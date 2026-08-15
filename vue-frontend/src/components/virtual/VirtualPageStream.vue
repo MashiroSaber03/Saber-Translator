@@ -1,12 +1,5 @@
 <script setup lang="ts">
-import {
-  computed,
-  nextTick,
-  onBeforeUnmount,
-  onMounted,
-  ref,
-  watch,
-} from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { variableItemOffsets, variableVirtualWindow } from './virtualWindow'
 
@@ -20,14 +13,17 @@ export interface VirtualPageStreamItem {
   width: number
 }
 
-const props = withDefaults(defineProps<{
-  gap?: number
-  items: VirtualPageStreamItem[]
-  overscanScreens?: number
-}>(), {
-  gap: 16,
-  overscanScreens: 2,
-})
+const props = withDefaults(
+  defineProps<{
+    gap?: number
+    items: VirtualPageStreamItem[]
+    overscanScreens?: number
+  }>(),
+  {
+    gap: 16,
+    overscanScreens: 2,
+  }
+)
 
 const emit = defineEmits<{
   visibleChange: [ids: string[]]
@@ -38,28 +34,30 @@ const viewportHeight = ref(0)
 const viewportWidth = ref(0)
 const scrollTop = ref(0)
 const visibleIds = ref<Set<string>>(new Set())
+const failedIds = ref<Set<string>>(new Set())
 let resizeObserver: ResizeObserver | null = null
 let intersectionObserver: IntersectionObserver | null = null
 
-const itemSizes = computed(() => props.items.map(item => {
-  const usableWidth = Math.max(1, viewportWidth.value)
-  const renderedHeight = item.width > 0
-    ? usableWidth * item.height / item.width
-    : usableWidth
-  return Math.max(1, renderedHeight) + props.gap
-}))
+const itemSizes = computed(() =>
+  props.items.map(item => {
+    const usableWidth = Math.max(1, viewportWidth.value)
+    const renderedHeight = item.width > 0 ? (usableWidth * item.height) / item.width : usableWidth
+    return Math.max(1, renderedHeight) + props.gap
+  })
+)
 const itemOffsets = computed(() => variableItemOffsets(itemSizes.value))
-const windowState = computed(() => variableVirtualWindow(
-  itemSizes.value,
-  scrollTop.value,
-  viewportHeight.value,
-  viewportHeight.value * props.overscanScreens,
-  itemOffsets.value,
-))
-const renderedItems = computed(() => props.items.slice(
-  windowState.value.start,
-  windowState.value.end,
-))
+const windowState = computed(() =>
+  variableVirtualWindow(
+    itemSizes.value,
+    scrollTop.value,
+    viewportHeight.value,
+    viewportHeight.value * props.overscanScreens,
+    itemOffsets.value
+  )
+)
+const renderedItems = computed(() =>
+  props.items.slice(windowState.value.start, windowState.value.end)
+)
 const innerStyle = computed(() => ({
   height: `${windowState.value.totalSize}px`,
 }))
@@ -80,31 +78,40 @@ function rebuildIntersectionObserver(): void {
   visibleIds.value = new Set()
   const root = containerRef.value
   if (!root || typeof IntersectionObserver === 'undefined') return
-  intersectionObserver = new IntersectionObserver(entries => {
-    const next = new Set(visibleIds.value)
-    for (const entry of entries) {
-      const id = (entry.target as HTMLElement).dataset.pageId
-      if (!id) continue
-      if (entry.isIntersecting) next.add(id)
-      else next.delete(id)
-    }
-    visibleIds.value = next
-    emit('visibleChange', props.items
-      .filter(item => next.has(item.id))
-      .map(item => item.id))
-  }, { root })
+  intersectionObserver = new IntersectionObserver(
+    entries => {
+      const next = new Set(visibleIds.value)
+      for (const entry of entries) {
+        const id = (entry.target as HTMLElement).dataset.pageId
+        if (!id) continue
+        if (entry.isIntersecting) next.add(id)
+        else next.delete(id)
+      }
+      visibleIds.value = next
+      emit(
+        'visibleChange',
+        props.items.filter(item => next.has(item.id)).map(item => item.id)
+      )
+    },
+    { root }
+  )
   root.querySelectorAll<HTMLElement>('[data-page-id]').forEach(element => {
     intersectionObserver?.observe(element)
   })
 }
 
+function markImageFailed(id: string): void {
+  failedIds.value = new Set([...failedIds.value, id])
+}
+
 watch(renderedItems, () => nextTick(rebuildIntersectionObserver))
 watch(
-  () => props.items.map(item => item.id).join('\u0000'),
+  () => props.items.map(item => `${item.id}\u0000${item.url}`).join('\u0001'),
   () => {
     if (containerRef.value) containerRef.value.scrollTop = 0
     scrollTop.value = 0
-  },
+    failedIds.value = new Set()
+  }
 )
 onMounted(() => {
   syncViewport()
@@ -121,11 +128,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div
-    ref="containerRef"
-    class="virtual-page-stream"
-    @scroll.passive="syncViewport"
-  >
+  <div ref="containerRef" class="virtual-page-stream" @scroll.passive="syncViewport">
     <div class="virtual-page-stream__inner" :style="innerStyle">
       <div class="virtual-page-stream__window" :style="windowStyle">
         <figure
@@ -139,12 +142,23 @@ onBeforeUnmount(() => {
           }"
         >
           <img
+            v-if="!failedIds.has(item.id)"
             class="virtual-page-stream__image"
             :src="item.url"
             :alt="item.alt"
             loading="lazy"
             decoding="async"
+            @error="markImageFailed(item.id)"
+          />
+          <div
+            v-else
+            class="virtual-page-stream__image-error"
+            role="img"
+            :aria-label="`${item.alt}加载失败`"
           >
+            <span aria-hidden="true">⚠️</span>
+            <span>图片加载失败</span>
+          </div>
           <span v-if="item.label" class="virtual-page-stream__label">
             {{ item.label }}
           </span>
@@ -218,5 +232,18 @@ onBeforeUnmount(() => {
   display: block;
   inline-size: 100%;
   block-size: auto;
+}
+
+.virtual-page-stream__image-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  inline-size: 100%;
+  block-size: 100%;
+  color: var(--color-text-inverse);
+  background: var(--color-surface-inverse-raised);
+  font-size: 14px;
 }
 </style>

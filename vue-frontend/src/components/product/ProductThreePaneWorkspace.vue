@@ -8,6 +8,7 @@ const props = withDefaults(defineProps<{
   rightWidth?: string
   leftMobileVisible?: boolean
   rightMobileVisible?: boolean
+  showRight?: boolean
   mobileMode?: 'flow' | 'drawer'
 }>(), {
   as: 'div',
@@ -16,6 +17,7 @@ const props = withDefaults(defineProps<{
   rightWidth: '320px',
   leftMobileVisible: false,
   rightMobileVisible: false,
+  showRight: true,
   mobileMode: 'flow',
 })
 
@@ -46,7 +48,7 @@ const workspaceStyle = computed(() => ({
     </section>
 
     <aside
-      v-if="$slots.right"
+      v-if="showRight && $slots.right"
       class="product-three-pane-workspace__pane product-three-pane-workspace__pane--right"
       :class="{ 'product-three-pane-workspace__pane--mobile-visible': rightMobileVisible }"
     >

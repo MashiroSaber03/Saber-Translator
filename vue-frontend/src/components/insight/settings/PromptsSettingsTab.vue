@@ -15,7 +15,7 @@ import UiSelect from '@/components/ui/UiSelect.vue'
 import UiField from '@/components/ui/UiField.vue'
 import { useInsightStore } from '@/stores/insightStore'
 import * as insightApi from '@/api/insight'
-import type { PromptType, SavedPromptItem } from '@/api/insight'
+import type { PromptType, SavedPromptInput, SavedPromptItem } from '@/api/insight'
 import { confirmProductAction } from '@/composables/useProductConfirm'
 import { requestProductTextInput } from '@/composables/useProductTextInput'
 import { triggerBlobDownload } from '@/utils/browserDownload'
@@ -35,10 +35,14 @@ const props = defineProps<{
 const insightStore = useInsightStore()
 
 const currentPromptType = ref<PromptType>('batch_analysis')
-const currentPromptContent = ref('')
-const customPrompts = ref<Record<string, string>>({})
+const customPrompts = ref<Record<string, string>>({ ...insightStore.config.prompts })
+const currentPromptContent = ref(customPrompts.value.batch_analysis ?? '')
 const savedPromptsLibrary = ref<SavedPromptItem[]>([])
 const isLoadingPrompts = ref(false)
+const isResettingPrompt = ref(false)
+const isSavingPrompt = ref(false)
+const isImportingPrompts = ref(false)
+const deletingPromptIds = ref<Set<string>>(new Set())
 const promptsImportInput = ref<InstanceType<typeof UiFileInput> | null>(null)
 const defaultPrompts = ref<Record<PromptType, string>>({
   batch_analysis: '',
@@ -50,8 +54,19 @@ const defaultPrompts = ref<Record<PromptType, string>>({
 async function loadDefaultPrompts(): Promise<void> {
   try {
     defaultPrompts.value = await insightApi.getDefaultPrompts()
-  } catch {
-    emit('showMessage', '默认提示词加载失败', 'error')
+    for (const type of insightApi.INSIGHT_PROMPT_TYPES) {
+      if (customPrompts.value[type] === undefined) {
+        customPrompts.value[type] = defaultPrompts.value[type]
+      }
+    }
+    currentPromptContent.value = customPrompts.value[currentPromptType.value] ?? ''
+    emitPrompts()
+  } catch (error) {
+    emit(
+      'showMessage',
+      '默认提示词加载失败: ' + (error instanceof Error ? error.message : '网络错误'),
+      'error',
+    )
   }
 }
 
@@ -59,25 +74,46 @@ async function loadPromptsLibrary(): Promise<void> {
   isLoadingPrompts.value = true
   try {
     savedPromptsLibrary.value = await insightApi.getPromptsLibrary()
-  } catch {
+  } catch (error) {
     savedPromptsLibrary.value = []
+    emit(
+      'showMessage',
+      '提示词库加载失败: ' + (error instanceof Error ? error.message : '网络错误'),
+      'error',
+    )
   } finally {
     isLoadingPrompts.value = false
   }
 }
 
 async function resetCurrentPrompt(): Promise<void> {
-  const confirmed = await confirmProductAction({
-    title: '重置提示词',
-    message: '确定要重置为默认提示词吗？当前编辑的内容将丢失。',
-    confirmText: '重置',
-    cancelText: '取消',
-    tone: 'danger',
-  })
-  if (!confirmed) return
-  currentPromptContent.value = defaultPrompts.value[currentPromptType.value] || ''
-  delete customPrompts.value[currentPromptType.value]
-  emit('showMessage', '已重置为默认提示词', 'success')
+  if (isResettingPrompt.value) return
+  const promptType = currentPromptType.value
+  isResettingPrompt.value = true
+  try {
+    const confirmed = await confirmProductAction({
+      title: '重置提示词',
+      message: '确定要重置为默认提示词吗？当前编辑的内容将丢失。',
+      confirmText: '重置',
+      cancelText: '取消',
+      tone: 'danger',
+    })
+    if (!confirmed) return
+    const content = await insightApi.resetDefaultPrompt(promptType)
+    defaultPrompts.value[promptType] = content
+    customPrompts.value[promptType] = content
+    if (currentPromptType.value === promptType) currentPromptContent.value = content
+    emitPrompts()
+    emit('showMessage', '已重置为默认提示词', 'success')
+  } catch (error) {
+    emit(
+      'showMessage',
+      '重置失败: ' + (error instanceof Error ? error.message : '网络错误'),
+      'error',
+    )
+  } finally {
+    isResettingPrompt.value = false
+  }
 }
 
 async function copyPromptToClipboard(): Promise<void> {
@@ -86,35 +122,40 @@ async function copyPromptToClipboard(): Promise<void> {
 }
 
 async function savePromptToLibrary(): Promise<void> {
-  const content = currentPromptContent.value.trim()
-  if (!content) {
+  if (isSavingPrompt.value) return
+  const content = currentPromptContent.value
+  const promptType = currentPromptType.value
+  if (!content.trim()) {
     emit('showMessage', '提示词内容不能为空', 'error')
     return
   }
 
-  const name = await requestProductTextInput({
-    title: '保存提示词',
-    message: '请输入提示词名称：',
-    placeholder: '提示词名称',
-    confirmText: '保存',
-    cancelText: '取消',
-  })
-  if (!name?.trim()) return
-
-  const newPrompt: SavedPromptItem = {
-    id: Date.now().toString(),
-    name: name.trim(),
-    type: currentPromptType.value,
-    content: content,
-    created_at: new Date().toISOString()
-  }
-
+  isSavingPrompt.value = true
   try {
-    const saved = await insightApi.savePromptToLibrary(newPrompt)
+    const name = await requestProductTextInput({
+      title: '保存提示词',
+      message: '请输入提示词名称：',
+      placeholder: '提示词名称',
+      confirmText: '保存',
+      cancelText: '取消',
+    })
+    if (!name?.trim()) return
+
+    const saved = await insightApi.savePromptToLibrary({
+      name: name.trim(),
+      type: promptType,
+      content,
+    })
     savedPromptsLibrary.value.push(saved)
     emit('showMessage', '提示词已保存到库', 'success')
-  } catch {
-    emit('showMessage', '保存失败', 'error')
+  } catch (error) {
+    emit(
+      'showMessage',
+      '保存失败: ' + (error instanceof Error ? error.message : '网络错误'),
+      'error',
+    )
+  } finally {
+    isSavingPrompt.value = false
   }
 }
 
@@ -137,34 +178,49 @@ function promptTypeChip(promptItem: SavedPromptItem): ProductChipItem[] {
 }
 
 async function deletePromptFromLibrary(promptId: string): Promise<void> {
-  const confirmed = await confirmProductAction({
-    title: '删除提示词',
-    message: '确定要删除这个提示词吗？',
-    confirmText: '删除',
-    cancelText: '取消',
-    tone: 'danger',
-  })
-  if (!confirmed) return
+  if (deletingPromptIds.value.has(promptId)) return
+  deletingPromptIds.value = new Set([...deletingPromptIds.value, promptId])
 
   try {
+    const confirmed = await confirmProductAction({
+      title: '删除提示词',
+      message: '确定要删除这个提示词吗？',
+      confirmText: '删除',
+      cancelText: '取消',
+      tone: 'danger',
+    })
+    if (!confirmed) return
+
     await insightApi.deletePromptFromLibrary(promptId)
     savedPromptsLibrary.value = savedPromptsLibrary.value.filter(p => p.id !== promptId)
     emit('showMessage', '提示词已删除', 'success')
-  } catch {
-    emit('showMessage', '删除失败', 'error')
+  } catch (error) {
+    emit(
+      'showMessage',
+      '删除失败: ' + (error instanceof Error ? error.message : '网络错误'),
+      'error',
+    )
+  } finally {
+    const remaining = new Set(deletingPromptIds.value)
+    remaining.delete(promptId)
+    deletingPromptIds.value = remaining
   }
 }
 
 function exportAllPrompts(): void {
-  if (currentPromptContent.value) {
-    customPrompts.value[currentPromptType.value] = currentPromptContent.value
-  }
+  customPrompts.value[currentPromptType.value] = currentPromptContent.value
 
   const exportData = {
-    version: '1.0',
-    exported_at: new Date().toISOString(),
-    prompts: customPrompts.value,
-    library: savedPromptsLibrary.value
+    version: 2,
+    exportedAt: new Date().toISOString(),
+    prompts: Object.fromEntries(
+      insightApi.INSIGHT_PROMPT_TYPES.map(type => [type, customPrompts.value[type] ?? '']),
+    ),
+    library: savedPromptsLibrary.value.map(({ name, type, content }) => ({
+      name,
+      type,
+      content,
+    })),
   }
 
   const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
@@ -178,55 +234,109 @@ function triggerImportPrompts(): void {
 }
 
 async function handlePromptsFileImport(files: File[]): Promise<void> {
+  if (isImportingPrompts.value) return
   const file = files[0]
   if (!file) return
 
+  isImportingPrompts.value = true
   try {
-    const text = await file.text()
-    const importData = JSON.parse(text)
+    const importData = parsePromptsImport(await file.text())
+    const library = importData.library.length > 0
+      ? await insightApi.importPromptsLibrary(importData.library)
+      : savedPromptsLibrary.value
 
-    if (importData.prompts) {
-      customPrompts.value = { ...customPrompts.value, ...importData.prompts }
-      emitPrompts()
-    }
-
-    if (importData.library && Array.isArray(importData.library)) {
-      const existingIds = new Set(savedPromptsLibrary.value.map(p => p.id))
-      for (const promptItem of importData.library) {
-        if (!existingIds.has(promptItem.id)) {
-          savedPromptsLibrary.value.push(promptItem)
-        }
-      }
-      savedPromptsLibrary.value = await insightApi.importPromptsLibrary(
-        savedPromptsLibrary.value
-      )
-    }
+    customPrompts.value = { ...customPrompts.value, ...importData.prompts }
+    currentPromptContent.value = customPrompts.value[currentPromptType.value] ?? ''
+    savedPromptsLibrary.value = library
+    emitPrompts()
 
     emit('showMessage', '提示词导入成功', 'success')
-  } catch {
-    emit('showMessage', '导入失败，请检查文件格式', 'error')
+  } catch (error) {
+    emit(
+      'showMessage',
+      '导入失败: ' + (error instanceof Error ? error.message : '请检查文件格式'),
+      'error',
+    )
+  } finally {
+    isImportingPrompts.value = false
+    promptsImportInput.value?.clear()
   }
+}
 
-  promptsImportInput.value?.clear()
+function parsePromptsImport(text: string): {
+  prompts: Record<PromptType, string>
+  library: SavedPromptInput[]
+} {
+  const value: unknown = JSON.parse(text)
+  if (!isObject(value)) throw new Error('文件根节点必须是对象')
+  requireExactKeys(value, ['version', 'exportedAt', 'prompts', 'library'], '文件')
+  if (value.version !== 2) throw new Error('提示词文件版本必须为 2')
+  if (typeof value.exportedAt !== 'string') throw new Error('exportedAt 必须是字符串')
+  if (!isObject(value.prompts)) throw new Error('prompts 必须是对象')
+  const promptValues = value.prompts
+  requireExactKeys(promptValues, [...insightApi.INSIGHT_PROMPT_TYPES], 'prompts')
+
+  const prompts = Object.fromEntries(
+    insightApi.INSIGHT_PROMPT_TYPES.map(type => {
+      const content = promptValues[type]
+      if (typeof content !== 'string') throw new Error(`prompts.${type} 必须是字符串`)
+      return [type, content]
+    }),
+  ) as Record<PromptType, string>
+
+  if (!Array.isArray(value.library)) throw new Error('library 必须是数组')
+  const names = new Set<string>()
+  const library = value.library.map((item, index): SavedPromptInput => {
+    if (!isObject(item)) throw new Error(`library[${index}] 必须是对象`)
+    requireExactKeys(item, ['name', 'type', 'content'], `library[${index}]`)
+    if (typeof item.name !== 'string' || !item.name.trim() || item.name.trim().length > 200) {
+      throw new Error(`library[${index}].name 必须包含 1-200 个字符`)
+    }
+    if (!insightApi.isInsightPromptType(item.type)) {
+      throw new Error(`library[${index}].type 不是可用的 Insight 提示词类型`)
+    }
+    if (typeof item.content !== 'string' || !item.content.trim()) {
+      throw new Error(`library[${index}].content 不能为空`)
+    }
+    const identity = `${item.type}\u0000${item.name.trim()}`
+    if (names.has(identity)) throw new Error(`library[${index}] 与前面的提示词重名`)
+    names.add(identity)
+    return { name: item.name.trim(), type: item.type, content: item.content }
+  })
+  return { prompts, library }
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function requireExactKeys(
+  value: Record<string, unknown>,
+  expected: string[],
+  label: string,
+): void {
+  const actual = Object.keys(value).sort()
+  const required = [...expected].sort()
+  if (actual.length !== required.length || actual.some((key, index) => key !== required[index])) {
+    throw new Error(`${label}字段必须为：${expected.join('、')}`)
+  }
 }
 
 watch(currentPromptType, (newType, previousType) => {
-  if (previousType && currentPromptContent.value) {
+  if (previousType) {
     customPrompts.value[previousType] = currentPromptContent.value
   }
   if (newType) {
-    currentPromptContent.value = customPrompts.value[newType] || defaultPrompts.value[newType] || ''
+    currentPromptContent.value = customPrompts.value[newType] ?? defaultPrompts.value[newType] ?? ''
   }
 })
 
 watch([currentPromptType, currentPromptContent], () => {
   emitPrompts()
-}, { immediate: true })
+})
 
 function collectDraftPrompts(): Record<string, string> {
-  if (currentPromptContent.value) {
-    customPrompts.value[currentPromptType.value] = currentPromptContent.value
-  }
+  customPrompts.value[currentPromptType.value] = currentPromptContent.value
   return customPrompts.value
 }
 
@@ -235,12 +345,10 @@ function emitPrompts(): void {
 }
 
 function refreshDraftFromStore(): void {
-  if (insightStore.config.prompts) {
-    customPrompts.value = { ...insightStore.config.prompts }
-  } else {
-    customPrompts.value = {}
-  }
-  currentPromptContent.value = customPrompts.value[currentPromptType.value] || defaultPrompts.value[currentPromptType.value] || ''
+  customPrompts.value = { ...insightStore.config.prompts }
+  currentPromptContent.value = customPrompts.value[currentPromptType.value]
+    ?? defaultPrompts.value[currentPromptType.value]
+    ?? ''
   emitPrompts()
 }
 
@@ -249,9 +357,7 @@ watch(() => props.syncRequestId, () => {
 })
 
 async function initialize(): Promise<void> {
-  await loadDefaultPrompts()
-  await loadPromptsLibrary()
-  refreshDraftFromStore()
+  await Promise.all([loadDefaultPrompts(), loadPromptsLibrary()])
 }
 
 onMounted(initialize)
@@ -268,17 +374,29 @@ onMounted(initialize)
     </UiField>
 
     <ProductActionRow aria-label="提示词编辑操作">
-      <UiButton variant="secondary" @click="resetCurrentPrompt" title="重置为默认" size="sm">
-        <UiIcon name="refresh" size="14" />
-        <span>重置</span>
+      <UiButton
+        variant="secondary"
+        :disabled="isResettingPrompt"
+        @click="resetCurrentPrompt"
+        title="重置为默认"
+        size="sm"
+      >
+        <UiIcon v-if="!isResettingPrompt" name="refresh" size="14" />
+        <span>{{ isResettingPrompt ? '重置中...' : '重置' }}</span>
       </UiButton>
       <UiButton variant="secondary" @click="copyPromptToClipboard" title="复制到剪贴板" size="sm">
         <UiIcon name="copy" size="14" />
         <span>复制</span>
       </UiButton>
-      <UiButton variant="primary" @click="savePromptToLibrary" title="保存到库" size="sm">
+      <UiButton
+        variant="primary"
+        :disabled="isSavingPrompt"
+        @click="savePromptToLibrary"
+        title="保存到库"
+        size="sm"
+      >
         <UiIcon name="save" size="14" />
-        <span>保存到库</span>
+        <span>{{ isSavingPrompt ? '保存中...' : '保存到库' }}</span>
       </UiButton>
     </ProductActionRow>
 
@@ -295,9 +413,15 @@ onMounted(initialize)
             <UiIcon name="download" size="14" />
             <span>导出</span>
           </UiButton>
-          <UiButton variant="secondary" @click="triggerImportPrompts" title="导入提示词" size="sm">
+          <UiButton
+            variant="secondary"
+            :disabled="isLoadingPrompts || isImportingPrompts"
+            @click="triggerImportPrompts"
+            title="导入提示词"
+            size="sm"
+          >
             <UiIcon name="upload" size="14" />
-            <span>导入</span>
+            <span>{{ isImportingPrompts ? '导入中...' : '导入' }}</span>
           </UiButton>
           <UiFileInput
             ref="promptsImportInput"
@@ -334,6 +458,7 @@ onMounted(initialize)
                 variant="danger"
                 size="sm"
                 :label="`删除提示词：${promptItem.name}`"
+                :disabled="deletingPromptIds.has(promptItem.id) || isImportingPrompts"
                 @click="deletePromptFromLibrary(promptItem.id)"
               >
                 <UiIcon name="trash" size="14" />
@@ -345,6 +470,7 @@ onMounted(initialize)
               type="button"
               class="prompts-settings-tab__saved-load"
               :aria-label="`加载提示词：${promptItem.name}`"
+              :disabled="deletingPromptIds.has(promptItem.id) || isImportingPrompts"
               @click="loadPromptFromLibrary(promptItem)"
             >
               <span class="prompts-settings-tab__prompt-name">{{ promptItem.name }}</span>

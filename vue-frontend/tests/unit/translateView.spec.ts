@@ -2,10 +2,11 @@ import { enableAutoUnmount, mount } from '@vue/test-utils'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createPinia, setActivePinia } from 'pinia'
-import { defineComponent } from 'vue'
+import { defineComponent, nextTick } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import TranslateView from '@/views/TranslateView.vue'
 import { useSettingsStore } from '@/stores/settings'
+import { useImageStore } from '@/stores/imageStore'
 import UiIcon from '@/components/ui/UiIcon.vue'
 
 const {
@@ -13,11 +14,15 @@ const {
   initializeAppMock,
   initializeBookChapterContextMock,
   handleKeydownMock,
+  translateActionOptions,
 } = vi.hoisted(() => ({
   routeState: { query: {} as Record<string, string | undefined> },
   initializeAppMock: vi.fn(),
   initializeBookChapterContextMock: vi.fn(),
   handleKeydownMock: vi.fn(),
+  translateActionOptions: {
+    value: null as null | { isEditMode: { value: boolean } },
+  },
 }))
 
 vi.mock('vue-router', () => ({
@@ -69,17 +74,20 @@ vi.mock('@/composables/useTextStyleSync', () => ({
 }))
 
 vi.mock('@/views/useTranslateViewActions', () => ({
-  useTranslateViewActions: () => ({
-    goToNext: vi.fn(),
-    goToPrevious: vi.fn(),
-    handleKeydown: handleKeydownMock,
-    handleRetryFailed: vi.fn(),
-    handleRunWorkflow: vi.fn(),
-    handleUploadComplete: vi.fn(),
-    loadChapterSession: vi.fn(),
-    selectImage: vi.fn(),
-    toggleEditMode: vi.fn(),
-  }),
+  useTranslateViewActions: (options: { isEditMode: { value: boolean } }) => {
+    translateActionOptions.value = options
+    return {
+      goToNext: vi.fn(),
+      goToPrevious: vi.fn(),
+      handleKeydown: handleKeydownMock,
+      handleRetryFailed: vi.fn(),
+      handleRunWorkflow: vi.fn(),
+      handleUploadComplete: vi.fn(),
+      loadChapterSession: vi.fn(),
+      selectImage: vi.fn(),
+      toggleEditMode: vi.fn(),
+    }
+  },
 }))
 
 const AppShellStub = defineComponent({
@@ -155,6 +163,7 @@ describe('TranslateView', () => {
     initializeAppMock.mockReset()
     initializeBookChapterContextMock.mockReset()
     handleKeydownMock.mockReset()
+    translateActionOptions.value = null
     initializeAppMock.mockResolvedValue(undefined)
     initializeBookChapterContextMock.mockResolvedValue(undefined)
   })
@@ -212,6 +221,30 @@ describe('TranslateView', () => {
     expect(source).not.toContain('.translate-page.edit-mode-active .product-page-header')
   })
 
+  it('leaves edit mode when the current page disappears', async () => {
+    mountTranslateView()
+    const imageStore = useImageStore()
+    imageStore.setImages([{
+      bubbleStates: [],
+      cleanAssetUrl: null,
+      fileName: 'page.png',
+      hasUnsavedChanges: false,
+      id: 'page-1',
+      sourceAssetUrl: '/api/v2/assets/source',
+      translatedAssetUrl: null,
+      translationStatus: 'pending',
+    }])
+    await nextTick()
+    expect(translateActionOptions.value).not.toBeNull()
+    translateActionOptions.value!.isEditMode.value = true
+    await nextTick()
+
+    imageStore.clearImages()
+    await nextTick()
+
+    expect(translateActionOptions.value!.isEditMode.value).toBe(false)
+  })
+
   it('keeps header actions free of DOM id hooks', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/views/TranslateView.vue'), 'utf8')
 
@@ -231,14 +264,13 @@ describe('TranslateView', () => {
   it('keeps page-level helper hooks under the translate owner', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/views/TranslateView.vue'), 'utf8')
 
-    expect(source).toContain('translate-bookshelf-mode-hint__text')
     expect(source).toContain('translate-upload-card__actions')
     expect(source).not.toContain('class="translate-upload-actions"')
     expect(source).not.toContain('.translate-upload-actions')
     expect(source).not.toContain('class="translate-loading-progress-label"')
     expect(source).not.toContain('.translate-loading-progress-label')
     expect(source).not.toMatch(/class="hint-text"/)
-    expect(source).not.toMatch(/\.translate-bookshelf-mode-hint\s+\.hint-text/)
+    expect(source).not.toContain('translate-bookshelf-mode-hint')
   })
 
   it('uses an owner modifier for settings highlight state', () => {

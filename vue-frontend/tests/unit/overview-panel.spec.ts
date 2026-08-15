@@ -11,18 +11,41 @@ import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
 
-const { regenerateOverviewMock, getGeneratedTemplatesMock, getRecentAnalyzedPagesMock, getOverviewMock } = vi.hoisted(() => ({
-  regenerateOverviewMock: vi.fn(),
+const {
+  downloadCurrentOverviewMock,
+  exportAnalysisMock,
+  getGeneratedTemplatesMock,
+  getOverviewMock,
+  getRecentAnalyzedPagesMock,
+  regenerateOverviewMock,
+  showToastMock,
+  triggerBlobDownloadMock,
+} = vi.hoisted(() => ({
+  downloadCurrentOverviewMock: vi.fn(),
+  exportAnalysisMock: vi.fn(),
   getGeneratedTemplatesMock: vi.fn(),
-  getRecentAnalyzedPagesMock: vi.fn(),
   getOverviewMock: vi.fn(),
+  getRecentAnalyzedPagesMock: vi.fn(),
+  regenerateOverviewMock: vi.fn(),
+  showToastMock: vi.fn(),
+  triggerBlobDownloadMock: vi.fn(),
 }))
 
 vi.mock('@/api/insight', () => ({
+  downloadCurrentOverview: downloadCurrentOverviewMock,
+  exportAnalysis: exportAnalysisMock,
   regenerateOverview: regenerateOverviewMock,
   getGeneratedTemplates: getGeneratedTemplatesMock,
   getRecentAnalyzedPages: getRecentAnalyzedPagesMock,
   getOverview: getOverviewMock,
+}))
+
+vi.mock('@/utils/browserDownload', () => ({
+  triggerBlobDownload: triggerBlobDownloadMock,
+}))
+
+vi.mock('@/utils/toast', () => ({
+  showToast: showToastMock,
 }))
 
 vi.mock('marked', () => ({
@@ -58,6 +81,10 @@ describe('OverviewPanel', () => {
       kind: 'queued',
       jobId: 'overview-job-1',
     })
+    downloadCurrentOverviewMock.mockReset().mockResolvedValue(new Blob(['overview']))
+    exportAnalysisMock.mockReset().mockResolvedValue({ jobId: 'export-job-1' })
+    showToastMock.mockReset()
+    triggerBlobDownloadMock.mockReset()
   })
 
   it('queues story_summary regeneration without fabricating a completion refresh', async () => {
@@ -225,7 +252,7 @@ describe('OverviewPanel', () => {
     await flushPromises()
 
     const templateSelect = wrapper.getComponent(UiSelect)
-    expect(templateSelect.attributes('aria-label')).toBe('选择概览模板')
+    expect(templateSelect.get('[role="combobox"]').attributes('aria-label')).toBe('选择概览模板')
   })
 
   it('keeps the overview cards on a responsive grid contract', () => {
@@ -260,6 +287,7 @@ describe('OverviewPanel', () => {
 
     getGeneratedTemplatesMock.mockResolvedValueOnce([])
     getRecentAnalyzedPagesMock.mockResolvedValueOnce([])
+    getOverviewMock.mockResolvedValueOnce(null)
 
     const emptyWrapper = mount(OverviewPanel, {
       global: {
@@ -335,5 +363,119 @@ describe('OverviewPanel', () => {
 
     expect(wrapper.text()).toContain('book-2 overview')
     expect(wrapper.text()).not.toContain('book-1 stale overview')
+  })
+
+  it('loads the selected overview directly even when template metadata fails', async () => {
+    getGeneratedTemplatesMock.mockRejectedValueOnce(new Error('metadata unavailable'))
+    getOverviewMock.mockResolvedValueOnce('direct overview content')
+
+    const wrapper = mount(OverviewPanel)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('direct overview content')
+    expect(wrapper.text()).not.toContain('概览操作失败')
+  })
+
+  it('shows a retryable error instead of treating a recent-page failure as an empty list', async () => {
+    getGeneratedTemplatesMock.mockResolvedValueOnce([])
+    getOverviewMock.mockResolvedValueOnce(null)
+    getRecentAnalyzedPagesMock.mockRejectedValueOnce(new Error('recent pages unavailable'))
+
+    const wrapper = mount(OverviewPanel)
+    await flushPromises()
+
+    const error = wrapper.findAllComponents(ProductStatusBanner)
+      .find(banner => banner.props('title') === '最近分析加载失败')
+    expect(error).toBeTruthy()
+    expect(error?.text()).toContain('recent pages unavailable')
+    expect(wrapper.text()).not.toContain('暂无分析记录')
+  })
+
+  it('stacks the recent-page retry action below errors in the narrow card', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/components/insight/OverviewPanel.vue'), 'utf8')
+    const errorRule = source.match(/\.overview-panel__recent-error\s*{([\s\S]*?)}/)?.[1]
+
+    expect(errorRule).toContain('--product-status-banner-flex-direction: column')
+    expect(errorRule).toContain('--product-status-banner-actions-width: 100%')
+  })
+
+  it('clears a stale loading state when the next book has no cached template', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useInsightStore()
+    store.currentBookId = 'book-1'
+    const book1Overview = deferred<string>()
+    getGeneratedTemplatesMock.mockReset()
+      .mockResolvedValueOnce(['no_spoiler'])
+      .mockResolvedValueOnce([])
+    getOverviewMock.mockReset().mockReturnValueOnce(book1Overview.promise)
+
+    const wrapper = mount(OverviewPanel, {
+      global: { plugins: [pinia] },
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('正在加载概览')
+
+    store.currentBookId = 'book-2'
+    await nextTick()
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('正在加载概览')
+    expect(wrapper.text()).toContain('选择模板类型，点击生成按钮')
+
+    book1Overview.resolve('book-1 stale overview')
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('book-1 stale overview')
+  })
+
+  it('prevents duplicate overview generation commands', async () => {
+    const queued = deferred<{ kind: 'queued'; jobId: string }>()
+    regenerateOverviewMock.mockReset().mockReturnValue(queued.promise)
+    const wrapper = mount(OverviewPanel)
+    await flushPromises()
+
+    const generateButton = wrapper.findAllComponents(UiIconButton)[0]!
+    await generateButton.trigger('click')
+    await generateButton.trigger('click')
+
+    expect(regenerateOverviewMock).toHaveBeenCalledTimes(1)
+    queued.resolve({ kind: 'queued', jobId: 'overview-job-1' })
+    await flushPromises()
+  })
+
+  it('keeps load failures out of exportable overview content', async () => {
+    getGeneratedTemplatesMock.mockResolvedValue(['no_spoiler'])
+    getOverviewMock.mockRejectedValue(new Error('temporary provider failure'))
+    const wrapper = mount(OverviewPanel)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('概览操作失败')
+    expect(wrapper.text()).toContain('temporary provider failure')
+    const exportCurrentButton = wrapper.findAllComponents({ name: 'UiButton' })[0]!
+    expect(exportCurrentButton.attributes('disabled')).toBeDefined()
+  })
+
+  it('captures the requested book and template for one current-overview export', async () => {
+    getGeneratedTemplatesMock.mockResolvedValue(['no_spoiler'])
+    getOverviewMock.mockResolvedValue('overview body')
+    const download = deferred<Blob>()
+    downloadCurrentOverviewMock.mockReset().mockReturnValue(download.promise)
+    const wrapper = mount(OverviewPanel)
+    await flushPromises()
+
+    const exportCurrentButton = wrapper.findAllComponents({ name: 'UiButton' })[0]!
+    await exportCurrentButton.trigger('click')
+    const store = useInsightStore()
+    store.currentBookId = 'book-2'
+    await nextTick()
+    await exportCurrentButton.trigger('click')
+
+    expect(downloadCurrentOverviewMock).toHaveBeenCalledTimes(1)
+    expect(downloadCurrentOverviewMock).toHaveBeenCalledWith('book-1', 'no_spoiler')
+
+    const blob = new Blob(['overview'])
+    download.resolve(blob)
+    await flushPromises()
+    expect(triggerBlobDownloadMock).toHaveBeenCalledWith(blob, 'book-1_no_spoiler.md')
   })
 })

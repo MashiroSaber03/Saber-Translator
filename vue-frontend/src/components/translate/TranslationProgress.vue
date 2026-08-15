@@ -5,7 +5,7 @@
       label="翻译进度"
       size="lg"
       striped
-      animated
+      :animated="isActivelyAdvancing"
     >
       <span class="translation-progress__label">
         {{ progressLabel }}
@@ -40,6 +40,9 @@
           <span v-else-if="pool.skipped > 0" class="translation-progress__skipped">
             跳过 {{ pool.skipped }}
           </span>
+          <span v-if="pool.cancelled > 0" class="translation-progress__skipped">
+            取消 {{ pool.cancelled }}
+          </span>
           <span v-if="pool.failed > 0" class="translation-progress__failed-count">
             失败 {{ pool.failed }}
           </span>
@@ -49,7 +52,7 @@
           :label="`${stepKindLabel(pool.kind)}流水线`"
           size="sm"
           :striped="pool.processing > 0"
-          :animated="pool.processing > 0"
+          :animated="isActivelyAdvancing && pool.processing > 0"
         />
       </div>
     </div>
@@ -81,12 +84,17 @@ function clampPercent(value: number): number {
 
 const currentProgress = computed(() => props.progress)
 const showProgress = computed(() => (
-  currentProgress.value.isInProgress || imageStore.isBatchTranslationInProgress
+  currentProgress.value.isInProgress || imageStore.isTranslationInProgress
 ))
 const failedCount = computed(() => currentProgress.value.failed)
 const isParallelProgress = computed(
   () => currentProgress.value.executionMode === 'parallel',
 )
+const isActivelyAdvancing = computed(() => (
+  currentProgress.value.status === 'running'
+  || currentProgress.value.status === 'pausing'
+  || currentProgress.value.status === 'cancelling'
+))
 const progressPercent = computed(() => {
   if (currentProgress.value.percentage !== undefined) {
     return clampPercent(currentProgress.value.percentage)
@@ -117,7 +125,7 @@ const progressLabel = computed(() => {
 function poolPercent(pool: TranslationPoolProgress): number {
   if (pool.total === 0) return 0
   return clampPercent(
-    (pool.completed + pool.failed + pool.skipped) / pool.total * 100,
+    (pool.completed + pool.failed + pool.skipped + pool.cancelled) / pool.total * 100,
   )
 }
 </script>

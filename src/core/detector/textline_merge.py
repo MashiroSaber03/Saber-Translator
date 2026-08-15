@@ -6,6 +6,7 @@
 
 import logging
 import itertools
+import math
 from typing import List, Set, Sequence, Optional
 from collections import Counter
 
@@ -55,14 +56,21 @@ def build_text_block_from_lines(lines: Sequence[TextLine]) -> Optional[TextBlock
     if majority_dir == 'h':
         sorted_indices = sorted(range(len(unique_lines)), key=lambda x: unique_lines[x].centroid[1])
     else:
-        sorted_indices = sorted(range(len(unique_lines)), key=lambda x: -unique_lines[x].centroid[0])
+        sorted_indices = sorted(
+            range(len(unique_lines)),
+            key=lambda x: -unique_lines[x].centroid[0],
+        )
     unique_lines = [unique_lines[i] for i in sorted_indices]
 
-    total_logprobs = 0
+    total_logprobs = 0.0
     total_area = sum([line.area for line in unique_lines])
     for line in unique_lines:
-        if line.confidence > 0 and line.area > 0:
-            total_logprobs += np.log(line.confidence) * line.area
+        if line.area <= 0:
+            continue
+        if line.confidence == 0:
+            total_logprobs = float('-inf')
+            break
+        total_logprobs += np.log(line.confidence) * line.area
     if total_area > 0:
         total_logprobs /= total_area
 
@@ -249,6 +257,21 @@ def merge_textlines(
     Returns:
         List[TextBlock]: 合并后的文本块列表
     """
+    if not isinstance(textlines, list) or any(
+        not isinstance(line, TextLine) for line in textlines
+    ):
+        raise TypeError("待合并文本行必须是 TextLine 列表")
+    if image_width <= 0 or image_height <= 0:
+        raise ValueError("图像尺寸必须大于零")
+    if (
+        isinstance(edge_ratio_threshold, bool)
+        or not isinstance(edge_ratio_threshold, (int, float))
+        or not math.isfinite(float(edge_ratio_threshold))
+        or edge_ratio_threshold < 0
+    ):
+        raise ValueError("边缘距离比例阈值必须是非负有限数字")
+    if not isinstance(verbose, bool):
+        raise TypeError("详细日志开关必须是布尔值")
     if not textlines:
         return []
     

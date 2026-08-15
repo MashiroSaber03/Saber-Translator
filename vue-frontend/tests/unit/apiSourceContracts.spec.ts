@@ -79,9 +79,9 @@ describe('api source contracts', () => {
   it('uses the shared OpenAI-compatible wire type in the insight API module', () => {
     const source = readFileSync(resolve(frontendRoot, 'src/api/insight.ts'), 'utf8')
 
-    expect(source).toContain("import type { OpenAICompatibleOptionsWire } from '@/utils/openaiOptions'")
+    expect(source).toContain('type OpenAICompatibleOptionsWire')
     expect(source).not.toContain('interface OpenAICompatibleWireOptions')
     expect(source).not.toContain('OpenAICompatibleWireOptions')
-    expect(source).toContain('openai_options?: OpenAICompatibleOptionsWire')
+    expect(source).toContain('): OpenAICompatibleOptionsWire')
   })
 })

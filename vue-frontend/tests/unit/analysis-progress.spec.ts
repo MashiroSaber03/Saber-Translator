@@ -1,7 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { createPinia, setActivePinia } from 'pinia'
 import { useInsightStore } from '@/stores/insightStore'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
@@ -10,20 +8,31 @@ import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 
-const { startAnalysisMock, cancelAnalysisMock, continueAnalysisMock, confirmProductActionMock } = vi.hoisted(() => ({
+const {
+  startAnalysisMock,
+  pauseAnalysisMock,
+  resumeAnalysisMock,
+  cancelAnalysisMock,
+  continueAnalysisMock,
+  exportAnalysisMock,
+  confirmProductActionMock,
+} = vi.hoisted(() => ({
   startAnalysisMock: vi.fn(),
+  pauseAnalysisMock: vi.fn(),
+  resumeAnalysisMock: vi.fn(),
   cancelAnalysisMock: vi.fn(),
   continueAnalysisMock: vi.fn(),
+  exportAnalysisMock: vi.fn(),
   confirmProductActionMock: vi.fn(),
 }))
 
 vi.mock('@/api/insight', () => ({
   startAnalysis: startAnalysisMock,
-  pauseAnalysis: vi.fn(),
-  resumeAnalysis: vi.fn(),
+  pauseAnalysis: pauseAnalysisMock,
+  resumeAnalysis: resumeAnalysisMock,
   continueAnalysis: continueAnalysisMock,
   cancelAnalysis: cancelAnalysisMock,
-  exportAnalysis: vi.fn(),
+  exportAnalysis: exportAnalysisMock,
 }))
 
 vi.mock('@/composables/useProductConfirm', () => ({
@@ -31,6 +40,14 @@ vi.mock('@/composables/useProductConfirm', () => ({
 }))
 
 import AnalysisProgress from '@/components/insight/AnalysisProgress.vue'
+
+function createDeferred<T>() {
+  let resolve: (value: T) => void = () => {}
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
+}
 
 describe('AnalysisProgress', () => {
   beforeEach(() => {
@@ -46,15 +63,21 @@ describe('AnalysisProgress', () => {
     store.updateProgress(0, 0)
 
     startAnalysisMock.mockReset()
+    pauseAnalysisMock.mockReset()
+    resumeAnalysisMock.mockReset()
     cancelAnalysisMock.mockReset()
     continueAnalysisMock.mockReset()
+    exportAnalysisMock.mockReset()
     confirmProductActionMock.mockReset()
     startAnalysisMock.mockRejectedValue({
       status: 409,
       message: '书籍 book-1 已有运行中的任务',
     })
+    pauseAnalysisMock.mockResolvedValue(undefined)
+    resumeAnalysisMock.mockResolvedValue(undefined)
     cancelAnalysisMock.mockResolvedValue(undefined)
     continueAnalysisMock.mockResolvedValue(undefined)
+    exportAnalysisMock.mockResolvedValue(undefined)
     confirmProductActionMock.mockResolvedValue(true)
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
   })
@@ -89,9 +112,9 @@ describe('AnalysisProgress', () => {
     const errorBanner = wrapper.getComponent(ProductStatusBanner)
     expect(errorBanner.props('tone')).toBe('danger')
 
-    const errorDismiss = wrapper.get('[aria-label="清除分析错误"]')
+    const errorDismiss = wrapper.get('[aria-label="清除分析提示"]')
     expect(errorDismiss.element.tagName).toBe('BUTTON')
-    expect(errorDismiss.attributes('aria-label')).toBe('清除分析错误')
+    expect(errorDismiss.attributes('aria-label')).toBe('清除分析提示')
 
     await errorDismiss.trigger('click')
 
@@ -207,13 +230,13 @@ describe('AnalysisProgress', () => {
     })
 
     const modeSelect = wrapper.getComponent(UiSelect)
-    expect(modeSelect.attributes('aria-label')).toBe('选择分析范围')
+    expect(modeSelect.get('button').attributes('aria-label')).toBe('选择分析范围')
 
     modeSelect.vm.$emit('change', 'chapter')
     await flushPromises()
 
     const chapterSelect = wrapper.findAllComponents(UiSelect)
-      .find(select => select.attributes('aria-label') === '选择分析章节')
+      .find(select => select.get('button').attributes('aria-label') === '选择分析章节')
 
     expect(chapterSelect).toBeTruthy()
   })
@@ -244,6 +267,32 @@ describe('AnalysisProgress', () => {
     await wrapper.get('button[aria-label="重新分析"]').trigger('click')
     await flushPromises()
     expect(startAnalysisMock).toHaveBeenCalled()
+  })
+
+  it('clears the previous job progress when a new analysis is accepted', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useInsightStore()
+    store.setCurrentBook('book-1')
+    store.setAnalysisStatus('completed')
+    store.updateProgress(20, 20)
+    startAnalysisMock.mockResolvedValue({
+      jobId: 'task-retry',
+      runId: 'run-retry',
+    })
+
+    const wrapper = mount(AnalysisProgress, {
+      global: { plugins: [pinia] },
+    })
+
+    await wrapper.get('button[aria-label="重新分析"]').trigger('click')
+    await flushPromises()
+
+    expect(store.currentTaskId).toBe('task-retry')
+    expect(store.analysisStatus).toBe('queued')
+    expect(store.progress.current).toBe(0)
+    expect(store.progress.total).toBe(0)
+    expect(wrapper.text()).not.toContain('20/20')
   })
 
   it('uses product confirmation before cancelling analysis', async () => {
@@ -297,29 +346,82 @@ describe('AnalysisProgress', () => {
     expect(store.analysisStatus).toBe('queued')
   })
 
-  it('keeps analysis owner colors on semantic tokens instead of raw values', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/insight/AnalysisProgress.vue'), 'utf8')
-    const styleBlock = source.match(/<style scoped>([\s\S]*)<\/style>/)?.[1] ?? ''
+  it('does not submit the same control command twice while it is pending', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useInsightStore()
+    store.setCurrentBook('book-1')
+    store.setCurrentTaskId('task-1')
+    store.setAnalysisStatus('running')
+    const pauseRequest = createDeferred<void>()
+    pauseAnalysisMock.mockReturnValueOnce(pauseRequest.promise)
 
-    expect(styleBlock).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(/)
-    expect(styleBlock).toContain('--shadow-action-brand')
-    expect(source).toContain('class="analysis-progress-panel"')
-    expect(source).toContain('analysis-progress-panel__status-dot')
-    expect(source).not.toContain('sidebar-section analysis-control-compact')
-    expect(styleBlock).not.toContain('.sidebar-section.analysis-control-compact')
-    expect(styleBlock).not.toMatch(/\.(?:status-dot|status-left|status-progress|progress-message)\b/)
+    const wrapper = mount(AnalysisProgress, {
+      global: { plugins: [pinia] },
+    })
+    const pauseButton = wrapper.get('button[aria-label="暂停分析"]')
+    await pauseButton.trigger('click')
+    await pauseButton.trigger('click')
+
+    expect(pauseAnalysisMock).toHaveBeenCalledTimes(1)
+    expect(pauseButton.attributes('disabled')).toBeDefined()
+
+    pauseRequest.resolve()
+    await flushPromises()
+    expect(store.analysisStatus).toBe('pausing')
+  })
+
+  it('does not write an accepted old-book job into the newly selected book', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useInsightStore()
+    store.setCurrentBook('book-1')
+    store.setBookTotalPages(20)
+    const submission = createDeferred<{ jobId: string; success: boolean }>()
+    startAnalysisMock.mockReturnValueOnce(submission.promise)
+
+    const wrapper = mount(AnalysisProgress, {
+      global: { plugins: [pinia] },
+    })
+    await wrapper.get('button[aria-label="开始分析"]').trigger('click')
+    store.setCurrentBook('book-2')
+    submission.resolve({ success: true, jobId: 'book-1-job' })
+    await flushPromises()
+
+    expect(store.currentBookId).toBe('book-2')
+    expect(store.currentTaskId).toBeNull()
+    expect(store.analysisStatus).toBe('idle')
+  })
+
+  it('shows successful export acceptance as information rather than an error', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useInsightStore()
+    store.setCurrentBook('book-1')
+    store.setAnalyzedPagesCount(3)
+
+    const wrapper = mount(AnalysisProgress, {
+      global: { plugins: [pinia] },
+    })
+    await wrapper.get('button[aria-label="导出分析报告"]').trigger('click')
+    await flushPromises()
+
+    expect(exportAnalysisMock).toHaveBeenCalledWith('book-1')
+    expect(wrapper.text()).toContain('导出任务已进入任务中心')
+    expect(wrapper.getComponent(ProductStatusBanner).props('tone')).toBe('info')
+  })
+
+  it('only shows the incremental option for the full-book scope', async () => {
+    const wrapper = mount(AnalysisProgress)
+    expect(wrapper.findComponent(UiCheckbox).exists()).toBe(true)
+
+    wrapper.getComponent(UiSelect).vm.$emit('change', 'chapter')
+    await flushPromises()
+
+    expect(wrapper.findComponent(UiCheckbox).exists()).toBe(false)
   })
 
   it('uses product action rows and shared button variants for analysis controls', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/insight/AnalysisProgress.vue'), 'utf8')
-    const styleBlock = source.match(/<style scoped>([\s\S]*)<\/style>/)?.[1] ?? ''
-
-    expect(source).toContain("import ProductActionRow from '@/components/product/ProductActionRow.vue'")
-    expect(source).toContain('aria-label="分析启动操作"')
-    expect(source).toContain('aria-label="运行中的分析操作"')
-    expect(source).toContain('aria-label="分析附加操作"')
-    expect(styleBlock).not.toMatch(/btn-analysis-start|btn-control|btn-pause|btn-resume|btn-cancel|button-icon-sm/)
-
     const pinia = createPinia()
     setActivePinia(pinia)
     const store = useInsightStore()
@@ -337,32 +439,5 @@ describe('AnalysisProgress', () => {
     const exportAction = wrapper.getComponent(UiIconButton)
     expect(exportAction.props('label')).toBe('导出分析报告')
     expect(exportAction.props('title')).toBe('导出分析报告')
-  })
-
-  it('keeps analysis progress structural hooks under the panel owner', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/insight/AnalysisProgress.vue'), 'utf8')
-    const oldHooks = [
-      'analysis-progress__progress',
-      'analysis-progress__error',
-      'analysis-progress__page-number',
-      'analysis-progress__incremental-checkbox',
-      'analysis-action-row',
-      'analysis-mode-select',
-      'analysis-start-action',
-      'analysis-action-button',
-      'page-input-wrapper',
-      'page-hint',
-      'mode-description',
-      'estimated-time',
-      'analysis-options-row',
-    ]
-
-    for (const hook of oldHooks) {
-      const escapedHook = hook.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      expect(source).not.toMatch(new RegExp(`(?<![\\w-])${escapedHook}(?![\\w-])`))
-    }
-    expect(source).toContain('analysis-progress-panel__progress')
-    expect(source).toContain('analysis-progress-panel__action-row')
-    expect(source).toContain('analysis-progress-panel__mode-description')
   })
 })

@@ -21,12 +21,10 @@ interface NormalizedProductConfirmOptions {
 }
 
 interface ProductConfirmRequest {
-  id: number
   options: NormalizedProductConfirmOptions
   resolve: (value: boolean) => void
 }
 
-let nextRequestId = 1
 const activeRequest = shallowRef<ProductConfirmRequest | null>(null)
 const pendingRequests: ProductConfirmRequest[] = []
 
@@ -56,7 +54,6 @@ function settleActiveRequest(value: boolean) {
 export function confirmProductAction(options: ProductConfirmOptions): Promise<boolean> {
   return new Promise(resolve => {
     pendingRequests.push({
-      id: nextRequestId++,
       options: normalizeConfirmOptions(options),
       resolve,
     })

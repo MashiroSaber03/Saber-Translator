@@ -7,7 +7,7 @@ import { normalizeImageTextStyleFields } from '@/defaults/textStyleDefaults'
 export const useImageStore = defineStore('image', () => {
   const images = ref<ImageData[]>([])
   const currentImageIndex = ref<number>(-1)
-  const isBatchTranslationInProgress = ref<boolean>(false)
+  const isTranslationInProgress = ref<boolean>(false)
 
   const currentImage = computed<ImageData | null>(() => {
     if (currentImageIndex.value >= 0 && currentImageIndex.value < images.value.length) {
@@ -21,7 +21,7 @@ export const useImageStore = defineStore('image', () => {
   const canGoPrevious = computed<boolean>(() => currentImageIndex.value > 0)
   const canGoNext = computed<boolean>(() => currentImageIndex.value < images.value.length - 1)
   const failedImageCount = computed<number>(
-    () => images.value.filter(img => img.translationFailed).length,
+    () => images.value.filter(image => image.translationStatus === 'failed').length,
   )
 
   function setImages(newImages: ImageDataLoadInput[]): void {
@@ -68,7 +68,7 @@ export const useImageStore = defineStore('image', () => {
   function clearImages(): void {
     images.value = []
     currentImageIndex.value = -1
-    isBatchTranslationInProgress.value = false
+    isTranslationInProgress.value = false
   }
 
   function setCurrentImageIndex(index: number): void {
@@ -142,30 +142,23 @@ export const useImageStore = defineStore('image', () => {
   function setTranslationStatus(
     index: number,
     status: TranslationStatus,
-    errorMessage?: string,
   ): void {
     if (index >= 0 && index < images.value.length) {
       const image = images.value[index]
       if (image) {
         image.translationStatus = status
-        image.translationFailed = status === 'failed'
-        if (status === 'failed') {
-          image.errorMessage = errorMessage
-        } else {
-          image.errorMessage = undefined
-        }
       }
     }
   }
 
-  function setBatchTranslationInProgress(isInProgress: boolean): void {
-    isBatchTranslationInProgress.value = isInProgress
+  function setTranslationInProgress(isInProgress: boolean): void {
+    isTranslationInProgress.value = isInProgress
   }
 
   return {
     images,
     currentImageIndex,
-    isBatchTranslationInProgress,
+    isTranslationInProgress,
 
     currentImage,
     imageCount,
@@ -190,6 +183,6 @@ export const useImageStore = defineStore('image', () => {
 
     setTranslationStatus,
 
-    setBatchTranslationInProgress,
+    setTranslationInProgress,
   }
 })

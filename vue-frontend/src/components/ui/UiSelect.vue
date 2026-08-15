@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, useAttrs, useId } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, useAttrs, useId, watch } from 'vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import type { UiSelectOption, UiSelectValue } from '@/components/ui/selectTypes'
 
@@ -31,6 +31,7 @@ const attrs = useAttrs()
 const selectRef = ref<HTMLElement | null>(null)
 const dropdownRef = ref<HTMLElement | null>(null)
 const isOpen = ref(false)
+const activeIndex = ref(-1)
 const dropdownStyle = ref<Record<string, string>>({})
 const dropdownId = useId()
 
@@ -43,6 +44,58 @@ const selectedOption = computed(() =>
 )
 
 const displayValue = computed(() => selectedOption.value?.label ?? props.placeholder)
+const enabledOptionIndexes = computed(() => props.options
+  .map((option, index) => option.disabled ? -1 : index)
+  .filter(index => index >= 0))
+const activeDescendant = computed(() => (
+  isOpen.value && activeIndex.value >= 0
+    ? optionId(activeIndex.value)
+    : undefined
+))
+
+function optionId(index: number): string {
+  return `${dropdownId}-option-${index}`
+}
+
+function resetActiveIndex(preferred: 'selected' | 'first' | 'last' = 'selected'): void {
+  const enabledIndexes = enabledOptionIndexes.value
+  if (enabledIndexes.length === 0) {
+    activeIndex.value = -1
+    return
+  }
+
+  if (preferred === 'first') {
+    activeIndex.value = enabledIndexes[0] ?? -1
+    return
+  }
+  if (preferred === 'last') {
+    activeIndex.value = enabledIndexes.at(-1) ?? -1
+    return
+  }
+
+  const selectedIndex = props.options.findIndex(option => (
+    !option.disabled && option.value === props.modelValue
+  ))
+  activeIndex.value = selectedIndex >= 0 ? selectedIndex : (enabledIndexes[0] ?? -1)
+}
+
+function moveActiveIndex(direction: -1 | 1): void {
+  const enabledIndexes = enabledOptionIndexes.value
+  if (enabledIndexes.length === 0) return
+
+  const currentPosition = enabledIndexes.indexOf(activeIndex.value)
+  if (currentPosition < 0) {
+    activeIndex.value = direction > 0 ? (enabledIndexes[0] ?? -1) : (enabledIndexes.at(-1) ?? -1)
+    return
+  }
+
+  const nextPosition = (currentPosition + direction + enabledIndexes.length) % enabledIndexes.length
+  activeIndex.value = enabledIndexes[nextPosition] ?? -1
+}
+
+function setActiveOption(index: number, option: UiSelectOption): void {
+  if (!option.disabled) activeIndex.value = index
+}
 
 function getOptionCount(): number {
   return Math.max(props.options.length, 1)
@@ -85,8 +138,9 @@ function updatePosition(): void {
   }
 }
 
-function openDropdown(): void {
+function openDropdown(preferred: 'selected' | 'first' | 'last' = 'selected'): void {
   if (props.disabled || isOpen.value) return
+  resetActiveIndex(preferred)
   isOpen.value = true
   void nextTick(() => {
     updatePosition()
@@ -111,25 +165,51 @@ function selectOption(option: UiSelectOption): void {
   emit('update:modelValue', option.value)
   emit('change', option.value)
   closeDropdown()
+  selectRef.value?.focus()
 }
 
 function handleKeydown(event: KeyboardEvent): void {
   if (props.disabled) return
 
-  if (event.key === 'Enter' || event.key === ' ') {
-    event.preventDefault()
-    toggleDropdown()
-    return
-  }
-
-  if (event.key === 'ArrowDown') {
-    event.preventDefault()
-    openDropdown()
-    return
-  }
-
   if (event.key === 'Escape' && isOpen.value) {
     event.preventDefault()
+    closeDropdown()
+    return
+  }
+
+  if (!isOpen.value) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      openDropdown()
+      return
+    }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      openDropdown(event.key === 'ArrowDown' ? 'first' : 'last')
+    }
+    return
+  }
+
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault()
+    moveActiveIndex(event.key === 'ArrowDown' ? 1 : -1)
+    return
+  }
+
+  if (event.key === 'Home' || event.key === 'End') {
+    event.preventDefault()
+    resetActiveIndex(event.key === 'Home' ? 'first' : 'last')
+    return
+  }
+
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault()
+    const option = props.options[activeIndex.value]
+    if (option) selectOption(option)
+    return
+  }
+
+  if (event.key === 'Tab') {
     closeDropdown()
   }
 }
@@ -158,10 +238,23 @@ onUnmounted(() => {
   window.removeEventListener('scroll', handleScrollOrResize, true)
   window.removeEventListener('resize', handleScrollOrResize)
 })
+
+watch(() => props.disabled, (disabled) => {
+  if (disabled) closeDropdown()
+})
+
+watch([() => props.options, () => props.modelValue], () => {
+  if (isOpen.value) resetActiveIndex()
+})
+
+watch(activeIndex, (index) => {
+  if (!isOpen.value || index < 0) return
+  void nextTick(() => document.getElementById(optionId(index))?.scrollIntoView?.({ block: 'nearest' }))
+})
 </script>
 
 <template>
-  <div
+  <button
     ref="selectRef"
     v-bind="attrs"
     class="ui-select"
@@ -175,11 +268,13 @@ onUnmounted(() => {
         'ui-select--placeholder': !selectedOption,
       },
     ]"
+    type="button"
     role="combobox"
-    :tabindex="disabled ? -1 : 0"
+    :disabled="disabled"
     :aria-expanded="isOpen ? 'true' : 'false'"
     aria-haspopup="listbox"
     :aria-controls="isOpen ? dropdownId : undefined"
+    :aria-activedescendant="activeDescendant"
     :aria-disabled="disabled ? 'true' : undefined"
     :aria-invalid="Boolean(error) ? 'true' : undefined"
     @click="toggleDropdown"
@@ -189,35 +284,38 @@ onUnmounted(() => {
     <span class="ui-select__arrow" aria-hidden="true">
       <UiIcon name="chevron-down" size="14" />
     </span>
+  </button>
 
-    <Teleport to="body">
+  <Teleport to="body">
+    <div
+      v-if="isOpen"
+      :id="dropdownId"
+      ref="dropdownRef"
+      class="ui-select-dropdown"
+      role="listbox"
+      :style="dropdownStyle"
+    >
       <div
-        v-if="isOpen"
-        :id="dropdownId"
-        ref="dropdownRef"
-        class="ui-select-dropdown"
-        role="listbox"
-        :style="dropdownStyle"
+        v-for="(option, index) in options"
+        :id="optionId(index)"
+        :key="`${typeof option.value}:${String(option.value)}`"
+        class="ui-select-option"
+        :class="{
+          'ui-select-option--selected': option.value === modelValue,
+          'ui-select-option--active': index === activeIndex,
+        }"
+        role="option"
+        :aria-selected="option.value === modelValue ? 'true' : 'false'"
+        :aria-disabled="option.disabled ? 'true' : undefined"
+        :data-ui-select-value="String(option.value)"
+        @mouseenter="setActiveOption(index, option)"
+        @mousedown.prevent
+        @click="selectOption(option)"
       >
-        <div
-          v-for="option in options"
-          :key="String(option.value)"
-          class="ui-select-option"
-          :class="{ 'ui-select-option--selected': option.value === modelValue }"
-          role="option"
-          :tabindex="option.disabled ? -1 : 0"
-          :aria-selected="option.value === modelValue ? 'true' : 'false'"
-          :aria-disabled="option.disabled ? 'true' : undefined"
-          :data-ui-select-value="String(option.value)"
-          @click="selectOption(option)"
-          @keydown.enter.prevent="selectOption(option)"
-          @keydown.space.prevent="selectOption(option)"
-        >
-          {{ option.label }}
-        </div>
+        {{ option.label }}
       </div>
-    </Teleport>
-  </div>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -233,14 +331,16 @@ onUnmounted(() => {
   border-radius: var(--ui-select-radius, var(--ui-selector-control-radius));
   background: var(--ui-select-background, var(--ui-selector-control-background, var(--color-surface-base, Canvas)));
   color: var(--ui-select-color, var(--ui-selector-control-text, var(--color-text-default, CanvasText)));
+  appearance: none;
   font-family: inherit;
   font-size: var(--ui-select-font-size, var(--ui-selector-control-font-size));
   line-height: var(--ui-select-line-height, var(--ui-selector-control-line-height));
+  text-align: left;
   cursor: pointer;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
 
-:where(.ui-select:hover) {
+:where(.ui-select:hover:not(:disabled)) {
   border-color: var(--ui-select-hover-border, var(--ui-selector-control-hover-border));
 }
 
@@ -358,7 +458,7 @@ onUnmounted(() => {
 }
 
 .ui-select-option:hover,
-.ui-select-option:focus {
+.ui-select-option--active {
   outline: none;
   background: var(--ui-selector-option-hover-background);
 }

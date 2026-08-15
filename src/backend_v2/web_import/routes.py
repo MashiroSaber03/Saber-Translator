@@ -53,7 +53,7 @@ def create_web_import_blueprint(
     @blueprint.post("/support-checks")
     def support_check() -> Response:
         body = _json_body(allowed_keys={"sourceUrl"})
-        source_url = str(body.get("sourceUrl", "")).strip()
+        source_url = _required_string(body, "sourceUrl")
         _validated_url(source_url)
         try:
             from gallery_dl import extractor
@@ -81,10 +81,13 @@ def create_web_import_blueprint(
         body = _json_body(
             allowed_keys={"chapterId", "sourceUrl", "engine"}
         )
+        requested_engine = body.get("engine", "auto")
+        if not isinstance(requested_engine, str):
+            raise ValueError("engine must be a string")
         result = service.create_draft(
             chapter_id=_required_string(body, "chapterId"),
             source_url=_required_string(body, "sourceUrl"),
-            requested_engine=str(body.get("engine", "auto")),
+            requested_engine=requested_engine,
             idempotency_key=_require_idempotency_key(),
         )
         return jsonify(result), 202

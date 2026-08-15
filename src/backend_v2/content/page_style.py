@@ -29,6 +29,7 @@ PAGE_STYLE_FIELDS = frozenset(
         "textAlign",
     }
 )
+PAGE_STYLE_SCHEMA_VERSION = 1
 TEXT_STYLE_DEFAULT_FIELDS = PAGE_STYLE_FIELDS | {"fontFamily"}
 _COLOR_PATTERN = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
@@ -38,15 +39,13 @@ def _integer(
     *,
     field: str,
     minimum: int,
-    maximum: int,
 ) -> int:
     if (
         isinstance(value, bool)
         or not isinstance(value, int)
         or value < minimum
-        or value > maximum
     ):
-        raise ValueError(f"{field} must be an integer from {minimum} to {maximum}")
+        raise ValueError(f"{field} must be an integer of at least {minimum}")
     return value
 
 
@@ -55,21 +54,12 @@ def _number(
     *,
     field: str,
     exclusive_minimum: float,
-    maximum: float,
 ) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ValueError(
-            f"{field} must be greater than {exclusive_minimum} and at most {maximum}"
-        )
+        raise ValueError(f"{field} must be greater than {exclusive_minimum}")
     normalized = float(value)
-    if (
-        not math.isfinite(normalized)
-        or normalized <= exclusive_minimum
-        or normalized > maximum
-    ):
-        raise ValueError(
-            f"{field} must be greater than {exclusive_minimum} and at most {maximum}"
-        )
+    if not math.isfinite(normalized) or normalized <= exclusive_minimum:
+        raise ValueError(f"{field} must be greater than {exclusive_minimum}")
     return normalized
 
 
@@ -92,12 +82,14 @@ def _color(value: object, *, field: str) -> str:
 
 
 def rgb_to_hex(value: object) -> str:
-    if not isinstance(value, (list, tuple)) or len(value) < 3:
-        return "#000000"
-    red, green, blue = (
-        max(0, min(255, int(part)))
-        for part in value[:3]
-    )
+    if not isinstance(value, (list, tuple)) or len(value) != 3:
+        raise ValueError("RGB color must contain exactly three channels")
+    channels: list[int] = []
+    for part in value:
+        if isinstance(part, bool) or not isinstance(part, int) or not 0 <= part <= 255:
+            raise ValueError("RGB color channels must be integers from 0 to 255")
+        channels.append(part)
+    red, green, blue = channels
     return f"#{red:02X}{green:02X}{blue:02X}"
 
 
@@ -124,7 +116,6 @@ def validate_page_style(
             result["fontSize"],
             field="fontSize",
             minimum=1,
-            maximum=512,
         )
     if "autoFontSize" in result:
         result["autoFontSize"] = _boolean(
@@ -154,14 +145,12 @@ def validate_page_style(
             result["strokeWidth"],
             field="strokeWidth",
             minimum=0,
-            maximum=64,
         )
     if "lineSpacing" in result:
         result["lineSpacing"] = _number(
             result["lineSpacing"],
             field="lineSpacing",
             exclusive_minimum=0,
-            maximum=10,
         )
     if "textAlign" in result:
         result["textAlign"] = _choice(

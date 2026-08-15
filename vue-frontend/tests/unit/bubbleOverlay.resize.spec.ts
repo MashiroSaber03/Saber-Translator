@@ -222,6 +222,11 @@ describe('BubbleOverlay rotated resize', () => {
         clientY: 80,
       })
 
+      document.dispatchEvent(new MouseEvent('mousemove', {
+        bubbles: true,
+        clientX: 190,
+        clientY: 90,
+      }))
       document.dispatchEvent(new MouseEvent('mouseup', {
         bubbles: true,
         button: 0,
@@ -236,7 +241,67 @@ describe('BubbleOverlay rotated resize', () => {
     }
   })
 
-  it('does not leave middle-button drawing state when drawing cannot start', async () => {
+  it('selects once and does not persist a no-op click as a drag', async () => {
+    const wrapper = mount(BubbleOverlay, {
+      props: {
+        bubbles: [makeBubble([100, 100, 200, 200], 0)],
+        selectedIndex: -1,
+        selectedIndices: [],
+        scale: 1,
+        imageWidth: 1000,
+        imageHeight: 1000,
+      },
+    })
+    const bubble = wrapper.get('.bubble-overlay__highlight-box')
+
+    await bubble.trigger('mousedown', { button: 0, clientX: 150, clientY: 150 })
+    await bubble.trigger('click', { button: 0, clientX: 150, clientY: 150 })
+
+    expect(wrapper.emitted('select')).toEqual([[0]])
+    expect(wrapper.emitted('dragEnd')).toBeUndefined()
+
+    await wrapper.setProps({ selectedIndex: 0, selectedIndices: [0] })
+    await bubble.trigger('mousedown', { button: 0, clientX: 150, clientY: 150 })
+    document.dispatchEvent(new MouseEvent('mouseup', {
+      bubbles: true,
+      button: 0,
+      clientX: 150,
+      clientY: 150,
+    }))
+    expect(wrapper.emitted('dragEnd')).toBeUndefined()
+  })
+
+  it('does not start geometry mutations before real image bounds are known', async () => {
+    const wrapper = mount(BubbleOverlay, {
+      props: {
+        bubbles: [makeBubble([100, 100, 200, 200], 0)],
+        selectedIndex: 0,
+        selectedIndices: [0],
+        scale: -1,
+        imageWidth: 0,
+        imageHeight: 0,
+      },
+    })
+    const bubble = wrapper.get('.bubble-overlay__highlight-box')
+
+    expect(wrapper.get('.bubble-overlay').attributes('style')).toContain('--scale: 1')
+    await bubble.trigger('mousedown', { button: 0, clientX: 150, clientY: 150 })
+    document.dispatchEvent(new MouseEvent('mousemove', {
+      bubbles: true,
+      clientX: 180,
+      clientY: 180,
+    }))
+    document.dispatchEvent(new MouseEvent('mouseup', {
+      bubbles: true,
+      button: 0,
+      clientX: 180,
+      clientY: 180,
+    }))
+
+    expect(wrapper.emitted('dragEnd')).toBeUndefined()
+  })
+
+  it('does not own the workspace middle-button drawing path', async () => {
     const wrapper = mount(BubbleOverlay, {
       props: {
         bubbles: [makeBubble([100, 100, 200, 200], 0)],
@@ -249,18 +314,14 @@ describe('BubbleOverlay rotated resize', () => {
       },
     })
 
-    try {
-      await wrapper.get('.bubble-overlay').trigger('mousedown', {
-        button: 1,
-        clientX: 50,
-        clientY: 50,
-      })
+    await wrapper.get('.bubble-overlay').trigger('mousedown', {
+      button: 1,
+      clientX: 50,
+      clientY: 50,
+    })
 
-      expect(document.body.classList.contains('middle-button-drawing')).toBe(false)
-      expect(wrapper.emitted('drawBubble')).toBeUndefined()
-    } finally {
-      document.body.classList.remove('middle-button-drawing')
-    }
+    expect(document.body.classList.contains('middle-button-drawing')).toBe(false)
+    expect(wrapper.emitted('drawBubble')).toBeUndefined()
   })
 
   it('maps overlay owner colors through semantic tokens', () => {
@@ -303,7 +364,6 @@ describe('BubbleOverlay rotated resize', () => {
       'bubble-overlay__resize-handle',
       'bubble-overlay__resize-handle--e',
       'bubble-overlay__rotate-handle',
-      'bubble-overlay__drawing-rect',
       'bubble-overlay--brush-mode',
     ]) {
       expect(overlaySource).toContain(currentHook)
@@ -324,6 +384,8 @@ describe('BubbleOverlay rotated resize', () => {
     }
     expect(overlaySource).not.toContain("'brush-mode': isBrushMode")
     expect(overlaySource).not.toContain('.bubble-overlay.brush-mode')
+    expect(overlaySource).not.toContain('bubble-overlay__drawing-rect')
+    expect(overlaySource).not.toContain('drawBubble')
     expect(overlaySource).not.toMatch(/\bselected:\s*index === selectedIndex/)
     expect(overlaySource).not.toContain("'multi-selected'")
   })

@@ -2,9 +2,9 @@
 Manga Insight 生图客户端。
 
 当前版本支持 OpenAI 兼容图片接口网关。
-调用策略：
-- 无参考图：POST /v1/images/generations
-- 有任意参考图：POST /v1/images/edits
+调用策略（相对于用户配置的 API Base URL）：
+- 无参考图：POST images/generations
+- 有任意参考图：POST images/edits
 
 上层业务继续只关心：
 - prompt
@@ -16,122 +16,115 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import io
 import logging
 import os
-from typing import Dict, List, Optional, Protocol
-from urllib.parse import urljoin, urlparse, urlunparse
+from typing import Any
+from urllib.parse import urlparse, urlunparse
 
 import httpx
-from PIL import Image, ImageDraw, ImageFont
 
 from src.shared.ai_providers import (
     IMAGE_GEN_CAPABILITY,
+    get_provider_manifest,
     normalize_provider_id,
     provider_requires_model,
     provider_supports_capability,
     resolve_provider_base_url_for_capability,
 )
 from src.shared.ai_transport import RETRYABLE_EXCEPTIONS, RETRYABLE_STATUS_CODES
-from src.shared.http_config import build_httpx_kwargs
-from src.shared.memory_errors import is_memory_allocation_error
+from src.shared.http_config import build_httpx_kwargs, is_local_service
 
 from ..config_models import ImageGenConfig
-from .base_client import BaseAPIClient
 
 logger = logging.getLogger("MangaInsight.ImageGenClient")
-
-_DOWNLOAD_TIMEOUT_SECONDS = 60
-DEFAULT_IMAGE_GEN_TRANSPORT_RETRIES = 10
-DEFAULT_IMAGE_GEN_BUSINESS_RETRIES = 10
-
 
 class ImageGenBusinessRetryableError(ValueError):
     """仅用于生图结果级别的可重试错误。"""
 
 
-class ImageGenAdapter(Protocol):
-    async def generate(
-        self,
-        client: "ImageGenClient",
-        prompt: str,
-        prepared_refs: List[Dict[str, object]],
-    ) -> bytes:
-        ...
-
-
-class OpenAICompatibleImageGenAdapter:
-    async def generate(
-        self,
-        client: "ImageGenClient",
-        prompt: str,
-        prepared_refs: List[Dict[str, object]],
-    ) -> bytes:
-        request_url = client._build_api_url("images/edits" if prepared_refs else "images/generations")
-        return await client._request_image_bytes(request_url, prompt, prepared_refs)
-
-
-IMAGE_GEN_ADAPTERS: Dict[str, ImageGenAdapter] = {
-    "gpt2api": OpenAICompatibleImageGenAdapter(),
-    "newapi": OpenAICompatibleImageGenAdapter(),
-}
-
-
-class ImageGenClient(BaseAPIClient):
+class ImageGenClient:
     """OpenAI 兼容图片接口客户端。"""
 
     def __init__(self, config: ImageGenConfig):
         self.config = config
-        resolved_base_url = config.base_url or (
+        self.provider = normalize_provider_id(config.provider)
+        self.api_key = config.api_key
+        self._base_url = config.base_url or (
             resolve_provider_base_url_for_capability(
-                config.provider,
+                self.provider,
                 IMAGE_GEN_CAPABILITY,
             )
             or ""
         )
-        timeout_value = float(config.timeout_seconds or 0)
-        self._timeout = None if timeout_value <= 0 else timeout_value
-        transport_retries = config.transport_retries if config.transport_retries is not None else DEFAULT_IMAGE_GEN_TRANSPORT_RETRIES
-        business_retries = config.business_retries if config.business_retries is not None else DEFAULT_IMAGE_GEN_BUSINESS_RETRIES
-        self._transport_retries = max(0, int(transport_retries))
-        self._business_retries = max(0, int(business_retries))
-        super().__init__(
-            provider=config.provider,
-            api_key=config.api_key,
-            base_url=config.base_url,
-            resolved_base_url=resolved_base_url,
-            rpm_limit=config.rpm_limit,
-            credential_version_id=config.credential_version_id,
-            timeout=self._timeout,
+        self._timeout = (
+            None if config.timeout_seconds == 0 else config.timeout_seconds
         )
-        logger.info("ImageGenClient 初始化: provider=%s, base_url=%s", config.provider, self._base_url)
+        self._transport_retries = config.transport_retries
+        self._business_retries = config.business_retries
+        if is_local_service(self._base_url):
+            logger.info("检测到本地生图服务 (%s)，禁用代理", self._base_url)
+        self.client = httpx.AsyncClient(
+            **build_httpx_kwargs(self._base_url, self._timeout)
+        )
+        logger.info(
+            "ImageGenClient 初始化: provider=%s, base_url=%s",
+            config.provider,
+            self._base_url,
+        )
+
+    @property
+    def base_url(self) -> str:
+        return self._base_url
+
+    async def close(self) -> None:
+        await self.client.aclose()
+
+    async def __aenter__(self) -> "ImageGenClient":
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        await self.close()
+
+    def _get_headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
 
     async def generate(
         self,
         prompt: str,
-        reference_images: Optional[List[Dict]] = None,
+        reference_images: list[dict[str, object]] | None = None,
     ) -> bytes:
-        provider = normalize_provider_id(self.config.provider)
+        if not isinstance(prompt, str) or not prompt.strip():
+            raise ValueError("image generation prompt must be a non-empty string")
+        provider = self.provider
         if not provider_supports_capability(provider, IMAGE_GEN_CAPABILITY):
             raise ValueError(f"服务商 '{self.config.provider}' 不支持 image_gen 能力")
-        adapter = IMAGE_GEN_ADAPTERS.get(provider)
-        if adapter is None:
-            raise ValueError(f"服务商 '{self.config.provider}' 尚未注册生图适配器")
         if not self.base_url:
             raise ValueError(f"{self.config.provider} 生图服务商需要设置 base_url")
-        if provider_requires_model(provider) and not str(self.config.model or "").strip():
+        if get_provider_manifest(provider).requires_api_key and not self.api_key.strip():
+            raise ValueError(f"{self.config.provider} 生图服务商需要设置 api_key")
+        if provider_requires_model(provider) and not self.config.model.strip():
             raise ValueError(f"{self.config.provider} 生图服务商需要设置 model")
 
         prepared_refs = self._prepare_reference_images(reference_images)
-        return await adapter.generate(self, prompt, prepared_refs)
+        request_url = self._build_api_url(
+            "images/edits" if prepared_refs else "images/generations"
+        )
+        return await self._request_image_bytes(
+            request_url,
+            prompt,
+            prepared_refs,
+        )
 
     async def _request_image_bytes(
         self,
         request_url: str,
         prompt: str,
-        prepared_refs: List[Dict[str, object]],
+        prepared_refs: list[dict[str, object]],
     ) -> bytes:
-        last_error: Optional[Exception] = None
+        last_error: Exception | None = None
         total_attempts = self._business_retries + 1
 
         for attempt in range(total_attempts):
@@ -164,13 +157,11 @@ class ImageGenClient(BaseAPIClient):
         self,
         request_url: str,
         prompt: str,
-        prepared_refs: List[Dict[str, object]],
-    ) -> Dict:
-        last_exception: Optional[Exception] = None
+        prepared_refs: list[dict[str, object]],
+    ) -> dict[str, Any]:
 
         for attempt in range(self._transport_retries + 1):
             try:
-                await self._enforce_rpm_limit()
                 if prepared_refs:
                     response = await self.client.post(
                         request_url,
@@ -185,7 +176,10 @@ class ImageGenClient(BaseAPIClient):
                         json=self._build_generation_body(prompt),
                     )
 
-                if response.status_code in RETRYABLE_STATUS_CODES and attempt < self._transport_retries:
+                if (
+                    response.status_code in RETRYABLE_STATUS_CODES
+                    and attempt < self._transport_retries
+                ):
                     logger.warning(
                         "%s 生图传输重试 %s/%s: HTTP %s",
                         self.config.provider,
@@ -200,7 +194,6 @@ class ImageGenClient(BaseAPIClient):
                 self._raise_api_error_if_needed(response, payload)
                 return payload
             except RETRYABLE_EXCEPTIONS as exc:
-                last_exception = exc
                 if attempt < self._transport_retries:
                     logger.warning(
                         "%s 生图传输重试 %s/%s: %s",
@@ -213,11 +206,9 @@ class ImageGenClient(BaseAPIClient):
                     continue
                 raise
 
-        if last_exception:
-            raise last_exception
         raise RuntimeError("生图传输重试耗尽")
 
-    def _build_generation_body(self, prompt: str) -> Dict[str, object]:
+    def _build_generation_body(self, prompt: str) -> dict[str, object]:
         return {
             "model": self.config.model,
             "prompt": prompt,
@@ -225,7 +216,7 @@ class ImageGenClient(BaseAPIClient):
             "response_format": "b64_json",
         }
 
-    def _build_edit_form_data(self, prompt: str) -> Dict[str, str]:
+    def _build_edit_form_data(self, prompt: str) -> dict[str, str]:
         return {
             "model": self.config.model,
             "prompt": prompt,
@@ -233,166 +224,132 @@ class ImageGenClient(BaseAPIClient):
             "response_format": "b64_json",
         }
 
-    def _build_edit_files(self, references: List[Dict[str, object]]) -> List[tuple[str, tuple[str, bytes, str]]]:
-        files: List[tuple[str, tuple[str, bytes, str]]] = []
+    def _build_edit_files(
+        self,
+        references: list[dict[str, object]],
+    ) -> list[tuple[str, tuple[str, bytes, str]]]:
+        files: list[tuple[str, tuple[str, bytes, str]]] = []
         for ref in references:
+            filename = ref.get("filename")
+            image_bytes = ref.get("bytes")
+            media_type = ref.get("mime")
+            if not isinstance(filename, str) or not filename:
+                raise ValueError("reference filename is invalid")
+            if not isinstance(image_bytes, bytes) or not image_bytes:
+                raise ValueError("reference image bytes are invalid")
+            if not isinstance(media_type, str) or not media_type.startswith("image/"):
+                raise ValueError("reference image MIME type is invalid")
             files.append((
                 "image",
                 (
-                    str(ref["filename"]),
-                    ref["bytes"],  # type: ignore[index]
-                    str(ref["mime"]),
+                    filename,
+                    image_bytes,
+                    media_type,
                 ),
             ))
         return files
 
-    def _build_multipart_headers(self) -> Dict[str, str]:
+    def _build_multipart_headers(self) -> dict[str, str]:
         return {
             "Authorization": f"Bearer {self.api_key}",
         }
 
-    def _prepare_reference_images(self, reference_images: Optional[List[Dict]]) -> List[Dict[str, object]]:
-        prepared: List[Dict[str, object]] = []
-        for ref_img in reference_images or []:
-            encoded = self._encode_reference_image(ref_img)
-            if encoded is not None:
-                prepared.append(encoded)
-        return prepared
+    def _prepare_reference_images(
+        self,
+        reference_images: list[dict[str, object]] | None,
+    ) -> list[dict[str, object]]:
+        if reference_images is None:
+            return []
+        if not isinstance(reference_images, list):
+            raise TypeError("reference_images must be a list")
+        return [self._encode_reference_image(ref) for ref in reference_images]
 
-    def _encode_reference_image(self, ref_img: Dict) -> Optional[Dict[str, object]]:
-        img_path = ref_img.get("path", "")
-        if not img_path or not os.path.exists(img_path):
-            return None
+    def _encode_reference_image(
+        self,
+        ref_img: dict[str, object],
+    ) -> dict[str, object]:
+        if not isinstance(ref_img, dict) or set(ref_img) != {"path", "type"}:
+            raise ValueError("reference image must contain exactly path and type")
+        image_path = ref_img["path"]
+        reference_type = ref_img["type"]
+        if not isinstance(image_path, str) or not image_path:
+            raise ValueError("reference image path is invalid")
+        if reference_type != "style":
+            raise ValueError("reference image type must be style")
+        if not os.path.isfile(image_path):
+            raise FileNotFoundError(f"reference image does not exist: {image_path}")
+        image_bytes, media_type = self._read_image_bytes(image_path)
+        filename = os.path.basename(image_path)
+        if not filename:
+            raise ValueError("reference image filename is invalid")
+        logger.info("已添加风格参考图: %s", image_path)
+        return {
+            "filename": filename,
+            "bytes": image_bytes,
+            "mime": media_type,
+        }
 
-        char_name = ref_img.get("name") if ref_img.get("type") == "character" else None
-        try:
-            image_bytes, mime = self._read_image_bytes(img_path, character_name=char_name)
-            if char_name:
-                logger.info("已添加角色参考图: %s (%s)", char_name, img_path)
-            else:
-                logger.info("已添加%s参考图: %s", ref_img.get("type", "unknown"), img_path)
-            suffix = os.path.splitext(img_path)[1].lower()
-            ext = suffix if suffix else ".png"
-            filename = os.path.basename(img_path) or f"reference{ext}"
-            return {
-                "filename": filename,
-                "bytes": image_bytes,
-                "mime": mime,
-            }
-        except Exception as exc:
-            if is_memory_allocation_error(exc):
-                raise
-            logger.error("编码参考图失败: %s", exc)
-            return None
-
-    def _read_image_bytes(self, image_path: str, character_name: Optional[str] = None) -> tuple[bytes, str]:
-        if character_name:
-            labeled = self._add_character_label(image_path, character_name)
-            if labeled is not None:
-                return labeled
-
+    def _read_image_bytes(self, image_path: str) -> tuple[bytes, str]:
         with open(image_path, "rb") as image_file:
             data = image_file.read()
-        mime = self._guess_mime_type(image_path)
-        return data, mime
-
-    def _guess_mime_type(self, image_path: str) -> str:
-        suffix = os.path.splitext(image_path)[1].lower()
-        return {
-            ".jpg": "image/jpeg",
-            ".jpeg": "image/jpeg",
-            ".webp": "image/webp",
-            ".gif": "image/gif",
-        }.get(suffix, "image/png")
-
-    def _add_character_label(self, image_path: str, character_name: str) -> Optional[tuple[bytes, str]]:
-        try:
-            img = Image.open(image_path)
-            label_height = max(30, min(80, int(img.height * 0.08)))
-            new_height = img.height + label_height
-            new_img = Image.new("RGB", (img.width, new_height), "white")
-            new_img.paste(img, (0, 0))
-
-            draw = ImageDraw.Draw(new_img)
-            font = None
-            font_size = int(label_height * 0.6)
-            font_paths = [
-                "C:/Windows/Fonts/msyh.ttc",
-                "C:/Windows/Fonts/simhei.ttf",
-                "C:/Windows/Fonts/simsun.ttc",
-                "/System/Library/Fonts/PingFang.ttc",
-                "/Library/Fonts/Arial Unicode.ttf",
-                "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
-                "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-            ]
-            for font_path in font_paths:
-                if not os.path.exists(font_path):
-                    continue
-                try:
-                    font = ImageFont.truetype(font_path, font_size)
-                    break
-                except Exception as exc:
-                    if is_memory_allocation_error(exc):
-                        raise
-                    continue
-            if font is None:
-                try:
-                    font = ImageFont.truetype("arial.ttf", font_size)
-                except Exception as exc:
-                    if is_memory_allocation_error(exc):
-                        raise
-                    font = ImageFont.load_default()
-
-            bbox = draw.textbbox((0, 0), character_name, font=font)
-            text_width = bbox[2] - bbox[0]
-            text_height = bbox[3] - bbox[1]
-            x = (img.width - text_width) // 2
-            y = img.height + (label_height - text_height) // 2
-            draw.text((x, y), character_name, fill="black", font=font)
-
-            buffer = io.BytesIO()
-            mime = self._guess_mime_type(image_path)
-            image_format = "PNG" if mime == "image/png" else "JPEG"
-            new_img.save(buffer, format=image_format, quality=95)
-            return buffer.getvalue(), mime
-        except Exception as exc:
-            if is_memory_allocation_error(exc):
-                raise
-            logger.warning("添加角色标签失败: %s，将使用原图", exc)
-            return None
+        if not data:
+            raise ValueError("reference image is empty")
+        if data.startswith(b"\x89PNG\r\n\x1a\n"):
+            return data, "image/png"
+        if data.startswith(b"\xff\xd8\xff"):
+            return data, "image/jpeg"
+        if data.startswith((b"GIF87a", b"GIF89a")):
+            return data, "image/gif"
+        if data.startswith(b"RIFF") and data[8:12] == b"WEBP":
+            return data, "image/webp"
+        raise ValueError("reference image format is unsupported")
 
     def _build_api_url(self, route: str) -> str:
         parsed = urlparse(self.base_url.rstrip("/"))
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("image generation base_url must be an absolute HTTP URL")
+        if parsed.params or parsed.query or parsed.fragment:
+            raise ValueError(
+                "image generation base_url must not contain params, query, "
+                "or fragment"
+            )
         path = parsed.path.rstrip("/")
         route_path = route.lstrip("/")
-        if path.endswith("/v1"):
-            new_path = f"{path}/{route_path}"
-        elif path:
-            new_path = f"{path}/v1/{route_path}"
-        else:
-            new_path = f"/v1/{route_path}"
+        new_path = f"{path}/{route_path}" if path else f"/{route_path}"
         return urlunparse(parsed._replace(path=new_path, params="", query="", fragment=""))
 
-    def _payload_has_result(self, payload: Dict) -> bool:
+    def _payload_has_result(self, payload: dict[str, Any]) -> bool:
         return bool(self._extract_result_items(payload))
 
-    def _extract_result_items(self, payload: Dict) -> List[Dict]:
-        if isinstance(payload.get("data"), list):
-            return [item for item in payload["data"] if isinstance(item, dict)]
-        result = payload.get("result")
-        if isinstance(result, dict) and isinstance(result.get("data"), list):
-            return [item for item in result["data"] if isinstance(item, dict)]
-        return []
+    def _extract_result_items(
+        self,
+        payload: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        data = payload.get("data")
+        if data is None:
+            return []
+        if not isinstance(data, list):
+            raise ValueError("image generation response data must be an array")
+        if not data:
+            return []
+        if len(data) != 1 or not isinstance(data[0], dict):
+            raise ValueError("image generation response must contain one image object")
+        return data
 
-    def _extract_error_message(self, payload: Dict) -> str:
+    def _extract_error_message(self, payload: dict[str, Any]) -> str:
         error = payload.get("error")
         if isinstance(error, dict):
-            return str(error.get("message", "")).strip()
+            message = error.get("message")
+            return message.strip() if isinstance(message, str) else ""
         if isinstance(error, str):
             return error.strip()
         return ""
 
-    def _raise_api_error_if_needed(self, response: httpx.Response, payload: Dict) -> None:
+    def _raise_api_error_if_needed(
+        self,
+        response: httpx.Response,
+        payload: dict[str, Any],
+    ) -> None:
         error_message = self._extract_error_message(payload)
         if response.status_code >= 400:
             if error_message:
@@ -401,25 +358,42 @@ class ImageGenClient(BaseAPIClient):
         if error_message and not self._payload_has_result(payload):
             raise ValueError(error_message)
 
-    def _decode_response_payload(self, response: httpx.Response) -> Dict:
+    def _decode_response_payload(self, response: httpx.Response) -> dict[str, Any]:
         try:
-            return response.json()
+            payload = response.json()
         except ValueError as exc:
-            raw_excerpt = (response.text or "")[:300]
-            raise ValueError(f"{self.config.provider} 返回了非 JSON 响应: {raw_excerpt}") from exc
+            raise ValueError(f"{self.config.provider} 返回了非 JSON 响应") from exc
+        if not isinstance(payload, dict):
+            raise ValueError(f"{self.config.provider} 响应必须是 JSON 对象")
+        return payload
 
-    async def _extract_image_bytes_from_payload(self, payload: Dict) -> bytes:
+    async def _extract_image_bytes_from_payload(
+        self,
+        payload: dict[str, Any],
+    ) -> bytes:
         items = self._extract_result_items(payload)
         if not items:
             raise ValueError(f"{self.config.provider} 返回中没有图片数据")
 
         image_item = items[0]
-        if image_item.get("b64_json"):
-            return base64.b64decode(image_item["b64_json"])
+        keys = {key for key in ("b64_json", "url") if key in image_item}
+        if len(keys) != 1:
+            raise ValueError("image result must contain exactly one of b64_json or url")
+        if "b64_json" in keys:
+            encoded = image_item["b64_json"]
+            if not isinstance(encoded, str) or not encoded:
+                raise ValueError("image b64_json must be a non-empty string")
+            try:
+                result = base64.b64decode(encoded, validate=True)
+            except ValueError as exc:
+                raise ValueError("image b64_json is invalid") from exc
+            if not result:
+                raise ValueError("image b64_json decoded to empty bytes")
+            return result
 
-        image_url = str(image_item.get("url", "")).strip()
-        if not image_url:
-            raise ValueError(f"{self.config.provider} 返回的图片项缺少 url")
+        image_url = image_item["url"]
+        if not isinstance(image_url, str) or not image_url.strip():
+            raise ValueError("image url must be a non-empty string")
         return await self._download_image_asset(image_url)
 
     async def _download_image_asset(self, asset_value: str) -> bytes:
@@ -427,16 +401,26 @@ class ImageGenClient(BaseAPIClient):
         if not asset_value:
             raise ValueError("图片资源为空")
 
-        if asset_value.startswith("data:image"):
-            return base64.b64decode(asset_value.split(",", 1)[-1])
-        if asset_value.startswith("/9j/") or asset_value.startswith("iVBOR"):
-            return base64.b64decode(asset_value)
+        if asset_value.startswith("data:image/"):
+            header, separator, encoded = asset_value.partition(",")
+            if not separator or not header.endswith(";base64") or not encoded:
+                raise ValueError("image data URL is invalid")
+            try:
+                result = base64.b64decode(encoded, validate=True)
+            except ValueError as exc:
+                raise ValueError("image data URL contains invalid base64") from exc
+            if not result:
+                raise ValueError("image data URL decoded to empty bytes")
+            return result
 
-        if asset_value.startswith(("http://", "https://", "/")) or not asset_value.startswith("data:"):
-            download_url = asset_value if asset_value.startswith(("http://", "https://")) else urljoin(self.base_url.rstrip("/") + "/", asset_value.lstrip("/"))
-            async with httpx.AsyncClient(**build_httpx_kwargs(download_url, _DOWNLOAD_TIMEOUT_SECONDS)) as http_client:
-                response = await http_client.get(download_url)
-                response.raise_for_status()
-                return response.content
-
-        raise ValueError(f"无法解析 {self.config.provider} 图片资源: {asset_value[:120]}")
+        parsed = urlparse(asset_value)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("image URL must be an absolute HTTP URL")
+        async with httpx.AsyncClient(
+            **build_httpx_kwargs(asset_value, self._timeout)
+        ) as http_client:
+            response = await http_client.get(asset_value)
+            response.raise_for_status()
+            if not response.content:
+                raise ValueError("downloaded image is empty")
+            return response.content

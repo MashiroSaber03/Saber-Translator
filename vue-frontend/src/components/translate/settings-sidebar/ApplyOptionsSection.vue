@@ -52,7 +52,7 @@ defineEmits<{
         type="button"
         class="apply-options-section__action"
         block
-        :disabled="disabled || !hasImages"
+        :disabled="disabled || !hasImages || !Object.values(applyOptions).some(Boolean)"
         @click="$emit('apply')"
       >
         应用到全部

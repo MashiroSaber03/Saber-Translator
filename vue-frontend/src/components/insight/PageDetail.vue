@@ -8,11 +8,12 @@ import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
 import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 
-import { ref, computed, nextTick, onUnmounted, watch } from 'vue'
-import type { ComponentPublicInstance } from 'vue'
+import { ref, computed, onUnmounted, watch } from 'vue'
 import { useInsightStore } from '@/stores/insightStore'
 import * as insightApi from '@/api/insight'
 import type { PageAnalysisData } from '@/api/insight'
+import { useBodyScrollLock } from '@/composables/useBodyScrollLock'
+import { useDialogLifecycle } from '@/composables/useDialogLifecycle'
 import { triggerBlobDownload } from '@/utils/browserDownload'
 
 const insightStore = useInsightStore()
@@ -24,7 +25,7 @@ const isReanalyzing = ref(false)
 const pendingReanalyzePage = ref<number | null>(null)
 const showImagePreview = ref(false)
 const isPageImageUnavailable = ref(false)
-const imagePreviewLayer = ref<ComponentPublicInstance | null>(null)
+const imagePreviewDialog = ref<HTMLElement | null>(null)
 const errorMessage = ref('')
 let pageDetailRequestSequence = 0
 let isPageDetailMounted = true
@@ -45,11 +46,46 @@ const pageImageUrl = computed(() => {
   return loadedImageUrl.value
 })
 
+const hasPageImage = computed(() => Boolean(pageImageUrl.value) && !isPageImageUnavailable.value)
+
+const pageAnalysisState = computed(() => pageAnalysis.value?.analysisState ?? 'not_analyzed')
+
 const isPageAnalyzed = computed(() => {
-  return pageAnalysis.value?.analyzed === true || !!pageAnalysis.value?.page_summary
+  return pageAnalysisState.value === 'ready' || pageAnalysisState.value === 'stale'
+})
+
+const analysisStatusLabel = computed(() => {
+  switch (pageAnalysisState.value) {
+    case 'ready':
+      return '✓ 已分析'
+    case 'stale':
+      return '△ 结果已过期'
+    case 'running':
+      return '… 分析中'
+    case 'failed':
+      return '! 分析失败'
+    default:
+      return '○ 未分析'
+  }
+})
+
+const emptySummaryMessage = computed(() => {
+  switch (pageAnalysisState.value) {
+    case 'ready':
+      return '此页分析完成，但没有生成页面摘要'
+    case 'stale':
+      return '此页分析结果已过期，可重新分析以更新结果'
+    case 'running':
+      return '正在分析此页，完成后会自动更新'
+    case 'failed':
+      return '此页分析失败，可点击下方按钮重试'
+    default:
+      return '此页尚未分析，点击下方按钮开始分析'
+  }
 })
 
 const isReanalyzeTaskRunning = computed(() => {
+  if (pageAnalysisState.value === 'running') return true
   return (
     pendingReanalyzePage.value !== null &&
     pendingReanalyzePage.value === selectedPageNum.value &&
@@ -113,56 +149,58 @@ function navigateNext(): void {
 }
 
 async function reanalyzePage(): Promise<void> {
-  if (!insightStore.currentBookId || !selectedPageNum.value) return
+  const bookId = insightStore.currentBookId
+  const pageNum = selectedPageNum.value
+  if (!bookId || !pageNum || isReanalyzing.value) return
 
   isReanalyzing.value = true
   errorMessage.value = ''
 
   try {
-    const submission = await insightApi.reanalyzePage(
-      insightStore.currentBookId,
-      selectedPageNum.value
-    )
+    const submission = await insightApi.reanalyzePage(bookId, pageNum)
+    if (insightStore.currentBookId !== bookId || selectedPageNum.value !== pageNum) return
     insightStore.setCurrentTaskId(submission.jobId)
-    pendingReanalyzePage.value = selectedPageNum.value
+    pendingReanalyzePage.value = pageNum
     insightStore.setAnalysisStatus('queued')
   } catch (error) {
-    const message = (error as { message?: string })?.message
-    errorMessage.value = message || '重新分析失败'
+    if (insightStore.currentBookId === bookId && selectedPageNum.value === pageNum) {
+      const message = (error as { message?: string })?.message
+      errorMessage.value = message || '重新分析失败'
+    }
   } finally {
     isReanalyzing.value = false
   }
 }
 
-async function openImagePreview(): Promise<void> {
-  if (isPageImageUnavailable.value || !pageImageUrl.value) return
+function openImagePreview(): void {
+  if (!hasPageImage.value) return
   showImagePreview.value = true
-  await nextTick()
-
-  const previewElement = imagePreviewLayer.value?.$el
-  if (previewElement instanceof HTMLElement) {
-    previewElement.focus()
-  }
 }
 
 function closeImagePreview(): void {
   showImagePreview.value = false
 }
 
+useDialogLifecycle({
+  open: showImagePreview,
+  container: imagePreviewDialog,
+  close: closeImagePreview,
+})
+useBodyScrollLock(showImagePreview)
+
 function handlePreviewKeydown(event: KeyboardEvent): void {
   if (!showImagePreview.value) return
 
   switch (event.key) {
-    case 'Escape':
-      closeImagePreview()
-      break
     case 'ArrowLeft':
       if (hasPrevPage.value) {
+        event.preventDefault()
         navigatePrev()
       }
       break
     case 'ArrowRight':
       if (hasNextPage.value) {
+        event.preventDefault()
         navigateNext()
       }
       break
@@ -177,7 +215,9 @@ function handlePageImageError(): void {
 const isExporting = ref(false)
 
 async function exportPageData(): Promise<void> {
-  if (!insightStore.currentBookId || !selectedPageNum.value || !pageAnalysis.value) {
+  const bookId = insightStore.currentBookId
+  const pageNum = selectedPageNum.value
+  if (!bookId || !pageNum || !pageAnalysis.value || isExporting.value) {
     return
   }
 
@@ -185,22 +225,30 @@ async function exportPageData(): Promise<void> {
 
   try {
     const blob = await insightApi.downloadPageAnalysis(
-      insightStore.currentBookId,
-      selectedPageNum.value,
+      bookId,
+      pageNum,
     )
-    triggerBlobDownload(blob, `${insightStore.currentBookId}_page_${selectedPageNum.value}.md`)
+    triggerBlobDownload(blob, `${bookId}_page_${pageNum}.md`)
 
-  } catch {
-    errorMessage.value = '导出失败'
+  } catch (error) {
+    if (insightStore.currentBookId === bookId && selectedPageNum.value === pageNum) {
+      errorMessage.value = error instanceof Error ? error.message : '导出失败'
+    }
   } finally {
     isExporting.value = false
   }
 }
 
-watch(selectedPageNum, () => {
-  loadedImageUrl.value = ''
-  loadPageDetail()
-}, { immediate: true })
+watch(
+  [() => insightStore.currentBookId, selectedPageNum],
+  ([bookId, pageNum], [previousBookId]) => {
+    if (bookId !== previousBookId) pendingReanalyzePage.value = null
+    if (bookId !== previousBookId || pageNum === null) closeImagePreview()
+    loadedImageUrl.value = ''
+    void loadPageDetail()
+  },
+  { immediate: true },
+)
 
 watch(pageImageUrl, () => {
   isPageImageUnavailable.value = false
@@ -296,12 +344,16 @@ onUnmounted(() => {
         <UiButton
           variant="toolbar"
           class="page-detail-panel__image-trigger"
-          :aria-label="isPageImageUnavailable ? `第 ${selectedPageNum} 页图片加载失败` : `预览第 ${selectedPageNum} 页图片`"
-          :disabled="isPageImageUnavailable || !pageImageUrl"
+          :aria-label="isPageImageUnavailable
+            ? `第 ${selectedPageNum} 页图片加载失败`
+            : hasPageImage
+              ? `预览第 ${selectedPageNum} 页图片`
+              : `第 ${selectedPageNum} 页暂无图片`"
+          :disabled="!hasPageImage"
           @click="openImagePreview"
         >
           <img
-            v-if="!isPageImageUnavailable"
+            v-if="hasPageImage"
             class="page-detail-panel__image"
             :src="pageImageUrl"
             :alt="`第${selectedPageNum}页`"
@@ -311,12 +363,14 @@ onUnmounted(() => {
             v-else
             class="page-detail-panel__image-fallback"
             role="img"
-            :aria-label="`第${selectedPageNum}页图片加载失败`"
+            :aria-label="isPageImageUnavailable
+              ? `第${selectedPageNum}页图片加载失败`
+              : `第${selectedPageNum}页暂无图片`"
           >
             <UiIcon name="image" size="28" />
-            <span>图片加载失败</span>
+            <span>{{ isPageImageUnavailable ? '图片加载失败' : '暂无页面图片' }}</span>
           </div>
-          <div v-if="!isPageImageUnavailable" class="page-detail-panel__image-overlay">
+          <div v-if="hasPageImage" class="page-detail-panel__image-overlay">
             <span class="page-detail-panel__zoom-hint">
               <UiIcon name="search" />
               <span>点击放大</span>
@@ -326,9 +380,10 @@ onUnmounted(() => {
 
         <div
           class="page-detail-panel__analysis-status"
-          :class="{ 'page-detail-panel__analysis-status--analyzed': isPageAnalyzed }"
+          :class="`page-detail-panel__analysis-status--${pageAnalysisState}`"
+          :data-state="pageAnalysisState"
         >
-          {{ isPageAnalyzed ? '✓ 已分析' : '○ 未分析' }}
+          {{ analysisStatusLabel }}
         </div>
 
         <div v-if="pageAnalysis?.page_summary" class="page-detail-panel__summary">
@@ -345,7 +400,7 @@ onUnmounted(() => {
           role="note"
           tone="neutral"
         >
-          此页尚未分析，点击下方按钮开始分析
+          {{ emptySummaryMessage }}
         </ProductStatusBanner>
 
         <div v-if="pageAnalysis?.key_events?.length" class="page-detail-panel__dialogues">
@@ -434,13 +489,19 @@ onUnmounted(() => {
 
     <OverlayLayer
       v-if="showImagePreview"
-      ref="imagePreviewLayer"
-      class="page-detail-panel__image-preview-modal"
-      tabindex="0"
+      class="page-detail-panel__image-preview-layer"
       @backdrop="closeImagePreview"
-      @keydown="handlePreviewKeydown"
     >
-      <div class="page-detail-panel__image-preview-content" @click.stop>
+      <div
+        ref="imagePreviewDialog"
+        class="page-detail-panel__image-preview-modal page-detail-panel__image-preview-content"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="`第 ${selectedPageNum} 页图片预览`"
+        tabindex="-1"
+        @click.stop
+        @keydown="handlePreviewKeydown"
+      >
         <UiIconButton
           class="page-detail-panel__preview-close"
           label="关闭图片预览"
@@ -452,7 +513,29 @@ onUnmounted(() => {
         >
           <UiIcon name="x" size="24" />
         </UiIconButton>
-        <img class="page-detail-panel__preview-image" :src="pageImageUrl" :alt="`第${selectedPageNum}页`">
+        <UiSpinner
+          v-if="isLoading"
+          class="page-detail-panel__preview-loading"
+          label="加载预览图片"
+          :decorative="false"
+          :size="32"
+        />
+        <img
+          v-else-if="hasPageImage"
+          class="page-detail-panel__preview-image"
+          :src="pageImageUrl"
+          :alt="`第${selectedPageNum}页`"
+          @error="handlePageImageError"
+        >
+        <ProductStatusBanner
+          v-else
+          class="page-detail-panel__preview-unavailable"
+          tone="neutral"
+          icon-name="image"
+          role="note"
+        >
+          当前页面图片不可用
+        </ProductStatusBanner>
         <div class="page-detail-panel__preview-nav">
           <UiIconButton
             class="page-detail-panel__preview-nav-button page-detail-panel__preview-nav-button--prev"
@@ -492,7 +575,10 @@ onUnmounted(() => {
   --page-detail-image-fallback-text: var(--insight-text-secondary);
   --page-detail-image-overlay-background: transparent;
   --page-detail-image-overlay-hover-background: var(--color-overlay-scrim-subtle);
-  --page-detail-analyzed-background: color-mix(in srgb, var(--color-status-success) 12%, transparent);
+  --page-detail-ready-background: color-mix(in srgb, var(--color-status-success) 12%, transparent);
+  --page-detail-stale-background: var(--color-status-warning-surface-soft);
+  --page-detail-running-background: color-mix(in srgb, var(--color-status-info) 12%, transparent);
+  --page-detail-failed-background: var(--color-surface-danger-soft);
   --page-detail-preview-backdrop: color-mix(in srgb, var(--color-overlay-backdrop-solid) 95%, transparent);
   --page-detail-success-text: var(--color-status-success);
 
@@ -647,9 +733,24 @@ onUnmounted(() => {
   margin-bottom: 12px;
 }
 
-.page-detail-panel__analysis-status--analyzed {
-  background: var(--page-detail-analyzed-background);
+.page-detail-panel__analysis-status--ready {
+  background: var(--page-detail-ready-background);
   color: var(--page-detail-success-text);
+}
+
+.page-detail-panel__analysis-status--stale {
+  background: var(--page-detail-stale-background);
+  color: var(--color-status-warning);
+}
+
+.page-detail-panel__analysis-status--running {
+  background: var(--page-detail-running-background);
+  color: var(--color-status-info);
+}
+
+.page-detail-panel__analysis-status--failed {
+  background: var(--page-detail-failed-background);
+  color: var(--color-text-danger);
 }
 
 .page-detail-panel__summary {
@@ -686,28 +787,6 @@ onUnmounted(() => {
 
   margin-bottom: 16px;
   font-style: italic;
-}
-
-.page-detail-panel__scene-mood {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-bottom: 16px;
-  padding: 10px;
-  background: var(--insight-surface-secondary);
-  border-radius: 6px;
-}
-
-.page-detail-panel__info-item {
-  font-size: 13px;
-}
-
-.page-detail-panel__info-label {
-  color: var(--insight-text-secondary);
-}
-
-.page-detail-panel__info-value {
-  color: var(--insight-text-primary);
 }
 
 .page-detail-panel__dialogues {
@@ -747,29 +826,20 @@ onUnmounted(() => {
   color: var(--insight-text-primary);
 }
 
-.page-detail-panel__dialogue-original {
-  font-size: 12px;
-  color: var(--insight-text-secondary);
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px dashed var(--color-border-muted);
-}
-
-.page-detail-panel__original-label {
-  font-weight: 500;
-}
-
 .page-detail-panel__actions {
   margin-top: 16px;
   padding-top: 12px;
   border-top: 1px solid var(--color-border-muted);
 }
 
-.page-detail-panel__image-preview-modal {
+.page-detail-panel__image-preview-layer {
   background: var(--page-detail-preview-backdrop);
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.page-detail-panel__image-preview-modal {
   outline: none;
 }
 
@@ -786,6 +856,14 @@ onUnmounted(() => {
   max-width: 100%;
   max-height: calc(90vh - 60px);
   object-fit: contain;
+}
+
+.page-detail-panel__preview-loading {
+  color: var(--color-text-inverse);
+}
+
+.page-detail-panel__preview-unavailable {
+  min-width: min(320px, 80vw);
 }
 
 .page-detail-panel__preview-close {

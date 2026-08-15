@@ -6,6 +6,7 @@ from pathlib import Path
 import socket
 import subprocess
 import sys
+import threading
 import time
 from types import SimpleNamespace
 from urllib.request import urlopen
@@ -19,25 +20,42 @@ from src.backend_v2.launcher.entrypoint import (
     API_HEALTH_FAILURE_LIMIT,
     MAX_CONSECUTIVE_RESTARTS,
     RESTART_STABILITY_SECONDS,
+    TORCH_CUDNN_V8_API_LRU_CACHE_LIMIT_ENV,
+    WORKER_CUDNN_V8_API_LRU_CACHE_LIMIT,
     ManagedChild,
     _api_health_requires_restart,
     _child_environment,
+    _is_expected_previous_child,
     _reset_restart_count_after_stable_run,
     _start_child_with_retries,
 )
 from src.backend_v2.runtime_identity import (
     API_EPOCH_ID_ENV,
     API_EPOCH_TOKEN_ENV,
+    LAUNCHER_PID_ENV,
     WORKER_EPOCH_ID_ENV,
     WORKER_EPOCH_TOKEN_ENV,
+    _watch_launcher_parent,
 )
 from src.backend_v2.storage.database import create_sqlite_engine, database_path_for
 from src.backend_v2.storage.epochs import EpochRegistration
 from src.backend_v2.storage.schema import process_epochs
+from src.backend_v2.worker.entrypoint import _insight_layer_handler
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ENTRYPOINT = PROJECT_ROOT / "saber_v2.py"
+
+
+def test_worker_dynamic_insight_layer_handler_has_no_fixed_layer_cap() -> None:
+    handler = object()
+    service = SimpleNamespace(handle=handler)
+
+    assert _insight_layer_handler("insight_build_layer_0", service) is handler
+    assert _insight_layer_handler("insight_build_layer_8", service) is handler
+    assert _insight_layer_handler("insight_build_layer_128", service) is handler
+    assert _insight_layer_handler("insight_build_layer_08", service) is None
+    assert _insight_layer_handler("insight_build_layer_invalid", service) is None
 
 
 def _clean_role_environment() -> dict[str, str]:
@@ -47,6 +65,8 @@ def _clean_role_environment() -> dict[str, str]:
         API_EPOCH_TOKEN_ENV,
         WORKER_EPOCH_ID_ENV,
         WORKER_EPOCH_TOKEN_ENV,
+        LAUNCHER_PID_ENV,
+        TORCH_CUDNN_V8_API_LRU_CACHE_LIMIT_ENV,
     ):
         environment.pop(name, None)
     return environment
@@ -175,6 +195,7 @@ def test_api_epoch_heartbeat_starts_before_application_initialization(
     monkeypatch.setattr(entrypoint, "create_sqlite_engine", lambda _path: FakeEngine())
     monkeypatch.setattr(entrypoint, "create_api_app", create_app)
     monkeypatch.setattr(entrypoint, "loaded_forbidden_api_modules", lambda: [])
+    monkeypatch.setattr(entrypoint, "start_launcher_parent_monitor", lambda *_args, **_kwargs: None)
 
     result = entrypoint.run_api(
         SimpleNamespace(
@@ -268,8 +289,60 @@ def test_launcher_exposes_only_the_target_roles_secret(tmp_path: Path) -> None:
     assert WORKER_EPOCH_ID_ENV not in api and WORKER_EPOCH_TOKEN_ENV not in api
     assert WORKER_EPOCH_ID_ENV in worker and WORKER_EPOCH_TOKEN_ENV in worker
     assert API_EPOCH_ID_ENV not in worker and API_EPOCH_TOKEN_ENV not in worker
+    assert TORCH_CUDNN_V8_API_LRU_CACHE_LIMIT_ENV not in api
+    assert (
+        worker[TORCH_CUDNN_V8_API_LRU_CACHE_LIMIT_ENV]
+        == WORKER_CUDNN_V8_API_LRU_CACHE_LIMIT
+    )
+    assert api[LAUNCHER_PID_ENV] == str(os.getpid())
+    assert worker[LAUNCHER_PID_ENV] == str(os.getpid())
     with pytest.raises(ValueError):
         _child_environment(tmp_path, "renderer", api_registration)
+
+
+def test_posix_parent_monitor_stops_after_launcher_parent_changes() -> None:
+    stop_event = threading.Event()
+    parent_pids = iter((1234, 4321))
+    lost = []
+
+    _watch_launcher_parent(
+        1234,
+        lambda: lost.append(True),
+        stop_event,
+        get_parent_pid=lambda: next(parent_pids),
+        interval_seconds=0,
+    )
+
+    assert lost == [True]
+
+
+def test_previous_child_identity_requires_role_and_same_data_root(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class FakeProcess:
+        def __init__(self, _pid: int) -> None:
+            pass
+
+        def cmdline(self) -> list[str]:
+            return [
+                sys.executable,
+                str(ENTRYPOINT),
+                "--role",
+                "worker",
+                "--data-dir",
+                str(tmp_path),
+            ]
+
+    monkeypatch.setattr(psutil, "Process", FakeProcess)
+
+    assert _is_expected_previous_child(123, role="worker", data_root=tmp_path.resolve())
+    assert not _is_expected_previous_child(123, role="api", data_root=tmp_path.resolve())
+    assert not _is_expected_previous_child(
+        123,
+        role="worker",
+        data_root=(tmp_path / "other").resolve(),
+    )
 
 
 def test_launcher_requires_repeated_api_health_failures_before_restart(

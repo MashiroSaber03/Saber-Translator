@@ -9,6 +9,7 @@ export type V2DiagnosticRequest = components['schemas']['ProviderDiagnosticReque
 export type V2ConnectionTestResult = components['schemas']['ConnectionTestResponse']
 export type V2Font = components['schemas']['FontResource']
 export type V2Prompt = components['schemas']['PromptResource']
+export type V2PromptMutation = components['schemas']['PromptMutation']
 export type V2ProviderSettingEntry = components['schemas']['ProviderSettingEntry']
 export type V2ProviderSettingMutation = components['schemas']['ProviderSettingMutation']
 export type V2SettingEntry = components['schemas']['SettingEntry']
@@ -48,19 +49,19 @@ export async function listV2Fonts(): Promise<V2Font[]> {
   return result.items
 }
 
-export function uploadV2Font(file: File): Promise<{ assetUrl: string; id: string }> {
+export function uploadV2Font(file: File): Promise<V2Font> {
   assertBackendActionAllowed()
   const form = new FormData()
   form.append('file', file)
   form.append('displayName', file.name.replace(/\.[^.]+$/, ''))
-  return apiClient.upload<{ assetUrl: string; id: string }>(
+  return apiClient.upload<V2Font>(
     '/api/v2/fonts',
     form,
     { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
 }
 
-export async function listV2Prompts(type?: string): Promise<V2Prompt[]> {
+export async function listV2Prompts(type?: V2Prompt['type']): Promise<V2Prompt[]> {
   const result = await apiClient.get<V2PromptList>(
     '/api/v2/prompts',
     { params: type ? { type } : {} },
@@ -69,7 +70,7 @@ export async function listV2Prompts(type?: string): Promise<V2Prompt[]> {
 }
 
 export function createV2Prompt(
-  type: string,
+  type: V2Prompt['type'],
   name: string,
   content: string,
 ): Promise<V2Prompt> {
@@ -98,6 +99,15 @@ export function deleteV2Prompt(promptId: string): Promise<{ deleted: boolean }> 
   assertBackendActionAllowed()
   return apiClient.delete<{ deleted: boolean }>(
     `/api/v2/prompts/${encodeURIComponent(promptId)}`,
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
+  )
+}
+
+export function resetV2Prompt(prompt: V2Prompt): Promise<V2Prompt> {
+  assertBackendActionAllowed()
+  return apiClient.post<V2Prompt>(
+    `/api/v2/prompts/${encodeURIComponent(prompt.id)}/reset`,
+    { baseRevision: prompt.revision },
     { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
 }
@@ -132,15 +142,8 @@ export function updateV2WorkflowPreferences(
   )
 }
 
-export function cleanV2DebugFiles(): Promise<{ removed: number }> {
-  return apiClient.post<{ removed: number }>(
-    '/api/v2/maintenance/clean-debug',
-    undefined,
-    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
-  )
-}
-
 export function cleanV2TempFiles(): Promise<{ recovered: number }> {
+  assertBackendActionAllowed()
   return apiClient.post<{ recovered: number }>(
     '/api/v2/maintenance/clean-temp',
     undefined,

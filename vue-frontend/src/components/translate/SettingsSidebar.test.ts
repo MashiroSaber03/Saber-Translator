@@ -29,7 +29,13 @@ describe('SettingsSidebar defaults', () => {
     apiMocks.getFontList.mockResolvedValue([])
     apiMocks.getTranslateWorkflowPreferences.mockRejectedValue(new Error('offline'))
     apiMocks.saveTranslateWorkflowPreferences.mockResolvedValue({ success: true })
-    apiMocks.uploadFont.mockResolvedValue({ id: 'font-custom', assetUrl: '/api/v2/assets/font' })
+    apiMocks.uploadFont.mockResolvedValue({
+      id: 'font-custom',
+      kind: 'uploaded',
+      displayName: 'custom',
+      builtinKey: null,
+      assetUrl: '/api/v2/assets/font',
+    })
     vi.spyOn(console, 'warn').mockImplementation(() => undefined)
   })
 
@@ -78,9 +84,10 @@ describe('SettingsSidebar defaults', () => {
       },
     })
     const inpaintSelect = wrapper.findAllComponents(UiSelect)
-      .find(select => select.attributes('id') === 'useInpainting')
+      .find(select => select.get('[role="combobox"]').attributes('id') === 'useInpainting')
 
-    inpaintSelect?.vm.$emit('change', 'lama_mpe')
+    expect(inpaintSelect).toBeTruthy()
+    inpaintSelect!.vm.$emit('change', 'lama_mpe')
     await wrapper.vm.$nextTick()
 
     expect(wrapper.emitted('textStyleChanged')).toContainEqual([

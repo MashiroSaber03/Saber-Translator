@@ -4,7 +4,6 @@ import { createDefaultSettings } from '../defaults'
 import {
   applyOpenAiOptionsPatch,
   cloneOpenAiOptions,
-  normalizeOpenAiOptions,
   type OpenAiOptionsPatch,
 } from '@/utils/openaiOptions'
 import type {
@@ -25,15 +24,11 @@ export function usePluginAgentSettings(
   settings: Ref<TranslationSettings>,
   providerConfigs: Ref<ProviderConfigsCache>,
 ) {
-  type PluginAgentUiUpdates = Partial<PluginAgentSettings> & OpenAiOptionsPatch
+  type PluginAgentUiUpdates = Partial<Omit<PluginAgentSettings, 'provider'>>
+    & OpenAiOptionsPatch
 
   const pluginAgentProvider = computed(() => settings.value.pluginAgent.provider)
   const getDefaultOpenAiOptions = () => cloneOpenAiOptions(createDefaultSettings().pluginAgent.openaiOptions)
-  const getUncachedProviderOpenAiOptions = () => {
-    const options = getDefaultOpenAiOptions()
-    options.execution.rpmLimit = 7
-    return options
-  }
 
   function setPluginAgentProvider(provider: PluginAgentProvider): void {
     provider = normalizeProviderId(provider) as PluginAgentProvider
@@ -46,7 +41,6 @@ export function usePluginAgentSettings(
   }
 
   function updatePluginAgent(updates: PluginAgentUiUpdates): void {
-    if (updates.provider !== undefined) settings.value.pluginAgent.provider = updates.provider
     if (updates.apiKey !== undefined) settings.value.pluginAgent.apiKey = updates.apiKey
     if (updates.modelName !== undefined) settings.value.pluginAgent.modelName = updates.modelName
     if (updates.customBaseUrl !== undefined) settings.value.pluginAgent.customBaseUrl = updates.customBaseUrl
@@ -74,12 +68,12 @@ export function usePluginAgentSettings(
       applyCached: (cached) => {
         applyProviderCredentials(settings.value.pluginAgent, cached)
         settings.value.pluginAgent.openaiOptions = cached.openaiOptions !== undefined
-          ? normalizeOpenAiOptions(cached.openaiOptions, settings.value.pluginAgent.openaiOptions)
+          ? cloneOpenAiOptions(cached.openaiOptions)
           : getDefaultOpenAiOptions()
       },
       applyMissing: () => {
         clearProviderCredentials(settings.value.pluginAgent)
-        settings.value.pluginAgent.openaiOptions = getUncachedProviderOpenAiOptions()
+        settings.value.pluginAgent.openaiOptions = getDefaultOpenAiOptions()
       },
     })
   }

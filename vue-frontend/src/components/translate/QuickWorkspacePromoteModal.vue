@@ -51,8 +51,14 @@ watch(
   async visible => {
     if (!visible) return
     errorMessage.value = ''
-    if (!bookshelfStore.books.length) await bookshelfStore.loadBooks()
+    if (!bookshelfStore.books.length) {
+      await bookshelfStore.loadBooks()
+      if (bookshelfStore.error) {
+        errorMessage.value = `加载书架失败：${bookshelfStore.error}`
+      }
+    }
   },
+  { immediate: true },
 )
 
 function setMode(value: 'new_book' | 'existing_book') {
@@ -65,7 +71,13 @@ function setTargetBook(value: UiSelectValue) {
 }
 
 function close() {
+  if (saving.value) return
   emit('update:modelValue', false)
+}
+
+function handleChapterTitleEnter(event: KeyboardEvent): void {
+  if (event.isComposing) return
+  void submit()
 }
 
 async function submit() {
@@ -87,7 +99,7 @@ async function submit() {
           },
     )
     emit('promoted', result)
-    close()
+    emit('update:modelValue', false)
   } catch (error) {
     if (
       error
@@ -110,20 +122,24 @@ async function submit() {
     :model-value="modelValue"
     title="保存到书架"
     size="small"
-    :close-on-overlay="true"
-    :close-on-esc="true"
+    :close-on-overlay="!saving"
+    :close-on-esc="!saving"
     @close="close"
   >
     <div class="quick-promote">
       <ProductActionRow aria-label="保存目标">
         <UiButton
           :variant="mode === 'new_book' ? 'primary' : 'secondary'"
+          :aria-pressed="mode === 'new_book'"
+          :disabled="saving"
           @click="setMode('new_book')"
         >
           新建书籍
         </UiButton>
         <UiButton
           :variant="mode === 'existing_book' ? 'primary' : 'secondary'"
+          :aria-pressed="mode === 'existing_book'"
+          :disabled="saving"
           @click="setMode('existing_book')"
         >
           已有书籍
@@ -140,6 +156,7 @@ async function submit() {
           id="quick-promote-book-title"
           v-model="bookTitle"
           maxlength="500"
+          :disabled="saving"
           placeholder="输入新书名称"
         />
       </UiField>
@@ -154,6 +171,7 @@ async function submit() {
           id="quick-promote-target-book"
           :model-value="targetBookId"
           :options="bookOptions"
+          :disabled="saving"
           placeholder="选择已有书籍"
           @change="setTargetBook"
         />
@@ -168,8 +186,9 @@ async function submit() {
           id="quick-promote-chapter-title"
           v-model="chapterTitle"
           maxlength="500"
+          :disabled="saving"
           placeholder="输入章节名称"
-          @keydown.enter="submit"
+          @keydown.enter="handleChapterTitleEnter"
         />
       </UiField>
 
@@ -186,7 +205,7 @@ async function submit() {
 
     <template #footer>
       <ProductActionRow aria-label="保存到书架操作" variant="dialog">
-        <UiButton variant="secondary" @click="close">取消</UiButton>
+        <UiButton variant="secondary" :disabled="saving" @click="close">取消</UiButton>
         <UiButton variant="primary" :disabled="!canSubmit" @click="submit">
           {{ saving ? '保存中…' : '保存到书架' }}
         </UiButton>

@@ -32,6 +32,7 @@ import { useTextStyleSync } from '@/composables/useTextStyleSync'
 import { useTranslateViewActions } from './useTranslateViewActions'
 import {
   flushPageDocument,
+  discardPageDocument,
   isPageDocumentRegistered,
   queuePageDocumentSave,
 } from '@/services/pageDocumentPersistence'
@@ -40,6 +41,8 @@ import WebImportModal from '@/components/translate/WebImportModal.vue'
 import WebImportDisclaimer from '@/components/translate/WebImportDisclaimer.vue'
 import QuickWorkspacePromoteModal from '@/components/translate/QuickWorkspacePromoteModal.vue'
 import { resetQuickWorkspace } from '@/api/v2/content'
+import { ApiClientError } from '@/api/client'
+import { HISTORY_JOB_STATUSES } from '@/api/v2/jobs'
 import { confirmProductAction } from '@/composables/useProductConfirm'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
 
@@ -79,7 +82,6 @@ const isEditMode = ref(false)
 
 const currentImage = computed(() => imageStore.currentImage)
 const hasImages = computed(() => imageStore.hasImages)
-const hasFailedImages = computed(() => imageStore.failedImageCount > 0)
 const showThumbnailSidebar = computed(() => hasImages.value && !isEditMode.value)
 const isBookshelfMode = computed(() => translateInit.isBookshelfMode.value)
 const currentChapterId = computed(() => translateInit.currentChapterId.value || undefined)
@@ -178,9 +180,29 @@ watch(
       image.id,
       image.documentRevision,
       bubbles,
-    ).catch(error => {
+    ).catch(async error => {
+      const message = error instanceof Error ? error.message : '未知错误'
+      if (imageStore.currentImage?.id !== image.id) {
+        showToast(`页面 ${image.fileName} 写入后端失败：${message}`, 'error')
+        return
+      }
+      const restored = await translateInit.switchImage(
+        imageStore.currentImageIndex,
+        false,
+      )
+      if (error instanceof ApiClientError && error.status === 423) {
+        showToast(
+          restored
+            ? '当前章节已被后端任务锁定，本次编辑未保存并已恢复后端版本；如需编辑，请先取消任务'
+            : `当前章节已被后端任务锁定，且重新加载页面失败：${message}`,
+          'warning',
+        )
+        return
+      }
       showToast(
-        `当前页写入后端失败：${error instanceof Error ? error.message : '未知错误'}`,
+        restored
+          ? `当前页写入后端失败，已恢复后端版本：${message}`
+          : `当前页写入后端失败，且重新加载页面失败：${message}`,
         'error',
       )
     })
@@ -200,22 +222,27 @@ const {
   toggleEditMode,
 } = useTranslateViewActions({
   imageStore,
+  bubbleStore,
   settingsStore,
   translation,
   translateInit,
   validateBeforeTranslation,
-  currentImage,
-  hasImages,
-  hasFailedImages,
   isEditMode,
 })
+
+watch(
+  () => currentImage.value?.id,
+  pageId => {
+    if (!pageId) isEditMode.value = false
+  },
+)
 
 function handleWebImportCommitAccepted(jobIds: string[]): void {
   pendingContentImportJobIds.value = new Set([
     ...pendingContentImportJobIds.value,
     ...jobIds,
   ])
-  void taskCenterStore.refresh()
+  void taskCenterStore.refresh().catch(() => undefined)
 }
 
 watch(
@@ -224,13 +251,7 @@ watch(
     if (pendingContentImportJobIds.value.size === 0) return
     const terminal = jobs.filter(job => (
       pendingContentImportJobIds.value.has(job.jobId)
-      && [
-        'completed',
-        'completed_with_errors',
-        'failed',
-        'cancelled',
-        'interrupted',
-      ].includes(job.status)
+      && HISTORY_JOB_STATUSES.has(job.status)
     ))
     if (terminal.length === 0) return
 
@@ -279,12 +300,9 @@ async function createNewQuickWorkspace() {
     tone: 'danger',
   })
   if (!confirmed || !(await guardDocumentFlush())) return
+  const pageIds = imageStore.images.map(image => image.id)
   try {
     await resetQuickWorkspace()
-    imageStore.clearImages()
-    bubbleStore.clearBubbles()
-    await loadChapterSession()
-    showToast('新的快速翻译工作区已创建', 'success')
   } catch (error) {
     if (
       error
@@ -296,14 +314,22 @@ async function createNewQuickWorkspace() {
       return
     }
     showToast(error instanceof Error ? error.message : '新建快速翻译失败', 'error')
+    return
   }
+  for (const pageId of pageIds) discardPageDocument(pageId)
+  imageStore.clearImages()
+  bubbleStore.clearBubblesLocal()
+  showToast('新的快速翻译工作区已创建', 'success')
+  await loadChapterSession()
 }
 
 async function handleQuickWorkspacePromoted() {
+  const pageIds = imageStore.images.map(image => image.id)
+  for (const pageId of pageIds) discardPageDocument(pageId)
   imageStore.clearImages()
-  bubbleStore.clearBubbles()
-  await loadChapterSession()
+  bubbleStore.clearBubblesLocal()
   showToast('快速翻译内容已保存到书架，当前工作区已切换为空白章节', 'success')
+  await loadChapterSession()
 }
 </script>
 
@@ -448,7 +474,6 @@ async function handleQuickWorkspacePromoted() {
       <template #right>
         <ThumbnailSidebar
           v-show="showThumbnailSidebar"
-          :is-visible="showThumbnailSidebar"
           @select="selectImage"
         />
       </template>
@@ -456,7 +481,6 @@ async function handleQuickWorkspacePromoted() {
 
     <EditWorkspace
       v-if="currentImage && isEditMode"
-      :is-edit-mode-active="isEditMode"
       @exit="toggleEditMode"
     />
 
@@ -533,7 +557,7 @@ async function handleQuickWorkspacePromoted() {
   align-items: center;
   justify-content: center;
   margin-bottom: 15px;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition: box-shadow 0.2s ease;
 }
 
 .translate-upload-card:hover {
@@ -602,16 +626,6 @@ async function handleQuickWorkspacePromoted() {
 .translate-header__settings-button--highlighted {
   animation: settingsBtnPulse 0.5s ease-in-out 3;
   box-shadow: 0 0 10px var(--color-action-primary);
-}
-
-.translate-bookshelf-mode-hint {
-  margin-top: 10px;
-  text-align: center;
-}
-
-.translate-bookshelf-mode-hint__text {
-  color: var(--color-text-subtle);
-  font-size: 0.85em;
 }
 
 .translate-page.edit-mode-active {

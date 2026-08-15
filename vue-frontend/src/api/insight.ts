@@ -1,11 +1,27 @@
 import type { FetchModelsResponse } from '@/types'
 import type {
   InsightAnalysisSnapshot,
+  ChapterInfo,
+  InsightEmbeddingProviderDraft,
+  InsightImageGenProviderDraft,
+  InsightLlmProviderDraft,
+  InsightProviderDrafts,
+  InsightRerankerProviderDraft,
+  InsightSettingsSnapshot,
   InsightTaskStatus,
+  InsightVlmProviderDraft,
+  NoteData,
+  NoteType,
+  NoteUpdateInput,
   OverviewTemplateType,
+  QAMode,
   TimelineData,
 } from '@/types/insight'
-import type { OpenAICompatibleOptionsWire } from '@/utils/openaiOptions'
+import {
+  deserializeOpenAICompatibleOptionsFromApi,
+  serializeOpenAICompatibleOptionsForApi,
+  type OpenAICompatibleOptionsWire,
+} from '@/utils/openaiOptions'
 import { projectInsightPageProgress } from '@/utils/insightJobProgress'
 import { readApiErrorMessage } from '@/api/download'
 import { readSseStream } from '@/api/sse'
@@ -36,21 +52,26 @@ import {
   rebuildInsightVectors,
   updateInsightNote,
   type V2InsightNote,
+  type V2InsightPageDetail,
   type V2InsightPageSummary,
 } from '@/api/v2/insight'
 import { assertBackendActionAllowed } from '@/services/backendAccessGate'
+import { deepClone } from '@/utils/deepClone'
+import { getProviderDefaultModel } from '@/config/aiProviders'
 import {
   createV2Prompt,
   deleteV2Prompt,
   fetchV2ModelCatalog,
   getV2Settings,
   listV2Prompts,
+  resetV2Prompt,
   runV2ConnectionTest,
   saveV2SettingsTransaction,
   updateV2Prompt,
   type V2CredentialEdit,
   type V2CredentialSummary,
   type V2Prompt,
+  type V2PromptMutation,
   type V2ProviderSettingEntry,
   type V2ProviderSettingMutation,
   type V2SettingsDocument,
@@ -58,8 +79,7 @@ import {
 } from '@/api/v2/settings'
 
 export interface PageAnalysisData {
-  analyzed?: boolean
-  analyzed_at?: string
+  analysisState: V2InsightPageDetail['analysisState']
   continuity_notes?: string
   key_events?: Array<{
     event_type?: string
@@ -76,113 +96,15 @@ export interface PageData {
   sourceUrl: string
 }
 
-export interface InsightChapter {
-  analyzed: boolean
-  analyzed_count: number
-  end_page: number
-  id: string
-  start_page: number
-  title: string
-}
-
-export interface NoteData {
-  answer?: string
-  citations?: Array<{ content: string; page: number }>
-  comment?: string
-  content: string
-  createdAt: string
-  id: string
-  pageNum?: number
-  question?: string
-  revision?: number
-  tags?: string[]
-  title?: string
-  type: 'text' | 'qa'
-  updatedAt: string
-}
-
-export interface VlmConfig {
-  provider: string
-  api_key: string
-  model: string
-  base_url?: string
-  openai_options?: OpenAICompatibleOptionsWire
-  image_max_size?: number
-}
-
-export interface LlmConfig {
-  use_same_as_vlm: boolean
-  provider?: string
-  api_key?: string
-  model?: string
-  base_url?: string
-  openai_options?: OpenAICompatibleOptionsWire
-}
-
-export interface EmbeddingConfig {
-  provider: string
-  api_key: string
-  model: string
-  base_url?: string
-  rpm_limit?: number
-  transport_retries?: number
-  business_retries?: number
-  timeout_seconds?: number
-}
-
-export interface RerankerConfig {
-  provider: string
-  api_key: string
-  model: string
-  base_url?: string
-  top_k?: number
-  transport_retries?: number
-  business_retries?: number
-  timeout_seconds?: number
-}
-
-export interface ImageGenConfig {
-  provider: string
-  api_key: string
-  model: string
-  base_url?: string
-  transport_retries?: number
-  business_retries?: number
-  timeout_seconds?: number
-}
-
-export interface BatchAnalysisConfig {
-  pages_per_batch: number
-  context_batch_count: number
-  architecture_preset: string
-  custom_layers?: Array<{
-    name: string
-    units_per_group: number
-    align_to_chapter: boolean
-  }>
-}
-
-export interface AnalysisConfig {
-  analysis?: { batch?: BatchAnalysisConfig }
-  chat_llm?: LlmConfig
-  embedding?: EmbeddingConfig
-  image_gen?: ImageGenConfig
-  prompts?: Record<string, string>
-  provider_settings?: Record<string, Record<string, Record<string, unknown>>>
-  reranker?: RerankerConfig
-  vlm?: VlmConfig
-}
-
 export interface StartAnalysisOptions {
   mode?: 'full' | 'incremental' | 'chapters' | 'pages'
   chapters?: string[]
   pages?: number[]
-  force?: boolean
 }
 
 export interface AnalysisJobSubmission {
   jobId: string
-  runId?: string
+  runId: string
 }
 
 export type OverviewGenerationResult =
@@ -191,9 +113,63 @@ export type OverviewGenerationResult =
 
 export interface ChatResult {
   answer: string
-  mode: string
+  mode: QAMode
   citations: Array<{ page: number }>
-  suggestedQuestions: string[]
+}
+
+interface ChatStreamOptions {
+  onChunk?: (content: string) => void
+  signal?: AbortSignal
+}
+
+export type SendChatOptions = ChatStreamOptions &
+  (
+    | {
+        mode: 'global'
+      }
+    | {
+        mode: 'precise'
+        threshold: number
+        topK: number
+        useParentChild: boolean
+        useReasoning: boolean
+        useReranker: boolean
+      }
+  )
+
+function requireQaEventData(
+  value: unknown,
+  keys: readonly string[],
+  event: string
+): Record<string, unknown> {
+  if (!isRecord(value) || !hasExactKeys(value, keys)) {
+    throw new Error(`问答 ${event} 事件格式无效`)
+  }
+  return value
+}
+
+function requireQaCitations(value: unknown): Array<{ page: number }> {
+  if (!Array.isArray(value)) throw new Error('问答引用格式无效')
+  return value.map(raw => {
+    const citation = requireQaEventData(
+      raw,
+      ['pageId', 'pageNumber', 'excerpt', 'score'],
+      'context'
+    )
+    if (
+      typeof citation.pageId !== 'string' ||
+      !citation.pageId ||
+      typeof citation.pageNumber !== 'number' ||
+      !Number.isInteger(citation.pageNumber) ||
+      citation.pageNumber < 1 ||
+      typeof citation.excerpt !== 'string' ||
+      typeof citation.score !== 'number' ||
+      !Number.isFinite(citation.score)
+    ) {
+      throw new Error('问答引用字段无效')
+    }
+    return { page: citation.pageNumber }
+  })
 }
 
 export interface QAStatusResponse {
@@ -207,7 +183,18 @@ export interface QAStatusResponse {
   repairAction?: 'analyze' | 'vector_rebuild' | 'overview_rebuild' | 'compressed_context_rebuild'
 }
 
-export type PromptType = 'batch_analysis' | 'segment_summary' | 'chapter_summary' | 'qa_response'
+export const INSIGHT_PROMPT_TYPES = [
+  'batch_analysis',
+  'segment_summary',
+  'chapter_summary',
+  'qa_response',
+] as const
+
+export type PromptType = (typeof INSIGHT_PROMPT_TYPES)[number]
+
+export function isInsightPromptType(value: unknown): value is PromptType {
+  return typeof value === 'string' && INSIGHT_PROMPT_TYPES.some(type => type === value)
+}
 
 export interface PromptMetadata {
   label: string
@@ -238,8 +225,9 @@ export interface SavedPromptItem {
   name: string
   type: PromptType
   content: string
-  created_at: string
 }
+
+export type SavedPromptInput = Pick<SavedPromptItem, 'name' | 'type' | 'content'>
 
 const INSIGHT_DOMAINS = [
   'insight',
@@ -249,20 +237,41 @@ const INSIGHT_DOMAINS = [
   'insight_reranker',
   'insight_image_gen',
 ]
-const PROVIDER_GROUPS = {
-  vlmProvider: 'insight_vlm',
-  llmProvider: 'insight_chat',
-  embeddingProvider: 'insight_embedding',
-  rerankerProvider: 'insight_reranker',
-  imageGenProvider: 'insight_image_gen',
-} as const
-const SECTION_DOMAINS = {
+const INSIGHT_PROVIDER_DOMAINS = {
   vlm: 'insight_vlm',
-  chat_llm: 'insight_chat',
+  llm: 'insight_chat',
   embedding: 'insight_embedding',
   reranker: 'insight_reranker',
-  image_gen: 'insight_image_gen',
+  imageGen: 'insight_image_gen',
 } as const
+type InsightProviderDomain =
+  (typeof INSIGHT_PROVIDER_DOMAINS)[keyof typeof INSIGHT_PROVIDER_DOMAINS]
+const INSIGHT_PROVIDER_PAYLOAD_FIELDS: Record<InsightProviderDomain, readonly string[]> = {
+  insight_vlm: ['modelName', 'customBaseUrl', 'openaiOptions', 'imageMaxSize'],
+  insight_chat: ['modelName', 'customBaseUrl', 'openaiOptions'],
+  insight_embedding: [
+    'modelName',
+    'customBaseUrl',
+    'rpmLimit',
+    'transportRetries',
+    'businessRetries',
+    'timeoutSeconds',
+  ],
+  insight_reranker: [
+    'modelName',
+    'customBaseUrl',
+    'transportRetries',
+    'businessRetries',
+    'timeoutSeconds',
+  ],
+  insight_image_gen: [
+    'modelName',
+    'customBaseUrl',
+    'transportRetries',
+    'businessRetries',
+    'timeoutSeconds',
+  ],
+}
 const OVERVIEW_TEMPLATES = [
   'no_spoiler',
   'story_summary',
@@ -273,20 +282,19 @@ const OVERVIEW_TEMPLATES = [
   'reading_notes',
 ] as const satisfies readonly OverviewTemplateType[]
 
-let settingsDocument: V2SettingsDocument | null = null
-let promptCache: V2Prompt[] = []
+function requireOverviewTemplate(value: string): OverviewTemplateType {
+  if (!OVERVIEW_TEMPLATES.includes(value as OverviewTemplateType)) {
+    throw new Error('不支持的漫画概览模板')
+  }
+  return value as OverviewTemplateType
+}
+
 let credentialSummaries: V2CredentialSummary[] = []
-const PAGE_CACHE_LIMIT = 300
-const NOTE_CACHE_LIMIT = 500
-const pageCache = new Map<string, Map<string, V2InsightPageSummary>>()
-const timelineThumbnailCache = new Map<number, string>()
-const noteCache = new Map<string, NoteData>()
-const noteCitationPageIds = new Map<string, Map<number, string>>()
 
 async function boundedMap<T, R>(
   items: readonly T[],
   mapper: (item: T, index: number) => Promise<R>,
-  concurrency = 4,
+  concurrency = 4
 ): Promise<R[]> {
   if (items.length === 0) return []
   const results = new Array<R>(items.length)
@@ -298,98 +306,24 @@ async function boundedMap<T, R>(
       results[index] = await mapper(items[index] as T, index)
     }
   }
-  await Promise.all(
-    Array.from({ length: Math.min(concurrency, items.length) }, () => worker()),
-  )
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()))
   return results
-}
-
-let cachedPageBookId: string | null = null
-let cachedTimelineThumbnailBookId: string | null = null
-
-function rememberPages(bookId: string, pages: V2InsightPageSummary[]): void {
-  if (cachedPageBookId !== bookId) {
-    pageCache.clear()
-    cachedPageBookId = bookId
-  }
-  const byId = pageCache.get(bookId) ?? new Map<string, V2InsightPageSummary>()
-  pages.forEach(page => {
-    byId.delete(page.pageId)
-    byId.set(page.pageId, page)
-  })
-  while (byId.size > PAGE_CACHE_LIMIT) {
-    const oldestId = byId.keys().next().value
-    if (!oldestId) break
-    byId.delete(oldestId)
-  }
-  pageCache.set(bookId, byId)
-}
-
-function rememberTimelineThumbnails(bookId: string, thumbnails: Record<string, string>): void {
-  if (cachedTimelineThumbnailBookId !== bookId) {
-    timelineThumbnailCache.clear()
-    cachedTimelineThumbnailBookId = bookId
-  }
-  Object.entries(thumbnails).forEach(([pageNumber, url]) => {
-    const parsed = Number(pageNumber)
-    if (Number.isInteger(parsed) && parsed > 0 && url) {
-      timelineThumbnailCache.delete(parsed)
-      timelineThumbnailCache.set(parsed, url)
-    }
-  })
-  while (timelineThumbnailCache.size > PAGE_CACHE_LIMIT) {
-    const oldestPage = timelineThumbnailCache.keys().next().value
-    if (oldestPage === undefined) break
-    timelineThumbnailCache.delete(oldestPage)
-  }
-}
-
-function cachedPageForNumber(
-  bookId: string,
-  pageNum: number,
-): V2InsightPageSummary | undefined {
-  for (const page of pageCache.get(bookId)?.values() ?? []) {
-    if (page.displayPageNumber === pageNum) return page
-  }
-  return undefined
 }
 
 export async function getInsightPagesPage(
   bookId: string,
   options: { chapterId?: string; cursor?: number; limit?: number } = {}
 ): Promise<{ items: V2InsightPageSummary[]; nextCursor: number | null }> {
-  const response = await listInsightPages(bookId, options)
-  rememberPages(bookId, response.items)
-  return response
+  return listInsightPages(bookId, options)
 }
 
 async function pageForNumber(
   bookId: string,
   pageNum: number
 ): Promise<V2InsightPageSummary | undefined> {
-  const cached = cachedPageForNumber(bookId, pageNum)
-  if (cached) return cached
   if (!Number.isInteger(pageNum) || pageNum < 1) return undefined
   const response = await getInsightPagesPage(bookId, { cursor: pageNum - 1, limit: 1 })
   return response.items.find(page => page.displayPageNumber === pageNum)
-}
-
-function mapJobStatus(status: string): InsightTaskStatus {
-  if (
-    status === 'queued' ||
-    status === 'running' ||
-    status === 'pausing' ||
-    status === 'paused' ||
-    status === 'cancelling' ||
-    status === 'interrupted' ||
-    status === 'completed' ||
-    status === 'completed_with_errors' ||
-    status === 'cancelled' ||
-    status === 'failed'
-  ) {
-    return status
-  }
-  return 'failed'
 }
 
 export async function startAnalysis(
@@ -400,22 +334,22 @@ export async function startAnalysis(
   const scope = mode === 'chapters' ? 'chapter' : mode === 'pages' ? 'page' : mode
   let pageIds: string[] | undefined
   if (scope === 'page') {
-    const pages = await boundedMap(
-      options.pages ?? [],
-      page => pageForNumber(bookId, page),
-    )
-    pageIds = pages.flatMap(page => page ? [page.pageId] : [])
+    const requestedPages = options.pages ?? []
+    const pages = await boundedMap(requestedPages, page => pageForNumber(bookId, page))
+    pageIds = pages.map((page, index) => {
+      if (!page) throw new Error(`第 ${requestedPages[index]} 页不存在`)
+      return page.pageId
+    })
   }
   const accepted = await createInsightAnalysisJob({
     bookId,
     scope,
     ...(scope === 'chapter' ? { chapterIds: options.chapters ?? [] } : {}),
     ...(scope === 'page' ? { pageIds: pageIds ?? [] } : {}),
-    force: options.force,
   })
   return {
     jobId: accepted.jobIds[0],
-    ...(accepted.runId ? { runId: accepted.runId } : {}),
+    runId: accepted.runId,
   }
 }
 
@@ -435,20 +369,57 @@ export async function cancelAnalysis(taskId: string): Promise<void> {
   await jobsApi.cancel(taskId)
 }
 
+function requireAnalysisCount(value: unknown, field: string): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`漫画分析 ${field} 格式无效`)
+  }
+  return value
+}
+
+function requireAnalysisString(value: unknown, field: string): string {
+  if (typeof value !== 'string' || !value) throw new Error(`漫画分析 ${field} 格式无效`)
+  return value
+}
+
+function requireInsightTaskStatus(value: unknown): InsightTaskStatus {
+  if (
+    value === 'queued' ||
+    value === 'running' ||
+    value === 'pausing' ||
+    value === 'paused' ||
+    value === 'cancelling' ||
+    value === 'interrupted' ||
+    value === 'completed' ||
+    value === 'completed_with_errors' ||
+    value === 'cancelled' ||
+    value === 'failed'
+  )
+    return value
+  throw new Error('漫画分析任务状态格式无效')
+}
+
 export async function getAnalysisStatus(bookId: string): Promise<InsightAnalysisSnapshot> {
   const bootstrap = await getInsightBootstrap()
   const book = bootstrap.books.find(item => item.bookId === bookId)
+  if (!book) throw new Error('漫画分析书籍不存在')
+  const pageCount = requireAnalysisCount(book.pageCount, '总页数')
+  const analyzedPageCount = requireAnalysisCount(book.analyzedPageCount, '已分析页数')
+  if (analyzedPageCount > pageCount) throw new Error('漫画分析已分析页数超过总页数')
   const job = bootstrap.activeJobs.find(
     item => item.bookId === bookId && item.kind === 'insight_analysis'
   )
   const pageProgress = job ? projectInsightPageProgress(job.progress) : undefined
+  if (pageProgress) {
+    requireAnalysisCount(pageProgress.current, '任务已处理页数')
+    requireAnalysisCount(pageProgress.total, '任务总页数')
+  }
   return {
-    fullyAnalyzed: Boolean(book && book.pageCount > 0 && book.analyzedPageCount >= book.pageCount),
-    analyzedPagesCount: book?.analyzedPageCount ?? 0,
+    fullyAnalyzed: pageCount > 0 && analyzedPageCount === pageCount,
+    analyzedPagesCount: analyzedPageCount,
     currentTask: job
       ? {
-          jobId: job.jobId,
-          status: mapJobStatus(job.status),
+          jobId: requireAnalysisString(job.jobId, '任务 ID'),
+          status: requireInsightTaskStatus(job.status),
           progress: {
             analyzedPages: pageProgress?.current ?? 0,
             totalPages: pageProgress?.total ?? 0,
@@ -459,14 +430,14 @@ export async function getAnalysisStatus(bookId: string): Promise<InsightAnalysis
 }
 
 export function reanalyzePage(bookId: string, pageNum: number): Promise<AnalysisJobSubmission> {
-  return startAnalysis(bookId, { mode: 'pages', pages: [pageNum], force: true })
+  return startAnalysis(bookId, { mode: 'pages', pages: [pageNum] })
 }
 
 export function reanalyzeChapter(
   bookId: string,
   chapterId: string
 ): Promise<AnalysisJobSubmission> {
-  return startAnalysis(bookId, { mode: 'chapters', chapters: [chapterId], force: true })
+  return startAnalysis(bookId, { mode: 'chapters', chapters: [chapterId] })
 }
 
 export async function getPageData(bookId: string, pageNum: number): Promise<PageData> {
@@ -475,49 +446,60 @@ export async function getPageData(bookId: string, pageNum: number): Promise<Page
   const detail = await getInsightPage(page.pageId)
   if (!detail.analysis) {
     return {
-      analysis: { page_num: pageNum, analyzed: false },
+      analysis: {
+        analysisState: detail.analysisState,
+        page_num: pageNum,
+      },
       sourceUrl: detail.sourceUrl,
     }
   }
   return {
     analysis: {
-      ...(detail.analysis as PageAnalysisData),
+      analysisState: detail.analysisState,
+      continuity_notes: detail.analysis.continuity_notes,
+      key_events: detail.analysis.key_events,
+      page_summary: detail.analysis.page_summary,
+      warnings: detail.analysis.warnings,
       page_num: pageNum,
-      analyzed: detail.analysisState === 'ready' || detail.analysisState === 'stale',
-      analyzed_at: detail.generatedAt ?? undefined,
     },
     sourceUrl: detail.sourceUrl,
   }
 }
 
-export function getThumbnailUrl(bookId: string, pageNum: number): string {
-  const page = cachedPageForNumber(bookId, pageNum)
-  if (page?.thumbnailUrl) return page.thumbnailUrl
-  return cachedTimelineThumbnailBookId === bookId
-    ? timelineThumbnailCache.get(pageNum) ?? ''
-    : ''
-}
-
-export async function getInsightChapters(bookId: string): Promise<InsightChapter[]> {
+export async function getInsightChapters(bookId: string): Promise<ChapterInfo[]> {
   const chapters = await listInsightChapters(bookId)
   let offset = 0
   return chapters.items.map(chapter => {
-    const startPage = offset + 1
-    offset += chapter.pageCount
+    const pageCount = requireAnalysisCount(chapter.pageCount, '章节总页数')
+    const analyzedCount = requireAnalysisCount(
+      chapter.analysisCounts.ready + chapter.analysisCounts.stale,
+      '章节已分析页数'
+    )
+    if (analyzedCount > pageCount) throw new Error('漫画分析章节已分析页数超过章节总页数')
+    const startPage = pageCount > 0 ? offset + 1 : 0
+    offset += pageCount
+    requireAnalysisCount(offset, '章节累计页数')
     return {
-      id: chapter.chapterId,
-      title: chapter.title,
-      start_page: startPage,
-      end_page: offset,
-      analyzed: chapter.analysisCounts.ready + chapter.analysisCounts.stale === chapter.pageCount,
-      analyzed_count: chapter.analysisCounts.ready + chapter.analysisCounts.stale,
+      id: requireAnalysisString(chapter.chapterId, '章节 ID'),
+      title: requireAnalysisString(chapter.title, '章节标题'),
+      startPage,
+      endPage: pageCount > 0 ? offset : 0,
+      analyzed: pageCount > 0 && analyzedCount === pageCount,
+      analyzedCount,
     }
   })
 }
 
 function artifactContent(payload: Record<string, unknown>): string {
-  if (typeof payload.content === 'string') return payload.content
-  return JSON.stringify(payload, null, 2)
+  if (
+    typeof payload.title !== 'string' ||
+    !payload.title.trim() ||
+    typeof payload.content !== 'string' ||
+    !payload.content.trim()
+  ) {
+    throw new Error('漫画概览响应格式无效')
+  }
+  return payload.content
 }
 
 function isNotFound(error: unknown): boolean {
@@ -529,7 +511,7 @@ export async function getOverview(
   templateType = 'story_summary'
 ): Promise<string | null> {
   try {
-    const artifact = await getInsightOverview(bookId, templateType)
+    const artifact = await getInsightOverview(bookId, requireOverviewTemplate(templateType))
     return artifactContent(artifact.payload)
   } catch (error) {
     if (isNotFound(error)) return null
@@ -542,31 +524,318 @@ export async function regenerateOverview(
   templateType: string,
   force = false
 ): Promise<OverviewGenerationResult> {
+  const template = requireOverviewTemplate(templateType)
   if (!force) {
-    const cached = await getOverview(bookId, templateType)
+    const cached = await getOverview(bookId, template)
     if (cached !== null) return { kind: 'cached', content: cached }
   }
-  const accepted = await rebuildInsightOverview(bookId, templateType)
+  const accepted = await rebuildInsightOverview(bookId, template)
   return { kind: 'queued', jobId: accepted.jobIds[0] }
 }
 
 export async function getGeneratedTemplates(bookId: string): Promise<OverviewTemplateType[]> {
   const response = await listInsightOverviewTemplates(bookId)
-  const available = new Set(response.items)
-  return OVERVIEW_TEMPLATES.filter(template => available.has(template))
+  if (
+    !Array.isArray(response.items) ||
+    response.items.some(
+      template => !OVERVIEW_TEMPLATES.includes(template as OverviewTemplateType)
+    ) ||
+    new Set(response.items).size !== response.items.length
+  ) {
+    throw new Error('漫画概览模板响应格式无效')
+  }
+  return [...response.items] as OverviewTemplateType[]
 }
 
-export async function getRecentAnalyzedPages(bookId: string): Promise<Array<{
-  page_num: number
-  summary?: string
-  analyzed_at?: string
-}>> {
+export async function getRecentAnalyzedPages(bookId: string): Promise<
+  Array<{
+    page_num: number
+    summary?: string
+  }>
+> {
   const response = await listRecentInsightPageAnalyses(bookId, 5)
   return response.items.map(item => ({
     page_num: item.displayPageNumber,
     ...(item.summary ? { summary: item.summary } : {}),
-    ...(item.generatedAt ? { analyzed_at: item.generatedAt } : {}),
   }))
+}
+
+function requirePositiveInteger(value: unknown, field: string): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) {
+    throw new Error(`时间线 ${field} 格式无效`)
+  }
+  return value
+}
+
+function requireNonnegativeInteger(value: unknown, field: string): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    throw new Error(`时间线 ${field} 格式无效`)
+  }
+  return value
+}
+
+function requireTimelineString(value: unknown, field: string): string {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new Error(`时间线 ${field} 格式无效`)
+  }
+  return value
+}
+
+function optionalTimelineString(value: unknown, field: string): string | undefined {
+  if (value === undefined) return undefined
+  return requireTimelineString(value, field)
+}
+
+function requireTimelinePageRange(value: unknown, field: string): { start: number; end: number } {
+  if (!isRecord(value)) throw new Error(`时间线 ${field} 格式无效`)
+  const start = requirePositiveInteger(value.start, `${field}.start`)
+  const end = requirePositiveInteger(value.end, `${field}.end`)
+  if (end < start) throw new Error(`时间线 ${field} 范围无效`)
+  return { start, end }
+}
+
+function requireTimelineArcs(value: unknown): TimelineData['plot_arcs'] {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value)) throw new Error('时间线 plot_arcs 格式无效')
+  const arcIds = new Set<string>()
+  return value.map((raw, index) => {
+    if (!isRecord(raw)) throw new Error(`时间线 plot_arcs[${index}] 格式无效`)
+    const id = requireTimelineString(raw.id, `plot_arcs[${index}].id`)
+    if (arcIds.has(id)) throw new Error(`时间线 plot_arcs[${index}].id 重复`)
+    arcIds.add(id)
+    const eventIds = raw.event_ids
+    if (
+      eventIds !== undefined &&
+      (!Array.isArray(eventIds) || eventIds.some(id => typeof id !== 'string' || !id))
+    ) {
+      throw new Error(`时间线 plot_arcs[${index}].event_ids 格式无效`)
+    }
+    return {
+      id,
+      name: requireTimelineString(raw.name, `plot_arcs[${index}].name`),
+      description: requireTimelineString(raw.description, `plot_arcs[${index}].description`),
+      page_range: requireTimelinePageRange(raw.page_range, `plot_arcs[${index}].page_range`),
+      ...(optionalTimelineString(raw.mood, `plot_arcs[${index}].mood`)
+        ? { mood: raw.mood as string }
+        : {}),
+      ...(eventIds ? { event_ids: [...eventIds] as string[] } : {}),
+    }
+  })
+}
+
+function requireTimelineThreads(value: unknown): TimelineData['plot_threads'] {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value)) throw new Error('时间线 plot_threads 格式无效')
+  const threadIds = new Set<string>()
+  return value.map((raw, index) => {
+    if (!isRecord(raw)) throw new Error(`时间线 plot_threads[${index}] 格式无效`)
+    const id = requireTimelineString(raw.id, `plot_threads[${index}].id`)
+    if (threadIds.has(id)) throw new Error(`时间线 plot_threads[${index}].id 重复`)
+    threadIds.add(id)
+    const introduced =
+      raw.introduced_at === undefined
+        ? undefined
+        : requirePositiveInteger(raw.introduced_at, `plot_threads[${index}].introduced_at`)
+    const resolved =
+      raw.resolved_at === undefined || raw.resolved_at === null
+        ? raw.resolved_at
+        : requirePositiveInteger(raw.resolved_at, `plot_threads[${index}].resolved_at`)
+    return {
+      id,
+      name: requireTimelineString(raw.name, `plot_threads[${index}].name`),
+      type: requireTimelineString(raw.type, `plot_threads[${index}].type`),
+      status: requireTimelineString(raw.status, `plot_threads[${index}].status`),
+      ...(optionalTimelineString(raw.description, `plot_threads[${index}].description`)
+        ? { description: raw.description as string }
+        : {}),
+      ...(introduced === undefined ? {} : { introduced_at: introduced }),
+      ...(resolved === undefined ? {} : { resolved_at: resolved }),
+    }
+  })
+}
+
+function requireTimelineThumbnails(value: unknown): Record<number, string> {
+  if (!isRecord(value)) throw new Error('时间线 pageThumbnails 格式无效')
+  const thumbnails: Record<number, string> = {}
+  for (const [pageNumber, url] of Object.entries(value)) {
+    if (!/^[1-9][0-9]*$/.test(pageNumber) || typeof url !== 'string' || !url.trim()) {
+      throw new Error('时间线 pageThumbnails 格式无效')
+    }
+    thumbnails[Number(pageNumber)] = url
+  }
+  return thumbnails
+}
+
+function requireTimelinePayload(value: unknown, expectedBookId: string): TimelineData {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      'timelineVersionId',
+      'bookId',
+      'runId',
+      'mode',
+      'status',
+      'content',
+      'events',
+      'characters',
+      'eventPage',
+      'characterPage',
+      'pageCount',
+      'pageThumbnails',
+      'dependencyFingerprint',
+    ])
+  ) {
+    throw new Error('时间线响应格式无效')
+  }
+  if (value.bookId !== expectedBookId) {
+    throw new Error('时间线 bookId 与请求不一致')
+  }
+  const timelineVersionId = requireTimelineString(value.timelineVersionId, 'timelineVersionId')
+  if (value.runId !== null) requireTimelineString(value.runId, 'runId')
+  if (value.status !== 'ready' && value.status !== 'degraded' && value.status !== 'stale') {
+    throw new Error('时间线 status 格式无效')
+  }
+  if (
+    typeof value.dependencyFingerprint !== 'string' ||
+    !/^[0-9a-f]{64}$/.test(value.dependencyFingerprint)
+  ) {
+    throw new Error('时间线 dependencyFingerprint 格式无效')
+  }
+  const mode = value.mode
+  if (mode !== 'enhanced' && mode !== 'compressed' && mode !== 'simple') {
+    throw new Error('时间线 mode 格式无效')
+  }
+  if (!isRecord(value.content)) throw new Error('时间线 content 格式无效')
+  const content = value.content
+  if (
+    content.requested_mode !== 'enhanced' ||
+    content.actual_mode !== mode ||
+    typeof content.degraded !== 'boolean' ||
+    content.degraded !== (mode !== 'enhanced') ||
+    (mode === 'enhanced' && content.fallback_reason !== null) ||
+    (mode !== 'enhanced' &&
+      (typeof content.fallback_reason !== 'string' || !content.fallback_reason.trim())) ||
+    typeof content.story_summary !== 'string' ||
+    (mode !== 'simple' && !content.story_summary.trim())
+  ) {
+    throw new Error('时间线 content 元数据格式无效')
+  }
+  if (!Array.isArray(value.events)) throw new Error('时间线 events 格式无效')
+  const events = value.events.map((raw, index) => {
+    if (!isRecord(raw)) throw new Error(`时间线 events[${index}] 格式无效`)
+    const pageIds = raw.page_ids
+    const pageNumbers = raw.page_numbers
+    if (
+      !Array.isArray(pageIds) ||
+      !pageIds.length ||
+      pageIds.some(pageId => typeof pageId !== 'string' || !pageId) ||
+      !Array.isArray(pageNumbers) ||
+      pageNumbers.length !== pageIds.length
+    ) {
+      throw new Error(`时间线 events[${index}] 页面引用格式无效`)
+    }
+    const normalizedPageNumbers = pageNumbers.map((pageNumber, pageIndex) =>
+      requirePositiveInteger(pageNumber, `events[${index}].page_numbers[${pageIndex}]`)
+    )
+    return {
+      eventId: requireTimelineString(raw.eventId, `events[${index}].eventId`),
+      summary: requireTimelineString(raw.summary, `events[${index}].summary`),
+      page_ids: [...pageIds] as string[],
+      page_numbers: normalizedPageNumbers,
+      ...(optionalTimelineString(raw.importance, `events[${index}].importance`)
+        ? { importance: raw.importance as string }
+        : {}),
+    }
+  })
+  if (!Array.isArray(value.characters)) throw new Error('时间线 characters 格式无效')
+  const characters = value.characters.map((raw, index) => {
+    if (!isRecord(raw) || !Array.isArray(raw.key_moments)) {
+      throw new Error(`时间线 characters[${index}] 格式无效`)
+    }
+    const keyMoments = raw.key_moments.map((moment, momentIndex) => {
+      if (!isRecord(moment)) {
+        throw new Error(`时间线 characters[${index}].key_moments[${momentIndex}] 格式无效`)
+      }
+      const page =
+        moment.page === undefined
+          ? undefined
+          : requirePositiveInteger(
+              moment.page,
+              `characters[${index}].key_moments[${momentIndex}].page`
+            )
+      return {
+        summary: requireTimelineString(
+          moment.summary,
+          `characters[${index}].key_moments[${momentIndex}].summary`
+        ),
+        ...(page === undefined ? {} : { page }),
+      }
+    })
+    return {
+      character_id: requireTimelineString(raw.characterId, `characters[${index}].characterId`),
+      name: requireTimelineString(raw.name, `characters[${index}].name`),
+      description: requireTimelineString(raw.description, `characters[${index}].description`),
+      first_appearance: requirePositiveInteger(raw.first_page, `characters[${index}].first_page`),
+      key_moments: keyMoments,
+      ...(optionalTimelineString(raw.arc, `characters[${index}].arc`)
+        ? { arc: raw.arc as string }
+        : {}),
+    }
+  })
+  if (!isRecord(value.eventPage) || !isRecord(value.characterPage)) {
+    throw new Error('时间线分页响应格式无效')
+  }
+  const nextEventCursor =
+    value.eventPage.nextCursor === null
+      ? null
+      : requirePositiveInteger(value.eventPage.nextCursor, 'eventPage.nextCursor')
+  const nextCharacterCursor = value.characterPage.nextCursor
+  if (
+    nextCharacterCursor !== null &&
+    (typeof nextCharacterCursor !== 'string' || !nextCharacterCursor)
+  ) {
+    throw new Error('时间线 characterPage.nextCursor 格式无效')
+  }
+  const pageCount = requireNonnegativeInteger(value.pageCount, 'pageCount')
+  const totalEvents = requireNonnegativeInteger(value.eventPage.totalCount, 'eventPage.totalCount')
+  const totalCharacters = requireNonnegativeInteger(
+    value.characterPage.totalCount,
+    'characterPage.totalCount'
+  )
+  const pageThumbnails = requireTimelineThumbnails(value.pageThumbnails)
+  const groups = events.map(event => {
+    const start = Math.min(...event.page_numbers)
+    const end = Math.max(...event.page_numbers)
+    return {
+      id: event.eventId,
+      page_range: { start, end },
+      thumbnail_page: start,
+      summary: event.summary,
+      events: [event.summary],
+    }
+  })
+  const plotArcs = requireTimelineArcs(content.plot_arcs)
+  const plotThreads = requireTimelineThreads(content.plot_threads)
+  return {
+    timeline_version_id: timelineVersionId,
+    mode,
+    events,
+    groups,
+    story_summary: content.story_summary,
+    main_characters: characters,
+    page_thumbnails: pageThumbnails,
+    stats: {
+      total_events: totalEvents,
+      total_pages: pageCount,
+      total_characters: totalCharacters,
+      ...(plotArcs ? { total_arcs: plotArcs.length } : {}),
+      ...(plotThreads ? { total_threads: plotThreads.length } : {}),
+    },
+    ...(plotArcs ? { plot_arcs: plotArcs } : {}),
+    ...(plotThreads ? { plot_threads: plotThreads } : {}),
+    next_event_cursor: nextEventCursor,
+    next_character_cursor: nextCharacterCursor,
+  }
 }
 
 export async function getTimeline(
@@ -575,68 +844,7 @@ export async function getTimeline(
 ): Promise<TimelineData | null> {
   try {
     const timeline = await getInsightTimeline(bookId, options)
-    rememberTimelineThumbnails(bookId, timeline.pageThumbnails ?? {})
-    const rawEvents = Array.isArray(timeline.events)
-      ? timeline.events.filter(value => Boolean(value) && typeof value === 'object')
-      : []
-    const groups = rawEvents.map((event, index) => {
-      const pageNumbers = (Array.isArray(event.page_numbers) ? event.page_numbers : [])
-        .map(Number)
-        .filter(value => Number.isInteger(value) && value > 0)
-      const fallbackPage = Math.max(1, index + 1)
-      const start = pageNumbers.length ? Math.min(...pageNumbers) : fallbackPage
-      const end = pageNumbers.length ? Math.max(...pageNumbers) : start
-      const summary = typeof event.summary === 'string' ? event.summary : ''
-      return {
-        id: String(event.eventId),
-        page_range: { start, end },
-        thumbnail_page: start,
-        summary,
-        events: summary ? [summary] : [],
-      }
-    })
-    const rawCharacters = Array.isArray(timeline.characters)
-      ? timeline.characters.filter(value => Boolean(value) && typeof value === 'object')
-      : []
-    const characters = rawCharacters.map((character, index) => {
-      const keyMoments = Array.isArray(character.key_moments)
-        ? character.key_moments.filter(
-            (value): value is Record<string, unknown> => Boolean(value) && typeof value === 'object'
-          )
-        : []
-      const firstAppearance = Math.max(1, Number(character.first_page ?? 1))
-      return {
-        name: String(character.name ?? `角色 ${index + 1}`),
-        description:
-          typeof character.description === 'string'
-            ? character.description
-            : String(keyMoments[0]?.summary ?? `首次出现于第 ${firstAppearance} 页`),
-        first_appearance: firstAppearance,
-        key_moments: keyMoments.map(moment => ({
-          summary: String(moment.summary ?? ''),
-          ...(Number(moment.page) > 0 ? { page: Number(moment.page) } : {}),
-        })),
-      }
-    })
-    const content = (
-      timeline.content && typeof timeline.content === 'object' ? timeline.content : {}
-    ) as Record<string, unknown>
-    const lastPage = groups.reduce((maximum, group) => Math.max(maximum, group.page_range.end), 0)
-    return {
-      ...content,
-      mode: timeline.mode,
-      events: rawEvents,
-      groups,
-      story_summary: typeof content.story_summary === 'string' ? content.story_summary : '',
-      main_characters: characters,
-      stats: {
-        total_events: timeline.eventPage.totalCount ?? groups.length,
-        total_pages: timeline.pageCount ?? lastPage,
-        total_characters: timeline.characterPage.totalCount ?? characters.length,
-      },
-      next_event_cursor: timeline.eventPage.nextCursor,
-      next_character_cursor: timeline.characterPage.nextCursor,
-    } as TimelineData
+    return requireTimelinePayload(timeline, bookId)
   } catch (error) {
     if (isNotFound(error)) return null
     throw error
@@ -651,65 +859,96 @@ export async function regenerateTimeline(bookId: string): Promise<string> {
 export async function sendChat(
   bookId: string,
   question: string,
-  options: {
-    use_parent_child?: boolean
-    use_reasoning?: boolean
-    use_reranker?: boolean
-    top_k?: number
-    threshold?: number
-    use_global_context?: boolean
-    on_chunk?: (content: string) => void
-  } = {}
+  options: SendChatOptions
 ): Promise<ChatResult> {
   assertBackendActionAllowed()
+  const preciseOptions =
+    options.mode === 'precise'
+      ? {
+          useParentChild: options.useParentChild,
+          useReasoning: options.useReasoning,
+          useReranker: options.useReranker,
+          topK: options.topK,
+          threshold: options.threshold,
+        }
+      : {}
   const response = await fetch(insightQaUrl(bookId), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    signal: options.signal,
     body: JSON.stringify({
       question,
-      mode: options.use_global_context ? 'global' : 'exact',
-      useParentChild: options.use_parent_child,
-      useReasoning: options.use_reasoning,
-      useReranker: options.use_reranker,
-      topK: options.top_k,
-      threshold: options.threshold,
+      mode: options.mode === 'global' ? 'global' : 'exact',
+      ...preciseOptions,
     }),
   })
   if (!response.ok) {
     throw new Error(await readApiErrorMessage(response, `HTTP ${response.status}`))
   }
   let answer = ''
-  let mode = options.use_global_context ? 'global' : 'precise'
+  let mode: QAMode | null = null
   let citations: Array<{ page: number }> = []
-  let suggestedQuestions: string[] = []
   let streamError = ''
+  let statusSeen = false
+  let contextSeen = false
+  let doneSeen = false
   await readSseStream<Record<string, unknown>>(response, {
     missingBodyMessage: '无法读取问答响应流',
     parseErrorMessage: '问答响应格式无效',
     onMessage(message) {
-      if (message.event === 'chunk') {
-        answer += String(message.data.text ?? '')
-        options.on_chunk?.(answer)
+      if (doneSeen || streamError) throw new Error('问答响应在结束后仍包含事件')
+      if (message.event === 'status') {
+        const data = requireQaEventData(message.data, ['requestId', 'status'], 'status')
+        if (
+          statusSeen ||
+          typeof data.requestId !== 'string' ||
+          !data.requestId ||
+          data.status !== 'retrieving'
+        ) {
+          throw new Error('问答 status 事件字段无效')
+        }
+        statusSeen = true
+      } else if (message.event === 'chunk') {
+        const data = requireQaEventData(message.data, ['text'], 'chunk')
+        if (!statusSeen || !contextSeen || typeof data.text !== 'string' || !data.text) {
+          throw new Error('问答 chunk 事件字段无效')
+        }
+        answer += data.text
+        options.onChunk?.(answer)
       } else if (message.event === 'context') {
-        mode = String(message.data.mode ?? mode)
-        const values = Array.isArray(message.data.citations) ? message.data.citations : []
-        citations = values.map(value => {
-          const citation = value as Record<string, unknown>
-          return {
-            page: Number(citation.pageNumber ?? 0),
-          }
-        })
+        const data = requireQaEventData(message.data, ['mode', 'citations'], 'context')
+        if (!statusSeen || contextSeen || (data.mode !== 'exact' && data.mode !== 'global')) {
+          throw new Error('问答 context 事件字段无效')
+        }
+        mode = data.mode === 'exact' ? 'precise' : 'global'
+        citations = requireQaCitations(data.citations)
+        contextSeen = true
       } else if (message.event === 'done') {
-        suggestedQuestions = Array.isArray(message.data.suggestedQuestions)
-          ? message.data.suggestedQuestions.map(String)
-          : []
+        requireQaEventData(message.data, [], 'done')
+        if (!statusSeen || !contextSeen || !answer) {
+          throw new Error('问答响应未完整结束')
+        }
+        doneSeen = true
       } else if (message.event === 'error') {
-        streamError = String(message.data.message ?? '问答失败')
+        const data = requireQaEventData(message.data, ['code', 'message'], 'error')
+        if (
+          !statusSeen ||
+          typeof data.code !== 'string' ||
+          !data.code ||
+          typeof data.message !== 'string' ||
+          !data.message
+        ) {
+          throw new Error('问答 error 事件字段无效')
+        }
+        streamError = data.message
+      } else {
+        throw new Error(`未知的问答事件: ${message.event}`)
       }
     },
   })
   if (streamError) throw new Error(streamError)
-  return { answer, mode, citations, suggestedQuestions }
+  if (!doneSeen || mode === null) throw new Error('问答响应意外中断')
+  return { answer, mode, citations }
 }
 
 export async function rebuildEmbeddings(bookId: string): Promise<string> {
@@ -729,32 +968,49 @@ export async function rebuildCompressedContext(bookId: string): Promise<string> 
   return accepted.jobIds[0]
 }
 
-function noteMetadata(note: NoteData): Record<string, unknown> {
-  const text =
-    [note.comment, note.question, note.answer, note.content, note.title]
-      .find(value => typeof value === 'string' && value.trim())
-      ?.trim() || '笔记'
-  return {
-    text,
-    question: note.question ?? '',
-    answer: note.answer ?? '',
-    comment: note.comment ?? '',
-  }
-}
-
 function mapNote(note: V2InsightNote): NoteData {
-  const metadata = note.comments?.find(value => typeof value === 'object') as
-    | Record<string, unknown>
-    | undefined
-  const mapped: NoteData = {
+  if (
+    !note ||
+    typeof note.noteId !== 'string' ||
+    !note.noteId ||
+    (note.kind !== 'text' && note.kind !== 'qa') ||
+    typeof note.title !== 'string' ||
+    !note.title.trim() ||
+    (note.content !== null && typeof note.content !== 'string') ||
+    (note.excerpt !== null && typeof note.excerpt !== 'string') ||
+    !Array.isArray(note.tags) ||
+    note.tags.some(tag => typeof tag !== 'string') ||
+    !Number.isInteger(note.revision) ||
+    note.revision < 1 ||
+    !Array.isArray(note.citations) ||
+    typeof note.createdAt !== 'string' ||
+    !Number.isFinite(Date.parse(note.createdAt)) ||
+    typeof note.updatedAt !== 'string' ||
+    !Number.isFinite(Date.parse(note.updatedAt)) ||
+    (note.kind === 'qa' && (typeof note.question !== 'string' || !note.question.trim())) ||
+    (note.kind === 'text' && note.question !== null) ||
+    (note.comment !== null && (typeof note.comment !== 'string' || !note.comment.trim()))
+  ) {
+    throw new Error('笔记响应格式无效')
+  }
+  for (const citation of note.citations) {
+    if (
+      !Number.isInteger(citation.pageNumberSnapshot) ||
+      citation.pageNumberSnapshot < 1 ||
+      typeof citation.excerpt !== 'string'
+    ) {
+      throw new Error('笔记响应格式无效')
+    }
+  }
+  const content = note.content ?? note.excerpt ?? ''
+  return {
     id: note.noteId,
     type: note.kind,
-    content: note.content ?? note.excerpt ?? '',
+    content,
     title: note.title,
     tags: note.tags,
-    question: typeof metadata?.question === 'string' ? metadata.question : undefined,
-    answer: typeof metadata?.answer === 'string' ? metadata.answer : undefined,
-    comment: typeof metadata?.comment === 'string' ? metadata.comment : undefined,
+    question: note.question ?? undefined,
+    comment: note.comment ?? undefined,
     citations: note.citations.map(citation => ({
       page: citation.pageNumberSnapshot,
       content: citation.excerpt,
@@ -764,29 +1020,11 @@ function mapNote(note: V2InsightNote): NoteData {
     createdAt: note.createdAt,
     updatedAt: note.updatedAt,
   }
-  noteCache.delete(mapped.id)
-  noteCache.set(mapped.id, mapped)
-  noteCitationPageIds.set(
-    mapped.id,
-    new Map(
-      note.citations.flatMap(citation => {
-        const pageId = citation.pageId ?? citation.pageIdSnapshot
-        return pageId ? [[citation.pageNumberSnapshot, pageId] as const] : []
-      })
-    )
-  )
-  while (noteCache.size > NOTE_CACHE_LIMIT) {
-    const oldestId = noteCache.keys().next().value
-    if (!oldestId) break
-    noteCache.delete(oldestId)
-    noteCitationPageIds.delete(oldestId)
-  }
-  return mapped
 }
 
 export async function getNotes(
   bookId: string,
-  type?: 'text' | 'qa',
+  type?: NoteType,
   cursor?: string
 ): Promise<{ items: NoteData[]; nextCursor: string | null }> {
   const response = await listInsightNotes(bookId, { cursor, kind: type, limit: 50 })
@@ -804,32 +1042,29 @@ async function resolvePageCitations(
   bookId: string,
   citations: Array<{ page: number; content: string }>
 ): Promise<Array<{ pageId: string; excerpt: string }>> {
-  const resolved = await boundedMap(citations, async citation => {
+  return boundedMap(citations, async citation => {
     const page = await pageForNumber(bookId, citation.page)
-    return page ? { pageId: page.pageId, excerpt: citation.content } : null
+    if (!page) throw new Error(`引用的第 ${citation.page} 页不存在`)
+    return { pageId: page.pageId, excerpt: citation.content }
   })
-  return resolved.filter(
-    (value): value is { pageId: string; excerpt: string } => value !== null
-  )
 }
 
 export async function createNote(
   bookId: string,
   note: {
-    type: 'text' | 'qa'
+    type: NoteType
     content: string
     pageNum?: number
     title?: string
     tags?: string[]
     question?: string
-    answer?: string
     citations?: Array<{ page: number; content: string }>
     comment?: string
   }
 ): Promise<NoteData> {
   const citations = await resolvePageCitations(
     bookId,
-    note.citations ?? (note.pageNum ? [{ page: note.pageNum, content: '' }] : [])
+    note.citations ?? (note.pageNum === undefined ? [] : [{ page: note.pageNum, content: '' }])
   )
   const created = await createInsightNote({
     bookId,
@@ -838,14 +1073,8 @@ export async function createNote(
     kind: note.type,
     tags: note.tags ?? [],
     citations,
-    comments: [
-      noteMetadata({
-        ...note,
-        id: '',
-        createdAt: '',
-        updatedAt: '',
-      }),
-    ],
+    question: note.type === 'qa' ? note.question?.trim() || null : null,
+    comment: note.comment?.trim() || null,
   })
   return mapNote(created)
 }
@@ -853,96 +1082,439 @@ export async function createNote(
 export async function updateNote(
   bookId: string,
   noteId: string,
-  updates: Partial<NoteData>
+  updates: NoteUpdateInput
 ): Promise<NoteData> {
-  const current = noteCache.get(noteId)
-  if (!current?.revision) throw new Error('笔记版本缺失，请重新加载')
+  const currentWire = await getInsightNote(noteId)
+  const current = mapNote(currentWire)
   const merged = { ...current, ...updates }
-  const knownPageIds = noteCitationPageIds.get(noteId) ?? new Map<number, string>()
-  const requestedCitations = merged.citations ?? []
+  const knownPageIds = new Map(
+    currentWire.citations.flatMap(citation => {
+      const pageId = citation.pageId ?? citation.pageIdSnapshot
+      return pageId ? [[citation.pageNumberSnapshot, pageId] as const] : []
+    })
+  )
+  const pageNumberWasUpdated = Object.prototype.hasOwnProperty.call(updates, 'pageNum')
+  const requestedCitations =
+    updates.citations ??
+    (pageNumberWasUpdated
+      ? updates.pageNum === undefined
+        ? []
+        : [{ page: updates.pageNum, content: '' }]
+      : current.citations)
   const unresolved = requestedCitations.filter(value => !knownPageIds.has(value.page))
   await boundedMap(unresolved, async value => {
     const page = await pageForNumber(bookId, value.page)
-    if (page) knownPageIds.set(value.page, page.pageId)
+    if (!page) throw new Error(`引用的第 ${value.page} 页不存在`)
+    knownPageIds.set(value.page, page.pageId)
   })
-  const citations = requestedCitations.flatMap(value => {
+  const citations = requestedCitations.map(value => {
     const pageId = knownPageIds.get(value.page)
-    return pageId ? [{ pageId, excerpt: value.content }] : []
+    if (!pageId) throw new Error(`引用的第 ${value.page} 页不存在`)
+    return { pageId, excerpt: value.content }
   })
   const updated = await updateInsightNote(noteId, {
-    baseRevision: current.revision,
+    baseRevision: currentWire.revision,
     title: merged.title?.trim() || '未命名笔记',
     content: merged.content,
     kind: merged.type,
     tags: merged.tags ?? [],
     citations,
-    comments: [noteMetadata(merged)],
+    question: merged.type === 'qa' ? merged.question?.trim() || null : null,
+    comment: merged.comment?.trim() || null,
   })
   return mapNote(updated)
 }
 
 export async function deleteNote(noteId: string): Promise<void> {
-  const current = noteCache.get(noteId)
-  if (!current?.revision) throw new Error('笔记版本缺失，请重新加载')
+  const current = await getInsightNote(noteId)
   await deleteInsightNote(noteId, current.revision)
-  noteCache.delete(noteId)
-  noteCitationPageIds.delete(noteId)
 }
 
-function providerWire(
-  row: V2ProviderSettingEntry | undefined,
-  provider: string
+function requireProviderString(
+  payload: Record<string, unknown>,
+  key: string,
+  label: string
+): string {
+  const value = payload[key]
+  if (typeof value !== 'string') throw new Error(`${label}.${key} 格式无效`)
+  return value
+}
+
+function requireProviderInteger(
+  payload: Record<string, unknown>,
+  key: string,
+  label: string,
+  maximum?: number
+): number {
+  const value = payload[key]
+  if (
+    typeof value !== 'number' ||
+    !Number.isSafeInteger(value) ||
+    value < 0 ||
+    (maximum !== undefined && value > maximum)
+  ) {
+    throw new Error(`${label}.${key} 格式无效`)
+  }
+  return value
+}
+
+function requireProviderNumber(
+  payload: Record<string, unknown>,
+  key: string,
+  label: string
+): number {
+  const value = payload[key]
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    throw new Error(`${label}.${key} 格式无效`)
+  }
+  return value
+}
+
+function requireOpenAiOptionsWire(
+  payload: Record<string, unknown>,
+  label: string
+): OpenAICompatibleOptionsWire {
+  const value = payload.openaiOptions
+  if (!isRecord(value) || !hasExactKeys(value, ['request', 'execution'])) {
+    throw new Error(`${label}.openaiOptions 格式无效`)
+  }
+  const request = value.request
+  const execution = value.execution
+  if (
+    !isRecord(request) ||
+    !isRecord(execution) ||
+    !hasExactKeys(request, ['force_json_output', 'temperature', 'extra_body']) ||
+    typeof request.force_json_output !== 'boolean' ||
+    (request.temperature !== null &&
+      (typeof request.temperature !== 'number' ||
+        !Number.isFinite(request.temperature) ||
+        request.temperature < 0 ||
+        request.temperature > 2)) ||
+    !isRecord(request.extra_body) ||
+    !hasExactKeys(execution, [
+      'use_stream',
+      'rpm_limit',
+      'transport_retries',
+      'business_retries',
+    ]) ||
+    typeof execution.use_stream !== 'boolean'
+  ) {
+    throw new Error(`${label}.openaiOptions 字段无效`)
+  }
+  requireProviderInteger(execution, 'rpm_limit', `${label}.openaiOptions.execution`, 100_000)
+  requireProviderInteger(execution, 'transport_retries', `${label}.openaiOptions.execution`, 100)
+  requireProviderInteger(execution, 'business_retries', `${label}.openaiOptions.execution`, 100)
+  return value as unknown as OpenAICompatibleOptionsWire
+}
+
+function requireProviderPayload(
+  domain: InsightProviderDomain,
+  row: V2ProviderSettingEntry
 ): Record<string, unknown> {
-  const payload = row?.payload ?? {}
+  if (
+    !isRecord(row.payload) ||
+    !hasExactKeys(row.payload, INSIGHT_PROVIDER_PAYLOAD_FIELDS[domain])
+  ) {
+    throw new Error(`后端 ${domain} provider 设置字段不完整`)
+  }
+  return row.payload
+}
+
+function providerCommonDraft(payload: Record<string, unknown>, label: string) {
   return {
-    provider,
-    api_key: '',
-    model: payload.modelName ?? '',
-    base_url: payload.customBaseUrl ?? '',
-    openai_options: payload.openaiOptions ?? {},
-    image_max_size: payload.imageMaxSize,
-    rpm_limit: payload.rpmLimit,
-    top_k: payload.topK,
-    transport_retries: payload.transportRetries,
-    business_retries: payload.businessRetries,
-    timeout_seconds: payload.timeoutSeconds,
+    apiKey: '',
+    model: requireProviderString(payload, 'modelName', label),
+    baseUrl: requireProviderString(payload, 'customBaseUrl', label),
   }
 }
 
-function providerSettingsWire(document: V2SettingsDocument): AnalysisConfig['provider_settings'] {
-  return Object.fromEntries(
-    Object.entries(PROVIDER_GROUPS).map(([group, domain]) => [
-      group,
-      Object.fromEntries(
-        document.providerSettings
-          .filter(row => row.domain === domain)
-          .map(row => [row.provider, providerWire(row, row.provider)])
-      ),
-    ])
+function defaultVlmDraft(provider: string): InsightVlmProviderDraft {
+  return {
+    apiKey: '',
+    model: getProviderDefaultModel(provider, 'vlm'),
+    baseUrl: '',
+    openaiOptions: deserializeOpenAICompatibleOptionsFromApi({
+      request: { force_json_output: false, temperature: 0.3, extra_body: {} },
+      execution: {
+        use_stream: true,
+        rpm_limit: 0,
+        transport_retries: 1,
+        business_retries: 0,
+      },
+    }),
+    imageMaxSize: 0,
+  }
+}
+
+function defaultLlmDraft(provider: string): InsightLlmProviderDraft {
+  return {
+    apiKey: '',
+    model: getProviderDefaultModel(provider, 'chat'),
+    baseUrl: '',
+    openaiOptions: deserializeOpenAICompatibleOptionsFromApi({
+      request: { force_json_output: false, temperature: null, extra_body: {} },
+      execution: {
+        use_stream: true,
+        rpm_limit: 0,
+        transport_retries: 1,
+        business_retries: 0,
+      },
+    }),
+  }
+}
+
+function defaultEmbeddingDraft(provider: string): InsightEmbeddingProviderDraft {
+  return {
+    apiKey: '',
+    model: getProviderDefaultModel(provider, 'embedding'),
+    baseUrl: '',
+    rpmLimit: 0,
+    transportRetries: 1,
+    businessRetries: 0,
+    timeoutSeconds: 0,
+  }
+}
+
+function defaultRerankerDraft(provider: string): InsightRerankerProviderDraft {
+  return {
+    apiKey: '',
+    model: getProviderDefaultModel(provider, 'reranker'),
+    baseUrl: '',
+    transportRetries: 1,
+    businessRetries: 0,
+    timeoutSeconds: 0,
+  }
+}
+
+function defaultImageGenDraft(provider: string): InsightImageGenProviderDraft {
+  return {
+    apiKey: '',
+    model: getProviderDefaultModel(provider, 'imageGen'),
+    baseUrl: '',
+    transportRetries: 1,
+    businessRetries: 0,
+    timeoutSeconds: 0,
+  }
+}
+
+function readVlmDraft(row: V2ProviderSettingEntry): InsightVlmProviderDraft {
+  const label = `${row.domain}.${row.provider}`
+  const payload = requireProviderPayload('insight_vlm', row)
+  return {
+    ...providerCommonDraft(payload, label),
+    openaiOptions: deserializeOpenAICompatibleOptionsFromApi(
+      requireOpenAiOptionsWire(payload, label)
+    ),
+    imageMaxSize: requireProviderInteger(payload, 'imageMaxSize', label),
+  }
+}
+
+function readLlmDraft(row: V2ProviderSettingEntry): InsightLlmProviderDraft {
+  const label = `${row.domain}.${row.provider}`
+  const payload = requireProviderPayload('insight_chat', row)
+  return {
+    ...providerCommonDraft(payload, label),
+    openaiOptions: deserializeOpenAICompatibleOptionsFromApi(
+      requireOpenAiOptionsWire(payload, label)
+    ),
+  }
+}
+
+function readEmbeddingDraft(row: V2ProviderSettingEntry): InsightEmbeddingProviderDraft {
+  const label = `${row.domain}.${row.provider}`
+  const payload = requireProviderPayload('insight_embedding', row)
+  return {
+    ...providerCommonDraft(payload, label),
+    rpmLimit: requireProviderInteger(payload, 'rpmLimit', label),
+    transportRetries: requireProviderInteger(payload, 'transportRetries', label),
+    businessRetries: requireProviderInteger(payload, 'businessRetries', label),
+    timeoutSeconds: requireProviderNumber(payload, 'timeoutSeconds', label),
+  }
+}
+
+function readRerankerDraft(row: V2ProviderSettingEntry): InsightRerankerProviderDraft {
+  const label = `${row.domain}.${row.provider}`
+  const payload = requireProviderPayload('insight_reranker', row)
+  return {
+    ...providerCommonDraft(payload, label),
+    transportRetries: requireProviderInteger(payload, 'transportRetries', label),
+    businessRetries: requireProviderInteger(payload, 'businessRetries', label),
+    timeoutSeconds: requireProviderNumber(payload, 'timeoutSeconds', label),
+  }
+}
+
+function readImageGenDraft(row: V2ProviderSettingEntry): InsightImageGenProviderDraft {
+  const label = `${row.domain}.${row.provider}`
+  const payload = requireProviderPayload('insight_image_gen', row)
+  return {
+    ...providerCommonDraft(payload, label),
+    transportRetries: requireProviderInteger(payload, 'transportRetries', label),
+    businessRetries: requireProviderInteger(payload, 'businessRetries', label),
+    timeoutSeconds: requireProviderNumber(payload, 'timeoutSeconds', label),
+  }
+}
+
+function readProviderDrafts(document: V2SettingsDocument): InsightProviderDrafts {
+  if (!Array.isArray(document.providerSettings)) {
+    throw new Error('后端 Insight provider 设置格式无效')
+  }
+  const drafts: InsightProviderDrafts = {
+    vlm: {},
+    llm: {},
+    embedding: {},
+    reranker: {},
+    imageGen: {},
+  }
+  for (const row of document.providerSettings) {
+    if (typeof row.provider !== 'string' || !row.provider || row.provider !== row.provider.trim()) {
+      throw new Error('后端 Insight provider 名称格式无效')
+    }
+    const provider = row.provider
+    if (row.domain === 'insight_vlm') {
+      if (drafts.vlm[provider]) throw new Error(`后端 insight_vlm provider 重复：${provider}`)
+      drafts.vlm[provider] = readVlmDraft(row)
+    } else if (row.domain === 'insight_chat') {
+      if (drafts.llm[provider]) throw new Error(`后端 insight_chat provider 重复：${provider}`)
+      drafts.llm[provider] = readLlmDraft(row)
+    } else if (row.domain === 'insight_embedding') {
+      if (drafts.embedding[provider]) {
+        throw new Error(`后端 insight_embedding provider 重复：${provider}`)
+      }
+      drafts.embedding[provider] = readEmbeddingDraft(row)
+    } else if (row.domain === 'insight_reranker') {
+      if (drafts.reranker[provider]) {
+        throw new Error(`后端 insight_reranker provider 重复：${provider}`)
+      }
+      drafts.reranker[provider] = readRerankerDraft(row)
+    } else if (row.domain === 'insight_image_gen') {
+      if (drafts.imageGen[provider]) {
+        throw new Error(`后端 insight_image_gen provider 重复：${provider}`)
+      }
+      drafts.imageGen[provider] = readImageGenDraft(row)
+    } else {
+      throw new Error(`后端 Insight provider domain 格式无效：${row.domain}`)
+    }
+  }
+  return drafts
+}
+
+function activeProviderDraft<T>(
+  provider: string,
+  drafts: Record<string, T>,
+  createDefault: (provider: string) => T
+): T {
+  const draft = drafts[provider] ?? createDefault(provider)
+  if (provider && !drafts[provider]) drafts[provider] = deepClone(draft)
+  return deepClone(draft)
+}
+
+type InsightProviderSelection = {
+  provider: string
+}
+
+type InsightAppPayload = {
+  analysis: {
+    batch: {
+      pagesPerBatch: number
+      contextBatchCount: number
+      architecturePreset: string
+      customLayers: Array<{
+        name: string
+        unitsPerGroup: number
+        alignToChapter: boolean
+      }>
+    }
+  }
+  vlm: InsightProviderSelection
+  chat: InsightProviderSelection & { useSameAsVlm: boolean }
+  embedding: InsightProviderSelection
+  reranker: InsightProviderSelection
+  imageGen: InsightProviderSelection
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function hasExactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
+  const actual = Object.keys(value)
+  return (
+    actual.length === expected.length &&
+    expected.every(key => Object.prototype.hasOwnProperty.call(value, key))
   )
 }
 
-function requireInsightAppPayload(value: unknown): Record<string, unknown> {
+function requireInsightAppPayload(value: unknown): InsightAppPayload {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('后端 Insight 设置格式无效')
   }
   const payload = value as Record<string, unknown>
   const required = ['analysis', 'vlm', 'chat', 'embedding', 'reranker', 'imageGen']
-  if (
-    Object.keys(payload).length !== required.length ||
-    required.some(key => !Object.prototype.hasOwnProperty.call(payload, key))
-  ) {
+  if (!hasExactKeys(payload, required)) {
     throw new Error('后端 Insight 设置字段不完整')
   }
-  const analysis = payload.analysis
-  if (!analysis || typeof analysis !== 'object' || Array.isArray(analysis)) {
+  if (!isRecord(payload.analysis) || !hasExactKeys(payload.analysis, ['batch'])) {
     throw new Error('后端 Insight 分析设置格式无效')
   }
-  const batch = (analysis as Record<string, unknown>).batch
-  if (!batch || typeof batch !== 'object' || Array.isArray(batch)) {
+  const batch = payload.analysis.batch
+  if (
+    !isRecord(batch) ||
+    !hasExactKeys(batch, [
+      'pagesPerBatch',
+      'contextBatchCount',
+      'architecturePreset',
+      'customLayers',
+    ])
+  ) {
     throw new Error('后端 Insight 批量设置格式无效')
   }
-  return payload
+  const architecturePresets = new Set(['simple', 'standard', 'chapter_based', 'full', 'custom'])
+  if (
+    typeof batch.pagesPerBatch !== 'number' ||
+    !Number.isSafeInteger(batch.pagesPerBatch) ||
+    batch.pagesPerBatch < 1 ||
+    typeof batch.contextBatchCount !== 'number' ||
+    !Number.isSafeInteger(batch.contextBatchCount) ||
+    batch.contextBatchCount < 0 ||
+    typeof batch.architecturePreset !== 'string' ||
+    !architecturePresets.has(batch.architecturePreset) ||
+    !Array.isArray(batch.customLayers) ||
+    (batch.architecturePreset === 'custom' && batch.customLayers.length < 2) ||
+    batch.customLayers.some(
+      layer =>
+        !isRecord(layer) ||
+        !hasExactKeys(layer, ['name', 'unitsPerGroup', 'alignToChapter']) ||
+        typeof layer.name !== 'string' ||
+        !layer.name.trim() ||
+        typeof layer.unitsPerGroup !== 'number' ||
+        !Number.isSafeInteger(layer.unitsPerGroup) ||
+        layer.unitsPerGroup < 0 ||
+        typeof layer.alignToChapter !== 'boolean'
+    )
+  ) {
+    throw new Error('后端 Insight 批量设置字段类型无效')
+  }
+  for (const key of ['vlm', 'embedding', 'reranker', 'imageGen'] as const) {
+    const section = payload[key]
+    if (
+      !isRecord(section) ||
+      !hasExactKeys(section, ['provider']) ||
+      typeof section.provider !== 'string' ||
+      section.provider !== section.provider.trim()
+    ) {
+      throw new Error(`后端 Insight ${key} 设置格式无效`)
+    }
+  }
+  if (
+    !isRecord(payload.chat) ||
+    !hasExactKeys(payload.chat, ['provider', 'useSameAsVlm']) ||
+    typeof payload.chat.provider !== 'string' ||
+    payload.chat.provider !== payload.chat.provider.trim() ||
+    typeof payload.chat.useSameAsVlm !== 'boolean'
+  ) {
+    throw new Error('后端 Insight chat 设置格式无效')
+  }
+  return payload as InsightAppPayload
 }
 
 export function hasInsightCredential(domain: string, provider: string): boolean {
@@ -951,157 +1523,310 @@ export function hasInsightCredential(domain: string, provider: string): boolean 
   )
 }
 
-export async function getGlobalConfig(): Promise<AnalysisConfig> {
+export async function getGlobalConfig(): Promise<InsightSettingsSnapshot> {
   const [document, prompts] = await Promise.all([getV2Settings(INSIGHT_DOMAINS), listV2Prompts()])
-  settingsDocument = document
   credentialSummaries = document.credentials
-  promptCache = prompts
   const appEntry = document.settings.find(row => row.domain === 'insight')
   if (!appEntry) throw new Error('后端 Insight 设置缺失')
   const app = requireInsightAppPayload(appEntry.payload)
-  const section = (
-    key: keyof typeof SECTION_DOMAINS,
-    appKey: string = key
-  ): Record<string, unknown> => {
-    const selected = (app[appKey] as Record<string, unknown> | undefined) ?? {}
-    const provider = String(selected.provider ?? '')
-    const row = document.providerSettings.find(
-      value => value.domain === SECTION_DOMAINS[key] && value.provider === provider
-    )
-    return { ...providerWire(row, provider), ...selected, api_key: '' }
-  }
-  const factoryPrompts = Object.fromEntries(
-    prompts.filter(prompt => prompt.isFactoryDefault).map(prompt => [prompt.type, prompt.content])
+  const providerDrafts = readProviderDrafts(document)
+  const vlm = activeProviderDraft(app.vlm.provider, providerDrafts.vlm, defaultVlmDraft)
+  const llm = activeProviderDraft(app.chat.provider, providerDrafts.llm, defaultLlmDraft)
+  const embedding = activeProviderDraft(
+    app.embedding.provider,
+    providerDrafts.embedding,
+    defaultEmbeddingDraft
   )
-  const batch = ((app.analysis as Record<string, unknown> | undefined)?.batch ?? {}) as Record<
-    string,
-    unknown
-  >
+  const reranker = activeProviderDraft(
+    app.reranker.provider,
+    providerDrafts.reranker,
+    defaultRerankerDraft
+  )
+  const imageGen = activeProviderDraft(
+    app.imageGen.provider,
+    providerDrafts.imageGen,
+    defaultImageGenDraft
+  )
+  const batch = app.analysis.batch
   return {
-    vlm: section('vlm') as unknown as VlmConfig,
-    chat_llm: {
-      ...section('chat_llm', 'chat'),
-      use_same_as_vlm: Boolean((app.chat as Record<string, unknown> | undefined)?.useSameAsVlm),
-    } as unknown as LlmConfig,
-    embedding: section('embedding') as unknown as EmbeddingConfig,
-    reranker: section('reranker') as unknown as RerankerConfig,
-    image_gen: section('image_gen', 'imageGen') as unknown as ImageGenConfig,
-    analysis: {
-      batch: {
-        pages_per_batch: Number(batch.pagesPerBatch ?? 5),
-        context_batch_count: Number(batch.contextBatchCount ?? 3),
-        architecture_preset: String(batch.architecturePreset ?? 'standard'),
-        custom_layers: ((batch.customLayers ?? []) as Array<Record<string, unknown>>).map(
-          layer => ({
-            name: String(layer.name ?? ''),
-            units_per_group: Number(layer.unitsPerGroup ?? 0),
-            align_to_chapter: Boolean(layer.alignToChapter),
-          })
-        ),
+    config: {
+      vlm: { provider: app.vlm.provider, ...vlm },
+      llm: {
+        provider: app.chat.provider,
+        useSameAsVlm: app.chat.useSameAsVlm,
+        ...llm,
       },
+      embedding: { provider: app.embedding.provider, ...embedding },
+      reranker: { provider: app.reranker.provider, ...reranker },
+      imageGen: { provider: app.imageGen.provider, ...imageGen },
+      batch: {
+        pagesPerBatch: batch.pagesPerBatch,
+        contextBatchCount: batch.contextBatchCount,
+        architecturePreset: batch.architecturePreset,
+        customLayers: batch.customLayers.map(layer => ({
+          name: layer.name,
+          units: layer.unitsPerGroup,
+          align: layer.alignToChapter,
+        })),
+      },
+      prompts: readInsightFactoryPrompts(prompts),
     },
-    prompts: factoryPrompts,
-    provider_settings: providerSettingsWire(document),
+    providerDrafts,
   }
 }
 
-function providerPayload(section: Record<string, unknown>): Record<string, unknown> {
+function providerCommonPayload(
+  draft: { model: string; baseUrl: string },
+  label: string
+): { modelName: string; customBaseUrl: string } {
+  if (typeof draft.model !== 'string') throw new Error(`${label}.model 格式无效`)
+  if (typeof draft.baseUrl !== 'string') throw new Error(`${label}.baseUrl 格式无效`)
+  return { modelName: draft.model, customBaseUrl: draft.baseUrl }
+}
+
+function serializeVlmDraft(draft: InsightVlmProviderDraft, label: string): Record<string, unknown> {
+  const openaiOptions = serializeOpenAICompatibleOptionsForApi(draft.openaiOptions)
+  requireOpenAiOptionsWire({ openaiOptions }, label)
+  requireProviderInteger({ imageMaxSize: draft.imageMaxSize }, 'imageMaxSize', label)
   return {
-    modelName: String(section.model ?? ''),
-    customBaseUrl: String(section.base_url ?? ''),
-    ...(section.openai_options && typeof section.openai_options === 'object'
-      ? { openaiOptions: section.openai_options }
-      : {}),
-    imageMaxSize: section.image_max_size,
-    rpmLimit: section.rpm_limit,
-    topK: section.top_k,
-    transportRetries: section.transport_retries,
-    businessRetries: section.business_retries,
-    timeoutSeconds: section.timeout_seconds,
+    ...providerCommonPayload(draft, label),
+    openaiOptions,
+    imageMaxSize: draft.imageMaxSize,
   }
 }
 
-export async function saveGlobalConfig(config: AnalysisConfig): Promise<void> {
-  const document = settingsDocument ?? (await getV2Settings(INSIGHT_DOMAINS))
-  settingsDocument = document
+function serializeLlmDraft(draft: InsightLlmProviderDraft, label: string): Record<string, unknown> {
+  const openaiOptions = serializeOpenAICompatibleOptionsForApi(draft.openaiOptions)
+  requireOpenAiOptionsWire({ openaiOptions }, label)
+  return { ...providerCommonPayload(draft, label), openaiOptions }
+}
+
+function serializeEmbeddingDraft(
+  draft: InsightEmbeddingProviderDraft,
+  label: string
+): Record<string, unknown> {
+  requireProviderInteger({ rpmLimit: draft.rpmLimit }, 'rpmLimit', label)
+  requireProviderInteger({ transportRetries: draft.transportRetries }, 'transportRetries', label)
+  requireProviderInteger({ businessRetries: draft.businessRetries }, 'businessRetries', label)
+  requireProviderNumber({ timeoutSeconds: draft.timeoutSeconds }, 'timeoutSeconds', label)
+  return {
+    ...providerCommonPayload(draft, label),
+    rpmLimit: draft.rpmLimit,
+    transportRetries: draft.transportRetries,
+    businessRetries: draft.businessRetries,
+    timeoutSeconds: draft.timeoutSeconds,
+  }
+}
+
+function serializeRetriedProviderDraft(
+  draft: InsightRerankerProviderDraft | InsightImageGenProviderDraft,
+  label: string
+): Record<string, unknown> {
+  requireProviderInteger({ transportRetries: draft.transportRetries }, 'transportRetries', label)
+  requireProviderInteger({ businessRetries: draft.businessRetries }, 'businessRetries', label)
+  requireProviderNumber({ timeoutSeconds: draft.timeoutSeconds }, 'timeoutSeconds', label)
+  return {
+    ...providerCommonPayload(draft, label),
+    transportRetries: draft.transportRetries,
+    businessRetries: draft.businessRetries,
+    timeoutSeconds: draft.timeoutSeconds,
+  }
+}
+
+function requireActiveProvider(domain: InsightProviderDomain, provider: unknown): string {
+  if (typeof provider !== 'string' || !provider || provider !== provider.trim()) {
+    throw new Error(`${domain} provider 不能为空且不能包含首尾空格`)
+  }
+  return provider
+}
+
+function mergeCredentialSummaries(
+  current: V2CredentialSummary[],
+  changed: V2CredentialSummary[]
+): V2CredentialSummary[] {
+  const byIdentity = new Map(current.map(row => [`${row.domain}\0${row.provider}`, row]))
+  for (const row of changed) byIdentity.set(`${row.domain}\0${row.provider}`, row)
+  return [...byIdentity.values()]
+}
+
+function withoutInsightApiKeys(snapshot: InsightSettingsSnapshot): InsightSettingsSnapshot {
+  const saved = deepClone(snapshot)
+  saved.config.vlm.apiKey = ''
+  saved.config.llm.apiKey = ''
+  saved.config.embedding.apiKey = ''
+  saved.config.reranker.apiKey = ''
+  saved.config.imageGen.apiKey = ''
+  const clearDraftKeys = <TDraft extends { apiKey: string }>(
+    drafts: Record<string, TDraft>
+  ): void => {
+    for (const draft of Object.values(drafts)) draft.apiKey = ''
+  }
+  clearDraftKeys(saved.providerDrafts.vlm)
+  clearDraftKeys(saved.providerDrafts.llm)
+  clearDraftKeys(saved.providerDrafts.embedding)
+  clearDraftKeys(saved.providerDrafts.reranker)
+  clearDraftKeys(saved.providerDrafts.imageGen)
+  return saved
+}
+
+export async function saveGlobalConfig(
+  snapshot: InsightSettingsSnapshot
+): Promise<InsightSettingsSnapshot> {
+  const [document, currentPrompts] = await Promise.all([
+    getV2Settings(INSIGHT_DOMAINS),
+    listV2Prompts(),
+  ])
   credentialSummaries = document.credentials
   const currentApp = document.settings.find(row => row.domain === 'insight')
   if (!currentApp) throw new Error('后端 Insight 设置缺失')
+  const { config, providerDrafts } = snapshot
   const providerSettings: V2ProviderSettingMutation[] = []
   const credentialEdits: V2CredentialEdit[] = []
-  const sections = [
-    ['vlm', 'insight_vlm', config.vlm],
-    ['chat', 'insight_chat', config.chat_llm],
-    ['embedding', 'insight_embedding', config.embedding],
-    ['reranker', 'insight_reranker', config.reranker],
-    ['imageGen', 'insight_image_gen', config.image_gen],
-  ] as const
-  const appPayload: Record<string, unknown> = {
+  const promptEdits: V2PromptMutation[] = []
+
+  const vlmProvider = requireActiveProvider(INSIGHT_PROVIDER_DOMAINS.vlm, config.vlm.provider)
+  const llmProvider = requireActiveProvider(INSIGHT_PROVIDER_DOMAINS.llm, config.llm.provider)
+  const embeddingProvider = requireActiveProvider(
+    INSIGHT_PROVIDER_DOMAINS.embedding,
+    config.embedding.provider
+  )
+  const rerankerProvider = requireActiveProvider(
+    INSIGHT_PROVIDER_DOMAINS.reranker,
+    config.reranker.provider
+  )
+  const imageGenProvider = requireActiveProvider(
+    INSIGHT_PROVIDER_DOMAINS.imageGen,
+    config.imageGen.provider
+  )
+  const appPayload = requireInsightAppPayload({
     analysis: {
       batch: {
-        pagesPerBatch: config.analysis?.batch?.pages_per_batch ?? 5,
-        contextBatchCount: config.analysis?.batch?.context_batch_count ?? 3,
-        architecturePreset: config.analysis?.batch?.architecture_preset ?? 'standard',
-        customLayers: (config.analysis?.batch?.custom_layers ?? []).map(layer => ({
+        pagesPerBatch: config.batch.pagesPerBatch,
+        contextBatchCount: config.batch.contextBatchCount,
+        architecturePreset: config.batch.architecturePreset,
+        customLayers: config.batch.customLayers.map(layer => ({
           name: layer.name,
-          unitsPerGroup: layer.units_per_group,
-          alignToChapter: layer.align_to_chapter,
+          unitsPerGroup: layer.units,
+          alignToChapter: layer.align,
         })),
       },
     },
-  }
-  for (const [appKey, domain, rawSection] of sections) {
-    const section = (rawSection ?? {}) as Record<string, unknown>
-    const provider = String(section.provider ?? '')
-    appPayload[appKey] = {
-      provider,
-      ...(appKey === 'chat' ? { useSameAsVlm: Boolean(section.use_same_as_vlm) } : {}),
-    }
-    if (!provider) continue
-    const existingRow = document.providerSettings.find(
-      row => row.domain === domain && row.provider === provider
-    )
-    const existingCredential = document.credentials.find(
-      row => row.domain === domain && row.provider === provider
-    )
-    const mutation: V2ProviderSettingMutation = {
-      domain,
-      provider,
-      payload: providerPayload(section),
-      baseRevision: existingRow?.revision ?? 0,
-      schemaVersion: 1,
-      ...(existingRow?.credentialVersionId
-        ? { credentialVersionId: existingRow.credentialVersionId }
-        : {}),
-    }
-    const secret = String(section.api_key ?? '').trim()
-    if (secret) {
-      const clientRef = `insight:${domain}:${provider}`
-      credentialEdits.push({
+    vlm: { provider: vlmProvider },
+    chat: { provider: llmProvider, useSameAsVlm: config.llm.useSameAsVlm },
+    embedding: { provider: embeddingProvider },
+    reranker: { provider: rerankerProvider },
+    imageGen: { provider: imageGenProvider },
+  })
+
+  function appendProviderMutations<TDraft extends { apiKey: string }>(
+    domain: InsightProviderDomain,
+    drafts: Record<string, TDraft>,
+    activeProvider: string,
+    activeDraft: TDraft,
+    serialize: (draft: TDraft, label: string) => Record<string, unknown>
+  ): void {
+    const mergedDrafts = new Map(Object.entries(drafts))
+    mergedDrafts.set(activeProvider, activeDraft)
+    for (const [provider, draft] of mergedDrafts) {
+      if (!provider || provider !== provider.trim() || !isRecord(draft)) {
+        throw new Error(`${domain} provider draft 格式无效`)
+      }
+      if (typeof draft.apiKey !== 'string') {
+        throw new Error(`${domain}.${provider}.apiKey 格式无效`)
+      }
+      const existingRow = document.providerSettings.find(
+        row => row.domain === domain && row.provider === provider
+      )
+      const existingCredential = document.credentials.find(
+        row => row.domain === domain && row.provider === provider
+      )
+      const mutation: V2ProviderSettingMutation = {
         domain,
         provider,
-        secret: { api_key: secret },
-        baseRevision: existingCredential?.revision ?? 0,
-        credentialId: existingCredential?.credentialId,
-        clientRef,
-      })
-      mutation.credentialEditRef = clientRef
-      delete mutation.credentialVersionId
-    }
-    providerSettings.push(mutation)
-  }
-  const prompts = config.prompts ?? {}
-  if (Object.keys(prompts).length > 0) {
-    const currentPrompts = promptCache.length ? promptCache : await listV2Prompts()
-    for (const [type, content] of Object.entries(prompts)) {
-      const factory = currentPrompts.find(prompt => prompt.type === type && prompt.isFactoryDefault)
-      if (factory && factory.content !== content) {
-        const updated = await updateV2Prompt({ ...factory, content })
-        promptCache = promptCache.map(prompt => (prompt.id === updated.id ? updated : prompt))
+        payload: serialize(draft, `${domain}.${provider}`),
+        baseRevision: existingRow?.revision ?? 0,
+        schemaVersion: 1,
+        ...(existingRow?.credentialVersionId
+          ? { credentialVersionId: existingRow.credentialVersionId }
+          : {}),
       }
+      const secret = draft.apiKey.trim()
+      if (secret) {
+        const clientRef = `insight:${domain}:${provider}`
+        credentialEdits.push({
+          domain,
+          provider,
+          secret: { api_key: secret },
+          baseRevision: existingCredential?.revision ?? 0,
+          credentialId: existingCredential?.credentialId,
+          clientRef,
+        })
+        mutation.credentialEditRef = clientRef
+        delete mutation.credentialVersionId
+      }
+      providerSettings.push(mutation)
     }
   }
-  await saveV2SettingsTransaction({
+
+  const { provider: _vlmProvider, ...vlmDraft } = config.vlm
+  const { provider: _llmProvider, useSameAsVlm: _useSameAsVlm, ...llmDraft } = config.llm
+  const { provider: _embeddingProvider, ...embeddingDraft } = config.embedding
+  const { provider: _rerankerProvider, ...rerankerDraft } = config.reranker
+  const { provider: _imageGenProvider, ...imageGenDraft } = config.imageGen
+  appendProviderMutations(
+    INSIGHT_PROVIDER_DOMAINS.vlm,
+    providerDrafts.vlm,
+    vlmProvider,
+    vlmDraft,
+    serializeVlmDraft
+  )
+  appendProviderMutations(
+    INSIGHT_PROVIDER_DOMAINS.llm,
+    providerDrafts.llm,
+    llmProvider,
+    llmDraft,
+    serializeLlmDraft
+  )
+  appendProviderMutations(
+    INSIGHT_PROVIDER_DOMAINS.embedding,
+    providerDrafts.embedding,
+    embeddingProvider,
+    embeddingDraft,
+    serializeEmbeddingDraft
+  )
+  appendProviderMutations(
+    INSIGHT_PROVIDER_DOMAINS.reranker,
+    providerDrafts.reranker,
+    rerankerProvider,
+    rerankerDraft,
+    serializeRetriedProviderDraft
+  )
+  appendProviderMutations(
+    INSIGHT_PROVIDER_DOMAINS.imageGen,
+    providerDrafts.imageGen,
+    imageGenProvider,
+    imageGenDraft,
+    serializeRetriedProviderDraft
+  )
+
+  const prompts = config.prompts
+  if (!isRecord(prompts) || !hasExactKeys(prompts, INSIGHT_PROMPT_TYPES)) {
+    throw new Error('Insight 提示词设置字段不完整')
+  }
+  for (const type of INSIGHT_PROMPT_TYPES) {
+    const content = prompts[type]
+    const factory = currentPrompts.find(prompt => prompt.type === type && prompt.isFactoryDefault)
+    if (!factory) throw new Error(`后端默认提示词不存在：${type}`)
+    if (typeof content !== 'string') throw new Error(`提示词内容格式无效：${type}`)
+    if (factory.content === content) continue
+    promptEdits.push({
+      id: factory.id,
+      name: factory.name,
+      content,
+      baseRevision: factory.revision,
+    })
+  }
+  const saved = await saveV2SettingsTransaction({
     settings: [
       {
         domain: 'insight',
@@ -1112,8 +1837,10 @@ export async function saveGlobalConfig(config: AnalysisConfig): Promise<void> {
     ],
     providerSettings,
     credentialEdits,
+    promptEdits,
   })
-  await getGlobalConfig()
+  credentialSummaries = mergeCredentialSummaries(document.credentials, saved.credentials)
+  return withoutInsightApiKeys(snapshot)
 }
 
 function diagnosticRequest(
@@ -1129,20 +1856,33 @@ function diagnosticRequest(
   })
 }
 
-export function testVlmConnection(config: VlmConfig): Promise<V2ConnectionTestResult> {
+type InsightConnectionTestConfig = {
+  provider: string
+  api_key: string
+  model: string
+  base_url?: string
+}
+
+export function testVlmConnection(
+  config: InsightConnectionTestConfig
+): Promise<V2ConnectionTestResult> {
   return diagnosticRequest('vlm', 'insight_vlm', config)
 }
 
-export function testEmbeddingConnection(config: EmbeddingConfig): Promise<V2ConnectionTestResult> {
+export function testEmbeddingConnection(
+  config: InsightConnectionTestConfig
+): Promise<V2ConnectionTestResult> {
   return diagnosticRequest('embedding', 'insight_embedding', config)
 }
 
-export function testRerankerConnection(config: RerankerConfig): Promise<V2ConnectionTestResult> {
+export function testRerankerConnection(
+  config: InsightConnectionTestConfig
+): Promise<V2ConnectionTestResult> {
   return diagnosticRequest('reranker', 'insight_reranker', config)
 }
 
 export function testLlmConnection(
-  config: LlmConfig & { provider: string; api_key: string; model: string }
+  config: InsightConnectionTestConfig & { use_same_as_vlm: boolean }
 ): Promise<V2ConnectionTestResult> {
   return diagnosticRequest('llm', 'insight_chat', config)
 }
@@ -1160,50 +1900,64 @@ export function fetchModels(
   })
 }
 
+function readInsightFactoryPrompts(prompts: V2Prompt[]): Record<PromptType, string> {
+  const defaults = {} as Record<PromptType, string>
+  for (const type of INSIGHT_PROMPT_TYPES) {
+    const prompt = prompts.find(value => value.type === type && value.isFactoryDefault)
+    if (!prompt) throw new Error(`后端默认提示词不存在：${type}`)
+    defaults[type] = prompt.content
+  }
+  return defaults
+}
+
 export async function getDefaultPrompts(): Promise<Record<PromptType, string>> {
-  const prompts = promptCache.length > 0 ? promptCache : await listV2Prompts()
-  promptCache = prompts
-  return Object.fromEntries(
-    prompts.filter(prompt => prompt.isFactoryDefault).map(prompt => [prompt.type, prompt.content])
-  ) as Record<PromptType, string>
+  return readInsightFactoryPrompts(await listV2Prompts())
+}
+
+export async function resetDefaultPrompt(type: PromptType): Promise<string> {
+  const prompts = await listV2Prompts()
+  const factory = prompts.find(prompt => prompt.type === type && prompt.isFactoryDefault)
+  if (!factory) throw new Error(`默认提示词不存在：${type}`)
+  const reset = await resetV2Prompt(factory)
+  return reset.content
 }
 
 function savedPrompt(prompt: V2Prompt): SavedPromptItem {
+  if (!isInsightPromptType(prompt.type)) {
+    throw new Error(`不支持的 Insight 提示词类型：${prompt.type}`)
+  }
   return {
     id: prompt.id,
     name: prompt.name,
-    type: prompt.type as PromptType,
+    type: prompt.type,
     content: prompt.content,
-    created_at: '',
   }
 }
 
 export async function getPromptsLibrary(): Promise<SavedPromptItem[]> {
-  const prompts = promptCache.length > 0 ? promptCache : await listV2Prompts()
-  promptCache = prompts
-  return prompts.filter(prompt => !prompt.isFactoryDefault).map(savedPrompt)
+  const prompts = await listV2Prompts()
+  return prompts
+    .filter(prompt => !prompt.isFactoryDefault && isInsightPromptType(prompt.type))
+    .map(savedPrompt)
 }
 
-export async function savePromptToLibrary(prompt: SavedPromptItem): Promise<SavedPromptItem> {
-  const existing = promptCache.find(value => value.id === prompt.id)
-  const saved = existing
-    ? await updateV2Prompt({ ...existing, name: prompt.name, content: prompt.content })
-    : await createV2Prompt(prompt.type, prompt.name, prompt.content)
-  promptCache = [...promptCache.filter(value => value.id !== saved.id), saved]
+export async function savePromptToLibrary(prompt: SavedPromptInput): Promise<SavedPromptItem> {
+  const saved = await createV2Prompt(prompt.type, prompt.name, prompt.content)
   return savedPrompt(saved)
 }
 
 export async function deletePromptFromLibrary(promptId: string): Promise<void> {
   await deleteV2Prompt(promptId)
-  promptCache = promptCache.filter(prompt => prompt.id !== promptId)
 }
 
 export async function importPromptsLibrary(
-  library: SavedPromptItem[]
+  library: SavedPromptInput[]
 ): Promise<SavedPromptItem[]> {
   const current = await listV2Prompts()
-  promptCache = current
   for (const prompt of library) {
+    if (!isInsightPromptType(prompt.type)) {
+      throw new Error(`不支持的 Insight 提示词类型：${prompt.type}`)
+    }
     const existing = current.find(
       value => !value.isFactoryDefault && value.type === prompt.type && value.name === prompt.name
     )
@@ -1213,9 +1967,9 @@ export async function importPromptsLibrary(
       await createV2Prompt(prompt.type, prompt.name, prompt.content)
     }
   }
-  promptCache = await listV2Prompts()
-  return promptCache
-    .filter(prompt => !prompt.isFactoryDefault)
+  const saved = await listV2Prompts()
+  return saved
+    .filter(prompt => !prompt.isFactoryDefault && isInsightPromptType(prompt.type))
     .map(savedPrompt)
 }
 

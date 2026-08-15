@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import itertools
 import json
 import logging
 import re
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from collections.abc import Callable
+from typing import Any
 
 from src.shared.ai_providers import (
     PLUGIN_AGENT_CAPABILITY,
@@ -16,7 +18,6 @@ from src.shared.openai_execution import (
     OpenAICompatibleBusinessRetryableError,
     OpenAICompatibleSyncExecutor,
     build_openai_compatible_runtime_options,
-    parse_json_block_from_text,
 )
 from src.shared.openai_options import OpenAICompatibleOptions
 
@@ -24,10 +25,44 @@ from .models import PluginAgentSession
 
 logger = logging.getLogger("PluginAgent.Controller")
 _ASSISTANT_MESSAGE_PATTERN = re.compile(r'"assistant_message"\s*:\s*"')
+_PLANNING_FIELDS = {"assistant_message", "target_proposal"}
+_EXECUTION_FIELDS = {"assistant_message", "action"}
+_ACTION_FIELDS = {"tool", "args"}
+_TARGET_FIELDS = {
+    "plugin_id",
+    "display_name",
+    "supported_steps",
+    "supported_modes",
+}
+_TOOLS = {
+    "list_files",
+    "read_file",
+    "write_file",
+    "delete_file",
+    "read_skill",
+    "validate_plugin",
+    "finish",
+}
+_TARGET_STEPS = {
+    "job",
+    "pipeline",
+    "detect",
+    "ocr",
+    "color",
+    "translate",
+    "ai_translate",
+    "inpaint",
+    "render",
+}
+_TARGET_MODES = {"standard", "hq", "proofread", "remove_text"}
 
 
-def _decode_json_string_prefix(raw_text: str) -> Tuple[str, bool]:
-    decoded: List[str] = []
+class PluginAgentControlRequested(RuntimeError):
+    """The durable job requested pause or cancellation at a safe point."""
+
+
+def _decode_json_string_prefix(raw_text: str) -> tuple[str, bool]:
+    decoded: list[str] = []
     index = 0
     while index < len(raw_text):
         character = raw_text[index]
@@ -81,7 +116,7 @@ def _decode_json_string_prefix(raw_text: str) -> Tuple[str, bool]:
 
 
 class PluginAgentController:
-    def __init__(self, transport: Optional[OpenAICompatibleChatTransport] = None) -> None:
+    def __init__(self, transport: OpenAICompatibleChatTransport | None = None) -> None:
         self.transport = transport or OpenAICompatibleChatTransport()
         self.executor = OpenAICompatibleSyncExecutor(self.transport)
 
@@ -89,8 +124,8 @@ class PluginAgentController:
         self,
         session: PluginAgentSession,
         skill_markdown: str,
-        agent_config: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        agent_config: dict[str, Any],
+    ) -> dict[str, Any]:
         system_prompt = self._build_planning_system_prompt(session)
         messages = self._build_chat_messages(session, system_prompt, skill_markdown)
         return self._call_agent_json(messages, agent_config, label="PluginAgent-Planning")
@@ -99,18 +134,24 @@ class PluginAgentController:
         self,
         session: PluginAgentSession,
         skill_markdown: str,
-        agent_config: Dict[str, Any],
+        agent_config: dict[str, Any],
         tool_executor,
         emit_event,
-    ) -> Dict[str, Any]:
-        recent_results: List[Dict[str, Any]] = []
-        last_validation: Optional[Dict[str, Any]] = None
+    ) -> dict[str, Any]:
+        tool_history: list[dict[str, Any]] = []
+        last_validation: dict[str, Any] | None = None
 
-        for iteration in range(1, 13):
-            if tool_executor.is_cancelled():
-                raise RuntimeError("任务已取消")
+        for iteration in itertools.count(1):
+            if tool_executor.is_control_requested():
+                raise PluginAgentControlRequested(
+                    "plugin agent job control requested"
+                )
 
-            system_prompt = self._build_execution_system_prompt(session, recent_results, iteration)
+            system_prompt = self._build_execution_system_prompt(
+                session,
+                tool_history,
+                iteration,
+            )
             messages = self._build_execution_messages(session, system_prompt, skill_markdown)
             stream_id = f"execution-{iteration}"
             last_stream_content = ""
@@ -134,15 +175,27 @@ class PluginAgentController:
                     },
                 )
 
+            def check_control() -> None:
+                if tool_executor.is_control_requested():
+                    raise PluginAgentControlRequested(
+                        "plugin agent job control requested"
+                    )
+
+            def handle_stream_chunk(_chunk: str, content: str) -> None:
+                check_control()
+                emit_streaming_assistant(content)
+
             envelope = self._call_agent_json(
                 messages,
                 agent_config,
                 label="PluginAgent-Execution",
-                on_stream_chunk=lambda _chunk, content: emit_streaming_assistant(content),
+                on_stream_chunk=handle_stream_chunk,
+                before_request=check_control,
                 require_action=True,
             )
+            check_control()
 
-            assistant_message = str(envelope.get("assistant_message") or "").strip()
+            assistant_message = envelope["assistant_message"].strip()
             if assistant_message:
                 emit_streaming_assistant(json.dumps({"assistant_message": assistant_message}, ensure_ascii=False), force=True)
                 emit_event(
@@ -154,24 +207,31 @@ class PluginAgentController:
                     },
                 )
 
-            action = envelope.get("action") or {}
-            tool_name = str(action.get("tool") or "").strip()
-            if not tool_name:
-                raise ValueError("Agent 未返回有效工具动作")
+            action = envelope["action"]
+            tool_name = action["tool"]
 
             if tool_name == "finish":
+                if action["args"]:
+                    raise OpenAICompatibleBusinessRetryableError(
+                        "Agent finish 动作不能包含参数"
+                    )
                 final_validation = last_validation or tool_executor.validate_plugin()
-                if not final_validation.get("success"):
-                    raise ValueError(final_validation.get("error") or "插件校验失败")
+                self._validate_tool_result("validate_plugin", final_validation)
+                if not final_validation["success"]:
+                    error = final_validation.get("error")
+                    raise ValueError(
+                        error if isinstance(error, str) and error else "插件校验失败"
+                    )
                 return {
                     "assistant_message": assistant_message or "插件任务完成。",
                     "validation": final_validation,
                 }
 
-            tool_args = action.get("args") if isinstance(action.get("args"), dict) else {}
+            tool_args = action["args"]
             group_id = f"tool-{iteration}"
             emit_event("tool_call", self._build_tool_call_payload(tool_name, tool_args, group_id))
             tool_result = tool_executor.run_tool(tool_name, tool_args)
+            self._validate_tool_result(tool_name, tool_result)
             emit_event("tool_result", self._build_tool_result_payload(tool_name, tool_result, group_id))
 
             if tool_name == "validate_plugin":
@@ -180,31 +240,48 @@ class PluginAgentController:
             elif tool_name in {"write_file", "delete_file"}:
                 last_validation = None
 
-            recent_results.append(
+            tool_history.append(
                 {
                     "tool": tool_name,
-                    "args": self._shrink_tool_args(tool_name, tool_args),
-                    "result": self._shrink_tool_result(tool_result),
+                    "args": dict(tool_args),
+                    "result": dict(tool_result),
                 }
             )
-            recent_results = recent_results[-8:]
-
-        raise RuntimeError("Agent 超过最大迭代次数仍未完成")
 
     def _call_agent_json(
         self,
-        messages: List[Dict[str, Any]],
-        agent_config: Dict[str, Any],
+        messages: list[dict[str, Any]],
+        agent_config: dict[str, Any],
         *,
         label: str,
-        on_stream_chunk: Optional[Callable[[str, str], None]] = None,
+        on_stream_chunk: Callable[[str, str], None] | None = None,
+        before_request: Callable[[], None] | None = None,
         require_action: bool = False,
-    ) -> Dict[str, Any]:
-        provider = normalize_provider_id(agent_config.get("provider"))
-        api_key = agent_config.get("api_key", "")
-        model_name = agent_config.get("model_name", "")
-        custom_base_url = agent_config.get("custom_base_url") or None
-        openai_options = agent_config.get("openai_options")
+    ) -> dict[str, Any]:
+        expected_config_fields = {
+            "provider",
+            "credential_version_id",
+            "api_key",
+            "model_name",
+            "custom_base_url",
+            "openai_options",
+        }
+        if not isinstance(agent_config, dict) or set(agent_config) != expected_config_fields:
+            raise ValueError("agent_config 字段无效")
+        string_fields = ("provider", "api_key", "model_name", "custom_base_url")
+        if any(not isinstance(agent_config[field], str) for field in string_fields):
+            raise ValueError("agent_config 文本字段必须是字符串")
+        credential_version_id = agent_config["credential_version_id"]
+        if credential_version_id is not None and not isinstance(
+            credential_version_id,
+            str,
+        ):
+            raise ValueError("agent_config.credential_version_id 必须是字符串或 null")
+        provider = normalize_provider_id(agent_config["provider"])
+        api_key = agent_config["api_key"]
+        model_name = agent_config["model_name"]
+        custom_base_url = agent_config["custom_base_url"] or None
+        openai_options = agent_config["openai_options"]
         if not isinstance(openai_options, OpenAICompatibleOptions):
             raise ValueError("agent_config.openai_options 必须是 OpenAICompatibleOptions")
 
@@ -224,11 +301,7 @@ class PluginAgentController:
                 provider=provider,
                 api_key=api_key,
                 model=model_name,
-                credential_version_id=(
-                    str(agent_config["credential_version_id"])
-                    if agent_config.get("credential_version_id")
-                    else None
-                ),
+                credential_version_id=credential_version_id,
                 base_url=custom_base_url,
                 capability=PLUGIN_AGENT_CAPABILITY,
                 openai_options=openai_options,
@@ -243,10 +316,10 @@ class PluginAgentController:
             capability=PLUGIN_AGENT_CAPABILITY,
             parser=lambda content: self._parse_agent_envelope(
                 content,
-                force_json_output=openai_options.request.force_json_output,
                 require_action=require_action,
             ),
             logger_instance=logger,
+            before_request=before_request,
         )
         return result.parsed
 
@@ -254,17 +327,11 @@ class PluginAgentController:
     def _parse_agent_envelope(
         content: str,
         *,
-        force_json_output: bool,
         require_action: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         try:
-            if force_json_output:
-                parsed = json.loads(content)
-            else:
-                parsed = parse_json_block_from_text(content)
-        except OpenAICompatibleBusinessRetryableError:
-            raise
-        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            parsed = json.loads(content)
+        except (TypeError, json.JSONDecodeError) as exc:
             raise OpenAICompatibleBusinessRetryableError(
                 f"Agent JSON 解析失败: {exc}"
             ) from exc
@@ -272,20 +339,205 @@ class PluginAgentController:
             raise OpenAICompatibleBusinessRetryableError(
                 "Agent 返回结果必须是 JSON 对象"
             )
-        if require_action:
-            action = parsed.get("action")
-            if (
-                not isinstance(action, dict)
-                or not str(action.get("tool") or "").strip()
+        expected_fields = _EXECUTION_FIELDS if require_action else _PLANNING_FIELDS
+        if set(parsed) != expected_fields:
+            raise OpenAICompatibleBusinessRetryableError(
+                "Agent 返回结果字段与当前阶段不匹配"
+            )
+        assistant_message = parsed["assistant_message"]
+        if not isinstance(assistant_message, str):
+            raise OpenAICompatibleBusinessRetryableError(
+                "Agent assistant_message 必须是字符串"
+            )
+        if not require_action:
+            target = parsed["target_proposal"]
+            if target is not None and (
+                not isinstance(target, dict) or set(target) != _TARGET_FIELDS
             ):
                 raise OpenAICompatibleBusinessRetryableError(
-                    "Agent 未返回有效工具动作"
+                    "Agent target_proposal 字段无效"
                 )
-            if "args" in action and not isinstance(action["args"], dict):
-                raise OpenAICompatibleBusinessRetryableError(
-                    "Agent 工具动作 args 必须是 JSON 对象"
+            if target is not None:
+                plugin_id = target["plugin_id"]
+                display_name = target["display_name"]
+                if (
+                    not isinstance(plugin_id, str)
+                    or not plugin_id.strip()
+                    or not isinstance(display_name, str)
+                    or not display_name.strip()
+                ):
+                    raise OpenAICompatibleBusinessRetryableError(
+                        "Agent target_proposal 文本字段无效"
+                    )
+                PluginAgentController._validate_target_values(
+                    target["supported_steps"],
+                    allowed=_TARGET_STEPS,
+                    field="supported_steps",
                 )
+                PluginAgentController._validate_target_values(
+                    target["supported_modes"],
+                    allowed=_TARGET_MODES,
+                    field="supported_modes",
+                )
+            return parsed
+
+        action = parsed["action"]
+        if not isinstance(action, dict) or set(action) != _ACTION_FIELDS:
+            raise OpenAICompatibleBusinessRetryableError(
+                "Agent 工具动作字段无效"
+            )
+        tool_name = action["tool"]
+        if not isinstance(tool_name, str) or tool_name not in _TOOLS:
+            raise OpenAICompatibleBusinessRetryableError(
+                "Agent 未返回受支持的工具动作"
+            )
+        if not isinstance(action["args"], dict):
+            raise OpenAICompatibleBusinessRetryableError(
+                "Agent 工具动作 args 必须是 JSON 对象"
+            )
+        PluginAgentController._validate_tool_args(tool_name, action["args"])
         return parsed
+
+    @staticmethod
+    def _require_tool_result(result: object) -> None:
+        if not isinstance(result, dict) or not isinstance(
+            result.get("success"),
+            bool,
+        ):
+            raise TypeError("Plugin Agent 工具必须返回带布尔 success 的对象")
+
+    @classmethod
+    def _validate_tool_result(
+        cls,
+        tool_name: str,
+        result: object,
+    ) -> None:
+        cls._require_tool_result(result)
+        if not isinstance(result, dict):
+            raise TypeError("Plugin Agent 工具结果必须是对象")
+        success = result["success"]
+        if tool_name == "validate_plugin":
+            expected = (
+                {
+                    "success",
+                    "plugin_id",
+                    "package_version",
+                    "hooks",
+                    "python_files",
+                }
+                if success
+                else {"success", "error"}
+            )
+        else:
+            expected = {
+                "list_files": {"success", "base_path", "entries"},
+                "read_file": {"success", "path", "content", "preview"},
+                "write_file": {"success", "path", "size", "preview"},
+                "delete_file": {"success", "path"},
+                "read_skill": {"success", "content", "preview"},
+            }[tool_name]
+        if set(result) != expected:
+            raise TypeError(f"Plugin Agent {tool_name} 工具结果字段无效")
+
+        if not success:
+            if not isinstance(result["error"], str) or not result["error"]:
+                raise TypeError("Plugin Agent 校验错误必须是非空字符串")
+            return
+        if tool_name == "list_files":
+            if not isinstance(result["base_path"], str) or not isinstance(
+                result["entries"],
+                list,
+            ):
+                raise TypeError("Plugin Agent 目录结果无效")
+            for entry in result["entries"]:
+                if (
+                    not isinstance(entry, dict)
+                    or set(entry) != {"path", "name", "type", "size"}
+                    or not isinstance(entry["path"], str)
+                    or not isinstance(entry["name"], str)
+                    or entry["type"] not in {"file", "directory"}
+                    or not (
+                        (entry["type"] == "directory" and entry["size"] is None)
+                        or (
+                            entry["type"] == "file"
+                            and not isinstance(entry["size"], bool)
+                            and isinstance(entry["size"], int)
+                            and entry["size"] >= 0
+                        )
+                    )
+                ):
+                    raise TypeError("Plugin Agent 目录条目无效")
+            return
+        if tool_name in {"read_file", "write_file", "delete_file"}:
+            if not isinstance(result["path"], str) or not result["path"]:
+                raise TypeError("Plugin Agent 文件工具结果路径无效")
+        if tool_name in {"read_file", "read_skill"}:
+            if not isinstance(result["content"], str):
+                raise TypeError("Plugin Agent 读取结果内容无效")
+        if tool_name in {"read_file", "write_file", "read_skill"}:
+            if not isinstance(result["preview"], str):
+                raise TypeError("Plugin Agent 工具结果预览无效")
+        if tool_name == "write_file" and (
+            isinstance(result["size"], bool)
+            or not isinstance(result["size"], int)
+            or result["size"] < 0
+        ):
+            raise TypeError("Plugin Agent 写入结果大小无效")
+        if tool_name == "validate_plugin" and (
+            not isinstance(result["plugin_id"], str)
+            or not result["plugin_id"]
+            or not isinstance(result["package_version"], str)
+            or not result["package_version"]
+            or not isinstance(result["hooks"], list)
+            or any(not isinstance(hook, str) for hook in result["hooks"])
+            or isinstance(result["python_files"], bool)
+            or not isinstance(result["python_files"], int)
+            or result["python_files"] < 1
+        ):
+            raise TypeError("Plugin Agent 校验成功结果无效")
+
+    @staticmethod
+    def _validate_target_values(
+        value: object,
+        *,
+        allowed: set[str],
+        field: str,
+    ) -> None:
+        if (
+            not isinstance(value, list)
+            or not value
+            or any(not isinstance(item, str) or item not in allowed for item in value)
+            or len(set(value)) != len(value)
+        ):
+            raise OpenAICompatibleBusinessRetryableError(
+                f"Agent target_proposal.{field} 无效"
+            )
+
+    @staticmethod
+    def _validate_tool_args(tool_name: str, args: dict[str, Any]) -> None:
+        expected_fields = {
+            "list_files": (set(), {"path"}),
+            "read_file": ({"path"},),
+            "write_file": ({"path", "content"},),
+            "delete_file": ({"path"},),
+            "read_skill": (set(),),
+            "validate_plugin": (set(),),
+            "finish": (set(),),
+        }[tool_name]
+        if set(args) not in expected_fields:
+            raise OpenAICompatibleBusinessRetryableError(
+                f"Agent {tool_name} 工具参数字段无效"
+            )
+        if "path" in args and (
+            not isinstance(args["path"], str) or not args["path"].strip()
+        ):
+            raise OpenAICompatibleBusinessRetryableError(
+                f"Agent {tool_name}.path 必须是非空字符串"
+            )
+        if "content" in args and not isinstance(args["content"], str):
+            raise OpenAICompatibleBusinessRetryableError(
+                "Agent write_file.content 必须是字符串"
+            )
 
     def _build_planning_system_prompt(self, session: PluginAgentSession) -> str:
         locked_target = session.locked_target.plugin_id if session.locked_target else "未锁定"
@@ -321,8 +573,8 @@ class PluginAgentController:
         session: PluginAgentSession,
         system_prompt: str,
         skill_markdown: str,
-    ) -> List[Dict[str, Any]]:
-        messages: List[Dict[str, Any]] = [
+    ) -> list[dict[str, Any]]:
+        messages: list[dict[str, Any]] = [
             {
                 "role": "system",
                 "content": (
@@ -332,28 +584,32 @@ class PluginAgentController:
                 ),
             },
         ]
-        for item in session.messages[-8:]:
+        for item in session.messages:
             messages.append({"role": item.role, "content": item.content})
         return messages
 
     def _build_execution_system_prompt(
         self,
         session: PluginAgentSession,
-        recent_results: List[Dict[str, Any]],
+        tool_history: list[dict[str, Any]],
         iteration: int,
     ) -> str:
         if session.locked_target is None:
             raise ValueError("执行阶段缺少 locked_target")
-        recent_json = json.dumps(recent_results, ensure_ascii=False, indent=2) if recent_results else "[]"
+        history_json = (
+            json.dumps(tool_history, ensure_ascii=False, indent=2)
+            if tool_history
+            else "[]"
+        )
         return (
             "你是 Saber Translator 的内置插件编程 Agent，正在执行插件开发任务。\n"
             "你只能操作当前锁定插件目录，不能访问项目其他目录，不能切换到第二个插件。\n"
             "一次只返回一个工具动作，不要同时返回多个动作。\n"
-            f"当前迭代: {iteration}/12\n"
+            f"当前迭代: {iteration}\n"
             f"锁定插件: {session.locked_target.plugin_id}\n"
             f"插件目录: {session.locked_target.plugin_dir}\n"
             f"会话模式: {session.mode}\n"
-            f"近期工具结果: {recent_json}\n\n"
+            f"完整工具历史: {history_json}\n\n"
             "可用工具：list_files, read_file, write_file, delete_file, read_skill, validate_plugin, finish\n"
             "请只返回 JSON 对象，结构如下：\n"
             "{\n"
@@ -379,8 +635,8 @@ class PluginAgentController:
         session: PluginAgentSession,
         system_prompt: str,
         skill_markdown: str,
-    ) -> List[Dict[str, Any]]:
-        messages: List[Dict[str, Any]] = [
+    ) -> list[dict[str, Any]]:
+        messages: list[dict[str, Any]] = [
             {
                 "role": "system",
                 "content": (
@@ -390,45 +646,24 @@ class PluginAgentController:
                 ),
             },
         ]
-        for item in session.messages[-10:]:
+        for item in session.messages:
             messages.append({"role": item.role, "content": item.content})
         return messages
 
     @staticmethod
-    def _shrink_tool_result(result: Dict[str, Any]) -> Dict[str, Any]:
-        raw = dict(result)
-        content = raw.get("content")
-        if isinstance(content, str) and len(content) > 1200:
-            raw["content"] = content[:1200] + "\n...[truncated]..."
-        preview = raw.get("preview")
-        if isinstance(preview, str) and len(preview) > 1200:
-            raw["preview"] = preview[:1200] + "\n...[truncated]..."
-        return raw
-
-    @staticmethod
-    def _shrink_tool_args(
-        tool_name: str,
-        tool_args: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        raw = dict(tool_args)
-        if tool_name == "write_file":
-            content = str(raw.pop("content", ""))
-            raw["content_length"] = len(content)
-        for key, value in tuple(raw.items()):
-            if isinstance(value, str) and len(value) > 1200:
-                raw[key] = value[:1200] + "\n...[truncated]..."
-        return raw
-
-    @staticmethod
-    def _extract_assistant_message_prefix(raw_text: str) -> Tuple[Optional[str], bool]:
+    def _extract_assistant_message_prefix(raw_text: str) -> tuple[str | None, bool]:
         match = _ASSISTANT_MESSAGE_PATTERN.search(raw_text)
         if not match:
             return None, False
         return _decode_json_string_prefix(raw_text[match.end() :])
 
     @staticmethod
-    def _build_tool_call_payload(tool_name: str, tool_args: Dict[str, Any], group_id: str) -> Dict[str, Any]:
-        path = str(tool_args.get("path") or "").strip()
+    def _build_tool_call_payload(
+        tool_name: str,
+        tool_args: dict[str, Any],
+        group_id: str,
+    ) -> dict[str, Any]:
+        path = tool_args.get("path", "")
         if tool_name == "write_file":
             summary = f"准备写入文件 {path or '未指定路径'}"
         elif tool_name == "read_file":
@@ -444,11 +679,11 @@ class PluginAgentController:
         else:
             summary = f"执行工具 {tool_name}"
 
-        args_preview: Dict[str, Any] = {}
+        args_preview: dict[str, Any] = {}
         if path:
             args_preview["path"] = path
         if tool_name == "write_file":
-            args_preview["content_length"] = len(str(tool_args.get("content") or ""))
+            args_preview["content_length"] = len(tool_args["content"])
 
         return {
             "group_id": group_id,
@@ -458,12 +693,20 @@ class PluginAgentController:
         }
 
     @classmethod
-    def _build_tool_result_payload(cls, tool_name: str, tool_result: Dict[str, Any], group_id: str) -> Dict[str, Any]:
-        success = bool(tool_result.get("success", True))
-        path = str(tool_result.get("path") or "").strip()
+    def _build_tool_result_payload(
+        cls,
+        tool_name: str,
+        tool_result: dict[str, Any],
+        group_id: str,
+    ) -> dict[str, Any]:
+        success = tool_result["success"]
+        raw_path = tool_result.get("path")
+        if raw_path is not None and not isinstance(raw_path, str):
+            raise TypeError("Plugin Agent 工具结果 path 必须是字符串")
+        path = raw_path or ""
         summary = cls._summarize_tool_result(tool_name, tool_result, success)
-        changed_files: List[str] = []
-        file_previews: Dict[str, str] = {}
+        changed_files: list[str] = []
+        file_previews: dict[str, str] = {}
         if tool_name == "write_file" and path:
             changed_files.append(path)
             preview = tool_result.get("preview")
@@ -478,22 +721,36 @@ class PluginAgentController:
             "success": success,
             "changed_files": changed_files,
             "file_previews": file_previews,
-            "debug_result": cls._shrink_tool_result(tool_result),
+            "debug_result": dict(tool_result),
         }
 
     @staticmethod
-    def _build_validation_payload(validation_result: Dict[str, Any]) -> Dict[str, Any]:
-        success = bool(validation_result.get("success"))
+    def _build_validation_payload(
+        validation_result: dict[str, Any],
+    ) -> dict[str, Any]:
+        PluginAgentController._require_tool_result(validation_result)
+        success = validation_result["success"]
         if success:
-            plugin_label = str(
-                validation_result.get("plugin_id") or "当前插件"
-            )
+            plugin_id = validation_result.get("plugin_id")
+            if plugin_id is not None and not isinstance(plugin_id, str):
+                raise TypeError("Plugin Agent 校验结果 plugin_id 必须是字符串")
+            plugin_label = plugin_id or "当前插件"
             package_version = validation_result.get("package_version")
+            if package_version is not None and not isinstance(
+                package_version,
+                str,
+            ):
+                raise TypeError(
+                    "Plugin Agent 校验结果 package_version 必须是字符串"
+                )
             if package_version:
                 plugin_label = f"{plugin_label} {package_version}"
             summary = f"插件校验通过：{plugin_label}"
         else:
-            summary = f"插件校验失败：{validation_result.get('error') or '未知错误'}"
+            error = validation_result.get("error")
+            if error is not None and not isinstance(error, str):
+                raise TypeError("Plugin Agent 校验结果 error 必须是字符串")
+            summary = f"插件校验失败：{error or '未知错误'}"
         return {
             "summary": summary,
             "success": success,
@@ -501,7 +758,11 @@ class PluginAgentController:
         }
 
     @staticmethod
-    def _summarize_tool_result(tool_name: str, tool_result: Dict[str, Any], success: bool) -> str:
+    def _summarize_tool_result(
+        tool_name: str,
+        tool_result: dict[str, Any],
+        success: bool,
+    ) -> str:
         if tool_name == "write_file":
             return f"{'已写入' if success else '写入失败'} {tool_result.get('path') or '文件'}"
         if tool_name == "read_file":

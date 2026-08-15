@@ -18,11 +18,11 @@
 
 **结论：GO，可以按本文开始重构。** 本文已作为最终架构基线冻结，第一步只能从阶段 0“契约与骨架”开工，不能跳过阶段 0 直接边写页面 handler 边补数据库。阶段 0 的退出门禁为：
 
-1. 关键 ADR、SQLAlchemy Metadata/首个 Alembic revision、SQLite partial index/FK 删除矩阵和状态机测试形成可评审产物。
+1. 本文关键决策、SQLAlchemy Metadata/唯一 Alembic foundation、SQLite partial index/FK 删除矩阵和状态机测试形成可评审产物。
 2. OpenAPI 已冻结页面 batch mutation、统一 page-repair multipart、operation kind、job transition、Idempotency-Key 和 Studio session fencing，并能生成前端 TypeScript 类型。
 3. `Launcher + 独立 v2 API + Worker` 最小骨架可启动；API import graph 在源码态/打包态均证明不加载 torch、Chroma、插件业务代码或 legacy 高层渲染入口。
 4. Worker/API executor epoch、attempt/lease fencing、续租失败后的执行器自我隔离、章节写入意图/排空屏障、队列/ordinal 算法、pause/cancel drain 和对象提交 journal 均有故障注入测试设计，实施阶段不得另造第二套语义。
-5. 阶段 0 发现本文与真实技术约束冲突时，必须先更新本文与 ADR 再改实现；任何页面临时兼容、双写或绕过 Repository 的方案都不视为可接受捷径。
+5. 阶段 0 发现本文与真实技术约束冲突时，必须先更新本文对应决策再改实现；任何页面临时兼容、双写或绕过 Repository 的方案都不视为可接受捷径。
 
 阶段 0 通过后依次执行阶段 1–6；用户可见正式入口仍只在阶段 6 全量验收通过后一次切换。
 
@@ -66,7 +66,7 @@
 | Insight 派生物刷新 | 只有全书 run 在任务内生成默认派生物；单页、章节和增量任务完成后只标 stale，由用户手动重建 |
 | Character Studio | 文档使用 revision CAS，会话另用 revision + generation fencing；保存型生成/聊天/总结使用持久 operation，断线后继续并落库，旧回复不能覆盖已编辑/中止会话；助手对话不持久化且断线取消 |
 | 书架页面 | 列表/详情/标签迁 SQLite 参数化查询（标签 AND 语义）；封面为 WebP 资产；详情章节多选与主页书籍批量模式创建翻译任务批次；章节徽章+卡片角标显示任务状态；删除 description 与前端二次过滤 |
-| 任务中心 | 全局抽屉+顶栏角标，无独立路由页；队列按批次卡片可展开组织；历史按批次保留最近 200 批；提供排序、取消全部排队与批次级继续，不提供“开始队列” |
+| 任务中心 | 全局抽屉+顶栏角标，无独立路由页；非终态队列快照完整返回并按批次卡片可展开组织；历史按批次保留最近 200 批；提供排序、取消全部排队与批次级继续，不提供“开始队列” |
 | 阅读器 | 纯只读消费端：一次取全章元数据（all=1）+资产 URL、视口窗口化渲染；不做阅读进度、翻页模式、章节预取；译图缺失回退原图并角标提示 |
 | 设置与凭据 | 全局设置按 domain JSON 存储，Insight 单书覆盖使用独立 book_settings；凭据使用不可变 credential_versions；每个设置弹窗的设置、Provider 记忆和凭据编辑在一次后端事务中原子保存 |
 | 插件 | v3 钩子全部在 Worker 执行；插件包使用不可变 plugin_versions，任务冻结并引用具体包版本；API 只读 manifest/config schema，不加载插件业务代码 |
@@ -156,13 +156,13 @@ flowchart LR
 - Worker 心跳过期由 API 的共享轮询器判定并落库（running → interrupted，§7.3）；任务中心在 worker_leases 心跳丢失时显示"Worker 离线"横幅，Worker 重启回归后自动消除。
 - Worker 崩溃重启后：running/pausing 转 interrupted 等待用户手动继续，cancelling 转 cancelled；其余 queued 任务保持 FIFO 顺序并在 Worker 恢复后自动继续。
 - API 单进程重启不影响 Worker 与队列执行（§7.7）；Launcher 必须先确认旧 API 进程已终止并使旧 `api_epoch_id` 失效，再启动替代 API。旧 epoch 下 running 的远程 operation 置 failed，pending operation 和可安全重做的 render/CPU operation 才可由新 epoch 领取；前端 SSE 断线重连按事件序号补发。
-- Launcher 执行 Alembic 前使用 SQLite Backup API 创建一次仅供升级失败回滚的临时数据库副本；备份在 API/Worker 尚未启动且 Launcher 已持有数据根单实例锁时完成，必须包含 WAL 中已提交内容，禁止只复制单个 `.sqlite3` 文件。迁移成功并完成 schema smoke test 后才删除副本；迁移失败时不启动子进程并保留副本用于自动回滚。这不是用户备份功能，不提供备份/恢复界面。涉及 objects 关系变化的未来迁移必须使用可恢复 migration journal，禁止先破坏性修改不可变文件再迁数据库。
+- Launcher 只接受空数据根或与当前 foundation revision 完全一致的数据库；revision 不匹配时拒绝启动并提示清空 `data-v2`。不创建升级备份、不执行旧数据迁移，也不提供备份/恢复界面。
 
 **唯一启动与恢复顺序**：
 
 1. Launcher 解析并规范化 data root，获取该根的单实例锁；锁未取得时立即退出。
-2. 完成 SQLite Backup API 升级副本、Alembic 迁移和数据库完整性/schema smoke test。
-3. Launcher 在一个短事务中登记新的 `launcher_epoch_id`，并调用唯一的 `reconcile_dead_worker()` 与 `reconcile_dead_api_executor()` 恢复命令。新 Launcher 已取得单实例锁且旧 Windows Job Object 中的子进程已终止时，可确定旧 worker/API epoch 已失效；普通 API 自动重启只执行由 Launcher 裁决的 API executor 恢复，绝不执行 Worker 恢复。
+2. 空数据根通过 Alembic foundation 创建当前 schema；已有数据根先校验 revision，再执行数据库完整性/schema smoke test。
+3. Launcher 登记新的 `launcher_epoch_id`，并调用唯一的 `reconcile_dead_worker()` 与 `reconcile_dead_api_executor()` 恢复命令。新 Launcher 已取得单实例锁且按 §4.3 的平台进程所有权确认旧子进程已终止时，才可确定旧 worker/API epoch 已失效；普通 API 自动重启只执行由 Launcher 裁决的 API executor 恢复，绝不执行 Worker 恢复。
 4. `reconcile_dead_worker()` 以旧 `worker_epoch_id + lease_token` 为 fencing 条件，原子执行：旧 running/pausing → interrupted、旧 cancelling → cancelled、保留 paused/interrupted 的章节锁、删除旧 epoch 持有的 `chapter_write_intents`（对应 job 保持 queued）、使旧 attempt 永久失去写回资格。命令可重复执行且结果幂等。
 5. `reconcile_dead_api_executor()` 以旧 `api_epoch_id + lease_token` 为 fencing 条件，原子执行：旧 API epoch 下 running 的远程 operation → failed（`API_EXECUTOR_LOST`），可安全重做的 running render/CPU operation → pending，并使旧 attempt 永久失去写回资格；pending 保持 pending。随后 Launcher 登记新 `api_epoch_id`，把只在当前子进程内存中可用的高熵 `api_epoch_token` 通过仅对子进程可见的继承环境/匿名管道传入 API，不放命令行、数据库明文或日志。
 6. 启动 API 并通过健康检查；API 只领取绑定当前 `api_epoch_id` 的 pending render/remote/CPU operation，不因自身启动改变任何健康 Worker job。API 进程不得自行宣告前一个 API epoch 失效。
@@ -189,7 +189,7 @@ API 进程负责短请求，不直接执行翻译和 Insight 长任务：
 
 API 进程不加载检测、OCR、LaMA 等大型本地模型，**禁止 import torch、禁止直连 ChromaDB、禁止加载插件业务代码**。纯渲染模块必须从现有渲染链路中抽离为不依赖 torch 的纯 PIL/numpy/freetype 模块，API 启动测试断言 `torch` 不在 `sys.modules`。Worker 中的任务最终渲染复用同一纯函数模块，但不通过 API 回调。
 
-这一边界从 v2 第一条启动链路开始成立，不能依赖阶段 6 删除旧路由后才成立。v2 API 必须由独立 app factory 创建并只注册 v2 蓝图；现有 legacy `app.py`、旧 `src.app.api` 聚合蓝图和旧插件管理器不得被 v2 API 角色导入。开发期间如需保留旧程序用于行为对照，只能通过独立 legacy 入口单独启动，禁止把旧蓝图与 v2 蓝图注册到同一个 API 进程。
+这一边界从 v2 第一条启动链路开始成立。v2 API 必须由独立 app factory 创建并只注册 v2 蓝图；旧 `app.py`、`src.app.api` 聚合蓝图和旧插件管理器均已删除，不得被任何正式角色重新引入。历史行为对照只使用 Git 中的 `main` 基线，不在当前工作树保留第二套可运行入口。
 
 纯渲染抽取不能直接复用会惰性导入修复模型的 legacy 高层入口：v2 `rendering` 包的 import graph 必须静态禁止 `src.core.inpainting`、模型接口层、插件层与 `torch`。Worker 先在自身边界完成修复/检测等模型步骤，再把普通图片资产与结构化页面文档交给这组无模型纯函数；API 与 Worker 只共享纯函数和 DTO，不共享模型生命周期。
 
@@ -264,7 +264,7 @@ pending → running → completed | failed | cancelled
 | 类别 | kind | executor | active 唯一键 | 输入绑定与发布 |
 | --- | --- | --- | --- | --- |
 | Worker 页面写 operation | bubble_ocr、bubble_color、page_detect | Worker | 同一 page_id 同时最多一个 active 页面写 operation | 创建时冻结输入 asset 与 base_revision，领取和发布时复查章节写入意图/锁、revision 与 operation fencing；意图前已 active 的实例可完成排空 |
-| 方法路由型页面修复 operation | page_repair | solid/restore_source → API CPU executor；lama_mpe/litelama → Worker | 同一 page_id 同时最多一个 active 页面写 operation | 所有 method 先规范化为 source、parent clean、repair mask、fill_color 与 base_revision；共用同一状态机、结果 schema、clean 发布和后续 render_request，客户端不得选择 executor |
+| 方法路由型页面修复 operation | page_repair | solid/restore_source → API CPU executor；lama_mpe/litelama → Worker | 同一 page_id 同时最多一个 active 页面写 operation | 所有 method 先规范化为 source、parent clean、repair mask 与 base_revision，只有 solid 额外携带 fill_color；共用同一状态机、结果 schema、clean 发布和后续 render_request，客户端不得选择 executor |
 | API 远程 operation | bubble_translate、studio_generate、studio_chat、studio_summary | API remote executor | bubble_translate 按 page_id；生成按 document_id；聊天/总结按 session_id | 创建时冻结业务 DTO、credential_version、配置和 base_revision；远程调用结束后以 operation fencing + CAS 发布 |
 | 内部页面渲染 | render_request | API render executor | `UNIQUE(page_id)`，每页仅一行 | 改变可渲染 bubble 且符合 §16.2.4 渲染资格的 PATCH 成功后 upsert 最新 requested_revision 并立即进入可执行态；不冻结旧 bubbles 快照，执行时聚合最新文档，只发布与当前 document_revision 相等的结果 |
 
@@ -298,9 +298,9 @@ pending → running → completed | failed | cancelled
 打包发行的进程模型必须在阶段 1 开始前锁定：
 
 - 单一可执行文件，按 `--role=launcher|api|worker` 参数分派角色；最小 role dispatcher 必须先执行 `multiprocessing.freeze_support()`、解析 role 与基础启动参数，再导入任何角色专属模块。顶层模块不得预先 import Flask app、插件管理器、torch、Chroma 或模型接口。
-- v2 提供相互隔离的 `create_api_app()`、`run_worker()` 与 `run_launcher()` 入口。`create_api_app()` 只注册 v2 蓝图；Worker 入口才允许导入模型、Chroma 和插件业务代码。旧 `app.py` 只作为开发期 legacy 对照入口存在，不得成为 v2 任一角色的依赖。
-- Launcher 使用 Windows Job Object 绑定子进程，保证 Launcher 退出（含崩溃）时 API 与 Worker 必然终止，不留孤儿进程占用 GPU。
-- API 监听端口可配置（默认 5000）；端口被占用时启动失败并给出明确报错，不自动换端口。默认绑定 `0.0.0.0` 并完全开放局域网访问，不提供仅回环地址模式；`GET /api/v2/system/server-info` 返回局域网地址与实际端口（见 §19.8）。
+- v2 提供相互隔离的 `create_api_app()`、`run_worker()` 与 `run_launcher()` 入口。`create_api_app()` 只注册 v2 蓝图；Worker 入口才允许导入模型、Chroma 和插件业务代码。旧 `app.py` 已删除；开发对照只读取 Git `main` 基线，不保留可运行 legacy 入口。
+- Launcher 在 Windows 使用 Job Object 的 kill-on-close 绑定子进程；Linux/macOS 子进程监视其直接父 PID，父 Launcher 消失时立即退出。新 Launcher 在恢复旧 epoch 前按数据库 PID 与角色/数据目录命令行精确确认旧子进程已经消失，超时则拒绝启动。三类系统都必须保证 Launcher 退出（含崩溃）后 API 与 Worker 不成为孤儿进程，也不允许新旧执行器短暂重叠。
+- API 监听端口可配置（默认 5000）；端口被占用时启动失败并给出明确报错，不自动换端口。桌面端默认绑定 `127.0.0.1`，用户明确开启“允许局域网访问”后才绑定 `0.0.0.0`；运行中修改端口、网络或日志等级会由桌面控制中心自动保存并重启后端。`GET /api/v2/system/server-info` 返回实际监听 host、局域网地址与端口（见 §19.8）。
 - 部署模型最终确定为可信局域网免认证、单实例、单数据空间；明确接受同一局域网内任意设备能够直接调用读写 API，这是主动采用的产品信任边界，不再增加账号、访问令牌、配对、租户、公网部署方案或 Origin/同源写保护。API 不读取或校验 `Origin`，带任意 `Origin` 或不带 `Origin` 的请求执行相同业务逻辑；不额外安装 wildcard CORS 中间件。上传端点按类型配置单文件/总请求大小上限。
 - 凭据、插件配置中的 secret、文件系统绝对路径不得出现在响应、SSE、日志或错误堆栈。
 - Launcher 在 API 健康检查通过后自动打开浏览器（保留现状体验）。
@@ -331,9 +331,9 @@ pending → running → completed | failed | cancelled
 - 实体使用不可变 UUID，页面顺序通过数据库排序字段管理。
 - 所有文件路径必须由统一存储服务解析，业务模块禁止自行拼接数据目录。
 - 页面、媒体、任务和插件运行接口不再传输或返回 Base64 图片。仅用户显式导入/导出的可移植文件格式在其既有规范要求时允许内嵌 Base64（例如 Studio 会话 JSON 附件）；此类内容必须作为文件流处理，不能进入普通业务 DTO、任务事件或插件 payload。
-- 使用 SQLAlchemy 2 作为数据访问层，使用 Alembic 管理新架构投入使用后的数据库升级。
+- 使用 SQLAlchemy 2 作为数据访问层，使用 Alembic foundation 定义当前 schema；不在运行时升级旧数据库。
 - SQLite 开启 WAL、foreign keys 和 busy timeout，写操作保持短事务。
-- 所有持久 JSON 列（设置 payload、bubble payload、任务配置/进度/事件、analysis/studio 扩展字段）都由所属行或表带明确 `schema_version` 并在 Repository 边界校验；后续 v2 升级通过 Alembic 数据迁移改变 schema，不在读取时堆叠多版兼容分支。任务 kind/operation kind/asset role 使用封闭枚举。
+- 所有持久 JSON 列（设置 payload、bubble payload、任务配置/进度/事件、analysis/studio 扩展字段）都由所属行或表带明确 `schema_version` 并在 Repository 边界校验；schema 变化时替换 foundation 并要求新的空数据根，不在读取时堆叠多版兼容分支。任务 kind/operation kind/asset role 使用封闭枚举。
 
 ### 5.2 目标目录结构
 
@@ -397,7 +397,7 @@ data-v2/
 - `job_drain_acks`：有界并行任务在 pausing/cancelling 时各 Pool slot 的安全点确认；以 job_id + attempt_id + pool_id + worker_slot 唯一，attempt 失效后整体级联清理。
 - `job_step_asset_outputs`：非终态继续所需的步骤输出 asset FK（job_step_id、role、asset_id）；终态后，已经由 page_assets/分析结果等正式关系承接的步骤引用可释放，避免仅为历史日志长期保留旧大图。
 - `job_events`：持久化进度、状态、日志和错误事件。
-- `job_config_snapshots`：任务创建时冻结的业务配置、提示词、约束和页面顺序，带 snapshot_schema_version；后续数据库升级可迁移表示，但不能改变原任务语义。
+- `job_config_snapshots`：任务创建时冻结的业务配置、提示词、约束和页面顺序，带 `snapshot_schema_version`；它只用于断言当前版本契约，版本不匹配时拒绝读取，不做旧快照转换。
 - `job_credential_snapshots`、`job_plugin_snapshots`、`job_font_snapshots`：对不可变版本/字体的明确 FK，引导安全删除与可重现重试。
 - `job_asset_inputs`：任务运行期间对已绑定输入资产版本的明确 FK，并记录 `binding_phase=create|item_start|checkpoint`；至少供 export、Insight 和所有已经开始处理页面的写任务使用，禁止只把 asset_id 埋入配置 JSON。不同任务何时绑定输入由 §7.4.1 矩阵唯一决定，不得笼统地全部在任务创建时冻结。容器源文件和网页 draft 临时文件另由 job/draft 行及其任务作用域相对目录保护，不伪装成正式 asset。
 - `job_artifacts`：完成后可下载或按 TTL 查看之产物（job_id、kind、asset_id、expires_at）；ZIP/PDF/CBZ、Insight 导出和调试包均以真实 asset FK 管理，不把已完成文件继续留在 temp。
@@ -405,7 +405,7 @@ data-v2/
 - `worker_commands`：API 到 Worker 的持久控制命令；当前只允许 `release_models`，同类 active 命令唯一，Worker 在步骤安全点领取并绑定当前 worker epoch，崩溃遗留 running 命令由新 Worker 恢复后重试。
 - `chapter_write_intents`：章节写 job 在 queued 排空阶段的持久准入屏障；`chapter_id` 唯一，明确引用 job 与 owner `worker_epoch_id`，保存本次多章节共享的 `intent_set_id`、由 `chapters.write_intent_generation` 原子递增得到的每章节单调 generation、`lease_token/lease_expires_at/created_at`。同一 job 多章节意图必须在一个事务中全有或全无；它只封闭新写入，不等价于 running 锁，也不允许跨失效 Worker epoch 遗留。
 - `chapter_write_locks`：章节级持久写锁；`chapter_id` 唯一并明确引用持锁 job、单调 `lock_generation`、当前可空 owner attempt 和 lease_token。resume/continue 形成 queued 时锁仍归 job，下一次领取在同一事务提升 generation 并绑定新 attempt；旧 attempt 永远不能释放新 generation 的锁。
-- `operations`：保存型即时操作；记录 kind、由后端决定的 executor_role、明确目标 FK、base_revision、状态、结果、错误以及领取它的 executor_epoch_id/attempt_id/lease_token/lease_expires_at。每种 kind 的冻结请求保存在带 `request_schema_version` 的固定 schema `request_json`，不能接受任意扩展键或从 JSON 改写 executor/目标；`page_repair` 的 request 必须明确保存 method、fill_color（restore_source 为空）和 repair_revision，source/parent clean/mask 则通过 `operation_asset_inputs` 的真实 FK 绑定。
+- `operations`：保存型即时操作；记录 kind、由后端决定的 executor_role、明确目标 FK、base_revision、状态、结果、错误以及领取它的 executor_epoch_id/attempt_id/lease_token/lease_expires_at。每种 kind 的冻结请求保存在带 `request_schema_version` 的固定 schema `request_json`，不能接受任意扩展键或从 JSON 改写 executor/目标；`page_repair` 的 request 必须明确保存 method 和 repair_revision，只有 solid 保存 fill_color，source/parent clean/mask 则通过 `operation_asset_inputs` 的真实 FK 绑定。
 - `operation_credential_snapshots`、`operation_plugin_snapshots`、`operation_font_snapshots`：operation 对不可变版本/字体的明确 FK；不能只把引用埋入 JSON。
 - `operation_asset_inputs`：operation 对 source/clean/mask/附件等冻结输入资产的明确 FK，终态后可按保留规则释放。
 - `operation_artifacts`：operation 的可见/调试产物 asset FK 与可选 page_id、expires_at；已正式挂到 Studio/页面业务关系的结果不重复依赖此表长期保活。
@@ -492,7 +492,7 @@ erDiagram
 - 所有“检查后写入”的竞争命令——任务领取、operation/render 领取、章节锁获取、队列排序、ordinal 重排、CAS 发布、幂等创建、active head 切换——使用短 `BEGIN IMMEDIATE` 事务，取得 SQLite 写保留锁后再读条件并写入，禁止先在普通读事务中判断、退出事务后再写。
 - AI、模型推理、图片解码、压缩、文件上传和网络调用绝不位于数据库事务内。事务只绑定输入、领取 attempt、切换指针或提交已经完成的结果。
 - API 与 Worker 每线程/任务使用独立 SQLAlchemy Session；Session 不跨线程共享。`busy_timeout` 命中后返回可重试的结构化存储错误，不能无限等待。
-- 所有封闭状态、kind、role 和 executor_role 同时使用数据库 CHECK 与应用枚举；Alembic 升级先迁数据再收紧 CHECK。
+- 所有封闭状态、kind、role 和 executor_role 同时使用数据库 CHECK 与应用枚举；foundation 直接创建当前 CHECK。
 
 **必须存在的唯一约束/partial unique index**：
 
@@ -509,7 +509,7 @@ erDiagram
 - `chapter_write_intents(job_id, intent_set_id)` 与 `(worker_epoch_id, lease_expires_at)` 建索引，分别服务于全目标原子升级/取消和旧 epoch 恢复清理；任何扫描全表寻找意图 owner 的实现不通过阶段 0 查询计划验收。
 - `idempotency_records(scope, key)` 唯一；记录 `request_hash、http_status、response_json、resource_type、resource_id、created_at、expires_at`。重复同键同 hash 返回原创建响应的状态码和资源 ID，即使资源随后状态变化；同键不同 hash 返回 409。记录不得保存上传文件、secret 或完整大型响应。
 
-其中最容易被 ORM 模糊化的全局/active 约束必须在首个 migration 中生成等价于下列 SQLite DDL 的索引（实际命名可调整，谓词不可放宽）：
+其中最容易被 ORM 模糊化的全局/active 约束必须在 foundation revision 中生成等价于下列 SQLite DDL 的索引（实际命名可调整，谓词不可放宽）：
 
 ```sql
 CREATE UNIQUE INDEX uq_jobs_one_current
@@ -817,7 +817,7 @@ Insight 按用户的一次书籍或指定章节分析请求创建一个任务。
 - operation 在存在章节写入意图或写锁的章节上返回 423；其他章节不受影响。API 创建时和 Worker 领取时都复查意图/锁与 base_revision；意图建立前已经 active 的 operation 允许继续领取并完成其既定写链。
 - `vector_query` transient request 与本地模型 operation 使用同一安全点检查机制；连接仍有效时优先于 Worker 返回批量 job 主线，但排在已经领取的即时请求之后。它不获得章节写锁、不写业务结果、不触发插件。
 
-**API operation 的数据来源**：单泡重译从 pages+bubbles 聚合读取全页上下文，从 translation_constraints、prompts 与 credential_versions 读取冻结输入。所有交互式背景修复先创建同一种 `page_repair`：后端把 bubble_id 或上传 mask 规范化为不可变 repair-mask asset，并冻结 source、parent clean、method、fill_color 与 base_revision；之后才根据 method 选择 API CPU executor 或 Worker。批量任务中的背景修复不额外创建 operation，但必须调用同一个 RepairService 和相同 mask/method DTO。
+**API operation 的数据来源**：单泡重译从 pages+bubbles 聚合读取全页上下文，从 translation_constraints、prompts 与 credential_versions 读取冻结输入。所有交互式背景修复先创建同一种 `page_repair`：后端把 bubble_id 或上传 mask 规范化为不可变 repair-mask asset，并冻结 source、parent clean、method 与 base_revision；只有 solid 冻结 fill_color，模型修复与 restore_source 拒绝该字段。之后才根据 method 选择 API CPU executor 或 Worker。批量任务中的背景修复不额外创建 operation，但必须调用同一个 RepairService 和相同 method 判别 DTO。
 
 外部 AI 的 RPM 限速由 SQLite `provider_rate_limits` 统一协调，API 与 Worker 对同一 Provider/credential/version 的调用合计遵守同一限制。
 
@@ -1251,7 +1251,7 @@ Context 至少包含：
 ### 阶段 0：冻结架构与契约
 
 - 以本文锁定 ERD、状态机、资产发布协议、进程依赖边界和错误码。
-- 把 §4.1/§4.2 Worker 与 API executor epoch 恢复事务、§4.4 续租失败自我隔离和章节写入意图排空协议、§4.4.1 operation/render_request 唯一约束矩阵、§5.3 物理 DDL/FK 删除矩阵/ordinal 算法、§5.4.1 页面资产来源矩阵、§7.4.1 任务输入绑定矩阵和 §7.5 drain 协议转为 ADR + 可执行状态机测试，禁止留给 handler 自行解释。
+- 把 §4.1/§4.2 Worker 与 API executor epoch 恢复事务、§4.4 续租失败自我隔离和章节写入意图排空协议、§4.4.1 operation/render_request 唯一约束矩阵、§5.3 物理 DDL/FK 删除矩阵/ordinal 算法、§5.4.1 页面资产来源矩阵、§7.4.1 任务输入绑定矩阵和 §7.5 drain 协议固化为可执行状态机测试，禁止留给 handler 自行解释。
 - 冻结 §11.2–§12.2 的“两级图片资产 + 当前页/视口懒加载”规则；以 1000 页章节验证浏览器不再全量请求和解码原图。
 - 冻结 `ImportSafetyLimits` 的文件/归档安全边界和逐页解码、同步缩略图、及时释放规则。
 - 建立 OpenAPI 3 骨架并配置前端 TypeScript 类型生成；优先把页面 batch document mutation、page-repair multipart、operation kind 闭集、Idempotency-Key、resume/continue 状态前提和 Studio session revision/generation 写成精确 schema/response，不得先写宽泛 `payload: object`。
@@ -1262,13 +1262,13 @@ Context 至少包含：
 
 ### 阶段 1：v2 平台底座
 
-- 建立独立 `data-v2`、SQLAlchemy 2、Alembic、SQLite WAL/foreign keys/busy timeout；Launcher 迁移前使用 SQLite Backup API，角色启动顺序和 Worker/API executor epoch 恢复严格遵循 §4.1–§4.2。
+- 建立独立 `data-v2`、SQLAlchemy 2、Alembic 当前基线、SQLite WAL/foreign keys/busy timeout；Launcher 只创建空数据根的当前基线，已有数据库必须精确匹配当前 revision，否则拒绝启动并提示舍弃旧数据，角色启动顺序和 Worker/API executor epoch 恢复严格遵循 §4.1–§4.2。
 - 实现不可变 AssetStorageService、`object_commit_journal`、明确资产关联、完整性扫描和分离的异步 GC。
-- 实现 Launcher/API/Worker、进程监护、Worker/API executor heartbeat/fencing、续租 CAS 影响 0 行后的 admission 关闭/attempt 毒化/受控退出，以及升级前临时数据库副本。
+- 实现 Launcher/API/Worker、进程监护、Worker/API executor heartbeat/fencing，以及续租 CAS 影响 0 行后的 admission 关闭、attempt 毒化和受控退出。
 - 实现 settings、credential_versions、plugin_versions、fonts、共享 Provider limiter。
 - 播种唯一 quick_workspace。
 
-验收：Repository、迁移、文件/数据库故障注入和三进程启动测试全部通过；此时不切换正式入口。
+验收：Repository、当前数据库基线、文件/数据库故障注入和三进程启动测试全部通过；此时不切换正式入口。
 
 ### 阶段 2：内容垂直链路
 
@@ -1294,7 +1294,7 @@ Context 至少包含：
 - 将顺序执行/有界并行流水线两种翻译模式迁入 Worker，接入逐步骤检查点、后端 Pool 进度和插件 v3；前端保留两套不同进度表现。
 - 迁移九种工作流、样式应用、文本导入导出、批量导出和书架批量提交。
 - 编辑器改为稳定 bubble_id CRUD + 150ms 前端尾随 PATCH 合并 + revision CAS + PATCH 成功后立即可执行的持久 render_request；render_request 与 operation 按 §4.4.1 分表、分状态和分保留期。
-- 笔刷每次只提交本次动作的完整尺寸二值 repair-mask PNG 与 method/fill_color；浏览器不再生成 clean/translated 整图，单泡 repair mask 由后端从 bubble 几何生成。
+- 笔刷每次只提交本次动作的完整尺寸二值 repair-mask PNG 与 method；仅当 method=solid 时提交 fill_color。浏览器不再生成 clean/translated 整图，单泡 repair mask 由后端从 bubble 几何生成。
 - 切换设置、凭据、提示词、字体和任务快照；删除前端 Pipeline、TaskPool、DeepLearningLock、翻译页 PDF.js 解析链、Base64 与旧自动保存。
 
 ### 阶段 5：Insight 与 Studio
@@ -1328,7 +1328,7 @@ Context 至少包含：
 
 - 数据库外键和唯一约束正确工作。
 - Launcher 在开发态、安装态和显式 `--data-dir` 三种情形解析到预期绝对根；故意让 API/Worker 使用不同 cwd 时仍打开同一数据库，同一数据根的第二个 Launcher 被单实例锁拒绝。
-- Alembic 前备份使用 SQLite Backup API，故意保留未 checkpoint 的 WAL 后备份仍包含全部已提交事务；备份/迁移/schema smoke test 任一步失败时 API/Worker 均不启动且可恢复原库。
+- 空数据根可原子创建当前 Alembic 基线；非空数据库只有在 revision 与 schema smoke test 均精确匹配时才允许 API/Worker 启动，任一检查失败都拒绝启动，不升级、转换或恢复旧库。
 - 对 1000 页章节、200 批任务历史和大事件表运行关键列表/领取/GC 查询的 `EXPLAIN QUERY PLAN`，不得退化为可由 §5.3 既定索引避免的全表扫描。
 - 文件资产和数据库记录不存在悬空关系（Chroma 向量集合与 objects 无 DB 孤儿经 §5.5 Worker 对账达成最终一致，宽限/清理窗口内的短暂残留不算违例）。
 - 原图不可被处理步骤覆盖。
@@ -1511,7 +1511,7 @@ Context 至少包含：
 - `document_revision`、`rendered_revision`、`render_status`。
 - `detection_state`、`default_font_id`、`page_style_defaults` 和 `page_warnings` JSON；字体外键不埋入 style JSON。
 
-`page_style_defaults` 使用固定 schema，不接受任意扩展键：`fontSize`、`autoFontSize`、`layoutDirection=auto|vertical|horizontal`、`textColor`、`useAutoTextColor`、`fillColor`、`strokeEnabled`、`strokeColor`、`strokeWidth`、`lineSpacing`、`textAlign=start|center|end`、`inpaintMethod=solid|lama_mpe|litelama`。字体只保存在 `pages.default_font_id`。所有数值范围、颜色格式和枚举由 OpenAPI 与后端领域校验共同固定；数据库 migration 必须在开放新代码读流量前原子补齐完整对象，正式运行时不得依赖前端 fallback 或读时修复。
+`page_style_defaults` 使用固定 schema，不接受任意扩展键：`fontSize`、`autoFontSize`、`layoutDirection=auto|vertical|horizontal`、`textColor`、`useAutoTextColor`、`fillColor`、`strokeEnabled`、`strokeColor`、`strokeWidth`、`lineSpacing`、`textAlign=start|center|end`、`inpaintMethod=solid|lama_mpe|litelama`。字体只保存在 `pages.default_font_id`。所有数值范围、颜色格式和枚举由 OpenAPI 与后端领域校验共同固定；当前数据库基线直接创建完整对象，已有对象缺字段或版本不匹配时拒绝启动，不依赖前端 fallback、读时修复或旧数据转换。
 
 `bubbles` 每泡一行：`bubble_id`、`page_id`、`ordinal`、`font_id`、`payload_json`、`updated_revision`。`font_id` 是可约束、可索引的独立外键；`payload_json` 保存其余 BubbleState 字段：
 
@@ -1520,7 +1520,7 @@ Context 至少包含：
 - OCR 文本、引擎、置信度和错误；混合 OCR 保存主引擎与回退标记（primaryEngine/fallbackUsed）。
 - 原文、译文、文本框译文。
 - 字号、方向、颜色、填充、描边、行距和对齐；字体由同一行的 `font_id` 提供，聚合 DTO 时恢复为 BubbleState 字段。
-- **每泡修复参数（inpaintMethod：solid/LaMA/LiteLaMA，以及 fillColor）**——沿用现状“每个气泡记忆自己的修复方式和纯色/失败回退颜色”；它们只有在显式创建 `page_repair` 或任务修复步骤时才改变 clean，不由纯文字渲染器消费。
+- **每泡修复参数（inpaintMethod：solid/LaMA/LiteLaMA，以及 fillColor）**——每个气泡记忆自己的修复方式和纯色填充颜色；`fillColor` 只供 solid 使用。它们只有在显式创建 `page_repair` 或任务修复步骤时才改变 clean，不由纯文字渲染器消费。
 - **自动提取的前景色/背景色（autoFgColor/autoBgColor）**——颜色提取结果写入文档本体，供渲染与编辑器直接读取，不能只存在任务检查点里。
 - bubble-level 警告与错误。
 
@@ -1528,7 +1528,7 @@ Context 至少包含：
 
 - `page_style_defaults.autoFontSize/layoutDirection/useAutoTextColor` 只表示本页的初始化或恢复模式；bubble 始终保存具体 `fontSize/textDirection/textColor`，以及可直接交给 RepairService 的具体 `fillColor/inpaintMethod`。纯文字渲染器不接收悬空的 `auto` 值，也不得读取 fillColor/inpaintMethod 后擅自修改 clean。
 - 检测阶段无论用户选择自动还是强制方向，都把检测结果写入只允许 `vertical|horizontal` 的 `bubble.autoTextDirection`；`bubble.textDirection` 同样只保存 `vertical|horizontal` 的当前实际方向，`auto` 只允许出现在页默认。切回自动时直接从已存 `autoTextDirection` 恢复，不重新检测；编辑器改变 bubble 几何时由后端 mutation service 按现有框高宽规则更新自动方向备份，浏览器不得提交自算结果，且几何变化不擅自覆盖用户当前的实际方向。
-- standard/HQ 翻译的颜色步骤无论 `useAutoTextColor` 开关是否开启都保存 `autoFgColor/autoBgColor`；开关只决定首次初始化或显式重新应用自动颜色时，是否把自动备份物化到 `textColor/fillColor`。`textColor` 影响文字层，`fillColor` 只是下一次 solid 修复或 LaMA 失败回退的参数；仅物化 fillColor 不重做 clean。普通重渲染不重新提色。
+- standard/HQ 翻译的颜色步骤无论 `useAutoTextColor` 开关是否开启都保存 `autoFgColor/autoBgColor`；开关只决定首次初始化或显式重新应用自动颜色时，是否把自动备份物化到 `textColor/fillColor`。`textColor` 影响文字层，`fillColor` 只作为下一次 solid 修复参数；仅物化 fillColor 不重做 clean。普通重渲染不重新提色。
 - 自动字号没有额外的泡级模式字段：启用初始化时由后端现有排版算法计算，并把结果写入 bubble 的具体 `fontSize`。普通文字、字体、几何或样式编辑默认保留该具体字号，只有 translation workflow 的渲染初始化（包括重新翻译）、侧栏显式重新开启/应用自动字号，或 `style_apply` 明确选择字号且冻结值为自动时才重新计算。
 - 编辑器直接读取和修改 bubble 的物化值，并保留 `autoTextDirection/autoFgColor/autoBgColor`；侧栏的自动开关负责按本节规则重新物化。这样浏览器刷新、后台重渲染和任务继续都只消费后端文档，不依赖浏览器重新推断。
 
@@ -1632,12 +1632,14 @@ GET    /api/v2/operations/{operation_id}
 
 `POST .../operations` 请求固定为 `{kind, base_revision, bubble_id?}`，公开 kind 闭集为 `bubble_ocr|bubble_translate|page_detect|bubble_color`：泡级 kind 必须带属于该页的 `bubble_id`，`page_detect` 不得带 bubble_id。operation 所需设置全部由后端按页面与当前设置解析，不保留无实际用途的通用 `payload` 扩展口。背景修复只能走专用 `POST .../repairs`，不得把 mask 或 method 塞入宽泛 operation 请求。executor 只能由后端按 kind/method 决定，客户端不得提交 executor、credential_version_id、asset path 或 attempt/lease 字段。
 
-`POST .../repairs` 使用 OpenAPI `oneOf` 固定两种 multipart 命令：
+`POST .../repairs` 使用 OpenAPI `oneOf` 固定四种 multipart 命令：
 
-- `target=bubble`：字段为 `base_revision`、`bubble_id`。后端从该 revision 的 bubble 读取 polygon（缺失时使用 coords）、`inpaintMethod` 与 `fillColor`，生成与 source 同尺寸的二值 repair mask。
-- `target=mask`：字段为 `base_revision`、`mask`、`method=solid|lama_mpe|litelama|restore_source`；solid/LaMA/LiteLaMA 还必须携带 `fill_color`，其中 LaMA 的 fill_color 只用于确定性失败回退，restore_source 禁止携带 fill_color。
+- `target=bubble`：字段为 `base_revision`、`bubble_id`。后端从该 revision 的 bubble 读取 polygon（缺失时使用 coords）与 `inpaintMethod`；仅当 method=solid 时再读取 `fillColor`，生成与 source 同尺寸的二值 repair mask。
+- `target=mask, method=solid`：字段为 `base_revision`、`mask`、`method`、`fill_color`。
+- `target=mask, method=lama_mpe|litelama`：字段为 `base_revision`、`mask`、`method`，禁止 `fill_color`。
+- `target=mask, method=restore_source`：字段为 `base_revision`、`mask`、`method`，禁止 `fill_color`。
 
-上传 mask 必须是与当前 source 尺寸完全一致的单帧 8-bit 灰度二值 PNG，只允许 0（不处理）与 255（本次处理区域），禁止服务器插值缩放；浏览器每次提交的是本次笔刷动作的 repair mask，不上传 clean/translated，也不维护需要在后端解释的三态协议。无论来源是哪一种，Controller 都必须先生成/验证不可变 mask asset，再创建同一种 `page_repair` operation，冻结 current source、current clean（不存在则以 source 为 parent）、mask、method、fill_color、input revisions 与新 `repair_revision`。创建事务验证 base_revision、章节锁和同页 active operation，把 document_revision 只推进一次并设置 `render_status=awaiting_repair`；operation active 期间同页新的 document mutation/repair 返回 `409 operation_active`。
+上传 mask 必须是与当前 source 尺寸完全一致的单帧 8-bit 灰度二值 PNG，只允许 0（不处理）与 255（本次处理区域），禁止服务器插值缩放；浏览器每次提交的是本次笔刷动作的 repair mask，不上传 clean/translated，也不维护需要在后端解释的三态协议。无论来源是哪一种，Controller 都必须先生成/验证不可变 mask asset，再创建同一种 `page_repair` operation，冻结 current source、current clean（不存在则以 source 为 parent）、mask、method、input revisions 与新 `repair_revision`；只有 solid 额外冻结 fill_color。创建事务验证 base_revision、章节锁和同页 active operation，把 document_revision 只推进一次并设置 `render_status=awaiting_repair`；operation active 期间同页新的 document mutation/repair 返回 `409 operation_active`。
 
 RepairService 的统一语义是“在冻结的 parent clean 上只处理 mask=255 的像素”：solid 填入 fill_color，LaMA/LiteLaMA 对同一 mask 推理，restore_source 从冻结 source 拷回对应像素。成功时以 operation fencing 发布新的 immutable clean，再为同一 repair_revision upsert render_request；render executor 随后读取该 clean 与该 revision 的完整 bubbles，生成 translated。失败时保留旧 clean/translated，页面置为 `render_status=repair_failed` 并允许基于同一冻结输入重试。repair mask 只由 `operation_asset_inputs` 保活，终态历史和 GC 按 §5.5 处理，不成为页面第二事实源。
 
@@ -1824,7 +1826,7 @@ PDF/MOBI/AZW/AZW3/CBZ：
 | 字号/自动字号 | `fontSize + autoFontSize` | 按下述自动字号规则更新具体 `bubble.fontSize` | 有可渲染内容时是 |
 | 排版方向 | `layoutDirection` | 按下述自动方向规则更新具体 `bubble.textDirection`，保留 `autoTextDirection` | 有可渲染内容时是 |
 | 文字颜色 | `textColor + useAutoTextColor` | 按下述自动颜色规则更新 `bubble.textColor` | 有可渲染内容时是 |
-| 填充颜色 | `fillColor + useAutoTextColor` | 按下述自动颜色规则更新 `bubble.fillColor`，作为下一次 solid 修复或 LaMA 失败回退参数 | 否；不改变现有 clean，只有显式 `page_repair` 才产生画面变化 |
+| 填充颜色 | `fillColor + useAutoTextColor` | 按下述自动颜色规则更新 `bubble.fillColor`，作为下一次 solid 修复参数 | 否；不改变现有 clean，只有显式 `page_repair` 才产生画面变化 |
 | 描边开关/颜色/宽度 | `strokeEnabled/strokeColor/strokeWidth` | 对应字段覆盖全部已有 bubbles | 有可渲染内容时是 |
 | 行距/对齐 | `lineSpacing/textAlign` | 对应字段覆盖全部已有 bubbles | 有可渲染内容时是 |
 | 修复方式 | `inpaintMethod` | **不覆盖**已有 `bubble.inpaintMethod`；每泡修复方式只由编辑器或修复操作改变 | 不新建请求、也不重新生成 clean；同页已有请求时仅按 §16.2.4 推进其 revision |
@@ -1984,9 +1986,9 @@ ZIP、CBZ、PDF：
 
 - solid、LaMA、LiteLaMA 和 restore_source 只公开一个 `page_repair` 业务对象。它们共用 repair mask、operation 状态/错误/result schema、revision fencing、clean 发布和后续整页 render_request；调度路径不同不改变用户选择和文档结构。
 - 翻译任务、批量消字和多页修复中的所有 repair method 均在 Worker 任务内调用同一 RepairService，包括 solid；任务内不额外创建 `page_repair` operation。
-- 单气泡 OCR、当前页检测为 Worker 保存型 operation，单气泡 AI 翻译为 API 保存型 operation，全章批量检测创建 detect job。单气泡修复、修复笔刷和还原笔刷一律调用 `POST .../repairs`：target=bubble 时后端从稳定 bubble_id 生成 mask 并读取该泡 inpaintMethod/fillColor；target=mask 时浏览器上传本次动作的二值 PNG 和 method/fill_color。
+- 单气泡 OCR、当前页检测为 Worker 保存型 operation，单气泡 AI 翻译为 API 保存型 operation，全章批量检测创建 detect job。单气泡修复、修复笔刷和还原笔刷一律调用 `POST .../repairs`：target=bubble 时后端从稳定 bubble_id 生成 mask 并读取该泡 inpaintMethod，只有 solid 再读取 fillColor；target=mask 时浏览器上传本次动作的二值 PNG 和 method，只有 solid 携带 fill_color。
 - 后端创建 operation 后按 method 路由：solid/restore_source 进入 API CPU executor，LaMA/LiteLaMA 进入 Worker 的安全点优先通道；浏览器只观察同一 operation_id，不感知 executor。
-- LaMA/LiteLaMA 失败时在同一 operation 内使用创建时冻结的 fill_color 回退 solid，并在 result 中记录结构化 warning；回退成功时 operation 状态仍为全局状态机中的 `completed`，由 `result.warning.code=lama_fallback_to_solid` 表达降级，不再创建第二个 solid operation 或另造终态。
+- LaMA/LiteLaMA 失败时 operation 直接失败，保留旧 clean/translated，并把页面置为 `repair_failed`；不得改用 solid 或把失败标记为 `completed`。用户若要改用 solid，必须显式发起新的修复命令。
 - 浏览器只保留当前页绘制中的 mask canvas；一次笔刷提交上传与 source 同尺寸的压缩二值灰度 PNG（0 不处理、255 处理），不上传 clean/translated 整图，也不把图片转 Base64。restore brush 仍上传相同 mask，只把 method 设为 restore_source。
 - page_repair 成功发布新 clean 后自动排入同一 repair_revision 的整页文字渲染；clean/translated 的所有写入都以整页 revision CAS 和 operation/render fencing 串行化，过期响应不能发布。
 
@@ -2117,7 +2119,7 @@ ZIP、CBZ、PDF：
 - 文档提交成功但渲染失败时编辑内容不丢失。
 - 单泡 repair 只提交 bubble_id，后端根据该 revision 的 polygon/coords 生成二值 mask；笔刷上传本次动作的完整尺寸二值灰度 PNG，0 不处理、255 处理，浏览器不上传 clean/translated 整图。
 - solid、LaMA、LiteLaMA、restore_source 创建同一种 page_repair operation、返回同一种状态/result；后端按 method 路由 API CPU executor 或 Worker，浏览器不得感知或指定 executor。
-- LaMA/LiteLaMA 失败使用 operation 冻结的 fill_color 在同一 operation 内回退 solid；回退成功的状态为 `completed`，并记录 `result.warning.code=lama_fallback_to_solid`，不得再创建第二个 operation 或增加新的终态枚举。
+- LaMA/LiteLaMA 失败必须使 operation 失败并保留旧 clean/translated，不得回退 solid 或伪装为 `completed`；用户可以随后显式选择 solid 发起新的 operation。
 - repair 成功必须先发布新 clean，再为相同 repair_revision 排入整页文字 render_request；失败保留旧 clean/translated，重试不丢失 mask 和参数。
 - 非二值、尺寸不等于 source、动画/多帧或无法解码的 mask 原子返回 422，不能创建 operation、推进 revision 或留下孤儿正式资产。
 - page_repair pending/running 时浏览器刷新或关闭不影响执行；solid/restore_source 经 API epoch 恢复可幂等重做，LaMA/LiteLaMA 经 Worker attempt/lease 恢复，任一旧 attempt 都不能发布 clean。
@@ -3821,8 +3823,6 @@ GET /api/v2/assets/{asset_id}
 ```text
 GET    /api/v2/settings?domains=
 PUT    /api/v2/settings/transactions
-GET    /api/v2/provider-settings?domains=
-GET    /api/v2/credentials
 DELETE /api/v2/credentials/{id}
 GET    /api/v2/prompts?type=
 POST   /api/v2/prompts
@@ -3837,13 +3837,12 @@ POST   /api/v2/model-catalog
 GET    /api/v2/fonts
 POST   /api/v2/fonts                            （multipart，创建 asset + font）
 DELETE /api/v2/fonts/{font_id}                   （仅 uploaded；受页面/operation/任务历史 FK 保护）
-POST   /api/v2/maintenance/clean-debug
 POST   /api/v2/maintenance/clean-temp
 ```
 
 - `connection-tests/{kind}` 统一全部连接测试短 API，kind 共 **14 类**：ollama、sakura、lama_repair、baidu_ocr、ai_vision_ocr、baidu_translate、youdao_translate、ai_translate（现状 8 个 `test_*`）+ firecrawl、web_import_agent（现状网页导入 `test-firecrawl`/`test-agent`，见 §16.3.2）+ vlm、llm、embedding、reranker（Insight 4 类，旧 `/api/manga-insight/config/test/*` 随旧组下线，§17.11）；`model-catalog` 为 `fetch_models` 的 v2 化（Insight 侧模型列表拉取复用同端点）；清理接口并入 §5.5 GC 口径。
 - 现状的 Sakura 服务 30 秒后台监控线程**删除**：sakura 连接测试改为按需执行（无缓存时现场探测），不再维护常驻轮询线程。
-- 删除旧组：`/api/get_settings`、`/api/save_settings`、`/api/get_prompts` 全家、`/api/get_textbox_prompts` 全家、`/api/config/text-style-defaults*`、`/api/config/translate-workflow-preferences`、网页导入设置旧持久化、Insight `/config` provider 写入组与 `/config/test/*`（并入统一表与统一测试口）、8 个 `/api/test_*`、`/api/test_params`、`/api/fetch_models`、`/api/get_font_list`、`/api/upload_font`、`/api/clean_debug_files` 与 `/api/clean_temp_files`（由 `/api/v2/maintenance/clean-debug`、`clean-temp` 取代）。
+- 删除旧组：`/api/get_settings`、`/api/save_settings`、`/api/get_prompts` 全家、`/api/get_textbox_prompts` 全家、`/api/config/text-style-defaults*`、`/api/config/translate-workflow-preferences`、网页导入设置旧持久化、Insight `/config` provider 写入组与 `/config/test/*`（并入统一表与统一测试口）、8 个 `/api/test_*`、`/api/test_params`、`/api/fetch_models`、`/api/get_font_list`、`/api/upload_font`、`/api/clean_debug_files` 与 `/api/clean_temp_files`（临时文件恢复统一由 `/api/v2/maintenance/clean-temp` 执行；v2 没有调试文件生产者，因此不保留空操作接口）。
 
 ### 22.8 前端改造
 
@@ -4036,7 +4035,7 @@ GET    /api/v2/jobs/events
 - 任务快照引用的 plugin_version 在引用解除前不可删除，因此重试和继续始终能加载相同代码。
 - 刷新和导入可与运行中任务并行，因为已发布版本不可变且运行任务使用冻结快照；它们不得修改旧版本目录。删除被 operation/任务历史引用的版本返回 423；current_version CAS 竞争返回 409。
 - Agent 执行任务排队期间会话过期：job 自带锁定目标与配置快照，仍可执行；完成事件提示会话已过期，仅影响后续对话上下文。
-- §5.6 口径：旧插件不兼容；plugins/ 目录内旧 v2 插件需按 v3 契约改写后重新导入，或由插件 Agent 辅助迁移。
+- §5.6 口径：旧插件不兼容；需要的功能应按 v3 当前契约重新创建或改写后导入，插件 Agent 只生成当前契约代码，不提供迁移模式。
 
 ### 23.11 实施顺序
 
@@ -4044,7 +4043,7 @@ GET    /api/v2/jobs/events
 2. v3 契约（钩子、Context、schema）与 Worker 内触发点，随阶段 4 翻译流水线落地。
 3. 管理 v2 API 与 PluginManager.vue 切换；删除双 JSON 文件。
 4. plugin_agent 任务类型、Agent 执行排队与 Modal 事件源切换。
-5. 重写 plugins/README.md 为 v3 插件开发与迁移指南（面向第三方开发者，与 v3 契约逐条对应）。
+5. 重写 plugins/README.md 为 v3 当前插件开发指南（面向第三方开发者，与 v3 契约逐条对应）。
 6. 删除旧 `/api/plugins`、`/api/plugins/agent`、`/api/pipeline` 全组与 API 进程插件加载。
 
 ### 23.12 测试与验收标准
@@ -4073,7 +4072,7 @@ GET    /api/v2/jobs/events
 - 不兼容旧 API。
 - 不兼容旧插件。
 - 不开发旧数据迁移、离线转换、双写、运行时适配或分页面灰度切换。
-- 局域网默认绑定 `0.0.0.0` 并完全开放；不提供账号、鉴权、访问令牌、配对、租户和公网部署方案。
+- 默认只绑定 `127.0.0.1`；用户明确开启局域网访问后才绑定 `0.0.0.0`。局域网模式不提供账号、鉴权、访问令牌、配对、租户和公网部署方案。
 - 不提供用户备份/恢复、回收站、通用编辑历史、撤销/重做或任务回滚。
 - 不给普通图片导入增加可恢复上传会话；只做逐页幂等与 60 秒 owner-token 租约。
 - 不生成中档 preview、多档缩略图或译图缩略图；每个 source 只生成一张符合 §11.2 单一规格的 `thumbnail_source` WebP（常规图最长边 320px，长条图使用顶部裁剪特判），translated 仅按当前页或视口窗口懒加载原图。

@@ -1,4 +1,6 @@
-const JOB_KIND_LABELS: Readonly<Record<string, string>> = {
+import type { V2Job } from '@/api/v2/jobs'
+
+const JOB_KIND_LABELS = {
   translation: '翻译',
   remove_text: '去除文字',
   detect: '文本检测',
@@ -14,7 +16,7 @@ const JOB_KIND_LABELS: Readonly<Record<string, string>> = {
   continuation: '漫画续写',
   derived_rebuild: '重建分析内容',
   plugin_agent: '插件助手',
-}
+} satisfies Readonly<Record<V2Job['kind'], string>>
 
 const STEP_KIND_LABELS: Readonly<Record<string, string>> = {
   detect: '文本检测',
@@ -60,7 +62,7 @@ const STEP_KIND_LABELS: Readonly<Record<string, string>> = {
   plugin_agent_execute: '执行插件助手',
 }
 
-const EVENT_TYPE_LABELS: Readonly<Record<string, string>> = {
+const EVENT_TYPE_LABELS = {
   job_created: '创建任务',
   job_reordered: '调整队列顺序',
   job_started: '开始执行',
@@ -96,7 +98,9 @@ const EVENT_TYPE_LABELS: Readonly<Record<string, string>> = {
   plugin_agent_done: '插件助手完成',
   plugin_agent_error: '插件助手错误',
   web_import_agent_log: '网页导入助手日志',
-}
+} as const
+
+export const TASK_EVENT_TYPES = Object.freeze(Object.keys(EVENT_TYPE_LABELS))
 
 function unknownLabel(category: string, value: string): string {
   const normalized = value.trim()
@@ -104,7 +108,7 @@ function unknownLabel(category: string, value: string): string {
 }
 
 export function jobKindLabel(kind: string): string {
-  return JOB_KIND_LABELS[kind] ?? unknownLabel('任务', kind)
+  return (JOB_KIND_LABELS as Readonly<Record<string, string>>)[kind] ?? unknownLabel('任务', kind)
 }
 
 export function stepKindLabel(kind: string): string {
@@ -114,12 +118,12 @@ export function stepKindLabel(kind: string): string {
 }
 
 export function eventTypeLabel(type: string): string {
-  return EVENT_TYPE_LABELS[type] ?? unknownLabel('事件', type)
+  return (EVENT_TYPE_LABELS as Readonly<Record<string, string>>)[type] ?? unknownLabel('事件', type)
 }
 
-export function formatTaskDuration(durationMs: number | null | undefined): string {
-  if (durationMs === null || durationMs === undefined || !Number.isFinite(durationMs)) return '—'
-  const milliseconds = Math.max(0, Math.round(durationMs))
+export function formatTaskDuration(durationMs: number | null): string {
+  if (durationMs === null) return '—'
+  const milliseconds = durationMs
   if (milliseconds < 1000) return `${milliseconds} 毫秒`
   if (milliseconds < 60_000) {
     return `${Number((milliseconds / 1000).toFixed(1))} 秒`

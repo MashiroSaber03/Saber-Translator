@@ -13,7 +13,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.engine import Connection
 
-from src.backend_v2.plugins.contract import parse_manifest
+from src.backend_v2.plugins.contract import PluginContractError, parse_manifest
 from src.backend_v2.storage.schema import (
     plugin_current_versions,
     plugin_versions,
@@ -65,8 +65,14 @@ def enabled_plugin_snapshots(
 
 
 def _object(raw: object) -> dict[str, Any]:
+    if isinstance(raw, Mapping):
+        return dict(raw)
+    if not isinstance(raw, str):
+        raise PluginContractError("stored plugin snapshot JSON must be an object")
     try:
-        value = json.loads(str(raw)) if raw else {}
-    except (TypeError, ValueError, json.JSONDecodeError):
-        return {}
-    return dict(value) if isinstance(value, Mapping) else {}
+        value = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise PluginContractError("stored plugin snapshot JSON is invalid") from exc
+    if not isinstance(value, Mapping):
+        raise PluginContractError("stored plugin snapshot JSON must be an object")
+    return dict(value)

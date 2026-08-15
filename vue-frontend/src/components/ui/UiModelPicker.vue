@@ -99,12 +99,8 @@ const resolvedModelCount = computed(() => {
 const showOptions = computed(() => resolvedModelCount.value > 0 && props.options.length > 0)
 const optionsComboboxId = computed(() => props.inputId ? `${props.inputId}Options` : generatedOptionsId)
 
-function coerceValue(value: string | number | boolean): UiSelectValue {
-  return typeof value === 'boolean' ? String(value) : value
-}
-
-function handleInput(value: string | number | boolean): void {
-  emit('update:modelValue', coerceValue(value))
+function handleInput(value: string | number): void {
+  emit('update:modelValue', value)
 }
 
 function handleSelect(value: UiSelectValue): void {

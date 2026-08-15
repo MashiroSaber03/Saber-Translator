@@ -5,6 +5,7 @@ Shared persistent OpenAI-compatible request/execution options.
 from __future__ import annotations
 
 import copy
+import math
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Optional
 
@@ -16,59 +17,56 @@ _OPENAI_EXTRA_BODY_RESERVED_KEYS = {
     "response_format",
     "stream",
 }
+_REQUEST_OPTION_FIELDS = {"force_json_output", "temperature", "extra_body"}
+_EXECUTION_OPTION_FIELDS = {
+    "use_stream",
+    "rpm_limit",
+    "transport_retries",
+    "business_retries",
+}
+_OPTION_FIELDS = {"request", "execution"}
 
 
-def _value_from_mapping(data: Mapping[str, Any], *keys: str, default=None):
-    for key in keys:
-        if key in data and data.get(key) is not None:
-            return data.get(key)
-    return default
-
-
-def _coerce_bool(value: Any, default: bool = False) -> bool:
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        lowered = value.strip().lower()
-        if lowered in {"1", "true", "yes", "on"}:
-            return True
-        if lowered in {"0", "false", "no", "off", ""}:
-            return False
-    return bool(value)
-
-
-def _coerce_int(
+def _require_exact_mapping(
     value: Any,
-    default: int = 0,
     *,
-    minimum: int = 0,
-    maximum: Optional[int] = None,
-) -> int:
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        parsed = default
-    parsed = max(minimum, parsed)
-    if maximum is not None:
-        parsed = min(maximum, parsed)
-    return parsed
+    fields: set[str],
+    name: str,
+) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping) or set(value) != fields:
+        raise ValueError(f"{name} 必须是完整的当前结构")
+    return value
 
 
-def _coerce_float(value: Any, default: Optional[float] = None) -> Optional[float]:
-    if value is None or value == "":
-        return default
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return default
+def _require_bool(value: Any, *, name: str) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError(f"{name} 必须是布尔值")
+    return value
+
+
+def _require_nonnegative_int(value: Any, *, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"{name} 必须是非负整数")
+    return value
+
+
+def _require_temperature(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(float(value))
+        or not 0 <= float(value) <= 2
+    ):
+        raise ValueError("openai_options.request.temperature 必须是 0 到 2 的有限数值")
+    return float(value)
 
 
 def _clone_mapping(value: Any) -> dict[str, Any]:
-    if isinstance(value, Mapping):
-        return copy.deepcopy(dict(value))
-    return {}
+    if not isinstance(value, Mapping):
+        raise ValueError("openai_options.request.extra_body 必须是 JSON 对象")
+    return copy.deepcopy(dict(value))
 
 
 def _validate_extra_body_payload(value: Any, *, prefix: str) -> list[str]:
@@ -84,6 +82,26 @@ def _validate_extra_body_payload(value: Any, *, prefix: str) -> list[str]:
     return invalid_keys
 
 
+def _validate_json_value(value: Any, *, path: str) -> None:
+    if value is None or isinstance(value, (str, bool, int)):
+        return
+    if isinstance(value, float):
+        if math.isfinite(value):
+            return
+        raise ValueError(f"{path} 必须是有限数值")
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            _validate_json_value(item, path=f"{path}[{index}]")
+        return
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise ValueError(f"{path} 的键必须是字符串")
+            _validate_json_value(item, path=f"{path}.{key}")
+        return
+    raise ValueError(f"{path} 必须是 JSON 可序列化值")
+
+
 def validate_and_clone_openai_extra_body(
     value: Any,
     *,
@@ -97,6 +115,7 @@ def validate_and_clone_openai_extra_body(
         reserved_keys = ", ".join(key.split(".")[-1] for key in invalid_keys)
         raise ValueError(f"{prefix} 包含不允许覆盖的保留字段: {reserved_keys}")
 
+    _validate_json_value(value, path=prefix)
     return _clone_mapping(value)
 
 
@@ -106,6 +125,16 @@ class OpenAICompatibleRequestOptions:
     temperature: Optional[float] = None
     extra_body: dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        self.force_json_output = _require_bool(
+            self.force_json_output,
+            name="openai_options.request.force_json_output",
+        )
+        self.temperature = _require_temperature(self.temperature)
+        if not isinstance(self.extra_body, Mapping):
+            raise ValueError("openai_options.request.extra_body 必须是 JSON 对象")
+        self.extra_body = validate_and_clone_openai_extra_body(self.extra_body)
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "force_json_output": self.force_json_output,
@@ -114,12 +143,18 @@ class OpenAICompatibleRequestOptions:
         }
 
     @classmethod
-    def from_dict(cls, data: Optional[Mapping[str, Any]]) -> "OpenAICompatibleRequestOptions":
-        data = data or {}
+    def from_dict(cls, data: Mapping[str, Any]) -> "OpenAICompatibleRequestOptions":
+        data = _require_exact_mapping(
+            data,
+            fields=_REQUEST_OPTION_FIELDS,
+            name="openai_options.request",
+        )
+        if not isinstance(data["extra_body"], Mapping):
+            raise ValueError("openai_options.request.extra_body 必须是 JSON 对象")
         return cls(
-            force_json_output=_coerce_bool(data.get("force_json_output"), False),
-            temperature=_coerce_float(data.get("temperature"), None),
-            extra_body=validate_and_clone_openai_extra_body(data.get("extra_body")),
+            force_json_output=data["force_json_output"],
+            temperature=data["temperature"],
+            extra_body=data["extra_body"],
         )
 
 
@@ -130,6 +165,24 @@ class OpenAICompatibleExecutionOptions:
     transport_retries: int = DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES
     business_retries: int = 0
 
+    def __post_init__(self) -> None:
+        self.use_stream = _require_bool(
+            self.use_stream,
+            name="openai_options.execution.use_stream",
+        )
+        self.rpm_limit = _require_nonnegative_int(
+            self.rpm_limit,
+            name="openai_options.execution.rpm_limit",
+        )
+        self.transport_retries = _require_nonnegative_int(
+            self.transport_retries,
+            name="openai_options.execution.transport_retries",
+        )
+        self.business_retries = _require_nonnegative_int(
+            self.business_retries,
+            name="openai_options.execution.business_retries",
+        )
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "use_stream": self.use_stream,
@@ -139,21 +192,17 @@ class OpenAICompatibleExecutionOptions:
         }
 
     @classmethod
-    def from_dict(cls, data: Optional[Mapping[str, Any]]) -> "OpenAICompatibleExecutionOptions":
-        data = data or {}
+    def from_dict(cls, data: Mapping[str, Any]) -> "OpenAICompatibleExecutionOptions":
+        data = _require_exact_mapping(
+            data,
+            fields=_EXECUTION_OPTION_FIELDS,
+            name="openai_options.execution",
+        )
         return cls(
-            use_stream=_coerce_bool(data.get("use_stream"), False),
-            rpm_limit=_coerce_int(data.get("rpm_limit"), 0, minimum=0),
-            transport_retries=_coerce_int(
-                data.get("transport_retries"),
-                DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
-                minimum=0,
-            ),
-            business_retries=_coerce_int(
-                data.get("business_retries"),
-                0,
-                minimum=0,
-            ),
+            use_stream=data["use_stream"],
+            rpm_limit=data["rpm_limit"],
+            transport_retries=data["transport_retries"],
+            business_retries=data["business_retries"],
         )
 
 
@@ -162,6 +211,12 @@ class OpenAICompatibleOptions:
     request: OpenAICompatibleRequestOptions = field(default_factory=OpenAICompatibleRequestOptions)
     execution: OpenAICompatibleExecutionOptions = field(default_factory=OpenAICompatibleExecutionOptions)
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.request, OpenAICompatibleRequestOptions):
+            raise TypeError("openai_options.request 类型错误")
+        if not isinstance(self.execution, OpenAICompatibleExecutionOptions):
+            raise TypeError("openai_options.execution 类型错误")
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "request": self.request.to_dict(),
@@ -169,17 +224,21 @@ class OpenAICompatibleOptions:
         }
 
     @classmethod
-    def from_dict(cls, data: Optional[Mapping[str, Any]]) -> "OpenAICompatibleOptions":
-        data = data or {}
-        request_data = _value_from_mapping(data, "request", default={}) or {}
-        execution_data = _value_from_mapping(data, "execution", default={}) or {}
+    def from_dict(cls, data: Mapping[str, Any]) -> "OpenAICompatibleOptions":
+        data = _require_exact_mapping(
+            data,
+            fields=_OPTION_FIELDS,
+            name="openai_options",
+        )
         return cls(
-            request=OpenAICompatibleRequestOptions.from_dict(request_data),
-            execution=OpenAICompatibleExecutionOptions.from_dict(execution_data),
+            request=OpenAICompatibleRequestOptions.from_dict(data["request"]),
+            execution=OpenAICompatibleExecutionOptions.from_dict(data["execution"]),
         )
 
 
 def clone_openai_compatible_options(options: OpenAICompatibleOptions) -> OpenAICompatibleOptions:
+    if not isinstance(options, OpenAICompatibleOptions):
+        raise TypeError("options 必须是 OpenAICompatibleOptions")
     return OpenAICompatibleOptions.from_dict(options.to_dict())
 
 
@@ -197,12 +256,12 @@ def create_openai_compatible_options(
         request=OpenAICompatibleRequestOptions(
             force_json_output=force_json_output,
             temperature=temperature,
-            extra_body=validate_and_clone_openai_extra_body(extra_body),
+            extra_body={} if extra_body is None else extra_body,
         ),
         execution=OpenAICompatibleExecutionOptions(
             use_stream=use_stream,
-            rpm_limit=max(0, int(rpm_limit or 0)),
-            transport_retries=max(0, int(transport_retries or 0)),
-            business_retries=max(0, int(business_retries or 0)),
+            rpm_limit=rpm_limit,
+            transport_retries=transport_retries,
+            business_retries=business_retries,
         ),
     )

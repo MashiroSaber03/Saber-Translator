@@ -18,17 +18,26 @@
       title="没有可用候选角色"
     />
     <div v-else class="candidate-list-pane__list">
-      <ProductRecordCard v-for="item in candidates" :key="item.name" class="candidate-list-pane__row">
+      <ProductRecordCard v-for="item in candidates" :key="item.id" class="candidate-list-pane__row">
         <div class="candidate-list-pane__row-body">
           <div class="candidate-list-pane__candidate-main">
             <strong class="candidate-list-pane__candidate-name">{{ item.name }}</strong>
             <div class="candidate-list-pane__candidate-meta">
-              首登 {{ item.first_appearance || '-' }} 页 · 对话 {{ item.dialogue_count }} · 关键页 {{ item.sample_pages.slice(0, 3).join(' / ') || '-' }}
+              首登 {{ item.first_appearance_page ?? '-' }} 页 · 关键时刻
+              {{ item.key_moment_count }} · 相关页 {{ item.related_page_count }}
+              <template v-if="item.related_page_numbers.length > 0">
+                （{{ item.related_page_numbers.slice(0, 3).join(' / ') }}）
+              </template>
             </div>
           </div>
           <ProductActionRow appearance="accent" aria-label="候选角色操作">
-            <UiButton variant="secondary" :disabled="!!creatingCandidateName" size="sm" @click="$emit('create', item.name)">
-              {{ creatingCandidateName === item.name ? '创建中...' : '创建' }}
+            <UiButton
+              variant="secondary"
+              :disabled="!!creatingCandidateId"
+              size="sm"
+              @click="$emit('create', item.id)"
+            >
+              {{ creatingCandidateId === item.id ? '创建中...' : '创建' }}
             </UiButton>
           </ProductActionRow>
         </div>
@@ -47,11 +56,11 @@ import type { CharacterStudioCandidate } from '@/types/characterStudio'
 defineProps<{
   candidates: CharacterStudioCandidate[]
   hasTimeline: boolean
-  creatingCandidateName: string
+  creatingCandidateId: string
 }>()
 
 defineEmits<{
-  (e: 'create', candidateName: string): void
+  (e: 'create', candidateId: string): void
 }>()
 </script>
 
@@ -126,5 +135,4 @@ defineEmits<{
   font-size: 11px;
   line-height: 1.5;
 }
-
 </style>

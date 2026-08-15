@@ -38,17 +38,6 @@ defineExpose({
       inputRef.value.value = ''
     }
   },
-  get value() {
-    return inputRef.value?.value ?? ''
-  },
-  set value(nextValue: string) {
-    if (inputRef.value) {
-      inputRef.value.value = nextValue
-    }
-  },
-  get files() {
-    return inputRef.value?.files ?? null
-  },
 })
 </script>
 

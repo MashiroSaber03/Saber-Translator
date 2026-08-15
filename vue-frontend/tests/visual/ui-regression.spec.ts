@@ -1,13 +1,10 @@
 import { execFileSync } from 'node:child_process'
 import { resolve } from 'node:path'
-import {
-  chromium,
-  expect,
-  test,
-  type Browser,
-  type Page,
-  type Route,
-} from '@playwright/test'
+import { chromium, expect, test, type Browser, type Page, type Route } from '@playwright/test'
+
+import type { components } from '../../src/api/generated/v2'
+
+type V2Schema<Name extends keyof components['schemas']> = components['schemas'][Name]
 
 const jsonHeaders = {
   'content-type': 'application/json; charset=utf-8',
@@ -54,21 +51,23 @@ async function expectDarkThemeSurface(page: Page, selector: string) {
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
   await expect(page.locator('body')).toHaveAttribute('data-theme', 'dark')
 
-  await expect.poll(async () => {
-    const colors = await page.evaluate(() => {
-      const bodyStyle = window.getComputedStyle(document.body)
+  await expect
+    .poll(async () => {
+      const colors = await page.evaluate(() => {
+        const bodyStyle = window.getComputedStyle(document.body)
+        return {
+          background: bodyStyle.backgroundColor,
+          text: bodyStyle.color,
+        }
+      })
+      const background = parseCssColorToRgb(colors.background)
+      const text = parseCssColorToRgb(colors.text)
       return {
-        background: bodyStyle.backgroundColor,
-        text: bodyStyle.color,
+        ...colors,
+        isDarkStable: Math.max(...background) < 80 && Math.min(...text) > 180,
       }
     })
-    const background = parseCssColorToRgb(colors.background)
-    const text = parseCssColorToRgb(colors.text)
-    return {
-      ...colors,
-      isDarkStable: Math.max(...background) < 80 && Math.min(...text) > 180,
-    }
-  }).toMatchObject({ isDarkStable: true })
+    .toMatchObject({ isDarkStable: true })
 
   const bodyColors = await page.evaluate(() => {
     const bodyStyle = window.getComputedStyle(document.body)
@@ -98,28 +97,6 @@ const demoPageSvg = `
   <rect x="150" y="950" width="580" height="38" rx="19" fill="#2f3f5c"/>
 </svg>`
 
-const demoBook = {
-  id: 'demo-book',
-  title: 'Demo Manga',
-  description: 'Visual regression fixture',
-  cover: '/api/v2/assets/demo-cover',
-  total_pages: 20,
-  tags: [],
-  chapters: [
-    {
-      id: 'demo-chapter',
-      title: 'Chapter 1',
-      page_count: 20,
-      image_count: 2,
-      session_path: 'bookshelf/demo-book/chapters/demo-chapter/session',
-      created_at: '2026-01-01T00:00:00Z',
-      updated_at: '2026-01-01T00:00:00Z',
-    },
-  ],
-  created_at: '2026-01-01T00:00:00Z',
-  updated_at: '2026-01-01T00:00:00Z',
-}
-
 const demoBubbleState = {
   originalText: '原文',
   translatedText: '测试译文',
@@ -127,7 +104,6 @@ const demoBubbleState = {
   coords: [150, 580, 410, 710],
   polygon: [],
   fontSize: 28,
-  fontFamily: 'fonts/STXIHEI.TTF',
   textDirection: 'horizontal',
   autoTextDirection: 'horizontal',
   textColor: '#000000',
@@ -140,9 +116,12 @@ const demoBubbleState = {
   lineSpacing: 1.2,
   textAlign: 'center',
   inpaintMethod: 'solid',
+  autoFgColor: null,
+  autoBgColor: null,
+  colorConfidence: 0,
   textlines: [],
   ocrResult: null,
-}
+} satisfies V2Schema<'BubblePayload'>
 
 const demoStudioDocument = {
   id: 'demo-doc',
@@ -154,16 +133,12 @@ const demoStudioDocument = {
   status: {
     is_favorite: true,
     frozen_sections: ['identity'],
+    last_diagnostics: null,
     last_validated_at: '2026-01-01T00:00:00Z',
   },
   meta: {
     title: '绫濑澪',
     tags: ['主角', '视觉回归'],
-    created_at: '2026-01-01T00:00:00Z',
-    updated_at: '2026-01-01T00:00:00Z',
-  },
-  avatar: {
-    asset_path: null,
   },
   identity: {
     name: '绫濑澪',
@@ -257,15 +232,6 @@ const demoStudioDocument = {
       disabled: false,
     },
   ],
-  chatPreset: {
-    opening_mode: 'first_message',
-  },
-  grounding: {
-    timeline_mode: 'enhanced',
-    sample_pages: [1, 2],
-    relationships: [{ target: '主角团', relation: '协作调查' }],
-    key_moments: [{ page: 1, summary: '发现旧校舍异常灯光' }],
-  },
   exportArtifacts: {
     last_review: {
       summary: '角色设定完整，已有可用的世界书与运行时资源。',
@@ -273,11 +239,16 @@ const demoStudioDocument = {
       suggestions: ['可以补充与学生会成员的关系条目。'],
     },
   },
+  revision: 1,
+  avatarUrl: null,
+  createdAt: '2026-01-01T00:00:00Z',
+  updatedAt: '2026-01-01T00:00:00Z',
 }
 
 const demoStudioChatSession = {
   session_id: 'demo-session',
   doc_id: 'demo-doc',
+  index_revision: 1,
   title: '视觉回归会话',
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
@@ -285,10 +256,7 @@ const demoStudioChatSession = {
   greeting_source: { type: 'first_message' },
   summary_blocks: [
     {
-      summary_id: 'summary-1',
-      content: '用户和角色正在排查旧校舍灯光异常。',
-      created_at: '2026-01-01T00:00:00Z',
-      covered_message_ids: ['msg-user-1', 'msg-assistant-1'],
+      summary: '用户和角色正在排查旧校舍灯光异常。',
     },
   ],
   messages: [
@@ -316,7 +284,8 @@ const demoStudioChatSession = {
     },
   ],
   variables: { trust_score: 21 },
-  last_prompt_preview: '角色: 绫濑澪\n场景: 校园祭前夜\n目标: 调查旧校舍异常',
+  revision: 1,
+  generation: 1,
 }
 
 const fixtureTimestamp = '2026-01-01T00:00:00Z'
@@ -327,7 +296,7 @@ const demoV2Chapter = {
   title: 'Chapter 1',
   pageCount: 2,
   pageOrderRevision: 1,
-}
+} satisfies V2Schema<'Chapter'>
 const demoV2Book = {
   id: 'demo-book',
   title: 'Demo Manga',
@@ -339,26 +308,26 @@ const demoV2Book = {
   createdAt: fixtureTimestamp,
   updatedAt: fixtureTimestamp,
   chapters: [demoV2Chapter],
-}
+} satisfies V2Schema<'BookDetail'>
 function createDemoV2Pages(pageCount: number) {
   return Array.from({ length: pageCount }, (_, index) => {
     const ordinal = index + 1
     return {
-  id: `demo-page-${ordinal}`,
-  chapterId: 'demo-chapter',
-  ordinal,
-  logicalSourcePath: `${String(ordinal).padStart(3, '0')}.svg`,
-  sourceRevision: 1,
-  documentRevision: 1,
-  renderedRevision: 1,
-  renderStatus: 'ready',
-  detectionState: 'ready',
-  sourceUrl: `/api/v2/assets/demo-source-${ordinal}`,
-  thumbnailSourceUrl: `/api/v2/assets/demo-source-thumb-${ordinal}`,
-  cleanUrl: `/api/v2/assets/demo-clean-${ordinal}`,
-  translatedUrl: `/api/v2/assets/demo-rendered-${ordinal}`,
-  width: 900,
-  height: 1280,
+      id: `demo-page-${ordinal}`,
+      chapterId: 'demo-chapter',
+      ordinal,
+      logicalSourcePath: `${String(ordinal).padStart(3, '0')}.svg`,
+      sourceRevision: 1,
+      documentRevision: 1,
+      renderedRevision: 1,
+      renderStatus: 'ready',
+      detectionState: 'ready',
+      sourceUrl: `/api/v2/assets/demo-source-${ordinal}`,
+      thumbnailSourceUrl: `/api/v2/assets/demo-source-thumb-${ordinal}`,
+      cleanUrl: `/api/v2/assets/demo-clean-${ordinal}`,
+      translatedUrl: `/api/v2/assets/demo-rendered-${ordinal}`,
+      width: 900,
+      height: 1280,
     }
   })
 }
@@ -395,7 +364,7 @@ function fixtureOpenAiOptions(useStream: boolean, rpmLimit = 0) {
 
 function createFixtureSettings() {
   return {
-    settingsSchemaVersion: 3,
+    settingsSchemaVersion: 5,
     textStyle: { ...fixtureTextStyle },
     ocrEngine: 'manga_ocr',
     sourceLanguage: 'japanese',
@@ -463,7 +432,6 @@ function createFixtureSettings() {
     proofreading: {
       enabled: false,
       rounds: [],
-      maxRetries: 3,
     },
     boxExpand: {
       ratio: 0,
@@ -495,7 +463,7 @@ function fixtureSettingsDocument() {
         domain: 'translation',
         payload: settings,
         revision: 1,
-        schemaVersion: 3,
+        schemaVersion: 5,
       },
       {
         domain: 'text_style_defaults',
@@ -568,10 +536,7 @@ function fixtureSettingsDocument() {
   }
 }
 
-function fixtureTranslationBootstrap(
-  loaded: boolean,
-  pages = demoV2Pages,
-) {
+function fixtureTranslationBootstrap(loaded: boolean, pages = demoV2Pages) {
   const bookId = loaded ? 'demo-book' : 'quick-workspace'
   const chapterId = loaded ? 'demo-chapter' : 'quick-chapter'
   return {
@@ -591,7 +556,7 @@ function fixtureTranslationBootstrap(
       settingsMemoryRevision: 1,
     },
     constraints: {
-      payload: { glossary: {}, non_translate: {} },
+      payload: { glossary: {}, nonTranslate: {} },
       schemaVersion: 1,
       revision: 1,
     },
@@ -620,13 +585,21 @@ function fixtureTranslationBootstrap(
 
 const demoV2StudioDocument = {
   ...demoStudioDocument,
+  status: {
+    ...demoStudioDocument.status,
+    last_diagnostics: null,
+  },
+  meta: {
+    title: demoStudioDocument.meta.title,
+    tags: demoStudioDocument.meta.tags,
+  },
   title: demoStudioDocument.meta.title,
   revision: 3,
   avatarAssetId: null,
   avatarUrl: null,
   createdAt: fixtureTimestamp,
   updatedAt: fixtureTimestamp,
-}
+} satisfies V2Schema<'StudioDocument'>
 
 const demoV2StudioSession = {
   sessionId: 'demo-session',
@@ -635,18 +608,20 @@ const demoV2StudioSession = {
   revision: 4,
   generation: 1,
   archived: false,
+  archivedAt: null,
   title: demoStudioChatSession.title,
   createdAt: fixtureTimestamp,
   updatedAt: fixtureTimestamp,
   greetingSource: { type: 'first_message' },
   summaryBlocks: demoStudioChatSession.summary_blocks.map(block => ({
-    summaryId: block.summary_id,
-    content: block.content,
-    createdAt: block.created_at,
-    coveredMessageIds: block.covered_message_ids,
+    summary: block.summary,
   })),
-  messages: demoStudioChatSession.messages.map(message => ({
+  summaryThroughMessageId: null,
+  summaryGeneration: 0,
+  runtimeState: {},
+  messages: demoStudioChatSession.messages.map((message, index) => ({
     messageId: message.message_id,
+    ordinal: index + 1,
     role: message.role,
     content: message.content,
     attachments: [],
@@ -657,7 +632,7 @@ const demoV2StudioSession = {
     updatedAt: message.updated_at,
   })),
   variables: demoStudioChatSession.variables,
-}
+} satisfies V2Schema<'StudioChatSession'>
 
 const demoContinuationProject = {
   bookId: 'demo-book',
@@ -683,10 +658,11 @@ const demoContinuationProject = {
   revision: 1,
   script: null,
   sourceRunId: 'demo-run',
-}
+} satisfies V2Schema<'ContinuationProject'>
 
 interface VisualFixtureOptions {
-  books?: typeof demoBook[]
+  bookshelfHasBook?: boolean
+  insightHasBook?: boolean
   studioDocuments?: boolean
   editBubbles?: boolean
   pages?: typeof demoV2Pages
@@ -696,10 +672,9 @@ async function mockApi(route: Route, options: VisualFixtureOptions = {}) {
   const requestUrl = new URL(route.request().url())
   const path = requestUrl.pathname
   const method = route.request().method()
-  const loadedTranslation = (
-    requestUrl.searchParams.get('bookId') === 'demo-book'
-    && requestUrl.searchParams.get('chapterId') === 'demo-chapter'
-  )
+  const loadedTranslation =
+    requestUrl.searchParams.get('bookId') === 'demo-book' &&
+    requestUrl.searchParams.get('chapterId') === 'demo-chapter'
   const fixturePages = options.pages ?? demoV2Pages
   const fixtureChapter = {
     ...demoV2Chapter,
@@ -762,14 +737,17 @@ async function mockApi(route: Route, options: VisualFixtureOptions = {}) {
 
   if (/^\/api\/v2\/pages\/demo-page-\d+\/document$/.test(path)) {
     const pageId = path.split('/').at(-2) || 'demo-page-1'
-    const bubble = options.editBubbles && pageId === 'demo-page-1'
-      ? [{
-          bubbleId: 'demo-bubble-1',
-          ordinal: 1,
-          fontId: 'font-source-han',
-          payload: demoBubbleState,
-        }]
-      : []
+    const bubble =
+      options.editBubbles && pageId === 'demo-page-1'
+        ? [
+            {
+              bubbleId: 'demo-bubble-1',
+              ordinal: 1,
+              fontId: 'font-source-han',
+              payload: demoBubbleState,
+            },
+          ]
+        : []
     const document = {
       pageId,
       chapterId: 'demo-chapter',
@@ -813,7 +791,7 @@ async function mockApi(route: Route, options: VisualFixtureOptions = {}) {
 
   if (path === '/api/v2/books') {
     await fulfillJson({
-      items: options.books?.length ? [fixtureBook] : [],
+      items: options.bookshelfHasBook ? [fixtureBook] : [],
     })
     return
   }
@@ -906,7 +884,7 @@ async function mockApi(route: Route, options: VisualFixtureOptions = {}) {
             plugin_id: 'demo-plugin',
             display_name: 'Demo Plugin',
             package_version: '1.0.0',
-            entrypoint: 'plugin.py',
+            entrypoint: 'plugin.py:Plugin',
             hooks: ['after_translate'],
             supported_steps: ['translate'],
             supported_modes: ['standard'],
@@ -939,12 +917,15 @@ async function mockApi(route: Route, options: VisualFixtureOptions = {}) {
   }
 
   if (path === '/api/v2/web-import/drafts' && method === 'POST') {
-    await fulfillJson({
-      batchId: 'demo-web-import-batch',
-      draftId: 'demo-web-import-draft',
-      jobIds: ['demo-web-import-job'],
-      status: 'queued',
-    }, 202)
+    await fulfillJson(
+      {
+        batchId: 'demo-web-import-batch',
+        draftId: 'demo-web-import-draft',
+        jobIds: ['demo-web-import-job'],
+        status: 'queued',
+      },
+      202
+    )
     return
   }
 
@@ -986,20 +967,23 @@ async function mockApi(route: Route, options: VisualFixtureOptions = {}) {
   if (path === '/api/v2/insight/bootstrap') {
     await fulfillJson({
       activeJobs: [],
-      books: options.books?.length === 0
-        ? []
-        : [{
-            activeRun: {
-              publishedAt: fixtureTimestamp,
-              runId: 'demo-run',
-              status: 'completed',
-            },
-            analyzedPageCount: fixturePages.length,
-            bookId: 'demo-book',
-            coverUrl: '/api/v2/assets/demo-cover',
-            pageCount: fixturePages.length,
-            title: 'Demo Manga',
-          }],
+      books:
+        options.insightHasBook === false
+          ? []
+          : [
+              {
+                activeRun: {
+                  publishedAt: fixtureTimestamp,
+                  runId: 'demo-run',
+                  status: 'completed',
+                },
+                analyzedPageCount: fixturePages.length,
+                bookId: 'demo-book',
+                coverUrl: '/api/v2/assets/demo-cover',
+                pageCount: fixturePages.length,
+                title: 'Demo Manga',
+              },
+            ],
       qa: { available: true, reason: '' },
     })
     return
@@ -1007,18 +991,20 @@ async function mockApi(route: Route, options: VisualFixtureOptions = {}) {
 
   if (path === '/api/v2/insight/books/demo-book/chapters') {
     await fulfillJson({
-      items: [{
-        analysisCounts: {
-          ready: fixturePages.length,
-          stale: 0,
-          failed: 0,
-          running: 0,
+      items: [
+        {
+          analysisCounts: {
+            ready: fixturePages.length,
+            stale: 0,
+            failed: 0,
+            running: 0,
+          },
+          chapterId: 'demo-chapter',
+          ordinal: 1,
+          pageCount: fixturePages.length,
+          title: 'Chapter 1',
         },
-        chapterId: 'demo-chapter',
-        ordinal: 1,
-        pageCount: fixturePages.length,
-        title: 'Chapter 1',
-      }],
+      ],
     })
     return
   }
@@ -1081,11 +1067,13 @@ async function mockApi(route: Route, options: VisualFixtureOptions = {}) {
       bookId: 'demo-book',
       kind: 'overview',
       payload: {
-        content: template === 'story_summary'
-          ? '这是用于视觉回归的故事概览。'
-          : template === 'no_spoiler'
-            ? '这是用于视觉回归的无剧透概览。'
-            : `已生成的 ${template} 概览。`,
+        title: `视觉回归概览：${template}`,
+        content:
+          template === 'story_summary'
+            ? '这是用于视觉回归的故事概览。'
+            : template === 'no_spoiler'
+              ? '这是用于视觉回归的无剧透概览。'
+              : `已生成的 ${template} 概览。`,
       },
       revision: 1,
       runId: 'demo-run',
@@ -1142,19 +1130,24 @@ async function mockApi(route: Route, options: VisualFixtureOptions = {}) {
     await route.fulfill({
       headers: { 'content-type': 'text/event-stream; charset=utf-8' },
       body: [
-        'event: chunk\n',
-        `data: ${JSON.stringify({ text: '这是一个用于视觉回归的回答，包含稳定的排版和引用。' })}\n\n`,
+        'event: status\n',
+        `data: ${JSON.stringify({ requestId: 'visual-qa-request', status: 'retrieving' })}\n\n`,
         'event: context\n',
         `data: ${JSON.stringify({
-          mode: 'precise',
-          citations: [{
-            pageIdSnapshot: 'demo-page-1',
-            pageNumberSnapshot: 1,
-            excerpt: '视觉回归证据',
-          }],
+          mode: 'exact',
+          citations: [
+            {
+              pageId: 'demo-page-1',
+              pageNumber: 1,
+              excerpt: '视觉回归证据',
+              score: 0.9,
+            },
+          ],
         })}\n\n`,
+        'event: chunk\n',
+        `data: ${JSON.stringify({ text: '这是一个用于视觉回归的回答，包含稳定的排版和引用。' })}\n\n`,
         'event: done\n',
-        `data: ${JSON.stringify({ suggestedQuestions: [] })}\n\n`,
+        'data: {}\n\n',
       ].join(''),
     })
     return
@@ -1173,21 +1166,23 @@ async function mockApi(route: Route, options: VisualFixtureOptions = {}) {
 
   if (path === '/api/v2/insight/continuation/projects/demo-project/forms') {
     await fulfillJson({
-      items: [{
-        adoptedAssetId: null,
-        characterId: 'demo-character',
-        formId: 'demo-form',
-        imageVersions: [],
-        name: '默认',
-        payload: {
-          description: '默认形态',
-          enabled: true,
+      items: [
+        {
+          adoptedAssetId: null,
+          characterId: 'demo-character',
+          formId: 'demo-form',
+          imageVersions: [],
+          name: '默认',
+          payload: {
+            description: '默认形态',
+            enabled: true,
+          },
+          referenceAssetId: null,
+          referenceAssetUrl: null,
+          referenceThumbnailUrl: null,
+          revision: 1,
         },
-        referenceAssetId: null,
-        referenceAssetUrl: null,
-        referenceThumbnailUrl: null,
-        revision: 1,
-      }],
+      ],
       nextCursor: null,
     })
     return
@@ -1198,18 +1193,20 @@ async function mockApi(route: Route, options: VisualFixtureOptions = {}) {
       bookId: 'demo-book',
       candidateStatus: { available: true, reason: null },
       documents: options.studioDocuments
-        ? [{
-            avatarAssetId: null,
-            documentId: 'demo-doc',
-            hasAvatar: false,
-            isFavorite: true,
-            kind: 'analysis',
-            revision: 3,
-            sourceCharacter: '绫濑澪',
-            tags: ['主角', '视觉回归'],
-            title: '绫濑澪',
-            updatedAt: fixtureTimestamp,
-          }]
+        ? [
+            {
+              avatarAssetId: null,
+              documentId: 'demo-doc',
+              hasAvatar: false,
+              isFavorite: true,
+              kind: 'analysis',
+              revision: 3,
+              sourceCharacter: '绫濑澪',
+              tags: ['主角', '视觉回归'],
+              title: '绫濑澪',
+              updatedAt: fixtureTimestamp,
+            },
+          ]
         : [],
     })
     return
@@ -1228,41 +1225,55 @@ async function mockApi(route: Route, options: VisualFixtureOptions = {}) {
   if (path === '/api/v2/studio/documents/demo-doc/chat') {
     await fulfillJson({
       activeSession: demoV2StudioSession,
-      availableGreetings: [{
-        greetingId: 'first_message',
-        label: '主问候',
-        content: demoStudioDocument.coreMessages.first_message,
-        source: { type: 'first_message' },
-      }],
+      availableGreetings: [
+        {
+          greetingId: 'first_message',
+          label: '主问候',
+          content: demoStudioDocument.coreMessages.first_message,
+          source: { type: 'first_message' },
+        },
+      ],
       documentId: 'demo-doc',
       indexRevision: 2,
-      sessions: [{
-        sessionId: 'demo-session',
-        title: '视觉回归会话',
-        revision: 4,
-        archived: false,
-        updatedAt: fixtureTimestamp,
-      }],
+      sessions: [
+        {
+          sessionId: 'demo-session',
+          title: '视觉回归会话',
+          revision: 4,
+          generation: 1,
+          archived: false,
+          archivedAt: null,
+          messageCount: demoV2StudioSession.messages.length,
+          lastMessageExcerpt: demoV2StudioSession.messages.at(-1)?.content || '',
+          updatedAt: fixtureTimestamp,
+        },
+      ],
     })
     return
   }
 
   if (path.startsWith('/api/v2/')) {
-    await fulfillJson({
-      error: {
-        code: 'visual_fixture_missing',
-        message: `Missing visual fixture for ${method} ${path}`,
+    await fulfillJson(
+      {
+        error: {
+          code: 'visual_fixture_missing',
+          message: `Missing visual fixture for ${method} ${path}`,
+        },
       },
-    }, 501)
+      501
+    )
     return
   }
 
-  await fulfillJson({
-    error: {
-      code: 'visual_fixture_missing',
-      message: `Unexpected non-v2 API request: ${method} ${path}`,
+  await fulfillJson(
+    {
+      error: {
+        code: 'visual_fixture_missing',
+        message: `Unexpected non-v2 API request: ${method} ${path}`,
+      },
     },
-  }, 501)
+    501
+  )
 }
 
 async function prepareVisualPage(page: Page, options: VisualFixtureOptions = {}) {
@@ -1289,7 +1300,9 @@ async function prepareVisualPage(page: Page, options: VisualFixtureOptions = {})
   })
   page.on('response', response => {
     if (response.status() >= 400) {
-      console.log(`[browser:http-${response.status()}] ${response.request().method()} ${response.url()}`)
+      console.log(
+        `[browser:http-${response.status()}] ${response.request().method()} ${response.url()}`
+      )
     }
   })
 }
@@ -1329,22 +1342,17 @@ print(json.dumps({
 async function sampleBrowserMemory(browser: Browser): Promise<BrowserMemorySnapshot> {
   const session = await browser.newBrowserCDPSession()
   try {
-    const result = await session.send('SystemInfo.getProcessInfo') as {
+    const result = (await session.send('SystemInfo.getProcessInfo')) as {
       processInfo: Array<{ id: number }>
     }
     const processIds = result.processInfo.map(process => process.id)
-    const pythonExecutable = resolve(
-      process.cwd(),
-      '..',
-      'venv',
-      'Scripts',
-      'python.exe',
-    )
-    return JSON.parse(execFileSync(
-      pythonExecutable,
-      ['-c', processMemoryScript, processIds.join(',')],
-      { encoding: 'utf8', timeout: 10_000 },
-    )) as BrowserMemorySnapshot
+    const pythonExecutable = resolve(process.cwd(), '..', 'venv', 'Scripts', 'python.exe')
+    return JSON.parse(
+      execFileSync(pythonExecutable, ['-c', processMemoryScript, processIds.join(',')], {
+        encoding: 'utf8',
+        timeout: 10_000,
+      })
+    ) as BrowserMemorySnapshot
   } finally {
     await session.detach()
   }
@@ -1365,10 +1373,7 @@ test('100/500/1000-page reader keeps requests, DOM, heap, and process memory bou
 
   for (const pageCount of [100, 500, 1000]) {
     const browser = await chromium.launch({
-      args: [
-        '--enable-precise-memory-info',
-        '--js-flags=--expose-gc',
-      ],
+      args: ['--enable-precise-memory-info', '--js-flags=--expose-gc'],
       headless: true,
     })
     try {
@@ -1396,42 +1401,37 @@ test('100/500/1000-page reader keeps requests, DOM, heap, and process memory bou
 
       const pageSession = await context.newCDPSession(page)
       await pageSession.send('Performance.enable')
-      await page.goto(
-        'http://127.0.0.1:5173/reader?book=demo-book&chapter=demo-chapter',
-      )
-      await expect(page.locator('.reader-canvas__stream')).toBeVisible()
+      await page.goto('http://127.0.0.1:5173/reader?book=demo-book&chapter=demo-chapter')
+      await expect(page.locator('.reader-canvas__stream')).toBeVisible({ timeout: 15_000 })
 
       const stream = page.locator('.virtual-page-stream')
-      const renderedCounts = [
-        await page.locator('.virtual-page-stream__image').count(),
-      ]
+      const renderedCounts = [await page.locator('.virtual-page-stream__image').count()]
       for (const ratio of [0.5, 1]) {
         await stream.evaluate((element, nextRatio) => {
           element.scrollTop = (element.scrollHeight - element.clientHeight) * nextRatio
           element.dispatchEvent(new Event('scroll'))
         }, ratio)
         await page.waitForTimeout(250)
-        renderedCounts.push(
-          await page.locator('.virtual-page-stream__image').count(),
-        )
+        renderedCounts.push(await page.locator('.virtual-page-stream__image').count())
       }
 
       await page.evaluate(() => {
-        const collectGarbage = (globalThis as typeof globalThis & {
-          gc?: () => void
-        }).gc
+        const collectGarbage = (
+          globalThis as typeof globalThis & {
+            gc?: () => void
+          }
+        ).gc
         collectGarbage?.()
       })
-      const performance = await pageSession.send('Performance.getMetrics') as {
-        metrics: Array<{ name: string, value: number }>
+      const performance = (await pageSession.send('Performance.getMetrics')) as {
+        metrics: Array<{ name: string; value: number }>
       }
-      const dom = await pageSession.send('Memory.getDOMCounters') as {
+      const dom = (await pageSession.send('Memory.getDOMCounters')) as {
         nodes: number
       }
       const current = await sampleBrowserMemory(browser)
-      const heapBytes = performance.metrics.find(
-        metric => metric.name === 'JSHeapUsedSize',
-      )?.value ?? 0
+      const heapBytes =
+        performance.metrics.find(metric => metric.name === 'JSHeapUsedSize')?.value ?? 0
       const toMb = (bytes: number) => bytes / 1024 / 1024
 
       measurements.push({
@@ -1442,10 +1442,7 @@ test('100/500/1000-page reader keeps requests, DOM, heap, and process memory bou
         pageCount,
         privateDeltaMb: Math.max(0, toMb(current.privateBytes - baseline.privateBytes)),
         thumbnailRequests: thumbnailRequests.size,
-        workingSetDeltaMb: Math.max(
-          0,
-          toMb(current.workingSetBytes - baseline.workingSetBytes),
-        ),
+        workingSetDeltaMb: Math.max(0, toMb(current.workingSetBytes - baseline.workingSetBytes)),
       })
     } finally {
       await browser.close()
@@ -1517,9 +1514,12 @@ test('100/500/1000-page thumbnail surfaces keep DOM and process memory bounded',
         await expect(page.getByTestId('translation-result-display')).toBeVisible()
         await page.getByRole('button', { name: '切换编辑模式' }).click()
         await expect(page.locator('.edit-workspace')).toBeVisible()
-        await page.getByRole('button', {
-          name: '显示或隐藏缩略图',
-        }).first().click()
+        await page
+          .getByRole('button', {
+            name: '显示或隐藏缩略图',
+          })
+          .first()
+          .click()
         return {
           horizontal: true,
           itemSelector: '.edit-thumbnails-panel__item',
@@ -1533,12 +1533,12 @@ test('100/500/1000-page thumbnail surfaces keep DOM and process memory bounded',
         await page.goto('http://127.0.0.1:5173/translate?book=demo-book&chapter=demo-chapter')
         await expect(page.getByTestId('translation-result-display')).toBeVisible()
         await page.locator('#workflowModeSelect').click()
-        await page.getByRole('option', {
-          name: '翻译所有图片',
-        }).click()
-        await page.locator(
-          '.page-selection-section .product-collapsible-section__header',
-        ).click()
+        await page
+          .getByRole('option', {
+            name: '翻译所有图片',
+          })
+          .click()
+        await page.locator('.page-selection-section .product-collapsible-section__header').click()
         const selectionSwitch = page.getByRole('switch', {
           name: '启用指定翻译页码',
         })
@@ -1559,27 +1559,20 @@ test('100/500/1000-page thumbnail surfaces keep DOM and process memory bounded',
         await expect(page.locator('.pages-tree-panel')).toBeVisible()
         return {
           itemSelector: '[data-product-thumbnail-id]',
-          viewportSelector: (
-            '.pages-tree-panel__pages-grid.virtual-thumbnail-grid'
-          ),
+          viewportSelector: '.pages-tree-panel__pages-grid.virtual-thumbnail-grid',
         }
       },
     },
   ]
   const measurements: Measurement[] = []
   const selectedSurfaces = process.env.PW_MEMORY_SURFACE
-    ? surfaces.filter(
-        surface => surface.name === process.env.PW_MEMORY_SURFACE,
-      )
+    ? surfaces.filter(surface => surface.name === process.env.PW_MEMORY_SURFACE)
     : surfaces
 
   for (const surface of selectedSurfaces) {
     for (const pageCount of [100, 500, 1000]) {
       const browser = await chromium.launch({
-        args: [
-          '--enable-precise-memory-info',
-          '--js-flags=--expose-gc',
-        ],
+        args: ['--enable-precise-memory-info', '--js-flags=--expose-gc'],
         headless: true,
       })
       try {
@@ -1593,14 +1586,10 @@ test('100/500/1000-page thumbnail surfaces keep DOM and process memory bounded',
         const thumbnailRequests = new Set<string>()
         page.on('request', request => {
           const path = new URL(request.url()).pathname
-          if (
-            /^\/api\/v2\/assets\/demo-(?:source|clean|rendered)-\d+$/.test(path)
-          ) {
+          if (/^\/api\/v2\/assets\/demo-(?:source|clean|rendered)-\d+$/.test(path)) {
             imageRequests.add(path)
           }
-          if (
-            /^\/api\/v2\/assets\/demo-(?:source|rendered)-thumb-\d+$/.test(path)
-          ) {
+          if (/^\/api\/v2\/assets\/demo-(?:source|rendered)-thumb-\d+$/.test(path)) {
             thumbnailRequests.add(path)
           }
         })
@@ -1615,54 +1604,45 @@ test('100/500/1000-page thumbnail surfaces keep DOM and process memory bounded',
           scrollHeight: element.scrollHeight,
         }))
 
-        const renderedCounts = [
-          await viewport.locator(surfaceState.itemSelector).count(),
-        ]
+        const renderedCounts = [await viewport.locator(surfaceState.itemSelector).count()]
         for (const ratio of [0.5, 1]) {
           await viewport.evaluate(
             (element, state) => {
               if (state.horizontal) {
-                element.scrollLeft = (
-                  element.scrollWidth - element.clientWidth
-                ) * state.ratio
+                element.scrollLeft = (element.scrollWidth - element.clientWidth) * state.ratio
               } else {
-                element.scrollTop = (
-                  element.scrollHeight - element.clientHeight
-                ) * state.ratio
+                element.scrollTop = (element.scrollHeight - element.clientHeight) * state.ratio
               }
               element.dispatchEvent(new Event('scroll'))
             },
             {
               horizontal: Boolean(surfaceState.horizontal),
               ratio,
-            },
+            }
           )
           await page.waitForTimeout(250)
-          renderedCounts.push(
-            await viewport.locator(surfaceState.itemSelector).count(),
-          )
+          renderedCounts.push(await viewport.locator(surfaceState.itemSelector).count())
         }
         await page.evaluate(() => {
-          const collectGarbage = (globalThis as typeof globalThis & {
-            gc?: () => void
-          }).gc
+          const collectGarbage = (
+            globalThis as typeof globalThis & {
+              gc?: () => void
+            }
+          ).gc
           collectGarbage?.()
         })
         const pageSession = await context.newCDPSession(page)
         await pageSession.send('Performance.enable')
-        const performance = await pageSession.send(
-          'Performance.getMetrics',
-        ) as {
-          metrics: Array<{ name: string, value: number }>
+        const performance = (await pageSession.send('Performance.getMetrics')) as {
+          metrics: Array<{ name: string; value: number }>
         }
-        const dom = await pageSession.send('Memory.getDOMCounters') as {
+        const dom = (await pageSession.send('Memory.getDOMCounters')) as {
           nodes: number
         }
         await pageSession.detach()
         const current = await sampleBrowserMemory(browser)
-        const heapBytes = performance.metrics.find(
-          metric => metric.name === 'JSHeapUsedSize',
-        )?.value ?? 0
+        const heapBytes =
+          performance.metrics.find(metric => metric.name === 'JSHeapUsedSize')?.value ?? 0
         const toMb = (bytes: number) => bytes / 1024 / 1024
         measurements.push({
           domNodes: dom.nodes,
@@ -1670,18 +1650,12 @@ test('100/500/1000-page thumbnail surfaces keep DOM and process memory bounded',
           jsHeapMb: toMb(heapBytes),
           maxRenderedItems: Math.max(...renderedCounts),
           pageCount,
-          privateDeltaMb: Math.max(
-            0,
-            toMb(current.privateBytes - baseline.privateBytes),
-          ),
+          privateDeltaMb: Math.max(0, toMb(current.privateBytes - baseline.privateBytes)),
           surface: surface.name,
           thumbnailRequests: thumbnailRequests.size,
           viewportHeight: viewportGeometry.height,
           viewportScrollHeight: viewportGeometry.scrollHeight,
-          workingSetDeltaMb: Math.max(
-            0,
-            toMb(current.workingSetBytes - baseline.workingSetBytes),
-          ),
+          workingSetDeltaMb: Math.max(0, toMb(current.workingSetBytes - baseline.workingSetBytes)),
         })
       } finally {
         await browser.close()
@@ -1690,10 +1664,7 @@ test('100/500/1000-page thumbnail surfaces keep DOM and process memory bounded',
   }
 
   for (const measurement of measurements) {
-    expect(
-      measurement.maxRenderedItems,
-      JSON.stringify(measurement),
-    ).toBeLessThanOrEqual(64)
+    expect(measurement.maxRenderedItems, JSON.stringify(measurement)).toBeLessThanOrEqual(64)
     expect(measurement.imageRequests).toBeLessThanOrEqual(12)
     expect(measurement.thumbnailRequests).toBeLessThanOrEqual(128)
     expect(measurement.domNodes).toBeLessThan(7000)
@@ -1703,20 +1674,14 @@ test('100/500/1000-page thumbnail surfaces keep DOM and process memory bounded',
   }
   for (const surface of selectedSurfaces) {
     const fiveHundred = measurements.find(
-      item => item.surface === surface.name && item.pageCount === 500,
+      item => item.surface === surface.name && item.pageCount === 500
     )!
     const oneThousand = measurements.find(
-      item => item.surface === surface.name && item.pageCount === 1000,
+      item => item.surface === surface.name && item.pageCount === 1000
     )!
-    expect(
-      oneThousand.jsHeapMb - fiveHundred.jsHeapMb,
-    ).toBeLessThan(25)
-    expect(
-      oneThousand.privateDeltaMb - fiveHundred.privateDeltaMb,
-    ).toBeLessThan(100)
-    expect(
-      oneThousand.workingSetDeltaMb - fiveHundred.workingSetDeltaMb,
-    ).toBeLessThan(100)
+    expect(oneThousand.jsHeapMb - fiveHundred.jsHeapMb).toBeLessThan(25)
+    expect(oneThousand.privateDeltaMb - fiveHundred.privateDeltaMb).toBeLessThan(100)
+    expect(oneThousand.workingSetDeltaMb - fiveHundred.workingSetDeltaMb).toBeLessThan(100)
   }
 
   await test.info().attach('thumbnail-surfaces-memory-trend.json', {
@@ -1742,21 +1707,25 @@ test('dark theme reaches every primary route surface without local overrides', a
   }
 })
 
-test('dark theme keeps selector primitives readable through one visual contract', async ({ page }) => {
+test('dark theme keeps selector primitives readable through one visual contract', async ({
+  page,
+}) => {
   await enableDarkTheme(page)
   await page.goto('/translate?book=demo-book&chapter=demo-chapter')
   await expect(page.locator('.text-style-section')).toBeVisible()
-  const fontSelector = page.locator('.text-style-section__field')
+  const fontSelector = page
+    .locator('.text-style-section__field')
     .filter({ hasText: '文本字体' })
     .getByRole('combobox')
-  const layoutSelector = page.locator('.text-style-section__field')
+  const layoutSelector = page
+    .locator('.text-style-section__field')
     .filter({ hasText: '排版方向' })
     .getByRole('combobox')
   await expect(fontSelector).toBeVisible()
   await expect(layoutSelector).toBeVisible()
 
   const readSelectorStyle = async (locator: typeof fontSelector) =>
-    locator.evaluate((element) => {
+    locator.evaluate(element => {
       const style = window.getComputedStyle(element)
       return {
         background: style.backgroundColor,
@@ -1782,18 +1751,26 @@ test('dark theme keeps selector primitives readable through one visual contract'
   expect(selectorSamples.select.borderRadius).toBe(selectorSamples.combobox.borderRadius)
 })
 
-test('selector dropdown layers keep an opaque surface above surrounding fields', async ({ page }) => {
+test('selector dropdown layers keep an opaque surface above surrounding fields', async ({
+  page,
+}) => {
   const verifyDropdowns = async () => {
     await page.goto('/translate?book=demo-book&chapter=demo-chapter')
     await expect(page.locator('.text-style-section')).toBeVisible()
 
     const selectors = [
       {
-        trigger: page.locator('.text-style-section__field').filter({ hasText: '文本字体' }).getByRole('combobox'),
+        trigger: page
+          .locator('.text-style-section__field')
+          .filter({ hasText: '文本字体' })
+          .getByRole('combobox'),
         dropdown: page.locator('.ui-combobox-dropdown'),
       },
       {
-        trigger: page.locator('.text-style-section__field').filter({ hasText: '排版方向' }).getByRole('combobox'),
+        trigger: page
+          .locator('.text-style-section__field')
+          .filter({ hasText: '排版方向' })
+          .getByRole('combobox'),
         dropdown: page.locator('.ui-select-dropdown'),
       },
     ]
@@ -1801,7 +1778,7 @@ test('selector dropdown layers keep an opaque surface above surrounding fields',
     for (const selector of selectors) {
       await selector.trigger.click()
       await expect(selector.dropdown).toBeVisible()
-      const surface = await selector.dropdown.evaluate((element) => {
+      const surface = await selector.dropdown.evaluate(element => {
         const style = window.getComputedStyle(element)
         return {
           background: style.backgroundColor,
@@ -1833,7 +1810,7 @@ test('bookshelf empty state keeps its layout contract', async ({ page }) => {
 
 test('book detail modal keeps nested chapter form styling contract', async ({ page }) => {
   await page.unroute('**/*')
-  await prepareVisualPage(page, { books: [demoBook] })
+  await prepareVisualPage(page, { bookshelfHasBook: true })
   await page.goto('/')
   await page.getByText('Demo Manga').click()
   await expect(page.locator('.book-detail-container')).toBeVisible()
@@ -1859,11 +1836,13 @@ test('book detail modal keeps nested chapter form styling contract', async ({ pa
 
 test('bookshelf create edit and tag modals keep their form contracts', async ({ page }) => {
   await page.unroute('**/*')
-  await prepareVisualPage(page, { books: [demoBook] })
+  await prepareVisualPage(page, { bookshelfHasBook: true })
   await page.goto('/')
 
   await page.getByRole('button', { name: '新建书籍' }).click()
-  const createBookModal = page.locator('[data-testid="base-dialog-container"]').filter({ hasText: '新建书籍' })
+  const createBookModal = page
+    .locator('[data-testid="base-dialog-container"]')
+    .filter({ hasText: '新建书籍' })
   await expect(createBookModal).toBeVisible()
   await expect(createBookModal.getByLabel('书籍名称')).toHaveCSS('border-radius', '8px')
   await expect(createBookModal).toHaveScreenshot('bookshelf-create-book-modal.png', {
@@ -1872,7 +1851,9 @@ test('bookshelf create edit and tag modals keep their form contracts', async ({ 
   await page.keyboard.press('Escape')
 
   await page.getByRole('button', { name: /管理标签/ }).click()
-  const tagModal = page.locator('[data-testid="base-dialog-container"]').filter({ hasText: '标签管理' })
+  const tagModal = page
+    .locator('[data-testid="base-dialog-container"]')
+    .filter({ hasText: '标签管理' })
   await expect(tagModal).toBeVisible()
   await expect(tagModal).toHaveScreenshot('bookshelf-tag-manage-modal.png', {
     animations: 'disabled',
@@ -1881,7 +1862,9 @@ test('bookshelf create edit and tag modals keep their form contracts', async ({ 
 
   await page.getByText('Demo Manga').click()
   await page.getByRole('button', { name: '编辑书籍' }).click()
-  const editBookModal = page.locator('[data-testid="base-dialog-container"]').filter({ hasText: '编辑书籍' })
+  const editBookModal = page
+    .locator('[data-testid="base-dialog-container"]')
+    .filter({ hasText: '编辑书籍' })
   await expect(editBookModal).toBeVisible()
   await expect(editBookModal.getByLabel('书籍名称')).toHaveCSS('border-radius', '8px')
   await expect(editBookModal).toHaveScreenshot('bookshelf-edit-book-modal.png', {
@@ -1891,14 +1874,17 @@ test('bookshelf create edit and tag modals keep their form contracts', async ({ 
 
 test('book detail delete confirmation keeps BaseModal styling contract', async ({ page }) => {
   await page.unroute('**/*')
-  await prepareVisualPage(page, { books: [demoBook] })
+  await prepareVisualPage(page, { bookshelfHasBook: true })
   await page.goto('/')
   await page.getByText('Demo Manga').click()
   await page.getByRole('button', { name: '删除书籍' }).click()
 
   const confirmModal = page.locator('.confirm-modal')
   await expect(confirmModal).toBeVisible()
-  await expect(confirmModal.locator('[data-testid="base-dialog-body"]')).toHaveCSS('padding-top', '20px')
+  await expect(confirmModal.locator('[data-testid="base-dialog-body"]')).toHaveCSS(
+    'padding-top',
+    '20px'
+  )
   await expect(confirmModal).toHaveScreenshot('book-detail-delete-confirm.png', {
     animations: 'disabled',
   })
@@ -1916,7 +1902,9 @@ test('translate workspace empty state keeps its layout contract', async ({ page 
 test('translate loaded workspace keeps fixed sidebar sizing contract', async ({ page }) => {
   await page.goto('/translate?book=demo-book&chapter=demo-chapter')
   await expect(page.getByTestId('translation-result-display')).toBeVisible()
-  await expect(page.locator('.thumbnail-sidebar').getByRole('button', { name: /选择图片 \d+:/ })).toHaveCount(2)
+  await expect(
+    page.locator('.thumbnail-sidebar').getByRole('button', { name: /选择图片 \d+:/ })
+  ).toHaveCount(2)
   await expect(page.locator('.settings-sidebar')).toHaveCSS('width', '300px')
   await expect(page.locator('.settings-sidebar')).toHaveCSS('padding-left', '20px')
   await expect(page.locator('.settings-sidebar')).toHaveCSS('padding-right', '20px')
@@ -1948,7 +1936,7 @@ test('translate header keeps enlarged controls inside its surface', async ({ pag
   expect(surfaceBounds).not.toBeNull()
 
   const visibleRegions = surface.locator(
-    '.product-page-header__brand, .product-page-header__nav, .product-page-header__actions',
+    '.product-page-header__brand, .product-page-header__nav, .product-page-header__actions'
   )
   const regionCount = await visibleRegions.count()
   for (let index = 0; index < regionCount; index += 1) {
@@ -1957,10 +1945,10 @@ test('translate header keeps enlarged controls inside its surface', async ({ pag
     expect(bounds!.x).toBeGreaterThanOrEqual(surfaceBounds!.x - 1)
     expect(bounds!.y).toBeGreaterThanOrEqual(surfaceBounds!.y - 1)
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(
-      surfaceBounds!.x + surfaceBounds!.width + 1,
+      surfaceBounds!.x + surfaceBounds!.width + 1
     )
     expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(
-      surfaceBounds!.y + surfaceBounds!.height + 1,
+      surfaceBounds!.y + surfaceBounds!.height + 1
     )
   }
 })
@@ -1974,7 +1962,9 @@ test('translate edit workspace keeps dark editor shell contract', async ({ page 
   const toolbar = page.locator('.edit-toolbar')
   await expect(workspace).toBeVisible()
   await expect(toolbar).toBeVisible()
-  const workspaceBackground = await workspace.evaluate(element => getComputedStyle(element).backgroundColor)
+  const workspaceBackground = await workspace.evaluate(
+    element => getComputedStyle(element).backgroundColor
+  )
   expectCssColorNear(workspaceBackground, [26, 26, 46], 2)
   await expect(toolbar).toHaveCSS('background-image', /linear-gradient/)
   await expect(page).toHaveScreenshot('translate-edit-workspace.png', {
@@ -2001,7 +1991,9 @@ test('translate edit workspace selected bubble keeps editor panel contract', asy
   expect(await page.locator('.bubble-overlay__resize-handle').count()).toBeGreaterThanOrEqual(8)
   await expect(page.locator('.bubble-editor__textarea--translated')).toBeVisible()
   await expect(page.locator('.bubble-editor')).toBeVisible()
-  const workspaceBackground = await workspace.evaluate(element => getComputedStyle(element).backgroundColor)
+  const workspaceBackground = await workspace.evaluate(
+    element => getComputedStyle(element).backgroundColor
+  )
   expectCssColorNear(workspaceBackground, [26, 26, 46], 2)
   await expect(toolbar).toHaveCSS('background-image', /linear-gradient/)
   await expect(page).toHaveScreenshot('translate-edit-workspace-selected-bubble.png', {
@@ -2052,7 +2044,7 @@ test('translation settings modal keeps every tab layout contract', async ({ page
   for (const tab of settingsTabs) {
     await settingsModal.getByRole('tab', { name: tab.label }).click()
     await expect(settingsModal.locator('[role="tab"][aria-selected="true"]')).toHaveText(tab.label)
-    await settingsModal.evaluate((element) => {
+    await settingsModal.evaluate(element => {
       element.querySelector<HTMLElement>('[data-testid="base-dialog-body"]')?.scrollTo(0, 0)
     })
     await expect(settingsModal).toHaveScreenshot(tab.snapshot, {
@@ -2071,7 +2063,7 @@ test('web import expanded settings keep modal layout contract', async ({ page })
   await webImportModal.getByRole('tab', { name: /高级设置/ }).click()
   await expect(webImportModal.locator('.product-collapsible-section__body')).toBeVisible()
   await expect(webImportModal.locator('[role="tab"][aria-selected="true"]')).toHaveText('高级设置')
-  await webImportModal.evaluate((element) => {
+  await webImportModal.evaluate(element => {
     element.scrollTop = 0
     element.querySelector<HTMLElement>('[data-testid="base-dialog-body"]')?.scrollTo(0, 0)
   })
@@ -2130,9 +2122,18 @@ test('insight selected-book sidebars keep their gutter contract', async ({ page 
   await expect(page.locator('.analysis-progress-panel')).toHaveCSS('padding-left', '16px')
   await expect(page.locator('.page-detail-panel')).toHaveCSS('padding-left', '18px')
   await expect(page.locator('.notes-panel')).toHaveCSS('padding-left', '18px')
-  await expect(page.locator('.product-tabbed-workspace__tab').nth(1)).toHaveCSS('color', 'rgb(102, 102, 102)')
-  await expect(page.locator('.overview-panel__card--stats .overview-panel__card-title')).toHaveCSS('color', 'rgb(51, 51, 51)')
-  await expect(page.locator('.page-detail-panel .product-section-header__title')).toHaveCSS('color', 'rgb(51, 51, 51)')
+  await expect(page.locator('.product-tabbed-workspace__tab').nth(1)).toHaveCSS(
+    'color',
+    'rgb(102, 102, 102)'
+  )
+  await expect(page.locator('.overview-panel__card--stats .overview-panel__card-title')).toHaveCSS(
+    'color',
+    'rgb(51, 51, 51)'
+  )
+  await expect(page.locator('.page-detail-panel .product-section-header__title')).toHaveCSS(
+    'color',
+    'rgb(51, 51, 51)'
+  )
   await expect(page.getByText('这是用于视觉回归的无剧透概览。')).toBeVisible()
   await expect(page.locator('.overview-panel__recent-page-card')).toHaveCount(2)
   await expect(page.locator('.overview-panel')).toHaveScreenshot('insight-overview-populated.png', {
@@ -2196,21 +2197,33 @@ test('insight continuation add-character dialog keeps field layout contract', as
   await expect(page.getByText('续写设置')).toBeVisible()
   await page.getByRole('button', { name: /新增角色/ }).click()
 
-  const addCharacterDialog = page.locator('.continuation-dialog-modal').filter({ hasText: '新增角色' })
+  const addCharacterDialog = page
+    .locator('.continuation-dialog-modal')
+    .filter({ hasText: '新增角色' })
   await expect(addCharacterDialog).toBeVisible()
   await expect(addCharacterDialog.locator('.continuation-dialog-form')).toHaveCSS('gap', '16px')
-  await expect(addCharacterDialog.locator('.continuation-dialog-field').first()).toHaveCSS('margin-bottom', '0px')
-  await expect(addCharacterDialog).toHaveScreenshot('insight-continuation-add-character-dialog.png', {
-    animations: 'disabled',
-  })
+  await expect(addCharacterDialog.locator('.continuation-dialog-field').first()).toHaveCSS(
+    'margin-bottom',
+    '0px'
+  )
+  await expect(addCharacterDialog).toHaveScreenshot(
+    'insight-continuation-add-character-dialog.png',
+    {
+      animations: 'disabled',
+    }
+  )
 })
 
 test('reader loaded state keeps its layout contract', async ({ page }) => {
   await page.goto('/reader?book=demo-book&chapter=demo-chapter')
   await expect(page.locator('.reader-page')).toBeVisible()
+  await expect(page.getByRole('button', { name: /打开任务中心/ })).toHaveCount(0)
   await expect(page.locator('.reader-canvas__stream .virtual-page-stream__image')).toHaveCount(2)
   await expect(page.locator('.reader-header__book-title')).toHaveCSS('color', 'rgb(255, 255, 255)')
-  await expect(page.locator('.reader-header__mode-button.product-header-action--active')).toHaveCSS('color', 'rgb(102, 126, 234)')
+  await expect(page.locator('.reader-header__mode-button.product-header-action--active')).toHaveCSS(
+    'color',
+    'rgb(102, 126, 234)'
+  )
   await expect(page).toHaveScreenshot('reader-loaded.png', {
     fullPage: true,
     animations: 'disabled',
@@ -2227,6 +2240,21 @@ test('reader settings panel keeps its control layout contract', async ({ page })
   await expect(settingsPanel).toHaveScreenshot('reader-settings-panel.png', {
     animations: 'disabled',
   })
+
+  const stream = page.locator('.reader-canvas__stream')
+  const initialWidth = (await stream.boundingBox())?.width ?? 0
+  await page.getByRole('slider', { name: '图片宽度' }).fill('70')
+  await page.getByRole('slider', { name: '图片间距' }).fill('24')
+  await page.getByRole('button', { name: '白色' }).click()
+
+  await expect
+    .poll(async () => (await stream.boundingBox())?.width ?? 0)
+    .toBeLessThan(initialWidth - 100)
+  await expect(page.locator('.virtual-page-stream__page').first()).toHaveCSS(
+    'margin-bottom',
+    '24px'
+  )
+  await expect(page.locator('.reader-canvas')).toHaveCSS('background-color', 'rgb(255, 255, 255)')
 })
 
 test('mobile translate loaded workspace keeps responsive layout contract', async ({ page }) => {
@@ -2254,7 +2282,9 @@ test('mobile insight selected book keeps responsive layout contract', async ({ p
   })
 })
 
-test('narrow insight continuation wizard keeps controls inside the scroll owner', async ({ page }) => {
+test('narrow insight continuation wizard keeps controls inside the scroll owner', async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 820, height: 844 })
   await page.goto('/insight?book=demo-book')
   await page.getByRole('tab', { name: /续写/ }).click()
@@ -2264,7 +2294,9 @@ test('narrow insight continuation wizard keeps controls inside the scroll owner'
     const panel = element as HTMLElement
     const scrollOwner = panel.closest('.product-workspace-panel__scroll') as HTMLElement | null
     const stepRows = new Set(
-      Array.from(panel.querySelectorAll<HTMLElement>('.product-wizard-steps__step')).map(step => Math.round(step.getBoundingClientRect().top)),
+      Array.from(panel.querySelectorAll<HTMLElement>('.product-wizard-steps__step')).map(step =>
+        Math.round(step.getBoundingClientRect().top)
+      )
     )
 
     return {
@@ -2294,18 +2326,22 @@ test('character studio empty workspace keeps its layout contract', async ({ page
 
 test('character studio editor and preview keep split workspace contract', async ({ page }) => {
   await page.unroute('**/*')
-  await prepareVisualPage(page, { books: [demoBook], studioDocuments: true })
+  await prepareVisualPage(page, { bookshelfHasBook: true, studioDocuments: true })
   await page.goto('/insight/character-studio?book=demo-book')
 
   await expect(page.locator('.studio-page__workspace-shell')).toBeVisible()
   await expect(page.locator('.studio-editor')).toBeVisible()
   await expect(page.locator('.character-studio-preview')).toBeVisible()
   await expect(page.locator('.studio-hero-section__kicker')).toHaveText('当前角色')
-  const heroKickerColor = await page.locator('.studio-hero-section__kicker').evaluate(element => getComputedStyle(element).color)
+  const heroKickerColor = await page
+    .locator('.studio-hero-section__kicker')
+    .evaluate(element => getComputedStyle(element).color)
   expectCssColorNear(heroKickerColor, [111, 132, 162])
   await expect(page.getByText('绫濑澪').first()).toBeVisible()
   await expect(page.locator('.studio-hero-section')).toHaveCSS('border-radius', '28px')
-  await expect(page.locator('.character-studio-preview .studio-preview-workspace-panel').first()).toHaveCSS('border-radius', '24px')
+  await expect(
+    page.locator('.character-studio-preview .studio-preview-workspace-panel').first()
+  ).toHaveCSS('border-radius', '24px')
   await expect(page).toHaveScreenshot('character-studio-editor-preview.png', {
     fullPage: true,
     animations: 'disabled',
@@ -2315,7 +2351,7 @@ test('character studio editor and preview keep split workspace contract', async 
 test('character studio panes keep independent scroll containers', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 620 })
   await page.unroute('**/*')
-  await prepareVisualPage(page, { books: [demoBook], studioDocuments: true })
+  await prepareVisualPage(page, { bookshelfHasBook: true, studioDocuments: true })
   await page.goto('/insight/character-studio?book=demo-book')
 
   const editorScroll = page.getByTestId('editor-scroll')
@@ -2325,9 +2361,16 @@ test('character studio panes keep independent scroll containers', async ({ page 
   await expect(editorScroll).toHaveCSS('overflow-y', 'auto')
   await expect(chatScroll).toHaveCSS('overflow-y', 'auto')
 
-  await page.locator('.studio-editor__shell').getByRole('tab', { name: '角色设定', exact: true }).click()
-  const editorCanScroll = await editorScroll.evaluate(element => element.scrollHeight > element.clientHeight)
+  await page
+    .locator('.studio-editor__shell')
+    .getByRole('tab', { name: '角色设定', exact: true })
+    .click()
+  const editorCanScroll = await editorScroll.evaluate(
+    element => element.scrollHeight > element.clientHeight
+  )
   expect(editorCanScroll).toBe(true)
-  await editorScroll.evaluate(element => { element.scrollTop = 160 })
+  await editorScroll.evaluate(element => {
+    element.scrollTop = 160
+  })
   await expect.poll(() => editorScroll.evaluate(element => element.scrollTop)).toBeGreaterThan(0)
 })

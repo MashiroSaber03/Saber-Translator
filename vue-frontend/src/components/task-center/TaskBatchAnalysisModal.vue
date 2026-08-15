@@ -11,7 +11,7 @@ import type { UiSelectOption, UiSelectValue } from '@/components/ui/selectTypes'
 import { getBookDetail } from '@/api/bookshelf'
 import {
   createInsightAnalysisJob,
-  type V2AcceptedJob,
+  type V2InsightAnalysisJobAccepted,
 } from '@/api/v2/insight'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
 import type { ChapterData } from '@/types/bookshelf'
@@ -22,7 +22,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
-  created: [result: V2AcceptedJob]
+  created: [result: V2InsightAnalysisJobAccepted]
 }>()
 
 const bookshelfStore = useBookshelfStore()
@@ -33,6 +33,7 @@ const selectedChapterIds = ref(new Set<string>())
 const loadingChapters = ref(false)
 const submitting = ref(false)
 const errorMessage = ref('')
+let bookRequestVersion = 0
 
 const bookOptions = computed<UiSelectOption[]>(() => (
   bookshelfStore.books.map(book => ({ label: book.title, value: book.id }))
@@ -56,8 +57,17 @@ watch(
   async visible => {
     if (!visible) return
     errorMessage.value = ''
-    if (!bookshelfStore.books.length) await bookshelfStore.loadBooks()
+    if (!bookshelfStore.books.length) {
+      try {
+        await bookshelfStore.loadBooks()
+      } catch (error) {
+        if (props.modelValue) {
+          errorMessage.value = error instanceof Error ? error.message : '读取书籍列表失败'
+        }
+      }
+    }
   },
+  { immediate: true },
 )
 
 function close() {
@@ -65,19 +75,30 @@ function close() {
 }
 
 async function selectBook(value: UiSelectValue) {
-  bookId.value = String(value)
+  const selectedBookId = String(value)
+  const requestVersion = ++bookRequestVersion
+  bookId.value = selectedBookId
   chapters.value = []
   selectedChapterIds.value = new Set()
   errorMessage.value = ''
-  if (!bookId.value) return
+  if (!selectedBookId) return
   loadingChapters.value = true
   try {
-    const book = await getBookDetail(bookId.value)
-    chapters.value = book.chapters || []
+    const book = await getBookDetail(selectedBookId)
+    if (
+      requestVersion === bookRequestVersion
+      && bookId.value === selectedBookId
+    ) {
+      chapters.value = book.chapters || []
+    }
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : '读取书籍章节失败'
+    if (requestVersion === bookRequestVersion) {
+      errorMessage.value = error instanceof Error ? error.message : '读取书籍章节失败'
+    }
   } finally {
-    loadingChapters.value = false
+    if (requestVersion === bookRequestVersion) {
+      loadingChapters.value = false
+    }
   }
 }
 

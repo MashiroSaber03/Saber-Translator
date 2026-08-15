@@ -40,6 +40,7 @@ function installCanvasMocks() {
   const context = {
     arc: vi.fn(),
     beginPath: vi.fn(),
+    ellipse: vi.fn(),
     fill: vi.fn(),
     fillRect: vi.fn(),
     fillStyle: '',
@@ -49,8 +50,15 @@ function installCanvasMocks() {
   )
 }
 
-function createBrushSurface() {
+function createBrushSurface({
+  naturalHeight = 120,
+  naturalWidth = 200,
+  viewportHeight = 120,
+  viewportWidth = 200,
+} = {}) {
   const viewport = document.createElement('div')
+  Object.defineProperty(viewport, 'clientWidth', { value: viewportWidth })
+  Object.defineProperty(viewport, 'clientHeight', { value: viewportHeight })
   const wrapper = document.createElement('div')
   wrapper.getBoundingClientRect = () => ({
     bottom: 120,
@@ -64,27 +72,30 @@ function createBrushSurface() {
     y: 0,
   })
   const image = document.createElement('img')
-  Object.defineProperty(image, 'naturalWidth', { value: 200 })
-  Object.defineProperty(image, 'naturalHeight', { value: 120 })
+  Object.defineProperty(image, 'naturalWidth', { value: naturalWidth })
+  Object.defineProperty(image, 'naturalHeight', { value: naturalHeight })
   return { image, viewport, wrapper }
 }
 
 function mountBrush(onBrushComplete = vi.fn()) {
+  let brushApi: ReturnType<typeof useBrush> | null = null
   const Harness = defineComponent({
     setup() {
-      return useBrush({
+      brushApi = useBrush({
         getCurrentRepairSettings: () => ({
           fillColor: '#ffffff',
           inpaintMethod: 'solid',
         }),
         onBrushComplete,
       })
+      return brushApi
     },
     render: () => h('div'),
   })
   const wrapper = mount(Harness)
+  if (!brushApi) throw new Error('useBrush test harness did not initialize')
   return {
-    brush: wrapper.vm as unknown as ReturnType<typeof useBrush>,
+    brush: brushApi,
     onBrushComplete,
     wrapper,
   }
@@ -209,6 +220,76 @@ describe('useBrush', () => {
     resolveOperation()
     await flushPromises()
 
+    expect(onBrushComplete).not.toHaveBeenCalled()
+  })
+
+  it('keeps the preview canvas at viewport resolution for a large source image', () => {
+    const { brush, wrapper } = mountBrush()
+    const surface = createBrushSurface({
+      naturalHeight: 12_000,
+      naturalWidth: 8_000,
+      viewportHeight: 600,
+      viewportWidth: 800,
+    })
+    brush.toggleBrushMode('repair')
+
+    brush.startBrushPainting(
+      new MouseEvent('mousedown', { button: 0, clientX: 40, clientY: 40 }),
+      surface,
+    )
+
+    const canvas = surface.wrapper.querySelector('canvas')
+    expect(canvas).toBeInstanceOf(HTMLCanvasElement)
+    expect(canvas!.width).toBeLessThanOrEqual(800 * Math.max(1, window.devicePixelRatio || 1))
+    expect(canvas!.height).toBeLessThanOrEqual(600 * Math.max(1, window.devicePixelRatio || 1))
+    expect(canvas!.width * canvas!.height).toBeLessThan(8_000 * 12_000)
+    wrapper.unmount()
+  })
+
+  it('does not accept another stroke while a repair operation is in flight', async () => {
+    let resolveOperation!: () => void
+    mocks.waitForOperation.mockImplementationOnce(() => new Promise(resolve => {
+      resolveOperation = () => resolve({ id: 'operation-1', status: 'completed' })
+    }))
+    const { brush } = mountBrush()
+
+    drawStroke(brush)
+    await vi.waitFor(() => expect(mocks.waitForOperation).toHaveBeenCalledOnce())
+    expect(brush.isBrushSubmitting.value).toBe(true)
+
+    const secondSurface = createBrushSurface()
+    brush.startBrushPainting(
+      new MouseEvent('mousedown', { button: 0, clientX: 50, clientY: 50 }),
+      secondSurface,
+    )
+    brush.finishBrushPainting()
+    expect(mocks.createMaskRepair).toHaveBeenCalledOnce()
+    expect(secondSurface.wrapper.querySelector('canvas')).toBeNull()
+
+    resolveOperation()
+    await vi.waitFor(() => expect(brush.isBrushSubmitting.value).toBe(false))
+  })
+
+  it('rejects a repaired document that belongs to another chapter', async () => {
+    mocks.getPageDocument.mockResolvedValueOnce({
+      bubbles: [],
+      chapterId: 'other-chapter',
+      defaultFontId: null,
+      documentRevision: 4,
+      pageId: 'page-1',
+      pageStyleDefaults: {},
+      pageStyleSchemaVersion: 1,
+      renderStatus: 'ready',
+    })
+    const { brush, onBrushComplete } = mountBrush()
+
+    drawStroke(brush)
+    await vi.waitFor(() => expect(mocks.toast).toHaveBeenCalledWith(
+      '页面 page-1 的后端文档身份不匹配',
+      'error',
+    ))
+
+    expect(mocks.registerPageDocument).not.toHaveBeenCalled()
     expect(onBrushComplete).not.toHaveBeenCalled()
   })
 

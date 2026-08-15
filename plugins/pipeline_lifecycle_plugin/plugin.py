@@ -16,7 +16,7 @@ class Plugin:
         return dict(data)
 
     def before_pipeline(self, context, data):
-        if context.config.get("log_target", True):
+        if context.config["log_target"]:
             context.logger.info(
                 "pipeline started",
                 bookId=context.book_id,

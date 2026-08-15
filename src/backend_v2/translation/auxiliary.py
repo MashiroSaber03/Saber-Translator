@@ -9,7 +9,11 @@ from sqlalchemy import Engine, select, update
 from sqlalchemy.engine import Connection
 
 from src.backend_v2.serialization import canonical_json
-from src.backend_v2.content.page_style import rgb_to_hex, validate_page_style
+from src.backend_v2.content.page_style import (
+    PAGE_STYLE_SCHEMA_VERSION,
+    rgb_to_hex,
+    validate_page_style,
+)
 from src.backend_v2.jobs.repository import (
     AttemptFence,
     JobItemSpec,
@@ -27,6 +31,7 @@ from src.backend_v2.storage.schema import (
     page_assets,
     pages,
 )
+from src.core.config_models import validate_bubble_payload
 
 
 STYLE_FIELDS = frozenset(
@@ -50,6 +55,98 @@ TEXT_IMPORT_FIELDS = {
     "textbox_text": "textboxText",
     "text_direction": "textDirection",
 }
+TEXT_EXPORT_ROOT_FIELDS = frozenset(
+    {"schema_version", "book_id", "chapter_id", "exported_at", "pages"}
+)
+TEXT_EXPORT_PAGE_FIELDS = frozenset(
+    {
+        "page_id",
+        "page_number",
+        "source_checksum",
+        "document_revision",
+        "bubbles",
+    }
+)
+TEXT_EXPORT_BUBBLE_FIELDS = frozenset(
+    {"bubble_id", *TEXT_IMPORT_FIELDS.keys()}
+)
+TEXT_IMPORT_PREVIEW_PAGE_FIELDS = frozenset(
+    {
+        "pageId",
+        "status",
+        "issues",
+        "baseDocumentRevision",
+        "sourceChecksum",
+        "sourceAssetId",
+        "changes",
+    }
+)
+TEXT_IMPORT_CHANGE_FIELDS = frozenset(
+    {"bubbleId", "fields", "differences"}
+)
+
+
+def _require_exact_fields(
+    value: Mapping[str, Any],
+    expected: frozenset[str],
+    *,
+    label: str,
+) -> None:
+    fields = set(value)
+    missing = expected - fields
+    unknown = fields - expected
+    if missing:
+        raise ValueError(
+            f"{label} is missing fields: {', '.join(sorted(missing))}"
+        )
+    if unknown:
+        raise ValueError(
+            f"{label} contains unknown fields: {', '.join(sorted(unknown))}"
+        )
+
+
+def _require_non_empty_text(value: object, *, label: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{label} must be a non-empty string")
+    return value
+
+
+def _require_positive_integer(value: object, *, label: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError(f"{label} must be a positive integer")
+    return value
+
+
+def _load_current_bubble_payload(
+    row: Mapping[str, Any],
+    *,
+    document_revision: int,
+    label: str,
+) -> dict[str, Any]:
+    if row["payload_schema_version"] != 1:
+        raise RuntimeError(f"{label} payload schema version is not current")
+    if row["updated_revision"] != document_revision:
+        raise RuntimeError(f"{label} revision does not match page document")
+    try:
+        return validate_bubble_payload(
+            json.loads(row["payload_json"]),
+            render=False,
+        )
+    except (json.JSONDecodeError, TypeError, ValueError) as exc:
+        raise RuntimeError(
+            f"{label} payload does not match the current schema"
+        ) from exc
+
+
+def _bubble_text(payload: Mapping[str, Any], field: str) -> str:
+    if field not in payload:
+        raise RuntimeError(f"bubble {field} is missing")
+    value = payload[field]
+    if not isinstance(value, str):
+        raise RuntimeError(f"bubble {field} must be a string")
+    if field == "textDirection" and value not in {"vertical", "horizontal"}:
+        raise RuntimeError("bubble textDirection is invalid")
+    return value
 
 
 class AuxiliaryTranslationCommands:
@@ -134,6 +231,16 @@ class AuxiliaryTranslationCommands:
         selected_fields: list[str],
         idempotency_key: str,
     ) -> dict[str, object]:
+        if not isinstance(source_page_id, str) or not source_page_id:
+            raise ValueError("sourcePageId must be a non-empty string")
+        _require_positive_integer(
+            source_document_revision,
+            label="sourceDocumentRevision",
+        )
+        if not isinstance(selected_fields, list) or not all(
+            isinstance(field, str) for field in selected_fields
+        ):
+            raise ValueError("selectedFields must be a string array")
         selected = set(selected_fields)
         if (
             not selected
@@ -153,6 +260,7 @@ class AuxiliaryTranslationCommands:
                     pages.c.document_revision,
                     pages.c.default_font_id,
                     pages.c.page_style_defaults_json,
+                    pages.c.page_style_schema_version,
                 ).where(
                     pages.c.id == source_page_id,
                     pages.c.chapter_id == chapter_id,
@@ -162,6 +270,8 @@ class AuxiliaryTranslationCommands:
             raise ValueError("source page does not belong to the chapter")
         if source["document_revision"] != source_document_revision:
             raise ValueError("source page document revision changed")
+        if source["page_style_schema_version"] != PAGE_STYLE_SCHEMA_VERSION:
+            raise ValueError("source page style schema version is not current")
         defaults = validate_page_style(
             json.loads(source["page_style_defaults_json"]),
             partial=False,
@@ -245,6 +355,7 @@ class AuxiliaryTranslationCommands:
                         pages.c.id,
                         pages.c.ordinal,
                         pages.c.document_revision,
+                        pages.c.page_style_schema_version,
                         assets.c.checksum,
                     )
                     .join(
@@ -259,7 +370,12 @@ class AuxiliaryTranslationCommands:
             )
             bubble_rows_by_page: dict[str, list[Mapping[str, Any]]] = {}
             for row in connection.execute(
-                select(bubbles)
+                select(
+                    bubbles,
+                    pages.c.document_revision.label(
+                        "page_document_revision"
+                    ),
+                )
                 .join(pages, pages.c.id == bubbles.c.page_id)
                 .where(pages.c.chapter_id == chapter_id)
                 .order_by(pages.c.ordinal, bubbles.c.ordinal)
@@ -269,6 +385,13 @@ class AuxiliaryTranslationCommands:
                 )
             exported_pages: list[dict[str, object]] = []
             for page in page_rows:
+                if (
+                    page["page_style_schema_version"]
+                    != PAGE_STYLE_SCHEMA_VERSION
+                ):
+                    raise RuntimeError(
+                        "page style schema version is not current"
+                    )
                 exported_pages.append(
                     {
                         "page_id": page["id"],
@@ -300,20 +423,99 @@ class AuxiliaryTranslationCommands:
         chapter_id: str,
         document: Mapping[str, Any],
     ) -> dict[str, object]:
+        _require_exact_fields(
+            document,
+            TEXT_EXPORT_ROOT_FIELDS,
+            label="text import root",
+        )
         if document.get("schema_version") != 1:
             raise ValueError("text import schema_version must be 1")
         if document.get("chapter_id") != chapter_id:
             raise ValueError("text import belongs to a different chapter")
+        _require_non_empty_text(
+            document.get("book_id"),
+            label="text import book_id",
+        )
+        _require_non_empty_text(
+            document.get("exported_at"),
+            label="text import exported_at",
+        )
         imported_pages = document.get("pages")
         if not isinstance(imported_pages, list):
             raise ValueError("text import pages must be an array")
+        seen_pages: set[str] = set()
+        for page_index, imported in enumerate(imported_pages):
+            if not isinstance(imported, Mapping):
+                raise ValueError("each imported page must be an object")
+            _require_exact_fields(
+                imported,
+                TEXT_EXPORT_PAGE_FIELDS,
+                label=f"text import pages[{page_index}]",
+            )
+            page_id = _require_non_empty_text(
+                imported["page_id"],
+                label=f"text import pages[{page_index}].page_id",
+            )
+            if page_id in seen_pages:
+                raise ValueError("imported page IDs must be unique")
+            seen_pages.add(page_id)
+            _require_positive_integer(
+                imported["page_number"],
+                label=f"text import pages[{page_index}].page_number",
+            )
+            _require_non_empty_text(
+                imported["source_checksum"],
+                label=f"text import pages[{page_index}].source_checksum",
+            )
+            _require_positive_integer(
+                imported["document_revision"],
+                label=f"text import pages[{page_index}].document_revision",
+            )
+            imported_bubbles = imported["bubbles"]
+            if not isinstance(imported_bubbles, list):
+                raise ValueError("imported page bubbles must be an array")
+            seen_bubbles: set[str] = set()
+            for bubble_index, imported_bubble in enumerate(imported_bubbles):
+                if not isinstance(imported_bubble, Mapping):
+                    raise ValueError("each imported bubble must be an object")
+                _require_exact_fields(
+                    imported_bubble,
+                    TEXT_EXPORT_BUBBLE_FIELDS,
+                    label=(
+                        f"text import pages[{page_index}]."
+                        f"bubbles[{bubble_index}]"
+                    ),
+                )
+                bubble_id = _require_non_empty_text(
+                    imported_bubble["bubble_id"],
+                    label=(
+                        f"text import pages[{page_index}]."
+                        f"bubbles[{bubble_index}].bubble_id"
+                    ),
+                )
+                if bubble_id in seen_bubbles:
+                    raise ValueError(
+                        "imported bubble IDs must be unique per page"
+                    )
+                seen_bubbles.add(bubble_id)
+                for field in TEXT_IMPORT_FIELDS:
+                    if not isinstance(imported_bubble[field], str):
+                        raise ValueError(f"{field} must be a string")
         with self.engine.connect() as connection:
+            chapter = connection.execute(
+                select(chapters.c.book_id).where(chapters.c.id == chapter_id)
+            ).mappings().one_or_none()
+            if chapter is None:
+                raise ValueError("chapter not found")
+            if document["book_id"] != chapter["book_id"]:
+                raise ValueError("text import belongs to a different book")
             current_pages = {
                 str(row["id"]): row
                 for row in connection.execute(
                     select(
                         pages.c.id,
                         pages.c.document_revision,
+                        pages.c.page_style_schema_version,
                         assets.c.checksum,
                         page_assets.c.asset_id,
                     )
@@ -329,65 +531,62 @@ class AuxiliaryTranslationCommands:
             current_bubbles = {
                 str(row["id"]): row
                 for row in connection.execute(
-                    select(bubbles)
+                    select(
+                        bubbles,
+                        pages.c.document_revision.label(
+                            "page_document_revision"
+                        ),
+                    )
                     .join(pages, pages.c.id == bubbles.c.page_id)
                     .where(pages.c.chapter_id == chapter_id)
                 ).mappings()
             }
         results: list[dict[str, object]] = []
-        seen_pages: set[str] = set()
         for imported in imported_pages:
-            if not isinstance(imported, Mapping):
-                raise ValueError("each imported page must be an object")
-            page_id = str(imported.get("page_id", ""))
-            if not page_id or page_id in seen_pages:
-                raise ValueError("imported page IDs must be non-empty and unique")
-            seen_pages.add(page_id)
+            page_id = imported["page_id"]
             current = current_pages.get(page_id)
             issues: list[str] = []
             changes: list[dict[str, object]] = []
             if current is None:
                 issues.append("missing_page")
             else:
+                if (
+                    current["page_style_schema_version"]
+                    != PAGE_STYLE_SCHEMA_VERSION
+                ):
+                    raise RuntimeError(
+                        "page style schema version is not current"
+                    )
                 if imported.get("source_checksum") != current["checksum"]:
                     issues.append("checksum_conflict")
                 if (
-                    int(imported.get("document_revision", 0))
+                    imported["document_revision"]
                     != int(current["document_revision"])
                 ):
                     issues.append("revision_conflict")
-                imported_bubbles = imported.get("bubbles")
-                if not isinstance(imported_bubbles, list):
-                    raise ValueError("imported page bubbles must be an array")
-                seen_bubbles: set[str] = set()
+                imported_bubbles = imported["bubbles"]
                 for imported_bubble in imported_bubbles:
-                    if not isinstance(imported_bubble, Mapping):
-                        raise ValueError("each imported bubble must be an object")
-                    bubble_id = str(imported_bubble.get("bubble_id", ""))
-                    if not bubble_id or bubble_id in seen_bubbles:
-                        raise ValueError(
-                            "imported bubble IDs must be non-empty and unique per page"
-                        )
-                    seen_bubbles.add(bubble_id)
+                    bubble_id = imported_bubble["bubble_id"]
                     existing = current_bubbles.get(bubble_id)
                     if existing is None or str(existing["page_id"]) != page_id:
                         issues.append(f"missing_bubble:{bubble_id}")
                         continue
-                    payload = json.loads(existing["payload_json"])
+                    payload = _load_current_bubble_payload(
+                        existing,
+                        document_revision=int(
+                            existing["page_document_revision"]
+                        ),
+                        label=f"bubble {bubble_id}",
+                    )
                     fields: dict[str, object] = {}
                     differences: dict[str, dict[str, object]] = {}
                     for imported_key, payload_key in TEXT_IMPORT_FIELDS.items():
-                        if imported_key not in imported_bubble:
-                            continue
                         value = imported_bubble[imported_key]
-                        if not isinstance(value, str):
-                            raise ValueError(
-                                f"{imported_key} must be a string"
-                            )
-                        if payload.get(payload_key, "") != value:
+                        current_value = _bubble_text(payload, payload_key)
+                        if current_value != value:
                             fields[payload_key] = value
                             differences[payload_key] = {
-                                "before": payload.get(payload_key, ""),
+                                "before": current_value,
                                 "after": value,
                             }
                     if fields:
@@ -445,32 +644,86 @@ class AuxiliaryTranslationCommands:
         order_index = {page_id: index for index, page_id in enumerate(ordered)}
         normalized: list[dict[str, object]] = []
         seen: set[str] = set()
-        for item in confirmed_pages:
-            page_id = str(item.get("pageId", ""))
+        for page_index, item in enumerate(confirmed_pages):
+            _require_exact_fields(
+                item,
+                TEXT_IMPORT_PREVIEW_PAGE_FIELDS,
+                label=f"confirmedPages[{page_index}]",
+            )
+            page_id = _require_non_empty_text(
+                item["pageId"],
+                label=f"confirmedPages[{page_index}].pageId",
+            )
             if page_id in seen or page_id not in order_index:
                 raise ValueError(
                     "confirmed page IDs must be unique members of the chapter"
                 )
             seen.add(page_id)
-            changes = item.get("changes")
+            if item["status"] != "match":
+                raise ValueError("confirmed pages must have match status")
+            issues = item["issues"]
+            if not isinstance(issues, list) or any(
+                not isinstance(issue, str) for issue in issues
+            ):
+                raise ValueError("confirmed page issues must be a string array")
+            if issues:
+                raise ValueError("confirmed pages cannot contain conflicts")
+            base_revision = _require_positive_integer(
+                item["baseDocumentRevision"],
+                label=f"confirmedPages[{page_index}].baseDocumentRevision",
+            )
+            source_checksum = _require_non_empty_text(
+                item["sourceChecksum"],
+                label=f"confirmedPages[{page_index}].sourceChecksum",
+            )
+            source_asset_id = _require_non_empty_text(
+                item["sourceAssetId"],
+                label=f"confirmedPages[{page_index}].sourceAssetId",
+            )
+            changes = item["changes"]
             if not isinstance(changes, list) or not changes:
                 raise ValueError("each confirmed page requires changes")
             normalized_changes: list[dict[str, object]] = []
             seen_bubbles: set[str] = set()
-            for change in changes:
+            for change_index, change in enumerate(changes):
                 if not isinstance(change, Mapping):
                     raise ValueError("each text change must be an object")
-                bubble_id = str(change.get("bubbleId", ""))
-                fields = change.get("fields")
+                _require_exact_fields(
+                    change,
+                    TEXT_IMPORT_CHANGE_FIELDS,
+                    label=(
+                        f"confirmedPages[{page_index}]."
+                        f"changes[{change_index}]"
+                    ),
+                )
+                bubble_id = _require_non_empty_text(
+                    change["bubbleId"],
+                    label=(
+                        f"confirmedPages[{page_index}]."
+                        f"changes[{change_index}].bubbleId"
+                    ),
+                )
+                fields = change["fields"]
                 if (
-                    not bubble_id
-                    or bubble_id in seen_bubbles
+                    bubble_id in seen_bubbles
                     or not isinstance(fields, Mapping)
                     or not fields
                     or not set(fields).issubset(TEXT_IMPORT_FIELDS.values())
                     or not all(isinstance(value, str) for value in fields.values())
                 ):
                     raise ValueError("text change bubbleId/fields are invalid")
+                differences = change["differences"]
+                if not isinstance(differences, Mapping) or set(
+                    differences
+                ) != set(fields):
+                    raise ValueError(
+                        "text change differences must match changed fields"
+                    )
+                for difference in differences.values():
+                    if not isinstance(difference, Mapping) or set(
+                        difference
+                    ) != {"before", "after"}:
+                        raise ValueError("text change difference is invalid")
                 seen_bubbles.add(bubble_id)
                 normalized_changes.append(
                     {"bubbleId": bubble_id, "fields": dict(fields)}
@@ -478,11 +731,9 @@ class AuxiliaryTranslationCommands:
             normalized.append(
                 {
                     "pageId": page_id,
-                    "baseDocumentRevision": int(
-                        item.get("baseDocumentRevision", 0)
-                    ),
-                    "sourceChecksum": str(item.get("sourceChecksum", "")),
-                    "sourceAssetId": str(item.get("sourceAssetId", "")),
+                    "baseDocumentRevision": base_revision,
+                    "sourceChecksum": source_checksum,
+                    "sourceAssetId": source_asset_id,
                     "changes": normalized_changes,
                 }
             )
@@ -494,6 +745,7 @@ class AuxiliaryTranslationCommands:
                     select(
                         pages.c.id,
                         pages.c.document_revision,
+                        pages.c.page_style_schema_version,
                         page_assets.c.asset_id,
                         assets.c.checksum,
                     )
@@ -510,10 +762,15 @@ class AuxiliaryTranslationCommands:
                     )
                 ).mappings()
             }
-            bubble_owners = {
-                str(row["id"]): str(row["page_id"])
+            current_bubbles = {
+                str(row["id"]): row
                 for row in connection.execute(
-                    select(bubbles.c.id, bubbles.c.page_id).where(
+                    select(
+                        bubbles.c.id,
+                        bubbles.c.page_id,
+                        bubbles.c.payload_schema_version,
+                        bubbles.c.updated_revision,
+                    ).where(
                         bubbles.c.page_id.in_(
                             [str(item["pageId"]) for item in normalized]
                         )
@@ -527,19 +784,28 @@ class AuxiliaryTranslationCommands:
                 current is None
                 or int(current["document_revision"])
                 != int(item["baseDocumentRevision"])
+                or current["page_style_schema_version"]
+                != PAGE_STYLE_SCHEMA_VERSION
                 or str(current["asset_id"]) != item["sourceAssetId"]
                 or str(current["checksum"]) != item["sourceChecksum"]
             ):
                 raise ValueError(
                     f"page {page_id} no longer matches the preview"
                 )
-            if any(
-                bubble_owners.get(str(change["bubbleId"])) != page_id
-                for change in item["changes"]  # type: ignore[union-attr]
-            ):
-                raise ValueError(
-                    f"page {page_id} contains a missing or moved bubble"
-                )
+            for change in item["changes"]:  # type: ignore[union-attr]
+                bubble = current_bubbles.get(str(change["bubbleId"]))
+                if bubble is None or str(bubble["page_id"]) != page_id:
+                    raise ValueError(
+                        f"page {page_id} contains a missing or moved bubble"
+                    )
+                if (
+                    bubble["payload_schema_version"] != 1
+                    or bubble["updated_revision"]
+                    != current["document_revision"]
+                ):
+                    raise ValueError(
+                        f"page {page_id} bubble document is not current"
+                    )
         config = {
             "pages": normalized,
             "executionMode": "sequential",
@@ -584,13 +850,17 @@ class AuxiliaryTranslationCommands:
 
     @staticmethod
     def _text_bubble(row: Mapping[str, Any]) -> dict[str, object]:
-        payload = json.loads(row["payload_json"])
+        payload = _load_current_bubble_payload(
+            row,
+            document_revision=int(row["page_document_revision"]),
+            label=f"bubble {row['id']}",
+        )
         return {
             "bubble_id": row["id"],
-            "original_text": payload.get("originalText", ""),
-            "translated_text": payload.get("translatedText", ""),
-            "textbox_text": payload.get("textboxText", ""),
-            "text_direction": payload.get("textDirection", "vertical"),
+            "original_text": _bubble_text(payload, "originalText"),
+            "translated_text": _bubble_text(payload, "translatedText"),
+            "textbox_text": _bubble_text(payload, "textboxText"),
+            "text_direction": _bubble_text(payload, "textDirection"),
         }
 
 class StyleApplyWorkerService:
@@ -603,18 +873,79 @@ class StyleApplyWorkerService:
         fence: AttemptFence,
         step: Mapping[str, Any],
     ) -> Mapping[str, Any]:
-        page_id = str(step["pageId"])
+        page_id = step.get("pageId")
+        if not isinstance(page_id, str) or not page_id:
+            raise RuntimeError("style job page is invalid")
         config = step.get("config")
-        if not isinstance(config, Mapping):
+        if not isinstance(config, Mapping) or set(config) != {
+            "sourcePageId",
+            "sourceDocumentRevision",
+            "selectedFields",
+            "frozenStyle",
+            "executionMode",
+        }:
             raise RuntimeError("style job configuration is invalid")
-        selected = set(config.get("selectedFields", []))
-        frozen = config.get("frozenStyle")
-        if not selected.issubset(STYLE_FIELDS) or not isinstance(frozen, Mapping):
-            raise RuntimeError("style snapshot is invalid")
+        selected_fields = config["selectedFields"]
+        frozen_value = config["frozenStyle"]
+        if (
+            config["executionMode"] != "sequential"
+            or not isinstance(selected_fields, list)
+            or not all(isinstance(field, str) for field in selected_fields)
+            or not isinstance(frozen_value, Mapping)
+        ):
+            raise RuntimeError("style job configuration is invalid")
+        if (
+            not isinstance(config["sourcePageId"], str)
+            or not config["sourcePageId"]
+        ):
+            raise RuntimeError("style source page is invalid")
+        if (
+            isinstance(config["sourceDocumentRevision"], bool)
+            or not isinstance(config["sourceDocumentRevision"], int)
+            or config["sourceDocumentRevision"] < 1
+        ):
+            raise RuntimeError("style source revision is invalid")
+        selected = set(selected_fields)
+        if (
+            not selected
+            or len(selected) != len(selected_fields)
+            or not selected.issubset(STYLE_FIELDS)
+        ):
+            raise RuntimeError("style selected fields are invalid")
+        frozen = dict(frozen_value)
+        expected_frozen = set(selected)
+        if "fontSize" in selected:
+            expected_frozen.add("autoFontSize")
+        if selected.intersection({"textColor", "fillColor"}):
+            expected_frozen.add("useAutoTextColor")
+        if set(frozen) != expected_frozen:
+            raise RuntimeError("style snapshot fields are invalid")
+        font_id = frozen.get("fontFamily")
+        if font_id is not None and (
+            not isinstance(font_id, str) or not font_id
+        ):
+            raise RuntimeError("style snapshot font is invalid")
+        try:
+            validate_page_style(
+                {
+                    key: item
+                    for key, item in frozen.items()
+                    if key != "fontFamily"
+                },
+                partial=True,
+            )
+        except ValueError as exc:
+            raise RuntimeError("style snapshot is invalid") from exc
         with self.engine.connect() as connection:
             page = connection.execute(
                 select(pages).where(pages.c.id == page_id)
-            ).mappings().one()
+            ).mappings().one_or_none()
+            if page is None:
+                raise RuntimeError("style target page was deleted")
+            if page["page_style_schema_version"] != PAGE_STYLE_SCHEMA_VERSION:
+                raise RuntimeError(
+                    "style target page schema version is not current"
+                )
             bubble_rows = list(
                 connection.execute(
                     select(bubbles)
@@ -672,7 +1003,11 @@ class StyleApplyWorkerService:
         render_changed = False
         has_drawable_text = False
         for row in bubble_rows:
-            payload = json.loads(row["payload_json"])
+            payload = _load_current_bubble_payload(
+                row,
+                document_revision=int(page["document_revision"]),
+                label=f"style target bubble {row['id']}",
+            )
             updated = dict(payload)
             if (
                 "fontFamily" in selected
@@ -685,21 +1020,26 @@ class StyleApplyWorkerService:
                     continue
                 value = frozen.get(field)
                 if field == "layoutDirection":
-                    direction = (
-                        updated.get("autoTextDirection", "vertical")
-                        if value == "auto"
-                        else value
-                    )
-                    updated["textDirection"] = (
-                        direction
-                        if direction in {"vertical", "horizontal"}
-                        else "vertical"
-                    )
+                    if value == "auto":
+                        direction = updated.get(
+                            "autoTextDirection",
+                            "vertical",
+                        )
+                        if direction not in {"vertical", "horizontal"}:
+                            raise RuntimeError(
+                                "bubble automatic text direction is invalid"
+                            )
+                    else:
+                        direction = value
+                    updated["textDirection"] = direction
                 elif (
                     field == "fontSize"
                     and bool(frozen.get("autoFontSize", False))
                 ):
-                    if str(updated.get("translatedText", "")).strip():
+                    if _bubble_text(
+                        updated,
+                        "translatedText",
+                    ).strip():
                         # The following render step recalculates and persists the
                         # concrete size. Force a fresh revision even when the
                         # target page was already in automatic mode.
@@ -739,7 +1079,7 @@ class StyleApplyWorkerService:
                     render_changed = True
             changed = changed or updated != payload
             has_drawable_text = has_drawable_text or bool(
-                str(updated.get("translatedText", "")).strip()
+                _bubble_text(updated, "translatedText").strip()
             )
             updated_payloads.append((str(row["id"]), updated))
         needs_render = bool(
@@ -766,15 +1106,20 @@ class StyleApplyWorkerService:
                     }
                     if "fontFamily" in selected:
                         values["font_id"] = default_font_id
-                    connection.execute(
+                    bubble_changed = connection.execute(
                         update(bubbles)
                         .where(
                             bubbles.c.id == bubble_id,
                             bubbles.c.page_id == page_id,
+                            bubbles.c.updated_revision == base_revision,
                         )
                         .values(**values)
                     )
-                connection.execute(
+                    if bubble_changed.rowcount != 1:
+                        raise RuntimeError(
+                            "style target bubble changed during publication"
+                        )
+                page_changed = connection.execute(
                     update(pages)
                     .where(
                         pages.c.id == page_id,
@@ -798,12 +1143,16 @@ class StyleApplyWorkerService:
                         ),
                     )
                 )
+                if page_changed.rowcount != 1:
+                    raise RuntimeError(
+                        "style target page changed during publication"
+                    )
                 if (
                     not needs_render
                     and page["render_status"] == "ready"
                     and page["rendered_revision"] == base_revision
                 ):
-                    connection.execute(
+                    pointer_changed = connection.execute(
                         update(page_assets)
                         .where(
                             page_assets.c.page_id == page_id,
@@ -813,6 +1162,10 @@ class StyleApplyWorkerService:
                         )
                         .values(input_document_revision=new_revision)
                     )
+                    if pointer_changed.rowcount != 1:
+                        raise RuntimeError(
+                            "current translated asset is missing"
+                        )
             if not needs_render:
                 connection.execute(
                     update(job_steps)
@@ -848,30 +1201,71 @@ class TextImportWorkerService:
         fence: AttemptFence,
         step: Mapping[str, Any],
     ) -> Mapping[str, Any]:
+        page_id = step.get("pageId")
+        if not isinstance(page_id, str) or not page_id:
+            raise RuntimeError("text import page is invalid")
         config = step.get("config")
-        if not isinstance(config, Mapping):
+        if (
+            not isinstance(config, Mapping)
+            or set(config) != {"pages", "executionMode"}
+            or config["executionMode"] != "sequential"
+            or not isinstance(config["pages"], list)
+        ):
             raise RuntimeError("text import snapshot is invalid")
-        entries = config.get("pages")
-        if not isinstance(entries, list):
-            raise RuntimeError("text import page snapshot is missing")
-        page_id = str(step["pageId"])
+        page_entries = config["pages"]
+        if not all(
+            isinstance(value, Mapping)
+            and set(value)
+            == {
+                "pageId",
+                "baseDocumentRevision",
+                "sourceChecksum",
+                "sourceAssetId",
+                "changes",
+            }
+            for value in page_entries
+        ):
+            raise RuntimeError("text import page snapshot is invalid")
+        page_ids = [value["pageId"] for value in page_entries]
+        if (
+            not all(isinstance(value, str) and value for value in page_ids)
+            or len(page_ids) != len(set(page_ids))
+        ):
+            raise RuntimeError("text import page snapshot is invalid")
         entry = next(
-            (
-                value
-                for value in entries
-                if isinstance(value, Mapping)
-                and value.get("pageId") == page_id
-            ),
+            (value for value in page_entries if value["pageId"] == page_id),
             None,
         )
-        if entry is None:
-            raise RuntimeError("text import page snapshot is missing")
-        base_revision = int(entry["baseDocumentRevision"])
+        if entry is None or set(entry) != {
+            "pageId",
+            "baseDocumentRevision",
+            "sourceChecksum",
+            "sourceAssetId",
+            "changes",
+        }:
+            raise RuntimeError("text import page snapshot is invalid")
+        base_revision = entry["baseDocumentRevision"]
+        if (
+            isinstance(base_revision, bool)
+            or not isinstance(base_revision, int)
+            or base_revision < 1
+            or not isinstance(entry["sourceChecksum"], str)
+            or not entry["sourceChecksum"]
+            or not isinstance(entry["sourceAssetId"], str)
+            or not entry["sourceAssetId"]
+            or not isinstance(entry["changes"], list)
+            or not entry["changes"]
+        ):
+            raise RuntimeError("text import page snapshot is invalid")
         with self.engine.connect() as connection:
             page = connection.execute(
                 select(
                     pages.c.chapter_id,
                     pages.c.document_revision,
+                    pages.c.page_style_schema_version,
+                    pages.c.rendered_revision,
+                    pages.c.render_status,
+                    page_assets.c.asset_id,
                     assets.c.checksum,
                 )
                 .join(
@@ -888,24 +1282,78 @@ class TextImportWorkerService:
                     select(bubbles).where(bubbles.c.page_id == page_id)
                 ).mappings()
             }
+            has_translated_asset = (
+                connection.execute(
+                    select(page_assets.c.asset_id).where(
+                        page_assets.c.page_id == page_id,
+                        page_assets.c.role == "translated",
+                    )
+                ).scalar_one_or_none()
+                is not None
+            )
         if page is None:
             raise RuntimeError("text import page was deleted")
         if (
             page["document_revision"] != base_revision
+            or page["page_style_schema_version"]
+            != PAGE_STYLE_SCHEMA_VERSION
+            or page["asset_id"] != entry["sourceAssetId"]
             or page["checksum"] != entry["sourceChecksum"]
         ):
             raise RuntimeError("text import page changed after preview")
+        bubble_payloads = {
+            bubble_id: _load_current_bubble_payload(
+                row,
+                document_revision=base_revision,
+                label=f"text import bubble {bubble_id}",
+            )
+            for bubble_id, row in bubble_rows.items()
+        }
         updates: list[tuple[str, dict[str, Any]]] = []
+        changed_fields: set[str] = set()
+        seen_bubbles: set[str] = set()
         for change in entry["changes"]:
-            bubble_id = str(change["bubbleId"])
+            if not isinstance(change, Mapping) or set(change) != {
+                "bubbleId",
+                "fields",
+            }:
+                raise RuntimeError("text import change snapshot is invalid")
+            bubble_id = change["bubbleId"]
+            fields = change["fields"]
+            if (
+                not isinstance(bubble_id, str)
+                or not bubble_id
+                or bubble_id in seen_bubbles
+                or not isinstance(fields, Mapping)
+                or not fields
+                or not set(fields).issubset(TEXT_IMPORT_FIELDS.values())
+                or not all(isinstance(value, str) for value in fields.values())
+            ):
+                raise RuntimeError("text import change snapshot is invalid")
+            seen_bubbles.add(bubble_id)
             current = bubble_rows.get(bubble_id)
             if current is None:
                 raise RuntimeError(
                     f"text import bubble {bubble_id} changed after preview"
                 )
-            payload = json.loads(current["payload_json"])
-            payload.update(dict(change["fields"]))
+            payload = dict(bubble_payloads[bubble_id])
+            payload.update(dict(fields))
+            changed_fields.update(fields)
             updates.append((bubble_id, payload))
+        render_changed = bool(
+            changed_fields.intersection({"translatedText", "textDirection"})
+        )
+        updated_by_id = dict(updates)
+        has_drawable_text = any(
+            _bubble_text(
+                updated_by_id.get(bubble_id, payload),
+                "translatedText",
+            ).strip()
+            for bubble_id, payload in bubble_payloads.items()
+        )
+        needs_render = bool(
+            render_changed and (has_translated_asset or has_drawable_text)
+        )
         new_revision = base_revision + 1
 
         def publish(connection: Connection) -> None:
@@ -919,16 +1367,35 @@ class TextImportWorkerService:
             ).scalar_one_or_none() is None:
                 raise RuntimeError("text import lost its chapter lock")
             for bubble_id, payload in updates:
-                connection.execute(
+                bubble_changed = connection.execute(
                     update(bubbles)
                     .where(
                         bubbles.c.id == bubble_id,
                         bubbles.c.page_id == page_id,
+                        bubbles.c.updated_revision == base_revision,
                     )
                     .values(
                         payload_json=canonical_json(payload),
                         updated_revision=new_revision,
                     )
+                )
+                if bubble_changed.rowcount != 1:
+                    raise RuntimeError(
+                        f"text import bubble {bubble_id} changed after preview"
+                    )
+            changed_ids = [bubble_id for bubble_id, _payload in updates]
+            untouched = connection.execute(
+                update(bubbles)
+                .where(
+                    bubbles.c.page_id == page_id,
+                    bubbles.c.updated_revision == base_revision,
+                    bubbles.c.id.not_in(changed_ids),
+                )
+                .values(updated_revision=new_revision)
+            )
+            if untouched.rowcount != len(bubble_rows) - len(updates):
+                raise RuntimeError(
+                    "text import bubble set changed after preview"
                 )
             changed = connection.execute(
                 update(pages)
@@ -938,16 +1405,54 @@ class TextImportWorkerService:
                 )
                 .values(
                     document_revision=new_revision,
-                    render_status="stale",
+                    rendered_revision=(
+                        new_revision
+                        if (
+                            not needs_render
+                            and page["render_status"] == "ready"
+                            and page["rendered_revision"] == base_revision
+                        )
+                        else page["rendered_revision"]
+                    ),
+                    render_status=(
+                        "stale" if needs_render else page["render_status"]
+                    ),
                 )
             )
             if changed.rowcount != 1:
                 raise RuntimeError("text import page changed after preview")
+            if (
+                not needs_render
+                and page["render_status"] == "ready"
+                and page["rendered_revision"] == base_revision
+            ):
+                pointer_changed = connection.execute(
+                    update(page_assets)
+                    .where(
+                        page_assets.c.page_id == page_id,
+                        page_assets.c.role == "translated",
+                        page_assets.c.input_document_revision == base_revision,
+                    )
+                    .values(input_document_revision=new_revision)
+                )
+                if pointer_changed.rowcount != 1:
+                    raise RuntimeError("current translated asset is missing")
+            if not needs_render:
+                connection.execute(
+                    update(job_steps)
+                    .where(
+                        job_steps.c.job_item_id == step["itemId"],
+                        job_steps.c.kind.in_(("render", "save")),
+                        job_steps.c.status == "pending",
+                    )
+                    .values(status="skipped")
+                )
 
         checkpoint = {
             "pageId": page_id,
             "documentRevision": new_revision,
             "changedBubbles": len(updates),
+            "renderRequired": needs_render,
         }
         self.jobs.complete_step(
             fence,

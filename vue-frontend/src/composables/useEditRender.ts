@@ -1,7 +1,6 @@
 import { getCurrentInstance, onUnmounted } from 'vue'
 import { storeToRefs } from 'pinia'
-import { getPageSummary } from '@/api/v2/content'
-import { pageSummaryToImage } from '@/adapters/v2ContentAdapter'
+import { getPageRenderStatus, type V2PageRenderStatus } from '@/api/v2/content'
 import {
   flushPageDocument,
   queuePageDocumentSave,
@@ -23,58 +22,70 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
   const { currentImage } = storeToRefs(imageStore)
 
   let currentRenderToken: symbol | null = null
+  let currentRenderController: AbortController | null = null
   let isOwnerDisposed = false
 
   if (getCurrentInstance()) {
     onUnmounted(() => {
       isOwnerDisposed = true
+      currentRenderController?.abort()
+      currentRenderController = null
       currentRenderToken = null
     })
   }
 
-  function applyPageSummary(pageId: string, summary: ReturnType<typeof pageSummaryToImage>): void {
+  function applyRenderStatus(pageId: string, status: V2PageRenderStatus): void {
     const index = imageStore.images.findIndex(image => image.id === pageId)
     if (index < 0) return
+    const failed = status.renderStatus === 'render_failed' || status.renderStatus === 'repair_failed'
+    const translationStatus = failed
+      ? 'failed'
+      : status.renderStatus === 'ready'
+        ? 'completed'
+        : status.renderStatus === 'not_rendered'
+          ? 'pending'
+          : 'processing'
     imageStore.updateImageByIndex(index, {
-      cleanAssetUrl: summary.cleanAssetUrl,
-      documentRevision: summary.documentRevision,
-      renderedRevision: summary.renderedRevision,
-      sourceAssetUrl: summary.sourceAssetUrl,
-      sourceRevision: summary.sourceRevision,
-      thumbnailSourceUrl: summary.thumbnailSourceUrl,
-      translatedAssetUrl: summary.translatedAssetUrl,
-      translationFailed: summary.translationFailed,
-      translationStatus: summary.translationStatus,
+      documentRevision: status.documentRevision,
+      renderedRevision: status.renderedRevision,
+      translatedAssetUrl: status.translatedUrl,
+      translationStatus,
     })
   }
 
   async function refreshUntilRendered(
     pageId: string,
+    minimumRevision: number,
     token: symbol,
+    signal: AbortSignal,
   ): Promise<string | null> {
     const deadline = Date.now() + 30_000
-    while (!isOwnerDisposed && currentRenderToken === token) {
-      const page = await getPageSummary(pageId)
-      applyPageSummary(pageId, pageSummaryToImage(page))
-      if (
-        page.renderedRevision === page.documentRevision
-        && page.renderStatus === 'ready'
-      ) {
-        return page.translatedUrl ?? null
+    while (!signal.aborted && !isOwnerDisposed && currentRenderToken === token) {
+      const status = await getPageRenderStatus(pageId, signal)
+      if (isOwnerDisposed || currentRenderToken !== token) return null
+      if (status.pageId !== pageId) {
+        throw new Error(`页面 ${pageId} 的渲染状态身份不匹配`)
       }
-      if (page.renderStatus === 'render_failed') {
+      applyRenderStatus(pageId, status)
+      if (
+        (status.renderedRevision ?? 0) >= minimumRevision
+        && status.renderStatus === 'ready'
+      ) {
+        return status.translatedUrl ?? null
+      }
+      if (status.renderStatus === 'render_failed' || status.renderStatus === 'repair_failed') {
         throw new Error('后端渲染失败')
       }
       if (
-        page.renderStatus === 'not_rendered'
+        status.renderStatus === 'not_rendered'
         && !bubbles.value.some(bubble => bubble.translatedText?.trim())
       ) {
-        return page.translatedUrl ?? null
+        return status.translatedUrl ?? null
       }
       if (Date.now() >= deadline) {
         throw new Error('后端渲染仍在继续，可稍后刷新查看结果')
       }
-      await new Promise(resolve => setTimeout(resolve, 50))
+      await new Promise(resolve => setTimeout(resolve, 500))
     }
     return null
   }
@@ -89,18 +100,28 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
       return false
     }
     const token = Symbol('backend-render')
+    currentRenderController?.abort()
+    const controller = new AbortController()
+    currentRenderController = controller
     currentRenderToken = token
     if (!silentMode) callbacks?.onRenderStart?.()
 
     try {
-      const pendingSave = queuePageDocumentSave(
+      await Promise.all([
+        queuePageDocumentSave(image.id, image.documentRevision, bubbles.value),
+        flushPageDocument(image.id),
+      ])
+      if (controller.signal.aborted || currentRenderToken !== token || isOwnerDisposed) return false
+      const committed = imageStore.images.find(candidate => candidate.id === image.id)
+      if (!committed || committed.documentRevision === undefined) {
+        throw new Error('当前页文档版本不可用')
+      }
+      const url = await refreshUntilRendered(
         image.id,
-        image.documentRevision,
-        bubbles.value,
+        committed.documentRevision,
+        token,
+        controller.signal,
       )
-      await flushPageDocument(image.id)
-      await pendingSave
-      const url = await refreshUntilRendered(image.id, token)
       if (currentRenderToken !== token || isOwnerDisposed) return false
       if (!silentMode) callbacks?.onRenderSuccess?.(url ?? image.sourceAssetUrl)
       return true
@@ -112,6 +133,8 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
     } finally {
       if (currentRenderToken === token) {
         if (!silentMode) callbacks?.onRenderEnd?.()
+        currentRenderController = null
+        currentRenderToken = null
       }
     }
   }

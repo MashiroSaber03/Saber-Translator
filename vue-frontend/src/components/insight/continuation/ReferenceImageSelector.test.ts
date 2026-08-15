@@ -2,16 +2,12 @@ import { enableAutoUnmount, mount } from '@vue/test-utils'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { nextTick } from 'vue'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
 import ReferenceImageSelector from './ReferenceImageSelector.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductThumbnailGrid from '@/components/product/ProductThumbnailGrid.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
-
-vi.mock('@/api/insight', () => ({
-  getThumbnailUrl: vi.fn().mockReturnValue('/thumb/page-1.png'),
-}))
 
 enableAutoUnmount(afterEach)
 
@@ -50,7 +46,6 @@ describe('ReferenceImageSelector', () => {
         continuationImages: [],
         characterForms: [],
         initialSelection: [],
-        bookId: 'book-1',
       },
     })
 
@@ -98,7 +93,6 @@ describe('ReferenceImageSelector', () => {
         ],
         characterForms: [],
         initialSelection: [],
-        bookId: 'book-1',
       },
     })
 
@@ -131,7 +125,6 @@ describe('ReferenceImageSelector', () => {
         continuationImages: [],
         characterForms: [],
         initialSelection: [],
-        bookId: 'book-1',
       },
     })
 
@@ -193,7 +186,6 @@ describe('ReferenceImageSelector', () => {
           },
         ],
         initialSelection: [],
-        bookId: 'book-1',
       },
     })
 
@@ -224,7 +216,6 @@ describe('ReferenceImageSelector', () => {
         continuationImages: [],
         characterForms: [],
         initialSelection: [],
-        bookId: 'book-1',
       },
     })
 
@@ -249,7 +240,6 @@ describe('ReferenceImageSelector', () => {
         continuationImages: [],
         characterForms: [],
         initialSelection: [],
-        bookId: 'book-1',
       },
     })
 

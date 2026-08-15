@@ -75,6 +75,7 @@ function mountComparison() {
       translatedTransformStyle: {},
       isOcrLoading: false,
       isTranslateLoading: false,
+      isBusy: false,
     },
     global: {
       stubs: {
@@ -113,6 +114,7 @@ function mountCleanComparison() {
       translatedTransformStyle: {},
       isOcrLoading: false,
       isTranslateLoading: false,
+      isBusy: false,
     },
     global: {
       stubs: {
@@ -227,6 +229,19 @@ describe('EditImageComparison event forwarding', () => {
     expect(source).toMatch(/\.edit-image-comparison--layout-vertical \.edit-image-comparison__image-panel\s*\{[^}]*min-height:\s*150px;/)
     expect(source).toMatch(/\.edit-image-comparison__divider--vertical\s*\{[^}]*height:\s*8px;[^}]*cursor:\s*ns-resize;/)
     expect(source).toMatch(/\.edit-image-comparison__divider--vertical \.edit-image-comparison__divider-handle\s*\{[^}]*writing-mode:\s*horizontal-tb;/)
+  })
+
+  it('stacks the editor without a fixed minimum width in narrow workspaces', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/edit/EditImageComparison.vue'),
+      'utf8',
+    )
+    const responsive = source.match(/@media \(--breakpoint-md-down\) \{([\s\S]*)\n\}/)?.[1] ?? ''
+
+    expect(responsive).toMatch(/\.edit-image-comparison\s*\{[^}]*flex-direction:\s*column/)
+    expect(responsive).toMatch(/\.edit-image-comparison__editor-panel\s*\{[^}]*min-width:\s*0/)
+    expect(responsive).toMatch(/\.edit-image-comparison__editor-panel\s*\{[^}]*max-width:\s*none/)
+    expect(responsive).toMatch(/\.edit-image-comparison__editor-resize-handle--vertical\s*\{[^}]*cursor:\s*ns-resize/)
   })
 
   it('uses edit-image-comparison owner hooks instead of generic local layout classes', () => {

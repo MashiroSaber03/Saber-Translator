@@ -16,9 +16,13 @@ export interface JobProgressCounts {
 
 export interface JobPoolProjection {
   kind: string
+  total: number
   waiting: number
   processing: number
   completed: number
+  failed: number
+  skipped: number
+  cancelled: number
   lockWaiting: boolean
 }
 
@@ -47,8 +51,8 @@ function targetText(job: V2Job, key: string): string {
 }
 
 function targetPageCount(job: V2Job): number {
-  const value = Number((job.target as Record<string, unknown>).pageCount)
-  return Number.isInteger(value) && value > 0 ? value : 0
+  const value = (job.target as Record<string, unknown>).pageCount
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : 0
 }
 
 function describeJobBatch(job: V2Job): string {
@@ -75,22 +79,14 @@ export function describeJobTarget(job: V2Job): string {
 export function progressPercent(job: V2Job): number {
   const counts = progressCounts(job)
   if (counts.total <= 0) return 0
-  return Math.max(0, Math.min(100, counts.completed / counts.total * 100))
+  return Math.max(0, Math.min(100, (counts.completed / counts.total) * 100))
 }
 
 export function progressCounts(job: V2Job): JobProgressCounts {
-  const progress = job.progress as Record<string, unknown>
-  const finiteCount = (value: unknown): number => {
-    const count = Number(value)
-    return Number.isFinite(count) && count > 0 ? count : 0
-  }
-  const total = finiteCount(progress.totalItems)
-  const completed = (
-    finiteCount(progress.completedItems)
-    + finiteCount(progress.failedItems)
-    + finiteCount(progress.skippedItems)
-    + finiteCount(progress.cancelledItems)
-  )
+  const progress = job.progress
+  const total = progress.totalItems
+  const completed =
+    progress.completedItems + progress.failedItems + progress.skippedItems + progress.cancelledItems
   if (job.kind === 'insight_analysis') {
     const pageProgress = projectInsightPageProgress(job.progress)
     if (pageProgress.total > 0) {
@@ -99,16 +95,9 @@ export function progressCounts(job: V2Job): JobProgressCounts {
         total: pageProgress.total,
       }
     }
-    const pageCount = targetPageCount(job)
-    if (pageCount > 0) {
-      return {
-        completed: Math.min(completed, pageCount),
-        total: pageCount,
-      }
-    }
   }
   return {
-    completed: Math.min(completed, total),
+    completed,
     total,
   }
 }
@@ -121,7 +110,7 @@ export function batchProgressCounts(jobs: V2Job[]): JobProgressCounts {
       summary.total += counts.total
       return summary
     },
-    { completed: 0, total: 0 },
+    { completed: 0, total: 0 }
   )
 }
 
@@ -132,38 +121,22 @@ export function batchStatusCounts(jobs: V2Job[]): Array<[V2Job['status'], number
 }
 
 export function currentStepLabel(job: V2Job): string {
-  const progress = job.progress as Record<string, unknown>
-  const current = progress.currentStep
-  if (!current || typeof current !== 'object' || Array.isArray(current)) return ''
-  const step = current as Record<string, unknown>
-  const kind = typeof step.kind === 'string' ? step.kind : ''
-  const ordinal = Number(step.itemOrdinal)
-  const page = typeof step.pageId === 'string' ? step.pageId.slice(0, 8) : ''
-  const target = Number.isInteger(ordinal) && ordinal > 0
-    ? `第 ${ordinal} 项`
-    : page
-      ? `页面 ${page}`
-      : ''
-  return [target, kind ? stepKindLabel(kind) : ''].filter(Boolean).join(' · ')
+  const current = job.progress.currentStep
+  if (!current) return ''
+  return `第 ${current.itemOrdinal} 项 · ${stepKindLabel(current.kind)}`
 }
 
 export function poolProgress(job: V2Job): JobPoolProjection[] {
-  const progress = job.progress as Record<string, unknown>
-  if (progress.executionMode !== 'parallel' || !Array.isArray(progress.pools)) return []
-  const count = (value: unknown): number => {
-    const parsed = Number(value)
-    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0
-  }
-  return progress.pools.flatMap((value) => {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return []
-    const pool = value as Record<string, unknown>
-    if (typeof pool.kind !== 'string' || !pool.kind) return []
-    return [{
-      kind: pool.kind,
-      waiting: count(pool.waiting),
-      processing: count(pool.processing),
-      completed: count(pool.completed),
-      lockWaiting: Boolean(pool.lockWaiting),
-    }]
-  })
+  if (job.progress.executionMode !== 'parallel') return []
+  return job.progress.pools.map(pool => ({
+    kind: pool.kind,
+    total: pool.total,
+    waiting: pool.waiting,
+    processing: pool.processing,
+    completed: pool.completed,
+    failed: pool.failed,
+    skipped: pool.skipped,
+    cancelled: pool.cancelled,
+    lockWaiting: pool.lockWaiting,
+  }))
 }

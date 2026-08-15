@@ -53,7 +53,6 @@
             input-id="script-reference-count"
             v-model="refCount"
             :min="1"
-            :max="10"
             size="xs"
             aria-label="VLM参考图数"
           />
@@ -88,7 +87,6 @@
       :continuation-images="[]"
       :character-forms="[]"
       :initial-selection="selectedReferenceTokens"
-      :book-id="bookId"
       :has-older-original-images="hasOlderOriginalImages"
       :loading-older-original-images="loadingOlderOriginalImages"
       @confirm="handleSelectorConfirm"
@@ -108,7 +106,7 @@ import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import { onBeforeUnmount, ref, watch } from 'vue'
 import type { ChapterScript, MangaImageInfo } from '@/api/continuation'
-import { getAvailableImages } from '@/api/continuation'
+import { getOriginalReferenceImages } from '@/api/continuation'
 import ReferenceImageSelector from './ReferenceImageSelector.vue'
 
 const props = defineProps<{
@@ -157,11 +155,11 @@ async function loadAvailableImages(bookId = props.bookId) {
   const requestId = ++imageRequestSeq
 
   try {
-    const response = await getAvailableImages(bookId)
+    const response = await getOriginalReferenceImages(bookId)
     if (!isMounted || requestId !== imageRequestSeq || props.bookId !== bookId) return
     availableOriginalImages.value = response.original_images
-    originalCursor.value = response.original_cursor ?? 0
-    hasOlderOriginalImages.value = Boolean(response.has_older_original_images)
+    originalCursor.value = response.original_cursor
+    hasOlderOriginalImages.value = response.original_cursor > 0
   } catch {
     if (!isMounted || requestId !== imageRequestSeq || props.bookId !== bookId) return
     availableOriginalImages.value = []
@@ -174,15 +172,18 @@ async function loadOlderOriginalImages(): Promise<void> {
   loadingOlderOriginalImages.value = true
   const requestId = ++imageRequestSeq
   try {
-    const response = await getAvailableImages(bookId, Math.max(0, originalCursor.value - 100))
+    const response = await getOriginalReferenceImages(
+      bookId,
+      Math.max(0, originalCursor.value - 100),
+    )
     if (!isMounted || requestId !== imageRequestSeq || props.bookId !== bookId) return
     const known = new Set(availableOriginalImages.value.map(image => image.token))
     availableOriginalImages.value = [
       ...response.original_images.filter(image => !known.has(image.token)),
       ...availableOriginalImages.value,
     ]
-    originalCursor.value = response.original_cursor ?? 0
-    hasOlderOriginalImages.value = Boolean(response.has_older_original_images)
+    originalCursor.value = response.original_cursor
+    hasOlderOriginalImages.value = response.original_cursor > 0
   } finally {
     if (isMounted && requestId === imageRequestSeq) loadingOlderOriginalImages.value = false
   }
@@ -223,21 +224,16 @@ function handleSave() {
 }
 
 watch(() => props.bookId, (newBookId) => {
+  invalidateAvailableImages()
+  refCount.value = 5
+  availableOriginalImages.value = []
+  originalCursor.value = 0
+  hasOlderOriginalImages.value = false
+  loadingOlderOriginalImages.value = false
+  selectedReferenceTokens.value = []
+  selectorVisible.value = false
   if (newBookId) {
-    loadAvailableImages(newBookId)
-    selectedReferenceTokens.value = []
-    refCount.value = 5
-  } else {
-    invalidateAvailableImages()
-    refCount.value = 5
-    availableOriginalImages.value = []
-    originalCursor.value = 0
-    hasOlderOriginalImages.value = false
-    originalCursor.value = 0
-    hasOlderOriginalImages.value = false
-    loadingOlderOriginalImages.value = false
-    selectedReferenceTokens.value = []
-    selectorVisible.value = false
+    void loadAvailableImages(newBookId)
   }
 }, { immediate: true })
 

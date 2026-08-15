@@ -1,16 +1,11 @@
 # ============================================================================
 # Saber-Translator 自动构建与发布工作流
 # ============================================================================
-# 分支策略:
-#   - main 分支: 完整功能（包含网页导入等开发功能）
-#   - release 分支: 精简版（删除网页导入，用于打包发布）
-#
 # 触发方式:
-#   1. 在 release 分支推送版本标签:
-#      git checkout release
+#   1. 在要发布的提交上推送版本标签:
 #      git tag v3.3.0
 #      git push origin v3.3.0
-#   2. 手动触发: GitHub Actions 页面 -> Run workflow -> 选择 release 分支
+#   2. 手动触发: GitHub Actions 页面 -> 选择要发布的分支 -> Run workflow
 #
 # 流程:
 #   1. 先创建 Draft Release
@@ -30,14 +25,6 @@ on:
         description: '版本号 (不带v前缀，如 3.3.0)'
         required: true
         default: '3.3.0'
-      branch:
-        description: '要打包的分支'
-        required: true
-        default: 'release'
-        type: choice
-        options:
-          - release
-          - main
 
 env:
   MODELS_RELEASE_TAG: models-storage
@@ -58,22 +45,36 @@ jobs:
     steps:
       - name: Get version
         id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            VERSION="${{ github.event.inputs.version }}"
+          if [ "$EVENT_NAME" == "workflow_dispatch" ]; then
+            VERSION="$INPUT_VERSION"
             TAG_NAME="v${VERSION}"
           else
-            TAG_NAME="${{ github.ref_name }}"
+            TAG_NAME="$REF_NAME"
             VERSION="${TAG_NAME#v}"
           fi
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_OUTPUT
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]; then
+            echo "Invalid release version: $VERSION" >&2
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "TAG_NAME=$TAG_NAME" >> "$GITHUB_OUTPUT"
+          if [[ "$VERSION" == *-* ]]; then
+            echo "PRERELEASE=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "PRERELEASE=false" >> "$GITHUB_OUTPUT"
+          fi
           echo "Version: $VERSION, Tag: $TAG_NAME"
 
       - name: Create Draft Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.TAG_NAME }}
+          target_commitish: ${{ github.sha }}
           name: v${{ steps.version.outputs.VERSION }}
           body: |
             ## Saber-Translator v${{ steps.version.outputs.VERSION }}
@@ -98,7 +99,7 @@ jobs:
             
             > ⚠️ 采用 7z 分卷压缩格式，请使用 [7-Zip](https://www.7-zip.org/) 或 [Bandzip](https://www.bandisoft.com/bandizip/) 解压，Windows 内置解压和 WinRAR 可能无法正确识别
           draft: true
-          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'rc') }}
+          prerelease: ${{ steps.version.outputs.PRERELEASE == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -125,8 +126,6 @@ jobs:
       # --------------------------------------------------
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.branch || github.ref }}
 
       # --------------------------------------------------
       # 2. 从 models-storage Release 下载模型文件
@@ -184,15 +183,7 @@ jobs:
         run: |
           Write-Host "Installing GPU dependencies..."
           python -m pip install --upgrade pip
-          
-          # Step 1: Install all dependencies (will install CPU torch)
           pip install -r ${{ matrix.requirements }}
-          
-          # Step 2: Uninstall CPU PyTorch
-          Write-Host "Replacing CPU PyTorch with CUDA version..."
-          pip uninstall torch torchvision torchaudio -y
-          
-          # Step 3: Install CUDA 13.0 PyTorch
           pip install torch==2.11.0 torchvision==0.26.0 --index-url https://download.pytorch.org/whl/cu130
 
       # --------------------------------------------------
@@ -209,7 +200,42 @@ jobs:
         working-directory: vue-frontend
         run: |
           npm ci
+          npm run check:api
           npm run build:check
+
+      - name: Verify generated frontend is current
+        run: |
+          $changes = @(git status --porcelain -- src/backend_v2/static/vue)
+          if ($changes.Count -ne 0) {
+            $changes | Write-Host
+            throw "Frontend build changed generated static assets"
+          }
+
+      - name: Verify backend contracts
+        if: matrix.variant == 'cpu'
+        run: |
+          python -m pip install "pytest>=8.4,<9"
+          python -m pytest tests_backend -q
+
+      - name: Verify frontend unit tests
+        if: matrix.variant == 'cpu'
+        working-directory: vue-frontend
+        run: npm test
+
+      - name: Verify frontend lint
+        if: matrix.variant == 'cpu'
+        working-directory: vue-frontend
+        run: npm run lint
+
+      - name: Verify frontend styles
+        if: matrix.variant == 'cpu'
+        working-directory: vue-frontend
+        run: npm run lint:css
+
+      - name: Verify frontend architecture
+        if: matrix.variant == 'cpu'
+        working-directory: vue-frontend
+        run: npm run lint:ui:audit
 
       # --------------------------------------------------
       # 8. 使用 PyInstaller 打包
@@ -355,11 +381,16 @@ jobs:
           echo ""
           echo "Version: ${{ needs.prepare.outputs.version }}"
           echo "Tag: ${{ needs.prepare.outputs.tag_name }}"
+          echo "Build result: ${{ needs.build.result }}"
           echo ""
-          echo "Next steps:"
-          echo "  1. Go to GitHub Releases page"
-          echo "  2. Edit the draft release v${{ needs.prepare.outputs.version }}"
-          echo "  3. Write your changelog"
-          echo "  4. Click 'Publish release'"
+          if [ "${{ needs.build.result }}" = "success" ]; then
+            echo "Next steps:"
+            echo "  1. Go to GitHub Releases page"
+            echo "  2. Edit the draft release v${{ needs.prepare.outputs.version }}"
+            echo "  3. Write your changelog"
+            echo "  4. Click 'Publish release'"
+          else
+            echo "The build failed or was cancelled. Keep the release as a draft and inspect the failed job."
+          fi
           echo ""
           echo "Link: https://github.com/${{ github.repository }}/releases"

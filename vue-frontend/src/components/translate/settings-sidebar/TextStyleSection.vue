@@ -70,7 +70,7 @@ const isTextStyleExpanded = ref(true)
           <UiNumberField
             input-id="fontSize"
             :model-value="textStyle.fontSize"
-            :min="10"
+            :min="1"
             :disabled="disabled || textStyle.autoFontSize"
             aria-label="字号"
             :title="textStyle.autoFontSize ? '已启用自动字号，首次翻译时将自动计算' : ''"
@@ -126,8 +126,7 @@ const isTextStyleExpanded = ref(true)
           <UiNumberField
             input-id="lineSpacing"
             :model-value="textStyle.lineSpacing"
-            :min="0.5"
-            :max="3"
+            :min="0.1"
             :step="0.1"
             :disabled="disabled"
             aria-label="行间距"
@@ -259,7 +258,6 @@ const isTextStyleExpanded = ref(true)
                   input-id="strokeWidth"
                   :model-value="textStyle.strokeWidth"
                   :min="0"
-                  :max="10"
                   :disabled="disabled"
                   aria-label="描边宽度"
                   @update:model-value="$event !== null && $emit('updateStrokeWidth', $event)"

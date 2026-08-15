@@ -39,7 +39,8 @@ function handleUpdate(value: string | number | boolean): void {
   emit('update:modelValue', String(value))
 }
 
-function handleSearch(): void {
+function handleSearch(event: KeyboardEvent): void {
+  if (event.isComposing) return
   emit('search', props.modelValue)
 }
 
@@ -113,6 +114,10 @@ defineExpose({ focus })
   --ui-input-border: var(--product-search-field-border, 1px solid var(--color-border-muted));
   --ui-input-focus-border: var(--product-search-field-focus-border, var(--color-action-primary));
   --ui-input-focus-shadow: var(--product-search-field-focus-shadow, var(--color-focus-brand-subtle));
+}
+
+.product-search-field__input::-webkit-search-cancel-button {
+  appearance: none;
 }
 
 .product-search-field--without-icon .product-search-field__input {

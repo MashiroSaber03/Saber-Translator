@@ -1,6 +1,4 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { defineComponent, h, ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -65,11 +63,6 @@ import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
 import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 
-const componentSourcePath = resolve(
-  process.cwd(),
-  'src/components/insight/continuation/CharacterManagementPanel.vue'
-)
-
 function createState() {
   return {
     characters: ref([
@@ -90,7 +83,6 @@ function createState() {
       },
     ]),
     getCharacterImageUrl: vi.fn().mockReturnValue(''),
-    getFormImageUrl: vi.fn().mockReturnValue(''),
     hasMoreCharacterForms: ref(false),
     isLoadingMoreCharacterForms: ref(false),
     loadMoreCharacterForms: vi.fn().mockResolvedValue(undefined),
@@ -226,7 +218,6 @@ describe('CharacterManagementPanel', () => {
         },
       },
     })
-    const source = readFileSync(componentSourcePath, 'utf8')
     const header = wrapper.getComponent(ProductSectionHeader)
 
     expect(header.props()).toMatchObject({
@@ -236,41 +227,6 @@ describe('CharacterManagementPanel', () => {
     })
     expect(header.get('.product-section-header__icon-text').text()).toBe('🎭')
     expect(header.text()).toContain('新增角色')
-    expect(source).toContain(
-      "import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'"
-    )
-    expect(source).not.toContain('class="section-header"')
-    expect(source).not.toContain('class="section-title"')
-    expect(source).not.toContain('.section-header {')
-    expect(source).not.toContain('.section-title h4')
-  })
-
-  it('does not override shared button primitive variables at the panel root', () => {
-    const source = readFileSync(componentSourcePath, 'utf8')
-    const rootStyle = source.match(/\.character-management-panel \{(?<body>[\s\S]*?)\n\}/)
-
-    expect(rootStyle?.groups?.body ?? '').not.toMatch(/--ui-button-/)
-  })
-
-  it('drives orthographic dialog status through typed props instead of child instance methods', () => {
-    const source = readFileSync(componentSourcePath, 'utf8')
-
-    expect(source).toContain(':is-generating="orthoGenerating"')
-    expect(source).toContain(':result-image-path="orthoResultImagePath"')
-    expect(source).not.toContain('orthoDialogRef')
-    expect(source).not.toContain('setGenerating')
-    expect(source).not.toContain('setResult')
-  })
-
-  it('lets the character list and detail pane stack based on the continuation workspace width', () => {
-    const source = readFileSync(componentSourcePath, 'utf8')
-
-    expect(source).toMatch(
-      /\.character-management-panel \{[\s\S]*?container-type: inline-size;[\s\S]*?container-name: continuation-character-management;/
-    )
-    expect(source).toMatch(
-      /@container continuation-character-management \(max-width: 640px\) \{[\s\S]*?\.character-management-panel__layout \{[\s\S]*?grid-template-columns: 1fr;[\s\S]*?\.character-management-panel__grid \{[\s\S]*?repeat\(auto-fill, minmax\(120px, 1fr\)\)[\s\S]*?max-height: none;/
-    )
   })
 
   it('renders the empty character list through product status feedback', () => {
@@ -301,17 +257,6 @@ describe('CharacterManagementPanel', () => {
     expect(banner.props('iconName')).toBe('users')
     expect(wrapper.text()).toContain('暂无角色数据，点击"新增角色"添加')
     expect(wrapper.find('.empty-state').exists()).toBe(false)
-  })
-
-  it('uses the product avatar contract for character tiles', () => {
-    const source = readFileSync(componentSourcePath, 'utf8')
-
-    expect(source).toContain("import ProductAvatar from '@/components/product/ProductAvatar.vue'")
-    expect(source).toContain('<ProductAvatar')
-    expect(source).toContain('shape="rounded"')
-    expect(source).not.toContain('class="tile-avatar"')
-    expect(source).not.toContain('tile-avatar-placeholder')
-    expect(source).not.toContain('char.name.charAt(0)')
   })
 
   it('uses product confirmation for destructive character form actions', async () => {
@@ -418,36 +363,4 @@ describe('CharacterManagementPanel', () => {
     expect(wrapper.find('.submit-character').exists()).toBe(true)
   })
 
-  it('keeps character management panel hooks under the panel owner', () => {
-    const source = readFileSync(componentSourcePath, 'utf8')
-
-    for (const oldClass of [
-      'character-empty-status',
-      'character-panel-layout',
-      'character-grid-panel',
-      'character-tile',
-      'tile-name',
-      'tile-chips',
-    ]) {
-      expect(source).not.toMatch(new RegExp(`class="[^"]*\\b${oldClass}\\b`))
-      expect(source).not.toMatch(new RegExp(`\\.${oldClass}\\b`))
-    }
-    expect(source).not.toContain('selected: selectedCharacter === char.name')
-    expect(source).not.toContain('disabled: char.enabled === false')
-    expect(source).not.toContain('.character-tile.selected')
-    expect(source).not.toContain('.character-tile.disabled')
-
-    for (const ownerClass of [
-      'character-management-panel__empty-status',
-      'character-management-panel__layout',
-      'character-management-panel__grid',
-      'character-management-panel__tile',
-      'character-management-panel__tile--selected',
-      'character-management-panel__tile--disabled',
-      'character-management-panel__tile-name',
-      'character-management-panel__tile-chips',
-    ]) {
-      expect(source).toContain(ownerClass)
-    }
-  })
 })

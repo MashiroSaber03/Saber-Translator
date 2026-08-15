@@ -12,14 +12,26 @@ import UiButton from '@/components/ui/UiButton.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
 
-const { getPageDataMock, reanalyzePageMock } = vi.hoisted(() => ({
+const {
+  getPageDataMock,
+  reanalyzePageMock,
+  downloadPageAnalysisMock,
+  triggerBlobDownloadMock,
+} = vi.hoisted(() => ({
   getPageDataMock: vi.fn(),
   reanalyzePageMock: vi.fn(),
+  downloadPageAnalysisMock: vi.fn(),
+  triggerBlobDownloadMock: vi.fn(),
 }))
 
 vi.mock('@/api/insight', () => ({
   getPageData: getPageDataMock,
   reanalyzePage: reanalyzePageMock,
+  downloadPageAnalysis: downloadPageAnalysisMock,
+}))
+
+vi.mock('@/utils/browserDownload', () => ({
+  triggerBlobDownload: triggerBlobDownloadMock,
 }))
 
 import PageDetail from '@/components/insight/PageDetail.vue'
@@ -48,6 +60,7 @@ describe('PageDetail', () => {
     getPageDataMock.mockResolvedValue({
       analysis: {
         page_num: 3,
+        analysisState: 'ready',
         page_summary: '旧摘要',
         panels: [],
       },
@@ -58,6 +71,9 @@ describe('PageDetail', () => {
     reanalyzePageMock.mockResolvedValue({
       jobId: 'task-123',
     })
+    downloadPageAnalysisMock.mockReset()
+    downloadPageAnalysisMock.mockResolvedValue(new Blob(['analysis']))
+    triggerBlobDownloadMock.mockReset()
 
   })
 
@@ -164,6 +180,60 @@ describe('PageDetail', () => {
     expect(getPageDataMock).toHaveBeenCalledTimes(2)
   })
 
+  it('submits page reanalysis once and ignores its result after changing context', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useInsightStore()
+    store.setCurrentBook('book-1')
+    store.selectPage(3)
+    store.setBookTotalPages(20)
+    const submission = deferred<{ jobId: string }>()
+    reanalyzePageMock.mockReturnValueOnce(submission.promise)
+
+    const wrapper = mount(PageDetail, {
+      global: { plugins: [pinia] },
+    })
+    await flushPromises()
+
+    const reanalyzeButton = wrapper.findAll('button')
+      .find(button => button.text().includes('重新分析'))!
+    await reanalyzeButton.trigger('click')
+    await reanalyzeButton.trigger('click')
+    expect(reanalyzePageMock).toHaveBeenCalledTimes(1)
+
+    store.setCurrentBook('book-2')
+    submission.resolve({ jobId: 'book-1-page-3-job' })
+    await flushPromises()
+
+    expect(store.currentTaskId).toBeNull()
+    expect(store.analysisStatus).toBe('idle')
+  })
+
+  it('downloads with the accepted page identity even if navigation changes mid-request', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useInsightStore()
+    store.setCurrentBook('book-1')
+    store.selectPage(3)
+    store.setBookTotalPages(20)
+    const download = deferred<Blob>()
+    downloadPageAnalysisMock.mockReturnValueOnce(download.promise)
+
+    const wrapper = mount(PageDetail, {
+      global: { plugins: [pinia] },
+    })
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text().includes('导出此页'))!.trigger('click')
+
+    store.selectPage(4)
+    const blob = new Blob(['page-3'])
+    download.resolve(blob)
+    await flushPromises()
+
+    expect(downloadPageAnalysisMock).toHaveBeenCalledWith('book-1', 3)
+    expect(triggerBlobDownloadMock).toHaveBeenCalledWith(blob, 'book-1_page_3.md')
+  })
+
   it('uses the shared spinner primitive for the reanalyze action loading state', async () => {
     const source = readFileSync(resolve(process.cwd(), 'src/components/insight/PageDetail.vue'), 'utf8')
     expect(source).not.toContain('btn-spinner')
@@ -238,13 +308,6 @@ describe('PageDetail', () => {
     expect(source).toContain('class="page-detail-panel"')
     expect(source).not.toContain('workspace-section page-detail-section')
     expect(source).not.toContain('.workspace-section.page-detail-section')
-  })
-
-  it('does not assert shared button primitives through internal class names', () => {
-    const source = readFileSync(resolve(process.cwd(), 'tests/unit/page-detail.spec.ts'), 'utf8')
-    const buttonClassPrefix = 'ui-' + 'button--'
-
-    expect(source).not.toContain(buttonClassPrefix)
   })
 
   it('reveals the page preview zoom affordance on keyboard focus as well as hover', () => {
@@ -353,7 +416,7 @@ describe('PageDetail', () => {
     getPageDataMock.mockReset()
     getPageDataMock.mockResolvedValueOnce({
       analysis: {
-        analyzed: false,
+        analysisState: 'not_analyzed',
         page_num: 3,
         page_summary: '',
         panels: [],
@@ -386,7 +449,7 @@ describe('PageDetail', () => {
     getPageDataMock.mockReset()
     getPageDataMock.mockResolvedValueOnce({
       analysis: {
-        analyzed: true,
+        analysisState: 'ready',
         page_num: 3,
         page_summary: '已有摘要',
         panels: [],
@@ -475,12 +538,17 @@ describe('PageDetail', () => {
       expect(previewTrigger.element.tagName).toBe('BUTTON')
       expect(previewTrigger.attributes('aria-label')).toBe('预览第 3 页图片')
 
+      previewTrigger.element.focus()
       await previewTrigger.trigger('click')
       await nextTick()
 
       const previewModal = wrapper.get('.page-detail-panel__image-preview-modal')
       expect(previewModal.exists()).toBe(true)
+      expect(previewModal.attributes('role')).toBe('dialog')
+      expect(previewModal.attributes('aria-modal')).toBe('true')
+      expect(previewModal.attributes('aria-label')).toBe('第 3 页图片预览')
       expect(document.activeElement).toBe(previewModal.element)
+      expect(document.body.style.overflow).toBe('hidden')
 
       const closeButton = wrapper.get('button[aria-label="关闭图片预览"]')
       expect(closeButton.getComponent(UiIcon).props('name')).toBe('x')
@@ -492,6 +560,11 @@ describe('PageDetail', () => {
       expect(iconActions.some(action => action.props('label') === '关闭图片预览')).toBe(true)
       expect(iconActions.some(action => action.props('label') === '预览上一页')).toBe(true)
       expect(iconActions.some(action => action.props('label') === '预览下一页')).toBe(true)
+
+      await closeButton.trigger('click')
+      await nextTick()
+      expect(document.activeElement).toBe(previewTrigger.element)
+      expect(document.body.style.overflow).toBe('')
     } finally {
       wrapper.unmount()
       host.remove()
@@ -528,6 +601,26 @@ describe('PageDetail', () => {
 
     await previewTrigger.trigger('click')
     expect(wrapper.find('.page-detail-panel__image-preview-modal').exists()).toBe(false)
+  })
+
+  it('renders a no-image fallback without requesting the current document as an empty image URL', async () => {
+    getPageDataMock.mockResolvedValueOnce({
+      analysis: {
+        analysisState: 'not_analyzed',
+        page_num: 3,
+        page_summary: '',
+      },
+      sourceUrl: '',
+    })
+
+    const wrapper = mount(PageDetail)
+    await flushPromises()
+
+    const previewTrigger = wrapper.get('.page-detail-panel__image-trigger')
+    expect(previewTrigger.attributes('aria-label')).toBe('第 3 页暂无图片')
+    expect(previewTrigger.attributes('disabled')).toBeDefined()
+    expect(wrapper.find('.page-detail-panel__image-trigger img').exists()).toBe(false)
+    expect(wrapper.get('.page-detail-panel__image-fallback').text()).toContain('暂无页面图片')
   })
 
   it('ignores stale page detail responses after selecting another page', async () => {
@@ -587,5 +680,33 @@ describe('PageDetail', () => {
 
     expect(wrapper.text()).toContain('第 4 页摘要')
     expect(wrapper.text()).not.toContain('第 3 页迟到摘要')
+  })
+
+  it.each([
+    ['not_analyzed', '○ 未分析', '此页尚未分析，点击下方按钮开始分析'],
+    ['running', '… 分析中', '正在分析此页，完成后会自动更新'],
+    ['failed', '! 分析失败', '此页分析失败，可点击下方按钮重试'],
+    ['stale', '△ 结果已过期', '此页分析结果已过期，可重新分析以更新结果'],
+    ['ready', '✓ 已分析', '此页分析完成，但没有生成页面摘要'],
+  ] as const)('renders the %s backend page state explicitly', async (state, label, message) => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useInsightStore()
+    store.currentBookId = 'book-1'
+    store.selectPage(3)
+    store.setBookTotalPages(20)
+    getPageDataMock.mockReset().mockResolvedValueOnce({
+      analysis: { analysisState: state, page_num: 3 },
+      sourceUrl: '/page.png',
+    })
+
+    const wrapper = mount(PageDetail, { global: { plugins: [pinia] } })
+    await flushPromises()
+
+    const status = wrapper.get('.page-detail-panel__analysis-status')
+    expect(status.attributes('data-state')).toBe(state)
+    expect(status.text()).toBe(label)
+    expect(wrapper.getComponent(ProductStatusBanner).text()).toContain(message)
+    wrapper.unmount()
   })
 })

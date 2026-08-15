@@ -1,11 +1,8 @@
 import { mount } from '@vue/test-utils'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import * as fc from 'fast-check'
 import SidebarLayout from '@/components/ui/SidebarLayout.vue'
 
-const modeArb = fc.constantFrom('flow' as const, 'fixed' as const, 'overlay' as const)
 const collapsedArb = fc.constantFrom('none' as const, 'left' as const, 'right' as const, 'both' as const)
 const scrollModeArb = fc.constantFrom('page' as const, 'main' as const, 'panes' as const)
 const sidebarsArb = fc.constantFrom('flow' as const, 'sticky' as const, 'fixed' as const, 'overlay' as const)
@@ -15,16 +12,14 @@ describe('responsive sidebar shell contracts', () => {
   it('routes layout options through the shared SidebarLayout class contract', () => {
     fc.assert(
       fc.property(
-        modeArb,
         collapsedArb,
         scrollModeArb,
         sidebarsArb,
         mobileModeArb,
         fc.boolean(),
-        (mode, collapsed, scrollMode, sidebars, mobileMode, paneScroll) => {
+        (collapsed, scrollMode, sidebars, mobileMode, paneScroll) => {
           const wrapper = mount(SidebarLayout, {
             props: {
-              mode,
               collapsed,
               scrollMode,
               sidebars,
@@ -39,7 +34,6 @@ describe('responsive sidebar shell contracts', () => {
           })
 
           const layout = wrapper.get('.ui-sidebar-layout')
-          expect(layout.classes()).toContain(`ui-sidebar-layout--${mode}`)
           expect(layout.classes()).toContain(`ui-sidebar-layout--${collapsed}-collapsed`)
           expect(layout.classes()).toContain(`ui-sidebar-layout--scroll-${scrollMode}`)
           expect(layout.classes()).toContain(`ui-sidebar-layout--sidebars-${sidebars}`)
@@ -88,10 +82,4 @@ describe('responsive sidebar shell contracts', () => {
     }
   })
 
-  it('does not expose a dead custom mobile breakpoint API', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/ui/SidebarLayout.vue'), 'utf8')
-
-    expect(source).not.toContain('mobileBreakpoint')
-    expect(source).not.toContain('--ui-sidebar-mobile-breakpoint')
-  })
 })

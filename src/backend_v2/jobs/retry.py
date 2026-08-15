@@ -2,23 +2,25 @@
 
 from __future__ import annotations
 
-import json
-import hashlib
-from pathlib import Path
-import uuid
 from collections import defaultdict
 from datetime import timedelta
+import json
+from pathlib import Path
 from typing import Any, Mapping
+import uuid
 
 from sqlalchemy import Engine, select, update
 
+from src.backend_v2.checksums import sha256_file
 from src.backend_v2.insight.repository import InsightRepository
 from src.backend_v2.jobs.repository import (
     JobConflict,
+    JobDataInvalid,
     JobItemSpec,
     JobNotFound,
     JobQueueRepository,
     JobSpec,
+    decode_job_config,
 )
 from src.backend_v2.timestamps import utcnow
 from src.backend_v2.settings.resolver import SettingsResolver
@@ -39,7 +41,16 @@ from src.backend_v2.storage.schema import (
 )
 from src.backend_v2.translation.auxiliary import AuxiliaryTranslationCommands
 from src.backend_v2.translation.commands import TranslationJobCommandService
-from src.backend_v2.web_import.commands import WebImportCommandService
+from src.backend_v2.transfer.commands import (
+    TransferDataInvalid,
+    validate_container_config,
+)
+from src.backend_v2.web_import.commands import (
+    WebImportCommandService,
+    WebImportDataInvalid,
+    validate_web_commit_config,
+    validate_web_extract_config,
+)
 
 
 class JobRetryService:
@@ -134,16 +145,28 @@ class JobRetryService:
         *,
         failed_only: bool,
     ) -> tuple[Mapping[str, Any], list[Mapping[str, Any]]]:
+        try:
+            detail = self.repository.get_job(job_id)
+        except JobDataInvalid as exc:
+            raise JobConflict(f"source job data is invalid: {exc}") from exc
+        expected_status = "completed_with_errors" if failed_only else "failed"
+        if str(detail["status"]) != expected_status:
+            raise JobConflict(
+                f"{expected_status} is required for this retry command"
+            )
         with self.engine.connect() as connection:
             source = connection.execute(
                 select(jobs).where(jobs.c.id == job_id)
             ).mappings().one_or_none()
             if source is None:
                 raise JobNotFound("job not found")
-            expected_status = "completed_with_errors" if failed_only else "failed"
+            try:
+                source_config = decode_job_config(source)
+            except JobDataInvalid as exc:
+                raise JobConflict(f"source job data is invalid: {exc}") from exc
             if str(source["status"]) != expected_status:
                 raise JobConflict(
-                    f"{expected_status} is required for this retry command"
+                    "source job changed while the retry was being prepared"
                 )
             conditions = [job_items.c.job_id == job_id]
             if failed_only:
@@ -157,7 +180,9 @@ class JobRetryService:
             )
         if not selected_items:
             raise JobConflict("source job has no retryable items")
-        return source, selected_items
+        normalized_source = dict(source)
+        normalized_source["config_json"] = source_config
+        return normalized_source, selected_items
 
     def _retry_container_import(
         self,
@@ -170,7 +195,10 @@ class JobRetryService:
     ) -> dict[str, object]:
         source_id = str(source["id"])
         chapter_id = _optional_text(source.get("chapter_id"))
-        config = _json_object(source.get("config_json"))
+        try:
+            config = validate_container_config(source.get("config_json"))
+        except TransferDataInvalid as exc:
+            raise JobConflict(f"container retry snapshot is invalid: {exc}") from exc
         relative_path = _optional_text(config.get("containerRelativePath"))
         checksum = _optional_text(config.get("checksum"))
         if not chapter_id or not relative_path or not checksum:
@@ -185,7 +213,7 @@ class JobRetryService:
             raise JobConflict("container retry input path is invalid") from exc
         if (
             not container_path.is_file()
-            or _sha256_file(container_path) != checksum
+            or sha256_file(container_path) != checksum
         ):
             raise JobConflict("container retry input is missing or changed")
 
@@ -206,16 +234,23 @@ class JobRetryService:
             step_kinds[str(row["job_item_id"])].append(str(row["kind"]))
 
         raw_entries = config.get("entries")
-        entries = (
-            [dict(entry) for entry in raw_entries if isinstance(entry, Mapping)]
-            if isinstance(raw_entries, list)
-            else []
-        )
+        if raw_entries is None:
+            entries: list[dict[str, Any]] = []
+        elif not isinstance(raw_entries, list) or not all(
+            isinstance(entry, Mapping) for entry in raw_entries
+        ):
+            raise JobConflict("container retry checkpoint is invalid")
+        else:
+            entries = [dict(entry) for entry in raw_entries]
         retry_entries: list[dict[str, Any]] = []
         retry_scan = not entries
         if entries:
+            source_base = _required_integer(
+                config,
+                "entryItemOrdinalBase",
+                minimum=1,
+            )
             if failed_only:
-                source_base = int(config.get("entryItemOrdinalBase", 2))
                 for item in selected_items:
                     kinds = step_kinds.get(str(item["id"]), [])
                     if "container_scan" in kinds:
@@ -252,6 +287,7 @@ class JobRetryService:
                 )
                 for _entry in retry_entries
             )
+        validate_container_config(retry_config)
 
         display = _json_object(source.get("target_display_json"))
         credentials, plugins = self._original_runtime_snapshots(source_id)
@@ -302,10 +338,13 @@ class JobRetryService:
         failed_only: bool,
         idempotency_key: str,
     ) -> dict[str, object]:
-        config = _json_object(source.get("config_json"))
+        try:
+            config = validate_web_extract_config(source.get("config_json"))
+        except WebImportDataInvalid as exc:
+            raise JobConflict(f"web extraction retry snapshot is invalid: {exc}") from exc
         chapter_id = _optional_text(source.get("chapter_id"))
         source_url = _optional_text(config.get("sourceUrl"))
-        requested_engine = str(config.get("requestedEngine", "auto"))
+        requested_engine = _required_text(config, "requestedEngine")
         if not chapter_id or not source_url:
             raise JobConflict("web extraction retry target no longer exists")
         credentials, plugins = self._original_runtime_snapshots(
@@ -320,7 +359,7 @@ class JobRetryService:
             requested_engine=requested_engine,
             idempotency_key=idempotency_key,
             resolved_options=(
-                _json_object(config.get("options"))
+                dict(config["options"])
                 if strategy == "original"
                 else None
             ),
@@ -349,15 +388,20 @@ class JobRetryService:
     ) -> dict[str, object]:
         source_id = str(source["id"])
         draft_id = _optional_text(source.get("web_import_draft_id"))
-        config = _json_object(source.get("config_json"))
+        chapter_id = _optional_text(source.get("chapter_id"))
+        try:
+            config = validate_web_commit_config(source.get("config_json"))
+        except WebImportDataInvalid as exc:
+            raise JobConflict(f"web import retry snapshot is invalid: {exc}") from exc
         raw_entries = config.get("entries")
-        if not draft_id or not isinstance(raw_entries, list):
+        if (
+            not draft_id
+            or not chapter_id
+            or not isinstance(raw_entries, list)
+            or not all(isinstance(entry, Mapping) for entry in raw_entries)
+        ):
             raise JobConflict("web import retry draft no longer exists")
-        entries = [
-            dict(entry)
-            for entry in raw_entries
-            if isinstance(entry, Mapping)
-        ]
+        entries = [dict(entry) for entry in raw_entries]
         selected_ids = {str(item["id"]) for item in selected_items}
         with self.engine.connect() as connection:
             draft = connection.execute(
@@ -409,10 +453,11 @@ class JobRetryService:
         retry_config = {
             "draftId": draft_id,
             "draftRevision": base_revision + 1,
-            "chapterId": str(source["chapter_id"]),
+            "chapterId": chapter_id,
             "entries": retry_entries,
             "executionMode": "sequential",
         }
+        validate_web_commit_config(retry_config)
         display = _json_object(source.get("target_display_json"))
         credentials, plugins = self._original_runtime_snapshots(source_id)
         item_specs = (
@@ -431,7 +476,7 @@ class JobRetryService:
         spec = JobSpec(
             kind="web_import_commit",
             book_id=_optional_text(source.get("book_id")),
-            chapter_id=_optional_text(source.get("chapter_id")),
+            chapter_id=chapter_id,
             web_import_draft_id=draft_id,
             config=retry_config,
             items=item_specs,
@@ -536,38 +581,40 @@ class JobRetryService:
             raise JobConflict("translation retry target chapter no longer exists")
         page_ids = self._page_ids(selected_items)
         config = _json_object(source.get("config_json"))
-        mode = str(config.get("mode", "standard"))
+        mode = _required_text(config, "mode")
+        execution_mode = _required_text(config, "executionMode")
+        reuse_existing_bubbles = _required_boolean(
+            config,
+            "reuseExistingBubbles",
+        )
         style_source: dict[str, object] = {}
         frozen_style = config.get("textStyleSnapshot")
-        if isinstance(frozen_style, Mapping):
-            source_page_id = _optional_text(frozen_style.get("sourcePageId"))
-            if source_page_id:
-                with self.engine.connect() as connection:
-                    source_revision = connection.execute(
-                        select(pages.c.document_revision).where(
-                            pages.c.id == source_page_id,
-                            pages.c.chapter_id == str(chapter_id),
-                        )
-                    ).scalar_one_or_none()
-                if source_revision is None:
-                    raise JobConflict(
-                        "translation style source page no longer exists"
+        if frozen_style is not None:
+            if not isinstance(frozen_style, Mapping):
+                raise JobConflict("translation style snapshot is invalid")
+            source_page_id = _required_text(frozen_style, "sourcePageId")
+            with self.engine.connect() as connection:
+                source_revision = connection.execute(
+                    select(pages.c.document_revision).where(
+                        pages.c.id == source_page_id,
+                        pages.c.chapter_id == str(chapter_id),
                     )
-                style_source = {
-                    "styleSourcePageId": source_page_id,
-                    "styleSourceDocumentRevision": int(source_revision),
-                }
+                ).scalar_one_or_none()
+            if source_revision is None:
+                raise JobConflict(
+                    "translation style source page no longer exists"
+                )
+            style_source = {
+                "styleSourcePageId": source_page_id,
+                "styleSourceDocumentRevision": int(source_revision),
+            }
         return TranslationJobCommandService(self.engine).create_chapter_job(
             chapter_id=str(chapter_id),
             config={
                 "mode": mode,
-                "executionMode": str(
-                    config.get("executionMode", "sequential")
-                ),
+                "executionMode": execution_mode,
                 "skipCompleted": False,
-                "reuseExistingBubbles": bool(
-                    config.get("reuseExistingBubbles", False)
-                ),
+                "reuseExistingBubbles": reuse_existing_bubbles,
                 **style_source,
             },
             page_ids=page_ids,
@@ -617,14 +664,13 @@ class JobRetryService:
         if not book_id or not source_run_id:
             raise JobConflict("Insight retry target run no longer exists")
         original = _json_object(source.get("config_json"))
-        scope = str(original.get("scope", "full"))
+        scope = _required_text(original, "scope")
+        if scope not in {"full", "incremental", "chapter", "page"}:
+            raise JobConflict("Insight retry scope is invalid")
         config = (
             SettingsResolver(self.engine).resolve_insight(
                 book_id=book_id,
-                command={
-                    "scope": scope,
-                    "force": bool(original.get("force", False)),
-                },
+                scope=scope,
             )
             if strategy == "current"
             else dict(original)
@@ -767,16 +813,23 @@ class JobRetryService:
         config["runId"] = new_run_id
         config["bookId"] = book_id
         config["targetCount"] = len(target_mappings)
-        raw_layers = _json_object(config.get("analysis")).get("layers", [])
-        if not isinstance(raw_layers, list):
+        raw_layers = _json_object(config.get("analysis")).get("layers")
+        if not isinstance(raw_layers, list) or not all(
+            isinstance(layer, Mapping) for layer in raw_layers
+        ):
+            raise JobConflict("Insight retry layer configuration is invalid")
+        layer_indices = [
+            _required_integer(layer, "index", minimum=0)
+            for layer in raw_layers
+        ]
+        if layer_indices != list(range(len(layer_indices))):
             raise JobConflict("Insight retry layer configuration is invalid")
         final_steps = (
             (
                 "insight_validate_run",
                 *(
-                    f"insight_build_layer_{int(layer['index'])}"
-                    for layer in raw_layers
-                    if isinstance(layer, Mapping) and "index" in layer
+                    f"insight_build_layer_{index}"
+                    for index in layer_indices
                 ),
                 "insight_stage_compressed_context",
                 "insight_stage_overview_no_spoiler",
@@ -1070,18 +1123,46 @@ def _json_object(value: object) -> dict[str, Any]:
     if isinstance(value, Mapping):
         return dict(value)
     if isinstance(value, str):
-        parsed = json.loads(value)
-        return dict(parsed) if isinstance(parsed, Mapping) else {}
-    return {}
+        try:
+            parsed = json.loads(value)
+        except (TypeError, json.JSONDecodeError) as exc:
+            raise JobConflict("stored job JSON is invalid") from exc
+        if isinstance(parsed, Mapping):
+            return dict(parsed)
+    raise JobConflict("stored job JSON must be an object")
 
 
 def _optional_text(value: object) -> str | None:
-    return str(value) if value is not None else None
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value:
+        raise JobConflict("stored job reference must be a non-empty string")
+    return value
 
 
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as source:
-        while chunk := source.read(1024 * 1024):
-            digest.update(chunk)
-    return digest.hexdigest()
+def _required_text(value: Mapping[str, Any], key: str) -> str:
+    selected = value.get(key)
+    if not isinstance(selected, str) or not selected:
+        raise JobConflict(f"stored job field {key} must be a non-empty string")
+    return selected
+
+
+def _required_boolean(value: Mapping[str, Any], key: str) -> bool:
+    selected = value.get(key)
+    if not isinstance(selected, bool):
+        raise JobConflict(f"stored job field {key} must be a boolean")
+    return selected
+
+
+def _required_integer(
+    value: Mapping[str, Any],
+    key: str,
+    *,
+    minimum: int | None = None,
+) -> int:
+    selected = value.get(key)
+    if isinstance(selected, bool) or not isinstance(selected, int):
+        raise JobConflict(f"stored job field {key} must be an integer")
+    if minimum is not None and selected < minimum:
+        raise JobConflict(f"stored job field {key} is out of range")
+    return selected

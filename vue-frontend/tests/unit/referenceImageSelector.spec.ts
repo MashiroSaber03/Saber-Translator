@@ -33,7 +33,6 @@ describe('ReferenceImageSelector', () => {
         continuationImages: [],
         characterForms: [],
         initialSelection: [],
-        bookId: 'book-1',
       },
     })
     wrappers.push(wrapper)

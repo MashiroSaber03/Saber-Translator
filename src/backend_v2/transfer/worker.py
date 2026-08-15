@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import timedelta
 from io import BytesIO
 from pathlib import Path, PurePosixPath
-import re
 import shutil
 import stat
 from typing import Any, Mapping
@@ -16,6 +15,7 @@ from PIL import Image
 from sqlalchemy import Engine, insert, select, update
 from sqlalchemy.engine import Connection
 
+from src.backend_v2.checksums import sha256_file
 from src.backend_v2.serialization import canonical_json
 from src.backend_v2.content.image_import import (
     ImageImportService,
@@ -24,8 +24,12 @@ from src.backend_v2.content.image_import import (
 from src.backend_v2.content.page_style import resolve_new_page_style
 from src.backend_v2.content.repository import (
     ContentRepository,
-    _deduplicate_logical_path,
+    deduplicate_logical_path,
+    natural_sort_key,
     normalize_logical_path,
+)
+from src.backend_v2.insight.repository import (
+    mark_book_insight_derived_stale,
 )
 from src.backend_v2.jobs.repository import (
     AttemptFence,
@@ -45,17 +49,12 @@ from src.backend_v2.storage.schema import (
     page_assets,
     pages,
 )
-from src.shared.memory_errors import is_memory_allocation_error
+from src.backend_v2.transfer.commands import (
+    validate_container_config,
+)
 
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tif", ".tiff"}
-
-
-def _natural_path_key(value: object) -> tuple[object, ...]:
-    return tuple(
-        int(part) if part.isdigit() else part.casefold()
-        for part in re.split(r"(\d+)", str(value))
-    )
 
 
 class TransferWorkerService:
@@ -100,7 +99,7 @@ class TransferWorkerService:
     ) -> Mapping[str, Any]:
         config = self._config(step)
         container = self._data_path(str(config["containerRelativePath"]))
-        if _sha256_file(container) != config.get("checksum"):
+        if sha256_file(container) != config.get("checksum"):
             raise ValueError("frozen container checksum changed")
         container_type = str(config["containerType"])
         if container_type in {"zip", "cbz"}:
@@ -109,8 +108,6 @@ class TransferWorkerService:
             import fitz
 
             with fitz.open(container) as document:
-                if document.page_count > self.limits.max_container_pages:
-                    raise ValueError("container contains too many pages")
                 entries = [
                     {
                         "kind": "pdf",
@@ -125,8 +122,6 @@ class TransferWorkerService:
             raise ValueError("unsupported container type")
         if not entries:
             raise ValueError("container contains no supported images")
-        if len(entries) > self.limits.max_container_pages:
-            raise ValueError("container contains too many pages")
         chapter_id = str(self._job_target(fence.job_id)["chapter_id"])
         with self.engine.connect() as connection:
             used_paths = set(
@@ -141,7 +136,7 @@ class TransferWorkerService:
             logical_path = normalize_logical_path(
                 str(raw_entry["logicalPath"])
             )
-            final_path = _deduplicate_logical_path(logical_path, used_paths)
+            final_path = deduplicate_logical_path(logical_path, used_paths)
             used_paths.add(final_path)
             frozen_entries.append({**raw_entry, "logicalPath": final_path})
         entries = frozen_entries
@@ -154,6 +149,7 @@ class TransferWorkerService:
             new_config["extractedRelativePath"] = (
                 Path("temp") / "container-import" / fence.job_id
             ).as_posix()
+        validate_container_config(new_config)
         now = utcnow()
 
         def publish(connection: Connection) -> None:
@@ -225,9 +221,9 @@ class TransferWorkerService:
         page_id = str(uuid.uuid4())
         logical_path = normalize_logical_path(str(entry["logicalPath"]))
         now = utcnow()
-        chapter_id = str(
-            self._job_target(fence.job_id)["chapter_id"]
-        )
+        target = self._job_target(fence.job_id)
+        chapter_id = str(target["chapter_id"])
+        book_id = str(target["book_id"])
 
         def publish(connection: Connection) -> None:
             if connection.execute(
@@ -295,6 +291,11 @@ class TransferWorkerService:
                     updated_at=now,
                 )
             )
+            mark_book_insight_derived_stale(
+                connection,
+                book_id=book_id,
+                now=now,
+            )
 
         checkpoint = {
             "pageId": page_id,
@@ -325,7 +326,6 @@ class TransferWorkerService:
         output_dir = self.data_root / "temp" / "exports"
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / f"{fence.job_id}.{export_format}"
-        failures: list[dict[str, object]] = []
         successful = 0
         try:
             if export_format in {"zip", "cbz"}:
@@ -337,43 +337,26 @@ class TransferWorkerService:
                     allowZip64=True,
                 ) as archive:
                     for entry in entries:
-                        try:
-                            path = asset_paths[str(entry["assetId"])]
-                            member = self._export_member_name(
-                                entry,
-                                used_names,
-                                extension=path.suffix.lower() or ".png",
-                            )
-                            archive.write(path, member)
-                            successful += 1
-                        except Exception as exc:
-                            if is_memory_allocation_error(exc):
-                                raise
-                            failures.append(
-                                {"pageId": entry.get("pageId"), "message": str(exc)}
-                            )
+                        path = asset_paths[str(entry["assetId"])]
+                        member = self._export_member_name(
+                            entry,
+                            used_names,
+                            extension=path.suffix.lower() or ".png",
+                        )
+                        archive.write(path, member)
+                        successful += 1
             else:
                 import img2pdf
 
                 paths: list[str] = []
                 for entry in entries:
-                    try:
-                        path = asset_paths[str(entry["assetId"])]
-                        with Image.open(path) as image:
-                            image.verify()
-                        paths.append(str(path))
-                        successful += 1
-                    except Exception as exc:
-                        if is_memory_allocation_error(exc):
-                            raise
-                        failures.append(
-                            {"pageId": entry.get("pageId"), "message": str(exc)}
-                        )
-                if paths:
-                    with output_path.open("wb") as output:
-                        img2pdf.convert(*paths, outputstream=output)
-            if successful == 0:
-                raise RuntimeError("export could not read any frozen page asset")
+                    path = asset_paths[str(entry["assetId"])]
+                    with Image.open(path) as image:
+                        image.verify()
+                    paths.append(str(path))
+                    successful += 1
+                with output_path.open("wb") as output:
+                    img2pdf.convert(*paths, outputstream=output)
             mime = (
                 "application/pdf"
                 if export_format == "pdf"
@@ -408,7 +391,6 @@ class TransferWorkerService:
             "artifactUrl": f"/api/v2/assets/{artifact.id}",
             "format": export_format,
             "successfulPages": successful,
-            "failedPages": failures,
             "expiresAt": expires.isoformat(),
         }
         self.jobs.complete_step(
@@ -423,8 +405,6 @@ class TransferWorkerService:
         entries: list[dict[str, object]] = []
         with zipfile.ZipFile(path) as archive:
             infos = archive.infolist()
-            if len(infos) > self.limits.max_archive_entries:
-                raise ValueError("archive contains too many entries")
             seen_members: set[str] = set()
             for info in infos:
                 pure = PurePosixPath(info.filename.replace("\\", "/"))
@@ -465,7 +445,7 @@ class TransferWorkerService:
                             "byteSize": info.file_size,
                         }
                     )
-        entries.sort(key=lambda entry: _natural_path_key(entry["logicalPath"]))
+        entries.sort(key=lambda entry: natural_sort_key(entry["logicalPath"]))
         return entries
 
     def _scan_mobi(
@@ -496,8 +476,6 @@ class TransferWorkerService:
                     ) from exc
                 relative = source.relative_to(root)
                 byte_size = source.stat().st_size
-                if len(entries) >= self.limits.max_container_pages:
-                    raise ValueError("container contains too many pages")
                 target = destination / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(source, target)
@@ -516,7 +494,7 @@ class TransferWorkerService:
                 )
         finally:
             shutil.rmtree(temporary_root, ignore_errors=True)
-        entries.sort(key=lambda entry: _natural_path_key(entry["logicalPath"]))
+        entries.sort(key=lambda entry: natural_sort_key(entry["logicalPath"]))
         return entries
 
     def _publish_entry(
@@ -581,15 +559,27 @@ class TransferWorkerService:
     def _job_target(self, job_id: str):
         with self.engine.connect() as connection:
             row = connection.execute(
-                select(jobs.c.chapter_id).where(jobs.c.id == job_id)
+                select(jobs.c.book_id, jobs.c.chapter_id).where(
+                    jobs.c.id == job_id
+                )
             ).mappings().one()
         return row
 
     @staticmethod
     def _config(step: Mapping[str, Any]) -> dict[str, Any]:
         config = step.get("config")
-        if not isinstance(config, dict):
-            raise RuntimeError("job configuration is invalid")
+        kind = step.get("stepKind")
+        if kind not in {
+            "container_scan",
+            "container_import_page",
+            "export_package",
+        }:
+            raise RuntimeError("transfer step kind is invalid")
+        if not isinstance(config, Mapping):
+            raise RuntimeError("transfer job configuration is invalid")
+        # Commands validate the complete frozen snapshot when it is created and
+        # container_scan validates the expanded snapshot before publishing it.
+        # Rewalking every entry for every page would make large imports O(n²).
         return dict(config)
 
     def _data_path(self, relative: str) -> Path:
@@ -622,13 +612,3 @@ class TransferWorkerService:
             counter += 1
         used.add(candidate.lower())
         return candidate
-
-
-def _sha256_file(path: Path) -> str:
-    import hashlib
-
-    digest = hashlib.sha256()
-    with path.open("rb") as source:
-        while chunk := source.read(1024 * 1024):
-            digest.update(chunk)
-    return digest.hexdigest()

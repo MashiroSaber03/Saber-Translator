@@ -94,12 +94,7 @@ function getRememberWorkflowToggle(wrapper: ReturnType<typeof mount>) {
 }
 
 function getWorkflowModeSelect(wrapper: ReturnType<typeof mount>) {
-  const select = wrapper.findAllComponents(UiSelect)
-    .find(item => item.attributes('id') === 'workflowModeSelect')
-  if (!select) {
-    throw new Error('Workflow mode select not found')
-  }
-  return select
+  return wrapper.getComponent(WorkflowSection).getComponent(UiSelect)
 }
 
 function selectWorkflowMode(wrapper: ReturnType<typeof mount>, mode: string) {
@@ -115,7 +110,13 @@ describe('SettingsSidebar workflow preferences', () => {
     savePreferencesMock.mockReset()
     uploadFontMock.mockReset()
     getFontListMock.mockResolvedValue([])
-    uploadFontMock.mockResolvedValue({ id: 'font-uploaded', assetUrl: '/api/v2/assets/font' })
+    uploadFontMock.mockResolvedValue({
+      id: 'font-uploaded',
+      kind: 'uploaded',
+      displayName: 'UploadedFont',
+      builtinKey: null,
+      assetUrl: '/api/v2/assets/font',
+    })
     savePreferencesMock.mockResolvedValue({
       domain: 'workflow_preferences',
       payload: {},
@@ -273,14 +274,22 @@ describe('SettingsSidebar workflow preferences', () => {
     expect(getRememberWorkflowToggle(wrapper).props('modelValue')).toBe(true)
   })
 
-  it('registers outside-click handling before async font loading settles', () => {
+  it('registers outside-click handling and accepts non-element event targets', async () => {
     const addEventListenerSpy = vi.spyOn(window, 'addEventListener')
     const removeEventListenerSpy = vi.spyOn(window, 'removeEventListener')
-    getFontListMock.mockReturnValue(new Promise(() => {}))
 
     const wrapper = mount(SettingsSidebar)
 
     expect(addEventListenerSpy).toHaveBeenCalledWith('click', expect.any(Function))
+    wrapper.getComponent(UiIconButton).vm.$emit('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.apply-options-section__menu').exists()).toBe(true)
+
+    const textNode = document.createTextNode('outside')
+    document.body.append(textNode)
+    expect(() => textNode.dispatchEvent(new MouseEvent('click', { bubbles: true }))).not.toThrow()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.apply-options-section__menu').exists()).toBe(false)
 
     wrapper.unmount()
     expect(removeEventListenerSpy).toHaveBeenCalledWith('click', expect.any(Function))
@@ -332,6 +341,14 @@ describe('SettingsSidebar workflow preferences', () => {
     await flushPromises()
 
     expect(uploadFontMock).toHaveBeenCalledWith(file)
+    expect(useSettingsStore().fontCatalog).toContainEqual({
+      id: 'font-uploaded',
+      kind: 'uploaded',
+      displayName: 'UploadedFont',
+      builtinKey: null,
+      assetUrl: '/api/v2/assets/font',
+    })
+    expect(getFontListMock).not.toHaveBeenCalled()
   })
 
   it('maps workflow section owner colors through semantic tokens', () => {

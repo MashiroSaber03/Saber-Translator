@@ -1,34 +1,12 @@
-export type TranslationConstraintMatchMode = 'text' | 'regex'
+import type { components } from '@/api/generated/v2'
 
-export interface GlossaryEntry {
-  source: string
-  target: string
-  note: string
-  matchMode: TranslationConstraintMatchMode
-}
+export type TranslationConstraintMatchMode =
+  components['schemas']['TranslationConstraintMatchMode']
 
-export interface GlossarySettings {
-  enabled: boolean
-  autoExtractEnabled: boolean
-  autoExtractPrompt: string
-  entries: GlossaryEntry[]
-}
+export type GlossaryEntry = components['schemas']['TranslationGlossaryEntry']
 
-export interface NonTranslateEntry {
-  pattern: string
-  note: string
-  matchMode: TranslationConstraintMatchMode
-}
+export type GlossarySettings = components['schemas']['TranslationGlossarySettings']
 
-export interface NonTranslateSettings {
-  enabled: boolean
-  entries: NonTranslateEntry[]
-}
+export type NonTranslateEntry = components['schemas']['TranslationNonTranslateEntry']
 
-export interface TranslationWarning {
-  imageIndex?: number
-  bubbleIndex?: number
-  source: string
-  expectedTarget: string
-  actualTranslation: string
-}
+export type NonTranslateSettings = components['schemas']['TranslationNonTranslateSettings']

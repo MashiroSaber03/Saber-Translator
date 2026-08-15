@@ -45,8 +45,8 @@ const emit = defineEmits<{
   'update:baseUrl': [value: string]
 }>()
 
-function asString(value: string | number | boolean): string {
-  return String(value)
+function updateBaseUrl(value: string | number | boolean): void {
+  if (typeof value === 'string') emit('update:baseUrl', value)
 }
 
 const storedCredentialMessage = computed(() => (
@@ -97,7 +97,7 @@ const resolvedApiKeyPlaceholder = computed(() => (
       type="text"
       :placeholder="baseUrlPlaceholder"
       :disabled="disabled"
-      @update:model-value="emit('update:baseUrl', asString($event))"
+      @update:model-value="updateBaseUrl"
     />
   </UiField>
 </template>

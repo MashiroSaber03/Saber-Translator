@@ -9,43 +9,38 @@ from torchvision.models import resnet34
 from . import DBHead
 
 
-class double_conv(nn.Module):
-    def __init__(self, in_ch, mid_ch, out_ch, stride=1, planes=256):
-        super(double_conv, self).__init__()
-        self.planes = planes
-        self.down = nn.AvgPool2d(2, stride=2) if stride > 1 else None
+class DoubleConv(nn.Module):
+    def __init__(self, in_channels, mid_channels, out_channels):
+        super().__init__()
+        self.down = nn.AvgPool2d(2, stride=2)
         self.conv = nn.Sequential(
-            nn.Conv2d(in_ch + mid_ch, mid_ch, kernel_size=3, padding=1, stride=1, bias=False),
-            nn.BatchNorm2d(mid_ch),
+            nn.Conv2d(in_channels + mid_channels, mid_channels, kernel_size=3, padding=1, stride=1, bias=False),
+            nn.BatchNorm2d(mid_channels),
             nn.ReLU(inplace=True),
-            nn.Conv2d(mid_ch, mid_ch, kernel_size=3, padding=1, stride=1, bias=False),
-            nn.BatchNorm2d(mid_ch),
+            nn.Conv2d(mid_channels, mid_channels, kernel_size=3, padding=1, stride=1, bias=False),
+            nn.BatchNorm2d(mid_channels),
             nn.ReLU(inplace=True),
-            nn.Conv2d(mid_ch, out_ch, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.BatchNorm2d(out_ch),
+            nn.Conv2d(mid_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True),
         )
 
     def forward(self, x):
-        if self.down is not None:
-            x = self.down(x)
-        x = self.conv(x)
-        return x
+        return self.conv(self.down(x))
 
 
-class double_conv_up(nn.Module):
-    def __init__(self, in_ch, mid_ch, out_ch, planes=256):
-        super(double_conv_up, self).__init__()
-        self.planes = planes
+class DoubleConvUp(nn.Module):
+    def __init__(self, in_channels, mid_channels, out_channels):
+        super().__init__()
         self.conv = nn.Sequential(
-            nn.Conv2d(in_ch + mid_ch, mid_ch, kernel_size=3, padding=1, stride=1, bias=False),
-            nn.BatchNorm2d(mid_ch),
+            nn.Conv2d(in_channels + mid_channels, mid_channels, kernel_size=3, padding=1, stride=1, bias=False),
+            nn.BatchNorm2d(mid_channels),
             nn.ReLU(inplace=True),
-            nn.Conv2d(mid_ch, mid_ch, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.BatchNorm2d(mid_ch),
+            nn.Conv2d(mid_channels, mid_channels, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.BatchNorm2d(mid_channels),
             nn.ReLU(inplace=True),
-            nn.ConvTranspose2d(mid_ch, out_ch, kernel_size=4, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(out_ch),
+            nn.ConvTranspose2d(mid_channels, out_channels, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True),
         )
 
@@ -63,11 +58,11 @@ class TextDetection(nn.Module):
         - mask: 文本掩码
     """
     
-    def __init__(self, pretrained=False):
-        super(TextDetection, self).__init__()
-        self.backbone = resnet34(pretrained=pretrained)
+    def __init__(self):
+        super().__init__()
+        self.backbone = resnet34(weights=None)
 
-        self.conv_db = DBHead.DBHead(64, 0)
+        self.conv_db = DBHead.DBHead(64)
         self.conv_mask = nn.Sequential(
             nn.Conv2d(64, 64, kernel_size=3, padding=1), nn.ReLU(inplace=True),
             nn.Conv2d(64, 64, kernel_size=3, padding=1), nn.ReLU(inplace=True),
@@ -76,17 +71,17 @@ class TextDetection(nn.Module):
             nn.Sigmoid()
         )
 
-        self.down_conv1 = double_conv(0, 512, 512, 2)
-        self.down_conv2 = double_conv(0, 512, 512, 2)
-        self.down_conv3 = double_conv(0, 512, 512, 2)
+        self.down_conv1 = DoubleConv(0, 512, 512)
+        self.down_conv2 = DoubleConv(0, 512, 512)
+        self.down_conv3 = DoubleConv(0, 512, 512)
 
-        self.upconv1 = double_conv_up(0, 512, 256)
-        self.upconv2 = double_conv_up(256, 512, 256)
-        self.upconv3 = double_conv_up(256, 512, 256)
-        self.upconv4 = double_conv_up(256, 512, 256, planes=128)
-        self.upconv5 = double_conv_up(256, 256, 128, planes=64)
-        self.upconv6 = double_conv_up(128, 128, 64, planes=32)
-        self.upconv7 = double_conv_up(64, 64, 64, planes=16)
+        self.upconv1 = DoubleConvUp(0, 512, 256)
+        self.upconv2 = DoubleConvUp(256, 512, 256)
+        self.upconv3 = DoubleConvUp(256, 512, 256)
+        self.upconv4 = DoubleConvUp(256, 512, 256)
+        self.upconv5 = DoubleConvUp(256, 256, 128)
+        self.upconv6 = DoubleConvUp(128, 128, 64)
+        self.upconv7 = DoubleConvUp(64, 64, 64)
 
     def forward(self, x):
         # Backbone

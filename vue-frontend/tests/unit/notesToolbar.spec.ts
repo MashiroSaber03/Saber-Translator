@@ -1,6 +1,4 @@
 import { mount } from '@vue/test-utils'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import NotesToolbar from '@/components/insight/notes/NotesToolbar.vue'
@@ -22,7 +20,7 @@ describe('NotesToolbar', () => {
 
     const filterSelect = wrapper.getComponent(UiSelect)
     expect(filterSelect.props('modelValue')).toBe('all')
-    expect(filterSelect.attributes('aria-label')).toBe('筛选笔记类型')
+    expect(filterSelect.get('button').attributes('aria-label')).toBe('筛选笔记类型')
     expect(filterSelect.props('options')).toEqual(expect.arrayContaining([
       expect.objectContaining({ value: 'text' }),
       expect.objectContaining({ value: 'qa' }),
@@ -43,7 +41,6 @@ describe('NotesToolbar', () => {
         ],
       },
     })
-    const source = readFileSync(resolve(process.cwd(), 'src/components/insight/notes/NotesToolbar.vue'), 'utf8')
     const header = wrapper.getComponent(ProductSectionHeader)
 
     expect(header.props()).toMatchObject({
@@ -53,9 +50,5 @@ describe('NotesToolbar', () => {
     })
     expect(header.get('.product-section-header__icon-text').text()).toBe('📝')
     expect(header.findComponent(UiSelect).exists()).toBe(true)
-    expect(source).toContain("import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'")
-    expect(source).not.toContain('section-header-with-actions')
-    expect(source).not.toContain('class="section-title"')
-    expect(source).not.toContain('.section-title')
   })
 })

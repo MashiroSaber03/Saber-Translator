@@ -37,24 +37,4 @@ describe('bubble factory source contract', () => {
     expect(content.match(/function cloneBubbleStateFields/g)).toHaveLength(1)
   })
 
-  it('keeps the bubble factory property suite focused on behavior contracts', () => {
-    const content = source('tests/property/bubbleFactory.property.ts')
-
-    for (const staleNarration of [
-      '气泡工厂函数属性测试',
-      '测试数据生成器',
-      '其他工厂函数测试',
-      '验证逻辑测试',
-      '宽高比判断测试',
-      '点击检测一致性',
-      '状态初始化一致性',
-      '测试 createBubbleState',
-      '生成有效',
-      '验证',
-      '// ============================================================',
-      '/' + '**',
-    ]) {
-      expect(content).not.toContain(staleNarration)
-    }
-  })
 })

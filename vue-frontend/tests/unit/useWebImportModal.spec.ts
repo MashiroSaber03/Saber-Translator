@@ -10,6 +10,7 @@ const {
   checkWebImportSupportMock,
   commitWebImportDraftMock,
   createWebImportDraftMock,
+  confirmProductActionMock,
   fetchModelsMock,
   getTranslationBootstrapMock,
   getWebImportDraftMock,
@@ -20,6 +21,7 @@ const {
   checkWebImportSupportMock: vi.fn(),
   commitWebImportDraftMock: vi.fn(),
   createWebImportDraftMock: vi.fn(),
+  confirmProductActionMock: vi.fn(),
   fetchModelsMock: vi.fn(),
   getTranslationBootstrapMock: vi.fn(),
   getWebImportDraftMock: vi.fn(),
@@ -41,6 +43,10 @@ vi.mock('@/api/v2/webImport', () => ({
 
 vi.mock('@/api/v2/content', () => ({
   getTranslationBootstrap: getTranslationBootstrapMock,
+}))
+
+vi.mock('@/composables/useProductConfirm', () => ({
+  confirmProductAction: confirmProductActionMock,
 }))
 
 vi.mock('vue-router', () => ({
@@ -69,6 +75,8 @@ describe('useWebImportModal', () => {
     })
     commitWebImportDraftMock.mockReset()
     createWebImportDraftMock.mockReset()
+    confirmProductActionMock.mockReset()
+    confirmProductActionMock.mockResolvedValue(true)
     getTranslationBootstrapMock.mockReset()
     getWebImportDraftMock.mockReset()
     listWebImportDraftPagesMock.mockReset()
@@ -150,6 +158,18 @@ describe('useWebImportModal', () => {
     expect(exposed.api.galleryDLSupported.value).toBe(true)
   })
 
+  it('does not run Gallery-DL support checks for an explicit AI Agent extraction', async () => {
+    const exposed = mountComposableHost()
+
+    exposed.api.selectedEngine.value = 'ai-agent'
+    exposed.api.urlInput.value = 'https://example.com/chapter'
+    await nextTick()
+    await vi.advanceTimersByTimeAsync(600)
+
+    expect(checkWebImportSupportMock).not.toHaveBeenCalled()
+    expect(exposed.api.checkingSupport.value).toBe(false)
+  })
+
   it('ignores model fetch responses after the modal owner unmounts', async () => {
     const modelFetch = deferred<{ models: Array<{ id: string }> }>()
     fetchModelsMock.mockReturnValueOnce(modelFetch.promise)
@@ -199,10 +219,34 @@ describe('useWebImportModal', () => {
     })
     listWebImportDraftPagesMock.mockResolvedValue({
       items: [
-        { id: 'page-1', selected: true, error: null, thumbnailUrl: '/thumb/1', sourceMediaUrl: '/media/1' },
-        { id: 'page-2', selected: true, error: null, thumbnailUrl: '/thumb/2', sourceMediaUrl: '/media/2' },
-        { id: 'page-3', selected: true, error: null, thumbnailUrl: '/thumb/3', sourceMediaUrl: '/media/3' },
-        { id: 'page-4', selected: true, error: null, thumbnailUrl: '/thumb/4', sourceMediaUrl: '/media/4' },
+        {
+          id: 'page-1',
+          selected: true,
+          error: null,
+          thumbnailUrl: '/thumb/1',
+          sourceMediaUrl: '/media/1',
+        },
+        {
+          id: 'page-2',
+          selected: true,
+          error: null,
+          thumbnailUrl: '/thumb/2',
+          sourceMediaUrl: '/media/2',
+        },
+        {
+          id: 'page-3',
+          selected: true,
+          error: null,
+          thumbnailUrl: '/thumb/3',
+          sourceMediaUrl: '/media/3',
+        },
+        {
+          id: 'page-4',
+          selected: true,
+          error: null,
+          thumbnailUrl: '/thumb/4',
+          sourceMediaUrl: '/media/4',
+        },
       ],
       nextCursor: null,
     })
@@ -267,9 +311,7 @@ describe('useWebImportModal', () => {
         nextCursor: 2,
       })
       .mockResolvedValueOnce({
-        items: [
-          { id: 'page-3', selected: true, error: null, thumbnailUrl: '/thumb/3' },
-        ],
+        items: [{ id: 'page-3', selected: true, error: null, thumbnailUrl: '/thumb/3' }],
         nextCursor: null,
       })
 
@@ -278,19 +320,205 @@ describe('useWebImportModal', () => {
 
     expect(exposed.api.extractResult.value?.pages).toHaveLength(2)
     expect(exposed.api.hasMorePages.value).toBe(true)
-    expect(listWebImportDraftPagesMock).toHaveBeenLastCalledWith(
-      'draft-paged',
-      { cursor: 0, limit: 100 },
-    )
+    expect(listWebImportDraftPagesMock).toHaveBeenLastCalledWith('draft-paged', {
+      cursor: 0,
+      limit: 100,
+    })
 
     await exposed.api.loadMoreDraftPages()
 
     expect(exposed.api.extractResult.value?.pages).toHaveLength(3)
     expect(exposed.api.hasMorePages.value).toBe(false)
-    expect(listWebImportDraftPagesMock).toHaveBeenLastCalledWith(
-      'draft-paged',
-      { cursor: 2, limit: 100 },
-    )
+    expect(listWebImportDraftPagesMock).toHaveBeenLastCalledWith('draft-paged', {
+      cursor: 2,
+      limit: 100,
+    })
+  })
+
+  it('reports a failed next candidate page without creating an unhandled rejection', async () => {
+    const exposed = mountComposableHost()
+    getTranslationBootstrapMock.mockResolvedValue({
+      activeWebImportDraft: null,
+      chapter: { id: 'chapter-1' },
+    })
+    createWebImportDraftMock.mockResolvedValue({
+      draftId: 'draft-paged',
+      status: 'queued',
+      batchId: 'batch-1',
+      jobIds: ['job-1'],
+    })
+    getWebImportDraftMock.mockResolvedValue({
+      id: 'draft-paged',
+      sourceUrl: 'https://example.com/chapter',
+      status: 'ready',
+      revision: 2,
+      autoImport: false,
+      candidateCount: 2,
+      selectedCount: 2,
+      failedCount: 0,
+      requestedEngine: 'auto',
+      actualEngine: 'gallery-dl',
+      jobs: [{ id: 'job-1', kind: 'web_extract', status: 'completed' }],
+    })
+    listWebImportDraftPagesMock
+      .mockResolvedValueOnce({
+        items: [{ id: 'page-1', selected: true, error: null, thumbnailUrl: '/thumb/1' }],
+        nextCursor: 1,
+      })
+      .mockRejectedValueOnce(new Error('候选页读取失败'))
+
+    exposed.api.urlInput.value = 'https://example.com/chapter'
+    await exposed.api.handleExtract()
+
+    await expect(exposed.api.loadMoreDraftPages()).resolves.toBeUndefined()
+    expect(showToastMock).toHaveBeenCalledWith('候选页读取失败', 'error')
+    expect(exposed.api.status.value).toBe('extracted')
+  })
+
+  it('polls an accepted extraction again when its first status read fails', async () => {
+    const exposed = mountComposableHost()
+    const webImportStore = useWebImportStore()
+    getTranslationBootstrapMock.mockResolvedValue({
+      activeWebImportDraft: null,
+      chapter: { id: 'chapter-1' },
+    })
+    createWebImportDraftMock.mockResolvedValue({
+      draftId: 'draft-retry',
+      status: 'queued',
+      batchId: 'batch-1',
+      jobIds: ['job-1'],
+    })
+    getWebImportDraftMock.mockRejectedValueOnce(new Error('瞬时网络错误')).mockResolvedValueOnce({
+      id: 'draft-retry',
+      sourceUrl: 'https://example.com/chapter',
+      status: 'ready',
+      revision: 2,
+      autoImport: false,
+      candidateCount: 1,
+      selectedCount: 1,
+      failedCount: 0,
+      requestedEngine: 'auto',
+      actualEngine: 'gallery-dl',
+      jobs: [{ id: 'job-1', kind: 'web_extract', status: 'completed' }],
+    })
+    listWebImportDraftPagesMock.mockResolvedValue({
+      items: [{ id: 'page-1', selected: true, error: null, thumbnailUrl: '/thumb/1' }],
+      nextCursor: null,
+    })
+    webImportStore.modalVisible = true
+    await flushPromises()
+
+    exposed.api.urlInput.value = 'https://example.com/chapter'
+    await exposed.api.handleExtract()
+
+    expect(exposed.api.status.value).toBe('extracting')
+    expect(exposed.api.error.value).toBeNull()
+
+    await vi.advanceTimersByTimeAsync(1000)
+    await flushPromises()
+
+    expect(exposed.api.status.value).toBe('extracted')
+    expect(exposed.api.extractResult.value?.pages).toHaveLength(1)
+  })
+
+  it('rejects a ready draft without a resolved engine instead of guessing AI Agent', async () => {
+    const exposed = mountComposableHost()
+    getTranslationBootstrapMock.mockResolvedValue({
+      activeWebImportDraft: null,
+      chapter: { id: 'chapter-1' },
+    })
+    createWebImportDraftMock.mockResolvedValue({
+      draftId: 'draft-invalid',
+      status: 'queued',
+      batchId: 'batch-1',
+      jobIds: ['job-1'],
+    })
+    getWebImportDraftMock.mockResolvedValue({
+      id: 'draft-invalid',
+      sourceUrl: 'https://example.com/chapter',
+      status: 'ready',
+      revision: 2,
+      autoImport: false,
+      candidateCount: 1,
+      selectedCount: 1,
+      failedCount: 0,
+      requestedEngine: 'auto',
+      actualEngine: null,
+      jobs: [{ id: 'job-1', kind: 'web_extract', status: 'completed' }],
+    })
+    listWebImportDraftPagesMock.mockResolvedValue({
+      items: [{ id: 'page-1', selected: true, error: null, thumbnailUrl: '/thumb/1' }],
+      nextCursor: null,
+    })
+
+    exposed.api.urlInput.value = 'https://example.com/chapter'
+    await exposed.api.handleExtract()
+
+    expect(exposed.api.status.value).toBe('error')
+    expect(exposed.api.error.value).toBe('网页导入草稿缺少有效的实际提取引擎')
+    expect(exposed.api.extractResult.value).toBeNull()
+  })
+
+  it('does not let a commit from a closed session close a later modal session', async () => {
+    const acceptedCommit = deferred<{
+      status: 'queued'
+      batchId: string
+      jobIds: string[]
+    }>()
+    const onCommitAccepted = vi.fn()
+    const exposed = mountComposableHost({ onCommitAccepted })
+    const webImportStore = useWebImportStore()
+    getTranslationBootstrapMock.mockResolvedValue({
+      activeWebImportDraft: null,
+      chapter: { id: 'chapter-1' },
+    })
+    createWebImportDraftMock.mockResolvedValue({
+      draftId: 'draft-1',
+      status: 'queued',
+      batchId: 'batch-1',
+      jobIds: ['job-1'],
+    })
+    getWebImportDraftMock.mockResolvedValue({
+      id: 'draft-1',
+      sourceUrl: 'https://example.com/chapter',
+      status: 'ready',
+      revision: 2,
+      autoImport: false,
+      candidateCount: 1,
+      selectedCount: 1,
+      failedCount: 0,
+      requestedEngine: 'auto',
+      actualEngine: 'gallery-dl',
+      jobs: [{ id: 'job-1', kind: 'web_extract', status: 'completed' }],
+    })
+    listWebImportDraftPagesMock.mockResolvedValue({
+      items: [{ id: 'page-1', selected: true, error: null, thumbnailUrl: '/thumb/1' }],
+      nextCursor: null,
+    })
+    commitWebImportDraftMock.mockReturnValue(acceptedCommit.promise)
+
+    exposed.api.urlInput.value = 'https://example.com/chapter'
+    await exposed.api.handleExtract()
+    const importPromise = exposed.api.handleImport()
+    await flushPromises()
+    expect(exposed.api.status.value).toBe('downloading')
+
+    await exposed.api.handleClose()
+    webImportStore.modalVisible = true
+    webImportStore.setStatus('idle')
+    await nextTick()
+
+    acceptedCommit.resolve({ status: 'queued', batchId: 'batch-2', jobIds: ['job-2'] })
+    await importPromise
+    await flushPromises()
+
+    expect(onCommitAccepted).toHaveBeenCalledWith({
+      status: 'queued',
+      batchId: 'batch-2',
+      jobIds: ['job-2'],
+    })
+    expect(webImportStore.modalVisible).toBe(true)
+    expect(webImportStore.status).toBe('idle')
   })
 
   it('keeps store and internal workflow helpers private to the modal owner', () => {

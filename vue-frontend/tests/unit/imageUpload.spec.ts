@@ -179,6 +179,48 @@ describe('ImageUpload', () => {
     expect(wrapper.emitted('uploadComplete')).toEqual([[1], [1]])
   })
 
+  it('does not start a second upload while the first batch is in flight', async () => {
+    let resolveImport!: (summary: SequentialImportSummary) => void
+    mocks.importImagesSequentially.mockReturnValueOnce(new Promise(resolve => {
+      resolveImport = resolve
+    }))
+    const wrapper = mount(ImageUpload, { props: { chapterId: 'chapter-1' } })
+    const first = new File(['first'], '001.png', { type: 'image/png' })
+    const second = new File(['second'], '002.png', { type: 'image/png' })
+
+    wrapper.getComponent(ProductFileDropzone).vm.$emit('select', [first])
+    await vi.waitFor(() => expect(mocks.importImagesSequentially).toHaveBeenCalledTimes(1))
+    wrapper.getComponent(ProductFileDropzone).vm.$emit('select', [second])
+    await flushPromises()
+
+    expect(mocks.importImagesSequentially).toHaveBeenCalledTimes(1)
+    resolveImport({ failures: [], results: [] })
+    await flushPromises()
+  })
+
+  it('keeps an in-flight upload bound to its starting chapter without refreshing a new chapter', async () => {
+    let resolveImport!: (summary: SequentialImportSummary) => void
+    mocks.importImagesSequentially.mockReturnValueOnce(new Promise(resolve => {
+      resolveImport = resolve
+    }))
+    const wrapper = mount(ImageUpload, { props: { chapterId: 'chapter-1' } })
+    const file = new File(['image'], '001.png', { type: 'image/png' })
+
+    wrapper.getComponent(ProductFileDropzone).vm.$emit('select', [file])
+    await vi.waitFor(() => expect(mocks.importImagesSequentially).toHaveBeenCalled())
+    await wrapper.setProps({ chapterId: 'chapter-2' })
+    resolveImport({ failures: [], results: [{ pageId: 'page-1' }] })
+    await flushPromises()
+
+    expect(mocks.importImagesSequentially).toHaveBeenCalledWith(
+      'chapter-1',
+      [file],
+      expect.any(Object),
+    )
+    expect(wrapper.emitted('uploadComplete')).toBeUndefined()
+    expect(mocks.toast).not.toHaveBeenCalledWith('已写入后端 1 张图片', 'success')
+  })
+
   it('contains no FileReader, PDF.js, or browser Base64 import pipeline', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/translate/ImageUpload.vue'),

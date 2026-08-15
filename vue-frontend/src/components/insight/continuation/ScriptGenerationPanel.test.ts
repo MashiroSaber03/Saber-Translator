@@ -10,18 +10,16 @@ import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import UiField from '@/components/ui/UiField.vue'
 import UiNumberField from '@/components/ui/UiNumberField.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
-import { getAvailableImages } from '@/api/continuation'
+import { getOriginalReferenceImages } from '@/api/continuation'
 
 const componentSourcePath = resolve(process.cwd(), 'src/components/insight/continuation/ScriptGenerationPanel.vue')
 
 vi.mock('@/api/continuation', () => ({
-  getAvailableImages: vi.fn().mockResolvedValue({
+  getOriginalReferenceImages: vi.fn().mockResolvedValue({
     original_images: [
       { page_number: 1, path: '/tmp/page-1.png', has_image: true, token: 'original:1' },
     ],
-    continuation_images: [],
-    character_forms: [],
-    total_original_pages: 1,
+    original_cursor: 0,
   }),
 }))
 
@@ -68,7 +66,7 @@ describe('ScriptGenerationPanel', () => {
     const numberField = wrapper.getComponent(UiNumberField)
     expect(numberField.props('inputId')).toBe('script-reference-count')
     expect(numberField.props('min')).toBe(1)
-    expect(numberField.props('max')).toBe(10)
+    expect(numberField.props('max')).toBeUndefined()
     expect(numberField.props('modelValue')).toBe(5)
 
     const rows = wrapper.findAllComponents(ProductActionRow)
@@ -257,17 +255,13 @@ describe('ScriptGenerationPanel', () => {
   it('ignores stale reference-image responses after the book changes', async () => {
     const bookOneImages = createDeferred<{
       original_images: Array<{ page_number: number; path: string; has_image: boolean; token: string }>
-      continuation_images: []
-      character_forms: []
-      total_original_pages: number
+      original_cursor: number
     }>()
     const bookTwoImages = createDeferred<{
       original_images: Array<{ page_number: number; path: string; has_image: boolean; token: string }>
-      continuation_images: []
-      character_forms: []
-      total_original_pages: number
+      original_cursor: number
     }>()
-    vi.mocked(getAvailableImages)
+    vi.mocked(getOriginalReferenceImages)
       .mockReturnValueOnce(bookOneImages.promise)
       .mockReturnValueOnce(bookTwoImages.promise)
 
@@ -293,9 +287,7 @@ describe('ScriptGenerationPanel', () => {
       original_images: [
         { page_number: 2, path: '/tmp/book-2.png', has_image: true, token: 'book-2-token' },
       ],
-      continuation_images: [],
-      character_forms: [],
-      total_original_pages: 1,
+      original_cursor: 0,
     })
     await nextTick()
     await Promise.resolve()
@@ -306,9 +298,7 @@ describe('ScriptGenerationPanel', () => {
       original_images: [
         { page_number: 1, path: '/tmp/book-1.png', has_image: true, token: 'book-1-token' },
       ],
-      continuation_images: [],
-      character_forms: [],
-      total_original_pages: 1,
+      original_cursor: 0,
     })
     await nextTick()
     await Promise.resolve()

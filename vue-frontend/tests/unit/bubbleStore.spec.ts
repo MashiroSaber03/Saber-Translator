@@ -14,7 +14,7 @@ describe('bubbleStore', () => {
     vi.restoreAllMocks()
   })
 
-  it('recomputes autoTextDirection when bubble coords change', () => {
+  it('leaves automatic direction to the backend when bubble coords change', () => {
     const bubbleStore = useBubbleStore()
 
     bubbleStore.setBubbles([
@@ -30,7 +30,7 @@ describe('bubbleStore', () => {
       coords: [0, 0, 100, 220],
     })
 
-    expect(bubbleStore.bubbles[0]?.autoTextDirection).toBe('vertical')
+    expect(bubbleStore.bubbles[0]?.autoTextDirection).toBe('horizontal')
   })
 
   it('keeps the selected bubble when backend state replaces the same stable bubbles', () => {
@@ -63,6 +63,21 @@ describe('bubbleStore', () => {
     expect(bubbleStore.selectedIndex).toBe(0)
     expect(bubbleStore.selectedBubble?.backendBubbleId).toBe('bubble-1')
     expect(bubbleStore.selectedBubble?.translatedText).toBe('after')
+  })
+
+  it('owns its bubble state instead of mutating the caller snapshot', () => {
+    const bubbleStore = useBubbleStore()
+    const external = [createBubbleState({
+      backendBubbleId: 'bubble-1',
+      coords: [0, 0, 200, 100],
+      translatedText: 'backend snapshot',
+    })]
+
+    bubbleStore.setBubbles(external, true)
+    bubbleStore.updateBubble(0, { translatedText: 'local edit' })
+
+    expect(bubbleStore.bubbles[0]?.translatedText).toBe('local edit')
+    expect(external[0]?.translatedText).toBe('backend snapshot')
   })
 
   it('does not write routine console logs for normal bubble state transitions', () => {

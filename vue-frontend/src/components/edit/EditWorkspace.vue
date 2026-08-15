@@ -1,13 +1,6 @@
 <template>
   <div
-    v-if="isEditModeActive"
     class="edit-workspace"
-    :class="[
-      `edit-workspace--layout-${layoutMode}`,
-      { 'edit-workspace--drawing-mode': isDrawingMode },
-      { 'edit-workspace--brush-mode-active': !!brushMode }
-    ]"
-    :data-brush-mode="brushMode || undefined"
     tabindex="0"
     ref="workspaceRef"
   >
@@ -29,10 +22,7 @@
       :brush-size="brushSize"
       :mouse-x="mouseX"
       :mouse-y="mouseY"
-      :is-processing="isProcessing"
-      :progress-text="progressText"
-      :progress-current="progressCurrent"
-      :progress-total="progressTotal"
+      :is-busy="isBusy"
       :is-repair-loading="isRepairLoading"
       @go-previous-image="goToPreviousImage"
       @go-next-image="goToNextImage"
@@ -62,6 +52,7 @@
       :visible="showThumbnails"
       :images="images"
       :current-image-index="currentImageIndex"
+      :is-busy="isBusy"
       @switch-to-image="switchToImage"
     />
 
@@ -86,6 +77,7 @@
       :translated-transform-style="translatedTransformStyle"
       :is-ocr-loading="isOcrLoading"
       :is-translate-loading="isTranslateLoading"
+      :is-busy="isBusy"
       @wheel-panel="handleWheel"
       @mouse-down-panel="handleMouseDown"
       @image-load="handleImageLoad"
@@ -97,7 +89,6 @@
       @bubble-drag-end="handleBubbleDragEnd"
       @bubble-resize-end="handleBubbleResizeEnd"
       @bubble-rotate-end="handleBubbleRotateEnd"
-      @draw-bubble="handleDrawBubble"
       @bubble-update="handleBubbleUpdateWithSync"
       @apply-to-all-style="handleApplyStyleToAllBubbles"
       @ocr-recognize="handleOcrRecognize"
@@ -112,9 +103,8 @@
 import EditImageComparison from './EditImageComparison.vue'
 import EditToolbar from './EditToolbar.vue'
 import EditThumbnailPanel from './EditThumbnailPanel.vue'
-import { useEditWorkspace, type EditWorkspaceEmit, type EditWorkspaceProps } from './useEditWorkspace'
+import { useEditWorkspace, type EditWorkspaceEmit } from './useEditWorkspace'
 
-const props = defineProps<EditWorkspaceProps>()
 const emit = defineEmits<EditWorkspaceEmit>()
 
 const {
@@ -154,17 +144,13 @@ const {
   handleBubbleResizeEnd,
   handleBubbleRotateEnd,
   toggleDrawingMode,
-  handleDrawBubble,
   getDrawingRectStyle,
   deleteSelectedBubbles,
   brushMode,
   brushSize,
   mouseX,
   mouseY,
-  isProcessing,
-  progressText,
-  progressCurrent,
-  progressTotal,
+  isBusy,
   startDividerDrag,
   startPanelResize,
   zoomIn,
@@ -196,14 +182,12 @@ const {
   autoDetectBubbles,
   detectAllImages,
   translateWithCurrentBubbles,
-} = useEditWorkspace(props, emit)
+} = useEditWorkspace(emit)
 </script>
 
 <style scoped>
 .edit-workspace {
   --edit-workspace-shell-background: var(--color-surface-inverse);
-  --edit-workspace-repair-brush-hint-background: color-mix(in srgb, var(--color-status-success) 90%, transparent);
-  --edit-workspace-restore-brush-hint-background: color-mix(in srgb, var(--color-status-info) 90%, transparent);
 
   display: flex;
   flex-direction: column;
@@ -221,40 +205,4 @@ const {
   transition: none;
 }
 
-.edit-workspace--brush-mode-active::before {
-  position: fixed;
-  top: 60px;
-  left: 50%;
-  z-index: var(--z-local-popover);
-  padding: 6px 16px;
-  border-radius: 20px;
-  color: var(--color-text-inverse);
-  font-size: 13px;
-  font-weight: 500;
-  pointer-events: none;
-  transform: translateX(-50%);
-  animation: edit-workspace-brush-hint 0.3s ease;
-}
-
-.edit-workspace--brush-mode-active[data-brush-mode="repair"]::before {
-  content: '修复笔刷 - 滚轮调整大小';
-  background: var(--edit-workspace-repair-brush-hint-background);
-}
-
-.edit-workspace--brush-mode-active[data-brush-mode="restore"]::before {
-  content: '还原笔刷 - 滚轮调整大小';
-  background: var(--edit-workspace-restore-brush-hint-background);
-}
-
-@keyframes edit-workspace-brush-hint {
-  from {
-    opacity: 0;
-    transform: translateX(-50%) translateY(-10px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0);
-  }
-}
 </style>

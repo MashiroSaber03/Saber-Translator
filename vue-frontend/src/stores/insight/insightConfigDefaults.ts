@@ -11,9 +11,8 @@ export function normalizeInsightRerankerConfig(
     apiKey: source?.apiKey ?? previous?.apiKey ?? '',
     model: source?.model ?? previous?.model ?? 'jina-reranker-v2-base-multilingual',
     baseUrl: source?.baseUrl ?? previous?.baseUrl ?? '',
-    topK: source?.topK ?? previous?.topK ?? 5,
-    transportRetries: source?.transportRetries ?? previous?.transportRetries ?? 10,
-    businessRetries: source?.businessRetries ?? previous?.businessRetries ?? 10,
+    transportRetries: source?.transportRetries ?? previous?.transportRetries ?? 1,
+    businessRetries: source?.businessRetries ?? previous?.businessRetries ?? 0,
     timeoutSeconds: source?.timeoutSeconds ?? previous?.timeoutSeconds ?? 0,
   }
 }
@@ -33,20 +32,20 @@ export function normalizeInsightImageGenConfig(
     apiKey: '',
     model: defaultModel,
     baseUrl: defaultBaseUrl,
-    transportRetries: 10,
-    businessRetries: 10,
+    transportRetries: 1,
+    businessRetries: 0,
     timeoutSeconds: 0,
   }
   const model = source?.model ?? (providerChanged ? providerDefaultModel : base.model || defaultModel)
   const baseUrl = source?.baseUrl ?? (providerChanged ? defaultBaseUrl : (base.baseUrl || defaultBaseUrl))
-  const businessRetries = source?.businessRetries ?? base.businessRetries ?? 10
+  const businessRetries = source?.businessRetries ?? base.businessRetries ?? 0
 
   return {
     provider: normalizedProvider,
     apiKey: source?.apiKey ?? base.apiKey,
     model,
     baseUrl,
-    transportRetries: source?.transportRetries ?? base.transportRetries ?? 10,
+    transportRetries: source?.transportRetries ?? base.transportRetries ?? 1,
     businessRetries,
     timeoutSeconds: source?.timeoutSeconds ?? base.timeoutSeconds ?? 0,
   }

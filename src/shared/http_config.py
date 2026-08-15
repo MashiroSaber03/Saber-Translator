@@ -13,6 +13,7 @@ AI 服务访问统一网络策略
 from __future__ import annotations
 
 from typing import Optional
+from urllib.parse import urlsplit
 
 # Chrome UA，用于绕过套 CF 的中转站 WAF 基础 UA 黑名单
 BROWSER_USER_AGENT = (
@@ -28,8 +29,13 @@ def is_local_service(base_url: Optional[str]) -> bool:
     """检测是否为本地服务（localhost / 127.0.0.1 / 0.0.0.0 / ::1）。"""
     if not base_url:
         return False
-    lower = base_url.lower()
-    return any(x in lower for x in ("localhost", "127.0.0.1", "0.0.0.0", "::1"))
+    if not isinstance(base_url, str):
+        raise TypeError("base_url 必须是字符串或 null")
+    try:
+        hostname = urlsplit(base_url).hostname
+    except ValueError:
+        return False
+    return hostname in {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
 
 
 def build_httpx_kwargs(base_url: Optional[str], timeout) -> dict:

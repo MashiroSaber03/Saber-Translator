@@ -34,10 +34,7 @@ Image.MAX_IMAGE_PIXELS = None
 
 @dataclass(frozen=True, slots=True)
 class ImportSafetyLimits:
-    max_archive_entries: int = 10_000
     max_compression_ratio: float = 1000.0
-    max_container_pages: int = 10_000
-    max_html_bytes: int = 16 * 1024 * 1024
     stream_chunk_bytes: int = 1024 * 1024
 
 

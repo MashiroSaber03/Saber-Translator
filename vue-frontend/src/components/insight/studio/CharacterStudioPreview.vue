@@ -21,6 +21,7 @@
       :chat-prompt-loading="chatPromptLoading"
       :chat-streaming="chatStreaming"
       :chat-abortable="chatAbortable"
+      :accepted-chat-submission-count="acceptedChatSubmissionCount"
       :chat-summarizing="chatSummarizing"
       :document="document"
       :session="session"
@@ -82,7 +83,6 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { getCharacterStudioChatAttachmentUrl } from '@/api/characterStudio'
 import ProductSegmentedTabs from '@/components/product/ProductSegmentedTabs.vue'
 import { buildCharacterStudioPatchSummary } from '@/stores/characterStudioPatchSummary'
 import { buildCharacterStudioGreetingOptions } from '@/utils/characterStudioGreetings'
@@ -104,6 +104,7 @@ import type {
 
 const props = defineProps<{
   activeTab: 'chat' | 'assistant' | 'runtime'
+  acceptedChatSubmissionCount?: number
   agentBusy: boolean
   agentHtmlPreview: string
   agentMessages: Array<{ role: 'user' | 'assistant'; content: string }>
@@ -153,9 +154,11 @@ const tabs = studioPreviewTabs.map(tab => ({
 const previewTabGlyphs = new Map(studioPreviewTabs.map(tab => [tab.value, tab.glyph]))
 
 function previewTabGlyph(tabId: string): string {
-  return previewTabGlyphs.get(tabId as typeof studioPreviewTabs[number]['value']) ?? ''
+  return previewTabGlyphs.get(tabId as (typeof studioPreviewTabs)[number]['value']) ?? ''
 }
 const agentInput = ref('')
+const pendingAgentValue = ref<string | null>(null)
+const pendingAgentMessageCount = ref(0)
 const selectedGreetingId = ref('')
 const greetingPickerOpen = ref(false)
 const promptPreviewModalOpen = ref(false)
@@ -164,24 +167,25 @@ const imagePreviewAttachment = ref<CharacterStudioChatAttachment | null>(null)
 
 const latestRuntimeMessage = computed(() => {
   const messages = props.session?.messages || []
-  return [...messages].reverse().find(item => item.role === 'assistant' && item.runtime_log.length > 0) || null
+  return (
+    [...messages]
+      .reverse()
+      .find(item => item.role === 'assistant' && item.runtime_log.length > 0) || null
+  )
 })
 
-const displayGreetings = computed(() => (
+const displayGreetings = computed(() =>
   props.availableGreetings?.length
     ? props.availableGreetings
     : buildCharacterStudioGreetingOptions(props.document)
-))
+)
 const currentGreetingId = computed(() => {
   const source = props.session?.greeting_source || {}
   if (source.type === 'first_message') {
     const hasFirstMessage = displayGreetings.value.some(item => item.greeting_id === 'first')
     if (hasFirstMessage) return 'first'
   }
-  if (
-    source.type === 'alternate_greeting'
-    && typeof source.index === 'number'
-  ) {
+  if (source.type === 'alternate_greeting' && typeof source.index === 'number') {
     const greetingId = `alternate-${source.index}`
     const hasAlternate = displayGreetings.value.some(item => item.greeting_id === greetingId)
     if (hasAlternate) return greetingId
@@ -189,15 +193,33 @@ const currentGreetingId = computed(() => {
   return displayGreetings.value[0]?.greeting_id || ''
 })
 
-const patchSummarySections = computed(() => buildCharacterStudioPatchSummary(props.pendingPatch, props.document))
+const patchSummarySections = computed(() =>
+  buildCharacterStudioPatchSummary(props.pendingPatch, props.document)
+)
 const imagePreviewTitle = computed(() => imagePreviewAttachment.value?.filename || '图片预览')
-const imagePreviewSrc = computed(() => (
-  imagePreviewAttachment.value ? attachmentUrl(imagePreviewAttachment.value) : ''
-))
+const imagePreviewSrc = computed(() => imagePreviewAttachment.value?.asset_path || '')
 
-watch(() => props.session?.session_id, () => {
-  selectedGreetingId.value = ''
-})
+watch(
+  () => props.session?.session_id,
+  () => {
+    selectedGreetingId.value = ''
+  }
+)
+
+watch(
+  () => props.agentBusy,
+  (busy, wasBusy) => {
+    if (busy || !wasBusy || pendingAgentValue.value === null) return
+    const lastMessage = props.agentMessages.at(-1)
+    const completed =
+      props.agentMessages.length >= pendingAgentMessageCount.value + 2 &&
+      lastMessage?.role === 'assistant'
+    if (completed && agentInput.value.trim() === pendingAgentValue.value) {
+      agentInput.value = ''
+    }
+    pendingAgentValue.value = null
+  }
+)
 
 function openGreetingPicker() {
   if (!displayGreetings.value.length) return
@@ -223,20 +245,16 @@ async function copyPromptPreview() {
 
 function sendAgent() {
   const value = agentInput.value.trim()
-  if (!value) return
+  if (!value || props.agentBusy) return
+  pendingAgentValue.value = value
+  pendingAgentMessageCount.value = props.agentMessages.length
   emit('send-agent', value)
-  agentInput.value = ''
 }
 
 function selectTab(tabId: string) {
   const tab = studioPreviewTabs.find(item => item.value === tabId)
   if (!tab) return
   emit('update:activeTab', tab.value)
-}
-
-function attachmentUrl(attachment: CharacterStudioChatAttachment) {
-  if (!props.bookId || !props.document) return attachment.asset_path
-  return getCharacterStudioChatAttachmentUrl(attachment.asset_path)
 }
 
 function openImagePreview(attachment: CharacterStudioChatAttachment) {
@@ -247,9 +265,17 @@ function openImagePreview(attachment: CharacterStudioChatAttachment) {
 
 <style scoped>
 .character-studio-preview {
-  --product-segmented-tabs-background: color-mix(in srgb, var(--color-surface-card) 94%, transparent);
+  --product-segmented-tabs-background: color-mix(
+    in srgb,
+    var(--color-surface-card) 94%,
+    transparent
+  );
   --product-segmented-tabs-border: var(--studio-border-default);
-  --product-segmented-tabs-active-background: color-mix(in srgb, var(--color-action-brand) 12%, var(--color-surface-card));
+  --product-segmented-tabs-active-background: color-mix(
+    in srgb,
+    var(--color-action-brand) 12%,
+    var(--color-surface-card)
+  );
   --product-segmented-tabs-active-text: var(--studio-text-strong);
   --product-segmented-tabs-text: var(--studio-text-muted);
   --product-segmented-tabs-gap: 8px;
@@ -258,7 +284,8 @@ function openImagePreview(attachment: CharacterStudioChatAttachment) {
   --product-segmented-tabs-shadow: 0 18px 32px var(--studio-shadow-floating);
   --product-segmented-tabs-tab-padding: 10px 14px;
   --product-segmented-tabs-tab-radius: 14px;
-  --product-segmented-tabs-active-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-action-brand) 24%, transparent);
+  --product-segmented-tabs-active-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--color-action-brand) 24%, transparent);
 
   display: flex;
   flex-direction: column;

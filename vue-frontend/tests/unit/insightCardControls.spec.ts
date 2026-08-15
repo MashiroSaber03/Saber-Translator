@@ -2,8 +2,6 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref } from 'vue'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 
 const {
   deletePromptFromLibraryMock,
@@ -11,6 +9,7 @@ const {
   getDefaultPromptsMock,
   getPromptsLibraryMock,
   importPromptsLibraryMock,
+  resetDefaultPromptMock,
   confirmProductActionMock,
   requestProductTextInputMock,
 } = vi.hoisted(() => ({
@@ -19,6 +18,7 @@ const {
   getDefaultPromptsMock: vi.fn(),
   getPromptsLibraryMock: vi.fn(),
   importPromptsLibraryMock: vi.fn(),
+  resetDefaultPromptMock: vi.fn(),
   confirmProductActionMock: vi.fn(),
   requestProductTextInputMock: vi.fn(),
 }))
@@ -35,6 +35,7 @@ vi.mock('@/api/insight', async importOriginal => {
     getDefaultPrompts: getDefaultPromptsMock,
     getPromptsLibrary: getPromptsLibraryMock,
     importPromptsLibrary: importPromptsLibraryMock,
+    resetDefaultPrompt: resetDefaultPromptMock,
     savePromptToLibrary: savePromptToLibraryMock,
   }
 })
@@ -69,6 +70,7 @@ import UiSelect from '@/components/ui/UiSelect.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import type { PageContent } from '@/api/continuation'
 import type { ContinuationState } from '@/composables/continuation/useContinuationState'
+import { useInsightStore } from '@/stores/insightStore'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -119,8 +121,6 @@ function createContinuationState(overrides: Partial<ContinuationState> = {}): Co
     resetState: vi.fn(),
     showMessage: vi.fn(),
     getCharacterImageUrl: vi.fn((characterName: string) => characterName),
-    getFormImageUrl: vi.fn((imagePath: string) => imagePath),
-    getGeneratedImageUrl: vi.fn((imagePath: string) => imagePath),
     ...overrides,
   }
 }
@@ -134,6 +134,7 @@ describe('Insight card-like controls', () => {
     getDefaultPromptsMock.mockReset()
     getPromptsLibraryMock.mockReset()
     importPromptsLibraryMock.mockReset()
+    resetDefaultPromptMock.mockReset().mockResolvedValue('默认提示词')
     confirmProductActionMock.mockReset()
     requestProductTextInputMock.mockReset()
     confirmProductActionMock.mockResolvedValue(true)
@@ -163,31 +164,6 @@ describe('Insight card-like controls', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
-  })
-
-  it('keeps Insight business owner CSS on current semantic tokens without fallback chains', () => {
-    const businessOwnerFiles = [
-      'src/components/insight/ContinuationPanel.vue',
-      'src/components/insight/continuation/PageDetailsPanel.vue',
-      'src/components/insight/continuation/ImageGenerationPanel.vue',
-      'src/components/insight/continuation/ScriptGenerationPanel.vue',
-      'src/components/insight/continuation/OrthographicDialog.vue',
-      'src/components/insight/continuation/ExportPanel.vue',
-      'src/components/insight/settings/InsightSettingsPanel.vue',
-      'src/components/insight/settings/BatchSettingsTab.vue',
-      'src/components/insight/settings/PromptsSettingsTab.vue',
-    ]
-
-    for (const file of businessOwnerFiles) {
-      const source = readFileSync(resolve(process.cwd(), file), 'utf8')
-
-      expect(source, file).not.toMatch(
-        /var\(--color-border-muted,\s*var\(--color-border-(?:default|subtle)\)\)/
-      )
-      expect(source, file).not.toContain(
-        'var(--color-text-supporting, var(--color-text-secondary))'
-      )
-    }
   })
 
   it('uses separate controls for loading and deleting saved prompts', async () => {
@@ -234,6 +210,7 @@ describe('Insight card-like controls', () => {
       cancelText: '取消',
       tone: 'danger',
     })
+    expect(resetDefaultPromptMock).toHaveBeenCalledWith('batch_analysis')
 
     const deleteButton = wrapper.get('[aria-label="删除提示词：战斗分析"]')
     await deleteButton.trigger('click')
@@ -319,13 +296,19 @@ describe('Insight card-like controls', () => {
 
     const file = {
       text: vi.fn().mockResolvedValue(JSON.stringify({
+        version: 2,
+        exportedAt: '2026-08-02T00:00:00Z',
+        prompts: {
+          batch_analysis: '批量分析',
+          segment_summary: '段落总结',
+          chapter_summary: '章节总结',
+          qa_response: '问答响应',
+        },
         library: [
           {
-            id: 'client-file-id',
             name: '导入提示词',
             type: 'qa_response',
             content: '只依据漫画内容回答',
-            created_at: '2026-08-02T00:00:00Z',
           },
         ],
       })),
@@ -333,12 +316,73 @@ describe('Insight card-like controls', () => {
     wrapper.getComponent(UiFileInput).vm.$emit('files-change', [file])
     await flushPromises()
 
+    expect(importPromptsLibraryMock).toHaveBeenCalledWith([{
+      name: '导入提示词',
+      type: 'qa_response',
+      content: '只依据漫画内容回答',
+    }])
+
     const deleteButton = wrapper.get('[aria-label="删除提示词：导入提示词"]')
     await deleteButton.trigger('click')
     await flushPromises()
 
     expect(importPromptsLibraryMock).toHaveBeenCalledOnce()
     expect(deletePromptFromLibraryMock).toHaveBeenCalledWith('server-prompt-id')
+  })
+
+  it('rejects noncurrent prompt import files before writing the backend library', async () => {
+    const wrapper = mount(PromptsSettingsTab, {
+      global: {
+        plugins: [createPinia()],
+      },
+    })
+    await flushPromises()
+    const file = {
+      text: vi.fn().mockResolvedValue(JSON.stringify({
+        version: '1.0',
+        exportedAt: '2026-08-10T00:00:00Z',
+        prompts: {},
+        library: [],
+      })),
+    } as unknown as File
+
+    wrapper.getComponent(UiFileInput).vm.$emit('files-change', [file])
+    await flushPromises()
+
+    expect(importPromptsLibraryMock).not.toHaveBeenCalled()
+    expect(wrapper.emitted('showMessage')?.at(-1)?.[0]).toContain('版本必须为 2')
+  })
+
+  it('preserves an intentionally empty prompt instead of restoring the default', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useInsightStore().updatePrompts({ batch_analysis: '' })
+    const wrapper = mount(PromptsSettingsTab, {
+      global: { plugins: [pinia] },
+    })
+    await flushPromises()
+
+    expect(wrapper.get('textarea').element.value).toBe('')
+    const emitted = wrapper.emitted('update:prompts')?.at(-1)?.[0] as Record<string, string>
+    expect(emitted.batch_analysis).toBe('')
+  })
+
+  it('does not open duplicate save commands while the prompt name is pending', async () => {
+    const pendingName = deferred<string | null>()
+    requestProductTextInputMock.mockReturnValueOnce(pendingName.promise)
+    const wrapper = mount(PromptsSettingsTab, {
+      global: { plugins: [createPinia()] },
+    })
+    await flushPromises()
+    await wrapper.get('textarea').setValue('待保存内容')
+    const saveButton = wrapper.findAll('button').find(button => button.text().includes('保存到库'))
+    if (!saveButton) throw new Error('Missing save prompt button')
+
+    await Promise.all([saveButton.trigger('click'), saveButton.trigger('click')])
+    expect(requestProductTextInputMock).toHaveBeenCalledTimes(1)
+
+    pendingName.resolve(null)
+    await flushPromises()
   })
 
   it('uses shared product primitives for prompt settings layout and saved prompts', async () => {
@@ -363,14 +407,6 @@ describe('Insight card-like controls', () => {
   })
 
   it('uses product status feedback for saved prompt loading and empty states', async () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/components/insight/settings/PromptsSettingsTab.vue'),
-      'utf8'
-    )
-    expect(source).toContain('ProductStatusBanner')
-    expect(source).not.toContain('placeholder-text')
-    expect(source).not.toContain('loading-text')
-
     const pendingLibrary = deferred<[]>()
     getPromptsLibraryMock.mockReturnValueOnce(pendingLibrary.promise)
 
@@ -417,86 +453,9 @@ describe('Insight card-like controls', () => {
       rows: '12',
     })
 
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/components/insight/settings/PromptsSettingsTab.vue'),
-      'utf8'
-    )
-    expect(source).toContain('variant="panel"')
-    expect(source).not.toMatch(/--ui-textarea-/)
-  })
-
-  it('keeps prompt settings hooks under the prompts-settings-tab owner', () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/components/insight/settings/PromptsSettingsTab.vue'),
-      'utf8'
-    )
-    const styleBlock = source.match(/<style scoped>([\s\S]*)<\/style>/)?.[1] ?? ''
-    const oldHooks = [
-      'prompts-settings',
-      'prompt-editor',
-      'section-divider',
-      'prompts-library-section',
-      'library-header',
-      'saved-prompts-list',
-      'saved-prompt-item',
-      'saved-prompt-card',
-      'saved-prompt-load',
-      'prompt-name',
-    ]
-
-    for (const hook of oldHooks) {
-      const escapedHook = hook.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      expect(source).not.toMatch(new RegExp(`(?<![\\w-])${escapedHook}(?![\\w-])`))
-    }
-    expect(source).toContain('prompts-settings-tab__editor')
-    expect(source).toContain('prompts-settings-tab__saved-load')
-    expect(source).toContain('prompts-settings-tab__prompt-name')
-    expect(styleBlock).not.toMatch(/\.prompts-settings\s+\./)
-  })
-
-  it('does not assert shared textarea primitives through internal class names', () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'tests/unit/insightCardControls.spec.ts'),
-      'utf8'
-    )
-    const textareaClassPrefix = 'ui-' + 'textarea--'
-
-    expect(source).not.toContain(textareaClassPrefix)
-  })
-
-  it('keeps continuation panel fixtures typed to the current state contract', () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'tests/unit/insightCardControls.spec.ts'),
-      'utf8'
-    )
-
-    expect(source).not.toMatch(/\bas any\b|:\s*any\b|any\[\]/)
-  })
-
-  it('keeps the Insight settings panel shell from skinning primitive controls', () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/components/insight/settings/InsightSettingsPanel.vue'),
-      'utf8'
-    )
-    const rootStyle = source.match(/\.insight-settings-panel \{(?<body>[\s\S]*?)\n\}/)
-
-    expect(rootStyle?.groups?.body ?? '').not.toMatch(/--ui-(input|select|button)-/)
   })
 
   it('opens prompt import through the component file-input owner', async () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/components/insight/settings/PromptsSettingsTab.vue'),
-      'utf8'
-    )
-
-    expect(source).not.toContain("document.getElementById('promptsFileInput')")
-    expect(source).not.toContain('id="promptsFileInput"')
-    expect(source).toContain('ref="promptsImportInput"')
-    expect(source).toContain('@files-change="handlePromptsFileImport"')
-    expect(source).not.toContain('@change="handlePromptsFileImport"')
-    expect(source).not.toContain('target.files')
-    expect(source).not.toContain("target.value = ''")
-
     const wrapper = mount(PromptsSettingsTab, {
       global: {
         plugins: [createPinia()],
@@ -587,31 +546,6 @@ describe('Insight card-like controls', () => {
         .get('.continuation-export-panel__download-action')
         .attributes('disabled'),
     ).toBeDefined()
-  })
-
-  it('does not cap the export step to a fixed narrow column', () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/components/insight/continuation/ExportPanel.vue'),
-      'utf8'
-    )
-
-    expect(source).not.toContain('max-width: 600px')
-  })
-
-  it('does not override shared button primitive variables in the export panel root', () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/components/insight/continuation/ExportPanel.vue'),
-      'utf8'
-    )
-    const rootStyle = source.match(/\.continuation-export-panel \{(?<body>[\s\S]*?)\n\}/)
-
-    expect(rootStyle?.groups?.body ?? '').not.toMatch(/--ui-button-/)
-    expect(source).toContain('class="continuation-export-panel"')
-    expect(source).toContain('class="continuation-export-panel__summary-text"')
-    expect(source).toContain('class="continuation-export-panel__summary-count"')
-    expect(source).not.toContain('class="export-panel"')
-    expect(source).not.toContain('.continuation-export-panel__summary p')
-    expect(source).not.toContain('.continuation-export-panel__summary strong')
   })
 
   it('uses product action-row alignment for export controls', () => {

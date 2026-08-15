@@ -23,7 +23,7 @@ from src.backend_v2.jobs.repository import (
 )
 from src.backend_v2.timestamps import utcnow
 from src.backend_v2.storage.assets import AssetStorageService
-from src.backend_v2.storage.database import immediate_transaction
+from src.backend_v2.storage.database import immediate_transaction, read_transaction
 from src.backend_v2.storage.schema import (
     NONTERMINAL_JOB_STATUSES,
     assets,
@@ -34,10 +34,365 @@ from src.backend_v2.storage.schema import (
     web_import_draft_pages,
     web_import_drafts,
 )
+from src.shared.ai_providers import get_provider_manifest
 from src.backend_v2.settings.resolver import SettingsResolver
 
 
 WEB_ENGINES = {"auto", "gallery-dl", "ai-agent"}
+ACTUAL_WEB_ENGINES = {"gallery-dl", "ai-agent", "html"}
+
+
+class WebImportDataInvalid(RuntimeError):
+    pass
+
+
+def _web_object(value: object, field: str) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise WebImportDataInvalid(f"{field} must be an object")
+    return dict(value)
+
+
+def _web_exact(value: Mapping[str, Any], expected: set[str], field: str) -> None:
+    if set(value) != expected:
+        raise WebImportDataInvalid(f"{field} fields are invalid")
+
+
+def _web_text(
+    value: Mapping[str, Any],
+    name: str,
+    field: str,
+    *,
+    allow_empty: bool = False,
+) -> str:
+    selected = value.get(name)
+    if not isinstance(selected, str) or (not allow_empty and not selected):
+        raise WebImportDataInvalid(f"{field}.{name} must be a string")
+    return selected
+
+
+def _web_integer(
+    value: Mapping[str, Any],
+    name: str,
+    field: str,
+    *,
+    minimum: int,
+    maximum: int | None = None,
+) -> int:
+    selected = value.get(name)
+    if (
+        isinstance(selected, bool)
+        or not isinstance(selected, int)
+        or selected < minimum
+        or (maximum is not None and selected > maximum)
+    ):
+        raise WebImportDataInvalid(f"{field}.{name} is invalid")
+    return selected
+
+
+def _web_boolean(value: Mapping[str, Any], name: str, field: str) -> bool:
+    selected = value.get(name)
+    if not isinstance(selected, bool):
+        raise WebImportDataInvalid(f"{field}.{name} must be boolean")
+    return selected
+
+
+def _web_id(value: Mapping[str, Any], name: str, field: str) -> str:
+    selected = _web_text(value, name, field)
+    try:
+        parsed = uuid.UUID(selected)
+    except ValueError as exc:
+        raise WebImportDataInvalid(f"{field}.{name} is invalid") from exc
+    if str(parsed) != selected:
+        raise WebImportDataInvalid(f"{field}.{name} is not canonical")
+    return selected
+
+
+def _web_checksum(value: object, field: str) -> str:
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise WebImportDataInvalid(f"{field} is invalid")
+    return value
+
+
+def validate_web_import_options(value: object) -> dict[str, Any]:
+    options = _web_object(value, "web import options")
+    required = {
+        "concurrency",
+        "timeout",
+        "retries",
+        "delay",
+        "referer",
+        "agent",
+        "extraction",
+        "imagePreprocess",
+        "bypassProxy",
+        "autoImport",
+        "settingsSnapshot",
+    }
+    optional = {"firecrawl", "http"}
+    if not required.issubset(options) or set(options) - required - optional:
+        raise WebImportDataInvalid("web import options fields are invalid")
+    _web_integer(options, "concurrency", "web import options", minimum=1)
+    _web_integer(options, "timeout", "web import options", minimum=1)
+    _web_integer(options, "retries", "web import options", minimum=0)
+    _web_integer(options, "delay", "web import options", minimum=0)
+    referer = options["referer"]
+    if referer is not None:
+        if not isinstance(referer, str):
+            raise WebImportDataInvalid("web import options.referer is invalid")
+        _validated_url(referer)
+    _web_boolean(options, "bypassProxy", "web import options")
+    _web_boolean(options, "autoImport", "web import options")
+
+    agent = _web_object(options["agent"], "web import options.agent")
+    agent_required = {
+        "provider",
+        "model_name",
+        "custom_base_url",
+        "useStream",
+        "forceJsonOutput",
+        "maxRetries",
+        "timeout",
+    }
+    agent_optional = {"credentialVersionId"}
+    if not agent_required.issubset(agent) or set(agent) - agent_required - agent_optional:
+        raise WebImportDataInvalid("web import options.agent fields are invalid")
+    _web_text(agent, "provider", "web import options.agent")
+    _web_text(agent, "model_name", "web import options.agent", allow_empty=True)
+    _web_text(agent, "custom_base_url", "web import options.agent", allow_empty=True)
+    _web_boolean(agent, "useStream", "web import options.agent")
+    _web_boolean(agent, "forceJsonOutput", "web import options.agent")
+    _web_integer(
+        agent,
+        "maxRetries",
+        "web import options.agent",
+        minimum=0,
+    )
+    _web_integer(
+        agent,
+        "timeout",
+        "web import options.agent",
+        minimum=1,
+    )
+    if "credentialVersionId" in agent:
+        _web_id(agent, "credentialVersionId", "web import options.agent")
+
+    extraction = _web_object(options["extraction"], "web import options.extraction")
+    _web_exact(extraction, {"prompt", "maxIterations"}, "web import options.extraction")
+    _web_text(extraction, "prompt", "web import options.extraction")
+    _web_integer(
+        extraction,
+        "maxIterations",
+        "web import options.extraction",
+        minimum=1,
+    )
+
+    preprocess = _web_object(
+        options["imagePreprocess"],
+        "web import options.imagePreprocess",
+    )
+    _web_exact(
+        preprocess,
+        {"enabled", "autoRotate", "compression", "formatConvert"},
+        "web import options.imagePreprocess",
+    )
+    _web_boolean(preprocess, "enabled", "web import options.imagePreprocess")
+    _web_boolean(preprocess, "autoRotate", "web import options.imagePreprocess")
+    compression = _web_object(
+        preprocess["compression"],
+        "web import options.imagePreprocess.compression",
+    )
+    _web_exact(
+        compression,
+        {"enabled", "quality", "maxWidth", "maxHeight"},
+        "web import options.imagePreprocess.compression",
+    )
+    _web_boolean(
+        compression,
+        "enabled",
+        "web import options.imagePreprocess.compression",
+    )
+    _web_integer(
+        compression,
+        "quality",
+        "web import options.imagePreprocess.compression",
+        minimum=1,
+        maximum=100,
+    )
+    for name in ("maxWidth", "maxHeight"):
+        _web_integer(
+            compression,
+            name,
+            "web import options.imagePreprocess.compression",
+            minimum=0,
+        )
+    conversion = _web_object(
+        preprocess["formatConvert"],
+        "web import options.imagePreprocess.formatConvert",
+    )
+    _web_exact(
+        conversion,
+        {"enabled", "targetFormat"},
+        "web import options.imagePreprocess.formatConvert",
+    )
+    _web_boolean(
+        conversion,
+        "enabled",
+        "web import options.imagePreprocess.formatConvert",
+    )
+    if conversion.get("targetFormat") not in {"jpeg", "png", "webp", "original"}:
+        raise WebImportDataInvalid(
+            "web import options.imagePreprocess.formatConvert.targetFormat is invalid"
+        )
+
+    snapshot = _web_object(options["settingsSnapshot"], "web import settings snapshot")
+    _web_exact(snapshot, {"appRevision", "agentProviderRevision"}, "web import settings snapshot")
+    _web_integer(snapshot, "appRevision", "web import settings snapshot", minimum=1)
+    _web_integer(
+        snapshot,
+        "agentProviderRevision",
+        "web import settings snapshot",
+        minimum=0,
+    )
+    for name in optional & set(options):
+        credential = _web_object(options[name], f"web import options.{name}")
+        _web_exact(
+            credential,
+            {"credentialVersionId"},
+            f"web import options.{name}",
+        )
+        _web_id(
+            credential,
+            "credentialVersionId",
+            f"web import options.{name}",
+        )
+    return options
+
+
+def validate_web_extract_config(value: object) -> dict[str, Any]:
+    config = _web_object(value, "web extract config")
+    base = {
+        "draftId",
+        "sourceUrl",
+        "requestedEngine",
+        "actualEngine",
+        "options",
+        "executionMode",
+    }
+    expected = base | {"entries"} if "entries" in config else base
+    _web_exact(config, expected, "web extract config")
+    _web_id(config, "draftId", "web extract config")
+    _validated_url(_web_text(config, "sourceUrl", "web extract config"))
+    if config.get("requestedEngine") not in WEB_ENGINES:
+        raise WebImportDataInvalid("web extract requested engine is invalid")
+    if config.get("executionMode") != "sequential":
+        raise WebImportDataInvalid("web extract execution mode is invalid")
+    actual = config.get("actualEngine")
+    if "entries" not in config:
+        if actual is not None:
+            raise WebImportDataInvalid("unscanned web extract has an actual engine")
+    elif actual not in ACTUAL_WEB_ENGINES:
+        raise WebImportDataInvalid("web extract actual engine is invalid")
+    validate_web_import_options(config["options"])
+    if "entries" in config:
+        entries = config["entries"]
+        if not isinstance(entries, list) or not entries:
+            raise WebImportDataInvalid("web extract entries must be a non-empty array")
+        seen_ids: set[str] = set()
+        for ordinal, raw_entry in enumerate(entries, start=1):
+            entry = _web_object(raw_entry, f"web extract entry {ordinal}")
+            _web_exact(
+                entry,
+                {"draftPageId", "ordinal", "sourceUrl"},
+                f"web extract entry {ordinal}",
+            )
+            entry_id = _web_id(entry, "draftPageId", f"web extract entry {ordinal}")
+            if entry_id in seen_ids:
+                raise WebImportDataInvalid("web extract entries contain duplicate IDs")
+            seen_ids.add(entry_id)
+            if _web_integer(
+                entry,
+                "ordinal",
+                f"web extract entry {ordinal}",
+                minimum=1,
+            ) != ordinal:
+                raise WebImportDataInvalid("web extract entry ordinals are not contiguous")
+            _validated_url(_web_text(entry, "sourceUrl", f"web extract entry {ordinal}"))
+    return config
+
+
+def validate_web_commit_config(value: object) -> dict[str, Any]:
+    config = _web_object(value, "web import commit config")
+    _web_exact(
+        config,
+        {"draftId", "draftRevision", "chapterId", "entries", "executionMode"},
+        "web import commit config",
+    )
+    _web_id(config, "draftId", "web import commit config")
+    _web_id(config, "chapterId", "web import commit config")
+    _web_integer(config, "draftRevision", "web import commit config", minimum=1)
+    if config.get("executionMode") != "sequential":
+        raise WebImportDataInvalid("web import commit execution mode is invalid")
+    entries = config.get("entries")
+    if not isinstance(entries, list):
+        raise WebImportDataInvalid("web import commit entries must be an array")
+    frozen = [isinstance(entry, Mapping) and "logicalPath" in entry for entry in entries]
+    if any(frozen) and not all(frozen):
+        raise WebImportDataInvalid("web import commit paths are only partly frozen")
+    seen_ids: set[str] = set()
+    for index, raw_entry in enumerate(entries):
+        entry = _web_object(raw_entry, f"web import commit entry {index}")
+        fields = {
+            "draftPageId",
+            "ordinal",
+            "sourceUrl",
+            "relativePath",
+            "checksum",
+            "thumbnailAssetId",
+        }
+        if all(frozen):
+            fields.add("logicalPath")
+        _web_exact(entry, fields, f"web import commit entry {index}")
+        entry_id = _web_id(entry, "draftPageId", f"web import commit entry {index}")
+        if entry_id in seen_ids:
+            raise WebImportDataInvalid("web import commit entries contain duplicate IDs")
+        seen_ids.add(entry_id)
+        _web_integer(entry, "ordinal", f"web import commit entry {index}", minimum=1)
+        _validated_url(_web_text(entry, "sourceUrl", f"web import commit entry {index}"))
+        _web_text(entry, "relativePath", f"web import commit entry {index}")
+        _web_checksum(entry.get("checksum"), f"web import commit entry {index}.checksum")
+        _web_id(entry, "thumbnailAssetId", f"web import commit entry {index}")
+        if all(frozen):
+            _web_text(entry, "logicalPath", f"web import commit entry {index}")
+    return config
+
+
+def decode_web_import_draft_config(row: Mapping[str, Any]) -> dict[str, Any]:
+    if row["config_schema_version"] != 1:
+        raise WebImportDataInvalid("web import draft schema version is invalid")
+    try:
+        value = json.loads(row["config_json"])
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise WebImportDataInvalid("web import draft config contains invalid JSON") from exc
+    return validate_web_extract_config(value)
+
+
+def decode_web_import_page_error(value: object) -> dict[str, str] | None:
+    if value is None:
+        return None
+    try:
+        error = json.loads(value)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise WebImportDataInvalid("web import page error contains invalid JSON") from exc
+    error = _web_object(error, "web import page error")
+    _web_exact(error, {"code", "message"}, "web import page error")
+    return {
+        "code": _web_text(error, "code", "web import page error"),
+        "message": _web_text(error, "message", "web import page error"),
+    }
 
 
 class DraftLocked(JobConflict):
@@ -80,14 +435,26 @@ class WebImportCommandService:
             )
         else:
             frozen_options = dict(resolved_options)
-        frozen_config = {
-            "draftId": draft_id,
-            "sourceUrl": normalized_url,
-            "requestedEngine": requested_engine,
-            "actualEngine": None,
-            "options": frozen_options,
-            "executionMode": "sequential",
-        }
+        validate_web_import_options(frozen_options)
+        if requested_engine == "ai-agent":
+            agent = frozen_options["agent"]
+            if (
+                get_provider_manifest(agent["provider"]).requires_api_key
+                and "credentialVersionId" not in agent
+            ):
+                raise ValueError("ai-agent extraction requires provider credentials")
+            if "firecrawl" not in frozen_options:
+                raise ValueError("ai-agent extraction requires Firecrawl credentials")
+        frozen_config = validate_web_extract_config(
+            {
+                "draftId": draft_id,
+                "sourceUrl": normalized_url,
+                "requestedEngine": requested_engine,
+                "actualEngine": None,
+                "options": frozen_options,
+                "executionMode": "sequential",
+            }
+        )
         now = utcnow()
 
         def initialize(connection: Connection, _batch_id: str) -> None:
@@ -169,7 +536,7 @@ class WebImportCommandService:
         return result
 
     def get_draft(self, draft_id: str) -> dict[str, object]:
-        with self.engine.connect() as connection:
+        with read_transaction(self.engine) as connection:
             draft = connection.execute(
                 select(web_import_drafts).where(
                     web_import_drafts.c.id == draft_id
@@ -198,20 +565,18 @@ class WebImportCommandService:
                     ).order_by(jobs.c.created_at)
                 ).mappings()
             )
-        config = json.loads(draft["config_json"])
+        config = decode_web_import_draft_config(draft)
         options = config["options"]
-        if not isinstance(options, Mapping):
-            raise ValueError("web import draft settings snapshot is invalid")
         return {
             "id": draft["id"],
             "bookId": draft["book_id"],
             "chapterId": draft["chapter_id"],
             "status": str(draft["status"]),
             "revision": draft["revision"],
-            "sourceUrl": config.get("sourceUrl"),
-            "requestedEngine": config.get("requestedEngine"),
-            "actualEngine": config.get("actualEngine"),
-            "autoImport": bool(options["autoImport"]),
+            "sourceUrl": config["sourceUrl"],
+            "requestedEngine": config["requestedEngine"],
+            "actualEngine": config["actualEngine"],
+            "autoImport": options["autoImport"],
             "candidateCount": int(counts["candidate_count"]),
             "selectedCount": int(counts["selected_count"]),
             "failedCount": int(counts["failed_count"]),
@@ -251,11 +616,7 @@ class WebImportCommandService:
                     "selected": bool(row["selected"]),
                     "sourceUrl": row["source_url"],
                     "checksum": row["checksum"],
-                    "error": (
-                        json.loads(row["error_json"])
-                        if row["error_json"]
-                        else None
-                    ),
+                    "error": decode_web_import_page_error(row["error_json"]),
                     "sourceMediaUrl": (
                         f"/api/v2/web-import/drafts/{draft_id}/media/"
                         f"{row['id']}?variant=source"
@@ -306,7 +667,7 @@ class WebImportCommandService:
                 now=now,
             )
             if replay is not None:
-                return replay
+                return _selection_response(replay, draft_id=draft_id)
             draft = connection.execute(
                 select(
                     web_import_drafts.c.status,
@@ -431,13 +792,15 @@ class WebImportCommandService:
             }
             for row in rows
         ]
-        config = {
-            "draftId": draft_id,
-            "draftRevision": base_revision,
-            "chapterId": str(draft["chapter_id"]),
-            "entries": entries,
-            "executionMode": "sequential",
-        }
+        config = validate_web_commit_config(
+            {
+                "draftId": draft_id,
+                "draftRevision": base_revision,
+                "chapterId": str(draft["chapter_id"]),
+                "entries": entries,
+                "executionMode": "sequential",
+            }
+        )
 
         def hook(
             connection: Connection,
@@ -543,7 +906,7 @@ class WebImportCommandService:
                 now=now,
             )
             if replay is not None:
-                response = replay
+                response = _delete_response(replay)
             else:
                 if connection.execute(
                     select(jobs.c.id).where(
@@ -706,7 +1069,45 @@ def _idempotency_replay(
         return None
     if row["request_hash"] != request_hash:
         raise JobConflict("Idempotency-Key was reused for different web import input")
-    return json.loads(str(row["response_json"]))
+    try:
+        response = json.loads(str(row["response_json"]))
+    except json.JSONDecodeError as exc:
+        raise WebImportDataInvalid(
+            "web import idempotency response contains invalid JSON"
+        ) from exc
+    return _web_object(response, "web import idempotency response")
+
+
+def _selection_response(
+    value: object,
+    *,
+    draft_id: str,
+) -> dict[str, object]:
+    response = _web_object(value, "web import selection response")
+    _web_exact(
+        response,
+        {"draftId", "revision", "selectedPageIds"},
+        "web import selection response",
+    )
+    if response["draftId"] != draft_id:
+        raise WebImportDataInvalid("web import selection response draft is invalid")
+    _web_integer(response, "revision", "web import selection response", minimum=1)
+    selected = response["selectedPageIds"]
+    if not isinstance(selected, list) or any(
+        not isinstance(page_id, str) or not page_id for page_id in selected
+    ):
+        raise WebImportDataInvalid(
+            "web import selection response page IDs are invalid"
+        )
+    return response
+
+
+def _delete_response(value: object) -> dict[str, object]:
+    response = _web_object(value, "web import delete response")
+    _web_exact(response, {"deleted"}, "web import delete response")
+    if response["deleted"] is not True:
+        raise WebImportDataInvalid("web import delete response is invalid")
+    return response
 
 
 def _record_idempotency(

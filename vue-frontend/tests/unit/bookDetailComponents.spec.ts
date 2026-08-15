@@ -1,6 +1,7 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { defineComponent, nextTick } from 'vue'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import BookDetailSummary from '@/components/bookshelf/book-detail/BookDetailSummary.vue'
@@ -8,6 +9,7 @@ import ChapterList from '@/components/bookshelf/book-detail/ChapterList.vue'
 import ChapterFormContent from '@/components/bookshelf/book-detail/ChapterFormContent.vue'
 import ChapterRow from '@/components/bookshelf/book-detail/ChapterRow.vue'
 import QuickTagPicker from '@/components/bookshelf/book-detail/QuickTagPicker.vue'
+import BookDetailModal from '@/components/bookshelf/BookDetailModal.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductChipList from '@/components/product/ProductChipList.vue'
 import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
@@ -19,7 +21,51 @@ import UiButton from '@/components/ui/UiButton.vue'
 import UiField from '@/components/ui/UiField.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
+import TaskStatusBadge from '@/components/task-center/TaskStatusBadge.vue'
 import type { BookData, TagData } from '@/types/api'
+import * as bookshelfApi from '@/api/bookshelf'
+import { useBookshelfStore } from '@/stores/bookshelfStore'
+import { useTaskCenterStore } from '@/stores/taskCenterStore'
+import { setTestBooks } from '../helpers/bookshelfFixtures'
+
+vi.mock('vue-router', () => ({
+  useRouter: () => ({ push: vi.fn() }),
+}))
+
+const BaseModalStub = defineComponent({
+  props: {
+    modelValue: {
+      type: Boolean,
+      default: true,
+    },
+    title: {
+      type: String,
+      default: '',
+    },
+  },
+  template: `
+    <section v-if="modelValue" class="base-modal-stub" :data-title="title">
+      <slot />
+      <footer><slot name="footer" /></footer>
+    </section>
+  `,
+})
+
+const ChapterListStub = defineComponent({
+  props: {
+    chapters: {
+      type: Array,
+      default: () => [],
+    },
+    selectedChapterIds: {
+      type: Set,
+      default: () => new Set<string>(),
+    },
+    translationPending: Boolean,
+  },
+  emits: ['delete', 'select'],
+  template: '<div class="chapter-list-stub" />',
+})
 
 const book: BookData = {
   id: 'book-1',
@@ -33,7 +79,7 @@ const book: BookData = {
 }
 
 const availableTags: TagData[] = [
-  { name: 'Action', color: '#4466aa' },
+  { id: 'tag-action', name: 'Action', color: '#4466aa' },
 ]
 
 describe('bookshelf detail child components', () => {
@@ -84,15 +130,6 @@ describe('bookshelf detail child components', () => {
       .find(button => button.text().includes('漫画分析'))
     expect(insightButton).toBeTruthy()
     expect(insightButton!.text()).toContain('●')
-  })
-
-  it('does not assert shared button primitives through internal class names', () => {
-    const source = readFileSync(resolve(process.cwd(), 'tests/unit/bookDetailComponents.spec.ts'), 'utf8')
-    const buttonClassPrefix = 'ui-' + 'button--'
-    const iconButtonClassPrefix = 'ui-' + 'icon-button--'
-
-    expect(source).not.toContain(buttonClassPrefix)
-    expect(source).not.toContain(iconButtonClassPrefix)
   })
 
   it('falls back to the detail cover placeholder when the cover image fails', async () => {
@@ -362,6 +399,67 @@ describe('bookshelf detail child components', () => {
     expect(wrapper.find('.chapter-read-btn').exists()).toBe(false)
   })
 
+  it('does not keep a stale running summary after the authoritative task snapshot is loaded', () => {
+    const taskStore = useTaskCenterStore()
+    taskStore.snapshotLoaded = true
+    const chapter = {
+      id: 'chapter-stale',
+      title: 'Finished Chapter',
+      imageCount: 2,
+      jobStatusSummary: { running: 1 },
+    }
+    const row = mount(ChapterRow, {
+      props: {
+        chapter,
+        index: 0,
+        isDragging: false,
+        isDragOver: false,
+        selectable: true,
+      },
+    })
+    const list = mount(ChapterList, {
+      props: {
+        chapters: [chapter],
+        draggedChapterIndex: null,
+        dragOverChapterIndex: null,
+      },
+    })
+
+    expect(row.get('input[type="checkbox"]').attributes('disabled')).toBeUndefined()
+    expect(row.findComponent(TaskStatusBadge).find('button').exists()).toBe(false)
+    expect(list.findAll('button').some(button => button.text().includes('全选可翻译章节'))).toBe(true)
+  })
+
+  it('reuses an existing tag casing when quick-add is submitted from the keyboard', async () => {
+    const store = useBookshelfStore()
+    setTestBooks(store, [{ ...book, tags: [] }])
+    store.tags = [{ id: 'tag-drama', name: 'Drama', color: '#4466aa' }]
+    store.setCurrentBook(book.id)
+    const createTagSpy = vi.spyOn(bookshelfApi, 'createTag')
+    const updateSpy = vi.spyOn(store, 'updateBookApi').mockResolvedValue({
+      ...book,
+      tags: ['Drama'],
+    })
+    const wrapper = mount(BookDetailModal, {
+      global: {
+        stubs: {
+          BaseModal: BaseModalStub,
+          BookDeleteConfirmContent: true,
+          ChapterFormContent: true,
+          ChapterList: ChapterListStub,
+        },
+      },
+    })
+
+    await wrapper.get('.book-detail-summary__add-tag').trigger('click')
+    const picker = wrapper.getComponent(QuickTagPicker)
+    picker.vm.$emit('add', 'drama')
+    await flushPromises()
+
+    expect(createTagSpy).not.toHaveBeenCalled()
+    expect(updateSpy).toHaveBeenCalledWith(book.id, { tags: ['Drama'] })
+  })
+
   it('keeps chapter rows responsive inside narrow detail modals', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/bookshelf/book-detail/ChapterRow.vue'),
@@ -425,6 +523,48 @@ describe('bookshelf detail child components', () => {
       /async function updateChapterApi[\s\S]*?\n {2}}\n\n {2}async function deleteChapterApi/,
     )?.[0] ?? ''
     expect(updateChapterSource).not.toContain('catch')
+  })
+
+  it('removes a deleted chapter from the batch selection', async () => {
+    const store = useBookshelfStore()
+    setTestBooks(store, [{
+      ...book,
+      chapters: [{
+        id: 'chapter-selected',
+        title: 'Selected Chapter',
+        order: 0,
+        imageCount: 1,
+      }],
+      chapterCount: 1,
+    }])
+    store.setCurrentBook(book.id)
+    vi.spyOn(bookshelfApi, 'deleteChapter').mockResolvedValue(undefined)
+    const wrapper = mount(BookDetailModal, {
+      global: {
+        stubs: {
+          BaseModal: BaseModalStub,
+          BookDeleteConfirmContent: true,
+          BookDetailSummary: true,
+          ChapterFormContent: true,
+          ChapterList: ChapterListStub,
+          QuickTagPicker: true,
+        },
+      },
+    })
+    const chapterList = wrapper.getComponent(ChapterListStub)
+    chapterList.vm.$emit('select', 'chapter-selected', true)
+    chapterList.vm.$emit('delete', 'chapter-selected')
+    await nextTick()
+
+    const confirm = wrapper.get('section[data-title="确认删除"]')
+    const deleteButton = confirm.findAllComponents(UiButton)
+      .find(button => button.text() === '删除')!
+    await deleteButton.trigger('click')
+    await flushPromises()
+
+    expect(bookshelfApi.deleteChapter).toHaveBeenCalledTimes(1)
+    expect(store.currentBook?.chapters).toEqual([])
+    expect(wrapper.getComponent(ChapterListStub).props('selectedChapterIds').size).toBe(0)
   })
 
   it('keeps bookshelf wire aliases out of detail child UI owners', () => {

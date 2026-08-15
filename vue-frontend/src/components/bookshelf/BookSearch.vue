@@ -5,15 +5,17 @@ import type { ProductChipItem } from '@/components/product/ProductChipList.vue'
 import ProductSearchField from '@/components/product/ProductSearchField.vue'
 import ProductSearchToolbar from '@/components/product/ProductSearchToolbar.vue'
 
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed, onUnmounted, watch } from 'vue'
 import type { TagData } from '@/types'
 
 interface Props {
   tags: TagData[]
+  query?: string
   selectedTagNames?: string[]
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  query: '',
   selectedTagNames: () => [],
 })
 
@@ -22,7 +24,7 @@ const emit = defineEmits<{
   filterTag: [tagName: string]
 }>()
 
-const searchQuery = ref('')
+const searchQuery = ref(props.query)
 const tagItems = computed<ProductChipItem[]>(() => props.tags.map(tag => {
   const selected = isTagSelected(tag.name)
 
@@ -43,7 +45,7 @@ const tagItems = computed<ProductChipItem[]>(() => props.tags.map(tag => {
     ariaLabel: `取消筛选标签 ${tag.name}`,
     interactive: true,
     selected: true,
-    tone: tag.color ? 'custom' : 'primary',
+    tone: 'custom',
     backgroundColor: tag.color,
     borderColor: tag.color,
     textColor: 'var(--color-text-inverse)',
@@ -85,6 +87,12 @@ function handleTagSelect(tagId: string | number) {
 function isTagSelected(tagName: string): boolean {
   return props.selectedTagNames.includes(tagName)
 }
+
+watch(() => props.query, (query) => {
+  if (query === searchQuery.value) return
+  clearPendingSearch()
+  searchQuery.value = query
+})
 
 onUnmounted(clearPendingSearch)
 </script>

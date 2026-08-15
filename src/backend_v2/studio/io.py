@@ -169,7 +169,7 @@ class StudioIOService:
         except Exception:
             self._mark_assets_for_gc([avatar.id])
             raise
-        if created.get("avatarAssetId") != avatar.id:
+        if created["avatarAssetId"] != avatar.id:
             self._mark_assets_for_gc([avatar.id])
         return created
 
@@ -178,45 +178,55 @@ class StudioIOService:
         return write_card_png(
             bundle["v3"],
             base_image_path=self._asset_path(
-                document.get("avatarAssetId")
+                document["avatarAssetId"]
             ),
         )
 
     def export_session(self, session_id: str) -> dict[str, Any]:
-        session = deepcopy(self.repository.get_session(session_id))
-        session["schema"] = "saber-studio-chat-v2"
-        for message in session.get("messages", []):
-            exported: list[dict[str, Any]] = []
-            for index, attachment in enumerate(
-                message.pop("attachments", []),
-                start=1,
-            ):
-                asset_id = str(attachment.get("assetId", ""))
+        session = self.repository.get_session(session_id)
+        messages: list[dict[str, Any]] = []
+        for message in session["messages"]:
+            exported_attachments: list[dict[str, str]] = []
+            for index, attachment in enumerate(message["attachments"], start=1):
+                asset_id = attachment["assetId"]
                 path = self._asset_path(asset_id)
                 if path is None:
-                    continue
-                exported.append(
+                    raise RuntimeError(
+                        f"Studio session attachment {asset_id} is unavailable"
+                    )
+                exported_attachments.append(
                     {
                         "filename": f"attachment-{index}{path.suffix}",
-                        "mime_type": attachment.get(
-                            "mimeType",
-                            "application/octet-stream",
-                        ),
+                        "mime_type": attachment["mimeType"],
                         "blob_base64": base64.b64encode(
                             path.read_bytes()
                         ).decode("ascii"),
                     }
                 )
-            message["attachments"] = exported
-        for key in (
-            "sessionId",
-            "documentId",
-            "revision",
-            "generation",
-            "archived",
-        ):
-            session.pop(key, None)
-        return session
+            messages.append(
+                {
+                    "messageId": message["messageId"],
+                    "role": message["role"],
+                    "content": message["content"],
+                    "attachments": exported_attachments,
+                    "runtimeLog": deepcopy(message["runtimeLog"]),
+                    "variablesSnapshot": deepcopy(
+                        message["variablesSnapshot"]
+                    ),
+                    "generationMeta": deepcopy(message["generationMeta"]),
+                }
+            )
+        return {
+            "schema": "saber-studio-chat-v2",
+            "title": session["title"],
+            "greetingSource": deepcopy(session["greetingSource"]),
+            "variables": deepcopy(session["variables"]),
+            "summaryBlocks": deepcopy(session["summaryBlocks"]),
+            "summaryThroughMessageId": session["summaryThroughMessageId"],
+            "summaryGeneration": session["summaryGeneration"],
+            "runtimeState": deepcopy(session["runtimeState"]),
+            "messages": messages,
+        }
 
     def import_session(
         self,
@@ -226,10 +236,11 @@ class StudioIOService:
         payload: Mapping[str, Any],
         idempotency_key: str,
     ) -> dict[str, Any]:
+        imported = _portable_session_payload(payload)
         request_identity = {
             "documentId": document_id,
             "baseIndexRevision": base_index_revision,
-            "session": deepcopy(dict(payload)),
+            "session": deepcopy(imported),
         }
         scope = f"POST:importStudioSession:{document_id}"
         replay = self.repository.replay_short_command(
@@ -239,10 +250,8 @@ class StudioIOService:
         )
         if replay is not None:
             return replay
-        imported = deepcopy(dict(payload))
-        messages = imported.get("messages", [])
-        if not isinstance(messages, list):
-            raise ValueError("session messages must be an array")
+        imported.pop("schema")
+        messages = imported["messages"]
         imported_assets = self._restore_session_attachments(messages)
         try:
             result = self.repository.import_session(
@@ -256,11 +265,9 @@ class StudioIOService:
             self._mark_assets_for_gc(imported_assets)
             raise
         referenced = {
-            str(attachment.get("assetId"))
-            for message in result.get("messages", [])
-            for attachment in message.get("attachments", [])
-            if isinstance(attachment, Mapping)
-            and attachment.get("assetId")
+            attachment["assetId"]
+            for message in result["messages"]
+            for attachment in message["attachments"]
         }
         self._mark_assets_for_gc(
             [
@@ -278,18 +285,10 @@ class StudioIOService:
         imported_assets: list[str] = []
         try:
             for message in messages:
-                if not isinstance(message, dict):
-                    raise ValueError("each session message must be an object")
                 restored_ids: list[str] = []
-                attachments = message.pop("attachments", [])
-                if not isinstance(attachments, list):
-                    raise ValueError("message attachments must be an array")
+                attachments = message.pop("attachments")
                 for attachment in attachments:
-                    if not isinstance(attachment, Mapping):
-                        raise ValueError("each attachment must be an object")
-                    encoded = str(attachment.get("blob_base64", "") or "")
-                    if not encoded:
-                        continue
+                    encoded = attachment["blob_base64"]
                     try:
                         binary = base64.b64decode(encoded, validate=True)
                     except ValueError as exc:
@@ -377,3 +376,56 @@ def _binary_request_identity(payload: bytes) -> dict[str, Any]:
         "checksum": hashlib.sha256(payload).hexdigest(),
         "byteSize": len(payload),
     }
+
+
+def _portable_session_payload(
+    payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    expected = {
+        "schema",
+        "title",
+        "greetingSource",
+        "variables",
+        "summaryBlocks",
+        "summaryThroughMessageId",
+        "summaryGeneration",
+        "runtimeState",
+        "messages",
+    }
+    if set(payload) != expected:
+        raise ValueError("portable Studio session fields are invalid")
+    if payload["schema"] != "saber-studio-chat-v2":
+        raise ValueError("portable Studio session schema is invalid")
+    messages = payload["messages"]
+    if not isinstance(messages, list):
+        raise ValueError("portable Studio session messages must be an array")
+    message_fields = {
+        "messageId",
+        "role",
+        "content",
+        "attachments",
+        "runtimeLog",
+        "variablesSnapshot",
+        "generationMeta",
+    }
+    attachment_fields = {"filename", "mime_type", "blob_base64"}
+    for message in messages:
+        if not isinstance(message, Mapping) or set(message) != message_fields:
+            raise ValueError("portable Studio session message fields are invalid")
+        attachments = message["attachments"]
+        if not isinstance(attachments, list):
+            raise ValueError("message attachments must be an array")
+        for attachment in attachments:
+            if (
+                not isinstance(attachment, Mapping)
+                or set(attachment) != attachment_fields
+            ):
+                raise ValueError("portable Studio attachment fields are invalid")
+            if not all(
+                isinstance(attachment[field], str) and attachment[field]
+                for field in attachment_fields
+            ):
+                raise ValueError(
+                    "portable Studio attachment values must be non-empty strings"
+                )
+    return deepcopy(dict(payload))

@@ -68,38 +68,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/provider-settings": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["getProviderSettings"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/credentials": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["listCredentials"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/credentials/{credential_id}": {
         parameters: {
             query?: never;
@@ -270,22 +238,6 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["cleanTemporaryAssets"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/maintenance/clean-debug": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["cleanDebugAssets"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1840,7 +1792,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                template: string;
+                template: components["schemas"]["InsightOverviewTemplate"];
             };
             cookie?: never;
         };
@@ -2570,11 +2522,18 @@ export interface components {
             credentialId?: components["schemas"]["Uuid"];
             clientRef: string;
         };
+        PromptMutation: {
+            id: components["schemas"]["Uuid"];
+            name: string;
+            content: string;
+            baseRevision: number;
+        };
         SettingsTransaction: {
             settings?: components["schemas"]["SettingMutation"][];
             bookSettings?: components["schemas"]["BookSettingMutation"][];
             providerSettings?: components["schemas"]["ProviderSettingMutation"][];
             credentialEdits?: components["schemas"]["CredentialEdit"][];
+            promptEdits?: components["schemas"]["PromptMutation"][];
         };
         SettingMutationResult: {
             domain: string;
@@ -2589,14 +2548,18 @@ export interface components {
             bookSettings: components["schemas"]["SettingMutationResult"][];
             providerSettings: components["schemas"]["SettingMutationResult"][];
             credentials: components["schemas"]["CredentialSummary"][];
+            prompts: components["schemas"]["PromptResource"][];
         };
         WorkflowPreferences: {
-            lastWorkflowMode: string;
+            /** @enum {string} */
+            lastWorkflowMode: "translate-current" | "translate-batch" | "hq-batch" | "proofread-batch" | "remove-current" | "remove-batch" | "retry-failed" | "delete-current" | "clear-all";
             rememberWorkflowModeEnabled: boolean;
         };
+        /** @enum {string} */
+        PromptType: "translate" | "textbox" | "ai_vision_ocr" | "hq_translate" | "proofreading" | "batch_analysis" | "segment_summary" | "chapter_summary" | "book_overview" | "group_summary" | "qa_response" | "question_decompose" | "analysis_system";
         PromptResource: {
             id: components["schemas"]["Uuid"];
-            type: string;
+            type: components["schemas"]["PromptType"];
             name: string;
             content: string;
             revision: number;
@@ -2608,7 +2571,6 @@ export interface components {
         ProviderDiagnosticRequest: {
             provider?: string;
             domain?: string;
-            credentialId?: components["schemas"]["Uuid"];
             secret?: {
                 [key: string]: string;
             };
@@ -2667,6 +2629,7 @@ export interface components {
             completed: number;
             failed: number;
             skipped: number;
+            cancelled: number;
             waiting: number;
             processing: number;
             lockWaiting: boolean;
@@ -2705,7 +2668,7 @@ export interface components {
                 [key: string]: unknown;
             };
             /** Format: date-time */
-            createdAt: string | null;
+            createdAt: string;
             /** Format: date-time */
             startedAt?: string | null;
             /** Format: date-time */
@@ -2922,25 +2885,25 @@ export interface components {
             status: components["schemas"]["OperationStatus"];
             /** @enum {string} */
             executorRole: "api" | "worker";
-            pageId?: components["schemas"]["Uuid"] | null;
-            bubbleId?: components["schemas"]["Uuid"] | null;
-            studioDocumentId?: components["schemas"]["Uuid"] | null;
-            studioSessionId?: components["schemas"]["Uuid"] | null;
-            baseRevision?: number | null;
-            baseGeneration?: number | null;
+            pageId: components["schemas"]["Uuid"] | null;
+            bubbleId: components["schemas"]["Uuid"] | null;
+            studioDocumentId: components["schemas"]["Uuid"] | null;
+            studioSessionId: components["schemas"]["Uuid"] | null;
+            baseRevision: number | null;
+            baseGeneration: number | null;
             request: {
                 [key: string]: unknown;
             };
-            result?: {
+            result: {
                 [key: string]: unknown;
             } | null;
-            error?: components["schemas"]["ErrorDetail"] | null;
+            error: components["schemas"]["OperationError"] | null;
             /** Format: date-time */
-            createdAt: string | null;
+            createdAt: string;
             /** Format: date-time */
-            startedAt?: string | null;
+            startedAt: string | null;
             /** Format: date-time */
-            finishedAt?: string | null;
+            finishedAt: string | null;
         };
         OperationAccepted: {
             operationId: components["schemas"]["Uuid"];
@@ -2954,6 +2917,11 @@ export interface components {
             sessionRevision?: number;
             sessionGeneration?: number;
             userMessageId?: components["schemas"]["Uuid"];
+            documentRevision?: number;
+        };
+        OperationError: {
+            code: string;
+            message: string;
         };
         OperationEvent: {
             eventId: number;
@@ -2974,23 +2942,142 @@ export interface components {
             baseRevision: number;
             bubbleId?: components["schemas"]["Uuid"];
         };
-        BubbleMutation: components["schemas"]["BubbleCreateMutation"] | components["schemas"]["ExistingBubbleMutation"];
+        BubbleOcrResult: {
+            text: string;
+            confidence: number | null;
+            confidenceSupported: boolean;
+            engine: string;
+            primaryEngine: string;
+            fallbackUsed: boolean;
+        };
+        BubbleTextline: {
+            polygon: number[][];
+            /** @enum {string} */
+            direction: "h" | "v";
+            confidence: number;
+        };
+        BubblePolygon: unknown[] | number[][];
+        BubbleRgb: number[];
+        BubblePayload: {
+            originalText: string;
+            translatedText: string;
+            textboxText: string;
+            coords: number[];
+            polygon: components["schemas"]["BubblePolygon"];
+            fontSize: number;
+            /** @enum {string} */
+            textDirection: "vertical" | "horizontal";
+            /** @enum {string} */
+            autoTextDirection: "vertical" | "horizontal";
+            textColor: string;
+            fillColor: string;
+            rotationAngle: number;
+            position: {
+                x: number;
+                y: number;
+            };
+            strokeEnabled: boolean;
+            strokeColor: string;
+            strokeWidth: number;
+            lineSpacing: number;
+            /** @enum {string} */
+            textAlign: "start" | "center" | "end";
+            /** @enum {string} */
+            inpaintMethod: "solid" | "lama_mpe" | "litelama";
+            autoFgColor: components["schemas"]["BubbleRgb"] | null;
+            autoBgColor: components["schemas"]["BubbleRgb"] | null;
+            colorConfidence: number;
+            textlines: components["schemas"]["BubbleTextline"][];
+            ocrResult: components["schemas"]["BubbleOcrResult"] | null;
+        };
+        BubbleMutationFields: {
+            originalText?: string;
+            translatedText?: string;
+            textboxText?: string;
+            coords?: number[];
+            polygon?: components["schemas"]["BubblePolygon"];
+            fontSize?: number;
+            /** @enum {string} */
+            textDirection?: "vertical" | "horizontal";
+            textColor?: string;
+            fillColor?: string;
+            rotationAngle?: number;
+            position?: {
+                x: number;
+                y: number;
+            };
+            strokeEnabled?: boolean;
+            strokeColor?: string;
+            strokeWidth?: number;
+            lineSpacing?: number;
+            /** @enum {string} */
+            textAlign?: "start" | "center" | "end";
+            /** @enum {string} */
+            inpaintMethod?: "solid" | "lama_mpe" | "litelama";
+            autoFgColor?: components["schemas"]["BubbleRgb"] | null;
+            autoBgColor?: components["schemas"]["BubbleRgb"] | null;
+            colorConfidence?: number;
+            textlines?: components["schemas"]["BubbleTextline"][];
+            ocrResult?: components["schemas"]["BubbleOcrResult"] | null;
+            fontId?: components["schemas"]["Uuid"] | null;
+        };
+        CompleteBubbleMutationFields: {
+            originalText: string;
+            translatedText: string;
+            textboxText: string;
+            coords: number[];
+            polygon: components["schemas"]["BubblePolygon"];
+            fontSize: number;
+            /** @enum {string} */
+            textDirection: "vertical" | "horizontal";
+            textColor: string;
+            fillColor: string;
+            rotationAngle: number;
+            position: {
+                x: number;
+                y: number;
+            };
+            strokeEnabled: boolean;
+            strokeColor: string;
+            strokeWidth: number;
+            lineSpacing: number;
+            /** @enum {string} */
+            textAlign: "start" | "center" | "end";
+            /** @enum {string} */
+            inpaintMethod: "solid" | "lama_mpe" | "litelama";
+            autoFgColor: components["schemas"]["BubbleRgb"] | null;
+            autoBgColor: components["schemas"]["BubbleRgb"] | null;
+            colorConfidence: number;
+            textlines: components["schemas"]["BubbleTextline"][];
+            ocrResult: components["schemas"]["BubbleOcrResult"] | null;
+            fontId?: components["schemas"]["Uuid"] | null;
+        };
+        BubbleMutation: components["schemas"]["BubbleCreateMutation"] | components["schemas"]["BubblePatchMutation"] | components["schemas"]["BubbleResetMutation"] | components["schemas"]["BubbleDeleteMutation"];
         BubbleCreateMutation: {
             /** @constant */
             op: "create";
             clientMutationId: string;
-            fields?: {
-                [key: string]: unknown;
-            };
+            fields: components["schemas"]["CompleteBubbleMutationFields"];
         };
-        ExistingBubbleMutation: {
-            /** @enum {string} */
-            op: "patch" | "delete" | "reset";
+        BubblePatchMutation: {
+            /** @constant */
+            op: "patch";
             clientMutationId: string;
             bubbleId: components["schemas"]["Uuid"];
-            fields?: {
-                [key: string]: unknown;
-            };
+            fields: components["schemas"]["BubbleMutationFields"];
+        };
+        BubbleResetMutation: {
+            /** @constant */
+            op: "reset";
+            clientMutationId: string;
+            bubbleId: components["schemas"]["Uuid"];
+            fields: components["schemas"]["CompleteBubbleMutationFields"];
+        };
+        BubbleDeleteMutation: {
+            /** @constant */
+            op: "delete";
+            clientMutationId: string;
+            bubbleId: components["schemas"]["Uuid"];
         };
         BubbleMutationResult: {
             /** @enum {string} */
@@ -3028,9 +3115,7 @@ export interface components {
             bubbleId: components["schemas"]["Uuid"];
             ordinal: number;
             fontId?: components["schemas"]["Uuid"] | null;
-            payload: {
-                [key: string]: unknown;
-            };
+            payload: components["schemas"]["BubblePayload"];
         };
         PageDocument: {
             pageId: components["schemas"]["Uuid"];
@@ -3047,11 +3132,13 @@ export interface components {
             document: components["schemas"]["PageDocument"];
             mutationResults: components["schemas"]["BubbleMutationResult"][];
         };
-        SingleBubbleMutationCommand: {
+        CreateBubbleCommand: {
             baseRevision: number;
-            fields: {
-                [key: string]: unknown;
-            };
+            fields: components["schemas"]["CompleteBubbleMutationFields"];
+        };
+        PatchBubbleCommand: {
+            baseRevision: number;
+            fields: components["schemas"]["BubbleMutationFields"];
         };
         BubbleRepairCommand: {
             /** @constant */
@@ -3059,15 +3146,24 @@ export interface components {
             bubble_id: components["schemas"]["Uuid"];
             base_revision: number;
         };
-        MaskRepairWithFillCommand: {
+        MaskSolidRepairCommand: {
+            /** @constant */
+            target: "mask";
+            /** Format: binary */
+            mask: string;
+            base_revision: number;
+            /** @constant */
+            method: "solid";
+            fill_color: string;
+        };
+        MaskModelRepairCommand: {
             /** @constant */
             target: "mask";
             /** Format: binary */
             mask: string;
             base_revision: number;
             /** @enum {string} */
-            method: "solid" | "lama_mpe" | "litelama";
-            fill_color: string;
+            method: "lama_mpe" | "litelama";
         };
         MaskRestoreCommand: {
             /** @constant */
@@ -3083,8 +3179,8 @@ export interface components {
             assetUrl: string;
             mimeType: string;
             byteSize: number;
-            width?: number | null;
-            height?: number | null;
+            width: number | null;
+            height: number | null;
         };
         StudioDocument: {
             id: components["schemas"]["Uuid"];
@@ -3093,46 +3189,25 @@ export interface components {
             revision: number;
             avatarAssetId: components["schemas"]["Uuid"] | null;
             avatarUrl: string | null;
-            origin: {
-                [key: string]: unknown;
-            };
-            status: {
-                [key: string]: unknown;
-            };
-            meta: {
-                [key: string]: unknown;
-            };
-            identity: {
-                [key: string]: unknown;
-            };
-            coreMessages: {
-                [key: string]: unknown;
-            };
-            lorebook: {
-                [key: string]: unknown;
-            };
-            regexScripts: unknown[];
-            stateTasks: unknown[];
+            origin: components["schemas"]["StudioDocumentOrigin"];
+            status: components["schemas"]["StudioDocumentStatus"];
+            meta: components["schemas"]["StudioDocumentMeta"];
+            identity: components["schemas"]["StudioDocumentIdentity"];
+            coreMessages: components["schemas"]["StudioDocumentCoreMessages"];
+            lorebook: components["schemas"]["StudioLorebook"];
+            regexScripts: components["schemas"]["StudioRegexScript"][];
+            stateTasks: components["schemas"]["StudioStateTask"][];
             exportArtifacts: {
                 [key: string]: unknown;
             };
             /** Format: date-time */
-            createdAt: string | null;
+            createdAt: string;
             /** Format: date-time */
-            updatedAt: string | null;
-        } & {
-            [key: string]: unknown;
+            updatedAt: string;
         };
         StudioDocumentCreateCommand: {
             title?: string;
-            /** @enum {string} */
-            kind?: "manual" | "analysis" | "imported";
-            candidate?: {
-                [key: string]: unknown;
-            };
-            document?: {
-                [key: string]: unknown;
-            };
+            candidateId?: components["schemas"]["Uuid"];
         };
         StudioDocumentImportCommand: {
             payload: {
@@ -3142,9 +3217,111 @@ export interface components {
         StudioDocumentMutation: {
             baseRevision: number;
             title?: string;
-            document: {
+            document: components["schemas"]["StudioDocumentContent"];
+        };
+        StudioDocumentOrigin: {
+            /** @enum {string} */
+            type: "analysis" | "manual" | "imported";
+            source_character: string | null;
+        };
+        StudioDocumentStatus: {
+            is_favorite: boolean;
+            frozen_sections: ("identity" | "greetings" | "lorebook" | "regex" | "state-tasks")[];
+            last_diagnostics: components["schemas"]["StudioDiagnostics"] | null;
+            /** Format: date-time */
+            last_validated_at: string | null;
+        };
+        StudioDocumentMeta: {
+            title: string;
+            tags: string[];
+        };
+        StudioDocumentIdentity: {
+            name: string;
+            aliases: string[];
+            description: string;
+            personality: string;
+            scenario: string;
+        };
+        StudioDocumentCoreMessages: {
+            first_message: string;
+            message_example: string;
+            alternate_greetings: string[];
+            system_prompt: string;
+            post_history_instructions: string;
+            creator_notes: string;
+            character_version: string;
+        };
+        StudioLorebookEntry: {
+            id: string;
+            comment: string;
+            keys: string[];
+            secondary_keys?: string[];
+            content: string;
+            enabled: boolean;
+            constant: boolean;
+            selective: boolean;
+            priority: number;
+            position: string;
+            depth: number;
+            probability?: number;
+            prevent_recursion?: boolean;
+            use_regex?: boolean;
+            match_persona_description?: boolean;
+            match_character_description?: boolean;
+            match_character_personality?: boolean;
+            match_character_depth_prompt?: boolean;
+            match_scenario?: boolean;
+            children: components["schemas"]["StudioLorebookEntry"][];
+        };
+        StudioLorebook: {
+            name: string;
+            entries: components["schemas"]["StudioLorebookEntry"][];
+        };
+        StudioRegexScript: {
+            id: string;
+            scriptName: string;
+            findRegex: string;
+            replaceString: string;
+            placement: number[];
+            markdownOnly: boolean;
+            promptOnly: boolean;
+            runOnEdit: boolean;
+            disabled: boolean;
+        };
+        StudioStateTask: {
+            id: string;
+            name: string;
+            triggerTiming: string;
+            interval: number;
+            commands: string;
+            disabled: boolean;
+        };
+        StudioDocumentContent: {
+            origin: components["schemas"]["StudioDocumentOrigin"];
+            status: components["schemas"]["StudioDocumentStatus"];
+            meta: components["schemas"]["StudioDocumentMeta"];
+            identity: components["schemas"]["StudioDocumentIdentity"];
+            coreMessages: components["schemas"]["StudioDocumentCoreMessages"];
+            lorebook: components["schemas"]["StudioLorebook"];
+            regexScripts: components["schemas"]["StudioRegexScript"][];
+            stateTasks: components["schemas"]["StudioStateTask"][];
+            exportArtifacts: {
                 [key: string]: unknown;
             };
+        };
+        StudioDiagnostics: {
+            valid: boolean;
+            errors: string[];
+            warnings: string[];
+            checks: {
+                document: boolean;
+                v3_export: boolean;
+                v2_export: boolean;
+            };
+        };
+        StudioValidationResult: {
+            documentRevision: number;
+            diagnostics: components["schemas"]["StudioDiagnostics"];
         };
         StudioGenerateCommand: {
             baseRevision: number;
@@ -3152,10 +3329,7 @@ export interface components {
             section: "identity" | "greetings" | "lorebook" | "regex" | "state-tasks" | "translate" | "full" | "review";
         };
         StudioAgentCommand: {
-            content?: string;
-            messages?: {
-                [key: string]: unknown;
-            }[];
+            content: string;
         };
         StudioIndex: {
             bookId: components["schemas"]["Uuid"];
@@ -3198,7 +3372,7 @@ export interface components {
             items: components["schemas"]["StudioCandidate"][];
         };
         StudioAttachment: components["schemas"]["StudioAsset"] & {
-            available?: boolean;
+            available: boolean;
         };
         StudioMessage: {
             messageId: components["schemas"]["Uuid"];
@@ -3207,19 +3381,17 @@ export interface components {
             role: "system" | "user" | "assistant";
             content: string;
             attachments: components["schemas"]["StudioAttachment"][];
-            runtimeLog?: unknown[];
-            variablesSnapshot?: {
+            runtimeLog: unknown[];
+            variablesSnapshot: {
                 [key: string]: unknown;
             };
-            generationMeta?: {
+            generationMeta: {
                 [key: string]: unknown;
             };
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
-        } & {
-            [key: string]: unknown;
         };
         StudioChatSession: {
             sessionId: components["schemas"]["Uuid"];
@@ -3228,6 +3400,8 @@ export interface components {
             revision: number;
             generation: number;
             archived: boolean;
+            /** Format: date-time */
+            archivedAt: string | null;
             title: string;
             greetingSource: {
                 [key: string]: unknown;
@@ -3235,9 +3409,7 @@ export interface components {
             variables: {
                 [key: string]: unknown;
             };
-            summaryBlocks: {
-                [key: string]: unknown;
-            }[];
+            summaryBlocks: components["schemas"]["StudioSummaryBlock"][];
             summaryThroughMessageId: components["schemas"]["Uuid"] | null;
             summaryGeneration: number;
             runtimeState: {
@@ -3248,8 +3420,6 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
-        } & {
-            [key: string]: unknown;
         };
         StudioMessageChainMutation: {
             sessionId: components["schemas"]["Uuid"];
@@ -3263,7 +3433,14 @@ export interface components {
             generation: number;
             archived: boolean;
             /** Format: date-time */
+            archivedAt: string | null;
+            messageCount: number;
+            lastMessageExcerpt: string;
+            /** Format: date-time */
             updatedAt: string;
+        };
+        StudioSummaryBlock: {
+            summary: string;
         };
         StudioGreeting: {
             greetingId: string;
@@ -3272,8 +3449,25 @@ export interface components {
             source: {
                 [key: string]: unknown;
             };
-        } & {
-            [key: string]: unknown;
+        };
+        StudioPromptMessage: {
+            /** @enum {string} */
+            role: "system" | "user" | "assistant";
+            content: string;
+            assetIds: components["schemas"]["Uuid"][];
+        };
+        StudioPromptLorebookHit: {
+            id: string;
+            comment: string;
+        };
+        StudioPromptPreview: {
+            system: string;
+            messages: components["schemas"]["StudioPromptMessage"][];
+            lorebookHits: components["schemas"]["StudioPromptLorebookHit"][];
+        };
+        StudioPromptPreviewResult: {
+            sessionId: components["schemas"]["Uuid"];
+            promptPreview: components["schemas"]["StudioPromptPreview"];
         };
         StudioChatState: {
             documentId: components["schemas"]["Uuid"];
@@ -3281,8 +3475,6 @@ export interface components {
             sessions: components["schemas"]["StudioSessionSummary"][];
             activeSession: components["schemas"]["StudioChatSession"] | null;
             availableGreetings: components["schemas"]["StudioGreeting"][];
-        } & {
-            [key: string]: unknown;
         };
         StudioSessionIndexCommand: {
             baseIndexRevision: number;
@@ -3291,10 +3483,6 @@ export interface components {
             baseIndexRevision: number;
             title?: string;
             greetingId?: string;
-            greeting?: string;
-            greetingSource?: {
-                [key: string]: unknown;
-            };
         };
         StudioMessageCommand: {
             baseSessionRevision: number;
@@ -3342,7 +3530,7 @@ export interface components {
             /** @enum {string} */
             mode: "create" | "modify";
             /** @enum {string} */
-            run_state: "drafting" | "awaiting_target_lock" | "ready" | "running" | "completed" | "failed" | "cancelled";
+            run_state: "drafting" | "awaiting_target_lock" | "ready" | "running" | "pausing" | "paused" | "cancelling" | "completed" | "failed" | "cancelled";
             selected_plugin_id?: string | null;
             pending_target?: components["schemas"]["PluginAgentTarget"] | null;
             locked_target?: components["schemas"]["PluginAgentLockedTarget"] | null;
@@ -3379,15 +3567,20 @@ export interface components {
             batchId: components["schemas"]["Uuid"];
             jobId: components["schemas"]["Uuid"];
         };
+        PluginConfigOption: {
+            value: string | number;
+            label: string;
+        };
         PluginConfigField: {
             /** @enum {string} */
             type: "text" | "number" | "boolean" | "select";
-            default?: unknown;
+            default: unknown;
+            label?: string;
+            description?: string;
+            placeholder?: string;
             minimum?: number;
             maximum?: number;
-            options?: unknown[];
-        } & {
-            [key: string]: unknown;
+            options?: components["schemas"]["PluginConfigOption"][];
         };
         PluginManifest: {
             /** @constant */
@@ -3490,11 +3683,31 @@ export interface components {
             chapters: components["schemas"]["Chapter"][];
             tags: components["schemas"]["Tag"][];
         };
-        BookUpdateCommand: {
+        BookCreateCommand: {
             title: string;
+            tagIds?: components["schemas"]["Uuid"][];
+        };
+        BookMultipartCreateCommand: {
+            title: string;
+            /** @description JSON-encoded array of tag UUIDs. */
+            tagIds?: string;
+            /** Format: binary */
+            cover?: string;
+        };
+        BookUpdateCommand: {
+            title?: string;
             tagIds?: components["schemas"]["Uuid"][];
             /** @default false */
             clearCover: boolean;
+        };
+        BookMultipartUpdateCommand: {
+            title?: string;
+            /** @description JSON-encoded array of tag UUIDs. */
+            tagIds?: string;
+            /** @default false */
+            clearCover: boolean;
+            /** Format: binary */
+            cover?: string;
         };
         BookBatchDeleteCommand: {
             bookIds: components["schemas"]["Uuid"][];
@@ -3656,10 +3869,9 @@ export interface components {
                 settingsMemoryRevision: number;
             };
             constraints: {
-                payload: {
-                    [key: string]: unknown;
-                };
-                schemaVersion: number;
+                payload: components["schemas"]["TranslationConstraintPayload"];
+                /** @constant */
+                schemaVersion: 2;
                 revision: number;
             };
             navigation: {
@@ -3839,7 +4051,7 @@ export interface components {
             };
         };
         InsightOverviewTemplateList: {
-            items: string[];
+            items: components["schemas"]["InsightOverviewTemplate"][];
         };
         InsightChapter: {
             chapterId: components["schemas"]["Uuid"];
@@ -3847,7 +4059,11 @@ export interface components {
             ordinal: number;
             pageCount: number;
             analysisCounts: {
-                [key: string]: number;
+                ready: number;
+                stale: number;
+                running: number;
+                failed: number;
+                not_analyzed: number;
             };
         };
         InsightChapterList: {
@@ -3877,29 +4093,52 @@ export interface components {
             analysisState: components["schemas"]["InsightAnalysisState"];
             staleReasons: string[];
             preview: boolean;
-            analysis: {
-                [key: string]: unknown;
-            } | null;
+            analysis: components["schemas"]["InsightPageAnalysis"] | null;
             runId: components["schemas"]["Uuid"] | null;
             /** Format: date-time */
             generatedAt: string | null;
+        };
+        InsightPageAnalysisEvent: {
+            summary: string;
+            /** @enum {string} */
+            importance: "high" | "medium" | "normal";
+            event_type?: string;
+        };
+        InsightPageAnalysisWarning: {
+            code: string;
+            message: string;
+        };
+        InsightPageAnalysis: {
+            /** @constant */
+            schema_version: 2;
+            page_id: components["schemas"]["Uuid"];
+            source_asset_id: components["schemas"]["Uuid"];
+            source_checksum: string;
+            page_number_snapshot: number;
+            page_summary: string;
+            key_events: components["schemas"]["InsightPageAnalysisEvent"][];
+            continuity_notes: string;
+            warnings: components["schemas"]["InsightPageAnalysisWarning"][];
         };
         InsightRunTarget: {
             pageId: components["schemas"]["Uuid"];
             pageNumber: number;
             /** @enum {string} */
             status: "pending" | "completed" | "failed" | "conflict";
-            error: {
-                [key: string]: unknown;
-            } | null;
+            error: components["schemas"]["InsightRunTargetError"] | null;
+        };
+        InsightRunTargetError: {
+            code: string;
+            message: string;
         };
         InsightRun: {
             runId: components["schemas"]["Uuid"];
-            jobId: components["schemas"]["Uuid"];
+            jobId: components["schemas"]["Uuid"] | null;
             bookId: components["schemas"]["Uuid"];
             /** @enum {string} */
             scope: "full" | "incremental" | "chapter" | "page";
-            status: string;
+            /** @enum {string} */
+            status: "staging" | "completed" | "completed_with_errors" | "failed" | "cancelled";
             targetCount: number;
             successCount: number;
             failedCount: number;
@@ -3916,31 +4155,90 @@ export interface components {
             scope: "full" | "incremental" | "chapter" | "page";
             chapterIds?: components["schemas"]["Uuid"][];
             pageIds?: components["schemas"]["Uuid"][];
-            force?: boolean;
         };
         InsightAnalysisJobAccepted: components["schemas"]["JobBatchAccepted"] & {
             runId: components["schemas"]["Uuid"];
+        };
+        /** @enum {string} */
+        InsightOverviewTemplate: "no_spoiler" | "story_summary" | "recap" | "character_guide" | "world_setting" | "highlights" | "reading_notes";
+        InsightOverviewPayload: {
+            title: string;
+            content: string;
+        } & {
+            [key: string]: unknown;
         };
         InsightArtifact: {
             artifactId: components["schemas"]["Uuid"];
             bookId: components["schemas"]["Uuid"];
             runId: components["schemas"]["Uuid"] | null;
-            kind: string;
-            template: string;
-            status: string;
+            /** @constant */
+            kind: "overview";
+            template: components["schemas"]["InsightOverviewTemplate"];
+            /** @enum {string} */
+            status: "ready" | "degraded" | "stale";
             revision: number;
             dependencyFingerprint: string;
-            payload: {
-                [key: string]: unknown;
-            };
+            payload: components["schemas"]["InsightOverviewPayload"];
         };
         InsightTimelineEntry: {
             eventId: components["schemas"]["Uuid"];
+            summary: string;
+            page_ids: components["schemas"]["Uuid"][];
+            page_numbers: number[];
+            importance?: string;
+        } & {
+            [key: string]: unknown;
+        };
+        InsightTimelineKeyMoment: {
+            summary: string;
+            page?: number;
         } & {
             [key: string]: unknown;
         };
         InsightTimelineCharacter: {
             characterId: components["schemas"]["Uuid"];
+            name: string;
+            description: string;
+            first_page: number;
+            key_moments: components["schemas"]["InsightTimelineKeyMoment"][];
+        } & {
+            [key: string]: unknown;
+        };
+        InsightTimelinePageRange: {
+            start: number;
+            end: number;
+        };
+        InsightTimelinePlotArc: {
+            id: string;
+            name: string;
+            description: string;
+            page_range: components["schemas"]["InsightTimelinePageRange"];
+            mood?: string;
+            event_ids?: string[];
+        } & {
+            [key: string]: unknown;
+        };
+        InsightTimelinePlotThread: {
+            id: string;
+            name: string;
+            type: string;
+            status: string;
+            description?: string;
+            introduced_at?: number;
+            resolved_at?: number | null;
+        } & {
+            [key: string]: unknown;
+        };
+        InsightTimelineContent: {
+            story_summary: string;
+            /** @constant */
+            requested_mode: "enhanced";
+            /** @enum {string} */
+            actual_mode: "enhanced" | "compressed" | "simple";
+            fallback_reason: string | null;
+            degraded: boolean;
+            plot_arcs?: components["schemas"]["InsightTimelinePlotArc"][];
+            plot_threads?: components["schemas"]["InsightTimelinePlotThread"][];
         } & {
             [key: string]: unknown;
         };
@@ -3950,10 +4248,9 @@ export interface components {
             runId: components["schemas"]["Uuid"] | null;
             /** @enum {string} */
             mode: "enhanced" | "compressed" | "simple";
-            status: string;
-            content: {
-                [key: string]: unknown;
-            };
+            /** @enum {string} */
+            status: "ready" | "degraded" | "stale";
+            content: components["schemas"]["InsightTimelineContent"];
             events: components["schemas"]["InsightTimelineEntry"][];
             characters: components["schemas"]["InsightTimelineCharacter"][];
             eventPage: components["schemas"]["IntegerCursorPage"];
@@ -3966,7 +4263,7 @@ export interface components {
         };
         IntegerCursorPage: {
             nextCursor: number | null;
-            totalCount?: number;
+            totalCount: number;
         };
         InsightRecentPageAnalysis: {
             pageId: components["schemas"]["Uuid"];
@@ -3980,7 +4277,7 @@ export interface components {
         };
         StringCursorPage: {
             nextCursor: string | null;
-            totalCount?: number;
+            totalCount: number;
         };
         InsightQaStatus: {
             available: boolean;
@@ -4025,8 +4322,8 @@ export interface components {
             /** @enum {string} */
             kind: "text" | "qa";
             tags: string[];
-            comments: unknown[];
-            commentCount: number;
+            question: string | null;
+            comment: string | null;
             revision: number;
             citations: components["schemas"]["InsightCitation"][];
             /** Format: date-time */
@@ -4046,7 +4343,8 @@ export interface components {
             /** @enum {string} */
             kind: "text" | "qa";
             tags: string[];
-            comments: unknown[];
+            question: string | null;
+            comment: string | null;
         };
         InsightNoteUpdateCommand: {
             baseRevision: number;
@@ -4056,7 +4354,8 @@ export interface components {
             /** @enum {string} */
             kind: "text" | "qa";
             tags: string[];
-            comments: unknown[];
+            question: string | null;
+            comment: string | null;
         };
         ContinuationImageVersion: {
             version: number;
@@ -4066,13 +4365,21 @@ export interface components {
             active?: boolean;
             adopted?: boolean;
         };
+        ContinuationPagePayload: {
+            storyText: string;
+            continuityText: string;
+            dialogueText: string;
+            characters: string[];
+            finalPrompt: string;
+            /** @enum {string} */
+            status: "pending" | "generating" | "ready" | "stale" | "failed";
+            staleReason?: string;
+        };
         ContinuationPage: {
             continuationPageId: components["schemas"]["Uuid"];
             ordinal: number;
             revision: number;
-            payload: {
-                [key: string]: unknown;
-            };
+            payload: components["schemas"]["ContinuationPagePayload"];
             imageVersions: components["schemas"]["ContinuationImageVersion"][];
         };
         ContinuationCharacter: {
@@ -4112,9 +4419,9 @@ export interface components {
             thumbnailUrl: string;
         };
         ContinuationProjectConfig: {
-            pageCount?: number;
-            styleReferencePages?: number;
-            direction?: string;
+            pageCount: number;
+            styleReferencePages: number;
+            direction: string;
         };
         ContinuationProject: {
             projectId: components["schemas"]["Uuid"];
@@ -4182,12 +4489,21 @@ export interface components {
             revision: number;
         };
         ContinuationJobCommand: {
+            /** @constant */
+            kind: "script";
+        } | {
             /** @enum {string} */
-            kind: "script" | "pages" | "images" | "export" | "character_sheet";
+            kind: "pages" | "images";
             ordinals?: number[];
+        } | {
+            /** @constant */
+            kind: "export";
             /** @enum {string} */
-            format?: "zip" | "pdf";
-            formId?: components["schemas"]["Uuid"];
+            format: "zip" | "pdf";
+        } | {
+            /** @constant */
+            kind: "character_sheet";
+            formId: components["schemas"]["Uuid"];
         };
         ContinuationScriptUpdateCommand: {
             baseRevision: number;
@@ -4195,9 +4511,7 @@ export interface components {
         };
         ContinuationPageUpdateCommand: {
             baseRevision: number;
-            payload: {
-                [key: string]: unknown;
-            };
+            payload: components["schemas"]["ContinuationPagePayload"];
         };
         ContinuationImageActivation: {
             continuationPageId: components["schemas"]["Uuid"];
@@ -4464,52 +4778,6 @@ export interface operations {
             };
         };
     };
-    getProviderSettings: {
-        parameters: {
-            query?: {
-                domains?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Provider configuration memories without secrets. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        items: components["schemas"]["ProviderSettingEntry"][];
-                    };
-                };
-            };
-        };
-    };
-    listCredentials: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Secret-free credential summaries. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        items: components["schemas"]["CredentialSummary"][];
-                    };
-                };
-            };
-        };
-    };
     deleteCredential: {
         parameters: {
             query?: never;
@@ -4553,7 +4821,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description All settings, provider memories, and credentials committed atomically. */
+            /** @description All settings, provider memories, credentials, and prompt edits committed atomically. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4600,7 +4868,7 @@ export interface operations {
     listPrompts: {
         parameters: {
             query?: {
-                type?: string;
+                type?: components["schemas"]["PromptType"];
             };
             header?: never;
             path?: never;
@@ -4632,7 +4900,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    type: string;
+                    type: components["schemas"]["PromptType"];
                     name: string;
                     content: string;
                 };
@@ -4840,10 +5108,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        id: components["schemas"]["Uuid"];
-                        assetUrl: string;
-                    };
+                    "application/json": components["schemas"]["FontResource"];
                 };
             };
             422: components["responses"]["ValidationError"];
@@ -4900,31 +5165,6 @@ export interface operations {
             };
         };
     };
-    cleanDebugAssets: {
-        parameters: {
-            query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Debug asset cleanup result. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        removed: number;
-                    };
-                };
-            };
-        };
-    };
     createPageRepairOperation: {
         parameters: {
             query?: never;
@@ -4939,7 +5179,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "multipart/form-data": components["schemas"]["BubbleRepairCommand"] | components["schemas"]["MaskRepairWithFillCommand"] | components["schemas"]["MaskRestoreCommand"];
+                "multipart/form-data": components["schemas"]["BubbleRepairCommand"] | components["schemas"]["MaskSolidRepairCommand"] | components["schemas"]["MaskModelRepairCommand"] | components["schemas"]["MaskRestoreCommand"];
             };
         };
         responses: {
@@ -4984,9 +5224,12 @@ export interface operations {
         parameters: {
             query?: {
                 after?: number;
+                limit?: number;
                 stream?: 0 | 1;
             };
-            header?: never;
+            header?: {
+                "Last-Event-ID"?: number;
+            };
             path: {
                 operation_id: components["parameters"]["OperationId"];
             };
@@ -5046,6 +5289,7 @@ export interface operations {
                 status?: components["schemas"]["JobStatus"];
                 type?: components["schemas"]["JobKind"];
                 book_id?: components["schemas"]["Uuid"];
+                /** @description Maximum retained history batches; the live queue snapshot is always complete. */
                 limit?: number;
             };
             header?: never;
@@ -5809,19 +6053,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        documentRevision: number;
-                        diagnostics: {
-                            valid: boolean;
-                            errors: string[];
-                            warnings: string[];
-                            checks: {
-                                document: boolean;
-                                v3_export: boolean;
-                                v2_export: boolean;
-                            };
-                        };
-                    };
+                    "application/json": components["schemas"]["StudioValidationResult"];
                 };
             };
             409: components["responses"]["Conflict"];
@@ -6200,9 +6432,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["StudioPromptPreviewResult"];
                 };
             };
         };
@@ -6330,6 +6560,8 @@ export interface operations {
             query?: {
                 search?: string;
                 tagIds?: string;
+                sort_by?: "title" | "created_at" | "updated_at";
+                sort_order?: "asc" | "desc";
             };
             header?: never;
             path?: never;
@@ -6360,9 +6592,8 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": {
-                    title: string;
-                };
+                "application/json": components["schemas"]["BookCreateCommand"];
+                "multipart/form-data": components["schemas"]["BookMultipartCreateCommand"];
             };
         };
         responses: {
@@ -6475,6 +6706,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["BookUpdateCommand"];
+                "multipart/form-data": components["schemas"]["BookMultipartUpdateCommand"];
             };
         };
         responses: {
@@ -7367,7 +7599,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["SingleBubbleMutationCommand"];
+                "application/json": components["schemas"]["CreateBubbleCommand"];
             };
         };
         responses: {
@@ -7435,7 +7667,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["SingleBubbleMutationCommand"];
+                "application/json": components["schemas"]["PatchBubbleCommand"];
             };
         };
         responses: {
@@ -8020,7 +8252,7 @@ export interface operations {
     getInsightPage: {
         parameters: {
             query?: {
-                run_id?: components["schemas"]["Uuid"];
+                runId?: components["schemas"]["Uuid"];
             };
             header?: never;
             path: {
@@ -8126,7 +8358,7 @@ export interface operations {
             };
             header?: never;
             path: {
-                template: string;
+                template: components["schemas"]["InsightOverviewTemplate"];
             };
             cookie?: never;
         };
@@ -8152,7 +8384,7 @@ export interface operations {
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
             path: {
-                template: string;
+                template: components["schemas"]["InsightOverviewTemplate"];
             };
             cookie?: never;
         };
@@ -9281,6 +9513,8 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
         };
     };
     getPluginConfig: {
@@ -9387,6 +9621,7 @@ export interface operations {
             };
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
             423: components["responses"]["Locked"];
         };
     };
@@ -9403,7 +9638,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The single in-memory planning session was created. */
+            /** @description An in-memory planning session was created. */
             201: {
                 headers: {
                     [name: string]: unknown;

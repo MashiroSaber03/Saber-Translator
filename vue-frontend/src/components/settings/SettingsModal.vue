@@ -14,10 +14,10 @@
     body-display="flex"
     body-direction="column"
     :show-header="true"
-    :close-on-overlay="true"
-    :close-on-esc="true"
+    :show-close-button="!isSaving"
+    :close-on-overlay="!isSaving"
+    :close-on-esc="!isSaving"
     @close="handleClose"
-    @open="handleOpen"
   >
     <template #title>
       <span class="settings-modal__title">
@@ -75,11 +75,11 @@
         </div>
 
         <div v-if="hasVisitedTab('plugins')" v-show="activeTab === 'plugins'" class="settings-modal__tab-pane">
-          <PluginManager />
+          <PluginManager @settings-saved="handlePluginAgentSettingsSaved" />
         </div>
 
         <div v-if="hasVisitedTab('text-defaults')" v-show="activeTab === 'text-defaults'" class="settings-modal__tab-pane">
-          <TextStyleDefaultsSettings :is-open="isOpen" />
+          <TextStyleDefaultsSettings />
         </div>
 
         <div v-if="hasVisitedTab('more')" v-show="activeTab === 'more'" class="settings-modal__tab-pane">
@@ -94,13 +94,13 @@
         aria-label="应用设置操作"
         variant="dialog"
       >
-        <UiButton variant="secondary" @click="handleClose">取消</UiButton>
+        <UiButton variant="secondary" :disabled="isSaving" @click="handleClose">取消</UiButton>
         <UiButton
           variant="primary"
-          :disabled="!contentReady || !settingsStore.isBackendReady"
+          :disabled="isSaving || !contentReady || !settingsStore.isBackendReady"
           @click="handleSave"
         >
-          保存设置
+          {{ isSaving ? '保存中…' : '保存设置' }}
         </UiButton>
       </ProductActionRow>
     </template>
@@ -163,6 +163,7 @@ type SettingsTabId =
 const activeTab = ref<SettingsTabId>('ocr')
 const visitedTabs = ref<Set<SettingsTabId>>(new Set(['ocr']))
 const contentReady = ref(false)
+const isSaving = ref(false)
 let settingsSnapshot: TranslationSettingsModel | null = null
 let textStyleDefaultsSnapshot: TextStyleSettings | null = null
 let providerSnapshot: ProviderConfigsCache | null = null
@@ -196,26 +197,27 @@ function hasVisitedTab(tabId: SettingsTabId): boolean {
   return visitedTabs.value.has(tabId)
 }
 
+function handlePluginAgentSettingsSaved(): void {
+  if (!settingsSnapshot || !providerSnapshot) return
+  settingsSnapshot.pluginAgent = deepClone(settingsStore.settings.pluginAgent)
+  providerSnapshot.pluginAgent = deepClone(settingsStore.providerConfigs.pluginAgent)
+}
+
 watch(
   () => props.modelValue,
   (newVal) => {
-    isOpen.value = newVal
     if (newVal) {
+      isOpen.value = true
       if (props.initialTab && isSettingsTabId(props.initialTab)) {
         setActiveTab(props.initialTab)
       }
+      void handleOpen()
     } else {
-      activeTab.value = 'ocr'
-      visitedTabs.value = new Set(['ocr'])
+      closeModal(false)
     }
-  }
+  },
+  { immediate: true },
 )
-
-watch(isOpen, (newVal) => {
-  if (!newVal && props.modelValue) {
-    emit('update:modelValue', false)
-  }
-})
 
 async function handleOpen() {
   const requestId = ++openRequestId
@@ -236,7 +238,7 @@ async function handleOpen() {
   }
 }
 
-function handleClose() {
+function closeModal(notifyParent: boolean) {
   openRequestId += 1
   if (
     !closeAfterSave
@@ -255,7 +257,12 @@ function handleClose() {
   contentReady.value = false
   visitedTabs.value = new Set(['ocr'])
   isOpen.value = false
-  emit('update:modelValue', false)
+  if (notifyParent) emit('update:modelValue', false)
+}
+
+function handleClose(): void {
+  if (isSaving.value) return
+  closeModal(true)
 }
 
 onBeforeUnmount(() => {
@@ -277,21 +284,27 @@ onBeforeUnmount(() => {
 })
 
 async function handleSave() {
+  if (isSaving.value) return
   const textDefaultsChanged = Boolean(
     textStyleDefaultsSnapshot
     && JSON.stringify(textStyleDefaultsSnapshot)
       !== JSON.stringify(settingsStore.textStyleDefaults),
   )
 
-  const saved = await settingsStore.saveToBackend()
-  if (!saved) {
-    showToast(settingsStore.backendError || '设置保存失败', 'error')
-    return
-  }
+  isSaving.value = true
+  try {
+    const saved = await settingsStore.saveToBackend()
+    if (!saved) {
+      showToast(settingsStore.backendError || '设置保存失败', 'error')
+      return
+    }
 
-  emit('save', { textDefaultsChanged })
-  closeAfterSave = true
-  handleClose()
+    emit('save', { textDefaultsChanged })
+    closeAfterSave = true
+    closeModal(true)
+  } finally {
+    isSaving.value = false
+  }
 }
 </script>
 

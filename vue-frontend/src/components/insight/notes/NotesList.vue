@@ -4,9 +4,14 @@ import ProductScrollStack from '@/components/product/ProductScrollStack.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import NoteCard from './NoteCard.vue'
 
-defineProps<{
+withDefaults(defineProps<{
+  busyNoteIds?: string[]
+  editingNoteId?: string | null
   notes: NoteData[]
-}>()
+}>(), {
+  busyNoteIds: () => [],
+  editingNoteId: null,
+})
 
 defineEmits<{
   (event: 'delete', noteId: string): void
@@ -38,6 +43,8 @@ defineEmits<{
       v-for="note in notes"
       :key="note.id"
       :note="note"
+      :busy="busyNoteIds.includes(note.id)"
+      :editing="editingNoteId === note.id"
       @delete="$emit('delete', $event)"
       @edit="$emit('edit', $event)"
       @show-page="$emit('showPage', $event)"

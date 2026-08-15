@@ -4,7 +4,9 @@
       <div class="character-studio-sidebar__toolbar-copy">
         <div class="character-studio-sidebar__kicker">导航与资源</div>
         <h2 class="character-studio-sidebar__title">当前书籍角色工坊</h2>
-        <p class="character-studio-sidebar__description">从分析候选锁定角色名，再用 AI 补全整卡；也可以直接空白新建或导入外部角色卡。</p>
+        <p class="character-studio-sidebar__description">
+          从分析候选锁定角色名，再用 AI 补全整卡；也可以直接空白新建或导入外部角色卡。
+        </p>
       </div>
 
       <div class="character-studio-sidebar__actions">
@@ -43,7 +45,12 @@
         </ProductActionRow>
       </div>
 
-      <UiFileInput ref="fileInput" hidden accept=".json,.png,.jpg,.jpeg,.webp,.gif,.bmp" @files-change="handleFileSelect" />
+      <UiFileInput
+        ref="fileInput"
+        hidden
+        accept=".json,.png,.jpg,.jpeg,.webp,.gif,.bmp"
+        @files-change="handleFileSelect"
+      />
     </div>
 
     <div class="character-studio-sidebar__content">
@@ -57,7 +64,7 @@
       <CandidateListPane
         :candidates="candidates"
         :has-timeline="hasTimeline"
-        :creating-candidate-name="creatingCandidateName"
+        :creating-candidate-id="creatingCandidateId"
         @create="$emit('create-from-candidate', $event)"
       />
     </div>
@@ -84,14 +91,14 @@ defineProps<{
   creatingManual: boolean
   importingFile: boolean
   openingDocumentId: string
-  creatingCandidateName: string
+  creatingCandidateId: string
 }>()
 
 const emit = defineEmits<{
   (e: 'update:search', value: string): void
   (e: 'open-document', docId: string): void
   (e: 'create-manual'): void
-  (e: 'create-from-candidate', candidateName: string): void
+  (e: 'create-from-candidate', candidateId: string): void
   (e: 'import-file', file: File): void
 }>()
 
@@ -111,9 +118,21 @@ function handleFileSelect(files: File[]) {
 
 <style scoped>
 .character-studio-sidebar {
-  --character-studio-sidebar-toolbar-background-start: color-mix(in srgb, var(--color-action-brand) 12%, transparent);
-  --character-studio-sidebar-toolbar-background-end: color-mix(in srgb, var(--color-surface-raised) 88%, transparent);
-  --character-studio-sidebar-shell-background: color-mix(in srgb, var(--color-surface-card) 88%, transparent);
+  --character-studio-sidebar-toolbar-background-start: color-mix(
+    in srgb,
+    var(--color-action-brand) 12%,
+    transparent
+  );
+  --character-studio-sidebar-toolbar-background-end: color-mix(
+    in srgb,
+    var(--color-surface-raised) 88%,
+    transparent
+  );
+  --character-studio-sidebar-shell-background: color-mix(
+    in srgb,
+    var(--color-surface-card) 88%,
+    transparent
+  );
   --character-studio-sidebar-kicker-text: var(--color-text-muted);
   --character-studio-sidebar-title-text: var(--color-text-brand);
   --character-studio-sidebar-description-text: var(--studio-text-subtle);
@@ -134,8 +153,11 @@ function handleFileSelect(files: File[]) {
   flex-shrink: 0;
   padding: 18px 18px 16px;
   border-bottom: 1px solid var(--studio-border-default);
-  background:
-    linear-gradient(180deg, var(--character-studio-sidebar-toolbar-background-start), var(--character-studio-sidebar-toolbar-background-end));
+  background: linear-gradient(
+    180deg,
+    var(--character-studio-sidebar-toolbar-background-start),
+    var(--character-studio-sidebar-toolbar-background-end)
+  );
 }
 
 .character-studio-sidebar__kicker {
@@ -167,7 +189,8 @@ function handleFileSelect(files: File[]) {
   --product-search-field-input-padding: 12px 14px;
   --product-search-field-radius: 14px;
   --product-search-field-background: color-mix(in srgb, var(--color-surface-base) 92%, transparent);
-  --product-search-field-border: 1px solid color-mix(in srgb, var(--color-text-link-strong) 12%, transparent);
+  --product-search-field-border: 1px solid
+    color-mix(in srgb, var(--color-text-link-strong) 12%, transparent);
 
   width: 100%;
 }
@@ -179,8 +202,13 @@ function handleFileSelect(files: File[]) {
 .character-studio-sidebar__create-action {
   --ui-button-padding: 11px 16px;
   --ui-button-radius: 14px;
-  --ui-button-primary-background: linear-gradient(135deg, var(--color-action-brand), var(--color-action-brand-strong));
-  --ui-button-primary-shadow: 0 12px 24px color-mix(in srgb, var(--color-action-brand) 20%, transparent);
+  --ui-button-primary-background: linear-gradient(
+    135deg,
+    var(--color-action-brand),
+    var(--color-action-brand-strong)
+  );
+  --ui-button-primary-shadow: 0 12px 24px
+    color-mix(in srgb, var(--color-action-brand) 20%, transparent);
 
   flex: 1 1 150px;
 }
@@ -188,7 +216,11 @@ function handleFileSelect(files: File[]) {
 .character-studio-sidebar__import-action {
   --ui-button-padding: 11px 14px;
   --ui-button-radius: 14px;
-  --ui-button-secondary-background: color-mix(in srgb, var(--color-text-link-strong) 7%, transparent);
+  --ui-button-secondary-background: color-mix(
+    in srgb,
+    var(--color-text-link-strong) 7%,
+    transparent
+  );
   --ui-button-secondary-border: none;
   --ui-button-secondary-color: var(--color-text-link-strong);
 

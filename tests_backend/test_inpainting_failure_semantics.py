@@ -8,37 +8,29 @@ import pytest
 from src.core import inpainting
 
 
-def test_lama_failure_uses_the_documented_solid_fallback(
+def test_lama_failure_is_not_reported_as_solid_success(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(inpainting, "is_lama_available", lambda: True)
     monkeypatch.setattr(
         inpainting,
         "clean_image_with_lama",
         mock.Mock(side_effect=RuntimeError("lama failed")),
     )
     source = Image.new("RGB", (8, 8), "white")
-    repaired, clean = inpainting.inpaint_bubbles(
-        source,
-        [(1, 1, 6, 6)],
-        method="lama",
-        fill_color="#112233",
-    )
     try:
-        assert repaired.getpixel((3, 3)) == (17, 34, 51)
-        assert getattr(repaired, "_lama_inpainted", False) is False
-        assert clean is not None
+        with pytest.raises(RuntimeError, match="lama failed"):
+            inpainting.inpaint_bubbles(
+                source,
+                [(1, 1, 6, 6)],
+                method="lama",
+            )
     finally:
-        repaired.close()
-        if clean is not None:
-            clean.close()
         source.close()
 
 
 def test_lama_allocation_failure_does_not_use_solid_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(inpainting, "is_lama_available", lambda: True)
     monkeypatch.setattr(
         inpainting,
         "clean_image_with_lama",
@@ -51,7 +43,6 @@ def test_lama_allocation_failure_does_not_use_solid_fallback(
                 source,
                 [(1, 1, 6, 6)],
                 method="lama",
-                fill_color="#112233",
             )
     finally:
         source.close()
@@ -86,6 +77,20 @@ def test_unknown_inpaint_method_is_rejected() -> None:
                 source,
                 [(1, 1, 6, 6)],
                 method="unknown",
+            )
+    finally:
+        source.close()
+
+
+def test_lama_rejects_unused_fill_color() -> None:
+    source = Image.new("RGB", (8, 8), "white")
+    try:
+        with pytest.raises(ValueError, match="不接受填充颜色"):
+            inpainting.inpaint_bubbles(
+                source,
+                [(1, 1, 6, 6)],
+                method="lama",
+                fill_color="#112233",
             )
     finally:
         source.close()

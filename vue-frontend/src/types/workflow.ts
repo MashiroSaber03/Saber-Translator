@@ -1,13 +1,6 @@
-export type WorkflowMode =
-  | 'translate-current'
-  | 'translate-batch'
-  | 'hq-batch'
-  | 'proofread-batch'
-  | 'remove-current'
-  | 'remove-batch'
-  | 'retry-failed'
-  | 'delete-current'
-  | 'clear-all'
+import type { components } from '@/api/generated/v2'
+
+export type WorkflowMode = components['schemas']['WorkflowPreferences']['lastWorkflowMode']
 
 export interface WorkflowPageSelection {
   pages: number[]

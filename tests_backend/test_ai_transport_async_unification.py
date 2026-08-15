@@ -44,10 +44,8 @@ class AsyncTransportContractTests(unittest.IsolatedAsyncioTestCase):
                 request=OpenAICompatibleRequestOptions(
                     force_json_output=True,
                     temperature=0.35,
+                    extra_body={"seed": 222},
                 ),
-            ),
-            runtime_options=build_openai_compatible_runtime_options(
-                request_overrides={"seed": 222},
             ),
         )
 
@@ -142,8 +140,8 @@ class AsyncTransportContractTests(unittest.IsolatedAsyncioTestCase):
             def json(self):
                 return {
                     "data": [
-                        {"embedding": [0.1, 0.2]},
-                        {"embedding": [0.3, 0.4]},
+                        {"index": 0, "embedding": [0.1, 0.2]},
+                        {"index": 1, "embedding": [0.3, 0.4]},
                     ]
                 }
 
@@ -273,3 +271,50 @@ class AsyncTransportContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(content, "本地成功")
         self.assertEqual(fake_client.request_calls[0]["url"], "http://localhost:11434/v1/chat/completions")
         self.assertEqual(fake_client.request_calls[0]["headers"]["Authorization"], "Bearer ollama")
+
+    async def test_async_embedding_rejects_missing_indices_or_nonfinite_vectors(self) -> None:
+        from src.shared.ai_transport import AsyncOpenAICompatibleTransport, UnifiedEmbeddingRequest
+
+        request = UnifiedEmbeddingRequest(
+            provider="custom",
+            api_key="test-key",
+            model="text-embedding-test",
+            inputs=["第一页"],
+            base_url="https://example.com/v1",
+        )
+        invalid_payloads = [
+            {"data": [{"embedding": [0.1, 0.2]}]},
+            {"data": [{"index": 0, "embedding": [float("nan"), 0.2]}]},
+            {"data": []},
+        ]
+
+        for payload in invalid_payloads:
+            transport = AsyncOpenAICompatibleTransport()
+            with self.subTest(payload=payload), mock.patch.object(
+                transport,
+                "_request_json",
+                new=mock.AsyncMock(return_value=payload),
+            ), self.assertRaises(ValueError):
+                await transport.embed(request)
+
+    async def test_async_transport_retry_count_requires_exact_nonnegative_integer(self) -> None:
+        from src.shared.ai_transport import AsyncOpenAICompatibleTransport
+
+        for value in (True, "1", -1):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                AsyncOpenAICompatibleTransport(max_retries=value)  # type: ignore[arg-type]
+
+    async def test_rerank_endpoint_requires_an_absolute_path(self) -> None:
+        from src.shared.ai_transport import UnifiedRerankRequest
+
+        with self.assertRaisesRegex(ValueError, "endpoint"):
+            UnifiedRerankRequest(
+                provider="custom",
+                api_key="test-key",
+                model="rerank-test",
+                query="主角是谁",
+                documents=["文档A"],
+                top_n=1,
+                base_url="https://example.com/v1",
+                endpoint="rerank",
+            )

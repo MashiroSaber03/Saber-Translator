@@ -32,8 +32,6 @@ export interface ContinuationState {
     showMessage: (message: string, type: 'success' | 'error' | 'info') => void
 
     getCharacterImageUrl: (characterName: string) => string
-    getFormImageUrl: (imagePath: string) => string
-    getGeneratedImageUrl: (imagePath: string) => string
 }
 
 export function useContinuationState(bookId: Ref<string | undefined>): ContinuationState {
@@ -61,12 +59,14 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
     let initializeRequestId = 0
     let syncRequestId = 0
     let formPageRequestId = 0
+    let characterFormCursor: number | null = null
     let isMounted = true
 
     function resetLoadedContinuationData(): void {
         isDataReady.value = false
         isSyncingAnalysis.value = false
         characters.value = []
+        characterFormCursor = null
         hasMoreCharacterForms.value = false
         isLoadingMoreCharacterForms.value = false
         formPageRequestId += 1
@@ -121,8 +121,9 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
             if (!isCurrentRequest()) {
                 return false
             }
-            characters.value = charactersResult
-            hasMoreCharacterForms.value = continuationApi.hasMoreCharacterForms(activeBookId)
+            characters.value = charactersResult.items
+            characterFormCursor = charactersResult.nextCursor
+            hasMoreCharacterForms.value = characterFormCursor !== null
             imageRefreshKey.value = Date.now()
             return true
         } catch (error) {
@@ -134,20 +135,45 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
         }
     }
 
+    function mergeCharacterFormPage(nextCharacters: CharacterProfile[]): void {
+        const currentByName = new Map(characters.value.map(character => [character.name, character]))
+        characters.value = nextCharacters.map(character => {
+            const current = currentByName.get(character.name)
+            if (!current) return character
+
+            const formIds = new Set(current.forms.map(form => form.form_id))
+            return {
+                ...character,
+                forms: [
+                    ...current.forms,
+                    ...character.forms.filter(form => !formIds.has(form.form_id)),
+                ],
+                reference_image: character.reference_image || current.reference_image,
+            }
+        })
+    }
+
     async function loadMoreCharacterForms(): Promise<void> {
         const activeBookId = bookId.value
-        if (!activeBookId || !hasMoreCharacterForms.value || isLoadingMoreCharacterForms.value) {
+        const cursor = characterFormCursor
+        if (
+            !activeBookId
+            || cursor === null
+            || !hasMoreCharacterForms.value
+            || isLoadingMoreCharacterForms.value
+        ) {
             return
         }
         const requestId = ++formPageRequestId
         isLoadingMoreCharacterForms.value = true
         try {
-            const charactersResult = await continuationApi.loadMoreCharacterForms(activeBookId)
+            const charactersResult = await continuationApi.getCharacters(activeBookId, cursor)
             if (!isMounted || requestId !== formPageRequestId || bookId.value !== activeBookId) {
                 return
             }
-            characters.value = charactersResult
-            hasMoreCharacterForms.value = continuationApi.hasMoreCharacterForms(activeBookId)
+            mergeCharacterFormPage(charactersResult.items)
+            characterFormCursor = charactersResult.nextCursor
+            hasMoreCharacterForms.value = characterFormCursor !== null
             imageRefreshKey.value = Date.now()
         } catch (error) {
             if (isMounted && requestId === formPageRequestId && bookId.value === activeBookId) {
@@ -174,9 +200,9 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
         pages.value = data.pages || []
 
         if (data.config) {
-            pageCount.value = data.config.page_count || 10
-            styleRefPages.value = data.config.style_reference_pages || 3
-            continuationDirection.value = data.config.continuation_direction || ''
+            pageCount.value = data.config.page_count ?? 10
+            styleRefPages.value = data.config.style_reference_pages ?? 3
+            continuationDirection.value = data.config.continuation_direction ?? ''
         }
     }
 
@@ -205,6 +231,7 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
         const activeBookId = bookId.value
         if (!activeBookId) return
         const requestId = ++initializeRequestId
+        syncRequestId += 1
         const isCurrentRequest = () => isMounted && requestId === initializeRequestId && bookId.value === activeBookId
 
         clearMessageTimer()
@@ -224,9 +251,10 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
             applySavedContinuationData(result.saved_data)
             applyPreparationResult(result)
             await loadCharactersForBook(activeBookId, true, isCurrentRequest)
-        } catch {
+        } catch (error) {
             if (isCurrentRequest()) {
-                setMessageState('初始化数据失败', 'error', true)
+                const message = error instanceof Error ? error.message : '网络错误'
+                setMessageState(`初始化数据失败：${message}`, 'error', true)
             }
         } finally {
             if (isCurrentRequest()) {
@@ -237,7 +265,7 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
 
     async function syncAnalysisData(source: 'auto' | 'manual' = 'manual') {
         const activeBookId = bookId.value
-        if (!activeBookId) return
+        if (!activeBookId || isSyncingAnalysis.value) return
         const requestId = ++syncRequestId
         const isCurrentRequest = () => isMounted && requestId === syncRequestId && bookId.value === activeBookId
 
@@ -263,6 +291,11 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
                     : (result.message || '分析数据同步完成')
                 showMessage(successText, 'success')
             }
+        } catch (error) {
+            if (isCurrentRequest()) {
+                const message = error instanceof Error ? error.message : '网络错误'
+                setMessageState(`同步分析数据失败：${message}`, 'error', true)
+            }
         } finally {
             if (isCurrentRequest()) {
                 isSyncingAnalysis.value = false
@@ -271,7 +304,11 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
     }
 
     function resetState() {
+        initializeRequestId += 1
+        syncRequestId += 1
+        formPageRequestId += 1
         clearMessageTimer()
+        isLoading.value = false
         currentStep.value = 0
         messageType.value = ''
         errorMessage.value = ''
@@ -285,14 +322,6 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
 
     function getCharacterImageUrl(characterName: string): string {
         return characters.value.find(character => character.name === characterName)?.reference_image ?? ''
-    }
-
-    function getFormImageUrl(imagePath: string): string {
-        return imagePath
-    }
-
-    function getGeneratedImageUrl(imagePath: string): string {
-        return imagePath
     }
 
     if (getCurrentInstance()) {
@@ -334,8 +363,6 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
         resetState,
         showMessage,
 
-        getCharacterImageUrl,
-        getFormImageUrl,
-        getGeneratedImageUrl
+        getCharacterImageUrl
     }
 }

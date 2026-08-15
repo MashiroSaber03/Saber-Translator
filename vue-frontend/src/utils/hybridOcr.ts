@@ -1,7 +1,6 @@
 import type { HybridOcrEngine, HybridOcrSettings, OcrEngine } from '@/types/settings'
 
 export const SUPPORTED_HYBRID_OCR_ENGINES: HybridOcrEngine[] = ['48px_ocr', 'manga_ocr']
-export const DEFAULT_HYBRID_OCR_THRESHOLD = 0.2
 export const RECOMMENDED_HYBRID_PRIMARY_ENGINE: HybridOcrEngine = '48px_ocr'
 export const RECOMMENDED_HYBRID_SECONDARY_ENGINE: HybridOcrEngine = 'manga_ocr'
 
@@ -24,23 +23,13 @@ export function getHybridCounterpartEngine(primaryEngine: HybridOcrEngine): Hybr
   return primaryEngine === '48px_ocr' ? 'manga_ocr' : '48px_ocr'
 }
 
-function normalizeHybridThreshold(value: unknown): number {
-  const parsed = Number(value)
-  if (!Number.isFinite(parsed)) {
-    return DEFAULT_HYBRID_OCR_THRESHOLD
-  }
-  return Math.max(0, Math.min(1, parsed))
-}
-
-export function normalizeHybridOcrConfig(
+export function applyHybridOcrRules(
   primaryEngine: OcrEngine,
-  hybrid: HybridOcrSettings | (Partial<HybridOcrSettings> & Record<string, unknown>),
+  hybrid: HybridOcrSettings,
   options?: {
     preferRecommendedOrder?: boolean
   }
 ): { primaryEngine: OcrEngine; hybrid: HybridOcrSettings } {
-  const confidenceThreshold = normalizeHybridThreshold(hybrid.confidenceThreshold)
-
   if (!hybrid.enabled) {
     const normalizedSecondary = isSupportedHybridOcrEngine(primaryEngine)
       ? getHybridCounterpartEngine(primaryEngine)
@@ -51,7 +40,7 @@ export function normalizeHybridOcrConfig(
       hybrid: {
         enabled: false,
         secondaryEngine: normalizedSecondary,
-        confidenceThreshold
+        confidenceThreshold: hybrid.confidenceThreshold,
       }
     }
   }
@@ -62,7 +51,7 @@ export function normalizeHybridOcrConfig(
       hybrid: {
         enabled: true,
         secondaryEngine: RECOMMENDED_HYBRID_SECONDARY_ENGINE,
-        confidenceThreshold
+        confidenceThreshold: hybrid.confidenceThreshold,
       }
     }
   }
@@ -85,7 +74,7 @@ export function normalizeHybridOcrConfig(
     hybrid: {
       enabled: true,
       secondaryEngine: normalizedSecondary,
-      confidenceThreshold
+      confidenceThreshold: hybrid.confidenceThreshold,
     }
   }
 }

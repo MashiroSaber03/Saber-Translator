@@ -10,11 +10,13 @@ import { useSettingsStore } from '@/stores/settings'
 import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductCardGrid from '@/components/product/ProductCardGrid.vue'
+import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 
-const { getBooksMock, getTagsMock, getServerInfoMock, routerPushMock } = vi.hoisted(() => ({
+const { getBooksMock, getTagsMock, getBookDetailMock, getServerInfoMock, routerPushMock } = vi.hoisted(() => ({
   getBooksMock: vi.fn(),
   getTagsMock: vi.fn(),
+  getBookDetailMock: vi.fn(),
   getServerInfoMock: vi.fn(),
   routerPushMock: vi.fn(),
 }))
@@ -30,8 +32,16 @@ vi.mock('@/api', () => ({
 vi.mock('@/api/bookshelf', () => ({
   getBooks: getBooksMock,
   getTags: getTagsMock,
-  getBookDetail: vi.fn(),
+  getBookDetail: getBookDetailMock,
 }))
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
+}
 
 const AppShellStub = defineComponent({
   template: '<div class="app-shell-stub"><slot /></div>',
@@ -61,6 +71,17 @@ const ProductPageHeaderStub = defineComponent({
   `,
 })
 
+const BookCardStub = defineComponent({
+  props: {
+    book: {
+      type: Object,
+      required: true,
+    },
+  },
+  emits: ['click'],
+  template: '<button class="book-card-stub" @click="$emit(\'click\')">{{ book.title }}</button>',
+})
+
 function mountView() {
   setActivePinia(createPinia())
   return mount(BookshelfView, {
@@ -70,7 +91,7 @@ function mountView() {
         ProductPageHeader: ProductPageHeaderStub,
         ProductCardGrid,
         BookSearch: true,
-        BookCard: true,
+        BookCard: BookCardStub,
         BookModal: true,
         BookDetailModal: true,
         TagManageModal: true,
@@ -84,6 +105,7 @@ describe('BookshelfView', () => {
     routerPushMock.mockReset()
     getBooksMock.mockReset()
     getTagsMock.mockReset()
+    getBookDetailMock.mockReset()
     getServerInfoMock.mockReset()
     getBooksMock.mockResolvedValue([])
     getTagsMock.mockResolvedValue([])
@@ -201,6 +223,41 @@ describe('BookshelfView', () => {
     expect(wrapper.find('.ui-empty-state').exists()).toBe(false)
   })
 
+  it('distinguishes a load failure from an empty bookshelf', async () => {
+    getBooksMock.mockRejectedValueOnce(new Error('database unavailable'))
+    const wrapper = mountView()
+    await flushPromises()
+
+    const status = wrapper.getComponent(ProductStatusBanner)
+    expect(status.props()).toMatchObject({
+      role: 'alert',
+      title: '书架加载失败',
+      tone: 'danger',
+    })
+    expect(status.text()).toContain('database unavailable')
+    expect(wrapper.findComponent(ProductEmptyState).exists()).toBe(false)
+  })
+
+  it('reports tag loading failures separately and retries only the tag request', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    const store = useBookshelfStore()
+    store.tagsError = 'tag service unavailable'
+    store.loadTags = vi.fn().mockResolvedValue(undefined)
+    await nextTick()
+
+    const status = wrapper.findAllComponents(ProductStatusBanner)
+      .find(banner => banner.props('title') === '标签加载失败')!
+    expect(status.props()).toMatchObject({
+      role: 'alert',
+      tone: 'warning',
+    })
+    expect(status.text()).toContain('tag service unavailable')
+
+    await status.get('button').trigger('click')
+    expect(store.loadTags).toHaveBeenCalledOnce()
+  })
+
   it('delegates repeated book-card layout to the product card grid', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/views/BookshelfView.vue'), 'utf8')
 
@@ -226,5 +283,33 @@ describe('BookshelfView', () => {
     store.books = [{ id: 'empty-book', title: 'Empty', chapterCount: 1 }]
     await nextTick()
     expect(translateButton?.attributes('disabled')).toBeUndefined()
+  })
+
+  it('only opens the latest book when detail requests finish out of order', async () => {
+    getBooksMock.mockResolvedValue([
+      { id: 'book-1', title: 'First' },
+      { id: 'book-2', title: 'Second' },
+    ])
+    const first = deferred<{ id: string; title: string; chapters: [] }>()
+    const second = deferred<{ id: string; title: string; chapters: [] }>()
+    getBookDetailMock
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise)
+    const wrapper = mountView()
+    await flushPromises()
+
+    const cards = wrapper.findAll('.book-card-stub')
+    await cards[0]!.trigger('click')
+    await cards[1]!.trigger('click')
+    second.resolve({ id: 'book-2', title: 'Second', chapters: [] })
+    await flushPromises()
+    expect(useBookshelfStore().currentBookId).toBe('book-2')
+
+    first.resolve({ id: 'book-1', title: 'First', chapters: [] })
+    await flushPromises()
+
+    expect(useBookshelfStore().currentBookId).toBe('book-2')
+    expect(getBookDetailMock).toHaveBeenNthCalledWith(1, 'book-1')
+    expect(getBookDetailMock).toHaveBeenNthCalledWith(2, 'book-2')
   })
 })

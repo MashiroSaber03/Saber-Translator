@@ -12,6 +12,8 @@ export interface BubbleTextline {
 
 export type TextDirection = 'vertical' | 'horizontal' | 'auto'
 
+export type ResolvedTextDirection = Exclude<TextDirection, 'auto'>
+
 export type TextAlign = 'start' | 'center' | 'end'
 
 export type InpaintMethod = 'solid' | 'lama_mpe' | 'litelama'
@@ -35,8 +37,8 @@ export interface BubbleState {
 
   fontSize: number
   fontFamily: string
-  textDirection: TextDirection
-  autoTextDirection: TextDirection
+  textDirection: ResolvedTextDirection
+  autoTextDirection: ResolvedTextDirection
   textColor: string
   fillColor: string
   rotationAngle: number
@@ -51,11 +53,11 @@ export interface BubbleState {
 
   inpaintMethod: InpaintMethod
 
-  autoFgColor?: [number, number, number] | null
-  autoBgColor?: [number, number, number] | null
-  colorConfidence?: number
+  autoFgColor: [number, number, number] | null
+  autoBgColor: [number, number, number] | null
+  colorConfidence: number
   textlines: BubbleTextline[]
-  ocrResult?: OcrResult | null
+  ocrResult: OcrResult | null
 }
 
 export type BubbleStateOverrides = Partial<BubbleState>

@@ -9,18 +9,17 @@ import json
 import secrets
 from typing import Literal
 
-from sqlalchemy import Engine, delete, exists, func, insert, select, update
+from sqlalchemy import Engine, delete, exists, insert, select, update
 
+from src.backend_v2.jobs.repository import JobQueueRepository
 from src.backend_v2.timestamps import utcnow
 from src.backend_v2.storage.database import immediate_transaction
 from src.backend_v2.storage.schema import (
     api_executor_leases,
     chapter_write_intents,
-    chapter_write_locks,
-    job_events,
-    job_steps,
-    jobs,
+    operation_events,
     operations,
+    pages,
     process_epochs,
     render_requests,
     worker_leases,
@@ -68,6 +67,12 @@ class ProcessEpochRepository:
         self.lease_seconds = lease_seconds
 
     def register(self, registration: EpochRegistration) -> None:
+        if (
+            not isinstance(registration.pid, int)
+            or isinstance(registration.pid, bool)
+            or registration.pid < 0
+        ):
+            raise ValueError("epoch pid must be non-negative")
         now = utcnow()
         expires_at = now + timedelta(seconds=self.lease_seconds)
         with immediate_transaction(self.engine) as connection:
@@ -199,12 +204,28 @@ class ProcessEpochRepository:
                 ).scalars()
             )
 
+    def active_epoch_processes(
+        self,
+        role: Literal["api", "worker"],
+    ) -> list[tuple[str, int]]:
+        with self.engine.connect() as connection:
+            return [
+                (str(epoch_id), int(pid))
+                for epoch_id, pid in connection.execute(
+                    select(process_epochs.c.id, process_epochs.c.pid).where(
+                        process_epochs.c.role == role,
+                        process_epochs.c.status == "active",
+                    )
+                )
+            ]
+
     def is_active_epoch(
         self,
         *,
         role: Literal["api", "worker"],
         epoch_id: str,
     ) -> bool:
+        now = utcnow()
         with self.engine.connect() as connection:
             return bool(
                 connection.execute(
@@ -213,6 +234,7 @@ class ProcessEpochRepository:
                             process_epochs.c.id == epoch_id,
                             process_epochs.c.role == role,
                             process_epochs.c.status == "active",
+                            process_epochs.c.lease_expires_at > now,
                         )
                     )
                 ).scalar()
@@ -257,107 +279,32 @@ class ProcessEpochRepository:
             if closed.rowcount != 1:
                 return ReconcileResult(epoch_id=epoch_id, role="worker")
 
-            affected_jobs = list(
-                connection.execute(
-                    select(
-                        jobs.c.id,
-                        jobs.c.status,
-                        jobs.c.attempt_id,
-                    ).where(
-                        jobs.c.worker_epoch_id == epoch_id,
-                        jobs.c.status.in_(("running", "pausing", "cancelling")),
-                    )
-                ).mappings()
+            intent_count = len(
+                list(
+                    connection.execute(
+                        select(chapter_write_intents.c.chapter_id).where(
+                            chapter_write_intents.c.worker_epoch_id == epoch_id
+                        )
+                    ).scalars()
+                )
             )
-            attempt_ids = [
-                str(row["attempt_id"])
-                for row in affected_jobs
-                if row["attempt_id"] is not None
-            ]
-            if attempt_ids:
-                connection.execute(
-                    update(job_steps)
-                    .where(
-                        job_steps.c.status == "running",
-                        job_steps.c.attempt_id.in_(attempt_ids),
-                    )
-                    .values(
-                        status="pending",
-                        attempt_id=None,
-                        updated_at=now,
-                    )
-                )
-            interrupted = connection.execute(
-                update(jobs)
-                .where(
-                    jobs.c.worker_epoch_id == epoch_id,
-                    jobs.c.status.in_(("running", "pausing")),
-                )
-                .values(
-                    status="interrupted",
-                    attempt_id=None,
-                    lease_token=None,
-                    lease_expires_at=None,
-                    worker_epoch_id=None,
-                    updated_at=now,
-                )
-            ).rowcount
-            cancelled = connection.execute(
-                update(jobs)
-                .where(
-                    jobs.c.worker_epoch_id == epoch_id,
-                    jobs.c.status == "cancelling",
-                )
-                .values(
-                    status="cancelled",
-                    queue_rank=None,
-                    attempt_id=None,
-                    lease_token=None,
-                    lease_expires_at=None,
-                    worker_epoch_id=None,
-                    finished_at=now,
-                    updated_at=now,
-                )
-            ).rowcount
-            cancelled_ids = [
-                str(row["id"])
-                for row in affected_jobs
-                if row["status"] == "cancelling"
-            ]
-            if cancelled_ids:
-                connection.execute(
-                    delete(chapter_write_locks).where(
-                        chapter_write_locks.c.job_id.in_(cancelled_ids)
-                    )
-                )
-            next_event_id = int(
-                connection.execute(
-                    select(func.coalesce(func.max(job_events.c.id), 0))
-                ).scalar_one()
+            interrupted, cancelled = JobQueueRepository(
+                self.engine
+            ).reconcile_lost_worker_jobs(
+                connection,
+                worker_epoch_id=epoch_id,
+                now=now,
             )
-            for row in affected_jobs:
-                next_event_id += 1
-                final_status = (
-                    "cancelled"
-                    if row["status"] == "cancelling"
-                    else "interrupted"
-                )
-                connection.execute(
-                    insert(job_events).values(
-                        id=next_event_id,
-                        job_id=row["id"],
-                        event_type=f"job_{final_status}",
-                        payload_json=json.dumps(
-                            {
-                                "reason": "WORKER_EPOCH_LOST",
-                                "workerEpochId": epoch_id,
-                            },
-                            separators=(",", ":"),
-                        ),
-                        payload_schema_version=1,
-                        created_at=now,
+            worker_operation_ids = [
+                str(value)
+                for value in connection.execute(
+                    select(operations.c.id).where(
+                        operations.c.executor_epoch_id == epoch_id,
+                        operations.c.executor_role == "worker",
+                        operations.c.status == "running",
                     )
-                )
+                ).scalars()
+            ]
             requeued = connection.execute(
                 update(operations)
                 .where(
@@ -376,11 +323,23 @@ class ProcessEpochRepository:
                     updated_at=now,
                 )
             ).rowcount
-            intents_removed = connection.execute(
+            for operation_id in worker_operation_ids:
+                connection.execute(
+                    insert(operation_events).values(
+                        operation_id=operation_id,
+                        type="operation_requeued",
+                        payload_json=json.dumps(
+                            {"reason": "WORKER_EPOCH_LOST"},
+                            separators=(",", ":"),
+                        ),
+                        created_at=now,
+                    )
+                )
+            connection.execute(
                 delete(chapter_write_intents).where(
                     chapter_write_intents.c.worker_epoch_id == epoch_id
                 )
-            ).rowcount
+            )
             connection.execute(
                 delete(worker_leases).where(
                     worker_leases.c.worker_epoch_id == epoch_id
@@ -392,7 +351,7 @@ class ProcessEpochRepository:
             jobs_interrupted=interrupted,
             jobs_cancelled=cancelled,
             operations_requeued=requeued,
-            intents_removed=intents_removed,
+            intents_removed=intent_count,
             changed=True,
         )
 
@@ -415,6 +374,32 @@ class ProcessEpochRepository:
             if closed.rowcount != 1:
                 return ReconcileResult(epoch_id=epoch_id, role="api")
 
+            remote_operation_ids = [
+                str(value)
+                for value in connection.execute(
+                    select(operations.c.id).where(
+                        operations.c.executor_epoch_id == epoch_id,
+                        operations.c.executor_role == "api",
+                        operations.c.status == "running",
+                        operations.c.kind.in_(REMOTE_API_OPERATION_KINDS),
+                    )
+                ).scalars()
+            ]
+            retryable_operation_ids = [
+                str(value)
+                for value in connection.execute(
+                    select(operations.c.id).where(
+                        operations.c.executor_epoch_id == epoch_id,
+                        operations.c.executor_role == "api",
+                        operations.c.status == "running",
+                        ~operations.c.kind.in_(REMOTE_API_OPERATION_KINDS),
+                    )
+                ).scalars()
+            ]
+            error = {
+                "code": "API_EXECUTOR_LOST",
+                "message": "API executor exited before publishing a result",
+            }
             failed = connection.execute(
                 update(operations)
                 .where(
@@ -426,10 +411,7 @@ class ProcessEpochRepository:
                 .values(
                     status="failed",
                     error_json=json.dumps(
-                        {
-                            "code": "API_EXECUTOR_LOST",
-                            "message": "API executor exited before publishing a result",
-                        },
+                        error,
                         separators=(",", ":"),
                     ),
                     executor_epoch_id=None,
@@ -440,6 +422,18 @@ class ProcessEpochRepository:
                     updated_at=now,
                 )
             ).rowcount
+            for operation_id in remote_operation_ids:
+                connection.execute(
+                    insert(operation_events).values(
+                        operation_id=operation_id,
+                        type="operation_failed",
+                        payload_json=json.dumps(
+                            {"status": "failed", "error": error},
+                            separators=(",", ":"),
+                        ),
+                        created_at=now,
+                    )
+                )
             requeued = connection.execute(
                 update(operations)
                 .where(
@@ -459,6 +453,27 @@ class ProcessEpochRepository:
                     updated_at=now,
                 )
             ).rowcount
+            for operation_id in retryable_operation_ids:
+                connection.execute(
+                    insert(operation_events).values(
+                        operation_id=operation_id,
+                        type="operation_requeued",
+                        payload_json=json.dumps(
+                            {"reason": "API_EPOCH_LOST"},
+                            separators=(",", ":"),
+                        ),
+                        created_at=now,
+                    )
+                )
+            render_page_ids = [
+                str(value)
+                for value in connection.execute(
+                    select(render_requests.c.page_id).where(
+                        render_requests.c.executor_epoch_id == epoch_id,
+                        render_requests.c.status == "running",
+                    )
+                ).scalars()
+            ]
             renders = connection.execute(
                 update(render_requests)
                 .where(
@@ -476,6 +491,15 @@ class ProcessEpochRepository:
                     updated_at=now,
                 )
             ).rowcount
+            if render_page_ids:
+                connection.execute(
+                    update(pages)
+                    .where(
+                        pages.c.id.in_(render_page_ids),
+                        pages.c.render_status == "rendering",
+                    )
+                    .values(render_status="stale", updated_at=now)
+                )
             connection.execute(
                 delete(api_executor_leases).where(
                     api_executor_leases.c.api_epoch_id == epoch_id

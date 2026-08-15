@@ -7,12 +7,23 @@ import UiSpinner from '@/components/ui/UiSpinner.vue'
 import VirtualPageStream from '@/components/virtual/VirtualPageStream.vue'
 import type { VirtualPageStreamItem } from '@/components/virtual/VirtualPageStream.vue'
 import type { V2PageSummary } from '@/api/v2/content'
+import { DEFAULT_READER_SETTINGS } from './readerSettings'
 
-const props = defineProps<{
-  images: V2PageSummary[]
-  viewMode: 'original' | 'translated'
-  isLoading: boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    backgroundColor?: string
+    imageGap?: number
+    imageWidth?: number
+    images: V2PageSummary[]
+    viewMode: 'original' | 'translated'
+    isLoading: boolean
+  }>(),
+  {
+    backgroundColor: DEFAULT_READER_SETTINGS.bgColor,
+    imageGap: DEFAULT_READER_SETTINGS.imageGap,
+    imageWidth: DEFAULT_READER_SETTINGS.imageWidth,
+  }
+)
 
 const emit = defineEmits<{
   (e: 'pageChange', page: number): void
@@ -21,24 +32,27 @@ const emit = defineEmits<{
 
 const showEmptyState = computed(() => !props.isLoading && props.images.length === 0)
 const showImagesContainer = computed(() => !props.isLoading && props.images.length > 0)
-const pageIndexById = computed(() => new Map(
-  props.images.map((page, index) => [page.id, index]),
-))
-const streamItems = computed<VirtualPageStreamItem[]>(() => props.images.map((page, index) => {
-  const source = page.sourceUrl || ''
-  const translated = page.translatedUrl || ''
-  return {
-    alt: `第 ${index + 1} 页`,
-    badge: props.viewMode === 'translated' && !translated ? '未翻译' : undefined,
-    height: page.height ?? 1,
-    id: page.id || String(index),
-    label: `${index + 1} / ${props.images.length}`,
-    url: props.viewMode === 'translated'
-      ? translated || source
-      : source,
-    width: page.width ?? 1,
-  }
+const canvasStyle = computed(() => ({
+  '--reader-page-background': props.backgroundColor,
 }))
+const streamStyle = computed(() => ({
+  '--reader-image-width': `${props.imageWidth}%`,
+}))
+const pageIndexById = computed(() => new Map(props.images.map((page, index) => [page.id, index])))
+const streamItems = computed<VirtualPageStreamItem[]>(() =>
+  props.images.map((page, index) => {
+    return {
+      alt: `第 ${index + 1} 页`,
+      badge: props.viewMode === 'translated' && page.translatedUrl === null ? '未翻译' : undefined,
+      height: page.height ?? 1,
+      id: page.id,
+      label: `${index + 1} / ${props.images.length}`,
+      url:
+        props.viewMode === 'translated' ? (page.translatedUrl ?? page.sourceUrl) : page.sourceUrl,
+      width: page.width ?? 1,
+    }
+  })
+)
 
 function handleVisibleChange(ids: string[]): void {
   if (ids.length === 0) return
@@ -51,7 +65,7 @@ function handleVisibleChange(ids: string[]): void {
 </script>
 
 <template>
-  <main class="reader-canvas">
+  <main class="reader-canvas" :style="canvasStyle">
     <div v-if="isLoading" class="reader-canvas__loading-state">
       <UiSpinner size="48px" label="正在加载阅读内容" :decorative="false" />
       <p class="reader-canvas__loading-text">正在加载...</p>
@@ -66,17 +80,16 @@ function handleVisibleChange(ids: string[]): void {
     >
       <template #icon>📖</template>
       <template #actions>
-        <UiButton variant="primary" @click="emit('goTranslate')">
-          进入翻译
-        </UiButton>
+        <UiButton variant="primary" @click="emit('goTranslate')"> 进入翻译 </UiButton>
       </template>
     </ProductEmptyState>
 
     <VirtualPageStream
       v-else-if="showImagesContainer"
       class="reader-canvas__stream"
+      :style="streamStyle"
       :items="streamItems"
-      :gap="8"
+      :gap="imageGap"
       :overscan-screens="2"
       @visible-change="handleVisibleChange"
     />
@@ -93,7 +106,7 @@ function handleVisibleChange(ids: string[]): void {
 }
 
 .reader-canvas__stream {
-  width: min(100%, 1200px);
+  width: min(var(--reader-image-width, 100%), 1200px);
   height: calc(100dvh - 56px);
   margin: 0 auto;
   padding: 16px 0 80px;
@@ -135,5 +148,4 @@ function handleVisibleChange(ids: string[]): void {
   --product-empty-state-description-font-size: 14px;
   --product-empty-state-actions-margin-top: 0;
 }
-
 </style>

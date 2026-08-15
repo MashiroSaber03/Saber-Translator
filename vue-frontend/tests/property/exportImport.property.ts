@@ -31,12 +31,17 @@ vi.mock('@/api/v2/translation', () => ({
   previewChapterTextImport: mocks.previewChapterTextImport,
 }))
 
-vi.mock('@/api/v2/jobs', () => ({
-  jobsApi: {
-    get: mocks.jobGet,
-    list: mocks.jobList,
-  },
-}))
+vi.mock('@/api/v2/jobs', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/api/v2/jobs')>()
+  return {
+    ...actual,
+    jobsApi: {
+      ...actual.jobsApi,
+      get: mocks.jobGet,
+      list: mocks.jobList,
+    },
+  }
+})
 
 vi.mock('@/utils/browserDownload', () => ({
   triggerUrlDownload: mocks.triggerUrlDownload,
@@ -129,6 +134,68 @@ describe('backend-owned export/import contracts', () => {
     expect(mocks.toast.success).toHaveBeenCalledWith(
       '已提交 1 页文本导入，可安全关闭页面；跳过 1 页冲突',
     )
+  })
+
+  it('does not report a committed import as failed when task-center refresh is unavailable', async () => {
+    seedChapter()
+    mocks.previewChapterTextImport.mockResolvedValue({
+      chapterId: 'chapter-1',
+      conflictedPages: 0,
+      matchedPages: 1,
+      pages: [{
+        baseDocumentRevision: 1,
+        changes: [{ fields: { translatedText: '译文' } }],
+        issues: [],
+        pageId: 'page-1',
+        sourceAssetId: 'source-1',
+        sourceChecksum: 'sha256:source-1',
+        status: 'match',
+      }],
+      schemaVersion: 2,
+    })
+    mocks.commitChapterTextImport.mockResolvedValue({
+      batchId: 'batch-1',
+      jobIds: ['job-import-1'],
+      status: 'queued',
+    })
+    mocks.jobList.mockRejectedValue(new Error('snapshot unavailable'))
+
+    await useExportImport().importText(new File(['{}'], 'translation.json'))
+
+    expect(mocks.toast.success).toHaveBeenCalledWith(
+      '已提交 1 页文本导入，可安全关闭页面',
+    )
+    expect(mocks.toast.error).not.toHaveBeenCalled()
+  })
+
+  it('serializes text import selection while preview is in flight', async () => {
+    seedChapter()
+    let resolvePreview!: (value: {
+      chapterId: string
+      conflictedPages: number
+      matchedPages: number
+      pages: never[]
+      schemaVersion: number
+    }) => void
+    mocks.previewChapterTextImport.mockReturnValueOnce(new Promise(resolve => {
+      resolvePreview = resolve
+    }))
+    const exportImport = useExportImport()
+    const first = exportImport.importText(new File(['{}'], 'first.json'))
+    await Promise.resolve()
+
+    await exportImport.importText(new File(['{}'], 'second.json'))
+    expect(mocks.previewChapterTextImport).toHaveBeenCalledTimes(1)
+    expect(mocks.toast.info).toHaveBeenCalledWith('已有文本导入正在处理')
+
+    resolvePreview({
+      chapterId: 'chapter-1',
+      conflictedPages: 0,
+      matchedPages: 0,
+      pages: [],
+      schemaVersion: 2,
+    })
+    await first
   })
 
   it('creates a durable backend export and downloads its artifact', async () => {

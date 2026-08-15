@@ -3,6 +3,9 @@ import BaseModal from '@/components/common/BaseModal.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 
+const wechatQrUrl = '/pic/wechat_qrcode.png'
+const alipayQrUrl = '/pic/alipay_qrcode.png'
+
 const emit = defineEmits<{
   close: []
 }>()
@@ -18,14 +21,14 @@ const emit = defineEmits<{
       <div class="sponsor-modal__qr-codes">
         <div class="sponsor-modal__qr-item">
           <div class="sponsor-modal__qr-image">
-            <img class="sponsor-modal__qr-img" :src="'/pic/wechat_qrcode.png'" alt="微信支付" />
+            <img class="sponsor-modal__qr-img" :src="wechatQrUrl" alt="微信支付" />
           </div>
           <span class="sponsor-modal__qr-label">微信支付</span>
         </div>
 
         <div class="sponsor-modal__qr-item">
           <div class="sponsor-modal__qr-image">
-            <img class="sponsor-modal__qr-img" :src="'/pic/alipay_qrcode.png'" alt="支付宝" />
+            <img class="sponsor-modal__qr-img" :src="alipayQrUrl" alt="支付宝" />
           </div>
           <span class="sponsor-modal__qr-label">支付宝</span>
         </div>
@@ -59,8 +62,9 @@ const emit = defineEmits<{
 
 .sponsor-modal__qr-codes {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
-  gap: 40px;
+  gap: 24px 40px;
   margin-bottom: 24px;
 }
 
@@ -95,5 +99,12 @@ const emit = defineEmits<{
 .sponsor-modal__thanks {
   font-size: 14px;
   color: var(--color-text-supporting);
+}
+
+@media (--breakpoint-sm-down) {
+  .sponsor-modal__qr-image {
+    width: 150px;
+    height: 150px;
+  }
 }
 </style>

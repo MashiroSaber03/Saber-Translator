@@ -17,8 +17,11 @@ from sqlalchemy import Engine
 
 from src.backend_v2.api.request_helpers import (
     error_response as _error,
+    integer_value as _integer_value,
     json_body as _json_body,
     require_idempotency_key as _require_idempotency_key,
+    required_integer as _required_integer,
+    required_string as _required_string,
     validate_multipart_fields as _validate_multipart_fields,
 )
 from src.backend_v2.operations.repository import (
@@ -63,16 +66,19 @@ def create_operations_blueprint(*, data_root, engine: Engine) -> Blueprint:
         body = _json_body(
             allowed_keys={"kind", "baseRevision", "bubbleId"}
         )
-        kind = str(body.get("kind", ""))
+        kind = _required_string(body, "kind")
+        bubble_id: str | None = None
+        if "bubbleId" in body:
+            bubble_id = _required_string(body, "bubbleId")
         response, replayed = repository.create_page_operation(
             page_id=page_id,
             kind=kind,
-            base_revision=int(body.get("baseRevision", 0)),
-            bubble_id=(
-                str(body["bubbleId"])
-                if body.get("bubbleId") is not None
-                else None
+            base_revision=_required_integer(
+                body,
+                "baseRevision",
+                minimum=1,
             ),
+            bubble_id=bubble_id,
             payload=settings.resolve_page_operation(
                 page_id=page_id,
                 kind=kind,
@@ -91,14 +97,22 @@ def create_operations_blueprint(*, data_root, engine: Engine) -> Blueprint:
 
     @blueprint.get("/operations/<operation_id>/events")
     def get_operation_events(operation_id: str) -> Response:
-        after = int(
+        after = _integer_value(
             request.headers.get(
                 "Last-Event-ID",
                 request.args.get("after", "0"),
-            )
+            ),
+            "after",
+            minimum=0,
+        )
+        stream = _integer_value(
+            request.args.get("stream", "0"),
+            "stream",
+            minimum=0,
+            maximum=1,
         )
         wants_stream = (
-            request.args.get("stream") == "1"
+            stream == 1
             or "text/event-stream" in request.headers.get("Accept", "")
         )
         if not wants_stream:
@@ -107,7 +121,12 @@ def create_operations_blueprint(*, data_root, engine: Engine) -> Blueprint:
                     "items": repository.events_after(
                         operation_id,
                         after=after,
-                        limit=int(request.args.get("limit", "500")),
+                        limit=_integer_value(
+                            request.args.get("limit", "500"),
+                            "limit",
+                            minimum=1,
+                            maximum=2000,
+                        ),
                     )
                 }
             )
@@ -118,7 +137,7 @@ def create_operations_blueprint(*, data_root, engine: Engine) -> Blueprint:
 
         @stream_with_context
         def generate() -> Iterator[str]:
-            cursor = max(0, after)
+            cursor = after
             last_heartbeat = time.monotonic()
             yield "retry: 1000\n\n"
             while True:
@@ -163,11 +182,6 @@ def create_operations_blueprint(*, data_root, engine: Engine) -> Blueprint:
     @blueprint.post("/pages/<page_id>/repairs")
     def create_repair(page_id: str):
         target = request.form.get("target", "")
-        common = {
-            "page_id": page_id,
-            "base_revision": int(request.form.get("base_revision", "0")),
-            "idempotency_key": _require_idempotency_key(),
-        }
         if target == "bubble":
             _validate_multipart_fields(
                 allowed_form_keys={"target", "base_revision", "bubble_id"},
@@ -177,7 +191,13 @@ def create_operations_blueprint(*, data_root, engine: Engine) -> Blueprint:
                 raise ValueError("bubble_id is required")
             response, replayed = repairs.create_for_bubble(
                 bubble_id=bubble_id,
-                **common,
+                page_id=page_id,
+                base_revision=_integer_value(
+                    request.form.get("base_revision"),
+                    "base_revision",
+                    minimum=1,
+                ),
+                idempotency_key=_require_idempotency_key(),
             )
         elif target == "mask":
             _validate_multipart_fields(
@@ -196,7 +216,13 @@ def create_operations_blueprint(*, data_root, engine: Engine) -> Blueprint:
                 upload=upload.stream,
                 method=request.form.get("method", ""),
                 fill_color=request.form.get("fill_color"),
-                **common,
+                page_id=page_id,
+                base_revision=_integer_value(
+                    request.form.get("base_revision"),
+                    "base_revision",
+                    minimum=1,
+                ),
+                idempotency_key=_require_idempotency_key(),
             )
         else:
             raise ValueError("repair target must be bubble or mask")

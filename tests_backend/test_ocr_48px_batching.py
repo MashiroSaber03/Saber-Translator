@@ -84,7 +84,6 @@ class Ocr48pxBatchingTests(unittest.TestCase):
         image = Image.new("RGB", (64, 64), color="white")
         textlines = [
             {"polygon": self._create_polygon(30), "direction": "h"},
-            {"polygon": [[0, 0], [1, 1]], "direction": "h"},
             {"polygon": self._create_polygon(10), "direction": "h"},
             {"polygon": self._create_polygon(20), "direction": "h"},
         ]
@@ -93,10 +92,23 @@ class Ocr48pxBatchingTests(unittest.TestCase):
             "src.interfaces.ocr_48px.interface.get_transformed_region",
             side_effect=self._fake_region_from_polygon,
         ):
-            results = handler.recognize_textlines_with_details(image, textlines)
+            results = handler.recognize_textlines_with_details(
+                image,
+                textlines,
+            )
 
-        self.assertEqual([result.text for result in results], ["A", "", "B", "C"])
+        self.assertEqual([result.text for result in results], ["A", "B", "C"])
         self.assertEqual(handler.model.calls, [[10, 20, 30]])
+
+    def test_recognize_textlines_rejects_invalid_current_geometry(self):
+        handler = self._create_handler({})
+        image = Image.new("RGB", (64, 64), color="white")
+
+        with self.assertRaisesRegex(ValueError, "几何无效"):
+            handler.recognize_textlines_with_details(
+                image,
+                [{"polygon": [[0, 0], [1, 1]], "direction": "h"}],
+            )
 
     def test_recognize_textlines_with_details_splits_into_multiple_chunks(self):
         width_to_output = {
@@ -114,7 +126,10 @@ class Ocr48pxBatchingTests(unittest.TestCase):
             "src.interfaces.ocr_48px.interface.get_transformed_region",
             side_effect=self._fake_region_from_polygon,
         ):
-            results = handler.recognize_textlines_with_details(image, textlines)
+            results = handler.recognize_textlines_with_details(
+                image,
+                textlines,
+            )
 
         self.assertEqual(len(results), 17)
         self.assertEqual(len(handler.model.calls), 2)
@@ -132,7 +147,6 @@ class Ocr48pxBatchingTests(unittest.TestCase):
         textlines_per_bubble = [
             [
                 {"polygon": self._create_polygon(30), "direction": "h"},
-                {"polygon": [[0, 0], [1, 1]], "direction": "h"},
                 {"polygon": self._create_polygon(10), "direction": "h"},
             ],
             [
@@ -144,7 +158,11 @@ class Ocr48pxBatchingTests(unittest.TestCase):
             "src.interfaces.ocr_48px.interface.get_transformed_region",
             side_effect=self._fake_region_from_polygon,
         ):
-            results = handler.recognize_text_with_details(image, bubble_coords, textlines_per_bubble)
+            results = handler.recognize_text_with_details(
+                image,
+                bubble_coords,
+                textlines_per_bubble,
+            )
 
         self.assertEqual([result.text for result in results], ["A B", "C"])
         self.assertAlmostEqual(results[0].confidence or 0.0, 0.7, places=6)

@@ -15,11 +15,7 @@ import type { ExtractResult } from '@/types/webImport'
 
 function createExtractResult(): ExtractResult {
   return {
-    success: true,
-    comicTitle: '测试漫画',
-    chapterTitle: '第一话',
     totalPages: 2,
-    sourceUrl: 'https://example.com/chapter',
     engine: 'ai-agent',
     pages: [
       { pageNumber: 1, imageUrl: 'https://example.com/1.jpg' },
@@ -132,17 +128,19 @@ describe('WebImportResultsGrid', () => {
     })
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/translate/web-import/WebImportResultsGrid.vue'),
-      'utf8',
+      'utf8'
     )
 
     const header = wrapper.getComponent(ProductSectionHeader)
     expect(header.props()).toMatchObject({
       iconName: 'book-open',
       size: 'sm',
-      title: '《测试漫画》- 第一话',
+      title: '提取结果',
     })
     expect(header.findComponent(ProductChipList).exists()).toBe(true)
-    expect(source).toContain("import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'")
+    expect(source).toContain(
+      "import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'"
+    )
     expect(source).not.toContain('class="result-header"')
     expect(source).not.toContain('class="result-title"')
   })
@@ -150,7 +148,7 @@ describe('WebImportResultsGrid', () => {
   it('keeps result structure hooks owned by the WebImport results grid', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/translate/web-import/WebImportResultsGrid.vue'),
-      'utf8',
+      'utf8'
     )
 
     expect(source).toContain('web-import-results-grid__section')
@@ -164,11 +162,11 @@ describe('WebImportResultsGrid', () => {
   it('inherits responsive result-header behavior from the shared section header', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/translate/web-import/WebImportResultsGrid.vue'),
-      'utf8',
+      'utf8'
     )
     const sectionHeaderSource = readFileSync(
       resolve(process.cwd(), 'src/components/product/ProductSectionHeader.vue'),
-      'utf8',
+      'utf8'
     )
 
     expect(source).toContain('ProductSectionHeader')
@@ -177,7 +175,9 @@ describe('WebImportResultsGrid', () => {
     expect(source).not.toContain('result-meta')
     expect(source).not.toContain('result-count')
     expect(source).not.toContain('result-engine')
-    expect(sectionHeaderSource).toMatch(/\.product-section-header__title\s*\{[\s\S]*overflow-wrap:\s*anywhere/)
+    expect(sectionHeaderSource).toMatch(
+      /\.product-section-header__title\s*\{[\s\S]*overflow-wrap:\s*anywhere/
+    )
   })
 
   it('renders extraction errors through the product status banner', () => {

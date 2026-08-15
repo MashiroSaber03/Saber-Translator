@@ -256,7 +256,7 @@ describe('edit mode properties', () => {
     })).toBeNull()
   })
 
-  it('recomputes automatic text direction after coords update', () => {
+  it('does not derive backend-owned automatic direction after coords update', () => {
     const bubbleStore = useBubbleStore()
     bubbleStore.setBubbles([makeBubble([0, 0, 200, 100])])
 
@@ -264,6 +264,6 @@ describe('edit mode properties', () => {
 
     bubbleStore.updateBubble(0, { coords: [0, 0, 100, 200] })
 
-    expect(bubbleStore.bubbles[0]?.autoTextDirection).toBe('vertical')
+    expect(bubbleStore.bubbles[0]?.autoTextDirection).toBe('horizontal')
   })
 })

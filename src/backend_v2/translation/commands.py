@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 import json
+import math
 from typing import Any
 
-from sqlalchemy import Engine, select, update
+from sqlalchemy import Engine, func, select, update
 from sqlalchemy.engine import Connection
 
 from src.backend_v2.content.page_style import validate_page_style
@@ -59,6 +60,14 @@ def resolve_chapter_pages(
     empty_message: str = "translation task requires at least one page",
 ) -> tuple[Mapping[str, Any], list[str]]:
     """Return one chapter and its requested pages in persisted order."""
+
+    if not isinstance(chapter_id, str) or not chapter_id:
+        raise ValueError("chapterId must be a non-empty string")
+    if requested_page_ids is not None and any(
+        not isinstance(page_id, str) or not page_id
+        for page_id in requested_page_ids
+    ):
+        raise ValueError("pageIds must contain non-empty strings")
 
     with engine.connect() as connection:
         chapter = connection.execute(
@@ -113,7 +122,7 @@ class TranslationJobCommandService:
         idempotency_scope: str | None = None,
     ) -> dict[str, object]:
         command = normalize_translation_command(config)
-        mode = str(command["mode"])
+        mode = command["mode"]
         job_kind = "remove_text" if mode == "remove_text" else "translation"
         _chapter, ordered_pages = resolve_chapter_pages(
             self.engine,
@@ -173,13 +182,17 @@ class TranslationJobCommandService:
         else:
             requested_field = "chapterIds"
             requested_ids = list(chapter_ids or ())
-        if not requested_ids or len(set(requested_ids)) != len(requested_ids):
+        if (
+            not requested_ids
+            or any(not isinstance(value, str) or not value for value in requested_ids)
+            or len(set(requested_ids)) != len(requested_ids)
+        ):
             raise ValueError(
                 f"{requested_field} must contain unique "
                 f"{'book' if requested_field == 'bookIds' else 'chapter'} IDs"
             )
         command = normalize_translation_command(config)
-        mode = str(command["mode"])
+        mode = command["mode"]
         job_kind = "remove_text" if mode == "remove_text" else "translation"
         idempotency_payload = {
             requested_field: requested_ids,
@@ -261,7 +274,11 @@ class TranslationJobCommandService:
         )
 
     def _resolve_book_chapter_ids(self, book_ids: Sequence[str]) -> list[str]:
-        if not book_ids or len(set(book_ids)) != len(book_ids):
+        if (
+            not book_ids
+            or any(not isinstance(value, str) or not value for value in book_ids)
+            or len(set(book_ids)) != len(book_ids)
+        ):
             raise ValueError("bookIds must contain unique book IDs")
         requested_order = {book_id: index for index, book_id in enumerate(book_ids)}
         with self.engine.connect() as connection:
@@ -318,7 +335,7 @@ class TranslationJobCommandService:
         )
         if text_style_snapshot is not None:
             normalized["textStyleSnapshot"] = text_style_snapshot
-        mode = str(command["mode"])
+        mode = command["mode"]
         step_kinds = step_kinds_for_mode(
             mode,
             reuse_existing_bubbles=bool(command["reuseExistingBubbles"]),
@@ -404,10 +421,28 @@ class TranslationJobCommandService:
                 continue
             if spec.chapter_id is None:
                 raise ValueError("text style materialization requires a chapter")
-
-            source_page_id = str(snapshot.get("sourcePageId", ""))
-            source_revision = int(snapshot.get("sourceDocumentRevision", 0))
+            if set(snapshot) != {
+                "sourcePageId",
+                "sourceDocumentRevision",
+                "defaultFontId",
+                "pageStyleDefaults",
+            }:
+                raise ValueError("frozen text style snapshot fields are invalid")
+            source_page_id = snapshot["sourcePageId"]
+            source_revision = snapshot["sourceDocumentRevision"]
+            if not isinstance(source_page_id, str) or not source_page_id:
+                raise ValueError("frozen text style source page is invalid")
+            if (
+                isinstance(source_revision, bool)
+                or not isinstance(source_revision, int)
+                or source_revision < 1
+            ):
+                raise ValueError("frozen text style source revision is invalid")
             default_font_id = snapshot.get("defaultFontId")
+            if default_font_id is not None and (
+                not isinstance(default_font_id, str) or not default_font_id
+            ):
+                raise ValueError("frozen text style font is invalid")
             style_defaults = validate_page_style(
                 snapshot.get("pageStyleDefaults"),
                 partial=False,
@@ -473,11 +508,25 @@ class TranslationJobCommandService:
 
                 base_revision = int(target["document_revision"])
                 new_revision = base_revision + 1
-                connection.execute(
+                bubble_count = int(
+                    connection.execute(
+                        select(func.count())
+                        .select_from(bubbles)
+                        .where(bubbles.c.page_id == page_id)
+                    ).scalar_one()
+                )
+                bubbles_changed = connection.execute(
                     update(bubbles)
-                    .where(bubbles.c.page_id == page_id)
+                    .where(
+                        bubbles.c.page_id == page_id,
+                        bubbles.c.updated_revision == base_revision,
+                    )
                     .values(updated_revision=new_revision, updated_at=now)
                 )
+                if bubbles_changed.rowcount != bubble_count:
+                    raise JobConflict(
+                        "bubble revision does not match page document"
+                    )
                 connection.execute(
                     update(render_requests)
                     .where(
@@ -497,7 +546,7 @@ class TranslationJobCommandService:
                     and target["rendered_revision"] == base_revision
                 ):
                     page_values["rendered_revision"] = new_revision
-                    connection.execute(
+                    pointer_changed = connection.execute(
                         update(page_assets)
                         .where(
                             page_assets.c.page_id == page_id,
@@ -506,6 +555,8 @@ class TranslationJobCommandService:
                         )
                         .values(input_document_revision=new_revision)
                     )
+                    if pointer_changed.rowcount != 1:
+                        raise JobConflict("current translated asset is missing")
                 changed = connection.execute(
                     update(pages)
                     .where(
@@ -525,8 +576,12 @@ def normalize_translation_command(config: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError(
             f"unknown translation config fields: {', '.join(sorted(unknown))}"
         )
-    mode = str(config.get("mode", "standard"))
-    execution_mode = str(config.get("executionMode", "sequential"))
+    mode = config.get("mode", "standard")
+    execution_mode = config.get("executionMode", "sequential")
+    if not isinstance(mode, str):
+        raise ValueError("mode must be a string")
+    if not isinstance(execution_mode, str):
+        raise ValueError("executionMode must be a string")
     if mode not in ALLOWED_MODES:
         raise ValueError(f"unsupported translation mode: {mode}")
     if execution_mode not in ALLOWED_EXECUTION_MODES:
@@ -547,11 +602,17 @@ def normalize_translation_command(config: Mapping[str, Any]) -> dict[str, Any]:
         or source_revision < 1
     ):
         raise ValueError("styleSourceDocumentRevision must be a positive integer")
+    skip_completed = config.get("skipCompleted", False)
+    reuse_existing = config.get("reuseExistingBubbles", False)
+    if not isinstance(skip_completed, bool):
+        raise ValueError("skipCompleted must be a boolean")
+    if not isinstance(reuse_existing, bool):
+        raise ValueError("reuseExistingBubbles must be a boolean")
     normalized = {
         "mode": mode,
         "executionMode": execution_mode,
-        "skipCompleted": bool(config.get("skipCompleted", False)),
-        "reuseExistingBubbles": bool(config.get("reuseExistingBubbles", False)),
+        "skipCompleted": skip_completed,
+        "reuseExistingBubbles": reuse_existing,
     }
     if source_page_id is not None:
         normalized.update(
@@ -660,6 +721,8 @@ def validate_translation_job_requirements(
 
     if "ocr" in steps:
         _validate_ocr_section(config.get("ocr"))
+    if "detect" in steps:
+        _validate_detector_section(config.get("detector"))
 
 
 def _validate_ai_provider_section(
@@ -668,30 +731,106 @@ def _validate_ai_provider_section(
     capability: str,
     label: str,
 ) -> None:
-    section = dict(value) if isinstance(value, Mapping) else {}
-    provider = str(section.get("provider", "")).strip()
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{label}配置必须是对象")
+    section = dict(value)
+    provider_value = section.get("provider")
+    if not isinstance(provider_value, str):
+        raise ValueError(f"{label}服务商必须是字符串")
+    provider = provider_value.strip()
     if not provider:
         raise ValueError(f"{label}未选择服务商，请先在设置中完成配置")
     manifest = get_provider_manifest(provider)
     if capability not in manifest.capabilities:
         raise ValueError(f"{label}服务商 {manifest.display_name} 不支持当前任务")
-    if manifest.requires_api_key and not section.get("credentialVersionId"):
+    credential_version_id = section.get("credentialVersionId")
+    if credential_version_id is not None and (
+        not isinstance(credential_version_id, str)
+        or not credential_version_id.strip()
+    ):
+        raise ValueError(f"{label}凭据版本必须是非空字符串")
+    if manifest.requires_api_key and credential_version_id is None:
         raise ValueError(
             f"{label}缺少已保存的 API Key，请先在设置中填写并保存"
         )
-    model_name = str(section.get("model_name", "")).strip()
+    model_value = section.get("model_name", "")
+    if not isinstance(model_value, str):
+        raise ValueError(f"{label}模型名称必须是字符串")
+    model_name = model_value.strip()
     if manifest.requires_model and not model_name:
         raise ValueError(f"{label}缺少模型名称，请先在设置中填写并保存")
-    base_url = str(section.get("custom_base_url", "")).strip()
+    base_url_value = section.get("custom_base_url", "")
+    if not isinstance(base_url_value, str):
+        raise ValueError(f"{label} Base URL 必须是字符串")
+    base_url = base_url_value.strip()
     if manifest.requires_base_url and not base_url:
         raise ValueError(f"{label}缺少 Base URL，请先在设置中填写并保存")
 
 
 def _validate_ocr_section(value: object) -> None:
-    section = dict(value) if isinstance(value, Mapping) else {}
-    engine = str(section.get("ocr_engine", "manga_ocr"))
+    if not isinstance(value, Mapping):
+        raise ValueError("OCR 配置必须是对象")
+    section = dict(value)
+    engine = section.get("ocr_engine")
+    if not isinstance(engine, str):
+        raise ValueError("OCR 引擎必须是字符串")
+    if engine not in {
+        "manga_ocr",
+        "paddle_ocr",
+        "paddleocr_vl",
+        "baidu_ocr",
+        "ai_vision",
+        "48px_ocr",
+    }:
+        raise ValueError("OCR 引擎无效")
+    base_fields = {
+        "ocr_engine",
+        "source_language",
+        "enable_hybrid_ocr",
+        "secondary_ocr_engine",
+        "hybrid_ocr_threshold",
+    }
+    expected_fields = set(base_fields)
     if engine == "baidu_ocr":
-        if not section.get("credentialVersionId"):
+        expected_fields.update(
+            {"baidu_version", "baidu_ocr_language", "credentialVersionId"}
+        )
+    elif engine == "ai_vision":
+        expected_fields.update(
+            {
+                "ai_vision_provider",
+                "ai_vision_model_name",
+                "custom_ai_vision_base_url",
+                "ai_vision_openai_options",
+                "ai_vision_ocr_prompt",
+                "ai_vision_prompt_mode",
+                "ai_vision_min_image_size",
+            }
+        )
+        if "credentialVersionId" in section:
+            expected_fields.add("credentialVersionId")
+    if set(section) != expected_fields:
+        raise ValueError("OCR 配置字段无效")
+    if not isinstance(section["source_language"], str) or not section["source_language"]:
+        raise ValueError("OCR 源语言无效")
+    if not isinstance(section["enable_hybrid_ocr"], bool):
+        raise ValueError("混合 OCR 开关必须是布尔值")
+    if (
+        not isinstance(section["secondary_ocr_engine"], str)
+        or not section["secondary_ocr_engine"]
+    ):
+        raise ValueError("备用 OCR 引擎无效")
+    threshold = section["hybrid_ocr_threshold"]
+    if (
+        isinstance(threshold, bool)
+        or not isinstance(threshold, (int, float))
+        or not math.isfinite(float(threshold))
+        or not 0 <= threshold <= 1
+    ):
+        raise ValueError("混合 OCR 阈值无效")
+    if engine == "baidu_ocr":
+        credential_version_id = section.get("credentialVersionId")
+        if not isinstance(credential_version_id, str) or not credential_version_id:
             raise ValueError(
                 "百度 OCR 缺少已保存的 API Key 和 Secret Key，"
                 "请先在设置中填写并保存"
@@ -709,3 +848,48 @@ def _validate_ocr_section(value: object) -> None:
         capability=VISION_OCR_CAPABILITY,
         label="AI 视觉 OCR",
     )
+
+
+def _validate_detector_section(value: object) -> None:
+    if not isinstance(value, Mapping):
+        raise ValueError("检测配置必须是对象")
+    section = dict(value)
+    required_fields = {
+        "detector_type",
+        "expand_ratio",
+        "expand_top",
+        "expand_bottom",
+        "expand_left",
+        "expand_right",
+        "enable_aux_yolo_detection",
+        "aux_yolo_conf_threshold",
+        "aux_yolo_overlap_threshold",
+        "enable_saber_yolo_refine",
+        "saber_yolo_refine_overlap_threshold",
+        "min_text_block_area_percent",
+    }
+    if set(section) != required_fields:
+        raise ValueError("检测配置字段无效")
+    if section["detector_type"] not in {"default", "ctd", "yolo"}:
+        raise ValueError("文本检测器无效")
+    for field in ("enable_aux_yolo_detection", "enable_saber_yolo_refine"):
+        if not isinstance(section[field], bool):
+            raise ValueError(f"检测配置 {field} 必须是布尔值")
+    for field in (
+        "expand_ratio",
+        "expand_top",
+        "expand_bottom",
+        "expand_left",
+        "expand_right",
+        "aux_yolo_conf_threshold",
+        "aux_yolo_overlap_threshold",
+        "saber_yolo_refine_overlap_threshold",
+        "min_text_block_area_percent",
+    ):
+        field_value = section[field]
+        if (
+            isinstance(field_value, bool)
+            or not isinstance(field_value, (int, float))
+            or not math.isfinite(float(field_value))
+        ):
+            raise ValueError(f"检测配置 {field} 必须是有限数字")

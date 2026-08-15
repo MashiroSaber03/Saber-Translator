@@ -19,18 +19,19 @@ const insightStore = useInsightStore()
 const currentTemplate = ref<OverviewTemplateType>('no_spoiler')
 const overviewContent = ref('')
 const queuedMessage = ref('')
+const errorMessage = ref('')
+const recentPagesError = ref('')
 const isLoading = ref(false)
+const isExporting = ref(false)
 const generatedTemplates = ref<OverviewTemplateType[]>([])
 let overviewContentRequestSequence = 0
 let generatedTemplatesRequestSequence = 0
 let recentPagesRequestSequence = 0
-let overviewRefreshSequence = 0
 let isOverviewPanelMounted = true
 
 const recentAnalyzedPages = ref<Array<{
   page_num: number
   summary?: string
-  analyzed_at?: string
 }>>([])
 
 interface OverviewTemplateOption {
@@ -66,7 +67,7 @@ const currentTemplateDescription = computed(() => {
 })
 
 const templateStatus = computed(() => {
-  if (generatedTemplates.value.includes(currentTemplate.value)) {
+  if (overviewContent.value || generatedTemplates.value.includes(currentTemplate.value)) {
     return '已生成'
   }
   return ''
@@ -105,11 +106,18 @@ async function loadCachedOverview(
   template = currentTemplate.value
 ): Promise<void> {
   const requestId = ++overviewContentRequestSequence
-  if (!bookId) return
+  if (!bookId) {
+    isLoading.value = false
+    overviewContent.value = ''
+    queuedMessage.value = ''
+    errorMessage.value = ''
+    return
+  }
 
   isLoading.value = true
   overviewContent.value = ''
   queuedMessage.value = ''
+  errorMessage.value = ''
 
   try {
     const content = await insightApi.getOverview(
@@ -127,9 +135,11 @@ async function loadCachedOverview(
     } else {
       overviewContent.value = ''
     }
-  } catch {
+  } catch (error) {
     if (!isCurrentOverviewRequest(requestId, bookId, template)) return
-    overviewContent.value = '加载失败，请重试'
+    errorMessage.value = error instanceof Error
+      ? `加载失败：${error.message}`
+      : '加载失败，请重试'
   } finally {
     if (isCurrentOverviewRequest(requestId, bookId, template)) {
       isLoading.value = false
@@ -140,12 +150,13 @@ async function loadCachedOverview(
 async function generateOverview(regenerate: boolean): Promise<void> {
   const bookId = insightStore.currentBookId
   const template = currentTemplate.value
+  if (!bookId || isLoading.value) return
   const requestId = ++overviewContentRequestSequence
-  if (!bookId) return
 
   isLoading.value = true
   overviewContent.value = ''
   queuedMessage.value = ''
+  errorMessage.value = ''
 
   try {
     const result = await insightApi.regenerateOverview(
@@ -166,7 +177,9 @@ async function generateOverview(regenerate: boolean): Promise<void> {
     }
   } catch (error) {
     if (!isCurrentOverviewRequest(requestId, bookId, template)) return
-    overviewContent.value = error instanceof Error ? `生成失败: ${error.message}` : '生成失败，请重试'
+    errorMessage.value = error instanceof Error
+      ? `生成失败：${error.message}`
+      : '生成失败，请重试'
   } finally {
     if (isCurrentOverviewRequest(requestId, bookId, template)) {
       isLoading.value = false
@@ -186,23 +199,22 @@ async function loadGeneratedTemplates(bookId = insightStore.currentBookId): Prom
     return templates
   } catch {
     if (!isCurrentBookRequest(requestId, generatedTemplatesRequestSequence, bookId)) return []
-    generatedTemplates.value = []
   }
   return []
 }
 
-const isExporting = ref(false)
-
 async function exportAnalysisData(): Promise<void> {
-  if (!insightStore.currentBookId) {
+  const bookId = insightStore.currentBookId
+  if (!bookId) {
     showToast('请先选择书籍', 'warning')
     return
   }
+  if (isExporting.value) return
 
   isExporting.value = true
 
   try {
-    await insightApi.exportAnalysis(insightStore.currentBookId)
+    await insightApi.exportAnalysis(bookId)
     showToast('完整导出已进入任务中心，完成后可下载', 'success')
   } catch (error) {
     showToast(
@@ -220,34 +232,46 @@ async function exportCurrentOverview(): Promise<void> {
     return
   }
 
-  if (!insightStore.currentBookId) return
+  const bookId = insightStore.currentBookId
+  const template = currentTemplate.value
+  if (!bookId || isExporting.value) return
+
+  isExporting.value = true
   try {
     const blob = await insightApi.downloadCurrentOverview(
-      insightStore.currentBookId,
-      currentTemplate.value,
+      bookId,
+      template,
     )
     triggerBlobDownload(
       blob,
-      `${insightStore.currentBookId}_${currentTemplate.value}.md`,
+      `${bookId}_${template}.md`,
     )
     showToast('导出成功', 'success')
   } catch (error) {
     showToast(error instanceof Error ? error.message : '导出失败', 'error')
+  } finally {
+    isExporting.value = false
   }
 }
 
 async function loadRecentAnalyzedPages(bookId = insightStore.currentBookId): Promise<void> {
   const requestId = ++recentPagesRequestSequence
   if (!bookId) return
+  recentPagesError.value = ''
 
   try {
     const recentPages = await insightApi.getRecentAnalyzedPages(bookId)
     if (!isCurrentBookRequest(requestId, recentPagesRequestSequence, bookId)) return
     recentAnalyzedPages.value = recentPages
-  } catch {
+  } catch (error) {
     if (!isCurrentBookRequest(requestId, recentPagesRequestSequence, bookId)) return
     recentAnalyzedPages.value = []
+    recentPagesError.value = error instanceof Error ? error.message : '加载最近分析失败'
   }
+}
+
+function retryRecentAnalyzedPages(): void {
+  void loadRecentAnalyzedPages()
 }
 
 function goToPage(pageNum: number): void {
@@ -256,33 +280,29 @@ function goToPage(pageNum: number): void {
 
 async function refreshOverviewForCurrentBook(): Promise<void> {
   const bookId = insightStore.currentBookId
-  const refreshId = ++overviewRefreshSequence
-  if (!bookId) return
 
+  isLoading.value = false
   overviewContent.value = ''
   queuedMessage.value = ''
+  errorMessage.value = ''
   generatedTemplates.value = []
   recentAnalyzedPages.value = []
+  recentPagesError.value = ''
+  if (!bookId) return
 
-  const [templates] = await Promise.all([
+  await Promise.all([
     loadGeneratedTemplates(bookId),
     loadRecentAnalyzedPages(bookId),
+    loadCachedOverview(bookId, currentTemplate.value),
   ])
-  if (!isCurrentBookRequest(refreshId, overviewRefreshSequence, bookId)) return
-
-  if (templates.includes(currentTemplate.value)) {
-    await loadCachedOverview(bookId, currentTemplate.value)
-  }
 }
 
 onMounted(async () => {
   await refreshOverviewForCurrentBook()
 })
 
-watch(() => insightStore.currentBookId, async (newBookId) => {
-  if (newBookId) {
-    await refreshOverviewForCurrentBook()
-  }
+watch(() => insightStore.currentBookId, async () => {
+  await refreshOverviewForCurrentBook()
 })
 
 watch(() => insightStore.dataRefreshKey, async (newKey) => {
@@ -296,7 +316,6 @@ onUnmounted(() => {
   overviewContentRequestSequence += 1
   generatedTemplatesRequestSequence += 1
   recentPagesRequestSequence += 1
-  overviewRefreshSequence += 1
 })
 </script>
 
@@ -318,6 +337,7 @@ onUnmounted(() => {
           <UiIconButton
             label="生成/加载"
             size="sm"
+            :disabled="isLoading"
             @click="generateOverview(false)"
           >
             <span aria-hidden="true">📄</span>
@@ -325,6 +345,7 @@ onUnmounted(() => {
           <UiIconButton
             label="重新生成"
             size="sm"
+            :disabled="isLoading"
             @click="generateOverview(true)"
           >
             <span aria-hidden="true">🔄</span>
@@ -343,6 +364,15 @@ onUnmounted(() => {
           正在读取当前模板的概览内容。
         </ProductStatusBanner>
         <div v-else-if="overviewContent" v-html="renderedContent"></div>
+        <ProductStatusBanner
+          v-else-if="errorMessage"
+          tone="danger"
+          icon-name="alert-triangle"
+          title="概览操作失败"
+          aria-live="polite"
+        >
+          {{ errorMessage }}
+        </ProductStatusBanner>
         <ProductStatusBanner
           v-else-if="queuedMessage"
           tone="neutral"
@@ -413,7 +443,22 @@ onUnmounted(() => {
       </h3>
       <div class="overview-panel__recent-pages">
         <ProductStatusBanner
-          v-if="recentAnalyzedPages.length === 0"
+          v-if="recentPagesError"
+          class="overview-panel__recent-error"
+          tone="danger"
+          icon-name="alert-triangle"
+          title="最近分析加载失败"
+          role="alert"
+        >
+          {{ recentPagesError }}
+          <template #actions>
+            <UiButton variant="secondary" size="sm" @click="retryRecentAnalyzedPages">
+              重新加载
+            </UiButton>
+          </template>
+        </ProductStatusBanner>
+        <ProductStatusBanner
+          v-else-if="recentAnalyzedPages.length === 0"
           class="overview-panel__empty-feedback"
           tone="neutral"
           icon-name="clock"
@@ -458,13 +503,16 @@ onUnmounted(() => {
 
 .overview-panel__card-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: 10px 12px;
   margin-bottom: 12px;
 }
 
 .overview-panel__template-heading {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 8px;
 }
@@ -477,6 +525,7 @@ onUnmounted(() => {
 
 .overview-panel__card-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
@@ -504,10 +553,6 @@ onUnmounted(() => {
   color: var(--insight-text-primary);
   font-weight: 600;
   font-size: 16px;
-}
-
-.overview-panel__card-header .overview-panel__card-title {
-  margin-bottom: 0;
 }
 
 .overview-panel__card-content {
@@ -621,6 +666,13 @@ onUnmounted(() => {
   gap: 8px;
 }
 
+.overview-panel__recent-error {
+  --product-status-banner-flex-direction: column;
+  --product-status-banner-actions-width: 100%;
+
+  margin-bottom: 4px;
+}
+
 .overview-panel__empty-feedback {
   --product-status-banner-border: 0;
   --product-status-banner-background: transparent;
@@ -655,17 +707,19 @@ onUnmounted(() => {
 }
 
 .overview-panel__page-number {
+  flex: 0 0 auto;
   font-size: 13px;
   font-weight: 500;
   color: var(--insight-action-primary);
 }
 
 .overview-panel__page-summary {
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: 12px;
   color: var(--insight-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 150px;
 }
 </style>

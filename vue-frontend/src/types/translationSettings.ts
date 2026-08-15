@@ -48,6 +48,7 @@ export interface PluginAgentSettings {
 }
 
 export interface ProofreadingRound {
+  id: string
   name: string
   provider: HqTranslationProvider
   apiKey: string
@@ -61,7 +62,6 @@ export interface ProofreadingRound {
 export interface ProofreadingSettings {
   enabled: boolean
   rounds: ProofreadingRound[]
-  maxRetries: number
 }
 
 export interface BoxExpandSettings {

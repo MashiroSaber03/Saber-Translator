@@ -29,17 +29,17 @@ describe('CharacterStudioSidebar pending feedback', () => {
             tags: [],
             is_favorite: false,
             has_avatar: false,
-            sample_pages: [],
           },
         ],
         candidates: [
           {
+            id: 'candidate-1',
             name: '候选角色',
             aliases: [],
-            first_appearance: 1,
-            dialogue_count: 2,
-            has_dialogues: true,
-            sample_pages: [1],
+            first_appearance_page: 1,
+            key_moment_count: 2,
+            related_page_count: 1,
+            related_page_numbers: [1],
           },
         ],
         search: '',
@@ -49,7 +49,7 @@ describe('CharacterStudioSidebar pending feedback', () => {
         creatingManual: true,
         importingFile: true,
         openingDocumentId: 'doc_alpha',
-        creatingCandidateName: '候选角色',
+        creatingCandidateId: 'candidate-1',
       },
     })
 
@@ -72,7 +72,7 @@ describe('CharacterStudioSidebar pending feedback', () => {
         creatingManual: false,
         importingFile: false,
         openingDocumentId: '',
-        creatingCandidateName: '',
+        creatingCandidateId: '',
       },
     })
 
@@ -91,7 +91,7 @@ describe('CharacterStudioSidebar pending feedback', () => {
 
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/insight/studio/CharacterStudioSidebar.vue'),
-      'utf8',
+      'utf8'
     )
     expect(source).not.toContain('variant="toolbar"')
     expect(source).not.toContain('action-primary')
@@ -137,7 +137,7 @@ describe('CharacterStudioSidebar pending feedback', () => {
   it('uses the typed file-input primitive boundary for card imports', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/insight/studio/CharacterStudioSidebar.vue'),
-      'utf8',
+      'utf8'
     )
 
     expect(source).toContain('@files-change="handleFileSelect"')
@@ -171,7 +171,9 @@ describe('CharacterStudioSidebar pending feedback', () => {
       }
 
       expect(source, contract.file).not.toContain('variant="toolbar"')
-      expect(source, contract.file).not.toMatch(/class="[^"]*(?:create-btn|opening-pill|favorite-pill|source-pill|check-pill)/)
+      expect(source, contract.file).not.toMatch(
+        /class="[^"]*(?:create-btn|opening-pill|favorite-pill|source-pill|check-pill)/
+      )
       expect(source, contract.file).not.toMatch(/#[0-9A-Fa-f]{3,8}\b|rgba?\(/)
     }
   })
@@ -179,37 +181,72 @@ describe('CharacterStudioSidebar pending feedback', () => {
   it('lets resource list rows wrap metadata and actions in narrow drawers', () => {
     const documentSource = readFileSync(
       resolve(process.cwd(), 'src/components/insight/studio/DocumentListPane.vue'),
-      'utf8',
+      'utf8'
     )
     const candidateSource = readFileSync(
       resolve(process.cwd(), 'src/components/insight/studio/CandidateListPane.vue'),
-      'utf8',
+      'utf8'
     )
 
     expect(cssRule(documentSource, '.document-list-pane__item-body')).toContain('flex-wrap: wrap')
     expect(cssRule(documentSource, '.document-list-pane__item-main')).toContain('min-width: 0')
     expect(cssRule(candidateSource, '.candidate-list-pane__row-body')).toContain('flex-wrap: wrap')
-    expect(cssRule(candidateSource, '.candidate-list-pane__candidate-main')).toContain('min-width: 0')
+    expect(cssRule(candidateSource, '.candidate-list-pane__candidate-main')).toContain(
+      'min-width: 0'
+    )
   })
 
   it('keeps sidebar support panel hooks under their component owners', () => {
     const ownerContracts = [
       {
         file: 'src/components/insight/studio/CandidateListPane.vue',
-        required: ['candidate-list-pane', 'candidate-list-pane__head', 'candidate-list-pane__title', 'candidate-list-pane__count', 'candidate-list-pane__list', 'candidate-list-pane__row', 'candidate-list-pane__candidate-main', 'candidate-list-pane__candidate-name'],
-        legacy: ['pane', 'pane-head', 'list', 'candidate-row', 'candidate-row-body', 'candidate-main', 'candidate-meta'],
+        required: [
+          'candidate-list-pane',
+          'candidate-list-pane__head',
+          'candidate-list-pane__title',
+          'candidate-list-pane__count',
+          'candidate-list-pane__list',
+          'candidate-list-pane__row',
+          'candidate-list-pane__candidate-main',
+          'candidate-list-pane__candidate-name',
+        ],
+        legacy: [
+          'pane',
+          'pane-head',
+          'list',
+          'candidate-row',
+          'candidate-row-body',
+          'candidate-main',
+          'candidate-meta',
+        ],
       },
       {
         file: 'src/components/insight/studio/DiagnosticsPanel.vue',
-        required: ['diagnostics-panel', 'diagnostics-panel__summary-grid', 'diagnostics-panel__summary-card', 'diagnostics-panel__check-list'],
-        legacy: ['diagnostics-shell', 'summary-grid', 'summary-card', 'label', 'block', 'danger', 'warning', 'checks-block', 'check-list'],
+        required: [
+          'diagnostics-panel',
+          'diagnostics-panel__summary-grid',
+          'diagnostics-panel__summary-card',
+          'diagnostics-panel__check-list',
+        ],
+        legacy: [
+          'diagnostics-shell',
+          'summary-grid',
+          'summary-card',
+          'label',
+          'block',
+          'danger',
+          'warning',
+          'checks-block',
+          'check-list',
+        ],
       },
     ]
 
     for (const contract of ownerContracts) {
       const source = readFileSync(resolve(process.cwd(), contract.file), 'utf8')
-      const classTokens = [...source.matchAll(/class="([^"]+)"/g)]
-        .flatMap(match => match[1]!.split(/\s+/).filter(Boolean))
+      const classTokens = [...source.matchAll(/class="([^"]+)"/g)].flatMap(match =>
+        match[1]!.split(/\s+/).filter(Boolean)
+      )
 
       for (const requiredClass of contract.required) {
         expect(classTokens, contract.file).toContain(requiredClass)
@@ -224,10 +261,11 @@ describe('CharacterStudioSidebar pending feedback', () => {
   it('keeps document list pane hooks under the component owner', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/insight/studio/DocumentListPane.vue'),
-      'utf8',
+      'utf8'
     )
-    const classTokens = [...source.matchAll(/class="([^"]+)"/g)]
-      .flatMap(match => match[1]!.split(/\s+/).filter(Boolean))
+    const classTokens = [...source.matchAll(/class="([^"]+)"/g)].flatMap(match =>
+      match[1]!.split(/\s+/).filter(Boolean)
+    )
 
     expect(classTokens).toContain('document-list-pane')
     expect(classTokens).toContain('document-list-pane__head')
@@ -271,7 +309,6 @@ describe('CharacterStudioSidebar pending feedback', () => {
             tags: [],
             is_favorite: false,
             has_avatar: false,
-            sample_pages: [],
           },
           {
             id: 'doc_beta',
@@ -282,7 +319,6 @@ describe('CharacterStudioSidebar pending feedback', () => {
             tags: [],
             is_favorite: true,
             has_avatar: true,
-            sample_pages: [2],
           },
         ],
         currentDocumentId: 'doc_alpha',
@@ -312,7 +348,7 @@ describe('CharacterStudioSidebar pending feedback', () => {
       props: {
         candidates: [],
         hasTimeline: false,
-        creatingCandidateName: '',
+        creatingCandidateId: '',
       },
     })
     const noTimelineState = noTimeline.getComponent(ProductEmptyState)
@@ -327,7 +363,7 @@ describe('CharacterStudioSidebar pending feedback', () => {
       props: {
         candidates: [],
         hasTimeline: true,
-        creatingCandidateName: '',
+        creatingCandidateId: '',
       },
     })
     expect(noCandidates.getComponent(ProductEmptyState).props('title')).toBe('没有可用候选角色')
@@ -355,5 +391,29 @@ describe('CharacterStudioSidebar pending feedback', () => {
       size: 'compact',
       title: '还没有运行诊断',
     })
+
+    const warningDiagnostics = mount(DiagnosticsPanel, {
+      props: {
+        diagnostics: {
+          valid: false,
+          errors: [],
+          warnings: ['存在一条警告'],
+          checks: { identity: true },
+        },
+      },
+    })
+    expect(warningDiagnostics.find('.diagnostics-panel__summary-value').text()).toBe('存在警告')
+
+    const errorDiagnostics = mount(DiagnosticsPanel, {
+      props: {
+        diagnostics: {
+          valid: false,
+          errors: ['存在一条错误'],
+          warnings: ['存在一条警告'],
+          checks: { identity: false },
+        },
+      },
+    })
+    expect(errorDiagnostics.find('.diagnostics-panel__summary-value').text()).toBe('存在错误')
   })
 })

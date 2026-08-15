@@ -5,7 +5,7 @@ import UiFormGrid from '@/components/ui/UiFormGrid.vue'
 import UiNumberField from '@/components/ui/UiNumberField.vue'
 import { ref, computed } from 'vue'
 import OpenAIExtraBodyEditor from '@/components/common/OpenAIExtraBodyEditor.vue'
-import { providerRequiresApiKey } from '@/config/aiProviders'
+import { getProviderDefaultModel, providerRequiresApiKey } from '@/config/aiProviders'
 import { useInsightStore } from '@/stores/insightStore'
 import * as insightApi from '@/api/insight'
 import type { StoreLlmConfig } from '@/types/insight'
@@ -13,7 +13,8 @@ import InsightModelProviderSection from './InsightModelProviderSection.vue'
 import InsightSettingsPanel from './InsightSettingsPanel.vue'
 import { useInsightSettingsDraft } from './useInsightSettingsDraft'
 import { useInsightModelFetch } from './useInsightModelFetch'
-import { LLM_PROVIDER_OPTIONS, LLM_DEFAULT_MODELS } from './types'
+import { useInsightConnectionTest } from './useInsightConnectionTest'
+import { LLM_PROVIDER_OPTIONS } from './types'
 
 const emit = defineEmits<{
   (e: 'showMessage', message: string, type: 'success' | 'error'): void
@@ -25,8 +26,6 @@ const props = defineProps<{
 }>()
 
 const insightStore = useInsightStore()
-
-const isTesting = ref(false)
 
 const provider = ref(insightStore.config.llm.provider)
 const apiKey = ref(insightStore.config.llm.apiKey)
@@ -59,6 +58,25 @@ const {
   emitMessage: (message, type) => emit('showMessage', message, type),
 })
 
+const { isTesting, testConnection } = useInsightConnectionTest({
+  sources: [provider, apiKey, model, baseUrl],
+  snapshot: () => ({
+    provider: provider.value,
+    apiKey: apiKey.value,
+    model: model.value,
+    baseUrl: provider.value === 'custom' ? baseUrl.value : '',
+  }),
+  request: snapshot => insightApi.testLlmConnection({
+    use_same_as_vlm: false,
+    provider: snapshot.provider,
+    api_key: snapshot.apiKey,
+    model: snapshot.model,
+    base_url: snapshot.baseUrl,
+  }),
+  successMessage: 'LLM 连接成功',
+  emitMessage: (message, type) => emit('showMessage', message, type),
+})
+
 function onProviderChange(): void {
   const newProvider = provider.value
   invalidateModelFetch()
@@ -66,35 +84,10 @@ function onProviderChange(): void {
   applyDraftConfig(insightStore.switchLlmProviderDraft(buildDraftConfig()))
 
   if (!model.value) {
-    const defaultModel = LLM_DEFAULT_MODELS[newProvider]
+    const defaultModel = getProviderDefaultModel(newProvider, 'chat')
     if (defaultModel) {
       model.value = defaultModel
     }
-  }
-}
-
-async function testConnection(): Promise<void> {
-  if (isTesting.value) return
-  isTesting.value = true
-
-  try {
-    const response = await insightApi.testLlmConnection({
-      use_same_as_vlm: false,
-      provider: provider.value,
-      api_key: apiKey.value,
-      model: model.value,
-      base_url: baseUrl.value || undefined,
-    })
-
-    if (response.success) {
-      emit('showMessage', 'LLM 连接成功', 'success')
-    } else {
-      emit('showMessage', '连接失败: ' + (response.message || '未知错误'), 'error')
-    }
-  } catch (error) {
-    emit('showMessage', '测试失败', 'error')
-  } finally {
-    isTesting.value = false
   }
 }
 
@@ -189,14 +182,13 @@ useInsightSettingsDraft<StoreLlmConfig>({
 
     <UiFormGrid class="llm-settings-tab__execution-grid">
       <UiField variant="settings" label="RPM 限制" control-id="insight-llm-rpm-limit">
-        <UiNumberField v-model="rpmLimit" input-id="insight-llm-rpm-limit" :min="0" :max="100" />
+        <UiNumberField v-model="rpmLimit" input-id="insight-llm-rpm-limit" :min="0" />
       </UiField>
       <UiField variant="settings" label="传输重试" control-id="insight-llm-transport-retries">
         <UiNumberField
           v-model="transportRetries"
           input-id="insight-llm-transport-retries"
           :min="0"
-          :max="10"
         />
       </UiField>
       <UiField variant="settings" label="业务重试" control-id="insight-llm-business-retries">
@@ -204,7 +196,6 @@ useInsightSettingsDraft<StoreLlmConfig>({
           v-model="businessRetries"
           input-id="insight-llm-business-retries"
           :min="0"
-          :max="10"
         />
       </UiField>
     </UiFormGrid>

@@ -1,9 +1,3 @@
-import type {
-  GlossarySettings,
-  NonTranslateSettings,
-} from './translationConstraints'
+import type { components } from '@/api/generated/v2'
 
-export interface BookTranslationConstraints {
-  glossary: GlossarySettings
-  non_translate: NonTranslateSettings
-}
+export type BookTranslationConstraints = components['schemas']['TranslationConstraintPayload']

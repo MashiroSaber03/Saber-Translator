@@ -75,6 +75,7 @@ watch(totalImages, (count) => {
 })
 
 const normalizedDraftSelection = computed(() => normalizePageSelection(draftSelectedPages.value))
+const selectedPageSet = computed(() => new Set(normalizedDraftSelection.value))
 const selectedCount = computed(() => normalizedDraftSelection.value.length)
 const draftSummary = computed(() => createPageSelectionSummary(normalizedDraftSelection.value))
 const summaryChipItems = computed<ProductChipItem[]>(() => [
@@ -108,7 +109,7 @@ function togglePage(page: number): void {
 }
 
 function isSelected(page: number): boolean {
-  return normalizedDraftSelection.value.includes(page)
+  return selectedPageSet.value.has(page)
 }
 
 function selectAllPages(): void {
@@ -177,7 +178,6 @@ function buildThumbnailItem(image: ImageData, index: number): ProductThumbnailGr
     header-padding="20px"
     footer-padding="14px 20px"
     scroll-mode="contained"
-    @update:model-value="emit('update:modelValue', $event)"
     @close="closeModal"
   >
     <div class="page-selection-shell">

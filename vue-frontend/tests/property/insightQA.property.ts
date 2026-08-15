@@ -20,13 +20,10 @@ const messageIdArbitrary = fc.stringOf(fc.constantFrom(...'0123456789'.split('')
 })
 const messageRoleArbitrary = fc.constantFrom<'user' | 'assistant'>('user', 'assistant')
 const messageContentArbitrary = fc.string({ minLength: 0, maxLength: 500 })
-const isoDateArbitrary = fc.date().map(date => date.toISOString())
-
 const qaMessageArbitrary: fc.Arbitrary<QAMessage> = fc.record({
   id: messageIdArbitrary,
   role: messageRoleArbitrary,
   content: messageContentArbitrary,
-  timestamp: isoDateArbitrary,
 })
 
 describe('insight QA properties', () => {
@@ -39,7 +36,7 @@ describe('insight QA properties', () => {
 
         expect(store.qaHistory).toEqual(messages)
         expect(store.qaHistory).toHaveLength(messages.length)
-      }),
+      })
     )
   })
 
@@ -52,7 +49,7 @@ describe('insight QA properties', () => {
         store.clearQAHistory()
 
         expect(store.qaHistory).toEqual([])
-      }),
+      })
     )
   })
 
@@ -66,7 +63,7 @@ describe('insight QA properties', () => {
         }
 
         expect(store.isStreaming).toBe(streamingSequence[streamingSequence.length - 1])
-      }),
+      })
     )
   })
 
@@ -84,13 +81,11 @@ describe('insight QA properties', () => {
               id: `user-${index}`,
               role: 'user',
               content: userContent,
-              timestamp: new Date().toISOString(),
             })
             store.addQAMessage({
               id: `assistant-${index}`,
               role: 'assistant',
               content: assistantContent,
-              timestamp: new Date().toISOString(),
             })
           }
 
@@ -99,8 +94,8 @@ describe('insight QA properties', () => {
             expect(store.qaHistory[index * 2]?.role).toBe('user')
             expect(store.qaHistory[index * 2 + 1]?.role).toBe('assistant')
           }
-        },
-      ),
+        }
+      )
     )
   })
 })

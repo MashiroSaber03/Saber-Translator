@@ -82,6 +82,11 @@ describe('ProductFileDropzone', () => {
     expect(wrapper.classes()).toContain('product-file-dropzone--dragging')
     expect(wrapper.get('[data-test="state"]').text()).toBe('释放上传')
 
+    await wrapper.get('label.product-file-dropzone').trigger('dragleave', {
+      relatedTarget: wrapper.get('[data-test="state"]').element,
+    })
+    expect(wrapper.classes()).toContain('product-file-dropzone--dragging')
+
     await wrapper.get('label.product-file-dropzone').trigger('dragleave')
     expect(wrapper.classes()).not.toContain('product-file-dropzone--dragging')
     expect(wrapper.get('[data-test="state"]').text()).toBe('拖拽上传')

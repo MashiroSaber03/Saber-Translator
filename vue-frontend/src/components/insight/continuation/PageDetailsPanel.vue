@@ -103,9 +103,9 @@
       </ProductRecordCard>
 
       <ProductActionRow class="page-details-panel__actions" aria-label="页面剧情操作">
-        <UiButton variant="secondary" @click="$emit('save-changes')">
-          <UiIcon name="save" size="15" />
-          <span>保存修改</span>
+        <UiButton variant="secondary" :disabled="isSaving" @click="$emit('save-changes')">
+          <UiIcon v-if="!isSaving" name="save" size="15" />
+          <span>{{ isSaving ? '保存中...' : '保存修改' }}</span>
         </UiButton>
       </ProductActionRow>
     </div>
@@ -130,6 +130,7 @@ import type { PageStoryField, PageStoryValue } from './pageStoryTypes'
 defineProps<{
   pages: PageContent[]
   isGenerating: boolean
+  isSaving?: boolean
 }>()
 
 const emit = defineEmits<{

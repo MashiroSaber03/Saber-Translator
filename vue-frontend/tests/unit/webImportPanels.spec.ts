@@ -85,8 +85,10 @@ function createSettingsActions() {
     setAgentApiKey: vi.fn(),
     setAgentBaseUrl: vi.fn(),
     setAgentForceJsonOutput: vi.fn(),
+    setAgentMaxRetries: vi.fn(),
     setAgentModelName: vi.fn(),
     setAgentProvider: vi.fn(),
+    setAgentTimeout: vi.fn(),
     setAgentUseStream: vi.fn(),
     setAutoImport: vi.fn(),
     setBypassProxy: vi.fn(),
@@ -115,13 +117,6 @@ function createSettingsActions() {
 describe('WebImport panels', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-  })
-
-  it('keeps WebImport settings fixtures on the current schema shape', () => {
-    const source = readFileSync(resolve(process.cwd(), 'tests/unit/webImportPanels.spec.ts'), 'utf8')
-    const obsoleteFirecrawlApiUrl = 'api' + 'Url'
-
-    expect(source).not.toContain(obsoleteFirecrawlApiUrl)
   })
 
   it('uses button semantics for settings disclosure', async () => {
@@ -183,7 +178,7 @@ describe('WebImport panels', () => {
       .findAllComponents(UiField)
       .filter(field => field.props('variant') === 'settings')
     expect(settingsFields.length).toBeGreaterThanOrEqual(20)
-    expect(wrapper.findAllComponents(UiNumberField).length).toBeGreaterThanOrEqual(8)
+    expect(wrapper.findAllComponents(UiNumberField).length).toBeGreaterThanOrEqual(10)
     expect(wrapper.find('.web-import-modal__form-row').exists()).toBe(false)
     expect(wrapper.find('.web-import-modal__form-label').exists()).toBe(false)
     expect(wrapper.find('.web-import-modal__form-grid').exists()).toBe(false)
@@ -201,12 +196,16 @@ describe('WebImport panels', () => {
     expect(wrapper.getComponent(ProductStatusBanner).props('tone')).toBe('warning')
     expect(wrapper.text()).toContain('有未保存的修改')
 
-    const settingsActions = wrapper.findAllComponents(UiButton)
+    const settingsActions = wrapper
+      .findAllComponents(UiButton)
       .filter(button => ['取消修改', '保存设置'].includes(button.text()))
     expect(settingsActions.map(button => button.props('variant'))).toEqual(['secondary', 'primary'])
 
-    const panelActions = wrapper.findAllComponents(UiButton)
-      .filter(button => ['测试连接', '获取模型', '测试 Agent 连接', '重置为默认'].includes(button.text()))
+    const panelActions = wrapper
+      .findAllComponents(UiButton)
+      .filter(button =>
+        ['测试连接', '获取模型', '测试 Agent 连接', '重置为默认'].includes(button.text())
+      )
     expect(panelActions.map(button => button.props('variant'))).toEqual([
       'secondary',
       'secondary',
@@ -214,6 +213,33 @@ describe('WebImport panels', () => {
       'secondary',
     ])
     expect(wrapper.find('.web-import-settings__reset-button').exists()).toBe(false)
+  })
+
+  it('locks the complete settings draft while its transaction is being saved', () => {
+    const wrapper = mount(WebImportSettingsPanel, {
+      props: {
+        activeSettingsTab: 'basic',
+        agentProviderOptions: [{ label: '自定义', value: 'custom' }],
+        draftSettings: createDraftSettings(),
+        hasUnsavedSettings: true,
+        isFetchingModels: false,
+        isSavingSettings: true,
+        modelList: [],
+        modelListOptions: [],
+        providerRequiresApiKey: () => false,
+        settingsActions: createSettingsActions(),
+        settingsExpanded: true,
+        showCustomUrl: true,
+        supportsFetchModels: false,
+        testingAgent: false,
+        testingFirecrawl: false,
+      },
+    })
+
+    const fieldset = wrapper.get('fieldset.web-import-settings__fieldset')
+    expect(fieldset.attributes('disabled')).toBeDefined()
+    expect(fieldset.attributes('aria-busy')).toBe('true')
+    expect(wrapper.get('#webImportExtractionPrompt').element.matches(':disabled')).toBe(true)
   })
 
   it('binds WebImport select field labels to stable control ids', () => {
@@ -269,10 +295,9 @@ describe('WebImport panels', () => {
     })
 
     const textareaVariants = new Map(
-      wrapper.findAllComponents(UiTextarea).map(textarea => [
-        textarea.attributes('id'),
-        textarea.props('variant'),
-      ]),
+      wrapper
+        .findAllComponents(UiTextarea)
+        .map(textarea => [textarea.attributes('id'), textarea.props('variant')])
     )
 
     expect(textareaVariants.get('webImportExtractionPrompt')).toBe('panel')
@@ -310,15 +335,36 @@ describe('WebImport panels', () => {
 
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/translate/web-import/WebImportBasicSettingsPanel.vue'),
-      'utf8',
+      'utf8'
     )
     expect(source).not.toMatch(/<template #title>\s*提取设置\s*<UiButton/)
+  })
+
+  it('does not impose arbitrary upper bounds on WebImport execution settings', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/translate/web-import/WebImportBasicSettingsPanel.vue'),
+      'utf8'
+    )
+
+    for (const inputId of [
+      'webImportMaxIterations',
+      'webImportAgentMaxRetries',
+      'webImportAgentTimeout',
+      'webImportDownloadConcurrency',
+      'webImportDownloadTimeout',
+      'webImportDownloadRetries',
+      'webImportDownloadDelay',
+    ]) {
+      const field = source.match(new RegExp(`input-id="${inputId}"[\\s\\S]*?/>`))?.[0]
+      expect(field).toBeDefined()
+      expect(field).not.toContain(':max=')
+    }
   })
 
   it('keeps settings tab scrolling owned by the settings panel instead of the modal shell', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/translate/web-import/WebImportSettingsPanel.vue'),
-      'utf8',
+      'utf8'
     )
 
     expect(source).toContain('web-import-settings__tab-content')
@@ -358,22 +404,35 @@ describe('WebImport panels', () => {
   it('keeps WebImport text fields on typed model updates instead of DOM event casts', () => {
     const basicSource = readFileSync(
       resolve(process.cwd(), 'src/components/translate/web-import/WebImportBasicSettingsPanel.vue'),
-      'utf8',
+      'utf8'
     )
     const advancedSource = readFileSync(
-      resolve(process.cwd(), 'src/components/translate/web-import/WebImportAdvancedSettingsPanel.vue'),
-      'utf8',
+      resolve(
+        process.cwd(),
+        'src/components/translate/web-import/WebImportAdvancedSettingsPanel.vue'
+      ),
+      'utf8'
     )
 
-    expect(basicSource).not.toContain('@input="settingsActions.setAgentBaseUrl(($event.target as HTMLInputElement).value)"')
-    expect(basicSource).not.toContain('@input="settingsActions.setExtractionPrompt(($event.target as HTMLTextAreaElement).value)"')
+    expect(basicSource).not.toContain(
+      '@input="settingsActions.setAgentBaseUrl(($event.target as HTMLInputElement).value)"'
+    )
+    expect(basicSource).not.toContain(
+      '@input="settingsActions.setExtractionPrompt(($event.target as HTMLTextAreaElement).value)"'
+    )
     expect(basicSource).toContain('AiProviderCredentialFields')
     expect(basicSource).toContain('@update:base-url="settingsActions.setAgentBaseUrl"')
     expect(basicSource).toContain('@update:model-value="settingsActions.setExtractionPrompt"')
 
-    expect(advancedSource).not.toContain('@input="settingsActions.setCustomCookie(($event.target as HTMLInputElement).value)"')
-    expect(advancedSource).not.toContain('@input="settingsActions.setCustomHeaders(($event.target as HTMLTextAreaElement).value)"')
-    expect(advancedSource).toContain('@update:model-value="value => settingsActions.setCustomCookie(String(value))"')
+    expect(advancedSource).not.toContain(
+      '@input="settingsActions.setCustomCookie(($event.target as HTMLInputElement).value)"'
+    )
+    expect(advancedSource).not.toContain(
+      '@input="settingsActions.setCustomHeaders(($event.target as HTMLTextAreaElement).value)"'
+    )
+    expect(advancedSource).toContain(
+      '@update:model-value="value => settingsActions.setCustomCookie(String(value))"'
+    )
     expect(advancedSource).toContain('@update:model-value="settingsActions.setCustomHeaders"')
   })
 
@@ -432,7 +491,7 @@ describe('WebImport panels', () => {
 
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/translate/web-import/WebImportSettingsPanel.vue'),
-      'utf8',
+      'utf8'
     )
     expect(source).not.toContain('tabId as SettingsTab')
   })
@@ -468,7 +527,7 @@ describe('WebImport panels', () => {
 
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/translate/WebImportPreprocessSettings.vue'),
-      'utf8',
+      'utf8'
     )
     expect(source).not.toContain('web-import-preprocess__subsection-title')
     expect(source).not.toMatch(/<h5\b/)
@@ -484,7 +543,7 @@ describe('WebImport panels', () => {
     })
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/translate/WebImportPreprocessSettings.vue'),
-      'utf8',
+      'utf8'
     )
 
     expect(source).toContain('function updateTargetFormat')
@@ -574,9 +633,11 @@ describe('WebImport panels', () => {
 
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/translate/web-import/WebImportBasicSettingsPanel.vue'),
-      'utf8',
+      'utf8'
     )
-    expect(source).not.toContain('@change="value => settingsActions.setAgentModelName(String(value))"')
+    expect(source).not.toContain(
+      '@change="value => settingsActions.setAgentModelName(String(value))"'
+    )
   })
 
   it('uses button semantics for logs disclosure', async () => {
@@ -601,6 +662,38 @@ describe('WebImport panels', () => {
     expect(wrapper.emitted('toggle')).toBeTruthy()
   })
 
+  it('maps each WebImport log category to a distinct semantic tone', () => {
+    const wrapper = mount(WebImportLogsPanel, {
+      props: {
+        expanded: true,
+        status: 'idle',
+        logs: [
+          { type: 'info', timestamp: '12:00', message: 'info' },
+          { type: 'tool_call', timestamp: '12:01', message: 'call' },
+          { type: 'tool_result', timestamp: '12:02', message: 'result' },
+          { type: 'thinking', timestamp: '12:03', message: 'thinking' },
+          { type: 'error', timestamp: '12:04', message: 'error' },
+        ],
+      },
+    })
+
+    expect(wrapper.getComponent(ProductLogPanel).props('items')).toEqual([
+      expect.objectContaining({ message: 'info', tone: 'info' }),
+      expect.objectContaining({ message: 'call', tone: 'warning' }),
+      expect.objectContaining({ message: 'result', tone: 'success' }),
+      expect.objectContaining({ message: 'thinking', tone: 'accent' }),
+      expect.objectContaining({ message: 'error', tone: 'danger' }),
+    ])
+
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/product/ProductLogPanel.vue'),
+      'utf8'
+    )
+    expect(source).toContain('product-log-panel__item--info')
+    expect(source).toContain('color: var(--color-status-info)')
+    expect(source).toContain('color: var(--color-status-success)')
+  })
+
   it('uses product button variants for extract and footer actions', () => {
     const extractWrapper = mount(WebImportExtractBar, {
       props: {
@@ -619,7 +712,8 @@ describe('WebImport panels', () => {
       '网页 URL',
       '提取引擎',
     ])
-    const notice = extractWrapper.findAllComponents(ProductStatusBanner)
+    const notice = extractWrapper
+      .findAllComponents(ProductStatusBanner)
       .find(banner => banner.text().includes('请仅爬取'))
     expect(notice.props('tone')).toBe('warning')
     const extractActionRow = extractWrapper.getComponent(ProductActionRow)
@@ -633,10 +727,8 @@ describe('WebImport panels', () => {
     const footerWrapper = mount(WebImportFooterActions, {
       props: {
         extractResult: {
-          success: true,
-          comicTitle: '漫画',
-          chapterTitle: '第一话',
           totalPages: 1,
+          engine: 'gallery-dl',
           pages: [{ pageNumber: 1, imageUrl: 'https://example.com/1.jpg' }],
         },
         isProcessing: false,
@@ -658,7 +750,7 @@ describe('WebImport panels', () => {
   it('keeps the extract form responsive to modal width instead of fixed columns', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/translate/web-import/WebImportExtractBar.vue'),
-      'utf8',
+      'utf8'
     )
 
     expect(source).toContain('repeat(auto-fit, minmax(min(100%, 220px), 1fr))')
@@ -679,7 +771,7 @@ describe('WebImport panels', () => {
     })
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/translate/web-import/WebImportExtractBar.vue'),
-      'utf8',
+      'utf8'
     )
 
     expect(source).toContain('function updateSelectedEngine')
@@ -708,9 +800,51 @@ describe('WebImport panels', () => {
 
     const statusBanners = supportedWrapper.findAllComponents(ProductStatusBanner)
     expect(statusBanners.map(banner => banner.props('tone'))).toContain('success')
-    expect(statusBanners.some(banner => banner.text().includes('支持 Gallery-DL 高速下载'))).toBe(true)
+    expect(statusBanners.some(banner => banner.text().includes('支持 Gallery-DL 高速下载'))).toBe(
+      true
+    )
     expect(supportedWrapper.find('.engine-hint').exists()).toBe(false)
     expect(supportedWrapper.find('.hint-supported').exists()).toBe(false)
+
+    const explicitAgentWrapper = mount(WebImportExtractBar, {
+      props: {
+        checkingSupport: false,
+        galleryDLAvailable: true,
+        galleryDLSupported: true,
+        isProcessing: false,
+        selectedEngine: 'ai-agent',
+        status: 'idle',
+        urlInput: 'https://example.com/chapter',
+      },
+    })
+    expect(
+      explicitAgentWrapper
+        .findAllComponents(ProductStatusBanner)
+        .some(
+          banner =>
+            banner.props('tone') === 'neutral' && banner.text().includes('将使用 AI Agent 模式')
+        )
+    ).toBe(true)
+
+    const unavailableGalleryWrapper = mount(WebImportExtractBar, {
+      props: {
+        checkingSupport: false,
+        galleryDLAvailable: false,
+        galleryDLSupported: false,
+        isProcessing: false,
+        selectedEngine: 'gallery-dl',
+        status: 'idle',
+        urlInput: 'https://example.com/chapter',
+      },
+    })
+    expect(
+      unavailableGalleryWrapper
+        .findAllComponents(ProductStatusBanner)
+        .some(
+          banner =>
+            banner.props('tone') === 'warning' && banner.text().includes('无法使用 Gallery-DL')
+        )
+    ).toBe(true)
 
     const checkingWrapper = mount(WebImportExtractBar, {
       props: {
@@ -723,13 +857,18 @@ describe('WebImport panels', () => {
         urlInput: 'https://example.com/chapter',
       },
     })
-    expect(checkingWrapper.findAllComponents(ProductStatusBanner).some(
-      banner => banner.props('tone') === 'info' && banner.text().includes('正在检查网站支持情况')
-    )).toBe(true)
+    expect(
+      checkingWrapper
+        .findAllComponents(ProductStatusBanner)
+        .some(
+          banner =>
+            banner.props('tone') === 'info' && banner.text().includes('正在检查网站支持情况')
+        )
+    ).toBe(true)
 
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/translate/web-import/WebImportExtractBar.vue'),
-      'utf8',
+      'utf8'
     )
     expect(source).not.toContain('engine-hint')
     expect(source).not.toContain('hint-supported')
@@ -750,10 +889,13 @@ describe('WebImport panels', () => {
       },
     })
     expect(wrapper.getComponent(UiInput).exists()).toBe(true)
-    const focusSpy = vi.spyOn(wrapper.get('#webImportSourceUrl').element as HTMLInputElement, 'focus')
+    const focusSpy = vi.spyOn(
+      wrapper.get('#webImportSourceUrl').element as HTMLInputElement,
+      'focus'
+    )
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/translate/web-import/WebImportExtractBar.vue'),
-      'utf8',
+      'utf8'
     )
 
     await wrapper.setProps({ focusRequestId: 1 })
@@ -779,15 +921,14 @@ describe('WebImport panels', () => {
     })
 
     expect(extractWrapper.findComponent(UiSpinner).exists()).toBe(true)
+    expect(extractWrapper.getComponent(UiSpinner).props('decorative')).toBe(true)
     expect(extractWrapper.find('.loading-spinner').exists()).toBe(false)
 
     const footerWrapper = mount(WebImportFooterActions, {
       props: {
         extractResult: {
-          success: true,
-          comicTitle: '漫画',
-          chapterTitle: '第一话',
           totalPages: 1,
+          engine: 'gallery-dl',
           pages: [{ pageNumber: 1, imageUrl: 'https://example.com/1.jpg' }],
         },
         isProcessing: true,
@@ -797,6 +938,7 @@ describe('WebImport panels', () => {
     })
 
     expect(footerWrapper.findComponent(UiSpinner).exists()).toBe(true)
+    expect(footerWrapper.getComponent(UiSpinner).props('decorative')).toBe(true)
     expect(footerWrapper.find('.loading-spinner').exists()).toBe(false)
   })
 })

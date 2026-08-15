@@ -33,6 +33,9 @@ class SaberYoloRefinementTests(unittest.TestCase):
     def setUp(self) -> None:
         self.image = Image.new("RGB", (180, 120), "white")
 
+    def tearDown(self) -> None:
+        self.image.close()
+
     def test_refinement_splits_merged_block_with_two_reference_blocks(self) -> None:
         left_line = make_line(10, 20, 50, 60)
         right_line = make_line(90, 20, 130, 60)
@@ -188,6 +191,27 @@ class SaberYoloRefinementTests(unittest.TestCase):
 
         detect_mock.assert_not_called()
         self.assertIs(refined, merged_result)
+
+    def test_apply_saber_yolo_refinement_propagates_reference_detector_failure(self) -> None:
+        left_line = make_line(10, 20, 50, 60)
+        right_line = make_line(90, 20, 130, 60)
+        merged_result = DetectionResult(
+            blocks=[TextBlock(lines=[left_line, right_line])],
+            raw_lines=[left_line, right_line],
+        )
+
+        with mock.patch(
+            "src.core.detector.refinement.detect",
+            side_effect=RuntimeError("reference failed"),
+        ) as detect_mock, self.assertRaisesRegex(RuntimeError, "reference failed"):
+            apply_saber_yolo_refinement(
+                self.image,
+                merged_result,
+                detector_type="default",
+                enabled=True,
+            )
+
+        self.assertFalse(detect_mock.call_args.kwargs["enable_aux_yolo_detection"])
 
 
 if __name__ == "__main__":

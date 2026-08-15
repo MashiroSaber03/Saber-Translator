@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import timedelta
+from datetime import datetime, timedelta
 import hashlib
 import json
 import os
@@ -13,6 +13,7 @@ from typing import Any
 import uuid
 
 from sqlalchemy import Engine, case, delete, insert, select, update
+from sqlalchemy.engine import Connection
 
 from src.backend_v2.serialization import canonical_json as _json
 from src.backend_v2.timestamps import utcnow
@@ -38,6 +39,7 @@ from src.backend_v2.storage.schema import (
     plugin_versions,
     plugins,
 )
+from src.shared.memory_errors import is_memory_allocation_error
 
 
 class PluginNotFound(LookupError):
@@ -55,12 +57,20 @@ class PluginConflict(RuntimeError):
         self.details = details or {}
 
 
+class PluginIdempotencyConflict(PluginConflict):
+    pass
+
+
 class PluginLocked(PluginConflict):
     pass
 
 
 def _load(value: str) -> object:
     return json.loads(value)
+
+
+def _request_hash(payload: Mapping[str, Any]) -> str:
+    return hashlib.sha256(_json(dict(payload)).encode("utf-8")).hexdigest()
 
 
 class PluginRegistry:
@@ -105,30 +115,35 @@ class PluginRegistry:
 
     def get_plugin(self, plugin_id: str) -> dict[str, Any]:
         with self.engine.connect() as connection:
-            row = connection.execute(
-                select(
-                    plugins,
-                    plugin_current_versions.c.plugin_version_id,
-                    plugin_current_versions.c.revision.label(
-                        "current_revision"
-                    ),
-                    plugin_versions.c.version.label("package_version"),
-                    plugin_versions.c.manifest_json,
-                    plugin_versions.c.config_schema_json,
-                    plugin_versions.c.package_relative_path,
-                    plugin_versions.c.checksum,
-                )
-                .join(
-                    plugin_current_versions,
-                    plugin_current_versions.c.plugin_id == plugins.c.id,
-                )
-                .join(
-                    plugin_versions,
-                    plugin_versions.c.id
-                    == plugin_current_versions.c.plugin_version_id,
-                )
-                .where(plugins.c.id == plugin_id)
-            ).mappings().one_or_none()
+            return self._get_plugin_in_connection(connection, plugin_id)
+
+    def _get_plugin_in_connection(
+        self,
+        connection: Connection,
+        plugin_id: str,
+    ) -> dict[str, Any]:
+        row = connection.execute(
+            select(
+                plugins,
+                plugin_current_versions.c.plugin_version_id,
+                plugin_current_versions.c.revision.label(
+                    "current_revision"
+                ),
+                plugin_versions.c.version.label("package_version"),
+                plugin_versions.c.manifest_json,
+                plugin_versions.c.config_schema_json,
+            )
+            .join(
+                plugin_current_versions,
+                plugin_current_versions.c.plugin_id == plugins.c.id,
+            )
+            .join(
+                plugin_versions,
+                plugin_versions.c.id
+                == plugin_current_versions.c.plugin_version_id,
+            )
+            .where(plugins.c.id == plugin_id)
+        ).mappings().one_or_none()
         if row is None:
             raise PluginNotFound("plugin not found")
         return self._dto(row)
@@ -147,9 +162,7 @@ class PluginRegistry:
             "baseRevision": base_revision,
             "archiveChecksum": parsed.archive_checksum,
         }
-        request_hash = hashlib.sha256(
-            _json(request).encode("utf-8")
-        ).hexdigest()
+        request_hash = _request_hash(request)
         scope = f"POST:importPlugin:{plugin_id}"
         now = utcnow()
         replay = self._replay_idempotency(
@@ -169,9 +182,9 @@ class PluginRegistry:
             / "versions"
             / plugin_version_id
         )
-        tree_checksum = extract_archive(parsed, staging)
         published = False
         try:
+            tree_checksum = extract_archive(parsed, staging)
             final.parent.mkdir(parents=True, exist_ok=True)
             with immediate_transaction(self.engine) as connection:
                 replay = self._idempotency_replay_in_connection(
@@ -229,20 +242,7 @@ class PluginRegistry:
                         )
                     )
                 else:
-                    loaded_config = _load(str(plugin["config_json"]))
-                    if not isinstance(loaded_config, Mapping):
-                        raise PluginConflict(
-                            "stored plugin config is invalid"
-                        )
-                    # Package upgrades may remove obsolete settings.  Keep
-                    # values whose fields still exist and seed new fields from
-                    # the new schema defaults.
-                    retained_config = {
-                        str(key): value
-                        for key, value in loaded_config.items()
-                        if key in schema
-                    }
-                    config = validate_config(schema, retained_config)
+                    config = default_config(schema)
                     connection.execute(
                         update(plugins)
                         .where(plugins.c.id == plugin_id)
@@ -251,6 +251,9 @@ class PluginRegistry:
                             author=parsed.manifest.author,
                             description=parsed.manifest.description,
                             config_json=_json(config),
+                            config_revision=(
+                                plugins.c.config_revision + 1
+                            ),
                             error_message=None,
                             state=(
                                 "enabled"
@@ -375,19 +378,52 @@ class PluginRegistry:
         *,
         plugin_id: str,
         enabled: bool,
-    ) -> dict[str, Any]:
+        idempotency_key: str,
+    ) -> tuple[dict[str, Any], bool]:
+        scope = f"PUT:setPluginDefaultEnabled:{plugin_id}"
+        request_hash = _request_hash({"enabled": enabled})
+        now = utcnow()
         with immediate_transaction(self.engine) as connection:
+            replay = self._idempotency_replay_in_connection(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                request_hash=request_hash,
+                now=now,
+            )
+            if replay is not None:
+                return replay, True
             changed = connection.execute(
                 update(plugins)
                 .where(plugins.c.id == plugin_id)
-                .values(default_enabled=enabled, updated_at=utcnow())
+                .values(default_enabled=enabled, updated_at=now)
             )
             if changed.rowcount != 1:
                 raise PluginNotFound("plugin not found")
-        return self.get_plugin(plugin_id)
+            response = self._get_plugin_in_connection(connection, plugin_id)
+            self._record_idempotency_in_connection(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                request_hash=request_hash,
+                response=response,
+                http_status=200,
+                resource_type="plugin",
+                resource_id=None,
+                now=now,
+            )
+        return response, False
 
     def get_config(self, plugin_id: str) -> dict[str, Any]:
-        plugin = self.get_plugin(plugin_id)
+        with self.engine.connect() as connection:
+            return self._get_config_in_connection(connection, plugin_id)
+
+    def _get_config_in_connection(
+        self,
+        connection: Connection,
+        plugin_id: str,
+    ) -> dict[str, Any]:
+        plugin = self._get_plugin_in_connection(connection, plugin_id)
         return {
             "pluginId": plugin_id,
             "schema": plugin["configSchema"],
@@ -401,8 +437,25 @@ class PluginRegistry:
         plugin_id: str,
         base_revision: int,
         config: Mapping[str, Any],
-    ) -> dict[str, Any]:
+        idempotency_key: str,
+    ) -> tuple[dict[str, Any], bool]:
+        request = {
+            "baseRevision": base_revision,
+            "config": dict(config),
+        }
+        scope = f"PUT:updatePluginConfig:{plugin_id}"
+        request_hash = _request_hash(request)
+        now = utcnow()
         with immediate_transaction(self.engine) as connection:
+            replay = self._idempotency_replay_in_connection(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                request_hash=request_hash,
+                now=now,
+            )
+            if replay is not None:
+                return replay, True
             row = connection.execute(
                 select(
                     plugins.c.config_revision,
@@ -436,49 +489,80 @@ class PluginRegistry:
                 .values(
                     config_json=_json(normalized),
                     config_revision=base_revision + 1,
-                    updated_at=utcnow(),
+                    updated_at=now,
                 )
             )
             if changed.rowcount != 1:
                 raise PluginConflict("plugin config revision changed")
-        return self.get_config(plugin_id)
+            response = self._get_config_in_connection(connection, plugin_id)
+            self._record_idempotency_in_connection(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                request_hash=request_hash,
+                response=response,
+                http_status=200,
+                resource_type="plugin_config",
+                resource_id=None,
+                now=now,
+            )
+        return response, False
 
     def export_current(self, plugin_id: str) -> tuple[bytes, str]:
-        plugin = self.get_plugin(plugin_id)
-        root = self._managed_path(str(plugin["packageRelativePath"]))
+        with self.engine.connect() as connection:
+            package = connection.execute(
+                select(
+                    plugin_versions.c.package_relative_path,
+                    plugin_versions.c.version,
+                )
+                .join(
+                    plugin_current_versions,
+                    plugin_current_versions.c.plugin_version_id
+                    == plugin_versions.c.id,
+                )
+                .where(plugin_current_versions.c.plugin_id == plugin_id)
+            ).mappings().one_or_none()
+        if package is None:
+            raise PluginNotFound("plugin not found")
+        root = self._managed_path(str(package["package_relative_path"]))
         return (
             build_archive(root),
-            f"{plugin_id}-{plugin['packageVersion']}.zip",
+            f"{plugin_id}-{package['version']}.zip",
         )
 
     def refresh(self) -> dict[str, Any]:
         checked = 0
         failed = 0
-        with immediate_transaction(self.engine) as connection:
+        # Package hashing can traverse many files. Keep it outside SQLite's
+        # single-writer transaction so a refresh cannot stall task heartbeats.
+        with self.engine.connect() as connection:
             rows = list(connection.execute(select(plugin_versions)).mappings())
-            failed_plugins: dict[str, str] = {}
-            for row in rows:
-                checked += 1
-                try:
-                    root = self._managed_path(
-                        str(row["package_relative_path"])
+        failed_plugins: dict[str, str] = {}
+        for row in rows:
+            checked += 1
+            try:
+                root = self._managed_path(
+                    str(row["package_relative_path"])
+                )
+                actual = directory_checksum(root)
+                if actual != row["checksum"]:
+                    raise PluginContractError(
+                        "immutable package checksum mismatch"
                     )
-                    actual = directory_checksum(root)
-                    if actual != row["checksum"]:
-                        raise PluginContractError(
-                            "immutable package checksum mismatch"
-                        )
-                    raw_manifest = _load(str(row["manifest_json"]))
-                    if not isinstance(raw_manifest, Mapping):
-                        raise PluginContractError(
-                            "stored manifest is invalid"
-                        )
-                    parse_manifest(raw_manifest)
-                except Exception as exc:
-                    failed += 1
-                    failed_plugins[str(row["plugin_id"])] = (
-                        redact_sensitive_text(exc)
+                raw_manifest = _load(str(row["manifest_json"]))
+                if not isinstance(raw_manifest, Mapping):
+                    raise PluginContractError(
+                        "stored manifest is invalid"
                     )
+                parse_manifest(raw_manifest)
+            except Exception as exc:
+                if is_memory_allocation_error(exc):
+                    raise
+                failed += 1
+                failed_plugins[str(row["plugin_id"])] = (
+                    redact_sensitive_text(exc)
+                )
+        with immediate_transaction(self.engine) as connection:
             for plugin_id, message in failed_plugins.items():
                 connection.execute(
                     update(plugins)
@@ -516,12 +600,25 @@ class PluginRegistry:
         *,
         plugin_id: str,
         base_revision: int,
-    ) -> dict[str, Any]:
+        idempotency_key: str,
+    ) -> tuple[dict[str, Any], bool]:
+        scope = f"DELETE:deletePlugin:{plugin_id}"
+        request_hash = _request_hash({"baseRevision": base_revision})
+        now = utcnow()
         plugin_root = self.plugins_root / plugin_id
         trash = self.temp_root / f"delete-{uuid.uuid4()}"
         moved = False
         try:
             with immediate_transaction(self.engine) as connection:
+                replay = self._idempotency_replay_in_connection(
+                    connection,
+                    scope=scope,
+                    key=idempotency_key,
+                    request_hash=request_hash,
+                    now=now,
+                )
+                if replay is not None:
+                    return replay, True
                 current = connection.execute(
                     select(plugin_current_versions.c.revision).where(
                         plugin_current_versions.c.plugin_id == plugin_id
@@ -584,9 +681,27 @@ class PluginRegistry:
                 connection.execute(
                     delete(plugins).where(plugins.c.id == plugin_id)
                 )
+                response = {"deleted": True, "pluginId": plugin_id}
+                self._record_idempotency_in_connection(
+                    connection,
+                    scope=scope,
+                    key=idempotency_key,
+                    request_hash=request_hash,
+                    response=response,
+                    http_status=200,
+                    resource_type="plugin",
+                    resource_id=None,
+                    now=now,
+                )
             if moved:
-                shutil.rmtree(trash)
-            return {"deleted": True, "pluginId": plugin_id}
+                try:
+                    shutil.rmtree(trash)
+                except OSError:
+                    # Database deletion is already committed. A leftover trash
+                    # directory is harmless; restoring it would create package
+                    # files with no registry rows.
+                    pass
+            return response, False
         except Exception:
             if moved and trash.exists() and not plugin_root.exists():
                 plugin_root.parent.mkdir(parents=True, exist_ok=True)
@@ -616,7 +731,7 @@ class PluginRegistry:
         if not isinstance(config, Mapping):
             raise PluginConflict("stored plugin config is invalid")
         normalized_config = validate_config(schema, config)
-        result = {
+        return {
             "pluginId": str(row["id"]),
             "displayName": str(row["name"]),
             "author": str(row["author"]),
@@ -633,13 +748,6 @@ class PluginRegistry:
             "manifest": manifest,
             "configSchema": dict(schema),
         }
-        if "package_relative_path" in row:
-            result["packageRelativePath"] = str(
-                row["package_relative_path"]
-            )
-        if "checksum" in row:
-            result["checksum"] = str(row["checksum"])
-        return result
 
     def _replay_idempotency(
         self,
@@ -649,7 +757,7 @@ class PluginRegistry:
         request_hash: str,
         now,
     ) -> dict[str, Any] | None:
-        with self.engine.connect() as connection:
+        with immediate_transaction(self.engine) as connection:
             return self._idempotency_replay_in_connection(
                 connection,
                 scope=scope,
@@ -667,20 +775,70 @@ class PluginRegistry:
         request_hash: str,
         now,
     ) -> dict[str, Any] | None:
+        if not isinstance(key, str) or not key or len(key) > 200:
+            raise ValueError(
+                "Idempotency-Key is required and must be at most 200 characters"
+            )
         row = connection.execute(
             select(idempotency_records).where(
                 idempotency_records.c.scope == scope,
                 idempotency_records.c.key == key,
-                idempotency_records.c.expires_at > now,
             )
         ).mappings().one_or_none()
         if row is None:
             return None
+        expires_at = row["expires_at"]
+        if not isinstance(expires_at, datetime):
+            raise PluginIdempotencyConflict(
+                "stored plugin idempotency record is invalid; clear current data"
+            )
+        if expires_at <= now:
+            connection.execute(
+                delete(idempotency_records).where(
+                    idempotency_records.c.scope == scope,
+                    idempotency_records.c.key == key,
+                )
+            )
+            return None
         if str(row["request_hash"]) != request_hash:
-            raise PluginConflict(
+            raise PluginIdempotencyConflict(
                 "Idempotency-Key was reused for different plugin input"
             )
-        value = _load(str(row["response_json"]))
+        try:
+            value = _load(str(row["response_json"]))
+        except (TypeError, ValueError) as exc:
+            raise PluginIdempotencyConflict(
+                "stored plugin idempotency response is invalid; clear current data"
+            ) from exc
         if not isinstance(value, dict):
-            raise PluginConflict("stored idempotency response is invalid")
+            raise PluginIdempotencyConflict(
+                "stored plugin idempotency response is invalid; clear current data"
+            )
         return value
+
+    @staticmethod
+    def _record_idempotency_in_connection(
+        connection: Connection,
+        *,
+        scope: str,
+        key: str,
+        request_hash: str,
+        response: Mapping[str, Any],
+        http_status: int,
+        resource_type: str,
+        resource_id: str | None,
+        now: datetime,
+    ) -> None:
+        connection.execute(
+            insert(idempotency_records).values(
+                scope=scope,
+                key=key,
+                request_hash=request_hash,
+                http_status=http_status,
+                response_json=_json(dict(response)),
+                resource_type=resource_type,
+                resource_id=resource_id,
+                created_at=now,
+                expires_at=now + timedelta(days=7),
+            )
+        )

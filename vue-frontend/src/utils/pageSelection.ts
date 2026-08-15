@@ -1,8 +1,7 @@
 export function normalizePageSelection(selectedPages: number[]): number[] {
   return [...new Set(
     selectedPages
-      .filter((page) => Number.isFinite(page))
-      .map((page) => Math.floor(page))
+      .filter((page) => Number.isInteger(page))
       .filter((page) => page >= 1)
   )].sort((a, b) => a - b)
 }

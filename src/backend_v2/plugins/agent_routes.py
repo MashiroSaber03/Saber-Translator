@@ -49,16 +49,15 @@ def create_plugin_agent_blueprint(
     @blueprint.post("/sessions")
     def create_session() -> tuple[Response, int]:
         body = _json_body(allowed_keys={"mode", "pluginId"})
+        plugin_id = body.get("pluginId")
+        if plugin_id is not None and not isinstance(plugin_id, str):
+            raise ValueError("pluginId must be a string")
         return (
             jsonify(
                 {
                     "session": sessions.create(
                         mode=_required_text(body, "mode"),
-                        plugin_id=(
-                            str(body["pluginId"])
-                            if body.get("pluginId") is not None
-                            else None
-                        ),
+                        plugin_id=plugin_id,
                     )
                 }
             ),

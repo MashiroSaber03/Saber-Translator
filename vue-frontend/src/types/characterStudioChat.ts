@@ -3,12 +3,11 @@ export interface CharacterStudioChatAttachment {
   filename: string
   mime_type: string
   asset_path: string
-  created_at: string
 }
 
 export interface CharacterStudioChatMessage {
   message_id: string
-  role: 'user' | 'assistant'
+  role: 'system' | 'user' | 'assistant'
   content: string
   attachments: CharacterStudioChatAttachment[]
   runtime_log: Array<Record<string, unknown>>
@@ -19,37 +18,34 @@ export interface CharacterStudioChatMessage {
 }
 
 export interface CharacterStudioChatSummaryBlock {
-  summary_id: string
-  content: string
-  created_at: string
-  covered_message_ids: string[]
+  summary: string
 }
 
 export interface CharacterStudioChatSessionSummary {
   session_id: string
   title: string
-  revision?: number
-  generation?: number
+  revision: number
+  generation: number
   message_count: number
   updated_at: string
-  archived_at?: string | null
-  last_message_excerpt?: string
+  archived_at: string | null
+  last_message_excerpt: string
 }
 
 export interface CharacterStudioChatSession {
   session_id: string
   doc_id: string
+  index_revision: number
   title: string
   created_at: string
   updated_at: string
-  archived_at?: string | null
-  greeting_source?: Record<string, unknown>
+  archived_at: string | null
+  greeting_source: Record<string, unknown>
   summary_blocks: CharacterStudioChatSummaryBlock[]
   messages: CharacterStudioChatMessage[]
   variables: Record<string, unknown>
-  last_prompt_preview: string
-  revision?: number
-  generation?: number
+  revision: number
+  generation: number
 }
 
 export interface CharacterStudioGreetingOption {

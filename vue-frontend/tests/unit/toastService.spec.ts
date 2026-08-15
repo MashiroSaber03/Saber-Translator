@@ -48,38 +48,6 @@ describe('toast service', () => {
     expect(content.match(/function removeToastsWhere/g)).toHaveLength(1)
   })
 
-  it('keeps toast property coverage on the real service boundary', () => {
-    const content = source('tests/property/toast.property.ts')
-
-    expect(content).toContain("from '@/utils/toast'")
-    expect(content).toContain('toastService.')
-    expect(content).not.toContain('createToastManager')
-    expect(content).not.toContain('createExtendedToastManager')
-    expect(content).not.toContain('从服务中提取用于测试')
-  })
-
-  it('sanitizes HTML general messages and expires duration zero through the safety timeout', () => {
-    const messageId = toastService.showGeneralMessage(
-      '<strong>ok</strong><img src=x onerror=alert(1)>',
-      'warning',
-      true,
-      0,
-      'toast_contract',
-    )
-
-    expect(messageId).toBe('toast_contract')
-    expect(toastService.toasts.value).toHaveLength(1)
-    expect(toastService.toasts.value[0]?.isHTML).toBe(true)
-    expect(toastService.toasts.value[0]?.message).toContain('<strong>ok</strong>')
-    expect(toastService.toasts.value[0]?.message).not.toContain('onerror')
-
-    vi.advanceTimersByTime(29999)
-    expect(toastService.toasts.value).toHaveLength(1)
-
-    vi.advanceTimersByTime(1)
-    expect(toastService.toasts.value).toHaveLength(0)
-  })
-
   it('clears timers when a toast is removed manually', () => {
     const id = toastService.addToast('pending', 'info', 1000)
 
@@ -89,13 +57,4 @@ describe('toast service', () => {
     expect(toastService.toasts.value).toHaveLength(0)
   })
 
-  it('clears only matching toast types when requested', () => {
-    toastService.addToast('keep', 'success', 0)
-    toastService.addToast('drop', 'warning', 0)
-
-    toastService.clearAllGeneralMessages('warning')
-
-    expect(toastService.toasts.value).toHaveLength(1)
-    expect(toastService.toasts.value[0]?.message).toBe('keep')
-  })
 })

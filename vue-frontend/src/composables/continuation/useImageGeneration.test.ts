@@ -78,8 +78,6 @@ function createState(pages: Ref<PageContent[]>): ContinuationState {
     resetState: vi.fn(),
     showMessage: vi.fn(),
     getCharacterImageUrl: vi.fn(),
-    getFormImageUrl: vi.fn(),
-    getGeneratedImageUrl: vi.fn(),
   }
 }
 

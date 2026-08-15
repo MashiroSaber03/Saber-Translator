@@ -32,7 +32,7 @@ class BaseTextDetector(ABC):
     requires_merge: bool = True
     detector_id: str = ''
     
-    def __init__(self, device: str = 'cuda', **kwargs):
+    def __init__(self, device: str = 'cuda'):
         """
         初始化检测器
         
@@ -41,7 +41,7 @@ class BaseTextDetector(ABC):
         """
         self.device = self._resolve_device(device)
         self.model = None
-        self._load_model(**kwargs)
+        self._load_model()
     
     @staticmethod
     def _resolve_device(device: str) -> str:
@@ -53,7 +53,7 @@ class BaseTextDetector(ABC):
         return device
     
     @abstractmethod
-    def _load_model(self, **kwargs):
+    def _load_model(self):
         """
         加载模型
         
@@ -62,7 +62,10 @@ class BaseTextDetector(ABC):
         pass
     
     @abstractmethod
-    def _detect_raw(self, image: np.ndarray, **kwargs) -> Tuple[List[TextLine], Optional[np.ndarray]]:
+    def _detect_raw(
+        self,
+        image: np.ndarray,
+    ) -> Tuple[List[TextLine], Optional[np.ndarray]]:
         """
         执行原始检测
         
@@ -77,12 +80,37 @@ class BaseTextDetector(ABC):
                 - 可选的掩码图像
         """
         pass
+
+    @staticmethod
+    def _validate_raw_result(
+        result,
+        image_width: int,
+        image_height: int,
+    ) -> Tuple[List[TextLine], Optional[np.ndarray]]:
+        if not isinstance(result, tuple) or len(result) != 2:
+            raise TypeError("检测器必须返回 (文本行列表, 掩码)")
+        textlines, mask = result
+        if not isinstance(textlines, list) or any(
+            not isinstance(line, TextLine) for line in textlines
+        ):
+            raise TypeError("检测器文本行结果必须是 TextLine 列表")
+        if mask is not None:
+            if not isinstance(mask, np.ndarray) or mask.ndim != 2:
+                raise TypeError("检测器掩码必须是二维 numpy 数组")
+            if mask.shape != (image_height, image_width):
+                raise ValueError("检测器掩码尺寸必须与输入图像一致")
+        return textlines, mask
     
     def _preprocess(self, image: Image.Image) -> np.ndarray:
         """
         预处理：PIL 图像转 OpenCV BGR
         """
-        img_np = np.array(image.convert('RGB'))
+        converted = image.convert('RGB')
+        try:
+            img_np = np.array(converted)
+        finally:
+            if converted is not image:
+                converted.close()
         return cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
     
     def detect(
@@ -90,14 +118,11 @@ class BaseTextDetector(ABC):
         image: Image.Image,
         merge_lines: bool = None,
         edge_ratio_threshold: float = 0.0,
-        expand_ratio: float = 0,
-        expand_top: float = 0,
-        expand_bottom: float = 0,
-        expand_left: float = 0,
-        expand_right: float = 0,
         sort_method: str = 'smart',  # 排序方法
         right_to_left: bool = True,  # 阅读方向
-        **kwargs
+        enable_aux_yolo_detection: bool = None,
+        aux_yolo_conf_threshold: float = None,
+        aux_yolo_overlap_threshold: float = None,
     ) -> DetectionResult:
         """
         统一检测入口
@@ -112,8 +137,6 @@ class BaseTextDetector(ABC):
             image: PIL 图像
             merge_lines: 是否合并文本行（None 时使用检测器默认值 requires_merge）
             edge_ratio_threshold: 边缘距离比例阈值
-            expand_ratio: 整体扩展比例 (%)
-            expand_top/bottom/left/right: 各边额外扩展 (%)
             sort_method: 排序方法 ('smart', 'area', 'reading', 'none')
             right_to_left: 是否从右到左阅读（日漫模式）
             
@@ -128,12 +151,13 @@ class BaseTextDetector(ABC):
         img_cv = self._preprocess(image)
         im_w, im_h = image.width, image.height
 
-        enable_aux_yolo_detection = kwargs.pop('enable_aux_yolo_detection', None)
-        aux_yolo_conf_threshold = kwargs.pop('aux_yolo_conf_threshold', None)
-        aux_yolo_overlap_threshold = kwargs.pop('aux_yolo_overlap_threshold', None)
-
         # 2. 原始检测
-        textlines, mask = self._detect_raw(img_cv, **kwargs)
+        textlines, mask = self._validate_raw_result(
+            self._detect_raw(img_cv),
+            im_w,
+            im_h,
+        )
+        textlines = [line for line in textlines if line.area > 16]
 
         if enable_aux_yolo_detection is None:
             from src.shared import constants
@@ -172,12 +196,7 @@ class BaseTextDetector(ABC):
         
         # 4. 后处理（包括智能排序）
         blocks = postprocess_blocks(
-            blocks, im_w, im_h,
-            expand_ratio=expand_ratio,
-            expand_top=expand_top,
-            expand_bottom=expand_bottom,
-            expand_left=expand_left,
-            expand_right=expand_right,
+            blocks,
             sort_method=sort_method,
             img=img_cv,  # 传递图像用于分镜检测
             right_to_left=right_to_left

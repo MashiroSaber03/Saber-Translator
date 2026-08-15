@@ -13,6 +13,7 @@ import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
 import { showToast } from '@/utils/toast'
 import type { BubbleState, BubbleCoords } from '@/types/bubble'
+import { buildDrawingRectStyle } from '@/components/edit/bubbleOverlayGeometry'
 
 export interface BubbleActionCallbacks {
   onReRender?: () => void | Promise<unknown>
@@ -74,15 +75,7 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
   }
 
   function getDrawingRectStyle(): Record<string, string> {
-    if (!currentDrawingRect.value) return {}
-    const [x1, y1, x2, y2] = currentDrawingRect.value
-    return {
-      position: 'absolute',
-      left: `${Math.min(x1, x2)}px`,
-      top: `${Math.min(y1, y2)}px`,
-      width: `${Math.abs(x2 - x1)}px`,
-      height: `${Math.abs(y2 - y1)}px`
-    }
+    return buildDrawingRectStyle(currentDrawingRect.value)
   }
 
   let previewTimer: ReturnType<typeof setTimeout> | null = null
@@ -227,8 +220,13 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
     pageId: string,
     bubbleId?: string,
   ): Promise<void> {
+    const requested = currentImage.value
+    if (!requested || requested.id !== pageId || !requested.chapterId) return
     const document = await getPageDocument(pageId)
     if (currentImage.value?.id !== pageId) return
+    if (document.pageId !== pageId || document.chapterId !== requested.chapterId) {
+      throw new Error(`页面 ${pageId} 的后端文档身份不匹配`)
+    }
     const updated = registerPageDocument(document)
     imageStore.updateCurrentImage({
       bubbleStates: updated,

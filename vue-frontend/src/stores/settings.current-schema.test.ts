@@ -14,6 +14,18 @@ vi.mock('@/api/v2/settings', () => ({
 import { useSettingsStore } from './settings'
 import { createDefaultSettings } from './settings/defaults'
 
+function workflowPreferencesEntry(revision = 1) {
+  return {
+    domain: 'workflow_preferences',
+    revision,
+    schemaVersion: 1,
+    payload: {
+      rememberWorkflowModeEnabled: false,
+      lastWorkflowMode: 'translate-current',
+    },
+  }
+}
+
 describe('useSettingsStore backend-first loading', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -38,19 +50,22 @@ describe('useSettingsStore backend-first loading', () => {
   it('rejects a backend document without the authoritative text-style defaults domain', async () => {
     const settings = createDefaultSettings()
     settingsApiMocks.getV2Settings.mockResolvedValue({
-      settings: [{
-        domain: 'translation',
-        revision: 0,
-        schemaVersion: 3,
-        payload: {
-          ...settings,
-          textStyle: {
-            ...settings.textStyle,
-            textColor: '#FA0000',
-            useAutoTextColor: true,
+      settings: [
+        {
+          domain: 'translation',
+          revision: 1,
+          schemaVersion: 5,
+          payload: {
+            ...settings,
+            textStyle: {
+              ...settings.textStyle,
+              textColor: '#FA0000',
+              useAutoTextColor: true,
+            },
           },
         },
-      }],
+        workflowPreferencesEntry(),
+      ],
       bookSettings: [],
       providerSettings: [],
       credentials: [],
@@ -70,16 +85,17 @@ describe('useSettingsStore backend-first loading', () => {
       settings: [
         {
           domain: 'translation',
-          revision: 0,
-          schemaVersion: 3,
+          revision: 1,
+          schemaVersion: 5,
           payload: settings,
         },
         {
           domain: 'text_style_defaults',
-          revision: 0,
+          revision: 1,
           schemaVersion: 1,
           payload: partialTextStyle,
         },
+        workflowPreferencesEntry(),
       ],
       bookSettings: [],
       providerSettings: [],
@@ -106,15 +122,16 @@ describe('useSettingsStore backend-first loading', () => {
         {
           domain: 'translation',
           revision: 4,
-          schemaVersion: 3,
+          schemaVersion: 5,
           payload: settings,
         },
         {
           domain: 'text_style_defaults',
-          revision: 0,
+          revision: 1,
           schemaVersion: 1,
           payload: settings.textStyle,
         },
+        workflowPreferencesEntry(),
       ],
       bookSettings: [],
       providerSettings: [{
@@ -150,7 +167,7 @@ describe('useSettingsStore backend-first loading', () => {
     expect(store.credentialSummaries[0]?.hasKey).toBe(true)
   })
 
-  it('saves a new API key, reloads only its summary, and keeps it usable', async () => {
+  it('saves a new API key, applies its returned summary, and keeps it usable', async () => {
     const initialSettings = createDefaultSettings()
     initialSettings.translation = {
       ...initialSettings.translation,
@@ -162,55 +179,33 @@ describe('useSettingsStore backend-first loading', () => {
       settings: [
         {
           domain: 'translation',
-          revision: 0,
-          schemaVersion: 3,
+          revision: 1,
+          schemaVersion: 5,
           payload: initialSettings,
         },
         {
           domain: 'text_style_defaults',
-          revision: 0,
+          revision: 1,
           schemaVersion: 1,
           payload: initialSettings.textStyle,
         },
+        workflowPreferencesEntry(),
       ],
       bookSettings: [],
       providerSettings: [],
       credentials: [],
     }
-    const persistedSettings = createDefaultSettings()
-    persistedSettings.translation = {
-      ...persistedSettings.translation,
-      provider: 'deepseek',
-      apiKey: '',
-      modelName: 'deepseek-chat',
-    }
-    const persistedDocument = {
+    settingsApiMocks.getV2Settings.mockResolvedValueOnce(initialDocument)
+    settingsApiMocks.saveV2SettingsTransaction.mockResolvedValue({
       settings: [
-        {
-          domain: 'translation',
-          revision: 1,
-          schemaVersion: 3,
-          payload: persistedSettings,
-        },
-        {
-          domain: 'text_style_defaults',
-          revision: 0,
-          schemaVersion: 1,
-          payload: persistedSettings.textStyle,
-        },
+        { domain: 'translation', revision: 2 },
+        { domain: 'text_style_defaults', revision: 2 },
       ],
       bookSettings: [],
       providerSettings: [{
         domain: 'translation',
         provider: 'deepseek',
         revision: 1,
-        schemaVersion: 1,
-        credentialVersionId: 'version-1',
-        payload: {
-          modelName: 'deepseek-chat',
-          customBaseUrl: '',
-          openaiOptions: persistedSettings.translation.openaiOptions,
-        },
       }],
       credentials: [{
         credentialId: 'credential-1',
@@ -221,21 +216,13 @@ describe('useSettingsStore backend-first loading', () => {
         provider: 'deepseek',
         revision: 1,
       }],
-    }
-    settingsApiMocks.getV2Settings
-      .mockResolvedValueOnce(initialDocument)
-      .mockResolvedValueOnce(persistedDocument)
-    settingsApiMocks.saveV2SettingsTransaction.mockResolvedValue({
-      settings: [],
-      bookSettings: [],
-      providerSettings: [],
-      credentials: [],
+      prompts: [],
     })
 
     const store = useSettingsStore()
     expect(await store.loadFromBackend()).toBe(true)
     store.updateTranslationService({
-      apiKey: 'sk-new-secret',
+      apiKey: '  sk-new-secret  ',
       modelName: 'deepseek-chat',
     })
 
@@ -253,57 +240,40 @@ describe('useSettingsStore backend-first loading', () => {
     }))
     expect(store.settings.translation.apiKey).toBe('')
     expect(store.hasCredential('translation', 'deepseek')).toBe(true)
+    expect(settingsApiMocks.getV2Settings).toHaveBeenCalledTimes(1)
   })
 
   it('does not restore a stale chapter snapshot after saving parallel mode', async () => {
     const initialSettings = createDefaultSettings()
-    const persistedSettings = createDefaultSettings()
-    persistedSettings.parallel.enabled = true
-    persistedSettings.parallel.deepLearningLockSize = 2
-    settingsApiMocks.getV2Settings
-      .mockResolvedValueOnce({
-        settings: [
-          {
-            domain: 'translation',
-            revision: 0,
-            schemaVersion: 3,
-            payload: initialSettings,
-          },
-          {
-            domain: 'text_style_defaults',
-            revision: 0,
-            schemaVersion: 1,
-            payload: initialSettings.textStyle,
-          },
-        ],
-        bookSettings: [],
-        providerSettings: [],
-        credentials: [],
-      })
-      .mockResolvedValueOnce({
+    settingsApiMocks.getV2Settings.mockResolvedValueOnce({
         settings: [
           {
             domain: 'translation',
             revision: 1,
-            schemaVersion: 3,
-            payload: persistedSettings,
+            schemaVersion: 5,
+            payload: initialSettings,
           },
           {
             domain: 'text_style_defaults',
-            revision: 0,
+            revision: 1,
             schemaVersion: 1,
-            payload: persistedSettings.textStyle,
+            payload: initialSettings.textStyle,
           },
+          workflowPreferencesEntry(),
         ],
         bookSettings: [],
         providerSettings: [],
         credentials: [],
       })
     settingsApiMocks.saveV2SettingsTransaction.mockResolvedValue({
-      settings: [],
+      settings: [
+        { domain: 'translation', revision: 2 },
+        { domain: 'text_style_defaults', revision: 2 },
+      ],
       bookSettings: [],
       providerSettings: [],
       credentials: [],
+      prompts: [],
     })
 
     const store = useSettingsStore()
@@ -334,8 +304,8 @@ describe('useSettingsStore backend-first loading', () => {
       settings: [
         {
           domain: 'translation',
-          revision: 0,
-          schemaVersion: 3,
+          revision: 1,
+          schemaVersion: 5,
           payload: settings,
         },
         {
@@ -344,6 +314,7 @@ describe('useSettingsStore backend-first loading', () => {
           schemaVersion: 1,
           payload: globalTextDefaults,
         },
+        workflowPreferencesEntry(),
       ],
       bookSettings: [],
       providerSettings: [],
@@ -384,26 +355,31 @@ describe('useSettingsStore backend-first loading', () => {
       settings: [
         {
           domain: 'translation',
-          revision: 0,
-          schemaVersion: 3,
+          revision: 1,
+          schemaVersion: 5,
           payload: settings,
         },
         {
           domain: 'text_style_defaults',
-          revision: 0,
+          revision: 1,
           schemaVersion: 1,
           payload: settings.textStyle,
         },
+        workflowPreferencesEntry(),
       ],
       bookSettings: [],
       providerSettings: [],
       credentials: [],
     })
     settingsApiMocks.saveV2SettingsTransaction.mockResolvedValue({
-      settings: [],
+      settings: [
+        { domain: 'translation', revision: 2 },
+        { domain: 'text_style_defaults', revision: 2 },
+      ],
       bookSettings: [],
       providerSettings: [],
       credentials: [],
+      prompts: [],
     })
 
     const store = useSettingsStore()
@@ -434,16 +410,17 @@ describe('useSettingsStore backend-first loading', () => {
       settings: [
         {
           domain: 'translation',
-          revision: 0,
-          schemaVersion: 3,
+          revision: 1,
+          schemaVersion: 5,
           payload: settings,
         },
         {
           domain: 'text_style_defaults',
-          revision: 0,
+          revision: 1,
           schemaVersion: 1,
           payload: settings.textStyle,
         },
+        workflowPreferencesEntry(),
       ],
       bookSettings: [],
       providerSettings: [],

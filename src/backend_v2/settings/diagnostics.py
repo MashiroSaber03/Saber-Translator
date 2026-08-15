@@ -15,16 +15,26 @@ import httpx
 from PIL import Image, ImageDraw
 
 from src.backend_v2.paths import project_root
+from src.backend_v2.redaction import redact_sensitive_text
 from src.backend_v2.storage.platform_repositories import SettingsRepository
 from src.shared.ai_providers import (
+    CHAT_CAPABILITY,
     CONNECTION_TEST_CAPABILITY,
+    EMBEDDING_CAPABILITY,
+    HQ_TRANSLATION_CAPABILITY,
+    IMAGE_GEN_CAPABILITY,
     MODEL_FETCH_CAPABILITY,
+    PLUGIN_AGENT_CAPABILITY,
     RERANK_CAPABILITY,
+    TRANSLATION_CAPABILITY,
+    VLM_CAPABILITY,
     VISION_OCR_CAPABILITY,
+    WEB_IMPORT_AGENT_CAPABILITY,
     get_provider_manifest,
     normalize_provider_id,
     provider_supports_capability,
 )
+from src.backend_v2.settings.validation import is_proofreading_provider_domain
 from src.shared.ai_transport import (
     AsyncOpenAICompatibleTransport,
     OpenAICompatibleChatTransport,
@@ -34,6 +44,7 @@ from src.shared.ai_transport import (
     UnifiedRerankRequest,
     UnifiedVisionRequest,
 )
+from src.shared.memory_errors import is_memory_allocation_error
 
 
 CONNECTION_TEST_KINDS = frozenset(
@@ -55,6 +66,40 @@ CONNECTION_TEST_KINDS = frozenset(
     }
 )
 
+_MODEL_CATALOG_FIELDS = frozenset(
+    {"provider", "domain", "baseUrl", "secret"}
+)
+_CONNECTION_TEST_FIELDS = {
+    "ollama": frozenset({"domain", "baseUrl", "model"}),
+    "sakura": frozenset({"domain", "baseUrl"}),
+    "lama_repair": frozenset(),
+    "baidu_ocr": frozenset({"domain", "secret"}),
+    "ai_vision_ocr": frozenset(
+        {"provider", "domain", "baseUrl", "model", "prompt", "secret"}
+    ),
+    "baidu_translate": frozenset({"domain", "secret"}),
+    "youdao_translate": frozenset({"domain", "secret"}),
+    "ai_translate": frozenset(
+        {"provider", "domain", "baseUrl", "model", "secret"}
+    ),
+    "firecrawl": frozenset({"domain", "secret"}),
+    "web_import_agent": frozenset(
+        {"provider", "domain", "baseUrl", "model", "secret"}
+    ),
+    "vlm": frozenset({"provider", "domain", "baseUrl", "model", "secret"}),
+    "llm": frozenset({"provider", "domain", "baseUrl", "model", "secret"}),
+    "embedding": frozenset(
+        {"provider", "domain", "baseUrl", "model", "secret"}
+    ),
+    "reranker": frozenset(
+        {"provider", "domain", "baseUrl", "model", "secret"}
+    ),
+}
+
+
+class DiagnosticRequestError(ValueError):
+    """The diagnostic request or selected provider configuration is invalid."""
+
 
 class ProviderDiagnostics:
     """Runs short, connection-bound checks without persisting their results."""
@@ -64,9 +109,17 @@ class ProviderDiagnostics:
         self.chat = OpenAICompatibleChatTransport()
 
     def model_catalog(self, body: Mapping[str, object]) -> dict[str, object]:
+        self._validate_fields(body, _MODEL_CATALOG_FIELDS)
         provider = self._provider(body)
         if not provider_supports_capability(provider, MODEL_FETCH_CAPABILITY):
-            raise ValueError(f"provider does not support model discovery: {provider}")
+            raise DiagnosticRequestError(f"provider does not support model discovery: {provider}")
+        domain = self._optional_string(body, "domain")
+        required_capability = self._domain_capability(domain)
+        if required_capability and not provider_supports_capability(
+            provider,
+            required_capability,
+        ):
+            raise DiagnosticRequestError(f"provider does not support {domain}: {provider}")
         secret = self._secret(body, provider=provider)
         manifest = get_provider_manifest(provider)
         api_key = self._api_key(
@@ -78,10 +131,10 @@ class ProviderDiagnostics:
             ),
         )
         if manifest.requires_api_key and not api_key:
-            raise ValueError("API key is required")
+            raise DiagnosticRequestError("API key is required")
         base_url = self._optional_string(body, "baseUrl")
         if manifest.requires_base_url and not base_url:
-            raise ValueError("baseUrl is required")
+            raise DiagnosticRequestError("baseUrl is required")
         models = self.chat.list_models(
             ProviderModelListRequest(
                 provider=provider,
@@ -97,13 +150,16 @@ class ProviderDiagnostics:
         body: Mapping[str, object],
     ) -> dict[str, object]:
         if kind not in CONNECTION_TEST_KINDS:
-            raise ValueError("unsupported connection test kind")
+            raise DiagnosticRequestError("unsupported connection test kind")
+        self._validate_fields(body, _CONNECTION_TEST_FIELDS[kind])
         try:
             message = self._run_test(kind, body)
             return {"success": True, "message": message}
-        except (ValueError, LookupError):
+        except (DiagnosticRequestError, LookupError):
             raise
         except Exception as exc:
+            if is_memory_allocation_error(exc):
+                raise
             return {"success": False, "message": self._friendly_error(exc)}
 
     def _run_test(self, kind: str, body: Mapping[str, object]) -> str:
@@ -122,9 +178,17 @@ class ProviderDiagnostics:
         if kind == "reranker":
             return self._test_reranker(body)
         if kind == "ai_vision_ocr":
-            return self._test_vision(body, api_key_field="ai_vision_api_key")
+            return self._test_vision(
+                body,
+                api_key_field="ai_vision_api_key",
+                capability=VISION_OCR_CAPABILITY,
+            )
         if kind == "vlm":
-            return self._test_vision(body, api_key_field="api_key")
+            return self._test_vision(
+                body,
+                api_key_field="api_key",
+                capability=VLM_CAPABILITY,
+            )
 
         provider = (
             kind
@@ -135,16 +199,33 @@ class ProviderDiagnostics:
             secret = self._secret(body, provider=provider)
             translated = self._translate_with_caiyun(self._api_key(secret))
             return f"连接成功：{translated}"
+        required_capability = {
+            "ollama": TRANSLATION_CAPABILITY,
+            "sakura": TRANSLATION_CAPABILITY,
+            "web_import_agent": WEB_IMPORT_AGENT_CAPABILITY,
+            "llm": CHAT_CAPABILITY,
+        }.get(kind)
+        if kind == "ai_translate":
+            required_capability = self._domain_capability(
+                self._optional_string(body, "domain") or "translation"
+            )
+        if required_capability and not provider_supports_capability(
+            provider,
+            required_capability,
+        ):
+            raise DiagnosticRequestError(
+                f"provider does not support {required_capability}: {provider}"
+            )
         if not provider_supports_capability(provider, CONNECTION_TEST_CAPABILITY):
-            raise ValueError(f"provider does not support connection tests: {provider}")
+            raise DiagnosticRequestError(f"provider does not support connection tests: {provider}")
         secret = self._secret(body, provider=provider)
         manifest = get_provider_manifest(provider)
         api_key = self._api_key(secret)
         if manifest.requires_api_key and not api_key:
-            raise ValueError("API key is required")
+            raise DiagnosticRequestError("API key is required")
         base_url = self._optional_string(body, "baseUrl")
         if manifest.requires_base_url and not base_url:
-            raise ValueError("baseUrl is required")
+            raise DiagnosticRequestError("baseUrl is required")
         model = self._optional_string(body, "model")
         if not model:
             catalog = self.model_catalog(
@@ -156,8 +237,11 @@ class ProviderDiagnostics:
             )
             models = catalog["models"]
             if not isinstance(models, list) or not models:
-                raise ValueError("no model is available for the connection test")
-            model = str(models[0]["id"])
+                raise RuntimeError("no model is available for the connection test")
+            first_model = models[0]
+            if not isinstance(first_model, Mapping):
+                raise RuntimeError("model catalog returned an invalid model")
+            model = self._required_string(first_model, "id")
         success, result = self.chat.test_connection(
             ProviderConnectionTestRequest(
                 provider=provider,
@@ -180,23 +264,25 @@ class ProviderDiagnostics:
         body: Mapping[str, object],
         *,
         api_key_field: str,
+        capability: str,
     ) -> str:
         provider = self._provider(body)
-        if not provider_supports_capability(provider, VISION_OCR_CAPABILITY):
-            raise ValueError(f"provider does not support vision: {provider}")
+        if not provider_supports_capability(provider, capability):
+            raise DiagnosticRequestError(f"provider does not support vision: {provider}")
         secret = self._secret(body, provider=provider)
         api_key = self._api_key(secret, field=api_key_field)
         manifest = get_provider_manifest(provider)
         model = self._required_string(body, "model")
         base_url = self._optional_string(body, "baseUrl")
         if manifest.requires_api_key and not api_key:
-            raise ValueError("API key is required")
+            raise DiagnosticRequestError("API key is required")
         if manifest.requires_base_url and not base_url:
-            raise ValueError("baseUrl is required")
-        image = Image.new("RGB", (320, 96), "white")
-        ImageDraw.Draw(image).text((16, 32), "Saber OCR test 123", fill="black")
-        buffer = BytesIO()
-        image.save(buffer, "PNG")
+            raise DiagnosticRequestError("baseUrl is required")
+        with Image.new("RGB", (320, 96), "white") as image:
+            ImageDraw.Draw(image).text((16, 32), "Saber OCR test 123", fill="black")
+            with BytesIO() as buffer:
+                image.save(buffer, "PNG")
+                image_base64 = base64.b64encode(buffer.getvalue()).decode("ascii")
         result = self.chat.complete_vision(
             UnifiedVisionRequest(
                 provider=provider,
@@ -204,23 +290,34 @@ class ProviderDiagnostics:
                 model=model,
                 prompt=self._optional_string(body, "prompt")
                 or "Read the text in this image.",
-                image_base64=base64.b64encode(buffer.getvalue()).decode("ascii"),
+                image_base64=image_base64,
                 base_url=base_url,
             )
         )
+        if not isinstance(result, str) or not result.strip():
+            raise RuntimeError("vision provider returned no result")
         return f"连接成功：{result}"
 
     def _test_embedding(self, body: Mapping[str, object]) -> str:
         provider = self._provider(body)
+        if not provider_supports_capability(provider, EMBEDDING_CAPABILITY):
+            raise DiagnosticRequestError(f"provider does not support embedding: {provider}")
         secret = self._secret(body, provider=provider)
+        manifest = get_provider_manifest(provider)
+        api_key = self._api_key(secret)
+        base_url = self._optional_string(body, "baseUrl")
+        if manifest.requires_api_key and not api_key:
+            raise DiagnosticRequestError("API key is required")
+        if manifest.requires_base_url and not base_url:
+            raise DiagnosticRequestError("baseUrl is required")
         result = asyncio.run(
             AsyncOpenAICompatibleTransport().embed(
                 UnifiedEmbeddingRequest(
                     provider=provider,
-                    api_key=self._api_key(secret),
+                    api_key=api_key,
                     model=self._required_string(body, "model"),
                     inputs=["Saber connection test"],
-                    base_url=self._optional_string(body, "baseUrl"),
+                    base_url=base_url,
                     timeout=30,
                 )
             )
@@ -232,18 +329,25 @@ class ProviderDiagnostics:
     def _test_reranker(self, body: Mapping[str, object]) -> str:
         provider = self._provider(body)
         if not provider_supports_capability(provider, RERANK_CAPABILITY):
-            raise ValueError(f"provider does not support reranking: {provider}")
+            raise DiagnosticRequestError(f"provider does not support reranking: {provider}")
         secret = self._secret(body, provider=provider)
+        manifest = get_provider_manifest(provider)
+        api_key = self._api_key(secret)
+        base_url = self._optional_string(body, "baseUrl")
+        if manifest.requires_api_key and not api_key:
+            raise DiagnosticRequestError("API key is required")
+        if manifest.requires_base_url and not base_url:
+            raise DiagnosticRequestError("baseUrl is required")
         result = asyncio.run(
             AsyncOpenAICompatibleTransport().rerank(
                 UnifiedRerankRequest(
                     provider=provider,
-                    api_key=self._api_key(secret),
+                    api_key=api_key,
                     model=self._required_string(body, "model"),
                     query="manga",
                     documents=["manga translation", "weather report"],
                     top_n=1,
-                    base_url=self._optional_string(body, "baseUrl"),
+                    base_url=base_url,
                     timeout=30,
                 )
             )
@@ -256,14 +360,16 @@ class ProviderDiagnostics:
         secret = self._secret(body, provider="firecrawl")
         api_key = self._api_key(secret)
         if not api_key:
-            raise ValueError("API key is required")
+            raise DiagnosticRequestError("API key is required")
         response = httpx.get(
-            "https://api.firecrawl.dev/v1/scrape",
+            "https://api.firecrawl.dev/v2/team/credit-usage",
             headers={"Authorization": f"Bearer {api_key}"},
             timeout=10,
         )
-        if response.status_code in {401, 403}:
-            raise RuntimeError("API key is invalid")
+        response.raise_for_status()
+        payload = self._response_object(response, "Firecrawl")
+        if payload.get("success") is not True:
+            raise RuntimeError("Firecrawl returned an invalid response")
         return "连接成功"
 
     def _test_baidu_ocr(self, body: Mapping[str, object]) -> str:
@@ -275,7 +381,7 @@ class ProviderDiagnostics:
         api_key = self._secret_string(secret, "baidu_api_key")
         secret_key = self._secret_string(secret, "baidu_secret_key")
         if not api_key or not secret_key:
-            raise ValueError("Baidu OCR API key and secret key are required")
+            raise DiagnosticRequestError("Baidu OCR API key and secret key are required")
         response = httpx.post(
             "https://aip.baidubce.com/oauth/2.0/token",
             params={
@@ -286,9 +392,15 @@ class ProviderDiagnostics:
             timeout=15,
         )
         response.raise_for_status()
-        payload = response.json()
-        if not payload.get("access_token"):
-            raise RuntimeError(str(payload.get("error_description") or "authentication failed"))
+        payload = self._response_object(response, "Baidu OCR")
+        access_token = payload.get("access_token")
+        if not isinstance(access_token, str) or not access_token:
+            description = payload.get("error_description")
+            raise RuntimeError(
+                description
+                if isinstance(description, str) and description
+                else "authentication failed"
+            )
         return "连接成功"
 
     def _test_baidu_translate(self, body: Mapping[str, object]) -> str:
@@ -297,7 +409,7 @@ class ProviderDiagnostics:
         app_id = self._secret_string(secret, "app_id")
         app_key = self._secret_string(secret, "app_key")
         if not app_id or not app_key:
-            raise ValueError("Baidu Translate app ID and app key are required")
+            raise DiagnosticRequestError("Baidu Translate app ID and app key are required")
         salt = str(secrets.randbelow(32769) + 32768)
         signature = hashlib.md5(
             f"{app_id}Hello{salt}{app_key}".encode("utf-8")
@@ -315,16 +427,27 @@ class ProviderDiagnostics:
             timeout=15,
         )
         response.raise_for_status()
-        payload = response.json()
+        payload = self._response_object(response, "Baidu Translate")
         if payload.get("error_code"):
+            error_message = payload.get("error_msg")
             raise RuntimeError(
-                str(payload.get("error_msg") or payload["error_code"])
+                error_message
+                if isinstance(error_message, str) and error_message
+                else "Baidu Translate rejected the request"
             )
-        translated = "\n".join(
-            str(item.get("dst", ""))
-            for item in payload.get("trans_result", [])
-            if item.get("dst")
-        )
+        raw_results = payload.get("trans_result")
+        if not isinstance(raw_results, list):
+            raise RuntimeError("Baidu Translate returned an invalid response")
+        translated_parts = []
+        for item in raw_results:
+            if not isinstance(item, Mapping):
+                raise RuntimeError("Baidu Translate returned an invalid response")
+            value = item.get("dst")
+            if not isinstance(value, str):
+                raise RuntimeError("Baidu Translate returned an invalid response")
+            if value:
+                translated_parts.append(value)
+        translated = "\n".join(translated_parts)
         if not translated:
             raise RuntimeError("translation provider returned no result")
         return f"连接成功：{translated}"
@@ -335,7 +458,7 @@ class ProviderDiagnostics:
         app_key = self._secret_string(secret, "app_key")
         app_secret = self._secret_string(secret, "app_secret")
         if not app_key or not app_secret:
-            raise ValueError("Youdao app key and app secret are required")
+            raise DiagnosticRequestError("Youdao app key and app secret are required")
         source = "Hello, this is a test."
         salt = str(uuid.uuid4())
         current_time = str(int(time.time()))
@@ -363,9 +486,16 @@ class ProviderDiagnostics:
             timeout=15,
         )
         response.raise_for_status()
-        payload = response.json()
-        translations = payload.get("translation", [])
-        translated = str(translations[0]) if translations else ""
+        payload = self._response_object(response, "Youdao Translate")
+        error_code = payload.get("errorCode")
+        if error_code is not None and error_code != "0":
+            raise RuntimeError("Youdao Translate rejected the request")
+        translations = payload.get("translation")
+        if not isinstance(translations, list):
+            raise RuntimeError("Youdao Translate returned an invalid response")
+        translated = translations[0] if translations else ""
+        if not isinstance(translated, str):
+            raise RuntimeError("Youdao Translate returned an invalid response")
         if not translated or translated == source:
             raise RuntimeError("translation provider returned no result")
         return f"连接成功：{translated}"
@@ -373,7 +503,7 @@ class ProviderDiagnostics:
     @staticmethod
     def _translate_with_caiyun(api_key: str) -> str:
         if not api_key:
-            raise ValueError("API key is required")
+            raise DiagnosticRequestError("API key is required")
         response = httpx.post(
             "https://api.interpreter.caiyunai.com/v1/translator",
             headers={
@@ -389,11 +519,16 @@ class ProviderDiagnostics:
             timeout=15,
         )
         response.raise_for_status()
-        payload = response.json()
-        translations = payload.get("target", [])
-        if not translations:
+        payload = ProviderDiagnostics._response_object(response, "Caiyun")
+        translations = payload.get("target")
+        if (
+            not isinstance(translations, list)
+            or not translations
+            or not isinstance(translations[0], str)
+            or not translations[0]
+        ):
             raise RuntimeError("translation provider returned no result")
-        return str(translations[0])
+        return translations[0]
 
     @staticmethod
     def _youdao_signature_input(value: str) -> str:
@@ -422,11 +557,8 @@ class ProviderDiagnostics:
         raw = body.get("secret")
         if raw is not None:
             if not isinstance(raw, dict):
-                raise ValueError("secret must be an object")
+                raise DiagnosticRequestError("secret must be an object")
             return dict(raw)
-        credential_id = self._optional_string(body, "credentialId")
-        if credential_id:
-            return self.settings.resolve_current_secret(credential_id)
         domain = self._optional_string(body, "domain")
         if domain:
             return self.settings.resolve_provider_secret(
@@ -450,7 +582,7 @@ class ProviderDiagnostics:
         expected: set[str],
     ) -> None:
         if secret and set(secret) != expected:
-            raise ValueError(
+            raise DiagnosticRequestError(
                 "diagnostic secret fields must be exactly: "
                 + ", ".join(sorted(expected))
             )
@@ -465,14 +597,17 @@ class ProviderDiagnostics:
         provider = normalize_provider_id(
             ProviderDiagnostics._required_string(body, "provider")
         )
-        get_provider_manifest(provider)
+        try:
+            get_provider_manifest(provider)
+        except ValueError as exc:
+            raise DiagnosticRequestError(str(exc)) from exc
         return provider
 
     @staticmethod
     def _required_string(body: Mapping[str, object], key: str) -> str:
         value = body.get(key)
         if not isinstance(value, str) or not value.strip():
-            raise ValueError(f"{key} is required")
+            raise DiagnosticRequestError(f"{key} is required")
         return value.strip()
 
     @staticmethod
@@ -481,17 +616,74 @@ class ProviderDiagnostics:
         if value is None or value == "":
             return None
         if not isinstance(value, str):
-            raise ValueError(f"{key} must be a string")
+            raise DiagnosticRequestError(f"{key} must be a string")
         return value.strip() or None
 
     @staticmethod
+    def _validate_fields(
+        body: Mapping[str, object],
+        allowed: frozenset[str],
+    ) -> None:
+        unknown = set(body) - allowed
+        if unknown:
+            raise DiagnosticRequestError(
+                "diagnostic request contains unknown fields: "
+                + ", ".join(sorted(unknown))
+            )
+
+    @staticmethod
+    def _response_object(
+        response: httpx.Response,
+        provider: str,
+    ) -> Mapping[str, object]:
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise RuntimeError(f"{provider} returned invalid JSON") from exc
+        if not isinstance(payload, Mapping):
+            raise RuntimeError(f"{provider} returned an invalid response")
+        return payload
+
+    @staticmethod
+    def _domain_capability(domain: str | None) -> str | None:
+        if domain is None:
+            return None
+        if domain == "translation":
+            return TRANSLATION_CAPABILITY
+        if domain == "hq" or is_proofreading_provider_domain(domain):
+            return HQ_TRANSLATION_CAPABILITY
+        capability = {
+            "ai_vision_ocr": VISION_OCR_CAPABILITY,
+            "plugin_agent": PLUGIN_AGENT_CAPABILITY,
+            "web_import_agent": WEB_IMPORT_AGENT_CAPABILITY,
+            "insight_vlm": VLM_CAPABILITY,
+            "insight_chat": CHAT_CAPABILITY,
+            "insight_embedding": EMBEDDING_CAPABILITY,
+            "insight_reranker": RERANK_CAPABILITY,
+            "insight_image_gen": IMAGE_GEN_CAPABILITY,
+        }.get(domain)
+        if capability is None:
+            raise DiagnosticRequestError(f"unsupported diagnostic domain: {domain}")
+        return capability
+
+    @staticmethod
     def _friendly_error(error: Exception) -> str:
-        message = str(error)
+        message = redact_sensitive_text(error)
         lowered = message.lower()
-        if "401" in lowered or "authentication" in lowered or "api key" in lowered:
+        if "429" in lowered or "rate limit" in lowered or "too many requests" in lowered:
+            return "服务请求过于频繁，请稍后重试"
+        if (
+            "401" in lowered
+            or "403" in lowered
+            or "authentication" in lowered
+            or "unauthorized" in lowered
+            or "invalid api key" in lowered
+        ):
             return "API Key 无效或已过期"
         if "timeout" in lowered:
             return "连接超时，请检查网络"
-        if "connect" in lowered:
+        if "connect" in lowered or "connection reset" in lowered:
             return "无法连接到服务"
+        if any(code in lowered for code in ("500", "502", "503", "504")):
+            return "服务暂时不可用，请稍后重试"
         return message

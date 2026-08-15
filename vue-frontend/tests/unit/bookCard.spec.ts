@@ -71,7 +71,7 @@ describe('BookCard', () => {
     const wrapper = mount(BookCard, {
       props: {
         book: book({ tags: ['Drama'] }),
-        tags: [{ name: 'Drama', color: '#aa6644' }],
+        tags: [{ id: 'tag-drama', name: 'Drama', color: '#aa6644' }],
       },
     })
 

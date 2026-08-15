@@ -67,3 +67,37 @@ def test_desktop_settings_discards_invalid_values(tmp_path: Path) -> None:
     )
 
     assert store.load() == DesktopSettings()
+
+
+def test_desktop_settings_discards_extra_current_schema_fields(tmp_path: Path) -> None:
+    store = DesktopSettingsStore(tmp_path)
+    store.save(DesktopSettings())
+    payload = json.loads(store.path.read_text(encoding="utf-8"))
+    payload["legacy"] = True
+    store.path.write_text(json.dumps(payload), encoding="utf-8")
+    defaults = DesktopSettings(port=5111)
+
+    assert store.load(defaults) == defaults
+    assert "legacy" not in json.loads(store.path.read_text(encoding="utf-8"))
+
+
+def test_desktop_settings_rejects_boolean_position_values(tmp_path: Path) -> None:
+    store = DesktopSettingsStore(tmp_path)
+    store.save(DesktopSettings())
+    payload = json.loads(store.path.read_text(encoding="utf-8"))
+    payload["pet"]["positionX"] = True
+    store.path.write_text(json.dumps(payload), encoding="utf-8")
+    defaults = DesktopSettings(port=5112)
+
+    assert store.load(defaults) == defaults
+
+
+def test_desktop_settings_discards_an_unrepresentable_position(tmp_path: Path) -> None:
+    store = DesktopSettingsStore(tmp_path)
+    store.save(DesktopSettings())
+    payload = json.loads(store.path.read_text(encoding="utf-8"))
+    payload["pet"]["positionX"] = 10**1000
+    store.path.write_text(json.dumps(payload), encoding="utf-8")
+    defaults = DesktopSettings(port=5114)
+
+    assert store.load(defaults) == defaults

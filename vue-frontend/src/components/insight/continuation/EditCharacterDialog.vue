@@ -1,5 +1,5 @@
 <template>
-  <ContinuationDialogShell title="编辑角色" @close="close">
+  <ContinuationDialogShell title="编辑角色" :dismissible="!busy" @close="close">
     <ContinuationDialogForm>
       <ContinuationDialogField
         label="角色名称"
@@ -36,10 +36,10 @@
 
     <template #footer>
       <ContinuationDialogActions>
-        <UiButton variant="secondary" @click="close">取消</UiButton>
-        <UiButton variant="primary" :disabled="!localName.trim()" @click="save">
-          <UiIcon name="save" size="15" />
-          <span>保存</span>
+        <UiButton variant="secondary" :disabled="busy" @click="close">取消</UiButton>
+        <UiButton variant="primary" :disabled="!localName.trim() || busy" @click="save">
+          <UiIcon v-if="!busy" name="save" size="15" />
+          <span>{{ busy ? '保存中...' : '保存' }}</span>
         </UiButton>
       </ContinuationDialogActions>
     </template>
@@ -59,6 +59,7 @@ import ContinuationDialogShell from './ContinuationDialogShell.vue'
 
 const props = defineProps<{
   character: CharacterProfile
+  busy?: boolean
 }>()
 
 const emit = defineEmits<{

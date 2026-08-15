@@ -55,5 +55,8 @@ describe('api download helpers', () => {
 
     const emptyResponse = new Response('', { status: 500 })
     await expect(readApiErrorMessage(emptyResponse, 'fallback')).resolves.toBe('fallback')
+
+    const primitiveJsonResponse = new Response('null', { status: 500 })
+    await expect(readApiErrorMessage(primitiveJsonResponse, 'fallback')).resolves.toBe('null')
   })
 })

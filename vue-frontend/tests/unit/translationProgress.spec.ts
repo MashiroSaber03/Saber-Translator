@@ -86,6 +86,7 @@ describe('TranslationProgress', () => {
             completed: 1,
             failed: 0,
             skipped: 0,
+            cancelled: 0,
             waiting: 1,
             processing: 1,
             lockWaiting: true,
@@ -117,6 +118,7 @@ describe('TranslationProgress', () => {
             completed: 8,
             failed: 0,
             skipped: 0,
+            cancelled: 0,
             waiting: 2693,
             processing: 1,
             lockWaiting: false,
@@ -130,6 +132,38 @@ describe('TranslationProgress', () => {
     expect(bars[0]?.props('value')).toBeCloseTo(8 / 2702 * 100)
     expect(bars[1]?.props('value')).toBeCloseTo(8 / 2702 * 100)
     expect(bars[0]?.props('value')).toBeGreaterThan(0)
+  })
+
+  it('stops progress animation while a backend task is paused', () => {
+    const wrapper = mount(TranslationProgress, {
+      props: {
+        progress: {
+          isInProgress: true,
+          current: 2,
+          total: 5,
+          completed: 2,
+          failed: 0,
+          executionMode: 'parallel',
+          status: 'paused',
+          pools: [{
+            kind: 'ocr',
+            total: 5,
+            completed: 2,
+            failed: 0,
+            skipped: 0,
+            cancelled: 0,
+            waiting: 2,
+            processing: 1,
+            lockWaiting: false,
+            current: [],
+          }],
+        },
+      },
+    })
+
+    const bars = wrapper.findAllComponents(UiProgressBar)
+    expect(bars[0]?.props('animated')).toBe(false)
+    expect(bars[1]?.props('animated')).toBe(false)
   })
 
   it('does not import the removed browser-owned pool pipeline', () => {

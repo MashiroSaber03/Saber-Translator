@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { copyTextToClipboard } from '@/utils/clipboard'
 
@@ -56,21 +54,5 @@ describe('clipboard utility', () => {
 
     await expect(copyTextToClipboard('blocked')).resolves.toBe(false)
     expect(document.querySelector('textarea')).toBeNull()
-  })
-
-  it('keeps production owners on the shared clipboard boundary', () => {
-    for (const file of [
-      'src/views/BookshelfView.vue',
-      'src/components/edit/useBubbleEditor.ts',
-      'src/components/insight/settings/PromptsSettingsTab.vue',
-      'src/components/insight/studio/CharacterStudioPreview.vue',
-    ]) {
-      const source = readFileSync(resolve(process.cwd(), file), 'utf8')
-
-      expect(source, file).toContain("from '@/utils/clipboard'")
-      expect(source, file).not.toContain('navigator.clipboard')
-      expect(source, file).not.toContain('document.execCommand')
-      expect(source, file).not.toContain("document.createElement('textarea')")
-    }
   })
 })

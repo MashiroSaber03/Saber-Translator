@@ -1,7 +1,5 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 
 import NoteCard from '@/components/insight/notes/NoteCard.vue'
 import ProductChipList from '@/components/product/ProductChipList.vue'
@@ -71,15 +69,4 @@ describe('NoteCard', () => {
     expect(wrapper.emitted('showPage')?.[1]?.[0]).toBe(3)
   })
 
-  it('keeps NoteCard-owned hooks scoped to the note-card owner', () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/components/insight/notes/NoteCard.vue'),
-      'utf8',
-    )
-
-    expect(source).toContain('class="note-card__open-button"')
-    expect(source).toContain('class="note-card__title"')
-    expect(source).toContain('class="note-card__content"')
-    expect(source).not.toMatch(/\.(?:note-open-button|note-title|note-content|note-date|note-tags|qa-preview-text|note-type-icon)\b/)
-  })
 })

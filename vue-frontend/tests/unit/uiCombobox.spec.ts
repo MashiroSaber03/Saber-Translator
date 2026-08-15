@@ -24,6 +24,7 @@ describe('UiCombobox accessibility contract', () => {
     })
 
     const trigger = wrapper.get('[role="combobox"]')
+    expect(trigger.element.tagName).toBe('BUTTON')
     expect(trigger.attributes('aria-expanded')).toBe('false')
     expect(trigger.attributes('aria-haspopup')).toBe('listbox')
 
@@ -38,11 +39,52 @@ describe('UiCombobox accessibility contract', () => {
     expect(options).toHaveLength(2)
     expect(options[1].getAttribute('aria-selected')).toBe('true')
     expect(trigger.attributes('aria-expanded')).toBe('true')
+    expect(document.getElementById(trigger.attributes('aria-activedescendant'))?.textContent).toContain('Option B')
 
     await trigger.trigger('keydown', { key: 'Escape' })
 
     expect(document.getElementById(listboxId || '')).toBeNull()
     expect(trigger.attributes('aria-expanded')).toBe('false')
+  })
+
+  it('skips disabled grouped options and selects the active option from the trigger', async () => {
+    const wrapper = mount(UiCombobox, {
+      attachTo: document.body,
+      props: {
+        modelValue: 'disabled',
+        groups: [
+          {
+            label: 'Group A',
+            options: [
+              { label: 'Disabled', value: 'disabled', disabled: true },
+              { label: 'Enabled B', value: 'b' },
+            ],
+          },
+          {
+            label: 'Group B',
+            options: [{ label: 'Enabled C', value: 'c' }],
+          },
+        ],
+      },
+    })
+    const trigger = wrapper.get('[role="combobox"]')
+
+    await trigger.trigger('keydown', { key: 'ArrowDown' })
+    expect(document.getElementById(trigger.attributes('aria-activedescendant'))?.textContent).toContain('Enabled B')
+
+    const disabledOption = document.body.querySelector('[aria-disabled="true"]') as HTMLElement
+    disabledOption.click()
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(trigger.attributes('aria-expanded')).toBe('true')
+
+    await trigger.trigger('keydown', { key: 'ArrowDown' })
+    expect(document.getElementById(trigger.attributes('aria-activedescendant'))?.textContent).toContain('Enabled C')
+    await trigger.trigger('keydown', { key: 'Enter' })
+
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['c'])
+    expect(wrapper.emitted('change')?.at(-1)).toEqual(['c'])
+    expect(trigger.attributes('aria-expanded')).toBe('false')
+    expect(document.activeElement).toBe(trigger.element)
   })
 
   it('uses the shared icon primitive for its disclosure arrow', () => {

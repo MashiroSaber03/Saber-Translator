@@ -1,16 +1,23 @@
 export type NoteType = 'text' | 'qa'
 
 export interface NoteData {
-  id: string
-  type: NoteType
-  content: string
-  pageNum?: number
-  createdAt?: string
-  updatedAt?: string
-  title?: string
-  tags?: string[]
-  question?: string
-  answer?: string
-  citations?: Array<{ page: number; content: string }>
+  citations: Array<{ page: number; content: string }>
   comment?: string
+  content: string
+  createdAt: string
+  id: string
+  pageNum?: number
+  question?: string
+  revision: number
+  tags: string[]
+  title: string
+  type: NoteType
+  updatedAt: string
 }
+
+export type NoteUpdateInput = Partial<
+  Pick<
+    NoteData,
+    'citations' | 'comment' | 'content' | 'pageNum' | 'question' | 'tags' | 'title' | 'type'
+  >
+>

@@ -15,8 +15,7 @@ dist-ssr
 coverage
 playwright-report
 blob-report
-test-results/*
-!test-results/.last-run.json
+test-results/
 *.local
 
 # Editor directories and files

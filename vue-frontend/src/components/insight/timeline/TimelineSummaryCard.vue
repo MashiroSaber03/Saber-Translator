@@ -1,22 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import ProductChipList from '@/components/product/ProductChipList.vue'
-import type { ProductChipItem } from '@/components/product/ProductChipList.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
-import type { PlotThread } from '@/types/insight'
 
-const props = defineProps<{
-  plotThreads: PlotThread[]
+defineProps<{
   storySummary: string
 }>()
-
-const themeItems = computed<ProductChipItem[]>(() => {
-  return props.plotThreads.slice(0, 5).map((thread) => ({
-    id: thread.id,
-    label: thread.name,
-    tone: 'inverse',
-  }))
-})
 </script>
 
 <template>
@@ -26,21 +13,16 @@ const themeItems = computed<ProductChipItem[]>(() => {
       <span>故事概要</span>
     </h4>
     <p class="timeline-summary-card__summary">{{ storySummary }}</p>
-    <ProductChipList
-      v-if="themeItems.length"
-      aria-label="故事主题"
-      label="主题："
-      :items="themeItems"
-    />
   </div>
 </template>
 
 <style scoped>
 .timeline-summary-card {
-  --product-chip-list-text: var(--color-text-inverse);
-  --product-chip-list-label-text: var(--color-text-inverse);
-
-  background: linear-gradient(135deg, var(--insight-action-primary) 0%, var(--insight-action-primary-strong) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--insight-action-primary) 0%,
+    var(--insight-action-primary-strong) 100%
+  );
   color: var(--color-text-inverse);
   border-radius: 12px;
   padding: 20px;

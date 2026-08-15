@@ -30,16 +30,12 @@ const documentStub: CharacterStudioDocument = {
   status: {
     is_favorite: false,
     frozen_sections: [],
+    last_diagnostics: null,
     last_validated_at: null,
   },
   meta: {
     title: '阿尔法',
     tags: [],
-    created_at: '2026-05-15T00:00:00',
-    updated_at: '2026-05-15T00:00:00',
-  },
-  avatar: {
-    asset_path: null,
   },
   identity: {
     name: '阿尔法',
@@ -63,16 +59,11 @@ const documentStub: CharacterStudioDocument = {
   },
   regexScripts: [],
   stateTasks: [],
-  chatPreset: {
-    opening_mode: 'first_message',
-  },
-  grounding: {
-    timeline_mode: 'enhanced',
-    sample_pages: [],
-    relationships: [],
-    key_moments: [],
-  },
   exportArtifacts: {},
+  revision: 1,
+  avatarUrl: null,
+  createdAt: '2026-05-15T00:00:00',
+  updatedAt: '2026-05-15T00:00:00',
 }
 
 const documentWithPatchTargets: CharacterStudioDocument = {
@@ -139,6 +130,7 @@ const documentWithPatchTargets: CharacterStudioDocument = {
 const sessionStub: CharacterStudioChatSession = {
   session_id: 'chat-alpha',
   doc_id: 'doc-alpha',
+  index_revision: 1,
   title: '新对话',
   created_at: '2026-05-15T00:00:00',
   updated_at: '2026-05-15T00:00:00',
@@ -159,8 +151,8 @@ const sessionStub: CharacterStudioChatSession = {
     },
   ],
   variables: { trust_score: 20 },
-  _runtime: {},
-  last_prompt_preview: '',
+  revision: 1,
+  generation: 1,
 }
 
 const conversationSessionStub: CharacterStudioChatSession = {
@@ -213,15 +205,18 @@ const attachmentSessionStub: CharacterStudioChatSession = {
           filename: 'scene.png',
           mime_type: 'image/png',
           asset_path: 'attachments/scene.png',
-          created_at: '2026-05-15T00:01:00',
         },
       ],
     },
   ],
 }
 
-function mountPreview(overrides: Record<string, unknown> = {}) {
+function mountPreview(
+  overrides: Record<string, unknown> = {},
+  attachTo?: HTMLElement,
+) {
   return mount(CharacterStudioPreview, {
+    attachTo,
     props: {
       bookId: 'book-demo',
       document: documentStub,
@@ -426,20 +421,27 @@ describe('CharacterStudioPreview workspace', () => {
   })
 
   it('exposes the session selector popup relationship to assistive technology', async () => {
-    const wrapper = mountPreview()
+    const wrapper = mountPreview({}, document.body)
     const trigger = wrapper.get('[data-testid="session-list-trigger"]')
 
-    expect(trigger.attributes('aria-haspopup')).toBe('menu')
+    expect(trigger.attributes('aria-haspopup')).toBeUndefined()
     expect(trigger.attributes('aria-controls')).toBe('studio-session-list-panel')
     expect(trigger.attributes('aria-expanded')).toBe('false')
 
     await trigger.trigger('click')
+    await flushPromises()
 
     expect(trigger.attributes('aria-expanded')).toBe('true')
     const panel = wrapper.get('#studio-session-list-panel')
-    expect(panel.attributes('role')).toBe('menu')
+    expect(panel.attributes('role')).toBe('region')
     expect(panel.attributes('aria-label')).toBe('聊天会话列表')
-    expect(panel.findAll('[role="menuitem"]').length).toBeGreaterThan(0)
+    expect(panel.findAll('[role="menuitem"]')).toHaveLength(0)
+    expect(document.activeElement).toBe(panel.find('button').element)
+
+    await panel.trigger('keydown', { key: 'Escape' })
+
+    expect(wrapper.find('#studio-session-list-panel').exists()).toBe(false)
+    expect(document.activeElement).toBe(trigger.element)
   })
 
   it('sizes the session selector popup from the toolbar container instead of the viewport', () => {
@@ -557,6 +559,44 @@ describe('CharacterStudioPreview workspace', () => {
     expect(sendButton.getComponent(UiIcon).props('name')).toBe('send')
     expect(sendButton.text()).not.toContain('↗')
     expect(wrapper.text()).not.toContain('发送给助手')
+  })
+
+  it('clears the agent draft only after an assistant reply succeeds', async () => {
+    const wrapper = mountPreview({ activeTab: 'assistant' })
+    const input = wrapper.get('.agent-workspace__composer textarea')
+    await input.setValue('请检查这张角色卡')
+    await wrapper.get('[data-testid="assistant-send-trigger"]').trigger('click')
+
+    expect((input.element as HTMLTextAreaElement).value).toBe('请检查这张角色卡')
+    await wrapper.setProps({
+      agentBusy: true,
+      agentMessages: [{ role: 'user', content: '请检查这张角色卡' }],
+    })
+    await wrapper.setProps({
+      agentBusy: false,
+      agentMessages: [
+        { role: 'user', content: '请检查这张角色卡' },
+        { role: 'assistant', content: '检查完成' },
+      ],
+    })
+    await flushPromises()
+
+    expect((input.element as HTMLTextAreaElement).value).toBe('')
+  })
+
+  it('keeps the agent draft when the provider call fails', async () => {
+    const wrapper = mountPreview({ activeTab: 'assistant' })
+    const input = wrapper.get('.agent-workspace__composer textarea')
+    await input.setValue('失败后保留这段话')
+    await wrapper.get('[data-testid="assistant-send-trigger"]').trigger('click')
+    await wrapper.setProps({
+      agentBusy: true,
+      agentMessages: [{ role: 'user', content: '失败后保留这段话' }],
+    })
+    await wrapper.setProps({ agentBusy: false, agentMessages: [] })
+    await flushPromises()
+
+    expect((input.element as HTMLTextAreaElement).value).toBe('失败后保留这段话')
   })
 
   it('uses a full-height runtime workspace container instead of leaving a loose empty block', () => {
@@ -889,6 +929,51 @@ describe('CharacterStudioPreview workspace', () => {
     expect(source).not.toContain('action-primary')
   })
 
+  it('clears the chat draft only after the backend accepts the operation', async () => {
+    const wrapper = mountPreview()
+    const input = wrapper.get('textarea.studio-chat-composer__input')
+    await input.setValue('等待后端接收')
+    await wrapper.get('[data-testid="chat-send-trigger"]').trigger('click')
+
+    expect((input.element as HTMLTextAreaElement).value).toBe('等待后端接收')
+    await wrapper.setProps({
+      acceptedChatSubmissionCount: 1,
+      chatStreaming: true,
+      chatAbortable: true,
+    })
+    await flushPromises()
+
+    expect((input.element as HTMLTextAreaElement).value).toBe('')
+  })
+
+  it('clears an accepted draft even when the operation finishes before the next render', async () => {
+    const wrapper = mountPreview()
+    const input = wrapper.get('textarea.studio-chat-composer__input')
+    await input.setValue('瞬间完成也应清空')
+    await wrapper.get('[data-testid="chat-send-trigger"]').trigger('click')
+
+    await wrapper.setProps({
+      acceptedChatSubmissionCount: 1,
+      chatStreaming: false,
+      chatAbortable: false,
+    })
+    await flushPromises()
+
+    expect((input.element as HTMLTextAreaElement).value).toBe('')
+  })
+
+  it('keeps the chat draft when sending fails before backend acceptance', async () => {
+    const wrapper = mountPreview()
+    const input = wrapper.get('textarea.studio-chat-composer__input')
+    await input.setValue('上传失败后保留')
+    await wrapper.get('[data-testid="chat-send-trigger"]').trigger('click')
+    await wrapper.setProps({ chatStreaming: true, chatAbortable: false })
+    await wrapper.setProps({ chatStreaming: false, chatAbortable: false })
+    await flushPromises()
+
+    expect((input.element as HTMLTextAreaElement).value).toBe('上传失败后保留')
+  })
+
   it('labels preview textareas when no visible field label is present', async () => {
     const chatWrapper = mountPreview()
     expect(chatWrapper.get('.studio-chat-composer__input').attributes('aria-label')).toBe('聊天消息内容')
@@ -907,16 +992,6 @@ describe('CharacterStudioPreview workspace', () => {
     await userCard!.find('button').trigger('click')
 
     expect(userCard!.get('textarea').attributes('aria-label')).toBe('编辑聊天消息内容')
-  })
-
-  it('does not assert shared icon-button primitives through internal class names', () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'tests/unit/characterStudioPreview.spec.ts'),
-      'utf8',
-    )
-    const iconButtonClassPrefix = 'ui-' + 'icon-button--'
-
-    expect(source).not.toContain(iconButtonClassPrefix)
   })
 
   it('keeps preview composer and attachment actions on product primitives', () => {
@@ -1037,6 +1112,28 @@ describe('CharacterStudioPreview workspace', () => {
 
     expect(document.body.textContent).toContain('重选开场白')
     expect(document.body.textContent).toContain('今天也一起推进计划吧。')
+  })
+
+  it('disables both greeting actions when no greeting is available', () => {
+    const wrapper = mountPreview({
+      availableGreetings: [],
+      document: {
+        ...documentStub,
+        coreMessages: {
+          ...documentStub.coreMessages,
+          first_message: '',
+          alternate_greetings: [],
+        },
+      },
+    })
+
+    expect(
+      (wrapper.get('[data-testid="greeting-picker-trigger"]').element as HTMLButtonElement)
+        .disabled,
+    ).toBe(true)
+    const reselect = wrapper.findAll('button').find(button => button.text() === '重选开场白')
+    expect(reselect).toBeDefined()
+    expect((reselect!.element as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('emits the backend greeting id selected in the picker', async () => {

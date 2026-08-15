@@ -17,27 +17,24 @@ import {
 } from '@/services/pageDocumentPersistence'
 import { deepClone } from '@/utils/deepClone'
 import { showToast } from '@/utils/toast'
+import { isRequestCanceled } from '@/api/client'
 import type EditImageComparison from './EditImageComparison.vue'
 import { LAYOUT_MODE_KEY } from '@/constants'
 import type { BubbleState, InpaintMethod } from '@/types/bubble'
 import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
 
-export interface EditWorkspaceProps {
-  isEditModeActive: boolean
-}
-
 export type EditWorkspaceEmit = {
   (e: 'exit'): void
 }
 
-export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceEmit) {
+export function useEditWorkspace(emit: EditWorkspaceEmit) {
   const imageStore = useImageStore()
   const bubbleStore = useBubbleStore()
 
   const {
     reRenderFullImage
   } = useEditRender({
-    onRenderError: () => showToast('渲染失败，请重试', 'error')
+    onRenderError: message => showToast(message, 'error')
   })
 
   const {
@@ -69,6 +66,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
   const {
     brushMode,
     brushSize,
+    isBrushSubmitting,
     mouseX,
     mouseY,
     isBrushKeyDown,
@@ -153,11 +151,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
 
   const {
     startDividerDrag,
-    handleDividerDrag,
-    stopDividerDrag,
     startPanelResize,
-    handlePanelResize,
-    stopPanelResize,
   } = useEditWorkspaceResizeActions({
     layoutMode,
     originalPanelRef,
@@ -174,19 +168,21 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
   const isOcrLoading = ref(false)
 
   const isRepairLoading = ref(false)
+  const isNavigationPending = ref(false)
 
   let layoutFitTimeout: ReturnType<typeof setTimeout> | null = null
-  let activationFitTimeout: ReturnType<typeof setTimeout> | null = null
+  let initialFitTimeout: ReturnType<typeof setTimeout> | null = null
   let imageLoadFitTimeout: ReturnType<typeof setTimeout> | null = null
+  let isOwnerActive = false
 
   function clearDelayedFitTimers(): void {
     if (layoutFitTimeout) {
       clearTimeout(layoutFitTimeout)
       layoutFitTimeout = null
     }
-    if (activationFitTimeout) {
-      clearTimeout(activationFitTimeout)
-      activationFitTimeout = null
+    if (initialFitTimeout) {
+      clearTimeout(initialFitTimeout)
+      initialFitTimeout = null
     }
     if (imageLoadFitTimeout) {
       clearTimeout(imageLoadFitTimeout)
@@ -198,8 +194,6 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
   const translatedViewer = useImageViewer()
 
   const scale = computed(() => translatedViewer.scale.value)
-  const translateX = computed(() => translatedViewer.translateX.value)
-  const translateY = computed(() => translatedViewer.translateY.value)
 
   const originalScale = computed(() => originalViewer.scale.value)
 
@@ -213,15 +207,25 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     transform: `translate(${translatedViewer.translateX.value}px, ${translatedViewer.translateY.value}px) scale(${translatedViewer.scale.value})`
   }))
 
+  function translatedViewportCenter(): { x: number; y: number } {
+    const viewport = translatedViewportRef.value || originalViewportRef.value
+    return {
+      x: (viewport?.clientWidth ?? 0) / 2,
+      y: (viewport?.clientHeight ?? 0) / 2,
+    }
+  }
+
   function zoomIn(): void {
-    translatedViewer.zoomIn()
+    const center = translatedViewportCenter()
+    translatedViewer.zoomIn(center.x, center.y)
     if (syncEnabled.value) {
       originalViewer.setTransform(translatedViewer.getTransform())
     }
   }
 
   function zoomOut(): void {
-    translatedViewer.zoomOut()
+    const center = translatedViewportCenter()
+    translatedViewer.zoomOut(center.x, center.y)
     if (syncEnabled.value) {
       originalViewer.setTransform(translatedViewer.getTransform())
     }
@@ -238,23 +242,19 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     const image = currentImage.value
     if (!image || image.documentRevision === undefined) return
     saveBubbleStatesToImage()
-    const pendingSave = queuePageDocumentSave(
-      image.id,
-      image.documentRevision,
-      bubbles.value,
-    )
-    await flushPageDocument(image.id)
-    await pendingSave
+    await Promise.all([
+      queuePageDocumentSave(image.id, image.documentRevision, bubbles.value),
+      flushPageDocument(image.id),
+    ])
   }
 
   async function prepareForNavigation(): Promise<void> {
-    if (brushMode.value) {
-      exitBrushMode()
-    }
     await persistCurrentDocument()
   }
 
   async function navigateAfterPersist(navigate: () => void): Promise<void> {
+    if (isBusy.value || brushMode.value) return
+    isNavigationPending.value = true
     try {
       await prepareForNavigation()
       navigate()
@@ -263,6 +263,8 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
         error instanceof Error ? error.message : '保存当前页失败，无法切换图片',
         'error',
       )
+    } finally {
+      isNavigationPending.value = false
     }
   }
 
@@ -297,7 +299,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     const hadBubbleStates = Array.isArray(currentImage.value.bubbleStates)
 
     if (bubbles.value.length > 0) {
-      imageStore.updateCurrentBubbleStates([...bubbles.value])
+      imageStore.updateCurrentBubbleStates(deepClone(bubbles.value))
       imageStore.setManuallyAnnotated(true)
     } else if (hadBubbleStates) {
       imageStore.updateCurrentBubbleStates([])
@@ -313,11 +315,11 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     hasSelection,
     isBrushKeyDown,
     exitEditMode: handleExitToolbarAction,
-    deleteSelectedBubbles,
+    deleteSelectedBubbles: deleteSelectedBubblesWhenIdle,
     goToPreviousImage,
     goToNextImage,
     applyAndNext,
-    toggleBrushMode,
+    toggleBrushMode: activateBrushShortcut,
     exitBrushMode,
     zoomIn,
     zoomOut,
@@ -328,6 +330,9 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
   let pageDocumentAbortController: AbortController | null = null
 
   function loadBubbleStatesFromImage(): void {
+    pageDocumentRequest += 1
+    pageDocumentAbortController?.abort()
+    pageDocumentAbortController = null
     if (currentImage.value?.bubbleStates) {
       // skipSync=true 避免冗余同步（数据已经在 imageStore 中）
       bubbleStore.setBubbles([...currentImage.value.bubbleStates], true)
@@ -338,16 +343,19 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     }
     selectFirstBubbleIfExists()
     const pageId = currentImage.value?.id
-    if (!pageId) return
-    pageDocumentAbortController?.abort()
+    const chapterId = currentImage.value?.chapterId
+    if (!pageId || !chapterId) return
     pageDocumentAbortController = new AbortController()
-    const request = ++pageDocumentRequest
+    const request = pageDocumentRequest
     void getPageDocument(pageId, pageDocumentAbortController.signal)
       .then(document => {
         if (
           request !== pageDocumentRequest
           || currentImage.value?.id !== pageId
         ) return
+        if (document.pageId !== pageId || document.chapterId !== chapterId) {
+          throw new Error(`页面 ${pageId} 的后端文档身份不匹配`)
+        }
         const loaded = registerPageDocument(document)
         imageStore.updateCurrentImage({
           bubbleStates: loaded,
@@ -358,18 +366,18 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
         selectFirstBubbleIfExists()
       })
       .catch(error => {
-        if (error instanceof DOMException && error.name === 'AbortError') return
+        if (isRequestCanceled(error)) return
         if (request === pageDocumentRequest) {
-          showToast('加载当前页编辑数据失败', 'error')
+          showToast(
+            error instanceof Error ? error.message : '加载当前页编辑数据失败',
+            'error',
+          )
         }
       })
   }
 
   const {
     isProcessing,
-    progressText,
-    progressCurrent,
-    progressTotal,
     isTranslateLoading,
     handleReTranslateBubble,
     autoDetectBubbles,
@@ -383,12 +391,22 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     selectFirstBubbleIfExists,
   })
 
+  const isBusy = computed(() => (
+    isProcessing.value
+    || isOcrLoading.value
+    || isRepairLoading.value
+    || isBrushSubmitting.value
+    || isNavigationPending.value
+  ))
+
 
   function selectPreviousBubble(): void {
+    if (isBusy.value) return
     bubbleStore.selectPrevious()
   }
 
   function selectNextBubble(): void {
+    if (isBusy.value) return
     bubbleStore.selectNext()
   }
 
@@ -433,17 +451,18 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
 
   function fitToScreen(): void {
     const viewport = translatedViewportRef.value || originalViewportRef.value
-    const wrapper = translatedWrapperRef.value || originalWrapperRef.value
-    if (!viewport || !wrapper) return
+    if (!viewport) return
 
     const img = translatedImageRef.value || originalImageRef.value
-    if (!img || !img.naturalWidth) return
+    if (!img || !img.naturalWidth || !img.naturalHeight) return
 
     const viewportRect = viewport.getBoundingClientRect()
+    if (viewportRect.width <= 0 || viewportRect.height <= 0) return
     const scaleX = viewportRect.width / img.naturalWidth
     const scaleY = viewportRect.height / img.naturalHeight
     const fitPadding = 0.95
     const newScale = Math.min(scaleX, scaleY) * fitPadding
+    if (!Number.isFinite(newScale) || newScale <= 0) return
 
     const newTranslateX = (viewportRect.width - img.naturalWidth * newScale) / 2
     const newTranslateY = (viewportRect.height - img.naturalHeight * newScale) / 2
@@ -479,6 +498,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
 
   function handleMouseDown(event: MouseEvent, viewport: 'original' | 'translated'): void {
     if (brushMode.value) {
+      if (isBrushSubmitting.value) return
       const surface = getBrushSurface(viewport)
       if (surface) {
         startBrushPainting(event, surface)
@@ -487,20 +507,25 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     }
 
     if (event.button === 1) {
-      isMiddleButtonDown.value = true
-      startDrawing(event, viewport)
+      if (!isBusy.value && startDrawing(event, viewport)) {
+        isMiddleButtonDown.value = true
+        document.body.classList.add('middle-button-drawing')
+      }
       event.preventDefault()
       return
     }
 
-    if (isDrawingMode.value && event.button === 0) {
+    if (isDrawingMode.value && !isBusy.value && event.button === 0) {
       startDrawing(event, viewport)
       event.preventDefault()
       return
     }
 
     if (event.button === 0) {
-      if ((event.target as HTMLElement).closest('.bubble-overlay__highlight-box')) {
+      if (
+        event.target instanceof Element
+        && event.target.closest('.bubble-overlay__highlight-box')
+      ) {
         return
       }
 
@@ -559,43 +584,65 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
 
   let drawingViewport: 'original' | 'translated' = 'translated'
 
-  function startDrawing(event: MouseEvent, viewport: 'original' | 'translated' = 'translated'): void {
-    drawingViewport = viewport
-
+  function drawingPoint(
+    event: MouseEvent,
+    viewport: 'original' | 'translated',
+    clampToImage: boolean,
+  ): { x: number; y: number } | null {
     const wrapper = viewport === 'original' ? originalWrapperRef.value : translatedWrapperRef.value
     const viewer = viewport === 'original' ? originalViewer : translatedViewer
-    if (!wrapper) return
+    const width = currentImageWidth.value
+    const height = currentImageHeight.value
+    if (
+      !wrapper
+      || !Number.isFinite(width)
+      || !Number.isFinite(height)
+      || width <= 0
+      || height <= 0
+      || !Number.isFinite(viewer.scale.value)
+      || viewer.scale.value <= 0
+    ) return null
 
     const wrapperRect = wrapper.getBoundingClientRect()
+    const rawX = (event.clientX - wrapperRect.left) / viewer.scale.value
+    const rawY = (event.clientY - wrapperRect.top) / viewer.scale.value
+    if (!clampToImage && (rawX < 0 || rawX > width || rawY < 0 || rawY > height)) {
+      return null
+    }
+    return {
+      x: Math.max(0, Math.min(width, rawX)),
+      y: Math.max(0, Math.min(height, rawY)),
+    }
+  }
 
-    const imgX = (event.clientX - wrapperRect.left) / viewer.scale.value
-    const imgY = (event.clientY - wrapperRect.top) / viewer.scale.value
+  function startDrawing(
+    event: MouseEvent,
+    viewport: 'original' | 'translated' = 'translated',
+  ): boolean {
+    const point = drawingPoint(event, viewport, false)
+    if (!point) return false
+    drawingViewport = viewport
 
-    drawStartX.value = imgX
-    drawStartY.value = imgY
+    drawStartX.value = point.x
+    drawStartY.value = point.y
     isDrawingBox.value = true
-    currentDrawingRect.value = [imgX, imgY, imgX, imgY]
+    currentDrawingRect.value = [point.x, point.y, point.x, point.y]
 
     document.addEventListener('mousemove', handleDrawingMove)
     document.addEventListener('mouseup', handleDrawingEnd)
+    return true
   }
 
   function handleDrawingMove(event: MouseEvent): void {
     if (!isDrawingBox.value) return
-
-    const wrapper = drawingViewport === 'original' ? originalWrapperRef.value : translatedWrapperRef.value
-    const viewer = drawingViewport === 'original' ? originalViewer : translatedViewer
-    if (!wrapper) return
-
-    const wrapperRect = wrapper.getBoundingClientRect()
-    const imgX = (event.clientX - wrapperRect.left) / viewer.scale.value
-    const imgY = (event.clientY - wrapperRect.top) / viewer.scale.value
+    const point = drawingPoint(event, drawingViewport, true)
+    if (!point) return
 
     currentDrawingRect.value = [
-      Math.min(drawStartX.value, imgX),
-      Math.min(drawStartY.value, imgY),
-      Math.max(drawStartX.value, imgX),
-      Math.max(drawStartY.value, imgY)
+      Math.min(drawStartX.value, point.x),
+      Math.min(drawStartY.value, point.y),
+      Math.max(drawStartX.value, point.x),
+      Math.max(drawStartY.value, point.y)
     ]
   }
 
@@ -604,6 +651,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     document.removeEventListener('mouseup', handleDrawingEnd)
 
     const wasMiddleButton = isMiddleButtonDown.value
+    document.body.classList.remove('middle-button-drawing')
 
     if (!isDrawingBox.value || !currentDrawingRect.value) {
       isDrawingBox.value = false
@@ -617,8 +665,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     const height = y2 - y1
 
     if (width > 10 && height > 10) {
-      bubbleStore.addBubble(currentDrawingRect.value)
-      bubbleStore.selectBubble(bubbleStore.bubbleCount - 1)
+      handleDrawBubble(currentDrawingRect.value)
     }
 
     isDrawingBox.value = false
@@ -631,22 +678,10 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
   }
 
   function handleImageLoad(viewport: 'original' | 'translated'): void {
-    const img = viewport === 'original' ? originalImageRef.value : translatedImageRef.value
-    const width = img?.naturalWidth || 0
-    const height = img?.naturalHeight || 0
-
     if (viewport === 'original') {
       updateImageDimensions()
-    }
-
-    // 只在以下情况自动适应屏幕：
-    // 1. 初始状态（scale=1, translate=0,0）- 首次进入编辑模式
-    // 2. 检测到超大图片（超过4K）- 强制适应以避免渲染问题
-    const isInitialState = scale.value === 1 && translateX.value === 0 && translateY.value === 0
-    const isLargeImage = width > 3840 || height > 2160
-
-    if (viewport === 'original' && (isInitialState || isLargeImage)) {
       nextTick(() => {
+        if (!isOwnerActive) return
         if (imageLoadFitTimeout) {
           clearTimeout(imageLoadFitTimeout)
         }
@@ -659,10 +694,12 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
   }
 
   function handleReRender(): void {
-    reRenderFullImage()
+    void reRenderFullImage()
   }
 
   async function handleExitToolbarAction(): Promise<void> {
+    if (isBusy.value || brushMode.value) return
+    isNavigationPending.value = true
     try {
       await persistCurrentDocument()
       emit('exit')
@@ -671,10 +708,13 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
         error instanceof Error ? error.message : '保存当前页失败，无法退出编辑',
         'error',
       )
+    } finally {
+      isNavigationPending.value = false
     }
   }
 
   function handleBubbleUpdateWithSync(updates: Partial<BubbleState>): void {
+    if (isBusy.value) return
     if (updates.inpaintMethod !== undefined) {
       currentInpaintMethod.value = updates.inpaintMethod
     }
@@ -688,11 +728,13 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
   }
 
   function handleApplyStyleToAllBubbles(updates: Partial<BubbleState>): void {
+    if (isBusy.value) return
     bubbleStore.updateAllBubbles(updates)
     handleReRender()
   }
 
   function handleResetCurrentBubble(index: number): void {
+    if (isBusy.value) return
     const initialState = bubbleStore.initialStates[index]
     if (!initialState) {
       showToast('无法重置：找不到初始状态', 'warning')
@@ -707,6 +749,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
   }
 
   async function handleOcrRecognize(index: number): Promise<void> {
+    if (isBusy.value) return
     isOcrLoading.value = true
     try {
       await bubbleOcrRecognize(index)
@@ -716,6 +759,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
   }
 
   async function handleRepairSelectedBubble(): Promise<void> {
+    if (isBusy.value) return
     isRepairLoading.value = true
     try {
       await bubbleRepairSelectedBubble()
@@ -726,11 +770,23 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
 
 
   function activateRepairBrush(): void {
+    if (isBusy.value) return
     toggleBrushMode('repair')
   }
 
   function activateRestoreBrush(): void {
+    if (isBusy.value) return
     toggleBrushMode('restore')
+  }
+
+  function activateBrushShortcut(mode: 'repair' | 'restore'): void {
+    if (isBusy.value) return
+    toggleBrushMode(mode)
+  }
+
+  function deleteSelectedBubblesWhenIdle(): void {
+    if (isBusy.value) return
+    deleteSelectedBubbles()
   }
 
   function handleGlobalMouseMove(event: MouseEvent): void {
@@ -743,22 +799,25 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
 
 
   async function applyAndNext(): Promise<void> {
-    saveBubbleStatesToImage()
+    if (isBusy.value || brushMode.value) return
+    isNavigationPending.value = true
+    try {
+      saveBubbleStatesToImage()
 
-    // 等待渲染完成后再切图，避免下一张读取到未落盘的画面。
-    const renderSucceeded = await reRenderFullImage()
-    if (!renderSucceeded) {
-      showToast('应用失败，已停留在当前图片，请重试', 'warning')
-      return
-    }
-
-    if (canGoNext.value) {
-      if (brushMode.value) {
-        exitBrushMode()
+      // 等待渲染完成后再切图，避免下一张读取到未落盘的画面。
+      const renderSucceeded = await reRenderFullImage()
+      if (!renderSucceeded) {
+        showToast('应用失败，已停留在当前图片，请重试', 'warning')
+        return
       }
-      imageStore.goToNext()
-    } else {
-      showToast('已是最后一张图片', 'info')
+
+      if (canGoNext.value) {
+        imageStore.goToNext()
+      } else {
+        showToast('已是最后一张图片', 'info')
+      }
+    } finally {
+      isNavigationPending.value = false
     }
   }
 
@@ -772,6 +831,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
 
 
   onMounted(() => {
+    isOwnerActive = true
     try {
       const savedLayout = localStorage.getItem(LAYOUT_MODE_KEY)
       if (savedLayout === 'horizontal' || savedLayout === 'vertical') {
@@ -787,55 +847,37 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     document.addEventListener('mousemove', handleGlobalMouseMove)
     document.addEventListener('mouseup', handleGlobalMouseUp)
 
-    // 加载当前图片的气泡状态，保留当前缩放状态。
-    if (props.isEditModeActive) {
-      loadBubbleStatesFromImage()
-      nextTick(() => {
-        workspaceRef.value?.focus()
-      })
-    }
+    loadBubbleStatesFromImage()
+    nextTick(() => {
+      if (!isOwnerActive) return
+      workspaceRef.value?.focus()
+      updateImageDimensions()
+      initialFitTimeout = setTimeout(() => {
+        initialFitTimeout = null
+        fitToScreen()
+      }, 100)
+    })
   })
 
   onUnmounted(() => {
+    isOwnerActive = false
     document.removeEventListener('keydown', handleKeyDown)
     document.removeEventListener('keyup', handleKeyUp)
     document.removeEventListener('mousemove', handleGlobalMouseMove)
     document.removeEventListener('mouseup', handleGlobalMouseUp)
     document.removeEventListener('mousemove', handleDrawingMove)
     document.removeEventListener('mouseup', handleDrawingEnd)
-    document.removeEventListener('mousemove', handleDividerDrag)
-    document.removeEventListener('mouseup', stopDividerDrag)
-    document.removeEventListener('mousemove', handlePanelResize)
-    document.removeEventListener('mouseup', stopPanelResize)
+    document.removeEventListener('mousemove', handleDragMove)
+    document.removeEventListener('mouseup', handleDragEnd)
+    document.body.classList.remove('middle-button-drawing')
     pageDocumentRequest += 1
     pageDocumentAbortController?.abort()
     pageDocumentAbortController = null
     clearDelayedFitTimers()
   })
 
-  watch(() => props.isEditModeActive, (active) => {
-    if (active) {
-      loadBubbleStatesFromImage()
-      nextTick(() => {
-        workspaceRef.value?.focus()
-        updateImageDimensions()
-        // 进入编辑模式时等待图片和容器完成布局，再计算初始缩放。
-        // 8K 等超大图片依赖这个时序获得正确视口尺寸。
-        if (activationFitTimeout) {
-          clearTimeout(activationFitTimeout)
-        }
-        activationFitTimeout = setTimeout(() => {
-          activationFitTimeout = null
-          fitToScreen()
-        }, 100)
-      })
-    }
-  })
-
   watch(currentImageIndex, () => {
-    if (props.isEditModeActive) {
-      loadBubbleStatesFromImage()
-    }
+    loadBubbleStatesFromImage()
   })
 
   watch(selectedBubble, (bubble) => {
@@ -867,62 +909,36 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     layoutMode,
     showThumbnails,
     syncEnabled,
-    currentInpaintMethod,
-    currentFillColor,
     isOcrLoading,
     isTranslateLoading,
     isRepairLoading,
     scale,
-    translateX,
-    translateY,
     originalScale,
-    activeViewport,
     originalTransformStyle,
     translatedTransformStyle,
     isDrawingMode,
-    isDrawingBox,
     currentDrawingRect,
-    isMiddleButtonDown,
     handleBubbleSelect,
     handleBubbleMultiSelect,
-    handleClearMultiSelect,
     handleBubbleDragEnd,
     handleBubbleResizeEnd,
     handleBubbleRotateEnd,
     toggleDrawingMode,
-    handleDrawBubble,
     getDrawingRectStyle,
-    handleBubbleUpdate,
-    deleteSelectedBubbles,
-    bubbleRepairSelectedBubble,
-    bubbleOcrRecognize,
+    deleteSelectedBubbles: deleteSelectedBubblesWhenIdle,
     brushMode,
     brushSize,
     mouseX,
     mouseY,
-    isBrushKeyDown,
-    toggleBrushMode,
-    exitBrushMode,
-    startBrushPainting,
-    continueBrushPainting,
-    finishBrushPainting,
-    adjustBrushSize,
-    isProcessing,
-    progressText,
-    progressCurrent,
-    progressTotal,
+    isBusy,
     startDividerDrag,
     startPanelResize,
     zoomIn,
     zoomOut,
     resetZoom,
-    prepareForNavigation,
-    selectFirstBubbleIfExists,
     goToPreviousImage,
     goToNextImage,
     switchToImage,
-    saveBubbleStatesToImage,
-    loadBubbleStatesFromImage,
     selectPreviousBubble,
     selectNextBubble,
     toggleThumbnails,
@@ -932,13 +948,7 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     fitToScreen,
     handleWheel,
     handleMouseDown,
-    handleDragMove,
-    handleDragEnd,
-    startDrawing,
-    handleDrawingMove,
-    handleDrawingEnd,
     handleImageLoad,
-    handleReRender,
     handleApplyStyleToAllBubbles,
     handleExitToolbarAction,
     handleBubbleUpdateWithSync,
@@ -948,8 +958,6 @@ export function useEditWorkspace(props: EditWorkspaceProps, emit: EditWorkspaceE
     handleRepairSelectedBubble,
     activateRepairBrush,
     activateRestoreBrush,
-    handleGlobalMouseMove,
-    handleGlobalMouseUp,
     applyAndNext,
     autoDetectBubbles,
     detectAllImages,

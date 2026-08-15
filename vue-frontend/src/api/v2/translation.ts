@@ -3,14 +3,14 @@ import type { components } from '@/api/generated/v2'
 import { assertBackendActionAllowed } from '@/services/backendAccessGate'
 import { newIdempotencyKey } from './content'
 
-export type TranslationJobConfig = components['schemas']['TranslationJobConfig']
-export type V2TextImportPreview = components['schemas']['TextImportPreview']
-export type V2TextImportPreviewPage = components['schemas']['TextImportPreviewPage']
-export type V2TranslationBatchAccepted = components['schemas']['JobBatchAccepted']
-export type V2MultiChapterTranslationBatchAccepted =
+type TranslationJobConfig = components['schemas']['TranslationJobConfig']
+type V2TextImportPreview = components['schemas']['TextImportPreview']
+type V2TextImportPreviewPage = components['schemas']['TextImportPreviewPage']
+type V2TranslationBatchAccepted = components['schemas']['JobBatchAccepted']
+type V2MultiChapterTranslationBatchAccepted =
   components['schemas']['TranslationBatchAccepted']
 
-export interface TranslationStyleSource {
+interface TranslationStyleSource {
   pageId: string
   documentRevision: number
 }
@@ -114,7 +114,7 @@ export function previewChapterTextImport(
 ): Promise<V2TextImportPreview> {
   const form = new FormData()
   form.append('file', file, file.name)
-  return apiClient.upload(
+  return apiClient.upload<V2TextImportPreview>(
     `/api/v2/chapters/${encodeURIComponent(chapterId)}/text-import/preview`,
     form,
   )

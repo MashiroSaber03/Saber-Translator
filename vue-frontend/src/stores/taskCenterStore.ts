@@ -1,6 +1,9 @@
 import { computed, ref, watch, type WatchStopHandle } from 'vue'
 import { defineStore } from 'pinia'
 import {
+  CURRENT_JOB_STATUSES,
+  HISTORY_JOB_STATUSES,
+  NONTERMINAL_JOB_STATUSES,
   jobsApi,
   type JobRetryAccepted,
   type V2Job,
@@ -9,55 +12,43 @@ import {
   type V2JobStatus,
 } from '@/api/v2/jobs'
 import { groupJobsByBatch } from '@/stores/taskCenterProjection'
-
-const EVENT_TYPES = [
-  'job_created',
-  'job_reordered',
-  'job_started',
-  'job_request_pause',
-  'job_request_cancel',
-  'job_resume',
-  'job_continue',
-  'job_paused',
-  'job_cancelled',
-  'job_interrupted',
-  'job_finished',
-  'job_failed',
-  'chapter_write_intent_created',
-  'chapter_write_lock_acquired',
-  'step_started',
-  'step_checkpointed',
-  'step_completed',
-  'pipeline_progress',
-  'page_completed',
-  'page_failed',
-  'page_skipped',
-  'drain_acknowledged',
-  'plugin_stage_completed',
-  'plugin_log',
-  'plugin_hook_failed',
-  'plugin_hook_completed',
-  'plugin_agent_state',
-  'plugin_agent_assistant_delta',
-  'plugin_agent_assistant',
-  'plugin_agent_tool_call',
-  'plugin_agent_tool_result',
-  'plugin_agent_validation',
-  'plugin_agent_done',
-  'plugin_agent_error',
-  'web_import_agent_log',
-]
+import { TASK_EVENT_TYPES } from '@/utils/taskDisplay'
 
 type TaskCenterEventListener = (event: V2JobEvent) => void
 
 const QUEUE_STATUSES = new Set<V2JobStatus>([
   'queued',
-  'running',
-  'pausing',
-  'paused',
-  'cancelling',
+  ...CURRENT_JOB_STATUSES,
 ])
 const HISTORY_BATCH_LIMIT = 200
+const JOB_EVENT_FIELDS = new Set(['eventId', 'jobId', 'type', 'payload', 'createdAt'])
+
+function parseJobEvent(value: unknown): V2JobEvent | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const record = value as Record<string, unknown>
+  if (
+    Object.keys(record).length !== JOB_EVENT_FIELDS.size
+    || Object.keys(record).some(key => !JOB_EVENT_FIELDS.has(key))
+    || !Number.isInteger(record.eventId)
+    || (record.eventId as number) < 1
+    || typeof record.jobId !== 'string'
+    || record.jobId.length === 0
+    || typeof record.type !== 'string'
+    || record.type.length === 0
+    || !record.payload
+    || typeof record.payload !== 'object'
+    || Array.isArray(record.payload)
+    || !(
+      record.createdAt === null
+      || (
+        typeof record.createdAt === 'string'
+        && record.createdAt.length > 0
+        && Number.isFinite(Date.parse(record.createdAt))
+      )
+    )
+  ) return null
+  return record as unknown as V2JobEvent
+}
 
 export interface WaitForJobOptions {
   onProgress?: (progress: V2Job['progress']) => void
@@ -78,11 +69,13 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
   const drawerOpen = ref(false)
   const focusTarget = ref<TaskCenterFocus | null>(null)
   const loading = ref(false)
+  const snapshotLoaded = ref(false)
   const connected = ref(false)
   const workerOnline = ref(true)
   const lastEventId = ref(0)
   const latestEvent = ref<V2JobEvent | null>(null)
   const selectedDetail = ref<V2JobDetail | null>(null)
+  const selectedDetailJobId = ref<string | null>(null)
   const detailLoading = ref(false)
   const olderEventsLoading = ref(false)
   const olderEventsExhausted = ref(false)
@@ -101,20 +94,19 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
   let detailProjectionTimer: ReturnType<typeof setTimeout> | null = null
   let detailProjectionPromise: Promise<void> | null = null
   let detailProjectionDirty = false
+  let detailRequestVersion = 0
   const pendingProjectionJobIds = new Set<string>()
   const eventListeners = new Set<TaskCenterEventListener>()
 
   const activeCount = computed(
-    () =>
-      queue.value.filter(job => ['running', 'pausing', 'paused', 'cancelling'].includes(job.status))
-        .length
+    () => queue.value.filter(job => CURRENT_JOB_STATUSES.has(job.status)).length
   )
   const queuedCount = computed(() => queue.value.filter(job => job.status === 'queued').length)
   const interruptedCount = computed(
     () => history.value.filter(job => job.status === 'interrupted').length
   )
   const currentJobs = computed(() =>
-    queue.value.filter(job => ['running', 'pausing', 'paused', 'cancelling'].includes(job.status))
+    queue.value.filter(job => CURRENT_JOB_STATUSES.has(job.status))
   )
   const waitingJobs = computed(() => queue.value.filter(job => job.status === 'queued'))
   const waitingBatches = computed(() => groupJobsByBatch(waitingJobs.value))
@@ -144,6 +136,7 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
       history.value = historyResult.items
       queueRevision.value = queueResult.queueRevision
       workerOnline.value = queueResult.workerOnline !== false
+      snapshotLoaded.value = true
       if (selectedDetail.value) {
         scheduleSelectedDetailRefresh(selectedDetail.value.jobId)
       }
@@ -172,12 +165,17 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
   }
 
   function trimHistoryBatches(items: V2Job[]): V2Job[] {
-    const retained = new Set<string>()
+    const batchKey = (job: V2Job) => job.batchId || `job:${job.jobId}`
+    const interruptedBatches = new Set(
+      items.filter(job => job.status === 'interrupted').map(batchKey),
+    )
+    const retainedTerminalBatches = new Set<string>()
     return items.filter(job => {
-      const key = job.batchId || `job:${job.jobId}`
-      if (retained.has(key)) return true
-      if (retained.size >= HISTORY_BATCH_LIMIT) return false
-      retained.add(key)
+      const key = batchKey(job)
+      if (interruptedBatches.has(key)) return true
+      if (retainedTerminalBatches.has(key)) return true
+      if (retainedTerminalBatches.size >= HISTORY_BATCH_LIMIT) return false
+      retainedTerminalBatches.add(key)
       return true
     })
   }
@@ -307,6 +305,10 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
       eventRefreshDirty = false
       try {
         await refresh()
+      } catch {
+        // A later SSE event, reconnect, drawer open, or explicit action retries
+        // the durable snapshot. Background refresh failures must not surface as
+        // unhandled promise rejections.
       } finally {
         eventRefreshInFlight = false
         if (eventRefreshDirty) scheduleRefresh()
@@ -314,10 +316,10 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     }, 250)
   }
 
-  function receiveEvent(event: MessageEvent<string>): void {
+  function receiveEvent(event: MessageEvent<string>, expectedType: string): void {
     try {
-      const parsed = JSON.parse(event.data) as V2JobEvent
-      if (!Number.isInteger(parsed.eventId) || parsed.eventId < 1) {
+      const parsed = parseJobEvent(JSON.parse(event.data))
+      if (!parsed || parsed.type !== expectedType) {
         scheduleRefresh()
         return
       }
@@ -338,19 +340,29 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     eventSource = new EventSource(`/api/v2/jobs/events?after=${lastEventId.value}`)
     eventSource.onopen = () => {
       connected.value = true
-      if (eventStreamOpenedOnce) void refresh()
+      if (eventStreamOpenedOnce || !snapshotLoaded.value) {
+        void refresh().catch(() => undefined)
+      }
       eventStreamOpenedOnce = true
     }
     eventSource.onerror = () => {
       connected.value = false
     }
-    for (const eventType of EVENT_TYPES) {
-      eventSource.addEventListener(eventType, receiveEvent as EventListener)
+    for (const eventType of TASK_EVENT_TYPES) {
+      eventSource.addEventListener(
+        eventType,
+        (event) => receiveEvent(event as MessageEvent<string>, eventType),
+      )
     }
   }
 
   async function initialize(): Promise<void> {
-    await refresh()
+    try {
+      await refresh()
+    } catch {
+      // EventSource reconnects independently and refreshes the durable
+      // snapshot on open, so a transient startup failure is recoverable.
+    }
     connect()
   }
 
@@ -367,7 +379,9 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     eventSource?.close()
     eventSource = null
     eventStreamOpenedOnce = false
+    snapshotLoaded.value = false
     connected.value = false
+    clearDetail()
   }
 
   function subscribeEvents(listener: TaskCenterEventListener): () => void {
@@ -399,12 +413,7 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
         job => {
           if (!job) return
           options.onProgress?.(job.progress)
-          if (
-            !['completed', 'completed_with_errors', 'failed', 'cancelled', 'interrupted'].includes(
-              job.status
-            )
-          )
-            return
+          if (!HISTORY_JOB_STATUSES.has(job.status)) return
           if (terminalDetailLoading) return
           terminalDetailLoading = true
 
@@ -437,28 +446,77 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
 
   async function runCommand<T>(command: () => Promise<T>): Promise<T> {
     const result = await command()
-    if (refreshPromise) await refreshPromise
-    await refresh()
+    if (refreshPromise) await refreshPromise.catch(() => undefined)
+    await refresh().catch(() => undefined)
     return result
   }
 
+  function hasActiveTranslation(
+    chapterId: string,
+    summary: Partial<Record<V2JobStatus, number>> = {},
+  ): boolean {
+    const matchesChapter = (job: V2Job) => (
+      job.chapterId === chapterId
+      && job.kind === 'translation'
+      && NONTERMINAL_JOB_STATUSES.has(job.status)
+    )
+    if (queue.value.some(matchesChapter) || history.value.some(matchesChapter)) {
+      return true
+    }
+    if (snapshotLoaded.value) return false
+    return [...NONTERMINAL_JOB_STATUSES]
+      .some(status => (summary[status] || 0) > 0)
+  }
+
   async function loadDetail(jobId: string): Promise<void> {
+    const requestVersion = ++detailRequestVersion
+    selectedDetailJobId.value = jobId
+    selectedDetail.value = null
     detailLoading.value = true
     olderEventsExhausted.value = false
     try {
-      selectedDetail.value = await jobsApi.get(jobId)
+      const detail = await jobsApi.get(jobId)
+      if (
+        requestVersion === detailRequestVersion
+        && selectedDetailJobId.value === jobId
+      ) {
+        selectedDetail.value = detail
+      }
+    } catch (error) {
+      if (requestVersion === detailRequestVersion) {
+        selectedDetailJobId.value = null
+        selectedDetail.value = null
+      }
+      throw error
     } finally {
-      detailLoading.value = false
+      if (requestVersion === detailRequestVersion) {
+        detailLoading.value = false
+      }
     }
+  }
+
+  function clearDetail(): void {
+    detailRequestVersion += 1
+    selectedDetailJobId.value = null
+    selectedDetail.value = null
+    detailLoading.value = false
+    olderEventsLoading.value = false
+    olderEventsExhausted.value = false
   }
 
   async function loadOlderEvents(): Promise<void> {
     const detail = selectedDetail.value
     const firstEvent = detail?.recentEvents[0]
     if (!detail || !firstEvent || olderEventsExhausted.value) return
+    const requestVersion = detailRequestVersion
     olderEventsLoading.value = true
     try {
       const page = await jobsApi.events(detail.jobId, { before: firstEvent.eventId, limit: 50 })
+      if (
+        requestVersion !== detailRequestVersion
+        || selectedDetailJobId.value !== detail.jobId
+        || selectedDetail.value?.jobId !== detail.jobId
+      ) return
       if (!page.items.length) {
         olderEventsExhausted.value = true
         return
@@ -472,7 +530,9 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
         ],
       }
     } finally {
-      olderEventsLoading.value = false
+      if (requestVersion === detailRequestVersion) {
+        olderEventsLoading.value = false
+      }
     }
   }
 
@@ -532,10 +592,12 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     drawerOpen,
     focusTarget,
     loading,
+    snapshotLoaded,
     connected,
     workerOnline,
     latestEvent,
     selectedDetail,
+    selectedDetailJobId,
     detailLoading,
     olderEventsLoading,
     olderEventsExhausted,
@@ -551,12 +613,13 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     initialize,
     disconnect,
     subscribeEvents,
+    hasActiveTranslation,
     waitForJob,
     refresh,
     open: (target?: TaskCenterFocus) => {
       focusTarget.value = target || null
       drawerOpen.value = true
-      void refresh()
+      void refresh().catch(() => undefined)
     },
     close: () => {
       drawerOpen.value = false
@@ -569,6 +632,7 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     retryFailed,
     retryLatestFailed,
     loadDetail,
+    clearDetail,
     loadOlderEvents,
     moveQueued,
     prioritizeQueued,

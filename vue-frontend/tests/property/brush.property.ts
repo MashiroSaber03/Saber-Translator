@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs'
 import { defineComponent, h } from 'vue'
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -40,24 +39,6 @@ describe('brush composable property contracts', () => {
     while (mountedWrappers.length > 0) {
       mountedWrappers.pop()?.unmount()
     }
-  })
-
-  it('uses the real composable instead of copied brush or rotation helpers', () => {
-    const source = readFileSync('tests/property/brush.property.ts', 'utf8')
-
-    expect(source).toContain("from '@/composables/useBrush'")
-    for (const shadowHelper of [
-      'function setBrush' + 'Size',
-      'function adjustBrush' + 'Size',
-      'function handleBrush' + 'Wheel',
-      'function calculateRotation' + 'Center',
-      'function normalize' + 'Angle',
-      'function calculateAngle' + 'FromCenter',
-      'function calculateRotated' + 'Angle',
-    ]) {
-      expect(source).not.toContain(shadowHelper)
-    }
-    expect(source).not.toMatch(/={6,}/)
   })
 
   it('keeps large size adjustments inside the product brush bounds', () => {

@@ -20,6 +20,7 @@ from sqlalchemy import Engine
 
 from src.backend_v2.api.request_helpers import (
     error_response as _error,
+    integer_value as _integer_value,
     json_body as _json_body,
     require_idempotency_key as _idempotency_key,
     required_string as _required_string,
@@ -38,6 +39,7 @@ from src.backend_v2.studio.io import StudioIOService
 from src.backend_v2.studio.service import StudioOperationService
 from src.backend_v2.studio.pure import (
     build_export_bundle,
+    create_empty_document,
     import_document_payload,
 )
 
@@ -81,7 +83,7 @@ def create_studio_blueprint(
     @blueprint.get("/books/<book_id>/index")
     def index(book_id: str) -> Response:
         payload = repository.index(book_id=book_id)
-        timeline = derived.get_timeline(book_id=book_id)
+        timeline = derived.get_timeline_status(book_id=book_id)
         payload["candidateStatus"] = {
             "available": bool(
                 timeline
@@ -100,7 +102,7 @@ def create_studio_blueprint(
 
     @blueprint.get("/books/<book_id>/candidates")
     def candidates(book_id: str) -> Response:
-        timeline = derived.get_timeline(book_id=book_id)
+        timeline = derived.list_timeline_characters(book_id=book_id)
         if timeline is None or timeline.get("status") not in {
             "ready",
             "degraded",
@@ -132,37 +134,40 @@ def create_studio_blueprint(
     @blueprint.post("/books/<book_id>/documents")
     def create_document(book_id: str):
         idempotency_key = _idempotency_key()
-        body = _json_body(
-            allowed_keys={"candidate", "title", "document", "kind"}
-        )
-        candidate = body.get("candidate")
-        title = str(
-            body.get("title")
-            or (
-                candidate.get("name")
-                if isinstance(candidate, dict)
-                else ""
+        body = _json_body(allowed_keys={"candidateId", "title"})
+        candidate: Mapping[str, Any] | None = None
+        candidate_id = body.get("candidateId")
+        if candidate_id is not None:
+            source = derived.get_timeline_character(
+                book_id=book_id,
+                character_id=_required_string(body, "candidateId"),
             )
-            or ""
+            if source is None:
+                raise ValueError("candidateId does not identify an active candidate")
+            if (
+                source.get("status") not in {"ready", "degraded"}
+                or source.get("mode") != "enhanced"
+            ):
+                raise ValueError("candidateId requires an enhanced active timeline")
+            raw_candidate = source.get("character")
+            if not isinstance(raw_candidate, Mapping):
+                raise ValueError("candidateId does not identify an active candidate")
+            candidate = raw_candidate
+        raw_title = body.get("title")
+        if raw_title is not None and not isinstance(raw_title, str):
+            raise ValueError("title must be a string")
+        title = (
+            (raw_title or "")
+            or (str(candidate.get("name", "")) if candidate else "")
         ).strip()
         if not title:
             raise ValueError("title is required")
-        document = body.get("document")
-        if document is not None and not isinstance(document, dict):
-            raise ValueError("document must be an object")
-        if document is None and isinstance(candidate, dict):
-            document = {
-                "origin": {
-                    "type": "analysis",
-                    "source_character": candidate.get("name"),
-                },
-                "identity": {
-                    "name": title,
-                    "aliases": candidate.get("aliases", []),
-                    "description": candidate.get("description", ""),
-                    "personality": candidate.get("personality", ""),
-                    "scenario": "",
-                },
+        document = None
+        if candidate is not None:
+            document = create_empty_document(book_id, title=title)
+            document["origin"] = {
+                "type": "analysis",
+                "source_character": candidate["name"],
             }
         return (
             jsonify(
@@ -170,14 +175,7 @@ def create_studio_blueprint(
                     book_id=book_id,
                     title=title,
                     document=document,
-                    kind=str(
-                        body.get(
-                            "kind",
-                            "analysis"
-                            if isinstance(candidate, dict)
-                            else "manual",
-                        )
-                    ),
+                    kind="analysis" if candidate is not None else "manual",
                     idempotency_key=idempotency_key,
                 )
             ),
@@ -197,15 +195,14 @@ def create_studio_blueprint(
         document = body.get("document")
         if not isinstance(document, dict):
             raise ValueError("document must be an object")
+        raw_title = body.get("title")
+        if raw_title is not None and not isinstance(raw_title, str):
+            raise ValueError("title must be a string")
         return jsonify(
             repository.update_document(
                 document_id=document_id,
-                base_revision=int(body.get("baseRevision", 0)),
-                title=(
-                    str(body["title"])
-                    if body.get("title") is not None
-                    else None
-                ),
+                base_revision=_revision(body, "baseRevision"),
+                title=raw_title,
                 document=document,
                 idempotency_key=idempotency_key,
             )
@@ -255,11 +252,11 @@ def create_studio_blueprint(
             )
         response = repository.create_generate_operation(
             document_id=document_id,
-            base_revision=int(body.get("baseRevision", 0)),
+            base_revision=_revision(body, "baseRevision"),
             section=_required_string(body, "section"),
             config=settings.resolve_insight(
                 book_id=str(document["bookId"]),
-                command={"scope": "full", "force": False},
+                scope="full",
             ),
             analysis_context=compressed,
             idempotency_key=_idempotency_key(),
@@ -273,7 +270,7 @@ def create_studio_blueprint(
         return jsonify(
             repository.validate_document(
                 document_id=document_id,
-                base_revision=int(body.get("baseRevision", 0)),
+                base_revision=_revision(body, "baseRevision"),
                 idempotency_key=idempotency_key,
             )
         )
@@ -307,51 +304,49 @@ def create_studio_blueprint(
                 "title",
                 "baseIndexRevision",
                 "greetingId",
-                "greeting",
-                "greetingSource",
             }
         )
         document = repository.get_document(document_id)
+        raw_title = body.get("title")
+        if raw_title is not None and not isinstance(raw_title, str):
+            raise ValueError("title must be a string")
+        raw_greeting_id = body.get("greetingId")
+        if raw_greeting_id is not None and not isinstance(
+            raw_greeting_id,
+            str,
+        ):
+            raise ValueError("greetingId must be a string")
+        choices = _greetings(document)
         selected = next(
             (
                 greeting
-                for greeting in _greetings(document)
-                if greeting["greetingId"] == body.get("greetingId")
+                for greeting in choices
+                if greeting["greetingId"] == raw_greeting_id
             ),
             None,
         )
-        if selected is None:
-            choices = _greetings(document)
+        if raw_greeting_id is not None and selected is None:
+            raise ValueError("greetingId does not identify an available greeting")
+        if raw_greeting_id is None:
             selected = choices[0] if choices else None
         return (
             jsonify(
                 repository.create_session(
                     document_id=document_id,
-                    title=str(body.get("title", "")).strip(),
+                    title=(raw_title or "").strip(),
                     base_index_revision=_positive_revision(
                         body.get("baseIndexRevision"),
                         "baseIndexRevision",
                     ),
                     greeting=(
-                        str(body["greeting"])
-                        if body.get("greeting") is not None
-                        else (
-                            str(selected["content"])
-                            if selected is not None
-                            else None
-                        )
+                        str(selected["content"])
+                        if selected is not None
+                        else None
                     ),
                     greeting_source=(
-                        body["greetingSource"]
-                        if isinstance(
-                            body.get("greetingSource"),
-                            dict,
-                        )
-                        else (
-                            dict(selected["source"])
-                            if selected is not None
-                            else None
-                        )
+                        dict(selected["source"])
+                        if selected is not None
+                        else None
                     ),
                     idempotency_key=idempotency_key,
                     idempotency_request={
@@ -407,14 +402,17 @@ def create_studio_blueprint(
             isinstance(value, str) for value in asset_ids
         ):
             raise ValueError("assetIds must be a string array")
+        content = body.get("content", "")
+        if not isinstance(content, str):
+            raise ValueError("content must be a string")
         response = repository.send_message(
             session_id=session_id,
-            base_revision=int(body.get("baseSessionRevision", 0)),
-            content=str(body.get("content", "")),
+            base_revision=_revision(body, "baseSessionRevision"),
+            content=content,
             asset_ids=asset_ids,
             config=settings.resolve_insight(
                 book_id=repository.session_book_id(session_id),
-                command={"scope": "full", "force": False},
+                scope="full",
             ),
             idempotency_key=_idempotency_key(),
         )
@@ -425,10 +423,10 @@ def create_studio_blueprint(
         body = _json_body(allowed_keys={"baseSessionRevision"})
         response = repository.create_summary_operation(
             session_id=session_id,
-            base_revision=int(body.get("baseSessionRevision", 0)),
+            base_revision=_revision(body, "baseSessionRevision"),
             config=settings.resolve_insight(
                 book_id=repository.session_book_id(session_id),
-                command={"scope": "full", "force": False},
+                scope="full",
             ),
             idempotency_key=_idempotency_key(),
         )
@@ -455,13 +453,14 @@ def create_studio_blueprint(
             jsonify(
                 repository.edit_or_regenerate_message(
                     message_id=message_id,
-                    base_revision=int(
-                        body.get("baseSessionRevision", 0)
+                    base_revision=_revision(
+                        body,
+                        "baseSessionRevision",
                     ),
                     content=_required_string(body, "content"),
                     config=settings.resolve_insight(
                         book_id=repository.message_book_id(message_id),
-                        command={"scope": "full", "force": False},
+                        scope="full",
                     ),
                     idempotency_key=_idempotency_key(),
                 )
@@ -476,13 +475,14 @@ def create_studio_blueprint(
             jsonify(
                 repository.edit_or_regenerate_message(
                     message_id=message_id,
-                    base_revision=int(
-                        body.get("baseSessionRevision", 0)
+                    base_revision=_revision(
+                        body,
+                        "baseSessionRevision",
                     ),
                     content=None,
                     config=settings.resolve_insight(
                         book_id=repository.message_book_id(message_id),
-                        command={"scope": "full", "force": False},
+                        scope="full",
                     ),
                     idempotency_key=_idempotency_key(),
                 )
@@ -497,8 +497,9 @@ def create_studio_blueprint(
         return jsonify(
             repository.delete_message_chain(
                 message_id=message_id,
-                base_revision=int(
-                    body.get("baseSessionRevision", 0)
+                base_revision=_revision(
+                    body,
+                    "baseSessionRevision",
                 ),
                 idempotency_key=idempotency_key,
             )
@@ -668,23 +669,17 @@ def create_studio_blueprint(
 
     @blueprint.post("/documents/<document_id>/agent")
     def agent(document_id: str) -> Response:
-        body = _json_body(allowed_keys={"messages", "content"})
+        body = _json_body(allowed_keys={"content"})
         document = repository.get_document(document_id)
-        messages = body.get("messages")
-        if messages is None:
-            messages = [
-                {
-                    "role": "user",
-                    "content": _required_string(body, "content"),
-                }
-            ]
-        if not isinstance(messages, list) or not all(
-            isinstance(message, dict) for message in messages
-        ):
-            raise ValueError("messages must be an object array")
+        messages = [
+            {
+                "role": "user",
+                "content": _required_string(body, "content"),
+            }
+        ]
         config = settings.resolve_insight(
             book_id=str(document["bookId"]),
-            command={"scope": "full", "force": False},
+            scope="full",
         )
         cancelled = threading.Event()
 
@@ -845,10 +840,8 @@ def _positive_page_number(value: object) -> int | None:
 
 
 def _positive_revision(value: object, field: str) -> int:
-    try:
-        revision = int(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"{field} must be a positive integer") from exc
-    if revision < 1:
-        raise ValueError(f"{field} must be a positive integer")
-    return revision
+    return _integer_value(value, field, minimum=1)
+
+
+def _revision(body: Mapping[str, object], field: str) -> int:
+    return _positive_revision(body.get(field), field)

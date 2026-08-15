@@ -8,7 +8,6 @@ import type {
 import {
   applyOpenAiOptionsPatch,
   cloneOpenAiOptions,
-  normalizeOpenAiOptions,
   omitOpenAiOptionsPatchFields,
   type OpenAiOptionsPatch,
 } from '@/utils/openaiOptions'
@@ -20,13 +19,16 @@ import {
   saveProviderCacheEntry,
   snapshotProviderCredentials,
 } from '../providerConfigCache'
+import { createDefaultSettings } from '../defaults'
 
 export function useTranslationSettings(
   settings: Ref<TranslationSettings>,
   providerConfigs: Ref<ProviderConfigsCache>,
 ) {
-  type TranslationServiceUiUpdates = Partial<TranslationServiceSettings> & OpenAiOptionsPatch
+  type TranslationServiceUiUpdates = Partial<Omit<TranslationServiceSettings, 'provider'>>
+    & OpenAiOptionsPatch
   const translationProvider = computed(() => settings.value.translation.provider)
+  const defaultTranslation = createDefaultSettings().translation
 
   function setTranslationProvider(provider: TranslationProvider): void {
     provider = normalizeProviderId(provider) as TranslationProvider
@@ -101,15 +103,16 @@ export function useTranslationSettings(
       applyCached: (cached) => {
         applyProviderCredentials(settings.value.translation, cached)
         if (cached.openaiOptions !== undefined) {
-          settings.value.translation.openaiOptions = normalizeOpenAiOptions(
-            cached.openaiOptions,
-            settings.value.translation.openaiOptions,
-          )
+          settings.value.translation.openaiOptions = cloneOpenAiOptions(cached.openaiOptions)
         }
         if (cached.translationMode !== undefined) settings.value.translation.translationMode = cached.translationMode
       },
       applyMissing: () => {
         clearProviderCredentials(settings.value.translation)
+        settings.value.translation.openaiOptions = cloneOpenAiOptions(
+          defaultTranslation.openaiOptions,
+        )
+        settings.value.translation.translationMode = defaultTranslation.translationMode
       },
     })
   }

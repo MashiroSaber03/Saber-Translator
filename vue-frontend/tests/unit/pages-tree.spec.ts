@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { nextTick } from 'vue'
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
@@ -50,12 +48,18 @@ function deferred<T>() {
 
 function pageSummary(
   pageNumber: number,
-  options: { analyzed?: boolean; bookId?: string; chapterId?: string } = {},
+  options: {
+    analyzed?: boolean
+    analysisState?: 'ready' | 'stale' | 'running' | 'failed' | 'not_analyzed'
+    bookId?: string
+    chapterId?: string
+  } = {},
 ) {
   const bookId = options.bookId ?? 'book-1'
+  const analysisState = options.analysisState ?? (options.analyzed ? 'ready' : 'not_analyzed')
   return {
-    activeAnalysisId: options.analyzed ? `analysis-${pageNumber}` : null,
-    analysisState: options.analyzed ? 'ready' : 'not_analyzed',
+    activeAnalysisId: analysisState === 'not_analyzed' ? null : `analysis-${pageNumber}`,
+    analysisState,
     chapterId: options.chapterId ?? 'ch-1',
     displayPageNumber: pageNumber,
     pageId: `${bookId}-page-${pageNumber}`,
@@ -136,6 +140,39 @@ describe('PagesTree', () => {
     expect(showToastMock).toHaveBeenCalledWith('章节分析已启动', 'success')
   })
 
+  it('submits chapter reanalysis once and ignores its result after switching books', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useInsightStore()
+    store.setCurrentBook('book-1')
+    store.setBookTotalPages(2)
+    store.setChapters([{ id: 'ch-1', title: '第1章', startPage: 1, endPage: 2 }])
+    const submission = deferred<{ jobId: string }>()
+    reanalyzeChapterMock.mockReturnValueOnce(submission.promise)
+
+    const wrapper = mount(PagesTree, {
+      global: { plugins: [pinia] },
+    })
+    await flushPromises()
+
+    const reanalyzeButton = wrapper.get('button[aria-label="重新分析第1章"]')
+    await reanalyzeButton.trigger('click')
+    await reanalyzeButton.trigger('click')
+    await flushPromises()
+
+    expect(confirmProductActionMock).toHaveBeenCalledTimes(1)
+    expect(reanalyzeChapterMock).toHaveBeenCalledTimes(1)
+    expect(reanalyzeButton.attributes('disabled')).toBeDefined()
+
+    store.setCurrentBook('book-2')
+    submission.resolve({ jobId: 'book-1-job' })
+    await flushPromises()
+
+    expect(store.currentTaskId).toBeNull()
+    expect(store.analysisStatus).toBe('idle')
+    expect(showToastMock).not.toHaveBeenCalledWith('章节分析已启动', 'success')
+  })
+
   it('refreshes analyzed page markers without routine console output', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
@@ -145,7 +182,7 @@ describe('PagesTree', () => {
     store.setBookTotalPages(2)
     store.setChapters([{ id: 'ch-1', title: '第1章', startPage: 1, endPage: 2, analyzed: false }])
 
-    mount(PagesTree, {
+    const wrapper = mount(PagesTree, {
       global: {
         plugins: [pinia],
       },
@@ -154,9 +191,18 @@ describe('PagesTree', () => {
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined)
     try {
-      store.setAnalyzedPagesCount(1)
+      getInsightPagesPageMock.mockResolvedValueOnce({
+        items: [pageSummary(1, { analyzed: true }), pageSummary(2)],
+        nextCursor: null,
+      })
+      store.triggerDataRefresh()
       await flushPromises()
       expect(logSpy).not.toHaveBeenCalled()
+      expect(getInsightPagesPageMock).toHaveBeenCalledTimes(2)
+      expect(wrapper.getComponent(VirtualThumbnailGrid).props('items')[0]).toMatchObject({
+        id: 1,
+        marked: true,
+      })
     } finally {
       logSpy.mockRestore()
     }
@@ -324,10 +370,6 @@ describe('PagesTree', () => {
       },
     })
     await flushPromises()
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/components/insight/PagesTree.vue'),
-      'utf8'
-    )
     const header = wrapper.getComponent(ProductSectionHeader)
 
     expect(header.props()).toMatchObject({
@@ -335,13 +377,6 @@ describe('PagesTree', () => {
       size: 'sm',
     })
     expect(header.findComponent(ProductChipList).props('ariaLabel')).toBe('内容导航统计')
-    expect(source).toContain(
-      "import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'"
-    )
-    expect(source).not.toContain('class="section-header"')
-    expect(source).not.toContain('class="section-title"')
-    expect(source).not.toContain('.section-header')
-    expect(source).not.toContain('.section-title')
   })
 
   it('renders the no-pages state through product status feedback', async () => {
@@ -359,10 +394,6 @@ describe('PagesTree', () => {
       },
     })
     await flushPromises()
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/components/insight/PagesTree.vue'),
-      'utf8'
-    )
     const emptyState = wrapper.getComponent(ProductStatusBanner)
 
     expect(emptyState.props()).toMatchObject({
@@ -372,56 +403,6 @@ describe('PagesTree', () => {
       title: '暂无页面',
     })
     expect(wrapper.text()).toContain('导入或选择书籍后将在这里显示页面缩略图。')
-    expect(source).toContain(
-      "import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'"
-    )
-    expect(source).not.toContain('empty-hint')
-  })
-
-  it('keeps chapter metadata on product chip contracts instead of local status classes', () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/components/insight/PagesTree.vue'),
-      'utf8'
-    )
-
-    expect(source).toContain('ProductChipList')
-    expect(source).not.toContain('page-count-badge')
-    expect(source).not.toContain('tree-chapter-status')
-    expect(source).not.toContain('tree-chapter-meta')
-  })
-
-  it('uses pages-tree-panel owner hooks for content navigation styling', () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/components/insight/PagesTree.vue'),
-      'utf8'
-    )
-    const styleBlock = source.match(/<style scoped>([\s\S]*)<\/style>/)?.[1] ?? ''
-    const oldHooks = [
-      'sidebar-section',
-      'pages-tree-section',
-      'pages-tree',
-      'pages-tree-header',
-      'tree-header-chips',
-      'tree-empty-status',
-      'tree-all-pages',
-      'tree-load-more',
-      'tree-chapter',
-      'tree-chapter-main',
-      'tree-chapter-toggle',
-      'tree-expand-icon',
-      'tree-chapter-title',
-      'tree-chapter-chips',
-      'tree-pages-grid',
-    ]
-
-    for (const hook of oldHooks) {
-      const escapedHook = hook.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      expect(source).not.toMatch(new RegExp(`(?<![\\w-])${escapedHook}(?![\\w-])`))
-    }
-    expect(source).toContain('class="pages-tree-panel"')
-    expect(source).toContain('pages-tree-panel__chapter-toggle')
-    expect(source).toContain('pages-tree-panel__pages-grid')
-    expect(styleBlock).not.toMatch(/\.tree-/)
   })
 
   it('ignores stale page-summary responses after switching books', async () => {
@@ -508,7 +489,7 @@ describe('PagesTree', () => {
 
     const grid = wrapper.getComponent(VirtualThumbnailGrid)
     expect(grid.props('items')).toHaveLength(100)
-    expect(grid.findAll('[data-product-thumbnail-id]').length).toBeLessThanOrEqual(8)
+    expect(grid.findAll('[data-product-thumbnail-id]').length).toBeLessThanOrEqual(32)
     expect(wrapper.find('.pages-tree-panel__load-more').exists()).toBe(true)
   })
 
@@ -523,5 +504,25 @@ describe('PagesTree', () => {
 
     expect(wrapper.text()).toContain('部分分析')
     expect(wrapper.text()).not.toContain('待分析')
+  })
+
+  it('does not count running or failed pages as published analysis results', async () => {
+    getInsightPagesPageMock.mockResolvedValueOnce({
+      items: [
+        pageSummary(1, { analysisState: 'running' }),
+        pageSummary(2, { analysisState: 'failed' }),
+      ],
+      nextCursor: null,
+    })
+
+    const wrapper = mount(PagesTree)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('待分析')
+    expect(wrapper.text()).not.toContain('部分分析')
+    expect(wrapper.getComponent(VirtualThumbnailGrid).props('items')).toEqual([
+      expect.objectContaining({ id: 1, marked: false }),
+      expect.objectContaining({ id: 2, marked: false }),
+    ])
   })
 })

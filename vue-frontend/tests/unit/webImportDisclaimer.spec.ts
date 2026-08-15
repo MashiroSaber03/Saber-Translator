@@ -5,10 +5,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { defineComponent, h } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const {
-  getV2SettingsMock,
-  saveV2SettingsTransactionMock,
-} = vi.hoisted(() => ({
+const { getV2SettingsMock, saveV2SettingsTransactionMock } = vi.hoisted(() => ({
   getV2SettingsMock: vi.fn(),
   saveV2SettingsTransactionMock: vi.fn(),
 }))
@@ -31,18 +28,21 @@ const BaseModalStub = defineComponent({
   props: {
     modelValue: Boolean,
     backdrop: String,
-    overlayLayer: String,
     backdropEffect: String,
   },
   setup(props, { slots }) {
-    return () => props.modelValue
-      ? h('section', {
-          role: 'dialog',
-          'data-backdrop': props.backdrop,
-          'data-overlay-layer': props.overlayLayer,
-          'data-backdrop-effect': props.backdropEffect,
-        }, slots.default?.())
-      : null
+    return () =>
+      props.modelValue
+        ? h(
+            'section',
+            {
+              role: 'dialog',
+              'data-backdrop': props.backdrop,
+              'data-backdrop-effect': props.backdropEffect,
+            },
+            slots.default?.()
+          )
+        : null
   },
 })
 
@@ -53,12 +53,14 @@ describe('WebImportDisclaimer', () => {
     getV2SettingsMock.mockReset()
     saveV2SettingsTransactionMock.mockReset()
     getV2SettingsMock.mockResolvedValue({
-      settings: [{
-        domain: 'web_import',
-        payload: createDefaultWebImportSettings(),
-        revision: 1,
-        schemaVersion: 1,
-      }],
+      settings: [
+        {
+          domain: 'web_import',
+          payload: createDefaultWebImportSettings(),
+          revision: 1,
+          schemaVersion: 1,
+        },
+      ],
       bookSettings: [],
       providerSettings: [],
       credentials: [],
@@ -107,7 +109,10 @@ describe('WebImportDisclaimer', () => {
   })
 
   it('maps owner colors through semantic tokens instead of raw color values', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/translate/WebImportDisclaimer.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/translate/WebImportDisclaimer.vue'),
+      'utf8'
+    )
     const style = source.match(/<style scoped>([\s\S]*?)<\/style>/)?.[1] ?? ''
 
     expect(style).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(/)
@@ -123,7 +128,7 @@ describe('WebImportDisclaimer', () => {
     expect(style).toContain('var(--color-surface-raised)')
   })
 
-  it('uses typed BaseModal overlay contracts instead of a global stylesheet', () => {
+  it('uses typed BaseModal backdrop contracts instead of a global stylesheet', () => {
     const store = useWebImportStore()
     store.disclaimerVisible = true
 
@@ -137,15 +142,43 @@ describe('WebImportDisclaimer', () => {
 
     const dialog = wrapper.get('[role="dialog"]')
     expect(dialog.attributes('data-backdrop')).toBe('strong')
-    expect(dialog.attributes('data-overlay-layer')).toBe('popover')
     expect(dialog.attributes('data-backdrop-effect')).toBe('blur-sm')
 
-    const source = readFileSync(resolve(process.cwd(), 'src/components/translate/WebImportDisclaimer.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/translate/WebImportDisclaimer.vue'),
+      'utf8'
+    )
     expect(source).not.toContain('WebImportDisclaimer.global.styles.css')
+    expect(source).not.toContain('overlay-layer')
+  })
+
+  it('does not treat an IME confirmation key as form acceptance', async () => {
+    const store = useWebImportStore()
+    store.disclaimerVisible = true
+    const wrapper = mount(WebImportDisclaimer, {
+      global: { stubs: { BaseModal: BaseModalStub } },
+    })
+    const input = wrapper.get('#webImportDisclaimerConfirmation')
+
+    await input.setValue('我已阅读并同意')
+    await input.trigger('keydown', { key: 'Enter', isComposing: true })
+    await flushPromises()
+
+    expect(localStorage.getItem('webImportDisclaimerAccepted')).toBeNull()
+    expect(store.modalVisible).toBe(false)
+
+    await input.trigger('keydown', { key: 'Enter', isComposing: false })
+    await flushPromises()
+
+    expect(localStorage.getItem('webImportDisclaimerAccepted')).toBe('true')
+    expect(store.modalVisible).toBe(true)
   })
 
   it('keeps disclaimer presentation hooks under the disclaimer owner', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/translate/WebImportDisclaimer.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/translate/WebImportDisclaimer.vue'),
+      'utf8'
+    )
 
     for (const currentHook of [
       'web-import-disclaimer',

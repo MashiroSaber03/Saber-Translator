@@ -67,25 +67,22 @@ function expectInpaintMethod(value: unknown, fieldName: string): TextStyleSettin
 }
 
 function expectPositiveInt(value: unknown, fieldName: string): number {
-  const numberValue = Number(value)
-  if (Number.isInteger(numberValue) && numberValue > 0) {
-    return numberValue
+  if (typeof value === 'number' && Number.isInteger(value) && value > 0) {
+    return value
   }
   return failInvalidConfig(`${fieldName} must be a positive integer`)
 }
 
 function expectNonNegativeInt(value: unknown, fieldName: string): number {
-  const numberValue = Number(value)
-  if (Number.isInteger(numberValue) && numberValue >= 0) {
-    return numberValue
+  if (typeof value === 'number' && Number.isInteger(value) && value >= 0) {
+    return value
   }
   return failInvalidConfig(`${fieldName} must be a non-negative integer`)
 }
 
 function expectPositiveFloat(value: unknown, fieldName: string): number {
-  const numberValue = Number(value)
-  if (Number.isFinite(numberValue) && numberValue > 0) {
-    return numberValue
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    return value
   }
   return failInvalidConfig(`${fieldName} must be a positive number`)
 }
@@ -174,15 +171,6 @@ export function parseCompleteTextStyleSettings(value: unknown): TextStyleSetting
     return failInvalidConfig('backend text style fields are incomplete')
   }
   const parsed = buildTextStyleFields(source)
-  if (parsed.fontSize > 512) {
-    return failInvalidConfig('fontSize must be at most 512')
-  }
-  if (parsed.strokeWidth > 64) {
-    return failInvalidConfig('strokeWidth must be at most 64')
-  }
-  if (parsed.lineSpacing > 10) {
-    return failInvalidConfig('lineSpacing must be at most 10')
-  }
   for (const [field, color] of [
     ['textColor', parsed.textColor],
     ['fillColor', parsed.fillColor],

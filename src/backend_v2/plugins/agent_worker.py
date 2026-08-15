@@ -13,14 +13,20 @@ from src.backend_v2.jobs.repository import (
     AttemptFence,
     JobQueueRepository,
 )
-from src.backend_v2.plugins.agent import PluginAgentProviderResolver
+from src.backend_v2.plugins.agent import (
+    PluginAgentProviderResolver,
+    validate_plugin_agent_target_snapshot,
+)
 from src.backend_v2.plugins.agent_tools import (
     PluginAgentWorktreeTools,
 )
 from src.backend_v2.plugins.package import build_archive
 from src.backend_v2.plugins.repository import PluginRegistry
 from src.backend_v2.storage.schema import plugin_versions
-from src.core.plugin_agent.controller import PluginAgentController
+from src.core.plugin_agent.controller import (
+    PluginAgentControlRequested,
+    PluginAgentController,
+)
 from src.core.plugin_agent.models import (
     LockedPluginTarget,
     PluginAgentMessage,
@@ -61,18 +67,35 @@ class PluginAgentWorkerService:
         if step.get("stepKind") != "plugin_agent_execute":
             raise ValueError("unsupported Plugin Agent step")
         config = step.get("config")
-        if not isinstance(config, Mapping):
+        if not isinstance(config, Mapping) or set(config) != {
+            "executionMode",
+            "sessionId",
+            "target",
+            "messages",
+            "provider",
+        }:
             raise ValueError("Plugin Agent job config is invalid")
-        target = config.get("target")
+        if config["executionMode"] != "sequential":
+            raise ValueError("Plugin Agent jobs must execute sequentially")
+        session_id = config["sessionId"]
+        if not isinstance(session_id, str) or not session_id:
+            raise ValueError("Plugin Agent session snapshot is invalid")
+        target = config["target"]
         if not isinstance(target, Mapping):
             raise ValueError("Plugin Agent target snapshot is missing")
+        target = validate_plugin_agent_target_snapshot(target)
+        if not isinstance(fence.job_id, str) or not fence.job_id:
+            raise ValueError("Plugin Agent job id is invalid")
+        worktree_root = (self.data_root / "temp" / "jobs").resolve()
         worktree = (
-            self.data_root
-            / "temp"
-            / "jobs"
-            / fence.job_id
-            / "plugin-worktree"
-        )
+            worktree_root / fence.job_id / "plugin-worktree"
+        ).resolve()
+        try:
+            worktree.relative_to(worktree_root)
+        except ValueError as exc:
+            raise ValueError(
+                "Plugin Agent worktree escapes managed storage"
+            ) from exc
         self._prepare_worktree(worktree, target)
         touched: list[str] = []
         previews: dict[str, str] = {}
@@ -99,19 +122,20 @@ class PluginAgentWorkerService:
         tools = PluginAgentWorktreeTools(
             worktree=worktree,
             skill_markdown=self.skill_markdown,
-            cancelled=lambda: (
-                self.jobs.control_status(fence) == "cancelling"
+            control_requested=lambda: (
+                self.jobs.control_status(fence)
+                in {"pausing", "cancelling"}
             ),
             on_write=on_write,
             on_delete=on_delete,
         )
         session = _session_from_snapshot(
-            session_id=str(config["sessionId"]),
+            session_id=session_id,
             target=target,
             messages=config["messages"],
             worktree=worktree,
         )
-        provider_snapshot = config.get("provider")
+        provider_snapshot = config["provider"]
         if not isinstance(provider_snapshot, Mapping):
             raise ValueError(
                 "Plugin Agent provider snapshot is missing"
@@ -138,46 +162,74 @@ class PluginAgentWorkerService:
             # worktree again at the Worker publication boundary so a stale or
             # fabricated controller result can never publish a package.
             validation = tools.validate_plugin()
-            if not validation.get("success"):
+            PluginAgentController._validate_tool_result(
+                "validate_plugin",
+                validation,
+            )
+            if not validation["success"]:
+                error = validation.get("error")
                 raise ValueError(
-                    str(
-                        validation.get(
-                            "error",
-                            "plugin validation failed",
-                        )
-                    )
+                    error
+                    if isinstance(error, str) and error
+                    else "plugin validation failed"
                 )
-            locked_plugin_id = str(target["plugin_id"])
-            if validation.get("plugin_id") != locked_plugin_id:
+            if not isinstance(result, Mapping) or set(result) != {
+                "assistant_message",
+                "validation",
+            }:
+                raise TypeError("Plugin Agent execution result is invalid")
+            assistant_message = result["assistant_message"]
+            if not isinstance(assistant_message, str):
+                raise TypeError(
+                    "Plugin Agent execution message must be text"
+                )
+            if not isinstance(result["validation"], Mapping):
+                raise TypeError(
+                    "Plugin Agent execution validation is invalid"
+                )
+            if result["validation"] != validation:
+                raise ValueError(
+                    "Plugin Agent execution validation is stale"
+                )
+            tools.check_control()
+            locked_plugin_id = target["plugin_id"]
+            if validation["plugin_id"] != locked_plugin_id:
                 raise ValueError(
                     "generated manifest plugin_id changed from locked target"
                 )
             archive = build_archive(worktree)
+            tools.check_control()
             published = self.registry.import_archive(
                 data=archive,
-                base_revision=int(target["baseRevision"]),
+                base_revision=target["baseRevision"],
                 idempotency_key=f"plugin-agent:{fence.job_id}",
             )
-            emit(
-                "done",
-                {
-                    "run_state": "completed",
-                    "plugin": published,
-                    "validation": validation,
-                    "touchedFiles": touched,
-                    "filePreviews": previews,
-                    "message": str(
-                        result.get(
-                            "assistant_message",
-                            "Plugin Agent job completed",
-                        )
-                    ),
-                },
-            )
-            return {
+            done_payload = {
+                "run_state": "completed",
                 "plugin": published,
                 "validation": validation,
                 "touchedFiles": touched,
+                "filePreviews": previews,
+                "message": assistant_message,
+            }
+            emit("done", done_payload)
+            return done_payload
+        except PluginAgentControlRequested:
+            step_id = step.get("stepId")
+            if not isinstance(step_id, str) or not step_id:
+                raise ValueError("Plugin Agent step id is invalid")
+            status = self.jobs.checkpoint_step(
+                fence,
+                step_id=step_id,
+                checkpoint={},
+            )
+            if status not in {"pausing", "cancelling"}:
+                raise RuntimeError(
+                    "plugin agent control checkpoint lost its control state"
+                )
+            return {
+                "__already_published__": True,
+                "__control_drained__": True,
             }
         except Exception as exc:
             run_state = (
@@ -206,28 +258,30 @@ class PluginAgentWorkerService:
         target: Mapping[str, Any],
     ) -> None:
         if worktree.exists():
-            return
+            shutil.rmtree(worktree)
         worktree.parent.mkdir(parents=True, exist_ok=True)
-        mode = str(target["mode"])
+        mode = target["mode"]
         if mode == "create":
             worktree.mkdir()
             return
         if mode != "modify":
             raise ValueError("Plugin Agent target mode is invalid")
-        version_id = str(target["pluginVersionId"])
+        version_id = target["pluginVersionId"]
         with self.engine.connect() as connection:
             relative = connection.execute(
                 select(plugin_versions.c.package_relative_path).where(
                     plugin_versions.c.id == version_id,
                     plugin_versions.c.plugin_id
-                    == str(target["plugin_id"]),
+                    == target["plugin_id"],
                 )
             ).scalar_one_or_none()
         if relative is None:
             raise ValueError(
                 "locked immutable plugin version is unavailable"
             )
-        source = (self.data_root / Path(str(relative))).resolve()
+        if not isinstance(relative, str) or not relative:
+            raise ValueError("locked plugin path is invalid")
+        source = (self.data_root / Path(relative)).resolve()
         plugins_root = (self.data_root / "plugins").resolve()
         try:
             source.relative_to(plugins_root)
@@ -245,19 +299,14 @@ def _session_from_snapshot(
     messages: object,
     worktree: Path,
 ) -> PluginAgentSession:
+    target = validate_plugin_agent_target_snapshot(target)
     locked = LockedPluginTarget(
-        mode=str(target["mode"]),
-        plugin_id=str(target["plugin_id"]),
-        display_name=str(target["display_name"]),
+        mode=target["mode"],
+        plugin_id=target["plugin_id"],
+        display_name=target["display_name"],
         plugin_dir=str(worktree),
-        supported_steps=[
-            str(value)
-            for value in target["supported_steps"]
-        ],
-        supported_modes=[
-            str(value)
-            for value in target["supported_modes"]
-        ],
+        supported_steps=list(target["supported_steps"]),
+        supported_modes=list(target["supported_modes"]),
     )
     session = PluginAgentSession(
         session_id=session_id,

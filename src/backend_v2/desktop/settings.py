@@ -10,8 +10,9 @@ from typing import Any
 
 
 SETTINGS_SCHEMA_VERSION = 1
-PET_SCALES = frozenset({75, 100, 125, 150})
-LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR"})
+PET_SCALES = (75, 100, 125, 150)
+LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
+MAX_WINDOW_SIZE = 16_777_215
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,8 +47,11 @@ class DesktopSettingsStore:
             payload = json.loads(self.path.read_text(encoding="utf-8"))
             settings = self._decode(payload)
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
-            self.path.unlink(missing_ok=True)
-            self.save(fallback)
+            try:
+                self.path.unlink(missing_ok=True)
+                self.save(fallback)
+            except OSError:
+                pass
             return fallback
         return settings
 
@@ -74,6 +78,7 @@ class DesktopSettingsStore:
                 "height": settings.window_height,
             },
         }
+        self._decode(payload)
         temporary = self.path.with_suffix(".json.tmp")
         temporary.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
@@ -85,13 +90,32 @@ class DesktopSettingsStore:
     def _decode(payload: object) -> DesktopSettings:
         if not isinstance(payload, dict):
             raise ValueError("desktop settings must be an object")
+        if set(payload) != {"schemaVersion", "server", "pet", "window"}:
+            raise ValueError("desktop settings fields do not match the current schema")
         if payload.get("schemaVersion") != SETTINGS_SCHEMA_VERSION:
             raise ValueError("unsupported desktop settings schema")
         server = payload.get("server")
         pet = payload.get("pet")
         window = payload.get("window")
-        if not isinstance(server, dict) or not isinstance(pet, dict) or not isinstance(window, dict):
+        if (
+            not isinstance(server, dict)
+            or not isinstance(pet, dict)
+            or not isinstance(window, dict)
+        ):
             raise ValueError("desktop settings sections are missing")
+        if set(server) != {"port", "allowLan", "logLevel", "openBrowserOnStart"}:
+            raise ValueError("desktop server settings do not match the current schema")
+        if set(pet) != {
+            "enabled",
+            "alwaysOnTop",
+            "scalePercent",
+            "screenName",
+            "positionX",
+            "positionY",
+        }:
+            raise ValueError("desktop pet settings do not match the current schema")
+        if set(window) != {"width", "height"}:
+            raise ValueError("desktop window settings do not match the current schema")
 
         port = server.get("port")
         log_level = server.get("logLevel")
@@ -106,13 +130,29 @@ class DesktopSettingsStore:
             raise ValueError("invalid desktop log level")
         if not isinstance(scale, int) or isinstance(scale, bool) or scale not in PET_SCALES:
             raise ValueError("invalid desktop pet scale")
-        if not isinstance(position_x, (int, float)) or not 0.0 <= float(position_x) <= 1.0:
+        if (
+            not isinstance(position_x, (int, float))
+            or isinstance(position_x, bool)
+            or not 0.0 <= position_x <= 1.0
+        ):
             raise ValueError("invalid desktop pet x position")
-        if not isinstance(position_y, (int, float)) or not 0.0 <= float(position_y) <= 1.0:
+        if (
+            not isinstance(position_y, (int, float))
+            or isinstance(position_y, bool)
+            or not 0.0 <= position_y <= 1.0
+        ):
             raise ValueError("invalid desktop pet y position")
-        if not isinstance(width, int) or isinstance(width, bool) or width < 920:
+        if (
+            not isinstance(width, int)
+            or isinstance(width, bool)
+            or not 920 <= width <= MAX_WINDOW_SIZE
+        ):
             raise ValueError("invalid desktop window width")
-        if not isinstance(height, int) or isinstance(height, bool) or height < 640:
+        if (
+            not isinstance(height, int)
+            or isinstance(height, bool)
+            or not 640 <= height <= MAX_WINDOW_SIZE
+        ):
             raise ValueError("invalid desktop window height")
 
         booleans = (

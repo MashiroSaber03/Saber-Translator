@@ -28,6 +28,7 @@ const {
   sendPluginAgentMessageMock,
   lockPluginAgentTargetMock,
   startPluginAgentExecutionMock,
+  cancelPluginAgentExecutionMock,
   listPluginAgentJobEventsMock,
   pluginAgentEventFromJobEventMock,
   subscribeTaskEventsMock,
@@ -41,6 +42,7 @@ const {
   sendPluginAgentMessageMock: vi.fn(),
   lockPluginAgentTargetMock: vi.fn(),
   startPluginAgentExecutionMock: vi.fn(),
+  cancelPluginAgentExecutionMock: vi.fn(),
   listPluginAgentJobEventsMock: vi.fn(),
   pluginAgentEventFromJobEventMock: vi.fn(),
   subscribeTaskEventsMock: vi.fn(),
@@ -56,6 +58,7 @@ vi.mock('@/api/pluginAgent', () => ({
   sendPluginAgentMessage: sendPluginAgentMessageMock,
   lockPluginAgentTarget: lockPluginAgentTargetMock,
   startPluginAgentExecution: startPluginAgentExecutionMock,
+  cancelPluginAgentExecution: cancelPluginAgentExecutionMock,
   listPluginAgentJobEvents: listPluginAgentJobEventsMock,
   pluginAgentEventFromJobEvent: pluginAgentEventFromJobEventMock,
 }))
@@ -143,6 +146,26 @@ function createDeferred<T>() {
   return { promise, resolve }
 }
 
+function modifySessionSettings() {
+  return {
+    overview: [],
+    overview_sections: [],
+    prompt_examples: [],
+    providers: [{ value: 'siliconflow', label: 'SiliconFlow' }],
+    plugins: [{ pluginId: 'existing_plugin', displayName: 'Existing Plugin' }],
+    session: {
+      session_id: 'modify-session',
+      mode: 'modify',
+      selected_plugin_id: 'existing_plugin',
+      run_state: 'drafting',
+      messages: [],
+      events: [],
+      touched_files: [],
+      file_previews: {},
+    },
+  }
+}
+
 describe('PluginAgentModal', () => {
   enableAutoUnmount(afterEach)
 
@@ -155,6 +178,7 @@ describe('PluginAgentModal', () => {
     sendPluginAgentMessageMock.mockReset()
     lockPluginAgentTargetMock.mockReset()
     startPluginAgentExecutionMock.mockReset()
+    cancelPluginAgentExecutionMock.mockReset().mockResolvedValue(undefined)
     listPluginAgentJobEventsMock.mockReset()
     pluginAgentEventFromJobEventMock.mockReset()
     subscribeTaskEventsMock.mockReset().mockReturnValue(vi.fn())
@@ -686,7 +710,7 @@ describe('PluginAgentModal', () => {
     const numberFields = wrapper.findAllComponents(UiNumberField)
     expect(numberFields).toHaveLength(3)
     expect(numberFields.map(field => field.props('min'))).toEqual([0, 0, 0])
-    expect(numberFields.map(field => field.props('max'))).toEqual([undefined, 10, 10])
+    expect(numberFields.map(field => field.props('max'))).toEqual([100000, 100, 100])
     expect(numberFields.map(field => field.props('step'))).toEqual([1, 1, 1])
 
     const source = readFileSync(
@@ -929,8 +953,76 @@ describe('PluginAgentModal', () => {
     await flushPromises()
 
     expect(saveSpy).toHaveBeenCalledTimes(1)
+    expect(wrapper.emitted('settingsSaved')).toHaveLength(1)
     expect(wrapper.text()).toContain('基础规则')
     expect(wrapper.text()).toContain('翻译与渲染类 Hook')
+  })
+
+  it('restores the mode of an existing modify session without deleting it', async () => {
+    getPluginAgentSettingsMock.mockResolvedValueOnce(modifySessionSettings())
+
+    const wrapper = mount(PluginAgentModal, {
+      props: { modelValue: true },
+    })
+    await flushPromises()
+
+    expect(wrapper.getComponent(ProductSegmentedTabs).props('activeTab')).toBe('modify')
+    expect(wrapper.get('.ui-combobox-stub').element).toHaveProperty('value', 'existing_plugin')
+    expect(deletePluginAgentSessionMock).not.toHaveBeenCalled()
+  })
+
+  it('keeps the current session when switching modes cannot delete it', async () => {
+    getPluginAgentSettingsMock.mockResolvedValueOnce(modifySessionSettings())
+    deletePluginAgentSessionMock.mockRejectedValueOnce(new Error('session delete failed'))
+
+    const wrapper = mount(PluginAgentModal, { props: { modelValue: true } })
+    await flushPromises()
+
+    wrapper.getComponent(ProductSegmentedTabs).vm.$emit('select', 'create')
+    await flushPromises()
+
+    expect(deletePluginAgentSessionMock).toHaveBeenCalledTimes(1)
+    expect(deletePluginAgentSessionMock).toHaveBeenCalledWith('modify-session')
+    expect(wrapper.getComponent(ProductSegmentedTabs).props('activeTab')).toBe('modify')
+    expect(wrapper.get('.ui-combobox-stub').element).toHaveProperty('value', 'existing_plugin')
+    expect(wrapper.find('.plugin-agent-clear-session-action').exists()).toBe(true)
+  })
+
+  it('serializes repeated end-session commands', async () => {
+    getPluginAgentSettingsMock.mockResolvedValueOnce(modifySessionSettings())
+    const pendingDelete = createDeferred<void>()
+    deletePluginAgentSessionMock.mockReturnValueOnce(pendingDelete.promise)
+
+    const wrapper = mount(PluginAgentModal, { props: { modelValue: true } })
+    await flushPromises()
+    const endSessionButton = wrapper.get('.plugin-agent-clear-session-action')
+
+    const firstClick = endSessionButton.trigger('click')
+    const secondClick = endSessionButton.trigger('click')
+    await Promise.all([firstClick, secondClick])
+
+    expect(deletePluginAgentSessionMock).toHaveBeenCalledTimes(1)
+    pendingDelete.resolve(undefined)
+    await flushPromises()
+  })
+
+  it('releases the live event subscription when durable backlog loading fails', async () => {
+    const stopSubscription = vi.fn()
+    subscribeTaskEventsMock.mockReturnValueOnce(stopSubscription)
+    listPluginAgentJobEventsMock.mockRejectedValueOnce(new Error('event backlog failed'))
+
+    const wrapper = mount(PluginAgentModal, { props: { modelValue: true } })
+    await flushPromises()
+    await wrapper.find('.plugin-agent-input').setValue('做一个 OCR 插件')
+    await wrapper.find('.plugin-agent-submit-message-action').trigger('click')
+    await flushPromises()
+    await wrapper.find('.plugin-agent-lock-target-action').trigger('click')
+    await flushPromises()
+    await wrapper.find('.plugin-agent-start-execution-action').trigger('click')
+    await flushPromises()
+
+    expect(subscribeTaskEventsMock).toHaveBeenCalledTimes(1)
+    expect(stopSubscription).toHaveBeenCalledTimes(1)
   })
 
   it('collapses the agent workbench from the modal content container', () => {
@@ -943,16 +1035,6 @@ describe('PluginAgentModal', () => {
     expect(source).toContain('container: plugin-agent-modal / inline-size')
     expect(source).toContain('@container plugin-agent-modal')
     expect(source).not.toContain('@media (--breakpoint-modal-wide-down)')
-  })
-
-  it('does not assert shared textarea primitives through internal class names', () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'tests/unit/pluginAgentModal.spec.ts'),
-      'utf8'
-    )
-    const textareaClassPrefix = 'ui-' + 'textarea--'
-
-    expect(source).not.toContain(textareaClassPrefix)
   })
 
   it('renders prompt examples through the shared chip primitive', async () => {

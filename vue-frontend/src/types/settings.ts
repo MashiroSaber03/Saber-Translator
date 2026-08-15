@@ -17,7 +17,11 @@ export type {
   HybridOcrSettings,
   PaddleOcrVlSettings,
 } from './ocrSettings'
-export type { TextStyleSettings } from './textStyleSettings'
+export type {
+  TextStyleSettings,
+  TextStyleMutationArgs,
+  TextStyleMutationField,
+} from './textStyleSettings'
 export type {
   BoxExpandSettings,
   HqTranslationSettings,

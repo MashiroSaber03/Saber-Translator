@@ -1,9 +1,7 @@
 import type { BookTranslationConstraints } from './bookTranslationConstraints'
+import type { components } from '@/api/generated/v2'
 
-export type JobStatusSummary = Partial<Record<
-  'queued' | 'running' | 'pausing' | 'paused' | 'cancelling' | 'interrupted' | 'failed',
-  number
->>
+export type JobStatusSummary = components['schemas']['JobStatusSummary']
 
 export interface BookData {
   id: string
@@ -16,7 +14,6 @@ export interface BookData {
   totalPages?: number
   createdAt?: string
   updatedAt?: string
-  chapterOrderRevision?: number
   jobStatusSummary?: JobStatusSummary
 }
 
@@ -25,14 +22,7 @@ export interface ChapterData {
   title: string
   order: number
   imageCount?: number
-  ordinal?: number
-  pageOrderRevision?: number
   jobStatusSummary?: JobStatusSummary
 }
 
-export interface TagData {
-  id?: string
-  name: string
-  color?: string
-  bookCount?: number
-}
+export type TagData = components['schemas']['Tag']

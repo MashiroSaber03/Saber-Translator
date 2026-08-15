@@ -39,6 +39,7 @@ const showOriginal = computed({
 const downloadFormat = ref<DownloadFormat>('zip')
 
 const isDownloading = computed(() => exportImport.isDownloading.value)
+const isImporting = computed(() => exportImport.isImporting.value)
 const downloadProgressText = computed(() => exportImport.downloadProgressText.value)
 const downloadProgress = computed(() => exportImport.downloadProgress.value)
 const hasImages = computed(() => imageStore.hasImages)
@@ -170,6 +171,7 @@ function handleImportText(file: File): void {
       :has-downloadable-image="hasDownloadableImage"
       :has-images="hasImages"
       :is-downloading="isDownloading"
+      :is-importing="isImporting"
       @download-all="handleDownloadAll"
       @download-current="handleDownloadCurrent"
       @export-text="handleExportText"

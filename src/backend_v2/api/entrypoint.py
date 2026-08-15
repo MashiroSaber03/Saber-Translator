@@ -13,7 +13,11 @@ from src.backend_v2.import_guard import loaded_forbidden_api_modules
 from src.backend_v2.logging_config import configure_backend_logging
 from src.backend_v2.paths import data_root_fingerprint, ensure_data_root, resolve_data_root
 from src.backend_v2.runtime_heartbeat import EpochHeartbeat
-from src.backend_v2.runtime_identity import RuntimeIdentity
+from src.backend_v2.runtime_identity import (
+    LauncherParentMonitor,
+    RuntimeIdentity,
+    start_launcher_parent_monitor,
+)
 from src.backend_v2.storage.database import create_sqlite_engine, database_path_for
 from src.backend_v2.storage.epochs import ProcessEpochRepository
 
@@ -41,12 +45,17 @@ def run_api(args: object) -> int:
     engine = create_sqlite_engine(database_path_for(data_root))
     fenced = threading.Event()
     close_server: Callable[[], None] | None = None
+    parent_monitor: LauncherParentMonitor | None = None
 
     def stop_fenced_server() -> None:
         LOGGER.error("API 进程租约失效，正在停止服务")
         fenced.set()
         if close_server is not None:
             close_server()
+
+    def stop_orphaned_server() -> None:
+        LOGGER.critical("Launcher 进程已退出，API 立即终止")
+        os._exit(75)
 
     if not identity.test_mode:
         repository = ProcessEpochRepository(engine)
@@ -67,6 +76,15 @@ def run_api(args: object) -> int:
         # busy machine.  The process owns the epoch as soon as validation
         # succeeds, so renewal must cover initialization as well as serving.
         heartbeat.start()
+        try:
+            parent_monitor = start_launcher_parent_monitor(
+                stop_orphaned_server,
+                test_mode=identity.test_mode,
+            )
+        except BaseException:
+            heartbeat.stop()
+            engine.dispose()
+            raise
 
     app = None
     server = None
@@ -126,6 +144,8 @@ def run_api(args: object) -> int:
             LOGGER.info("API 服务正在关闭")
         if heartbeat is not None:
             heartbeat.stop()
+        if parent_monitor is not None:
+            parent_monitor.stop()
         if server is not None:
             server.close()
             server.task_dispatcher.shutdown(cancel_pending=True, timeout=5)

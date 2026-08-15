@@ -34,6 +34,12 @@ const isDecorative = computed(() => props.decorative || props.label.length === 0
   border: var(--ui-spinner-border-width, 2px) solid var(--ui-spinner-track-color, transparent);
   border-top-color: var(--ui-spinner-color, currentcolor);
   border-radius: 50%;
-  animation: spin var(--ui-spinner-duration, 0.8s) linear infinite;
+  animation: ui-spinner-spin var(--ui-spinner-duration, 0.8s) linear infinite;
+}
+
+@keyframes ui-spinner-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

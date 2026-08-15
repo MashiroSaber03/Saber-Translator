@@ -3,15 +3,10 @@
     <ProductFormSection>
       <template #title>AI校对设置</template>
       <UiField variant="settings" control="checkbox" hint="翻译完成后自动进行AI校对">
-        <UiCheckbox v-model="isProofreadingEnabled" label="启用AI校对" />
-      </UiField>
-      <UiField variant="settings" label="全局重试次数" control-id="settingsProofreadingMaxRetries">
-        <UiNumberField
-          input-id="settingsProofreadingMaxRetries"
-          v-model="proofreadingMaxRetries"
-          :min="0"
-          :max="10"
-          :step="1"
+        <UiCheckbox
+          :model-value="isProofreadingEnabled"
+          label="启用AI校对"
+          @update:model-value="settingsStore.setProofreadingEnabled"
         />
       </UiField>
     </ProductFormSection>
@@ -32,7 +27,7 @@
 
       <div
         v-for="(round, index) in proofreadingRounds"
-        :key="index"
+        :key="round.id"
         class="proofreading-settings__round"
       >
         <div class="proofreading-settings__round-header">
@@ -49,67 +44,69 @@
         </div>
 
         <div class="proofreading-settings__round-content">
-          <UiField variant="settings" label="轮次名称" :control-id="roundFieldId(index, 'Name')">
+          <UiField variant="settings" label="轮次名称" :control-id="roundFieldId(round.id, 'Name')">
             <UiInput
               type="text"
-              :id="roundFieldId(index, 'Name')"
-              v-model="round.name"
+              :id="roundFieldId(round.id, 'Name')"
+              :model-value="round.name"
               placeholder="如: 第一轮校对"
+              @update:model-value="updateRoundString(index, 'name', $event)"
             />
           </UiField>
 
           <UiFormGrid>
             <AiProviderSelectField
               :model-value="round.provider"
-              :input-id="roundFieldId(index, 'Provider')"
+              :input-id="roundFieldId(round.id, 'Provider')"
               :options="providerOptions"
-              @change="handleRoundProviderChange(index, $event)"
+              @change="handleRoundProviderChange(index, round, $event)"
             />
             <AiProviderCredentialFields
               :api-key="round.apiKey"
-              :api-key-input-id="roundFieldId(index, 'ApiKey')"
+              :api-key-input-id="roundFieldId(round.id, 'ApiKey')"
               :base-url="round.customBaseUrl"
-              :base-url-input-id="roundFieldId(index, 'BaseUrl')"
+              :base-url-input-id="roundFieldId(round.id, 'BaseUrl')"
               :show-api-key="providerRequiresApiKey(round.provider)"
               :show-base-url="false"
               :include-base-url="false"
               api-key-placeholder="请输入API Key"
               :has-stored-credential="
-                settingsStore.hasCredential(`proofreading_${index}`, round.provider)
+                settingsStore.hasCredential(proofreadingProviderDomain(round.id), round.provider)
               "
               :api-key-show-label="`显示${round.name} API Key`"
               :api-key-hide-label="`隐藏${round.name} API Key`"
-              @update:api-key="round.apiKey = $event"
+              @update:api-key="updateRoundString(index, 'apiKey', $event)"
             />
           </UiFormGrid>
 
           <AiProviderCredentialFields
             :api-key="round.apiKey"
-            :api-key-input-id="roundFieldId(index, 'ApiKey')"
+            :api-key-input-id="roundFieldId(round.id, 'ApiKey')"
             :base-url="round.customBaseUrl"
-            :base-url-input-id="roundFieldId(index, 'BaseUrl')"
+            :base-url-input-id="roundFieldId(round.id, 'BaseUrl')"
             :show-api-key="false"
             :show-base-url="providerRequiresBaseUrl(round.provider)"
             :include-api-key="false"
             base-url-placeholder="例如: https://api.example.com/v1"
-            @update:base-url="round.customBaseUrl = $event"
+            @update:base-url="updateRoundString(index, 'customBaseUrl', $event)"
           />
 
           <UiField
             variant="settings"
             label="模型名称"
-            :control-id="roundFieldId(index, 'ModelName')"
+            :control-id="roundFieldId(round.id, 'ModelName')"
           >
             <UiModelPicker
-              :input-id="roundFieldId(index, 'ModelName')"
-              v-model="round.modelName"
+              :input-id="roundFieldId(round.id, 'ModelName')"
+              :model-value="round.modelName"
               placeholder="请输入模型名称"
               fetch-variant="primary"
-              :fetching="isRoundFetching(index)"
-              :fetch-disabled="isRoundFetching(index)"
-              :options="getRoundModelOptions(index)"
-              :model-count="getRoundModelCount(index)"
-              @fetch="fetchRoundModels(index)"
+              :fetching="isRoundFetching(round)"
+              :fetch-disabled="isRoundFetching(round)"
+              :options="getRoundModelOptions(round)"
+              :model-count="getRoundModelCount(round)"
+              @update:model-value="updateRoundModel(index, $event)"
+              @fetch="fetchRoundModels(round)"
             />
           </UiField>
 
@@ -118,10 +115,10 @@
               variant="secondary"
               tone="info"
               block
-              @click="testRoundConnection(index)"
-              :disabled="roundTestingStates[index]"
+              @click="testRoundConnection(round)"
+              :disabled="roundTestingStates[round.id]"
             >
-              <span v-if="roundTestingStates[index]">测试中...</span>
+              <span v-if="roundTestingStates[round.id]">测试中...</span>
               <template v-else>
                 <span aria-hidden="true">🔗</span>
                 <span>测试连接</span>
@@ -133,26 +130,29 @@
             <UiField
               variant="settings"
               label="批次大小"
-              :control-id="roundFieldId(index, 'BatchSize')"
+              :control-id="roundFieldId(round.id, 'BatchSize')"
             >
               <UiNumberField
-                :input-id="roundFieldId(index, 'BatchSize')"
-                v-model="round.batchSize"
+                :input-id="roundFieldId(round.id, 'BatchSize')"
+                :model-value="round.batchSize"
                 :min="1"
                 :max="10"
                 :step="1"
+                @update:model-value="updateRoundNumber(index, 'batchSize', $event)"
               />
             </UiField>
             <UiField
               variant="settings"
               label="RPM限制"
-              :control-id="roundFieldId(index, 'RpmLimit')"
+              :control-id="roundFieldId(round.id, 'RpmLimit')"
             >
               <UiNumberField
-                :input-id="roundFieldId(index, 'RpmLimit')"
-                v-model="round.openaiOptions.execution.rpmLimit"
+                :input-id="roundFieldId(round.id, 'RpmLimit')"
+                :model-value="round.openaiOptions.execution.rpmLimit"
                 :min="0"
+                :max="100000"
                 :step="1"
+                @update:model-value="updateRoundNumber(index, 'rpmLimit', $event)"
               />
             </UiField>
           </UiFormGrid>
@@ -161,56 +161,67 @@
             <UiField
               variant="settings"
               label="业务重试"
-              :control-id="roundFieldId(index, 'BusinessRetries')"
+              :control-id="roundFieldId(round.id, 'BusinessRetries')"
             >
               <UiNumberField
-                :input-id="roundFieldId(index, 'BusinessRetries')"
-                v-model="round.openaiOptions.execution.businessRetries"
+                :input-id="roundFieldId(round.id, 'BusinessRetries')"
+                :model-value="round.openaiOptions.execution.businessRetries"
                 :min="0"
-                :max="10"
+                :max="100"
                 :step="1"
+                @update:model-value="updateRoundNumber(index, 'businessRetries', $event)"
               />
             </UiField>
             <UiField
               variant="settings"
               label="传输重试"
-              :control-id="roundFieldId(index, 'TransportRetries')"
+              :control-id="roundFieldId(round.id, 'TransportRetries')"
             >
               <UiNumberField
-                :input-id="roundFieldId(index, 'TransportRetries')"
-                v-model="round.openaiOptions.execution.transportRetries"
+                :input-id="roundFieldId(round.id, 'TransportRetries')"
+                :model-value="round.openaiOptions.execution.transportRetries"
                 :min="0"
-                :max="10"
+                :max="100"
                 :step="1"
+                @update:model-value="updateRoundNumber(index, 'transportRetries', $event)"
               />
             </UiField>
           </UiFormGrid>
           <UiFormGrid>
             <UiField variant="settings" control="checkbox" hint="使用 response_format: json_object">
               <UiCheckbox
-                v-model="round.openaiOptions.request.forceJsonOutput"
+                :model-value="round.openaiOptions.request.forceJsonOutput"
                 label="强制JSON输出"
+                @update:model-value="updateRoundBoolean(index, 'forceJsonOutput', $event)"
               />
             </UiField>
             <UiField variant="settings" control="checkbox" hint="使用流式API调用，避免超时">
-              <UiCheckbox v-model="round.openaiOptions.execution.useStream" label="流式调用" />
+              <UiCheckbox
+                :model-value="round.openaiOptions.execution.useStream"
+                label="流式调用"
+                @update:model-value="updateRoundBoolean(index, 'useStream', $event)"
+              />
             </UiField>
           </UiFormGrid>
           <UiField variant="settings">
-            <OpenAIExtraBodyEditor v-model="round.openaiOptions.request.extraBody" />
+            <OpenAIExtraBodyEditor
+              :model-value="round.openaiOptions.request.extraBody"
+              @update:model-value="updateRoundExtraBody(index, $event)"
+            />
           </UiField>
 
           <UiField
             variant="settings"
             label="校对提示词"
-            :control-id="roundFieldId(index, 'Prompt')"
+            :control-id="roundFieldId(round.id, 'Prompt')"
           >
             <UiTextarea
-              :id="roundFieldId(index, 'Prompt')"
-              v-model="round.prompt"
+              :id="roundFieldId(round.id, 'Prompt')"
+              :model-value="round.prompt"
               variant="panel"
               rows="4"
               placeholder="校对提示词"
+              @update:model-value="updateRoundString(index, 'prompt', $event)"
             />
             <SavedPromptsPicker
               prompt-type="proofreading"
@@ -242,7 +253,7 @@ import UiNumberField from '@/components/ui/UiNumberField.vue'
 import AiProviderCredentialFields from '@/components/settings/AiProviderCredentialFields.vue'
 import AiProviderSelectField from '@/components/settings/AiProviderSelectField.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
-import { ref, computed } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import {
   getProviderOptionsForCapability,
   providerRequiresApiKey,
@@ -251,8 +262,15 @@ import {
 import { useSettingsStore } from '@/stores/settings'
 import { fetchModels as fetchV2Models, testAiTranslateConnection } from '@/api/v2/diagnostics'
 import { useToast } from '@/utils/toast'
-import { DEFAULT_PROOFREADING_PROMPT } from '@/constants'
+import {
+  DEFAULT_HQ_TRANSLATION_MAX_RETRIES,
+  DEFAULT_PROOFREADING_PROMPT,
+} from '@/constants'
 import type { ProofreadingRound } from '@/types/settings'
+import {
+  newProofreadingRoundId,
+  proofreadingProviderDomain,
+} from '@/stores/settings/proofreadingIdentity'
 import OpenAIExtraBodyEditor from '@/components/common/OpenAIExtraBodyEditor.vue'
 import SavedPromptsPicker from '@/components/settings/SavedPromptsPicker.vue'
 import {
@@ -265,26 +283,19 @@ const providerOptions = getProviderOptionsForCapability('hqTranslation')
 const settingsStore = useSettingsStore()
 const toast = useToast()
 
-const roundTestingStates = ref<Record<number, boolean>>({})
-const roundModelDiscoveries = new Map<number, ReturnType<typeof useAiModelDiscovery>>()
+const roundTestingStates = ref<Record<string, boolean>>({})
+const roundModelDiscoveries = new Map<string, ReturnType<typeof useAiModelDiscovery>>()
 
 const proofreadingRounds = computed(() => settingsStore.settings.proofreading.rounds)
-const proofreadingMaxRetries = computed({
-  get: () => settingsStore.settings.proofreading.maxRetries,
-  set: (val: number) => settingsStore.setProofreadingMaxRetries(val),
-})
-const isProofreadingEnabled = computed({
-  get: () => settingsStore.settings.proofreading.enabled,
-  set: (val: boolean) => settingsStore.setProofreadingEnabled(val),
-})
+const isProofreadingEnabled = computed(() => settingsStore.settings.proofreading.enabled)
 
-function roundFieldId(index: number, field: string) {
-  return `proofreadingRound${index}${field}`
+function roundFieldId(roundId: string, field: string) {
+  return `proofreadingRound-${roundId}-${field}`
 }
 
-function getRoundModelOptions(index: number) {
+function getRoundModelOptions(round: ProofreadingRound) {
   const options = [{ label: '-- 选择模型 --', value: '' }]
-  getRoundModelDiscovery(index).models.value.forEach(model => {
+  getRoundModelDiscovery(round).models.value.forEach(model => {
     options.push({ label: model.id, value: model.id })
   })
   return options
@@ -294,64 +305,107 @@ function notifyRoundModelDiscovery(message: string, tone: AiModelDiscoveryMessag
   toast[tone](message)
 }
 
-function getRoundModelDiscovery(index: number): ReturnType<typeof useAiModelDiscovery> {
-  const existing = roundModelDiscoveries.get(index)
+function getRoundModelDiscovery(round: ProofreadingRound): ReturnType<typeof useAiModelDiscovery> {
+  const roundId = round.id
+  const existing = roundModelDiscoveries.get(roundId)
   if (existing) return existing
 
   const discovery = useAiModelDiscovery({
     source: () => {
-      const round = proofreadingRounds.value[index]
+      const currentRound = proofreadingRounds.value.find(candidate => candidate.id === roundId)
       return {
-        provider: round?.provider ?? '',
-        apiKey: round?.apiKey ?? '',
-        baseUrl: round?.customBaseUrl ?? '',
-        hasStoredCredential: round
-          ? settingsStore.hasCredential(`proofreading_${index}`, round.provider)
+        provider: currentRound?.provider ?? '',
+        apiKey: currentRound?.apiKey ?? '',
+        baseUrl: currentRound?.customBaseUrl ?? '',
+        hasStoredCredential: currentRound
+          ? settingsStore.hasCredential(proofreadingProviderDomain(roundId), currentRound.provider)
           : false,
       }
     },
     fetcher: (provider, apiKey, baseUrl) =>
-      fetchV2Models(provider, apiKey, baseUrl, `proofreading_${index}`),
+      fetchV2Models(
+        provider,
+        apiKey,
+        baseUrl,
+        proofreadingProviderDomain(roundId),
+      ),
     notify: notifyRoundModelDiscovery,
-    successMessage: count => `轮次 ${index + 1}: 获取到 ${count} 个模型`,
+    successMessage: count => {
+      const index = proofreadingRounds.value.findIndex(candidate => candidate.id === roundId)
+      return index >= 0
+        ? `轮次 ${index + 1}: 获取到 ${count} 个模型`
+        : `校对轮次已获取到 ${count} 个模型`
+    },
     emptyBaseUrl: '',
   })
-  roundModelDiscoveries.set(index, discovery)
+  roundModelDiscoveries.set(roundId, discovery)
   return discovery
 }
 
-function isRoundFetching(index: number): boolean {
-  return getRoundModelDiscovery(index).isFetchingModels.value
+function isRoundFetching(round: ProofreadingRound): boolean {
+  return getRoundModelDiscovery(round).isFetchingModels.value
 }
 
-function getRoundModelCount(index: number): number {
-  return getRoundModelDiscovery(index).models.value.length
+function getRoundModelCount(round: ProofreadingRound): number {
+  return getRoundModelDiscovery(round).models.value.length
 }
 
-function resetRoundModelDiscoveries(): void {
-  for (const discovery of roundModelDiscoveries.values()) {
-    discovery.invalidate()
-  }
-  roundModelDiscoveries.clear()
+function updateRoundString(
+  index: number,
+  field: 'name' | 'apiKey' | 'customBaseUrl' | 'prompt',
+  value: string | number,
+): void {
+  settingsStore.updateProofreadingRound(index, { [field]: String(value) })
 }
 
-function handleRoundProviderChange(index: number, value: string | number) {
-  const round = proofreadingRounds.value[index]
-  if (!round) return
-  getRoundModelDiscovery(index).invalidate()
-  round.provider = String(value) as ProofreadingRound['provider']
+function updateRoundModel(index: number, value: string | number): void {
+  if (typeof value !== 'string') return
+  settingsStore.updateProofreadingRound(index, { modelName: value })
 }
 
-async function fetchRoundModels(index: number) {
-  const round = proofreadingRounds.value[index]
-  if (!round) return
-  await getRoundModelDiscovery(index).fetchModels()
+function updateRoundNumber(
+  index: number,
+  field: 'batchSize' | 'rpmLimit' | 'businessRetries' | 'transportRetries',
+  value: number | null,
+): void {
+  if (value === null) return
+  settingsStore.updateProofreadingRound(index, { [field]: value })
 }
 
-async function testRoundConnection(index: number) {
-  const round = proofreadingRounds.value[index]
-  if (!round) return
+function updateRoundBoolean(
+  index: number,
+  field: 'forceJsonOutput' | 'useStream',
+  value: boolean,
+): void {
+  settingsStore.updateProofreadingRound(index, { [field]: value })
+}
 
+function updateRoundExtraBody(
+  index: number,
+  value: Record<string, unknown> | undefined,
+): void {
+  settingsStore.updateProofreadingRound(index, { extraBody: value })
+}
+
+function handleRoundProviderChange(index: number, round: ProofreadingRound, value: string) {
+  if (!providerOptions.some(option => option.value === value)) return
+  if (round.provider === value) return
+  getRoundModelDiscovery(round).invalidate()
+  settingsStore.updateProofreadingRound(index, {
+    provider: value as ProofreadingRound['provider'],
+    apiKey: '',
+    modelName: '',
+    customBaseUrl: '',
+  })
+}
+
+async function fetchRoundModels(round: ProofreadingRound) {
+  await getRoundModelDiscovery(round).fetchModels()
+}
+
+async function testRoundConnection(round: ProofreadingRound) {
+  const roundId = round.id
+  const roundNumber = proofreadingRounds.value.findIndex(candidate => candidate.id === roundId) + 1
   const provider = round.provider
   const apiKey = round.apiKey?.trim()
   const modelName = round.modelName?.trim()
@@ -360,7 +414,7 @@ async function testRoundConnection(index: number) {
   if (
     providerRequiresApiKey(provider) &&
     !apiKey &&
-    !settingsStore.hasCredential(`proofreading_${index}`, provider)
+    !settingsStore.hasCredential(proofreadingProviderDomain(round.id), provider)
   ) {
     toast.warning('请先填写 API Key')
     return
@@ -371,8 +425,13 @@ async function testRoundConnection(index: number) {
     return
   }
 
-  roundTestingStates.value[index] = true
-  toast.info(`正在测试轮次 ${index + 1} 的连接...`)
+  if (providerRequiresBaseUrl(provider) && !baseUrl) {
+    toast.warning('自定义服务需要填写 Base URL')
+    return
+  }
+
+  roundTestingStates.value[roundId] = true
+  toast.info(`正在测试轮次 ${roundNumber} 的连接...`)
 
   try {
     const result = await testAiTranslateConnection({
@@ -380,7 +439,7 @@ async function testRoundConnection(index: number) {
       apiKey,
       modelName,
       baseUrl,
-      domain: `proofreading_${index}`,
+      domain: proofreadingProviderDomain(roundId),
     })
 
     if (result.success) {
@@ -392,12 +451,13 @@ async function testRoundConnection(index: number) {
     const errorMessage = error instanceof Error ? error.message : '连接测试失败'
     toast.error(errorMessage)
   } finally {
-    roundTestingStates.value[index] = false
+    roundTestingStates.value[roundId] = false
   }
 }
 
 function addRound() {
   const newRound: ProofreadingRound = {
+    id: newProofreadingRoundId(),
     name: `第${proofreadingRounds.value.length + 1}轮校对`,
     provider: 'siliconflow',
     apiKey: '',
@@ -411,7 +471,7 @@ function addRound() {
         useStream: true,
         rpmLimit: 7,
         transportRetries: 1,
-        businessRetries: settingsStore.settings.proofreading.maxRetries,
+        businessRetries: DEFAULT_HQ_TRANSLATION_MAX_RETRIES,
       },
     },
     batchSize: 3,
@@ -426,7 +486,11 @@ function removeRound(index: number) {
     toast.warning('至少需要保留一个校对轮次')
     return
   }
-  resetRoundModelDiscoveries()
+  const round = proofreadingRounds.value[index]
+  if (!round) return
+  roundModelDiscoveries.get(round.id)?.invalidate()
+  roundModelDiscoveries.delete(round.id)
+  delete roundTestingStates.value[round.id]
   settingsStore.removeProofreadingRound(index)
   toast.success('已删除校对轮次')
 }
@@ -440,6 +504,11 @@ function handleProofreadingPromptSelect(index: number, content: string, name: st
   settingsStore.updateProofreadingRound(index, { prompt: content })
   toast.success(`已应用提示词: ${name}`)
 }
+
+onBeforeUnmount(() => {
+  roundModelDiscoveries.forEach(discovery => discovery.invalidate())
+  roundModelDiscoveries.clear()
+})
 </script>
 
 <style scoped>

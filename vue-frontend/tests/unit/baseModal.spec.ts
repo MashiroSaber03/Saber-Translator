@@ -100,7 +100,9 @@ describe('BaseModal', () => {
     expect(document.activeElement).toBe(closeButton)
 
     closeButton.focus()
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true }))
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true })
+    )
     expect(document.activeElement).toBe(lastAction)
   })
 
@@ -223,15 +225,12 @@ describe('BaseModal', () => {
     expect(wrapper.emitted('update:modelValue')).toEqual([[false]])
   })
 
-  it('exposes explicit chrome body footer and scroll classes for Teleport customization', () => {
+  it('exposes typed body padding and scroll variants', () => {
     mount(BaseModal, {
       attachTo: document.body,
       props: {
         modelValue: true,
         title: 'Custom Modal',
-        chromeVariant: 'compact',
-        bodyClass: 'custom-body',
-        footerClass: 'custom-footer',
         bodyPadding: 'none',
         scrollMode: 'contained',
       },
@@ -241,30 +240,20 @@ describe('BaseModal', () => {
       },
     })
 
-    expect(getContainer().classList.contains('ui-modal__container--chrome-compact')).toBe(true)
     const body = document.body.querySelector('[data-testid="base-dialog-body"]')
-    expect(body?.classList.contains('custom-body')).toBe(true)
     expect(body?.classList.contains('ui-modal__body--padding-none')).toBe(true)
     expect(body?.classList.contains('ui-modal__body--scroll-contained')).toBe(true)
-    const footer = document.body.querySelector('[data-testid="base-dialog-footer"]')
-    expect(footer?.classList.contains('custom-footer')).toBe(true)
   })
 
-  it('exposes typed placement backdrop and inverse chrome variants for product modal shells', () => {
+  it('exposes typed backdrop variants for product modal shells', () => {
     mountModal({
-      placement: 'top-end',
       backdrop: 'strong',
-      overlayLayer: 'popover',
       backdropEffect: 'blur-sm',
-      chromeVariant: 'inverse',
     })
 
     const overlay = getOverlay()
-    expect(overlay.classList.contains('ui-modal__overlay--placement-top-end')).toBe(true)
     expect(overlay.classList.contains('ui-modal__overlay--backdrop-strong')).toBe(true)
-    expect(overlay.classList.contains('ui-modal__overlay--layer-popover')).toBe(true)
     expect(overlay.classList.contains('ui-modal__overlay--effect-blur-sm')).toBe(true)
-    expect(getContainer().classList.contains('ui-modal__container--chrome-inverse')).toBe(true)
   })
 
   it('exposes a typed brand header variant for product settings-style modals', () => {

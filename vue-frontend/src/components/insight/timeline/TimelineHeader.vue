@@ -4,7 +4,9 @@ import UiSpinner from '@/components/ui/UiSpinner.vue'
 
 defineProps<{
   isLoading: boolean
+  isPending: boolean
   isRegenerating: boolean
+  showRegenerate: boolean
 }>()
 
 defineEmits<{
@@ -19,16 +21,17 @@ defineEmits<{
       <span>剧情时间线</span>
     </h3>
     <UiButton
+      v-if="showRegenerate"
       variant="secondary"
       size="sm"
       class="timeline-header__regenerate-action"
-      :disabled="isLoading || isRegenerating"
-      :loading="isRegenerating"
+      :disabled="isLoading || isRegenerating || isPending"
+      :loading="isRegenerating || isPending"
       @click="$emit('regenerate')"
     >
-      <UiSpinner v-if="isRegenerating" :size="14" />
+      <UiSpinner v-if="isRegenerating || isPending" :size="14" />
       <span v-else aria-hidden="true">🔄</span>
-      <span>{{ isRegenerating ? '生成中...' : '重新生成' }}</span>
+      <span>{{ isRegenerating || isPending ? '生成中...' : '重新生成' }}</span>
     </UiButton>
   </div>
 </template>
@@ -36,8 +39,10 @@ defineEmits<{
 <style scoped>
 .timeline-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
   margin-bottom: 16px;
 }
 

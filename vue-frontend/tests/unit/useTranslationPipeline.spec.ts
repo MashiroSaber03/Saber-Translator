@@ -12,6 +12,23 @@ import { useSettingsStore } from '@/stores/settings'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import { createDefaultSettings } from '@/stores/settings/defaults'
 import { addTestImage } from '../helpers/imageFixtures'
+import type { components } from '@/api/generated/v2'
+
+type JobProgress = components['schemas']['JobProgress']
+
+function jobProgress(overrides: Partial<JobProgress> = {}): JobProgress {
+  return {
+    executionMode: 'sequential',
+    jobStatus: 'queued',
+    totalItems: 0,
+    completedItems: 0,
+    failedItems: 0,
+    skippedItems: 0,
+    cancelledItems: 0,
+    pools: [],
+    ...overrides,
+  }
+}
 
 const mocks = vi.hoisted(() => ({
   createChapterRemoveTextJob: vi.fn(),
@@ -39,13 +56,18 @@ vi.mock('@/api/v2/content', () => ({
   listChapterPages: mocks.listChapterPages,
 }))
 
-vi.mock('@/api/v2/jobs', () => ({
-  jobsApi: {
-    cancel: vi.fn(),
-    list: mocks.jobsList,
-    retryFailed: mocks.jobsRetryFailed,
-  },
-}))
+vi.mock('@/api/v2/jobs', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/api/v2/jobs')>()
+  return {
+    ...actual,
+    jobsApi: {
+      ...actual.jobsApi,
+      cancel: vi.fn(),
+      list: mocks.jobsList,
+      retryFailed: mocks.jobsRetryFailed,
+    },
+  }
+})
 
 vi.mock('@/utils/toast', () => ({
   useToast: () => mocks.toast,
@@ -74,13 +96,20 @@ describe('useTranslationPipeline', () => {
       retryMode: 'current',
       failedOnly: true,
     })
-    mocks.listChapterPages.mockResolvedValue({ items: [] })
+    mocks.listChapterPages.mockResolvedValue({
+      items: [],
+      nextCursor: null,
+      pageOrderRevision: 1,
+    })
     const { fontFamily, ...pageStyleDefaults } = createDefaultSettings().textStyle
     mocks.getPageDocument.mockResolvedValue({
       pageId: 'page-1',
+      chapterId: 'chapter-1',
       documentRevision: 2,
       defaultFontId: fontFamily,
       pageStyleDefaults,
+      pageStyleSchemaVersion: 1,
+      renderStatus: 'not_rendered',
       bubbles: [],
     })
   })
@@ -116,6 +145,89 @@ describe('useTranslationPipeline', () => {
     expect(mocks.toast.success).toHaveBeenCalledWith(
       '任务已加入后端任务中心，可安全关闭页面',
     )
+  })
+
+  it('keeps an accepted translation successful when task-center refresh fails', async () => {
+    const imageStore = useImageStore()
+    addTestImage(imageStore, '001.png', '/api/v2/assets/source-1', {
+      chapterId: 'chapter-1',
+      documentRevision: 7,
+      id: 'page-1',
+    })
+    mocks.jobsList.mockRejectedValue(new Error('snapshot unavailable'))
+
+    await expect(useTranslation().translateCurrentImage()).resolves.toBe(true)
+
+    expect(mocks.createChapterTranslationJob).toHaveBeenCalledOnce()
+    expect(mocks.toast.error).not.toHaveBeenCalled()
+    expect(mocks.toast.success).toHaveBeenCalledWith(
+      '任务已加入后端任务中心，可安全关闭页面',
+    )
+  })
+
+  it('locks job creation immediately and keeps the submitted execution mode', async () => {
+    const imageStore = useImageStore()
+    const settingsStore = useSettingsStore()
+    settingsStore.settings.parallel.enabled = true
+    addTestImage(imageStore, '001.png', '/api/v2/assets/source-1', {
+      chapterId: 'chapter-1',
+      documentRevision: 7,
+      id: 'page-1',
+    })
+    let resolveCreation!: () => void
+    mocks.createChapterTranslationJob.mockImplementationOnce(() => new Promise(resolve => {
+      resolveCreation = () => resolve({
+        batchId: 'batch-1',
+        jobIds: ['job-1'],
+        status: 'queued',
+      })
+    }))
+    const translation = useTranslation()
+
+    const firstCreation = translation.translateCurrentImage()
+    await vi.waitFor(() => expect(mocks.createChapterTranslationJob).toHaveBeenCalledOnce())
+    expect(imageStore.isTranslationInProgress).toBe(true)
+    settingsStore.settings.parallel.enabled = false
+
+    await expect(translation.translateCurrentImage()).resolves.toBe(false)
+    expect(mocks.createChapterTranslationJob).toHaveBeenCalledOnce()
+    expect(mocks.toast.info).toHaveBeenCalledWith('已有翻译任务正在创建或执行')
+
+    resolveCreation()
+    await expect(firstCreation).resolves.toBe(true)
+    expect(translation.progress.value.executionMode).toBe('parallel')
+  })
+
+  it('ignores malformed realtime progress instead of coercing it to zero', async () => {
+    const imageStore = useImageStore()
+    const taskCenterStore = useTaskCenterStore()
+    addTestImage(imageStore, '001.png', '/api/v2/assets/source-1', {
+      chapterId: 'chapter-1',
+      documentRevision: 7,
+      id: 'page-1',
+    })
+    const translation = useTranslation()
+    await translation.translateCurrentImage()
+
+    taskCenterStore.latestEvent = {
+      eventId: 997,
+      jobId: 'job-1',
+      type: 'pipeline_progress',
+      payload: {
+        progress: {
+          ...jobProgress({ jobStatus: 'running', totalItems: 1 }),
+          completedItems: 'not-a-number',
+        },
+      },
+      createdAt: new Date().toISOString(),
+    }
+    await nextTick()
+
+    expect(translation.progress.value).toMatchObject({
+      current: 0,
+      total: 1,
+      status: 'queued',
+    })
   })
 
   it('does not create a job when chapter settings preflight fails', async () => {
@@ -229,7 +341,11 @@ describe('useTranslationPipeline', () => {
       type: 'page_completed',
       payload: {
         pageId: 'page-1',
-        progress: { totalItems: 2, completedItems: 1 },
+        progress: jobProgress({
+          jobStatus: 'running',
+          totalItems: 2,
+          completedItems: 1,
+        }),
       },
       createdAt: new Date().toISOString(),
     }
@@ -278,10 +394,13 @@ describe('useTranslationPipeline', () => {
         cleanUrl: '/api/v2/assets/clean-1',
         translatedUrl: '/api/v2/assets/translated-1',
       }],
+      nextCursor: null,
+      pageOrderRevision: 1,
     })
     const { fontFamily, ...pageStyleDefaults } = createDefaultSettings().textStyle
     mocks.getPageDocument.mockResolvedValue({
       pageId: 'page-1',
+      chapterId: 'chapter-1',
       documentRevision: 2,
       defaultFontId: fontFamily,
       pageStyleDefaults: {
@@ -290,19 +409,42 @@ describe('useTranslationPipeline', () => {
         textColor: '#123456',
         useAutoTextColor: false,
       },
+      pageStyleSchemaVersion: 1,
+      renderStatus: 'ready',
       bubbles: [{
         bubbleId: 'bubble-1',
         ordinal: 1,
-        fontId: null,
+        fontId: fontFamily,
+        updatedRevision: 2,
         payload: {
           originalText: 'こんにちは',
           translatedText: '你好',
+          textboxText: '',
           coords: [1, 2, 30, 40],
+          polygon: [],
+          fontSize: 24,
+          textDirection: 'vertical',
+          autoTextDirection: 'vertical',
+          textColor: '#123456',
+          fillColor: '#ffffff',
+          rotationAngle: 0,
+          position: { x: 0, y: 0 },
+          strokeEnabled: false,
+          strokeColor: '#ffffff',
+          strokeWidth: 0,
+          lineSpacing: 1.2,
+          textAlign: 'center',
+          inpaintMethod: 'solid',
+          autoFgColor: null,
+          autoBgColor: null,
+          colorConfidence: 0,
+          textlines: [],
+          ocrResult: null,
         },
       }],
     })
 
-    await useTranslation().translateCurrentImage()
+    await expect(useTranslation().translateCurrentImage()).resolves.toBe(true)
     taskCenterStore.latestEvent = {
       eventId: 999,
       jobId: 'job-1',
@@ -312,6 +454,10 @@ describe('useTranslationPipeline', () => {
     }
     await nextTick()
 
+    await vi.waitFor(() => expect(mocks.listChapterPages).toHaveBeenCalledWith(
+      'chapter-1',
+      { all: true },
+    ))
     await vi.waitFor(() => {
       expect(imageStore.currentImage?.bubbleStates).toHaveLength(1)
       expect(bubbleStore.bubbles).toHaveLength(1)
@@ -330,6 +476,94 @@ describe('useTranslationPipeline', () => {
       textColor: '#123456',
       useAutoTextColor: false,
     })
+  })
+
+  it('preserves a page selected while terminal chapter refresh is pending', async () => {
+    const imageStore = useImageStore()
+    const taskCenterStore = useTaskCenterStore()
+    addTestImage(imageStore, '001.png', '/api/v2/assets/source-1', {
+      chapterId: 'chapter-1',
+      documentRevision: 1,
+      id: 'page-1',
+    })
+    addTestImage(imageStore, '002.png', '/api/v2/assets/source-2', {
+      chapterId: 'chapter-1',
+      documentRevision: 1,
+      id: 'page-2',
+    })
+    let resolvePages!: () => void
+    mocks.listChapterPages.mockImplementationOnce(() => new Promise(resolve => {
+      resolvePages = () => resolve({
+        items: [
+          {
+            id: 'page-1',
+            chapterId: 'chapter-1',
+            ordinal: 1,
+            logicalSourcePath: '001.png',
+            width: 100,
+            height: 200,
+            sourceRevision: 1,
+            documentRevision: 2,
+            renderedRevision: 2,
+            renderStatus: 'ready',
+            detectionState: 'completed',
+            sourceUrl: '/api/v2/assets/source-1',
+            thumbnailSourceUrl: '/api/v2/assets/thumb-1',
+            cleanUrl: '/api/v2/assets/clean-1',
+            translatedUrl: '/api/v2/assets/translated-1',
+          },
+          {
+            id: 'page-2',
+            chapterId: 'chapter-1',
+            ordinal: 2,
+            logicalSourcePath: '002.png',
+            width: 100,
+            height: 200,
+            sourceRevision: 1,
+            documentRevision: 2,
+            renderedRevision: 2,
+            renderStatus: 'ready',
+            detectionState: 'completed',
+            sourceUrl: '/api/v2/assets/source-2',
+            thumbnailSourceUrl: '/api/v2/assets/thumb-2',
+            cleanUrl: '/api/v2/assets/clean-2',
+            translatedUrl: '/api/v2/assets/translated-2',
+          },
+        ],
+        nextCursor: null,
+        pageOrderRevision: 1,
+      })
+    }))
+    mocks.getPageDocument.mockImplementation(async (pageId: string) => {
+      const { fontFamily, ...pageStyleDefaults } = createDefaultSettings().textStyle
+      return {
+        pageId,
+        chapterId: 'chapter-1',
+        documentRevision: 2,
+        defaultFontId: fontFamily,
+        pageStyleDefaults,
+        pageStyleSchemaVersion: 1,
+        renderStatus: 'ready',
+        bubbles: [],
+      }
+    })
+    const translation = useTranslation()
+    await translation.translateCurrentImage()
+
+    taskCenterStore.latestEvent = {
+      eventId: 1002,
+      jobId: 'job-1',
+      type: 'job_finished',
+      payload: {},
+      createdAt: new Date().toISOString(),
+    }
+    await vi.waitFor(() => expect(mocks.listChapterPages).toHaveBeenCalledOnce())
+    imageStore.setCurrentImageIndex(1)
+    resolvePages()
+
+    await vi.waitFor(() => expect(mocks.getPageDocument).toHaveBeenCalledWith('page-2'))
+    expect(imageStore.currentImage?.id).toBe('page-2')
+    expect(mocks.getPageDocument).not.toHaveBeenCalledWith('page-1')
   })
 
   it('does not reload the open chapter for an unrelated terminal job', async () => {
@@ -353,7 +587,7 @@ describe('useTranslationPipeline', () => {
       chapterId: 'chapter-1',
       pageId: null,
       blockedReason: null,
-      progress: {},
+      progress: jobProgress({ jobStatus: 'completed' }),
       createdAt: new Date().toISOString(),
       startedAt: null,
       finishedAt: new Date().toISOString(),
@@ -416,6 +650,8 @@ describe('useTranslationPipeline', () => {
           translatedUrl: null,
         },
       ],
+      nextCursor: null,
+      pageOrderRevision: 2,
     })
     taskCenterStore.history = [{
       jobId: 'container-job',
@@ -431,7 +667,11 @@ describe('useTranslationPipeline', () => {
       pageId: null,
       blockedReason: null,
       blockedByJobId: null,
-      progress: { totalItems: 2, completedItems: 2 },
+      progress: jobProgress({
+        jobStatus: 'completed',
+        totalItems: 2,
+        completedItems: 2,
+      }),
       target: { pageCount: 2 },
       createdAt: null,
       startedAt: null,
@@ -482,14 +722,11 @@ describe('useTranslationPipeline', () => {
       pageId: null,
       blockedReason: null,
       blockedByJobId: null,
-      progress: {
+      progress: jobProgress({
         totalItems: 1,
         completedItems: 0,
-        failedItems: 0,
         jobStatus: 'running',
-        executionMode: 'sequential',
-        pools: [],
-      },
+      }),
       target: { book: 'Book', chapter: 'Chapter', pageCount: 1 },
       createdAt: null,
       startedAt: null,
@@ -512,14 +749,11 @@ describe('useTranslationPipeline', () => {
       retryMode: null,
       status: 'completed',
       queueRank: null,
-      progress: {
+      progress: jobProgress({
         totalItems: 1,
         completedItems: 1,
-        failedItems: 0,
         jobStatus: 'completed',
-        executionMode: 'sequential',
-        pools: [],
-      },
+      }),
       target: { book: 'Book', chapter: 'Chapter', pageCount: 1 },
       createdAt: null,
     }]
@@ -552,7 +786,11 @@ describe('useTranslationPipeline', () => {
             pageId: null,
             blockedReason: null,
             blockedByJobId: null,
-            progress: { totalItems: 1, failedItems: 1 },
+            progress: jobProgress({
+              jobStatus: 'completed_with_errors',
+              totalItems: 1,
+              failedItems: 1,
+            }),
             target: {},
             createdAt: null,
             startedAt: null,

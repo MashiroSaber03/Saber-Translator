@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
 from datetime import datetime
 import json
 from typing import Any, Mapping
@@ -11,7 +10,7 @@ from src.backend_v2.serialization import canonical_json as _json
 from src.backend_v2.timestamps import iso_utc
 from src.backend_v2.studio.pure import (
     create_empty_document,
-    ensure_document_shape,
+    validate_current_document,
 )
 
 
@@ -33,71 +32,57 @@ def normalize_document(
     title: str | None,
     document: Mapping[str, Any],
 ) -> dict[str, Any]:
-    raw = deepcopy(dict(document))
-    raw_identity = raw.get("identity")
-    identity_name = (
-        str(raw_identity.get("name", "")).strip()
-        if isinstance(raw_identity, Mapping)
-        else ""
-    )
-    meta = raw.get("meta")
-    meta_title = (
-        str(meta.get("title", "")).strip()
-        if isinstance(meta, Mapping)
-        else ""
-    )
-    explicit_title = str(title or "").strip()
-    names = {
-        value for value in (explicit_title, identity_name, meta_title) if value
-    }
-    if len(names) > 1:
-        raise StudioDocumentInvalid(
-            "title, meta.title and identity.name must agree"
+    try:
+        return validate_current_document(
+            document,
+            book_id=book_id,
+            title=title,
         )
-    canonical_title = next(iter(names), "新角色")
-    shaped = ensure_document_shape(raw, book_id=book_id)
-    shaped["identity"]["name"] = canonical_title
-    shaped["meta"]["title"] = canonical_title
-    shaped["title"] = canonical_title
-    return shaped
+    except ValueError as exc:
+        raise StudioDocumentInvalid(str(exc)) from exc
 
 
 def to_storage(document: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
-    canonical = deepcopy(dict(document))
-    title = str(canonical.pop("title", "")).strip()
-    if not title:
+    book_id = document.get("bookId")
+    title_value = document.get("title")
+    if not isinstance(book_id, str) or not book_id:
+        raise StudioDocumentInvalid("document bookId is required")
+    if not isinstance(title_value, str) or not title_value:
         raise StudioDocumentInvalid("document title is required")
-    origin = _object(canonical.get("origin"))
-    origin_type = str(origin.get("type", "manual") or "manual")
+    try:
+        canonical = validate_current_document(
+            document,
+            book_id=book_id,
+            title=title_value,
+        )
+    except ValueError as exc:
+        raise StudioDocumentInvalid(str(exc)) from exc
+    title = canonical.pop("title")
+    origin = dict(canonical["origin"])
+    origin_type = origin["type"]
     if origin_type not in {"analysis", "manual", "imported"}:
         raise StudioDocumentInvalid("origin.type is invalid")
-    identity = _object(canonical.get("identity"))
-    identity.pop("name", None)
-    meta = _object(canonical.get("meta"))
-    status = _object(canonical.get("status"))
-    export_artifacts = _object(canonical.get("exportArtifacts"))
+    identity = dict(canonical["identity"])
+    del identity["name"]
+    meta = dict(canonical["meta"])
+    status = dict(canonical["status"])
+    export_artifacts = dict(canonical["exportArtifacts"])
     last_review = export_artifacts.get("last_review")
     last_diagnostics = status.get("last_diagnostics")
     return title, {
         "origin_type": origin_type,
         "source_character": (
-            str(origin["source_character"])
-            if origin.get("source_character") is not None
-            else None
+            origin["source_character"]
         ),
-        "tags_json": _json(meta.get("tags", [])),
-        "is_favorite": bool(status.get("is_favorite", False)),
+        "tags_json": _json(meta["tags"]),
+        "is_favorite": status["is_favorite"],
         "identity_json": _json(identity),
-        "core_messages_json": _json(
-            _object(canonical.get("coreMessages"))
-        ),
-        "lorebook_json": _json(_object(canonical.get("lorebook"))),
-        "regex_scripts_json": _json(
-            canonical.get("regexScripts", [])
-        ),
-        "state_tasks_json": _json(canonical.get("stateTasks", [])),
+        "core_messages_json": _json(canonical["coreMessages"]),
+        "lorebook_json": _json(canonical["lorebook"]),
+        "regex_scripts_json": _json(canonical["regexScripts"]),
+        "state_tasks_json": _json(canonical["stateTasks"]),
         "frozen_sections_json": _json(
-            status.get("frozen_sections", [])
+            status["frozen_sections"]
         ),
         "last_review_json": (
             _json(last_review)
@@ -109,79 +94,133 @@ def to_storage(document: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
             if last_diagnostics is not None
             else None
         ),
-        "last_validated_at": _parse_datetime(
-            status.get("last_validated_at")
-        ),
+        "last_validated_at": _parse_datetime(status["last_validated_at"]),
     }
 
 
 def from_storage(row: Mapping[str, Any]) -> dict[str, Any]:
-    title = str(row["title"])
-    avatar_id = row.get("avatar_asset_id")
-    identity = _load_object(row.get("identity_json"))
+    if row["schema_version"] != 2:
+        raise StudioDocumentInvalid(
+            "stored Studio document schema version is invalid"
+        )
+    title = row["title"]
+    if not isinstance(title, str) or not title:
+        raise StudioDocumentInvalid("stored Studio document title is invalid")
+    document_id = row["id"]
+    book_id = row["book_id"]
+    if not isinstance(document_id, str) or not document_id:
+        raise StudioDocumentInvalid("stored Studio document id is invalid")
+    if not isinstance(book_id, str) or not book_id:
+        raise StudioDocumentInvalid("stored Studio document bookId is invalid")
+    avatar_id = row["avatar_asset_id"]
+    if avatar_id is not None and (
+        not isinstance(avatar_id, str) or not avatar_id
+    ):
+        raise StudioDocumentInvalid(
+            "stored Studio document avatarAssetId is invalid"
+        )
+    identity = _load_object(row["identity_json"])
     identity["name"] = title
-    last_review = _load_nullable(row.get("last_review_json"))
-    last_diagnostics = _load_nullable(row.get("last_diagnostics_json"))
-    return {
-        "id": str(row["id"]),
-        "bookId": str(row["book_id"]),
+    last_review = _load_nullable(row["last_review_json"])
+    last_diagnostics = _load_nullable(row["last_diagnostics_json"])
+    created_at = iso_utc(row["created_at"])
+    updated_at = iso_utc(row["updated_at"])
+    raw = {
+        "id": document_id,
+        "bookId": book_id,
         "title": title,
         "origin": {
-            "type": str(row["origin_type"]),
-            "source_character": row.get("source_character"),
+            "type": row["origin_type"],
+            "source_character": row["source_character"],
         },
         "status": {
-            "is_favorite": bool(row.get("is_favorite")),
+            "is_favorite": row["is_favorite"],
             "frozen_sections": _load_list(
-                row.get("frozen_sections_json")
+                row["frozen_sections_json"]
             ),
             "last_diagnostics": last_diagnostics,
             "last_validated_at": iso_utc(
-                row.get("last_validated_at")
+                row["last_validated_at"]
             ),
         },
         "meta": {
             "title": title,
-            "tags": _load_list(row.get("tags_json")),
+            "tags": _load_list(row["tags_json"]),
         },
         "identity": identity,
-        "coreMessages": _load_object(row.get("core_messages_json")),
-        "lorebook": _load_object(row.get("lorebook_json")),
-        "regexScripts": _load_list(row.get("regex_scripts_json")),
-        "stateTasks": _load_list(row.get("state_tasks_json")),
+        "coreMessages": _load_object(row["core_messages_json"]),
+        "lorebook": _load_object(row["lorebook_json"]),
+        "regexScripts": _load_list(row["regex_scripts_json"]),
+        "stateTasks": _load_list(row["state_tasks_json"]),
         "exportArtifacts": (
             {"last_review": last_review}
             if last_review is not None
             else {}
         ),
-        "revision": int(row["revision"]),
+        "revision": row["revision"],
         "avatarAssetId": avatar_id,
         "avatarUrl": (
-            f"/api/v2/assets/{avatar_id}" if avatar_id else None
+            f"/api/v2/assets/{avatar_id}"
+            if avatar_id is not None
+            else None
         ),
-        "createdAt": iso_utc(row.get("created_at")),
-        "updatedAt": iso_utc(row.get("updated_at")),
+        "createdAt": created_at,
+        "updatedAt": updated_at,
     }
-
-
-def _object(value: object) -> dict[str, Any]:
-    return dict(value) if isinstance(value, Mapping) else {}
+    try:
+        canonical = validate_current_document(
+            raw,
+            book_id=book_id,
+            title=title,
+        )
+    except ValueError as exc:
+        raise StudioDocumentInvalid(str(exc)) from exc
+    return {
+        "id": document_id,
+        **canonical,
+        "revision": row["revision"],
+        "avatarAssetId": avatar_id,
+        "avatarUrl": (
+            f"/api/v2/assets/{avatar_id}"
+            if avatar_id is not None
+            else None
+        ),
+        "createdAt": created_at,
+        "updatedAt": updated_at,
+    }
 
 
 def _load_nullable(value: object) -> object | None:
     if value is None:
         return None
-    return json.loads(str(value))
+    if not isinstance(value, str):
+        raise StudioDocumentInvalid(
+            "stored Studio document JSON column is invalid"
+        )
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise StudioDocumentInvalid(
+            "stored Studio document JSON is invalid"
+        ) from exc
 
 
 def _load_object(value: object) -> dict[str, Any]:
     loaded = _load_nullable(value)
-    return dict(loaded) if isinstance(loaded, Mapping) else {}
+    if not isinstance(loaded, Mapping):
+        raise StudioDocumentInvalid(
+            "stored Studio document object JSON is invalid"
+        )
+    return dict(loaded)
 
 
 def _load_list(value: object) -> list[Any]:
     loaded = _load_nullable(value)
-    return list(loaded) if isinstance(loaded, list) else []
+    if not isinstance(loaded, list):
+        raise StudioDocumentInvalid(
+            "stored Studio document array JSON is invalid"
+        )
+    return list(loaded)
 
 
 def _parse_datetime(value: object) -> datetime | None:
@@ -189,7 +228,9 @@ def _parse_datetime(value: object) -> datetime | None:
         return None
     if isinstance(value, datetime):
         return value
-    rendered = str(value)
+    if not isinstance(value, str):
+        raise StudioDocumentInvalid("Studio document timestamp is invalid")
+    rendered = value
     if rendered.endswith("Z"):
         rendered = rendered[:-1] + "+00:00"
     parsed = datetime.fromisoformat(rendered)

@@ -48,4 +48,12 @@ describe('CharacterStudioEntryPanel', () => {
     expect(source).toContain('character-studio-entry-panel__title')
     expect(source).toContain('character-studio-entry-panel__description')
   })
+
+  it('stacks the entry action below the copy on narrow viewports', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/components/insight/CharacterStudioEntryPanel.vue'), 'utf8')
+    const mobileRules = source.split('@media (--breakpoint-sm-down)')[1]
+
+    expect(mobileRules).toContain('--product-record-card-grid-template-columns: minmax(0, 1fr)')
+    expect(mobileRules).toContain('--product-record-card-actions-grid-row: 3')
+  })
 })

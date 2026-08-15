@@ -9,14 +9,22 @@ interface UseEditWorkspaceResizeActionsOptions {
 
 export function useEditWorkspaceResizeActions(options: UseEditWorkspaceResizeActionsOptions) {
   const isDraggingDivider = ref(false)
-  const dividerStartPos = ref(0)
   const isResizingPanel = ref(false)
   const panelResizeStart = ref({ x: 0, y: 0, size: 0 })
+  let dividerIsVertical = false
+  let panelResizeIsVertical = false
+
+  function usesVerticalFlow(element: HTMLElement | null): boolean {
+    const direction = element ? window.getComputedStyle(element).flexDirection : ''
+    if (direction === 'column' || direction === 'column-reverse') return true
+    if (direction === 'row' || direction === 'row-reverse') return false
+    return options.layoutMode.value === 'vertical'
+  }
 
   function startDividerDrag(event: MouseEvent): void {
+    dividerIsVertical = usesVerticalFlow(options.originalPanelRef.value?.parentElement ?? null)
     isDraggingDivider.value = true
-    dividerStartPos.value = options.layoutMode.value === 'horizontal' ? event.clientX : event.clientY
-    document.body.style.cursor = options.layoutMode.value === 'horizontal' ? 'col-resize' : 'row-resize'
+    document.body.style.cursor = dividerIsVertical ? 'row-resize' : 'col-resize'
     document.body.style.userSelect = 'none'
 
     document.addEventListener('mousemove', handleDividerDrag)
@@ -34,9 +42,10 @@ export function useEditWorkspaceResizeActions(options: UseEditWorkspaceResizeAct
 
     const containerRect = container.getBoundingClientRect()
 
-    if (options.layoutMode.value === 'horizontal') {
+    if (!dividerIsVertical) {
       const mouseX = event.clientX - containerRect.left
       const totalWidth = containerRect.width
+      if (totalWidth <= 0) return
       const leftPercent = Math.max(20, Math.min(80, (mouseX / totalWidth) * 100))
 
       originalPanel.style.flex = `0 0 ${leftPercent}%`
@@ -44,6 +53,7 @@ export function useEditWorkspaceResizeActions(options: UseEditWorkspaceResizeAct
     } else {
       const mouseY = event.clientY - containerRect.top
       const totalHeight = containerRect.height
+      if (totalHeight <= 0) return
       const topPercent = Math.max(20, Math.min(80, (mouseY / totalHeight) * 100))
 
       originalPanel.style.flex = `0 0 ${topPercent}%`
@@ -63,14 +73,15 @@ export function useEditWorkspaceResizeActions(options: UseEditWorkspaceResizeAct
     const panel = options.editPanelRef.value
     if (!panel) return
 
+    panelResizeIsVertical = usesVerticalFlow(panel.parentElement)
     isResizingPanel.value = true
     panelResizeStart.value = {
       x: event.clientX,
       y: event.clientY,
-      size: options.layoutMode.value === 'horizontal' ? panel.offsetWidth : panel.offsetHeight,
+      size: panelResizeIsVertical ? panel.offsetHeight : panel.offsetWidth,
     }
 
-    document.body.style.cursor = options.layoutMode.value === 'horizontal' ? 'ew-resize' : 'ns-resize'
+    document.body.style.cursor = panelResizeIsVertical ? 'ns-resize' : 'ew-resize'
     document.body.style.userSelect = 'none'
 
     document.addEventListener('mousemove', handlePanelResize)
@@ -82,7 +93,7 @@ export function useEditWorkspaceResizeActions(options: UseEditWorkspaceResizeAct
     const panel = options.editPanelRef.value
     if (!isResizingPanel.value || !panel) return
 
-    if (options.layoutMode.value === 'horizontal') {
+    if (!panelResizeIsVertical) {
       const deltaX = panelResizeStart.value.x - event.clientX
       const newWidth = Math.max(300, Math.min(window.innerWidth * 0.6, panelResizeStart.value.size + deltaX))
       panel.style.flex = `0 0 ${newWidth}px`

@@ -9,7 +9,6 @@
 |------|------|
 | `src/styles/tokens/*.css` | 唯一 token 来源，按 `foundation(custom media/layout constants) -> semantic -> component -> domain` 顺序显式导入 |
 | `src/styles/reset.css` | 最小浏览器 reset；不得承载业务布局或组件样式 |
-| `src/styles/base.css` | 保持空壳或极少低层工具；业务样式必须下沉到组件或 primitive |
 | `src/components/ui/*` | 不绑定业务的按钮、字段、输入、面板、布局外壳等基础 UI |
 | `src/components/**/*.global.styles.css` | 仅用于 Teleport、slot reach-through 或 body 状态这类明确全局 owner |
 
@@ -21,7 +20,7 @@
 
 表单 section 使用 `ProductFormSection`，表单字段默认由 `UiField`、`UiFormGrid`、`UiInput`、`UiTextarea`、`UiSelect`、`UiCombobox`、`UiNumberField`、`UiPasswordField`、`UiModelPicker` 承载。固定少量选项使用 `UiSelect`，动态/可搜索模型或字体列表使用 `UiCombobox` 或专门 primitive。业务组件只写业务命名空间样式，不再通过父组件 `:deep()` 修改子组件内部。
 
-普通弹窗使用 `BaseModal` 或 `ConfirmModal`。需要定制 Teleport 容器时，必须使用明确的 `custom-class`/`overlay-class` 和同目录命名空间 `.global.styles.css`；业务 SFC 中禁止 `:global()`。
+普通弹窗使用 `BaseModal` 或 `ConfirmModal`。需要定制 Teleport 容器时，必须使用明确的 `custom-class` 和同目录命名空间 `.global.styles.css`；业务 SFC 中禁止 `:global()`。
 
 ## Token 规则
 

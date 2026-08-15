@@ -12,7 +12,7 @@ const assistantMessage: QAMessage = {
   id: 'qa-message-1',
   role: 'assistant',
   content: '第 5 页揭示了关键线索。',
-  timestamp: '2026-05-21T10:00:00Z',
+  mode: 'precise',
   citations: [{ page: 5 }],
 }
 
@@ -29,6 +29,7 @@ describe('QAMessageItem', () => {
     expect(bubble.props('role')).toBe('assistant')
     expect(bubble.props('avatarIconName')).toBe('message')
     expect(bubble.props('avatarLabel')).toBe('智能助手')
+    expect(wrapper.get('.qa-message-item__mode-badge').text()).toBe('🎯 精确模式')
 
     const citations = wrapper.getComponent(ProductChipList)
     expect(citations.props('ariaLabel')).toBe('引用页码')
@@ -60,14 +61,31 @@ describe('QAMessageItem', () => {
     expect(wrapper.emitted('saveNote')?.[0]?.[0]).toEqual(assistantMessage)
   })
 
+  it('does not offer failed requests as saveable answers', () => {
+    const wrapper = mount(QAMessageItem, {
+      props: {
+        message: {
+          id: 'qa-error-1',
+          role: 'assistant',
+          content: '抱歉，处理问题时出错: provider unavailable',
+        },
+        renderMarkdown: content => `<p>${content}</p>`,
+      },
+    })
+
+    expect(wrapper.find('button[aria-label="保存为笔记"]').exists()).toBe(false)
+  })
+
   it('keeps local QA message hooks scoped to the message item owner', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/insight/qa/QAMessageItem.vue'),
-      'utf8',
+      'utf8'
     )
 
     expect(source).toContain('qa-message-item__answer-text')
     expect(source).toContain('qa-message-item__citations')
-    expect(source).not.toMatch(/\.(?:answer-text|answer-mode-badge|loading-dots|message-citations)\b/)
+    expect(source).not.toMatch(
+      /\.(?:answer-text|answer-mode-badge|loading-dots|message-citations)\b/
+    )
   })
 })

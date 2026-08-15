@@ -5,9 +5,11 @@ import { resolve } from 'node:path'
 import { createPinia, setActivePinia } from 'pinia'
 import UiFileInput from '@/components/ui/UiFileInput.vue'
 import UiField from '@/components/ui/UiField.vue'
+import UiNumberField from '@/components/ui/UiNumberField.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import { useSettingsStore } from '@/stores/settings'
 import { createDefaultSettings } from '@/stores/settings/defaults'
+import { getTextStyleDefaults } from '@/defaults/textStyleDefaults'
 
 const initialDefaults = {
   fontSize: 26,
@@ -25,11 +27,7 @@ const initialDefaults = {
   textAlign: 'start',
 }
 
-const factoryDefaults = {
-  ...initialDefaults,
-  fontSize: 31,
-  textColor: '#223344',
-}
+const factoryDefaults = getTextStyleDefaults()
 
 const {
   getV2SettingsMock,
@@ -48,10 +46,6 @@ vi.mock('@/api/v2/settings', () => ({
   listV2Fonts: listV2FontsMock,
   saveV2SettingsTransaction: saveV2SettingsTransactionMock,
   uploadV2Font: uploadV2FontMock,
-}))
-
-vi.mock('@/defaults/textStyleFactoryDefaults', () => ({
-  getFactoryTextStyleDefaults: () => ({ ...factoryDefaults }),
 }))
 
 import TextStyleDefaultsSettings from '@/components/settings/TextStyleDefaultsSettings.vue'
@@ -77,11 +71,20 @@ describe('TextStyleDefaultsSettings', () => {
           domain: 'translation',
           payload: settings,
           revision: 1,
-          schemaVersion: 3,
+          schemaVersion: 5,
         },
         {
           domain: 'text_style_defaults',
           payload: initialDefaults,
+          revision: 1,
+          schemaVersion: 1,
+        },
+        {
+          domain: 'workflow_preferences',
+          payload: {
+            rememberWorkflowModeEnabled: false,
+            lastWorkflowMode: 'translate-current',
+          },
           revision: 1,
           schemaVersion: 1,
         },
@@ -92,6 +95,9 @@ describe('TextStyleDefaultsSettings', () => {
     })
     uploadV2FontMock.mockResolvedValue({
       id: 'font-uploaded',
+      displayName: 'UploadedFont',
+      kind: 'uploaded',
+      builtinKey: null,
       assetUrl: '/api/v2/assets/font-uploaded',
     })
     listV2FontsMock.mockResolvedValue([{
@@ -101,11 +107,11 @@ describe('TextStyleDefaultsSettings', () => {
       builtinKey: 'source-han-sans',
       assetUrl: null,
     }])
+    useSettingsStore().textStyleDefaults = { ...initialDefaults }
   })
 
-  it('loads current defaults when the settings modal opens', async () => {
+  it('renders the defaults already loaded by the parent settings modal', async () => {
     const wrapper = mount(TextStyleDefaultsSettings, {
-      props: { isOpen: true },
       global: {
         stubs: {
           UiCombobox: uiComboboxStub,
@@ -115,13 +121,12 @@ describe('TextStyleDefaultsSettings', () => {
 
     await flushPromises()
 
-    expect(getV2SettingsMock).toHaveBeenCalledTimes(1)
+    expect(getV2SettingsMock).not.toHaveBeenCalled()
     expect((wrapper.get('#textDefaultsFontSize').element as HTMLInputElement).value).toBe('26')
   })
 
   it('restores factory defaults into the shared parent draft without a standalone write', async () => {
     const wrapper = mount(TextStyleDefaultsSettings, {
-      props: { isOpen: true },
       global: {
         stubs: {
           UiCombobox: uiComboboxStub,
@@ -133,13 +138,14 @@ describe('TextStyleDefaultsSettings', () => {
     await wrapper.get('[data-testid="reset-text-style-defaults"]').trigger('click')
 
     expect(saveV2SettingsTransactionMock).not.toHaveBeenCalled()
-    expect((wrapper.get('#textDefaultsFontSize').element as HTMLInputElement).value).toBe('31')
+    expect((wrapper.get('#textDefaultsFontSize').element as HTMLInputElement).value).toBe(
+      String(factoryDefaults.fontSize),
+    )
     expect(useSettingsStore().textStyleDefaults).toEqual(factoryDefaults)
   })
 
   it('publishes modified defaults directly into the parent settings draft', async () => {
     const wrapper = mount(TextStyleDefaultsSettings, {
-      props: { isOpen: true },
       global: {
         stubs: {
           UiCombobox: uiComboboxStub,
@@ -157,7 +163,6 @@ describe('TextStyleDefaultsSettings', () => {
 
   it('uses fixed select primitives for layout, alignment, and fill method fields', async () => {
     const wrapper = mount(TextStyleDefaultsSettings, {
-      props: { isOpen: true },
       global: {
         stubs: {
           UiCombobox: uiComboboxStub,
@@ -176,6 +181,62 @@ describe('TextStyleDefaultsSettings', () => {
     expect(optionValues).toContainEqual(expect.arrayContaining(['solid', 'lama_mpe', 'litelama']))
   })
 
+  it('ignores values outside the backend text-style contracts', async () => {
+    const wrapper = mount(TextStyleDefaultsSettings, {
+      global: {
+        stubs: {
+          UiCombobox: uiComboboxStub,
+        },
+      },
+    })
+    await flushPromises()
+
+    const store = useSettingsStore()
+    const before = { ...store.textStyleDefaults }
+    const selects = wrapper.findAllComponents(UiSelect)
+    selects[0]!.vm.$emit('change', 1)
+    selects[1]!.vm.$emit('change', 'middle')
+    selects[2]!.vm.$emit('change', 'legacy')
+
+    const numberFields = wrapper.findAllComponents(UiNumberField)
+    const field = (inputId: string) => numberFields.find(item => item.props('inputId') === inputId)!
+    field('textDefaultsFontSize').vm.$emit('change', 1.5)
+    field('textDefaultsLineSpacing').vm.$emit('change', 0)
+    field('textDefaultsStrokeWidth').vm.$emit('change', 1.5)
+    await flushPromises()
+
+    expect(store.textStyleDefaults).toEqual(before)
+  })
+
+  it('does not impose frontend-only upper bounds on text-style values', async () => {
+    const wrapper = mount(TextStyleDefaultsSettings, {
+      global: {
+        stubs: {
+          UiCombobox: uiComboboxStub,
+        },
+      },
+    })
+    await flushPromises()
+
+    const numberFields = wrapper.findAllComponents(UiNumberField)
+    const field = (inputId: string) => numberFields.find(
+      item => item.props('inputId') === inputId,
+    )!
+    field('textDefaultsFontSize').vm.$emit('change', 1024)
+    field('textDefaultsLineSpacing').vm.$emit('change', 12.5)
+    field('textDefaultsStrokeWidth').vm.$emit('change', 80)
+    await flushPromises()
+
+    expect(useSettingsStore().textStyleDefaults).toMatchObject({
+      fontSize: 1024,
+      lineSpacing: 12.5,
+      strokeWidth: 80,
+    })
+    expect(field('textDefaultsFontSize').props('max')).toBeUndefined()
+    expect(field('textDefaultsLineSpacing').props('max')).toBeUndefined()
+    expect(field('textDefaultsStrokeWidth').props('max')).toBeUndefined()
+  })
+
   it('routes text-style default labels and feedback through typed settings primitives', async () => {
     const source = readFileSync(resolve(process.cwd(), 'src/components/settings/TextStyleDefaultsSettings.vue'), 'utf8')
 
@@ -186,7 +247,6 @@ describe('TextStyleDefaultsSettings', () => {
     expect(source).toContain('ProductActionRow')
 
     const wrapper = mount(TextStyleDefaultsSettings, {
-      props: { isOpen: true },
       global: {
         stubs: {
           UiCombobox: uiComboboxStub,
@@ -204,7 +264,7 @@ describe('TextStyleDefaultsSettings', () => {
     expect(fieldByControlId('textDefaultsFontFamily')?.props('label')).toBe('文本字体')
     expect(fieldByControlId('textDefaultsLayoutDirection')?.props('label')).toBe('排版方向')
     expect(fieldByControlId('textDefaultsTextAlign')?.props('label')).toBe('对齐方式')
-    expect(fieldByControlId('textDefaultsLineSpacing')?.props('hint')).toBe('行间距倍数（0.5 - 3.0）')
+    expect(fieldByControlId('textDefaultsLineSpacing')?.props('hint')).toBe('行间距倍数，必须大于 0。')
     expect(fieldByControlId('textDefaultsUseAutoTextColor')?.props('label')).toBe('自动识别文字颜色')
     expect(fieldByControlId('textDefaultsTextColor')?.props('label')).toBe('文字颜色')
     expect(fieldByControlId('textDefaultsInpaintMethod')?.props('label')).toBe('气泡填充方式')
@@ -234,7 +294,7 @@ describe('TextStyleDefaultsSettings', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/components/settings/TextStyleDefaultsSettings.vue'), 'utf8')
 
     expect(source).not.toContain('style="display: none"')
-    expect(source).toMatch(/:accept="FONT_FILE_ACCEPT"\s+hidden/)
+    expect(source).toMatch(/:accept="FONT_FILE_ACCEPT"[\s\S]*?\shidden/)
   })
 
   it('receives custom fonts through the typed file-input boundary', async () => {
@@ -245,7 +305,6 @@ describe('TextStyleDefaultsSettings', () => {
     expect(source).not.toMatch(/target\.files|target\.value\s*=|@change="handleFontUpload"|ref<HTMLInputElement/)
 
     const wrapper = mount(TextStyleDefaultsSettings, {
-      props: { isOpen: true },
       global: {
         stubs: {
           UiCombobox: uiComboboxStub,
@@ -259,6 +318,14 @@ describe('TextStyleDefaultsSettings', () => {
     await flushPromises()
 
     expect(uploadV2FontMock).toHaveBeenCalledWith(file)
+    expect(listV2FontsMock).toHaveBeenCalledTimes(1)
+    expect(useSettingsStore().fontCatalog).toContainEqual({
+      id: 'font-uploaded',
+      displayName: 'UploadedFont',
+      kind: 'uploaded',
+      builtinKey: null,
+      assetUrl: '/api/v2/assets/font-uploaded',
+    })
     expect(wrapper.get('.ui-combobox-stub').attributes('data-value')).toBe('font-uploaded')
     expect(useSettingsStore().textStyleDefaults.fontFamily).toBe('font-uploaded')
     expect(saveV2SettingsTransactionMock).not.toHaveBeenCalled()
@@ -266,7 +333,6 @@ describe('TextStyleDefaultsSettings', () => {
 
   it('uses normal save when the user edits fields after resetting to factory defaults', async () => {
     const wrapper = mount(TextStyleDefaultsSettings, {
-      props: { isOpen: true },
       global: {
         stubs: {
           UiCombobox: uiComboboxStub,
@@ -276,21 +342,23 @@ describe('TextStyleDefaultsSettings', () => {
 
     await flushPromises()
     await wrapper.get('[data-testid="reset-text-style-defaults"]').trigger('click')
+    wrapper.getComponent({ name: 'UiCheckbox' }).vm.$emit('change', false)
+    await wrapper.vm.$nextTick()
     await wrapper.get('#textDefaultsFontSize').setValue('35')
 
     expect(useSettingsStore().textStyleDefaults).toEqual({
       ...factoryDefaults,
+      autoFontSize: false,
       fontSize: 35,
     })
     expect(saveV2SettingsTransactionMock).not.toHaveBeenCalled()
   })
 
-  it('shows a restricted error and leaves the parent draft unchanged when loading fails', async () => {
-    getV2SettingsMock.mockRejectedValue(new Error('load failed'))
+  it('shows a font-catalog error and leaves the parent draft unchanged', async () => {
+    listV2FontsMock.mockRejectedValue(new Error('font list failed'))
     const before = { ...useSettingsStore().textStyleDefaults }
 
     const wrapper = mount(TextStyleDefaultsSettings, {
-      props: { isOpen: true },
       global: {
         stubs: {
           UiCombobox: uiComboboxStub,
@@ -300,7 +368,7 @@ describe('TextStyleDefaultsSettings', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('load failed')
+    expect(wrapper.text()).toContain('font list failed')
     expect(useSettingsStore().textStyleDefaults).toEqual(before)
     expect(saveV2SettingsTransactionMock).not.toHaveBeenCalled()
   })

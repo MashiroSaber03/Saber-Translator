@@ -1,17 +1,14 @@
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import type { Ref } from 'vue'
-import type { NoteData, NoteType } from '@/types/insight'
-import { mapInsightApiNote } from '@/stores/insight/insightNotesModels'
+import type { NoteData, NoteType, NoteUpdateInput } from '@/types/insight'
 import * as insightApi from '@/api/insight'
 
 export interface UseInsightNotesOptions {
   currentBookId: Ref<string | null>
 }
 
-export type NewInsightNoteInput = Omit<
-  NoteData,
-  'id' | 'createdAt' | 'updatedAt'
->
+export type NewInsightNoteInput = Pick<NoteData, 'content' | 'type'>
+  & Partial<Pick<NoteData, 'citations' | 'comment' | 'pageNum' | 'question' | 'tags' | 'title'>>
 
 export function useInsightNotes(options: UseInsightNotesOptions) {
   const { currentBookId } = options
@@ -28,35 +25,45 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
 
   const error = ref<string | null>(null)
 
-  const filteredNotes = computed(() => {
-    if (noteTypeFilter.value === 'all') {
-      return notes.value
-    }
-    return notes.value.filter(note => note.type === noteTypeFilter.value)
-  })
-
-  function isActiveNotesLoad(requestId: number, requestedBookId: string): boolean {
-    return requestId === notesLoadRequestId && currentBookId.value === requestedBookId
+  function isActiveNotesLoad(
+    requestId: number,
+    requestedBookId: string,
+    requestedFilter: NoteType | 'all'
+  ): boolean {
+    return requestId === notesLoadRequestId
+      && currentBookId.value === requestedBookId
+      && noteTypeFilter.value === requestedFilter
   }
 
   async function loadNotes(): Promise<void> {
     const requestedBookId = currentBookId.value
+    const requestedFilter = noteTypeFilter.value
     const requestId = ++notesLoadRequestId
     if (!requestedBookId) {
       notes.value = []
+      nextCursor.value = null
+      isLoading.value = false
+      isLoadingMore.value = false
+      error.value = null
       return
     }
 
     isLoading.value = true
+    isLoadingMore.value = false
+    notes.value = []
+    nextCursor.value = null
     error.value = null
 
     try {
-      const loadedNotes = await insightApi.getNotes(requestedBookId)
-      if (!isActiveNotesLoad(requestId, requestedBookId)) return
-      notes.value = loadedNotes.items.map(mapInsightApiNote)
+      const loadedNotes = await insightApi.getNotes(
+        requestedBookId,
+        requestedFilter === 'all' ? undefined : requestedFilter
+      )
+      if (!isActiveNotesLoad(requestId, requestedBookId, requestedFilter)) return
+      notes.value = loadedNotes.items
       nextCursor.value = loadedNotes.nextCursor
     } catch (e) {
-      if (!isActiveNotesLoad(requestId, requestedBookId)) return
+      if (!isActiveNotesLoad(requestId, requestedBookId, requestedFilter)) return
       error.value = e instanceof Error ? e.message : '加载笔记失败'
     } finally {
       if (requestId === notesLoadRequestId) {
@@ -67,25 +74,32 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
 
   async function loadMoreNotes(): Promise<void> {
     const requestedBookId = currentBookId.value
+    const requestedFilter = noteTypeFilter.value
     const cursor = nextCursor.value
     const requestId = notesLoadRequestId
     if (!requestedBookId || !cursor || isLoadingMore.value) return
     isLoadingMore.value = true
     error.value = null
     try {
-      const loadedNotes = await insightApi.getNotes(requestedBookId, undefined, cursor)
-      if (!isActiveNotesLoad(requestId, requestedBookId)) return
+      const loadedNotes = await insightApi.getNotes(
+        requestedBookId,
+        requestedFilter === 'all' ? undefined : requestedFilter,
+        cursor
+      )
+      if (!isActiveNotesLoad(requestId, requestedBookId, requestedFilter)) return
       const known = new Set(notes.value.map(note => note.id))
       notes.value.push(
-        ...loadedNotes.items.map(mapInsightApiNote).filter(note => !known.has(note.id))
+        ...loadedNotes.items.filter(note => !known.has(note.id))
       )
       nextCursor.value = loadedNotes.nextCursor
     } catch (e) {
-      if (isActiveNotesLoad(requestId, requestedBookId)) {
+      if (isActiveNotesLoad(requestId, requestedBookId, requestedFilter)) {
         error.value = e instanceof Error ? e.message : '加载更多笔记失败'
       }
     } finally {
-      if (isActiveNotesLoad(requestId, requestedBookId)) isLoadingMore.value = false
+      if (isActiveNotesLoad(requestId, requestedBookId, requestedFilter)) {
+        isLoadingMore.value = false
+      }
     }
   }
 
@@ -95,7 +109,7 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
     const requestId = ++noteDetailRequestId
     if (!requestedBookId) return null
     try {
-      const detail = mapInsightApiNote(await insightApi.getNoteDetail(noteId))
+      const detail = await insightApi.getNoteDetail(noteId)
       if (
         requestId !== noteDetailRequestId
         || listRequestId !== notesLoadRequestId
@@ -118,97 +132,84 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
   async function addNote(
     note: NewInsightNoteInput,
   ): Promise<NoteData | null> {
-    if (!currentBookId.value) return null
-
-    const optimisticNote: NoteData = {
-      id: `note_${Date.now()}`,
-      type: note.type,
-      content: note.content,
-      pageNum: note.pageNum,
-      title: note.title,
-      tags: note.tags,
-      question: note.question,
-      answer: note.answer,
-      citations: note.citations,
-      comment: note.comment,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    }
-    notes.value.unshift(optimisticNote)
-
-    function rollbackOptimisticNote(): void {
-      notes.value = notes.value.filter(existing => existing.id !== optimisticNote.id)
-    }
-
+    const requestedBookId = currentBookId.value
+    if (!requestedBookId) return null
+    error.value = null
     try {
-      const createdNote = await insightApi.createNote(currentBookId.value, {
+      const createdNote = await insightApi.createNote(requestedBookId, {
         type: note.type,
         content: note.content,
         pageNum: note.pageNum,
         title: note.title,
         tags: note.tags,
         question: note.question,
-        answer: note.answer,
         citations: note.citations,
         comment: note.comment
       })
 
-      const newNote = mapInsightApiNote(createdNote)
-      const index = notes.value.findIndex(existing => existing.id === optimisticNote.id)
-      if (index !== -1) {
-        notes.value[index] = newNote
-      } else {
+      const newNote = createdNote
+      if (
+        currentBookId.value === requestedBookId
+        && (noteTypeFilter.value === 'all' || noteTypeFilter.value === newNote.type)
+        && !notes.value.some(existing => existing.id === newNote.id)
+      ) {
         notes.value.unshift(newNote)
       }
       return newNote
     } catch (e) {
-      error.value = e instanceof Error ? e.message : '添加笔记失败'
+      if (currentBookId.value === requestedBookId) {
+        error.value = e instanceof Error ? e.message : '添加笔记失败'
+      }
+      throw e
     }
-    rollbackOptimisticNote()
-    return null
   }
 
-  async function updateNote(noteId: string, updates: Partial<NoteData>): Promise<boolean> {
-    if (!currentBookId.value) return false
+  async function updateNote(noteId: string, updates: NoteUpdateInput): Promise<void> {
+    const requestedBookId = currentBookId.value
+    if (!requestedBookId) return
+    error.value = null
 
     try {
-      const updatedNote = await insightApi.updateNote(currentBookId.value, noteId, {
-        content: updates.content,
-        pageNum: updates.pageNum,
-        title: updates.title,
-        tags: updates.tags,
-        question: updates.question,
-        answer: updates.answer,
-        citations: updates.citations,
-        comment: updates.comment
-      })
+      const updatedNote = await insightApi.updateNote(requestedBookId, noteId, updates)
+      if (currentBookId.value !== requestedBookId) return
 
       const index = notes.value.findIndex(note => note.id === noteId)
       if (index !== -1) {
-        notes.value[index] = mapInsightApiNote(updatedNote)
+        if (noteTypeFilter.value === 'all' || noteTypeFilter.value === updatedNote.type) {
+          notes.value[index] = updatedNote
+        } else {
+          notes.value.splice(index, 1)
+        }
       }
-      return true
     } catch (e) {
-      error.value = e instanceof Error ? e.message : '更新笔记失败'
+      if (currentBookId.value === requestedBookId) {
+        error.value = e instanceof Error ? e.message : '更新笔记失败'
+      }
+      throw e
     }
-    return false
   }
 
-  async function deleteNote(noteId: string): Promise<boolean> {
-    if (!currentBookId.value) return false
+  async function deleteNote(noteId: string): Promise<void> {
+    const requestedBookId = currentBookId.value
+    if (!requestedBookId) return
+    error.value = null
 
     try {
       await insightApi.deleteNote(noteId)
+      if (currentBookId.value !== requestedBookId) return
       notes.value = notes.value.filter(n => n.id !== noteId)
-      return true
     } catch (e) {
-      error.value = e instanceof Error ? e.message : '删除笔记失败'
+      if (currentBookId.value === requestedBookId) {
+        error.value = e instanceof Error ? e.message : '删除笔记失败'
+      }
+      throw e
     }
-    return false
   }
 
-  function setNoteTypeFilter(filter: NoteType | 'all'): void {
+  async function setNoteTypeFilter(filter: NoteType | 'all'): Promise<void> {
+    if (noteTypeFilter.value === filter) return
     noteTypeFilter.value = filter
+    await loadNotes()
   }
 
   function clearNotes(): void {
@@ -216,13 +217,14 @@ export function useInsightNotes(options: UseInsightNotesOptions) {
     noteDetailRequestId += 1
     notes.value = []
     nextCursor.value = null
+    isLoading.value = false
     isLoadingMore.value = false
+    error.value = null
   }
 
   return {
     notes,
     noteTypeFilter,
-    filteredNotes,
     isLoading,
     isLoadingMore,
     nextCursor,

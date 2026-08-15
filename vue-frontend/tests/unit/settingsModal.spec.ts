@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { flushPromises, mount } from '@vue/test-utils'
-import { defineComponent, h, onMounted } from 'vue'
+import { defineComponent, h } from 'vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductSegmentedTabs from '@/components/product/ProductSegmentedTabs.vue'
 
@@ -45,13 +45,22 @@ vi.mock('@/utils/toast', () => ({
 
 vi.mock('@/components/common/BaseModal.vue', () => ({
   default: defineComponent({
-    props: ['modelValue', 'mobilePresentation', 'headerVariant'],
-    emits: ['update:modelValue', 'close', 'open'],
-    setup(props, { emit, slots }) {
-      onMounted(() => emit('open'))
+    props: [
+      'modelValue',
+      'mobilePresentation',
+      'headerVariant',
+      'showCloseButton',
+      'closeOnOverlay',
+      'closeOnEsc',
+    ],
+    emits: ['update:modelValue', 'close'],
+    setup(props, { slots }) {
       return () => h('div', {
         'data-header-variant': props.headerVariant,
         'data-mobile-presentation': props.mobilePresentation,
+        'data-show-close-button': String(props.showCloseButton),
+        'data-close-on-overlay': String(props.closeOnOverlay),
+        'data-close-on-esc': String(props.closeOnEsc),
       }, [
         h('div', { class: 'modal-body-stub' }, slots.default ? slots.default() : []),
         h('div', { class: 'modal-footer-stub' }, slots.footer ? slots.footer() : []),
@@ -93,7 +102,6 @@ vi.mock('@/components/settings/MoreSettings.vue', () => ({
 vi.mock('@/components/settings/TextStyleDefaultsSettings.vue', () => ({
   default: defineComponent({
     name: 'TextStyleDefaultsSettings',
-    props: { isOpen: Boolean },
     setup: () => () => h('div', 'TextStyleDefaultsSettings stub'),
   }),
 }))
@@ -134,6 +142,38 @@ describe('SettingsModal', () => {
 
     expect(saveToBackendMock).toHaveBeenCalledTimes(1)
     expect(wrapper.emitted('save')?.[0]?.[0]).toEqual({ textDefaultsChanged: true })
+  })
+
+  it('keeps every close path disabled while the save transaction is pending', async () => {
+    let resolveSave!: (value: boolean) => void
+    saveToBackendMock.mockReturnValueOnce(new Promise<boolean>((resolve) => {
+      resolveSave = resolve
+    }))
+    const wrapper = mount(SettingsModal, {
+      props: { modelValue: true },
+    })
+    await flushPromises()
+
+    const buttons = wrapper.findAll('button')
+    const saveButton = buttons.find(button => button.text().includes('保存设置'))
+    const cancelButton = buttons.find(button => button.text() === '取消')
+    expect(saveButton).toBeTruthy()
+    expect(cancelButton).toBeTruthy()
+
+    await saveButton!.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(cancelButton!.attributes('disabled')).toBeDefined()
+    const modal = wrapper.get('[data-close-on-overlay]')
+    expect(modal.attributes('data-show-close-button')).toBe('false')
+    expect(modal.attributes('data-close-on-overlay')).toBe('false')
+    expect(modal.attributes('data-close-on-esc')).toBe('false')
+    await cancelButton!.trigger('click')
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+
+    resolveSave(true)
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')).toEqual([[false]])
   })
 
   it('does not render glossary and non-translate tabs', () => {
@@ -225,7 +265,7 @@ describe('SettingsModal', () => {
       'utf8',
     )
 
-    expect(modalSource).toContain('<TextStyleDefaultsSettings :is-open="isOpen" />')
+    expect(modalSource).toContain('<TextStyleDefaultsSettings />')
     expect(modalSource).toContain('settingsStore.saveToBackend()')
     expect(modalSource).not.toContain('save-request-id')
     expect(modalSource).not.toContain('save-complete')
@@ -237,6 +277,14 @@ describe('SettingsModal', () => {
     expect(textDefaultsSource).not.toContain('saveRequestId')
     expect(textDefaultsSource).not.toContain('save-complete')
     expect(textDefaultsSource).not.toContain('defineExpose')
+  })
+
+  it('preserves independently saved plugin Agent settings in the cancel snapshot', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/components/settings/SettingsModal.vue'), 'utf8')
+
+    expect(source).toContain('@settings-saved="handlePluginAgentSettingsSaved"')
+    expect(source).toContain('settingsSnapshot.pluginAgent = deepClone(settingsStore.settings.pluginAgent)')
+    expect(source).toContain('providerSnapshot.pluginAgent = deepClone(settingsStore.providerConfigs.pluginAgent)')
   })
 
   it('mounts setting forms only after the latest backend load completes', async () => {

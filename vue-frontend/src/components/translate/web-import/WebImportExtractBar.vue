@@ -8,25 +8,28 @@ import UiFormGrid from '@/components/ui/UiFormGrid.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import UiSpinner from '@/components/ui/UiSpinner.vue'
-import type { WebImportEngine, WebImportState } from '@/types/webImport'
+import type { WebImportEngine, WebImportStatus } from '@/types/webImport'
 
 type SupportStatus = {
   message: string
-  tone: 'info' | 'success' | 'neutral'
+  tone: 'info' | 'success' | 'warning' | 'neutral'
 }
 
-const props = withDefaults(defineProps<{
-  checkingSupport: boolean
-  focusRequestId?: number
-  galleryDLAvailable: boolean
-  galleryDLSupported: boolean
-  isProcessing: boolean
-  selectedEngine: WebImportEngine
-  status: WebImportState['status']
-  urlInput: string
-}>(), {
-  focusRequestId: 0,
-})
+const props = withDefaults(
+  defineProps<{
+    checkingSupport: boolean
+    focusRequestId?: number
+    galleryDLAvailable: boolean
+    galleryDLSupported: boolean
+    isProcessing: boolean
+    selectedEngine: WebImportEngine
+    status: WebImportStatus
+    urlInput: string
+  }>(),
+  {
+    focusRequestId: 0,
+  }
+)
 
 const emit = defineEmits<{
   (event: 'extract'): void
@@ -45,10 +48,30 @@ const sourceUrlInputRef = ref<{ focus: () => void } | null>(null)
 const canExtract = computed(() => !props.isProcessing && props.urlInput.trim().length > 0)
 const supportStatus = computed<SupportStatus | null>(() => {
   if (!props.urlInput.trim() || props.isProcessing) return null
+  if (props.selectedEngine === 'ai-agent') {
+    return {
+      message: '将使用 AI Agent 模式',
+      tone: 'neutral',
+    }
+  }
   if (props.checkingSupport) {
     return {
       message: '正在检查网站支持情况...',
       tone: 'info',
+    }
+  }
+  if (props.selectedEngine === 'gallery-dl') {
+    if (!props.galleryDLAvailable) {
+      return {
+        message: '当前环境无法使用 Gallery-DL',
+        tone: 'warning',
+      }
+    }
+    if (!props.galleryDLSupported) {
+      return {
+        message: '该网站未检测到 Gallery-DL 支持',
+        tone: 'warning',
+      }
     }
   }
   if (props.galleryDLSupported) {
@@ -57,13 +80,10 @@ const supportStatus = computed<SupportStatus | null>(() => {
       tone: 'success',
     }
   }
-  if (props.galleryDLAvailable) {
-    return {
-      message: '该网站将使用 AI Agent 模式',
-      tone: 'neutral',
-    }
+  return {
+    message: '该网站将使用 AI Agent 模式',
+    tone: 'neutral',
   }
-  return null
 })
 
 function handleSubmit(): void {
@@ -83,7 +103,7 @@ function updateSelectedEngine(value: string | number): void {
 
 watch(
   () => props.focusRequestId,
-  async (requestId) => {
+  async requestId => {
     if (requestId <= 0) return
     await nextTick()
     sourceUrlInputRef.value?.focus()
@@ -137,7 +157,7 @@ watch(
           class="web-import-extract-bar__submit"
           :disabled="!canExtract"
         >
-          <UiSpinner v-if="status === 'extracting'" label="提取中" :decorative="false" />
+          <UiSpinner v-if="status === 'extracting'" />
           <span v-else aria-hidden="true">🔍</span>
           {{ status === 'extracting' ? '提取中...' : '开始提取' }}
         </UiButton>
@@ -154,11 +174,7 @@ watch(
       {{ supportStatus.message }}
     </ProductStatusBanner>
 
-    <ProductStatusBanner
-      class="web-import-extract-bar__notice"
-      tone="warning"
-      role="note"
-    >
+    <ProductStatusBanner class="web-import-extract-bar__notice" tone="warning" role="note">
       <template #icon>⚠️</template>
       请仅爬取您有权访问的内容，并遵守目标网站的使用条款。
     </ProductStatusBanner>

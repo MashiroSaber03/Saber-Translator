@@ -4,34 +4,40 @@
 使用 LLM + Firecrawl 工具实现智能漫画图片提取
 """
 
-import logging
 import json
-import re
+import logging
+import math
 import time
-from typing import Dict, Any, List, Callable, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 from types import SimpleNamespace
+from typing import Any, Callable
+from urllib.parse import urlparse
 
-from openai import OpenAI
+from openai import APIConnectionError, APIStatusError, APITimeoutError
 
 from src.shared.ai_providers import (
-    CHAT_CAPABILITY,
     WEB_IMPORT_AGENT_CAPABILITY,
+    get_provider_manifest,
     normalize_provider_id,
     provider_supports_capability,
     resolve_provider_base_url_for_capability,
 )
 from src.shared.openai_helpers import create_openai_client
 from src.shared.memory_errors import is_memory_allocation_error
+from src.shared.ai_transport import RETRYABLE_STATUS_CODES
 
-from .prompts import get_system_prompt
 from .firecrawl_tools import FIRECRAWL_TOOLS, execute_firecrawl_tool_sync
 
 logger = logging.getLogger("WebImport.Agent")
 
+JSON_OUTPUT_SUFFIX = """
 
-@dataclass
+IMPORTANT: You must respond with valid JSON format only. Do not include any
+markdown code block markers. Output the raw JSON object."""
+
+
+@dataclass(slots=True)
 class AgentLog:
     """Agent 日志"""
     timestamp: str
@@ -39,85 +45,108 @@ class AgentLog:
     message: str
 
 
-@dataclass
+@dataclass(slots=True)
 class ExtractResult:
     """提取结果"""
     success: bool
     comic_title: str = ""
     chapter_title: str = ""
-    pages: List[Dict[str, Any]] = field(default_factory=list)
+    pages: list[dict[str, Any]] = field(default_factory=list)
     total_pages: int = 0
     source_url: str = ""
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class StreamFallbackNeeded(Exception):
     """流式工具调用无法可靠解析，需要回退到非流式调用。"""
-    pass
+
+
+class WebImportAgentControlRequested(RuntimeError):
+    """The durable job requested pause or cancellation at a safe point."""
 
 
 class MangaScraperAgent:
     """AI 驱动的漫画图片提取 Agent"""
-    
-    def __init__(self, config: dict):
-        """
-        初始化 Agent
-        
-        Args:
-            config: 配置字典，包含：
-                - firecrawl.apiKey: Firecrawl API Key
-                - agent.provider: AI 服务商
-                - agent.apiKey: AI API Key
-                - agent.customBaseUrl: 自定义 API 地址
-                - agent.modelName: 模型名称
-                - agent.useStream: 是否流式调用
-                - agent.forceJsonOutput: 是否强制 JSON 输出
-                - agent.maxRetries: 最大重试次数
-                - agent.timeout: 超时时间
-                - extraction.prompt: 提取提示词
-                - extraction.maxIterations: 最大迭代次数
-        """
-        self.config = config
-        self.firecrawl_api_key = config.get('firecrawl', {}).get('apiKey', '')
-        
-        agent_config = config.get('agent', {})
-        self.provider = normalize_provider_id(agent_config.get('provider', 'openai'))
-        self.api_key = agent_config.get('apiKey', '')
-        self.base_url = agent_config.get('customBaseUrl', '')
-        self.model_name = agent_config.get('modelName', 'gpt-4o-mini')
-        self.use_stream = agent_config.get('useStream', False)
-        self.force_json = agent_config.get('forceJsonOutput', True)
-        self.max_retries = agent_config.get('maxRetries', 3)
-        self.timeout = agent_config.get('timeout', 120)
-        self.bypass_proxy = bool(config.get('bypassProxy', False))
-        
-        extraction_config = config.get('extraction', {})
-        self.custom_prompt = extraction_config.get('prompt', '')
-        self.max_iterations = extraction_config.get('maxIterations', 10)
 
-        if self.provider and not provider_supports_capability(self.provider, WEB_IMPORT_AGENT_CAPABILITY):
+    def __init__(
+        self,
+        *,
+        firecrawl_api_key: str,
+        provider: str,
+        api_key: str,
+        base_url: str,
+        model_name: str,
+        use_stream: bool,
+        force_json: bool,
+        max_retries: int,
+        timeout: float,
+        prompt: str,
+        max_iterations: int,
+        bypass_proxy: bool,
+    ) -> None:
+        if not isinstance(firecrawl_api_key, str) or not firecrawl_api_key.strip():
+            raise ValueError("Firecrawl API Key 不能为空")
+        if not isinstance(api_key, str):
+            raise TypeError("AI Agent API Key 必须是字符串")
+        if not isinstance(base_url, str):
+            raise TypeError("AI Agent Base URL 必须是字符串")
+        if not isinstance(model_name, str) or not model_name.strip():
+            raise ValueError("AI Agent 模型名称不能为空")
+        if not isinstance(use_stream, bool) or not isinstance(force_json, bool):
+            raise TypeError("AI Agent 流式与 JSON 开关必须是布尔值")
+        if isinstance(max_retries, bool) or not isinstance(max_retries, int) or max_retries < 0:
+            raise ValueError("AI Agent 重试次数必须是非负整数")
+        if (
+            isinstance(timeout, bool)
+            or not isinstance(timeout, (int, float))
+            or not math.isfinite(float(timeout))
+            or timeout <= 0
+        ):
+            raise ValueError("AI Agent 超时时间必须是正数")
+        if not isinstance(prompt, str) or not prompt.strip():
+            raise ValueError("AI Agent 提取提示词不能为空")
+        if (
+            isinstance(max_iterations, bool)
+            or not isinstance(max_iterations, int)
+            or max_iterations < 1
+        ):
+            raise ValueError("AI Agent 最大迭代次数必须是正整数")
+        if not isinstance(bypass_proxy, bool):
+            raise TypeError("AI Agent 代理开关必须是布尔值")
+        self.firecrawl_api_key = firecrawl_api_key
+        self.provider = normalize_provider_id(provider)
+        self.api_key = api_key
+        self.base_url = base_url
+        self.model_name = model_name
+        self.use_stream = use_stream
+        self.force_json = force_json
+        self.max_retries = max_retries
+        self.timeout = timeout
+        self.prompt = prompt
+        self.max_iterations = max_iterations
+        self.bypass_proxy = bypass_proxy
+
+        if not provider_supports_capability(self.provider, WEB_IMPORT_AGENT_CAPABILITY):
             raise ValueError(f"不支持的 AI Agent 服务商: {self.provider}")
+        manifest = get_provider_manifest(self.provider)
+        if manifest.requires_api_key and not self.api_key.strip():
+            raise ValueError(f"{manifest.display_name} 需要 API Key")
+        if manifest.requires_base_url and not self.base_url.strip():
+            raise ValueError(f"{manifest.display_name} 需要 Base URL")
         
-        # 初始化 LLM 客户端
-        self.client = self._init_llm_client()
-    
-    def _init_llm_client(self) -> OpenAI:
-        """初始化 LLM 客户端"""
-        # 获取 base_url
-        base_url = self._get_base_url()
-
-        return create_openai_client(
+        self.client = create_openai_client(
             api_key=self.api_key,
-            base_url=base_url,
+            base_url=resolve_provider_base_url_for_capability(
+                self.provider,
+                WEB_IMPORT_AGENT_CAPABILITY,
+                self.base_url,
+            ),
             timeout=self.timeout,
             bypass_proxy=self.bypass_proxy,
         )
-    
-    def _get_base_url(self) -> Optional[str]:
-        """根据服务商获取 API 地址"""
-        if self.provider == 'openai':
-            return None
-        return resolve_provider_base_url_for_capability(self.provider, CHAT_CAPABILITY, self.base_url)
+
+    def close(self) -> None:
+        self.client.close()
     
     def _create_log(self, log_type: str, message: str) -> AgentLog:
         """创建日志对象"""
@@ -130,7 +159,8 @@ class MangaScraperAgent:
     def extract(
         self,
         url: str,
-        on_log: Callable[[AgentLog], None] = None
+        on_log: Callable[[AgentLog], None] | None = None,
+        should_stop: Callable[[], bool] | None = None,
     ) -> ExtractResult:
         """
         执行提取任务 (同步版本)
@@ -142,105 +172,114 @@ class MangaScraperAgent:
         Returns:
             ExtractResult: 提取结果
         """
+        if not isinstance(url, str) or not url.strip():
+            raise ValueError("漫画网页 URL 不能为空")
+        source_url = url.strip()
+        parsed_source_url = urlparse(source_url)
+        if (
+            parsed_source_url.scheme not in {"http", "https"}
+            or not parsed_source_url.netloc
+        ):
+            raise ValueError("漫画网页 URL 必须是绝对 HTTP(S) 地址")
+
         def emit_log(log_type: str, message: str):
             if on_log:
                 on_log(self._create_log(log_type, message))
             logger.info(f"[{log_type}] {message}")
         
-        emit_log('info', f"开始提取: {url}")
+        emit_log('info', f"开始提取: {source_url}")
         
-        # 构建系统提示词
-        system_prompt = get_system_prompt(
-            custom_prompt=self.custom_prompt if self.custom_prompt else None,
-            force_json=self.force_json
-        )
+        self._check_control(should_stop)
+        system_prompt = self.prompt
+        if self.force_json:
+            system_prompt += JSON_OUTPUT_SUFFIX
         
         # 初始化消息列表
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"请提取这个URL的漫画图片: {url}"}
+            {"role": "user", "content": f"请提取这个URL的漫画图片: {source_url}"}
         ]
         
-        try:
-            for iteration in range(self.max_iterations):
-                emit_log('thinking', f"Agent 思考中... (迭代 {iteration + 1}/{self.max_iterations})")
-                
-                # 调用 LLM
-                response = self._call_llm(messages)
-                
-                # 检查是否有工具调用
-                if response.tool_calls:
-                    for tool_call in response.tool_calls:
-                        tool_name = tool_call.function.name
+        for iteration in range(self.max_iterations):
+            self._check_control(should_stop)
+            emit_log('thinking', f"Agent 思考中... (迭代 {iteration + 1}/{self.max_iterations})")
+
+            response = self._call_llm(messages, should_stop=should_stop)
+            self._check_control(should_stop)
+
+            if response.tool_calls:
+                assistant_tool_calls: list[dict[str, Any]] = []
+                tool_messages: list[dict[str, str]] = []
+                for tool_call in response.tool_calls:
+                    self._check_control(should_stop)
+                    tool_name = tool_call.function.name
+                    try:
                         tool_args = json.loads(tool_call.function.arguments)
-                        
-                        emit_log('tool_call', f"调用 {tool_name}: {json.dumps(tool_args, ensure_ascii=False)[:200]}...")
-                        
-                        # 执行工具 (同步)
-                        tool_result = execute_firecrawl_tool_sync(
-                            tool_name,
-                            tool_args,
-                            self.firecrawl_api_key,
-                            timeout=self.timeout,
-                            bypass_proxy=self.bypass_proxy,
-                        )
-                        
-                        result_str = json.dumps(tool_result, ensure_ascii=False)
-                        emit_log('tool_result', f"返回 {len(result_str)} 字符")
-                        
-                        # 添加工具调用和结果到消息
-                        messages.append({
-                            "role": "assistant",
-                            "content": None,
-                            "tool_calls": [{
-                                "id": tool_call.id,
-                                "type": "function",
-                                "function": {
-                                    "name": tool_name,
-                                    "arguments": tool_call.function.arguments
-                                }
-                            }]
-                        })
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "content": result_str[:50000]  # 限制长度
-                        })
+                    except json.JSONDecodeError as exc:
+                        raise ValueError("AI Agent 工具参数不是合法 JSON") from exc
+                    if not isinstance(tool_args, dict):
+                        raise ValueError("AI Agent 工具参数必须是 JSON 对象")
+
+                    emit_log('tool_call', f"调用 {tool_name}: {json.dumps(tool_args, ensure_ascii=False)[:200]}...")
+
+                    tool_result = execute_firecrawl_tool_sync(
+                        tool_name,
+                        tool_args,
+                        self.firecrawl_api_key,
+                        timeout=self.timeout,
+                        bypass_proxy=self.bypass_proxy,
+                    )
+                    self._check_control(should_stop)
+
+                    result_str = json.dumps(tool_result, ensure_ascii=False)
+                    emit_log('tool_result', f"返回 {len(result_str)} 字符")
+
+                    assistant_tool_calls.append({
+                            "id": tool_call.id,
+                            "type": "function",
+                            "function": {
+                                "name": tool_name,
+                                "arguments": tool_call.function.arguments
+                            }
+                    })
+                    tool_messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": result_str,
+                    })
+                messages.append({
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": assistant_tool_calls,
+                })
+                messages.extend(tool_messages)
+            else:
+                self._check_control(should_stop)
+                content = response.content
+                emit_log('info', "Agent 完成分析，正在解析结果...")
+
+                result = self._parse_result(content, source_url)
+
+                if result.success:
+                    emit_log('info', f"提取成功: 《{result.comic_title}》- {result.chapter_title} - 共 {result.total_pages} 页")
                 else:
-                    # 没有工具调用，解析最终结果
-                    content = response.content
-                    emit_log('info', "Agent 完成分析，正在解析结果...")
-                    
-                    result = self._parse_result(content, url)
-                    
-                    if result.success:
-                        emit_log('info', f"提取成功: 《{result.comic_title}》- {result.chapter_title} - 共 {result.total_pages} 页")
-                    else:
-                        emit_log('error', f"解析结果失败: {result.error}")
-                    
-                    return result
-            
-            # 超过最大迭代次数
-            emit_log('error', f"超过最大迭代次数 ({self.max_iterations})")
-            return ExtractResult(
-                success=False,
-                source_url=url,
-                error=f"超过最大迭代次数 ({self.max_iterations})"
-            )
-            
-        except Exception as e:
-            if is_memory_allocation_error(e):
-                raise
-            error_msg = str(e)
-            emit_log('error', f"提取失败: {error_msg}")
-            logger.exception("Agent 提取异常")
-            return ExtractResult(
-                success=False,
-                source_url=url,
-                error=error_msg
-            )
-    
-    def _call_llm(self, messages: List[Dict]) -> Any:
+                    emit_log('error', f"解析结果失败: {result.error}")
+
+                return result
+
+        emit_log('error', f"超过最大迭代次数 ({self.max_iterations})")
+        return ExtractResult(
+            success=False,
+            source_url=source_url,
+            error=f"超过最大迭代次数 ({self.max_iterations})"
+        )
+
+    def _call_llm(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        should_stop: Callable[[], bool] | None = None,
+    ) -> Any:
         """
         调用 LLM (同步版本)
         
@@ -250,27 +289,37 @@ class MangaScraperAgent:
         Returns:
             LLM 响应
         """
-        max_attempts = max(1, int(self.max_retries or 1))
+        max_attempts = self.max_retries + 1
 
         for attempt in range(max_attempts):
+            self._check_control(should_stop)
             try:
                 if self.use_stream:
                     try:
-                        return self._call_llm_stream(messages)
+                        response = self._call_llm_stream(
+                            messages,
+                            should_stop=should_stop,
+                        )
                     except StreamFallbackNeeded as exc:
                         logger.warning("流式响应无法可靠解析，回退到非流式请求: %s", exc)
-                        return self._call_llm_non_stream(messages)
+                        self._check_control(should_stop)
+                        response = self._call_llm_non_stream(messages)
+                else:
+                    response = self._call_llm_non_stream(messages)
 
-                return self._call_llm_non_stream(messages)
+                self._check_control(should_stop)
+                return response
+            except WebImportAgentControlRequested:
+                raise
             except Exception as e:
                 if is_memory_allocation_error(e):
                     raise
                 logger.error(f"LLM 调用失败 (尝试 {attempt + 1}/{max_attempts}): {e}")
                 if attempt >= max_attempts - 1 or not self._should_retry_llm_error(e):
                     raise
-                time.sleep(2 ** attempt)
+                self._wait_before_retry(2 ** attempt, should_stop)
 
-    def _call_llm_non_stream(self, messages: List[Dict]) -> Any:
+    def _call_llm_non_stream(self, messages: list[dict[str, Any]]) -> Any:
         response = self.client.chat.completions.create(
             model=self.model_name,
             messages=messages,
@@ -280,7 +329,12 @@ class MangaScraperAgent:
         )
         return response.choices[0].message
 
-    def _call_llm_stream(self, messages: List[Dict]) -> Any:
+    def _call_llm_stream(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        should_stop: Callable[[], bool] | None = None,
+    ) -> Any:
         response_stream = self.client.chat.completions.create(
             model=self.model_name,
             messages=messages,
@@ -290,11 +344,12 @@ class MangaScraperAgent:
             stream=True,
         )
 
-        content_parts: List[str] = []
-        tool_calls_by_index: Dict[int, Dict[str, Any]] = {}
+        content_parts: list[str] = []
+        tool_calls_by_index: dict[int, dict[str, Any]] = {}
         saw_tool_call_delta = False
 
         for chunk in response_stream:
+            self._check_control(should_stop)
             choices = getattr(chunk, "choices", None) or []
             if not choices:
                 continue
@@ -349,8 +404,33 @@ class MangaScraperAgent:
             tool_calls=tool_calls,
         )
 
-    def _finalize_stream_tool_calls(self, tool_calls_by_index: Dict[int, Dict[str, Any]]) -> List[Any]:
-        tool_calls: List[Any] = []
+    @staticmethod
+    def _check_control(
+        should_stop: Callable[[], bool] | None,
+    ) -> None:
+        if should_stop is not None and should_stop():
+            raise WebImportAgentControlRequested(
+                "web import job control requested"
+            )
+    @classmethod
+    def _wait_before_retry(
+        cls,
+        delay_seconds: float,
+        should_stop: Callable[[], bool] | None,
+    ) -> None:
+        deadline = time.monotonic() + delay_seconds
+        while True:
+            cls._check_control(should_stop)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            time.sleep(min(0.25, remaining))
+
+    def _finalize_stream_tool_calls(
+        self,
+        tool_calls_by_index: dict[int, dict[str, Any]],
+    ) -> list[Any]:
+        tool_calls: list[Any] = []
         for index in sorted(tool_calls_by_index):
             state = tool_calls_by_index[index]
             tool_call_id = state.get("id") or ""
@@ -379,42 +459,11 @@ class MangaScraperAgent:
 
     @staticmethod
     def _should_retry_llm_error(error: Exception) -> bool:
-        error_text = str(error).lower()
-
-        non_retryable_keywords = (
-            "api key",
-            "authentication",
-            "unauthorized",
-            "invalid_api_key",
-            "base url",
-            "not found",
-            "permission",
-            "401",
-            "forbidden",
-            "403",
-            "404",
-        )
-        if any(keyword in error_text for keyword in non_retryable_keywords):
-            return False
-
-        retryable_keywords = (
-            "timeout",
-            "timed out",
-            "connection",
-            "connect",
-            "reset",
-            "temporarily unavailable",
-            "rate limit",
-            "429",
-            "500",
-            "502",
-            "503",
-            "504",
-        )
-        if any(keyword in error_text for keyword in retryable_keywords):
+        if isinstance(error, (APIConnectionError, APITimeoutError)):
             return True
-
-        return bool(re.search(r"api 错误\s*(408|429|500|502|503|504)", str(error), re.IGNORECASE))
+        if isinstance(error, APIStatusError):
+            return error.status_code in RETRYABLE_STATUS_CODES
+        return False
     
     def _parse_result(self, content: str, source_url: str) -> ExtractResult:
         """
@@ -433,13 +482,8 @@ class MangaScraperAgent:
                 source_url=source_url,
                 error="LLM 返回内容为空"
             )
-        
         try:
-            # 清理 Markdown 代码块标记
-            cleaned = self._clean_json_response(content)
-            
-            # 解析 JSON
-            data = json.loads(cleaned)
+            data = json.loads(content.strip())
 
             required_fields = {
                 'comic_title',
@@ -460,6 +504,7 @@ class MangaScraperAgent:
                 not isinstance(comic_title, str)
                 or not isinstance(chapter_title, str)
                 or not isinstance(pages, list)
+                or not pages
                 or isinstance(total_pages, bool)
                 or not isinstance(total_pages, int)
                 or total_pages != len(pages)
@@ -475,10 +520,14 @@ class MangaScraperAgent:
                     or isinstance(page['page_number'], bool)
                     or not isinstance(page['page_number'], int)
                     or page['page_number'] < 1
+                    or page['page_number'] != i + 1
                     or not isinstance(page['image_url'], str)
                     or not page['image_url'].strip()
                 ):
                     raise ValueError(f'Agent 第 {i + 1} 个页面字段不正确')
+                parsed_url = urlparse(page['image_url'].strip())
+                if parsed_url.scheme not in {'http', 'https'} or not parsed_url.netloc:
+                    raise ValueError(f'Agent 第 {i + 1} 个页面 URL 不正确')
                 normalized_pages.append({
                     'pageNumber': page['page_number'],
                     'imageUrl': page['image_url'].strip()
@@ -492,7 +541,6 @@ class MangaScraperAgent:
                 total_pages=total_pages,
                 source_url=source_url
             )
-            
         except json.JSONDecodeError as e:
             logger.error(f"JSON 解析失败: {e}")
             logger.debug(f"原始内容: {content[:500]}")
@@ -510,35 +558,3 @@ class MangaScraperAgent:
                 source_url=source_url,
                 error=f"结果解析失败: {e}"
             )
-    
-    def _clean_json_response(self, content: str) -> str:
-        """
-        清理 JSON 响应，移除 Markdown 代码块标记
-        
-        Args:
-            content: 原始内容
-        
-        Returns:
-            清理后的 JSON 字符串
-        """
-        content = content.strip()
-        
-        # 移除 ```json ... ``` 标记
-        if content.startswith('```'):
-            # 找到第一个换行
-            first_newline = content.find('\n')
-            if first_newline != -1:
-                content = content[first_newline + 1:]
-            
-            # 移除结尾的 ```
-            if content.endswith('```'):
-                content = content[:-3]
-        
-        # 尝试找到 JSON 对象
-        start = content.find('{')
-        end = content.rfind('}')
-        
-        if start != -1 and end != -1 and end > start:
-            content = content[start:end + 1]
-        
-        return content.strip()

@@ -110,6 +110,7 @@ const props = withDefaults(defineProps<{
   }
 
   .product-section-header__actions {
+    flex-wrap: wrap;
     justify-content: flex-start;
   }
 }

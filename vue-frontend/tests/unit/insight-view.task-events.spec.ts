@@ -1,42 +1,65 @@
-﻿import { nextTick } from 'vue'
+import { nextTick } from 'vue'
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
+import type { Component } from 'vue'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { flushPromises, mount, shallowMount } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount, shallowMount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { useInsightStore } from '@/stores/insightStore'
-import { useBookshelfStore } from '@/stores/bookshelfStore'
 import { useSettingsStore } from '@/stores/settings'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import type { V2Job } from '@/api/v2/jobs'
 import type { BookData } from '@/types'
 
+enableAutoUnmount(afterEach)
+
 const {
   getBookDetailMock,
   getAnalysisStatusMock,
+  getInsightChaptersMock,
+  getNotesMock,
   routerReplaceMock,
   routerPushMock,
+  routeMock,
+  showToastMock,
 } = vi.hoisted(() => ({
   getBookDetailMock: vi.fn(),
   getAnalysisStatusMock: vi.fn(),
+  getInsightChaptersMock: vi.fn(),
+  getNotesMock: vi.fn(),
   routerReplaceMock: vi.fn(),
   routerPushMock: vi.fn(),
+  routeMock: {
+    current: null as { query: Record<string, unknown> } | null,
+  },
+  showToastMock: vi.fn(),
 }))
 
-vi.mock('vue-router', () => ({
-  useRoute: () => ({ query: {} }),
-  useRouter: () => ({
-    replace: routerReplaceMock,
-    push: routerPushMock,
-  }),
-}))
+vi.mock('vue-router', async () => {
+  const { reactive } = await import('vue')
+  const route = reactive({ query: {} as Record<string, unknown> })
+  routeMock.current = route
+  return {
+    useRoute: () => route,
+    useRouter: () => ({
+      replace: routerReplaceMock,
+      push: routerPushMock,
+    }),
+  }
+})
 
 vi.mock('@/api/insight', () => ({
   getAnalysisStatus: getAnalysisStatusMock,
+  getInsightChapters: getInsightChaptersMock,
+  getNotes: getNotesMock,
 }))
 
 vi.mock('@/api/bookshelf', () => ({
   getBookDetail: getBookDetailMock,
+}))
+
+vi.mock('@/utils/toast', () => ({
+  showToast: showToastMock,
 }))
 
 import InsightView from '@/views/InsightView.vue'
@@ -65,13 +88,37 @@ const ProductPageHeaderStub = {
   `,
 }
 
+function insightViewStubs(
+  overrides: Record<string, Component | boolean> = {},
+): Record<string, Component | boolean> {
+  return {
+    AppShell: { template: '<section><slot name="header" /><slot /></section>' },
+    ProductPageHeader: ProductPageHeaderStub,
+    ProductThemeToggle: false,
+    BookSelector: true,
+    AnalysisProgress: true,
+    OverviewPanel: true,
+    TimelinePanel: true,
+    QAPanel: true,
+    NotesPanel: true,
+    PageDetail: true,
+    PagesTree: true,
+    InsightSettingsModal: true,
+    ChapterSelectModal: true,
+    ContinuationPanel: true,
+    CharacterStudioEntryPanel: true,
+    'router-link': { template: '<a><slot /></a>' },
+    ...overrides,
+  }
+}
+
 type BookDetailSuccess = BookData
 
 function createBook(id: string, title: string): BookData {
   return {
     id,
     title,
-    total_pages: 1,
+    totalPages: 1,
     chapters: [],
     createdAt: '2026-06-25T00:00:00Z',
     updatedAt: '2026-06-25T00:00:00Z',
@@ -86,9 +133,9 @@ function createDeferred<T>() {
   return { promise, resolve }
 }
 
-function stubBookshelfLoadBooks() {
-  const bookshelfStore = useBookshelfStore()
-  vi.spyOn(bookshelfStore, 'loadBooks').mockResolvedValue(undefined)
+function setRouteQuery(query: Record<string, unknown>): void {
+  if (!routeMock.current) throw new Error('route mock is not initialized')
+  routeMock.current.query = query
 }
 
 function insightJob(overrides: Partial<V2Job> = {}): V2Job {
@@ -115,6 +162,7 @@ function insightJob(overrides: Partial<V2Job> = {}): V2Job {
           completed: 2,
           failed: 1,
           skipped: 1,
+          cancelled: 0,
           waiting: 0,
           processing: 0,
           lockWaiting: false,
@@ -126,6 +174,7 @@ function insightJob(overrides: Partial<V2Job> = {}): V2Job {
           completed: 0,
           failed: 0,
           skipped: 0,
+          cancelled: 0,
           waiting: 1,
           processing: 0,
           lockWaiting: false,
@@ -144,26 +193,65 @@ describe('InsightView task event projection', () => {
     const pinia = createPinia()
     setActivePinia(pinia)
 
-    const insightStore = useInsightStore()
-    insightStore.currentBookId = 'book-1'
-    insightStore.setAnalysisStatus('idle')
-    insightStore.setAnalyzedPagesCount(0)
-    insightStore.dataRefreshKey = 0
-
-    stubBookshelfLoadBooks()
+    setRouteQuery({})
 
     getAnalysisStatusMock.mockReset()
     getBookDetailMock.mockReset()
+    getInsightChaptersMock.mockReset()
+    getNotesMock.mockReset()
+    routerReplaceMock.mockReset()
+    routerPushMock.mockReset()
+    showToastMock.mockReset()
+    getBookDetailMock.mockResolvedValue(createBook('book-1', 'First Book'))
     getAnalysisStatusMock.mockResolvedValue({
-      success: true,
-      analyzed: true,
-      fully_analyzed: false,
-      analyzed_pages_count: 5,
+      fullyAnalyzed: false,
+      analyzedPagesCount: 5,
     })
+    getInsightChaptersMock.mockResolvedValue([])
+    getNotesMock.mockResolvedValue({ items: [], nextCursor: null })
   })
 
   afterEach(() => {
     vi.clearAllMocks()
+  })
+
+  it('clears every book-scoped projection when the selected book changes', () => {
+    const insightStore = useInsightStore()
+    insightStore.setCurrentBook('book-1')
+    insightStore.setCurrentTaskId('analysis-job-1')
+    insightStore.setAnalysisStatus('running')
+    insightStore.updateProgress(7, 20, '分析中')
+    insightStore.setBookTotalPages(20)
+    insightStore.setAnalyzedPagesCount(7)
+    insightStore.setChapters([{
+      id: 'chapter-1',
+      title: '第一章',
+      startPage: 1,
+      endPage: 20,
+      analyzed: false,
+    }])
+    insightStore.selectPage(7)
+    insightStore.addQAMessage({
+      id: 'message-1',
+      role: 'user',
+      content: '上一册的问题',
+    })
+    insightStore.setStreaming(true)
+    insightStore.setError('上一册错误')
+
+    insightStore.setCurrentBook('book-2')
+
+    expect(insightStore.currentBookId).toBe('book-2')
+    expect(insightStore.currentTaskId).toBeNull()
+    expect(insightStore.analysisStatus).toBe('idle')
+    expect(insightStore.progress).toEqual({ current: 0, total: 0, status: 'idle' })
+    expect(insightStore.totalPageCount).toBe(0)
+    expect(insightStore.analyzedPageCount).toBe(0)
+    expect(insightStore.chapters).toEqual([])
+    expect(insightStore.selectedPageNum).toBeNull()
+    expect(insightStore.qaHistory).toEqual([])
+    expect(insightStore.isStreaming).toBe(false)
+    expect(insightStore.error).toBeNull()
   })
 
   it('projects active progress and refreshes backend facts on a terminal task event', async () => {
@@ -171,36 +259,16 @@ describe('InsightView task event projection', () => {
     setActivePinia(pinia)
 
     const insightStore = useInsightStore()
-    insightStore.currentBookId = 'book-1'
-    insightStore.setAnalysisStatus('idle')
-    insightStore.dataRefreshKey = 0
-
-    stubBookshelfLoadBooks()
 
     shallowMount(InsightView, {
       global: {
         plugins: [pinia],
-        stubs: {
-          AppShell: { template: '<section><slot name="header" /><slot /></section>' },
-          ProductPageHeader: ProductPageHeaderStub,
-          ProductThemeToggle: false,
-          BookSelector: true,
-          AnalysisProgress: true,
-          OverviewPanel: true,
-          TimelinePanel: true,
-          QAPanel: true,
-          NotesPanel: true,
-          PageDetail: true,
-          PagesTree: true,
-          InsightSettingsModal: true,
-          ChapterSelectModal: true,
-          ContinuationPanel: true,
-          'router-link': { template: '<a><slot /></a>' },
-        },
+        stubs: insightViewStubs(),
       },
     })
 
     await flushPromises()
+    insightStore.setCurrentBook('book-1')
     const taskCenterStore = useTaskCenterStore()
     const refreshKeyBefore = insightStore.dataRefreshKey
     taskCenterStore.queue = [insightJob()]
@@ -215,7 +283,7 @@ describe('InsightView task event projection', () => {
       eventId: 101,
       jobId: 'analysis-job-1',
       type: 'job_finished',
-      payload: {},
+      payload: { status: 'completed' },
       createdAt: null,
     }
     await flushPromises()
@@ -229,42 +297,73 @@ describe('InsightView task event projection', () => {
     expect(insightStore.dataRefreshKey).not.toBe(refreshKeyBefore)
   })
 
+  it('does not apply an old terminal event after the user switches books', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const insightStore = useInsightStore()
+    insightStore.setCurrentBook('book-1')
+    const statusLoad = createDeferred<{
+      analyzedPagesCount: number
+      fullyAnalyzed: boolean
+    }>()
+    getAnalysisStatusMock.mockReturnValueOnce(statusLoad.promise)
+
+    shallowMount(InsightView, {
+      global: {
+        plugins: [pinia],
+        stubs: insightViewStubs(),
+      },
+    })
+
+    await flushPromises()
+    insightStore.setCurrentBook('book-1')
+    const taskCenterStore = useTaskCenterStore()
+    taskCenterStore.queue = [insightJob()]
+    await nextTick()
+    expect(insightStore.currentTaskId).toBe('analysis-job-1')
+
+    const refreshKeyBefore = insightStore.dataRefreshKey
+    taskCenterStore.latestEvent = {
+      eventId: 104,
+      jobId: 'analysis-job-1',
+      type: 'job_finished',
+      payload: { status: 'completed' },
+      createdAt: null,
+    }
+    await nextTick()
+    expect(getAnalysisStatusMock).toHaveBeenCalledWith('book-1')
+
+    insightStore.setCurrentBook('book-2')
+    statusLoad.resolve({ analyzedPagesCount: 10, fullyAnalyzed: true })
+    await flushPromises()
+
+    expect(insightStore.currentBookId).toBe('book-2')
+    expect(insightStore.currentTaskId).toBeNull()
+    expect(insightStore.analysisStatus).toBe('idle')
+    expect(insightStore.analyzedPageCount).toBe(0)
+    expect(insightStore.progress).toEqual({ current: 0, total: 0, status: 'idle' })
+    expect(insightStore.dataRefreshKey).toBe(refreshKeyBefore)
+  })
+
   it('keeps a recoverable interrupted job available for the distinct continue command', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
 
     const insightStore = useInsightStore()
-    insightStore.currentBookId = 'book-1'
-    insightStore.setAnalysisStatus('failed')
-    insightStore.setCurrentTaskId(null)
-    stubBookshelfLoadBooks()
 
     shallowMount(InsightView, {
       global: {
         plugins: [pinia],
-        stubs: {
-          AppShell: { template: '<section><slot name="header" /><slot /></section>' },
-          ProductPageHeader: ProductPageHeaderStub,
-          ProductThemeToggle: false,
-          BookSelector: true,
-          AnalysisProgress: true,
-          OverviewPanel: true,
-          TimelinePanel: true,
-          QAPanel: true,
-          NotesPanel: true,
-          PageDetail: true,
-          PagesTree: true,
-          InsightSettingsModal: true,
-          ChapterSelectModal: true,
-          ContinuationPanel: true,
-          'router-link': { template: '<a><slot /></a>' },
-        },
+        stubs: insightViewStubs(),
       },
     })
 
     await flushPromises()
+    insightStore.setCurrentBook('book-1')
+    insightStore.setAnalysisStatus('failed')
+    insightStore.setCurrentTaskId(null)
     const taskCenterStore = useTaskCenterStore()
-    taskCenterStore.queue = [insightJob({ status: 'interrupted' })]
+    taskCenterStore.history = [insightJob({ status: 'interrupted' })]
     await nextTick()
 
     expect(insightStore.analysisStatus).toBe('interrupted')
@@ -276,34 +375,17 @@ describe('InsightView task event projection', () => {
     setActivePinia(pinia)
 
     const insightStore = useInsightStore()
-    insightStore.currentBookId = 'book-1'
-    insightStore.dataRefreshKey = 0
-    stubBookshelfLoadBooks()
 
     shallowMount(InsightView, {
       global: {
         plugins: [pinia],
-        stubs: {
-          AppShell: { template: '<section><slot name="header" /><slot /></section>' },
-          ProductPageHeader: ProductPageHeaderStub,
-          ProductThemeToggle: false,
-          BookSelector: true,
-          AnalysisProgress: true,
-          OverviewPanel: true,
-          TimelinePanel: true,
-          QAPanel: true,
-          NotesPanel: true,
-          PageDetail: true,
-          PagesTree: true,
-          InsightSettingsModal: true,
-          ChapterSelectModal: true,
-          ContinuationPanel: true,
-          'router-link': { template: '<a><slot /></a>' },
-        },
+        stubs: insightViewStubs(),
       },
     })
 
     await flushPromises()
+    insightStore.setCurrentBook('book-1')
+    insightStore.dataRefreshKey = 0
     const taskCenterStore = useTaskCenterStore()
     const refreshKeyBefore = insightStore.dataRefreshKey
     taskCenterStore.queue = [insightJob({
@@ -330,37 +412,18 @@ describe('InsightView task event projection', () => {
     setActivePinia(pinia)
 
     const insightStore = useInsightStore()
-    insightStore.currentBookId = 'book-1'
-    insightStore.setAnalysisStatus('idle')
-    insightStore.dataRefreshKey = 0
-
-    stubBookshelfLoadBooks()
 
     const wrapper = shallowMount(InsightView, {
       global: {
         plugins: [pinia],
-        stubs: {
-          AppShell: { template: '<section><slot name="header" /><slot /></section>' },
-          ProductHeaderAction: false,
-          ProductPageHeader: ProductPageHeaderStub,
-          ProductThemeToggle: false,
-          BookSelector: true,
-          AnalysisProgress: true,
-          OverviewPanel: true,
-          TimelinePanel: true,
-          QAPanel: true,
-          NotesPanel: true,
-          PageDetail: true,
-          PagesTree: true,
-          InsightSettingsModal: true,
-          ChapterSelectModal: true,
-          ContinuationPanel: true,
-          'router-link': { template: '<a><slot /></a>' },
-        },
+        stubs: insightViewStubs({ ProductHeaderAction: false }),
       },
     })
 
     await flushPromises()
+    insightStore.setCurrentBook('book-1')
+    insightStore.setAnalysisStatus('idle')
+    insightStore.dataRefreshKey = 0
     const taskCenterStore = useTaskCenterStore()
     const refreshKeyBefore = insightStore.dataRefreshKey
     taskCenterStore.queue = [insightJob()]
@@ -384,23 +447,7 @@ describe('InsightView task event projection', () => {
   it('uses safe header navigation semantics', async () => {
     const wrapper = mount(InsightView, {
       global: {
-        stubs: {
-          AppShell: { template: '<section><slot name="header" /><slot /></section>' },
-          ProductPageHeader: ProductPageHeaderStub,
-          ProductThemeToggle: false,
-          BookSelector: true,
-          AnalysisProgress: true,
-          OverviewPanel: true,
-          TimelinePanel: true,
-          QAPanel: true,
-          NotesPanel: true,
-          PageDetail: true,
-          PagesTree: true,
-          InsightSettingsModal: true,
-          ChapterSelectModal: true,
-          ContinuationPanel: true,
-          'router-link': { template: '<a><slot /></a>' },
-        },
+        stubs: insightViewStubs(),
       },
     })
     const settingsStore = useSettingsStore()
@@ -432,11 +479,9 @@ describe('InsightView task event projection', () => {
     }
   })
 
-  it('keeps task event projection typed and free of page-local polling', () => {
-    const source = readFileSync(resolve(process.cwd(), 'tests/unit/insight-view.task-events.spec.ts'), 'utf8')
+  it('keeps task event projection free of page-local polling', () => {
     const viewSource = readFileSync(resolve(process.cwd(), 'src/views/InsightView.vue'), 'utf8')
 
-    expect(source).not.toMatch(/\bas any\b|:\s*any\b|any\[\]/)
     expect(viewSource).not.toContain('setInterval(')
     expect(viewSource).not.toContain('setTimeout(')
     expect(viewSource).toContain('taskCenterStore.latestEvent')
@@ -552,35 +597,18 @@ describe('InsightView task event projection', () => {
     expect(source).toContain('currentBook?.totalPages')
   })
 
-  it('uses the shared product tabbed workspace shell for selected-book panels', () => {
+  it('uses the shared product tabbed workspace shell for selected-book panels', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
-    const insightStore = useInsightStore()
-    insightStore.currentBookId = 'book-1'
+    setRouteQuery({ book: 'book-1' })
 
     const wrapper = mount(InsightView, {
       global: {
         plugins: [pinia],
-        stubs: {
-          AppShell: { template: '<section><slot name="header" /><slot /></section>' },
-          ProductPageHeader: ProductPageHeaderStub,
-          SidebarLayout: { template: '<main><slot /></main>' },
-          BookSelector: true,
-          AnalysisProgress: true,
-          OverviewPanel: true,
-          TimelinePanel: true,
-          QAPanel: true,
-          NotesPanel: true,
-          PageDetail: true,
-          PagesTree: true,
-          InsightSettingsModal: true,
-          ChapterSelectModal: true,
-          ContinuationPanel: true,
-          CharacterStudioEntryPanel: true,
-          'router-link': { template: '<a><slot /></a>' },
-        },
+        stubs: insightViewStubs(),
       },
     })
+    await flushPromises()
 
     expect(wrapper.find('.product-tabbed-workspace').exists()).toBe(true)
     expect(wrapper.find('.product-tabbed-workspace__panels > .insight-view__tab-content').exists()).toBe(true)
@@ -588,37 +616,54 @@ describe('InsightView task event projection', () => {
       .findAll('.product-tabbed-workspace__tab-label')
       .map(tab => tab.text())
     expect(tabLabels).toEqual(['概览', '智能问答', '时间线', '续写', '角色工坊'])
+    for (const tab of wrapper.findAll('[role="tab"]')) {
+      const panelId = tab.attributes('aria-controls')
+      expect(panelId).toBeTruthy()
+      expect(wrapper.get(`#${panelId}`).attributes('aria-labelledby')).toBe(tab.attributes('id'))
+    }
+    expect(wrapper.findAll('[role="tabpanel"]')).toHaveLength(5)
+    await wrapper.findAll('[role="tab"]')[1]!.trigger('click')
+    expect(wrapper.findAll('[role="tabpanel"]')).toHaveLength(5)
+    expect(wrapper.get('#product-workspace-panel-overview').attributes('style')).toContain('display: none')
+    expect(wrapper.get('#product-workspace-panel-qa').attributes('style') ?? '').not.toContain('display: none')
   })
 
-  it('uses the shared product three-pane workspace shell for selected-book layout', () => {
+  it('does not navigate to an invalid book-only translation route', async () => {
+    const wrapper = mount(InsightView, {
+      global: {
+        stubs: insightViewStubs(),
+      },
+    })
+    const insightStore = useInsightStore()
+    insightStore.setCurrentBook('book-1')
+    insightStore.setChapters([])
+    await nextTick()
+
+    const translateAction = wrapper.findAll('button').find(
+      button => button.text().includes('翻译'),
+    )
+    expect(translateAction).toBeDefined()
+    await translateAction!.trigger('click')
+
+    expect(routerPushMock).not.toHaveBeenCalled()
+    expect(showToastMock).toHaveBeenCalledWith(
+      '当前书籍还没有章节，请先在书架中创建章节',
+      'warning',
+    )
+  })
+
+  it('uses the shared product three-pane workspace shell for selected-book layout', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
-    const insightStore = useInsightStore()
-    insightStore.currentBookId = 'book-1'
+    setRouteQuery({ book: 'book-1' })
 
     const wrapper = mount(InsightView, {
       global: {
         plugins: [pinia],
-        stubs: {
-          AppShell: { template: '<section><slot name="header" /><slot /></section>' },
-          ProductPageHeader: ProductPageHeaderStub,
-          ProductThemeToggle: false,
-          BookSelector: true,
-          AnalysisProgress: true,
-          OverviewPanel: true,
-          TimelinePanel: true,
-          QAPanel: true,
-          NotesPanel: true,
-          PageDetail: true,
-          PagesTree: true,
-          InsightSettingsModal: true,
-          ChapterSelectModal: true,
-          ContinuationPanel: true,
-          CharacterStudioEntryPanel: true,
-          'router-link': { template: '<a><slot /></a>' },
-        },
+        stubs: insightViewStubs(),
       },
     })
+    await flushPromises()
 
     expect(wrapper.find('.product-three-pane-workspace').exists()).toBe(true)
     expect(wrapper.find('.product-three-pane-workspace__pane--left .insight-view__book-summary').exists()).toBe(true)
@@ -652,12 +697,118 @@ describe('InsightView task event projection', () => {
     expect(mobileButtonBlock).not.toMatch(/\b(width|height|border|border-radius|background|color|cursor|font-size|transition)\s*:/)
   })
 
+  it('keeps all book-owned panels unmounted until the core book snapshot is complete', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    setRouteQuery({ book: 'book-1' })
+    const bookLoad = createDeferred<BookDetailSuccess>()
+    getBookDetailMock.mockReturnValueOnce(bookLoad.promise)
+
+    const wrapper = mount(InsightView, {
+      global: {
+        plugins: [pinia],
+        stubs: insightViewStubs(),
+      },
+    })
+    await nextTick()
+
+    expect(wrapper.text()).toContain('正在读取书籍详情与分析状态')
+    expect(wrapper.find('.product-tabbed-workspace').exists()).toBe(false)
+    expect(wrapper.find('.product-three-pane-workspace__pane--right').exists()).toBe(false)
+
+    bookLoad.resolve(createBook('book-1', 'First Book'))
+    await flushPromises()
+
+    expect(wrapper.find('.product-tabbed-workspace').exists()).toBe(true)
+    expect(wrapper.find('.product-three-pane-workspace__pane--right').exists()).toBe(true)
+  })
+
+  it('fails the core load instead of presenting fallback chapter facts', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    setRouteQuery({ book: 'book-1' })
+    getInsightChaptersMock.mockRejectedValueOnce(new Error('章节状态读取失败'))
+
+    const wrapper = mount(InsightView, {
+      global: {
+        plugins: [pinia],
+        stubs: insightViewStubs(),
+      },
+    })
+    await flushPromises()
+
+    const insightStore = useInsightStore()
+    expect(insightStore.error).toBe('章节状态读取失败')
+    expect(insightStore.chapters).toEqual([])
+    expect(wrapper.text()).toContain('书籍加载失败')
+    expect(wrapper.find('.product-tabbed-workspace').exists()).toBe(false)
+    expect(wrapper.find('.product-three-pane-workspace__pane--right').exists()).toBe(false)
+  })
+
+  it('clears the selected-book projection when the route removes its book identity', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    setRouteQuery({ book: 'book-1' })
+
+    const wrapper = mount(InsightView, {
+      global: {
+        plugins: [pinia],
+        stubs: insightViewStubs(),
+      },
+    })
+    await flushPromises()
+    expect(useInsightStore().currentBookId).toBe('book-1')
+
+    setRouteQuery({})
+    await nextTick()
+
+    expect(useInsightStore().currentBookId).toBeNull()
+    expect(wrapper.find('.product-tabbed-workspace').exists()).toBe(false)
+    expect(wrapper.find('.product-three-pane-workspace__pane--right').exists()).toBe(false)
+    expect(wrapper.text()).toContain('选择要分析的书籍')
+  })
+
+  it('reprocesses a terminal event after its durable job projection arrives', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const wrapper = shallowMount(InsightView, {
+      global: {
+        plugins: [pinia],
+        stubs: insightViewStubs(),
+      },
+    })
+    await flushPromises()
+
+    const insightStore = useInsightStore()
+    const taskCenterStore = useTaskCenterStore()
+    insightStore.setCurrentBook('book-1')
+    const refreshKeyBefore = insightStore.dataRefreshKey
+    taskCenterStore.latestEvent = {
+      eventId: 106,
+      jobId: 'derived-job-late',
+      type: 'job_finished',
+      payload: { status: 'completed' },
+      createdAt: null,
+    }
+    await nextTick()
+    expect(insightStore.dataRefreshKey).toBe(refreshKeyBefore)
+
+    taskCenterStore.history = [insightJob({
+      jobId: 'derived-job-late',
+      kind: 'derived_rebuild',
+      status: 'completed',
+    })]
+    await nextTick()
+
+    expect(insightStore.dataRefreshKey).toBe(refreshKeyBefore + 1)
+    wrapper.unmount()
+  })
+
   it('ignores stale book load responses when a newer selection finishes first', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
 
     const insightStore = useInsightStore()
-    stubBookshelfLoadBooks()
 
     const firstLoad = createDeferred<BookDetailSuccess>()
     const secondLoad = createDeferred<BookDetailSuccess>()
@@ -668,9 +819,7 @@ describe('InsightView task event projection', () => {
     const wrapper = shallowMount(InsightView, {
       global: {
         plugins: [pinia],
-        stubs: {
-          AppShell: { template: '<section><slot name="header" /><slot /></section>' },
-          ProductPageHeader: ProductPageHeaderStub,
+        stubs: insightViewStubs({
           ProductThreePaneWorkspace: {
             template: '<main><slot name="left" /><slot /><slot name="right" /></main>',
           },
@@ -682,19 +831,7 @@ describe('InsightView task event projection', () => {
               </div>
             `,
           },
-          AnalysisProgress: true,
-          OverviewPanel: true,
-          TimelinePanel: true,
-          QAPanel: true,
-          NotesPanel: true,
-          PageDetail: true,
-          PagesTree: true,
-          InsightSettingsModal: true,
-          ChapterSelectModal: true,
-          ContinuationPanel: true,
-          CharacterStudioEntryPanel: true,
-          'router-link': { template: '<a><slot /></a>' },
-        },
+        }),
       },
     })
 

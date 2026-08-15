@@ -1,5 +1,5 @@
 <template>
-  <ContinuationDialogShell title="➕ 新增角色" @close="close">
+  <ContinuationDialogShell title="➕ 新增角色" :dismissible="!busy" @close="close">
     <ContinuationDialogForm>
       <ContinuationDialogField
         label="角色名称"
@@ -44,14 +44,14 @@
 
     <template #footer>
       <ContinuationDialogActions>
-        <UiButton variant="secondary" @click="close">取消</UiButton>
+        <UiButton variant="secondary" :disabled="busy" @click="close">取消</UiButton>
         <UiButton
           variant="primary"
-          :disabled="!name.trim() || isAdding"
+          :disabled="!name.trim() || busy"
           @click="add"
         >
-          <UiIcon v-if="!isAdding" name="check" size="15" />
-          <span>{{ isAdding ? '添加中...' : '确认添加' }}</span>
+          <UiIcon v-if="!busy" name="check" size="15" />
+          <span>{{ busy ? '添加中...' : '确认添加' }}</span>
         </UiButton>
       </ContinuationDialogActions>
     </template>
@@ -61,7 +61,7 @@
 <script setup lang="ts">
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiInput from '@/components/ui/UiInput.vue'
-import { onBeforeUnmount, ref } from 'vue'
+import { ref } from 'vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import ContinuationDialogActions from './ContinuationDialogActions.vue'
@@ -74,20 +74,17 @@ const emit = defineEmits<{
   add: [name: string, aliases: string[], description: string]
 }>()
 
+withDefaults(defineProps<{
+  busy?: boolean
+}>(), {
+  busy: false,
+})
+
 const name = ref('')
 const aliases = ref('')
 const description = ref('')
 const nameError = ref('')
-const isAdding = ref(false)
-let loadingTimer: ReturnType<typeof setTimeout> | null = null
 const close = () => emit('close')
-
-function clearLoadingTimer(): void {
-  if (loadingTimer) {
-    clearTimeout(loadingTimer)
-    loadingTimer = null
-  }
-}
 
 function add() {
   const charName = name.value.trim()
@@ -102,17 +99,6 @@ function add() {
     .map(a => a.trim())
     .filter(a => a.length > 0)
 
-  isAdding.value = true
   emit('add', charName, aliasList, description.value.trim())
-
-  clearLoadingTimer()
-  loadingTimer = setTimeout(() => {
-    isAdding.value = false
-    loadingTimer = null
-  }, 500)
 }
-
-onBeforeUnmount(() => {
-  clearLoadingTimer()
-})
 </script>

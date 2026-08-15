@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-import json
 import logging
 from pathlib import Path
 import shutil
@@ -15,7 +14,7 @@ from sqlalchemy import Engine, delete, exists, func, or_, select, tuple_
 from src.backend_v2.insight.derived import InsightVectorStore
 from src.backend_v2.insight.gc import InsightReachabilityGarbageCollector
 from src.backend_v2.insight.qa import TransientRequestRepository
-from src.backend_v2.jobs.repository import JobQueueRepository
+from src.backend_v2.jobs.repository import JobQueueRepository, decode_job_config
 from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.storage.database import immediate_transaction
 from src.backend_v2.storage.schema import (
@@ -327,6 +326,7 @@ class WorkerMaintenance:
                     select(
                         jobs.c.status,
                         jobs.c.config_json,
+                        jobs.c.config_schema_version,
                         jobs.c.finished_at,
                         jobs.c.updated_at,
                     ).where(jobs.c.kind == "container_import")
@@ -337,12 +337,7 @@ class WorkerMaintenance:
         protected: set[Path] = set()
         deadlines: dict[Path, datetime] = {}
         for row in rows:
-            try:
-                config = json.loads(str(row["config_json"]))
-            except (TypeError, ValueError):
-                continue
-            if not isinstance(config, dict):
-                continue
+            config = decode_job_config(row)
             for key in ("containerRelativePath", "extractedRelativePath"):
                 value = config.get(key)
                 if not isinstance(value, str) or not value:

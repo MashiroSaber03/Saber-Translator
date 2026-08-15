@@ -1,10 +1,10 @@
 <template>
   <BaseModal
-    v-model="isOpen"
+    :model-value="modelValue"
     title="术语表"
     size="large"
-    :close-on-overlay="true"
-    :close-on-esc="true"
+    :close-on-overlay="!isSaving"
+    :close-on-esc="!isSaving"
     @close="handleClose"
   >
     <div class="constraint-modal-body">
@@ -72,7 +72,7 @@
         variant="dialog"
         aria-label="术语表操作"
       >
-        <UiButton variant="secondary" @click="handleClose">取消</UiButton>
+        <UiButton variant="secondary" :disabled="isSaving" @click="handleClose">取消</UiButton>
         <UiButton
           variant="primary"
           :disabled="isSaving"
@@ -111,7 +111,6 @@ const emit = defineEmits<{
 }>()
 
 const constraintStore = useBookTranslationConstraintsStore()
-const isOpen = ref(props.modelValue)
 const isSaving = computed(() => constraintStore.isSaving)
 const draft = ref({
   enabled: false,
@@ -158,19 +157,12 @@ function toGlossaryEntry(row: object): GlossaryEntry {
 watch(
   () => props.modelValue,
   value => {
-    isOpen.value = value
     if (value) {
       syncDraft()
     }
   },
   { immediate: true }
 )
-
-watch(isOpen, value => {
-  if (!value && props.modelValue) {
-    emit('update:modelValue', false)
-  }
-})
 
 function syncDraft(): void {
   draft.value = deepClone(constraintStore.glossary)
@@ -197,7 +189,7 @@ function updateEntries(entries: object[]): void {
 }
 
 function handleClose(): void {
-  isOpen.value = false
+  if (isSaving.value) return
   emit('update:modelValue', false)
 }
 
@@ -208,12 +200,13 @@ async function handleSave(): Promise<void> {
     return
   }
 
-  const ok = await constraintStore.saveBookConstraints({
-    ...deepClone(constraintStore.constraints),
-    glossary: deepClone(draft.value),
-  })
-  if (!ok) {
-    showToast('保存术语表失败', 'error')
+  try {
+    await constraintStore.saveBookConstraints({
+      ...deepClone(constraintStore.constraints),
+      glossary: deepClone(draft.value),
+    })
+  } catch (saveError) {
+    showToast(saveError instanceof Error ? saveError.message : '保存术语表失败', 'error')
     return
   }
 

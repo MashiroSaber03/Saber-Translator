@@ -157,23 +157,16 @@ class ColorExtractor:
         image: Image.Image,
         bubble_coords: List[Tuple[int, int, int, int]],
         textlines_per_bubble: Optional[List[List[Dict]]] = None,
-        extract_fg: bool = True,
-        extract_bg: bool = True
     ) -> List[ColorExtractionResult]:
         """
         提取每个气泡的颜色
         
         这是设计文档中"强制提取"功能的入口。
-        无论 extract_fg/extract_bg 参数如何设置，都会尝试提取所有颜色，
-        参数只控制最终返回的颜色是否为 None。
-        
         Args:
             image: PIL 图像
             bubble_coords: 气泡坐标列表 [(x1, y1, x2, y2), ...]
             textlines_per_bubble: 每个气泡对应的原始文本行列表（可选）
                 格式: [[{'polygon': [[x,y], ...], 'direction': 'h'}, ...], ...]
-            extract_fg: 是否返回前景色
-            extract_bg: 是否返回背景色
         
         Returns:
             List[ColorExtractionResult]: 每个气泡的颜色提取结果
@@ -199,14 +192,10 @@ class ColorExtractor:
                 f"expected={len(bubble_coords)}, actual={len(raw_results)}"
             )
 
-        # 根据参数过滤结果
-        results = []
-        for raw in raw_results:
-            fg = raw.fg_color if extract_fg else None
-            bg = raw.bg_color if extract_bg else None
-            results.append(ColorExtractionResult(fg, bg, raw.confidence))
-
-        return results
+        return [
+            ColorExtractionResult(raw.fg_color, raw.bg_color, raw.confidence)
+            for raw in raw_results
+        ]
     
 
 

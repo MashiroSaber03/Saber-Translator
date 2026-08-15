@@ -35,26 +35,6 @@ describe('common component accessibility contracts', () => {
     expect(wrapper.getComponent(UiIconButton).props('label')).toBe('关闭通知')
   })
 
-  it('sanitizes html toast messages before rendering', async () => {
-    mount(ToastNotification, {
-      attachTo: document.body,
-    })
-
-    toastService.showGeneralMessage(
-      '<strong>完成</strong><img src=x onerror="alert(1)"><a href="javascript:alert(1)" onclick="alert(1)">链接</a>',
-      'info',
-      true,
-      0
-    )
-    await nextTick()
-
-    const message = document.body.querySelector('.vue-toast-message span')
-    expect(message?.innerHTML).toContain('<strong>完成</strong>')
-    expect(message?.querySelector('img')).toBeNull()
-    expect(message?.querySelector('a')?.getAttribute('href')).toBeNull()
-    expect(message?.querySelector('a')?.getAttribute('onclick')).toBeNull()
-  })
-
   it('keeps the toast service off the component instance API', () => {
     const toastSource = readFileSync(
       resolve(process.cwd(), 'src/components/common/ToastNotification.vue'),

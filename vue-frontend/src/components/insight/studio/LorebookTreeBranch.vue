@@ -3,99 +3,163 @@
     <details class="lorebook-tree-branch__details" open>
       <summary class="lorebook-tree-branch__summary">
         <div class="lorebook-tree-branch__summary-main">
-          <UiInput v-model="localEntry.comment" class="lorebook-tree-branch__title-input" type="text" variant="studio" />
+          <UiInput
+            :model-value="entry.comment"
+            class="lorebook-tree-branch__title-input"
+            type="text"
+            variant="studio"
+            @update:model-value="updateStringField('comment', String($event))"
+          />
           <div class="lorebook-tree-branch__meta">
-            <span class="lorebook-tree-branch__meta-item">{{ localEntry.keys.length }} 个关键词</span>
-            <span class="lorebook-tree-branch__meta-item">优先级 {{ localEntry.priority }}</span>
-            <span class="lorebook-tree-branch__meta-item">{{ localEntry.position }}</span>
+            <span class="lorebook-tree-branch__meta-item">{{ entry.keys.length }} 个关键词</span>
+            <span class="lorebook-tree-branch__meta-item">优先级 {{ entry.priority }}</span>
+            <span class="lorebook-tree-branch__meta-item">{{ entry.position }}</span>
           </div>
         </div>
-        <ProductActionRow appearance="accent" class="lorebook-tree-branch__actions" aria-label="世界书条目操作" @click.prevent>
-          <UiButton variant="secondary" size="sm" @click="move(-1)" :disabled="index === 0">上移</UiButton>
-          <UiButton variant="secondary" size="sm" @click="move(1)" :disabled="index >= siblingCount - 1">下移</UiButton>
+        <ProductActionRow
+          appearance="accent"
+          class="lorebook-tree-branch__actions"
+          aria-label="世界书条目操作"
+          @click.prevent
+        >
+          <UiButton variant="secondary" size="sm" @click="move(-1)" :disabled="index === 0">
+            上移
+          </UiButton>
+          <UiButton
+            variant="secondary"
+            size="sm"
+            @click="move(1)"
+            :disabled="index >= siblingCount - 1"
+          >
+            下移
+          </UiButton>
           <UiButton variant="secondary" size="sm" @click="addChild">子项</UiButton>
-          <UiButton variant="secondary" tone="danger" size="sm" @click="$emit('remove')">删除</UiButton>
+          <UiButton variant="secondary" tone="danger" size="sm" @click="$emit('remove')">
+            删除
+          </UiButton>
         </ProductActionRow>
       </summary>
 
       <div class="lorebook-tree-branch__body">
         <UiFormGrid class="lorebook-tree-branch__grid">
-          <UiField variant="settings" label="关键词（逗号分隔）" :control-id="entryControlId('keys')">
+          <UiField
+            variant="settings"
+            label="关键词（逗号分隔）"
+            :control-id="entryControlId('keys')"
+          >
             <UiInput
               :id="entryControlId('keys')"
-              :model-value="localEntry.keys.join(', ')"
+              :model-value="entry.keys.join(', ')"
               type="text"
               variant="studio"
               @update:model-value="updateKeys(String($event))"
             />
           </UiField>
-          <UiField variant="settings" label="次级关键词（逗号分隔）" :control-id="entryControlId('secondary-keys')">
+          <UiField
+            variant="settings"
+            label="次级关键词（逗号分隔）"
+            :control-id="entryControlId('secondary-keys')"
+          >
             <UiInput
               :id="entryControlId('secondary-keys')"
-              :model-value="(localEntry.secondary_keys || []).join(', ')"
+              :model-value="(entry.secondary_keys || []).join(', ')"
               type="text"
               variant="studio"
               @update:model-value="updateSecondaryKeys(String($event))"
             />
           </UiField>
-          <UiField class="lorebook-tree-branch__field--full" variant="settings" label="内容" :control-id="entryControlId('content')">
-            <UiTextarea :id="entryControlId('content')" v-model="localEntry.content" rows="4" variant="studio" />
+          <UiField
+            class="lorebook-tree-branch__field--full"
+            variant="settings"
+            label="内容"
+            :control-id="entryControlId('content')"
+          >
+            <UiTextarea
+              :id="entryControlId('content')"
+              :model-value="entry.content"
+              rows="4"
+              variant="studio"
+              @update:model-value="updateStringField('content', $event)"
+            />
           </UiField>
           <UiField variant="settings" label="优先级" :control-id="entryControlId('priority')">
             <UiNumberField
               :input-id="entryControlId('priority')"
-              v-model="localEntry.priority"
+              :model-value="entry.priority"
               aria-label="世界书条目优先级"
               :min="0"
               :step="10"
               variant="studio"
+              @update:model-value="updateNumberField('priority', $event ?? 0)"
             />
           </UiField>
           <UiField variant="settings" label="注入位置" :control-id="entryControlId('position')">
             <UiSelect
               :id="entryControlId('position')"
-              v-model="localEntry.position"
+              :model-value="entry.position"
               :options="LOREBOOK_POSITION_OPTIONS"
               variant="studio"
+              @change="updateStringField('position', String($event))"
             />
           </UiField>
           <UiField variant="settings" label="深度" :control-id="entryControlId('depth')">
             <UiNumberField
               :input-id="entryControlId('depth')"
-              v-model="localEntry.depth"
+              :model-value="entry.depth"
               aria-label="世界书条目深度"
               :min="0"
               variant="studio"
+              @update:model-value="updateNumberField('depth', $event ?? 0)"
             />
           </UiField>
           <UiField variant="settings" label="概率" :control-id="entryControlId('probability')">
             <UiNumberField
               :input-id="entryControlId('probability')"
-              :model-value="localEntry.probability ?? null"
+              :model-value="entry.probability ?? null"
               aria-label="世界书条目概率"
               :min="0"
               :max="100"
               variant="studio"
-              @update:model-value="value => { if (value !== null) localEntry.probability = value }"
+              @update:model-value="updateProbability"
             />
           </UiField>
         </UiFormGrid>
 
         <div class="lorebook-tree-branch__toggles">
-          <UiCheckbox v-model="localEntry.enabled" label="启用" />
-          <UiCheckbox v-model="localEntry.constant" label="常驻" />
-          <UiCheckbox v-model="localEntry.selective" label="选择触发" />
-          <UiCheckbox v-model="localEntry.prevent_recursion" label="防递归" />
-          <UiCheckbox v-model="localEntry.use_regex" label="用正则匹配" />
+          <UiCheckbox
+            :model-value="entry.enabled"
+            label="启用"
+            @change="updateBooleanField('enabled', $event)"
+          />
+          <UiCheckbox
+            :model-value="entry.constant"
+            label="常驻"
+            @change="updateBooleanField('constant', $event)"
+          />
+          <UiCheckbox
+            :model-value="entry.selective"
+            label="选择触发"
+            @change="updateBooleanField('selective', $event)"
+          />
+          <UiCheckbox
+            :model-value="entry.prevent_recursion"
+            label="防递归"
+            @change="updateBooleanField('prevent_recursion', $event)"
+          />
+          <UiCheckbox
+            :model-value="entry.use_regex"
+            label="用正则匹配"
+            @change="updateBooleanField('use_regex', $event)"
+          />
         </div>
 
-        <div v-if="localEntry.children.length > 0" class="lorebook-tree-branch__children">
+        <div v-if="entry.children.length > 0" class="lorebook-tree-branch__children">
           <LorebookTreeBranch
-            v-for="(child, childIndex) in localEntry.children"
+            v-for="(child, childIndex) in entry.children"
             :key="child.id"
             :entry="child"
             :index="childIndex"
-            :sibling-count="localEntry.children.length"
+            :sibling-count="entry.children.length"
             @update:entry="replaceChild(childIndex, $event)"
             @remove="removeChild(childIndex)"
             @move="moveChild(childIndex, $event)"
@@ -116,10 +180,8 @@ import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import UiField from '@/components/ui/UiField.vue'
 import UiFormGrid from '@/components/ui/UiFormGrid.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
-import { nextTick, ref, watch } from 'vue'
 import type { LorebookEntryNode } from '@/types/characterStudio'
 import type { UiSelectOption } from '@/components/ui/selectTypes'
-import { deepClone } from '@/utils/deepClone'
 
 const LOREBOOK_POSITION_OPTIONS: UiSelectOption[] = [
   { label: 'before_char', value: 'before_char' },
@@ -139,70 +201,93 @@ const emit = defineEmits<{
   (e: 'move', offset: -1 | 1): void
 }>()
 
-const localEntry = ref<LorebookEntryNode>(deepClone(props.entry))
-let syncing = false
-
-watch(() => props.entry, value => {
-  syncing = true
-  localEntry.value = deepClone(value)
-  void nextTick(() => {
-    syncing = false
-  })
-}, { deep: true, immediate: true })
-
-watch(localEntry, value => {
-  if (syncing) return
-  emit('update:entry', deepClone(value))
-}, { deep: true })
-
 function splitCsv(value: string) {
-  return value.split(/[,，]/).map(item => item.trim()).filter(Boolean)
+  return value
+    .split(/[,，]/)
+    .map(item => item.trim())
+    .filter(Boolean)
 }
 
 function entryControlId(field: string) {
-  return `lorebook-${localEntry.value.id}-${field}`
+  return `lorebook-${props.entry.id}-${field}`
 }
 
 function updateKeys(value: string) {
-  localEntry.value.keys = splitCsv(value)
+  updateEntry({ keys: splitCsv(value) })
 }
 
 function updateSecondaryKeys(value: string) {
-  localEntry.value.secondary_keys = splitCsv(value)
+  updateEntry({ secondary_keys: splitCsv(value) })
+}
+
+function updateEntry(patch: Partial<LorebookEntryNode>) {
+  emit('update:entry', { ...props.entry, ...patch })
+}
+
+function updateStringField(field: 'comment' | 'content' | 'position', value: string) {
+  updateEntry({ [field]: value })
+}
+
+function updateNumberField(field: 'priority' | 'depth', value: number) {
+  updateEntry({ [field]: value })
+}
+
+function updateBooleanField(
+  field: 'enabled' | 'constant' | 'selective' | 'prevent_recursion' | 'use_regex',
+  value: boolean
+) {
+  updateEntry({ [field]: value })
+}
+
+function updateProbability(value: number | null) {
+  updateEntry({ probability: value ?? undefined })
 }
 
 function addChild() {
-  localEntry.value.children.push({
-    id: `entry_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`,
-    comment: '新子条目',
-    keys: [],
-    secondary_keys: [],
-    content: '',
-    enabled: true,
-    constant: false,
-    selective: true,
-    priority: 100,
-    position: 'before_char',
-    depth: 4,
-    probability: 100,
-    prevent_recursion: true,
-    children: [],
+  updateEntry({
+    children: [
+      ...props.entry.children,
+      {
+        id: `entry_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`,
+        comment: '新子条目',
+        keys: [],
+        secondary_keys: [],
+        content: '',
+        enabled: true,
+        constant: false,
+        selective: true,
+        priority: 100,
+        position: 'before_char',
+        depth: 4,
+        probability: 100,
+        prevent_recursion: true,
+        children: [],
+      },
+    ],
   })
 }
 
 function replaceChild(index: number, value: LorebookEntryNode) {
-  localEntry.value.children[index] = value
+  updateEntry({
+    children: props.entry.children.map((child, childIndex) =>
+      childIndex === index ? value : child
+    ),
+  })
 }
 
 function removeChild(index: number) {
-  localEntry.value.children.splice(index, 1)
+  updateEntry({
+    children: props.entry.children.filter((_child, childIndex) => childIndex !== index),
+  })
 }
 
 function moveChild(index: number, offset: -1 | 1) {
   const target = index + offset
-  if (target < 0 || target >= localEntry.value.children.length) return
-  const [item] = localEntry.value.children.splice(index, 1)
-  localEntry.value.children.splice(target, 0, item!)
+  if (target < 0 || target >= props.entry.children.length) return
+  const children = [...props.entry.children]
+  const [item] = children.splice(index, 1)
+  children.splice(target, 0, item!)
+  updateEntry({ children })
 }
 
 function move(offset: -1 | 1) {
@@ -213,7 +298,11 @@ function move(offset: -1 | 1) {
 <style scoped>
 .lorebook-tree-branch {
   --lorebook-tree-branch-border-default: var(--studio-border-default);
-  --lorebook-tree-branch-surface-base: color-mix(in srgb, var(--color-surface-card) 82%, transparent);
+  --lorebook-tree-branch-surface-base: color-mix(
+    in srgb,
+    var(--color-surface-card) 82%,
+    transparent
+  );
   --lorebook-tree-branch-text-primary: var(--studio-text-strong);
 
   border-radius: 18px;

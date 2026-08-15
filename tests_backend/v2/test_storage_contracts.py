@@ -10,7 +10,7 @@ import sys
 import pytest
 from alembic.config import Config
 from alembic.script import ScriptDirectory
-from sqlalchemy import UniqueConstraint, insert, text
+from sqlalchemy import CheckConstraint, UniqueConstraint, insert, inspect, text
 from sqlalchemy.exc import IntegrityError
 
 from src.backend_v2.storage.database import create_sqlite_engine
@@ -31,6 +31,22 @@ from src.backend_v2.storage.schema import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 FOUNDATION_REVISION = "v2_foundation_20260810"
+
+
+def _stored_job_progress(status: str) -> str:
+    return json.dumps(
+        {
+            "executionMode": "sequential",
+            "jobStatus": status,
+            "totalItems": 0,
+            "completedItems": 0,
+            "failedItems": 0,
+            "skippedItems": 0,
+            "cancelledItems": 0,
+            "pools": [],
+        },
+        separators=(",", ":"),
+    )
 
 
 @pytest.fixture()
@@ -77,6 +93,10 @@ def test_schema_contains_backend_first_ownership_tables(engine) -> None:
             )
         }
     assert expected <= actual
+
+    assert metadata.tables["plugins"].c.id.type.length == 100
+    assert metadata.tables["plugin_versions"].c.plugin_id.type.length == 100
+    assert metadata.tables["plugin_current_versions"].c.plugin_id.type.length == 100
 
 
 def test_every_non_primary_foreign_key_has_a_leading_lookup_index() -> None:
@@ -192,6 +212,9 @@ def test_large_dataset_hot_queries_use_declared_indexes(engine) -> None:
                     "book_id": "scale-book",
                     "chapter_id": "scale-chapter",
                     "config_json": "{}",
+                    "latest_progress_json": _stored_job_progress(
+                        "queued" if index < 10 else "completed"
+                    ),
                     "finished_at": None if index < 10 else now,
                 }
                 for index in range(200)
@@ -356,13 +379,14 @@ def test_history_targets_null_out_and_asset_producers_do_not_own_current_assets(
             text(
                 "INSERT INTO jobs("
                 "id, kind, status, book_id, chapter_id, page_id, "
-                "config_json, target_display_json"
+                "config_json, latest_progress_json, target_display_json"
                 ") VALUES ("
                 "'history-job', 'export', 'completed', 'history-book', "
-                "'history-chapter', 'history-page', '{}', "
+                "'history-chapter', 'history-page', '{}', :progress, "
                 "'{\"book\":\"History\",\"chapter\":\"Chapter\"}'"
                 ")"
-            )
+            ),
+            {"progress": _stored_job_progress("completed")},
         )
         connection.execute(
             text(
@@ -568,19 +592,115 @@ def test_only_one_current_job_can_exist(engine) -> None:
         connection.execute(
             text(
                 "INSERT INTO jobs "
-                "(id, kind, status, config_json, created_at, updated_at) "
-                "VALUES ('job-1', 'translation', 'running', '{}', "
+                "(id, kind, status, config_json, latest_progress_json, "
+                "created_at, updated_at) "
+                "VALUES ('job-1', 'translation', 'running', '{}', :progress, "
                 "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
-            )
+            ),
+            {"progress": _stored_job_progress("running")},
         )
     with pytest.raises(IntegrityError):
         with engine.begin() as connection:
             connection.execute(
                 text(
                     "INSERT INTO jobs "
-                    "(id, kind, status, config_json, created_at, updated_at) "
-                    "VALUES ('job-2', 'export', 'pausing', '{}', "
+                    "(id, kind, status, config_json, latest_progress_json, "
+                    "created_at, updated_at) "
+                    "VALUES ('job-2', 'export', 'pausing', '{}', :progress, "
                     "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                ),
+                {"progress": _stored_job_progress("pausing")},
+            )
+
+
+def test_continuation_current_image_flags_are_unique(engine) -> None:
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO books(id, kind, title) "
+                "VALUES ('image-book', 'library', 'Images')"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO continuation_projects(id, book_id) "
+                "VALUES ('image-project', 'image-book')"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO continuation_pages(id, project_id, ordinal) "
+                "VALUES ('image-page', 'image-project', 1)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO continuation_characters(id, project_id, name) "
+                "VALUES ('image-character', 'image-project', 'Character')"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO continuation_character_forms(id, character_id, name) "
+                "VALUES ('image-form', 'image-character', 'Default')"
+            )
+        )
+        for index in range(8):
+            connection.execute(
+                text(
+                    "INSERT INTO assets("
+                    "id, relative_path, mime_type, checksum, byte_size"
+                    ") VALUES (:id, :path, 'image/png', :checksum, 1)"
+                ),
+                {
+                    "id": f"image-asset-{index}",
+                    "path": f"objects/image-{index}.png",
+                    "checksum": f"{index:064x}",
+                },
+            )
+        connection.execute(
+            text(
+                "INSERT INTO continuation_image_versions("
+                "id, continuation_page_id, asset_id, thumbnail_asset_id, "
+                "version, is_active"
+                ") VALUES ("
+                "'page-version-1', 'image-page', 'image-asset-0', "
+                "'image-asset-1', 1, 1)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO continuation_form_image_versions("
+                "id, form_id, asset_id, thumbnail_asset_id, version, is_adopted"
+                ") VALUES ("
+                "'form-version-1', 'image-form', 'image-asset-4', "
+                "'image-asset-5', 1, 1)"
+            )
+        )
+
+    with pytest.raises(IntegrityError):
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO continuation_image_versions("
+                    "id, continuation_page_id, asset_id, thumbnail_asset_id, "
+                    "version, is_active"
+                    ") VALUES ("
+                    "'page-version-2', 'image-page', 'image-asset-2', "
+                    "'image-asset-3', 2, 1)"
+                )
+            )
+
+    with pytest.raises(IntegrityError):
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO continuation_form_image_versions("
+                    "id, form_id, asset_id, thumbnail_asset_id, version, "
+                    "is_adopted"
+                    ") VALUES ("
+                    "'form-version-2', 'image-form', 'image-asset-6', "
+                    "'image-asset-7', 2, 1)"
                 )
             )
 
@@ -635,6 +755,18 @@ def test_v2_foundation_builds_the_exact_schema_and_downgrades_cleanly(
             if not str(row[0]).startswith("sqlite_")
         }
         assert actual_tables == set(metadata.tables) | {"alembic_version"}
+        inspector = inspect(connection)
+        for table in metadata.tables.values():
+            expected_checks = {
+                str(constraint.name)
+                for constraint in table.constraints
+                if isinstance(constraint, CheckConstraint)
+            }
+            actual_checks = {
+                str(constraint["name"])
+                for constraint in inspector.get_check_constraints(table.name)
+            }
+            assert actual_checks == expected_checks, table.name
         index_sql = connection.execute(
             text(
                 "SELECT sql FROM sqlite_master "

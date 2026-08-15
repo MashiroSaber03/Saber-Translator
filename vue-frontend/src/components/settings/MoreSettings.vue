@@ -9,7 +9,11 @@
         control="checkbox"
         hint="开启后，消除文字模式会同时执行OCR识别，获取带有原文的干净背景图。适用于需要保留原文信息以便后续翻译或参考的场景。"
       >
-        <UiCheckbox v-model="localSettings.removeTextWithOcr" label="同时执行OCR识别" />
+        <UiCheckbox
+          :model-value="settingsStore.settings.removeTextWithOcr"
+          label="同时执行OCR识别"
+          @change="settingsStore.setRemoveTextWithOcr"
+        />
       </UiField>
     </ProductFormSection>
 
@@ -20,7 +24,11 @@
         control="checkbox"
         hint="开启后，LAMA 修复将使用原图尺寸进行处理（不缩放到1024px），可获得更高画质。需要更强的 GPU 和更多显存，处理速度会变慢。推荐 RTX 4060 或更高配置使用。适用于两种LAMA修复方法（速度优化和通用）。"
       >
-        <UiCheckbox v-model="localSettings.lamaDisableResize" label="禁用自动缩放" />
+        <UiCheckbox
+          :model-value="settingsStore.settings.lamaDisableResize"
+          label="禁用自动缩放"
+          @change="settingsStore.setLamaDisableResize"
+        />
       </UiField>
     </ProductFormSection>
 
@@ -31,7 +39,11 @@
         control="checkbox"
         hint="开启后，后端终端会打印详细的诊断日志（包括完整的消息结构、模型响应等），便于调试问题。影响所有翻译模式，默认关闭以保持日志简洁。"
       >
-        <UiCheckbox v-model="localSettings.enableVerboseLogs" label="详细日志" />
+        <UiCheckbox
+          :model-value="settingsStore.settings.enableVerboseLogs"
+          label="详细日志"
+          @change="settingsStore.setEnableVerboseLogs"
+        />
       </UiField>
     </ProductFormSection>
 
@@ -54,15 +66,17 @@
             data-testid="font-upload-input"
             class="more-settings__hidden-file-input"
             :accept="FONT_FILE_ACCEPT"
+            :disabled="isLoadingFonts || isUploadingFont"
             @files-change="handleFontUpload"
           />
           <UiButton
             variant="secondary"
             type="button"
             data-testid="font-upload-trigger"
+            :disabled="isLoadingFonts || isUploadingFont"
             @click="triggerFontUpload"
           >
-            选择字体文件
+            {{ isUploadingFont ? '上传中...' : isLoadingFonts ? '字体列表加载中...' : '选择字体文件' }}
           </UiButton>
           <span class="more-settings__font-upload-filename" data-testid="font-upload-filename">
             {{ selectedFontFileName || '未选择文件' }}
@@ -72,27 +86,16 @@
     </ProductFormSection>
 
     <ProductFormSection>
-      <template #title>缓存清理</template>
-      <UiFormGrid>
-        <UiField
-          variant="settings"
-          label="清理调试文件"
-          hint="清理调试过程中生成的临时文件"
-        >
-          <UiButton variant="secondary" @click="cleanDebugFiles" :disabled="isCleaning">
-            {{ isCleaning ? '清理中...' : '清理调试文件' }}
-          </UiButton>
-        </UiField>
-        <UiField
-          variant="settings"
-          label="清理临时文件"
-          hint="清理下载和处理过程中的临时文件"
-        >
-          <UiButton variant="secondary" @click="cleanTempFiles" :disabled="isCleaning">
-            {{ isCleaning ? '清理中...' : '清理临时文件' }}
-          </UiButton>
-        </UiField>
-      </UiFormGrid>
+      <template #title>存储维护</template>
+      <UiField
+        variant="settings"
+        label="修复临时文件记录"
+        hint="恢复中断的文件写入，并清理过期的未完成临时文件"
+      >
+        <UiButton variant="secondary" @click="recoverAssetJournal" :disabled="isRecoveringAssets">
+          {{ isRecoveringAssets ? '修复中...' : '检查并修复' }}
+        </UiButton>
+      </UiField>
     </ProductFormSection>
 
     <ProductFormSection>
@@ -112,15 +115,13 @@
 
 <script setup lang="ts">
 import UiField from '@/components/ui/UiField.vue'
-import UiFormGrid from '@/components/ui/UiFormGrid.vue'
 import ProductFormSection from '@/components/product/ProductFormSection.vue'
 import UiFileInput from '@/components/ui/UiFileInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
-import { ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import {
-  cleanV2DebugFiles,
   cleanV2TempFiles,
   listV2Fonts,
   uploadV2Font,
@@ -138,38 +139,22 @@ const settingsStore = useSettingsStore()
 const toast = useToast()
 
 const isLoadingFonts = ref(false)
-const fontList = ref<V2Font[]>([])
-const isCleaning = ref(false)
+const fontList = computed<V2Font[]>(() => settingsStore.fontCatalog)
+const isUploadingFont = ref(false)
+const isRecoveringAssets = ref(false)
 const fontInput = ref<InstanceType<typeof UiFileInput> | null>(null)
 const selectedFontFileName = ref('')
 
-const localSettings = ref({
-  removeTextWithOcr: settingsStore.settings.removeTextWithOcr || false,
-  enableVerboseLogs: settingsStore.settings.enableVerboseLogs || false,
-  lamaDisableResize: settingsStore.settings.lamaDisableResize || false
-})
-
-watch(() => localSettings.value.removeTextWithOcr, (val) => {
-  settingsStore.setRemoveTextWithOcr(val)
-})
-
-watch(() => localSettings.value.enableVerboseLogs, (val) => {
-  settingsStore.setEnableVerboseLogs(val)
-})
-
-watch(() => localSettings.value.lamaDisableResize, (val) => {
-  settingsStore.setLamaDisableResize(val)
-})
-
 async function refreshFontList() {
+  if (isLoadingFonts.value) return
   isLoadingFonts.value = true
   try {
-    fontList.value = await listV2Fonts()
+    const fonts = await listV2Fonts()
     settingsStore.hydrateResourceCatalogs(
-      fontList.value,
+      fonts,
       settingsStore.promptCatalog,
     )
-    toast.success(`获取到 ${fontList.value.length} 个字体`)
+    toast.success(`获取到 ${fonts.length} 个字体`)
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '获取字体列表失败'
     toast.error(errorMessage)
@@ -179,10 +164,12 @@ async function refreshFontList() {
 }
 
 function triggerFontUpload() {
+  if (isLoadingFonts.value || isUploadingFont.value) return
   fontInput.value?.click()
 }
 
 async function handleFontUpload(files: File[]) {
+  if (isLoadingFonts.value || isUploadingFont.value) return
   const file = files[0]
   if (!file) return
   selectedFontFileName.value = file.name
@@ -190,44 +177,36 @@ async function handleFontUpload(files: File[]) {
   if (!isSupportedFontFileName(file.name)) {
     toast.error(`不支持的字体格式，请上传 ${FONT_FILE_FORMATS_LABEL} 文件`)
     fontInput.value?.clear()
+    selectedFontFileName.value = ''
     return
   }
 
+  isUploadingFont.value = true
   try {
-    await uploadV2Font(file)
+    const uploadedFont = await uploadV2Font(file)
+    settingsStore.upsertFont(uploadedFont)
     toast.success(`字体 "${file.name}" 上传成功`)
-    await refreshFontList()
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '字体上传失败'
     toast.error(errorMessage)
   } finally {
+    isUploadingFont.value = false
     fontInput.value?.clear()
+    selectedFontFileName.value = ''
   }
 }
 
-async function cleanDebugFiles() {
-  isCleaning.value = true
-  try {
-    const result = await cleanV2DebugFiles()
-    toast.success(`已清理 ${result.removed} 个调试文件`)
-  } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : '清理失败'
-    toast.error(errorMessage)
-  } finally {
-    isCleaning.value = false
-  }
-}
-
-async function cleanTempFiles() {
-  isCleaning.value = true
+async function recoverAssetJournal() {
+  if (isRecoveringAssets.value) return
+  isRecoveringAssets.value = true
   try {
     const result = await cleanV2TempFiles()
-    toast.success(`已恢复或清理 ${result.recovered} 个临时记录`)
+    toast.success(`已处理 ${result.recovered} 个临时文件记录`)
   } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : '清理失败'
+    const errorMessage = error instanceof Error ? error.message : '存储修复失败'
     toast.error(errorMessage)
   } finally {
-    isCleaning.value = false
+    isRecoveringAssets.value = false
   }
 }
 </script>

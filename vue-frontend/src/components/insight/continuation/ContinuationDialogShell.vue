@@ -6,9 +6,11 @@ const props = withDefaults(defineProps<{
   title: string
   customClass?: string
   widthVariant?: 'default' | 'wide'
+  dismissible?: boolean
 }>(), {
   customClass: '',
   widthVariant: 'default',
+  dismissible: true,
 })
 
 const emit = defineEmits<{
@@ -20,7 +22,7 @@ const modalMaxWidth = computed(() => (
 ))
 
 function handleUpdate(value: boolean): void {
-  if (!value) {
+  if (!value && props.dismissible) {
     emit('close')
   }
 }
@@ -36,9 +38,11 @@ function handleUpdate(value: boolean): void {
     width="90%"
     :max-width="modalMaxWidth"
     max-height="90vh"
+    :show-close-button="dismissible"
+    :close-on-overlay="dismissible"
+    :close-on-esc="dismissible"
     footer-padding="16px 24px"
     @update:model-value="handleUpdate"
-    @close="emit('close')"
   >
     <slot />
 

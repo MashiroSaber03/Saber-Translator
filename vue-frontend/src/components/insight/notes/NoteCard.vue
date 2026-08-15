@@ -9,9 +9,14 @@ import UiIconButton from '@/components/ui/UiIconButton.vue'
 import type { UiIconName } from '@/components/ui/iconRegistry'
 import type { NoteData, NoteType } from '@/types/insight'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
+  busy?: boolean
+  editing?: boolean
   note: NoteData
-}>()
+}>(), {
+  busy: false,
+  editing: false,
+})
 
 const emit = defineEmits<{
   (event: 'delete', noteId: string): void
@@ -20,7 +25,7 @@ const emit = defineEmits<{
 }>()
 
 const noteTitleText = computed(() => {
-  return props.note.title || props.note.question || props.note.content || '未命名笔记'
+  return props.note.title
 })
 
 const cardLabel = computed(() => `笔记：${noteTitleText.value}`)
@@ -28,15 +33,15 @@ const editLabel = computed(() => `编辑笔记：${noteTitleText.value}`)
 const deleteLabel = computed(() => `删除笔记：${noteTitleText.value}`)
 
 const tagChips = computed<ProductChipItem[]>(() => {
-  return props.note.tags?.map(tag => ({
+  return props.note.tags.map(tag => ({
     id: tag,
     label: tag,
     tone: 'neutral',
-  })) ?? []
+  }))
 })
 
 const citationChips = computed<ProductChipItem[]>(() => {
-  const citations = props.note.citations ?? []
+  const citations = props.note.citations
   const visibleCitations: ProductChipItem[] = citations.slice(0, 3).map(citation => ({
     id: citation.page,
     label: `第${citation.page}页`,
@@ -66,8 +71,7 @@ const pageChips = computed<ProductChipItem[]>(() => {
   }]
 })
 
-function formatDate(dateStr?: string): string {
-  if (!dateStr) return ''
+function formatDate(dateStr: string): string {
   const date = new Date(dateStr)
   return date.toLocaleDateString('zh-CN', {
     month: 'short',
@@ -106,6 +110,7 @@ function showPage(id: string | number): void {
       <UiIconButton
         :label="editLabel"
         size="sm"
+        :disabled="busy || editing"
         @click.stop="emit('edit', note)"
       >
         <UiIcon name="pencil" />
@@ -114,6 +119,7 @@ function showPage(id: string | number): void {
         :label="deleteLabel"
         variant="danger"
         size="sm"
+        :disabled="busy || editing"
         @click.stop="emit('delete', note.id)"
       >
         <UiIcon name="trash" />
@@ -124,11 +130,12 @@ function showPage(id: string | number): void {
       variant="toolbar"
       class="note-card__open-button"
       :aria-label="editLabel"
+      :disabled="busy || editing"
       @click="emit('edit', note)"
     >
-      <span v-if="note.title" class="note-card__title">{{ note.title }}</span>
+      <span class="note-card__title">{{ note.title }}</span>
       <span v-if="note.type === 'qa'" class="note-card__content">
-        <span class="note-card__qa-preview">Q: {{ note.question?.substring(0, 60) }}...</span>
+        <span class="note-card__qa-preview">Q: {{ note.question }}</span>
       </span>
       <span v-else class="note-card__content">{{ note.content }}</span>
 
@@ -195,9 +202,13 @@ function showPage(id: string | number): void {
 }
 
 .note-card__qa-preview {
+  display: -webkit-box;
+  overflow: hidden;
   color: var(--insight-text-secondary);
   font-size: 13px;
   font-style: italic;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
 }
 
 .note-card__tags {

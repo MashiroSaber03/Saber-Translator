@@ -7,8 +7,10 @@ import math
 import re
 from typing import Any, Mapping
 
-from src.backend_v2.serialization import canonical_json
-from src.backend_v2.storage.defaults import default_translation_settings
+from src.backend_v2.storage.defaults import (
+    TRANSLATION_SETTINGS_SCHEMA_VERSION,
+    default_translation_settings,
+)
 from src.shared.ai_providers import (
     CHAT_CAPABILITY,
     EMBEDDING_CAPABILITY,
@@ -32,17 +34,10 @@ APP_SETTING_DOMAINS = frozenset(
         "workflow_preferences",
         "web_import",
         "insight",
-        "ocr",
-        "detection",
-        "hq",
-        "proofreading",
-        "misc",
-        "inpainting",
-        "rendering",
     }
 )
 APP_SETTING_SCHEMA_VERSIONS = {
-    domain: (3 if domain == "translation" else 1)
+    domain: (TRANSLATION_SETTINGS_SCHEMA_VERSION if domain == "translation" else 1)
     for domain in APP_SETTING_DOMAINS
 }
 PROVIDER_SETTING_SCHEMA_VERSION = 1
@@ -59,7 +54,14 @@ PROVIDER_CAPABILITIES = {
     "insight_reranker": RERANK_CAPABILITY,
     "insight_image_gen": IMAGE_GEN_CAPABILITY,
 }
-_PROOFREADING_DOMAIN = re.compile(r"^proofreading_\d+$")
+_PROOFREADING_ROUND_ID = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-"
+    r"[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+)
+_PROOFREADING_DOMAIN = re.compile(
+    r"^proofreading_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-"
+    r"[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+)
 _SECRET_KEYS = frozenset(
     {
         "apikey",
@@ -86,38 +88,79 @@ _WORKFLOW_MODES = frozenset(
         "clear-all",
     }
 )
-_PROVIDER_PAYLOAD_FIELDS = frozenset(
-    {
-        "modelName",
-        "customBaseUrl",
-        "openaiOptions",
-        "prompt",
-        "translationMode",
-        "promptMode",
-        "batchSize",
-        "minImageSize",
-        "imageMaxSize",
-        "rpmLimit",
-        "topK",
-        "transportRetries",
-        "businessRetries",
-        "timeoutSeconds",
-        "version",
-        "sourceLanguage",
-    }
+_PROVIDER_PAYLOAD_FIELDS_BY_DOMAIN = {
+    "translation": frozenset(
+        {"modelName", "customBaseUrl", "openaiOptions", "translationMode"}
+    ),
+    "hq": frozenset(
+        {"modelName", "customBaseUrl", "openaiOptions", "batchSize", "prompt"}
+    ),
+    "plugin_agent": frozenset(
+        {"modelName", "customBaseUrl", "openaiOptions"}
+    ),
+    "ai_vision_ocr": frozenset(
+        {
+            "modelName",
+            "customBaseUrl",
+            "openaiOptions",
+            "prompt",
+            "promptMode",
+            "minImageSize",
+        }
+    ),
+}
+_PROOFREADING_PROVIDER_PAYLOAD_FIELDS = frozenset(
+    {"modelName", "customBaseUrl", "openaiOptions", "batchSize", "prompt"}
 )
+_INSIGHT_PROVIDER_PAYLOAD_FIELDS = {
+    "insight_vlm": frozenset(
+        {"modelName", "customBaseUrl", "openaiOptions", "imageMaxSize"}
+    ),
+    "insight_chat": frozenset(
+        {"modelName", "customBaseUrl", "openaiOptions"}
+    ),
+    "insight_embedding": frozenset(
+        {
+            "modelName",
+            "customBaseUrl",
+            "rpmLimit",
+            "transportRetries",
+            "businessRetries",
+            "timeoutSeconds",
+        }
+    ),
+    "insight_reranker": frozenset(
+        {
+            "modelName",
+            "customBaseUrl",
+            "transportRetries",
+            "businessRetries",
+            "timeoutSeconds",
+        }
+    ),
+    "insight_image_gen": frozenset(
+        {
+            "modelName",
+            "customBaseUrl",
+            "transportRetries",
+            "businessRetries",
+            "timeoutSeconds",
+        }
+    ),
+}
+_WEB_IMPORT_AGENT_PROVIDER_PAYLOAD_FIELDS = frozenset(
+    {"modelName", "customBaseUrl"}
+)
+
+
+def is_proofreading_provider_domain(value: object) -> bool:
+    return isinstance(value, str) and _PROOFREADING_DOMAIN.fullmatch(value) is not None
 
 
 def _object(value: object, label: str) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise ValueError(f"{label} must be an object")
     return deepcopy(dict(value))
-
-
-def _bounded_json(value: object, label: str, maximum: int = 512 * 1024) -> None:
-    encoded = canonical_json(value).encode("utf-8")
-    if len(encoded) > maximum:
-        raise ValueError(f"{label} exceeds {maximum} bytes")
 
 
 def _reject_secret_fields(value: object, path: str) -> None:
@@ -163,13 +206,16 @@ def _integer(
     path: str,
     *,
     minimum: int,
-    maximum: int,
+    maximum: int | None = None,
 ) -> int:
     if (
         isinstance(value, bool)
         or not isinstance(value, int)
-        or not minimum <= value <= maximum
+        or value < minimum
+        or (maximum is not None and value > maximum)
     ):
+        if maximum is None:
+            raise ValueError(f"{path} must be an integer of at least {minimum}")
         raise ValueError(f"{path} must be an integer from {minimum} to {maximum}")
     return value
 
@@ -187,21 +233,25 @@ def _validate_openai_options(
     extra_body_key = "extra_body" if wire_format else "extraBody"
     allowed_request = {force_json_key, "temperature", extra_body_key}
     unknown = set(request) - allowed_request
-    if unknown or force_json_key not in request:
+    required_request = (
+        allowed_request if wire_format else {force_json_key}
+    )
+    if unknown or not required_request.issubset(request):
         raise ValueError(f"{path}.request has invalid fields")
     if not isinstance(request[force_json_key], bool):
         raise ValueError(f"{path}.request.{force_json_key} must be boolean")
     if "temperature" in request:
-        temperature = _finite_number(
-            request["temperature"],
-            f"{path}.request.temperature",
-        )
-        if not 0 <= temperature <= 2:
-            raise ValueError(f"{path}.request.temperature must be from 0 to 2")
-    if extra_body_key in request and not isinstance(
-        request[extra_body_key],
-        Mapping,
-    ):
+        if request["temperature"] is None:
+            if not wire_format:
+                raise ValueError(f"{path}.request.temperature must be from 0 to 2")
+        else:
+            temperature = _finite_number(
+                request["temperature"],
+                f"{path}.request.temperature",
+            )
+            if not 0 <= temperature <= 2:
+                raise ValueError(f"{path}.request.temperature must be from 0 to 2")
+    if extra_body_key in request and not isinstance(request[extra_body_key], Mapping):
         raise ValueError(f"{path}.request.{extra_body_key} must be an object")
     execution = _object(options["execution"], f"{path}.execution")
     use_stream_key = "use_stream" if wire_format else "useStream"
@@ -285,9 +335,10 @@ def _require_provider(value: object, capability: str, path: str) -> str:
 def _validate_proofreading_rounds(payload: Mapping[str, object]) -> None:
     proofreading = _object(payload["proofreading"], "translation.proofreading")
     rounds = proofreading["rounds"]
-    if not isinstance(rounds, list) or len(rounds) > 20:
-        raise ValueError("translation.proofreading.rounds must contain at most 20 items")
+    if not isinstance(rounds, list):
+        raise ValueError("translation.proofreading.rounds must be an array")
     expected = {
+        "id",
         "name",
         "provider",
         "modelName",
@@ -296,10 +347,17 @@ def _validate_proofreading_rounds(payload: Mapping[str, object]) -> None:
         "batchSize",
         "prompt",
     }
+    round_ids: set[str] = set()
     for index, value in enumerate(rounds):
         path = f"translation.proofreading.rounds[{index}]"
         round_config = _object(value, path)
         _exact_keys(round_config, expected, path)
+        round_id = round_config["id"]
+        if not isinstance(round_id, str) or not _PROOFREADING_ROUND_ID.fullmatch(round_id):
+            raise ValueError(f"{path}.id must be a UUID")
+        if round_id in round_ids:
+            raise ValueError("translation.proofreading.rounds must use unique IDs")
+        round_ids.add(round_id)
         _require_provider(
             round_config["provider"],
             HQ_TRANSLATION_CAPABILITY,
@@ -314,7 +372,10 @@ def _validate_proofreading_rounds(payload: Mapping[str, object]) -> None:
 
 def _validate_translation(payload: dict[str, Any], schema_version: int) -> None:
     if payload.get("settingsSchemaVersion") != schema_version:
-        raise ValueError("translation settings schema version must be 3")
+        raise ValueError(
+            "translation settings schema version must be "
+            f"{TRANSLATION_SETTINGS_SCHEMA_VERSION}"
+        )
     _validate_shape(payload, default_translation_settings(), "translation")
     _validate_proofreading_rounds(payload)
     if payload["ocrEngine"] not in {
@@ -336,6 +397,27 @@ def _validate_translation(payload: dict[str, Any], schema_version: int) -> None:
         "paddleocr_vl",
     }:
         raise ValueError("translation.aiVisionOcr.promptMode is invalid")
+    if payload["baiduOcr"]["version"] not in {"standard", "high_precision"}:
+        raise ValueError("translation.baiduOcr.version is invalid")
+    if payload["baiduOcr"]["sourceLanguage"] not in {
+        "auto_detect",
+        "CHN_ENG",
+        "ENG",
+        "JAP",
+        "KOR",
+        "FRE",
+        "GER",
+        "RUS",
+    }:
+        raise ValueError("translation.baiduOcr.sourceLanguage is invalid")
+    hybrid = payload["hybridOcr"]
+    if hybrid["secondaryEngine"] not in {"manga_ocr", "48px_ocr"}:
+        raise ValueError("translation.hybridOcr.secondaryEngine is invalid")
+    if hybrid["enabled"] and (
+        payload["ocrEngine"] not in {"manga_ocr", "48px_ocr"}
+        or hybrid["secondaryEngine"] == payload["ocrEngine"]
+    ):
+        raise ValueError("translation hybrid OCR engine pair is invalid")
     for key in ("auxYoloConfThreshold", "auxYoloOverlapThreshold"):
         value = _finite_number(payload[key], f"translation.{key}")
         if not 0 <= value <= 1:
@@ -348,6 +430,44 @@ def _validate_translation(payload: dict[str, Any], schema_version: int) -> None:
         raise ValueError(
             "translation.saberYoloRefineOverlapThreshold must be from 0 to 100"
         )
+    min_area = _finite_number(
+        payload["minTextBlockAreaPercent"],
+        "translation.minTextBlockAreaPercent",
+    )
+    if not 0 <= min_area <= 100:
+        raise ValueError("translation.minTextBlockAreaPercent must be from 0 to 100")
+    confidence = _finite_number(
+        hybrid["confidenceThreshold"],
+        "translation.hybridOcr.confidenceThreshold",
+    )
+    if not 0 <= confidence <= 1:
+        raise ValueError(
+            "translation.hybridOcr.confidenceThreshold must be from 0 to 1"
+        )
+    box_expand = payload["boxExpand"]
+    for key in ("ratio", "top", "bottom", "left", "right"):
+        value = _finite_number(box_expand[key], f"translation.boxExpand.{key}")
+        if not 0 <= value <= 50:
+            raise ValueError(f"translation.boxExpand.{key} must be from 0 to 50")
+    precise_mask = payload["preciseMask"]
+    _integer(
+        precise_mask["dilateSize"],
+        "translation.preciseMask.dilateSize",
+        minimum=0,
+    )
+    mask_expand = _finite_number(
+        precise_mask["boxExpandRatio"],
+        "translation.preciseMask.boxExpandRatio",
+    )
+    if not 0 <= mask_expand <= 100:
+        raise ValueError(
+            "translation.preciseMask.boxExpandRatio must be from 0 to 100"
+        )
+    _integer(
+        payload["aiVisionOcr"]["minImageSize"],
+        "translation.aiVisionOcr.minImageSize",
+        minimum=0,
+    )
     _require_provider(
         payload["translation"]["provider"],
         TRANSLATION_CAPABILITY,
@@ -372,18 +492,11 @@ def _validate_translation(payload: dict[str, Any], schema_version: int) -> None:
         payload["parallel"]["deepLearningLockSize"],
         "translation.parallel.deepLearningLockSize",
         minimum=1,
-        maximum=4,
     )
     _integer(
         payload["hqTranslation"]["batchSize"],
         "translation.hqTranslation.batchSize",
         minimum=1,
-        maximum=10,
-    )
-    _integer(
-        payload["proofreading"]["maxRetries"],
-        "translation.proofreading.maxRetries",
-        minimum=0,
         maximum=10,
     )
 
@@ -427,9 +540,11 @@ def _validate_web_import(payload: dict[str, Any]) -> None:
         "advanced": {"bypassProxy"},
         "ui": {"showAgentLogs", "autoImport"},
     }
+    sections: dict[str, dict[str, Any]] = {}
     for key, fields in nested_fields.items():
         section = _object(payload[key], f"web_import.{key}")
         _exact_keys(section, fields, f"web_import.{key}")
+        sections[key] = section
     preprocess = _object(payload["imagePreprocess"], "web_import.imagePreprocess")
     _exact_keys(
         preprocess,
@@ -454,28 +569,55 @@ def _validate_web_import(payload: dict[str, Any]) -> None:
         {"enabled", "targetFormat"},
         "web_import.imagePreprocess.formatConvert",
     )
-    agent = payload["agent"]
-    assert isinstance(agent, Mapping)
+    agent = sections["agent"]
     _require_provider(
         agent["provider"],
         WEB_IMPORT_AGENT_CAPABILITY,
         "web_import.agent.provider",
     )
+    for path, value in (
+        ("agent.customBaseUrl", agent["customBaseUrl"]),
+        ("agent.modelName", agent["modelName"]),
+        ("extraction.prompt", payload["extraction"]["prompt"]),
+    ):
+        if not isinstance(value, str):
+            raise ValueError(f"web_import.{path} must be a string")
+    for path, value in (
+        ("agent.useStream", agent["useStream"]),
+        ("agent.forceJsonOutput", agent["forceJsonOutput"]),
+        ("download.useReferer", payload["download"]["useReferer"]),
+        ("imagePreprocess.enabled", preprocess["enabled"]),
+        ("imagePreprocess.autoRotate", preprocess["autoRotate"]),
+        ("imagePreprocess.compression.enabled", compression["enabled"]),
+        ("imagePreprocess.formatConvert.enabled", conversion["enabled"]),
+        ("advanced.bypassProxy", payload["advanced"]["bypassProxy"]),
+        ("ui.showAgentLogs", payload["ui"]["showAgentLogs"]),
+        ("ui.autoImport", payload["ui"]["autoImport"]),
+    ):
+        if not isinstance(value, bool):
+            raise ValueError(f"web_import.{path} must be boolean")
+    if not isinstance(conversion["targetFormat"], str):
+        raise ValueError("web_import targetFormat must be a string")
     if conversion["targetFormat"] not in {"jpeg", "png", "webp", "original"}:
         raise ValueError("web_import targetFormat is invalid")
-    for path, value, minimum, maximum in (
-        ("agent.maxRetries", agent["maxRetries"], 0, 100),
-        ("agent.timeout", agent["timeout"], 1, 3600),
-        ("extraction.maxIterations", payload["extraction"]["maxIterations"], 1, 100),
-        ("download.concurrency", payload["download"]["concurrency"], 1, 32),
-        ("download.timeout", payload["download"]["timeout"], 1, 3600),
-        ("download.retries", payload["download"]["retries"], 0, 100),
-        ("download.delay", payload["download"]["delay"], 0, 60_000),
-        ("compression.quality", compression["quality"], 1, 100),
-        ("compression.maxWidth", compression["maxWidth"], 0, 100_000),
-        ("compression.maxHeight", compression["maxHeight"], 0, 100_000),
+    for path, value, minimum in (
+        ("agent.maxRetries", agent["maxRetries"], 0),
+        ("agent.timeout", agent["timeout"], 1),
+        ("extraction.maxIterations", payload["extraction"]["maxIterations"], 1),
+        ("download.concurrency", payload["download"]["concurrency"], 1),
+        ("download.timeout", payload["download"]["timeout"], 1),
+        ("download.retries", payload["download"]["retries"], 0),
+        ("download.delay", payload["download"]["delay"], 0),
+        ("compression.maxWidth", compression["maxWidth"], 0),
+        ("compression.maxHeight", compression["maxHeight"], 0),
     ):
-        _integer(value, f"web_import.{path}", minimum=minimum, maximum=maximum)
+        _integer(value, f"web_import.{path}", minimum=minimum)
+    _integer(
+        compression["quality"],
+        "web_import.compression.quality",
+        minimum=1,
+        maximum=100,
+    )
 
 
 def _validate_insight(payload: dict[str, Any]) -> None:
@@ -501,13 +643,11 @@ def _validate_insight(payload: dict[str, Any]) -> None:
         batch["pagesPerBatch"],
         "insight.analysis.batch.pagesPerBatch",
         minimum=1,
-        maximum=20,
     )
     _integer(
         batch["contextBatchCount"],
         "insight.analysis.batch.contextBatchCount",
         minimum=0,
-        maximum=10,
     )
     if batch["architecturePreset"] not in {
         "simple",
@@ -518,10 +658,10 @@ def _validate_insight(payload: dict[str, Any]) -> None:
     }:
         raise ValueError("insight architecturePreset is invalid")
     layers = batch["customLayers"]
-    if not isinstance(layers, list) or len(layers) > 8:
-        raise ValueError("insight customLayers must contain at most 8 items")
+    if not isinstance(layers, list):
+        raise ValueError("insight customLayers must be an array")
     if batch["architecturePreset"] == "custom" and len(layers) < 2:
-        raise ValueError("custom Insight architecture must contain 2-8 layers")
+        raise ValueError("custom Insight architecture must contain at least 2 layers")
     for index, layer_value in enumerate(layers):
         layer = _object(
             layer_value,
@@ -538,7 +678,6 @@ def _validate_insight(payload: dict[str, Any]) -> None:
             layer["unitsPerGroup"],
             "insight custom layer unitsPerGroup",
             minimum=0,
-            maximum=100,
         )
         if not isinstance(layer["alignToChapter"], bool):
             raise ValueError("insight custom layer alignToChapter must be boolean")
@@ -577,7 +716,6 @@ def validate_setting_payload(
             f"{expected_schema_version}"
         )
     result = _object(payload, f"{domain} setting")
-    _bounded_json(result, f"{domain} setting")
     _reject_secret_fields(result, domain)
     if domain == "translation":
         _validate_translation(result, schema_version)
@@ -587,11 +725,6 @@ def validate_setting_payload(
         _validate_web_import(result)
     elif domain == "insight":
         _validate_insight(result)
-    elif domain == "proofreading":
-        if set(result) - {"enabled"} or (
-            "enabled" in result and not isinstance(result["enabled"], bool)
-        ):
-            raise ValueError("proofreading setting is invalid")
     return result
 
 
@@ -608,7 +741,6 @@ def validate_provider_setting_payload(
             f"{PROVIDER_SETTING_SCHEMA_VERSION}"
         )
     result = _object(payload, "provider setting payload")
-    _bounded_json(result, "provider setting payload", 256 * 1024)
     _reject_secret_fields(result, f"provider_settings.{domain}.{provider}")
     if domain in {"web_import_firecrawl", "web_import_http"}:
         expected_provider = "firecrawl" if domain == "web_import_firecrawl" else "headers"
@@ -616,17 +748,55 @@ def validate_provider_setting_payload(
             raise ValueError(f"{domain} provider setting is invalid")
         return result
     capability = PROVIDER_CAPABILITIES.get(domain)
-    if capability is None and _PROOFREADING_DOMAIN.fullmatch(domain):
+    if capability is None and is_proofreading_provider_domain(domain):
         capability = HQ_TRANSLATION_CAPABILITY
     if capability is None:
         if domain == "ocr" and provider == "baidu":
-            allowed = {"version", "sourceLanguage"}
-            if set(result) - allowed:
-                raise ValueError("ocr provider setting has unknown fields")
+            _exact_keys(
+                result,
+                {"version", "sourceLanguage"},
+                "provider_settings.ocr",
+            )
+            if result["version"] not in {"standard", "high_precision"}:
+                raise ValueError("provider_settings.ocr.version is invalid")
+            if result["sourceLanguage"] not in {
+                "auto_detect",
+                "CHN_ENG",
+                "ENG",
+                "JAP",
+                "KOR",
+                "FRE",
+                "GER",
+                "RUS",
+            }:
+                raise ValueError("provider_settings.ocr.sourceLanguage is invalid")
             return result
         raise ValueError(f"unsupported provider setting domain: {domain}")
     _require_provider(provider, capability, f"provider_settings.{domain}.provider")
-    unknown = set(result) - _PROVIDER_PAYLOAD_FIELDS
+    expected_insight_fields = _INSIGHT_PROVIDER_PAYLOAD_FIELDS.get(domain)
+    if domain == "web_import_agent":
+        _exact_keys(
+            result,
+            _WEB_IMPORT_AGENT_PROVIDER_PAYLOAD_FIELDS,
+            "provider_settings.web_import_agent",
+        )
+    elif expected_insight_fields is not None:
+        _exact_keys(
+            result,
+            expected_insight_fields,
+            f"provider_settings.{domain}",
+        )
+    if is_proofreading_provider_domain(domain):
+        allowed_fields = _PROOFREADING_PROVIDER_PAYLOAD_FIELDS
+    elif domain in _PROVIDER_PAYLOAD_FIELDS_BY_DOMAIN:
+        allowed_fields = _PROVIDER_PAYLOAD_FIELDS_BY_DOMAIN[domain]
+    elif expected_insight_fields is not None:
+        allowed_fields = expected_insight_fields
+    elif domain == "web_import_agent":
+        allowed_fields = _WEB_IMPORT_AGENT_PROVIDER_PAYLOAD_FIELDS
+    else:
+        raise ValueError(f"unsupported provider setting domain: {domain}")
+    unknown = set(result) - allowed_fields
     if unknown:
         raise ValueError(
             "provider setting has unknown fields: " + ", ".join(sorted(unknown))
@@ -637,20 +807,56 @@ def validate_provider_setting_payload(
             f"provider_settings.{domain}.openaiOptions",
             wire_format=domain in {"insight_vlm", "insight_chat"},
         )
+    if "translationMode" in result and result["translationMode"] not in {
+        "batch",
+        "single",
+    }:
+        raise ValueError("provider_settings.translation.translationMode is invalid")
+    if "promptMode" in result and result["promptMode"] not in {
+        "normal",
+        "json",
+        "paddleocr_vl",
+    }:
+        raise ValueError("provider_settings.ai_vision_ocr.promptMode is invalid")
     for key, value in result.items():
         if key == "openaiOptions":
             continue
-        if key in {
-            "batchSize",
-            "minImageSize",
-            "imageMaxSize",
-            "rpmLimit",
-            "topK",
-            "transportRetries",
-            "businessRetries",
-            "timeoutSeconds",
-        }:
-            _finite_number(value, f"provider_settings.{domain}.{key}")
+        if key == "batchSize":
+            _integer(
+                value,
+                f"provider_settings.{domain}.{key}",
+                minimum=1,
+                maximum=10,
+            )
+        elif key == "rpmLimit":
+            _integer(
+                value,
+                f"provider_settings.{domain}.{key}",
+                minimum=0,
+                maximum=100_000,
+            )
+        elif key in {"transportRetries", "businessRetries"}:
+            _integer(
+                value,
+                f"provider_settings.{domain}.{key}",
+                minimum=0,
+                maximum=100,
+            )
+        elif key in {"minImageSize", "imageMaxSize"}:
+            _integer(
+                value,
+                f"provider_settings.{domain}.{key}",
+                minimum=0,
+            )
+        elif key == "timeoutSeconds":
+            number = _finite_number(
+                value,
+                f"provider_settings.{domain}.{key}",
+            )
+            if number < 0:
+                raise ValueError(
+                    f"provider_settings.{domain}.{key} must be at least 0"
+                )
         elif not isinstance(value, str):
             raise ValueError(f"provider_settings.{domain}.{key} must be a string")
     return result
@@ -665,14 +871,29 @@ def validate_credential_secret(
     if domain == "ocr" and provider == "baidu":
         allowed = {"baidu_api_key", "baidu_secret_key"}
     elif domain == "ai_vision_ocr":
+        _require_provider(
+            provider,
+            VISION_OCR_CAPABILITY,
+            "credential.ai_vision_ocr.provider",
+        )
         allowed = {"ai_vision_api_key"}
     elif domain == "web_import_http" and provider == "headers":
         allowed = {"cookie", "headers"}
-    elif (
-        domain in PROVIDER_CAPABILITIES
-        or _PROOFREADING_DOMAIN.fullmatch(domain)
-        or domain == "web_import_firecrawl"
-    ):
+    elif domain == "web_import_firecrawl" and provider == "firecrawl":
+        allowed = {"api_key"}
+    elif domain in PROVIDER_CAPABILITIES:
+        _require_provider(
+            provider,
+            PROVIDER_CAPABILITIES[domain],
+            f"credential.{domain}.provider",
+        )
+        allowed = {"api_key"}
+    elif is_proofreading_provider_domain(domain):
+        _require_provider(
+            provider,
+            HQ_TRANSLATION_CAPABILITY,
+            f"credential.{domain}.provider",
+        )
         allowed = {"api_key"}
     else:
         raise ValueError(f"unsupported credential domain/provider: {domain}/{provider}")
@@ -687,17 +908,29 @@ def validate_credential_secret(
             + ", ".join(sorted(allowed))
         )
     if domain == "web_import_http":
-        if (
-            "cookie" in result
-            and not isinstance(result["cookie"], str)
-        ) or (
-            "headers" in result
-            and not isinstance(result["headers"], Mapping)
+        cookie = result.get("cookie")
+        headers = result.get("headers")
+        if cookie is not None and (
+            not isinstance(cookie, str) or not cookie.strip()
         ):
             raise ValueError("web import HTTP credential is invalid")
-    elif any(not isinstance(value, str) or not value for value in result.values()):
+        if headers is not None and (
+            not isinstance(headers, Mapping)
+            or not headers
+            or any(
+                not isinstance(key, str)
+                or not key.strip()
+                or not isinstance(value, str)
+                or not value.strip()
+                for key, value in headers.items()
+            )
+        ):
+            raise ValueError("web import HTTP credential is invalid")
+    elif any(
+        not isinstance(value, str) or not value.strip()
+        for value in result.values()
+    ):
         raise ValueError("credential secret values must be non-empty strings")
-    _bounded_json(result, "credential secret", 128 * 1024)
     return result
 
 
@@ -715,7 +948,6 @@ def validate_book_setting_payload(
     if domain != "insight":
         raise ValueError(f"unsupported book setting domain: {domain}")
     result = _object(payload, "book setting payload")
-    _bounded_json(result, "book setting payload")
     _reject_secret_fields(result, f"book_settings.{domain}")
     _validate_insight(result)
     return result

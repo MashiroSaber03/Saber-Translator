@@ -12,7 +12,7 @@ const {
   fetchModelsMock,
   getTranslationBootstrapMock,
   getWebImportDraftMock,
-  listAllWebImportDraftPagesMock,
+  listWebImportDraftPagesMock,
   updateWebImportSelectionMock,
   testFirecrawlConnectionMock,
   testAgentConnectionMock,
@@ -25,7 +25,7 @@ const {
   fetchModelsMock: vi.fn(),
   getTranslationBootstrapMock: vi.fn(),
   getWebImportDraftMock: vi.fn(),
-  listAllWebImportDraftPagesMock: vi.fn(),
+  listWebImportDraftPagesMock: vi.fn(),
   updateWebImportSelectionMock: vi.fn(),
   testFirecrawlConnectionMock: vi.fn(),
   testAgentConnectionMock: vi.fn(),
@@ -38,7 +38,7 @@ vi.mock('@/api/v2/webImport', () => ({
   commitWebImportDraft: commitWebImportDraftMock,
   createWebImportDraft: createWebImportDraftMock,
   getWebImportDraft: getWebImportDraftMock,
-  listAllWebImportDraftPages: listAllWebImportDraftPagesMock,
+  listWebImportDraftPages: listWebImportDraftPagesMock,
   testFirecrawlConnection: testFirecrawlConnectionMock,
   testAgentConnection: testAgentConnectionMock,
   updateWebImportSelection: updateWebImportSelectionMock,
@@ -48,9 +48,16 @@ vi.mock('@/api/v2/content', () => ({
   getTranslationBootstrap: getTranslationBootstrapMock,
 }))
 
-vi.mock('@/api/v2/jobs', () => ({
-  jobsApi: { events: jobEventsMock },
-}))
+vi.mock('@/api/v2/jobs', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/api/v2/jobs')>()
+  return {
+    ...actual,
+    jobsApi: {
+      ...actual.jobsApi,
+      events: jobEventsMock,
+    },
+  }
+})
 
 vi.mock('vue-router', () => ({
   useRoute: () => ({ query: {} }),
@@ -132,7 +139,7 @@ describe('WebImportModal', () => {
     fetchModelsMock.mockReset()
     getTranslationBootstrapMock.mockReset()
     getWebImportDraftMock.mockReset()
-    listAllWebImportDraftPagesMock.mockReset()
+    listWebImportDraftPagesMock.mockReset()
     updateWebImportSelectionMock.mockReset()
     testFirecrawlConnectionMock.mockReset()
     testAgentConnectionMock.mockReset()
@@ -160,19 +167,24 @@ describe('WebImportModal', () => {
       revision: 1,
       autoImport: false,
       candidateCount: 1,
+      selectedCount: 1,
       failedCount: 0,
       requestedEngine: 'auto',
       actualEngine: 'ai-agent',
       jobs: [{ id: 'job-1', kind: 'web_extract', status: 'completed' }],
     })
-    listAllWebImportDraftPagesMock.mockResolvedValue([
-      {
-        id: 'draft-page-1',
-        error: null,
-        thumbnailUrl: '/api/v2/assets/thumb-1',
-        sourceMediaUrl: '/api/v2/assets/media-1',
-      },
-    ])
+    listWebImportDraftPagesMock.mockResolvedValue({
+      items: [
+        {
+          id: 'draft-page-1',
+          selected: true,
+          error: null,
+          thumbnailUrl: '/api/v2/assets/thumb-1',
+          sourceMediaUrl: '/api/v2/assets/media-1',
+        },
+      ],
+      nextCursor: null,
+    })
     updateWebImportSelectionMock.mockResolvedValue({ revision: 2 })
     commitWebImportDraftMock.mockResolvedValue({
       status: 'queued',
@@ -208,6 +220,7 @@ describe('WebImportModal', () => {
       revision: 2,
       autoImport: true,
       candidateCount: 1,
+      selectedCount: 1,
       failedCount: 0,
       requestedEngine: 'auto',
       actualEngine: 'ai-agent',
@@ -323,9 +336,13 @@ describe('WebImportModal', () => {
       sourceUrl: string
       status: string
       revision: number
+      autoImport: boolean
       candidateCount: number
+      selectedCount: number
       failedCount: number
+      requestedEngine: string
       actualEngine: string
+      jobs: Array<{ id: string; kind: string; status: string }>
     }>()
     getWebImportDraftMock.mockReset()
     getWebImportDraftMock.mockReturnValueOnce(pendingDraft.promise)
@@ -350,11 +367,19 @@ describe('WebImportModal', () => {
       sourceUrl: 'https://example.com/chapter-1',
       status: 'ready',
       revision: 1,
+      autoImport: false,
       candidateCount: 0,
+      selectedCount: 0,
       failedCount: 0,
+      requestedEngine: 'auto',
       actualEngine: 'ai-agent',
+      jobs: [{ id: 'job-1', kind: 'web_extract', status: 'completed' }],
     })
     await flushPromises()
+
+    expect(webImportStore.modalVisible).toBe(false)
+    expect(webImportStore.status).toBe('idle')
+    expect(webImportStore.extractResult).toBeNull()
   })
 
   it('recovers a cancelled backend draft without locking the import form', async () => {
@@ -375,6 +400,7 @@ describe('WebImportModal', () => {
       revision: 2,
       autoImport: false,
       candidateCount: 0,
+      selectedCount: 0,
       failedCount: 0,
       requestedEngine: 'ai-agent',
       actualEngine: null,

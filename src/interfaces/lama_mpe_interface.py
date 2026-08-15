@@ -32,16 +32,21 @@ def get_activation(kind='tanh'):
     raise ValueError(f'Unknown activation kind {kind}')
 
 
-def resize_keep_aspect(img: np.ndarray, size: int) -> np.ndarray:
+def resize_keep_aspect(
+    img: np.ndarray,
+    size: int,
+    *,
+    interpolation: int,
+) -> np.ndarray:
     """保持宽高比缩放图像"""
     h, w = img.shape[:2]
     if h > w:
         new_h = size
-        new_w = int(w * size / h)
+        new_w = max(1, int(w * size / h))
     else:
         new_w = size
-        new_h = int(h * size / w)
-    return cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+        new_h = max(1, int(h * size / w))
+    return cv2.resize(img, (new_w, new_h), interpolation=interpolation)
 
 
 # ============================================================
@@ -51,7 +56,7 @@ def resize_keep_aspect(img: np.ndarray, size: int) -> np.ndarray:
 class FourierUnit(nn.Module):
     def __init__(self, in_channels, out_channels, groups=1, spatial_scale_factor=None, 
                  spatial_scale_mode='bilinear', spectral_pos_encoding=False, 
-                 use_se=False, se_kwargs=None, ffc3d=False, fft_norm='ortho'):
+                 ffc3d=False, fft_norm='ortho'):
         super(FourierUnit, self).__init__()
         self.groups = groups
 
@@ -63,7 +68,6 @@ class FourierUnit(nn.Module):
         self.bn = torch.nn.BatchNorm2d(out_channels * 2)
         self.relu = torch.nn.ReLU(inplace=True)
 
-        self.use_se = use_se
         self.spatial_scale_factor = spatial_scale_factor
         self.spatial_scale_mode = spatial_scale_mode
         self.spectral_pos_encoding = spectral_pos_encoding
@@ -93,9 +97,6 @@ class FourierUnit(nn.Module):
             coords_vert = torch.linspace(0, 1, height)[None, None, :, None].expand(batch, 1, height, width).to(ffted)
             coords_hor = torch.linspace(0, 1, width)[None, None, None, :].expand(batch, 1, height, width).to(ffted)
             ffted = torch.cat((coords_vert, coords_hor, ffted), dim=1)
-
-        if self.use_se:
-            ffted = self.se(ffted)
 
         ffted = self.conv_layer(ffted)
         ffted = self.relu(self.bn(ffted))
@@ -242,7 +243,7 @@ class FFC_BN_ACT(nn.Module):
 
 class FFCResnetBlock(nn.Module):
     def __init__(self, dim, padding_type, norm_layer, activation_layer=nn.ReLU, dilation=1,
-                 spatial_transform_kwargs=None, inline=False, **conv_kwargs):
+                 inline=False, **conv_kwargs):
         super().__init__()
         self.conv1 = FFC_BN_ACT(dim, dim, kernel_size=3, padding=dilation, dilation=dilation,
                                 norm_layer=norm_layer, activation_layer=activation_layer,
@@ -351,11 +352,15 @@ class FFCResNetGenerator(nn.Module):
     def __init__(self, input_nc, output_nc, ngf=64, n_downsampling=3, n_blocks=9,
                  norm_layer=nn.BatchNorm2d, padding_type='reflect', activation_layer=nn.ReLU,
                  up_norm_layer=nn.BatchNorm2d, up_activation=nn.ReLU(True),
-                 init_conv_kwargs={}, downsample_conv_kwargs={}, resnet_conv_kwargs={},
-                 spatial_transform_layers=None, spatial_transform_kwargs={},
-                 add_out_act=True, max_features=1024, out_ffc=False, out_ffc_kwargs={}):
+                 init_conv_kwargs=None, downsample_conv_kwargs=None,
+                 resnet_conv_kwargs=None, add_out_act=True, max_features=1024,
+                 out_ffc=False, out_ffc_kwargs=None):
         assert n_blocks >= 0
         super().__init__()
+        init_conv_kwargs = dict(init_conv_kwargs or {})
+        downsample_conv_kwargs = dict(downsample_conv_kwargs or {})
+        resnet_conv_kwargs = dict(resnet_conv_kwargs or {})
+        out_ffc_kwargs = dict(out_ffc_kwargs or {})
 
         model = [nn.ReflectionPad2d(3),
                  FFC_BN_ACT(input_nc, ngf, kernel_size=7, padding=0, norm_layer=norm_layer,
@@ -428,12 +433,10 @@ class FFCResNetGenerator(nn.Module):
 class LamaFourier:
     """LAMA MPE 模型封装类"""
     
-    def __init__(self, build_discriminator=False, use_mpe=True, large_arch: bool = False):
-        n_blocks = 18 if large_arch else 9
-        
+    def __init__(self):
         self.generator = FFCResNetGenerator(
             4, 3, add_out_act='sigmoid',
-            n_blocks=n_blocks,
+            n_blocks=9,
             init_conv_kwargs={
                 'ratio_gin': 0,
                 'ratio_gout': 0,
@@ -451,45 +454,28 @@ class LamaFourier:
             },
         )
         
-        self.discriminator = None
-        self.inpaint_only = True
-        self.mpe = MPE() if use_mpe else None
+        self.mpe = MPE()
 
     def to(self, device):
         self.generator.to(device)
-        if self.mpe is not None:
-            self.mpe.to(device)
+        self.mpe.to(device)
         return self
 
     def eval(self):
-        self.inpaint_only = True
         self.generator.eval()
-        if self.mpe is not None:
-            self.mpe.eval()
-        return self
-
-    def cuda(self):
-        self.generator.cuda()
-        if self.mpe is not None:
-            self.mpe.cuda()
+        self.mpe.eval()
         return self
 
     def __call__(self, img: Tensor, mask: Tensor, rel_pos=None, direct=None):
-        if self.mpe is not None:
-            # 1 batch only
-            rel_pos, _, direct = self.load_masked_position_encoding(mask[0][0].cpu().numpy())
-            rel_pos = torch.LongTensor(rel_pos).unsqueeze_(0).to(img.device)
-            direct = torch.LongTensor(direct).unsqueeze_(0).to(img.device)
-            rel_pos, direct = self.mpe(rel_pos, direct)
-        else:
-            rel_pos, direct = None, None
-            
+        # 1 batch only
+        rel_pos, direct = self.load_masked_position_encoding(
+            mask[0][0].cpu().numpy()
+        )
+        rel_pos = torch.LongTensor(rel_pos).unsqueeze_(0).to(img.device)
+        direct = torch.LongTensor(direct).unsqueeze_(0).to(img.device)
+        rel_pos, direct = self.mpe(rel_pos, direct)
         predicted_img = self.generator(img, mask, rel_pos, direct)
-
-        if self.inpaint_only:
-            return predicted_img * mask + (1 - mask) * img
-        
-        return predicted_img
+        return predicted_img * mask + (1 - mask) * img
 
     def load_masked_position_encoding(self, mask):
         """加载掩码位置编码"""
@@ -544,7 +530,6 @@ class LamaFourier:
 
                 mask3 = mask3_
 
-        abs_pos = pos.copy()
         rel_pos = pos / (str_size / 2)
         rel_pos = (rel_pos * pos_num).astype(np.int32)
         rel_pos = np.clip(rel_pos, 0, pos_num - 1)
@@ -555,31 +540,31 @@ class LamaFourier:
             direct = cv2.resize(direct, (ori_w, ori_h), interpolation=cv2.INTER_NEAREST)
             direct[ori_mask == 0, :] = 0
 
-        return rel_pos, abs_pos, direct
+        return rel_pos, direct
 
 
 # ============================================================
 # 模型加载函数
 # ============================================================
 
-def load_lama_mpe(model_path: str, device: str = 'cpu', use_mpe: bool = True, large_arch: bool = False) -> LamaFourier:
+def load_lama_mpe(model_path: str, device: str = 'cpu') -> LamaFourier:
     """
     加载 LAMA MPE 模型
     
     Args:
         model_path: 模型文件路径
         device: 运行设备 ('cpu', 'cuda', 'cuda:0', 'mps')
-        use_mpe: 是否使用 MPE 模块
-        large_arch: 是否使用大架构 (18 blocks vs 9 blocks)
-    
     Returns:
         LamaFourier 模型实例
     """
-    model = LamaFourier(build_discriminator=False, use_mpe=use_mpe, large_arch=large_arch)
-    sd = torch.load(model_path, map_location='cpu', weights_only=False)
+    model = LamaFourier()
+    sd = torch.load(model_path, map_location='cpu', weights_only=True)
+    if not isinstance(sd, dict) or "gen_state_dict" not in sd:
+        raise RuntimeError("LAMA MPE 检查点缺少生成器状态")
+    if "str_state_dict" not in sd:
+        raise RuntimeError("LAMA MPE 检查点缺少位置编码状态")
     model.generator.load_state_dict(sd['gen_state_dict'])
-    if use_mpe and 'str_state_dict' in sd:
-        model.mpe.load_state_dict(sd['str_state_dict'])
+    model.mpe.load_state_dict(sd['str_state_dict'])
     model.eval().to(device)
     return model
 
@@ -608,6 +593,9 @@ class LamaMPEInpainter:
     def load(self, device: str = None):
         """加载模型"""
         if LamaMPEInpainter._loaded and LamaMPEInpainter._model is not None:
+            if device is not None and device != LamaMPEInpainter._device:
+                LamaMPEInpainter._model.to(device)
+                LamaMPEInpainter._device = device
             return
         
         if device is None:
@@ -623,12 +611,12 @@ class LamaMPEInpainter:
         logger.info(f"加载 LAMA MPE 模型: {self.model_path}")
         logger.info(f"使用设备: {device}")
         
-        LamaMPEInpainter._model = load_lama_mpe(self.model_path, device='cpu', use_mpe=True)
-        LamaMPEInpainter._device = device
-        
+        model = load_lama_mpe(self.model_path, device='cpu')
         if device.startswith('cuda') or device == 'mps':
-            LamaMPEInpainter._model.to(device)
-        
+            model.to(device)
+
+        LamaMPEInpainter._model = model
+        LamaMPEInpainter._device = device
         LamaMPEInpainter._loaded = True
         logger.info("LAMA MPE 模型加载完成")
     
@@ -638,6 +626,7 @@ class LamaMPEInpainter:
             LamaMPEInpainter._model.to('cpu')
             del LamaMPEInpainter._model
             LamaMPEInpainter._model = None
+            LamaMPEInpainter._device = None
             LamaMPEInpainter._loaded = False
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
@@ -658,80 +647,133 @@ class LamaMPEInpainter:
         Returns:
             修复后的图像 (H, W, 3) RGB格式 uint8
         """
+        if (
+            not isinstance(image, np.ndarray)
+            or image.dtype != np.uint8
+            or image.ndim != 3
+            or image.shape[2] != 3
+            or image.shape[0] <= 0
+            or image.shape[1] <= 0
+        ):
+            raise ValueError("LAMA MPE 图像必须是非空 RGB uint8 数组")
+        if (
+            not isinstance(mask, np.ndarray)
+            or mask.dtype != np.uint8
+            or mask.ndim != 2
+            or mask.shape != image.shape[:2]
+        ):
+            raise ValueError("LAMA MPE 掩膜必须是同尺寸 uint8 单通道数组")
+        if (
+            isinstance(inpainting_size, bool)
+            or not isinstance(inpainting_size, int)
+            or inpainting_size <= 0
+        ):
+            raise ValueError("inpainting_size 必须是正整数")
+        if not isinstance(disable_resize, bool):
+            raise ValueError("disable_resize 必须是布尔值")
         if not LamaMPEInpainter._loaded:
             self.load()
-        
-        img_original = np.copy(image)
-        mask_original = np.copy(mask)
-        mask_original[mask_original < 127] = 0
-        mask_original[mask_original >= 127] = 1
-        mask_original = mask_original[:, :, None]
 
-        height, width, c = image.shape
-        
-        # 缩放到处理尺寸（如果禁用缩放，则跳过）
-        if (not disable_resize) and max(image.shape[0:2]) > inpainting_size:
-            image = resize_keep_aspect(image, inpainting_size)
-            mask = resize_keep_aspect(mask, inpainting_size)
-        elif disable_resize:
-            logger.info(f"LAMA MPE: 禁用缩放模式，使用原图尺寸 {width}x{height}")
-        
-        # Padding 到 8 的倍数
-        pad_size = 8
-        h, w, c = image.shape
-        new_h = ((h + pad_size - 1) // pad_size) * pad_size
-        new_w = ((w + pad_size - 1) // pad_size) * pad_size
-        
-        if new_h != h or new_w != w:
-            image = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
-            mask = cv2.resize(mask, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
-        
-        logger.info(f"Inpainting resolution: {new_w}x{new_h}")
-        
-        # 转换为 tensor
-        img_torch = torch.from_numpy(image).permute(2, 0, 1).unsqueeze_(0).float() / 255.
-        mask_torch = torch.from_numpy(mask).unsqueeze_(0).unsqueeze_(0).float() / 255.0
-        mask_torch[mask_torch < 0.5] = 0
-        mask_torch[mask_torch >= 0.5] = 1
-        
+        model = LamaMPEInpainter._model
         device = LamaMPEInpainter._device
+        if model is None or not isinstance(device, str):
+            raise RuntimeError("LAMA MPE 模型未加载")
+
+        img_original = image.copy()
+        mask_original = (mask >= 127)[:, :, None]
+        height, width = image.shape[:2]
+        processed_image = image
+        processed_mask = mask
+
+        if not disable_resize and max(height, width) > inpainting_size:
+            processed_image = resize_keep_aspect(
+                image,
+                inpainting_size,
+                interpolation=cv2.INTER_LINEAR,
+            )
+            processed_mask = resize_keep_aspect(
+                mask,
+                inpainting_size,
+                interpolation=cv2.INTER_NEAREST,
+            )
+        elif disable_resize:
+            logger.info(
+                "LAMA MPE: 禁用缩放模式，使用原图尺寸 %sx%s",
+                width,
+                height,
+            )
+
+        processed_height, processed_width = processed_image.shape[:2]
+        padded_height = ((processed_height + 7) // 8) * 8
+        padded_width = ((processed_width + 7) // 8) * 8
+        pad_bottom = padded_height - processed_height
+        pad_right = padded_width - processed_width
+        if pad_bottom or pad_right:
+            processed_image = cv2.copyMakeBorder(
+                processed_image,
+                0,
+                pad_bottom,
+                0,
+                pad_right,
+                cv2.BORDER_REPLICATE,
+            )
+            processed_mask = cv2.copyMakeBorder(
+                processed_mask,
+                0,
+                pad_bottom,
+                0,
+                pad_right,
+                cv2.BORDER_CONSTANT,
+                value=0,
+            )
+
+        logger.info("Inpainting resolution: %sx%s", padded_width, padded_height)
+        img_torch = (
+            torch.from_numpy(np.ascontiguousarray(processed_image))
+            .permute(2, 0, 1)
+            .unsqueeze(0)
+            .float()
+            / 255.0
+        )
+        mask_torch = (
+            torch.from_numpy(np.ascontiguousarray(processed_mask))
+            .unsqueeze(0)
+            .unsqueeze(0)
+            .float()
+            / 255.0
+        )
+        mask_torch = (mask_torch >= 0.5).to(torch.float32)
         if device.startswith('cuda') or device == 'mps':
             img_torch = img_torch.to(device)
             mask_torch = mask_torch.to(device)
-        
+
         with torch.no_grad():
-            img_torch *= (1 - mask_torch)
-            
-            if device.startswith('cuda'):
+            masked_image = img_torch * (1 - mask_torch)
+            if device.startswith('cuda') and torch.cuda.is_bf16_supported():
                 with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-                    img_inpainted_torch = LamaMPEInpainter._model(img_torch, mask_torch)
+                    predicted = model(masked_image, mask_torch)
             else:
-                img_inpainted_torch = LamaMPEInpainter._model(img_torch, mask_torch)
-        
-        img_inpainted_torch = img_inpainted_torch.to(torch.float32)
-        img_inpainted = (img_inpainted_torch.cpu().squeeze_(0).permute(1, 2, 0).numpy() * 255.).astype(np.uint8)
-        
-        # 缩放回原始尺寸
-        if new_h != height or new_w != width:
-            img_inpainted = cv2.resize(img_inpainted, (width, height), interpolation=cv2.INTER_LINEAR)
-        
-        # 混合结果
-        result = img_inpainted * mask_original + img_original * (1 - mask_original)
-        
-        # 推理后清理临时张量
-        self._cleanup_memory()
-        
-        return result.astype(np.uint8)
-    
-    def _cleanup_memory(self):
-        """推理后清理内存，防止临时张量累积，执行3次确保彻底"""
-        import gc
-        for _ in range(3):
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-        if torch.cuda.is_available():
-            torch.cuda.synchronize()
+                predicted = model(masked_image, mask_torch)
+        if (
+            not isinstance(predicted, Tensor)
+            or predicted.shape != img_torch.shape
+            or not bool(torch.isfinite(predicted).all().item())
+        ):
+            raise RuntimeError("LAMA MPE 返回了无效张量")
+        predicted = predicted.to(torch.float32).clamp(0, 1)
+        img_inpainted = (
+            predicted.cpu().squeeze(0).permute(1, 2, 0).numpy() * 255.0
+        ).astype(np.uint8)
+        img_inpainted = img_inpainted[:processed_height, :processed_width]
+        if (processed_height, processed_width) != (height, width):
+            img_inpainted = cv2.resize(
+                img_inpainted,
+                (width, height),
+                interpolation=cv2.INTER_LINEAR,
+            )
+        if img_inpainted.shape != img_original.shape:
+            raise RuntimeError("LAMA MPE 最终结果尺寸与原图不一致")
+        return np.where(mask_original, img_inpainted, img_original).astype(np.uint8)
 
 
 # ============================================================

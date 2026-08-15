@@ -5,6 +5,7 @@
 """
 
 import logging
+import math
 from typing import List
 import numpy as np
 
@@ -91,64 +92,6 @@ def merge_overlapping_blocks(blocks: List[TextBlock],
     return blocks
 
 
-def expand_blocks(blocks: List[TextBlock],
-                  image_width: int,
-                  image_height: int,
-                  expand_ratio: float = 0,
-                  expand_top: float = 0,
-                  expand_bottom: float = 0,
-                  expand_left: float = 0,
-                  expand_right: float = 0) -> List[TextBlock]:
-    """扩展文本块边界"""
-    if not blocks:
-        return blocks
-    
-    # 如果所有扩展参数都是0，直接返回
-    if expand_ratio == 0 and expand_top == 0 and expand_bottom == 0 and expand_left == 0 and expand_right == 0:
-        return blocks
-    
-    for block in blocks:
-        x1, y1, x2, y2 = block.xyxy
-        width = x2 - x1
-        height = y2 - y1
-        
-        if width <= 0 or height <= 0:
-            continue
-        
-        # 计算扩展量
-        base_expand_w = int(width * expand_ratio / 100)
-        base_expand_h = int(height * expand_ratio / 100)
-        extra_top = int(height * expand_top / 100)
-        extra_bottom = int(height * expand_bottom / 100)
-        extra_left = int(width * expand_left / 100)
-        extra_right = int(width * expand_right / 100)
-        
-        # 应用扩展
-        new_x1 = max(0, x1 - base_expand_w - extra_left)
-        new_y1 = max(0, y1 - base_expand_h - extra_top)
-        new_x2 = min(image_width, x2 + base_expand_w + extra_right)
-        new_y2 = min(image_height, y2 + base_expand_h + extra_bottom)
-        
-        # 更新 lines 中的第一个点（用于重新计算 xyxy）
-        if block.lines:
-            # 创建一个包含扩展边界的新 TextLine
-            from .data_types import TextLine
-            expanded_pts = np.array([
-                [new_x1, new_y1],
-                [new_x2, new_y1],
-                [new_x2, new_y2],
-                [new_x1, new_y2]
-            ], dtype=np.int32)
-            # 添加边界框作为一个虚拟 line
-            block.lines = [TextLine(pts=expanded_pts, confidence=1.0)]
-            # 清除所有相关缓存（cached_property 存储在 __dict__ 中）
-            for cache_key in ['xyxy', 'xywh', 'center', 'min_rect', 'polygon', 'area']:
-                if cache_key in block.__dict__:
-                    del block.__dict__[cache_key]
-    
-    return blocks
-
-
 def _simple_reading_order_sort(blocks: List[TextBlock], 
                                   right_to_left: bool = True) -> List[TextBlock]:
     """简单阅读顺序排序（日漫从右到左，从上到下）"""
@@ -171,25 +114,16 @@ def sort_blocks_by_area(blocks: List[TextBlock], descending: bool = True) -> Lis
 
 
 def postprocess_blocks(blocks: List[TextBlock],
-                       image_width: int,
-                       image_height: int,
-                       expand_ratio: float = 0,
-                       expand_top: float = 0,
-                       expand_bottom: float = 0,
-                       expand_left: float = 0,
-                       expand_right: float = 0,
                        overlap_threshold: float = 0.7,
                        sort_method: str = 'smart',  # 'smart', 'area', 'reading', 'none'
                        img: np.ndarray = None,  # 用于分镜检测
-                       right_to_left: bool = True,  # 阅读方向
-                       **kwargs) -> List[TextBlock]:
+                       right_to_left: bool = True) -> List[TextBlock]:  # 阅读方向
     """
     完整的后处理流程
     
     1. 删除被包围的小块
     2. 合并重叠度高的块
-    3. 扩展边界
-    4. 排序
+    3. 排序
     
     Args:
         sort_method: 排序方法
@@ -200,6 +134,17 @@ def postprocess_blocks(blocks: List[TextBlock],
         img: 原始图像（用于分镜检测，仅 smart 模式需要）
         right_to_left: 是否从右到左阅读（日漫模式）
     """
+    if (
+        isinstance(overlap_threshold, bool)
+        or not isinstance(overlap_threshold, (int, float))
+        or not math.isfinite(float(overlap_threshold))
+        or not 0 <= float(overlap_threshold) <= 1
+    ):
+        raise ValueError("文本块重叠阈值必须是 0 到 1 之间的数字")
+    if sort_method not in {'smart', 'area', 'reading', 'none'}:
+        raise ValueError(f"未知的文本块排序方法: {sort_method}")
+    if not isinstance(right_to_left, bool):
+        raise TypeError("阅读方向必须是布尔值")
     if not blocks:
         return blocks
     
@@ -209,13 +154,7 @@ def postprocess_blocks(blocks: List[TextBlock],
     # 2. 合并重叠的块
     blocks = merge_overlapping_blocks(blocks, overlap_threshold)
     
-    # 3. 扩展边界
-    blocks = expand_blocks(
-        blocks, image_width, image_height,
-        expand_ratio, expand_top, expand_bottom, expand_left, expand_right
-    )
-    
-    # 4. 排序
+    # 3. 排序
     if sort_method == 'smart':
         blocks = sort_blocks_by_reading_order(blocks, right_to_left=right_to_left, img=img)
     elif sort_method == 'reading':

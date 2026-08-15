@@ -24,6 +24,7 @@ import einops
 
 from src.shared.path_helpers import resource_path
 from src.shared import constants
+from src.shared.image_helpers import image_to_rgb_array
 from src.shared.memory_errors import is_memory_allocation_error
 from src.core.ocr_types import OcrResult, OcrTextlineResult, create_ocr_result, create_ocr_textline_result
 
@@ -70,7 +71,7 @@ def get_transformed_region(image: np.ndarray, pts: np.ndarray, direction: str, t
     y2 = min(im_h, int(y2))
     
     if x2 <= x1 or y2 <= y1:
-        return np.zeros((target_height, 10, 3), dtype=np.uint8)
+        raise ValueError("文本行裁剪区域无效")
     
     img_cropped = image[y1:y2, x1:x2]
     
@@ -87,7 +88,7 @@ def get_transformed_region(image: np.ndarray, pts: np.ndarray, direction: str, t
     norm_h = np.linalg.norm(vec_h)
     
     if norm_v <= 0 or norm_h <= 0:
-        return np.zeros((target_height, 10, 3), dtype=np.uint8)
+        raise ValueError("文本行多边形面积无效")
     
     ratio = norm_v / norm_h
     
@@ -100,7 +101,7 @@ def get_transformed_region(image: np.ndarray, pts: np.ndarray, direction: str, t
         dst_pts = np.array([[0, 0], [w - 1, 0], [w - 1, h - 1], [0, h - 1]], dtype=np.float32)
         M, _ = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
         if M is None:
-            return np.zeros((target_height, 10, 3), dtype=np.uint8)
+            raise RuntimeError("无法计算水平文本行透视变换")
         region = cv2.warpPerspective(img_cropped, M, (w, h))
     else:
         # 垂直文本
@@ -111,7 +112,7 @@ def get_transformed_region(image: np.ndarray, pts: np.ndarray, direction: str, t
         dst_pts = np.array([[0, 0], [w - 1, 0], [w - 1, h - 1], [0, h - 1]], dtype=np.float32)
         M, _ = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
         if M is None:
-            return np.zeros((target_height, 10, 3), dtype=np.uint8)
+            raise RuntimeError("无法计算垂直文本行透视变换")
         region = cv2.warpPerspective(img_cropped, M, (w, h))
         # 竖排文本旋转90度
         region = cv2.rotate(region, cv2.ROTATE_90_COUNTERCLOCKWISE)
@@ -192,6 +193,8 @@ class Model48pxOCR:
         empty_result = ("", None, None, 0.0)
         if not regions:
             return []
+        if max_chunk_size <= 0:
+            raise ValueError("48px OCR 批大小必须大于零")
 
         results: List[Tuple[str, Optional[Tuple[int, int, int]], Optional[Tuple[int, int, int]], float]] = [
             empty_result for _ in regions
@@ -204,7 +207,7 @@ class Model48pxOCR:
         for index, region in enumerate(regions):
             prepared = self._prepare_region_for_batch(region)
             if prepared is None:
-                continue
+                raise ValueError(f"48px OCR 区域 {index} 无效")
             valid_indices.append(index)
             prepared_regions.append(prepared)
             widths.append(prepared.shape[1])
@@ -237,13 +240,15 @@ class Model48pxOCR:
                     tensor, chunk_widths, beams_k=5, max_seq_length=255
                 )
 
+            if len(preds) != batch_size:
+                raise RuntimeError("48px OCR 模型结果数量不匹配")
+
             for batch_pos, pred in enumerate(preds):
                 prepared_idx = chunk_indices[batch_pos]
                 original_idx = valid_indices[prepared_idx]
 
                 if pred is None or len(pred) < 6:
-                    results[original_idx] = empty_result
-                    continue
+                    raise RuntimeError("48px OCR 模型返回了无效结果")
 
                 pred_chars_index, prob, fg_pred, bg_pred, fg_ind_pred, bg_ind_pred = pred
                 prob = float(prob)
@@ -265,7 +270,7 @@ class Model48pxOCR:
         self, 
         image: Image.Image, 
         bubble_coords: List[Tuple[int, int, int, int]],
-        textlines_per_bubble: Optional[List[List[Dict]]] = None
+        textlines_per_bubble: Optional[List[List[Dict]]] = None,
     ) -> List[str]:
         """
         识别文本
@@ -281,7 +286,14 @@ class Model48pxOCR:
         Returns:
             ['text1', 'text2', ...] - 每个大框的识别结果
         """
-        return [result.text for result in self.recognize_text_with_details(image, bubble_coords, textlines_per_bubble)]
+        return [
+            result.text
+            for result in self.recognize_text_with_details(
+                image,
+                bubble_coords,
+                textlines_per_bubble,
+            )
+        ]
 
     def recognize_text_with_details(
         self,
@@ -292,26 +304,15 @@ class Model48pxOCR:
         fallback_used: bool = False,
     ) -> List[OcrResult]:
         if not self.initialized or self.model is None:
-            logger.error("48px OCR 未初始化")
-            return [
-                create_ocr_result(
-                    "",
-                    constants.OCR_ENGINE_48PX,
-                    confidence=0.0,
-                    confidence_supported=True,
-                    primary_engine=primary_engine,
-                    fallback_used=fallback_used,
-                )
-                for _ in bubble_coords
-            ]
+            raise RuntimeError("48px OCR 未初始化")
 
         if not bubble_coords:
             return []
 
         try:
-            img_np = np.array(image.convert('RGB'))
+            img_np = image_to_rgb_array(image)
 
-            if textlines_per_bubble is None or len(textlines_per_bubble) != len(bubble_coords):
+            if textlines_per_bubble is None:
                 logger.warning("未提供原始文本行信息，使用简单裁剪模式")
                 bubble_regions = [
                     img_np[y1:y2, x1:x2]
@@ -329,6 +330,8 @@ class Model48pxOCR:
                     )
                     for text, _, _, prob in bubble_predictions
                 ]
+            if len(textlines_per_bubble) != len(bubble_coords):
+                raise ValueError("48px OCR 文本行分组数量与气泡数量不匹配")
 
             logger.info(f"使用 48px OCR 识别 {len(bubble_coords)} 个气泡 (使用原始文本行)")
 
@@ -347,11 +350,11 @@ class Model48pxOCR:
                     continue
 
                 for line_info in textlines:
-                    polygon = line_info.get('polygon', [])
-                    direction = line_info.get('direction', 'h')
+                    polygon = line_info['polygon']
+                    direction = line_info['direction']
 
                     if not polygon or len(polygon) != 4:
-                        continue
+                        raise ValueError(f"气泡 {bubble_idx} 包含无效文本行几何")
 
                     pts = np.array(polygon, dtype=np.float32)
                     flat_regions.append(get_transformed_region(img_np, pts, direction, target_height=48))
@@ -409,19 +412,7 @@ class Model48pxOCR:
 
         except Exception as e:
             logger.error(f"48px OCR 识别失败: {e}", exc_info=True)
-            if is_memory_allocation_error(e):
-                raise
-            return [
-                create_ocr_result(
-                    "",
-                    constants.OCR_ENGINE_48PX,
-                    confidence=0.0,
-                    confidence_supported=True,
-                    primary_engine=primary_engine,
-                    fallback_used=fallback_used,
-                )
-                for _ in bubble_coords
-            ]
+            raise
 
     def recognize_textlines_with_details(
         self,
@@ -431,47 +422,24 @@ class Model48pxOCR:
         fallback_used: bool = False,
     ) -> List[OcrTextlineResult]:
         if not self.initialized or self.model is None:
-            logger.error("48px OCR 未初始化")
-            return [
-                create_ocr_textline_result(
-                    "",
-                    constants.OCR_ENGINE_48PX,
-                    confidence=0.0,
-                    confidence_supported=True,
-                    primary_engine=primary_engine,
-                    fallback_used=fallback_used,
-                    polygon=line_info.get("polygon", []) if isinstance(line_info, dict) else [],
-                    direction=line_info.get("direction", "h") if isinstance(line_info, dict) else "h",
-                )
-                for line_info in textlines
-            ]
+            raise RuntimeError("48px OCR 未初始化")
 
         if not textlines:
             return []
 
         try:
             logger.info(f"使用 48px OCR 识别 {len(textlines)} 个文本行")
-            img_np = np.array(image.convert('RGB'))
+            img_np = image_to_rgb_array(image)
             results: List[Optional[OcrTextlineResult]] = [None] * len(textlines)
             valid_regions: List[np.ndarray] = []
             valid_entries: List[Tuple[int, List[List[int]], str]] = []
 
             for index, line_info in enumerate(textlines):
-                polygon = line_info.get('polygon', [])
-                direction = line_info.get('direction', 'h')
+                polygon = line_info['polygon']
+                direction = line_info['direction']
 
                 if not polygon or len(polygon) != 4:
-                    results[index] = create_ocr_textline_result(
-                        "",
-                        constants.OCR_ENGINE_48PX,
-                        confidence=0.0,
-                        confidence_supported=True,
-                        primary_engine=primary_engine,
-                        fallback_used=fallback_used,
-                        polygon=polygon,
-                        direction=direction,
-                    )
-                    continue
+                    raise ValueError(f"文本行 {index} 几何无效")
 
                 pts = np.array(polygon, dtype=np.float32)
                 valid_regions.append(get_transformed_region(img_np, pts, direction, target_height=48))
@@ -496,34 +464,12 @@ class Model48pxOCR:
                     bg_color=bg_color,
                 )
 
-            return [
-                result if result is not None else create_ocr_textline_result(
-                    "",
-                    constants.OCR_ENGINE_48PX,
-                    confidence=0.0,
-                    confidence_supported=True,
-                    primary_engine=primary_engine,
-                    fallback_used=fallback_used,
-                )
-                for result in results
-            ]
+            if any(result is None for result in results):
+                raise RuntimeError("48px OCR 文本行结果数量不匹配")
+            return [result for result in results if result is not None]
         except Exception as e:
             logger.error(f"48px OCR 文本行识别失败: {e}", exc_info=True)
-            if is_memory_allocation_error(e):
-                raise
-            return [
-                create_ocr_textline_result(
-                    "",
-                    constants.OCR_ENGINE_48PX,
-                    confidence=0.0,
-                    confidence_supported=True,
-                    primary_engine=primary_engine,
-                    fallback_used=fallback_used,
-                    polygon=line_info.get("polygon", []) if isinstance(line_info, dict) else [],
-                    direction=line_info.get("direction", "h") if isinstance(line_info, dict) else "h",
-                )
-                for line_info in textlines
-            ]
+            raise
     
     
     def _decode_with_colors(
@@ -632,16 +578,17 @@ class Model48pxOCR:
             List[ColorExtractionResult]: 每个气泡的颜色提取结果
         """
         if not self.initialized or self.model is None:
-            logger.error("48px OCR 未初始化，无法提取颜色")
-            return [ColorExtractionResult(None, None, 0.0) for _ in bubble_coords]
+            raise RuntimeError("48px OCR 未初始化，无法提取颜色")
         
         if not bubble_coords:
             return []
+        if max_chunk_size <= 0:
+            raise ValueError("颜色提取批大小必须大于零")
         
         logger.info(f"开始为 {len(bubble_coords)} 个气泡提取颜色（批量模式）...")
         
         try:
-            img_np = np.array(image.convert('RGB'))
+            img_np = image_to_rgb_array(image)
             
             # ========== 第1步：收集所有文本行区域 ==========
             all_regions = []       # 所有文本行图像
@@ -649,16 +596,17 @@ class Model48pxOCR:
             region_to_bubble = []  # 映射到气泡索引
             
             # 如果没有提供原始文本行，使用简单裁剪模式
-            if textlines_per_bubble is None or len(textlines_per_bubble) != len(bubble_coords):
+            if textlines_per_bubble is None:
                 logger.info("使用简单裁剪模式提取颜色")
                 for bubble_idx, (x1, y1, x2, y2) in enumerate(bubble_coords):
                     bubble = img_np[y1:y2, x1:x2]
                     region = self._prepare_region_for_batch(bubble)
-                    if region is not None:
-                        all_regions.append(region)
-                        all_widths.append(region.shape[1])
-                        region_to_bubble.append(bubble_idx)
+                    all_regions.append(region)
+                    all_widths.append(region.shape[1])
+                    region_to_bubble.append(bubble_idx)
             else:
+                if len(textlines_per_bubble) != len(bubble_coords):
+                    raise ValueError("颜色提取文本行分组数量与气泡数量不匹配")
                 # 使用原始文本行进行精确颜色提取
                 for bubble_idx, (coords, textlines) in enumerate(zip(bubble_coords, textlines_per_bubble)):
                     if not textlines:
@@ -666,31 +614,30 @@ class Model48pxOCR:
                         x1, y1, x2, y2 = coords
                         bubble = img_np[y1:y2, x1:x2]
                         region = self._prepare_region_for_batch(bubble)
-                        if region is not None:
-                            all_regions.append(region)
-                            all_widths.append(region.shape[1])
-                            region_to_bubble.append(bubble_idx)
+                        all_regions.append(region)
+                        all_widths.append(region.shape[1])
+                        region_to_bubble.append(bubble_idx)
                     else:
                         # 对每个文本行
                         for line_info in textlines:
-                            polygon = line_info.get('polygon', [])
-                            direction = line_info.get('direction', 'h')
+                            polygon = line_info['polygon']
+                            direction = line_info['direction']
                             
                             if not polygon or len(polygon) != 4:
-                                continue
+                                raise ValueError(
+                                    f"气泡 {bubble_idx} 包含无效文本行几何"
+                                )
                             
                             pts = np.array(polygon, dtype=np.float32)
                             region = get_transformed_region(img_np, pts, direction, target_height=48)
                             
-                            if region is not None and region.shape[0] > 0 and region.shape[1] > 0:
-                                all_regions.append(region)
-                                all_widths.append(region.shape[1])
-                                region_to_bubble.append(bubble_idx)
+                            all_regions.append(region)
+                            all_widths.append(region.shape[1])
+                            region_to_bubble.append(bubble_idx)
             
             # 如果没有有效区域，返回空结果
             if not all_regions:
-                logger.warning("没有有效的文本区域可提取颜色")
-                return [ColorExtractionResult(None, None, 0.0) for _ in bubble_coords]
+                raise RuntimeError("没有有效的文本区域可提取颜色")
             
             logger.info(f"收集到 {len(all_regions)} 个文本区域，开始批量推理...")
             
@@ -731,14 +678,18 @@ class Model48pxOCR:
                     preds = self.model.infer_beam_batch_tensor(
                         tensor, widths, beams_k=5, max_seq_length=255
                     )
+                if len(preds) != N:
+                    raise RuntimeError("48px 颜色模型结果数量不匹配")
                 
                 # 提取每个样本的颜色
                 for i, pred in enumerate(preds):
                     if pred is None or len(pred) < 6:
-                        all_colors[chunk_indices[i]] = (None, None, 0.0)
-                        continue
+                        raise RuntimeError("48px 颜色模型返回了无效结果")
                     
                     pred_chars_index, prob, fg_pred, bg_pred, fg_ind_pred, bg_ind_pred = pred
+                    prob = float(prob)
+                    if not 0 <= prob <= 1:
+                        raise RuntimeError("48px 颜色模型置信度超出范围")
                     
                     if prob < 0.2:
                         all_colors[chunk_indices[i]] = (None, None, prob)
@@ -752,6 +703,9 @@ class Model48pxOCR:
                 
                 # 清理 GPU 内存
                 del tensor, batch, preds
+
+            if any(color is None for color in all_colors):
+                raise RuntimeError("48px 颜色模型缺少部分结果")
             
             # ========== 第4步：聚合每个气泡的颜色 ==========
             results = []
@@ -791,14 +745,12 @@ class Model48pxOCR:
             
         except Exception as e:
             logger.error(f"颜色提取失败: {e}", exc_info=True)
-            if is_memory_allocation_error(e):
-                raise
-            return [ColorExtractionResult(None, None, 0.0) for _ in bubble_coords]
+            raise
     
-    def _prepare_region_for_batch(self, region: np.ndarray) -> Optional[np.ndarray]:
+    def _prepare_region_for_batch(self, region: np.ndarray) -> np.ndarray:
         """准备区域图像用于批量处理（缩放到48px高度）"""
         if region is None or region.shape[0] == 0 or region.shape[1] == 0:
-            return None
+            raise ValueError("颜色提取图像区域无效")
         
         h, w = region.shape[:2]
         scale = 48 / h
@@ -834,7 +786,9 @@ def reset_48px_ocr_handler():
         if model is not None and hasattr(model, "to"):
             try:
                 model.to("cpu")
-            except Exception:
+            except Exception as error:
+                if is_memory_allocation_error(error):
+                    raise
                 logger.debug("48px OCR 模型迁移到 CPU 失败", exc_info=True)
         handler.model = None
         handler.initialized = False

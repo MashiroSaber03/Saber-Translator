@@ -3,11 +3,13 @@ import { createPinia, setActivePinia } from 'pinia'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 
 import { useInsightStore } from '@/stores/insightStore'
 import ProductComposer from '@/components/product/ProductComposer.vue'
 import ProductScrollStack from '@/components/product/ProductScrollStack.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
+import QAOptionsBar from '@/components/insight/qa/QAOptionsBar.vue'
 
 const { getQAStatusMock, sendChatMock } = vi.hoisted(() => ({
   getQAStatusMock: vi.fn(),
@@ -48,7 +50,8 @@ describe('QAPanel Markdown rendering', () => {
   it('sanitizes API-provided Markdown HTML before rendering assistant answers', async () => {
     sendChatMock.mockResolvedValue({
       success: true,
-      answer: '<img src="x" onerror="alert(1)">[bad](javascript:alert(2))<script>alert(3)</script>**安全文本**',
+      answer:
+        '<img src="x" onerror="alert(1)">[bad](javascript:alert(2))<script>alert(3)</script>**安全文本**',
       citations: [],
       mode: 'precise',
     })
@@ -67,6 +70,7 @@ describe('QAPanel Markdown rendering', () => {
 
     const composer = wrapper.getComponent(ProductComposer)
     await composer.get('textarea').setValue('这页发生了什么？')
+    expect(composer.get('button').attributes('disabled')).toBeUndefined()
     await composer.get('button').trigger('click')
     await flushPromises()
 
@@ -82,16 +86,13 @@ describe('QAPanel Markdown rendering', () => {
       answer: string
       citations: never[]
       mode: 'precise'
-      suggestedQuestions: never[]
     }>()
-    sendChatMock.mockImplementationOnce((
-      _bookId: string,
-      _question: string,
-      options: { on_chunk: (content: string) => void },
-    ) => {
-      options.on_chunk('正在流式返回的片段')
-      return finalResponse.promise
-    })
+    sendChatMock.mockImplementationOnce(
+      (_bookId: string, _question: string, options: { onChunk: (content: string) => void }) => {
+        options.onChunk('正在流式返回的片段')
+        return finalResponse.promise
+      }
+    )
 
     const pinia = createPinia()
     setActivePinia(pinia)
@@ -115,7 +116,6 @@ describe('QAPanel Markdown rendering', () => {
       answer: '最终回答',
       citations: [],
       mode: 'precise',
-      suggestedQuestions: [],
     })
     await flushPromises()
     expect(wrapper.text()).toContain('最终回答')
@@ -125,7 +125,7 @@ describe('QAPanel Markdown rendering', () => {
   it('renders messages through the product scroll stack contract', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/insight/qa/QAMessageList.vue'),
-      'utf8',
+      'utf8'
     )
     expect(source).toContain('ProductStatusBanner')
     expect(source).not.toContain('welcome-message')
@@ -177,14 +177,17 @@ describe('QAPanel Markdown rendering', () => {
 
     const composer = wrapper.getComponent(ProductComposer)
     await composer.get('textarea').setValue('这页发生了什么？')
+    expect(composer.get('button').attributes('disabled')).toBeUndefined()
     await composer.get('button').trigger('click')
-    expect(sendChatMock).toHaveBeenCalledWith(
-      'book-1',
-      '这页发生了什么？',
-      expect.any(Object)
-    )
+    await flushPromises()
+    expect(sendChatMock).toHaveBeenCalledWith('book-1', '这页发生了什么？', expect.any(Object))
+    const signal = sendChatMock.mock.calls[0]?.[2]?.signal as AbortSignal
+    expect(signal.aborted).toBe(false)
 
     store.currentBookId = 'book-2'
+    await nextTick()
+    expect(signal.aborted).toBe(true)
+    expect(store.qaHistory).toEqual([])
     staleResponse.resolve({
       success: true,
       answer: 'book-1 stale answer',
@@ -194,18 +197,52 @@ describe('QAPanel Markdown rendering', () => {
     await flushPromises()
 
     expect(wrapper.text()).not.toContain('book-1 stale answer')
-    expect(store.qaHistory.some(message => message.isLoading)).toBe(false)
+    expect(store.qaHistory).toEqual([])
+    expect(store.isStreaming).toBe(false)
+  })
+
+  it('aborts the current answer when the QA mode changes', async () => {
+    const staleResponse = deferred<{
+      answer: string
+      citations: never[]
+      mode: 'precise'
+    }>()
+    sendChatMock.mockReturnValueOnce(staleResponse.promise)
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useInsightStore()
+    store.currentBookId = 'book-1'
+    const wrapper = mount(QAPanel, {
+      global: { plugins: [pinia] },
+    })
+    await flushPromises()
+
+    const composer = wrapper.getComponent(ProductComposer)
+    await composer.get('textarea').setValue('精确模式问题')
+    await composer.get('button').trigger('click')
+    await flushPromises()
+    const signal = sendChatMock.mock.calls[0]?.[2]?.signal as AbortSignal
+    expect(signal.aborted).toBe(false)
+
+    wrapper.getComponent(QAOptionsBar).vm.$emit('update:qaMode', 'global')
+    await nextTick()
+    expect(signal.aborted).toBe(true)
+    expect(store.qaHistory).toEqual([])
+
+    staleResponse.resolve({ answer: '过期回答', citations: [], mode: 'precise' })
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('过期回答')
     expect(store.isStreaming).toBe(false)
   })
 
   it('uses owner-prefixed hooks for the QA panel and message list shells', () => {
     const panelSource = readFileSync(
       resolve(process.cwd(), 'src/components/insight/QAPanel.vue'),
-      'utf8',
+      'utf8'
     )
     const listSource = readFileSync(
       resolve(process.cwd(), 'src/components/insight/qa/QAMessageList.vue'),
-      'utf8',
+      'utf8'
     )
 
     expect(panelSource).toContain('class="qa-panel"')
@@ -218,11 +255,11 @@ describe('QAPanel Markdown rendering', () => {
   it('requests message-list scrolling through a typed prop instead of a child expose', () => {
     const panelSource = readFileSync(
       resolve(process.cwd(), 'src/components/insight/QAPanel.vue'),
-      'utf8',
+      'utf8'
     )
     const listSource = readFileSync(
       resolve(process.cwd(), 'src/components/insight/qa/QAMessageList.vue'),
-      'utf8',
+      'utf8'
     )
 
     expect(panelSource).toContain('messageScrollRequestId')

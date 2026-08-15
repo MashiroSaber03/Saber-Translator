@@ -28,10 +28,12 @@ describe('EditThumbnailPanel', () => {
         visible: true,
         images,
         currentImageIndex: 1,
+        isBusy: false,
       },
     })
 
     const thumbnails = wrapper.findAll('.edit-thumbnails-panel__item')
+    expect(wrapper.get('.edit-thumbnails-panel__viewport').attributes('role')).toBe('navigation')
     const firstThumbnail = thumbnails[0]
     expect(firstThumbnail.element.tagName).toBe('BUTTON')
     expect(firstThumbnail.attributes('aria-label')).toBe('切换到图片 1')
@@ -67,10 +69,27 @@ describe('EditThumbnailPanel', () => {
         visible: true,
         images: manyImages,
         currentImageIndex: 0,
+        isBusy: false,
       },
     })
 
     expect(wrapper.findAll('.edit-thumbnails-panel__item').length).toBeLessThanOrEqual(32)
     expect(wrapper.get('.edit-thumbnails-panel__track').attributes('style')).toContain('70000px')
+  })
+
+  it('prevents page switches while the current edit is being persisted', async () => {
+    const wrapper = mount(EditThumbnailPanel, {
+      props: {
+        visible: true,
+        images,
+        currentImageIndex: 0,
+        isBusy: true,
+      },
+    })
+
+    const second = wrapper.findAll('.edit-thumbnails-panel__item')[1]!
+    expect(second.attributes('disabled')).toBeDefined()
+    await second.trigger('click')
+    expect(wrapper.emitted('switch-to-image')).toBeUndefined()
   })
 })

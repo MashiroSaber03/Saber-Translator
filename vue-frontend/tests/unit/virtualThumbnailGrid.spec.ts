@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 
 import VirtualThumbnailGrid from '@/components/virtual/VirtualThumbnailGrid.vue'
+import VirtualThumbnailList from '@/components/virtual/VirtualThumbnailList.vue'
 import type { ProductThumbnailGridItem } from '@/components/product/ProductThumbnailGrid.vue'
 
 function items(count: number): ProductThumbnailGridItem[] {
@@ -50,5 +51,49 @@ describe('VirtualThumbnailGrid', () => {
     await wrapper.get('[data-product-thumbnail-id="1"]').trigger('click')
 
     expect(wrapper.emitted('select')).toEqual([[1]])
+  })
+
+  it('derives one-column row height from the measured thumbnail width', async () => {
+    const wrapper = mount(VirtualThumbnailList, {
+      props: {
+        items: items(1000),
+      },
+    })
+    const container = wrapper.get('.virtual-thumbnail-list').element as HTMLElement
+    Object.defineProperties(container, {
+      clientHeight: { configurable: true, value: 320 },
+      clientWidth: { configurable: true, value: 180 },
+    })
+    container.dispatchEvent(new Event('scroll'))
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.get('.virtual-thumbnail-list__inner').attributes('style')).toContain('height: 245994px;')
+    expect(wrapper.findAll('[data-product-thumbnail-id]').length).toBeLessThanOrEqual(12)
+
+    container.scrollTop = 2460
+    container.dispatchEvent(new Event('scroll'))
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-product-thumbnail-id="1"]').exists()).toBe(false)
+    expect(wrapper.find('[data-product-thumbnail-id="11"]').exists()).toBe(true)
+  })
+
+  it('scrolls the active list item with the same measured row size', async () => {
+    const wrapper = mount(VirtualThumbnailList, {
+      props: {
+        activeId: 1,
+        items: items(30),
+      },
+    })
+    const container = wrapper.get('.virtual-thumbnail-list').element as HTMLElement
+    Object.defineProperties(container, {
+      clientHeight: { configurable: true, value: 320 },
+      clientWidth: { configurable: true, value: 180 },
+    })
+    container.dispatchEvent(new Event('scroll'))
+    await wrapper.setProps({ activeId: 20 })
+    await wrapper.vm.$nextTick()
+
+    expect(container.scrollTop).toBe(4600)
   })
 })

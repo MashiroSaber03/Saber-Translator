@@ -85,6 +85,38 @@ describe('plugin agent v2 api', () => {
     expect(result.session_id).toBe('session-1')
   })
 
+  it('does not discard the active session on a transient reload failure', async () => {
+    postMock.mockResolvedValue({ session })
+    const { createPluginAgentSession, getPluginAgentSettings } = await import('@/api/pluginAgent')
+    await createPluginAgentSession({ mode: 'create' })
+
+    getMock
+      .mockResolvedValueOnce({ items: [] })
+      .mockRejectedValueOnce(Object.assign(new Error('offline'), { status: 0 }))
+    await expect(getPluginAgentSettings()).rejects.toThrow('offline')
+
+    getMock
+      .mockResolvedValueOnce({ items: [] })
+      .mockResolvedValueOnce({ session })
+    await expect(getPluginAgentSettings()).resolves.toMatchObject({ session })
+    expect(getMock).toHaveBeenLastCalledWith('/api/v2/plugin-agent/sessions/session-1')
+  })
+
+  it('forgets an expired active session after the backend returns not found', async () => {
+    postMock.mockResolvedValue({ session })
+    const { createPluginAgentSession, getPluginAgentSettings } = await import('@/api/pluginAgent')
+    await createPluginAgentSession({ mode: 'create' })
+
+    getMock
+      .mockResolvedValueOnce({ items: [] })
+      .mockRejectedValueOnce(Object.assign(new Error('expired'), { status: 404 }))
+    await expect(getPluginAgentSettings()).resolves.toMatchObject({ session: null })
+
+    getMock.mockResolvedValueOnce({ items: [] })
+    await getPluginAgentSettings()
+    expect(getMock).toHaveBeenLastCalledWith('/api/v2/plugins')
+  })
+
   it('uses the v2 session and durable job routes', async () => {
     const encoded = 'session%2Fgroup%20one'
     const scopedSession = {
@@ -182,7 +214,7 @@ describe('plugin agent v2 api', () => {
     const { listPluginAgentJobEvents } = await import('@/api/pluginAgent')
     const result = await listPluginAgentJobEvents('job-1', 4)
 
-    expect(eventsMock).toHaveBeenCalledWith('job-1', { after: 4, limit: 200 })
+    expect(eventsMock).toHaveBeenCalledWith('job-1', { after: 4, limit: 1000 })
     expect(result).toEqual({
       cursor: 6,
       events: [
@@ -195,6 +227,35 @@ describe('plugin agent v2 api', () => {
         },
       ],
     })
+  })
+
+  it('paginates the complete durable event backlog', async () => {
+    const firstPage = Array.from({ length: 1000 }, (_, index) => ({
+      eventId: index + 1,
+      type: 'job_progress',
+      payload: {},
+      createdAt: '2026-01-01T00:00:00Z',
+    }))
+    eventsMock
+      .mockResolvedValueOnce({ items: firstPage })
+      .mockResolvedValueOnce({
+        items: [{
+          eventId: 1001,
+          type: 'plugin_agent_done',
+          payload: { run_state: 'completed', message: 'done' },
+          createdAt: '2026-01-01T00:01:00Z',
+        }],
+      })
+
+    const { listPluginAgentJobEvents } = await import('@/api/pluginAgent')
+    const result = await listPluginAgentJobEvents('job-many')
+
+    expect(eventsMock).toHaveBeenNthCalledWith(1, 'job-many', { after: 0, limit: 1000 })
+    expect(eventsMock).toHaveBeenNthCalledWith(2, 'job-many', { after: 1000, limit: 1000 })
+    expect(result.cursor).toBe(1001)
+    expect(result.events).toEqual([
+      expect.objectContaining({ id: 1001, type: 'done' }),
+    ])
   })
 
   it('closes the running session when the durable job ends with an error', async () => {
@@ -228,5 +289,32 @@ describe('plugin agent v2 api', () => {
         timestamp: '2026-01-01T00:00:03Z',
       },
     ])
+  })
+
+  it.each([
+    ['job_request_pause', 'pausing', '正在暂停'],
+    ['job_paused', 'paused', '已暂停'],
+    ['job_resume', 'running', '执行中'],
+    ['job_request_cancel', 'cancelling', '正在取消'],
+  ] as const)('maps durable %s events into the Plugin Agent session state', async (
+    eventType,
+    runState,
+    label,
+  ) => {
+    const { pluginAgentEventFromJobEvent } = await import('@/api/pluginAgent')
+
+    expect(pluginAgentEventFromJobEvent({
+      jobId: 'job-1',
+      eventId: 9,
+      type: eventType,
+      payload: {},
+      createdAt: '2026-01-01T00:00:04Z',
+    })).toEqual({
+      id: 9,
+      eventKey: 'job:9',
+      type: 'state',
+      payload: { run_state: runState, label },
+      timestamp: '2026-01-01T00:00:04Z',
+    })
   })
 })

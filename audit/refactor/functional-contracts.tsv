@@ -1,0 +1,274 @@
+status	layer	group	contract_or_function	owner	result	evidence
+PASS	DESKTOP_PAGE	desktop	概览	DesktopWindow	桌面页面运行时、布局与交互契约已验证	真实 Windows 窗口捕获；生产组件在 1080×720 与 920×640 逐页渲染；即时设置及 API/Worker 启停探针通过
+PASS	DESKTOP_PAGE	desktop	任务中心	DesktopWindow	桌面页面运行时、布局与交互契约已验证	真实 Windows 窗口捕获；生产组件在 1080×720 与 920×640 逐页渲染；即时设置及 API/Worker 启停探针通过
+PASS	DESKTOP_PAGE	desktop	运行日志	DesktopWindow	桌面页面运行时、布局与交互契约已验证	真实 Windows 窗口捕获；生产组件在 1080×720 与 920×640 逐页渲染；即时设置及 API/Worker 启停探针通过
+PASS	DESKTOP_PAGE	desktop	设置	DesktopWindow	桌面页面运行时、布局与交互契约已验证	真实 Windows 窗口捕获；生产组件在 1080×720 与 920×640 逐页渲染；即时设置及 API/Worker 启停探针通过
+FIXED	FRONTEND_ROUTE	router	bookshelf	/	AUDIT-013/AUDIT-017	五个正式路由均经 Playwright 视觉回归与内置浏览器桌面、390×844 实机检查，无页面级溢出、破图或控制台错误
+PASS	FRONTEND_ROUTE	router	character-studio	/insight/character-studio	路由与页面 owner 契约已验证	五个正式路由均经 Playwright 视觉回归与内置浏览器桌面、390×844 实机检查，无页面级溢出、破图或控制台错误
+FIXED	FRONTEND_ROUTE	router	insight	/insight	AUDIT-049/AUDIT-060/AUDIT-062	五个正式路由均经 Playwright 视觉回归与内置浏览器桌面、390×844 实机检查，无页面级溢出、破图或控制台错误
+PASS	FRONTEND_ROUTE	router	reader	/reader	路由与页面 owner 契约已验证	五个正式路由均经 Playwright 视觉回归与内置浏览器桌面、390×844 实机检查，无页面级溢出、破图或控制台错误
+FIXED	FRONTEND_ROUTE	router	translate	/translate	AUDIT-098/AUDIT-110/AUDIT-111/AUDIT-126/AUDIT-128	五个正式路由均经 Playwright 视觉回归与内置浏览器桌面、390×844 实机检查，无页面级溢出、破图或控制台错误
+PASS	FRONTEND_SETTINGS_TAB	settings	detection	DetectionSettings.vue	SettingsModal 当前页签与表单交互契约已验证	九个设置页签均有 Playwright 视觉基线；内置浏览器弹层尺寸、滚动与窄屏边界通过
+PASS	FRONTEND_SETTINGS_TAB	settings	hq	HqTranslationSettings.vue	SettingsModal 当前页签与表单交互契约已验证	九个设置页签均有 Playwright 视觉基线；内置浏览器弹层尺寸、滚动与窄屏边界通过
+PASS	FRONTEND_SETTINGS_TAB	settings	more	MoreSettings.vue	SettingsModal 当前页签与表单交互契约已验证	九个设置页签均有 Playwright 视觉基线；内置浏览器弹层尺寸、滚动与窄屏边界通过
+PASS	FRONTEND_SETTINGS_TAB	settings	ocr	OcrSettings.vue	SettingsModal 当前页签与表单交互契约已验证	九个设置页签均有 Playwright 视觉基线；内置浏览器弹层尺寸、滚动与窄屏边界通过
+PASS	FRONTEND_SETTINGS_TAB	settings	plugins	PluginManager.vue	SettingsModal 当前页签与表单交互契约已验证	九个设置页签均有 Playwright 视觉基线；内置浏览器弹层尺寸、滚动与窄屏边界通过
+PASS	FRONTEND_SETTINGS_TAB	settings	prompt-library	PromptLibrary.vue	SettingsModal 当前页签与表单交互契约已验证	九个设置页签均有 Playwright 视觉基线；内置浏览器弹层尺寸、滚动与窄屏边界通过
+PASS	FRONTEND_SETTINGS_TAB	settings	proofreading	ProofreadingSettings.vue	SettingsModal 当前页签与表单交互契约已验证	九个设置页签均有 Playwright 视觉基线；内置浏览器弹层尺寸、滚动与窄屏边界通过
+PASS	FRONTEND_SETTINGS_TAB	settings	text-defaults	TextStyleDefaultsSettings.vue	SettingsModal 当前页签与表单交互契约已验证	九个设置页签均有 Playwright 视觉基线；内置浏览器弹层尺寸、滚动与窄屏边界通过
+PASS	FRONTEND_SETTINGS_TAB	settings	translate	TranslationSettings.vue	SettingsModal 当前页签与表单交互契约已验证	九个设置页签均有 Playwright 视觉基线；内置浏览器弹层尺寸、滚动与窄屏边界通过
+PASS	HTTP	system	GET /health	getV2Health	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	system	GET /system/server-info	getServerInfo	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	system	POST /system/release-models	releaseWorkerModelCache	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	settings	GET /settings	getSettings	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	settings	DELETE /credentials/{credential_id}	deleteCredential	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	settings	PUT /settings/transactions	saveSettingsTransaction	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	settings	PATCH /settings/workflow-preferences	updateWorkflowPreferences	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	settings	GET /prompts	listPrompts	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	settings	POST /prompts	createPrompt	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	settings	PUT /prompts/{prompt_id}	updatePrompt	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	settings	DELETE /prompts/{prompt_id}	deletePrompt	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	settings	POST /prompts/{prompt_id}/reset	resetPrompt	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	settings	POST /model-catalog	fetchModelCatalog	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	settings	POST /connection-tests/{kind}	runConnectionTest	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	settings	GET /fonts	listFonts	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	settings	POST /fonts	uploadFont	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	settings	DELETE /fonts/{font_id}	deleteFont	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	settings	POST /maintenance/clean-temp	cleanTemporaryAssets	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	pages	POST /pages/{page_id}/repairs	createPageRepairOperation	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	pages	GET /operations/{operation_id}	getOperation	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	pages	GET /operations/{operation_id}/events	getOperationEvents	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	pages	POST /pages/{page_id}/operations	createPageOperation	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	jobs	GET /jobs	listJobs	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	jobs	GET /jobs/events	streamJobEvents	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	jobs	GET /jobs/snapshot	getJobSnapshot	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	jobs	GET /jobs/{job_id}	getJob	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	jobs	GET /jobs/{job_id}/events	listJobEvents	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	jobs	POST /jobs/{job_id}/pause	pauseRunningJob	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	jobs	POST /jobs/{job_id}/resume	resumePausedJob	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	jobs	POST /jobs/{job_id}/cancel	cancelJob	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	jobs	POST /jobs/{job_id}/retry	retryFailedJob	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	jobs	POST /jobs/{job_id}/retry-failed	retryFailedJobItems	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	jobs	POST /jobs/reorder	reorderJobs	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	jobs	POST /jobs/cancel-queued	cancelQueuedJobs	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	jobs	POST /jobs/history/clear	clearJobHistory	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	jobs	GET /job-batches/{batch_id}	getJobBatch	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	jobs	POST /job-batches/{batch_id}/cancel	cancelQueuedJobBatchMembers	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	jobs	POST /job-batches/{batch_id}/prioritize	prioritizeQueuedJobBatchMembers	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	jobs	POST /job-batches/{batch_id}/continue	continueJobBatchMembers	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	jobs	POST /jobs/{job_id}/continue	continueInterruptedJob	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	jobs	GET /jobs/{job_id}/download	downloadJobArtifact	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	studio	GET /studio/books/{book_id}/index	getStudioIndex	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	studio	GET /studio/books/{book_id}/candidates	getStudioCandidates	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	studio	POST /studio/books/{book_id}/documents	createStudioDocument	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	studio	POST /studio/books/{book_id}/imports	importStudioDocument	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	studio	POST /studio/assets	uploadStudioAsset	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	studio	GET /studio/documents/{document_id}	getStudioDocument	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	studio	PUT /studio/documents/{document_id}	updateStudioDocument	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	studio	DELETE /studio/documents/{document_id}	deleteStudioDocument	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	studio	POST /studio/documents/{document_id}/generate	generateStudioDocumentSection	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	studio	POST /studio/documents/{document_id}/validate	validateStudioDocument	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	studio	GET /studio/documents/{document_id}/export	exportStudioDocument	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	studio	POST /studio/documents/{document_id}/worldbook/import	importStudioWorldbook	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	studio	POST /studio/documents/{document_id}/agent	streamStudioAgent	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	studio	GET /studio/documents/{document_id}/chat	getStudioChatState	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	studio	POST /studio/documents/{document_id}/chat/sessions	createStudioChatSession	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	studio	POST /studio/documents/{document_id}/chat/import	importStudioChatSession	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	studio	GET /studio/chat/sessions/{session_id}	getStudioChatSession	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	studio	DELETE /studio/chat/sessions/{session_id}	deleteArchivedStudioChatSession	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	studio	POST /studio/chat/sessions/{session_id}/activate	activateStudioChatSession	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	studio	POST /studio/chat/sessions/{session_id}/messages	createStudioChatMessage	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	studio	POST /studio/chat/sessions/{session_id}/abort	abortStudioChatOperation	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	studio	POST /studio/chat/sessions/{session_id}/summarize	summarizeStudioChatSession	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	studio	GET /studio/chat/sessions/{session_id}/export	exportStudioChatSession	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	studio	GET /studio/chat/sessions/{session_id}/prompt-preview	previewStudioChatPrompt	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	studio	PUT /studio/chat/messages/{message_id}	editStudioChatMessageAndRegenerate	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	studio	DELETE /studio/chat/messages/{message_id}	deleteStudioChatMessageChain	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	studio	POST /studio/chat/messages/{message_id}/regenerate	regenerateStudioChatMessage	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	content	GET /books	listBooks	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	content	POST /books	createBook	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	content	POST /books/batch-delete	batchDeleteBooks	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	content	POST /books/batch-tags	batchUpdateBookTags	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	content	GET /books/{book_id}	getBook	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	content	PUT /books/{book_id}	updateBook	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	content	DELETE /books/{book_id}	deleteBook	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	content	GET /books/{book_id}/translation-constraints	getBookTranslationConstraints	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	content	PUT /books/{book_id}/translation-constraints	updateBookTranslationConstraints	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	content	GET /books/{book_id}/chapters	listBookChapters	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	content	POST /books/{book_id}/chapters	createChapter	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	content	PUT /books/{book_id}/chapters/order	reorderChapters	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	content	PUT /chapters/{chapter_id}	updateChapter	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	content	DELETE /chapters/{chapter_id}	deleteChapter	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	content	PUT /chapters/{chapter_id}/pages/order	reorderChapterPages	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	content	PATCH /chapters/{chapter_id}/settings-memory	updateChapterSettingsMemory	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	content	PATCH /chapters/{chapter_id}/last-visited-page	updateChapterLastVisitedPage	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	jobs	POST /chapters/{chapter_id}/translation-jobs	createChapterTranslationJob	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	jobs	POST /translation-batches	createTranslationJobBatch	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	jobs	POST /chapters/{chapter_id}/remove-text-jobs	createChapterRemoveTextJob	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	jobs	POST /chapters/{chapter_id}/detect-jobs	createChapterDetectJob	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	jobs	POST /chapters/{chapter_id}/style-apply-jobs	createChapterStyleApplyJob	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	transfer	POST /chapters/{chapter_id}/container-import-jobs	createContainerImportJob	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	transfer	POST /chapters/{chapter_id}/export-jobs	createChapterExportJob	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	transfer	GET /chapters/{chapter_id}/text-export	exportChapterText	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	transfer	POST /chapters/{chapter_id}/text-import/preview	previewChapterTextImport	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	transfer	POST /chapters/{chapter_id}/text-import/commit	commitChapterTextImport	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	content	GET /chapters/{chapter_id}/pages	listChapterPages	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	content	POST /chapters/{chapter_id}/pages	importChapterPage	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	content	DELETE /chapters/{chapter_id}/pages	clearChapterPages	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	content	GET /pages/{page_id}	getPageSummary	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	content	DELETE /pages/{page_id}	deletePage	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	content	PUT /pages/{page_id}/source	replacePageSource	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	pages	GET /pages/{page_id}/document	getPageDocument	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	pages	PATCH /pages/{page_id}/document	updatePageDocument	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	pages	POST /pages/{page_id}/bubbles	createPageBubble	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	pages	PATCH /pages/{page_id}/bubbles/{bubble_id}	updatePageBubble	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	pages	DELETE /pages/{page_id}/bubbles/{bubble_id}	deletePageBubble	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	pages	GET /pages/{page_id}/render-status	getPageRenderStatus	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	content	GET /assets/{asset_id}	getImmutableAsset	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	content	GET /translation/bootstrap	getTranslationBootstrap	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	content	POST /quick-workspace/reset	resetQuickWorkspace	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	content	POST /quick-workspace/promote	promoteQuickWorkspace	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	content	GET /tags	listTags	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	content	POST /tags	createTag	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	content	PUT /tags/{tag_id}	updateTag	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	content	DELETE /tags/{tag_id}	deleteTag	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	web-import	POST /web-import/support-checks	checkWebImportSupport	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	web-import	POST /web-import/drafts	createWebImportDraft	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	web-import	GET /web-import/drafts/{draft_id}	getWebImportDraft	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	web-import	DELETE /web-import/drafts/{draft_id}	deleteWebImportDraft	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	web-import	GET /web-import/drafts/{draft_id}/pages	listWebImportDraftPages	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	web-import	PUT /web-import/drafts/{draft_id}/selection	updateWebImportDraftSelection	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	web-import	POST /web-import/drafts/{draft_id}/commit	commitWebImportDraft	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	web-import	GET /web-import/drafts/{draft_id}/media/{draft_page_id}	getWebImportDraftPageMedia	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	GET /insight/bootstrap	getInsightBootstrap	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	GET /insight/books/{book_id}/chapters	listInsightChapters	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	GET /insight/books/{book_id}/pages	listInsightPages	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	GET /insight/books/{book_id}/recent-page-analyses	listRecentInsightPageAnalyses	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	GET /insight/pages/{page_id}	getInsightPage	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	GET /insight/runs/{run_id}	getInsightRun	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight,jobs	POST /insight/analysis-jobs	createInsightAnalysisJob	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	GET /insight/artifacts/overviews	listInsightOverviewTemplates	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	GET /insight/artifacts/overviews/{template}	getInsightOverview	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight,jobs	POST /insight/artifacts/overviews/{template}	rebuildInsightOverview	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	GET /insight/timeline	getInsightTimeline	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight,jobs	POST /insight/timeline	rebuildInsightTimeline	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight,jobs	POST /insight/books/{book_id}/compressed-context/rebuild	rebuildInsightCompressedContext	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight,jobs	POST /insight/books/{book_id}/vector-rebuild	rebuildInsightVectors	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	GET /insight/qa/status	getInsightQaStatus	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	POST /insight/books/{book_id}/qa	askInsightQuestion	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	GET /insight/pages/{page_id}/export	exportInsightPage	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	GET /insight/books/{book_id}/export/current	exportCurrentInsightBook	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight,jobs	POST /insight/books/{book_id}/exports	createInsightExportJob	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	GET /insight/notes	listInsightNotes	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	POST /insight/notes	createInsightNote	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	GET /insight/notes/{note_id}	getInsightNote	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	PATCH /insight/notes/{note_id}	updateInsightNote	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	DELETE /insight/notes/{note_id}	deleteInsightNote	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	GET /insight/books/{book_id}/continuation	getContinuationProject	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	DELETE /insight/books/{book_id}/continuation	deleteContinuationProject	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	POST /insight/books/{book_id}/continuation/sync-analysis	syncContinuationAnalysis	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	PATCH /insight/continuation/projects/{project_id}	updateContinuationProject	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	PUT /insight/continuation/projects/{project_id}/references	updateContinuationReferences	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	POST /insight/continuation/projects/{project_id}/characters	createContinuationCharacter	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	PATCH /insight/continuation/characters/{character_id}	updateContinuationCharacter	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	DELETE /insight/continuation/characters/{character_id}	deleteContinuationCharacter	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	POST /insight/continuation/characters/{character_id}/forms	createContinuationForm	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	GET /insight/continuation/projects/{project_id}/forms	listContinuationForms	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	PATCH /insight/continuation/forms/{form_id}	updateContinuationForm	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	DELETE /insight/continuation/forms/{form_id}	deleteContinuationForm	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	POST /insight/continuation/forms/{form_id}/reference	uploadContinuationFormReference	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	DELETE /insight/continuation/forms/{form_id}/reference	deleteContinuationFormReference	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	POST /insight/continuation/forms/{form_id}/image-versions/{version}/adopt	adoptContinuationFormImageVersion	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight,jobs	POST /insight/books/{book_id}/continuation/jobs	createContinuationRunJob	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	PATCH /insight/continuation/projects/{project_id}/script	updateContinuationScript	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	PATCH /insight/continuation/pages/{page_id}	updateContinuationPage	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	insight	POST /insight/continuation/pages/{page_id}/image-versions/{version}/activate	activateContinuationPageImageVersion	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	plugins	GET /plugins	listPlugins	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	plugins	POST /plugins/refresh	refreshPlugins	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	plugins	POST /plugins/import	importPlugin	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	plugins	PUT /plugins/{plugin_id}/runtime-enabled	setPluginRuntimeEnabled	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	plugins	PUT /plugins/{plugin_id}/default-enabled	setPluginDefaultEnabled	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	plugins	GET /plugins/{plugin_id}/config	getPluginConfig	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	plugins	PUT /plugins/{plugin_id}/config	updatePluginConfig	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	plugins	GET /plugins/{plugin_id}/export	exportPlugin	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	plugins	DELETE /plugins/{plugin_id}	deletePlugin	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	plugin-agent	POST /plugin-agent/sessions	createPluginAgentSession	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	plugin-agent	GET /plugin-agent/sessions/{session_id}	getPluginAgentSession	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	plugin-agent	DELETE /plugin-agent/sessions/{session_id}	deletePluginAgentSession	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	plugin-agent	POST /plugin-agent/sessions/{session_id}/messages	sendPluginAgentPlanningMessage	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	plugin-agent	POST /plugin-agent/sessions/{session_id}/lock-target	lockPluginAgentTarget	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+PASS	HTTP	plugin-agent	POST /plugin-agent/sessions/{session_id}/start	startPluginAgentJob	OpenAPI operationId、Flask 路由与当前实现闭合	181 个当前 HTTP operation 经确定性生成、runtime route 对照和完整后端测试验证
+DELETE-VERIFIED	HTTP	settings	GET /credentials	listCredentials	旧接口已删除且当前运行时无对应路由	Git main 对照、OpenAPI 路由集合与残留路径搜索闭合
+DELETE-VERIFIED	HTTP	settings	GET /provider-settings	getProviderSettings	旧接口已删除且当前运行时无对应路由	Git main 对照、OpenAPI 路由集合与残留路径搜索闭合
+DELETE-VERIFIED	HTTP	settings	POST /maintenance/clean-debug	cleanDebugAssets	旧接口已删除且当前运行时无对应路由	Git main 对照、OpenAPI 路由集合与残留路径搜索闭合
+PASS	OPERATION	pages	bubble_color	InteractivePageOperationService	页面原子操作的受理、事件与终态契约闭合	Operations 仓储、执行器、HTTP 与恢复测试通过
+PASS	OPERATION	pages	bubble_ocr	InteractivePageOperationService	页面原子操作的受理、事件与终态契约闭合	Operations 仓储、执行器、HTTP 与恢复测试通过
+PASS	OPERATION	pages	page_detect	InteractivePageOperationService	页面原子操作的受理、事件与终态契约闭合	Operations 仓储、执行器、HTTP 与恢复测试通过
+PASS	OPERATION	pages	page_repair	PageRepairService	页面原子操作的受理、事件与终态契约闭合	Operations 仓储、执行器、HTTP 与恢复测试通过
+PASS	PLUGIN_HOOK	plugins	after_ai_translate	PluginRuntime	当前插件生命周期钩子由单一运行时契约拥有	插件 manifest、运行时分派、示例插件与完整后端测试通过
+PASS	PLUGIN_HOOK	plugins	after_color	PluginRuntime	当前插件生命周期钩子由单一运行时契约拥有	插件 manifest、运行时分派、示例插件与完整后端测试通过
+PASS	PLUGIN_HOOK	plugins	after_detect	PluginRuntime	当前插件生命周期钩子由单一运行时契约拥有	插件 manifest、运行时分派、示例插件与完整后端测试通过
+PASS	PLUGIN_HOOK	plugins	after_inpaint	PluginRuntime	当前插件生命周期钩子由单一运行时契约拥有	插件 manifest、运行时分派、示例插件与完整后端测试通过
+PASS	PLUGIN_HOOK	plugins	after_job	PluginRuntime	当前插件生命周期钩子由单一运行时契约拥有	插件 manifest、运行时分派、示例插件与完整后端测试通过
+PASS	PLUGIN_HOOK	plugins	after_ocr	PluginRuntime	当前插件生命周期钩子由单一运行时契约拥有	插件 manifest、运行时分派、示例插件与完整后端测试通过
+PASS	PLUGIN_HOOK	plugins	after_pipeline	PluginRuntime	当前插件生命周期钩子由单一运行时契约拥有	插件 manifest、运行时分派、示例插件与完整后端测试通过
+PASS	PLUGIN_HOOK	plugins	after_render	PluginRuntime	当前插件生命周期钩子由单一运行时契约拥有	插件 manifest、运行时分派、示例插件与完整后端测试通过
+PASS	PLUGIN_HOOK	plugins	after_translate	PluginRuntime	当前插件生命周期钩子由单一运行时契约拥有	插件 manifest、运行时分派、示例插件与完整后端测试通过
+PASS	PLUGIN_HOOK	plugins	before_ai_translate	PluginRuntime	当前插件生命周期钩子由单一运行时契约拥有	插件 manifest、运行时分派、示例插件与完整后端测试通过
+PASS	PLUGIN_HOOK	plugins	before_color	PluginRuntime	当前插件生命周期钩子由单一运行时契约拥有	插件 manifest、运行时分派、示例插件与完整后端测试通过
+PASS	PLUGIN_HOOK	plugins	before_detect	PluginRuntime	当前插件生命周期钩子由单一运行时契约拥有	插件 manifest、运行时分派、示例插件与完整后端测试通过
+PASS	PLUGIN_HOOK	plugins	before_inpaint	PluginRuntime	当前插件生命周期钩子由单一运行时契约拥有	插件 manifest、运行时分派、示例插件与完整后端测试通过
+PASS	PLUGIN_HOOK	plugins	before_job	PluginRuntime	当前插件生命周期钩子由单一运行时契约拥有	插件 manifest、运行时分派、示例插件与完整后端测试通过
+PASS	PLUGIN_HOOK	plugins	before_ocr	PluginRuntime	当前插件生命周期钩子由单一运行时契约拥有	插件 manifest、运行时分派、示例插件与完整后端测试通过
+PASS	PLUGIN_HOOK	plugins	before_pipeline	PluginRuntime	当前插件生命周期钩子由单一运行时契约拥有	插件 manifest、运行时分派、示例插件与完整后端测试通过
+PASS	PLUGIN_HOOK	plugins	before_render	PluginRuntime	当前插件生命周期钩子由单一运行时契约拥有	插件 manifest、运行时分派、示例插件与完整后端测试通过
+PASS	PLUGIN_HOOK	plugins	before_translate	PluginRuntime	当前插件生命周期钩子由单一运行时契约拥有	插件 manifest、运行时分派、示例插件与完整后端测试通过
+PASS	PLUGIN_MODE	plugins	hq	plugin contract	当前插件任务模式与任务类型映射闭合	插件 manifest、任务编排与示例插件验证通过
+PASS	PLUGIN_MODE	plugins	proofread	plugin contract	当前插件任务模式与任务类型映射闭合	插件 manifest、任务编排与示例插件验证通过
+PASS	PLUGIN_MODE	plugins	remove_text	plugin contract	当前插件任务模式与任务类型映射闭合	插件 manifest、任务编排与示例插件验证通过
+PASS	PLUGIN_MODE	plugins	standard	plugin contract	当前插件任务模式与任务类型映射闭合	插件 manifest、任务编排与示例插件验证通过
+PASS	WORKER_BATCH	worker	hq_translate	TranslationPipelineService.batch_handler	批处理器与 Worker 当前注册表闭合	批处理执行、失败传播、取消/暂停及完整后端测试通过
+PASS	WORKER_BATCH	worker	proofread	TranslationPipelineService.batch_handler	批处理器与 Worker 当前注册表闭合	批处理执行、失败传播、取消/暂停及完整后端测试通过
+PASS	WORKER_BATCH	worker	web_extract_page	WebImportWorkerService.handle_download_batch	批处理器与 Worker 当前注册表闭合	批处理执行、失败传播、取消/暂停及完整后端测试通过
+PASS	WORKER_STEP	content	style_apply_document	StyleApplyWorkerService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	content	text_import_apply	TextImportWorkerService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	continuation	continuation_export	ContinuationWorkerService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	continuation	continuation_generate_character_sheet	ContinuationWorkerService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	continuation	continuation_generate_image	ContinuationWorkerService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	continuation	continuation_generate_page	ContinuationWorkerService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	continuation	continuation_generate_script	ContinuationWorkerService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	insight	insight_analyze_page	InsightAnalysisWorkerService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	insight	insight_publish_run	InsightAnalysisWorkerService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	insight	insight_validate_run	InsightAnalysisWorkerService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	insight-derived	insight_build_compressed_context	InsightDerivedWorkerService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	insight-derived	insight_build_overview	InsightDerivedWorkerService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	insight-derived	insight_build_timeline	InsightDerivedWorkerService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	insight-derived	insight_build_vectors	InsightDerivedWorkerService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	insight-derived	insight_stage_compressed_context	InsightDerivedWorkerService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	insight-derived	insight_stage_overview_no_spoiler	InsightDerivedWorkerService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	insight-derived	insight_stage_overview_story_summary	InsightDerivedWorkerService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	insight-derived	insight_stage_timeline	InsightDerivedWorkerService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	insight-derived	insight_stage_vectors	InsightDerivedWorkerService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	insight-derived	insight_build_layer_{index}	InsightDerivedWorkerService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	insight-export	insight_export_report	InsightExportWorkerService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	plugin-agent	plugin_agent_execute	PluginAgentWorkerService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	transfer	container_import_page	TransferWorkerService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	transfer	container_scan	TransferWorkerService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	transfer	export_package	TransferWorkerService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	translation	auto_terms	TranslationPipelineService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	translation	color	TranslationPipelineService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	translation	detect	TranslationPipelineService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	translation	hq_translate	TranslationPipelineService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	translation	ocr	TranslationPipelineService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	translation	proofread	TranslationPipelineService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	translation	publish_clean	TranslationPipelineService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	translation	render	TranslationPipelineService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	translation	repair	TranslationPipelineService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	translation	save	TranslationPipelineService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	translation	translate	TranslationPipelineService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	web-import	web_extract_auto_commit	WebImportWorkerService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	web-import	web_extract_finalize	WebImportWorkerService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	web-import	web_extract_page	WebImportWorkerService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	web-import	web_extract_scan	WebImportWorkerService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	web-import	web_import_commit_finalize	WebImportWorkerService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证
+PASS	WORKER_STEP	web-import	web_import_commit_page	WebImportWorkerService	原子步骤与当前 Worker 注册表、任务图闭合	42 个原子步骤经注册表、执行器、失败传播与完整后端测试验证

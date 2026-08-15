@@ -284,6 +284,8 @@ import { computed, nextTick, ref, watch } from 'vue'
 import type {
   CharacterStudioDocument,
   CharacterStudioEditorPendingState,
+  CharacterStudioGenerationSection,
+  CharacterStudioSection,
   ExportDiagnostic,
 } from '@/types/characterStudio'
 import { deepClone } from '@/utils/deepClone'
@@ -357,7 +359,7 @@ const emit = defineEmits<{
   (e: 'update:activeTab', value: 'overview' | 'character' | 'greetings' | 'lorebook' | 'scripts' | 'export'): void
   (e: 'update:activeScriptTab', value: 'regex' | 'tasks'): void
   (e: 'save'): void
-  (e: 'generate', section: string): void
+  (e: 'generate', section: CharacterStudioGenerationSection): void
   (e: 'validate'): void
   (e: 'delete'): void
   (e: 'import-worldbook', file: File): void
@@ -417,12 +419,6 @@ watch(() => props.document, value => {
 
 watch(localDocument, value => {
   if (syncing) return
-  if (value) {
-    const normalizedName = String(value.identity.name || '').trim()
-    if (value.meta.title !== normalizedName) {
-      value.meta.title = normalizedName
-    }
-  }
   emit('update:document', value ? deepClone(value) : null)
 }, { deep: true })
 
@@ -580,11 +576,11 @@ function toggleTaskField(index: number, field: StateTaskToggleField, value: bool
   task[field] = value
 }
 
-function isFrozen(section: string) {
+function isFrozen(section: CharacterStudioSection) {
   return !!localDocument.value?.status.frozen_sections.includes(section)
 }
 
-function toggleFrozen(section: string, checked: boolean) {
+function toggleFrozen(section: CharacterStudioSection, checked: boolean) {
   if (!localDocument.value) return
   const next = new Set(localDocument.value.status.frozen_sections || [])
   if (checked) next.add(section)

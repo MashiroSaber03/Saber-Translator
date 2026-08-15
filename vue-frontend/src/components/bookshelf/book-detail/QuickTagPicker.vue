@@ -27,8 +27,8 @@ const availableTagItems = computed<ProductChipItem[]>(() => props.availableTags.
   iconName: 'plus',
   interactive: true,
   tone: 'custom',
-  backgroundColor: tag.color || 'var(--color-action-brand)',
-  borderColor: tag.color || 'var(--color-action-brand)',
+  backgroundColor: tag.color,
+  borderColor: tag.color,
   textColor: 'var(--color-text-inverse)',
 })))
 

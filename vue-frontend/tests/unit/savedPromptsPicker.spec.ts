@@ -143,6 +143,41 @@ describe('SavedPromptsPicker', () => {
     expect(wrapper.find('.empty-hint').exists()).toBe(false)
   })
 
+  it('lets the user retry after a prompt-list request fails', async () => {
+    listV2PromptsMock
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce([
+        prompt('retry-prompt-id', 'retry prompt', 'retry content'),
+      ])
+
+    const wrapper = mount(SavedPromptsPicker, {
+      props: { promptType: 'translate' },
+    })
+    await flushPromises()
+
+    let chipList = wrapper.getComponent(ProductChipList)
+    expect(chipList.props('items')).toEqual([
+      expect.objectContaining({
+        id: 'error',
+        interactive: true,
+        label: '加载失败，点击重试',
+        tone: 'danger',
+      }),
+    ])
+
+    chipList.vm.$emit('select', 'error')
+    await flushPromises()
+
+    chipList = wrapper.getComponent(ProductChipList)
+    expect(listV2PromptsMock).toHaveBeenCalledTimes(2)
+    expect(chipList.props('items')).toEqual([
+      expect.objectContaining({
+        id: 'retry-prompt-id',
+        label: 'retry prompt',
+      }),
+    ])
+  })
+
   it('keeps refresh behavior on lifecycle and props instead of an exposed instance method', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/settings/SavedPromptsPicker.vue'),

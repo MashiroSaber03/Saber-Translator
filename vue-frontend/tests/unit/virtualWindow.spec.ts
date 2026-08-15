@@ -14,6 +14,17 @@ describe('virtual windows', () => {
     expect(window.totalSize).toBe(164000)
   })
 
+  it('keeps a stale scroll offset inside a shortened fixed-size collection', () => {
+    const window = fixedVirtualWindow(10, 100, 100000, 300, 2)
+
+    expect(window).toEqual({
+      start: 7,
+      end: 10,
+      offset: 700,
+      totalSize: 1000,
+    })
+  })
+
   it('uses page aspect-derived sizes without mounting the whole stream', () => {
     const sizes = Array.from({ length: 1000 }, (_, index) => 500 + index % 5)
     const offsets = variableItemOffsets(sizes)

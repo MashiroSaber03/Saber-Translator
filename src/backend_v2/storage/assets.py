@@ -130,7 +130,13 @@ class AssetStorageService:
             raise ValueError("asset extension must contain only 1-12 lowercase letters/digits")
         if not mime_type or "/" not in mime_type:
             raise ValueError("a concrete MIME type is required")
-        if width is not None and width < 1 or height is not None and height < 1:
+        if (width is None) != (height is None):
+            raise ValueError("asset width and height must be provided together")
+        if (
+            width is not None
+            and height is not None
+            and (width < 1 or height < 1)
+        ):
             raise ValueError("asset dimensions must be positive")
 
         asset_id = str(uuid.uuid4())

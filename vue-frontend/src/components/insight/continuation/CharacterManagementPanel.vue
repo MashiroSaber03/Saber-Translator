@@ -84,6 +84,7 @@
 
     <AddCharacterDialog
       v-if="showAddCharDialog"
+      :busy="pendingActions.has('add-character')"
       @close="showAddCharDialog = false"
       @add="handleAddCharacter"
     />
@@ -91,12 +92,14 @@
     <EditCharacterDialog
       v-if="showEditCharDialog && editingCharacter"
       :character="editingCharacter"
+      :busy="selectedCharacter ? pendingActions.has(`edit-character:${selectedCharacter}`) : false"
       @close="showEditCharDialog = false"
       @save="handleSaveCharacterInfo"
     />
 
     <AddFormDialog
       v-if="showAddFormDialog"
+      :busy="selectedCharacter ? pendingActions.has(`add-form:${selectedCharacter}`) : false"
       @close="showAddFormDialog = false"
       @add="handleAddForm"
     />
@@ -104,6 +107,7 @@
     <EditFormDialog
       v-if="showEditFormDialog && editingForm"
       :form="editingForm"
+      :busy="pendingActions.has(`edit-form:${editingForm.form_id}`)"
       @close="showEditFormDialog = false"
       @save="handleSaveFormInfo"
     />
@@ -131,7 +135,7 @@ import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
 import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import type { ProductChipItem } from '@/components/product/ProductChipList.vue'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import type { CharacterManagementComposable } from '@/composables/continuation/useCharacterManagement'
 import type { ContinuationState } from '@/composables/continuation/useContinuationState'
 import { confirmProductAction } from '@/composables/useProductConfirm'
@@ -170,6 +174,8 @@ const orthoFormId = ref('')
 const orthoFormName = ref('')
 const orthoGenerating = ref(false)
 const orthoResultImagePath = ref<string | null>(null)
+const pendingActions = ref<Set<string>>(new Set())
+let orthoRequestId = 0
 
 const characters = computed(() => state.characters.value)
 
@@ -189,8 +195,7 @@ function getCharacterImageUrl(name: string): string {
 function getFormImageUrl(charName: string, formId: string): string {
   const char = characters.value.find(c => c.name === charName)
   const form = char?.forms?.find(f => f.form_id === formId)
-  if (!form?.reference_image) return ''
-  return state.getFormImageUrl(form.reference_image)
+  return form?.reference_image || ''
 }
 
 function characterTileChips(character: CharacterProfile): ProductChipItem[] {
@@ -208,6 +213,18 @@ function openAddCharacterDialog() {
   showAddCharDialog.value = true
 }
 
+function beginAction(key: string): boolean {
+  if (pendingActions.value.has(key)) return false
+  pendingActions.value = new Set(pendingActions.value).add(key)
+  return true
+}
+
+function endAction(key: string): void {
+  const next = new Set(pendingActions.value)
+  next.delete(key)
+  pendingActions.value = next
+}
+
 function openEditCharacterDialog() {
   const char = getSelectedCharacterData()
   if (!char) return
@@ -216,21 +233,37 @@ function openEditCharacterDialog() {
 }
 
 async function handleAddCharacter(name: string, aliases: string[], description: string) {
-  if (await charMgmt.addCharacter(name, aliases, description)) {
-    showAddCharDialog.value = false
+  const key = 'add-character'
+  if (!beginAction(key)) return
+  try {
+    if (await charMgmt.addCharacter(name, aliases, description)) {
+      showAddCharDialog.value = false
+    }
+  } finally {
+    endAction(key)
   }
 }
 
 async function handleSaveCharacterInfo(name: string, aliases: string[]) {
   if (!selectedCharacter.value) return
-  if (await charMgmt.updateCharacterInfo(selectedCharacter.value, name, aliases)) {
-    showEditCharDialog.value = false
+  const key = `edit-character:${selectedCharacter.value}`
+  if (!beginAction(key)) return
+  try {
+    if (await charMgmt.updateCharacterInfo(selectedCharacter.value, name, aliases)) {
+      showEditCharDialog.value = false
+    }
+  } finally {
+    endAction(key)
   }
 }
 
 async function handleDeleteCharacter() {
   if (!selectedCharacter.value) return
   const characterName = selectedCharacter.value
+  const bookId = props.bookId
+  const key = `delete-character:${characterName}`
+  if (!beginAction(key)) return
+  try {
   const confirmed = await confirmProductAction({
     title: '删除角色',
     message: `确定要删除角色"${characterName}"吗？`,
@@ -238,16 +271,25 @@ async function handleDeleteCharacter() {
     cancelText: '取消',
     tone: 'danger',
   })
-  if (!confirmed) return
+  if (!confirmed || props.bookId !== bookId) return
 
   if (await charMgmt.deleteCharacter(characterName)) {
     selectedCharacter.value = null
+  }
+  } finally {
+    endAction(key)
   }
 }
 
 async function handleToggleCharacter(enabled: boolean) {
   if (!selectedCharacter.value) return
-  await charMgmt.toggleCharacterEnabled(selectedCharacter.value, enabled)
+  const key = `toggle-character:${selectedCharacter.value}`
+  if (!beginAction(key)) return
+  try {
+    await charMgmt.toggleCharacterEnabled(selectedCharacter.value, enabled)
+  } finally {
+    endAction(key)
+  }
 }
 
 function openAddFormDialog() {
@@ -263,13 +305,22 @@ function openEditFormDialog(form: CharacterForm) {
 
 async function handleAddForm(formName: string, description: string) {
   if (!selectedCharacter.value) return
-  if (await charMgmt.addForm(selectedCharacter.value, formName, description)) {
-    showAddFormDialog.value = false
+  const key = `add-form:${selectedCharacter.value}`
+  if (!beginAction(key)) return
+  try {
+    if (await charMgmt.addForm(selectedCharacter.value, formName, description)) {
+      showAddFormDialog.value = false
+    }
+  } finally {
+    endAction(key)
   }
 }
 
 async function handleSaveFormInfo(formName: string, description: string) {
   if (!selectedCharacter.value || !editingForm.value) return
+  const key = `edit-form:${editingForm.value.form_id}`
+  if (!beginAction(key)) return
+  try {
   const saved = await charMgmt.updateForm(
     selectedCharacter.value,
     editingForm.value.form_id,
@@ -279,10 +330,18 @@ async function handleSaveFormInfo(formName: string, description: string) {
   if (saved) {
     showEditFormDialog.value = false
   }
+  } finally {
+    endAction(key)
+  }
 }
 
 async function handleDeleteForm(form: CharacterForm) {
   if (!selectedCharacter.value) return
+  const characterName = selectedCharacter.value
+  const bookId = props.bookId
+  const key = `delete-form:${form.form_id}`
+  if (!beginAction(key)) return
+  try {
   const confirmed = await confirmProductAction({
     title: '删除角色形态',
     message: `确定要删除形态"${form.form_name}"吗？`,
@@ -290,18 +349,32 @@ async function handleDeleteForm(form: CharacterForm) {
     cancelText: '取消',
     tone: 'danger',
   })
-  if (!confirmed) return
+  if (!confirmed || props.bookId !== bookId) return
 
-  await charMgmt.deleteForm(selectedCharacter.value, form.form_id)
+  await charMgmt.deleteForm(characterName, form.form_id)
+  } finally {
+    endAction(key)
+  }
 }
 
 async function handleUploadFormImage(formId: string, file: File) {
   if (!selectedCharacter.value) return
-  await charMgmt.uploadFormImage(selectedCharacter.value, formId, file)
+  const key = `upload-form:${formId}`
+  if (!beginAction(key)) return
+  try {
+    await charMgmt.uploadFormImage(selectedCharacter.value, formId, file)
+  } finally {
+    endAction(key)
+  }
 }
 
 async function handleDeleteFormImage(formId: string) {
   if (!selectedCharacter.value) return
+  const characterName = selectedCharacter.value
+  const bookId = props.bookId
+  const key = `delete-form-image:${formId}`
+  if (!beginAction(key)) return
+  try {
   const confirmed = await confirmProductAction({
     title: '删除形态参考图',
     message: '确定要删除形态参考图吗？',
@@ -309,14 +382,23 @@ async function handleDeleteFormImage(formId: string) {
     cancelText: '取消',
     tone: 'danger',
   })
-  if (!confirmed) return
+  if (!confirmed || props.bookId !== bookId) return
 
-  await charMgmt.deleteFormImage(selectedCharacter.value, formId)
+  await charMgmt.deleteFormImage(characterName, formId)
+  } finally {
+    endAction(key)
+  }
 }
 
 async function handleToggleFormEnabled(formId: string, enabled: boolean) {
   if (!selectedCharacter.value) return
-  await charMgmt.toggleFormEnabled(selectedCharacter.value, formId, enabled)
+  const key = `toggle-form:${formId}`
+  if (!beginAction(key)) return
+  try {
+    await charMgmt.toggleFormEnabled(selectedCharacter.value, formId, enabled)
+  } finally {
+    endAction(key)
+  }
 }
 
 function handleGenerateOrthographic(formId: string, formName: string) {
@@ -327,56 +409,97 @@ function handleGenerateOrthographic(formId: string, formName: string) {
   showOrthoDialog.value = true
 }
 
-async function handleGenerateOrtho(sourceImages: File[]) {
-  if (!selectedCharacter.value) return
+async function handleGenerateOrtho(sourceImage: File) {
+  if (!selectedCharacter.value || orthoGenerating.value) return
+  const bookId = props.bookId
+  const characterName = selectedCharacter.value
+  const formId = orthoFormId.value
+  const requestId = ++orthoRequestId
 
   orthoGenerating.value = true
   orthoResultImagePath.value = null
 
   try {
     const jobId = await charMgmt.generateOrtho(
-      selectedCharacter.value,
-      orthoFormId.value,
-      sourceImages
+      characterName,
+      formId,
+      sourceImage
     )
 
+    if (requestId !== orthoRequestId || props.bookId !== bookId) return
     state.showMessage('三视图任务已进入任务中心，关闭浏览器也会继续运行', 'info')
     await taskCenterStore.waitForJob(jobId)
+    if (requestId !== orthoRequestId || props.bookId !== bookId) return
     await state.initializeData()
+    if (requestId !== orthoRequestId || props.bookId !== bookId) return
     const form = state.characters.value
-      .find(character => character.name === selectedCharacter.value)
-      ?.forms.find(item => item.form_id === orthoFormId.value)
+      .find(character => character.name === characterName)
+      ?.forms.find(item => item.form_id === formId)
     orthoResultImagePath.value = form?.reference_image || null
     if (!orthoResultImagePath.value) {
       throw new Error('任务完成但未找到生成结果')
     }
     state.showMessage('三视图生成成功', 'success')
   } catch (error) {
-    state.showMessage('生成失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
+    if (requestId === orthoRequestId && props.bookId === bookId) {
+      state.showMessage('生成失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
+    }
   } finally {
-    orthoGenerating.value = false
+    if (requestId === orthoRequestId) orthoGenerating.value = false
   }
 }
 
 async function handleUseOrthoResult(imagePath: string) {
   if (!selectedCharacter.value) return
+  const bookId = props.bookId
+  const characterName = selectedCharacter.value
+  const formId = orthoFormId.value
+  const key = `use-ortho:${formId}`
+  if (!beginAction(key)) return
 
   try {
-    await charMgmt.setFormReference(selectedCharacter.value, orthoFormId.value, imagePath)
+    await charMgmt.setFormReference(characterName, formId, imagePath)
+    if (props.bookId !== bookId) return
     state.showMessage('三视图已设置为形态参考图', 'success')
     closeOrthoDialog()
   } catch (error) {
-    state.showMessage('设置失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
+    if (props.bookId === bookId) {
+      state.showMessage('设置失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
+    }
+  } finally {
+    endAction(key)
   }
 }
 
 function closeOrthoDialog() {
+  if (orthoGenerating.value) return
+  orthoRequestId += 1
   showOrthoDialog.value = false
   orthoFormId.value = ''
   orthoFormName.value = ''
   orthoGenerating.value = false
   orthoResultImagePath.value = null
 }
+
+watch(
+  () => props.bookId,
+  () => {
+    orthoRequestId += 1
+    selectedCharacter.value = null
+    showAddCharDialog.value = false
+    showEditCharDialog.value = false
+    showAddFormDialog.value = false
+    showEditFormDialog.value = false
+    showOrthoDialog.value = false
+    editingCharacter.value = null
+    editingForm.value = null
+    orthoFormId.value = ''
+    orthoFormName.value = ''
+    orthoGenerating.value = false
+    orthoResultImagePath.value = null
+    pendingActions.value = new Set()
+  },
+)
 </script>
 
 <style scoped>

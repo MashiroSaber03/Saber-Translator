@@ -1,283 +1,272 @@
-from copy import deepcopy
-import math
-from pathlib import Path
+"""Minimal YOLOv5 graph loader for the bundled CTD checkpoint."""
 
 import torch
 from torch import nn
 
-from .common import (
-    Bottleneck,
-    BottleneckCSP,
-    C3,
-    C3Ghost,
-    C3SPP,
-    C3TR,
-    Concat,
-    Contract,
-    Conv,
-    DWConv,
-    Expand,
-    Focus,
-    GhostBottleneck,
-    GhostConv,
-    SPP,
-    SPPF,
-)
+from .common import C3, Concat, Conv, SPPF
 from ..utils.yolov5_utils import (
     check_anchor_order,
-    check_version,
     fuse_conv_and_bn,
     initialize_weights,
     make_divisible,
 )
 
+
 class Detect(nn.Module):
-    stride = None  # strides computed during build
-    onnx_dynamic = False  # ONNX export parameter
+    stride = None
 
-    def __init__(self, nc=80, anchors=(), ch=(), inplace=True):  # detection layer
+    def __init__(self, nc=80, anchors=(), ch=()):
         super().__init__()
-        self.nc = nc  # number of classes
-        self.no = nc + 5  # number of outputs per anchor
-        self.nl = len(anchors)  # number of detection layers
-        self.na = len(anchors[0]) // 2  # number of anchors
-        self.grid = [torch.zeros(1)] * self.nl  # init grid
-        self.anchor_grid = [torch.zeros(1)] * self.nl  # init anchor grid
-        self.register_buffer('anchors', torch.tensor(anchors).float().view(self.nl, -1, 2))  # shape(nl,na,2)
-        self.m = nn.ModuleList(nn.Conv2d(x, self.no * self.na, 1) for x in ch)  # output conv
-        self.inplace = inplace  # use in-place ops (e.g. slice assignment)
+        self.nc = nc
+        self.no = nc + 5
+        self.nl = len(anchors)
+        self.na = len(anchors[0]) // 2
+        self.grid = [torch.zeros(1)] * self.nl
+        self.anchor_grid = [torch.zeros(1)] * self.nl
+        self.register_buffer(
+            "anchors",
+            torch.tensor(anchors).float().view(self.nl, -1, 2),
+        )
+        self.m = nn.ModuleList(nn.Conv2d(value, self.no * self.na, 1) for value in ch)
 
-    def forward(self, x):
-        z = []  # inference output
-        for i in range(self.nl):
-            x[i] = self.m[i](x[i])  # conv
-            bs, _, ny, nx = x[i].shape  # x(bs,255,20,20) to x(bs,3,20,20,85)
-            x[i] = x[i].view(bs, self.na, self.no, ny, nx).permute(0, 1, 3, 4, 2).contiguous()
+    def forward(self, values):
+        predictions = []
+        for index in range(self.nl):
+            values[index] = self.m[index](values[index])
+            batch_size, _, height, width = values[index].shape
+            values[index] = (
+                values[index]
+                .view(batch_size, self.na, self.no, height, width)
+                .permute(0, 1, 3, 4, 2)
+                .contiguous()
+            )
 
-            if not self.training:  # inference
-                if self.onnx_dynamic or self.grid[i].shape[2:4] != x[i].shape[2:4]:
-                    self.grid[i], self.anchor_grid[i] = self._make_grid(nx, ny, i)
+            if self.training:
+                continue
+            if self.grid[index].shape[2:4] != values[index].shape[2:4]:
+                self.grid[index], self.anchor_grid[index] = self._make_grid(
+                    width,
+                    height,
+                    index,
+                )
 
-                y = x[i].sigmoid()
-                if self.inplace:
-                    y[..., 0:2] = (y[..., 0:2] * 2 - 0.5 + self.grid[i]) * self.stride[i]  # xy
-                    y[..., 2:4] = (y[..., 2:4] * 2) ** 2 * self.anchor_grid[i]  # wh
-                else:  # for YOLOv5 on AWS Inferentia https://github.com/ultralytics/yolov5/pull/2953
-                    xy = (y[..., 0:2] * 2 - 0.5 + self.grid[i]) * self.stride[i]  # xy
-                    wh = (y[..., 2:4] * 2) ** 2 * self.anchor_grid[i]  # wh
-                    y = torch.cat((xy, wh, y[..., 4:]), -1)
-                z.append(y.view(bs, -1, self.no))
+            prediction = values[index].sigmoid()
+            prediction[..., 0:2] = (
+                prediction[..., 0:2] * 2 - 0.5 + self.grid[index]
+            ) * self.stride[index]
+            prediction[..., 2:4] = (
+                prediction[..., 2:4] * 2
+            ) ** 2 * self.anchor_grid[index]
+            predictions.append(prediction.view(batch_size, -1, self.no))
 
-        return x if self.training else (torch.cat(z, 1), x)
+        if self.training:
+            return values
+        return torch.cat(predictions, dim=1), values
 
-    def _make_grid(self, nx=20, ny=20, i=0):
-        d = self.anchors[i].device
-        if check_version(torch.__version__, '1.10.0'):  # torch>=1.10.0 meshgrid workaround for torch>=0.7 compatibility
-            yv, xv = torch.meshgrid([torch.arange(ny, device=d), torch.arange(nx, device=d)], indexing='ij')
-        else:
-            yv, xv = torch.meshgrid([torch.arange(ny, device=d), torch.arange(nx, device=d)])
-        grid = torch.stack((xv, yv), 2).expand((1, self.na, ny, nx, 2)).float()
-        anchor_grid = (self.anchors[i].clone() * self.stride[i]) \
-            .view((1, self.na, 1, 1, 2)).expand((1, self.na, ny, nx, 2)).float()
+    def _make_grid(self, width, height, index):
+        device = self.anchors[index].device
+        y_grid, x_grid = torch.meshgrid(
+            torch.arange(height, device=device),
+            torch.arange(width, device=device),
+            indexing="ij",
+        )
+        grid = torch.stack((x_grid, y_grid), dim=2).expand(
+            1,
+            self.na,
+            height,
+            width,
+            2,
+        ).float()
+        anchor_grid = (self.anchors[index].clone() * self.stride[index]).view(
+            1,
+            self.na,
+            1,
+            1,
+            2,
+        ).expand(1, self.na, height, width, 2).float()
         return grid, anchor_grid
 
+
+_MODULE_TYPES = {
+    "Conv": Conv,
+    "C3": C3,
+    "SPPF": SPPF,
+    "Concat": Concat,
+    "Detect": Detect,
+    "nn.Upsample": nn.Upsample,
+}
+
+
+def _resolve_argument(value, *, nc, anchors):
+    if not isinstance(value, str):
+        return value
+    if value == "None":
+        return None
+    if value == "nc":
+        return nc
+    if value == "anchors":
+        return anchors
+    if value == "nearest":
+        return value
+    raise ValueError(f"CTD checkpoint 使用了不支持的参数: {value!r}")
+
+
 class Model(nn.Module):
-    def __init__(self, cfg='yolov5s.yaml', ch=3, nc=None, anchors=None):  # model, input channels, number of classes
+    def __init__(self, config, channels=3):
         super().__init__()
+        if not isinstance(config, dict):
+            raise TypeError("CTD checkpoint 中的 YOLO 配置必须是对象")
+        self.model, self.save = parse_model(config, channels=[channels])
         self.out_indices = None
-        if isinstance(cfg, dict):
-            self.yaml = cfg  # model dict
-        else:  # is *.yaml
-            import yaml  # for torch hub
-            self.yaml_file = Path(cfg).name
-            with open(cfg, encoding='ascii', errors='ignore') as f:
-                self.yaml = yaml.safe_load(f)  # model dict
-
-        # Define model
-        ch = self.yaml['ch'] = self.yaml.get('ch', ch)  # input channels
-        if nc and nc != self.yaml['nc']:
-            # LOGGER.info(f"Overriding model.yaml nc={self.yaml['nc']} with nc={nc}")
-            self.yaml['nc'] = nc  # override yaml value
-        if anchors:
-            # LOGGER.info(f'Overriding model.yaml anchors with anchors={anchors}')
-            self.yaml['anchors'] = round(anchors)  # override yaml value
-        self.model, self.save = parse_model(deepcopy(self.yaml), ch=[ch])  # model, savelist
-        self.names = [str(i) for i in range(self.yaml['nc'])]  # default names
-        self.inplace = self.yaml.get('inplace', True)
-
-        # Build strides, anchors
-        m = self.model[-1]  # Detect()
-        # with torch.no_grad():
-        if isinstance(m, Detect):
-            s = 256  # 2x min stride
-            m.inplace = self.inplace
-            m.stride = torch.tensor([s / x.shape[-2] for x in self.forward(torch.zeros(1, ch, s, s))])  # forward
-            m.anchors /= m.stride.view(-1, 1, 1)
-            check_anchor_order(m)
-            self.stride = m.stride
-            self._initialize_biases()  # only run once
-
-        # Init weights, biases
+        detection = self.model[-1]
+        if not isinstance(detection, Detect):
+            raise ValueError("CTD checkpoint 的最后一层必须是 Detect")
+        sample_size = 256
+        detection.stride = torch.tensor(
+            [
+                sample_size / output.shape[-2]
+                for output in self.forward(
+                    torch.zeros(1, channels, sample_size, sample_size)
+                )
+            ]
+        )
+        detection.anchors /= detection.stride.view(-1, 1, 1)
+        check_anchor_order(detection)
+        self.stride = detection.stride
         initialize_weights(self)
 
-    def forward(self, x, augment=False, profile=False, visualize=False, detect=False):
-        # if augment:
-        #     return self._forward_augment(x)  # augmented inference, None
-        return self._forward_once(x, profile, visualize, detect=detect)  # single-scale inference, train
+    def forward(self, value, detect=False):
+        return self._forward_once(value, detect=detect)
 
-    # def _forward_augment(self, x):
-    #     img_size = x.shape[-2:]  # height, width
-    #     s = [1, 0.83, 0.67]  # scales
-    #     f = [None, 3, None]  # flips (2-ud, 3-lr)
-    #     y = []  # outputs
-    #     for si, fi in zip(s, f):
-    #         xi = scale_img(x.flip(fi) if fi else x, si, gs=int(self.stride.max()))
-    #         yi = self._forward_once(xi)[0]  # forward
-    #         # cv2.imwrite(f'img_{si}.jpg', 255 * xi[0].cpu().numpy().transpose((1, 2, 0))[:, :, ::-1])  # save
-    #         yi = self._descale_pred(yi, fi, si, img_size)
-    #         y.append(yi)
-    #     y = self._clip_augmented(y)  # clip augmented tails
-    #     return torch.cat(y, 1), None  # augmented inference, train
+    def _forward_once(self, value, detect=False):
+        saved_outputs = []
+        selected_outputs = []
+        for layer in self.model:
+            if layer.f != -1:
+                value = (
+                    saved_outputs[layer.f]
+                    if isinstance(layer.f, int)
+                    else [
+                        value if source == -1 else saved_outputs[source]
+                        for source in layer.f
+                    ]
+                )
+            value = layer(value)
+            saved_outputs.append(value if layer.i in self.save else None)
+            if self.out_indices is not None and layer.i in self.out_indices:
+                selected_outputs.append(value)
 
-    def _forward_once(self, x, profile=False, visualize=False, detect=False):
-        y, dt = [], []  # outputs
-        z = []
-        for ii, m in enumerate(self.model):
-            if m.f != -1:  # if not from previous layer
-                x = y[m.f] if isinstance(m.f, int) else [x if j == -1 else y[j] for j in m.f]  # from earlier layers
-            if profile:
-                self._profile_one_layer(m, x, dt)
-            x = m(x)  # run
-            y.append(x if m.i in self.save else None)  # save output
-            if self.out_indices is not None:
-                if m.i in self.out_indices:
-                    z.append(x)
-        if self.out_indices is not None:
-            if detect:
-                return x, z
-            else:
-                return z
-        else:
-            return x
+        if self.out_indices is None:
+            return value
+        if detect:
+            return value, selected_outputs
+        return selected_outputs
 
-
-    def _profile_one_layer(self, m, x, dt):
-        c = isinstance(m, Detect)  # is final layer, copy input as inplace fix
-        for _ in range(10):
-            m(x.copy() if c else x)
-
-
-    def _initialize_biases(self, cf=None):  # initialize biases into Detect(), cf is class frequency
-        # https://arxiv.org/abs/1708.02002 section 3.3
-        # cf = torch.bincount(torch.tensor(np.concatenate(dataset.labels, 0)[:, 0]).long(), minlength=nc) + 1.
-        m = self.model[-1]  # Detect() module
-        for mi, s in zip(m.m, m.stride):  # from
-            b = mi.bias.view(m.na, -1)  # conv.bias(255) to (3,85)
-            b.data[:, 4] += math.log(8 / (640 / s) ** 2)  # obj (8 objects per 640 image)
-            b.data[:, 5:] += math.log(0.6 / (m.nc - 0.999999)) if cf is None else torch.log(cf / cf.sum())  # cls
-            mi.bias = torch.nn.Parameter(b.view(-1), requires_grad=True)
-
-    def fuse(self):  # fuse model Conv2d() + BatchNorm2d() layers
-        for m in self.model.modules():
-            if isinstance(m, (Conv, DWConv)) and hasattr(m, 'bn'):
-                m.conv = fuse_conv_and_bn(m.conv, m.bn)  # update conv
-                delattr(m, 'bn')  # remove batchnorm
-                m.forward = m.forward_fuse  # update forward
-        # self.info()
+    def fuse(self):
+        for layer in self.model.modules():
+            if isinstance(layer, Conv) and hasattr(layer, "bn"):
+                layer.conv = fuse_conv_and_bn(layer.conv, layer.bn)
+                delattr(layer, "bn")
+                layer.forward = layer.forward_fuse
         return self
 
-    # def info(self, verbose=False, img_size=640):  # print model information
-    #     model_info(self, verbose, img_size)
-
-    def _apply(self, fn):
-        # Apply to(), cpu(), cuda(), half() to model tensors that are not parameters or registered buffers
-        self = super()._apply(fn)
-        m = self.model[-1]  # Detect()
-        if isinstance(m, Detect):
-            m.stride = fn(m.stride)
-            m.grid = list(map(fn, m.grid))
-            if isinstance(m.anchor_grid, list):
-                m.anchor_grid = list(map(fn, m.anchor_grid))
+    def _apply(self, function):
+        super()._apply(function)
+        detection = self.model[-1]
+        detection.stride = function(detection.stride)
+        detection.grid = [function(value) for value in detection.grid]
+        detection.anchor_grid = [function(value) for value in detection.anchor_grid]
         return self
 
-def parse_model(d, ch):  # model_dict, input_channels(3)
-    # LOGGER.info(f"\n{'':>3}{'from':>18}{'n':>3}{'params':>10}  {'module':<40}{'arguments':<30}")
-    anchors, nc, gd, gw = d['anchors'], d['nc'], d['depth_multiple'], d['width_multiple']
-    na = (len(anchors[0]) // 2) if isinstance(anchors, list) else anchors  # number of anchors
-    no = na * (nc + 5)  # number of outputs = anchors * (classes + 5)
 
-    layers, save, c2 = [], [], ch[-1]  # layers, savelist, ch out
-    for i, (f, n, m, args) in enumerate(d['backbone'] + d['head']):  # from, number, module, args
-        m = eval(m) if isinstance(m, str) else m  # eval strings
-        for j, a in enumerate(args):
-            try:
-                args[j] = eval(a) if isinstance(a, str) else a  # eval strings
-            except NameError:
-                pass
+def parse_model(config, channels):
+    required_keys = {
+        "anchors",
+        "nc",
+        "depth_multiple",
+        "width_multiple",
+        "backbone",
+        "head",
+    }
+    allowed_keys = required_keys | {"ch"}
+    if set(config) != allowed_keys or config["ch"] != 3:
+        raise ValueError("CTD checkpoint 的 YOLO 配置字段无效")
 
-        n = max(round(n * gd), 1) if n > 1 else n  # depth gain
-        if m in [Conv, GhostConv, Bottleneck, GhostBottleneck, SPP, SPPF, DWConv, Focus,
-                 BottleneckCSP, C3, C3TR, C3SPP, C3Ghost]:
-            c1, c2 = ch[f], args[0]
-            if c2 != no:  # if not output
-                c2 = make_divisible(c2 * gw, 8)
+    anchors = config["anchors"]
+    class_count = config["nc"]
+    depth_multiple = config["depth_multiple"]
+    width_multiple = config["width_multiple"]
+    anchor_count = len(anchors[0]) // 2
+    output_channels = anchor_count * (class_count + 5)
 
-            args = [c1, c2, *args[1:]]
-            if m in [BottleneckCSP, C3, C3TR, C3Ghost]:
-                args.insert(2, n)  # number of repeats
-                n = 1
-        elif m is nn.BatchNorm2d:
-            args = [ch[f]]
-        elif m is Concat:
-            c2 = sum(ch[x] for x in f)
-        elif m is Detect:
-            args.append([ch[x] for x in f])
-            if isinstance(args[1], int):  # number of anchors
-                args[1] = [list(range(args[1] * 2))] * len(f)
-        elif m is Contract:
-            c2 = ch[f] * args[0] ** 2
-        elif m is Expand:
-            c2 = ch[f] // args[0] ** 2
+    layers = []
+    saved_indices = []
+    output_channel_count = channels[-1]
+    definitions = config["backbone"] + config["head"]
+    for index, definition in enumerate(definitions):
+        if not isinstance(definition, list) or len(definition) != 4:
+            raise ValueError(f"CTD checkpoint 的第 {index} 层配置无效")
+        sources, repeats, module_name, arguments = definition
+        if module_name not in _MODULE_TYPES:
+            raise ValueError(f"CTD checkpoint 使用了不支持的层: {module_name!r}")
+        if not isinstance(arguments, list):
+            raise ValueError(f"CTD checkpoint 的第 {index} 层参数必须是列表")
+        module_type = _MODULE_TYPES[module_name]
+        arguments = [
+            _resolve_argument(value, nc=class_count, anchors=anchors)
+            for value in arguments
+        ]
+        repeats = max(round(repeats * depth_multiple), 1) if repeats > 1 else repeats
+
+        if module_type in {Conv, C3, SPPF}:
+            in_channels = channels[sources]
+            output_channel_count = arguments[0]
+            if output_channel_count != output_channels:
+                output_channel_count = make_divisible(
+                    output_channel_count * width_multiple,
+                    8,
+                )
+            arguments = [in_channels, output_channel_count, *arguments[1:]]
+            if module_type is C3:
+                arguments.insert(2, repeats)
+                repeats = 1
+        elif module_type is Concat:
+            output_channel_count = sum(channels[source] for source in sources)
+        elif module_type is Detect:
+            arguments.append([channels[source] for source in sources])
         else:
-            c2 = ch[f]
+            output_channel_count = channels[sources]
 
-        m_ = nn.Sequential(*(m(*args) for _ in range(n))) if n > 1 else m(*args)  # module
-        t = str(m)[8:-2].replace('__main__.', '')  # module type
-        np = sum(x.numel() for x in m_.parameters())  # number params
-        m_.i, m_.f, m_.type, m_.np = i, f, t, np  # attach index, 'from' index, type, number params
-        # LOGGER.info(f'{i:>3}{str(f):>18}{n_:>3}{np:10.0f}  {t:<40}{str(args):<30}')  # print
-        save.extend(x % i for x in ([f] if isinstance(f, int) else f) if x != -1)  # append to savelist
-        layers.append(m_)
-        if i == 0:
-            ch = []
-        ch.append(c2)
-    return nn.Sequential(*layers), sorted(save)
+        layer = (
+            nn.Sequential(*(module_type(*arguments) for _ in range(repeats)))
+            if repeats > 1
+            else module_type(*arguments)
+        )
+        layer.i = index
+        layer.f = sources
+        saved_indices.extend(
+            source % index
+            for source in ([sources] if isinstance(sources, int) else sources)
+            if source != -1
+        )
+        layers.append(layer)
+        if index == 0:
+            channels = []
+        channels.append(output_channel_count)
+
+    return nn.Sequential(*layers), sorted(saved_indices)
 
 
 @torch.no_grad()
-def load_yolov5_ckpt(weights, map_location='cpu', fuse=True, inplace=True, out_indices=[1, 3, 5, 7, 9]):
-    if isinstance(weights, str):
-        ckpt = torch.load(weights, map_location=map_location)  # load
-    else:
-        ckpt = weights
-
-    model = Model(ckpt['cfg'])
-    model.load_state_dict(ckpt['weights'], strict=True)
-
-    if fuse:
-        model = model.float().fuse().eval()  # FP32 model
-    else:
-        model = model.float().eval()  # without layer fuse
-
-    # Compatibility updates
-    for m in model.modules():
-        if type(m) in [nn.Hardswish, nn.LeakyReLU, nn.ReLU, nn.ReLU6, nn.SiLU, Detect, Model]:
-            m.inplace = inplace  # pytorch 1.7.0 compatibility
-            if type(m) is Detect:
-                if not isinstance(m.anchor_grid, list):  # new Detect Layer compatibility
-                    delattr(m, 'anchor_grid')
-                    setattr(m, 'anchor_grid', [torch.zeros(1)] * m.nl)
-        elif type(m) is Conv:
-            m._non_persistent_buffers_set = set()  # pytorch 1.6.0 compatibility
-    model.out_indices = out_indices
-    return model
+def load_yolov5_ckpt(weights, map_location="cpu"):
+    if not isinstance(weights, dict):
+        raise TypeError("CTD checkpoint 的检测器数据必须是对象")
+    if set(weights) != {"cfg", "weights"}:
+        raise ValueError("CTD checkpoint 的检测器数据字段无效")
+    model = Model(weights["cfg"])
+    model.load_state_dict(weights["weights"], strict=True)
+    model = model.float()
+    model.fuse()
+    model.eval()
+    model.out_indices = [1, 3, 5, 7, 9]
+    return model.to(map_location)

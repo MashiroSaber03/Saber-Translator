@@ -3,14 +3,18 @@ import { computed, type Ref } from 'vue'
 import type { ImageData } from '@/types/image'
 
 export function useThumbnailSelection(images: Ref<ImageData[]>) {
+  const imageIndexes = computed(() => new Map(
+    images.value.map((image, index) => [image.id, index]),
+  ))
+
   function getImageGlobalIndex(image: ImageData): number {
-    return images.value.findIndex((img) => img.id === image.id)
+    return imageIndexes.value.get(image.id) ?? -1
   }
 
   function getStatusType(image: ImageData): 'failed' | 'labeled' | 'processing' | null {
-    if (image.translationFailed) return 'failed'
-    if (image.isManuallyAnnotated) return 'labeled'
+    if (image.translationStatus === 'failed') return 'failed'
     if (image.translationStatus === 'processing') return 'processing'
+    if (image.isManuallyAnnotated) return 'labeled'
     return null
   }
 
@@ -19,7 +23,8 @@ export function useThumbnailSelection(images: Ref<ImageData[]>) {
   }
 
   function getThumbnailTitle(image: ImageData): string {
-    if (image.translationFailed) return '翻译失败，点击可重试'
+    if (image.translationStatus === 'failed') return '翻译失败'
+    if (image.translationStatus === 'processing') return '正在处理'
     if (image.isManuallyAnnotated) return '包含手动标注'
     if (image.translationStatus === 'completed') return '已完成翻译'
     return image.fileName || ''
@@ -27,7 +32,7 @@ export function useThumbnailSelection(images: Ref<ImageData[]>) {
 
   const failedPages = computed(() =>
     images.value
-      .map((image, index) => image.translationFailed ? index + 1 : null)
+      .map((image, index) => image.translationStatus === 'failed' ? index + 1 : null)
       .filter((page): page is number => page !== null)
   )
 

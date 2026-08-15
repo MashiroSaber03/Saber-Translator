@@ -28,6 +28,7 @@ interface PageListState {
 }
 const GLOBAL_PAGE_LIST = '__all__'
 const pageLists = ref<Map<string, PageListState>>(new Map())
+const reanalyzingChapterId = ref<string | null>(null)
 let pageListGeneration = 0
 let isPagesTreeMounted = true
 
@@ -81,8 +82,12 @@ function createPageThumbnailItems(chapterId?: string): ProductThumbnailGridItem[
     alt: `第${page.displayPageNumber}页`,
     label: `第 ${page.displayPageNumber} 页`,
     selected: isPageSelected(page.displayPageNumber),
-    marked: page.analysisState !== 'not_analyzed',
+    marked: isPublishedAnalysisState(page.analysisState),
   }))
+}
+
+function isPublishedAnalysisState(state: V2InsightPageSummary['analysisState']): boolean {
+  return state === 'ready' || state === 'stale'
 }
 
 async function loadPageList(chapterId?: string, reset = false): Promise<void> {
@@ -134,9 +139,7 @@ function chapterAnalysisState(chapter: {
 }): ChapterAnalysisState {
   const state = pageLists.value.get(chapter.id)
   if (state && state.nextCursor === null && state.items.length > 0) {
-    const analyzedCount = state.items.filter(
-      page => page.analysisState !== 'not_analyzed',
-    ).length
+    const analyzedCount = state.items.filter(page => isPublishedAnalysisState(page.analysisState)).length
     if (analyzedCount === state.items.length) return 'completed'
     return analyzedCount > 0 ? 'partial' : 'none'
   }
@@ -176,23 +179,30 @@ function chapterStateChips(chapter: {
 }
 
 async function reanalyzeChapter(chapterId: string): Promise<void> {
-  if (!insightStore.currentBookId) return
-  const confirmed = await confirmProductAction({
-    title: '重新分析章节',
-    message: '确定要重新分析此章节吗？',
-    confirmText: '重新分析',
-    cancelText: '取消',
-    tone: 'danger',
-  })
-  if (!confirmed) return
+  const bookId = insightStore.currentBookId
+  if (!bookId || reanalyzingChapterId.value !== null) return
+  reanalyzingChapterId.value = chapterId
 
   try {
-    const submission = await insightApi.reanalyzeChapter(insightStore.currentBookId, chapterId)
+    const confirmed = await confirmProductAction({
+      title: '重新分析章节',
+      message: '确定要重新分析此章节吗？',
+      confirmText: '重新分析',
+      cancelText: '取消',
+      tone: 'danger',
+    })
+    if (!confirmed || insightStore.currentBookId !== bookId) return
+    const submission = await insightApi.reanalyzeChapter(bookId, chapterId)
+    if (insightStore.currentBookId !== bookId) return
     insightStore.setCurrentTaskId(submission.jobId)
     insightStore.setAnalysisStatus('queued')
     showToast('章节分析已启动', 'success')
   } catch (error) {
-    showToast(error instanceof Error ? error.message : '重新分析失败', 'error')
+    if (insightStore.currentBookId === bookId) {
+      showToast(error instanceof Error ? error.message : '重新分析失败', 'error')
+    }
+  } finally {
+    if (reanalyzingChapterId.value === chapterId) reanalyzingChapterId.value = null
   }
 }
 
@@ -206,18 +216,28 @@ async function loadInitialPageList(): Promise<void> {
   }
 }
 
+async function refreshLoadedPageLists(): Promise<void> {
+  const loadedKeys = [...pageLists.value.keys()]
+  if (loadedKeys.length === 0) return
+
+  pageListGeneration += 1
+  pageLists.value = new Map(
+    [...pageLists.value].map(([key, state]) => [key, { ...state, loading: false }])
+  )
+  await Promise.all(
+    loadedKeys.map(key => loadPageList(key === GLOBAL_PAGE_LIST ? undefined : key, true))
+  )
+}
+
 onMounted(async () => {
   await loadInitialPageList()
 })
 
 watch(
-  () => insightStore.analyzedPageCount,
-  async (newCount, previousCount) => {
-    if (newCount !== previousCount && newCount > 0) {
-      const loadedKeys = [...pageLists.value.keys()]
-      for (const key of loadedKeys) {
-        await loadPageList(key === GLOBAL_PAGE_LIST ? undefined : key, true)
-      }
+  [() => insightStore.analyzedPageCount, () => insightStore.dataRefreshKey],
+  async ([newCount, newRefreshKey], [previousCount, previousRefreshKey]) => {
+    if (newCount !== previousCount || newRefreshKey !== previousRefreshKey) {
+      await refreshLoadedPageLists()
     }
   }
 )
@@ -333,6 +353,7 @@ onUnmounted(() => {
                 :label="`重新分析${chapter.title}`"
                 variant="soft"
                 size="xs"
+                :disabled="reanalyzingChapterId !== null"
                 @click.stop="reanalyzeChapter(chapter.id)"
               >
                 <UiIcon name="refresh" size="14" />

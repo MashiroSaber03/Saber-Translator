@@ -8,11 +8,12 @@ import {
   omitOpenAiOptionsPatchFields,
   type OpenAiOptionsPatch,
 } from '@/utils/openaiOptions'
+import { isProofreadingRoundId } from '../proofreadingIdentity'
 
 export function useProofreadingSettings(
   settings: Ref<TranslationSettings>,
 ) {
-  type ProofreadingRoundUiUpdates = Partial<ProofreadingRound> & OpenAiOptionsPatch
+  type ProofreadingRoundUiUpdates = Partial<Omit<ProofreadingRound, 'id'>> & OpenAiOptionsPatch
   const isProofreadingEnabled = computed(() => settings.value.proofreading.enabled)
 
   function setProofreadingEnabled(enabled: boolean): void {
@@ -20,6 +21,12 @@ export function useProofreadingSettings(
   }
 
   function addProofreadingRound(round: ProofreadingRound): void {
+    if (!isProofreadingRoundId(round.id)) {
+      throw new Error('校对轮次 ID 无效')
+    }
+    if (settings.value.proofreading.rounds.some(existing => existing.id === round.id)) {
+      throw new Error('校对轮次 ID 重复')
+    }
     settings.value.proofreading.rounds.push(round)
   }
 
@@ -27,7 +34,9 @@ export function useProofreadingSettings(
     if (index >= 0 && index < settings.value.proofreading.rounds.length) {
       const round = settings.value.proofreading.rounds[index]
       if (round) {
-        Object.assign(round, omitOpenAiOptionsPatchFields(updates))
+        const safeUpdates = omitOpenAiOptionsPatchFields(updates)
+        delete (safeUpdates as Partial<ProofreadingRound>).id
+        Object.assign(round, safeUpdates)
         applyOpenAiOptionsPatch(round.openaiOptions, updates)
       }
     }
@@ -39,16 +48,11 @@ export function useProofreadingSettings(
     }
   }
 
-  function setProofreadingMaxRetries(maxRetries: number): void {
-    settings.value.proofreading.maxRetries = maxRetries
-  }
-
   return {
     isProofreadingEnabled,
     setProofreadingEnabled,
     addProofreadingRound,
     updateProofreadingRound,
-    removeProofreadingRound,
-    setProofreadingMaxRetries
+    removeProofreadingRound
   }
 }

@@ -181,9 +181,16 @@ class DurableOperationExecutor:
         try:
             handler = self.handlers[str(operation["kind"])]
             result = handler(fence, operation)
+            if not isinstance(result, Mapping):
+                raise RuntimeError("operation handler result must be an object")
+            already_published = result.get("__already_published__", False)
+            if not isinstance(already_published, bool):
+                raise RuntimeError(
+                    "operation publication marker must be boolean"
+                )
             if (
                 not heartbeat.fenced.is_set()
-                and not result.get("__already_published__")
+                and not already_published
             ):
                 self.repository.complete(fence, result=result)
         except OperationFenced:
@@ -257,9 +264,16 @@ class WorkerOperationRunner:
                 fence,
                 operation,
             )
+            if not isinstance(result, Mapping):
+                raise RuntimeError("operation handler result must be an object")
+            already_published = result.get("__already_published__", False)
+            if not isinstance(already_published, bool):
+                raise RuntimeError(
+                    "operation publication marker must be boolean"
+                )
             if (
                 not heartbeat.fenced.is_set()
-                and not result.get("__already_published__")
+                and not already_published
             ):
                 self.repository.complete(fence, result=result)
         except OperationFenced:

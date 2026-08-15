@@ -14,6 +14,7 @@ if PROJECT_ROOT not in sys.path:
 
 from src.core.config_models import BubbleState
 from src.core.rendering import (
+    calculate_auto_font_size,
     draw_multiline_text_vertical,
     get_char_ink_offset,
     get_font,
@@ -107,6 +108,26 @@ class VerticalPunctuationRenderingTests(unittest.TestCase):
         )
         with self.assertRaises(FileNotFoundError):
             get_font(missing, 32)
+
+    def test_font_size_must_be_an_exact_positive_integer(self) -> None:
+        for invalid in (True, "32", 32.5, 0, -1):
+            with self.subTest(value=invalid):
+                with self.assertRaisesRegex(ValueError, "positive integer"):
+                    get_font(self.FONTS[0], invalid)
+
+    def test_auto_font_size_propagates_font_loading_failure(self) -> None:
+        with patch(
+            "src.core.rendering.get_font",
+            side_effect=OSError("corrupt font"),
+        ):
+            with self.assertRaisesRegex(OSError, "corrupt font"):
+                calculate_auto_font_size(
+                    "测试文本",
+                    100,
+                    100,
+                    "vertical",
+                    self.FONTS[0],
+                )
 
     def test_vertical_question_and_exclamation_marks_do_not_jump_far_above_direct_draw_position(self) -> None:
         for font_path in self.FONTS:
@@ -212,9 +233,43 @@ class VerticalPunctuationRenderingTests(unittest.TestCase):
             text_direction="vertical",
         )
         try:
-            with patch("src.core.rendering.get_font", return_value=None):
-                with self.assertRaisesRegex(RuntimeError, "无法加载字体"):
+            with patch(
+                "src.core.rendering.get_font",
+                side_effect=FileNotFoundError("missing font"),
+            ):
+                with self.assertRaisesRegex(FileNotFoundError, "missing font"):
                     render_bubbles_unified(image, [state])
+        finally:
+            image.close()
+
+    def test_unified_renderer_does_not_replace_an_invalid_font_size(self) -> None:
+        image = Image.new("RGB", (160, 160), "white")
+        state = BubbleState(
+            translated_text="文字",
+            coords=(20, 20, 120, 140),
+            font_size=0,
+            font_family=self.FONTS[0],
+            text_direction="vertical",
+        )
+        try:
+            with self.assertRaisesRegex(ValueError, "positive integer"):
+                render_bubbles_unified(image, [state])
+        finally:
+            image.close()
+
+    def test_rotated_renderer_accepts_current_finite_position_offsets(self) -> None:
+        image = Image.new("RGB", (160, 160), "white")
+        state = BubbleState(
+            translated_text="文字",
+            coords=(20, 20, 120, 140),
+            font_size=32,
+            font_family=self.FONTS[0],
+            text_direction="vertical",
+            rotation_angle=15.5,
+            position_offset={"x": 0.5, "y": -0.25},
+        )
+        try:
+            self.assertIs(render_bubbles_unified(image, [state]), image)
         finally:
             image.close()
 

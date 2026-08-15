@@ -10,6 +10,30 @@ export type JobSnapshotResponse = components['schemas']['JobSnapshot']
 export type JobRetryAccepted = components['schemas']['JobRetryAccepted']
 export type JobEventList = components['schemas']['JobEventList']
 
+export const NONTERMINAL_JOB_STATUSES: ReadonlySet<V2JobStatus> = new Set([
+  'queued',
+  'running',
+  'pausing',
+  'paused',
+  'cancelling',
+  'interrupted',
+])
+
+export const HISTORY_JOB_STATUSES: ReadonlySet<V2JobStatus> = new Set([
+  'cancelled',
+  'completed',
+  'completed_with_errors',
+  'failed',
+  'interrupted',
+])
+
+export const CURRENT_JOB_STATUSES: ReadonlySet<V2JobStatus> = new Set([
+  'running',
+  'pausing',
+  'paused',
+  'cancelling',
+])
+
 function commandHeaders(): Record<string, string> {
   return { 'Idempotency-Key': crypto.randomUUID() }
 }
@@ -19,7 +43,8 @@ export const jobsApi = {
     scope: 'queue' | 'history',
     filters: { status?: V2JobStatus; type?: V2Job['kind']; bookId?: string } = {},
   ): Promise<JobListResponse> {
-    const query = new URLSearchParams({ scope, limit: '200' })
+    const query = new URLSearchParams({ scope })
+    if (scope === 'history') query.set('limit', '200')
     if (filters.status) query.set('status', filters.status)
     if (filters.type) query.set('type', filters.type)
     if (filters.bookId) query.set('book_id', filters.bookId)
@@ -56,7 +81,7 @@ export const jobsApi = {
 
   pause(jobId: string): Promise<V2Job> {
     return apiClient.post(
-      `/api/v2/jobs/${jobId}/pause`,
+      `/api/v2/jobs/${encodeURIComponent(jobId)}/pause`,
       undefined,
       { headers: commandHeaders() },
     )
@@ -64,7 +89,7 @@ export const jobsApi = {
 
   resume(jobId: string): Promise<V2Job> {
     return apiClient.post(
-      `/api/v2/jobs/${jobId}/resume`,
+      `/api/v2/jobs/${encodeURIComponent(jobId)}/resume`,
       undefined,
       { headers: commandHeaders() },
     )
@@ -72,7 +97,7 @@ export const jobsApi = {
 
   continue(jobId: string): Promise<V2Job> {
     return apiClient.post(
-      `/api/v2/jobs/${jobId}/continue`,
+      `/api/v2/jobs/${encodeURIComponent(jobId)}/continue`,
       undefined,
       { headers: commandHeaders() },
     )
@@ -80,7 +105,7 @@ export const jobsApi = {
 
   cancel(jobId: string): Promise<V2Job> {
     return apiClient.post(
-      `/api/v2/jobs/${jobId}/cancel`,
+      `/api/v2/jobs/${encodeURIComponent(jobId)}/cancel`,
       undefined,
       { headers: commandHeaders() },
     )

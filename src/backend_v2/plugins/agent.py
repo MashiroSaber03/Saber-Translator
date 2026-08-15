@@ -27,7 +27,6 @@ from src.backend_v2.plugins.repository import (
     PluginNotFound,
     PluginRegistry,
 )
-from src.backend_v2.plugins.snapshots import enabled_plugin_snapshots
 from src.backend_v2.settings.validation import (
     validate_provider_setting_payload,
     validate_setting_payload,
@@ -89,12 +88,12 @@ class PluginAgentProviderResolver:
             schema_version=int(app_row["schema_version"]),
         )
         app_payload = dict(translation_payload["pluginAgent"])
-        selected = str(app_payload["provider"]).strip()
+        selected = app_payload["provider"]
         row = next(
             (
                 candidate
                 for candidate in rows
-                if str(candidate["provider"]) == selected
+                if candidate["provider"] == selected
             ),
             None,
         )
@@ -114,10 +113,10 @@ class PluginAgentProviderResolver:
         }
         result = {
             "provider": selected,
-            "model_name": str(payload.get("modelName", "")),
-            "custom_base_url": str(payload.get("customBaseUrl", "")),
+            "model_name": payload["modelName"],
+            "custom_base_url": payload["customBaseUrl"],
             "openai_options": _normalize_openai_options(
-                payload.get("openaiOptions", {})
+                payload["openaiOptions"]
             ),
             "settingsSnapshot": {
                 "appRevision": int(app_row["revision"]),
@@ -125,48 +124,50 @@ class PluginAgentProviderResolver:
             },
         }
         credential_version_id = row["credential_version_id"]
-        if credential_version_id:
-            result["credentialVersionId"] = str(
-                credential_version_id
-            )
-        return result
+        if credential_version_id is not None:
+            if not isinstance(credential_version_id, str) or not credential_version_id:
+                raise ValueError("Plugin Agent credential version is invalid")
+            result["credentialVersionId"] = credential_version_id
+        return _provider_snapshot(result)
 
     def runtime_config(
         self,
         snapshot: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
-        frozen = dict(snapshot or self.snapshot())
+        frozen = _provider_snapshot(
+            self.snapshot() if snapshot is None else snapshot
+        )
         credential_version_id = frozen.get("credentialVersionId")
-        secret: dict[str, Any] = {}
-        if credential_version_id:
+        api_key = ""
+        if credential_version_id is not None:
             try:
                 secret = self.credentials.resolve_secret(
-                    str(credential_version_id)
+                    credential_version_id
                 )
             except LookupError as exc:
                 raise ValueError(
                     "Plugin Agent credential version is unavailable"
                 ) from exc
+            if set(secret) != {"api_key"} or not isinstance(
+                secret["api_key"],
+                str,
+            ):
+                raise ValueError("Plugin Agent credential secret is invalid")
+            api_key = secret["api_key"]
         return {
-            "provider": str(frozen.get("provider", "")),
-            "credential_version_id": (
-                str(credential_version_id)
-                if credential_version_id
-                else None
-            ),
-            "api_key": str(secret.get("api_key", "")),
-            "model_name": str(frozen.get("model_name", "")),
-            "custom_base_url": str(
-                frozen.get("custom_base_url", "")
-            ),
+            "provider": frozen["provider"],
+            "credential_version_id": credential_version_id,
+            "api_key": api_key,
+            "model_name": frozen["model_name"],
+            "custom_base_url": frozen["custom_base_url"],
             "openai_options": OpenAICompatibleOptions.from_dict(
-                _json_mapping(frozen.get("openai_options"))
+                frozen["openai_options"]
             ),
         }
 
 
 class PluginAgentSessionService:
-    """One active 30-minute planning session; execution is a durable job."""
+    """Short-lived planning sessions that hand execution to durable jobs."""
 
     def __init__(
         self,
@@ -191,12 +192,20 @@ class PluginAgentSessionService:
         self.skill_markdown = (
             Path(__file__).with_name("plugin_builder_skill.md")
         ).read_text(encoding="utf-8")
-        self.ttl_seconds = max(60, int(ttl_seconds))
+        if (
+            isinstance(ttl_seconds, bool)
+            or not isinstance(ttl_seconds, int)
+            or ttl_seconds <= 0
+        ):
+            raise ValueError("ttl_seconds must be a positive integer")
+        self.ttl_seconds = ttl_seconds
         self._lock = threading.RLock()
         self._sessions: dict[str, PluginAgentSession] = {}
         self._targets: dict[str, dict[str, Any]] = {}
         self._batch_ids: dict[str, str] = {}
         self._job_ids: dict[str, str] = {}
+        self._planning_sessions: set[str] = set()
+        self._starting_sessions: set[str] = set()
 
     def create(
         self,
@@ -204,23 +213,22 @@ class PluginAgentSessionService:
         mode: str,
         plugin_id: str | None,
     ) -> dict[str, Any]:
-        normalized_mode = str(mode).strip().lower()
-        if normalized_mode not in {"create", "modify"}:
+        if mode not in {"create", "modify"}:
             raise ValueError("mode must be create or modify")
+        if mode == "create" and plugin_id is not None:
+            raise ValueError("create mode does not accept pluginId")
+        if mode == "modify" and (
+            not isinstance(plugin_id, str) or not plugin_id
+        ):
+            raise ValueError("modify mode requires pluginId")
         self._cleanup()
         with self._lock:
-            if self._sessions:
-                raise ValueError(
-                    "another Plugin Agent planning session is active"
-                )
             session = PluginAgentSession(
                 session_id=uuid.uuid4().hex,
-                mode=normalized_mode,
+                mode=mode,
                 selected_plugin_id=plugin_id,
             )
-            if normalized_mode == "modify":
-                if not plugin_id:
-                    raise ValueError("modify mode requires pluginId")
+            if mode == "modify":
                 plugin = self.registry.get_plugin(plugin_id)
                 target = self._target_from_plugin(plugin)
                 session.locked_target = _locked_target(target)
@@ -242,10 +250,20 @@ class PluginAgentSessionService:
 
         self._cleanup()
         with self._lock:
+            if session_id in self._planning_sessions:
+                raise ValueError(
+                    "finish the active planning request before deleting the session"
+                )
+            if session_id in self._starting_sessions:
+                raise ValueError(
+                    "finish queuing Plugin Agent execution before deleting the session"
+                )
             existed = self._sessions.pop(session_id, None) is not None
             self._targets.pop(session_id, None)
             self._batch_ids.pop(session_id, None)
             self._job_ids.pop(session_id, None)
+            self._planning_sessions.discard(session_id)
+            self._starting_sessions.discard(session_id)
         return {"deleted": existed}
 
     def send_message(
@@ -254,18 +272,25 @@ class PluginAgentSessionService:
         session_id: str,
         content: str,
     ) -> dict[str, Any]:
-        message_text = str(content).strip()
-        if not message_text or len(message_text) > 100_000:
-            raise ValueError(
-                "content must contain 1-100000 characters"
-            )
+        if not isinstance(content, str):
+            raise ValueError("content must be a string")
+        message_text = content.strip()
+        if not message_text:
+            raise ValueError("content must be a non-empty string")
         self._cleanup()
         with self._lock:
             session = self._require(session_id)
-            if session.run_state == "running":
+            if session.run_state in {
+                "running",
+                "pausing",
+                "paused",
+                "cancelling",
+            }:
                 raise ValueError(
                     "execution already started; follow the durable job"
                 )
+            if session_id in self._planning_sessions:
+                raise ValueError("a Plugin Agent planning request is already running")
             session.messages.append(
                 PluginAgentMessage(
                     id=f"user_{uuid.uuid4().hex[:12]}",
@@ -274,17 +299,28 @@ class PluginAgentSessionService:
                 )
             )
             session.touch()
-        runtime_config = self.provider_resolver.runtime_config()
-        result = self.controller.plan_turn(
-            session,
-            self.skill_markdown,
-            runtime_config,
-        )
+            self._planning_sessions.add(session_id)
+        try:
+            runtime_config = self.provider_resolver.runtime_config()
+            result = self.controller.plan_turn(
+                session,
+                self.skill_markdown,
+                runtime_config,
+            )
+        finally:
+            with self._lock:
+                self._planning_sessions.discard(session_id)
         with self._lock:
             session = self._require(session_id)
-            assistant = str(
-                result.get("assistant_message", "")
-            ).strip()
+            if not isinstance(result, Mapping) or set(result) != {
+                "assistant_message",
+                "target_proposal",
+            }:
+                raise TypeError("Plugin Agent planning result is invalid")
+            assistant = result["assistant_message"]
+            if not isinstance(assistant, str):
+                raise TypeError("Plugin Agent assistant message must be text")
+            assistant = assistant.strip()
             if assistant:
                 session.messages.append(
                     PluginAgentMessage(
@@ -301,7 +337,12 @@ class PluginAgentSessionService:
                         "message": assistant,
                     },
                 )
-            proposal_raw = result.get("target_proposal")
+            proposal_raw = result["target_proposal"]
+            if proposal_raw is not None and not isinstance(
+                proposal_raw,
+                Mapping,
+            ):
+                raise TypeError("Plugin Agent target proposal is invalid")
             if (
                 session.mode == "create"
                 and session.locked_target is None
@@ -330,7 +371,7 @@ class PluginAgentSessionService:
                     "only create mode can lock a new target"
                 )
             if session.locked_target is not None:
-                return self._dto(session)
+                raise ValueError("plugin target is already locked")
             normalized = _proposal(proposal)
             try:
                 self.registry.get_plugin(normalized.plugin_id)
@@ -379,99 +420,117 @@ class PluginAgentSessionService:
                     "batchId": self._batch_ids[session_id],
                     "jobId": self._job_ids[session_id],
                 }
+            if session_id in self._planning_sessions:
+                raise ValueError("finish the active planning request before starting")
+            if session_id in self._starting_sessions:
+                raise ValueError("Plugin Agent execution is already being queued")
             messages = [
                 message.to_dict() for message in session.messages
             ]
-        provider = self.provider_resolver.snapshot()
-        with self.engine.connect() as connection:
-            plugin_snapshots = enabled_plugin_snapshots(connection)
-        target_version_id = target.get("pluginVersionId")
-        if isinstance(target_version_id, str) and target_version_id:
-            plugin_snapshots.setdefault(
-                target_version_id,
-                {
-                    "pluginId": str(target["plugin_id"]),
-                    "protectOnly": True,
-                },
-            )
-        config = {
-            "executionMode": "sequential",
-            "sessionId": session_id,
-            "target": target,
-            "messages": messages,
-            "provider": provider,
-        }
-        created = self.jobs.create_batch(
-            kind="plugin_agent",
-            display_name=(
-                "创建插件 "
-                if target["mode"] == "create"
-                else "修改插件 "
-            )
-            + str(target["display_name"]),
-            specs=[
-                JobSpec(
-                    kind="plugin_agent",
-                    config=config,
-                    items=(
-                        JobItemSpec(
-                            page_id=None,
-                            step_kinds=("plugin_agent_execute",),
-                        ),
-                    ),
-                    credential_snapshots=(
-                        {
-                            "plugin_agent": str(
-                                provider["credentialVersionId"]
-                            )
-                        }
-                        if provider.get("credentialVersionId")
-                        else None
-                    ),
-                    plugin_snapshots=plugin_snapshots,
-                    target_display={
+            self._starting_sessions.add(session_id)
+        try:
+            provider = self.provider_resolver.snapshot()
+            plugin_snapshots: dict[str, dict[str, Any]] = {}
+            target_version_id = target["pluginVersionId"]
+            if target_version_id is not None:
+                plugin_snapshots.setdefault(
+                    target_version_id,
+                    {
                         "pluginId": target["plugin_id"],
-                        "mode": target["mode"],
+                        "protectOnly": True,
                     },
                 )
-            ],
-            idempotency_scope=f"plugin-agent-start:{session_id}",
-            idempotency_key=idempotency_key,
-            idempotency_payload={
+            config = {
+                "executionMode": "sequential",
                 "sessionId": session_id,
                 "target": target,
                 "messages": messages,
                 "provider": provider,
-            },
-        )
-        job_id = str(created["jobIds"][0])
-        with self._lock:
-            session = self._require(session_id)
-            session.run_state = "running"
-            session.touch()
-            self._batch_ids[session_id] = str(created["batchId"])
-            self._job_ids[session_id] = job_id
-            self._append_state(session, job_id=job_id)
-            return {
-                "session": self._dto(session),
-                "batchId": created["batchId"],
-                "jobId": job_id,
             }
+            created = self.jobs.create_batch(
+                kind="plugin_agent",
+                display_name=(
+                    "创建插件 "
+                    if target["mode"] == "create"
+                    else "修改插件 "
+                )
+                + target["display_name"],
+                specs=[
+                    JobSpec(
+                        kind="plugin_agent",
+                        config=config,
+                        items=(
+                            JobItemSpec(
+                                page_id=None,
+                                step_kinds=("plugin_agent_execute",),
+                            ),
+                        ),
+                        credential_snapshots=(
+                            {
+                                "plugin_agent": provider[
+                                    "credentialVersionId"
+                                ]
+                            }
+                            if "credentialVersionId" in provider
+                            else None
+                        ),
+                        plugin_snapshots=plugin_snapshots,
+                        target_display={
+                            "pluginId": target["plugin_id"],
+                            "mode": target["mode"],
+                        },
+                    )
+                ],
+                idempotency_scope=f"plugin-agent-start:{session_id}",
+                idempotency_key=idempotency_key,
+                idempotency_payload={
+                    "sessionId": session_id,
+                    "target": target,
+                    "messages": messages,
+                    "provider": provider,
+                },
+            )
+            job_ids = created["jobIds"]
+            if (
+                not isinstance(job_ids, list)
+                or len(job_ids) != 1
+                or not isinstance(job_ids[0], str)
+            ):
+                raise TypeError("Plugin Agent job creation result is invalid")
+            batch_id = created["batchId"]
+            if not isinstance(batch_id, str):
+                raise TypeError("Plugin Agent batch ID is invalid")
+            job_id = job_ids[0]
+            with self._lock:
+                session = self._require(session_id)
+                session.run_state = "running"
+                session.touch()
+                self._batch_ids[session_id] = batch_id
+                self._job_ids[session_id] = job_id
+                self._append_state(session, job_id=job_id)
+                return {
+                    "session": self._dto(session),
+                    "batchId": batch_id,
+                    "jobId": job_id,
+                }
+        finally:
+            with self._lock:
+                self._starting_sessions.discard(session_id)
 
     def _target_from_plugin(
         self,
         plugin: Mapping[str, Any],
     ) -> dict[str, Any]:
-        manifest = _json_mapping(plugin.get("manifest"))
-        return {
+        manifest = _json_mapping(plugin["manifest"])
+        return validate_plugin_agent_target_snapshot({
             "mode": "modify",
-            "plugin_id": str(plugin["pluginId"]),
-            "display_name": str(plugin["displayName"]),
+            "plugin_id": plugin["pluginId"],
+            "display_name": plugin["displayName"],
             "supported_steps": list(manifest["supported_steps"]),
             "supported_modes": list(manifest["supported_modes"]),
-            "baseRevision": int(plugin["currentRevision"]),
-            "pluginVersionId": str(plugin["pluginVersionId"]),
-        }
+            "baseRevision": plugin["currentRevision"],
+            "pluginVersionId": plugin["pluginVersionId"],
+        })
 
     def _require(self, session_id: str) -> PluginAgentSession:
         session = self._sessions.get(session_id)
@@ -485,16 +544,33 @@ class PluginAgentSessionService:
         self,
         session: PluginAgentSession,
     ) -> None:
-        if session.run_state != "running":
+        if session.run_state in {"completed", "failed", "cancelled"}:
             return
         job_id = self._job_ids.get(session.session_id)
         if not job_id:
             return
         job = self.jobs.get_job(job_id)
-        started_at = job.get("startedAt")
-        if started_at and not session.execution_started_at:
-            session.execution_started_at = str(started_at)
-        status = str(job["status"])
+        started_at = job["startedAt"]
+        if started_at is not None and not isinstance(started_at, str):
+            raise TypeError("Plugin Agent job startedAt is invalid")
+        if started_at is not None and not session.execution_started_at:
+            session.execution_started_at = started_at
+        status = job["status"]
+        if not isinstance(status, str):
+            raise TypeError("Plugin Agent job status is invalid")
+        active_state = {
+            "queued": "running",
+            "running": "running",
+            "pausing": "pausing",
+            "paused": "paused",
+            "cancelling": "cancelling",
+        }.get(status)
+        if active_state is not None:
+            if session.run_state != active_state:
+                session.run_state = active_state
+                session.touch()
+                self._append_state(session, job_id=job_id)
+            return
         terminal_state = {
             "completed": "completed",
             "completed_with_errors": "failed",
@@ -503,40 +579,73 @@ class PluginAgentSessionService:
             "cancelled": "cancelled",
         }.get(status)
         if terminal_state is None:
-            return
+            raise ValueError(f"unsupported Plugin Agent job status: {status}")
         outcome: dict[str, Any] = {}
-        for item in job.get("items", []):
+        items = job["items"]
+        if not isinstance(items, list):
+            raise TypeError("Plugin Agent job items are invalid")
+        for item in items:
             if not isinstance(item, Mapping):
+                raise TypeError("Plugin Agent job item is invalid")
+            result = item["result"]
+            if result is None:
                 continue
-            result = item.get("result")
             if not isinstance(result, Mapping):
-                continue
+                raise TypeError("Plugin Agent job item result is invalid")
             checkpoint = result.get("lastCheckpoint")
-            if isinstance(checkpoint, Mapping):
+            if checkpoint is not None:
+                if not isinstance(checkpoint, Mapping):
+                    raise TypeError("Plugin Agent checkpoint is invalid")
                 outcome.update(checkpoint)
-        for event in reversed(job.get("recentEvents", [])):
-            if (
-                isinstance(event, Mapping)
-                and event.get("type") == "plugin_agent_done"
-                and isinstance(event.get("payload"), Mapping)
-            ):
-                outcome.update(event["payload"])
+        recent_events = job["recentEvents"]
+        if not isinstance(recent_events, list):
+            raise TypeError("Plugin Agent job events are invalid")
+        for event in reversed(recent_events):
+            if not isinstance(event, Mapping):
+                raise TypeError("Plugin Agent job event is invalid")
+            if event["type"] == "plugin_agent_done":
+                payload = event["payload"]
+                if not isinstance(payload, Mapping):
+                    raise TypeError("Plugin Agent done event payload is invalid")
+                outcome.update(payload)
                 break
         touched_files = outcome.get("touchedFiles")
-        if isinstance(touched_files, list):
-            session.touched_files = [
-                str(item) for item in touched_files if str(item).strip()
-            ]
+        if touched_files is not None:
+            if not isinstance(touched_files, list) or any(
+                not isinstance(item, str) or not item
+                for item in touched_files
+            ):
+                raise TypeError("Plugin Agent touched files are invalid")
+            session.touched_files = list(touched_files)
         file_previews = outcome.get("filePreviews")
-        if isinstance(file_previews, Mapping):
-            session.file_previews = {
-                str(path): str(content)
+        if file_previews is not None:
+            if not isinstance(file_previews, Mapping) or any(
+                not isinstance(path, str)
+                or not path
+                or not isinstance(content, str)
                 for path, content in file_previews.items()
-            }
+            ):
+                raise TypeError("Plugin Agent file previews are invalid")
+            session.file_previews = dict(file_previews)
         validation = outcome.get("validation")
-        if isinstance(validation, Mapping):
+        if validation is not None:
+            if not isinstance(validation, Mapping) or not isinstance(
+                validation.get("success"),
+                bool,
+            ):
+                raise TypeError("Plugin Agent validation result is invalid")
             session.last_validation = dict(validation)
-        final_message = str(outcome.get("message", "")).strip()
+        final_message = outcome.get("message", "")
+        if not isinstance(final_message, str):
+            raise TypeError("Plugin Agent final message is invalid")
+        final_message = final_message.strip()
+        if terminal_state == "completed" and (
+            touched_files is None
+            or file_previews is None
+            or validation is None
+            or not final_message
+        ):
+            raise ValueError("completed Plugin Agent job has incomplete output")
         if final_message:
             session.messages.append(
                 PluginAgentMessage(
@@ -554,14 +663,18 @@ class PluginAgentSessionService:
                 },
             )
         session.run_state = terminal_state
-        session.execution_finished_at = (
-            str(job["finishedAt"])
-            if job.get("finishedAt")
-            else session.execution_finished_at
-        )
-        error = job.get("error")
-        if isinstance(error, Mapping):
-            message = str(error.get("message", "")).strip()
+        finished_at = job["finishedAt"]
+        if not isinstance(finished_at, str) or not finished_at:
+            raise TypeError("terminal Plugin Agent job finishedAt is invalid")
+        session.execution_finished_at = finished_at
+        error = job["error"]
+        if error is not None:
+            if not isinstance(error, Mapping):
+                raise TypeError("Plugin Agent job error is invalid")
+            message = error.get("message", "")
+            if not isinstance(message, str):
+                raise TypeError("Plugin Agent job error message is invalid")
+            message = message.strip()
             session.last_error = message or None
         session.touch()
         self._append_state(session, job_id=job_id)
@@ -571,15 +684,17 @@ class PluginAgentSessionService:
         with self._lock:
             expired: list[str] = []
             for session_id, session in self._sessions.items():
-                try:
-                    updated = datetime.fromisoformat(
-                        session.updated_at.replace(
-                            "Z",
-                            "+00:00",
-                        )
-                    ).astimezone(timezone.utc).timestamp()
-                except ValueError:
+                if (
+                    session_id in self._planning_sessions
+                    or session_id in self._starting_sessions
+                ):
                     continue
+                updated = datetime.fromisoformat(
+                    session.updated_at.replace(
+                        "Z",
+                        "+00:00",
+                    )
+                ).astimezone(timezone.utc).timestamp()
                 if updated < cutoff:
                     expired.append(session_id)
             for session_id in expired:
@@ -587,6 +702,8 @@ class PluginAgentSessionService:
                 self._targets.pop(session_id, None)
                 self._batch_ids.pop(session_id, None)
                 self._job_ids.pop(session_id, None)
+                self._planning_sessions.discard(session_id)
+                self._starting_sessions.discard(session_id)
 
     def _dto(self, session: PluginAgentSession) -> dict[str, Any]:
         value = session.to_dict()
@@ -635,20 +752,27 @@ class PluginAgentSessionService:
 
 
 def _proposal(value: Mapping[str, Any]) -> PluginTargetProposal:
-    plugin_id = _proposal_text(value.get("plugin_id"), "plugin_id")
+    if set(value) != {
+        "plugin_id",
+        "display_name",
+        "supported_steps",
+        "supported_modes",
+    }:
+        raise ValueError("Plugin Agent target proposal fields are invalid")
+    plugin_id = _proposal_text(value["plugin_id"], "plugin_id")
     display_name = _proposal_text(
-        value.get("display_name"),
+        value["display_name"],
         "display_name",
     )
     if not PLUGIN_ID_PATTERN.fullmatch(plugin_id):
         raise ValueError("plugin_id is invalid")
     supported_steps = _proposal_values(
-        value.get("supported_steps", []),
+        value["supported_steps"],
         field="supported_steps",
         allowed=frozenset(HOOK_STEPS),
     )
     supported_modes = _proposal_values(
-        value.get("supported_modes", []),
+        value["supported_modes"],
         field="supported_modes",
         allowed=PLUGIN_MODES,
     )
@@ -666,7 +790,7 @@ def _proposal_values(
     field: str,
     allowed: frozenset[str],
 ) -> list[str]:
-    if not isinstance(value, list) or not all(
+    if not isinstance(value, list) or not value or not all(
         isinstance(item, str) for item in value
     ):
         raise ValueError(f"{field} must be a string array")
@@ -687,50 +811,152 @@ def _proposal_text(value: object, field: str) -> str:
 def _locked_target(
     target: Mapping[str, Any],
 ) -> LockedPluginTarget:
+    normalized = validate_plugin_agent_target_snapshot(target)
     return LockedPluginTarget(
-        mode=str(target["mode"]),
-        plugin_id=str(target["plugin_id"]),
-        display_name=str(target["display_name"]),
-        plugin_dir=f"worktree://{target['plugin_id']}",
-        supported_steps=_proposal_values(
-            target["supported_steps"],
-            field="supported_steps",
-            allowed=frozenset(HOOK_STEPS),
-        ),
-        supported_modes=_proposal_values(
-            target["supported_modes"],
-            field="supported_modes",
-            allowed=PLUGIN_MODES,
-        ),
+        mode=normalized["mode"],
+        plugin_id=normalized["plugin_id"],
+        display_name=normalized["display_name"],
+        plugin_dir=f"worktree://{normalized['plugin_id']}",
+        supported_steps=normalized["supported_steps"],
+        supported_modes=normalized["supported_modes"],
     )
+
+
+def validate_plugin_agent_target_snapshot(
+    target: Mapping[str, Any],
+) -> dict[str, Any]:
+    expected_fields = {
+        "mode",
+        "plugin_id",
+        "display_name",
+        "supported_steps",
+        "supported_modes",
+        "baseRevision",
+        "pluginVersionId",
+    }
+    if not isinstance(target, Mapping) or set(target) != expected_fields:
+        raise ValueError("Plugin Agent target snapshot fields are invalid")
+    mode = target["mode"]
+    if mode not in {"create", "modify"}:
+        raise ValueError("Plugin Agent target mode is invalid")
+    proposal = _proposal(
+        {
+            "plugin_id": target["plugin_id"],
+            "display_name": target["display_name"],
+            "supported_steps": target["supported_steps"],
+            "supported_modes": target["supported_modes"],
+        }
+    )
+    base_revision = target["baseRevision"]
+    if (
+        isinstance(base_revision, bool)
+        or not isinstance(base_revision, int)
+        or base_revision < 0
+    ):
+        raise ValueError("Plugin Agent target revision is invalid")
+    version_id = target["pluginVersionId"]
+    if mode == "create":
+        if base_revision != 0 or version_id is not None:
+            raise ValueError("new Plugin Agent target must start at revision zero")
+    elif (
+        base_revision < 1
+        or not isinstance(version_id, str)
+        or not version_id
+    ):
+        raise ValueError("modified Plugin Agent target version is invalid")
+    return {
+        "mode": mode,
+        **proposal.to_dict(),
+        "baseRevision": base_revision,
+        "pluginVersionId": version_id,
+    }
 
 
 def _normalize_openai_options(value: object) -> dict[str, Any]:
     raw = _json_mapping(value)
-    request = _json_mapping(raw.get("request"))
-    execution = _json_mapping(raw.get("execution"))
-    return {
+    if set(raw) != {"request", "execution"}:
+        raise ValueError("Plugin Agent OpenAI options fields are invalid")
+    request = _json_mapping(raw["request"])
+    execution = _json_mapping(raw["execution"])
+    if (
+        "forceJsonOutput" not in request
+        or set(request) - {"forceJsonOutput", "temperature", "extraBody"}
+        or set(execution)
+        != {
+            "useStream",
+            "rpmLimit",
+            "transportRetries",
+            "businessRetries",
+        }
+    ):
+        raise ValueError("Plugin Agent OpenAI options fields are invalid")
+    normalized = {
         "request": {
-            "force_json_output": request.get("forceJsonOutput", True),
+            "force_json_output": request["forceJsonOutput"],
             "temperature": request.get("temperature"),
             "extra_body": request.get("extraBody", {}),
         },
         "execution": {
-            "use_stream": execution.get("useStream", True),
-            "rpm_limit": execution.get("rpmLimit", 0),
-            "transport_retries": execution.get("transportRetries", 1),
-            "business_retries": execution.get("businessRetries", 0),
+            "use_stream": execution["useStream"],
+            "rpm_limit": execution["rpmLimit"],
+            "transport_retries": execution["transportRetries"],
+            "business_retries": execution["businessRetries"],
         },
     }
+    return OpenAICompatibleOptions.from_dict(normalized).to_dict()
+
+
+def _provider_snapshot(value: object) -> dict[str, Any]:
+    raw = _json_mapping(value)
+    required = {
+        "provider",
+        "model_name",
+        "custom_base_url",
+        "openai_options",
+        "settingsSnapshot",
+    }
+    if set(raw) not in (required, required | {"credentialVersionId"}):
+        raise ValueError("Plugin Agent provider snapshot fields are invalid")
+    for field in ("provider", "model_name", "custom_base_url"):
+        if not isinstance(raw[field], str):
+            raise ValueError(f"Plugin Agent provider snapshot {field} is invalid")
+    if not raw["provider"]:
+        raise ValueError("Plugin Agent provider snapshot provider is required")
+    credential_version_id = raw.get("credentialVersionId")
+    if credential_version_id is not None and (
+        not isinstance(credential_version_id, str)
+        or not credential_version_id
+    ):
+        raise ValueError("Plugin Agent credential version is invalid")
+    revisions = _json_mapping(raw["settingsSnapshot"])
+    if set(revisions) != {"appRevision", "providerRevision"} or any(
+        isinstance(revisions[field], bool)
+        or not isinstance(revisions[field], int)
+        or revisions[field] < 1
+        for field in revisions
+    ):
+        raise ValueError("Plugin Agent settings snapshot is invalid")
+    OpenAICompatibleOptions.from_dict(
+        _json_mapping(raw["openai_options"])
+    )
+    return raw
 
 
 def _json_object(value: object) -> dict[str, Any]:
+    if isinstance(value, Mapping):
+        return dict(value)
+    if not isinstance(value, str):
+        raise ValueError("stored Plugin Agent JSON must be an object")
     try:
-        loaded = json.loads(str(value)) if value else {}
-    except (TypeError, ValueError, json.JSONDecodeError):
-        return {}
-    return dict(loaded) if isinstance(loaded, Mapping) else {}
+        loaded = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise ValueError("stored Plugin Agent JSON is invalid") from exc
+    if not isinstance(loaded, Mapping):
+        raise ValueError("stored Plugin Agent JSON must be an object")
+    return dict(loaded)
 
 
 def _json_mapping(value: object) -> dict[str, Any]:
-    return dict(value) if isinstance(value, Mapping) else {}
+    if not isinstance(value, Mapping):
+        raise ValueError("Plugin Agent options must be an object")
+    return dict(value)

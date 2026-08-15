@@ -1,196 +1,210 @@
-"""
-网页漫画导入 - Firecrawl 工具定义
+"""Current Firecrawl scrape tool used by the webpage-import Agent."""
 
-定义 AI Agent 可调用的 Firecrawl 工具 (Function Calling Schema)
-"""
+from __future__ import annotations
 
 import logging
-from typing import Any, Dict
+import math
+from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
 from src.shared.memory_errors import is_memory_allocation_error
 
+
 logger = logging.getLogger("WebImport.FirecrawlTools")
-
-# Firecrawl API 基础 URL
-FIRECRAWL_API_BASE = "https://api.firecrawl.dev/v1"
-
-
-# ============================================================
-# 工具定义 (OpenAI Function Calling Schema)
-# ============================================================
+FIRECRAWL_API_BASE = "https://api.firecrawl.dev/v2"
+_FORMATS = {"markdown", "html", "screenshot", "links"}
 
 FIRECRAWL_TOOLS = [
     {
         "type": "function",
         "function": {
             "name": "firecrawl_scrape",
-            "description": "抓取单个网页的内容。可以获取页面的 HTML、Markdown 内容、截图，以及执行页面操作（如滚动、点击、等待）。适用于需要深入分析单个页面的场景。",
+            "description": (
+                "抓取当前漫画网页的 HTML、Markdown、链接或截图；"
+                "需要动态加载时可执行等待、点击或滚动动作。"
+            ),
             "parameters": {
                 "type": "object",
+                "additionalProperties": False,
                 "properties": {
                     "url": {
                         "type": "string",
-                        "description": "要抓取的网页 URL"
+                        "description": "要抓取的 HTTP(S) 网页 URL",
                     },
                     "formats": {
                         "type": "array",
-                        "items": {"type": "string", "enum": ["markdown", "html", "screenshot", "links"]},
-                        "description": "返回格式列表。可选: markdown, html, screenshot, links",
-                        "default": ["markdown", "html"]
+                        "items": {"type": "string", "enum": sorted(_FORMATS)},
+                        "default": ["markdown", "html"],
                     },
                     "wait_for": {
                         "type": "integer",
-                        "description": "等待页面加载的毫秒数（用于动态内容）",
-                        "default": 0
+                        "minimum": 0,
+                        "default": 0,
+                        "description": "等待页面加载的毫秒数",
                     },
                     "actions": {
                         "type": "array",
                         "items": {
                             "type": "object",
+                            "additionalProperties": False,
                             "properties": {
                                 "type": {
                                     "type": "string",
                                     "enum": ["wait", "click", "scroll", "screenshot"],
-                                    "description": "操作类型"
                                 },
-                                "milliseconds": {
-                                    "type": "integer",
-                                    "description": "wait 操作的等待时间"
-                                },
-                                "selector": {
-                                    "type": "string", 
-                                    "description": "click 操作的 CSS 选择器"
-                                },
+                                "milliseconds": {"type": "integer", "minimum": 0},
+                                "selector": {"type": "string"},
                                 "direction": {
                                     "type": "string",
                                     "enum": ["up", "down"],
-                                    "description": "scroll 操作的方向"
                                 },
-                                "amount": {
-                                    "type": "integer",
-                                    "description": "scroll 操作的滚动像素数"
-                                }
-                            }
+                                "amount": {"type": "integer", "minimum": 1},
+                            },
+                            "required": ["type"],
                         },
-                        "description": "页面操作列表，用于处理动态加载的内容"
-                    }
-                },
-                "required": ["url"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "firecrawl_extract",
-            "description": "使用 LLM 从网页中提取结构化数据。适用于需要从页面中提取特定信息（如漫画图片列表）的场景。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "urls": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "要提取数据的 URL 列表"
                     },
-                    "prompt": {
-                        "type": "string",
-                        "description": "描述要提取什么数据的提示词"
-                    },
-                    "schema": {
-                        "type": "object",
-                        "description": "期望的输出 JSON Schema（可选）"
-                    }
                 },
-                "required": ["urls"]
-            }
-        }
+                "required": ["url"],
+            },
+        },
     }
 ]
 
 
-
-
-
-
 def execute_firecrawl_tool_sync(
     tool_name: str,
-    tool_args: Dict[str, Any],
+    tool_args: dict[str, Any],
     api_key: str,
-    timeout: int = 60,
-    bypass_proxy: bool = False,
-) -> Dict[str, Any]:
-    """
-    执行 Firecrawl 工具调用 (同步版本)
-    
-    Args:
-        tool_name: 工具名称
-        tool_args: 工具参数
-        api_key: Firecrawl API Key
-        timeout: 超时时间
-    
-    Returns:
-        工具执行结果
-    """
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
-    
+    timeout: float,
+    bypass_proxy: bool,
+) -> dict[str, Any]:
+    """Execute one scrape call and return a canonical tool result."""
+
     try:
-        if tool_name == "firecrawl_scrape":
-            payload = {"url": tool_args.get("url")}
-            formats = tool_args.get("formats", ["markdown", "html"])
-            if formats:
-                payload["formats"] = formats
-            wait_for = tool_args.get("wait_for", 0)
-            if wait_for > 0:
-                payload["waitFor"] = wait_for
-            actions = tool_args.get("actions")
-            if actions:
-                payload["actions"] = actions
-            
-            with httpx.Client(
-                timeout=timeout,
-                trust_env=not bypass_proxy,
-            ) as client:
-                response = client.post(
-                    f"{FIRECRAWL_API_BASE}/scrape",
-                    headers=headers,
-                    json=payload
-                )
-                response.raise_for_status()
-                return response.json()
-                
-        elif tool_name == "firecrawl_extract":
-            payload = {"urls": tool_args.get("urls", [])}
-            prompt = tool_args.get("prompt")
-            if prompt:
-                payload["prompt"] = prompt
-            schema = tool_args.get("schema")
-            if schema:
-                payload["schema"] = schema
-            
-            with httpx.Client(
-                timeout=timeout,
-                trust_env=not bypass_proxy,
-            ) as client:
-                response = client.post(
-                    f"{FIRECRAWL_API_BASE}/extract",
-                    headers=headers,
-                    json=payload
-                )
-                response.raise_for_status()
-                return response.json()
-        else:
-            return {"error": f"未知的工具: {tool_name}"}
-        
-    except httpx.HTTPStatusError as e:
-        logger.error(f"Firecrawl API 错误: {e.response.status_code} - {e.response.text}")
-        return {"error": f"API 错误: {e.response.status_code}", "details": e.response.text}
-    except Exception as e:
-        if is_memory_allocation_error(e):
+        if tool_name != "firecrawl_scrape":
+            raise ValueError(f"未知的 Firecrawl 工具: {tool_name}")
+        payload = _scrape_payload(tool_args)
+        if not isinstance(api_key, str) or not api_key.strip():
+            raise ValueError("Firecrawl API Key 不能为空")
+        if (
+            isinstance(timeout, bool)
+            or not isinstance(timeout, (int, float))
+            or not math.isfinite(float(timeout))
+            or timeout <= 0
+        ):
+            raise ValueError("Firecrawl 超时时间必须是正有限数")
+        if not isinstance(bypass_proxy, bool):
+            raise ValueError("Firecrawl 代理开关必须是布尔值")
+    except (TypeError, ValueError) as exc:
+        return {"error": str(exc)}
+
+    try:
+        with httpx.Client(
+            timeout=float(timeout),
+            trust_env=not bypass_proxy,
+        ) as client:
+            response = client.post(
+                f"{FIRECRAWL_API_BASE}/scrape",
+                headers={
+                    "Authorization": f"Bearer {api_key.strip()}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+            response.raise_for_status()
+            result = response.json()
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code
+        logger.warning("Firecrawl 请求失败: HTTP %s", status)
+        return {"error": f"Firecrawl HTTP {status}"}
+    except Exception as exc:
+        if is_memory_allocation_error(exc):
             raise
-        logger.error(f"执行 Firecrawl 工具失败: {e}")
-        return {"error": str(e)}
+        logger.warning("Firecrawl 请求失败: %s", type(exc).__name__)
+        return {"error": f"Firecrawl 请求失败: {type(exc).__name__}"}
+
+    if (
+        not isinstance(result, dict)
+        or result.get("success") is not True
+        or not isinstance(result.get("data"), dict)
+    ):
+        return {"error": "Firecrawl 返回格式无效"}
+    return {"success": True, "data": result["data"]}
+
+
+def _scrape_payload(tool_args: object) -> dict[str, Any]:
+    if not isinstance(tool_args, dict):
+        raise TypeError("Firecrawl 工具参数必须是对象")
+    allowed = {"url", "formats", "wait_for", "actions"}
+    if set(tool_args) - allowed:
+        raise ValueError("Firecrawl 工具参数包含未知字段")
+
+    url = tool_args.get("url")
+    if not isinstance(url, str) or not url.strip():
+        raise ValueError("Firecrawl url 必须是非空字符串")
+    parsed = urlparse(url.strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("Firecrawl url 必须是 HTTP(S) URL")
+
+    formats = tool_args.get("formats", ["markdown", "html"])
+    if (
+        not isinstance(formats, list)
+        or not formats
+        or any(not isinstance(value, str) or value not in _FORMATS for value in formats)
+        or len(set(formats)) != len(formats)
+    ):
+        raise ValueError("Firecrawl formats 字段无效")
+
+    wait_for = tool_args.get("wait_for", 0)
+    if isinstance(wait_for, bool) or not isinstance(wait_for, int) or wait_for < 0:
+        raise ValueError("Firecrawl wait_for 必须是非负整数")
+
+    payload: dict[str, Any] = {
+        "url": url.strip(),
+        "formats": formats,
+    }
+    if wait_for:
+        payload["waitFor"] = wait_for
+    if "actions" in tool_args:
+        payload["actions"] = _actions(tool_args["actions"])
+    return payload
+
+
+def _actions(value: object) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        raise ValueError("Firecrawl actions 必须是数组")
+    result: list[dict[str, Any]] = []
+    fields = {
+        "wait": {"type", "milliseconds"},
+        "click": {"type", "selector"},
+        "scroll": {"type", "direction", "amount"},
+        "screenshot": {"type"},
+    }
+    for action in value:
+        if not isinstance(action, dict) or not isinstance(action.get("type"), str):
+            raise ValueError("Firecrawl action 必须是带 type 的对象")
+        action_type = action["type"]
+        expected = fields.get(action_type)
+        if expected is None or set(action) != expected:
+            raise ValueError(f"Firecrawl {action_type} action 字段无效")
+        if action_type == "wait":
+            milliseconds = action["milliseconds"]
+            if (
+                isinstance(milliseconds, bool)
+                or not isinstance(milliseconds, int)
+                or milliseconds < 0
+            ):
+                raise ValueError("Firecrawl wait action 毫秒数无效")
+        elif action_type == "click":
+            if not isinstance(action["selector"], str) or not action["selector"].strip():
+                raise ValueError("Firecrawl click action 选择器无效")
+        elif action_type == "scroll":
+            amount = action["amount"]
+            if action["direction"] not in {"up", "down"}:
+                raise ValueError("Firecrawl scroll action 方向无效")
+            if isinstance(amount, bool) or not isinstance(amount, int) or amount < 1:
+                raise ValueError("Firecrawl scroll action 距离无效")
+        result.append(dict(action))
+    return result

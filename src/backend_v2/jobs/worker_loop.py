@@ -130,6 +130,7 @@ class JobWorkerLoop:
         worker_epoch_id: str,
         handlers: Mapping[str, StepHandler],
         batch_handlers: Mapping[str, BatchStepHandler] | None = None,
+        handler_resolver: Callable[[str], StepHandler | None] | None = None,
         plugin_runtime: Any | None = None,
         safe_point: Callable[[], bool] | None = None,
         on_activity: Callable[[], None] | None = None,
@@ -139,6 +140,7 @@ class JobWorkerLoop:
         self.worker_epoch_id = worker_epoch_id
         self.handlers = dict(handlers)
         self.batch_handlers = dict(batch_handlers or {})
+        self.handler_resolver = handler_resolver
         if not set(self.batch_handlers).issubset(self.handlers):
             raise ValueError("every batch handler requires a matching step handler")
         self.plugin_runtime = plugin_runtime
@@ -188,7 +190,12 @@ class JobWorkerLoop:
             config = self.repository.attempt_config(fence)
             if self.plugin_runtime is not None:
                 config = self.plugin_runtime.before_job(fence, config)
-            execution_mode = str(config.get("executionMode", "sequential"))
+            if not isinstance(config, Mapping):
+                raise ValueError("job config must be an object")
+            self._resolve_attempt_handlers(fence)
+            execution_mode = config.get("executionMode", "sequential")
+            if not isinstance(execution_mode, str):
+                raise ValueError("executionMode must be a string")
             if execution_mode not in {"sequential", "parallel"}:
                 raise ValueError(f"unsupported execution mode: {execution_mode}")
             LOGGER.info(
@@ -239,6 +246,16 @@ class JobWorkerLoop:
     def _note_activity(self) -> None:
         if self.on_activity is not None:
             self.on_activity()
+
+    def _resolve_attempt_handlers(self, fence: AttemptFence) -> None:
+        if self.handler_resolver is None:
+            return
+        for step_kind in self.repository.step_kinds(fence):
+            if step_kind in self.handlers:
+                continue
+            handler = self.handler_resolver(step_kind)
+            if handler is not None:
+                self.handlers[step_kind] = handler
 
     def _run_sequential_attempt(
         self,
@@ -379,6 +396,8 @@ class JobWorkerLoop:
                         heartbeat.fence,
                         step,
                     )
+                    if not isinstance(checkpoint, Mapping):
+                        raise TypeError("step handler must return an object")
                 except Exception as exc:
                     LOGGER.exception(
                         "步骤失败：job=%s kind=%s step=%s page=%s duration=%.2fs",
@@ -442,7 +461,7 @@ class JobWorkerLoop:
             )
             return
         admission_closed = threading.Event()
-        worker_errors: list[BaseException] = []
+        worker_errors: list[Exception] = []
         pipeline_wait_seconds = min(
             max(self.idle_poll_seconds, MIN_SCHEDULER_POLL_SECONDS),
             MAX_SCHEDULER_POLL_SECONDS,
@@ -451,16 +470,14 @@ class JobWorkerLoop:
             set(pool_kinds).intersection(DEEP_LEARNING_STEP_KINDS)
         )
         has_terminal_save = "save" in pool_kinds
-        deep_learning_concurrency = (
-            int(config["deepLearningConcurrency"])
-            if has_deep_learning_pool
-            else 1
-        )
-        if not 1 <= deep_learning_concurrency <= 4:
-            raise ValueError("deepLearningConcurrency must be between 1 and 4")
-        deep_learning_admission = threading.Semaphore(
-            deep_learning_concurrency
-        )
+        deep_learning_concurrency = 1
+        if has_deep_learning_pool:
+            value = config.get("deepLearningConcurrency")
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise ValueError("deepLearningConcurrency must be an integer")
+            deep_learning_concurrency = value
+        if deep_learning_concurrency < 1:
+            raise ValueError("deepLearningConcurrency must be a positive integer")
         LOGGER.info(
             "并行流水线启动：job=%s pools=%s deep_learning_concurrency=%s "
             "lead_window=%s",
@@ -480,10 +497,44 @@ class JobWorkerLoop:
             with lock_waiting_state_lock:
                 lock_waiting_states[pool_kind] = waiting
                 snapshot = dict(lock_waiting_states)
-            self.repository.write_pipeline_progress(
-                heartbeat.fence,
-                lock_waiting=snapshot,
-            )
+            busy_failures = 0
+            while True:
+                try:
+                    self.repository.write_pipeline_progress(
+                        heartbeat.fence,
+                        lock_waiting=snapshot,
+                    )
+                    break
+                except AttemptFenced:
+                    raise
+                except Exception as exc:
+                    if not is_sqlite_busy_error(exc):
+                        raise
+                    if busy_failures >= PIPELINE_BUSY_RETRY_LIMIT:
+                        LOGGER.warning(
+                            "深度学习并发锁遥测持续遇到 SQLite 写锁竞争，"
+                            "跳过本次遥测：job=%s pool=%s waiting=%s",
+                            _short(heartbeat.fence.job_id),
+                            pool_kind,
+                            waiting,
+                        )
+                        break
+                    busy_failures += 1
+                    delay = min(
+                        PIPELINE_BUSY_RETRY_BASE_SECONDS
+                        * (2 ** (busy_failures - 1)),
+                        pipeline_wait_seconds,
+                    )
+                    LOGGER.warning(
+                        "深度学习并发锁遥测遇到 SQLite 写锁竞争，将有限重试："
+                        "job=%s pool=%s attempt=%s/%s",
+                        _short(heartbeat.fence.job_id),
+                        pool_kind,
+                        busy_failures,
+                        PIPELINE_BUSY_RETRY_LIMIT,
+                    )
+                    if stop_event.wait(delay):
+                        break
             LOGGER.info(
                 "深度学习并发锁状态：job=%s pool=%s waiting=%s",
                 _short(heartbeat.fence.job_id),
@@ -494,6 +545,8 @@ class JobWorkerLoop:
         def execute_step(
             pool_kind: str,
             step: Mapping[str, Any],
+            *,
+            model_waiting: bool = False,
         ) -> None:
             handler = self.handlers.get(str(step["stepKind"]))
             if handler is None:
@@ -521,22 +574,14 @@ class JobWorkerLoop:
                 page_id,
                 pool_kind,
             )
+            if model_waiting:
+                set_lock_waiting(pool_kind, False)
             if not self._before_pipeline(heartbeat.fence, step):
                 return
             try:
-                if pool_kind in DEEP_LEARNING_STEP_KINDS:
-                    acquired = deep_learning_admission.acquire(blocking=False)
-                    if not acquired:
-                        set_lock_waiting(pool_kind, True)
-                        deep_learning_admission.acquire()
-                    try:
-                        if not acquired:
-                            set_lock_waiting(pool_kind, False)
-                        checkpoint = handler(heartbeat.fence, step)
-                    finally:
-                        deep_learning_admission.release()
-                else:
-                    checkpoint = handler(heartbeat.fence, step)
+                checkpoint = handler(heartbeat.fence, step)
+                if not isinstance(checkpoint, Mapping):
+                    raise TypeError("step handler must return an object")
             except Exception as exc:
                 LOGGER.exception(
                     "步骤失败：job=%s kind=%s step=%s page=%s "
@@ -591,6 +636,7 @@ class JobWorkerLoop:
             pool_kind: str,
             steps: Sequence[Mapping[str, Any]],
             step: Mapping[str, Any] | None,
+            model_waiting: bool = False,
         ) -> None:
             if steps:
                 self._execute_batch(
@@ -599,7 +645,11 @@ class JobWorkerLoop:
                     steps,
                 )
             elif step is not None:
-                execute_step(pool_kind, step)
+                execute_step(
+                    pool_kind,
+                    step,
+                    model_waiting=model_waiting,
+                )
 
         def claim_with_retry(
             pool_kind: str,
@@ -618,7 +668,7 @@ class JobWorkerLoop:
                     return claim()
                 except AttemptFenced:
                     raise
-                except BaseException as exc:
+                except Exception as exc:
                     if is_sqlite_busy_error(exc):
                         if busy_failures >= PIPELINE_BUSY_RETRY_LIMIT:
                             LOGGER.warning(
@@ -651,7 +701,7 @@ class JobWorkerLoop:
 
         def record_worker_error(
             pool_kind: str,
-            exc: BaseException,
+            exc: Exception,
         ) -> None:
             LOGGER.exception(
                 "并行流水线执行失败：job=%s pool=%s",
@@ -662,10 +712,19 @@ class JobWorkerLoop:
             worker_errors.append(exc)
             admission_closed.set()
 
-        with ThreadPoolExecutor(
-            max_workers=len(pool_kinds),
-            thread_name_prefix="job-pipeline",
-        ) as executor:
+        # cuDNN keeps host-side execution plans per calling thread.  A dedicated
+        # pool preserves the configured concurrency without migrating model calls
+        # across every pipeline thread during long jobs.
+        with (
+            ThreadPoolExecutor(
+                max_workers=deep_learning_concurrency,
+                thread_name_prefix="job-model",
+            ) as deep_learning_executor,
+            ThreadPoolExecutor(
+                max_workers=len(pool_kinds),
+                thread_name_prefix="job-pipeline",
+            ) as executor,
+        ):
             active_futures: dict[Future[None], str] = {}
             while (
                 not stop_event.is_set()
@@ -680,7 +739,7 @@ class JobWorkerLoop:
                         future.result()
                     except AttemptFenced:
                         admission_closed.set()
-                    except BaseException as exc:
+                    except Exception as exc:
                         record_worker_error(pool_kind, exc)
                 if admission_closed.is_set():
                     break
@@ -699,7 +758,7 @@ class JobWorkerLoop:
                 except AttemptFenced:
                     admission_closed.set()
                     break
-                except BaseException as exc:
+                except Exception as exc:
                     record_worker_error("admission", exc)
                     break
 
@@ -800,18 +859,33 @@ class JobWorkerLoop:
                                 raise RuntimeError(
                                     "claimed step does not belong to an idle pool"
                                 )
-                            future = executor.submit(
+                            model_waiting = False
+                            target_executor = executor
+                            if pool_kind in DEEP_LEARNING_STEP_KINDS:
+                                active_model_steps = sum(
+                                    1
+                                    for active_kind in active_futures.values()
+                                    if active_kind in DEEP_LEARNING_STEP_KINDS
+                                )
+                                model_waiting = (
+                                    active_model_steps >= deep_learning_concurrency
+                                )
+                                if model_waiting:
+                                    set_lock_waiting(pool_kind, True)
+                                target_executor = deep_learning_executor
+                            future = target_executor.submit(
                                 execute_claimed,
                                 pool_kind,
                                 (),
                                 step,
+                                model_waiting,
                             )
                             active_futures[future] = pool_kind
                             ordinary_pool_kinds.remove(pool_kind)
                 except AttemptFenced:
                     admission_closed.set()
                     break
-                except BaseException as exc:
+                except Exception as exc:
                     record_worker_error("admission", exc)
                     break
 
@@ -832,7 +906,7 @@ class JobWorkerLoop:
                     future.result()
                 except AttemptFenced:
                     pass
-                except BaseException as exc:
+                except Exception as exc:
                     record_worker_error(pool_kind, exc)
 
         if heartbeat.fenced.is_set() or stop_event.is_set():
@@ -1002,6 +1076,8 @@ class JobWorkerLoop:
         )
         try:
             checkpoint = handler(heartbeat.fence, active_steps)
+            if not isinstance(checkpoint, Mapping):
+                raise TypeError("batch handler must return an object")
         except Exception as exc:
             LOGGER.exception(
                 "批处理失败：job=%s kind=%s count=%s duration=%.2fs",
@@ -1108,7 +1184,9 @@ class JobWorkerLoop:
             value = section["concurrency"]
         else:
             value = 1
-        parsed = int(value)
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError("batch size must be an integer")
+        parsed = value
         maximum = 32 if step_kind == "web_extract_page" else 10
         if not 1 <= parsed <= maximum:
             raise ValueError(f"batch size must be between 1 and {maximum}")

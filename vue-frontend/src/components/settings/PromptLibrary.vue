@@ -7,6 +7,7 @@
           id="promptType"
           :model-value="selectedType"
           :options="promptTypeOptions"
+          :disabled="isMutating"
           @change="handleTypeSelect"
         />
       </UiField>
@@ -22,6 +23,7 @@
           id="promptMode"
           :model-value="selectedMode"
           :options="availablePromptModeOptions"
+          :disabled="isMutating"
           @change="handleModeSelect"
         />
       </UiField>
@@ -37,6 +39,20 @@
         aria-live="polite"
       >
         正在同步已保存的提示词列表。
+      </ProductStatusBanner>
+      <ProductStatusBanner
+        v-else-if="loadError"
+        tone="danger"
+        icon-name="alert-triangle"
+        title="提示词加载失败"
+        aria-live="polite"
+      >
+        {{ loadError }}
+        <template #actions>
+          <UiButton variant="secondary" size="sm" @click="loadPromptList">
+            重试
+          </UiButton>
+        </template>
       </ProductStatusBanner>
       <ProductStatusBanner
         v-else-if="promptList.length === 0"
@@ -58,7 +74,8 @@
             type="button"
             class="prompt-library__select-action"
             :aria-label="`选择提示词：${prompt.name}`"
-            :aria-pressed="String(selectedPromptId === prompt.id)"
+            :aria-pressed="selectedPromptId === prompt.id"
+            :disabled="isMutating"
             @click="selectPrompt(prompt)"
           >
             <span class="prompt-library__name">{{ prompt.name }}</span>
@@ -69,6 +86,7 @@
               :label="`加载提示词：${prompt.name}`"
               variant="soft"
               size="sm"
+              :disabled="isMutating"
               @click="loadPrompt(prompt)"
             >
               <UiIcon name="download" />
@@ -79,7 +97,7 @@
               :label="`删除提示词：${prompt.name}`"
               size="sm"
               @click="deletePrompt(prompt)"
-              :disabled="prompt.isFactoryDefault"
+              :disabled="isMutating || prompt.isFactoryDefault"
             >
               <UiIcon name="trash" />
             </UiIconButton>
@@ -91,7 +109,13 @@
     <ProductFormSection>
       <template #title>提示词编辑</template>
       <UiField variant="settings" label="提示词名称" control-id="promptName">
-        <UiInput type="text" id="promptName" v-model="editingName" placeholder="请输入提示词名称" />
+        <UiInput
+          type="text"
+          id="promptName"
+          v-model="editingName"
+          placeholder="请输入提示词名称"
+          :disabled="isMutating"
+        />
       </UiField>
       <UiField variant="settings" label="提示词内容" control-id="promptContent">
         <UiTextarea
@@ -100,11 +124,16 @@
           rows="8"
           variant="panel"
           placeholder="请输入提示词内容"
+          :disabled="isMutating"
         />
       </UiField>
       <ProductActionRow aria-label="提示词编辑操作" justify="start">
-        <UiButton variant="primary" @click="savePrompt" :disabled="!editingName || !editingContent">
-          保存提示词
+        <UiButton
+          variant="primary"
+          @click="savePrompt"
+          :disabled="isMutating || !editingName.trim()"
+        >
+          {{ isMutating ? '处理中…' : '保存提示词' }}
         </UiButton>
       </ProductActionRow>
     </ProductFormSection>
@@ -140,7 +169,7 @@ const promptTypeOptions = [
   { label: 'AI视觉OCR提示词', value: 'ai_vision_ocr' },
   { label: '高质量翻译提示词', value: 'hq_translate' },
   { label: '校对提示词', value: 'proofreading' },
-]
+] satisfies Array<{ label: string; value: V2Prompt['type'] }>
 
 const translatePromptModeOptions = [
   { label: '普通模式', value: 'normal' },
@@ -156,15 +185,16 @@ const aiVisionPromptModeOptions = [
 const toast = useToast()
 const settingsStore = useSettingsStore()
 
-const selectedType = ref('translate')
+const selectedType = ref<V2Prompt['type']>('translate')
 const promptList = ref<V2Prompt[]>([])
 const selectedPromptId = ref('')
 const editingName = ref('')
 const editingContent = ref('')
 const isLoading = ref(false)
+const loadError = ref('')
+const isMutating = ref(false)
 const selectedMode = ref<'normal' | 'json' | 'paddleocr_vl'>('normal')
 let promptListRequestId = 0
-let promptContentRequestId = 0
 let isMounted = true
 
 const supportsModeSwitch = computed(() => {
@@ -198,6 +228,7 @@ async function loadPromptList() {
   const requestId = ++promptListRequestId
   const promptType = selectedType.value
   isLoading.value = true
+  loadError.value = ''
   try {
     const result = await listV2Prompts(promptType)
     if (!isMounted || requestId !== promptListRequestId || selectedType.value !== promptType) {
@@ -209,6 +240,7 @@ async function loadPromptList() {
       return
     }
     const errorMessage = error instanceof Error ? error.message : '加载提示词列表失败'
+    loadError.value = errorMessage
     toast.error(errorMessage)
   } finally {
     if (isMounted && requestId === promptListRequestId && selectedType.value === promptType) {
@@ -217,100 +249,103 @@ async function loadPromptList() {
   }
 }
 
-async function selectPrompt(prompt: V2Prompt) {
-  selectedPromptId.value = prompt.id
-  editingName.value = prompt.name
-  await loadPrompt(prompt)
+function upsertPrompt(prompt: V2Prompt) {
+  const next = promptList.value.filter(item => item.id !== prompt.id)
+  next.push(prompt)
+  promptList.value = next.sort((left, right) => left.name.localeCompare(right.name, 'zh-CN'))
 }
 
-async function loadPrompt(prompt: V2Prompt) {
-  const requestId = ++promptContentRequestId
-  const promptType = selectedType.value
-  try {
-    if (!isMounted || requestId !== promptContentRequestId || selectedType.value !== promptType) {
-      return
-    }
-    editingName.value = prompt.name
-    editingContent.value = prompt.content
-    selectedPromptId.value = prompt.id
-    toast.success('已加载提示词')
-  } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : '加载提示词内容失败'
-    toast.error(errorMessage)
-  }
+function selectPrompt(prompt: V2Prompt) {
+  loadPrompt(prompt)
+}
+
+function loadPrompt(prompt: V2Prompt) {
+  editingName.value = prompt.name
+  editingContent.value = prompt.content
+  selectedPromptId.value = prompt.id
+  toast.success('已加载提示词')
 }
 
 async function savePrompt() {
-  if (!editingName.value || !editingContent.value) {
-    toast.warning('请输入提示词名称和内容')
+  if (isMutating.value) return
+  if (!editingName.value.trim()) {
+    toast.warning('请输入提示词名称')
     return
   }
+  isMutating.value = true
   try {
     const selected = promptList.value.find(prompt => prompt.id === selectedPromptId.value)
+    let saved: V2Prompt
     if (selected) {
-      await updateV2Prompt({
+      saved = await updateV2Prompt({
         ...selected,
         name: editingName.value,
         content: editingContent.value,
       })
     } else {
-      await createV2Prompt(
+      saved = await createV2Prompt(
         selectedType.value,
         editingName.value,
         editingContent.value,
       )
     }
+    if (!loadError.value) upsertPrompt(saved)
     toast.success('提示词保存成功')
     selectedPromptId.value = ''
     editingName.value = ''
     editingContent.value = ''
-    await loadPromptList()
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '保存提示词失败'
     toast.error(errorMessage)
+  } finally {
+    isMutating.value = false
   }
 }
 
 async function deletePrompt(prompt: V2Prompt) {
+  if (isMutating.value) return
   if (prompt.isFactoryDefault) {
     toast.warning('默认提示词不能删除')
     return
   }
 
-  const confirmed = await confirmProductAction({
-    title: '删除提示词',
-    message: `确定要删除提示词“${prompt.name}”吗？此操作无法撤销。`,
-    confirmText: '删除',
-    cancelText: '取消',
-    tone: 'danger',
-  })
-  if (!confirmed) {
-    return
-  }
-
+  isMutating.value = true
   try {
+    const confirmed = await confirmProductAction({
+      title: '删除提示词',
+      message: `确定要删除提示词“${prompt.name}”吗？此操作无法撤销。`,
+      confirmText: '删除',
+      cancelText: '取消',
+      tone: 'danger',
+    })
+    if (!confirmed) return
+
     await deleteV2Prompt(prompt.id)
+    promptList.value = promptList.value.filter(item => item.id !== prompt.id)
     toast.success('提示词删除成功')
     if (selectedPromptId.value === prompt.id) {
       selectedPromptId.value = ''
       editingName.value = ''
       editingContent.value = ''
     }
-    await loadPromptList()
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '删除提示词失败'
     toast.error(errorMessage)
+  } finally {
+    isMutating.value = false
   }
 }
 
 function handleTypeChange() {
+  promptList.value = []
+  loadError.value = ''
   selectedPromptId.value = ''
   editingName.value = ''
   editingContent.value = ''
   if (selectedType.value === 'translate') {
     selectedMode.value = getTranslationPromptMode()
   } else if (selectedType.value === 'ai_vision_ocr') {
-    selectedMode.value = settingsStore.settings.aiVisionOcr.promptMode || 'normal'
+    selectedMode.value = settingsStore.settings.aiVisionOcr.promptMode
   } else {
     selectedMode.value = 'normal'
   }
@@ -319,18 +354,19 @@ function handleTypeChange() {
 }
 
 function handleTypeSelect(value: string | number) {
-  selectedType.value = String(value)
+  if (typeof value !== 'string') return
+  const option = promptTypeOptions.find(candidate => candidate.value === value)
+  if (!option) return
+  selectedType.value = option.value
   handleTypeChange()
 }
 
 function handleModeChange() {
   if (selectedType.value === 'translate') {
-    settingsStore.updateTranslationService({ forceJsonOutput: selectedMode.value === 'json' })
+    if (selectedMode.value === 'paddleocr_vl') return
+    settingsStore.setTranslatePromptMode(selectedMode.value === 'json')
   } else if (selectedType.value === 'ai_vision_ocr') {
-    settingsStore.updateAiVisionOcr({
-      forceJsonOutput: selectedMode.value === 'json',
-      promptMode: selectedMode.value,
-    })
+    settingsStore.setAiVisionOcrPromptMode(selectedMode.value)
   }
 
   const modeLabel =
@@ -343,9 +379,8 @@ function handleModeChange() {
 }
 
 function handleModeSelect(value: string | number) {
-  const nextMode = String(value)
-  if (nextMode === 'normal' || nextMode === 'json' || nextMode === 'paddleocr_vl') {
-    selectedMode.value = nextMode
+  if (value === 'normal' || value === 'json' || value === 'paddleocr_vl') {
+    selectedMode.value = value
     handleModeChange()
   }
 }
@@ -358,7 +393,6 @@ onMounted(() => {
 onBeforeUnmount(() => {
   isMounted = false
   promptListRequestId += 1
-  promptContentRequestId += 1
 })
 </script>
 

@@ -4,8 +4,18 @@ import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as bookshelfApi from '@/api/bookshelf'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
-import type { BookData } from '@/types/api'
+import type { BookData, TagData } from '@/types/api'
 import { setTestBooks, setTestTags } from '../helpers/bookshelfFixtures'
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, reject, resolve }
+}
 
 describe('bookshelfStore', () => {
   beforeEach(() => {
@@ -26,7 +36,7 @@ describe('bookshelfStore', () => {
     }
 
     setTestBooks(store, [book])
-    setTestTags(store, [{ name: 'tag-a', color: '#ffffff' }])
+    setTestTags(store, [{ id: 'tag-a', name: 'tag-a', color: '#ffffff' }])
     store.selectedTagNames = ['tag-a']
     store.setSort('title', 'asc')
     store.setCurrentBook(book.id)
@@ -34,6 +44,7 @@ describe('bookshelfStore', () => {
     store.toggleBookSelection(book.id)
     store.isLoading = true
     store.error = 'boom'
+    store.tagsError = 'tag boom'
 
     store.reset()
 
@@ -48,6 +59,7 @@ describe('bookshelfStore', () => {
     expect(store.currentBook).toBeNull()
     expect(store.isLoading).toBe(false)
     expect(store.error).toBeNull()
+    expect(store.tagsError).toBeNull()
   })
 
   it('keeps current bookshelf DTO fields intact', () => {
@@ -136,7 +148,7 @@ describe('bookshelfStore', () => {
           autoExtractPrompt: '',
           entries: [],
         },
-        non_translate: {
+        nonTranslate: {
           enabled: false,
           entries: [],
         },
@@ -158,6 +170,94 @@ describe('bookshelfStore', () => {
     expect(store.currentBook?.tags).toEqual(['updated'])
     expect(store.currentBook?.chapters?.[0]?.id).toBe('chapter-1')
     expect(store.currentBook?.translationConstraints?.glossary.enabled).toBe(true)
+  })
+
+  it('only commits the newest bookshelf request', async () => {
+    const store = useBookshelfStore()
+    const first = deferred<BookData[]>()
+    const second = deferred<BookData[]>()
+    const getBooks = vi.spyOn(bookshelfApi, 'getBooks')
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise)
+
+    const firstRequest = store.loadBooks()
+    store.setSearchQuery('latest')
+
+    expect(getBooks).toHaveBeenNthCalledWith(2, {
+      search: 'latest',
+      sortBy: 'updatedAt',
+      sortOrder: 'desc',
+    })
+
+    second.resolve([{ id: 'latest', title: 'Latest' }])
+    await vi.waitFor(() => expect(store.books[0]?.id).toBe('latest'))
+    expect(store.isLoading).toBe(false)
+
+    first.resolve([{ id: 'stale', title: 'Stale' }])
+    await firstRequest
+
+    expect(store.books[0]?.id).toBe('latest')
+    expect(store.error).toBeNull()
+  })
+
+  it('does not let a stale request clear the active loading state', async () => {
+    const store = useBookshelfStore()
+    const first = deferred<BookData[]>()
+    const second = deferred<BookData[]>()
+    vi.spyOn(bookshelfApi, 'getBooks')
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise)
+
+    const firstRequest = store.loadBooks()
+    store.setSearchQuery('latest')
+    first.resolve([])
+    await firstRequest
+
+    expect(store.isLoading).toBe(true)
+
+    second.resolve([])
+    await vi.waitFor(() => expect(store.isLoading).toBe(false))
+  })
+
+  it('reports tag load failures without letting an older request overwrite newer tags', async () => {
+    const store = useBookshelfStore()
+    const first = deferred<TagData[]>()
+    const second = deferred<TagData[]>()
+    vi.spyOn(bookshelfApi, 'getTags')
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise)
+
+    const firstRequest = store.loadTags()
+    const secondRequest = store.loadTags()
+    second.resolve([{ id: 'latest', name: 'Latest', color: '#ffffff' }])
+    await secondRequest
+    first.reject(new Error('stale failure'))
+    await firstRequest
+
+    expect(store.tags.map(tag => tag.id)).toEqual(['latest'])
+    expect(store.tagsError).toBeNull()
+
+    vi.spyOn(bookshelfApi, 'getTags').mockRejectedValueOnce(new Error('tag service unavailable'))
+    await store.loadTags()
+    expect(store.tagsError).toBe('tag service unavailable')
+  })
+
+  it('drops hidden batch selections when the backend list projection changes', async () => {
+    const store = useBookshelfStore()
+    setTestBooks(store, [
+      { id: 'visible', title: 'Visible' },
+      { id: 'hidden', title: 'Hidden' },
+    ])
+    store.enterBatchMode()
+    store.toggleBookSelection('visible')
+    store.toggleBookSelection('hidden')
+    vi.spyOn(bookshelfApi, 'getBooks').mockResolvedValue([
+      { id: 'visible', title: 'Visible' },
+    ])
+
+    await store.loadBooks()
+
+    expect([...store.selectedBookIds]).toEqual(['visible'])
   })
 
   it('refreshes the backend list projection after creating a book', async () => {
@@ -184,13 +284,13 @@ describe('bookshelfStore', () => {
   it('reloads books after deleting the active tag filter', async () => {
     const store = useBookshelfStore()
     store.selectedTagNames = ['obsolete']
-    setTestTags(store, [{ name: 'obsolete', color: '#ffffff' }])
+    setTestTags(store, [{ id: 'obsolete', name: 'obsolete', color: '#ffffff' }])
     vi.spyOn(bookshelfApi, 'deleteTag').mockResolvedValue(undefined)
     const getBooks = vi.spyOn(bookshelfApi, 'getBooks').mockResolvedValue([
       { id: 'book-all', title: 'All Books' },
     ])
 
-    await expect(store.deleteTagApi('obsolete')).resolves.toBe(true)
+    await expect(store.deleteTagApi('obsolete')).resolves.toBeUndefined()
 
     expect(getBooks).toHaveBeenCalledWith({
       sortBy: 'updatedAt',
@@ -198,5 +298,124 @@ describe('bookshelfStore', () => {
     })
     expect(store.selectedTagNames).toEqual([])
     expect(store.books.map(book => book.id)).toEqual(['book-all'])
+  })
+
+  it('removes a deleted tag from local book projections even when the list refresh fails', async () => {
+    const store = useBookshelfStore()
+    setTestBooks(store, [{ id: 'book-1', title: 'Book', tags: ['obsolete', 'keep'] }])
+    store.setCurrentBook('book-1')
+    setTestTags(store, [{ id: 'obsolete', name: 'obsolete', color: '#ffffff' }])
+    vi.spyOn(bookshelfApi, 'deleteTag').mockResolvedValue(undefined)
+    vi.spyOn(bookshelfApi, 'getBooks').mockRejectedValue(new Error('refresh failed'))
+
+    await store.deleteTagApi('obsolete')
+
+    expect(store.tags).toEqual([])
+    expect(store.currentBook?.tags).toEqual(['keep'])
+    expect(store.error).toBe('refresh failed')
+  })
+
+  it('keeps an active tag filter valid when the tag is renamed', async () => {
+    const store = useBookshelfStore()
+    store.selectedTagNames = ['old-name']
+    setTestTags(store, [{ id: 'tag-1', name: 'old-name', color: '#ffffff' }])
+    vi.spyOn(bookshelfApi, 'updateTag').mockResolvedValue({
+      id: 'tag-1',
+      name: 'new-name',
+      color: '#ffffff',
+    })
+    vi.spyOn(bookshelfApi, 'getTags').mockResolvedValue([
+      { id: 'tag-1', name: 'new-name', color: '#ffffff' },
+    ])
+    const getBooks = vi.spyOn(bookshelfApi, 'getBooks').mockResolvedValue([])
+
+    await expect(
+      store.updateTagApi('old-name', 'new-name', '#ffffff'),
+    ).resolves.toMatchObject({ id: 'tag-1', name: 'new-name' })
+
+    expect(store.selectedTagNames).toEqual(['new-name'])
+    expect(getBooks).toHaveBeenCalledWith({
+      tags: ['new-name'],
+      sortBy: 'updatedAt',
+      sortOrder: 'desc',
+    })
+  })
+
+  it('renames tags in local book projections even when refreshes fail', async () => {
+    const store = useBookshelfStore()
+    setTestBooks(store, [{ id: 'book-1', title: 'Book', tags: ['old-name'] }])
+    store.setCurrentBook('book-1')
+    store.selectedTagNames = ['old-name']
+    setTestTags(store, [{ id: 'tag-1', name: 'old-name', color: '#000000', bookCount: 1 }])
+    vi.spyOn(bookshelfApi, 'updateTag').mockResolvedValue({
+      id: 'tag-1',
+      name: 'new-name',
+      color: '#ffffff',
+    })
+    vi.spyOn(bookshelfApi, 'getTags').mockRejectedValue(new Error('tag refresh failed'))
+    vi.spyOn(bookshelfApi, 'getBooks').mockRejectedValue(new Error('book refresh failed'))
+
+    await store.updateTagApi('old-name', 'new-name', '#ffffff')
+
+    expect(store.tags[0]).toEqual({
+      id: 'tag-1',
+      name: 'new-name',
+      color: '#ffffff',
+      bookCount: 1,
+    })
+    expect(store.currentBook?.tags).toEqual(['new-name'])
+    expect(store.selectedTagNames).toEqual(['new-name'])
+    expect(store.tagsError).toBe('tag refresh failed')
+    expect(store.error).toBe('book refresh failed')
+  })
+
+  it('preserves loaded chapters when a book update returns only the summary projection', async () => {
+    const store = useBookshelfStore()
+    setTestBooks(store, [{
+      id: 'book-1',
+      title: 'Old title',
+      chapters: [{ id: 'chapter-1', title: 'Chapter', order: 0, imageCount: 3 }],
+    }])
+    store.setCurrentBook('book-1')
+    vi.spyOn(bookshelfApi, 'updateBook').mockResolvedValue({
+      id: 'book-1',
+      title: 'New title',
+      chapterCount: 1,
+    })
+    vi.spyOn(bookshelfApi, 'getBooks').mockRejectedValue(new Error('refresh failed'))
+
+    await store.updateBookApi('book-1', { title: 'New title' })
+
+    expect(store.currentBook?.title).toBe('New title')
+    expect(store.currentBook?.chapters).toEqual([
+      { id: 'chapter-1', title: 'Chapter', order: 0, imageCount: 3 },
+    ])
+  })
+
+  it('updates a chapter title without replacing its backend-owned projection fields', async () => {
+    const store = useBookshelfStore()
+    setTestBooks(store, [{
+      id: 'book-1',
+      title: 'Book',
+      chapters: [{
+        id: 'chapter-1',
+        title: 'Old title',
+        order: 3,
+        imageCount: 27,
+      }],
+    }])
+    vi.spyOn(bookshelfApi, 'updateChapter').mockResolvedValue({
+      id: 'chapter-1',
+      title: 'New title',
+    })
+
+    await store.updateChapterApi('book-1', 'chapter-1', 'New title')
+
+    expect(store.books[0]?.chapters?.[0]).toEqual({
+      id: 'chapter-1',
+      title: 'New title',
+      order: 3,
+      imageCount: 27,
+    })
   })
 })

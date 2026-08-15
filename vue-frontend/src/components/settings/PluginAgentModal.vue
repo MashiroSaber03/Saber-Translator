@@ -35,7 +35,7 @@
                 aria-label="目标插件"
                 :model-value="selectedPluginId"
                 :options="pluginOptions"
-                :disabled="unref(isRunning)"
+                :disabled="unref(isConversationPending)"
                 @change="handleSelectedPluginChange"
               />
             </UiField>
@@ -44,7 +44,7 @@
           <div class="plugin-agent-block">
             <h3 class="plugin-agent-modal__block-title">Agent 设置</h3>
             <AiProviderSelectField
-              :model-value="localAgentSettings.provider"
+              :model-value="agentSettings.provider"
               input-id="pluginAgentProvider"
               :options="providerOptions"
               :disabled="unref(isRunning)"
@@ -52,9 +52,9 @@
               @change="handleProviderChange"
             />
             <AiProviderCredentialFields
-              :api-key="localAgentSettings.apiKey"
+              :api-key="agentSettings.apiKey"
               api-key-input-id="pluginAgentApiKey"
-              :base-url="localAgentSettings.customBaseUrl"
+              :base-url="agentSettings.customBaseUrl"
               base-url-input-id="pluginAgentBaseUrl"
               :disabled="unref(isRunning)"
               :show-base-url="true"
@@ -64,8 +64,8 @@
               api-key-show-label="显示插件 Agent API Key"
               api-key-hide-label="隐藏插件 Agent API Key"
               base-url-placeholder="可选，自定义服务填写"
-              @update:api-key="localAgentSettings.apiKey = $event"
-              @update:base-url="localAgentSettings.customBaseUrl = $event"
+              @update:api-key="updateAgentString('apiKey', $event)"
+              @update:base-url="updateAgentString('customBaseUrl', $event)"
             />
             <UiField
               class="plugin-agent-field"
@@ -75,7 +75,7 @@
             >
               <UiModelPicker
                 input-id="pluginAgentModelName"
-                v-model="localAgentSettings.modelName"
+                :model-value="agentSettings.modelName"
                 placeholder="请输入模型名称"
                 :disabled="unref(isRunning)"
                 :fetching="unref(isFetchingModels)"
@@ -83,6 +83,7 @@
                 :options="modelListOptions"
                 :model-count="modelListOptions.length - 1"
                 @change="handleModelSelected"
+                @update:model-value="handleModelSelected"
                 @fetch="fetchModels"
               />
             </UiField>
@@ -90,22 +91,25 @@
               <UiField label="RPM" control-id="pluginAgentRpmLimit" variant="settings">
                 <UiNumberField
                   input-id="pluginAgentRpmLimit"
-                  v-model="localAgentSettings.rpmLimit"
+                  :model-value="agentSettings.openaiOptions.execution.rpmLimit"
                   aria-label="插件 Agent RPM"
                   :disabled="unref(isRunning)"
                   :min="0"
+                  :max="100000"
                   :step="1"
+                  @update:model-value="updateAgentNumber('rpmLimit', $event)"
                 />
               </UiField>
               <UiField label="业务重试" control-id="pluginAgentBusinessRetries" variant="settings">
                 <UiNumberField
                   input-id="pluginAgentBusinessRetries"
-                  v-model="localAgentSettings.businessRetries"
+                  :model-value="agentSettings.openaiOptions.execution.businessRetries"
                   aria-label="插件 Agent 业务重试"
                   :disabled="unref(isRunning)"
                   :min="0"
-                  :max="10"
+                  :max="100"
                   :step="1"
+                  @update:model-value="updateAgentNumber('businessRetries', $event)"
                 />
               </UiField>
             </div>
@@ -113,23 +117,24 @@
               <UiField label="传输重试" control-id="pluginAgentTransportRetries" variant="settings">
                 <UiNumberField
                   input-id="pluginAgentTransportRetries"
-                  v-model="localAgentSettings.transportRetries"
+                  :model-value="agentSettings.openaiOptions.execution.transportRetries"
                   aria-label="插件 Agent 传输重试"
                   :disabled="unref(isRunning)"
                   :min="0"
-                  :max="10"
+                  :max="100"
                   :step="1"
+                  @update:model-value="updateAgentNumber('transportRetries', $event)"
                 />
               </UiField>
               <UiField label="输出选项" variant="settings" control="checkbox">
                 <div class="plugin-agent-checkboxes">
-                  <UiCheckbox v-model="localAgentSettings.forceJsonOutput" :disabled="unref(isRunning)" label="强制 JSON 输出" />
-                  <UiCheckbox v-model="localAgentSettings.useStream" :disabled="unref(isRunning)" label="流式调用" />
+                  <UiCheckbox :model-value="agentSettings.openaiOptions.request.forceJsonOutput" :disabled="unref(isRunning)" label="强制 JSON 输出" @update:model-value="updateAgentBoolean('forceJsonOutput', $event)" />
+                  <UiCheckbox :model-value="agentSettings.openaiOptions.execution.useStream" :disabled="unref(isRunning)" label="流式调用" @update:model-value="updateAgentBoolean('useStream', $event)" />
                 </div>
               </UiField>
             </div>
             <div class="plugin-agent-field">
-              <OpenAIExtraBodyEditor v-model="localAgentSettings.extraBody" :disabled="unref(isRunning)" />
+              <OpenAIExtraBodyEditor :model-value="agentSettings.openaiOptions.request.extraBody" :disabled="unref(isRunning)" @update:model-value="updateAgentExtraBody" />
             </div>
             <ProductActionRow class="plugin-agent-actions" aria-label="Agent 设置操作" justify="start">
               <UiButton variant="secondary" type="button" @click="testConnection" :disabled="unref(isTestingConnection) || unref(isRunning)" size="sm">
@@ -184,15 +189,17 @@
                   v-if="isRunning"
                   type="button"
                   class="plugin-agent-cancel-action"
+                  :disabled="isSessionCommandPending"
                   @click="cancelExecution" size="sm"
                 >
-                  取消执行
+                  {{ isSessionCommandPending ? '请求中...' : '取消执行' }}
                 </UiButton>
                 <UiButton
                   variant="secondary"
                   v-else-if="session"
                   type="button"
                   class="plugin-agent-clear-session-action"
+                  :disabled="isSessionCommandPending"
                   @click="clearSession" size="sm"
                 >
                   结束会话
@@ -422,7 +429,8 @@ const {
   isTestingConnection,
   isSavingAgentSettings,
   isAwaitingPlanningReply,
-  localAgentSettings,
+  isSessionCommandPending,
+  agentSettings,
   hasStoredAgentCredential,
   messages,
   modelListOptions,
@@ -438,6 +446,10 @@ const {
   handleSelectedPluginChange,
   handleProviderChange,
   handleModelSelected,
+  updateAgentString,
+  updateAgentNumber,
+  updateAgentBoolean,
+  updateAgentExtraBody,
   fetchModels,
   testConnection,
   saveAgentSettings,
@@ -457,7 +469,7 @@ const {
 type PluginAgentMode = 'create' | 'modify'
 
 function buildModeTab(id: PluginAgentMode, label: string): ProductSegmentedTab {
-  return unref(isRunning) ? { id, label, disabled: true } : { id, label }
+  return unref(isConversationPending) ? { id, label, disabled: true } : { id, label }
 }
 
 const modeTabs = computed<ProductSegmentedTab[]>(() => [

@@ -3,6 +3,37 @@ import { describe, expect, it } from 'vitest'
 import type { V2PageDocument, V2PageSummary } from '@/api/v2/content'
 import { pageDocumentToBubbles, pageSummaryToImage } from '@/adapters/v2ContentAdapter'
 
+function bubblePayload(
+  overrides: Partial<V2PageDocument['bubbles'][number]['payload']> = {},
+): V2PageDocument['bubbles'][number]['payload'] {
+  return {
+    originalText: '',
+    translatedText: '',
+    textboxText: '',
+    coords: [0, 0, 100, 80],
+    polygon: [],
+    fontSize: 24,
+    textDirection: 'vertical',
+    autoTextDirection: 'vertical',
+    textColor: '#000000',
+    fillColor: '#ffffff',
+    rotationAngle: 0,
+    position: { x: 0, y: 0 },
+    strokeEnabled: false,
+    strokeColor: '#ffffff',
+    strokeWidth: 0,
+    lineSpacing: 1.2,
+    textAlign: 'center',
+    inpaintMethod: 'solid',
+    autoFgColor: null,
+    autoBgColor: null,
+    colorConfidence: 0,
+    textlines: [],
+    ocrResult: null,
+    ...overrides,
+  }
+}
+
 function pageSummary(overrides: Partial<V2PageSummary> = {}): V2PageSummary {
   return {
     id: 'page-1',
@@ -33,10 +64,10 @@ function documentWithFont(options: {
       bubbleId: 'bubble-1',
       fontId: options.fontId,
       ordinal: 1,
-      payload: {
+      payload: bubblePayload({
         coords: [0, 0, 100, 80],
         translatedText: '译文',
-      },
+      }),
       updatedRevision: 1,
     }],
     chapterId: 'chapter-1',
@@ -79,6 +110,28 @@ describe('v2 content adapter', () => {
     })).translationStatus).toBe('pending')
   })
 
+  it('projects the canonical logical path into the file and folder fields used by navigation', () => {
+    const image = pageSummaryToImage(pageSummary({
+      logicalSourcePath: 'volume-1/chapter-a/page-001.png',
+    }))
+
+    expect(image).toMatchObject({
+      fileName: 'page-001.png',
+      folderPath: 'volume-1/chapter-a',
+    })
+    expect(image).not.toHaveProperty('relativePath')
+    expect(image).not.toHaveProperty('sourceRevision')
+  })
+
+  it('keeps a root page at the folder-tree root', () => {
+    expect(pageSummaryToImage(pageSummary({ logicalSourcePath: 'cover.png' }))).toMatchObject({
+      fileName: 'cover.png',
+    })
+    expect(
+      pageSummaryToImage(pageSummary({ logicalSourcePath: 'cover.png' })),
+    ).not.toHaveProperty('folderPath')
+  })
+
   it('uses the relational page font when the bubble has no override', () => {
     const [bubble] = pageDocumentToBubbles(documentWithFont({
       defaultFontId: 'font-page-default',
@@ -102,5 +155,18 @@ describe('v2 content adapter', () => {
       defaultFontId: null,
       fontId: null,
     }))).toThrow('缺少后端字体 ID')
+  })
+
+  it('rejects incomplete legacy bubble payloads instead of filling defaults', () => {
+    const document = documentWithFont({
+      defaultFontId: 'font-page-default',
+      fontId: null,
+    })
+    document.bubbles[0]!.payload = {
+      coords: [0, 0, 100, 80],
+      translatedText: '旧数据',
+    } as V2PageDocument['bubbles'][number]['payload']
+
+    expect(() => pageDocumentToBubbles(document)).toThrow('不符合当前数据结构')
   })
 })

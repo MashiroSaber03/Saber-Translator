@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sqlite3
 import threading
 import time
 import uuid
@@ -28,6 +29,7 @@ from src.backend_v2.storage.seeding import seed_system_records
 from src.backend_v2.worker.model_lifecycle import (
     WorkerModelControlRepository,
     WorkerModelLifecycle,
+    unload_loaded_models,
 )
 
 
@@ -100,6 +102,62 @@ def test_manual_model_release_is_durable_and_worker_fenced(
     assert '"releasedCount":1' in str(command["result_json"])
 
 
+def test_manual_release_retries_same_epoch_after_busy_completion(
+    model_platform,
+    monkeypatch,
+) -> None:
+    engine, worker_epoch_id, _page_id = model_platform
+    repository = WorkerModelControlRepository(engine)
+    accepted = repository.request_release()
+    release_calls = 0
+
+    def release(*, release_callbacks) -> dict[str, object]:
+        nonlocal release_calls
+        release_calls += 1
+        return _run_release_callbacks(release_callbacks)
+
+    monkeypatch.setattr(
+        "src.backend_v2.worker.model_lifecycle.unload_loaded_models",
+        release,
+    )
+    lifecycle = WorkerModelLifecycle(
+        repository,
+        worker_epoch_id=worker_epoch_id,
+    )
+    original_complete = repository.complete
+    completion_calls = 0
+
+    def complete_once_busy(**kwargs) -> None:
+        nonlocal completion_calls
+        completion_calls += 1
+        if completion_calls == 1:
+            raise sqlite3.OperationalError("database is locked")
+        original_complete(**kwargs)
+
+    monkeypatch.setattr(repository, "complete", complete_once_busy)
+
+    with pytest.raises(sqlite3.OperationalError, match="locked"):
+        lifecycle.run_pending_release()
+    with engine.connect() as connection:
+        status_after_busy = connection.execute(
+            select(worker_commands.c.status).where(
+                worker_commands.c.id == accepted["commandId"]
+            )
+        ).scalar_one()
+    assert status_after_busy == "running"
+
+    assert lifecycle.run_pending_release() is True
+    with engine.connect() as connection:
+        final_status = connection.execute(
+            select(worker_commands.c.status).where(
+                worker_commands.c.id == accepted["commandId"]
+            )
+        ).scalar_one()
+    assert final_status == "completed"
+    assert release_calls == 2
+    assert completion_calls == 2
+
+
 def test_release_endpoint_returns_409_during_local_model_inference(
     model_platform,
 ) -> None:
@@ -167,6 +225,30 @@ def test_idle_model_cache_is_released_once_after_ten_minutes(
     assert lifecycle.release_if_idle() is False
     assert runtime_checks == 1
     assert released == ["plugins"]
+
+
+def test_model_release_includes_loaded_paddle_onnx_sessions(monkeypatch) -> None:
+    from src.interfaces import paddle_ocr_onnx_interface
+
+    handler = paddle_ocr_onnx_interface.PaddleOCRHandlerONNX()
+    handler.ocr = object()
+    handler.current_lang = "japanese"
+    handler.current_model_dir = "chinese"
+    handler.initialized = True
+    monkeypatch.setattr(
+        paddle_ocr_onnx_interface,
+        "_paddle_ocr_onnx_handler",
+        handler,
+    )
+
+    result = unload_loaded_models()
+
+    assert "paddle_ocr" in result["released"]
+    assert paddle_ocr_onnx_interface._paddle_ocr_onnx_handler is None
+    assert handler.ocr is None
+    assert handler.current_lang is None
+    assert handler.current_model_dir is None
+    assert handler.initialized is False
 
 
 def test_durable_job_activity_rearms_idle_release_after_models_reload(

@@ -21,16 +21,27 @@ from src.backend_v2.content.translation_constraints import (
     validate_translation_constraints,
 )
 from src.backend_v2.content.page_style import (
+    PAGE_STYLE_SCHEMA_VERSION,
     resolve_new_page_style,
     rgb_to_hex,
     validate_page_style,
 )
+from src.backend_v2.insight.repository import (
+    mark_book_insight_derived_stale,
+)
+from src.backend_v2.jobs.repository import decode_job_progress
 from src.backend_v2.rendering.fonts import resolve_font_path
 from src.backend_v2.settings.validation import validate_setting_payload
 from src.backend_v2.storage.assets import AssetRecord, AssetStorageService
 from src.backend_v2.storage.database import immediate_transaction
-from src.backend_v2.storage.defaults import default_translation_settings
+from src.backend_v2.storage.defaults import (
+    TRANSLATION_SETTINGS_SCHEMA_VERSION,
+    default_translation_settings,
+)
 from src.backend_v2.storage.schema import (
+    ACTIVE_OPERATION_STATUSES,
+    ACTIVE_RENDER_REQUEST_STATUSES,
+    NONTERMINAL_JOB_STATUSES,
     assets,
     book_tags,
     books,
@@ -46,6 +57,7 @@ from src.backend_v2.storage.schema import (
     operations,
     page_assets,
     pages,
+    render_requests,
     studio_chat_sessions,
     studio_documents,
     tags,
@@ -53,18 +65,17 @@ from src.backend_v2.storage.schema import (
     web_import_drafts,
 )
 from src.backend_v2.storage.seeding import QUICK_WORKSPACE_BOOK_ID
-
-
-NONTERMINAL_JOB_STATUSES = (
-    "queued",
-    "running",
-    "pausing",
-    "paused",
-    "cancelling",
-    "interrupted",
+from src.core.config_models import (
+    STORED_BUBBLE_FIELDS,
+    validate_bubble_payload,
 )
-ACTIVE_OPERATION_STATUSES = ("pending", "running")
+
+
+CHAPTER_SETTINGS_MEMORY_SCHEMA_VERSION = 1
 _MISSING = object()
+_CLIENT_BUBBLE_MUTATION_FIELDS = (
+    STORED_BUBBLE_FIELDS - {"autoTextDirection"}
+) | {"fontId"}
 _CHAPTER_WORK_STATE_KEYS = frozenset(
     {
         "ocrEngine",
@@ -95,6 +106,16 @@ _CHAPTER_WORK_STATE_KEYS = frozenset(
         "lamaDisableResize",
     }
 )
+
+
+def _auto_text_direction_from_coords(coords: list[int]) -> str:
+    return (
+        "vertical"
+        if coords[3] - coords[1] > coords[2] - coords[0]
+        else "horizontal"
+    )
+
+
 _CHAPTER_MEMORY_FORBIDDEN_KEYS = frozenset(
     {
         "apikey",
@@ -144,10 +165,6 @@ def _validate_chapter_settings_memory(payload: dict[str, object]) -> None:
             "chapter settings memory contains unsupported fields: "
             + ", ".join(unknown)
         )
-    encoded = _json(payload)
-    if len(encoded.encode("utf-8")) > 256 * 1024:
-        raise ValueError("chapter settings memory exceeds 256 KiB")
-
     def visit(value: object) -> None:
         if isinstance(value, dict):
             for key, child in value.items():
@@ -179,7 +196,7 @@ def _validate_chapter_settings_memory(payload: dict[str, object]) -> None:
     validate_setting_payload(
         "translation",
         merge(default_translation_settings(), payload),
-        schema_version=3,
+        schema_version=TRANSLATION_SETTINGS_SCHEMA_VERSION,
     )
 
 
@@ -196,7 +213,7 @@ def normalize_logical_path(raw_path: str) -> str:
     return path.as_posix()
 
 
-def _deduplicate_logical_path(requested: str, existing: set[str]) -> str:
+def deduplicate_logical_path(requested: str, existing: set[str]) -> str:
     if requested not in existing:
         return requested
     path = PurePosixPath(requested)
@@ -211,7 +228,7 @@ def _deduplicate_logical_path(requested: str, existing: set[str]) -> str:
         counter += 1
 
 
-def _natural_sort_key(value: object) -> tuple[object, ...]:
+def natural_sort_key(value: object) -> tuple[object, ...]:
     return tuple(
         int(part) if part.isdigit() else part.casefold()
         for part in re.split(r"(\d+)", str(value))
@@ -236,6 +253,8 @@ class ContentRepository:
         sort_by: str = "updated_at",
         sort_order: str = "desc",
     ) -> list[dict[str, object]]:
+        if len(tag_ids) != len(set(tag_ids)):
+            raise ValueError("tagIds must contain unique IDs")
         if sort_by not in {"title", "created_at", "updated_at"}:
             raise ValueError("sort_by must be title, created_at, or updated_at")
         if sort_order not in {"asc", "desc"}:
@@ -277,8 +296,19 @@ class ContentRepository:
                 sort_column.asc() if sort_order == "asc" else sort_column.desc(),
                 books.c.id,
             )
-        if search:
-            statement = statement.where(books.c.title.ilike(f"%{search.strip()}%"))
+        normalized_search = search.strip()
+        if normalized_search:
+            pattern = f"%{normalized_search}%"
+            statement = statement.where(
+                or_(
+                    books.c.title.ilike(pattern),
+                    books.c.id.in_(
+                        select(book_tags.c.book_id)
+                        .join(tags, tags.c.id == book_tags.c.tag_id)
+                        .where(tags.c.name.ilike(pattern))
+                    ),
+                )
+            )
         if tag_ids:
             statement = statement.where(
                 books.c.id.in_(
@@ -295,6 +325,7 @@ class ContentRepository:
                     select(book_tags.c.book_id, tags.c.id, tags.c.name, tags.c.color)
                     .join(tags, tags.c.id == book_tags.c.tag_id)
                     .where(book_tags.c.book_id.in_([row["id"] for row in rows]))
+                    .order_by(book_tags.c.book_id, tags.c.name, tags.c.id)
                 ).mappings()
             ) if rows else []
             job_rows = list(
@@ -323,7 +354,7 @@ class ContentRepository:
             ) if rows else []
         if sort_by == "title":
             rows.sort(
-                key=lambda row: _natural_sort_key(row["title"]),
+                key=lambda row: natural_sort_key(row["title"]),
                 reverse=sort_order == "desc",
             )
         tags_by_book: dict[str, list[dict[str, str]]] = {}
@@ -490,19 +521,20 @@ class ContentRepository:
         self,
         *,
         book_id: str,
-        title: str,
+        title: str | None = None,
         tag_ids: list[str] | None = None,
         cover_asset_id: str | None = None,
         replace_cover: bool = False,
     ) -> dict[str, object]:
-        normalized = title.strip()
-        if not normalized or len(normalized) > 500:
-            raise ValueError("book title must contain 1-500 characters")
+        normalized_title: str | None = None
+        if title is not None:
+            normalized_title = title.strip()
+            if not normalized_title or len(normalized_title) > 500:
+                raise ValueError("book title must contain 1-500 characters")
         with immediate_transaction(self.engine) as connection:
-            values: dict[str, object] = {
-                "title": normalized,
-                "updated_at": _utcnow(),
-            }
+            values: dict[str, object] = {"updated_at": _utcnow()}
+            if normalized_title is not None:
+                values["title"] = normalized_title
             if replace_cover:
                 values["cover_asset_id"] = cover_asset_id
             changed = connection.execute(
@@ -595,6 +627,14 @@ class ContentRepository:
                 raise ContentNotFound("chapter not found")
             book_id = str(row["book_id"])
             self._assert_targets_idle(connection, book_id, [chapter_id])
+            if connection.execute(
+                select(exists().where(pages.c.chapter_id == chapter_id))
+            ).scalar_one():
+                mark_book_insight_derived_stale(
+                    connection,
+                    book_id=book_id,
+                    now=_utcnow(),
+                )
             connection.execute(delete(chapters).where(chapters.c.id == chapter_id))
             connection.execute(
                 update(chapters)
@@ -669,18 +709,21 @@ class ContentRepository:
         normalized_color = self._normalize_color(color)
         if not normalized_name or len(normalized_name) > 200:
             raise ValueError("tag name must contain 1-200 characters")
-        with immediate_transaction(self.engine) as connection:
-            changed = connection.execute(
-                update(tags)
-                .where(tags.c.id == tag_id)
-                .values(
-                    name=normalized_name,
-                    color=normalized_color,
-                    updated_at=_utcnow(),
+        try:
+            with immediate_transaction(self.engine) as connection:
+                changed = connection.execute(
+                    update(tags)
+                    .where(tags.c.id == tag_id)
+                    .values(
+                        name=normalized_name,
+                        color=normalized_color,
+                        updated_at=_utcnow(),
+                    )
                 )
-            )
-            if changed.rowcount != 1:
-                raise ContentNotFound("tag not found")
+                if changed.rowcount != 1:
+                    raise ContentNotFound("tag not found")
+        except IntegrityError as exc:
+            raise ContentConflict("tag name already exists") from exc
         return {
             "id": tag_id,
             "name": normalized_name,
@@ -704,6 +747,8 @@ class ContentRepository:
             raise ValueError("tag action must be add or remove")
         if not book_ids or len(book_ids) != len(set(book_ids)):
             raise ValueError("bookIds must contain unique IDs")
+        if len(tag_ids) != len(set(tag_ids)):
+            raise ValueError("tagIds must contain unique IDs")
         with immediate_transaction(self.engine) as connection:
             existing_books = set(
                 connection.execute(
@@ -746,6 +791,8 @@ class ContentRepository:
             ).mappings().one_or_none()
         if row is None:
             raise ContentNotFound("translation constraints not found")
+        if row["schema_version"] != TRANSLATION_CONSTRAINTS_SCHEMA_VERSION:
+            raise ValueError("translation constraints schema version is not current")
         return {
             "bookId": book_id,
             "revision": row["revision"],
@@ -769,6 +816,8 @@ class ContentRepository:
                 .where(
                     translation_constraints.c.book_id == book_id,
                     translation_constraints.c.revision == base_revision,
+                    translation_constraints.c.schema_version
+                    == TRANSLATION_CONSTRAINTS_SCHEMA_VERSION,
                 )
                 .values(
                     payload_json=_json(normalized),
@@ -783,6 +832,15 @@ class ContentRepository:
                 ).scalar_one_or_none()
                 if exists_book is None:
                     raise ContentNotFound("book not found")
+                schema_version = connection.execute(
+                    select(translation_constraints.c.schema_version).where(
+                        translation_constraints.c.book_id == book_id
+                    )
+                ).scalar_one_or_none()
+                if schema_version != TRANSLATION_CONSTRAINTS_SCHEMA_VERSION:
+                    raise ValueError(
+                        "translation constraints schema version is not current"
+                    )
                 raise ContentConflict("translation constraints revision changed")
         return {
             "bookId": book_id,
@@ -934,6 +992,13 @@ class ContentRepository:
             ).mappings().one_or_none()
         if constraints is None:
             raise ContentNotFound("translation constraints not found")
+        if (
+            row["settings_memory_schema_version"]
+            != CHAPTER_SETTINGS_MEMORY_SCHEMA_VERSION
+        ):
+            raise ValueError("chapter settings memory schema version is not current")
+        if constraints["schema_version"] != TRANSLATION_CONSTRAINTS_SCHEMA_VERSION:
+            raise ValueError("translation constraints schema version is not current")
         settings_memory = json.loads(row["settings_memory_json"])
         if not isinstance(settings_memory, dict):
             raise ValueError("chapter settings memory must be an object")
@@ -980,7 +1045,7 @@ class ContentRepository:
                     "kind": job["kind"],
                     "status": job["status"],
                     "queueRank": job["queue_rank"],
-                    "progress": json.loads(job["latest_progress_json"]),
+                    "progress": decode_job_progress(job),
                     "pages": active_job_pages.get(str(job["id"]), []),
                 }
                 for job in active_jobs
@@ -1011,6 +1076,8 @@ class ContentRepository:
                 .where(
                     chapters.c.id == chapter_id,
                     chapters.c.settings_memory_revision == base_revision,
+                    chapters.c.settings_memory_schema_version
+                    == CHAPTER_SETTINGS_MEMORY_SCHEMA_VERSION,
                 )
                 .values(
                     settings_memory_json=_json(payload),
@@ -1023,6 +1090,15 @@ class ContentRepository:
                     select(chapters.c.id).where(chapters.c.id == chapter_id)
                 ).scalar_one_or_none() is None:
                     raise ContentNotFound("chapter not found")
+                schema_version = connection.execute(
+                    select(chapters.c.settings_memory_schema_version).where(
+                        chapters.c.id == chapter_id
+                    )
+                ).scalar_one()
+                if schema_version != CHAPTER_SETTINGS_MEMORY_SCHEMA_VERSION:
+                    raise ValueError(
+                        "chapter settings memory schema version is not current"
+                    )
                 raise ContentConflict("chapter settings memory revision changed")
         return {
             "chapterId": chapter_id,
@@ -1212,6 +1288,11 @@ class ContentRepository:
                     updated_at=_utcnow(),
                 )
             )
+            mark_book_insight_derived_stale(
+                connection,
+                book_id=book_id,
+                now=_utcnow(),
+            )
         return base_revision + 1
 
     def reorder_pages(
@@ -1270,6 +1351,11 @@ class ContentRepository:
                     updated_at=_utcnow(),
                 )
             )
+            mark_book_insight_derived_stale(
+                connection,
+                book_id=str(chapter["book_id"]),
+                now=_utcnow(),
+            )
         return base_revision + 1
 
     def delete_page(self, page_id: str) -> None:
@@ -1290,6 +1376,11 @@ class ContentRepository:
                 connection,
                 str(page["book_id"]),
                 [chapter_id],
+            )
+            mark_book_insight_derived_stale(
+                connection,
+                book_id=str(page["book_id"]),
+                now=_utcnow(),
             )
             connection.execute(delete(pages).where(pages.c.id == page_id))
             connection.execute(
@@ -1321,6 +1412,15 @@ class ContentRepository:
                 str(chapter["book_id"]),
                 [chapter_id],
             )
+            has_pages = connection.execute(
+                select(exists().where(pages.c.chapter_id == chapter_id))
+            ).scalar_one()
+            if has_pages:
+                mark_book_insight_derived_stale(
+                    connection,
+                    book_id=str(chapter["book_id"]),
+                    now=_utcnow(),
+                )
             removed = connection.execute(
                 delete(pages).where(pages.c.chapter_id == chapter_id)
             )
@@ -1377,7 +1477,10 @@ class ContentRepository:
                     pages.c.chapter_id,
                     pages.c.source_revision,
                     pages.c.document_revision,
-                ).where(pages.c.id == page_id)
+                    chapters.c.book_id,
+                )
+                .join(chapters, chapters.c.id == pages.c.chapter_id)
+                .where(pages.c.id == page_id)
             ).mappings().one_or_none()
             if page is None:
                 raise ContentNotFound("page not found")
@@ -1437,6 +1540,11 @@ class ContentRepository:
                     detection_state="unprocessed",
                     updated_at=_utcnow(),
                 )
+            )
+            mark_book_insight_derived_stale(
+                connection,
+                book_id=str(page["book_id"]),
+                now=now,
             )
             result = {
                 "pageId": page_id,
@@ -1499,12 +1607,14 @@ class ContentRepository:
                 )
 
             chapter = connection.execute(
-                select(chapters.c.page_order_revision).where(
-                    chapters.c.id == chapter_id
-                )
-            ).scalar_one_or_none()
+                select(
+                    chapters.c.book_id,
+                    chapters.c.page_order_revision,
+                ).where(chapters.c.id == chapter_id)
+            ).mappings().one_or_none()
             if chapter is None:
                 raise ContentNotFound("chapter not found")
+            chapter_revision = chapter["page_order_revision"]
             self._assert_chapter_writable(connection, chapter_id)
             existing_paths = set(
                 connection.execute(
@@ -1513,7 +1623,7 @@ class ContentRepository:
                     )
                 ).scalars()
             )
-            final_logical_path = _deduplicate_logical_path(logical_path, existing_paths)
+            final_logical_path = deduplicate_logical_path(logical_path, existing_paths)
             ordinal = (
                 connection.execute(
                     select(func.coalesce(func.max(pages.c.ordinal), 0)).where(
@@ -1557,12 +1667,17 @@ class ContentRepository:
                 update(chapters)
                 .where(
                     chapters.c.id == chapter_id,
-                    chapters.c.page_order_revision == chapter,
+                    chapters.c.page_order_revision == chapter_revision,
                 )
                 .values(
-                    page_order_revision=chapter + 1,
+                    page_order_revision=chapter_revision + 1,
                     updated_at=now,
                 )
+            )
+            mark_book_insight_derived_stale(
+                connection,
+                book_id=str(chapter["book_id"]),
+                now=now,
             )
             response = {
                 "page": {
@@ -1578,7 +1693,7 @@ class ContentRepository:
                     "thumbnailSourceUrl": f"/api/v2/assets/{thumbnail.id}",
                     "translatedUrl": None,
                 },
-                "pageOrderRevision": chapter + 1,
+                "pageOrderRevision": chapter_revision + 1,
             }
             connection.execute(
                 insert(idempotency_records).values(
@@ -1693,14 +1808,24 @@ class ContentRepository:
     ) -> tuple[dict[str, object], bool]:
         style_patch = dict(page_style_defaults_patch or {})
         propagation = list(propagate_style_fields or [])
-        if len(mutations) > 500 or (
+        if (
             not mutations
             and default_font_id is _MISSING
             and not style_patch
+            and not propagation
         ):
             raise ValueError(
                 "command must mutate bubbles, the default font, or page style"
             )
+        normalized_mutations: list[dict[str, object]] = []
+        for mutation in mutations:
+            if not isinstance(mutation, dict):
+                raise ValueError("each bubble mutation must be an object")
+            normalized = dict(mutation)
+            if isinstance(normalized.get("fields"), dict):
+                normalized["fields"] = dict(normalized["fields"])  # type: ignore[arg-type]
+            normalized_mutations.append(normalized)
+        mutations = normalized_mutations
         style_patch = validate_page_style(style_patch, partial=True)
         if len(propagation) != len(set(propagation)):
             raise ValueError("propagateStyleFields must contain unique fields")
@@ -1746,8 +1871,6 @@ class ContentRepository:
         seen_client_mutation_ids: set[str] = set()
         mutation_keys = {"op", "clientMutationId", "bubbleId", "fields"}
         for mutation in mutations:
-            if not isinstance(mutation, dict):
-                raise ValueError("each bubble mutation must be an object")
             unknown_keys = set(mutation) - mutation_keys
             if unknown_keys:
                 raise ValueError(
@@ -1761,7 +1884,6 @@ class ContentRepository:
             if (
                 not isinstance(client_mutation_id, str)
                 or not client_mutation_id.strip()
-                or len(client_mutation_id) > 128
             ):
                 raise ValueError("clientMutationId must be a non-empty string")
             if client_mutation_id in seen_client_mutation_ids:
@@ -1793,7 +1915,44 @@ class ContentRepository:
                     "fields contains non-payload identities: "
                     + ", ".join(sorted(non_payload_fields))
                 )
-            conflicts = propagated_targets.intersection(fields)
+            unknown_fields = set(fields) - _CLIENT_BUBBLE_MUTATION_FIELDS
+            if unknown_fields:
+                raise ValueError(
+                    "unknown bubble fields: "
+                    + ", ".join(sorted(unknown_fields))
+                )
+            if operation == "delete":
+                if fields:
+                    raise ValueError("delete mutations cannot provide fields")
+            else:
+                payload_fields = {
+                    key: value for key, value in fields.items() if key != "fontId"
+                }
+                payload_fields = validate_bubble_payload(
+                    payload_fields,
+                    render=False,
+                    partial=True,
+                )
+                if "coords" in payload_fields:
+                    payload_fields["autoTextDirection"] = (
+                        _auto_text_direction_from_coords(payload_fields["coords"])
+                    )
+                if operation != "patch":
+                    payload_fields = validate_bubble_payload(
+                        payload_fields,
+                        render=False,
+                    )
+                if operation == "patch" and not fields:
+                    raise ValueError("patch mutations must provide fields")
+                mutation["fields"] = {
+                    **payload_fields,
+                    **({"fontId": fields["fontId"]} if "fontId" in fields else {}),
+                }
+            conflicts = (
+                propagated_targets.intersection(fields)
+                if operation == "patch"
+                else set()
+            )
             if conflicts:
                 raise ValueError(
                     "bubble mutation conflicts with propagated style fields: "
@@ -1843,9 +2002,18 @@ class ContentRepository:
             ).mappings().one_or_none()
             if page is None:
                 raise ContentNotFound("page not found")
+            if page["page_style_schema_version"] != PAGE_STYLE_SCHEMA_VERSION:
+                raise ValueError("page style schema version is not current")
             if page["document_revision"] != base_revision:
                 raise ContentConflict("page document revision changed")
             self._assert_chapter_writable(connection, str(page["chapter_id"]))
+            if connection.execute(
+                select(operations.c.id).where(
+                    operations.c.page_id == page_id,
+                    operations.c.status.in_(ACTIVE_OPERATION_STATUSES),
+                )
+            ).scalar_one_or_none() is not None:
+                raise ContentConflict("page has an active operation")
             existing_rows = list(
                 connection.execute(
                     select(
@@ -1862,7 +2030,10 @@ class ContentRepository:
                 str(row["id"]): {
                     "bubbleId": str(row["id"]),
                     "fontId": row["font_id"],
-                    "payload": json.loads(row["payload_json"]),
+                    "payload": validate_bubble_payload(
+                        json.loads(row["payload_json"]),
+                        render=False,
+                    ),
                 }
                 for row in existing_rows
             }
@@ -1899,6 +2070,17 @@ class ContentRepository:
                     select(page_assets.c.asset_id).where(
                         page_assets.c.page_id == page_id,
                         page_assets.c.role == "translated",
+                    )
+                ).scalar_one_or_none()
+                is not None
+            )
+            has_active_render = (
+                connection.execute(
+                    select(render_requests.c.id).where(
+                        render_requests.c.page_id == page_id,
+                        render_requests.c.status.in_(
+                            ACTIVE_RENDER_REQUEST_STATUSES
+                        ),
                     )
                 ).scalar_one_or_none()
                 is not None
@@ -2010,12 +2192,10 @@ class ContentRepository:
                         if field == "layoutDirection":
                             value = current_style[field]
                             direction = (
-                                payload.get("autoTextDirection", "vertical")
+                                payload["autoTextDirection"]
                                 if value == "auto"
                                 else value
                             )
-                            if direction not in {"vertical", "horizontal"}:
-                                direction = "vertical"
                             if payload.get("textDirection") != direction:
                                 renderable_change = True
                             payload["textDirection"] = direction
@@ -2027,7 +2207,7 @@ class ContentRepository:
                                     if field == "textColor"
                                     else "autoBgColor"
                                 )
-                                automatic = payload.get(automatic_field)
+                                automatic = payload[automatic_field]
                                 if automatic is not None:
                                     materialized = rgb_to_hex(automatic)
                             elif field in style_patch:
@@ -2044,13 +2224,9 @@ class ContentRepository:
                                 bool(current_style["autoFontSize"])
                                 and calculate_auto_font_size is not None
                             ):
-                                coords = payload.get("coords")
-                                text = str(payload.get("translatedText", ""))
-                                if (
-                                    text.strip()
-                                    and isinstance(coords, list)
-                                    and len(coords) == 4
-                                ):
+                                coords = payload["coords"]
+                                text = payload["translatedText"]
+                                if text.strip():
                                     font_id = document["fontId"] or (
                                         default_font_id
                                         if default_font_id is not _MISSING
@@ -2071,20 +2247,9 @@ class ContentRepository:
                                         font_path = constants.DEFAULT_FONT_RELATIVE_PATH
                                     calculated = calculate_auto_font_size(
                                         text,
-                                        max(
-                                            0,
-                                            float(coords[2]) - float(coords[0]),
-                                        ),
-                                        max(
-                                            0,
-                                            float(coords[3]) - float(coords[1]),
-                                        ),
-                                        str(
-                                            payload.get(
-                                                "textDirection",
-                                                "vertical",
-                                            )
-                                        ),
+                                        coords[2] - coords[0],
+                                        coords[3] - coords[1],
+                                        payload["textDirection"],
                                         font_path,
                                     )
                                     if payload.get("fontSize") != calculated:
@@ -2104,6 +2269,12 @@ class ContentRepository:
                                 renderable_change = True
                             payload[field] = value
                     document["payload"] = payload
+
+            for document in documents.values():
+                document["payload"] = validate_bubble_payload(
+                    document["payload"],
+                    render=False,
+                )
 
             new_revision = base_revision + 1
             if existing_rows:
@@ -2147,11 +2318,18 @@ class ContentRepository:
                         .values(**values)
                     )
             has_drawable_text = any(
-                str(document["payload"].get("translatedText", "")).strip()
+                document["payload"]["translatedText"].strip()
                 for document in documents.values()
             )
             needs_render = renderable_change and (
                 has_current_translated or has_drawable_text
+            )
+            repair_blocks_render = page["render_status"] in {
+                "awaiting_repair",
+                "repair_failed",
+            }
+            advance_render_request = not repair_blocks_render and (
+                needs_render or has_active_render
             )
             page_values: dict[str, object] = {
                 "document_revision": new_revision,
@@ -2161,7 +2339,7 @@ class ContentRepository:
                 page_values["default_font_id"] = default_font_id
             if style_patch:
                 page_values["page_style_defaults_json"] = _json(current_style)
-            if needs_render:
+            if advance_render_request:
                 page_values["render_status"] = "stale"
             elif (
                 page["render_status"] == "ready"
@@ -2187,7 +2365,7 @@ class ContentRepository:
             )
             if changed.rowcount != 1:
                 raise ContentConflict("page document revision changed")
-            if needs_render:
+            if advance_render_request:
                 from src.backend_v2.operations.repository import (
                     RenderRequestRepository,
                 )
@@ -2233,6 +2411,12 @@ class ContentRepository:
         ).mappings().one_or_none()
         if page is None:
             raise ContentNotFound("page not found")
+        if page["page_style_schema_version"] != PAGE_STYLE_SCHEMA_VERSION:
+            raise ValueError("page style schema version is not current")
+        page_style = validate_page_style(
+            json.loads(page["page_style_defaults_json"]),
+            partial=False,
+        )
         bubble_rows = list(
             connection.execute(
                 select(
@@ -2246,24 +2430,30 @@ class ContentRepository:
                 .order_by(bubbles.c.ordinal)
             ).mappings()
         )
+        bubble_documents: list[dict[str, object]] = []
+        for row in bubble_rows:
+            payload = validate_bubble_payload(
+                json.loads(row["payload_json"]),
+                render=False,
+            )
+            bubble_documents.append(
+                {
+                    "bubbleId": row["id"],
+                    "ordinal": row["ordinal"],
+                    "fontId": row["font_id"],
+                    "payload": payload,
+                    "updatedRevision": row["updated_revision"],
+                }
+            )
         return {
             "pageId": page["id"],
             "chapterId": page["chapter_id"],
             "documentRevision": page["document_revision"],
             "renderStatus": page["render_status"],
             "defaultFontId": page["default_font_id"],
-            "pageStyleDefaults": json.loads(page["page_style_defaults_json"]),
+            "pageStyleDefaults": page_style,
             "pageStyleSchemaVersion": page["page_style_schema_version"],
-            "bubbles": [
-                {
-                    "bubbleId": row["id"],
-                    "ordinal": row["ordinal"],
-                    "fontId": row["font_id"],
-                    "payload": json.loads(row["payload_json"]),
-                    "updatedRevision": row["updated_revision"],
-                }
-                for row in bubble_rows
-            ],
+            "bubbles": bubble_documents,
         }
 
     @staticmethod
@@ -2403,10 +2593,21 @@ class ContentRepository:
         target_book_id: str | None = None,
     ) -> dict[str, str]:
         normalized_chapter_title = chapter_title.strip()
-        if not normalized_chapter_title:
-            raise ValueError("chapter title is required")
-        if bool(new_book_title) == bool(target_book_id):
+        if not normalized_chapter_title or len(normalized_chapter_title) > 500:
+            raise ValueError("chapter title must contain 1-500 characters")
+        if (new_book_title is None) == (target_book_id is None):
             raise ValueError("choose exactly one target: new book or existing book")
+        normalized_new_book_title: str | None = None
+        normalized_target_book_id: str | None = None
+        if new_book_title is not None:
+            normalized_new_book_title = new_book_title.strip()
+            if not normalized_new_book_title or len(normalized_new_book_title) > 500:
+                raise ValueError("new book title must contain 1-500 characters")
+        else:
+            assert target_book_id is not None
+            normalized_target_book_id = target_book_id.strip()
+            if not normalized_target_book_id:
+                raise ValueError("target book ID is required")
         with immediate_transaction(self.engine) as connection:
             quick_book_id = connection.execute(
                 select(books.c.id).where(books.c.kind == "quick_workspace")
@@ -2429,14 +2630,12 @@ class ContentRepository:
                 [source_chapter_id],
             )
 
-            if new_book_title:
-                title = new_book_title.strip()
-                if not title:
-                    raise ValueError("new book title is required")
+            if normalized_new_book_title is not None:
                 duplicate_book = connection.execute(
                     select(books.c.id).where(
                         books.c.kind == "library",
-                        func.lower(books.c.title) == title.lower(),
+                        func.lower(books.c.title)
+                        == normalized_new_book_title.lower(),
                     )
                 ).scalar_one_or_none()
                 if duplicate_book is not None:
@@ -2446,7 +2645,7 @@ class ContentRepository:
                     insert(books).values(
                         id=destination_book_id,
                         kind="library",
-                        title=title,
+                        title=normalized_new_book_title,
                     )
                 )
                 source_constraints = connection.execute(
@@ -2457,28 +2656,48 @@ class ContentRepository:
                         translation_constraints.c.book_id == quick_book_id
                     )
                 ).mappings().one_or_none()
+                if source_constraints is None:
+                    raise ContentNotFound("translation constraints not found")
+                if (
+                    source_constraints["schema_version"]
+                    != TRANSLATION_CONSTRAINTS_SCHEMA_VERSION
+                ):
+                    raise ValueError(
+                        "translation constraints schema version is not current"
+                    )
+                source_constraint_payload = validate_translation_constraints(
+                    json.loads(source_constraints["payload_json"])
+                )
                 connection.execute(
                     insert(translation_constraints).values(
                         book_id=destination_book_id,
-                        payload_json=(
-                            source_constraints["payload_json"]
-                            if source_constraints
-                            else _json(empty_translation_constraints())
-                        ),
-                        schema_version=(
-                            source_constraints["schema_version"]
-                            if source_constraints
-                            else TRANSLATION_CONSTRAINTS_SCHEMA_VERSION
-                        ),
+                        payload_json=_json(source_constraint_payload),
+                        schema_version=TRANSLATION_CONSTRAINTS_SCHEMA_VERSION,
                     )
                 )
             else:
-                destination_book_id = str(target_book_id)
-                destination_kind = connection.execute(
-                    select(books.c.kind).where(books.c.id == destination_book_id)
-                ).scalar_one_or_none()
-                if destination_kind != "library":
+                assert normalized_target_book_id is not None
+                destination_book_id = normalized_target_book_id
+                destination = connection.execute(
+                    select(
+                        books.c.kind,
+                        translation_constraints.c.schema_version,
+                    )
+                    .outerjoin(
+                        translation_constraints,
+                        translation_constraints.c.book_id == books.c.id,
+                    )
+                    .where(books.c.id == destination_book_id)
+                ).mappings().one_or_none()
+                if destination is None or destination["kind"] != "library":
                     raise ContentNotFound("target library book not found")
+                if (
+                    destination["schema_version"]
+                    != TRANSLATION_CONSTRAINTS_SCHEMA_VERSION
+                ):
+                    raise ValueError(
+                        "translation constraints schema version is not current"
+                    )
                 duplicate_chapter = connection.execute(
                     select(chapters.c.id).where(
                         chapters.c.book_id == destination_book_id,

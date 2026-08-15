@@ -15,17 +15,19 @@
               input-id="continuation-style-reference-count"
               v-model="refCount"
               :min="1"
-              :max="10"
               size="xs"
               aria-label="画风参考图数量"
             />
           </UiField>
           <UiButton
             variant="secondary"
+            :disabled="isLoadingReferenceImages"
             @click="openBatchReferenceSelector"
           >
             <UiIcon name="camera" size="15" />
-            <span>选择初始参考图 ({{ getInitialRefCount() }})</span>
+            <span>
+              {{ isLoadingReferenceImages ? '加载参考图...' : `选择初始参考图 (${getInitialRefCount()})` }}
+            </span>
           </UiButton>
         </div>
       </div>
@@ -58,7 +60,7 @@
           <ProductChipList
             class="image-generation-panel__status"
             :aria-label="`页面 ${page.page_number} 生成状态`"
-            :items="[getStatusChipItem(page.status)]"
+            :items="[getStatusChipItem(getImageStatus(page))]"
           />
         </div>
 
@@ -66,18 +68,17 @@
           <img
             v-if="page.image_url"
             class="image-generation-panel__image"
-            :src="getImageUrl(page.image_url)"
+            :src="page.image_url"
             :alt="`页面 ${page.page_number}`"
           >
           <div v-else class="image-generation-panel__empty-preview">
             <UiIcon
               class="image-generation-panel__empty-preview-icon"
-              :class="{ 'image-generation-panel__empty-preview-icon--loading': page.status === 'generating' }"
-              :name="page.status === 'generating' ? 'loading' : 'camera'"
+              name="camera"
               size="40"
               stroke-width="1.5"
             />
-            <p class="image-generation-panel__empty-preview-text">{{ page.status === 'generating' ? '生成中...' : '未生成' }}</p>
+            <p class="image-generation-panel__empty-preview-text">未生成</p>
           </div>
         </div>
 
@@ -182,7 +183,7 @@
         >
           <UiButton
             variant="secondary"
-            :disabled="page.status === 'generating'"
+            :disabled="isGenerating"
             size="sm"
             @click="$emit('regenerate', page.page_number)"
           >
@@ -210,7 +211,6 @@
       :continuation-images="availableContinuationImages"
       :character-forms="availableCharacterForms"
       :initial-selection="batchInitialReferenceTokens"
-      :book-id="bookId"
       :has-older-original-images="hasOlderOriginalImages"
       :loading-older-original-images="loadingOlderOriginalImages"
       :has-more-character-forms="hasMoreCharacterForms"
@@ -273,6 +273,8 @@ const hasOlderOriginalImages = ref(false)
 const loadingOlderOriginalImages = ref(false)
 const hasMoreCharacterForms = ref(false)
 const loadingMoreCharacterForms = ref(false)
+const characterFormsCursor = ref<number | null>(null)
+const isLoadingReferenceImages = ref(false)
 const boundedProgress = computed(() => Math.min(100, Math.max(0, Number(props.progress) || 0)))
 let imageRequestSeq = 0
 let isMounted = true
@@ -289,8 +291,9 @@ function handlePromptInput(pageNumber: number, prompt: string): void {
   emit('prompt-change', pageNumber, prompt)
 }
 
-function getImageUrl(imagePath: string): string {
-  return state.getGeneratedImageUrl(imagePath)
+function getImageStatus(page: PageContent): 'pending' | 'generated' | 'stale' {
+  if (page.status === 'stale') return 'stale'
+  return page.image_url ? 'generated' : 'pending'
 }
 
 function getStatusText(status: string): string {
@@ -384,7 +387,9 @@ function invalidateAvailableImages(): void {
 
 async function openBatchReferenceSelector() {
   const bookId = props.bookId
+  if (!bookId || isLoadingReferenceImages.value) return
   const requestId = ++imageRequestSeq
+  isLoadingReferenceImages.value = true
 
   try {
     const response = await getAvailableImages(bookId)
@@ -392,9 +397,11 @@ async function openBatchReferenceSelector() {
     availableOriginalImages.value = response.original_images
     availableContinuationImages.value = response.continuation_images
     availableCharacterForms.value = response.character_forms
-    originalCursor.value = response.original_cursor ?? 0
-    hasOlderOriginalImages.value = Boolean(response.has_older_original_images)
-    hasMoreCharacterForms.value = Boolean(response.has_more_character_forms)
+    originalCursor.value = response.original_cursor
+    hasOlderOriginalImages.value = response.original_cursor > 0
+    characterFormsCursor.value = response.character_forms_cursor
+    hasMoreCharacterForms.value = characterFormsCursor.value !== null
+    selectorVisible.value = true
   } catch {
     if (!isMounted || requestId !== imageRequestSeq || props.bookId !== bookId) return
     availableOriginalImages.value = []
@@ -402,23 +409,37 @@ async function openBatchReferenceSelector() {
     availableCharacterForms.value = []
     originalCursor.value = 0
     hasOlderOriginalImages.value = false
+    characterFormsCursor.value = null
     hasMoreCharacterForms.value = false
     state.showMessage('加载可用参考图失败', 'error')
+  } finally {
+    if (isMounted && requestId === imageRequestSeq) {
+      isLoadingReferenceImages.value = false
+    }
   }
-
-  selectorVisible.value = true
 }
 
 async function loadMoreCharacterFormImages(): Promise<void> {
   const bookId = props.bookId
-  if (!bookId || !hasMoreCharacterForms.value || loadingMoreCharacterForms.value) return
+  const cursor = characterFormsCursor.value
+  if (
+    !bookId
+    || cursor === null
+    || !hasMoreCharacterForms.value
+    || loadingMoreCharacterForms.value
+  ) return
   loadingMoreCharacterForms.value = true
   const requestId = imageRequestSeq
   try {
-    const response = await loadMoreAvailableCharacterForms(bookId)
+    const response = await loadMoreAvailableCharacterForms(bookId, cursor)
     if (!isMounted || requestId !== imageRequestSeq || props.bookId !== bookId) return
-    availableCharacterForms.value = response.character_forms
-    hasMoreCharacterForms.value = response.has_more_character_forms
+    const knownTokens = new Set(availableCharacterForms.value.map(form => form.token))
+    availableCharacterForms.value = [
+      ...availableCharacterForms.value,
+      ...response.character_forms.filter(form => !knownTokens.has(form.token)),
+    ]
+    characterFormsCursor.value = response.next_cursor
+    hasMoreCharacterForms.value = characterFormsCursor.value !== null
   } catch {
     if (isMounted && requestId === imageRequestSeq && props.bookId === bookId) {
       state.showMessage('加载更多角色参考图失败', 'error')
@@ -441,8 +462,8 @@ async function loadOlderOriginalImages(): Promise<void> {
       ...response.original_images.filter(image => !known.has(image.token)),
       ...availableOriginalImages.value,
     ]
-    originalCursor.value = response.original_cursor ?? 0
-    hasOlderOriginalImages.value = Boolean(response.has_older_original_images)
+    originalCursor.value = response.original_cursor
+    hasOlderOriginalImages.value = response.original_cursor > 0
   } finally {
     if (isMounted && requestId === imageRequestSeq) loadingOlderOriginalImages.value = false
   }
@@ -477,15 +498,20 @@ watch(() => state.styleRefPages?.value, (newValue) => {
 
 watch(() => props.bookId, () => {
   invalidateAvailableImages()
+  editingPromptPage.value = null
+  expandedStorySections.value = {}
   batchInitialReferenceTokens.value = []
+  selectorVisible.value = false
   availableOriginalImages.value = []
   availableContinuationImages.value = []
   availableCharacterForms.value = []
   originalCursor.value = 0
   hasOlderOriginalImages.value = false
   loadingOlderOriginalImages.value = false
+  characterFormsCursor.value = null
   hasMoreCharacterForms.value = false
   loadingMoreCharacterForms.value = false
+  isLoadingReferenceImages.value = false
 })
 
 watch(() => props.pages.length, (pageCount) => {
@@ -598,10 +624,6 @@ onBeforeUnmount(() => {
 
 .image-generation-panel__empty-preview-icon {
   margin-bottom: 10px;
-}
-
-.image-generation-panel__empty-preview-icon--loading {
-  animation: spin 1s linear infinite;
 }
 
 .image-generation-panel__empty-preview-text {

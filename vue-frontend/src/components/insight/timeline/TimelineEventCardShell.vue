@@ -27,7 +27,7 @@ watch(
   () => [props.thumbnailUrl, props.thumbnailPage] as const,
   () => {
     thumbnailFailed.value = false
-  },
+  }
 )
 </script>
 
@@ -48,7 +48,7 @@ watch(
           :alt="`第${thumbnailPage}页`"
           loading="lazy"
           @error="handleThumbnailError"
-        >
+        />
         <span
           v-else
           class="timeline-event-card-shell__thumbnail timeline-event-card-shell__thumbnail-fallback"
@@ -78,7 +78,11 @@ watch(
       </UiButton>
     </div>
 
-    <div v-if="$slots.summary" class="timeline-event-card-shell__summary">
+    <div
+      v-if="$slots.summary"
+      class="timeline-event-card-shell__summary"
+      :class="{ 'timeline-event-card-shell__summary--expanded': expanded }"
+    >
       <slot name="summary" />
     </div>
 
@@ -93,7 +97,9 @@ watch(
   border: 1px solid var(--color-border-muted);
   border-radius: 12px;
   background: var(--insight-surface-secondary);
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition:
+    transform 0.2s,
+    box-shadow 0.2s;
 }
 
 .timeline-event-card-shell:hover {
@@ -185,10 +191,19 @@ watch(
 }
 
 .timeline-event-card-shell__summary {
+  display: -webkit-box;
   padding: 12px;
+  overflow: hidden;
   border-bottom: 1px solid var(--color-border-muted);
   color: var(--insight-text-secondary);
   font-size: 14px;
   line-height: 1.6;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.timeline-event-card-shell__summary--expanded {
+  display: block;
+  overflow: visible;
 }
 </style>

@@ -41,17 +41,20 @@ function createApiError(error: AxiosError): ApiError {
   const backendDetails = backendError?.details
   const contentType = String(response?.headers?.['content-type'] || '').toLowerCase()
   const isNetworkFailure = response === undefined
+  const isCanceled = error.code === 'ERR_CANCELED' || error.name === 'CanceledError'
   const isDevelopmentProxyFailure = response?.status === 500
     && backendError === undefined
     && (data === '' || data === undefined || contentType.startsWith('text/plain'))
 
   return new ApiClientError({
     code: backendCode
+      || (isCanceled ? 'request_canceled' : undefined)
       || (isNetworkFailure ? 'network_error' : undefined)
       || (isDevelopmentProxyFailure ? 'proxy_connection_error' : undefined)
       || error.code
       || 'UNKNOWN_ERROR',
     message: backendMessage
+      || (isCanceled ? '请求已取消' : undefined)
       || (isNetworkFailure ? '无法连接后端服务，请稍后重试' : undefined)
       || (isDevelopmentProxyFailure ? '开发代理与后端连接中断，请稍后重试' : undefined)
       || error.message,
@@ -60,6 +63,14 @@ function createApiError(error: AxiosError): ApiError {
       ? backendDetails as Record<string, unknown>
       : undefined,
   })
+}
+
+export function isRequestCanceled(error: unknown): boolean {
+  if (error instanceof DOMException && error.name === 'AbortError') return true
+  if (error instanceof ApiClientError) return error.code === 'request_canceled'
+  if (!(error instanceof Error)) return false
+  const code = (error as Error & { code?: unknown }).code
+  return error.name === 'CanceledError' || code === 'ERR_CANCELED'
 }
 
 class ApiClient {

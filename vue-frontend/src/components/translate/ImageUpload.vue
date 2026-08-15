@@ -8,7 +8,7 @@ import UiButton from '@/components/ui/UiButton.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
 import UiProgressBar from '@/components/ui/UiProgressBar.vue'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { showToast } from '@/utils/toast'
 import { useWebImportStore } from '@/stores/webImportStore'
 import {
@@ -34,6 +34,7 @@ const uploadProgress = ref(0)
 const currentFileName = ref('')
 const showProgress = ref(false)
 const failedImports = ref<SequentialImportFailure[]>([])
+const failedChapterId = ref<string | null>(null)
 const CONTAINER_SUFFIXES = new Set(['.pdf', '.zip', '.cbz', '.mobi', '.azw', '.azw3'])
 const IMAGE_SUFFIXES = new Set(['.bmp', '.gif', '.jpeg', '.jpg', '.png', '.tif', '.tiff', '.webp'])
 
@@ -73,25 +74,35 @@ function isImageFile(file: File): boolean {
   return file.type.startsWith('image/') || IMAGE_SUFFIXES.has(fileSuffix(file))
 }
 
-function imageImportOptions(): SequentialImportOptions {
+function imageImportOptions(chapterId: string): SequentialImportOptions {
   return {
     onProgress: state => {
+      if (props.chapterId !== chapterId) return
       currentFileName.value = state.currentPath
       uploadProgress.value = state.completed / state.total * 100
     },
     onRetry: state => {
+      if (props.chapterId !== chapterId) return
       currentFileName.value = `${state.currentPath}（连接重试 ${state.attempt}/${state.maxAttempts}）`
     },
   }
 }
 
-async function importImageFiles(files: File[]): Promise<SequentialImportSummary> {
-  if (!props.chapterId || files.length === 0) return { failures: [], results: [] }
-  return importImagesSequentially(props.chapterId, files, imageImportOptions())
+async function importImageFiles(
+  chapterId: string,
+  files: File[],
+): Promise<SequentialImportSummary> {
+  if (files.length === 0) return { failures: [], results: [] }
+  return importImagesSequentially(chapterId, files, imageImportOptions(chapterId))
 }
 
-function applyImageImportSummary(summary: SequentialImportSummary): void {
+function applyImageImportSummary(
+  chapterId: string,
+  summary: SequentialImportSummary,
+): void {
+  if (props.chapterId !== chapterId) return
   failedImports.value = summary.failures
+  failedChapterId.value = summary.failures.length > 0 ? chapterId : null
   if (summary.results.length > 0) {
     showToast(`已写入后端 ${summary.results.length} 张图片`, 'success')
     emit('uploadComplete', summary.results.length)
@@ -112,14 +123,16 @@ function applyImageImportSummary(summary: SequentialImportSummary): void {
 }
 
 async function processFiles(files: File[]) {
-  if (files.length === 0) return
-  if (!props.chapterId) {
+  if (files.length === 0 || isLoading.value) return
+  const chapterId = props.chapterId
+  if (!chapterId) {
     showToast('后端章节尚未初始化，请稍后重试', 'error')
     return
   }
   isLoading.value = true
   errorMessage.value = ''
   failedImports.value = []
+  failedChapterId.value = null
   showProgress.value = true
   uploadProgress.value = 0
   try {
@@ -132,21 +145,26 @@ async function processFiles(files: File[]) {
       showToast(`不支持的文件类型: ${file.name}`, 'warning')
     }
 
-    const imageSummary = await importImageFiles(images)
-    applyImageImportSummary(imageSummary)
+    const imageSummary = await importImageFiles(chapterId, images)
+    applyImageImportSummary(chapterId, imageSummary)
     for (const [index, file] of containers.entries()) {
-      currentFileName.value = `上传到后端任务：${file.name}`
-      await createContainerImportJob(props.chapterId, file)
-      uploadProgress.value = (index + 1) / containers.length * 100
+      if (props.chapterId === chapterId) {
+        currentFileName.value = `上传到后端任务：${file.name}`
+      }
+      await createContainerImportJob(chapterId, file)
+      if (props.chapterId === chapterId) {
+        uploadProgress.value = (index + 1) / containers.length * 100
+      }
     }
 
-    if (containers.length > 0) {
+    if (containers.length > 0 && props.chapterId === chapterId) {
       showToast(
         `已创建 ${containers.length} 个后端解析任务，可安全关闭页面`,
         'success',
       )
     }
   } catch (error) {
+    if (props.chapterId !== chapterId) return
     const errMsg = error instanceof Error ? error.message : '处理文件失败，请重试'
     errorMessage.value = errMsg
     showToast(errMsg, 'error')
@@ -158,19 +176,26 @@ async function processFiles(files: File[]) {
 }
 
 async function retryFailedImages() {
-  if (!props.chapterId || failedImports.value.length === 0 || isLoading.value) return
+  const chapterId = props.chapterId
+  if (
+    !chapterId
+    || failedChapterId.value !== chapterId
+    || failedImports.value.length === 0
+    || isLoading.value
+  ) return
   isLoading.value = true
   errorMessage.value = ''
   showProgress.value = true
   uploadProgress.value = 0
   try {
     const summary = await retryFailedImageImports(
-      props.chapterId,
+      chapterId,
       failedImports.value,
-      imageImportOptions(),
+      imageImportOptions(chapterId),
     )
-    applyImageImportSummary(summary)
+    applyImageImportSummary(chapterId, summary)
   } catch (error) {
+    if (props.chapterId !== chapterId) return
     const errMsg = error instanceof Error ? error.message : '重试图片失败，请稍后再试'
     errorMessage.value = errMsg
     showToast(errMsg, 'error')
@@ -184,7 +209,12 @@ async function retryFailedImages() {
 function clearError() {
   errorMessage.value = ''
   failedImports.value = []
+  failedChapterId.value = null
 }
+
+watch(() => props.chapterId, () => {
+  clearError()
+})
 </script>
 <template>
   <div class="image-upload">

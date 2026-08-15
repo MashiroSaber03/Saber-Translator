@@ -33,7 +33,7 @@ const inputType = computed(() => (isVisible.value ? 'text' : 'password'))
 const toggleLabel = computed(() => (isVisible.value ? props.hideLabel : props.showLabel))
 const iconName = computed(() => (isVisible.value ? 'eye-off' : 'eye'))
 
-function handleUpdate(value: string | number | boolean): void {
+function handleUpdate(value: string | number): void {
   emit('update:modelValue', String(value))
 }
 

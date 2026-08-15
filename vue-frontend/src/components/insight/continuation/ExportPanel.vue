@@ -32,7 +32,7 @@
       </UiButton>
 
       <ProductActionRow aria-label="导出操作" justify="center">
-        <UiButton variant="secondary" @click="clearAndRestart">
+        <UiButton variant="secondary" :disabled="isClearing" @click="clearAndRestart">
           <UiIcon name="trash" size="15" />
           <span>清空并重新开始</span>
         </UiButton>
@@ -49,7 +49,7 @@ import ProductChoiceCardGrid, {
   type ProductChoiceCardItem,
 } from '@/components/product/ProductChoiceCardGrid.vue'
 import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'
-import { ref } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
 import type { ContinuationState } from '@/composables/continuation/useContinuationState'
 import { confirmProductAction } from '@/composables/useProductConfirm'
 import * as continuationApi from '@/api/continuation'
@@ -60,10 +60,11 @@ const props = defineProps<{
   bookId: string
   generatedCount: number
   state: ContinuationState
+  isClearing?: boolean
 }>()
 
 const emit = defineEmits<{
-  'clear-and-restart': []
+  'clear-and-restart': [bookId: string]
 }>()
 
 const state = props.state
@@ -77,6 +78,8 @@ const exportFormatItems: ProductChoiceCardItem[] = [
 
 const selectedFormat = ref<ExportFormat>('images')
 const isExporting = ref(false)
+let exportRequestId = 0
+let isMounted = true
 
 function handleFormatSelect(formatId: string): void {
   if (formatId !== 'images' && formatId !== 'pdf') return
@@ -84,34 +87,45 @@ function handleFormatSelect(formatId: string): void {
 }
 
 async function handleExport() {
+  if (isExporting.value) return
   if (!props.bookId || props.generatedCount <= 0) {
     state.showMessage('没有已生成的图片可导出', 'error')
     return
   }
 
+  const bookId = props.bookId
+  const requestId = ++exportRequestId
+  const isCurrent = () => isMounted && requestId === exportRequestId && props.bookId === bookId
   isExporting.value = true
 
   try {
     const format = selectedFormat.value === 'images' ? 'zip' : 'pdf'
-    const jobId = await continuationApi.createContinuationExportJob(props.bookId, format)
+    const jobId = await continuationApi.createContinuationExportJob(bookId, format)
+    if (!isCurrent()) return
     state.showMessage('续写导出任务已进入任务中心，关闭浏览器也会继续运行', 'info')
     const job = await taskCenterStore.waitForJob(jobId)
+    if (!isCurrent()) return
     const assetId = job.artifacts[0]?.assetId
     if (!assetId) throw new Error('导出任务未生成文件')
-    const blob = await continuationApi.downloadContinuationExport(assetId, props.bookId, format)
+    const blob = await continuationApi.downloadContinuationExport(assetId, bookId, format)
+    if (!isCurrent()) return
     const filename = `continuation_${Date.now()}.${format}`
 
     triggerBlobDownload(blob, filename)
 
     state.showMessage('导出成功', 'success')
   } catch (error) {
-    state.showMessage('导出失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
+    if (isCurrent()) {
+      state.showMessage('导出失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
+    }
   } finally {
-    isExporting.value = false
+    if (requestId === exportRequestId) isExporting.value = false
   }
 }
 
 async function clearAndRestart() {
+  const bookId = props.bookId
+  if (!bookId || props.isClearing) return
   const confirmed = await confirmProductAction({
     title: '清空续写数据',
     message: '确定要清空所有续写数据并重新开始吗？此操作不可恢复。',
@@ -119,10 +133,20 @@ async function clearAndRestart() {
     cancelText: '取消',
     tone: 'danger',
   })
-  if (!confirmed) return
+  if (!confirmed || props.bookId !== bookId) return
 
-  emit('clear-and-restart')
+  emit('clear-and-restart', bookId)
 }
+
+watch(() => props.bookId, () => {
+  exportRequestId += 1
+  isExporting.value = false
+})
+
+onBeforeUnmount(() => {
+  isMounted = false
+  exportRequestId += 1
+})
 </script>
 
 <style scoped>

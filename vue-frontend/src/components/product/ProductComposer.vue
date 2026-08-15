@@ -39,7 +39,7 @@ function submit(): void {
 }
 
 function handleKeydown(event: KeyboardEvent): void {
-  if (event.key !== 'Enter' || event.shiftKey) return
+  if (event.isComposing || event.key !== 'Enter' || event.shiftKey) return
   event.preventDefault()
   submit()
 }

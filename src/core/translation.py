@@ -1,12 +1,12 @@
-import logging
-import time
 import json
+import logging
 import re
+import time
 
-# 导入项目内模块
+import requests
+
 from src.shared import constants
 from src.shared.ai_adapters import (
-    run_local_chat_completion,
     translate_with_baidu,
     translate_with_caiyun,
     translate_with_youdao,
@@ -14,14 +14,18 @@ from src.shared.ai_adapters import (
 from src.shared.ai_providers import (
     TRANSLATION_CAPABILITY,
     get_provider_manifest,
-    is_openai_compatible_provider,
     normalize_provider_id,
     provider_supports_capability,
 )
-from src.shared.ai_transport import OpenAICompatibleChatTransport, UnifiedChatRequest
+from src.shared.ai_transport import (
+    RETRYABLE_STATUS_CODES,
+    OpenAICompatibleChatTransport,
+    UnifiedChatRequest,
+)
 from src.shared.memory_errors import is_memory_allocation_error
 from src.shared.openai_execution import (
     OpenAICompatibleBusinessRetryableError,
+    OpenAICompatibleRuntimeOptions,
     OpenAICompatibleSyncExecutor,
     build_openai_compatible_runtime_options,
 )
@@ -33,16 +37,16 @@ from src.shared.openai_options import (
 from src.shared.openai_rate_limits import SharedRPMLimiter
 
 logger = logging.getLogger("CoreTranslation")
-# logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 _chat_transport = OpenAICompatibleChatTransport()
 _sync_executor = OpenAICompatibleSyncExecutor(_chat_transport)
 
-# --- 自定义异常 ---
+
 class TranslationParseException(OpenAICompatibleBusinessRetryableError):
     """批量翻译响应解析失败异常，触发重试"""
 
-def _build_text_chat_messages(prompt_content: str, text: str) -> list:
-    messages = []
+
+def _build_text_chat_messages(prompt_content: str, text: str) -> list[dict[str, str]]:
+    messages: list[dict[str, str]] = []
     if prompt_content:
         messages.append({"role": "system", "content": prompt_content})
     messages.append({"role": "user", "content": text})
@@ -55,23 +59,18 @@ def _build_translation_openai_options(
     default_force_json_output: bool = False,
     default_rpm_limit: int = constants.DEFAULT_rpm_TRANSLATION,
     default_business_retries: int = constants.DEFAULT_TRANSLATION_MAX_RETRIES,
-    temperature: float | None = None,
 ) -> OpenAICompatibleOptions:
     if openai_options is not None:
-        effective = OpenAICompatibleOptions.from_dict(openai_options.to_dict())
-    else:
-        effective = create_openai_compatible_options(
-            force_json_output=default_force_json_output,
-            temperature=temperature,
-            use_stream=False,
-            rpm_limit=default_rpm_limit,
-            transport_retries=DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
-            business_retries=default_business_retries,
-        )
-
-    if effective.request.temperature is None:
-        effective.request.temperature = temperature
-    return effective
+        if not isinstance(openai_options, OpenAICompatibleOptions):
+            raise TypeError("openai_options 必须是 OpenAICompatibleOptions")
+        return OpenAICompatibleOptions.from_dict(openai_options.to_dict())
+    return create_openai_compatible_options(
+        force_json_output=default_force_json_output,
+        use_stream=False,
+        rpm_limit=default_rpm_limit,
+        transport_retries=DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
+        business_retries=default_business_retries,
+    )
 
 
 def _build_translation_runtime_options(
@@ -79,7 +78,7 @@ def _build_translation_runtime_options(
     timeout: float,
     label: str,
     use_stream: bool,
-):
+) -> OpenAICompatibleRuntimeOptions:
     return build_openai_compatible_runtime_options(
         timeout=timeout,
         print_stream_output=use_stream,
@@ -88,16 +87,38 @@ def _build_translation_runtime_options(
 
 
 def _parse_single_translation_response(content: str, *, use_json_format: bool) -> str:
+    if not isinstance(content, str):
+        raise OpenAICompatibleBusinessRetryableError("翻译响应必须是字符串")
     translated_text = content.strip()
     if use_json_format:
         try:
             payload = json.loads(translated_text)
         except json.JSONDecodeError as exc:
             raise OpenAICompatibleBusinessRetryableError(f"翻译 JSON 解析失败: {exc}") from exc
-        translated_text = str(payload.get("translated_text") or "").strip()
+        if not isinstance(payload, dict) or set(payload) != {"translated_text"}:
+            raise OpenAICompatibleBusinessRetryableError(
+                '翻译 JSON 必须仅包含 "translated_text" 字段'
+            )
+        value = payload["translated_text"]
+        if not isinstance(value, str):
+            raise OpenAICompatibleBusinessRetryableError(
+                '翻译 JSON 的 "translated_text" 必须是字符串'
+            )
+        translated_text = value.strip()
     if not translated_text:
         raise OpenAICompatibleBusinessRetryableError("AI 返回空翻译结果")
     return translated_text
+
+
+def _is_retryable_adapter_error(error: Exception) -> bool:
+    if isinstance(error, OpenAICompatibleBusinessRetryableError):
+        return True
+    if isinstance(error, (requests.Timeout, requests.ConnectionError)):
+        return True
+    if isinstance(error, requests.HTTPError):
+        response = error.response
+        return response is not None and response.status_code in RETRYABLE_STATUS_CODES
+    return False
 
 
 def _parse_batch_translation_response(
@@ -106,8 +127,13 @@ def _parse_batch_translation_response(
     texts: list[str],
     use_json_format: bool,
 ) -> list[str]:
+    if not isinstance(texts, list) or not texts or any(
+        not isinstance(text, str) or not text.strip()
+        for text in texts
+    ):
+        raise ValueError("批量翻译解析器需要非空字符串列表")
     translations = (
-        _parse_batch_json_response(response_text)
+        _parse_batch_json_response(response_text, len(texts))
         if use_json_format
         else _parse_batch_response(response_text, len(texts))
     )
@@ -117,11 +143,16 @@ def _parse_batch_translation_response(
             f"翻译数量不匹配: 期望 {len(texts)}, 实际 {len(translations)}"
         )
 
-    empty_count = sum(1 for src, trans in zip(texts, translations) if src.strip() and not trans.strip())
+    empty_count = sum(
+        1
+        for source, translated in zip(texts, translations)
+        if source.strip() and not translated.strip()
+    )
     if empty_count > 0:
         raise OpenAICompatibleBusinessRetryableError(f"检测到 {empty_count} 个空翻译")
 
     return translations
+
 
 def translate_single_text(
     text,
@@ -151,7 +182,15 @@ def translate_single_text(
     Returns:
         str: 翻译后的文本。
     """
-    if not text or not text.strip():
+    if not isinstance(text, str):
+        raise TypeError("待翻译文本必须是字符串")
+    if not isinstance(target_language, str) or not target_language.strip():
+        raise ValueError("目标语言必须是非空字符串")
+    if not isinstance(model_provider, str) or not model_provider.strip():
+        raise ValueError("翻译服务商必须是非空字符串")
+    if prompt_content is not None and not isinstance(prompt_content, str):
+        raise TypeError("翻译提示词必须是字符串或 null")
+    if not text.strip():
         return ""
 
     effective_options = _build_translation_openai_options(
@@ -176,14 +215,18 @@ def translate_single_text(
 
 
     canonical_provider = normalize_provider_id(model_provider)
+    manifest = get_provider_manifest(canonical_provider)
+    if not provider_supports_capability(canonical_provider, TRANSLATION_CAPABILITY):
+        raise ValueError(f"{manifest.display_name}不支持翻译")
     logger.info(
-        f"开始翻译文本: '{text[:30]}...' "
-        f"(服务商: {canonical_provider}, rpm: {rpm_limit_translation if rpm_limit_translation > 0 else '无'}, "
-        f"transport_retries: {effective_options.execution.transport_retries}, business_retries: {business_retries})"
+        "开始翻译文本（服务商=%s, rpm=%s, transport_retries=%s, business_retries=%s）",
+        canonical_provider,
+        rpm_limit_translation if rpm_limit_translation > 0 else "无",
+        effective_options.execution.transport_retries,
+        business_retries,
     )
 
-    if is_openai_compatible_provider(canonical_provider) and provider_supports_capability(canonical_provider, TRANSLATION_CAPABILITY):
-        manifest = get_provider_manifest(canonical_provider)
+    if manifest.kind in {"openai_compatible", "local"}:
         if manifest.requires_api_key and not api_key:
             raise ValueError(f"{manifest.display_name}需要 API Key")
         if manifest.requires_model and not model_name:
@@ -191,13 +234,20 @@ def translate_single_text(
         if manifest.requires_base_url and not custom_base_url:
             raise ValueError(f"{manifest.display_name}需要 Base URL")
 
+        messages = _build_text_chat_messages(prompt_content, text)
+        if canonical_provider == "sakura":
+            messages = _build_text_chat_messages(
+                "你是一个轻小说翻译模型，可以流畅通顺地以日本轻小说的风格将日文翻译成简体中文，并联系上下文正确使用人称代词，不擅自添加原文中没有的代词。",
+                f"将下面的日文文本翻译成中文：{text}",
+            )
+
         result = _sync_executor.execute(
             UnifiedChatRequest(
                 provider=canonical_provider,
                 api_key=api_key,
                 model=model_name,
                 credential_version_id=credential_version_id,
-                base_url=custom_base_url,
+                base_url=custom_base_url or None,
                 capability=TRANSLATION_CAPABILITY,
                 openai_options=effective_options,
                 runtime_options=_build_translation_runtime_options(
@@ -205,7 +255,7 @@ def translate_single_text(
                     label="普通翻译",
                     use_stream=effective_options.execution.use_stream,
                 ),
-                messages=_build_text_chat_messages(prompt_content, text),
+                messages=messages,
             ),
             capability=TRANSLATION_CAPABILITY,
             parser=lambda content: _parse_single_translation_response(
@@ -227,18 +277,13 @@ def translate_single_text(
                     credential_version_id=credential_version_id,
                 ).wait_sync()
 
-                if canonical_provider == 'caiyun':
+                if canonical_provider == "caiyun":
                     if not api_key:
                         raise ValueError("彩云小译需要 API Key")
-                    translated_text = translate_with_caiyun(text, target_language, api_key, model_name or "")
-
-                elif canonical_provider == 'sakura':
-                    sakura_prompt = "你是一个轻小说翻译模型，可以流畅通顺地以日本轻小说的风格将日文翻译成简体中文，并联系上下文正确使用人称代词，不擅自添加原文中没有的代词。"
-                    translated_text = run_local_chat_completion(
-                        "sakura",
-                        model_name,
-                        _build_text_chat_messages(sakura_prompt, f"将下面的日文文本翻译成中文：{text}"),
-                        timeout=120.0,
+                    translated_text = translate_with_caiyun(
+                        text,
+                        target_language,
+                        api_key,
                     )
 
                 elif canonical_provider == constants.BAIDU_TRANSLATE_ENGINE_ID:
@@ -257,45 +302,50 @@ def translate_single_text(
                 else:
                     raise ValueError(f"不支持的翻译服务提供商: {canonical_provider}")
 
-                translated_text = str(translated_text or "").strip()
+                if not isinstance(translated_text, str):
+                    raise OpenAICompatibleBusinessRetryableError(
+                        "翻译服务返回值必须是字符串"
+                    )
+                translated_text = translated_text.strip()
                 if not translated_text:
                     raise OpenAICompatibleBusinessRetryableError(
                         "翻译服务返回空结果"
                     )
                 break
-            except Exception as e:
-                if is_memory_allocation_error(e):
+            except Exception as error:
+                if is_memory_allocation_error(error):
                     raise
-                last_error = e
-                error_message = str(e)
+                last_error = error
                 logger.error(
-                    f"翻译失败（尝试 {attempt + 1}/{total_attempts}，服务商: {canonical_provider}）: {error_message}",
+                    "翻译失败（尝试 %s/%s，服务商=%s）: %s",
+                    attempt + 1,
+                    total_attempts,
+                    canonical_provider,
+                    error,
                     exc_info=True,
                 )
                 translated_text = None
-                if hasattr(e, 'response') and e.response is not None:
-                    try:
-                        error_detail = e.response.json()
-                        logger.error(f"{canonical_provider} API 错误详情: {error_detail}")
-                    except json.JSONDecodeError:
-                        logger.error(f"{canonical_provider} API 原始错误响应 (状态码 {e.response.status_code}): {e.response.text}")
-
-                if "API key" in error_message or "appid" in error_message or "appkey" in error_message or "authentication" in error_message.lower() or "Base URL" in error_message:
+                if not _is_retryable_adapter_error(error):
+                    raise
+                if attempt >= business_retries:
                     break
-                if attempt < business_retries:
-                    time.sleep(1)
+                time.sleep(1)
 
         if translated_text is None:
             if last_error is None:
                 raise RuntimeError("翻译失败且未提供错误原因")
             raise last_error
 
-    logger.info(f"最终翻译成功: '{text[:30]}...' -> '{translated_text[:30]}...'")
-        
+    logger.info("文本翻译成功")
+
     return translated_text
 
 
-def _assemble_batch_prompt(texts: list, custom_prompt: str = None, use_json_format: bool = False) -> tuple:
+def _assemble_batch_prompt(
+    texts: list[str],
+    custom_prompt: str | None = None,
+    use_json_format: bool = False,
+) -> tuple[list[dict[str, str]], int]:
     """
     将多个文本组装成批量翻译的 prompt
     
@@ -308,8 +358,8 @@ def _assemble_batch_prompt(texts: list, custom_prompt: str = None, use_json_form
         tuple: (messages_list, batch_size) - 消息列表和批次大小
     """
     # 构建消息列表
-    messages = []
-    
+    messages: list[dict[str, str]] = []
+
     if use_json_format:
         # --- JSON 模式 ---
         # 1. System prompt
@@ -318,16 +368,22 @@ def _assemble_batch_prompt(texts: list, custom_prompt: str = None, use_json_form
         else:
             system_prompt = constants.BATCH_TRANSLATE_JSON_SYSTEM_TEMPLATE
         messages.append({"role": "system", "content": system_prompt})
-        
         # 2. Few-shot learning: JSON 格式示例
         messages.append({"role": "user", "content": constants.BATCH_TRANSLATE_JSON_SAMPLE_INPUT})
         messages.append({"role": "assistant", "content": constants.BATCH_TRANSLATE_JSON_SAMPLE_OUTPUT})
         logger.debug("已添加 JSON 模式翻译示例")
-        
         # 3. User prompt：构建 JSON 格式的输入
-        import json
-        texts_json = {"texts": [{"id": i+1, "text": text} for i, text in enumerate(texts)]}
-        user_prompt = constants.BATCH_TRANSLATE_JSON_USER_TEMPLATE + "\n" + json.dumps(texts_json, ensure_ascii=False, indent=2)
+        texts_json = {
+            "texts": [
+                {"id": index + 1, "text": text}
+                for index, text in enumerate(texts)
+            ]
+        }
+        user_prompt = (
+            constants.BATCH_TRANSLATE_JSON_USER_TEMPLATE
+            + "\n"
+            + json.dumps(texts_json, ensure_ascii=False, indent=2)
+        )
         messages.append({"role": "user", "content": user_prompt})
     else:
         # --- 纯文本模式 (默认) ---
@@ -337,209 +393,125 @@ def _assemble_batch_prompt(texts: list, custom_prompt: str = None, use_json_form
         else:
             system_prompt = constants.BATCH_TRANSLATE_SYSTEM_TEMPLATE
         messages.append({"role": "system", "content": system_prompt})
-        
         # 2. Few-shot learning: 添加翻译示例
         messages.append({"role": "user", "content": constants.BATCH_TRANSLATE_SAMPLE_INPUT})
         messages.append({"role": "assistant", "content": constants.BATCH_TRANSLATE_SAMPLE_OUTPUT})
         logger.debug("已添加翻译示例")
-        
         # 3. User prompt：将所有文本编号并合并
         user_prompt = constants.BATCH_TRANSLATE_USER_TEMPLATE
-        for i, text in enumerate(texts):
-            user_prompt += f"\n<|{i+1}|>{text}"
+        for index, text in enumerate(texts):
+            user_prompt += f"\n<|{index + 1}|>{text}"
         messages.append({"role": "user", "content": user_prompt})
-    
+
     return messages, len(texts)
 
 
+def _parse_batch_response(response_text: str, expected_count: int) -> list[str]:
+    """按 <|n|> 协议严格解析批量翻译响应。"""
+    if not isinstance(response_text, str):
+        raise TranslationParseException("批量翻译响应必须是字符串")
+    if isinstance(expected_count, bool) or not isinstance(expected_count, int) or expected_count < 1:
+        raise ValueError("批量翻译期望数量必须是正整数")
 
-
-def _parse_batch_response(response_text: str, expected_count: int) -> list:
-    """
-    解析批量翻译的响应
-    
-    Args:
-        response_text: LLM 返回的响应文本
-        expected_count: 期望的翻译数量
-        
-    Returns:
-        list: 解析后的翻译列表
-        
-    Raises:
-        TranslationParseException: 当无法解析出有效内容时抛出，触发重试
-    """
-    # --- 响应清理 ---
-    
-    # 1. 去除 <think>...</think> 标签及内容 (某些模型的思考过程)
-    cleaned_text = re.sub(r'(</think>)?<think>.*?</think>', '', response_text, flags=re.DOTALL)
-    
-    # 2. 删除多余的空行
-    cleaned_text = re.sub(r'\n\s*\n', '\n', cleaned_text).strip()
-
-    # 部分模型会把示例中的 <|n|> 简化为 <n>。只在行首接受这一种
-    # 无歧义变体，并立即规范化，后续仍沿用同一套数量与空值校验。
     cleaned_text = re.sub(
-        r'(?m)^(\s*)<(\d+)>',
+        r"<think>.*?</think>",
+        "",
+        response_text,
+        flags=re.DOTALL | re.IGNORECASE,
+    ).strip()
+    # 某些服务商会把行首 <|n|> 简化为 <n>；该变体仍是无歧义的同一协议。
+    cleaned_text = re.sub(
+        r"(?m)^(\s*)<(\d+)>",
         lambda match: f"{match.group(1)}<|{match.group(2)}|>",
         cleaned_text,
     )
-    
-    # 3. 仅保留 <|1|> 到 <|max|> 范围内的行，删除前后的解释性文字
-    lines = cleaned_text.splitlines()
-    min_index_line = -1
-    max_index_line = -1
-    has_numeric_prefix = False
-    
-    for index, line in enumerate(lines):
-        match = re.search(r'<\|(\d+)\|>', line)
-        if match:
-            has_numeric_prefix = True
-            current_index = int(match.group(1))
-            if current_index == 1:
-                min_index_line = index
-            if max_index_line == -1:
-                max_index_line = index
-            else:
-                prev_match = re.search(r'<\|(\d+)\|>', lines[max_index_line])
-                if prev_match and current_index > int(prev_match.group(1)):
-                    max_index_line = index
-    
-    # 🔍 新增：检测是否完全无法找到编号格式
-    if not has_numeric_prefix:
-        logger.warning(f"响应中未找到 <|n|> 格式的编号，无法解析。响应内容: {response_text[:200]}...")
+    markers = list(re.finditer(r"<\|(\d+)\|>", cleaned_text))
+    if not markers:
         raise TranslationParseException(
-            "无法在响应中找到批量翻译的编号格式 <|n|>，AI 可能未按要求输出"
+            "无法在响应中找到批量翻译的编号格式 <|n|>"
         )
-    
-    if has_numeric_prefix and min_index_line != -1:
-        # 只保留从 <|1|> 开始到最大编号行的内容
-        modified_lines = lines[min_index_line:max_index_line + 1]
-        cleaned_text = "\n".join(modified_lines)
-    
-    # 4. 修复前缀和翻译内容之间的空格问题
-    fixed_lines = []
-    for line in cleaned_text.strip().split('\n'):
-        # 匹配 <|数字|> 前缀格式，去除前缀后的多余空格
-        match = re.match(r'^(<\|\d+\|>)\s+(.*)$', line.strip())
-        if match:
-            prefix = match.group(1)
-            content = match.group(2)
-            fixed_lines.append(f"{prefix}{content}")
-        else:
-            fixed_lines.append(line)
-    cleaned_text = '\n'.join(fixed_lines)
-    
-    # --- 分割解析 ---
-    
-    # 特殊情况：单个查询但响应可能被分成多段 (在分割前检查)
-    if expected_count == 1:
-        # 检查是否存在多个编号
-        all_indices = re.findall(r'<\|(\d+)\|>', cleaned_text)
-        if len(all_indices) > 1:
-            # 检查是否有超过 1 的索引（说明模型错误地分割了单个翻译）
-            has_invalid = any(int(idx) > 1 for idx in all_indices)
-            if has_invalid:
-                # 合并所有翻译，移除所有编号
-                merged = re.sub(r'<\|\d+\|>', '', cleaned_text).strip()
-                logger.warning("检测到单查询被分割，已合并翻译结果")
-                return [merged]
-    
-    # 使用正则表达式分割响应：<|1|>...<|2|>...
-    translations = re.split(r'<\|\d+\|>', cleaned_text)
-    
-    # 清理每个翻译的前后空格
-    translations = [t.strip() for t in translations]
-    
-    # 移除第一个空元素（如果存在）
-    if translations and not translations[0]:
-        translations = translations[1:]
-    
-    # 🔍 新增：验证解析结果
-    if not translations:
-        logger.warning("解析后未获取到任何翻译内容")
-        raise TranslationParseException("解析后的翻译列表为空，AI 可能返回了无效内容")
-    
+    if cleaned_text[:markers[0].start()].strip():
+        raise TranslationParseException("批量翻译响应在 <|1|> 前包含额外内容")
+
+    actual_ids = [int(marker.group(1)) for marker in markers]
+    expected_ids = list(range(1, expected_count + 1))
+    if actual_ids != expected_ids:
+        raise TranslationParseException(
+            f"翻译数量不匹配或编号错误: 期望 {expected_ids}，实际 {actual_ids}"
+        )
+
+    translations: list[str] = []
+    for index, marker in enumerate(markers):
+        content_end = markers[index + 1].start() if index + 1 < len(markers) else len(cleaned_text)
+        translated = cleaned_text[marker.end() : content_end].strip()
+        if not translated:
+            raise TranslationParseException(f"第 {index + 1} 条翻译为空")
+        translations.append(translated)
+    return translations
+
+def _parse_batch_json_response(response_text: str, expected_count: int) -> list[str]:
+    """按当前 translations JSON 协议严格解析批量翻译响应。"""
+    if not isinstance(response_text, str):
+        raise TranslationParseException("批量翻译 JSON 响应必须是字符串")
+    if isinstance(expected_count, bool) or not isinstance(expected_count, int) or expected_count < 1:
+        raise ValueError("批量翻译期望数量必须是正整数")
+
+    cleaned_text = re.sub(
+        r"<think>.*?</think>",
+        "",
+        response_text,
+        flags=re.DOTALL | re.IGNORECASE,
+    ).strip()
+    fenced = re.fullmatch(r"```(?:json)?\s*([\s\S]*?)\s*```", cleaned_text)
+    if fenced:
+        cleaned_text = fenced.group(1).strip()
+    try:
+        data = json.loads(cleaned_text)
+    except json.JSONDecodeError as exc:
+        raise TranslationParseException(f"JSON 解析失败: {exc}") from exc
+
+    if not isinstance(data, dict) or set(data) != {"translations"}:
+        raise TranslationParseException(
+            '批量翻译 JSON 必须仅包含 "translations" 字段'
+        )
+    items = data["translations"]
+    if not isinstance(items, list):
+        raise TranslationParseException('"translations" 必须是列表')
+    if len(items) != expected_count:
+        raise TranslationParseException(
+            f"翻译数量不匹配: 期望 {expected_count}, 实际 {len(items)}"
+        )
+
+    translations: list[str] = []
+    for expected_id, item in enumerate(items, start=1):
+        if not isinstance(item, dict) or set(item) != {"id", "text"}:
+            raise TranslationParseException(
+                f"第 {expected_id} 个翻译条目必须仅包含 id 和 text"
+            )
+        item_id = item["id"]
+        if isinstance(item_id, bool) or not isinstance(item_id, int) or item_id != expected_id:
+            raise TranslationParseException(
+                f"第 {expected_id} 个翻译条目的 id 必须为 {expected_id}"
+            )
+        item_text = item["text"]
+        if not isinstance(item_text, str) or not item_text.strip():
+            raise TranslationParseException(
+                f"第 {expected_id} 个翻译条目的 text 必须是非空字符串"
+            )
+        translations.append(item_text.strip())
     return translations
 
 
-
-def _parse_batch_json_response(response_text: str) -> list:
-    """
-    解析 JSON 格式的批量翻译响应
-    
-    Args:
-        response_text: LLM 返回的响应文本 (应为 JSON 格式)
-    Returns:
-        list: 解析后的翻译列表
-        
-    Raises:
-        TranslationParseException: 当 JSON 解析失败时抛出，触发重试
-    """
-    import json
-    
-    # 1. 去除 <think>...</think> 标签及内容
-    cleaned_text = re.sub(r'(</think>)?<think>.*?</think>', '', response_text, flags=re.DOTALL)
-    
-    # 2. 尝试提取 JSON 部分（可能被包裹在 ```json ... ``` 中）
-    json_match = re.search(r'```json\s*([\s\S]*?)\s*```', cleaned_text)
-    if json_match:
-        json_str = json_match.group(1)
-    else:
-        # 尝试直接找到 JSON 对象
-        json_match = re.search(r'\{[\s\S]*\}', cleaned_text)
-        if json_match:
-            json_str = json_match.group(0)
-        else:
-            logger.warning("无法从响应中提取 JSON")
-            # 🔍 修改：不再降级，直接抛出异常
-            raise TranslationParseException("响应中未找到 JSON 格式的内容")
-    
-    # 3. 解析 JSON
-    try:
-        data = json.loads(json_str)
-    except json.JSONDecodeError as e:
-        logger.warning(f"JSON 解析失败: {e}")
-        # 🔍 修改：不再降级，直接抛出异常
-        raise TranslationParseException(f"JSON 解析失败: {e}")
-    
-    # 4. 提取翻译结果
-    translations = []
-    
-    if 'translations' not in data:
-        logger.warning("JSON 格式不正确，找不到 translations 字段")
-        # 🔍 修改：不再降级，直接抛出异常
-        raise TranslationParseException(
-            f"JSON 格式不正确，期望包含 'translations' 字段，实际收到: {list(data.keys())}"
-        )
-    items = data['translations']
-    
-    # 按 id 排序并提取文本
-    try:
-        for item in items:
-            item_id = item.get('id')
-            item_text = item.get('text', '')
-            translations.append((item_id, item_text))
-        
-        # 按 id 排序
-        translations.sort(key=lambda x: x[0] if x[0] else 0)
-        translations = [t[1] for t in translations]
-        
-    except Exception as e:
-        if is_memory_allocation_error(e):
-            raise
-        logger.warning(f"提取翻译结果失败: {e}")
-        # 🔍 修改：不再降级，直接抛出异常
-        raise TranslationParseException(f"从 JSON 提取翻译结果失败: {e}")
-    
-    logger.debug(f"JSON 模式解析成功: {len(translations)} 条翻译")
-    return translations
-
-
-def _translate_batch_with_llm(texts: list, model_provider: str,
-                               api_key: str, model_name: str, custom_prompt: str = None,
-                               custom_base_url: str = None,
-                               openai_options: OpenAICompatibleOptions | None = None,
-                               credential_version_id: str | None = None) -> list:
+def _translate_batch_with_llm(
+    texts: list[str],
+    model_provider: str,
+    api_key: str | None,
+    model_name: str | None,
+    custom_prompt: str | None = None,
+    custom_base_url: str | None = None,
+    openai_options: OpenAICompatibleOptions | None = None,
+    credential_version_id: str | None = None,
+) -> list[str]:
     """
     使用 LLM 进行批量翻译
     
@@ -553,6 +525,12 @@ def _translate_batch_with_llm(texts: list, model_provider: str,
     Returns:
         list: 翻译结果列表
     """
+    if not isinstance(texts, list) or any(not isinstance(text, str) for text in texts):
+        raise TypeError("批量翻译文本必须是字符串列表")
+    if not isinstance(model_provider, str) or not model_provider.strip():
+        raise ValueError("翻译服务商必须是非空字符串")
+    if custom_prompt is not None and not isinstance(custom_prompt, str):
+        raise TypeError("批量翻译提示词必须是字符串或 null")
     if not texts:
         return []
 
@@ -563,57 +541,23 @@ def _translate_batch_with_llm(texts: list, model_provider: str,
         default_business_retries=2,
     )
     use_json_format = effective_options.request.force_json_output
-    business_retries = effective_options.execution.business_retries
-    
     # 组装消息列表 (包含 system prompt、few-shot 示例、user prompt)
     messages, batch_size = _assemble_batch_prompt(texts, custom_prompt, use_json_format)
     
-    logger.info(f"批量翻译请求: {batch_size} 个文本片段 (消息数: {len(messages)})")
+    logger.info("批量翻译请求：%s 个文本片段（消息数=%s）", batch_size, len(messages))
     
     canonical_provider = normalize_provider_id(model_provider)
-
-    if canonical_provider == 'sakura':
-        last_error = None
-        for attempt in range(business_retries + 1):
-            try:
-                response_text = run_local_chat_completion(
-                    canonical_provider,
-                    model_name,
-                    messages,
-                    timeout=120.0,
-                )
-                translations = _parse_batch_translation_response(
-                    response_text,
-                    texts=texts,
-                    use_json_format=use_json_format,
-                )
-                logger.info(f"批量翻译成功: {len(texts)} 个文本片段")
-                return translations
-            except OpenAICompatibleBusinessRetryableError as error:
-                if is_memory_allocation_error(error):
-                    raise
-                last_error = error
-                logger.error("[尝试 %s/%s] 批量翻译解析失败: %s", attempt + 1, business_retries + 1, error)
-                if attempt < business_retries:
-                    time.sleep(1)
-                    continue
-                break
-            except Exception as error:
-                if is_memory_allocation_error(error):
-                    raise
-                last_error = error
-                logger.error("[尝试 %s/%s] 批量翻译失败: %s", attempt + 1, business_retries + 1, error, exc_info=True)
-                if attempt < business_retries:
-                    time.sleep(1)
-                    continue
-                break
-
-        if last_error is None:
-            raise RuntimeError("批量翻译失败且未提供错误原因")
-        raise last_error
-
-    if not is_openai_compatible_provider(canonical_provider):
+    manifest = get_provider_manifest(canonical_provider)
+    if not provider_supports_capability(canonical_provider, TRANSLATION_CAPABILITY):
+        raise ValueError(f"{manifest.display_name}不支持翻译")
+    if manifest.kind not in {"openai_compatible", "local"}:
         raise ValueError(f"不支持批量翻译的服务商: {canonical_provider}")
+    if manifest.requires_api_key and not api_key:
+        raise ValueError(f"{manifest.display_name}需要 API Key")
+    if manifest.requires_model and not model_name:
+        raise ValueError(f"{manifest.display_name}需要模型名称")
+    if manifest.requires_base_url and not custom_base_url:
+        raise ValueError(f"{manifest.display_name}需要 Base URL")
 
     result = _sync_executor.execute(
         UnifiedChatRequest(
@@ -622,7 +566,7 @@ def _translate_batch_with_llm(texts: list, model_provider: str,
             model=model_name,
             credential_version_id=credential_version_id,
             messages=messages,
-            base_url=custom_base_url,
+            base_url=custom_base_url or None,
             capability=TRANSLATION_CAPABILITY,
             openai_options=effective_options,
             runtime_options=_build_translation_runtime_options(
@@ -639,9 +583,7 @@ def _translate_batch_with_llm(texts: list, model_provider: str,
         ),
         logger_instance=logger,
     )
-    logger.info(f"批量翻译成功: {len(texts)} 个文本片段")
-    logger.info(f"批量翻译响应（前300字符）:\n{result.raw_content[:300]}...")
-    logger.info(f"解析后的翻译结果: {result.parsed}")
+    logger.info("批量翻译成功：%s 个文本片段", len(texts))
     return result.parsed
 
 
@@ -676,20 +618,28 @@ def translate_text_list(
     Returns:
         list: 包含翻译后文本的列表，顺序与输入列表一致。
     """
+    if not isinstance(texts, list) or any(not isinstance(text, str) for text in texts):
+        raise TypeError("待翻译内容必须是字符串列表")
+    if not isinstance(target_language, str) or not target_language.strip():
+        raise ValueError("目标语言必须是非空字符串")
+    if not isinstance(model_provider, str) or not model_provider.strip():
+        raise ValueError("翻译服务商必须是非空字符串")
+    if prompt_content is not None and not isinstance(prompt_content, str):
+        raise TypeError("翻译提示词必须是字符串或 null")
     if not texts:
         return []
     
     # 过滤空文本，记录索引
     non_empty_indices = []
     non_empty_texts = []
-    final_translations = [''] * len(texts)
+    final_translations = [""] * len(texts)
     
     for i, text in enumerate(texts):
         if text and text.strip():
             non_empty_indices.append(i)
             non_empty_texts.append(text)
         else:
-            final_translations[i] = ''
+            final_translations[i] = ""
     
     if not non_empty_texts:
         return final_translations
@@ -703,57 +653,29 @@ def translate_text_list(
     rpm_limit_translation = effective_options.execution.rpm_limit
 
     canonical_provider = normalize_provider_id(model_provider)
-    logger.info(f"开始批量翻译 {len(non_empty_texts)} 个文本片段 (使用 {canonical_provider}, rpm: {rpm_limit_translation if rpm_limit_translation > 0 else '无'})...")
-    
-    # 检查是否为支持批量翻译的提供商 (LLM)
-    supports_batch_translation = (
-        provider_supports_capability(canonical_provider, TRANSLATION_CAPABILITY)
-        and get_provider_manifest(canonical_provider).kind != 'adapter'
+    manifest = get_provider_manifest(canonical_provider)
+    if not provider_supports_capability(canonical_provider, TRANSLATION_CAPABILITY):
+        raise ValueError(f"{manifest.display_name}不支持翻译")
+    logger.info(
+        "开始批量翻译 %s 个文本片段（服务商=%s, rpm=%s）",
+        len(non_empty_texts),
+        canonical_provider,
+        rpm_limit_translation if rpm_limit_translation > 0 else "无",
     )
 
-    if supports_batch_translation:
-        # 使用批量翻译
-        # 将文本按字符数分批，避免超过 token 限制
-        max_chars = constants.BATCH_TRANSLATE_MAX_CHARS_PER_REQUEST
-        batches = []
-        current_batch = []
-        current_chars = 0
-        
-        for text in non_empty_texts:
-            text_len = len(text) + 10  # +10 用于 <|n|> 标记
-            if current_chars + text_len > max_chars and current_batch:
-                batches.append(current_batch)
-                current_batch = []
-                current_chars = 0
-            current_batch.append(text)
-            current_chars += text_len
-        
-        if current_batch:
-            batches.append(current_batch)
-        
-        logger.info(f"文本已分为 {len(batches)} 个批次进行翻译")
-        
-        # 翻译每个批次
-        all_translations = []
-        for batch_idx, batch in enumerate(batches):
-            logger.info(f"正在翻译批次 {batch_idx + 1}/{len(batches)} ({len(batch)} 个文本)...")
-            
-            batch_translations = _translate_batch_with_llm(
-                batch,
-                canonical_provider,
-                api_key,
-                model_name,
-                custom_prompt=prompt_content,
-                custom_base_url=custom_base_url,
-                openai_options=effective_options,
-                credential_version_id=credential_version_id,
-            )
-            all_translations.extend(batch_translations)
-            
-            # 如果有多个批次，在批次之间稍微等待
-            if len(batches) > 1 and batch_idx < len(batches) - 1:
-                time.sleep(0.5)
+    supports_batch_translation = manifest.kind != "adapter"
 
+    if supports_batch_translation:
+        all_translations = _translate_batch_with_llm(
+            non_empty_texts,
+            canonical_provider,
+            api_key,
+            model_name,
+            custom_prompt=prompt_content,
+            custom_base_url=custom_base_url,
+            openai_options=effective_options,
+            credential_version_id=credential_version_id,
+        )
         if len(all_translations) != len(non_empty_indices):
             raise RuntimeError(
                 "批量翻译结果数量不匹配: "
@@ -761,13 +683,13 @@ def translate_text_list(
             )
         
         # 将翻译结果写回最终列表
-        for i, trans in enumerate(all_translations):
-            final_translations[non_empty_indices[i]] = trans
-        
+        for index, translated in enumerate(all_translations):
+            final_translations[non_empty_indices[index]] = translated
+
     else:
         # 非 LLM 提供商 (如百度翻译、有道翻译)，使用原有的逐个翻译逻辑
-        logger.info(f"提供商 {canonical_provider} 不支持批量翻译，使用逐个翻译模式")
-        for i, text in enumerate(non_empty_texts):
+        logger.info("服务商 %s 使用逐条翻译", canonical_provider)
+        for index, text in enumerate(non_empty_texts):
             translated = translate_single_text(
                 text,
                 target_language,
@@ -779,7 +701,8 @@ def translate_text_list(
                 openai_options=effective_options,
                 credential_version_id=credential_version_id,
             )
-            final_translations[non_empty_indices[i]] = translated
-    
-    logger.info(f"批量翻译完成。成功 {len([t for t in final_translations if t])} / {len(texts)}")
+            final_translations[non_empty_indices[index]] = translated
+
+    completed_count = sum(1 for translated in final_translations if translated)
+    logger.info("批量翻译完成：成功 %s/%s", completed_count, len(texts))
     return final_translations

@@ -15,7 +15,7 @@ const taskCenterMocks = vi.hoisted(() => ({
 }))
 
 const contentMocks = vi.hoisted(() => ({
-  getPageSummary: vi.fn(),
+  getPageRenderStatus: vi.fn(),
 }))
 
 vi.mock('@/services/pageDocumentPersistence', () => ({
@@ -24,7 +24,7 @@ vi.mock('@/services/pageDocumentPersistence', () => ({
 }))
 
 vi.mock('@/api/v2/content', () => ({
-  getPageSummary: contentMocks.getPageSummary,
+  getPageRenderStatus: contentMocks.getPageRenderStatus,
 }))
 
 vi.mock('@/api/v2/translation', () => ({
@@ -50,23 +50,12 @@ describe('useTextStyleSync page defaults', () => {
     translationMocks.createChapterStyleApplyJob.mockResolvedValue({ jobIds: ['job-1'] })
     taskCenterMocks.refresh.mockReset()
     taskCenterMocks.refresh.mockResolvedValue(undefined)
-    contentMocks.getPageSummary.mockReset()
-    contentMocks.getPageSummary.mockResolvedValue({
-      id: '00000000-0000-0000-0000-000000000001',
-      chapterId: '00000000-0000-0000-0000-000000000002',
-      ordinal: 1,
-      logicalSourcePath: 'page.png',
-      sourceRevision: 1,
-      documentRevision: 3,
+    contentMocks.getPageRenderStatus.mockReset()
+    contentMocks.getPageRenderStatus.mockResolvedValue({
+      pageId: '00000000-0000-0000-0000-000000000001',
       renderedRevision: 3,
       renderStatus: 'ready',
-      detectionState: 'pending',
-      sourceUrl: '/source',
-      thumbnailSourceUrl: '/thumbnail/source',
-      cleanUrl: '/clean',
       translatedUrl: '/translated?revision=3',
-      width: 1200,
-      height: 1800,
     })
   })
 
@@ -82,7 +71,6 @@ describe('useTextStyleSync page defaults', () => {
       cleanAssetUrl: null,
       bubbleStates: [],
       translationStatus: 'pending',
-      translationFailed: false,
       hasUnsavedChanges: false,
     }])
 
@@ -125,7 +113,6 @@ describe('useTextStyleSync page defaults', () => {
       cleanAssetUrl: null,
       bubbleStates: [],
       translationStatus: 'pending',
-      translationFailed: false,
       hasUnsavedChanges: false,
     }])
 
@@ -158,9 +145,11 @@ describe('useTextStyleSync page defaults', () => {
       sourceAssetUrl: '/source',
       translatedAssetUrl: '/translated',
       cleanAssetUrl: '/clean',
+      textColor: '#123456',
+      fillColor: '#abcdef',
+      useAutoTextColor: true,
       bubbleStates: [],
       translationStatus: 'completed',
-      translationFailed: false,
       hasUnsavedChanges: false,
     }])
 
@@ -197,7 +186,6 @@ describe('useTextStyleSync page defaults', () => {
       cleanAssetUrl: null,
       bubbleStates: [],
       translationStatus: 'pending',
-      translationFailed: false,
       hasUnsavedChanges: false,
     }])
     persistenceMocks.flushPageDocument.mockImplementation(async () => {

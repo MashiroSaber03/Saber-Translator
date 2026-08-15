@@ -13,9 +13,22 @@ if PROJECT_ROOT not in sys.path:
 
 
 from src.core import detection as detection_module
-from src.core.detector.aux_yolo import merge_aux_yolo_lines, maybe_merge_with_aux_yolo
+from src.core.detector import registry as detector_registry
+from src.core.detector.aux_yolo import (
+    merge_aux_yolo_lines,
+    maybe_merge_with_aux_yolo,
+    normalize_aux_overlap_threshold,
+)
 from src.core.detector.data_types import DetectionResult, TextBlock, TextLine
+from src.core.detector.base import BaseTextDetector
+from src.core.detector.backends.default_backend import DefaultBackend
+from src.core.detector.textline_merge import build_text_block_from_lines
 from src.core.large_image_detection import LargeImageDetectorWrapper
+from src.utils.image_rearrange import (
+    PatchInfo,
+    RearrangeContext,
+    merge_masks_from_patches,
+)
 
 
 def make_line(x1: int, y1: int, x2: int, y2: int) -> TextLine:
@@ -31,6 +44,9 @@ def make_line(x1: int, y1: int, x2: int, y2: int) -> TextLine:
 class AuxYoloDetectionTests(unittest.TestCase):
     def setUp(self) -> None:
         self.image = Image.new("RGB", (240, 160), "white")
+
+    def tearDown(self) -> None:
+        self.image.close()
 
     def test_merge_aux_detection_adds_non_overlapping_box(self) -> None:
         main_lines = [make_line(10, 20, 40, 60)]
@@ -90,11 +106,14 @@ class AuxYoloDetectionTests(unittest.TestCase):
         self.assertEqual(len(merged), 1)
         self.assertEqual(merged[0].xyxy, main_line.xyxy)
 
-    def test_aux_detection_falls_back_when_aux_detect_raises(self) -> None:
+    def test_aux_detection_propagates_aux_detector_failure(self) -> None:
         main_line = make_line(10, 20, 40, 60)
 
-        with mock.patch("src.core.detector.aux_yolo.detect_aux_yolo_lines", side_effect=RuntimeError("aux failed")):
-            merged = maybe_merge_with_aux_yolo(
+        with mock.patch(
+            "src.core.detector.aux_yolo.detect_aux_yolo_lines",
+            side_effect=RuntimeError("aux failed"),
+        ), self.assertRaisesRegex(RuntimeError, "aux failed"):
+            maybe_merge_with_aux_yolo(
                 np.zeros((20, 20, 3), dtype=np.uint8),
                 [main_line],
                 detector_type="default",
@@ -102,9 +121,6 @@ class AuxYoloDetectionTests(unittest.TestCase):
                 conf_threshold=0.4,
                 overlap_threshold=0.1,
             )
-
-        self.assertEqual(len(merged), 1)
-        self.assertEqual(merged[0].xyxy, main_line.xyxy)
 
     def test_aux_detection_can_recover_from_empty_main_result(self) -> None:
         aux_line = make_line(80, 20, 120, 60)
@@ -119,6 +135,11 @@ class AuxYoloDetectionTests(unittest.TestCase):
 
         self.assertEqual(len(merged), 1)
         self.assertEqual(merged[0].xyxy, aux_line.xyxy)
+
+    def test_aux_threshold_rejects_invalid_values_instead_of_clamping(self) -> None:
+        for value in (-0.1, 1.1, float("nan"), "0.5", True):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                normalize_aux_overlap_threshold(value)
 
     def test_detect_with_optional_saber_refinement_runs_aux_before_saber(self) -> None:
         main_result = DetectionResult(
@@ -166,8 +187,20 @@ class AuxYoloDetectionTests(unittest.TestCase):
         fake_detector._detect_raw.return_value = ([], None)
         wrapper = LargeImageDetectorWrapper(detector=fake_detector, target_size=1536)
 
-        context = mock.Mock()
-        context.is_rearranged = True
+        context = RearrangeContext(
+            is_rearranged=True,
+            original_height=120,
+            original_width=120,
+            patches_info=[
+                PatchInfo(
+                    top=0,
+                    bottom=120,
+                    down_scale_ratio=1.0,
+                    pad_height=0,
+                    pad_width=0,
+                )
+            ],
+        )
 
         with mock.patch("src.core.large_image_detection.slice_image_for_detection", return_value=([np.zeros((64, 64, 3), dtype=np.uint8)], context)), \
              mock.patch("src.core.large_image_detection.transform_textlines_to_original", return_value=[line]), \
@@ -178,11 +211,6 @@ class AuxYoloDetectionTests(unittest.TestCase):
                 120,
                 merge_lines=False,
                 edge_ratio_threshold=0.0,
-                expand_ratio=0.0,
-                expand_top=0.0,
-                expand_bottom=0.0,
-                expand_left=0.0,
-                expand_right=0.0,
                 enable_aux_yolo_detection=True,
             )
 
@@ -199,8 +227,20 @@ class AuxYoloDetectionTests(unittest.TestCase):
             np.zeros((64, 64), dtype=np.uint8),
         )
         wrapper = LargeImageDetectorWrapper(detector=fake_detector, target_size=1536)
-        context = mock.Mock()
-        context.is_rearranged = True
+        context = RearrangeContext(
+            is_rearranged=True,
+            original_height=120,
+            original_width=120,
+            patches_info=[
+                PatchInfo(
+                    top=0,
+                    bottom=120,
+                    down_scale_ratio=1.0,
+                    pad_height=0,
+                    pad_width=0,
+                )
+            ],
+        )
 
         with mock.patch(
             "src.core.large_image_detection.slice_image_for_detection",
@@ -218,12 +258,121 @@ class AuxYoloDetectionTests(unittest.TestCase):
                 120,
                 merge_lines=False,
                 edge_ratio_threshold=0.0,
-                expand_ratio=0.0,
-                expand_top=0.0,
-                expand_bottom=0.0,
-                expand_left=0.0,
-                expand_right=0.0,
             )
+
+    def test_large_image_registry_propagates_wrapper_failure(self) -> None:
+        fake_detector = mock.Mock()
+        with mock.patch.object(
+            detector_registry,
+            "get_detector",
+            return_value=fake_detector,
+        ), mock.patch(
+            "src.core.large_image_detection.LargeImageDetectorWrapper.detect",
+            side_effect=RuntimeError("slice failed"),
+        ), self.assertRaisesRegex(RuntimeError, "slice failed"):
+            detector_registry.detect(
+                self.image,
+                enable_large_image=True,
+            )
+
+    def test_mask_merge_preserves_patch_index_and_uint8_range(self) -> None:
+        context = RearrangeContext(
+            is_rearranged=True,
+            original_height=6,
+            original_width=2,
+            patches_info=[
+                PatchInfo(0, 2, 1.0, 0, 0),
+                PatchInfo(2, 4, 1.0, 0, 0),
+                PatchInfo(4, 6, 1.0, 0, 0),
+            ],
+        )
+
+        merged = merge_masks_from_patches(
+            [
+                np.full((2, 2), 64, dtype=np.uint8),
+                None,
+                np.full((2, 2), 128, dtype=np.uint8),
+            ],
+            context,
+        )
+
+        self.assertIsNotNone(merged)
+        np.testing.assert_array_equal(merged[:2], np.full((2, 2), 64, dtype=np.uint8))
+        np.testing.assert_array_equal(merged[2:4], np.zeros((2, 2), dtype=np.uint8))
+        np.testing.assert_array_equal(merged[4:], np.full((2, 2), 128, dtype=np.uint8))
+
+    def test_raw_detector_contract_rejects_misaligned_mask(self) -> None:
+        with self.assertRaisesRegex(ValueError, "掩码尺寸"):
+            BaseTextDetector._validate_raw_result(
+                ([make_line(0, 0, 4, 4)], np.zeros((3, 4), dtype=np.uint8)),
+                4,
+                4,
+            )
+
+    def test_textline_clip_refreshes_cached_geometry(self) -> None:
+        line = make_line(-100, 0, 100, 10)
+        self.assertEqual(line.direction, "h")
+        _ = line.xyxy
+
+        line.clip(5, 10)
+
+        self.assertEqual(line.xyxy, (0, 0, 5, 10))
+        self.assertEqual(line.direction, "v")
+
+    def test_zero_confidence_line_keeps_zero_block_confidence(self) -> None:
+        line = make_line(0, 0, 10, 10)
+        line.confidence = 0.0
+
+        block = build_text_block_from_lines([line])
+
+        self.assertIsNotNone(block)
+        self.assertEqual(block.prob, 0.0)
+
+    def test_default_detector_applies_box_confidence_threshold(self) -> None:
+        class FakeTensor:
+            def __init__(self, value: np.ndarray) -> None:
+                self.value = value
+
+            def sigmoid(self):
+                return self
+
+            def cpu(self):
+                return self
+
+            def numpy(self):
+                return self.value
+
+        backend = object.__new__(DefaultBackend)
+        backend.model = mock.Mock(
+            return_value=(
+                FakeTensor(np.zeros((1, 2, 2, 2), dtype=np.float32)),
+                FakeTensor(np.zeros((1, 1, 4, 4), dtype=np.float32)),
+            )
+        )
+        backend.seg_rep = mock.Mock(
+            return_value=(
+                [
+                    np.array(
+                        [
+                            [[0, 0], [2, 0], [2, 2], [0, 2]],
+                            [[1, 1], [3, 1], [3, 3], [1, 3]],
+                        ],
+                        dtype=np.int64,
+                    )
+                ],
+                [np.array([0.69, 0.71], dtype=np.float32)],
+            )
+        )
+        backend.box_threshold = 0.7
+        backend.device = "cpu"
+        backend._preprocess_image = mock.Mock(
+            return_value=(np.zeros((4, 4, 3), dtype=np.uint8), 1.0, 0, 0)
+        )
+
+        lines, _mask = backend._detect_raw(np.zeros((4, 4, 3), dtype=np.uint8))
+
+        self.assertEqual(len(lines), 1)
+        self.assertAlmostEqual(lines[0].confidence, 0.71, places=2)
 
 
 if __name__ == "__main__":

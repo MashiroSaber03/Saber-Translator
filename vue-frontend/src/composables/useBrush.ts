@@ -35,10 +35,6 @@ export interface BrushSurface {
 }
 
 export interface BrushBounds {
-  x1: number
-  y1: number
-  x2: number
-  y2: number
   path: BrushPosition[]
   radius: number
 }
@@ -60,6 +56,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
   const brushSize = ref(BRUSH_DEFAULT_SIZE)
   const isBrushKeyDown = ref(false)
   const isBrushPainting = ref(false)
+  const isBrushSubmitting = ref(false)
   const brushPath = ref<BrushPosition[]>([])
   const mouseX = ref(0)
   const mouseY = ref(0)
@@ -67,17 +64,19 @@ export function useBrush(callbacks?: BrushCallbacks) {
   let activeSurface: BrushSurface | null = null
   let brushCanvas: HTMLCanvasElement | null = null
   let brushCtx: CanvasRenderingContext2D | null = null
+  let brushCanvasScaleX = 1
+  let brushCanvasScaleY = 1
   let isOwnerDisposed = false
 
   const isActive = computed(() => brushMode.value !== null)
   const brushColor = computed(() => {
     if (brushMode.value === 'repair') {
-      return { fill: 'rgba(76, 175, 80, 0.4)', border: '#4CAF50' }
+      return 'rgba(76, 175, 80, 0.4)'
     }
     if (brushMode.value === 'restore') {
-      return { fill: 'rgba(33, 150, 243, 0.4)', border: '#2196F3' }
+      return 'rgba(33, 150, 243, 0.4)'
     }
-    return { fill: 'transparent', border: 'transparent' }
+    return 'transparent'
   })
 
   function enterBrushMode(mode: 'repair' | 'restore'): void {
@@ -111,18 +110,17 @@ export function useBrush(callbacks?: BrushCallbacks) {
   }
 
   function startBrushPainting(event: MouseEvent, surface: BrushSurface): void {
-    if (!isActive.value || event.button !== 0) return
+    if (!isActive.value || isBrushSubmitting.value || event.button !== 0) return
+    const position = getBrushPositionInImage(event, surface)
+    if (!position) return
     event.preventDefault()
     event.stopPropagation()
     isBrushPainting.value = true
     activeSurface = surface
     brushPath.value = []
-    const position = getBrushPositionInImage(event, surface)
-    if (position) {
-      brushPath.value.push(position)
-      createBrushCanvas(surface)
-      drawBrushStroke(position)
-    }
+    brushPath.value.push(position)
+    createBrushCanvas(surface)
+    drawBrushStroke(position)
   }
 
   function continueBrushPainting(event: MouseEvent): void {
@@ -142,8 +140,8 @@ export function useBrush(callbacks?: BrushCallbacks) {
     const image = imageStore.currentImage
     const bounds = getBrushPathBounds()
     const mode = brushMode.value
-    const width = image?.width || activeSurface?.image.naturalWidth || 0
-    const height = image?.height || activeSurface?.image.naturalHeight || 0
+    const width = Math.round(image?.width || activeSurface?.image.naturalWidth || 0)
+    const height = Math.round(image?.height || activeSurface?.image.naturalHeight || 0)
     removeBrushCanvas()
     brushPath.value = []
     activeSurface = null
@@ -156,18 +154,24 @@ export function useBrush(callbacks?: BrushCallbacks) {
       || height <= 0
     ) return
 
-    void submitMaskRepair(
+    isBrushSubmitting.value = true
+    const submission = submitMaskRepair(
       image.id,
       image.documentRevision,
       width,
       height,
       bounds,
       mode,
-    ).catch(error => {
-      if (!isOwnerDisposed && imageStore.currentImage?.id === image.id) {
-        showToast(error instanceof Error ? error.message : '画笔修复失败', 'error')
-      }
-    })
+    )
+    void submission
+      .catch(error => {
+        if (!isOwnerDisposed && imageStore.currentImage?.id === image.id) {
+          showToast(error instanceof Error ? error.message : '画笔修复失败', 'error')
+        }
+      })
+      .finally(() => {
+        isBrushSubmitting.value = false
+      })
   }
 
   async function submitMaskRepair(
@@ -187,6 +191,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
     if (
       !current
       || current.id !== pageId
+      || !current.chapterId
       || current.documentRevision === undefined
     ) {
       throw new Error('当前页面已切换')
@@ -199,17 +204,29 @@ export function useBrush(callbacks?: BrushCallbacks) {
       ? 'restore_source'
       : settings.inpaintMethod
     const mask = await createBinaryMask(width, height, bounds)
-    const accepted = await createMaskRepair(pageId, mask, {
-      baseRevision: current.documentRevision,
-      fillColor: mode === 'restore' ? undefined : settings.fillColor,
-      method,
-    })
+    const accepted = await createMaskRepair(
+      pageId,
+      mask,
+      method === 'solid'
+        ? {
+            baseRevision: current.documentRevision,
+            fillColor: settings.fillColor,
+            method,
+          }
+        : {
+            baseRevision: current.documentRevision,
+            method,
+          },
+    )
     await waitForOperation(accepted.operationId, {
       signal: abortController.signal,
     })
     if (isOwnerDisposed || imageStore.currentImage?.id !== pageId) return
     const document = await getPageDocument(pageId, abortController.signal)
     if (isOwnerDisposed || imageStore.currentImage?.id !== pageId) return
+    if (document.pageId !== pageId || document.chapterId !== current.chapterId) {
+      throw new Error(`页面 ${pageId} 的后端文档身份不匹配`)
+    }
     const bubbles = registerPageDocument(document)
     imageStore.updateCurrentImage({
       bubbleStates: bubbles,
@@ -224,13 +241,14 @@ export function useBrush(callbacks?: BrushCallbacks) {
     event: MouseEvent,
     surface: BrushSurface | null,
   ): BrushPosition | null {
-    if (!surface || !surface.image.naturalWidth) return null
+    if (!surface || !surface.image.naturalWidth || !surface.image.naturalHeight) return null
     const rect = surface.wrapper.getBoundingClientRect()
     const transform = window.getComputedStyle(surface.wrapper).transform
     let scale = 1
     if (transform && transform !== 'none') {
       scale = new DOMMatrix(transform).a
     }
+    if (!Number.isFinite(scale) || scale <= 0) return null
     const x = (event.clientX - rect.left) / scale
     const y = (event.clientY - rect.top) / scale
     if (
@@ -246,21 +264,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
     if (brushPath.value.length === 0) return null
     const scale = brushPath.value[0]?.scale || 1
     const radius = brushSize.value / 2 / scale
-    let minX = Infinity
-    let minY = Infinity
-    let maxX = -Infinity
-    let maxY = -Infinity
-    for (const position of brushPath.value) {
-      minX = Math.min(minX, position.x - radius)
-      minY = Math.min(minY, position.y - radius)
-      maxX = Math.max(maxX, position.x + radius)
-      maxY = Math.max(maxY, position.y + radius)
-    }
     return {
-      x1: Math.max(0, Math.floor(minX)),
-      y1: Math.max(0, Math.floor(minY)),
-      x2: Math.ceil(maxX),
-      y2: Math.ceil(maxY),
       path: [...brushPath.value],
       radius,
     }
@@ -269,8 +273,18 @@ export function useBrush(callbacks?: BrushCallbacks) {
   function createBrushCanvas(surface: BrushSurface): void {
     removeBrushCanvas()
     const canvas = document.createElement('canvas')
-    canvas.width = surface.image.naturalWidth
-    canvas.height = surface.image.naturalHeight
+    const naturalWidth = surface.image.naturalWidth
+    const naturalHeight = surface.image.naturalHeight
+    const pixelRatio = Math.max(1, window.devicePixelRatio || 1)
+    const previewScale = Math.min(
+      1,
+      (surface.viewport.clientWidth * pixelRatio) / naturalWidth,
+      (surface.viewport.clientHeight * pixelRatio) / naturalHeight,
+    )
+    canvas.width = Math.max(1, Math.round(naturalWidth * previewScale))
+    canvas.height = Math.max(1, Math.round(naturalHeight * previewScale))
+    brushCanvasScaleX = canvas.width / naturalWidth
+    brushCanvasScaleY = canvas.height / naturalHeight
     canvas.setAttribute('aria-hidden', 'true')
     Object.assign(canvas.style, {
       position: 'absolute',
@@ -290,14 +304,24 @@ export function useBrush(callbacks?: BrushCallbacks) {
     brushCanvas?.remove()
     brushCanvas = null
     brushCtx = null
+    brushCanvasScaleX = 1
+    brushCanvasScaleY = 1
   }
 
   function drawBrushStroke(position: BrushPosition): void {
     if (!brushCtx) return
     const radius = brushSize.value / 2 / (position.scale || 1)
     brushCtx.beginPath()
-    brushCtx.arc(position.x, position.y, radius, 0, Math.PI * 2)
-    brushCtx.fillStyle = brushColor.value.fill
+    brushCtx.ellipse(
+      position.x * brushCanvasScaleX,
+      position.y * brushCanvasScaleY,
+      radius * brushCanvasScaleX,
+      radius * brushCanvasScaleY,
+      0,
+      0,
+      Math.PI * 2,
+    )
+    brushCtx.fillStyle = brushColor.value
     brushCtx.fill()
   }
 
@@ -323,6 +347,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
     isBrushPainting.value = false
     brushMode.value = null
     isBrushKeyDown.value = false
+    isBrushSubmitting.value = false
     brushPath.value = []
     activeSurface = null
     removeBrushCanvas()
@@ -332,6 +357,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
     brushMode,
     brushSize,
     isBrushKeyDown,
+    isBrushSubmitting,
     mouseX,
     mouseY,
     exitBrushMode,

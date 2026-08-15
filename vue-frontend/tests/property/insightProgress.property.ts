@@ -25,7 +25,6 @@ const analysisStatusArbitrary = fc.constantFrom<AnalysisStatus>(
   'completed_with_errors',
   'failed',
   'cancelled',
-  'error',
 )
 
 const activeStatuses = new Set<AnalysisStatus>([

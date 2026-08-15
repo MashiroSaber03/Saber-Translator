@@ -1,6 +1,6 @@
 import { computed, getCurrentInstance, onUnmounted, ref, watch } from 'vue'
 
-import { getPageSummary } from '@/api/v2/content'
+import { getPageDocument, getPageRenderStatus } from '@/api/v2/content'
 import { createChapterStyleApplyJob } from '@/api/v2/translation'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
@@ -9,8 +9,11 @@ import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import {
   flushPageDocument,
   queuePageDocumentMutation,
+  registerPageDocument,
 } from '@/services/pageDocumentPersistence'
 import { showToast } from '@/utils/toast'
+import { parseCompleteTextStyleSettings } from '@/defaults/textStyleDefaults'
+import type { TextStyleMutationField, TextStyleSettings } from '@/types/settings'
 
 export interface ApplySettingsOptions {
   fontSize: boolean
@@ -25,7 +28,7 @@ export interface ApplySettingsOptions {
   textAlign: boolean
 }
 
-const RENDERED_STYLE_FIELDS = new Set([
+const RENDERED_STYLE_FIELDS = new Set<TextStyleMutationField>([
   'fontSize',
   'fontFamily',
   'layoutDirection',
@@ -36,6 +39,9 @@ const RENDERED_STYLE_FIELDS = new Set([
   'lineSpacing',
   'textAlign',
 ])
+const RENDER_STATUS_POLL_MS = 500
+const RENDER_STATUS_TIMEOUT_MS = 30_000
+const RENDER_STATUS_RETRY_LIMIT = 5
 
 export function useTextStyleSync() {
   const imageStore = useImageStore()
@@ -44,11 +50,15 @@ export function useTextStyleSync() {
   const taskCenterStore = useTaskCenterStore()
   const currentImage = computed(() => imageStore.currentImage)
   const isSyncingTextStyle = ref(false)
-  let renderedAssetRefreshToken = 0
+  const isApplyingToAll = ref(false)
+  const renderStatusControllers = new Map<string, AbortController>()
 
   if (getCurrentInstance()) {
     onUnmounted(() => {
-      renderedAssetRefreshToken += 1
+      for (const controller of renderStatusControllers.values()) {
+        controller.abort()
+      }
+      renderStatusControllers.clear()
     })
   }
 
@@ -102,6 +112,7 @@ export function useTextStyleSync() {
         isSyncingTextStyle.value = false
       }
     },
+    { immediate: true },
   )
 
   watch(
@@ -139,56 +150,148 @@ export function useTextStyleSync() {
         },
       )
     } catch (error) {
-      showToast(
-        `文字样式写入后端失败：${error instanceof Error ? error.message : '未知错误'}`,
-        'error',
-      )
+      const failure = error instanceof Error ? error.message : '未知错误'
+      try {
+        await reloadAuthoritativePage(image.id, image.chapterId)
+        showToast(`文字样式写入后端失败，已恢复后端版本：${failure}`, 'error')
+      } catch (reloadError) {
+        showToast(
+          `文字样式写入后端失败：${failure}；重新加载失败：${
+            reloadError instanceof Error ? reloadError.message : '未知错误'
+          }`,
+          'error',
+        )
+      }
       return
     }
     const committed = imageStore.images.find(candidate => candidate.id === image.id)
     if (!expectsRender || !image.translatedAssetUrl || !committed?.documentRevision) return
+    imageStore.updateImageByIndex(
+      imageStore.images.findIndex(candidate => candidate.id === image.id),
+      { translationStatus: 'processing' },
+    )
     void refreshRenderedAsset(image.id, committed.documentRevision)
   }
 
-  async function refreshRenderedAsset(pageId: string, minimumRevision: number): Promise<void> {
-    const token = ++renderedAssetRefreshToken
-    for (let attempt = 0; attempt < 50; attempt += 1) {
-      await new Promise(resolve => setTimeout(resolve, 200))
-      if (token !== renderedAssetRefreshToken) return
-      let summary
-      try {
-        summary = await getPageSummary(pageId)
-      } catch {
-        continue
-      }
-      if (token !== renderedAssetRefreshToken) return
-      if (
-        summary.renderStatus !== 'ready'
-        || (summary.renderedRevision ?? 0) < minimumRevision
-      ) continue
-      const index = imageStore.images.findIndex(image => image.id === pageId)
-      if (index >= 0) {
-        imageStore.updateImageByIndex(index, {
-          renderedRevision: summary.renderedRevision ?? undefined,
-          translatedAssetUrl: summary.translatedUrl,
-          translationStatus: 'completed',
-        })
-      }
-      return
+  async function reloadAuthoritativePage(
+    pageId: string,
+    expectedChapterId: string | undefined,
+  ): Promise<void> {
+    const document = await getPageDocument(pageId)
+    if (
+      document.pageId !== pageId
+      || !expectedChapterId
+      || document.chapterId !== expectedChapterId
+    ) {
+      throw new Error(`页面 ${pageId} 的后端文档身份不匹配`)
+    }
+    const bubbles = registerPageDocument(document)
+    if (imageStore.currentImage?.id !== pageId) return
+    const pageTextStyle = parseCompleteTextStyleSettings({
+      ...document.pageStyleDefaults,
+      ...(document.defaultFontId ? { fontFamily: document.defaultFontId } : {}),
+    })
+    isSyncingTextStyle.value = true
+    try {
+      imageStore.updateCurrentImage({
+        ...pageTextStyle,
+        bubbleStates: bubbles,
+        documentRevision: document.documentRevision,
+        hasUnsavedChanges: false,
+      })
+      settingsStore.updateTextStyle(pageTextStyle)
+      bubbleStore.setBubbles(bubbles, true)
+      bubbleStore.saveAsInitial()
+    } finally {
+      isSyncingTextStyle.value = false
     }
   }
 
-  async function handleTextStyleChanged(settingKey: string, newValue: unknown) {
+  async function refreshRenderedAsset(pageId: string, minimumRevision: number): Promise<void> {
+    renderStatusControllers.get(pageId)?.abort()
+    const controller = new AbortController()
+    renderStatusControllers.set(pageId, controller)
+    const deadline = Date.now() + RENDER_STATUS_TIMEOUT_MS
+    let consecutiveReadFailures = 0
+    try {
+      while (!controller.signal.aborted && Date.now() < deadline) {
+        let status
+        try {
+          status = await getPageRenderStatus(pageId, controller.signal)
+          if (controller.signal.aborted) return
+        } catch (error) {
+          if (controller.signal.aborted) return
+          consecutiveReadFailures += 1
+          if (consecutiveReadFailures >= RENDER_STATUS_RETRY_LIMIT) {
+            showToast(
+              `文字样式已保存，但无法读取后端渲染状态：${
+                error instanceof Error ? error.message : '未知错误'
+              }`,
+              'error',
+            )
+            return
+          }
+          await new Promise(resolve => setTimeout(resolve, RENDER_STATUS_POLL_MS))
+          continue
+        }
+        consecutiveReadFailures = 0
+        if (status.pageId !== pageId) {
+          showToast(`页面 ${pageId} 的渲染状态身份不匹配`, 'error')
+          return
+        }
+        if (
+          status.renderStatus === 'render_failed'
+          || status.renderStatus === 'repair_failed'
+        ) {
+          const index = imageStore.images.findIndex(image => image.id === pageId)
+          if (index >= 0) imageStore.setTranslationStatus(index, 'failed')
+          showToast('文字样式已保存，但后端重渲染失败', 'error')
+          return
+        }
+        if (
+          status.renderStatus !== 'ready'
+          || (status.renderedRevision ?? 0) < minimumRevision
+        ) {
+          await new Promise(resolve => setTimeout(resolve, RENDER_STATUS_POLL_MS))
+          continue
+        }
+        const index = imageStore.images.findIndex(image => image.id === pageId)
+        if (index >= 0) {
+          imageStore.updateImageByIndex(index, {
+            renderedRevision: status.renderedRevision ?? undefined,
+            translatedAssetUrl: status.translatedUrl,
+            translationStatus: 'completed',
+          })
+        }
+        return
+      }
+      if (!controller.signal.aborted) {
+        showToast('文字样式已保存，后端仍在生成最新预览', 'info')
+      }
+    } finally {
+      if (renderStatusControllers.get(pageId) === controller) {
+        renderStatusControllers.delete(pageId)
+      }
+    }
+  }
+
+  async function handleTextStyleChanged<Field extends TextStyleMutationField>(
+    settingKey: Field,
+    newValue: TextStyleSettings[Field],
+  ) {
     const image = currentImage.value
     if (!image) return
     imageStore.updateCurrentImage({
       [settingKey]: newValue,
       hasUnsavedChanges: true,
     })
+    const defaultFontId = settingKey === 'fontFamily' && typeof newValue === 'string'
+      ? newValue
+      : undefined
     await persistStyle(
       settingKey === 'fontFamily' ? {} : { [settingKey]: newValue },
       settingKey === 'inpaintMethod' ? [] : [settingKey],
-      settingKey === 'fontFamily' ? String(newValue) : undefined,
+      defaultFontId,
       RENDERED_STYLE_FIELDS.has(settingKey),
     )
   }
@@ -236,6 +339,7 @@ export function useTextStyleSync() {
   }
 
   async function handleApplyToAll(options: ApplySettingsOptions) {
+    if (isApplyingToAll.value) return
     const selectedFields = Object.entries(options)
       .filter(([, selected]) => selected)
       .map(([field]) => field)
@@ -248,6 +352,7 @@ export function useTextStyleSync() {
       showToast('当前页尚未写入后端章节', 'warning')
       return
     }
+    isApplyingToAll.value = true
     try {
       await flushPageDocument(image.id)
       const committed = imageStore.images.find(candidate => candidate.id === image.id)
@@ -259,13 +364,15 @@ export function useTextStyleSync() {
         sourceDocumentRevision: committed.documentRevision,
         sourcePageId: image.id,
       })
-      await taskCenterStore.refresh()
+      void taskCenterStore.refresh().catch(() => undefined)
       showToast('样式应用任务已加入后端任务中心，可安全关闭页面', 'success')
     } catch (error) {
       showToast(
         `创建样式应用任务失败：${error instanceof Error ? error.message : '未知错误'}`,
         'error',
       )
+    } finally {
+      isApplyingToAll.value = false
     }
   }
 

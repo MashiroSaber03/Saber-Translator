@@ -12,20 +12,25 @@ import UiIcon from '@/components/ui/UiIcon.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 
-interface PendingQAData {
-  messageId: string
+interface QANotePreviewData {
   question: string
   answer: string
   citations: Array<{ page: number }>
 }
 
-const props = defineProps<{
-  noteComment: string
-  noteTitle: string
-  pendingQAData: PendingQAData | null
-  renderMarkdown: (content: string) => string
-  visible: boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    noteComment: string
+    noteTitle: string
+    pendingQAData: QANotePreviewData | null
+    renderMarkdown: (content: string) => string
+    isSaving?: boolean
+    visible: boolean
+  }>(),
+  {
+    isSaving: false,
+  }
+)
 
 const emit = defineEmits<{
   (event: 'close'): void
@@ -45,11 +50,13 @@ const noteCommentModel = computed({
 })
 
 const citationChips = computed<ProductChipItem[]>(() => {
-  return props.pendingQAData?.citations.map(citation => ({
-    id: citation.page,
-    label: `第${citation.page}页`,
-    tone: 'primary',
-  })) ?? []
+  return (
+    props.pendingQAData?.citations.map(citation => ({
+      id: citation.page,
+      label: `第${citation.page}页`,
+      tone: 'primary',
+    })) ?? []
+  )
 })
 </script>
 
@@ -64,6 +71,9 @@ const citationChips = computed<ProductChipItem[]>(() => {
     body-padding="spacious"
     width="90%"
     max-width="560px"
+    :show-close-button="!isSaving"
+    :close-on-esc="!isSaving"
+    :close-on-overlay="!isSaving"
     @close="$emit('close')"
   >
     <template #title>
@@ -88,20 +98,12 @@ const citationChips = computed<ProductChipItem[]>(() => {
           label="引用页码"
           :framed="false"
         >
-          <ProductChipList
-            aria-label="引用页码"
-            :items="citationChips"
-          />
+          <ProductChipList aria-label="引用页码" :items="citationChips" />
         </ProductDetailSection>
       </ProductDetailPanel>
 
       <div class="qa-note-modal__form">
-        <UiField
-          variant="settings"
-          label="笔记标题"
-          hint="可选"
-          control-id="qaNoteTitle"
-        >
+        <UiField variant="settings" label="笔记标题" hint="可选" control-id="qaNoteTitle">
           <UiInput
             id="qaNoteTitle"
             v-model="noteTitleModel"
@@ -110,12 +112,7 @@ const citationChips = computed<ProductChipItem[]>(() => {
           />
         </UiField>
 
-        <UiField
-          variant="settings"
-          label="补充说明"
-          hint="可选"
-          control-id="qaNoteComment"
-        >
+        <UiField variant="settings" label="补充说明" hint="可选" control-id="qaNoteComment">
           <UiTextarea
             id="qaNoteComment"
             v-model="noteCommentModel"
@@ -128,12 +125,11 @@ const citationChips = computed<ProductChipItem[]>(() => {
     </div>
 
     <template #footer>
-      <ProductActionRow
-        aria-label="问答笔记保存操作"
-        variant="dialog"
-      >
-        <UiButton variant="secondary" @click="$emit('close')">取消</UiButton>
-        <UiButton variant="primary" @click="$emit('save')">保存笔记</UiButton>
+      <ProductActionRow aria-label="问答笔记保存操作" variant="dialog">
+        <UiButton variant="secondary" :disabled="isSaving" @click="$emit('close')">取消</UiButton>
+        <UiButton variant="primary" :loading="isSaving" :disabled="isSaving" @click="$emit('save')">
+          {{ isSaving ? '保存中...' : '保存笔记' }}
+        </UiButton>
       </ProductActionRow>
     </template>
   </BaseModal>

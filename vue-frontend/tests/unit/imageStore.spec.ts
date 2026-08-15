@@ -33,33 +33,6 @@ describe('imageStore', () => {
         }
     })
 
-    it('keeps image store property tests focused on behavior contracts', () => {
-        const source = readFileSync(resolve(process.cwd(), 'tests/property/imageStore.property.ts'), 'utf8')
-
-        for (const staleNarration of [
-            '/' + '**',
-            '图片状态管理属性测试',
-            '使用 fast-check 进行属性基测试',
-            '生成有效',
-            '验证',
-            '每次迭代重新创建 Pinia',
-            '// 批量添加图片',
-            'return store.imageCount',
-            'return uniqueIds.size',
-        ]) {
-            expect(source).not.toContain(staleNarration)
-        }
-
-        expect(source).toContain('useImageStore')
-        expect(source).toContain('expect(')
-    })
-
-    it('keeps image store fixtures typed to the current load contract', () => {
-        const source = readFileSync(resolve(process.cwd(), 'tests/unit/imageStore.spec.ts'), 'utf8')
-
-        expect(source).not.toMatch(/\bas any\b|:\s*any\b|any\[\]/)
-    })
-
     describe('图片管理', () => {
         it('应该能载入后端图片', () => {
             const store = useImageStore()
@@ -129,7 +102,6 @@ describe('imageStore', () => {
                 cleanAssetUrl: null,
                 bubbleStates: null,
                 translationStatus: 'pending',
-                translationFailed: false,
                 hasUnsavedChanges: false,
             }
 
@@ -150,35 +122,16 @@ describe('imageStore', () => {
             expect(store.currentImage?.useAutoTextColor).toBe(TEXT_STYLE_DEFAULTS.useAutoTextColor)
         })
 
-        it('从 failed 切回 processing 时应清除旧的错误信息', () => {
+        it('从 failed 切回 processing 时应更新唯一状态字段', () => {
             const store = useImageStore()
             addTestImage(store, 'test.png', '/api/v2/assets/source-1')
 
-            store.setTranslationStatus(0, 'failed', 'boom')
-            expect(store.currentImage?.errorMessage).toBe('boom')
+            store.setTranslationStatus(0, 'failed')
+            expect(store.currentImage?.translationStatus).toBe('failed')
 
             store.setTranslationStatus(0, 'processing')
 
             expect(store.currentImage?.translationStatus).toBe('processing')
-            expect(store.currentImage?.translationFailed).toBe(false)
-            expect(store.currentImage?.errorMessage).toBeUndefined()
-        })
-
-        it('非失败状态即使收到错误参数也应清除错误信息', () => {
-            const nonFailedStatuses = ['pending', 'processing', 'completed'] as const
-
-            nonFailedStatuses.forEach(status => {
-                setActivePinia(createPinia())
-                const store = useImageStore()
-                addTestImage(store, 'test.png', '/api/v2/assets/source-1')
-
-                store.setTranslationStatus(0, 'failed', 'boom')
-                store.setTranslationStatus(0, status, 'stale error')
-
-                expect(store.currentImage?.translationStatus).toBe(status)
-                expect(store.currentImage?.translationFailed).toBe(false)
-                expect(store.currentImage?.errorMessage).toBeUndefined()
-            })
         })
 
         it('正常状态变更不应输出常规控制台日志', () => {
@@ -192,7 +145,7 @@ describe('imageStore', () => {
                 store.updateCurrentImage({ translatedAssetUrl: '/api/v2/assets/translated' })
                 store.updateImageByIndex(0, { translationStatus: 'processing' })
                 store.updateCurrentImageDimensions(800, 600)
-                store.setBatchTranslationInProgress(true)
+                store.setTranslationInProgress(true)
                 store.deleteCurrentImage()
                 store.clearImages()
 

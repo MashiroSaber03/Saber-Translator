@@ -116,7 +116,6 @@ import type { ProductThumbnailGridItem } from '@/components/product/ProductThumb
 import VirtualThumbnailGrid from '@/components/virtual/VirtualThumbnailGrid.vue'
 import { ref, computed, watch, nextTick } from 'vue'
 import type { MangaImageInfo, CharacterFormInfo } from '@/api/continuation'
-import * as insightApi from '@/api/insight'
 
 const props = defineProps<{
   visible: boolean
@@ -126,7 +125,6 @@ const props = defineProps<{
   continuationImages: MangaImageInfo[]
   characterForms: CharacterFormInfo[]
   initialSelection: string[]
-  bookId: string
   hasOlderOriginalImages?: boolean
   loadingOlderOriginalImages?: boolean
   hasMoreCharacterForms?: boolean
@@ -154,7 +152,7 @@ const characterThumbnailItems = computed<ProductThumbnailGridItem[]>(() => {
       fallbackLabel: '角色图缺失',
       interactive: false,
       label,
-      src: form.has_image && form.path ? getImageUrl(form.path) : '',
+      src: form.has_image && form.path ? form.path : '',
     }
   })
 })
@@ -233,7 +231,7 @@ function createOriginalThumbnailItem(img: MangaImageInfo): ProductThumbnailGridI
   return createThumbnailItem(img, '原作', {
     alt: `第${img.page_number}页`,
     fallbackLabel: '原作页缺失',
-    src: img.has_image ? getOriginalThumbnailUrl(img.page_number) : '',
+    src: img.has_image && img.path ? img.path : '',
   })
 }
 
@@ -242,7 +240,7 @@ function createContinuationThumbnailItem(img: MangaImageInfo): ProductThumbnailG
     alt: `第${img.page_number}页续写图`,
     cornerLabel: '续写',
     fallbackLabel: '占位页',
-    src: img.has_image && img.path ? getImageUrl(img.path) : '',
+    src: img.has_image && img.path ? img.path : '',
   })
 }
 
@@ -298,15 +296,6 @@ function clearSelection(): void {
 
 function scrollToBottom(): void {
   thumbnailsGrid.value?.scrollToEnd()
-}
-
-function getOriginalThumbnailUrl(pageNum: number): string {
-  if (!props.bookId) return ''
-  return insightApi.getThumbnailUrl(props.bookId, pageNum)
-}
-
-function getImageUrl(path: string): string {
-  return path
 }
 
 function handleConfirm(): void {

@@ -11,6 +11,7 @@ import {
   type V2Prompt,
   type V2ProviderSettingMutation,
   type V2SettingsDocument,
+  type V2SettingsTransactionResult,
   type V2WorkflowPreferences,
   updateV2WorkflowPreferences,
 } from '@/api/v2/settings'
@@ -22,9 +23,13 @@ import {
 } from '@/defaults/textStyleDefaults'
 
 import type { ProviderConfigsCache } from './types'
-import { createDefaultSettings } from './defaults'
-import { parseCurrentSettings } from './schema'
+import {
+  TRANSLATION_SETTINGS_SCHEMA_VERSION,
+  createDefaultSettings,
+} from './defaults'
+import { parseCurrentSettings, parseCurrentWorkflowPreferences } from './schema'
 import { useThemePreference } from './useThemePreference'
+import { proofreadingProviderDomain } from './proofreadingIdentity'
 import {
   useOcrSettings,
   useTranslationSettings,
@@ -162,6 +167,7 @@ function proofreadingProviderPayload(
 ): Record<string, unknown> {
   const {
     apiKey: _apiKey,
+    id: _id,
     name: _name,
     provider: _provider,
     ...payload
@@ -182,7 +188,7 @@ function sanitizedSettingsPayload(
   payload.proofreading.rounds.forEach((round) => {
     delete (round as Partial<typeof round>).apiKey
   })
-  payload.settingsSchemaVersion = 3
+  payload.settingsSchemaVersion = TRANSLATION_SETTINGS_SCHEMA_VERSION
   const backendPayload = payload as unknown as Record<string, unknown>
   delete backendPayload.textStyle
   return backendPayload
@@ -324,6 +330,9 @@ export const useSettingsStore = defineStore('settings', () => {
     if (!textStyleDefaultsEntry) {
       throw new Error('后端文字样式默认设置缺失')
     }
+    if (!workflowPreferencesEntry) {
+      throw new Error('后端工作流偏好设置缺失')
+    }
     let parsedTextStyleDefaults: TextStyleSettings
     try {
       parsedTextStyleDefaults = parseCompleteTextStyleSettings(
@@ -345,19 +354,18 @@ export const useSettingsStore = defineStore('settings', () => {
     }
     settingsRevision = translationEntry.revision
     textStyleDefaultsRevision = textStyleDefaultsEntry.revision
-    workflowPreferencesRevision = workflowPreferencesEntry?.revision ?? 0
+    const parsedWorkflowPreferences = parseCurrentWorkflowPreferences(
+      workflowPreferencesEntry.payload,
+    )
+    if (!parsedWorkflowPreferences) {
+      throw new Error('后端工作流偏好设置格式无效')
+    }
+    workflowPreferencesRevision = workflowPreferencesEntry.revision
     textStyleDefaults.value = parsedTextStyleDefaults
     settings.value = parsed
     settings.value.textStyle = currentPageTextStyle
       ?? deepClone(textStyleDefaults.value)
-    workflowPreferences.value = {
-      rememberWorkflowModeEnabled: Boolean(
-        workflowPreferencesEntry?.payload.rememberWorkflowModeEnabled,
-      ),
-      lastWorkflowMode: String(
-        workflowPreferencesEntry?.payload.lastWorkflowMode ?? 'translate-current',
-      ),
-    }
+    workflowPreferences.value = parsedWorkflowPreferences
     providerConfigs.value = emptyProviderConfigs()
     providerRevisions = new Map()
     for (const row of document.providerSettings) {
@@ -410,7 +418,7 @@ export const useSettingsStore = defineStore('settings', () => {
     if (unknown.length > 0) return false
     const current = settings.value as unknown as Record<string, unknown>
     const candidate = mergeObjects(current, scrubChapterWorkState(payload) as Record<string, unknown>)
-    candidate.settingsSchemaVersion = 3
+    candidate.settingsSchemaVersion = TRANSLATION_SETTINGS_SCHEMA_VERSION
     candidate.textStyle = deepClone(settings.value.textStyle)
     candidate.pluginAgent = deepClone(settings.value.pluginAgent)
     candidate.enableVerboseLogs = settings.value.enableVerboseLogs
@@ -460,6 +468,15 @@ export const useSettingsStore = defineStore('settings', () => {
   function hydrateResourceCatalogs(fonts: V2Font[], prompts: V2Prompt[]): void {
     fontCatalog.value = deepClone(fonts)
     promptCatalog.value = deepClone(prompts)
+  }
+
+  function upsertFont(font: V2Font): void {
+    const index = fontCatalog.value.findIndex(item => item.id === font.id)
+    if (index >= 0) {
+      fontCatalog.value[index] = deepClone(font)
+      return
+    }
+    fontCatalog.value.push(deepClone(font))
   }
 
   async function loadFromBackend(): Promise<boolean> {
@@ -513,6 +530,73 @@ export const useSettingsStore = defineStore('settings', () => {
     return Boolean(currentCredential(domain, provider)?.hasKey)
   }
 
+  function mergeCredentialSummaries(
+    current: V2CredentialSummary[],
+    updates: V2CredentialSummary[],
+  ): V2CredentialSummary[] {
+    const merged = new Map(
+      current.map(summary => [
+        credentialIdentity(summary.domain, summary.provider),
+        deepClone(summary),
+      ]),
+    )
+    updates.forEach((summary) => {
+      merged.set(
+        credentialIdentity(summary.domain, summary.provider),
+        deepClone(summary),
+      )
+    })
+    return [...merged.values()]
+  }
+
+  function applyTransactionResult(result: V2SettingsTransactionResult): void {
+    result.settings.forEach((entry) => {
+      if (entry.domain === 'translation') settingsRevision = entry.revision
+      if (entry.domain === 'text_style_defaults') {
+        textStyleDefaultsRevision = entry.revision
+      }
+      if (entry.domain === 'workflow_preferences') {
+        workflowPreferencesRevision = entry.revision
+      }
+    })
+    result.providerSettings.forEach((entry) => {
+      if (!entry.provider) return
+      providerRevisions.set(
+        credentialIdentity(entry.domain, entry.provider),
+        entry.revision,
+      )
+    })
+    credentialSummaries.value = mergeCredentialSummaries(
+      credentialSummaries.value,
+      result.credentials,
+    )
+    result.prompts.forEach((prompt) => {
+      const index = promptCatalog.value.findIndex(item => item.id === prompt.id)
+      if (index >= 0) promptCatalog.value[index] = deepClone(prompt)
+    })
+  }
+
+  function clearProviderCacheApiKeys(
+    cache: Record<string, { apiKey?: string }>,
+  ): void {
+    Object.values(cache).forEach((config) => {
+      if (config.apiKey !== undefined) config.apiKey = ''
+    })
+  }
+
+  function clearSubmittedSecrets(): void {
+    settings.value.translation.apiKey = ''
+    settings.value.hqTranslation.apiKey = ''
+    settings.value.pluginAgent.apiKey = ''
+    settings.value.aiVisionOcr.apiKey = ''
+    settings.value.baiduOcr.apiKey = ''
+    settings.value.baiduOcr.secretKey = ''
+    settings.value.proofreading.rounds.forEach((round) => {
+      round.apiKey = ''
+    })
+    Object.values(providerConfigs.value).forEach(clearProviderCacheApiKeys)
+  }
+
   function addProviderMutation(
     providerSettings: V2ProviderSettingMutation[],
     credentialEdits: V2CredentialEdit[],
@@ -533,7 +617,12 @@ export const useSettingsStore = defineStore('settings', () => {
     } = {},
   ): void {
     const nonEmptySecret = Object.fromEntries(
-      Object.entries(secret).filter(([, value]) => value !== '' && value != null),
+      Object.entries(secret)
+        .map(([key, value]) => [
+          key,
+          typeof value === 'string' ? value.trim() : value,
+        ])
+        .filter(([, value]) => value !== '' && value != null),
     )
     const credentials = source.credentials ?? credentialSummaries.value
     const revisions = source.revisions ?? providerRevisions
@@ -607,9 +696,9 @@ export const useSettingsStore = defineStore('settings', () => {
       },
     })
 
-    settings.value.proofreading.rounds.forEach((round, index) => {
+    settings.value.proofreading.rounds.forEach((round) => {
       addProviderMutation(providerSettings, credentialEdits, {
-        domain: `proofreading_${index}`,
+        domain: proofreadingProviderDomain(round.id),
         provider: round.provider,
         rawPayload: proofreadingProviderPayload(round),
         secret: { api_key: round.apiKey },
@@ -622,7 +711,7 @@ export const useSettingsStore = defineStore('settings', () => {
           domain: 'translation',
           payload: sanitizedSettingsPayload(settings.value),
           baseRevision: settingsRevision,
-          schemaVersion: 3,
+          schemaVersion: TRANSLATION_SETTINGS_SCHEMA_VERSION,
         },
         {
           domain: 'text_style_defaults',
@@ -642,8 +731,11 @@ export const useSettingsStore = defineStore('settings', () => {
       return false
     }
     try {
-      await saveV2SettingsTransaction(buildSettingsTransaction())
-      return await loadFromBackend()
+      const result = await saveV2SettingsTransaction(buildSettingsTransaction())
+      applyTransactionResult(result)
+      clearSubmittedSecrets()
+      backendError.value = null
+      return true
     } catch (error) {
       backendError.value = error instanceof Error ? error.message : '设置保存失败'
       return false
@@ -651,35 +743,26 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   async function savePluginAgentSettings(): Promise<boolean> {
-    const localDraft = deepClone(settings.value)
-    const localProviderDraft = deepClone(providerConfigs.value)
     try {
       const authoritative = await getV2Settings([
         'translation',
-        'text_style_defaults',
         'plugin_agent',
       ])
       const translationEntry = authoritative.settings.find(
         row => row.domain === 'translation',
       )
-      const textStyleEntry = authoritative.settings.find(
-        row => row.domain === 'text_style_defaults',
-      )
-      const authoritativeSettings = translationEntry && textStyleEntry
-        ? parseBackendTranslationPayload(
-            translationEntry.payload,
-            parseCompleteTextStyleSettings(textStyleEntry.payload),
-          )
-        : null
-      if (!translationEntry || !textStyleEntry || !authoritativeSettings) {
-        throw new Error('后端翻译或文字样式设置缺失或格式无效')
+      if (!translationEntry) {
+        throw new Error('后端翻译设置缺失')
       }
 
       pluginAgentModule.savePluginAgentProviderConfig(
         settings.value.pluginAgent.provider,
       )
-      authoritativeSettings.pluginAgent = deepClone(settings.value.pluginAgent)
-      authoritativeSettings.pluginAgent.apiKey = ''
+      const translationPayload = deepClone(translationEntry.payload)
+      translationPayload.pluginAgent = withoutApiKey(
+        deepClone(settings.value.pluginAgent) as unknown as Record<string, unknown>,
+      )
+      translationPayload.settingsSchemaVersion = TRANSLATION_SETTINGS_SCHEMA_VERSION
 
       const freshRevisions = new Map(
         authoritative.providerSettings.map(row => [
@@ -709,28 +792,28 @@ export const useSettingsStore = defineStore('settings', () => {
         )
       }
 
-      await saveV2SettingsTransaction({
+      const result = await saveV2SettingsTransaction({
         settings: [{
           domain: 'translation',
-          payload: sanitizedSettingsPayload(authoritativeSettings),
+          payload: translationPayload,
           baseRevision: translationEntry.revision,
-          schemaVersion: 3,
+          schemaVersion: TRANSLATION_SETTINGS_SCHEMA_VERSION,
         }],
         providerSettings,
         credentialEdits,
       })
 
-      const reloaded = await loadFromBackend()
-      if (!reloaded) return false
-
-      const persistedPluginAgent = deepClone(settings.value.pluginAgent)
-      const persistedPluginProviders = deepClone(
-        providerConfigs.value.pluginAgent,
+      settingsRevision = translationEntry.revision
+      freshRevisions.forEach((revision, identity) => {
+        providerRevisions.set(identity, revision)
+      })
+      credentialSummaries.value = mergeCredentialSummaries(
+        credentialSummaries.value,
+        authoritative.credentials,
       )
-      settings.value = localDraft
-      settings.value.pluginAgent = persistedPluginAgent
-      providerConfigs.value = localProviderDraft
-      providerConfigs.value.pluginAgent = persistedPluginProviders
+      applyTransactionResult(result)
+      settings.value.pluginAgent.apiKey = ''
+      clearProviderCacheApiKeys(providerConfigs.value.pluginAgent)
       backendError.value = null
       return true
     } catch (error) {
@@ -805,7 +888,6 @@ export const useSettingsStore = defineStore('settings', () => {
     addProofreadingRound: proofreadingModule.addProofreadingRound,
     updateProofreadingRound: proofreadingModule.updateProofreadingRound,
     removeProofreadingRound: proofreadingModule.removeProofreadingRound,
-    setProofreadingMaxRetries: proofreadingModule.setProofreadingMaxRetries,
 
     setTextboxPrompt: promptsModule.setTextboxPrompt,
     setUseTextboxPrompt: promptsModule.setUseTextboxPrompt,
@@ -813,6 +895,7 @@ export const useSettingsStore = defineStore('settings', () => {
     textStyle: miscModule.textStyle,
     updateSettings: miscModule.updateSettings,
     updateTextStyle: miscModule.updateTextStyle,
+    updateParallel: miscModule.updateParallel,
     setShowDetectionDebug: miscModule.setShowDetectionDebug,
     setRemoveTextWithOcr: miscModule.setRemoveTextWithOcr,
     setEnableVerboseLogs: miscModule.setEnableVerboseLogs,
@@ -824,6 +907,7 @@ export const useSettingsStore = defineStore('settings', () => {
     initSettings,
     hydrateFromBackendDocument,
     hydrateResourceCatalogs,
+    upsertFont,
     hydrateChapterWorkState,
     clearChapterWorkState,
     chapterWorkStatePayload,

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { getCharacterStudioChatAttachmentUrl } from '@/api/characterStudio'
 import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
 import { buildCharacterStudioGreetingOptions } from '@/utils/characterStudioGreetings'
 import ChatComposer from './ChatComposer.vue'
@@ -17,6 +16,7 @@ import type {
 
 const props = defineProps<{
   archivedSessions: CharacterStudioChatSessionSummary[]
+  acceptedChatSubmissionCount?: number
   availableGreetings?: CharacterStudioGreetingOption[]
   bookId: string
   chatExporting: boolean
@@ -56,21 +56,18 @@ const currentSessionExcerpt = computed(() => {
   return last?.content || ''
 })
 const currentSessionMeta = computed(() => `${props.session?.messages.length || 0} 条消息`)
-const displayGreetings = computed(() => (
+const displayGreetings = computed(() =>
   props.availableGreetings?.length
     ? props.availableGreetings
     : buildCharacterStudioGreetingOptions(props.document)
-))
+)
 const currentGreetingId = computed(() => {
   const source = props.session?.greeting_source || {}
   if (source.type === 'first_message') {
     const hasFirstMessage = displayGreetings.value.some(item => item.greeting_id === 'first')
     if (hasFirstMessage) return 'first'
   }
-  if (
-    source.type === 'alternate_greeting'
-    && typeof source.index === 'number'
-  ) {
+  if (source.type === 'alternate_greeting' && typeof source.index === 'number') {
     const greetingId = `alternate-${source.index}`
     const hasAlternate = displayGreetings.value.some(item => item.greeting_id === greetingId)
     if (hasAlternate) return greetingId
@@ -84,8 +81,7 @@ const currentGreetingLabel = computed(() => {
 const assistantName = computed(() => props.document?.identity.name || '角色')
 
 function attachmentUrl(attachment: CharacterStudioChatAttachment) {
-  if (!props.bookId || !props.document) return attachment.asset_path
-  return getCharacterStudioChatAttachmentUrl(attachment.asset_path)
+  return attachment.asset_path
 }
 
 function switchSession(sessionId: string) {
@@ -150,6 +146,7 @@ function switchSession(sessionId: string) {
         @regenerate-message="$emit('regenerate-message', $event)"
       />
       <ChatComposer
+        :accepted-chat-submission-count="acceptedChatSubmissionCount"
         :chat-abortable="chatAbortable"
         :chat-streaming="chatStreaming"
         @abort-chat="$emit('abort-chat')"
@@ -161,7 +158,11 @@ function switchSession(sessionId: string) {
 
 <style scoped>
 .chat-workspace {
-  --studio-preview-workspace-panel-background: color-mix(in srgb, var(--color-surface-card) 96%, transparent);
+  --studio-preview-workspace-panel-background: color-mix(
+    in srgb,
+    var(--color-surface-card) 96%,
+    transparent
+  );
   --studio-preview-workspace-panel-shadow: var(--shadow-soft);
 
   gap: 12px;

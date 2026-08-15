@@ -129,9 +129,13 @@ function handleCoverError(): void {
 }
 
 .book-detail-summary__cover-placeholder {
-  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
   color: var(--color-text-inverse);
-  font-size: 1rem;
+  font-size: 3rem;
   line-height: 1;
 }
 
@@ -193,5 +197,16 @@ function handleCoverError(): void {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 16px;
+}
+
+@media (--breakpoint-sm-down) {
+  .book-detail-summary {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .book-detail-summary__cover {
+    align-self: center;
+  }
 }
 </style>

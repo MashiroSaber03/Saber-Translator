@@ -42,6 +42,7 @@ from src.backend_v2.launcher.entrypoint import LauncherState, LauncherStatus
 
 
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+MAX_LOG_LINES = 5000
 KIND_LABELS = {
     "translation": "漫画翻译",
     "remove_text": "清除文字",
@@ -323,29 +324,37 @@ class OverviewPage(QWidget):
         self.hero_message.setText(status.message)
         stopped = status.state == LauncherState.STOPPED
         running = status.state == LauncherState.RUNNING
-        self.start_button.setEnabled(stopped or status.state == LauncherState.DEGRADED)
+        degraded = status.state == LauncherState.DEGRADED
+        self.start_button.setEnabled(stopped)
         self.stop_button.setEnabled(
             status.state
             in {LauncherState.STARTING, LauncherState.RUNNING, LauncherState.DEGRADED}
         )
-        self.restart_button.setEnabled(running)
+        self.restart_button.setEnabled(running or degraded)
         self.open_button.setEnabled(running)
 
     def update_jobs(self, queue: list[Mapping[str, object]]) -> None:
         active = next((job for job in queue if job.get("status") == "running"), None)
         if active is None:
+            active = next((job for job in queue if job.get("status") != "queued"), None)
+        if active is None:
             queued = sum(1 for job in queue if job.get("status") == "queued")
             self.task_value.setText("无" if queued == 0 else f"排队 {queued}")
             self.current_title.setText("等待任务" if queued == 0 else "任务正在排队")
-            self.current_detail.setText("当前没有正在运行的任务。")
+            self.current_detail.setText(
+                "当前没有正在运行的任务。"
+                if queued == 0
+                else f"已有 {queued} 个任务等待调度。"
+            )
             self.current_progress.setValue(0)
             return
         kind = str(active.get("kind") or "")
+        status = str(active.get("status") or "")
         progress = active.get("progress")
         percent, detail = _progress_summary(progress)
         self.task_value.setText(KIND_LABELS.get(kind, kind))
         self.current_title.setText(KIND_LABELS.get(kind, kind))
-        self.current_detail.setText(detail)
+        self.current_detail.setText(f"{STATUS_LABELS.get(status, status)} · {detail}")
         self.current_progress.setValue(percent)
 
     def set_connected(self, connected: bool) -> None:
@@ -355,15 +364,24 @@ class OverviewPage(QWidget):
 def _progress_summary(progress: object) -> tuple[int, str]:
     if not isinstance(progress, Mapping):
         return 0, "等待进度数据"
-    total = int(progress.get("totalItems") or 0)
-    completed = int(progress.get("completedItems") or 0)
-    failed = int(progress.get("failedItems") or 0)
-    skipped = int(progress.get("skippedItems") or 0)
-    cancelled = int(progress.get("cancelledItems") or 0)
+    counts = []
+    for key in (
+        "totalItems",
+        "completedItems",
+        "failedItems",
+        "skippedItems",
+        "cancelledItems",
+    ):
+        value = progress.get(key)
+        counts.append(
+            value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
+        )
+    total, completed, failed, skipped, cancelled = counts
     done = completed + failed + skipped + cancelled
-    percent = round(done * 100 / total) if total else 0
+    percent = min(100, round(done * 100 / total)) if total else 0
     current = progress.get("currentStep")
-    step = str(current.get("kind")) if isinstance(current, Mapping) else "等待调度"
+    current_kind = current.get("kind") if isinstance(current, Mapping) else None
+    step = current_kind if isinstance(current_kind, str) and current_kind else "等待调度"
     return percent, f"{step} · {done} / {total}" if total else step
 
 
@@ -480,7 +498,7 @@ class LogPage(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self.setObjectName("page")
-        self._lines: deque[tuple[str, str, str]] = deque(maxlen=5000)
+        self._lines: deque[tuple[str, str, str]] = deque(maxlen=MAX_LOG_LINES)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(26, 18, 26, 26)
         layout.setSpacing(12)
@@ -511,6 +529,7 @@ class LogPage(QWidget):
         self.output = QPlainTextEdit()
         self.output.setReadOnly(True)
         self.output.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        self.output.document().setMaximumBlockCount(MAX_LOG_LINES)
         layout.addWidget(self.output, 1)
         self.source_filter.currentTextChanged.connect(self._render)
         self.level_filter.currentTextChanged.connect(self._render)
@@ -520,7 +539,14 @@ class LogPage(QWidget):
 
     def add_line(self, source: str, line: str) -> None:
         clean = ANSI_ESCAPE.sub("", line)
-        level = next((name for name in ("ERROR", "WARNING", "INFO", "DEBUG") if f"[{name}]" in clean), "INFO")
+        level = next(
+            (
+                name
+                for name in ("ERROR", "WARNING", "INFO", "DEBUG")
+                if f"[{name}]" in clean
+            ),
+            "INFO",
+        )
         self._lines.append((source.upper(), level, clean))
         if self._matches(source.upper(), level, clean):
             self.output.appendPlainText(clean)
@@ -628,7 +654,7 @@ class SettingsPage(QWidget):
         self.allow_lan = ToggleSwitch(settings.allow_lan)
         self.allow_lan.setAccessibleName("允许局域网访问")
         self.log_level = QComboBox()
-        self.log_level.addItems(sorted(LOG_LEVELS))
+        self.log_level.addItems(LOG_LEVELS)
         self.log_level.setFixedWidth(160)
         self.log_level.setCurrentText(settings.log_level)
         self.open_browser = ToggleSwitch(settings.open_browser_on_start)
@@ -739,6 +765,7 @@ class DesktopWindow(QMainWindow):
     ) -> None:
         super().__init__()
         self._allow_close = False
+        self._close_to_tray_enabled = True
         self.setWindowTitle("Saber-Translator")
         self.setWindowIcon(QIcon(str(native_icon_path)))
         self.setMinimumSize(920, 640)
@@ -794,7 +821,13 @@ class DesktopWindow(QMainWindow):
             self.showMaximized()
 
     def request_close_to_tray(self) -> None:
-        self.hide()
+        if self._close_to_tray_enabled:
+            self.hide()
+        else:
+            self.quit_requested.emit()
+
+    def set_close_to_tray_enabled(self, enabled: bool) -> None:
+        self._close_to_tray_enabled = enabled
 
     def allow_close(self) -> None:
         self._allow_close = True

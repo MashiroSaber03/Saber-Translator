@@ -55,8 +55,7 @@
               <UiNumberField
                 v-model="state.pageCount.value"
                 input-id="continuationPageCount"
-                :min="5"
-                :max="50"
+                :min="1"
               />
             </UiField>
             <UiField
@@ -69,7 +68,6 @@
                 v-model="state.styleRefPages.value"
                 input-id="continuationStyleRefPages"
                 :min="1"
-                :max="10"
               />
             </UiField>
           </UiFormGrid>
@@ -95,11 +93,15 @@
             :state="state"
           />
           <ProductActionRow aria-label="续写设置操作" divider justify="between">
-            <UiButton variant="danger" @click="requestClearAndRestart">
+            <UiButton variant="danger" :disabled="isClearing" @click="requestClearAndRestart">
               <span aria-hidden="true">🗑️</span>
               <span>清除数据重新开始</span>
             </UiButton>
-            <UiButton variant="primary" :disabled="!canProceedToScript" @click="goToStep(1)">
+            <UiButton
+              variant="primary"
+              :disabled="!canProceedToScript || isChangingStep"
+              @click="goToStep(1)"
+            >
               <span>下一步：生成脚本</span>
               <UiIcon name="chevron-right" />
             </UiButton>
@@ -117,11 +119,15 @@
             @reset-script="handleResetScript"
           />
           <ProductActionRow aria-label="脚本生成步骤操作" divider justify="between">
-            <UiButton variant="secondary" @click="goToStep(0)">
+            <UiButton variant="secondary" :disabled="isChangingStep" @click="goToStep(0)">
               <UiIcon name="chevron-left" />
               <span>上一步</span>
             </UiButton>
-            <UiButton variant="primary" :disabled="!canProceedToPages" @click="goToStep(2)">
+            <UiButton
+              variant="primary"
+              :disabled="!canProceedToPages || isChangingStep"
+              @click="goToStep(2)"
+            >
               <span>下一步：页面剧情</span>
               <UiIcon name="chevron-right" />
             </UiButton>
@@ -131,16 +137,21 @@
           <PageDetailsPanel
             :pages="state.pages.value"
             :is-generating="state.isGeneratingPages.value"
+            :is-saving="isSavingPages"
             @generate-details="handleGeneratePageDetails"
             @save-changes="handleSavePageChanges"
             @story-change="handleStoryContentChange"
           />
           <ProductActionRow aria-label="页面剧情步骤操作" divider justify="between">
-            <UiButton variant="secondary" @click="goToStep(1)">
+            <UiButton variant="secondary" :disabled="isChangingStep" @click="goToStep(1)">
               <UiIcon name="chevron-left" />
               <span>上一步</span>
             </UiButton>
-            <UiButton variant="primary" :disabled="!canProceedToImages" @click="goToStep(3)">
+            <UiButton
+              variant="primary"
+              :disabled="!canProceedToImages || isChangingStep"
+              @click="goToStep(3)"
+            >
               <span>下一步：图片生成</span>
               <UiIcon name="chevron-right" />
             </UiButton>
@@ -163,10 +174,11 @@
             :book-id="insightStore.currentBookId"
             :generated-count="generatedPagesCount"
             :state="state"
+            :is-clearing="isClearing"
             @clear-and-restart="clearAndRestart"
           />
           <ProductActionRow aria-label="图片生成步骤操作" divider justify="start">
-            <UiButton variant="secondary" @click="goToStep(2)">
+            <UiButton variant="secondary" :disabled="isChangingStep" @click="goToStep(2)">
               <UiIcon name="chevron-left" />
               <span>上一步</span>
             </UiButton>
@@ -218,10 +230,15 @@ const imageGen = imageGenComposable
 const stepNames = ['角色设置', '生成脚本', '页面剧情', '图片生成/导出']
 const isGeneratingScript = ref(false)
 const isSavingScript = ref(false)
+const isSavingPages = ref(false)
+const isClearing = ref(false)
+const isChangingStep = ref(false)
+const activatingPageNumbers = ref<Set<number>>(new Set())
 const scriptDirty = ref(false)
 const lastSavedScriptText = ref('')
 interface PendingPageAutosave {
   bookId: string
+  bookGeneration: number
   pages: PageContent[]
   errorLabel: string
 }
@@ -229,6 +246,28 @@ interface PendingPageAutosave {
 let pageAutosaveTimer: ReturnType<typeof setTimeout> | null = null
 let pendingPageAutosave: PendingPageAutosave | null = null
 let pageSaveChain: Promise<void> = Promise.resolve()
+let bookGeneration = 0
+
+interface ContinuationBookContext {
+  bookId: string
+  generation: number
+}
+
+function currentBookContext(): ContinuationBookContext | null {
+  const activeBookId = insightStore.currentBookId
+  return activeBookId ? { bookId: activeBookId, generation: bookGeneration } : null
+}
+
+function isCurrentBookContext(context: ContinuationBookContext): boolean {
+  return bookGeneration === context.generation && insightStore.currentBookId === context.bookId
+}
+
+function copyPageForSave(page: PageContent): PageContent {
+  return {
+    ...page,
+    characters: [...page.characters],
+  }
+}
 
 function clearPageAutosaveTimer() {
   if (pageAutosaveTimer) {
@@ -250,7 +289,11 @@ function enqueuePageSave(
     continuationApi.savePages(request.bookId, request.pages),
   )
   pageSaveChain = operation.catch(error => {
-    if (reportError) {
+    if (
+      reportError
+      && bookGeneration === request.bookGeneration
+      && insightStore.currentBookId === request.bookId
+    ) {
       state.showMessage(
         `${request.errorLabel}: ${error instanceof Error ? error.message : '网络错误'}`,
         'error',
@@ -266,23 +309,37 @@ function flushPendingPageAutosave(reportError = true): Promise<void> {
   return pending ? enqueuePageSave(pending, reportError) : pageSaveChain
 }
 
-function schedulePageAutosave(errorLabel: string) {
-  const activeBookId = insightStore.currentBookId
-  if (!activeBookId || state.pages.value.length === 0) return
+function schedulePageAutosave(page: PageContent, errorLabel: string) {
+  const context = currentBookContext()
+  if (!context) return
+  const pendingPages = (
+    pendingPageAutosave
+    && pendingPageAutosave.bookId === context.bookId
+    && pendingPageAutosave.bookGeneration === context.generation
+  ) ? pendingPageAutosave.pages : []
+  const pagesByNumber = new Map(
+    pendingPages.map(pendingPage => [pendingPage.page_number, pendingPage]),
+  )
+  pagesByNumber.set(page.page_number, copyPageForSave(page))
   pendingPageAutosave = {
-    bookId: activeBookId,
-    pages: state.pages.value,
+    bookId: context.bookId,
+    bookGeneration: context.generation,
+    pages: [...pagesByNumber.values()],
     errorLabel,
   }
   clearPageAutosaveTimer()
   pageAutosaveTimer = setTimeout(() => {
-    void flushPendingPageAutosave()
+    void flushPendingPageAutosave().catch(() => undefined)
   }, 600)
 }
 
 function resetLocalWorkflowState() {
   isGeneratingScript.value = false
   isSavingScript.value = false
+  isSavingPages.value = false
+  isClearing.value = false
+  isChangingStep.value = false
+  activatingPageNumbers.value = new Set()
 }
 const canProceedToScript = computed(() => {
   return state.isDataReady.value && state.characters.value.length > 0
@@ -299,7 +356,7 @@ const canProceedToImages = computed(() => {
   )
 })
 const generatedPagesCount = computed(() => {
-  return state.pages.value.filter(p => p.image_url && p.status === 'generated').length
+  return state.pages.value.filter(page => page.image_url).length
 })
 const workflowMessage = computed(() => state.errorMessage.value || state.successMessage.value)
 const workflowMessageTone = computed<'success' | 'danger' | 'info'>(() => {
@@ -321,16 +378,20 @@ const analysisSyncStatus = computed(() => {
   }
   return '分析数据已就绪'
 })
-async function persistContinuationConfig(): Promise<string | null> {
-  if (!insightStore.currentBookId) {
+async function persistContinuationConfig(
+  context: ContinuationBookContext,
+): Promise<string | null> {
+  if (!isCurrentBookContext(context)) {
     return '当前未选择漫画'
   }
+  const config = {
+    page_count: state.pageCount.value,
+    style_reference_pages: state.styleRefPages.value,
+    continuation_direction: state.continuationDirection.value,
+  }
   try {
-    await continuationApi.saveConfig(insightStore.currentBookId, {
-      page_count: state.pageCount.value,
-      style_reference_pages: state.styleRefPages.value,
-      continuation_direction: state.continuationDirection.value,
-    })
+    await continuationApi.saveConfig(context.bookId, config)
+    if (!isCurrentBookContext(context)) return '当前漫画已切换'
     return null
   } catch (error) {
     return error instanceof Error ? error.message : '网络错误'
@@ -366,38 +427,47 @@ async function handleGenerateScript(payload: {
   referenceTokens: string[] | null
   referenceImageCount: number
 }) {
-  if (!insightStore.currentBookId) return
+  const context = currentBookContext()
+  if (!context || isGeneratingScript.value) return
   isGeneratingScript.value = true
   state.errorMessage.value = ''
   try {
     const jobId = await continuationApi.generateScriptWithRefs(
-      insightStore.currentBookId,
+      context.bookId,
       state.continuationDirection.value,
       state.pageCount.value,
       payload.referenceTokens || undefined,
       payload.referenceImageCount
     )
+    if (!isCurrentBookContext(context)) return
     state.showMessage('脚本生成任务已进入任务中心，关闭浏览器也会继续运行', 'info')
     await taskCenterStore.waitForJob(jobId)
+    if (!isCurrentBookContext(context)) return
     await state.initializeData()
+    if (!isCurrentBookContext(context)) return
     lastSavedScriptText.value = state.chapterScript.value?.script_text ?? ''
     scriptDirty.value = false
     state.showMessage('脚本生成成功，旧页面剧情已标记为需要重新生成', 'success')
   } catch (error) {
-    state.showMessage('生成失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
+    if (isCurrentBookContext(context)) {
+      state.showMessage('生成失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
+    }
   } finally {
-    isGeneratingScript.value = false
+    if (isCurrentBookContext(context)) isGeneratingScript.value = false
   }
 }
 async function handleSaveScript(showSuccessMessage = true): Promise<boolean> {
-  if (!insightStore.currentBookId || !state.chapterScript.value) return false
+  const context = currentBookContext()
+  if (!context || !state.chapterScript.value || isSavingScript.value) return false
+  const script = { ...state.chapterScript.value }
   isSavingScript.value = true
   const shouldMarkPagesStale = scriptDirty.value && state.pages.value.length > 0
   try {
     const savedScript = await continuationApi.saveScript(
-      insightStore.currentBookId,
-      state.chapterScript.value
+      context.bookId,
+      script
     )
+    if (!isCurrentBookContext(context)) return false
     state.chapterScript.value = savedScript
     lastSavedScriptText.value = savedScript.script_text
     scriptDirty.value = false
@@ -414,22 +484,25 @@ async function handleSaveScript(showSuccessMessage = true): Promise<boolean> {
     }
     return true
   } catch (error) {
-    state.showMessage(
-      '脚本保存失败: ' + (error instanceof Error ? error.message : '网络错误'),
-      'error'
-    )
+    if (isCurrentBookContext(context)) {
+      state.showMessage(
+        '脚本保存失败: ' + (error instanceof Error ? error.message : '网络错误'),
+        'error'
+      )
+    }
     return false
   } finally {
-    isSavingScript.value = false
+    if (isCurrentBookContext(context)) isSavingScript.value = false
   }
 }
 async function persistPages(pages = state.pages.value): Promise<void> {
-  const activeBookId = insightStore.currentBookId
-  if (!activeBookId) return
+  const context = currentBookContext()
+  if (!context) return
   await enqueuePageSave(
     {
-      bookId: activeBookId,
-      pages,
+      bookId: context.bookId,
+      bookGeneration: context.generation,
+      pages: pages.map(copyPageForSave),
       errorLabel: '页面数据保存失败',
     },
     false,
@@ -456,7 +529,7 @@ function handleStoryContentChange(
   if (!page) return
   applyPageStoryEdit(page, field, value)
 
-  schedulePageAutosave('页面剧情保存失败')
+  schedulePageAutosave(page, '页面剧情保存失败')
 }
 function handleResetScript() {
   if (!state.chapterScript.value) return
@@ -464,7 +537,8 @@ function handleResetScript() {
   scriptDirty.value = false
 }
 async function handleGeneratePageDetails() {
-  if (!insightStore.currentBookId || !state.chapterScript.value) return
+  const context = currentBookContext()
+  if (!context || !state.chapterScript.value || state.isGeneratingPages.value) return
   if (scriptDirty.value) {
     const saved = await handleSaveScript(false)
     if (!saved) {
@@ -474,49 +548,100 @@ async function handleGeneratePageDetails() {
   state.isGeneratingPages.value = true
   state.errorMessage.value = ''
   try {
-    const jobId = await continuationApi.generateAllPageDetails(insightStore.currentBookId)
+    const jobId = await continuationApi.generateAllPageDetails(context.bookId)
+    if (!isCurrentBookContext(context)) return
     state.showMessage('页面剧情任务已整体进入任务中心，关闭浏览器也会继续运行', 'info')
     await taskCenterStore.waitForJob(jobId)
+    if (!isCurrentBookContext(context)) return
     await state.initializeData()
+    if (!isCurrentBookContext(context)) return
     state.showMessage(`页面剧情生成完成 (${state.pages.value.length} 页)`, 'success')
   } catch (error) {
-    state.showMessage('生成失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
+    if (isCurrentBookContext(context)) {
+      state.showMessage('生成失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
+    }
   } finally {
-    state.isGeneratingPages.value = false
+    if (isCurrentBookContext(context)) state.isGeneratingPages.value = false
   }
 }
 async function handleSavePageChanges() {
-  if (!insightStore.currentBookId || state.pages.value.length === 0) return
+  const context = currentBookContext()
+  if (!context || state.pages.value.length === 0 || isSavingPages.value) return
+  isSavingPages.value = true
   try {
     discardPendingPageAutosave()
     await persistPages()
-    state.showMessage('页面数据保存成功', 'success')
+    if (isCurrentBookContext(context)) state.showMessage('页面数据保存成功', 'success')
   } catch (error) {
-    state.showMessage('保存失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
+    if (isCurrentBookContext(context)) {
+      state.showMessage('保存失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
+    }
+  } finally {
+    if (isCurrentBookContext(context)) isSavingPages.value = false
   }
 }
 async function handleBatchGenerate(initialStyleReferenceTokens: string[] | null) {
-  if (!insightStore.currentBookId) return
-  discardPendingPageAutosave()
-  await pageSaveChain
-  await imageGen.batchGenerateImages(state.pages.value, initialStyleReferenceTokens || undefined)
+  const context = currentBookContext()
+  if (!context || imageGen.isGenerating.value) return
+  try {
+    await flushPendingPageAutosave(false)
+    if (!isCurrentBookContext(context)) return
+    await imageGen.batchGenerateImages(
+      state.pages.value.map(copyPageForSave),
+      initialStyleReferenceTokens || undefined,
+    )
+  } catch (error) {
+    if (isCurrentBookContext(context)) {
+      state.showMessage(
+        '生成前保存页面失败: ' + (error instanceof Error ? error.message : '网络错误'),
+        'error',
+      )
+    }
+  }
 }
 async function handleRegenerateImage(pageNumber: number) {
-  if (!insightStore.currentBookId) return
-  discardPendingPageAutosave()
-  await pageSaveChain
-  await imageGen.regeneratePageImage(pageNumber)
+  const context = currentBookContext()
+  if (!context || imageGen.isGenerating.value) return
+  try {
+    await flushPendingPageAutosave(false)
+    if (!isCurrentBookContext(context)) return
+    await imageGen.regeneratePageImage(pageNumber)
+  } catch (error) {
+    if (isCurrentBookContext(context)) {
+      state.showMessage(
+        '重新生成前保存页面失败: ' + (error instanceof Error ? error.message : '网络错误'),
+        'error',
+      )
+    }
+  }
 }
 async function handleUsePrevious(pageNumber: number) {
+  const context = currentBookContext()
+  if (!context || activatingPageNumbers.value.has(pageNumber)) return
   const page = state.pages.value.find(p => p.page_number === pageNumber)
   if (!page || !page.previous_url) return
-  if (insightStore.currentBookId) {
+  activatingPageNumbers.value = new Set(activatingPageNumbers.value).add(pageNumber)
+  try {
     await continuationApi.activatePageImageVersion(
-      insightStore.currentBookId,
+      context.bookId,
       pageNumber,
       page.previous_url
     )
+    if (!isCurrentBookContext(context)) return
     await state.initializeData()
+  } catch (error) {
+    if (isCurrentBookContext(context)) {
+      state.showMessage(
+        '切换图片版本失败: ' + (error instanceof Error ? error.message : '网络错误'),
+        'error',
+      )
+    }
+  } finally {
+    if (isCurrentBookContext(context)) {
+      const next = new Set(activatingPageNumbers.value)
+      next.delete(pageNumber)
+      activatingPageNumbers.value = next
+    }
   }
 }
 async function handlePromptChange(pageNumber: number, prompt: string) {
@@ -524,29 +649,41 @@ async function handlePromptChange(pageNumber: number, prompt: string) {
   if (!page) return
   page.final_prompt = prompt
 
-  schedulePageAutosave('提示词保存失败')
+  schedulePageAutosave(page, '提示词保存失败')
 }
 async function handleManualSync() {
   await state.syncAnalysisData('manual')
 }
-async function clearAndRestart() {
-  if (!insightStore.currentBookId) return
+async function clearAndRestart(expectedBookId?: string) {
+  const context = currentBookContext()
+  if (!context || isClearing.value || (expectedBookId && expectedBookId !== context.bookId)) return
+  isClearing.value = true
   try {
     discardPendingPageAutosave()
     await pageSaveChain
-    await continuationApi.clearContinuationData(insightStore.currentBookId)
+    if (!isCurrentBookContext(context)) return
+    await continuationApi.clearContinuationData(context.bookId)
+    if (!isCurrentBookContext(context)) return
     state.resetState()
     resetLocalWorkflowState()
+    isClearing.value = true
     await state.initializeData()
+    if (!isCurrentBookContext(context)) return
     if (state.isDataReady.value) {
       state.showMessage('续写数据已清空，可重新开始。', 'success')
     }
   } catch (error) {
-    state.showMessage('清空失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
+    if (isCurrentBookContext(context)) {
+      state.showMessage('清空失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
+    }
+  } finally {
+    if (isCurrentBookContext(context)) isClearing.value = false
   }
 }
 
 async function requestClearAndRestart() {
+  const context = currentBookContext()
+  if (!context || isClearing.value) return
   const confirmed = await confirmProductAction({
     title: '清空续写数据',
     message: '确定要清空所有续写数据并重新开始吗？此操作不可恢复。',
@@ -554,14 +691,21 @@ async function requestClearAndRestart() {
     cancelText: '取消',
     tone: 'danger',
   })
-  if (!confirmed) return
-  await clearAndRestart()
+  if (!confirmed || !isCurrentBookContext(context)) return
+  await clearAndRestart(context.bookId)
 }
 async function goToStep(step: number) {
+  const context = currentBookContext()
+  if (!context || isChangingStep.value) return
+  isChangingStep.value = true
+  try {
   if (state.currentStep.value === 0 && step !== 0) {
-    const configError = await persistContinuationConfig()
+    const configError = await persistContinuationConfig(context)
     if (configError) {
-      state.showMessage(`续写配置保存失败：${configError}`, 'info')
+      if (isCurrentBookContext(context)) {
+        state.showMessage(`续写配置保存失败：${configError}`, 'error')
+      }
+      return
     }
   }
   if (state.currentStep.value === 1 && step !== 1 && scriptDirty.value) {
@@ -570,12 +714,16 @@ async function goToStep(step: number) {
       return
     }
   }
-  state.currentStep.value = resolveReachableStep(step)
+  if (isCurrentBookContext(context)) state.currentStep.value = resolveReachableStep(step)
+  } finally {
+    if (isCurrentBookContext(context)) isChangingStep.value = false
+  }
 }
 watch(
   () => insightStore.currentBookId,
   newBookId => {
-    void flushPendingPageAutosave(false)
+    void flushPendingPageAutosave(false).catch(() => undefined)
+    bookGeneration += 1
     resetLocalWorkflowState()
     if (newBookId) {
       state.initializeData()
@@ -606,7 +754,8 @@ watch(
   { immediate: true }
 )
 onBeforeUnmount(() => {
-  void flushPendingPageAutosave(false)
+  bookGeneration += 1
+  void flushPendingPageAutosave(false).catch(() => undefined)
 })
 </script>
 

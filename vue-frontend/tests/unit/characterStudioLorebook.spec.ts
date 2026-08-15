@@ -30,7 +30,7 @@ describe('LorebookTreeEditor import flow', () => {
   it('renders the empty tree state through the product empty-state pattern', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/insight/studio/LorebookTreeEditor.vue'),
-      'utf8',
+      'utf8'
     )
     expect(source).toContain('ProductEmptyState')
     expect(source).not.toContain('class="placeholder"')
@@ -86,5 +86,29 @@ describe('LorebookTreeEditor import flow', () => {
 
     const downButton = wrapper.findAll('button').find(button => button.text() === '下移')
     expect(downButton?.attributes('disabled')).toBeDefined()
+  })
+
+  it('emits immutable tree and branch updates without mutating input props', async () => {
+    const root = buildEntry()
+    const editor = mount(LorebookTreeEditor, {
+      props: { entries: [root], importing: false },
+    })
+
+    await editor
+      .findAll('button')
+      .find(button => button.text() === '添加根条目')!
+      .trigger('click')
+    const nextEntries = editor.emitted('update:entries')?.[0]?.[0] as LorebookEntryNode[]
+    expect(nextEntries).toHaveLength(2)
+    expect(root.children).toEqual([])
+
+    const branch = mount(LorebookTreeBranch, {
+      props: { entry: root, index: 0, siblingCount: 1 },
+    })
+    await branch.find('input').setValue('更新后的条目')
+    const nextEntry = branch.emitted('update:entry')?.at(-1)?.[0] as LorebookEntryNode
+
+    expect(nextEntry.comment).toBe('更新后的条目')
+    expect(root.comment).toBe('测试条目')
   })
 })

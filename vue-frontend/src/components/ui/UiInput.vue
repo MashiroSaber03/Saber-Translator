@@ -4,7 +4,7 @@ import { computed, ref, useAttrs } from 'vue'
 defineOptions({ inheritAttrs: false })
 
 const props = withDefaults(defineProps<{
-  modelValue?: string | number | boolean
+  modelValue?: string | number
   type?: string
   placeholder?: string
   disabled?: boolean
@@ -24,7 +24,7 @@ const props = withDefaults(defineProps<{
 })
 
 const emit = defineEmits<{
-  'update:modelValue': [value: string | number | boolean]
+  'update:modelValue': [value: string | number]
   input: [event: Event]
 }>()
 
@@ -45,11 +45,6 @@ const supportsComposition = computed(() => textCompositionInputTypes.has((props.
 function handleInput(event: Event) {
   const target = event.target as HTMLInputElement & { composing?: boolean }
   if (supportsComposition.value && (isComposing.value || target.composing)) return
-  if (props.type === 'checkbox') {
-    emit('update:modelValue', target.checked)
-    emit('input', event)
-    return
-  }
   emit('update:modelValue', props.type === 'number' && target.value !== '' ? Number(target.value) : target.value)
   emit('input', event)
 }
@@ -83,7 +78,6 @@ defineExpose({ focus })
     class="ui-input"
     :class="[`ui-input--${size}`, `ui-input--${variant}`, { 'ui-input--error': Boolean(error) }]"
     :value="inputValue"
-    :checked="type === 'checkbox' ? Boolean(modelValue) : undefined"
     :type="type"
     :placeholder="placeholder"
     :disabled="disabled"
@@ -117,8 +111,6 @@ defineExpose({ focus })
   box-shadow: 0 0 0 3px var(--ui-input-focus-shadow);
 }
 
-:where(.ui-input[type='checkbox']),
-:where(.ui-input[type='radio']),
 :where(.ui-input[type='range']) {
   width: auto;
   min-height: 0;
@@ -129,8 +121,6 @@ defineExpose({ focus })
   margin: var(--ui-input-control-margin);
 }
 
-:where(.ui-input[type='checkbox']):focus,
-:where(.ui-input[type='radio']):focus,
 :where(.ui-input[type='range']):focus {
   box-shadow: none;
 }

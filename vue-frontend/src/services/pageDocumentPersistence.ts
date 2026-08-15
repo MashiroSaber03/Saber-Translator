@@ -3,6 +3,7 @@ import {
   type V2PageDocument,
   type V2PageDocumentBatchMutation,
   type V2PageDocumentMutationResponse,
+  type V2CompleteBubbleMutationFields,
 } from '@/api/v2/content'
 import { pageDocumentToBubbles } from '@/adapters/v2ContentAdapter'
 import { useBubbleStore } from '@/stores/bubbleStore'
@@ -42,14 +43,36 @@ function canonical(value: unknown): string {
   return JSON.stringify(value)
 }
 
-function bubbleFields(bubble: BubbleState): Record<string, unknown> {
-  const fields = { ...deepClone(bubble) } as Record<string, unknown>
-  delete fields.backendBubbleId
-  delete fields.clientMutationId
-  const fontId = typeof fields.fontFamily === 'string' ? fields.fontFamily : null
-  delete fields.fontFamily
-  fields.fontId = fontId
-  return fields
+function bubbleFields(bubble: BubbleState): V2CompleteBubbleMutationFields {
+  return {
+    originalText: bubble.originalText,
+    translatedText: bubble.translatedText,
+    textboxText: bubble.textboxText,
+    coords: [...bubble.coords],
+    polygon: bubble.polygon.map(point => [...point]),
+    fontSize: bubble.fontSize,
+    textDirection: bubble.textDirection,
+    textColor: bubble.textColor,
+    fillColor: bubble.fillColor,
+    rotationAngle: bubble.rotationAngle,
+    position: { ...bubble.position },
+    strokeEnabled: bubble.strokeEnabled,
+    strokeColor: bubble.strokeColor,
+    strokeWidth: bubble.strokeWidth,
+    lineSpacing: bubble.lineSpacing,
+    textAlign: bubble.textAlign,
+    inpaintMethod: bubble.inpaintMethod,
+    autoFgColor: bubble.autoFgColor ? [...bubble.autoFgColor] : null,
+    autoBgColor: bubble.autoBgColor ? [...bubble.autoBgColor] : null,
+    colorConfidence: bubble.colorConfidence,
+    textlines: bubble.textlines.map(line => ({
+      polygon: line.polygon.map(point => [...point]),
+      direction: line.direction,
+      confidence: line.confidence,
+    })),
+    ocrResult: bubble.ocrResult ? { ...bubble.ocrResult } : null,
+    fontId: bubble.fontFamily,
+  }
 }
 
 function ensureClientMutationIds(bubbles: BubbleState[]): void {
@@ -72,7 +95,7 @@ function evictSettledStates(protectedPageId: string): void {
     if (
       pageId === protectedPageId
       || state.promise
-      || state.lastError
+      || state.saving
     ) continue
     states.delete(pageId)
   }
@@ -178,7 +201,11 @@ export function registerPageDocument(document: V2PageDocument): BubbleState[] {
     !existing
     || (
       !existing.saving
-      && canonical(existing.desired) === canonical(existing.persisted)
+      && !existing.promise
+      && (
+        existing.lastError
+        || canonical(existing.desired) === canonical(existing.persisted)
+      )
     )
   ) {
     const state: PersistedPageState = {
@@ -227,28 +254,20 @@ export function queuePageDocumentMutation(
   bubbles: BubbleState[],
   style: PageDocumentStyleMutation = {},
 ): Promise<void> {
-  ensureClientMutationIds(bubbles)
-  let state = states.get(pageId)
+  const state = states.get(pageId)
   if (!state) {
-    state = {
-      debounceResolve: null,
-      debounceTimer: null,
-      defaultFontChanged: false,
-      desiredDefaultFontId: null,
-      desiredPropagateStyleFields: new Set(),
-      desiredStylePatch: {},
-      desired: [],
-      desiredVersion: 0,
-      documentRevision,
-      lastError: null,
-      lastQueuedAt: 0,
-      persisted: [],
-      promise: null,
-      saving: false,
-      flushRequested: false,
-    }
-    states.set(pageId, state)
+    throw new Error(`页面文档 ${pageId} 尚未从后端注册`)
   }
+  if (
+    !Number.isSafeInteger(documentRevision)
+    || documentRevision < 1
+    || documentRevision !== state.documentRevision
+  ) {
+    throw new Error(
+      `页面文档 ${pageId} 版本已变化：当前为 ${state.documentRevision}，提交版本为 ${documentRevision}`,
+    )
+  }
+  ensureClientMutationIds(bubbles)
   touchState(pageId, state)
   state.desired = cloneBubbles(bubbles)
   if (Object.hasOwn(style, 'defaultFontId')) {
@@ -374,6 +393,10 @@ async function persistLoop(
     state.lastError = error instanceof Error ? error : new Error('页面文档写入失败')
     throw state.lastError
   } finally {
+    if (state.debounceTimer) clearTimeout(state.debounceTimer)
+    state.debounceTimer = null
+    state.debounceResolve = null
+    state.flushRequested = false
     state.saving = false
   }
 }
@@ -405,6 +428,14 @@ export function hasPendingPageDocument(pageId: string): boolean {
 
 export function isPageDocumentRegistered(pageId: string): boolean {
   return states.has(pageId)
+}
+
+export function discardPageDocument(pageId: string): boolean {
+  const state = states.get(pageId)
+  if (!state) return true
+  if (state.promise || state.saving) return false
+  states.delete(pageId)
+  return true
 }
 
 export async function flushPageDocument(pageId: string): Promise<void> {

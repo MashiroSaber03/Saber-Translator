@@ -143,13 +143,28 @@ class WorkerModelControlRepository:
                 select(worker_commands)
                 .where(
                     worker_commands.c.kind == "release_models",
-                    worker_commands.c.status == "pending",
+                    (
+                        worker_commands.c.status == "pending"
+                    )
+                    | (
+                        (worker_commands.c.status == "running")
+                        & (
+                            worker_commands.c.worker_epoch_id
+                            == worker_epoch_id
+                        )
+                    ),
                 )
                 .order_by(worker_commands.c.created_at)
                 .limit(1)
             ).mappings().one_or_none()
             if row is None:
                 return None
+            if row["status"] == "running":
+                return {
+                    "commandId": str(row["id"]),
+                    "kind": str(row["kind"]),
+                    "status": "running",
+                }
             changed = connection.execute(
                 update(worker_commands)
                 .where(
@@ -355,23 +370,26 @@ class WorkerModelLifecycle:
             result = unload_loaded_models(
                 release_callbacks=self.release_callbacks,
             )
-            self.repository.complete(
-                command_id=command_id,
-                worker_epoch_id=self.worker_epoch_id,
-                result=result,
-            )
-            LOGGER.info(
-                "手动模型释放完成：command=%s released=%s failures=%s",
-                command_id[:8],
-                _log_list(result.get("released")),
-                _log_list(result.get("failures")),
-            )
         except Exception as exc:
             LOGGER.exception("手动模型释放失败：command=%s", command_id[:8])
             self.repository.fail(
                 command_id=command_id,
                 worker_epoch_id=self.worker_epoch_id,
                 message=str(exc),
+            )
+        else:
+            # Persistence errors are not model-release errors.  Let SQLite BUSY
+            # reach the scheduler retry boundary; claim_release() can resume a
+            # running command owned by this same Worker epoch.
+            self.repository.complete(
+                command_id=command_id,
+                worker_epoch_id=self.worker_epoch_id,
+                result=result,
+            )
+            LOGGER.info(
+                "手动模型释放完成：command=%s released=%s",
+                command_id[:8],
+                _log_list(result.get("released")),
             )
         self.last_activity = self.monotonic()
         self.released_since_activity = True
@@ -427,6 +445,11 @@ def unload_loaded_models(
             "src.interfaces.paddleocr_vl_interface",
             "reset_paddleocr_vl_handler",
             "paddleocr_vl",
+        ),
+        (
+            "src.interfaces.paddle_ocr_onnx_interface",
+            "reset_paddle_ocr_handler",
+            "paddle_ocr",
         ),
         (
             "src.interfaces.lama_interface",

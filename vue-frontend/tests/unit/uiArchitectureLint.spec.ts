@@ -702,6 +702,34 @@ describe('UI architecture CSS variable ownership lint', () => {
 })
 
 describe('UI architecture style ownership lint', () => {
+  it('does not interpret Vue named-slot shorthand as a CSS ID selector', () => {
+    const result = runUiArchitectureSourceFixture('QAMessageItem.vue', `
+      <template>
+        <ProductMessageBubble>
+          <template #footer>引用</template>
+        </ProductMessageBubble>
+      </template>
+      <style scoped>
+      .qa-message-item { display: block; }
+      </style>
+    `)
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain('UI architecture check passed')
+  })
+
+  it('rejects an actual CSS ID selector inside a Vue style block', () => {
+    const result = runUiArchitectureSourceFixture('QAMessageItem.vue', `
+      <template><div id="answer"></div></template>
+      <style scoped>
+      #answer { display: block; }
+      </style>
+    `)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('CSS ID selectors are not allowed')
+  })
+
   it('reports heavy owner review signals only in audit output', () => {
     const longTemplate = Array.from(
       { length: 901 },
@@ -1336,6 +1364,28 @@ describe('UI architecture old implementation mindset lint', () => {
 })
 
 describe('UI architecture source hygiene lint', () => {
+  it('allows only the button and selector primitives to own native buttons', () => {
+    for (const primitivePath of [
+      'src/components/ui/UiButton.vue',
+      'src/components/ui/UiCombobox.vue',
+      'src/components/ui/UiIconButton.vue',
+      'src/components/ui/UiSelect.vue',
+    ]) {
+      const result = runUiArchitectureSourceFixture(
+        primitivePath,
+        '<template><button type="button">control</button></template>',
+      )
+      expect(result.status).toBe(0)
+    }
+
+    const domainResult = runUiArchitectureSourceFixture(
+      'src/components/edit/RawAction.vue',
+      '<template><button type="button">action</button></template>',
+    )
+    expect(domainResult.status).toBe(1)
+    expect(domainResult.stderr).toContain('raw <button> is not allowed')
+  })
+
   it('rejects stale requirement and property narration inside frontend tests', () => {
     const result = runUiArchitectureSourceFixture('tests/property/example.property.ts', `
       /**

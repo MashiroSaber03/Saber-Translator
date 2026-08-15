@@ -2,6 +2,16 @@ export type WebImportAgentProvider = string
 
 export type WebImportEngine = 'auto' | 'gallery-dl' | 'ai-agent'
 
+export type WebImportResolvedEngine = Exclude<WebImportEngine, 'auto'>
+
+export type WebImportStatus =
+  | 'idle'
+  | 'extracting'
+  | 'extracted'
+  | 'downloading'
+  | 'completed'
+  | 'error'
+
 export type WebImportImageFormat = 'jpeg' | 'png' | 'webp' | 'original'
 
 export interface WebImportCompressionSettings {
@@ -94,37 +104,13 @@ export interface ComicPage {
 }
 
 export interface ExtractResult {
-  success: boolean
-  comicTitle: string
-  chapterTitle: string
   pages: ComicPage[]
   totalPages: number
-  sourceUrl: string
-  referer?: string
-  engine?: WebImportEngine
-  error?: string
+  engine: WebImportResolvedEngine
 }
 
 export interface AgentLog {
   timestamp: string
   type: 'info' | 'tool_call' | 'tool_result' | 'thinking' | 'error'
   message: string
-}
-
-export interface WebImportDownloadProgress {
-  current: number
-  total: number
-}
-
-export interface WebImportState {
-  status: 'idle' | 'extracting' | 'extracted' | 'downloading' | 'completed' | 'error'
-  url: string
-  engine: WebImportEngine
-  currentEngine: WebImportEngine | null
-  referer: string
-  logs: AgentLog[]
-  extractResult: ExtractResult | null
-  selectedPages: Set<number>
-  downloadProgress: WebImportDownloadProgress
-  error: string | null
 }

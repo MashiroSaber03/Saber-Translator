@@ -2,8 +2,20 @@
 
 from __future__ import annotations
 
+from src.shared.constants import (
+    BATCH_TRANSLATE_JSON_SYSTEM_TEMPLATE,
+    BATCH_TRANSLATE_SYSTEM_TEMPLATE,
+    DEFAULT_AI_VISION_OCR_PROMPT,
+    DEFAULT_HQ_TRANSLATE_PROMPT,
+    DEFAULT_PROMPT,
+    DEFAULT_PROOFREADING_PROMPT,
+    DEFAULT_TRANSLATE_JSON_PROMPT,
+    DEFAULT_WEB_IMPORT_EXTRACTION_PROMPT,
+)
+
 
 DEFAULT_FONT_ID = "00000000-0000-0000-0000-000000000010"
+TRANSLATION_SETTINGS_SCHEMA_VERSION = 5
 
 DEFAULT_TEXT_STYLE: dict[str, object] = {
     "fontSize": 26,
@@ -25,34 +37,6 @@ DEFAULT_WORKFLOW_PREFERENCES: dict[str, object] = {
     "rememberWorkflowModeEnabled": False,
     "lastWorkflowMode": "translate-current",
 }
-
-DEFAULT_WEB_IMPORT_EXTRACTION_PROMPT = """你是一个专业的漫画数据提取助手。请针对当前网页执行以下提取任务:
-
-## 1. 交互行为
-- 请模拟用户行为，缓慢向下滚动页面至底部，以触发所有采用"懒加载"技术的漫画图片。
-- 在滚动过程中，请确保等待图片加载完成，识别并提取真实的漫画内容图片。
-
-## 2. 提取逻辑
-- **图片过滤**: 忽略所有加载占位图（如 loading.gif、spacer.gif）、广告图或图标，仅提取属于漫画正文的图片。
-- **属性识别**: 优先提取 `data-src`、`data-original`、`original` 或 `file` 等包含真实高清原图地址的属性。如果这些属性不存在，再提取 `src` 属性。
-- **元数据**: 提取漫画的名称（comic_title）和当前章节的名称（chapter_title）。
-
-## 3. 数据结构
-- 必须按图片在页面中显示的先后顺序提取，并为每张图片分配一个从 1 开始的 `page_number`（页码序号）。
-- 最终结果以 JSON 格式输出，包含漫画名称、章节名以及包含序号和图片链接的列表。
-
-## 4. 输出格式 (Valid JSON Only)
-严格按照以下 JSON 格式输出，不要包含 Markdown 代码块标记（如 ```json）：
-
-{
-  "comic_title": "漫画名称",
-  "chapter_title": "第X话 章节标题",
-  "pages": [
-    {"page_number": 1, "image_url": "https://..."},
-    {"page_number": 2, "image_url": "https://..."}
-  ],
-  "total_pages": 1
-}"""
 
 DEFAULT_WEB_IMPORT_SETTINGS: dict[str, object] = {
     "firecrawl": {},
@@ -114,24 +98,13 @@ DEFAULT_INSIGHT_SETTINGS: dict[str, object] = {
 }
 
 FACTORY_PROMPTS: dict[str, str] = {
-    "translate": (
-        "将输入内容准确、自然地翻译为简体中文，仅输出译文；"
-        "保持角色语气、上下文与专有名词一致。"
-    ),
+    "translate": BATCH_TRANSLATE_SYSTEM_TEMPLATE,
     "textbox": (
         "将输入内容翻译为简体中文，并简要说明关键语法、语气与译法。"
     ),
-    "ai_vision_ocr": (
-        "按阅读顺序识别漫画图片中的文字；不要臆造不可见内容。"
-    ),
-    "hq_translate": (
-        "结合连续漫画页面、原文和既有术语，将内容翻译为自然的简体中文；"
-        "保持跨页上下文和角色口吻一致。"
-    ),
-    "proofreading": (
-        "结合原图、原文和既有译文进行校对，只修正准确性、流畅性、"
-        "术语一致性与角色语气问题。"
-    ),
+    "ai_vision_ocr": DEFAULT_AI_VISION_OCR_PROMPT,
+    "hq_translate": DEFAULT_HQ_TRANSLATE_PROMPT,
+    "proofreading": DEFAULT_PROOFREADING_PROMPT,
     "batch_analysis": (
         "分析漫画页面，输出符合给定 schema 的摘要、关键事件、连续性与警告。"
     ),
@@ -160,11 +133,10 @@ FACTORY_PROMPTS: dict[str, str] = {
 
 
 def default_translation_settings() -> dict[str, object]:
-    """Return the complete browser schema-v3 factory document.
+    """Return the complete current browser settings document.
 
     The v2 database is the first source of truth, so a fresh database must
-    contain a document the strict frontend parser can hydrate without falling
-    back to a second browser-owned settings source.
+    contain a document the strict frontend parser can hydrate directly.
     """
 
     def openai_options(
@@ -185,7 +157,7 @@ def default_translation_settings() -> dict[str, object]:
         }
 
     return {
-        "settingsSchemaVersion": 3,
+        "settingsSchemaVersion": TRANSLATION_SETTINGS_SCHEMA_VERSION,
         "ocrEngine": "manga_ocr",
         "sourceLanguage": "japanese",
         "textDetector": "default",
@@ -230,13 +202,13 @@ def default_translation_settings() -> dict[str, object]:
                 business_retries=3,
             ),
             "translationMode": "batch",
-            "batchNormalPrompt": FACTORY_PROMPTS["translate"],
-            "batchJsonPrompt": FACTORY_PROMPTS["translate"],
-            "singleNormalPrompt": FACTORY_PROMPTS["translate"],
-            "singleJsonPrompt": FACTORY_PROMPTS["translate"],
+            "batchNormalPrompt": BATCH_TRANSLATE_SYSTEM_TEMPLATE,
+            "batchJsonPrompt": BATCH_TRANSLATE_JSON_SYSTEM_TEMPLATE,
+            "singleNormalPrompt": DEFAULT_PROMPT,
+            "singleJsonPrompt": DEFAULT_TRANSLATE_JSON_PROMPT,
         },
         "targetLanguage": "zh",
-        "translatePrompt": FACTORY_PROMPTS["translate"],
+        "translatePrompt": BATCH_TRANSLATE_SYSTEM_TEMPLATE,
         "useTextboxPrompt": False,
         "textboxPrompt": "",
         "hqTranslation": {
@@ -259,14 +231,13 @@ def default_translation_settings() -> dict[str, object]:
             "openaiOptions": openai_options(
                 use_stream=True,
                 rpm_limit=0,
-                transport_retries=10,
-                business_retries=10,
+                transport_retries=1,
+                business_retries=0,
             ),
         },
         "proofreading": {
             "enabled": False,
             "rounds": [],
-            "maxRetries": 2,
         },
         "boxExpand": {"ratio": 0, "top": 0, "bottom": 0, "left": 0, "right": 0},
         "preciseMask": {"dilateSize": 10, "boxExpandRatio": 20},

@@ -12,11 +12,7 @@ const routes: RouteRecordRaw[] = [
     path: APP_ROUTE_PATHS.translate,
     name: 'translate',
     component: () => import('@/views/TranslateView.vue'),
-    meta: { title: '翻译' },
-    props: (route) => ({
-      bookId: route.query.book as string | undefined,
-      chapterId: route.query.chapter as string | undefined
-    })
+    meta: { title: '翻译' }
   },
   {
     path: APP_ROUTE_PATHS.reader,
@@ -39,10 +35,7 @@ const routes: RouteRecordRaw[] = [
     path: APP_ROUTE_PATHS.insight,
     name: 'insight',
     component: () => import('@/views/InsightView.vue'),
-    meta: { title: '漫画分析' },
-    props: (route) => ({
-      bookId: route.query.book as string | undefined
-    })
+    meta: { title: '漫画分析' }
   },
   {
     path: APP_ROUTE_PATHS.characterStudio,

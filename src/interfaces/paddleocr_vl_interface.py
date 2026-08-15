@@ -216,32 +216,33 @@ class PaddleOCRVLHandler:
         Returns:
             识别的文本
         """
-        # 转换为 PIL Image
+        owns_image = False
         if isinstance(img, np.ndarray):
             pil_img = Image.fromarray(img)
+            owns_image = True
         else:
             pil_img = img
-        
-        # 确保是 RGB 模式
+
         if pil_img.mode != 'RGB':
-            pil_img = pil_img.convert('RGB')
-        
-        # 根据源语言构建动态提示词
-        lang_name = PADDLEOCR_VL_LANG_MAP.get(source_language, '日语')
-        ocr_prompt = f"对图中的{lang_name}进行OCR:"
-        
-        # 构建对话消息 (VLM 格式)
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "image", "image": pil_img},
-                    {"type": "text", "text": ocr_prompt}
-                ]
-            }
-        ]
-        
+            converted = pil_img.convert('RGB')
+            if owns_image:
+                pil_img.close()
+            pil_img = converted
+            owns_image = True
+
         try:
+            lang_name = PADDLEOCR_VL_LANG_MAP.get(source_language, '日语')
+            ocr_prompt = f"对图中的{lang_name}进行OCR:"
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image", "image": pil_img},
+                        {"type": "text", "text": ocr_prompt},
+                    ],
+                }
+            ]
+
             # 使用 transformers 标准推理方式
             # 第一步：使用 apply_chat_template 生成 text (tokenize=False)
             text = self.processor.apply_chat_template(
@@ -280,17 +281,19 @@ class PaddleOCRVLHandler:
             )[0]
             
             return output_text.strip()
-            
         except Exception as e:
             logger.error(f"OCR 识别出错: {type(e).__name__}: {e}")
             logger.error(f"图像尺寸: {pil_img.size}, 模式: {pil_img.mode}")
             raise
+        finally:
+            if owns_image:
+                pil_img.close()
     
     def recognize_text(
         self, 
         image: Image.Image, 
         bubble_coords: List[Tuple[int, int, int, int]],
-        source_language: str = 'japanese'
+        source_language: str = 'japanese',
     ) -> List[str]:
         """
         识别文本
@@ -304,8 +307,7 @@ class PaddleOCRVLHandler:
             ['text1', 'text2', ...] - 每个气泡的识别结果
         """
         if not self.initialized or self.model is None:
-            logger.error("PaddleOCR-VL 未初始化")
-            return [""] * len(bubble_coords)
+            raise RuntimeError("PaddleOCR-VL 未初始化")
         
         if not bubble_coords:
             return []
@@ -313,8 +315,14 @@ class PaddleOCRVLHandler:
         lang_name = PADDLEOCR_VL_LANG_MAP.get(source_language, '日语')
         logger.info(f"使用 PaddleOCR-VL 识别 {len(bubble_coords)} 个气泡，源语言: {lang_name}")
         
+        converted = image.convert('RGB')
         try:
-            img_np = np.array(image.convert('RGB'))
+            img_np = np.array(converted)
+        finally:
+            if converted is not image:
+                converted.close()
+
+        try:
             results = []
             
             for i, (x1, y1, x2, y2) in enumerate(bubble_coords):
@@ -323,9 +331,7 @@ class PaddleOCRVLHandler:
                     bubble = img_np[y1:y2, x1:x2]
                     
                     if bubble.shape[0] == 0 or bubble.shape[1] == 0:
-                        logger.info(f"气泡 {i} 图像无效，跳过")
-                        results.append("")
-                        continue
+                        raise ValueError(f"气泡 {i} 图像区域无效")
                     
                     logger.info(f"处理气泡 {i+1}/{len(bubble_coords)}，尺寸: {bubble.shape[1]}x{bubble.shape[0]}")
                     
@@ -340,9 +346,7 @@ class PaddleOCRVLHandler:
                     
                 except Exception as e:
                     logger.error(f"气泡 {i} 识别失败: {e}")
-                    if is_memory_allocation_error(e):
-                        raise
-                    results.append("")
+                    raise
             
             # 清理 GPU 显存
             if self.use_gpu:
@@ -353,9 +357,7 @@ class PaddleOCRVLHandler:
             
         except Exception as e:
             logger.error(f"PaddleOCR-VL 识别失败: {e}", exc_info=True)
-            if is_memory_allocation_error(e):
-                raise
-            return [""] * len(bubble_coords)
+            raise
 
 
 # 单例模式

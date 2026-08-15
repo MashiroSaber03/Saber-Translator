@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { getCurrentScope, onScopeDispose, ref } from 'vue'
 
 import { fetchModels as fetchV2Models } from '@/api/v2/diagnostics'
 import {
@@ -143,6 +143,8 @@ export function useAiModelDiscovery(options: AiModelDiscoveryOptions) {
       }
     }
   }
+
+  if (getCurrentScope()) onScopeDispose(invalidate)
 
   return {
     models,

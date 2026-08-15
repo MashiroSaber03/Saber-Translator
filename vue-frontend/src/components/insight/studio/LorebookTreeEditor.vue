@@ -3,7 +3,9 @@
     <div class="lorebook-tree-editor__head">
       <div class="lorebook-tree-editor__head-copy">
         <h3 class="lorebook-tree-editor__title">世界书树</h3>
-        <p class="lorebook-tree-editor__description">支持根条目与子条目，适合逐步积累设定与触发知识。</p>
+        <p class="lorebook-tree-editor__description">
+          支持根条目与子条目，适合逐步积累设定与触发知识。
+        </p>
       </div>
       <ProductActionRow appearance="accent" aria-label="世界书树操作">
         <UiButton variant="secondary" @click="addRootEntry">添加根条目</UiButton>
@@ -13,15 +15,10 @@
       </ProductActionRow>
     </div>
 
-    <UiFileInput
-      ref="worldbookInput"
-      hidden
-      accept=".json"
-      @files-change="handleWorldbookSelect"
-    />
+    <UiFileInput ref="worldbookInput" hidden accept=".json" @files-change="handleWorldbookSelect" />
 
     <ProductEmptyState
-      v-if="localEntries.length === 0"
+      v-if="entries.length === 0"
       icon-name="book-open"
       role="note"
       size="compact"
@@ -30,11 +27,11 @@
     />
     <div v-else class="lorebook-tree-editor__tree-list">
       <LorebookTreeBranch
-        v-for="(entry, index) in localEntries"
+        v-for="(entry, index) in entries"
         :key="entry.id"
         :entry="entry"
         :index="index"
-        :sibling-count="localEntries.length"
+        :sibling-count="entries.length"
         @update:entry="replaceRootEntry(index, $event)"
         @remove="removeRootEntry(index)"
         @move="moveRootEntry(index, $event)"
@@ -48,9 +45,8 @@ import UiFileInput from '@/components/ui/UiFileInput.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
-import { nextTick, ref, watch } from 'vue'
+import { ref } from 'vue'
 import type { LorebookEntryNode } from '@/types/characterStudio'
-import { deepClone } from '@/utils/deepClone'
 import LorebookTreeBranch from './LorebookTreeBranch.vue'
 
 const props = defineProps<{
@@ -63,40 +59,28 @@ const emit = defineEmits<{
   (e: 'import-worldbook', file: File): void
 }>()
 
-const localEntries = ref<LorebookEntryNode[]>([])
 const worldbookInput = ref<InstanceType<typeof UiFileInput> | null>(null)
-let syncing = false
-
-watch(() => props.entries, value => {
-  syncing = true
-  localEntries.value = deepClone(value || [])
-  void nextTick(() => {
-    syncing = false
-  })
-}, { deep: true, immediate: true })
-
-watch(localEntries, value => {
-  if (syncing) return
-  emit('update:entries', deepClone(value))
-}, { deep: true })
 
 function addRootEntry() {
-  localEntries.value.push({
-    id: `entry_${Date.now()}`,
-    comment: '新根条目',
-    keys: [],
-    secondary_keys: [],
-    content: '',
-    enabled: true,
-    constant: false,
-    selective: true,
-    priority: 100,
-    position: 'before_char',
-    depth: 4,
-    probability: 100,
-    prevent_recursion: true,
-    children: [],
-  })
+  emit('update:entries', [
+    ...props.entries,
+    {
+      id: `entry_${Date.now()}`,
+      comment: '新根条目',
+      keys: [],
+      secondary_keys: [],
+      content: '',
+      enabled: true,
+      constant: false,
+      selective: true,
+      priority: 100,
+      position: 'before_char',
+      depth: 4,
+      probability: 100,
+      prevent_recursion: true,
+      children: [],
+    },
+  ])
 }
 
 function pickWorldbook() {
@@ -111,18 +95,26 @@ function handleWorldbookSelect(files: File[]) {
 }
 
 function replaceRootEntry(index: number, value: LorebookEntryNode) {
-  localEntries.value[index] = value
+  emit(
+    'update:entries',
+    props.entries.map((entry, entryIndex) => (entryIndex === index ? value : entry))
+  )
 }
 
 function removeRootEntry(index: number) {
-  localEntries.value.splice(index, 1)
+  emit(
+    'update:entries',
+    props.entries.filter((_entry, entryIndex) => entryIndex !== index)
+  )
 }
 
 function moveRootEntry(index: number, offset: -1 | 1) {
   const target = index + offset
-  if (target < 0 || target >= localEntries.value.length) return
-  const [item] = localEntries.value.splice(index, 1)
-  localEntries.value.splice(target, 0, item!)
+  if (target < 0 || target >= props.entries.length) return
+  const entries = [...props.entries]
+  const [item] = entries.splice(index, 1)
+  entries.splice(target, 0, item!)
+  emit('update:entries', entries)
 }
 </script>
 
@@ -130,7 +122,11 @@ function moveRootEntry(index: number, offset: -1 | 1) {
 .lorebook-tree-editor {
   --lorebook-tree-editor-card-border: var(--studio-border-default);
   --lorebook-tree-editor-card-shadow: var(--studio-shadow-floating);
-  --lorebook-tree-editor-card-background: color-mix(in srgb, var(--color-surface-card) 82%, transparent);
+  --lorebook-tree-editor-card-background: color-mix(
+    in srgb,
+    var(--color-surface-card) 82%,
+    transparent
+  );
   --lorebook-tree-editor-description-text: var(--studio-text-muted);
 
   border-radius: 22px;

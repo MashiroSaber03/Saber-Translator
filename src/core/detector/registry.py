@@ -9,8 +9,6 @@ from typing import Dict, Type, Literal
 
 from PIL import Image
 
-from src.shared.memory_errors import is_memory_allocation_error
-
 from .base import BaseTextDetector
 from .data_types import DetectionResult
 
@@ -64,17 +62,12 @@ def _lazy_register_builtin():
 
 def get_detector(
     detector_type: DetectorType = None,
-    force_reload: bool = False,
-    **kwargs
 ) -> BaseTextDetector:
     """
     获取检测器实例（单例模式）
     
     Args:
         detector_type: 检测器类型，默认使用 Default
-        force_reload: 是否强制重新加载
-        **kwargs: 传递给检测器构造函数的参数
-        
     Returns:
         BaseTextDetector: 检测器实例
     """
@@ -90,10 +83,10 @@ def get_detector(
         )
     
     # 检查是否需要创建新实例
-    if force_reload or detector_type not in _detector_instances:
+    if detector_type not in _detector_instances:
         logger.info(f"创建检测器实例: {detector_type}")
         detector_class = _detector_registry[detector_type]
-        _detector_instances[detector_type] = detector_class(**kwargs)
+        _detector_instances[detector_type] = detector_class()
     
     return _detector_instances[detector_type]
 
@@ -120,13 +113,12 @@ def detect(
     detector_type: DetectorType = None,
     merge_lines: bool = None,
     edge_ratio_threshold: float = 0.0,
-    expand_ratio: float = 0,
-    expand_top: float = 0,
-    expand_bottom: float = 0,
-    expand_left: float = 0,
-    expand_right: float = 0,
     enable_large_image: bool = None,
-    **kwargs
+    sort_method: str = 'smart',
+    right_to_left: bool = True,
+    enable_aux_yolo_detection: bool = None,
+    aux_yolo_conf_threshold: float = None,
+    aux_yolo_overlap_threshold: float = None,
 ) -> DetectionResult:
     """
     统一检测入口函数
@@ -136,11 +128,7 @@ def detect(
         detector_type: 检测器类型
         merge_lines: 是否合并文本行（None 时使用检测器默认设置）
         edge_ratio_threshold: 边缘距离比例阈值
-        expand_ratio: 整体扩展比例 (%)
-        expand_top/bottom/left/right: 各边额外扩展 (%)
         enable_large_image: 是否启用超长图片切割（None 时使用全局配置）
-        **kwargs: 其他参数
-        
     Returns:
         DetectionResult: 检测结果
     """
@@ -153,44 +141,31 @@ def detect(
         enable_large_image = constants.LARGE_IMAGE_ENABLED
     
     if enable_large_image:
-        # 使用大图检测包装器
-        try:
-            from src.core.large_image_detection import LargeImageDetectorWrapper
-            
-            target_size = constants.LARGE_IMAGE_TARGET_SIZE
-            
-            wrapper = LargeImageDetectorWrapper(
-                detector=detector,
-                target_size=target_size
-            )
-            
-            return wrapper.detect(
-                image,
-                merge_lines=merge_lines,
-                edge_ratio_threshold=edge_ratio_threshold,
-                expand_ratio=expand_ratio,
-                expand_top=expand_top,
-                expand_bottom=expand_bottom,
-                expand_left=expand_left,
-                expand_right=expand_right,
-                **kwargs
-            )
-        except ImportError as e:
-            logger.warning(f"大图检测模块导入失败，回退到普通检测: {e}")
-        except Exception as e:
-            if is_memory_allocation_error(e):
-                raise
-            logger.warning(f"大图检测失败，回退到普通检测: {e}")
+        from src.core.large_image_detection import LargeImageDetectorWrapper
+
+        wrapper = LargeImageDetectorWrapper(
+            detector=detector,
+            target_size=constants.LARGE_IMAGE_TARGET_SIZE,
+        )
+        return wrapper.detect(
+            image,
+            merge_lines=merge_lines,
+            edge_ratio_threshold=edge_ratio_threshold,
+            sort_method=sort_method,
+            right_to_left=right_to_left,
+            enable_aux_yolo_detection=enable_aux_yolo_detection,
+            aux_yolo_conf_threshold=aux_yolo_conf_threshold,
+            aux_yolo_overlap_threshold=aux_yolo_overlap_threshold,
+        )
     
     # 普通检测
     return detector.detect(
         image,
         merge_lines=merge_lines,
         edge_ratio_threshold=edge_ratio_threshold,
-        expand_ratio=expand_ratio,
-        expand_top=expand_top,
-        expand_bottom=expand_bottom,
-        expand_left=expand_left,
-        expand_right=expand_right,
-        **kwargs
+        sort_method=sort_method,
+        right_to_left=right_to_left,
+        enable_aux_yolo_detection=enable_aux_yolo_detection,
+        aux_yolo_conf_threshold=aux_yolo_conf_threshold,
+        aux_yolo_overlap_threshold=aux_yolo_overlap_threshold,
     )

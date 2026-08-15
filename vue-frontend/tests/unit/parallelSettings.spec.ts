@@ -40,11 +40,14 @@ describe('ParallelSettings', () => {
 
     expect(numberField.props('modelValue')).toBe(2)
     expect(numberField.props('min')).toBe(1)
-    expect(numberField.props('max')).toBe(4)
+    expect(numberField.props('max')).toBeUndefined()
     expect(numberField.props('controls')).toBe(true)
 
-    numberField.vm.$emit('update:modelValue', 5)
-    expect(store.settings.parallel.deepLearningLockSize).toBe(4)
+    numberField.vm.$emit('update:modelValue', 8)
+    expect(store.settings.parallel.deepLearningLockSize).toBe(8)
+
+    numberField.vm.$emit('update:modelValue', 0)
+    expect(store.settings.parallel.deepLearningLockSize).toBe(8)
 
     expect(wrapper.find('.number-input').exists()).toBe(false)
     expect(wrapper.find('.number-control').exists()).toBe(false)

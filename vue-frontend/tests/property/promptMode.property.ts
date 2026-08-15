@@ -2,11 +2,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as fc from 'fast-check'
 import { setActivePinia, createPinia } from 'pinia'
 import { useSettingsStore } from '@/stores/settings'
+import promptDefaults from '../../../src/shared/prompt_defaults_factory.json'
 import {
   DEFAULT_AI_VISION_OCR_JSON_PROMPT,
   DEFAULT_AI_VISION_OCR_PROMPT,
+  DEFAULT_AUTO_GLOSSARY_PROMPT,
+  DEFAULT_HQ_TRANSLATE_PROMPT,
+  DEFAULT_PROOFREADING_PROMPT,
+  DEFAULT_SINGLE_BUBBLE_JSON_PROMPT,
+  DEFAULT_SINGLE_BUBBLE_PROMPT,
   DEFAULT_TRANSLATE_JSON_PROMPT,
   DEFAULT_TRANSLATE_PROMPT,
+  DEFAULT_WEB_IMPORT_EXTRACTION_PROMPT,
 } from '@/constants'
 import type { TranslationMode } from '@/types/settings'
 
@@ -76,6 +83,21 @@ describe('prompt mode properties', () => {
     expect(DEFAULT_AI_VISION_OCR_PROMPT).not.toBe(DEFAULT_AI_VISION_OCR_JSON_PROMPT)
   })
 
+  it('uses the shared factory prompt resource without frontend copies', () => {
+    expect({
+      singleNormal: DEFAULT_SINGLE_BUBBLE_PROMPT,
+      singleJson: DEFAULT_SINGLE_BUBBLE_JSON_PROMPT,
+      batchNormal: DEFAULT_TRANSLATE_PROMPT,
+      batchJson: DEFAULT_TRANSLATE_JSON_PROMPT,
+      aiVisionOcrNormal: DEFAULT_AI_VISION_OCR_PROMPT,
+      aiVisionOcrJson: DEFAULT_AI_VISION_OCR_JSON_PROMPT,
+      hqTranslation: DEFAULT_HQ_TRANSLATE_PROMPT,
+      proofreading: DEFAULT_PROOFREADING_PROMPT,
+      autoGlossary: DEFAULT_AUTO_GLOSSARY_PROMPT,
+      webImportExtraction: DEFAULT_WEB_IMPORT_EXTRACTION_PROMPT,
+    }).toEqual(promptDefaults)
+  })
+
   it('selects the matching translation prompt variant for every mode', () => {
     fc.assert(
       fc.property(
@@ -114,7 +136,7 @@ describe('prompt mode properties', () => {
         installMemoryStorage()
         const store = createStore()
 
-        store.setAiVisionOcrPromptMode(forceJsonOutput)
+        store.setAiVisionOcrPromptMode(forceJsonOutput ? 'json' : 'normal')
 
         expect(store.settings.aiVisionOcr.openaiOptions.request.forceJsonOutput).toBe(forceJsonOutput)
         expect(store.settings.aiVisionOcr.promptMode).toBe(forceJsonOutput ? 'json' : 'normal')
@@ -185,13 +207,13 @@ describe('prompt mode properties', () => {
         const store = createStore()
 
         store.setTranslatePromptMode(translateJsonMode)
-        store.setAiVisionOcrPromptMode(aiVisionJsonMode)
+        store.setAiVisionOcrPromptMode(aiVisionJsonMode ? 'json' : 'normal')
         store.setTranslatePromptMode(!translateJsonMode)
 
         expect(store.settings.translation.openaiOptions.request.forceJsonOutput).toBe(!translateJsonMode)
         expect(store.settings.aiVisionOcr.openaiOptions.request.forceJsonOutput).toBe(aiVisionJsonMode)
 
-        store.setAiVisionOcrPromptMode(!aiVisionJsonMode)
+        store.setAiVisionOcrPromptMode(aiVisionJsonMode ? 'normal' : 'json')
 
         expect(store.settings.translation.openaiOptions.request.forceJsonOutput).toBe(!translateJsonMode)
         expect(store.settings.aiVisionOcr.openaiOptions.request.forceJsonOutput).toBe(!aiVisionJsonMode)

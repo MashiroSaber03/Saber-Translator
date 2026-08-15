@@ -27,7 +27,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import type { V2JobEvent } from '@/api/v2/jobs'
 import type { PluginAgentProvider } from '@/types/settings'
-import { providerRequiresApiKey } from '@/config/aiProviders'
+import { providerRequiresApiKey, providerRequiresBaseUrl } from '@/config/aiProviders'
 import { sanitizeHtml } from '@/utils/sanitizeHtml'
 import { useToast } from '@/utils/toast'
 import {
@@ -44,6 +44,7 @@ export interface PluginAgentModalProps {
 export type PluginAgentModalEmit = {
   (e: 'update:modelValue', value: boolean): void
   (e: 'pluginsChanged'): void
+  (e: 'settingsSaved'): void
 }
 
 export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAgentModalEmit) {
@@ -67,6 +68,9 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
     awaiting_target_lock: '等待锁定目标插件',
     ready: '已就绪',
     running: '执行中',
+    pausing: '正在暂停',
+    paused: '已暂停',
+    cancelling: '正在取消',
     completed: '已完成',
     failed: '执行失败',
     cancelled: '已取消',
@@ -90,6 +94,7 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
   const isTestingConnection = ref(false)
   const isSavingAgentSettings = ref(false)
   const isAwaitingPlanningReply = ref(false)
+  const isSessionCommandPending = ref(false)
   const optimisticMessages = ref<PluginAgentConversationMessage[]>([])
   let activeStreamJobId = ''
   let bufferedJobEvents: V2JobEvent[] = []
@@ -98,30 +103,20 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
   let stopTaskEvents: (() => void) | null = null
   let streamGeneration = 0
   let streamIsCatchingUp = false
+  let initializeRequestId = 0
 
-  const localAgentSettings = ref({
-    provider: settingsStore.settings.pluginAgent.provider,
-    apiKey: settingsStore.settings.pluginAgent.apiKey,
-    modelName: settingsStore.settings.pluginAgent.modelName,
-    customBaseUrl: settingsStore.settings.pluginAgent.customBaseUrl,
-    rpmLimit: settingsStore.settings.pluginAgent.openaiOptions.execution.rpmLimit,
-    transportRetries: settingsStore.settings.pluginAgent.openaiOptions.execution.transportRetries,
-    businessRetries: settingsStore.settings.pluginAgent.openaiOptions.execution.businessRetries,
-    forceJsonOutput: settingsStore.settings.pluginAgent.openaiOptions.request.forceJsonOutput,
-    useStream: settingsStore.settings.pluginAgent.openaiOptions.execution.useStream,
-    extraBody: settingsStore.settings.pluginAgent.openaiOptions.request.extraBody,
-  })
+  const agentSettings = computed(() => settingsStore.settings.pluginAgent)
   const hasStoredAgentCredential = computed(() =>
-    settingsStore.hasCredential('plugin_agent', localAgentSettings.value.provider)
+    settingsStore.hasCredential('plugin_agent', agentSettings.value.provider)
   )
   function notifyModelDiscovery(message: string, tone: AiModelDiscoveryMessageTone): void {
     toast[tone](message)
   }
   const modelDiscovery = useAiModelDiscovery({
     source: () => ({
-      provider: localAgentSettings.value.provider,
-      apiKey: localAgentSettings.value.apiKey,
-      baseUrl: localAgentSettings.value.customBaseUrl,
+      provider: agentSettings.value.provider,
+      apiKey: agentSettings.value.apiKey,
+      baseUrl: agentSettings.value.customBaseUrl,
       hasStoredCredential: hasStoredAgentCredential.value,
     }),
     fetcher: (provider, apiKey, baseUrl) =>
@@ -179,22 +174,32 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
       assistantDisplayTargets.value
     )
   )
+  const isRunning = computed(() =>
+    ['running', 'pausing', 'paused', 'cancelling'].includes(
+      session.value?.run_state || ''
+    )
+  )
+  const isConversationPending = computed(
+    () => isRunning.value || isAwaitingPlanningReply.value || isSessionCommandPending.value,
+  )
   const canBeginConversation = computed(() => {
+    if (isConversationPending.value) return false
     if (mode.value === 'modify') {
       return Boolean(selectedPluginId.value && messageInput.value.trim())
     }
     return Boolean(messageInput.value.trim())
   })
   const canLockTarget = computed(
-    () => mode.value === 'create' && Boolean(session.value?.pending_target)
+    () => !isSessionCommandPending.value
+      && mode.value === 'create'
+      && Boolean(session.value?.pending_target)
   )
   const canStartExecution = computed(
     () =>
+      !isSessionCommandPending.value &&
       Boolean(session.value?.locked_target && session.value?.run_state === 'ready') &&
       messages.value.some(message => message.role === 'user')
   )
-  const isRunning = computed(() => session.value?.run_state === 'running')
-  const isConversationPending = computed(() => isRunning.value || isAwaitingPlanningReply.value)
   const currentRunStateLabel = computed(() => {
     return stateLabelMap[session.value?.run_state || 'drafting'] || '等待需求描述'
   })
@@ -216,6 +221,7 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
       clearAssistantDisplayAnimation()
       return
     }
+    mode.value = nextSession.mode
     selectedPluginId.value =
       nextSession.selected_plugin_id ||
       nextSession.locked_target?.plugin_id ||
@@ -315,75 +321,8 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
 
   watch(isOpen, value => {
     if (!value) {
+      initializeRequestId += 1
       emit('update:modelValue', false)
-    }
-  })
-
-  watch(
-    () => localAgentSettings.value.apiKey,
-    value => {
-      settingsStore.updatePluginAgent({ apiKey: value })
-    }
-  )
-  watch(
-    () => localAgentSettings.value.modelName,
-    value => {
-      settingsStore.updatePluginAgent({ modelName: value })
-    }
-  )
-  watch(
-    () => localAgentSettings.value.customBaseUrl,
-    value => {
-      settingsStore.updatePluginAgent({ customBaseUrl: value })
-    }
-  )
-  watch(
-    () => localAgentSettings.value.rpmLimit,
-    value => {
-      settingsStore.updatePluginAgent({ rpmLimit: value })
-    }
-  )
-  watch(
-    () => localAgentSettings.value.transportRetries,
-    value => {
-      settingsStore.updatePluginAgent({ transportRetries: value })
-    }
-  )
-  watch(
-    () => localAgentSettings.value.businessRetries,
-    value => {
-      settingsStore.updatePluginAgent({ businessRetries: value })
-    }
-  )
-  watch(
-    () => localAgentSettings.value.forceJsonOutput,
-    value => {
-      settingsStore.updatePluginAgent({ forceJsonOutput: value })
-    }
-  )
-  watch(
-    () => localAgentSettings.value.useStream,
-    value => {
-      settingsStore.updatePluginAgent({ useStream: value })
-    }
-  )
-  watch(
-    () => localAgentSettings.value.extraBody,
-    value => {
-      settingsStore.updatePluginAgent({ extraBody: value })
-    }
-  )
-
-  watch(selectedPluginId, async (value, previousValue) => {
-    if (mode.value === 'modify' && session.value?.session_id && value !== previousValue) {
-      try {
-        await deletePluginAgentSession(session.value.session_id)
-      } catch {
-        // 忽略切换目标插件时的清理失败
-      }
-      applySession(null)
-      messageInput.value = ''
-      stopStreaming()
     }
   })
 
@@ -393,30 +332,13 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
     modelDiscovery.invalidate()
   })
 
-  function syncLocalAgentSettingsFromStore(): void {
-    localAgentSettings.value.provider = settingsStore.settings.pluginAgent.provider
-    localAgentSettings.value.apiKey = settingsStore.settings.pluginAgent.apiKey
-    localAgentSettings.value.modelName = settingsStore.settings.pluginAgent.modelName
-    localAgentSettings.value.customBaseUrl = settingsStore.settings.pluginAgent.customBaseUrl
-    localAgentSettings.value.rpmLimit =
-      settingsStore.settings.pluginAgent.openaiOptions.execution.rpmLimit
-    localAgentSettings.value.transportRetries =
-      settingsStore.settings.pluginAgent.openaiOptions.execution.transportRetries
-    localAgentSettings.value.businessRetries =
-      settingsStore.settings.pluginAgent.openaiOptions.execution.businessRetries
-    localAgentSettings.value.forceJsonOutput =
-      settingsStore.settings.pluginAgent.openaiOptions.request.forceJsonOutput
-    localAgentSettings.value.useStream =
-      settingsStore.settings.pluginAgent.openaiOptions.execution.useStream
-    localAgentSettings.value.extraBody =
-      settingsStore.settings.pluginAgent.openaiOptions.request.extraBody
-  }
-
-  async function initializeModal(): Promise<void> {
+  async function initializeModal(options: { preserveSessionWhenMissing?: boolean } = {}): Promise<void> {
+    if (!isOpen.value) return
+    const requestId = ++initializeRequestId
     try {
-      syncLocalAgentSettingsFromStore()
       modelDiscovery.invalidate()
       const result = await getPluginAgentSettings()
+      if (requestId !== initializeRequestId || !isOpen.value) return
       overview.value = result.overview
       overviewSections.value = result.overview_sections
       promptExamples.value = result.prompt_examples
@@ -428,7 +350,7 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
           label: plugin.displayName,
         })),
       ]
-      if (result.session) {
+      if (result.session || !options.preserveSessionWhenMissing) {
         applySession(result.session)
       }
       if (session.value) {
@@ -436,61 +358,94 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
           session.value.selected_plugin_id ||
           session.value.locked_target?.plugin_id ||
           selectedPluginId.value
-        if (session.value.run_state === 'running') {
+        if (isRunning.value) {
           void startStreaming()
         }
       }
     } catch (error) {
+      if (requestId !== initializeRequestId || !isOpen.value) return
       toast.error(error instanceof Error ? error.message : '加载插件 Agent 设置失败')
     }
   }
 
   async function handleModeChange(nextMode: 'create' | 'modify'): Promise<void> {
-    if (nextMode === mode.value && !session.value) {
-      return
-    }
-    if (session.value?.session_id) {
-      try {
-        await deletePluginAgentSession(session.value.session_id)
-      } catch {
-        // 忽略切换模式时的清理失败，避免阻断 UI
+    if (isConversationPending.value) return
+    if (nextMode === mode.value) return
+    const sessionId = session.value?.session_id
+    isSessionCommandPending.value = true
+    try {
+      if (sessionId) {
+        await deletePluginAgentSession(sessionId)
       }
+      mode.value = nextMode
+      applySession(null)
+      selectedPluginId.value = ''
+      messageInput.value = ''
+      stopStreaming()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '切换任务模式失败')
+    } finally {
+      isSessionCommandPending.value = false
     }
-    mode.value = nextMode
-    applySession(null)
-    selectedPluginId.value = ''
-    messageInput.value = ''
-    stopStreaming()
   }
 
   function handleProviderChange(value: string | number): void {
     modelDiscovery.invalidate()
     const provider = String(value || '') as PluginAgentProvider
-    localAgentSettings.value.provider = provider
+    if (!providerOptions.value.some(option => option.value === provider)) return
     settingsStore.setPluginAgentProvider(provider)
-    localAgentSettings.value.apiKey = settingsStore.settings.pluginAgent.apiKey
-    localAgentSettings.value.modelName = settingsStore.settings.pluginAgent.modelName
-    localAgentSettings.value.customBaseUrl = settingsStore.settings.pluginAgent.customBaseUrl
-    localAgentSettings.value.rpmLimit =
-      settingsStore.settings.pluginAgent.openaiOptions.execution.rpmLimit
-    localAgentSettings.value.transportRetries =
-      settingsStore.settings.pluginAgent.openaiOptions.execution.transportRetries
-    localAgentSettings.value.businessRetries =
-      settingsStore.settings.pluginAgent.openaiOptions.execution.businessRetries
-    localAgentSettings.value.forceJsonOutput =
-      settingsStore.settings.pluginAgent.openaiOptions.request.forceJsonOutput
-    localAgentSettings.value.useStream =
-      settingsStore.settings.pluginAgent.openaiOptions.execution.useStream
-    localAgentSettings.value.extraBody =
-      settingsStore.settings.pluginAgent.openaiOptions.request.extraBody
   }
 
-  function handleSelectedPluginChange(value: string | number): void {
-    selectedPluginId.value = String(value || '')
+  async function handleSelectedPluginChange(value: string | number): Promise<void> {
+    if (isConversationPending.value) return
+    const nextPluginId = String(value || '')
+    if (selectedPluginId.value === nextPluginId) return
+    const sessionId = mode.value === 'modify' ? session.value?.session_id : undefined
+    if (!sessionId) {
+      selectedPluginId.value = nextPluginId
+      return
+    }
+    isSessionCommandPending.value = true
+    try {
+      await deletePluginAgentSession(sessionId)
+      applySession(null)
+      selectedPluginId.value = nextPluginId
+      messageInput.value = ''
+      stopStreaming()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '切换目标插件失败')
+    } finally {
+      isSessionCommandPending.value = false
+    }
   }
 
   function handleModelSelected(value: string | number): void {
-    localAgentSettings.value.modelName = String(value || '')
+    settingsStore.updatePluginAgent({ modelName: String(value || '') })
+  }
+
+  function updateAgentString(
+    field: 'apiKey' | 'customBaseUrl' | 'modelName',
+    value: string,
+  ): void {
+    settingsStore.updatePluginAgent({ [field]: value })
+  }
+
+  function updateAgentNumber(
+    field: 'rpmLimit' | 'transportRetries' | 'businessRetries',
+    value: number | null,
+  ): void {
+    if (value !== null) settingsStore.updatePluginAgent({ [field]: value })
+  }
+
+  function updateAgentBoolean(
+    field: 'forceJsonOutput' | 'useStream',
+    value: boolean,
+  ): void {
+    settingsStore.updatePluginAgent({ [field]: value })
+  }
+
+  function updateAgentExtraBody(value: Record<string, unknown> | undefined): void {
+    settingsStore.updatePluginAgent({ extraBody: value })
   }
 
   function applyExamplePrompt(example: string): void {
@@ -556,9 +511,9 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
   }
 
   async function lockTarget(): Promise<void> {
+    if (isSessionCommandPending.value || !session.value?.pending_target) return
+    isSessionCommandPending.value = true
     try {
-      if (!session.value?.pending_target) return
-
       const result = await lockPluginAgentTarget(
         session.value.session_id,
         session.value.pending_target
@@ -566,19 +521,23 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
       applySession(result)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '锁定目标失败')
+    } finally {
+      isSessionCommandPending.value = false
     }
   }
 
   async function startExecution(): Promise<void> {
+    if (isSessionCommandPending.value || !session.value || !canStartExecution.value) return
+    isSessionCommandPending.value = true
     try {
-      if (!session.value || !canStartExecution.value) return
-
       const result = await startPluginAgentExecution(session.value.session_id)
       applySession(result)
       await syncHistoryScrollToBottom()
       await startStreaming()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '启动执行失败')
+    } finally {
+      isSessionCommandPending.value = false
     }
   }
 
@@ -676,13 +635,13 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
     }
     if (mapped.type === 'done') {
       emit('pluginsChanged')
-      await initializeModal()
+      await initializeModal({ preserveSessionWhenMissing: true })
     }
   }
 
   async function startStreaming(): Promise<void> {
     const activeSession = session.value
-    if (activeSession?.run_state !== 'running' || !activeSession.job_id) return
+    if (!activeSession || !isRunning.value || !activeSession.job_id) return
     stopStreaming()
 
     const generation = streamGeneration
@@ -719,30 +678,35 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
       if (backlogCompleted && generation === streamGeneration) {
         stopStreaming()
         emit('pluginsChanged')
-        await initializeModal()
+        await initializeModal({ preserveSessionWhenMissing: true })
       } else if (sawPluginTerminalEvent && generation === streamGeneration) {
         stopStreaming()
       }
     } catch (error) {
       if (generation === streamGeneration) {
+        stopStreaming()
         toast.error(error instanceof Error ? error.message : '任务事件加载失败')
       }
     }
   }
 
   async function cancelExecution(): Promise<void> {
+    if (isSessionCommandPending.value || !session.value?.job_id) return
+    isSessionCommandPending.value = true
     try {
-      if (!session.value?.job_id) return
       await cancelPluginAgentExecution(session.value.job_id)
       toast.info('已请求取消执行')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '取消执行失败')
+    } finally {
+      isSessionCommandPending.value = false
     }
   }
 
   async function clearSession(): Promise<void> {
+    if (isSessionCommandPending.value || !session.value?.session_id) return
+    isSessionCommandPending.value = true
     try {
-      if (!session.value?.session_id) return
       await deletePluginAgentSession(session.value.session_id)
       applySession(null)
       messageInput.value = ''
@@ -750,6 +714,8 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
       await initializeModal()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '清理会话失败')
+    } finally {
+      isSessionCommandPending.value = false
     }
   }
 
@@ -765,13 +731,30 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
   const fetchModels = modelDiscovery.fetchModels
 
   async function testConnection(): Promise<void> {
+    if (isTestingConnection.value) return
+    const provider = agentSettings.value.provider
+    const apiKey = agentSettings.value.apiKey.trim()
+    const modelName = agentSettings.value.modelName.trim()
+    const baseUrl = agentSettings.value.customBaseUrl.trim()
+    if (providerRequiresApiKey(provider) && !apiKey && !hasStoredAgentCredential.value) {
+      toast.warning('请先填写 API Key')
+      return
+    }
+    if (!modelName) {
+      toast.warning('请填写模型名称')
+      return
+    }
+    if (providerRequiresBaseUrl(provider) && !baseUrl) {
+      toast.warning('自定义服务需要填写 Base URL')
+      return
+    }
     isTestingConnection.value = true
     try {
       const result = await testAiTranslateConnection({
-        provider: localAgentSettings.value.provider,
-        apiKey: localAgentSettings.value.apiKey,
-        modelName: localAgentSettings.value.modelName,
-        baseUrl: localAgentSettings.value.customBaseUrl,
+        provider,
+        apiKey,
+        modelName,
+        baseUrl,
         domain: 'plugin_agent',
       })
       if (result.success) {
@@ -787,10 +770,12 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
   }
 
   async function saveAgentSettings(): Promise<void> {
+    if (isSavingAgentSettings.value) return
     isSavingAgentSettings.value = true
     try {
       const success = await settingsStore.savePluginAgentSettings()
       if (success) {
+        emit('settingsSaved')
         toast.success('Agent 设置已保存')
       } else {
         toast.error('保存 Agent 设置失败')
@@ -845,7 +830,8 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
     isTestingConnection,
     isSavingAgentSettings,
     isAwaitingPlanningReply,
-    localAgentSettings,
+    isSessionCommandPending,
+    agentSettings,
     hasStoredAgentCredential,
     messages,
     modelListOptions,
@@ -861,6 +847,10 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
     handleSelectedPluginChange,
     handleProviderChange,
     handleModelSelected,
+    updateAgentString,
+    updateAgentNumber,
+    updateAgentBoolean,
+    updateAgentExtraBody,
     fetchModels,
     testConnection,
     saveAgentSettings,

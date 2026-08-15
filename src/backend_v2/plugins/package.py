@@ -7,9 +7,11 @@ from io import BytesIO
 import hashlib
 import json
 from pathlib import Path, PurePosixPath
+import shutil
 import stat
 import zipfile
 
+from src.backend_v2.checksums import sha256_file
 from src.backend_v2.plugins.contract import (
     PluginContractError,
     PluginManifest,
@@ -108,7 +110,7 @@ def directory_checksum(root: Path) -> str:
         relative = path.relative_to(root).as_posix()
         digest.update(relative.encode("utf-8"))
         digest.update(b"\0")
-        digest.update(hashlib.sha256(path.read_bytes()).digest())
+        digest.update(bytes.fromhex(sha256_file(path)))
     return digest.hexdigest()
 
 
@@ -132,7 +134,13 @@ def build_archive(root: Path) -> bytes:
             info = zipfile.ZipInfo(path.relative_to(root).as_posix())
             info.date_time = (1980, 1, 1, 0, 0, 0)
             info.external_attr = 0o644 << 16
-            archive.writestr(info, path.read_bytes())
+            info.compress_type = zipfile.ZIP_DEFLATED
+            with path.open("rb") as source, archive.open(
+                info,
+                "w",
+                force_zip64=True,
+            ) as target:
+                shutil.copyfileobj(source, target, length=1024 * 1024)
     return output.getvalue()
 
 

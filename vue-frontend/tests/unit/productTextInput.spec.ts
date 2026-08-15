@@ -35,6 +35,7 @@ describe('ProductTextInputProvider', () => {
     expect(wrapper.get('[role="dialog"]').attributes('aria-label')).toBe('保存提示词')
     expect(wrapper.text()).toContain('请输入提示词名称：')
     expect(wrapper.get('input').attributes('aria-label')).toBe('名称')
+    expect(wrapper.get('input').attributes()).toHaveProperty('autofocus')
 
     await wrapper.get('input').setValue('战斗分析')
     const confirmButton = wrapper.findAll('button').find(button => button.text() === '保存')

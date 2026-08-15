@@ -11,7 +11,10 @@ import {
   canEditStudioChatMessage as canEditMessage,
   canRegenerateStudioChatMessage as canRegenerateMessage,
 } from '../characterStudioPreviewHelpers'
-import type { CharacterStudioChatAttachment, CharacterStudioChatSession } from '@/types/characterStudio'
+import type {
+  CharacterStudioChatAttachment,
+  CharacterStudioChatSession,
+} from '@/types/characterStudio'
 
 const props = defineProps<{
   assistantName: string
@@ -31,9 +34,12 @@ const emit = defineEmits<{
 const editingMessageId = ref('')
 const editingContent = ref('')
 
-watch(() => props.session.session_id, () => {
-  cancelEdit()
-})
+watch(
+  () => props.session.session_id,
+  () => {
+    cancelEdit()
+  }
+)
 
 function startEdit(message: CharacterStudioChatSession['messages'][number]) {
   editingMessageId.value = message.message_id
@@ -49,6 +55,17 @@ function commitEdit(message: CharacterStudioChatSession['messages'][number]) {
   if (!editingContent.value.trim()) return
   emit('edit-message', { messageId: message.message_id, content: editingContent.value.trim() })
   cancelEdit()
+}
+
+function messageLabel(message: CharacterStudioChatSession['messages'][number]): string {
+  if (message.role === 'system') return '系统'
+  return message.role === 'assistant' ? props.assistantName : '你'
+}
+
+function messageBubbleRole(
+  message: CharacterStudioChatSession['messages'][number]
+): 'assistant' | 'user' {
+  return message.role === 'user' ? 'user' : 'assistant'
 }
 </script>
 
@@ -66,21 +83,37 @@ function commitEdit(message: CharacterStudioChatSession['messages'][number]) {
       :key="item.message_id"
       class="studio-message-list__bubble"
       appearance="reading"
-      :role="item.role"
-      :avatar-icon-name="item.role === 'assistant' ? 'sparkles' : 'users'"
-      :avatar-label="item.role === 'assistant' ? assistantName : '你'"
-      :aria-label="`${item.role === 'assistant' ? assistantName : '你'}的聊天消息`"
+      :role="messageBubbleRole(item)"
+      :avatar-icon-name="item.role === 'user' ? 'users' : 'sparkles'"
+      :avatar-label="messageLabel(item)"
+      :aria-label="`${messageLabel(item)}的聊天消息`"
       data-testid="studio-chat-message"
       :data-message-role="item.role"
     >
       <template #meta>
-        <span class="studio-message-list__role">{{ item.role === 'assistant' ? assistantName : '你' }}</span>
+        <span class="studio-message-list__role">{{ messageLabel(item) }}</span>
       </template>
 
       <div v-if="editingMessageId === item.message_id" class="studio-message-list__editor">
-        <UiTextarea v-model="editingContent" rows="4" variant="studio" aria-label="编辑聊天消息内容" />
-        <ProductActionRow appearance="accent" class="studio-message-list__editor-actions" aria-label="编辑聊天消息操作" justify="start" variant="toolbar">
-          <UiButton variant="primary" size="xs" :disabled="!editingContent.trim() || chatMutating" @click="commitEdit(item)">
+        <UiTextarea
+          v-model="editingContent"
+          rows="4"
+          variant="studio"
+          aria-label="编辑聊天消息内容"
+        />
+        <ProductActionRow
+          appearance="accent"
+          class="studio-message-list__editor-actions"
+          aria-label="编辑聊天消息操作"
+          justify="start"
+          variant="toolbar"
+        >
+          <UiButton
+            variant="primary"
+            size="xs"
+            :disabled="!editingContent.trim() || chatMutating"
+            @click="commitEdit(item)"
+          >
             保存并重新生成
           </UiButton>
           <UiButton variant="secondary" size="xs" @click="cancelEdit">取消</UiButton>
@@ -104,18 +137,28 @@ function commitEdit(message: CharacterStudioChatSession['messages'][number]) {
                 class="studio-message-list__attachment-image"
                 :src="attachmentUrlFor(attachment)"
                 :alt="attachment.filename"
-              >
+              />
             </div>
             <div class="studio-message-list__attachment-info">
-              <strong class="studio-message-list__attachment-name">{{ attachment.filename }}</strong>
-              <span class="studio-message-list__attachment-type">{{ attachmentTypeLabel(attachment.mime_type) }}</span>
+              <strong class="studio-message-list__attachment-name">{{
+                attachment.filename
+              }}</strong>
+              <span class="studio-message-list__attachment-type">{{
+                attachmentTypeLabel(attachment.mime_type)
+              }}</span>
             </div>
           </ProductRecordCard>
         </div>
       </template>
 
       <template #actions>
-        <ProductActionRow appearance="accent" class="studio-message-list__actions" aria-label="聊天消息操作" justify="start" variant="toolbar">
+        <ProductActionRow
+          appearance="accent"
+          class="studio-message-list__actions"
+          aria-label="聊天消息操作"
+          justify="start"
+          variant="toolbar"
+        >
           <UiButton
             v-if="canEditMessage(item)"
             variant="secondary"
@@ -156,12 +199,25 @@ function commitEdit(message: CharacterStudioChatSession['messages'][number]) {
 }
 
 .studio-message-list {
-  --product-message-bubble-reading-assistant-background: color-mix(in srgb, var(--color-action-brand) 9%, var(--color-surface-card));
-  --product-message-bubble-reading-user-background: color-mix(in srgb, var(--color-text-heading) 7%, var(--color-surface-card));
-  --product-message-bubble-reading-border: color-mix(in srgb, var(--color-action-brand) 16%, var(--studio-border-default));
+  --product-message-bubble-reading-assistant-background: color-mix(
+    in srgb,
+    var(--color-action-brand) 9%,
+    var(--color-surface-card)
+  );
+  --product-message-bubble-reading-user-background: color-mix(
+    in srgb,
+    var(--color-text-heading) 7%,
+    var(--color-surface-card)
+  );
+  --product-message-bubble-reading-border: color-mix(
+    in srgb,
+    var(--color-action-brand) 16%,
+    var(--studio-border-default)
+  );
   --product-message-bubble-reading-user-border: var(--studio-border-default);
   --product-message-bubble-reading-text: var(--studio-text-strong);
-  --product-message-bubble-reading-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-surface-card) 58%, transparent);
+  --product-message-bubble-reading-shadow: inset 0 1px 0
+    color-mix(in srgb, var(--color-surface-card) 58%, transparent);
 
   display: flex;
   flex: 1 1 auto;
@@ -173,7 +229,11 @@ function commitEdit(message: CharacterStudioChatSession['messages'][number]) {
   scrollbar-gutter: stable;
   border: 1px solid var(--studio-border-default);
   border-radius: 20px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--studio-surface-tint-muted) 74%, var(--color-surface-card)), color-mix(in srgb, var(--studio-surface-soft) 92%, var(--color-surface-card)));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--studio-surface-tint-muted) 74%, var(--color-surface-card)),
+    color-mix(in srgb, var(--studio-surface-soft) 92%, var(--color-surface-card))
+  );
 }
 
 .studio-message-list__role {
@@ -240,5 +300,4 @@ function commitEdit(message: CharacterStudioChatSession['messages'][number]) {
   color: var(--studio-text-muted);
   font-size: 11px;
 }
-
 </style>

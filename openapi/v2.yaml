@@ -3,8 +3,8 @@ info:
   title: Saber Translator Backend-First API
   version: 2.0.0-dev
   description: >-
-    Contract-first API for the backend-owned v2 architecture. This document is
-    intentionally introduced before v2 feature handlers.
+    Complete HTTP contract for the backend-owned v2 architecture. Runtime
+    route coverage and generated frontend types are verified against this file.
 servers:
   - url: /api/v2
 tags:
@@ -78,44 +78,6 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/SettingsDocument"}
-  /provider-settings:
-    get:
-      tags: [settings]
-      operationId: getProviderSettings
-      parameters:
-        - name: domains
-          in: query
-          schema: {type: string}
-      responses:
-        "200":
-          description: Provider configuration memories without secrets.
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: false
-                required: [items]
-                properties:
-                  items:
-                    type: array
-                    items: {$ref: "#/components/schemas/ProviderSettingEntry"}
-  /credentials:
-    get:
-      tags: [settings]
-      operationId: listCredentials
-      responses:
-        "200":
-          description: Secret-free credential summaries.
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: false
-                required: [items]
-                properties:
-                  items:
-                    type: array
-                    items: {$ref: "#/components/schemas/CredentialSummary"}
   /credentials/{credential_id}:
     delete:
       tags: [settings]
@@ -147,7 +109,7 @@ paths:
             schema: {$ref: "#/components/schemas/SettingsTransaction"}
       responses:
         "200":
-          description: All settings, provider memories, and credentials committed atomically.
+          description: All settings, provider memories, credentials, and prompt edits committed atomically.
           content:
             application/json:
               schema: {$ref: "#/components/schemas/SettingsTransactionResult"}
@@ -184,7 +146,7 @@ paths:
       parameters:
         - name: type
           in: query
-          schema: {type: string}
+          schema: {$ref: "#/components/schemas/PromptType"}
       responses:
         "200":
           description: Unified prompt library.
@@ -205,7 +167,7 @@ paths:
               additionalProperties: false
               required: [type, name, content]
               properties:
-                type: {type: string}
+                type: {$ref: "#/components/schemas/PromptType"}
                 name: {type: string, minLength: 1}
                 content: {type: string}
       responses:
@@ -363,13 +325,7 @@ paths:
           description: Immutable font asset registered.
           content:
             application/json:
-              schema:
-                type: object
-                additionalProperties: false
-                required: [id, assetUrl]
-                properties:
-                  id: {$ref: "#/components/schemas/Uuid"}
-                  assetUrl: {type: string}
+              schema: {$ref: "#/components/schemas/FontResource"}
         "422": {$ref: "#/components/responses/ValidationError"}
   /fonts/{font_id}:
     delete:
@@ -405,23 +361,6 @@ paths:
                 required: [recovered]
                 properties:
                   recovered: {type: integer, minimum: 0}
-  /maintenance/clean-debug:
-    post:
-      tags: [settings]
-      operationId: cleanDebugAssets
-      parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
-      responses:
-        "200":
-          description: Debug asset cleanup result.
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: false
-                required: [removed]
-                properties:
-                  removed: {type: integer, minimum: 0}
   /pages/{page_id}/repairs:
     post:
       tags: [operations]
@@ -436,7 +375,8 @@ paths:
             schema:
               oneOf:
                 - $ref: "#/components/schemas/BubbleRepairCommand"
-                - $ref: "#/components/schemas/MaskRepairWithFillCommand"
+                - $ref: "#/components/schemas/MaskSolidRepairCommand"
+                - $ref: "#/components/schemas/MaskModelRepairCommand"
                 - $ref: "#/components/schemas/MaskRestoreCommand"
       responses:
         "202":
@@ -475,9 +415,15 @@ paths:
         client sends Accept: text/event-stream or stream=1.
       parameters:
         - $ref: "#/components/parameters/OperationId"
+        - name: Last-Event-ID
+          in: header
+          schema: {type: integer, minimum: 0}
         - name: after
           in: query
           schema: {type: integer, minimum: 0, default: 0}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 2000, default: 500}
         - name: stream
           in: query
           schema: {type: integer, enum: [0, 1], default: 0}
@@ -536,6 +482,7 @@ paths:
           schema: {$ref: "#/components/schemas/Uuid"}
         - name: limit
           in: query
+          description: Maximum retained history batches; the live queue snapshot is always complete.
           schema: {type: integer, minimum: 1, maximum: 200, default: 200}
       responses:
         "200":
@@ -1026,31 +973,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: false
-                required: [documentRevision, diagnostics]
-                properties:
-                  documentRevision: {type: integer, minimum: 1}
-                  diagnostics:
-                    type: object
-                    additionalProperties: false
-                    required: [valid, errors, warnings, checks]
-                    properties:
-                      valid: {type: boolean}
-                      errors:
-                        type: array
-                        items: {type: string}
-                      warnings:
-                        type: array
-                        items: {type: string}
-                      checks:
-                        type: object
-                        additionalProperties: false
-                        required: [document, v3_export, v2_export]
-                        properties:
-                          document: {type: boolean}
-                          v3_export: {type: boolean}
-                          v2_export: {type: boolean}
+                $ref: "#/components/schemas/StudioValidationResult"
         "409": {$ref: "#/components/responses/Conflict"}
   /studio/documents/{document_id}/export:
     get:
@@ -1317,7 +1240,7 @@ paths:
           description: Portable JSON with base64 attachment blobs.
           content:
             application/json:
-              schema: {type: object, additionalProperties: true}
+              schema: {$ref: "#/components/schemas/StudioPromptPreviewResult"}
   /studio/chat/sessions/{session_id}/prompt-preview:
     get:
       tags: [studio]
@@ -1407,6 +1330,12 @@ paths:
         - name: tagIds
           in: query
           schema: {type: string}
+        - name: sort_by
+          in: query
+          schema: {type: string, enum: [title, created_at, updated_at], default: updated_at}
+        - name: sort_order
+          in: query
+          schema: {type: string, enum: [asc, desc], default: desc}
       responses:
         "200":
           description: Library books only; the quick workspace is hidden.
@@ -1423,12 +1352,9 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              required: [title]
-              properties:
-                title: {type: string, minLength: 1, maxLength: 500}
+            schema: {$ref: "#/components/schemas/BookCreateCommand"}
+          multipart/form-data:
+            schema: {$ref: "#/components/schemas/BookMultipartCreateCommand"}
       responses:
         "201":
           description: Book created.
@@ -1500,6 +1426,8 @@ paths:
         content:
           application/json:
             schema: {$ref: "#/components/schemas/BookUpdateCommand"}
+          multipart/form-data:
+            schema: {$ref: "#/components/schemas/BookMultipartUpdateCommand"}
       responses:
         "200":
           description: Updated book detail.
@@ -2089,7 +2017,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: {$ref: "#/components/schemas/SingleBubbleMutationCommand"}
+            schema: {$ref: "#/components/schemas/CreateBubbleCommand"}
       responses:
         "200":
           description: Bubble created and the aggregate page document returned.
@@ -2113,7 +2041,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: {$ref: "#/components/schemas/SingleBubbleMutationCommand"}
+            schema: {$ref: "#/components/schemas/PatchBubbleCommand"}
       responses:
         "200":
           description: Bubble updated and the aggregate page document returned.
@@ -2515,7 +2443,7 @@ paths:
       operationId: getInsightPage
       parameters:
         - $ref: "#/components/parameters/PageId"
-        - name: run_id
+        - name: runId
           in: query
           schema: {$ref: "#/components/schemas/Uuid"}
       responses:
@@ -2580,7 +2508,7 @@ paths:
       - name: template
         in: path
         required: true
-        schema: {type: string, minLength: 1}
+        schema: {$ref: "#/components/schemas/InsightOverviewTemplate"}
     get:
       tags: [insight]
       operationId: getInsightOverview
@@ -3342,6 +3270,8 @@ paths:
             application/json:
               schema: {$ref: "#/components/schemas/Plugin"}
         "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
   /plugins/{plugin_id}/config:
     get:
       tags: [plugins]
@@ -3408,6 +3338,7 @@ paths:
         "404": {$ref: "#/components/responses/NotFound"}
         "409": {$ref: "#/components/responses/Conflict"}
         "423": {$ref: "#/components/responses/Locked"}
+        "422": {$ref: "#/components/responses/ValidationError"}
   /plugin-agent/sessions:
     post:
       tags: [plugin-agent]
@@ -3421,7 +3352,7 @@ paths:
               $ref: "#/components/schemas/PluginAgentSessionCreateCommand"
       responses:
         "201":
-          description: The single in-memory planning session was created.
+          description: An in-memory planning session was created.
           content:
             application/json:
               schema:
@@ -3477,7 +3408,6 @@ paths:
                 content:
                   type: string
                   minLength: 1
-                  maxLength: 100000
       responses:
         "200":
           description: Synchronous planning turn completed.
@@ -3871,6 +3801,15 @@ components:
         baseRevision: {type: integer, minimum: 0}
         credentialId: {$ref: "#/components/schemas/Uuid"}
         clientRef: {type: string}
+    PromptMutation:
+      type: object
+      additionalProperties: false
+      required: [id, name, content, baseRevision]
+      properties:
+        id: {$ref: "#/components/schemas/Uuid"}
+        name: {type: string, minLength: 1, maxLength: 200}
+        content: {type: string}
+        baseRevision: {type: integer, minimum: 1}
     SettingsTransaction:
       type: object
       additionalProperties: false
@@ -3887,6 +3826,9 @@ components:
         credentialEdits:
           type: array
           items: {$ref: "#/components/schemas/CredentialEdit"}
+        promptEdits:
+          type: array
+          items: {$ref: "#/components/schemas/PromptMutation"}
     SettingMutationResult:
       type: object
       additionalProperties: true
@@ -3899,7 +3841,7 @@ components:
     SettingsTransactionResult:
       type: object
       additionalProperties: false
-      required: [settings, bookSettings, providerSettings, credentials]
+      required: [settings, bookSettings, providerSettings, credentials, prompts]
       properties:
         settings:
           type: array
@@ -3913,20 +3855,50 @@ components:
         credentials:
           type: array
           items: {$ref: "#/components/schemas/CredentialSummary"}
+        prompts:
+          type: array
+          items: {$ref: "#/components/schemas/PromptResource"}
     WorkflowPreferences:
       type: object
       additionalProperties: false
       required: [lastWorkflowMode, rememberWorkflowModeEnabled]
       properties:
-        lastWorkflowMode: {type: string}
+        lastWorkflowMode:
+          type: string
+          enum:
+            - translate-current
+            - translate-batch
+            - hq-batch
+            - proofread-batch
+            - remove-current
+            - remove-batch
+            - retry-failed
+            - delete-current
+            - clear-all
         rememberWorkflowModeEnabled: {type: boolean}
+    PromptType:
+      type: string
+      enum:
+        - translate
+        - textbox
+        - ai_vision_ocr
+        - hq_translate
+        - proofreading
+        - batch_analysis
+        - segment_summary
+        - chapter_summary
+        - book_overview
+        - group_summary
+        - qa_response
+        - question_decompose
+        - analysis_system
     PromptResource:
       type: object
       additionalProperties: false
       required: [id, type, name, content, revision, isFactoryDefault]
       properties:
         id: {$ref: "#/components/schemas/Uuid"}
-        type: {type: string}
+        type: {$ref: "#/components/schemas/PromptType"}
         name: {type: string}
         content: {type: string}
         revision: {type: integer, minimum: 1}
@@ -3945,7 +3917,6 @@ components:
       properties:
         provider: {type: string}
         domain: {type: string}
-        credentialId: {$ref: "#/components/schemas/Uuid"}
         secret:
           type: object
           additionalProperties: {type: string}
@@ -4060,13 +4031,14 @@ components:
       type: object
       additionalProperties: false
       required:
-        [kind, total, completed, failed, skipped, waiting, processing, lockWaiting, current]
+        [kind, total, completed, failed, skipped, cancelled, waiting, processing, lockWaiting, current]
       properties:
         kind: {type: string}
         total: {type: integer, minimum: 0}
         completed: {type: integer, minimum: 0}
         failed: {type: integer, minimum: 0}
         skipped: {type: integer, minimum: 0}
+        cancelled: {type: integer, minimum: 0}
         waiting: {type: integer, minimum: 0}
         processing: {type: integer, minimum: 0}
         lockWaiting: {type: boolean}
@@ -4161,7 +4133,7 @@ components:
           type: object
           additionalProperties: true
         createdAt:
-          type: [string, "null"]
+          type: string
           format: date-time
         startedAt:
           type: [string, "null"]
@@ -4592,7 +4564,23 @@ components:
     Operation:
       type: object
       additionalProperties: false
-      required: [operationId, kind, executorRole, status, request, createdAt]
+      required:
+        - operationId
+        - kind
+        - executorRole
+        - status
+        - pageId
+        - bubbleId
+        - studioDocumentId
+        - studioSessionId
+        - baseRevision
+        - baseGeneration
+        - request
+        - result
+        - error
+        - createdAt
+        - startedAt
+        - finishedAt
       properties:
         operationId:
           $ref: "#/components/schemas/Uuid"
@@ -4635,10 +4623,10 @@ components:
           additionalProperties: true
         error:
           oneOf:
-            - $ref: "#/components/schemas/ErrorDetail"
+            - $ref: "#/components/schemas/OperationError"
             - type: "null"
         createdAt:
-          type: [string, "null"]
+          type: string
           format: date-time
         startedAt:
           type: [string, "null"]
@@ -4675,6 +4663,16 @@ components:
           minimum: 1
         userMessageId:
           $ref: "#/components/schemas/Uuid"
+        documentRevision:
+          type: integer
+          minimum: 1
+    OperationError:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code: {type: string, minLength: 1}
+        message: {type: string}
     OperationEvent:
       type: object
       additionalProperties: false
@@ -4703,14 +4701,267 @@ components:
           enum: [bubble_ocr, bubble_color, page_detect, bubble_translate]
         baseRevision: {type: integer, minimum: 1}
         bubbleId: {$ref: "#/components/schemas/Uuid"}
+    BubbleOcrResult:
+      type: object
+      additionalProperties: false
+      required:
+        - text
+        - confidence
+        - confidenceSupported
+        - engine
+        - primaryEngine
+        - fallbackUsed
+      properties:
+        text: {type: string}
+        confidence:
+          type: [number, "null"]
+          minimum: 0
+          maximum: 1
+        confidenceSupported: {type: boolean}
+        engine: {type: string, minLength: 1}
+        primaryEngine: {type: string, minLength: 1}
+        fallbackUsed: {type: boolean}
+    BubbleTextline:
+      type: object
+      additionalProperties: false
+      required: [polygon, direction, confidence]
+      properties:
+        polygon:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            type: array
+            minItems: 2
+            maxItems: 2
+            items: {type: integer}
+        direction: {type: string, enum: [h, v]}
+        confidence: {type: number, minimum: 0, maximum: 1}
+    BubblePolygon:
+      oneOf:
+        - type: array
+          maxItems: 0
+        - type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            type: array
+            minItems: 2
+            maxItems: 2
+            items: {type: integer}
+    BubbleRgb:
+      type: array
+      minItems: 3
+      maxItems: 3
+      items: {type: integer, minimum: 0, maximum: 255}
+    BubblePayload:
+      type: object
+      additionalProperties: false
+      required:
+        - originalText
+        - translatedText
+        - textboxText
+        - coords
+        - polygon
+        - fontSize
+        - textDirection
+        - autoTextDirection
+        - textColor
+        - fillColor
+        - rotationAngle
+        - position
+        - strokeEnabled
+        - strokeColor
+        - strokeWidth
+        - lineSpacing
+        - textAlign
+        - inpaintMethod
+        - autoFgColor
+        - autoBgColor
+        - colorConfidence
+        - textlines
+        - ocrResult
+      properties:
+        originalText: {type: string}
+        translatedText: {type: string}
+        textboxText: {type: string}
+        coords:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items: {type: integer}
+        polygon: {$ref: "#/components/schemas/BubblePolygon"}
+        fontSize: {type: integer, minimum: 1}
+        textDirection: {type: string, enum: [vertical, horizontal]}
+        autoTextDirection: {type: string, enum: [vertical, horizontal]}
+        textColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
+        fillColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
+        rotationAngle: {type: number}
+        position:
+          type: object
+          additionalProperties: false
+          required: [x, y]
+          properties:
+            x: {type: number}
+            y: {type: number}
+        strokeEnabled: {type: boolean}
+        strokeColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
+        strokeWidth: {type: integer, minimum: 0}
+        lineSpacing: {type: number, exclusiveMinimum: 0}
+        textAlign: {type: string, enum: [start, center, end]}
+        inpaintMethod: {type: string, enum: [solid, lama_mpe, litelama]}
+        autoFgColor:
+          oneOf:
+            - $ref: "#/components/schemas/BubbleRgb"
+            - type: "null"
+        autoBgColor:
+          oneOf:
+            - $ref: "#/components/schemas/BubbleRgb"
+            - type: "null"
+        colorConfidence: {type: number, minimum: 0, maximum: 1}
+        textlines:
+          type: array
+          items: {$ref: "#/components/schemas/BubbleTextline"}
+        ocrResult:
+          oneOf:
+            - $ref: "#/components/schemas/BubbleOcrResult"
+            - type: "null"
+    BubbleMutationFields:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        originalText: {type: string}
+        translatedText: {type: string}
+        textboxText: {type: string}
+        coords:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items: {type: integer}
+        polygon: {$ref: "#/components/schemas/BubblePolygon"}
+        fontSize: {type: integer, minimum: 1}
+        textDirection: {type: string, enum: [vertical, horizontal]}
+        textColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
+        fillColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
+        rotationAngle: {type: number}
+        position:
+          type: object
+          additionalProperties: false
+          required: [x, y]
+          properties:
+            x: {type: number}
+            y: {type: number}
+        strokeEnabled: {type: boolean}
+        strokeColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
+        strokeWidth: {type: integer, minimum: 0}
+        lineSpacing: {type: number, exclusiveMinimum: 0}
+        textAlign: {type: string, enum: [start, center, end]}
+        inpaintMethod: {type: string, enum: [solid, lama_mpe, litelama]}
+        autoFgColor:
+          oneOf:
+            - $ref: "#/components/schemas/BubbleRgb"
+            - type: "null"
+        autoBgColor:
+          oneOf:
+            - $ref: "#/components/schemas/BubbleRgb"
+            - type: "null"
+        colorConfidence: {type: number, minimum: 0, maximum: 1}
+        textlines:
+          type: array
+          items: {$ref: "#/components/schemas/BubbleTextline"}
+        ocrResult:
+          oneOf:
+            - $ref: "#/components/schemas/BubbleOcrResult"
+            - type: "null"
+        fontId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+    CompleteBubbleMutationFields:
+      type: object
+      additionalProperties: false
+      required:
+        - originalText
+        - translatedText
+        - textboxText
+        - coords
+        - polygon
+        - fontSize
+        - textDirection
+        - textColor
+        - fillColor
+        - rotationAngle
+        - position
+        - strokeEnabled
+        - strokeColor
+        - strokeWidth
+        - lineSpacing
+        - textAlign
+        - inpaintMethod
+        - autoFgColor
+        - autoBgColor
+        - colorConfidence
+        - textlines
+        - ocrResult
+      properties:
+        originalText: {type: string}
+        translatedText: {type: string}
+        textboxText: {type: string}
+        coords:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items: {type: integer}
+        polygon: {$ref: "#/components/schemas/BubblePolygon"}
+        fontSize: {type: integer, minimum: 1}
+        textDirection: {type: string, enum: [vertical, horizontal]}
+        textColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
+        fillColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
+        rotationAngle: {type: number}
+        position:
+          type: object
+          additionalProperties: false
+          required: [x, y]
+          properties:
+            x: {type: number}
+            y: {type: number}
+        strokeEnabled: {type: boolean}
+        strokeColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
+        strokeWidth: {type: integer, minimum: 0}
+        lineSpacing: {type: number, exclusiveMinimum: 0}
+        textAlign: {type: string, enum: [start, center, end]}
+        inpaintMethod: {type: string, enum: [solid, lama_mpe, litelama]}
+        autoFgColor:
+          oneOf:
+            - $ref: "#/components/schemas/BubbleRgb"
+            - type: "null"
+        autoBgColor:
+          oneOf:
+            - $ref: "#/components/schemas/BubbleRgb"
+            - type: "null"
+        colorConfidence: {type: number, minimum: 0, maximum: 1}
+        textlines:
+          type: array
+          items: {$ref: "#/components/schemas/BubbleTextline"}
+        ocrResult:
+          oneOf:
+            - $ref: "#/components/schemas/BubbleOcrResult"
+            - type: "null"
+        fontId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
     BubbleMutation:
       oneOf:
         - $ref: "#/components/schemas/BubbleCreateMutation"
-        - $ref: "#/components/schemas/ExistingBubbleMutation"
+        - $ref: "#/components/schemas/BubblePatchMutation"
+        - $ref: "#/components/schemas/BubbleResetMutation"
+        - $ref: "#/components/schemas/BubbleDeleteMutation"
     BubbleCreateMutation:
       type: object
       additionalProperties: false
-      required: [op, clientMutationId]
+      required: [op, clientMutationId, fields]
       properties:
         op:
           type: string
@@ -4718,27 +4969,41 @@ components:
         clientMutationId:
           type: string
           minLength: 1
-          maxLength: 128
         fields:
-          type: object
-          additionalProperties: true
-    ExistingBubbleMutation:
+          $ref: "#/components/schemas/CompleteBubbleMutationFields"
+    BubblePatchMutation:
+      type: object
+      additionalProperties: false
+      required: [op, clientMutationId, bubbleId, fields]
+      properties:
+        op:
+          type: string
+          const: patch
+        clientMutationId:
+          type: string
+          minLength: 1
+        bubbleId:
+          $ref: "#/components/schemas/Uuid"
+        fields:
+          $ref: "#/components/schemas/BubbleMutationFields"
+    BubbleResetMutation:
+      type: object
+      additionalProperties: false
+      required: [op, clientMutationId, bubbleId, fields]
+      properties:
+        op: {type: string, const: reset}
+        clientMutationId: {type: string, minLength: 1}
+        bubbleId: {$ref: "#/components/schemas/Uuid"}
+        fields:
+          $ref: "#/components/schemas/CompleteBubbleMutationFields"
+    BubbleDeleteMutation:
       type: object
       additionalProperties: false
       required: [op, clientMutationId, bubbleId]
       properties:
-        op:
-          type: string
-          enum: [patch, delete, reset]
-        clientMutationId:
-          type: string
-          minLength: 1
-          maxLength: 128
-        bubbleId:
-          $ref: "#/components/schemas/Uuid"
-        fields:
-          type: object
-          additionalProperties: true
+        op: {type: string, const: delete}
+        clientMutationId: {type: string, minLength: 1}
+        bubbleId: {$ref: "#/components/schemas/Uuid"}
     BubbleMutationResult:
       type: object
       additionalProperties: false
@@ -4750,7 +5015,6 @@ components:
         clientMutationId:
           type: string
           minLength: 1
-          maxLength: 128
         bubbleId:
           $ref: "#/components/schemas/Uuid"
     PageDocumentBatchMutation:
@@ -4763,7 +5027,6 @@ components:
           minimum: 1
         mutations:
           type: array
-          maxItems: 500
           items:
             $ref: "#/components/schemas/BubbleMutation"
         defaultFontId:
@@ -4795,7 +5058,7 @@ components:
       additionalProperties: false
       minProperties: 1
       properties:
-        fontSize: {type: integer, minimum: 1, maximum: 512}
+        fontSize: {type: integer, minimum: 1}
         autoFontSize: {type: boolean}
         layoutDirection: {type: string, enum: [auto, vertical, horizontal]}
         textColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
@@ -4804,8 +5067,8 @@ components:
         useAutoTextColor: {type: boolean}
         strokeEnabled: {type: boolean}
         strokeColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
-        strokeWidth: {type: integer, minimum: 0, maximum: 64}
-        lineSpacing: {type: number, exclusiveMinimum: 0, maximum: 10}
+        strokeWidth: {type: integer, minimum: 0}
+        lineSpacing: {type: number, exclusiveMinimum: 0}
         textAlign: {type: string, enum: [start, center, end]}
     BubbleDocument:
       type: object
@@ -4822,8 +5085,7 @@ components:
             - $ref: "#/components/schemas/Uuid"
             - type: "null"
         payload:
-          type: object
-          additionalProperties: true
+          $ref: "#/components/schemas/BubblePayload"
     PageDocument:
       type: object
       additionalProperties: false
@@ -4894,7 +5156,7 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/BubbleMutationResult"
-    SingleBubbleMutationCommand:
+    CreateBubbleCommand:
       type: object
       additionalProperties: false
       required: [baseRevision, fields]
@@ -4903,8 +5165,17 @@ components:
           type: integer
           minimum: 1
         fields:
-          type: object
-          additionalProperties: true
+          $ref: "#/components/schemas/CompleteBubbleMutationFields"
+    PatchBubbleCommand:
+      type: object
+      additionalProperties: false
+      required: [baseRevision, fields]
+      properties:
+        baseRevision:
+          type: integer
+          minimum: 1
+        fields:
+          $ref: "#/components/schemas/BubbleMutationFields"
     BubbleRepairCommand:
       type: object
       additionalProperties: false
@@ -4918,7 +5189,7 @@ components:
         base_revision:
           type: integer
           minimum: 1
-    MaskRepairWithFillCommand:
+    MaskSolidRepairCommand:
       type: object
       additionalProperties: false
       required: [target, mask, base_revision, method, fill_color]
@@ -4935,10 +5206,28 @@ components:
           minimum: 1
         method:
           type: string
-          enum: [solid, lama_mpe, litelama]
+          const: solid
         fill_color:
           type: string
           pattern: "^#[0-9A-Fa-f]{6}$"
+    MaskModelRepairCommand:
+      type: object
+      additionalProperties: false
+      required: [target, mask, base_revision, method]
+      properties:
+        target:
+          type: string
+          const: mask
+        mask:
+          type: string
+          format: binary
+          contentMediaType: image/png
+        base_revision:
+          type: integer
+          minimum: 1
+        method:
+          type: string
+          enum: [lama_mpe, litelama]
     MaskRestoreCommand:
       type: object
       additionalProperties: false
@@ -4960,7 +5249,7 @@ components:
     StudioAsset:
       type: object
       additionalProperties: false
-      required: [assetId, assetUrl, mimeType, byteSize]
+      required: [assetId, assetUrl, mimeType, byteSize, width, height]
       properties:
         assetId: {$ref: "#/components/schemas/Uuid"}
         assetUrl: {type: string}
@@ -4970,7 +5259,7 @@ components:
         height: {type: [integer, "null"], minimum: 1}
     StudioDocument:
       type: object
-      additionalProperties: true
+      additionalProperties: false
       required:
         - id
         - bookId
@@ -4999,29 +5288,27 @@ components:
             - $ref: "#/components/schemas/Uuid"
             - type: "null"
         avatarUrl: {type: [string, "null"]}
-        origin: {type: object, additionalProperties: true}
-        status: {type: object, additionalProperties: true}
-        meta: {type: object, additionalProperties: true}
-        identity: {type: object, additionalProperties: true}
-        coreMessages: {type: object, additionalProperties: true}
-        lorebook: {type: object, additionalProperties: true}
+        origin: {$ref: "#/components/schemas/StudioDocumentOrigin"}
+        status: {$ref: "#/components/schemas/StudioDocumentStatus"}
+        meta: {$ref: "#/components/schemas/StudioDocumentMeta"}
+        identity: {$ref: "#/components/schemas/StudioDocumentIdentity"}
+        coreMessages: {$ref: "#/components/schemas/StudioDocumentCoreMessages"}
+        lorebook: {$ref: "#/components/schemas/StudioLorebook"}
         regexScripts:
           type: array
-          items: {}
+          items: {$ref: "#/components/schemas/StudioRegexScript"}
         stateTasks:
           type: array
-          items: {}
+          items: {$ref: "#/components/schemas/StudioStateTask"}
         exportArtifacts: {type: object, additionalProperties: true}
-        createdAt: {type: [string, "null"], format: date-time}
-        updatedAt: {type: [string, "null"], format: date-time}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
     StudioDocumentCreateCommand:
       type: object
       additionalProperties: false
       properties:
-        title: {type: string, maxLength: 500}
-        kind: {type: string, enum: [manual, analysis, imported]}
-        candidate: {type: object, additionalProperties: true}
-        document: {type: object, additionalProperties: true}
+        title: {type: string}
+        candidateId: {$ref: "#/components/schemas/Uuid"}
     StudioDocumentImportCommand:
       type: object
       additionalProperties: false
@@ -5035,7 +5322,182 @@ components:
       properties:
         baseRevision: {type: integer, minimum: 1}
         title: {type: string}
-        document: {type: object, additionalProperties: true}
+        document: {$ref: "#/components/schemas/StudioDocumentContent"}
+    StudioDocumentOrigin:
+      type: object
+      additionalProperties: false
+      required: [type, source_character]
+      properties:
+        type: {type: string, enum: [analysis, manual, imported]}
+        source_character: {type: [string, "null"]}
+    StudioDocumentStatus:
+      type: object
+      additionalProperties: false
+      required: [is_favorite, frozen_sections, last_diagnostics, last_validated_at]
+      properties:
+        is_favorite: {type: boolean}
+        frozen_sections:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum: [identity, greetings, lorebook, regex, state-tasks]
+        last_diagnostics:
+          oneOf:
+            - $ref: "#/components/schemas/StudioDiagnostics"
+            - type: "null"
+        last_validated_at: {type: [string, "null"], format: date-time}
+    StudioDocumentMeta:
+      type: object
+      additionalProperties: false
+      required: [title, tags]
+      properties:
+        title: {type: string, minLength: 1}
+        tags:
+          type: array
+          items: {type: string}
+    StudioDocumentIdentity:
+      type: object
+      additionalProperties: false
+      required: [name, aliases, description, personality, scenario]
+      properties:
+        name: {type: string, minLength: 1}
+        aliases:
+          type: array
+          items: {type: string}
+        description: {type: string}
+        personality: {type: string}
+        scenario: {type: string}
+    StudioDocumentCoreMessages:
+      type: object
+      additionalProperties: false
+      required:
+        [first_message, message_example, alternate_greetings, system_prompt, post_history_instructions, creator_notes, character_version]
+      properties:
+        first_message: {type: string}
+        message_example: {type: string}
+        alternate_greetings:
+          type: array
+          items: {type: string}
+        system_prompt: {type: string}
+        post_history_instructions: {type: string}
+        creator_notes: {type: string}
+        character_version: {type: string}
+    StudioLorebookEntry:
+      type: object
+      additionalProperties: false
+      required:
+        [id, comment, keys, content, enabled, constant, selective, priority, position, depth, children]
+      properties:
+        id: {type: string, minLength: 1}
+        comment: {type: string}
+        keys:
+          type: array
+          items: {type: string}
+        secondary_keys:
+          type: array
+          items: {type: string}
+        content: {type: string}
+        enabled: {type: boolean}
+        constant: {type: boolean}
+        selective: {type: boolean}
+        priority: {type: integer}
+        position: {type: string}
+        depth: {type: integer, minimum: 0}
+        probability: {type: integer, minimum: 0, maximum: 100}
+        prevent_recursion: {type: boolean}
+        use_regex: {type: boolean}
+        match_persona_description: {type: boolean}
+        match_character_description: {type: boolean}
+        match_character_personality: {type: boolean}
+        match_character_depth_prompt: {type: boolean}
+        match_scenario: {type: boolean}
+        children:
+          type: array
+          items: {$ref: "#/components/schemas/StudioLorebookEntry"}
+    StudioLorebook:
+      type: object
+      additionalProperties: false
+      required: [name, entries]
+      properties:
+        name: {type: string}
+        entries:
+          type: array
+          items: {$ref: "#/components/schemas/StudioLorebookEntry"}
+    StudioRegexScript:
+      type: object
+      additionalProperties: false
+      required:
+        [id, scriptName, findRegex, replaceString, placement, markdownOnly, promptOnly, runOnEdit, disabled]
+      properties:
+        id: {type: string, minLength: 1}
+        scriptName: {type: string}
+        findRegex: {type: string}
+        replaceString: {type: string}
+        placement:
+          type: array
+          items: {type: integer}
+        markdownOnly: {type: boolean}
+        promptOnly: {type: boolean}
+        runOnEdit: {type: boolean}
+        disabled: {type: boolean}
+    StudioStateTask:
+      type: object
+      additionalProperties: false
+      required: [id, name, triggerTiming, interval, commands, disabled]
+      properties:
+        id: {type: string, minLength: 1}
+        name: {type: string}
+        triggerTiming: {type: string}
+        interval: {type: integer}
+        commands: {type: string}
+        disabled: {type: boolean}
+    StudioDocumentContent:
+      type: object
+      additionalProperties: false
+      required:
+        [origin, status, meta, identity, coreMessages, lorebook, regexScripts, stateTasks, exportArtifacts]
+      properties:
+        origin: {$ref: "#/components/schemas/StudioDocumentOrigin"}
+        status: {$ref: "#/components/schemas/StudioDocumentStatus"}
+        meta: {$ref: "#/components/schemas/StudioDocumentMeta"}
+        identity: {$ref: "#/components/schemas/StudioDocumentIdentity"}
+        coreMessages: {$ref: "#/components/schemas/StudioDocumentCoreMessages"}
+        lorebook: {$ref: "#/components/schemas/StudioLorebook"}
+        regexScripts:
+          type: array
+          items: {$ref: "#/components/schemas/StudioRegexScript"}
+        stateTasks:
+          type: array
+          items: {$ref: "#/components/schemas/StudioStateTask"}
+        exportArtifacts: {type: object, additionalProperties: true}
+    StudioDiagnostics:
+      type: object
+      additionalProperties: false
+      required: [valid, errors, warnings, checks]
+      properties:
+        valid: {type: boolean}
+        errors:
+          type: array
+          items: {type: string}
+        warnings:
+          type: array
+          items: {type: string}
+        checks:
+          type: object
+          additionalProperties: false
+          required: [document, v3_export, v2_export]
+          properties:
+            document: {type: boolean}
+            v3_export: {type: boolean}
+            v2_export: {type: boolean}
+    StudioValidationResult:
+      type: object
+      additionalProperties: false
+      required: [documentRevision, diagnostics]
+      properties:
+        documentRevision: {type: integer, minimum: 1}
+        diagnostics: {$ref: "#/components/schemas/StudioDiagnostics"}
     StudioGenerateCommand:
       type: object
       additionalProperties: false
@@ -5049,11 +5511,9 @@ components:
     StudioAgentCommand:
       type: object
       additionalProperties: false
+      required: [content]
       properties:
-        content: {type: string, minLength: 1, maxLength: 100000}
-        messages:
-          type: array
-          items: {type: object, additionalProperties: true}
+        content: {type: string, minLength: 1}
     StudioIndex:
       type: object
       additionalProperties: false
@@ -5145,13 +5605,14 @@ components:
       allOf:
         - $ref: "#/components/schemas/StudioAsset"
         - type: object
+          required: [available]
           properties:
             available: {type: boolean}
     StudioMessage:
       type: object
-      additionalProperties: true
+      additionalProperties: false
       required:
-        [messageId, ordinal, role, content, attachments, createdAt, updatedAt]
+        [messageId, ordinal, role, content, attachments, runtimeLog, variablesSnapshot, generationMeta, createdAt, updatedAt]
       properties:
         messageId: {$ref: "#/components/schemas/Uuid"}
         ordinal: {type: integer, minimum: 1}
@@ -5169,7 +5630,7 @@ components:
         updatedAt: {type: string, format: date-time}
     StudioChatSession:
       type: object
-      additionalProperties: true
+      additionalProperties: false
       required:
         - sessionId
         - documentId
@@ -5184,6 +5645,7 @@ components:
         - summaryGeneration
         - runtimeState
         - archived
+        - archivedAt
         - messages
         - createdAt
         - updatedAt
@@ -5194,12 +5656,13 @@ components:
         revision: {type: integer, minimum: 1}
         generation: {type: integer, minimum: 1}
         archived: {type: boolean}
+        archivedAt: {type: [string, "null"], format: date-time}
         title: {type: string}
         greetingSource: {type: object, additionalProperties: true}
         variables: {type: object, additionalProperties: true}
         summaryBlocks:
           type: array
-          items: {type: object, additionalProperties: true}
+          items: {$ref: "#/components/schemas/StudioSummaryBlock"}
         summaryThroughMessageId:
           oneOf:
             - $ref: "#/components/schemas/Uuid"
@@ -5223,26 +5686,71 @@ components:
       type: object
       additionalProperties: false
       required:
-        [sessionId, title, revision, generation, archived, updatedAt]
+        [sessionId, title, revision, generation, archived, archivedAt, messageCount, lastMessageExcerpt, updatedAt]
       properties:
         sessionId: {$ref: "#/components/schemas/Uuid"}
         title: {type: string}
         revision: {type: integer, minimum: 1}
         generation: {type: integer, minimum: 1}
         archived: {type: boolean}
+        archivedAt: {type: [string, "null"], format: date-time}
+        messageCount: {type: integer, minimum: 0}
+        lastMessageExcerpt: {type: string}
         updatedAt: {type: string, format: date-time}
+    StudioSummaryBlock:
+      type: object
+      additionalProperties: false
+      required: [summary]
+      properties:
+        summary: {type: string, minLength: 1}
     StudioGreeting:
       type: object
-      additionalProperties: true
+      additionalProperties: false
       required: [greetingId, label, content, source]
       properties:
         greetingId: {type: string}
         label: {type: string}
         content: {type: string}
         source: {type: object, additionalProperties: true}
+    StudioPromptMessage:
+      type: object
+      additionalProperties: false
+      required: [role, content, assetIds]
+      properties:
+        role: {type: string, enum: [system, user, assistant]}
+        content: {type: string}
+        assetIds:
+          type: array
+          items: {$ref: "#/components/schemas/Uuid"}
+    StudioPromptLorebookHit:
+      type: object
+      additionalProperties: false
+      required: [id, comment]
+      properties:
+        id: {type: string, minLength: 1}
+        comment: {type: string}
+    StudioPromptPreview:
+      type: object
+      additionalProperties: false
+      required: [system, messages, lorebookHits]
+      properties:
+        system: {type: string}
+        messages:
+          type: array
+          items: {$ref: "#/components/schemas/StudioPromptMessage"}
+        lorebookHits:
+          type: array
+          items: {$ref: "#/components/schemas/StudioPromptLorebookHit"}
+    StudioPromptPreviewResult:
+      type: object
+      additionalProperties: false
+      required: [sessionId, promptPreview]
+      properties:
+        sessionId: {$ref: "#/components/schemas/Uuid"}
+        promptPreview: {$ref: "#/components/schemas/StudioPromptPreview"}
     StudioChatState:
       type: object
-      additionalProperties: true
+      additionalProperties: false
       required:
         [documentId, indexRevision, sessions, activeSession, availableGreetings]
       properties:
@@ -5270,10 +5778,8 @@ components:
       required: [baseIndexRevision]
       properties:
         baseIndexRevision: {type: integer, minimum: 1}
-        title: {type: string, maxLength: 500}
+        title: {type: string}
         greetingId: {type: string}
-        greeting: {type: string}
-        greetingSource: {type: object, additionalProperties: true}
     StudioMessageCommand:
       type: object
       additionalProperties: false
@@ -5284,10 +5790,8 @@ components:
           minimum: 1
         content:
           type: string
-          maxLength: 100000
         assetIds:
           type: array
-          maxItems: 20
           uniqueItems: true
           items:
             $ref: "#/components/schemas/Uuid"
@@ -5297,7 +5801,7 @@ components:
       required: [baseSessionRevision, content]
       properties:
         baseSessionRevision: {type: integer, minimum: 1}
-        content: {type: string, minLength: 1, maxLength: 100000}
+        content: {type: string, minLength: 1}
     PluginAgentTarget:
       type: object
       additionalProperties: false
@@ -5381,7 +5885,7 @@ components:
         run_state:
           type: string
           enum:
-            [drafting, awaiting_target_lock, ready, running, completed, failed, cancelled]
+            [drafting, awaiting_target_lock, ready, running, pausing, paused, cancelling, completed, failed, cancelled]
         selected_plugin_id: {type: [string, "null"]}
         pending_target:
           oneOf:
@@ -5444,20 +5948,35 @@ components:
           $ref: "#/components/schemas/PluginAgentSession"
         batchId: {$ref: "#/components/schemas/Uuid"}
         jobId: {$ref: "#/components/schemas/Uuid"}
+    PluginConfigOption:
+      type: object
+      additionalProperties: false
+      required: [value, label]
+      properties:
+        value:
+          oneOf:
+            - {type: string}
+            - {type: number}
+        label: {type: string, minLength: 1}
     PluginConfigField:
       type: object
-      additionalProperties: true
-      required: [type]
+      additionalProperties: false
+      required: [type, default]
       properties:
         type:
           type: string
           enum: [text, number, boolean, select]
         default: {}
+        label: {type: string}
+        description: {type: string}
+        placeholder: {type: string}
         minimum: {type: number}
         maximum: {type: number}
         options:
           type: array
-          items: {}
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/PluginConfigOption"
     PluginManifest:
       type: object
       additionalProperties: false
@@ -5668,7 +6187,7 @@ components:
             tags:
               type: array
               items: {$ref: "#/components/schemas/Tag"}
-    BookUpdateCommand:
+    BookCreateCommand:
       type: object
       additionalProperties: false
       required: [title]
@@ -5678,7 +6197,38 @@ components:
           type: array
           uniqueItems: true
           items: {$ref: "#/components/schemas/Uuid"}
+    BookMultipartCreateCommand:
+      type: object
+      additionalProperties: false
+      required: [title]
+      properties:
+        title: {type: string, minLength: 1, maxLength: 500}
+        tagIds:
+          type: string
+          description: JSON-encoded array of tag UUIDs.
+        cover: {type: string, format: binary}
+    BookUpdateCommand:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        title: {type: string, minLength: 1, maxLength: 500}
+        tagIds:
+          type: array
+          uniqueItems: true
+          items: {$ref: "#/components/schemas/Uuid"}
         clearCover: {type: boolean, default: false}
+    BookMultipartUpdateCommand:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        title: {type: string, minLength: 1, maxLength: 500}
+        tagIds:
+          type: string
+          description: JSON-encoded array of tag UUIDs.
+        clearCover: {type: boolean, default: false}
+        cover: {type: string, format: binary}
     BookBatchDeleteCommand:
       type: object
       additionalProperties: false
@@ -6000,9 +6550,9 @@ components:
           additionalProperties: false
           required: [payload, schemaVersion, revision]
           properties:
-            payload: {type: object, additionalProperties: true}
-            schemaVersion: {type: integer, minimum: 1}
-            revision: {type: integer, minimum: 0}
+            payload: {$ref: "#/components/schemas/TranslationConstraintPayload"}
+            schemaVersion: {type: integer, const: 2}
+            revision: {type: integer, minimum: 1}
         navigation:
           type: object
           additionalProperties: false
@@ -6119,7 +6669,6 @@ components:
         autoExtractPrompt: {type: string, minLength: 1, maxLength: 100000}
         entries:
           type: array
-          maxItems: 10000
           items: {$ref: "#/components/schemas/TranslationGlossaryEntry"}
     TranslationNonTranslateSettings:
       type: object
@@ -6129,7 +6678,6 @@ components:
         enabled: {type: boolean}
         entries:
           type: array
-          maxItems: 10000
           items: {$ref: "#/components/schemas/TranslationNonTranslateEntry"}
     TranslationConstraintPayload:
       type: object
@@ -6331,7 +6879,8 @@ components:
       properties:
         items:
           type: array
-          items: {type: string, minLength: 1}
+          uniqueItems: true
+          items: {$ref: "#/components/schemas/InsightOverviewTemplate"}
     InsightChapter:
       type: object
       additionalProperties: false
@@ -6343,9 +6892,14 @@ components:
         pageCount: {type: integer, minimum: 0}
         analysisCounts:
           type: object
-          additionalProperties:
-            type: integer
-            minimum: 0
+          additionalProperties: false
+          required: [ready, stale, running, failed, not_analyzed]
+          properties:
+            ready: {type: integer, minimum: 0}
+            stale: {type: integer, minimum: 0}
+            running: {type: integer, minimum: 0}
+            failed: {type: integer, minimum: 0}
+            not_analyzed: {type: integer, minimum: 0}
     InsightChapterList:
       type: object
       additionalProperties: false
@@ -6416,13 +6970,56 @@ components:
           items: {type: string}
         preview: {type: boolean}
         analysis:
-          type: [object, "null"]
-          additionalProperties: true
+          oneOf:
+            - $ref: "#/components/schemas/InsightPageAnalysis"
+            - type: "null"
         runId:
           oneOf:
             - $ref: "#/components/schemas/Uuid"
             - type: "null"
         generatedAt: {type: [string, "null"], format: date-time}
+    InsightPageAnalysisEvent:
+      type: object
+      additionalProperties: false
+      required: [summary, importance]
+      properties:
+        summary: {type: string, minLength: 1}
+        importance: {type: string, enum: [high, medium, normal]}
+        event_type: {type: string, minLength: 1}
+    InsightPageAnalysisWarning:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code: {type: string, minLength: 1}
+        message: {type: string, minLength: 1}
+    InsightPageAnalysis:
+      type: object
+      additionalProperties: false
+      required:
+        - schema_version
+        - page_id
+        - source_asset_id
+        - source_checksum
+        - page_number_snapshot
+        - page_summary
+        - key_events
+        - continuity_notes
+        - warnings
+      properties:
+        schema_version: {type: integer, const: 2}
+        page_id: {$ref: "#/components/schemas/Uuid"}
+        source_asset_id: {$ref: "#/components/schemas/Uuid"}
+        source_checksum: {type: string, pattern: "^[0-9a-f]{64}$"}
+        page_number_snapshot: {type: integer, minimum: 1}
+        page_summary: {type: string, minLength: 1}
+        key_events:
+          type: array
+          items: {$ref: "#/components/schemas/InsightPageAnalysisEvent"}
+        continuity_notes: {type: string}
+        warnings:
+          type: array
+          items: {$ref: "#/components/schemas/InsightPageAnalysisWarning"}
     InsightRunTarget:
       type: object
       additionalProperties: false
@@ -6432,8 +7029,16 @@ components:
         pageNumber: {type: integer, minimum: 1}
         status: {type: string, enum: [pending, completed, failed, conflict]}
         error:
-          type: [object, "null"]
-          additionalProperties: true
+          oneOf:
+            - $ref: "#/components/schemas/InsightRunTargetError"
+            - type: "null"
+    InsightRunTargetError:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code: {type: string, minLength: 1}
+        message: {type: string, minLength: 1}
     InsightRun:
       type: object
       additionalProperties: false
@@ -6452,10 +7057,15 @@ components:
         - targets
       properties:
         runId: {$ref: "#/components/schemas/Uuid"}
-        jobId: {$ref: "#/components/schemas/Uuid"}
+        jobId:
+          oneOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
         bookId: {$ref: "#/components/schemas/Uuid"}
         scope: {type: string, enum: [full, incremental, chapter, page]}
-        status: {type: string}
+        status:
+          type: string
+          enum: [staging, completed, completed_with_errors, failed, cancelled]
         targetCount: {type: integer, minimum: 0}
         successCount: {type: integer, minimum: 0}
         failedCount: {type: integer, minimum: 0}
@@ -6484,7 +7094,6 @@ components:
           minItems: 1
           uniqueItems: true
           items: {$ref: "#/components/schemas/Uuid"}
-        force: {type: boolean}
     InsightAnalysisJobAccepted:
       allOf:
         - $ref: "#/components/schemas/JobBatchAccepted"
@@ -6492,6 +7101,23 @@ components:
           required: [runId]
           properties:
             runId: {$ref: "#/components/schemas/Uuid"}
+    InsightOverviewTemplate:
+      type: string
+      enum:
+        - no_spoiler
+        - story_summary
+        - recap
+        - character_guide
+        - world_setting
+        - highlights
+        - reading_notes
+    InsightOverviewPayload:
+      type: object
+      required: [title, content]
+      properties:
+        title: {type: string, minLength: 1}
+        content: {type: string, minLength: 1}
+      additionalProperties: true
     InsightArtifact:
       type: object
       additionalProperties: false
@@ -6512,23 +7138,102 @@ components:
           oneOf:
             - $ref: "#/components/schemas/Uuid"
             - type: "null"
-        kind: {type: string}
-        template: {type: string}
-        status: {type: string}
+        kind: {type: string, const: overview}
+        template: {$ref: "#/components/schemas/InsightOverviewTemplate"}
+        status: {type: string, enum: [ready, degraded, stale]}
         revision: {type: integer, minimum: 1}
-        dependencyFingerprint: {type: string}
-        payload: {type: object, additionalProperties: true}
+        dependencyFingerprint: {type: string, pattern: "^[0-9a-f]{64}$"}
+        payload: {$ref: "#/components/schemas/InsightOverviewPayload"}
     InsightTimelineEntry:
       type: object
-      required: [eventId]
+      required: [eventId, summary, page_ids, page_numbers]
       properties:
         eventId: {$ref: "#/components/schemas/Uuid"}
+        summary: {type: string, minLength: 1}
+        page_ids:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: {$ref: "#/components/schemas/Uuid"}
+        page_numbers:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: {type: integer, minimum: 1}
+        importance: {type: string, minLength: 1}
+      additionalProperties: true
+    InsightTimelineKeyMoment:
+      type: object
+      required: [summary]
+      properties:
+        summary: {type: string, minLength: 1}
+        page: {type: integer, minimum: 1}
       additionalProperties: true
     InsightTimelineCharacter:
       type: object
-      required: [characterId]
+      required: [characterId, name, description, first_page, key_moments]
       properties:
         characterId: {$ref: "#/components/schemas/Uuid"}
+        name: {type: string, minLength: 1}
+        description: {type: string, minLength: 1}
+        first_page: {type: integer, minimum: 1}
+        key_moments:
+          type: array
+          items: {$ref: "#/components/schemas/InsightTimelineKeyMoment"}
+      additionalProperties: true
+    InsightTimelinePageRange:
+      type: object
+      additionalProperties: false
+      required: [start, end]
+      properties:
+        start: {type: integer, minimum: 1}
+        end: {type: integer, minimum: 1}
+    InsightTimelinePlotArc:
+      type: object
+      required: [id, name, description, page_range]
+      properties:
+        id: {type: string, minLength: 1}
+        name: {type: string, minLength: 1}
+        description: {type: string, minLength: 1}
+        page_range: {$ref: "#/components/schemas/InsightTimelinePageRange"}
+        mood: {type: string, minLength: 1}
+        event_ids:
+          type: array
+          uniqueItems: true
+          items: {type: string, minLength: 1}
+      additionalProperties: true
+    InsightTimelinePlotThread:
+      type: object
+      required: [id, name, type, status]
+      properties:
+        id: {type: string, minLength: 1}
+        name: {type: string, minLength: 1}
+        type: {type: string, minLength: 1}
+        status: {type: string, minLength: 1}
+        description: {type: string, minLength: 1}
+        introduced_at: {type: integer, minimum: 1}
+        resolved_at: {type: [integer, "null"], minimum: 1}
+      additionalProperties: true
+    InsightTimelineContent:
+      type: object
+      required:
+        - story_summary
+        - requested_mode
+        - actual_mode
+        - fallback_reason
+        - degraded
+      properties:
+        story_summary: {type: string}
+        requested_mode: {type: string, const: enhanced}
+        actual_mode: {type: string, enum: [enhanced, compressed, simple]}
+        fallback_reason: {type: [string, "null"]}
+        degraded: {type: boolean}
+        plot_arcs:
+          type: array
+          items: {$ref: "#/components/schemas/InsightTimelinePlotArc"}
+        plot_threads:
+          type: array
+          items: {$ref: "#/components/schemas/InsightTimelinePlotThread"}
       additionalProperties: true
     InsightTimeline:
       type: object
@@ -6555,8 +7260,8 @@ components:
             - $ref: "#/components/schemas/Uuid"
             - type: "null"
         mode: {type: string, enum: [enhanced, compressed, simple]}
-        status: {type: string}
-        content: {type: object, additionalProperties: true}
+        status: {type: string, enum: [ready, degraded, stale]}
+        content: {$ref: "#/components/schemas/InsightTimelineContent"}
         events:
           type: array
           items: {$ref: "#/components/schemas/InsightTimelineEntry"}
@@ -6571,11 +7276,11 @@ components:
         pageThumbnails:
           type: object
           additionalProperties: {type: string}
-        dependencyFingerprint: {type: string}
+        dependencyFingerprint: {type: string, pattern: "^[0-9a-f]{64}$"}
     IntegerCursorPage:
       type: object
       additionalProperties: false
-      required: [nextCursor]
+      required: [nextCursor, totalCount]
       properties:
         nextCursor: {type: [integer, "null"], minimum: 1}
         totalCount: {type: integer, minimum: 0}
@@ -6599,7 +7304,7 @@ components:
     StringCursorPage:
       type: object
       additionalProperties: false
-      required: [nextCursor]
+      required: [nextCursor, totalCount]
       properties:
         nextCursor: {type: [string, "null"]}
         totalCount: {type: integer, minimum: 0}
@@ -6630,9 +7335,9 @@ components:
       additionalProperties: false
       required: [question]
       properties:
-        question: {type: string, minLength: 1, maxLength: 4000}
+        question: {type: string, minLength: 1}
         mode: {type: string, enum: [exact, global]}
-        topK: {type: integer, minimum: 1, maximum: 20}
+        topK: {type: integer, minimum: 1}
         threshold: {type: number, minimum: 0, maximum: 1}
         useParentChild: {type: boolean}
         useReasoning: {type: boolean}
@@ -6666,7 +7371,7 @@ components:
       required: [pageId]
       properties:
         pageId: {$ref: "#/components/schemas/Uuid"}
-        excerpt: {type: string, maxLength: 2000}
+        excerpt: {type: string}
         score: {type: [number, "null"]}
     InsightNote:
       type: object
@@ -6679,8 +7384,8 @@ components:
         - excerpt
         - kind
         - tags
-        - comments
-        - commentCount
+        - question
+        - comment
         - revision
         - citations
         - createdAt
@@ -6695,10 +7400,8 @@ components:
         tags:
           type: array
           items: {type: string}
-        comments:
-          type: array
-          items: {}
-        commentCount: {type: integer, minimum: 0}
+        question: {type: [string, "null"], minLength: 1}
+        comment: {type: [string, "null"], minLength: 1}
         revision: {type: integer, minimum: 1}
         citations:
           type: array
@@ -6717,11 +7420,11 @@ components:
     InsightNoteCreateCommand:
       type: object
       additionalProperties: false
-      required: [bookId, title, content, citations, kind, tags, comments]
+      required: [bookId, title, content, citations, kind, tags, question, comment]
       properties:
         bookId: {$ref: "#/components/schemas/Uuid"}
         title: {type: string, minLength: 1, maxLength: 500}
-        content: {type: string, maxLength: 1000000}
+        content: {type: string}
         citations:
           type: array
           items: {$ref: "#/components/schemas/InsightCitationCommand"}
@@ -6729,18 +7432,17 @@ components:
         tags:
           type: array
           items: {type: string}
-        comments:
-          type: array
-          items: {}
+        question: {type: [string, "null"], minLength: 1}
+        comment: {type: [string, "null"], minLength: 1}
     InsightNoteUpdateCommand:
       type: object
       additionalProperties: false
       required:
-        [baseRevision, title, content, citations, kind, tags, comments]
+        [baseRevision, title, content, citations, kind, tags, question, comment]
       properties:
         baseRevision: {type: integer, minimum: 1}
         title: {type: string, minLength: 1, maxLength: 500}
-        content: {type: string, maxLength: 1000000}
+        content: {type: string}
         citations:
           type: array
           items: {$ref: "#/components/schemas/InsightCitationCommand"}
@@ -6748,9 +7450,8 @@ components:
         tags:
           type: array
           items: {type: string}
-        comments:
-          type: array
-          items: {}
+        question: {type: [string, "null"], minLength: 1}
+        comment: {type: [string, "null"], minLength: 1}
     ContinuationImageVersion:
       type: object
       additionalProperties: false
@@ -6762,6 +7463,28 @@ components:
         thumbnailUrl: {type: string}
         active: {type: boolean}
         adopted: {type: boolean}
+    ContinuationPagePayload:
+      type: object
+      additionalProperties: false
+      required:
+        - storyText
+        - continuityText
+        - dialogueText
+        - characters
+        - finalPrompt
+        - status
+      properties:
+        storyText: {type: string}
+        continuityText: {type: string}
+        dialogueText: {type: string}
+        characters:
+          type: array
+          items: {type: string}
+        finalPrompt: {type: string}
+        status:
+          type: string
+          enum: [pending, generating, ready, stale, failed]
+        staleReason: {type: string, minLength: 1}
     ContinuationPage:
       type: object
       additionalProperties: false
@@ -6771,7 +7494,7 @@ components:
         continuationPageId: {$ref: "#/components/schemas/Uuid"}
         ordinal: {type: integer, minimum: 1}
         revision: {type: integer, minimum: 1}
-        payload: {type: object, additionalProperties: true}
+        payload: {$ref: "#/components/schemas/ContinuationPagePayload"}
         imageVersions:
           type: array
           items: {$ref: "#/components/schemas/ContinuationImageVersion"}
@@ -6843,9 +7566,10 @@ components:
     ContinuationProjectConfig:
       type: object
       additionalProperties: false
+      required: [pageCount, styleReferencePages, direction]
       properties:
-        pageCount: {type: integer, minimum: 1, maximum: 100}
-        styleReferencePages: {type: integer, minimum: 1, maximum: 20}
+        pageCount: {type: integer, minimum: 1}
+        styleReferencePages: {type: integer, minimum: 1}
         direction: {type: string}
     ContinuationProject:
       type: object
@@ -6926,7 +7650,6 @@ components:
         baseRevision: {type: integer, minimum: 1}
         assetIds:
           type: array
-          maxItems: 20
           uniqueItems: true
           items: {$ref: "#/components/schemas/Uuid"}
     ContinuationCharacterCreateCommand:
@@ -6937,9 +7660,8 @@ components:
         name: {type: string, minLength: 1, maxLength: 500}
         aliases:
           type: array
-          maxItems: 100
           uniqueItems: true
-          items: {type: string, maxLength: 500}
+          items: {type: string, minLength: 1}
         enabled: {type: boolean}
         payload: {type: object, additionalProperties: true}
     ContinuationCharacterUpdateCommand:
@@ -6981,20 +7703,34 @@ components:
         assetId: {$ref: "#/components/schemas/Uuid"}
         revision: {type: integer, minimum: 1}
     ContinuationJobCommand:
-      type: object
-      additionalProperties: false
-      required: [kind]
-      properties:
-        kind:
-          type: string
-          enum: [script, pages, images, export, character_sheet]
-        ordinals:
-          type: array
-          minItems: 1
-          uniqueItems: true
-          items: {type: integer, minimum: 1}
-        format: {type: string, enum: [zip, pdf]}
-        formId: {$ref: "#/components/schemas/Uuid"}
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [kind]
+          properties:
+            kind: {type: string, const: script}
+        - type: object
+          additionalProperties: false
+          required: [kind]
+          properties:
+            kind: {type: string, enum: [pages, images]}
+            ordinals:
+              type: array
+              minItems: 1
+              uniqueItems: true
+              items: {type: integer, minimum: 1}
+        - type: object
+          additionalProperties: false
+          required: [kind, format]
+          properties:
+            kind: {type: string, const: export}
+            format: {type: string, enum: [zip, pdf]}
+        - type: object
+          additionalProperties: false
+          required: [kind, formId]
+          properties:
+            kind: {type: string, const: character_sheet}
+            formId: {$ref: "#/components/schemas/Uuid"}
     ContinuationScriptUpdateCommand:
       type: object
       additionalProperties: false
@@ -7008,7 +7744,7 @@ components:
       required: [baseRevision, payload]
       properties:
         baseRevision: {type: integer, minimum: 1}
-        payload: {type: object, additionalProperties: true}
+        payload: {$ref: "#/components/schemas/ContinuationPagePayload"}
     ContinuationImageActivation:
       type: object
       additionalProperties: false
@@ -7022,7 +7758,7 @@ components:
       additionalProperties: false
       required: [sourceUrl]
       properties:
-        sourceUrl: {type: string, format: uri}
+        sourceUrl: {type: string, format: uri, maxLength: 8000}
     WebImportSupport:
       type: object
       additionalProperties: false
@@ -7039,7 +7775,7 @@ components:
       required: [chapterId, sourceUrl]
       properties:
         chapterId: {$ref: "#/components/schemas/Uuid"}
-        sourceUrl: {type: string, format: uri}
+        sourceUrl: {type: string, format: uri, maxLength: 8000}
         engine:
           type: string
           enum: [auto, gallery-dl, ai-agent]

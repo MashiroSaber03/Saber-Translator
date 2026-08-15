@@ -33,6 +33,7 @@ describe('NotesPanel', () => {
 
   it('uses product confirmation before deleting a note', async () => {
     const store = useInsightStore()
+    store.currentBookId = 'book-1'
     const deleteNoteSpy = vi.spyOn(store, 'deleteNote').mockResolvedValue(undefined)
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
 
@@ -119,6 +120,53 @@ describe('NotesPanel', () => {
     expect(source).not.toContain('placeholder-text')
   })
 
+  it('does not present loading or failed requests as an empty note list', async () => {
+    const store = useInsightStore()
+    store.currentBookId = 'book-1'
+    const pending = new Promise<never>(() => undefined)
+    vi.spyOn(store, 'loadNotesFromAPI').mockReturnValue(pending)
+
+    const wrapper = mount(NotesPanel)
+    store.$patch({ notesLoading: true })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.findComponent(NotesList).exists()).toBe(false)
+    expect(wrapper.text()).toContain('正在加载笔记')
+    expect(wrapper.text()).not.toContain('暂无笔记')
+
+    store.$patch({ notesLoading: false, notesError: '读取失败' })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.findComponent(NotesList).exists()).toBe(false)
+    expect(wrapper.text()).toContain('读取失败')
+    expect(wrapper.text()).not.toContain('暂无笔记')
+  })
+
+  it('keeps existing notes visible when a later note operation fails', async () => {
+    const wrapper = mount(NotesPanel)
+    const store = useInsightStore()
+    store.$patch({
+      notesLoading: false,
+      notesError: '加载更多笔记失败',
+      notes: [{
+        citations: [],
+        content: '已加载的笔记',
+        createdAt: '2026-08-12T00:00:00.000Z',
+        id: 'note-existing',
+        revision: 1,
+        tags: [],
+        title: '既有笔记',
+        type: 'text',
+        updatedAt: '2026-08-12T00:00:00.000Z',
+      }],
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.findComponent(NotesList).exists()).toBe(true)
+    expect(wrapper.text()).toContain('加载更多笔记失败')
+    expect(wrapper.text()).not.toContain('暂无笔记')
+  })
+
   it('does not redefine the shared button primitive skin in the notes panel owner', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/components/insight/NotesPanel.vue'), 'utf8')
 
@@ -169,7 +217,8 @@ describe('NotesPanel', () => {
   it('creates manual notes as text notes instead of offering an incomplete QA form', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/components/insight/NotesPanel.vue'), 'utf8')
 
-    expect(source).toContain("type: editingNote.value?.type ?? 'text'")
+    expect(source).toContain("type: 'text'")
+    expect(source).toContain("editedNote.type === 'qa'")
     expect(source).not.toContain('noteTypeOptions')
     expect(source).not.toContain('v-model:note-type')
   })

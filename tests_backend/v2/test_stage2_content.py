@@ -11,6 +11,7 @@ from sqlalchemy import insert, select, update
 
 from src.backend_v2.api.app import ApiSettings, create_api_app
 from src.backend_v2.content.image_import import ImageImportService, ImportSafetyLimits
+from src.backend_v2.content.page_style import rgb_to_hex
 from src.backend_v2.content.repository import (
     ContentConflict,
     ContentLocked,
@@ -18,7 +19,9 @@ from src.backend_v2.content.repository import (
     IdempotencyConflict,
 )
 from src.backend_v2.content.translation_constraints import (
+    TRANSLATION_CONSTRAINTS_SCHEMA_VERSION,
     empty_translation_constraints,
+    validate_translation_constraints,
 )
 from src.backend_v2.runtime_identity import RuntimeIdentity
 from src.backend_v2.rendering.fonts import (
@@ -43,9 +46,27 @@ from src.backend_v2.storage.schema import (
     operations,
     page_assets,
     pages,
+    translation_constraints,
 )
 from src.backend_v2.storage.seeding import seed_system_records
 from src.backend_v2.storage.seeding import QUICK_WORKSPACE_BOOK_ID
+from src.core.config_models import BubbleState
+
+
+def _stored_job_progress(status: str = "queued") -> str:
+    return json.dumps(
+        {
+            "executionMode": "sequential",
+            "jobStatus": status,
+            "totalItems": 0,
+            "completedItems": 0,
+            "failedItems": 0,
+            "skippedItems": 0,
+            "cancelledItems": 0,
+            "pools": [],
+        },
+        separators=(",", ":"),
+    )
 
 
 @pytest.fixture()
@@ -82,6 +103,14 @@ def _image_bytes(
     return output.getvalue()
 
 
+def _bubble_fields(**overrides: object) -> dict[str, object]:
+    payload = BubbleState().to_dict()
+    payload.pop("fontFamily")
+    payload.pop("autoTextDirection")
+    payload.update(overrides)
+    return payload
+
+
 def test_large_image_policy_has_no_byte_or_pixel_dimension_gate() -> None:
     limits = ImportSafetyLimits()
 
@@ -89,6 +118,18 @@ def test_large_image_policy_has_no_byte_or_pixel_dimension_gate() -> None:
     assert not hasattr(limits, "max_image_bytes")
     assert not hasattr(limits, "max_container_bytes")
     assert not hasattr(limits, "max_expanded_bytes")
+    assert not hasattr(limits, "max_archive_entries")
+    assert not hasattr(limits, "max_container_pages")
+    assert not hasattr(limits, "max_html_bytes")
+
+
+@pytest.mark.parametrize(
+    "value",
+    [None, [], [0, 0], [0, 0, 0, 0], [0, 0, "0"], [0, 0, True], [-1, 0, 0]],
+)
+def test_rgb_color_rejects_malformed_algorithm_results(value: object) -> None:
+    with pytest.raises(ValueError, match="RGB color"):
+        rgb_to_hex(value)
 
 
 def test_font_resolution_rejects_an_unknown_v2_font(content_platform) -> None:
@@ -196,6 +237,57 @@ def test_book_creation_rejects_retired_request_fields(content_platform) -> None:
     assert "form.description" in multipart_response.get_data(as_text=True)
 
 
+def test_content_name_commands_reject_non_string_values(content_platform) -> None:
+    data_root, engine, repository, _storage, _importer, book, chapter = (
+        content_platform
+    )
+    tag = repository.create_tag(name="Strict", color="#4466aa")
+    app = create_api_app(
+        ApiSettings(
+            data_root=data_root,
+            identity=RuntimeIdentity(
+                epoch_id="test-strict-content-names",
+                epoch_token="test-token",
+                test_mode=True,
+            ),
+            engine=engine,
+        )
+    )
+    try:
+        client = app.test_client()
+        responses = [
+            client.post(
+                "/api/v2/books",
+                headers={"Idempotency-Key": "invalid-book-title-type"},
+                json={"title": 123},
+            ),
+            client.post(
+                f"/api/v2/books/{book['id']}/chapters",
+                headers={"Idempotency-Key": "invalid-chapter-title-type"},
+                json={"title": 123},
+            ),
+            client.put(
+                f"/api/v2/chapters/{chapter['id']}",
+                headers={"Idempotency-Key": "invalid-chapter-update-type"},
+                json={"title": 123},
+            ),
+            client.post(
+                "/api/v2/tags",
+                headers={"Idempotency-Key": "invalid-tag-name-type"},
+                json={"name": 123, "color": "#4466aa"},
+            ),
+            client.put(
+                f"/api/v2/tags/{tag['id']}",
+                headers={"Idempotency-Key": "invalid-tag-color-type"},
+                json={"name": "Strict", "color": 123},
+            ),
+        ]
+    finally:
+        app.extensions["saber_v2_runtime"].close()
+
+    assert [response.status_code for response in responses] == [422] * 5
+
+
 def test_book_detail_includes_the_list_projection_timestamps(content_platform) -> None:
     _data_root, _engine, repository, _storage, _importer, book, _chapter = (
         content_platform
@@ -208,6 +300,86 @@ def test_book_detail_includes_the_list_projection_timestamps(content_platform) -
 
     assert detail["createdAt"] == summary["createdAt"]
     assert detail["updatedAt"] == summary["updatedAt"]
+
+
+def test_book_search_matches_titles_and_tag_names(content_platform) -> None:
+    _data_root, _engine, repository, _storage, _importer, _book, _chapter = (
+        content_platform
+    )
+    fantasy = repository.create_tag(name="Fantasy", color="#4466aa")
+    tagged = repository.create_book(
+        title="Unrelated title",
+        tag_ids=[str(fantasy["id"])],
+    )
+    titled = repository.create_book(title="Fantasy collection")
+
+    matched_ids = {
+        str(book["id"])
+        for book in repository.list_books(search="fAnTaSy")
+    }
+
+    assert matched_ids == {str(tagged["id"]), str(titled["id"])}
+
+
+def test_book_update_only_changes_fields_present_in_the_request(
+    content_platform,
+) -> None:
+    data_root, engine, repository, _storage, _importer, book, _chapter = (
+        content_platform
+    )
+    tag = repository.create_tag(name="Fantasy", color="#4466aa")
+    app = create_api_app(
+        ApiSettings(
+            data_root=data_root,
+            identity=RuntimeIdentity(
+                epoch_id="test-partial-book-update",
+                epoch_token="test-token",
+                test_mode=True,
+            ),
+            engine=engine,
+        )
+    )
+    try:
+        client = app.test_client()
+        response = client.put(
+            f"/api/v2/books/{book['id']}",
+            headers={"Idempotency-Key": "partial-book-update"},
+            json={"tagIds": [tag["id"]]},
+        )
+        empty_response = client.put(
+            f"/api/v2/books/{book['id']}",
+            headers={"Idempotency-Key": "empty-book-update"},
+            json={},
+        )
+        invalid_title_response = client.put(
+            f"/api/v2/books/{book['id']}",
+            headers={"Idempotency-Key": "invalid-book-title"},
+            json={"title": 123},
+        )
+    finally:
+        app.extensions["saber_v2_runtime"].close()
+
+    assert response.status_code == 200
+    updated = response.get_json()
+    assert updated["title"] == book["title"]
+    assert [item["name"] for item in updated["tags"]] == ["Fantasy"]
+    assert empty_response.status_code == 422
+    assert invalid_title_response.status_code == 422
+
+
+def test_tag_rename_conflict_is_reported_as_a_domain_conflict(content_platform) -> None:
+    _data_root, _engine, repository, _storage, _importer, _book, _chapter = (
+        content_platform
+    )
+    first = repository.create_tag(name="First", color="#4466aa")
+    repository.create_tag(name="Second", color="#aa6644")
+
+    with pytest.raises(ContentConflict, match="tag name already exists"):
+        repository.update_tag(
+            tag_id=str(first["id"]),
+            name="Second",
+            color="#ffffff",
+        )
 
 
 def test_page_operation_rejects_client_payload(content_platform) -> None:
@@ -234,7 +406,8 @@ def test_page_operation_rejects_client_payload(content_platform) -> None:
         )
     )
     try:
-        response = app.test_client().post(
+        client = app.test_client()
+        response = client.post(
             f"/api/v2/pages/{imported['page']['id']}/operations",
             headers={"Idempotency-Key": "operation-with-client-payload"},
             json={
@@ -243,11 +416,33 @@ def test_page_operation_rejects_client_payload(content_platform) -> None:
                 "payload": {},
             },
         )
+        coerced_revision = client.post(
+            f"/api/v2/pages/{imported['page']['id']}/operations",
+            headers={"Idempotency-Key": "operation-string-revision"},
+            json={"kind": "page_detect", "baseRevision": "1"},
+        )
+        coerced_kind = client.post(
+            f"/api/v2/pages/{imported['page']['id']}/operations",
+            headers={"Idempotency-Key": "operation-numeric-kind"},
+            json={"kind": 7, "baseRevision": 1},
+        )
+        nullable_bubble = client.post(
+            f"/api/v2/pages/{imported['page']['id']}/operations",
+            headers={"Idempotency-Key": "operation-null-bubble"},
+            json={
+                "kind": "page_detect",
+                "baseRevision": 1,
+                "bubbleId": None,
+            },
+        )
     finally:
         app.extensions["saber_v2_runtime"].close()
 
     assert response.status_code == 422
     assert "payload" in response.get_data(as_text=True)
+    assert coerced_revision.status_code == 422
+    assert coerced_kind.status_code == 422
+    assert nullable_bubble.status_code == 422
 
 
 def test_translation_bootstrap_includes_backend_owned_runtime_configuration(
@@ -290,9 +485,9 @@ def test_translation_bootstrap_includes_backend_owned_runtime_configuration(
         "workflow_preferences",
     } <= settings_by_domain.keys()
     translation = settings_by_domain["translation"]
-    assert translation["schemaVersion"] == 3
+    assert translation["schemaVersion"] == 5
     assert translation["revision"] == 1
-    assert translation["payload"]["settingsSchemaVersion"] == 3
+    assert translation["payload"]["settingsSchemaVersion"] == 5
     assert translation["payload"]["translation"]["provider"]
     assert "textStyle" not in translation["payload"]
     assert translation["payload"]["pluginAgent"]["provider"]
@@ -382,6 +577,25 @@ def test_chapter_settings_memory_is_cas_scoped_and_rejects_style_or_secrets(
             base_revision=2,
             payload={"textDetector": "browser-only-fallback"},
         )
+
+
+def test_chapter_settings_memory_has_no_aggregate_byte_gate(content_platform) -> None:
+    _root, _engine, repository, _storage, _importer, _book, chapter = (
+        content_platform
+    )
+    prompt = "示" * 100_000
+    payload = {
+        "translatePrompt": prompt,
+        "textboxPrompt": prompt,
+    }
+
+    updated = repository.update_chapter_settings_memory(
+        chapter_id=str(chapter["id"]),
+        base_revision=1,
+        payload=payload,
+    )
+
+    assert updated["payload"] == payload
 def test_page_import_publishes_source_and_webp_thumbnail_without_base64(
     content_platform,
 ) -> None:
@@ -682,6 +896,7 @@ def test_clear_chapter_pages_is_one_guarded_atomic_backend_command(
                 book_id=str(book["id"]),
                 chapter_id=chapter_id,
                 config_json="{}",
+                latest_progress_json=_stored_job_progress(),
             )
         )
 
@@ -829,6 +1044,7 @@ def test_page_import_and_chapter_order_cas_enforce_backend_ownership(
                 status="queued",
                 chapter_id=chapter_id,
                 config_json="{}",
+                latest_progress_json=_stored_job_progress(),
             )
         )
         connection.execute(
@@ -958,7 +1174,10 @@ def test_page_document_uses_stable_bubble_ids_and_revision_cas(
             {
                 "op": "create",
                 "clientMutationId": "document-create-bubble",
-                "fields": {"text": "hello", "fontSize": 24},
+                "fields": _bubble_fields(
+                    translatedText="hello",
+                    fontSize=24,
+                ),
             }
         ],
         idempotency_key="document-create",
@@ -967,7 +1186,7 @@ def test_page_document_uses_stable_bubble_ids_and_revision_cas(
     bubble_id = created["mutationResults"][0]["bubbleId"]
     assert str(uuid.UUID(bubble_id)) == bubble_id
     assert created_document["documentRevision"] == 2
-    assert created_document["renderStatus"] == "not_rendered"
+    assert created_document["renderStatus"] == "stale"
     assert created_document["bubbles"][0]["bubbleId"] == bubble_id
     with pytest.raises(ValueError, match="cannot provide bubbleId"):
         repository.mutate_page_document(
@@ -1004,12 +1223,15 @@ def test_page_document_uses_stable_bubble_ids_and_revision_cas(
                 "op": "patch",
                 "clientMutationId": "document-patch-bubble",
                 "bubbleId": bubble_id,
-                "fields": {"text": "translated"},
+                "fields": {"translatedText": "translated"},
             }
         ],
         idempotency_key="document-patch",
     )
-    assert patched["document"]["bubbles"][0]["payload"]["text"] == "translated"
+    assert (
+        patched["document"]["bubbles"][0]["payload"]["translatedText"]
+        == "translated"
+    )
     with pytest.raises(ContentConflict):
         repository.mutate_page_document(
             page_id=page_id,
@@ -1023,6 +1245,191 @@ def test_page_document_uses_stable_bubble_ids_and_revision_cas(
             ],
             idempotency_key="document-stale-delete",
         )
+
+
+def test_page_document_derives_auto_direction_from_geometry_without_overwriting_actual_direction(
+    content_platform,
+) -> None:
+    _root, _engine, repository, _storage, importer, _book, chapter = content_platform
+    imported, _ = _import(
+        repository,
+        importer,
+        chapter_id=str(chapter["id"]),
+        payload=_image_bytes((200, 200)),
+        logical_path="auto-direction.png",
+        key="auto-direction-page",
+    )
+    page_id = str(imported["page"]["id"])
+    created, _ = repository.mutate_page_document(
+        page_id=page_id,
+        base_revision=1,
+        mutations=[{
+            "op": "create",
+            "clientMutationId": "auto-direction-create",
+            "fields": _bubble_fields(
+                coords=[0, 0, 80, 160],
+                textDirection="vertical",
+            ),
+        }],
+        idempotency_key="auto-direction-create-command",
+    )
+    bubble = created["document"]["bubbles"][0]
+    assert bubble["payload"]["autoTextDirection"] == "vertical"
+
+    updated, _ = repository.mutate_page_document(
+        page_id=page_id,
+        base_revision=2,
+        mutations=[{
+            "op": "patch",
+            "clientMutationId": "auto-direction-resize",
+            "bubbleId": bubble["bubbleId"],
+            "fields": {"coords": [0, 0, 160, 80]},
+        }],
+        idempotency_key="auto-direction-resize-command",
+    )
+    resized = updated["document"]["bubbles"][0]["payload"]
+    assert resized["autoTextDirection"] == "horizontal"
+    assert resized["textDirection"] == "vertical"
+
+    with pytest.raises(ValueError, match="unknown bubble fields: autoTextDirection"):
+        repository.mutate_page_document(
+            page_id=page_id,
+            base_revision=3,
+            mutations=[{
+                "op": "patch",
+                "clientMutationId": "client-auto-direction",
+                "bubbleId": bubble["bubbleId"],
+                "fields": {"autoTextDirection": "vertical"},
+            }],
+            idempotency_key="client-auto-direction-command",
+        )
+
+
+def test_page_document_mutation_has_no_bubble_count_gate(content_platform) -> None:
+    _root, _engine, repository, _storage, importer, _book, chapter = content_platform
+    imported, _ = _import(
+        repository,
+        importer,
+        chapter_id=str(chapter["id"]),
+        payload=_image_bytes((50, 50)),
+        logical_path="many-bubbles.png",
+        key="many-bubbles-page",
+    )
+    mutations = [
+        {
+            "op": "create",
+            "clientMutationId": f"many-bubbles-{index}",
+            "fields": _bubble_fields(translatedText=str(index)),
+        }
+        for index in range(501)
+    ]
+
+    result, _ = repository.mutate_page_document(
+        page_id=str(imported["page"]["id"]),
+        base_revision=1,
+        mutations=mutations,
+        idempotency_key="many-bubbles-mutation",
+    )
+
+    assert len(result["mutationResults"]) == 501
+    assert len(result["document"]["bubbles"]) == 501
+
+
+def test_page_document_allows_propagating_current_style_without_a_style_patch(
+    content_platform,
+) -> None:
+    _root, _engine, repository, _storage, importer, _book, chapter = content_platform
+    imported, _ = _import(
+        repository,
+        importer,
+        chapter_id=str(chapter["id"]),
+        payload=_image_bytes((50, 50)),
+        logical_path="propagate-current-style.png",
+        key="propagate-current-style-page",
+    )
+    created, _ = repository.mutate_page_document(
+        page_id=str(imported["page"]["id"]),
+        base_revision=1,
+        mutations=[
+            {
+                "op": "create",
+                "clientMutationId": "propagate-current-style-create",
+                "fields": _bubble_fields(translatedText="text"),
+            }
+        ],
+        idempotency_key="propagate-current-style-create-command",
+    )
+
+    result, _ = repository.mutate_page_document(
+        page_id=str(imported["page"]["id"]),
+        base_revision=created["document"]["documentRevision"],
+        mutations=[],
+        propagate_style_fields=["textAlign"],
+        idempotency_key="propagate-current-style-command",
+    )
+
+    assert result["document"]["bubbles"][0]["payload"]["textAlign"] == "start"
+
+
+def test_content_rejects_noncurrent_embedded_schemas_without_migrating(
+    content_platform,
+) -> None:
+    _root, engine, repository, _storage, importer, book, chapter = content_platform
+    imported, _ = _import(
+        repository,
+        importer,
+        chapter_id=str(chapter["id"]),
+        payload=_image_bytes((50, 50)),
+        logical_path="noncurrent-schema.png",
+        key="noncurrent-schema-page",
+    )
+    page_id = str(imported["page"]["id"])
+
+    with engine.begin() as connection:
+        connection.execute(
+            update(translation_constraints)
+            .where(translation_constraints.c.book_id == book["id"])
+            .values(schema_version=1)
+        )
+        connection.execute(
+            update(chapters)
+            .where(chapters.c.id == chapter["id"])
+            .values(settings_memory_schema_version=2)
+        )
+        connection.execute(
+            update(pages)
+            .where(pages.c.id == page_id)
+            .values(page_style_schema_version=2)
+        )
+
+    with pytest.raises(ValueError, match="translation constraints schema"):
+        repository.get_constraints(str(book["id"]))
+    with pytest.raises(ValueError, match="translation constraints schema"):
+        repository.update_constraints(
+            book_id=str(book["id"]),
+            base_revision=1,
+            payload=empty_translation_constraints(),
+        )
+    with pytest.raises(ValueError, match="chapter settings memory schema"):
+        repository.update_chapter_settings_memory(
+            chapter_id=str(chapter["id"]),
+            base_revision=1,
+            payload={},
+        )
+    with pytest.raises(ValueError, match="page style schema"):
+        repository.get_page_document(page_id)
+
+    with engine.connect() as connection:
+        assert connection.execute(
+            select(translation_constraints.c.schema_version).where(
+                translation_constraints.c.book_id == book["id"]
+            )
+        ).scalar_one() == 1
+        assert connection.execute(
+            select(chapters.c.settings_memory_schema_version).where(
+                chapters.c.id == chapter["id"]
+            )
+        ).scalar_one() == 2
 
 
 def test_page_document_route_persists_editor_mutations_and_optional_font(
@@ -1061,11 +1468,11 @@ def test_page_document_route_persists_editor_mutations_and_optional_font(
                 {
                     "op": "create",
                     "clientMutationId": "editor-route-create",
-                    "fields": {
-                        "translatedText": "编辑写入",
-                        "coords": [5, 6, 50, 60],
-                        "fontSize": 20,
-                    },
+                    "fields": _bubble_fields(
+                        translatedText="编辑写入",
+                        coords=[5, 6, 50, 60],
+                        fontSize=20,
+                    ),
                 }
             ],
         },
@@ -1121,6 +1528,101 @@ def test_page_document_route_persists_editor_mutations_and_optional_font(
     assert unchanged["bubbles"][0]["payload"]["translatedText"] == "编辑写入"
 
 
+def test_content_routes_reject_scalar_coercion_and_missing_required_fields(
+    content_platform,
+) -> None:
+    data_root, engine, repository, _storage, importer, book, chapter = (
+        content_platform
+    )
+    imported, _ = _import(
+        repository,
+        importer,
+        chapter_id=str(chapter["id"]),
+        payload=_image_bytes((40, 60)),
+        logical_path="strict-content-routes.png",
+        key="strict-content-routes",
+    )
+    page_id = str(imported["page"]["id"])
+    app = create_api_app(
+        ApiSettings(
+            data_root=data_root,
+            identity=RuntimeIdentity(
+                epoch_id="strict-content-routes-api",
+                epoch_token="test-only",
+                test_mode=True,
+            ),
+            engine=engine,
+        )
+    )
+    client = app.test_client()
+    calls = [
+        lambda: client.put(
+            f"/api/v2/books/{book['id']}",
+            headers={"Idempotency-Key": "strict-book-boolean"},
+            json={"clearCover": "yes"},
+        ),
+        lambda: client.post(
+            "/api/v2/books/batch-tags",
+            headers={"Idempotency-Key": "strict-batch-action"},
+            json={"bookIds": [book["id"]], "tagIds": [], "action": {}},
+        ),
+        lambda: client.put(
+            f"/api/v2/books/{book['id']}/chapters/order",
+            headers={"Idempotency-Key": "strict-chapter-revision"},
+            json={"orderedIds": [chapter["id"]], "baseRevision": True},
+        ),
+        lambda: client.get(
+            f"/api/v2/chapters/{chapter['id']}/pages?all=perhaps"
+        ),
+        lambda: client.put(
+            f"/api/v2/pages/{page_id}/source",
+            headers={"Idempotency-Key": "strict-source-revision"},
+            data={
+                "file": (BytesIO(_image_bytes((40, 60))), "strict.png"),
+            },
+            content_type="multipart/form-data",
+        ),
+        lambda: client.patch(
+            f"/api/v2/chapters/{chapter['id']}/settings-memory",
+            headers={"Idempotency-Key": "strict-memory-revision"},
+            json={"payload": {}, "baseRevision": "1"},
+        ),
+        lambda: client.patch(
+            f"/api/v2/chapters/{chapter['id']}/last-visited-page",
+            headers={"Idempotency-Key": "strict-last-page"},
+            json={"pageId": {"value": page_id}},
+        ),
+        lambda: client.patch(
+            f"/api/v2/pages/{page_id}/document",
+            headers={"Idempotency-Key": "strict-document-revision"},
+            json={"baseRevision": "1", "mutations": []},
+        ),
+        lambda: client.post(
+            f"/api/v2/pages/{page_id}/bubbles",
+            headers={"Idempotency-Key": "strict-bubble-fields"},
+            json={"baseRevision": 1},
+        ),
+        lambda: client.post(
+            "/api/v2/quick-workspace/promote",
+            headers={"Idempotency-Key": "strict-promote-fields"},
+            json={
+                "mode": "new_book",
+                "chapterTitle": "Chapter",
+                "title": "Book",
+                "bookId": book["id"],
+            },
+        ),
+    ]
+
+    try:
+        for call in calls:
+            response = call()
+            assert response.status_code == 422, response.get_data(as_text=True)
+            assert response.get_json()["error"]["code"] == "validation_error"
+    finally:
+        app.extensions["saber_v2_runtime"].close()
+
+
 def test_plan_page_source_bubble_and_render_status_routes(
     content_platform,
 ) -> None:
@@ -1169,11 +1671,11 @@ def test_plan_page_source_bubble_and_render_status_routes(
             headers={"Idempotency-Key": "plan-bubble-create"},
             json={
                 "baseRevision": base_revision,
-                "fields": {
-                    "translatedText": "后端气泡",
-                    "coords": [5, 6, 50, 60],
-                    "fontSize": 20,
-                },
+                "fields": _bubble_fields(
+                    translatedText="后端气泡",
+                    coords=[5, 6, 50, 60],
+                    fontSize=20,
+                ),
             },
         )
         assert created.status_code == 200
@@ -1238,7 +1740,7 @@ def test_page_document_command_is_idempotent_and_propagates_style(
             {
                 "op": "create",
                 "clientMutationId": "document-command-create",
-                "fields": {"translatedText": "hello"},
+                "fields": _bubble_fields(translatedText="hello"),
             }
         ],
         "idempotency_key": "document-command",
@@ -1294,13 +1796,12 @@ def test_document_mutation_materializes_auto_style_before_render_projection(
             {
                 "op": "create",
                 "clientMutationId": "auto-style-create-bubble",
-                "fields": {
-                    "translatedText": "自动样式",
-                    "coords": [0, 0, 120, 80],
-                    "autoTextDirection": "horizontal",
-                    "autoFgColor": [1, 2, 3],
-                    "autoBgColor": [10, 11, 12],
-                },
+                "fields": _bubble_fields(
+                    translatedText="自动样式",
+                    coords=[0, 0, 120, 80],
+                    autoFgColor=[1, 2, 3],
+                    autoBgColor=[10, 11, 12],
+                ),
             }
         ],
         idempotency_key="auto-style-create",
@@ -1509,6 +2010,64 @@ def test_quick_workspace_promote_rejects_duplicate_destinations(
         )
 
 
+def test_content_tag_filters_and_batch_updates_reject_duplicate_ids(
+    content_platform,
+) -> None:
+    _root, _engine, repository, _storage, _importer, book, _chapter = (
+        content_platform
+    )
+    tag = repository.create_tag(name="Strict", color="#112233")
+
+    with pytest.raises(ValueError, match="tagIds must contain unique IDs"):
+        repository.list_books(tag_ids=(str(tag["id"]), str(tag["id"])))
+    with pytest.raises(ValueError, match="tagIds must contain unique IDs"):
+        repository.batch_update_tags(
+            book_ids=[str(book["id"])],
+            tag_ids=[str(tag["id"]), str(tag["id"])],
+            action="add",
+        )
+
+
+def test_quick_workspace_promote_rejects_noncurrent_constraint_schema(
+    content_platform,
+) -> None:
+    _root, engine, repository, _storage, _importer, book, _chapter = (
+        content_platform
+    )
+    with engine.begin() as connection:
+        connection.execute(
+            update(translation_constraints)
+            .where(
+                translation_constraints.c.book_id == QUICK_WORKSPACE_BOOK_ID
+            )
+            .values(
+                schema_version=TRANSLATION_CONSTRAINTS_SCHEMA_VERSION + 1
+            )
+        )
+
+    with pytest.raises(ValueError, match="schema version is not current"):
+        repository.promote_quick_workspace(
+            chapter_title="Current only",
+            new_book_title="No migration",
+        )
+    assert repository.list_books(search="No migration") == []
+
+    with engine.begin() as connection:
+        connection.execute(
+            update(translation_constraints)
+            .where(translation_constraints.c.book_id == book["id"])
+            .values(
+                schema_version=TRANSLATION_CONSTRAINTS_SCHEMA_VERSION + 1
+            )
+        )
+
+    with pytest.raises(ValueError, match="schema version is not current"):
+        repository.promote_quick_workspace(
+            chapter_title="Current only",
+            target_book_id=str(book["id"]),
+        )
+
+
 @pytest.mark.parametrize("blocker", ("job", "operation"))
 def test_quick_workspace_reset_and_promote_reject_every_active_work_kind(
     content_platform,
@@ -1540,6 +2099,7 @@ def test_quick_workspace_reset_and_promote_reject_every_active_work_kind(
                     book_id=QUICK_WORKSPACE_BOOK_ID,
                     chapter_id=quick_chapter_id,
                     config_json="{}",
+                    latest_progress_json=_stored_job_progress(),
                 )
             )
     elif blocker == "operation":
@@ -1623,7 +2183,7 @@ def test_quick_workspace_reset_clears_pages_and_constraints(
     )
 
 
-def test_translation_constraints_validate_regex_and_deduplicate_identical_rows(
+def test_translation_constraints_validate_regex_and_reject_duplicate_rows(
     content_platform,
 ) -> None:
     _root, _engine, repository, _storage, _importer, book, _chapter = (
@@ -1645,13 +2205,12 @@ def test_translation_constraints_validate_regex_and_deduplicate_identical_rows(
             "matchMode": "text",
         },
     ]
-    saved = repository.update_constraints(
-        book_id=str(book["id"]),
-        base_revision=1,
-        payload=payload,
-    )
-    assert len(saved["payload"]["glossary"]["entries"]) == 1
-    assert saved["schemaVersion"] == 2
+    with pytest.raises(ValueError, match="duplicates an earlier glossary entry"):
+        repository.update_constraints(
+            book_id=str(book["id"]),
+            base_revision=1,
+            payload=payload,
+        )
 
     invalid = empty_translation_constraints()
     invalid["nonTranslate"]["enabled"] = True
@@ -1668,6 +2227,23 @@ def test_translation_constraints_validate_regex_and_deduplicate_identical_rows(
             base_revision=2,
             payload=invalid,
         )
+
+
+def test_translation_constraints_have_no_entry_count_gate() -> None:
+    payload = empty_translation_constraints()
+    payload["glossary"]["entries"] = [
+        {
+            "source": f"source-{index}",
+            "target": f"target-{index}",
+            "note": "",
+            "matchMode": "text",
+        }
+        for index in range(10_001)
+    ]
+
+    validated = validate_translation_constraints(payload)
+
+    assert len(validated["glossary"]["entries"]) == 10_001
 
 
 def test_promote_to_existing_book_keeps_destination_constraints_and_resets_quick(

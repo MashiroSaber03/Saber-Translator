@@ -24,8 +24,6 @@
   --ui-selector-option-selected-text: var(--color-text-brand);
   --ui-selector-group-label-background: var(--color-surface-subtle);
   --ui-selector-group-label-text: var(--color-text-secondary);
-  --ui-selector-workflow-border: var(--color-border-input);
-
   --toast-notification-default-background: rgba(0, 0, 0, .75);
   --toast-notification-shadow-color: rgba(0, 0, 0, .3);
   --toast-notification-info-background: rgba(24, 144, 255, .85);

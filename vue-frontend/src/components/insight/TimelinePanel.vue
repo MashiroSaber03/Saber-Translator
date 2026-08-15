@@ -22,6 +22,7 @@ const {
   isLoading,
   isLoadingMore,
   isRegenerating,
+  loadTimeline,
   mainCharacters,
   loadMoreTimeline,
   pendingMessage,
@@ -32,8 +33,6 @@ const {
   storySummary,
   timelineData,
   toggleGroup,
-  totalEvents,
-  totalPages,
 } = useTimelinePanel()
 </script>
 
@@ -42,11 +41,13 @@ const {
     <TimelineHeader
       :is-loading="isLoading"
       :is-regenerating="isRegenerating"
+      :is-pending="Boolean(pendingMessage)"
+      :show-regenerate="hasTimelineData"
       @regenerate="regenerateTimeline"
     />
 
     <ProductStatusBanner
-      v-if="errorMessage"
+      v-if="errorMessage && timelineData"
       aria-live="assertive"
       class="timeline-panel__status-banner"
       tone="danger"
@@ -54,8 +55,19 @@ const {
       {{ errorMessage }}
     </ProductStatusBanner>
 
+    <ProductStatusBanner
+      v-if="pendingMessage && timelineData"
+      aria-live="polite"
+      class="timeline-panel__status-banner"
+      icon-name="refresh"
+      title="时间线生成中"
+      tone="neutral"
+    >
+      {{ pendingMessage }}
+    </ProductStatusBanner>
+
     <div class="timeline-panel__body">
-      <div v-if="isLoading" class="timeline-panel__loading-state">
+      <div v-if="isLoading && !timelineData" class="timeline-panel__loading-state">
         <UiSpinner
           class="timeline-panel__loading-indicator"
           label="加载时间线"
@@ -66,7 +78,20 @@ const {
       </div>
 
       <ProductStatusBanner
-        v-else-if="pendingMessage"
+        v-else-if="errorMessage && !timelineData"
+        aria-live="assertive"
+        class="timeline-panel__status-banner"
+        title="时间线加载失败"
+        tone="danger"
+      >
+        {{ errorMessage }}
+        <template #actions>
+          <UiButton variant="secondary" size="xs" @click="loadTimeline"> 重试 </UiButton>
+        </template>
+      </ProductStatusBanner>
+
+      <ProductStatusBanner
+        v-else-if="pendingMessage && !timelineData"
         aria-live="polite"
         class="timeline-panel__status-banner"
         icon-name="refresh"
@@ -88,7 +113,7 @@ const {
           <UiButton
             variant="primary"
             size="sm"
-            :disabled="isRegenerating"
+            :disabled="isRegenerating || Boolean(pendingMessage)"
             @click="regenerateTimeline"
           >
             {{ isRegenerating ? '生成中...' : '生成时间线' }}
@@ -96,18 +121,10 @@ const {
         </template>
       </ProductEmptyState>
 
-      <template v-else>
-        <TimelineStats
-          :stats="timelineData?.stats"
-          :total-events="totalEvents"
-          :total-pages="totalPages"
-        />
+      <template v-else-if="timelineData">
+        <TimelineStats :stats="timelineData.stats" />
 
-        <TimelineSummaryCard
-          v-if="storySummary"
-          :plot-threads="plotThreads"
-          :story-summary="storySummary"
-        />
+        <TimelineSummaryCard v-if="storySummary" :story-summary="storySummary" />
 
         <TimelineCharacterGrid
           v-if="mainCharacters.length > 0"
@@ -124,7 +141,7 @@ const {
 
         <TimelineTrack
           :expanded-ids="expandedGroupIds"
-          :groups="timelineData?.groups || []"
+          :groups="timelineData.groups"
           :is-enhanced-data="isEnhancedData"
           :plot-arcs="plotArcs"
           :thumbnail-url-for="getThumbnailUrl"

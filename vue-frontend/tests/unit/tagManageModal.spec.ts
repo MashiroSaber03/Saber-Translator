@@ -33,6 +33,14 @@ const BaseModalStub = defineComponent({
   template: '<section class="base-modal-stub"><slot /><footer><slot name="footer" /></footer></section>',
 })
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
+}
+
 function mountModal() {
   setActivePinia(createPinia())
   return mount(TagManageModal, {
@@ -54,21 +62,40 @@ describe('TagManageModal', () => {
   it('does not report success when tag creation fails', async () => {
     const wrapper = mountModal()
     const store = useBookshelfStore()
-    store.createTag = vi.fn().mockResolvedValue(null)
+    store.createTag = vi.fn().mockRejectedValue(new Error('create failed'))
 
     await wrapper.get('input[type="text"]').setValue('New Tag')
     await wrapper.get('button').trigger('click')
     await flushPromises()
 
-    expect(showToast).toHaveBeenCalledWith('创建失败', 'error')
+    expect(showToast).toHaveBeenCalledWith('create failed', 'error')
     expect(showToast).not.toHaveBeenCalledWith('标签创建成功', 'success')
+  })
+
+  it('submits a slow tag creation only once', async () => {
+    const wrapper = mountModal()
+    const store = useBookshelfStore()
+    const pending = deferred<{ id: string; name: string; color: string }>()
+    store.createTag = vi.fn().mockReturnValue(pending.promise)
+    await wrapper.get('input[type="text"]').setValue('Slow Tag')
+    const addButton = wrapper.findAllComponents(UiButton)
+      .find(button => button.text() === '添加')!
+
+    await addButton.trigger('click')
+    await addButton.trigger('click')
+
+    expect(store.createTag).toHaveBeenCalledTimes(1)
+    expect(addButton.props('loading')).toBe(true)
+
+    pending.resolve({ id: 'slow-tag', name: 'Slow Tag', color: '#667eea' })
+    await flushPromises()
   })
 
   it('confirms before deleting a tag and skips deletion when cancelled', async () => {
     const wrapper = mountModal()
     const store = useBookshelfStore()
-    setTestTags(store, [{ name: '待删标签', color: '#667eea', bookCount: 2 }])
-    store.deleteTagApi = vi.fn().mockResolvedValue(true)
+    setTestTags(store, [{ id: 'delete-tag', name: '待删标签', color: '#667eea', bookCount: 2 }])
+    store.deleteTagApi = vi.fn().mockResolvedValue(undefined)
     confirmProductActionMock.mockResolvedValueOnce(false)
     await wrapper.vm.$nextTick()
 
@@ -88,7 +115,7 @@ describe('TagManageModal', () => {
   it('uses product button variants for tag row actions', async () => {
     const wrapper = mountModal()
     const store = useBookshelfStore()
-    setTestTags(store, [{ name: '可编辑标签', color: '#667eea', bookCount: 1 }])
+    setTestTags(store, [{ id: 'editable-tag', name: '可编辑标签', color: '#667eea', bookCount: 1 }])
     await wrapper.vm.$nextTick()
 
     const viewButtons = wrapper.findAllComponents(UiButton)
@@ -125,7 +152,7 @@ describe('TagManageModal', () => {
   it('renders tag rows through the shared product record-card shell', async () => {
     const wrapper = mountModal()
     const store = useBookshelfStore()
-    setTestTags(store, [{ name: '记录标签', color: '#667eea', bookCount: 1 }])
+    setTestTags(store, [{ id: 'record-tag', name: '记录标签', color: '#667eea', bookCount: 1 }])
     await wrapper.vm.$nextTick()
 
     const row = wrapper.getComponent(ProductRecordCard)
@@ -138,7 +165,7 @@ describe('TagManageModal', () => {
   it('renders tag row metadata through shared product chips', async () => {
     const wrapper = mountModal()
     const store = useBookshelfStore()
-    setTestTags(store, [{ name: '元信息标签', color: '#667eea', bookCount: 3 }])
+    setTestTags(store, [{ id: 'metadata-tag', name: '元信息标签', color: '#667eea', bookCount: 3 }])
     await wrapper.vm.$nextTick()
 
     const chipList = wrapper.getComponent(ProductChipList)
@@ -191,7 +218,7 @@ describe('TagManageModal', () => {
     newColorInput.vm.$emit('update:modelValue', '#334455')
     await wrapper.vm.$nextTick()
 
-    setTestTags(store, [{ name: '待编辑标签', color: '#667eea', bookCount: 1 }])
+    setTestTags(store, [{ id: 'edit-tag', name: '待编辑标签', color: '#667eea', bookCount: 1 }])
     await wrapper.vm.$nextTick()
     await wrapper.get('.tag-manage-modal__row-edit-action').trigger('click')
     await wrapper.vm.$nextTick()
@@ -251,6 +278,25 @@ describe('TagManageModal', () => {
     expect(wrapper.find('.empty-hint').exists()).toBe(false)
   })
 
+  it('keeps tag loading failures visible in the modal and exposes a retry', async () => {
+    const wrapper = mountModal()
+    const store = useBookshelfStore()
+    store.tagsError = 'tag refresh failed'
+    store.loadTags = vi.fn().mockResolvedValue(undefined)
+    await wrapper.vm.$nextTick()
+
+    const status = wrapper.findAllComponents(ProductStatusBanner)
+      .find(banner => banner.props('title') === '标签加载失败')!
+    expect(status.props()).toMatchObject({
+      role: 'alert',
+      tone: 'warning',
+    })
+    expect(status.text()).toContain('tag refresh failed')
+
+    await status.get('button').trigger('click')
+    expect(store.loadTags).toHaveBeenCalledOnce()
+  })
+
   it('renders modal footer actions through the product dialog action row', () => {
     const wrapper = mountModal()
 
@@ -263,7 +309,7 @@ describe('TagManageModal', () => {
   it('renders the edit-tag form through shared field and action primitives', async () => {
     const wrapper = mountModal()
     const store = useBookshelfStore()
-    setTestTags(store, [{ name: '待编辑标签', color: '#667eea', bookCount: 1 }])
+    setTestTags(store, [{ id: 'edit-tag', name: '待编辑标签', color: '#667eea', bookCount: 1 }])
     await wrapper.vm.$nextTick()
 
     await wrapper.get('.tag-manage-modal__row-edit-action').trigger('click')

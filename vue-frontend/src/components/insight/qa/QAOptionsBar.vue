@@ -7,9 +7,8 @@ import type { ProductSegmentedTab } from '@/components/product/ProductSegmentedT
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import UiField from '@/components/ui/UiField.vue'
 import UiNumberField from '@/components/ui/UiNumberField.vue'
+import type { QAMode } from '@/types/insight'
 import EmbeddingRebuildControl from './EmbeddingRebuildControl.vue'
-
-type QAMode = 'precise' | 'global'
 
 const props = defineProps<{
   globalModeExamples: string[]
@@ -49,23 +48,23 @@ function qaModeGlyph(tabId: string): string {
 const showPreciseModeOptions = computed(() => props.qaMode === 'precise')
 const parentChildModel = computed({
   get: () => props.useParentChild,
-  set: value => emit('update:useParentChild', Boolean(value)),
+  set: value => emit('update:useParentChild', value),
 })
 const reasoningModel = computed({
   get: () => props.useReasoning,
-  set: value => emit('update:useReasoning', Boolean(value)),
+  set: value => emit('update:useReasoning', value),
 })
 const rerankerModel = computed({
   get: () => props.useReranker,
-  set: value => emit('update:useReranker', Boolean(value)),
+  set: value => emit('update:useReranker', value),
 })
 const topKModel = computed({
   get: () => props.topK,
-  set: value => emit('update:topK', Number(value)),
+  set: value => emit('update:topK', value),
 })
 const thresholdModel = computed({
   get: () => props.threshold,
-  set: value => emit('update:threshold', Number(value)),
+  set: value => emit('update:threshold', value),
 })
 const globalExampleChips = computed<ProductChipItem[]>(() => {
   return props.globalModeExamples.map(example => ({
@@ -78,7 +77,7 @@ const globalExampleChips = computed<ProductChipItem[]>(() => {
 })
 
 function askExample(id: string | number): void {
-  emit('askExample', String(id))
+  if (typeof id === 'string') emit('askExample', id)
 }
 
 function updateQaMode(mode: string): void {
@@ -136,7 +135,6 @@ function updateQaMode(mode: string): void {
           v-model="topKModel"
           input-id="qaTopK"
           :min="1"
-          :max="20"
           size="xs"
         />
       </UiField>

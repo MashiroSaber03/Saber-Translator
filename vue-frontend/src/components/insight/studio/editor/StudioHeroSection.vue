@@ -3,19 +3,20 @@ import UiButton from '@/components/ui/UiButton.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductAvatar from '@/components/product/ProductAvatar.vue'
 import type { CharacterStudioDocument, CharacterStudioEditorPendingState } from '@/types/characterStudio'
+import type { CharacterStudioGenerationSection } from '@/types/characterStudioDocument'
 
 defineProps<{
   avatarUrl: string
   document: CharacterStudioDocument
   formatOrigin: (origin: CharacterStudioDocument['origin']['type']) => string
   isGenerationLocked: boolean
-  isGenerating: (section: string) => boolean
+  isGenerating: (section: CharacterStudioGenerationSection) => boolean
   pendingState: CharacterStudioEditorPendingState
 }>()
 
 defineEmits<{
   (event: 'delete'): void
-  (event: 'generate', section: string): void
+  (event: 'generate', section: CharacterStudioGenerationSection): void
 }>()
 </script>
 

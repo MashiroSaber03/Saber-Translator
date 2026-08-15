@@ -26,9 +26,12 @@ Manifest contract details:
   `proofread`, or `remove_text`. Never use `*`.
 - `config_schema` is Saber UI field metadata, not JSON Schema. Each top-level
   key is one configurable field. Its `type` must be `text`, `number`,
-  `boolean`, or `select`; a `select` field also requires a non-empty `options`
-  array. Do not use JSON Schema keys such as top-level `type`, `properties`,
-  or `additionalProperties`.
+  `boolean`, or `select`, and every field requires a correctly typed `default`.
+  A `number` may use `minimum`/`maximum`. A `select` requires a non-empty
+  `options` array of exact `{ "value": string-or-number, "label": string }`
+  objects, and its default must equal one option value. Optional UI metadata is
+  limited to `label`, `description`, and `placeholder`. Do not use JSON Schema
+  keys such as top-level `type`, `properties`, or `additionalProperties`.
 
 Minimal valid manifest:
 
@@ -85,7 +88,8 @@ Atomic hook data uses these exact fields:
 - `ai_translate`: before has `pageId`, `originalTexts`, `translations`; after
   has `pageId`, `originalTexts`, `translations`.
 - `inpaint`: before has `pageId`, `sourceAssetId`, `inputAssetId`,
-  `textMaskAssetId`, `bubbles`, `method`, `fillColor`; after has `pageId`,
+  `textMaskAssetId`, `bubbles`, `method`, `fillColor` (a color only for
+  `solid`, otherwise `null`); after has `pageId`,
   `cleanAssetId`, `documentRevision`.
 - `render`: before has `pageId`, `inputAssetId`, `bubbles`, `renderConfig`;
   after has `pageId`, `translatedAssetId`, and `documentRevision`.

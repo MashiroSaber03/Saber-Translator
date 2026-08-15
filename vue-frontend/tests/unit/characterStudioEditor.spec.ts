@@ -16,8 +16,9 @@ import type { CharacterStudioDocument } from '@/types/characterStudio'
 
 function cssRules(source: string, selector: string): string[] {
   const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return Array.from(source.matchAll(new RegExp(`(?:^|\\n)${escapedSelector}\\s*{([\\s\\S]*?)}`, 'g')))
-    .map(match => match[1] ?? '')
+  return Array.from(
+    source.matchAll(new RegExp(`(?:^|\\n)${escapedSelector}\\s*{([\\s\\S]*?)}`, 'g'))
+  ).map(match => match[1] ?? '')
 }
 
 function buildDocument(): CharacterStudioDocument {
@@ -31,16 +32,12 @@ function buildDocument(): CharacterStudioDocument {
     status: {
       is_favorite: false,
       frozen_sections: [],
+      last_diagnostics: null,
       last_validated_at: null,
     },
     meta: {
       title: '上杉风太郎',
       tags: ['主角', '分析生成'],
-      created_at: '2026-05-15T00:00:00',
-      updated_at: '2026-05-15T00:00:00',
-    },
-    avatar: {
-      asset_path: null,
     },
     identity: {
       name: '上杉风太郎',
@@ -64,16 +61,11 @@ function buildDocument(): CharacterStudioDocument {
     },
     regexScripts: [],
     stateTasks: [],
-    chatPreset: {
-      opening_mode: 'first_message',
-    },
-    grounding: {
-      timeline_mode: 'enhanced',
-      sample_pages: [1, 3],
-      relationships: [],
-      key_moments: [],
-    },
     exportArtifacts: {},
+    revision: 1,
+    avatarUrl: null,
+    createdAt: '2026-05-15T00:00:00',
+    updatedAt: '2026-05-15T00:00:00',
   }
 }
 
@@ -85,46 +77,58 @@ describe('CharacterStudioEditor tabs', () => {
   })
 
   function mountHarness() {
-    return mount(defineComponent({
-      components: { CharacterStudioEditor },
-      setup() {
-        const currentDocument = ref<CharacterStudioDocument | null>(document)
-        const activeTab = ref<'overview' | 'character' | 'greetings' | 'lorebook' | 'scripts' | 'export'>('overview')
-        const activeScriptTab = ref<'regex' | 'tasks'>('regex')
-        return () => h(CharacterStudioEditor, {
-          document: currentDocument.value,
-          avatarUrl: '',
-          diagnostics: null,
-          activeTab: activeTab.value,
-          activeScriptTab: activeScriptTab.value,
-          pendingState: {
-            generatingSection: null,
-            validating: false,
-            importingWorldbook: false,
-            deleting: false,
-            saving: false,
-            downloadingFormat: null,
-          },
-          'onUpdate:document': (value: CharacterStudioDocument | null) => { currentDocument.value = value },
-          'onUpdate:activeTab': (value: typeof activeTab.value) => { activeTab.value = value },
-          'onUpdate:activeScriptTab': (value: typeof activeScriptTab.value) => { activeScriptTab.value = value },
-        })
-      },
-    }), {
-      global: {
-        stubs: {
-          LorebookTreeEditor: {
-            template: '<div class="lorebook-stub">世界书树编辑器</div>',
+    return mount(
+      defineComponent({
+        components: { CharacterStudioEditor },
+        setup() {
+          const currentDocument = ref<CharacterStudioDocument | null>(document)
+          const activeTab = ref<
+            'overview' | 'character' | 'greetings' | 'lorebook' | 'scripts' | 'export'
+          >('overview')
+          const activeScriptTab = ref<'regex' | 'tasks'>('regex')
+          return () =>
+            h(CharacterStudioEditor, {
+              document: currentDocument.value,
+              avatarUrl: '',
+              diagnostics: null,
+              activeTab: activeTab.value,
+              activeScriptTab: activeScriptTab.value,
+              pendingState: {
+                generatingSection: null,
+                validating: false,
+                importingWorldbook: false,
+                deleting: false,
+                saving: false,
+                downloadingFormat: null,
+              },
+              'onUpdate:document': (value: CharacterStudioDocument | null) => {
+                currentDocument.value = value
+              },
+              'onUpdate:activeTab': (value: typeof activeTab.value) => {
+                activeTab.value = value
+              },
+              'onUpdate:activeScriptTab': (value: typeof activeScriptTab.value) => {
+                activeScriptTab.value = value
+              },
+            })
+        },
+      }),
+      {
+        global: {
+          stubs: {
+            LorebookTreeEditor: {
+              template: '<div class="lorebook-stub">世界书树编辑器</div>',
+            },
           },
         },
-      },
-    })
+      }
+    )
   }
 
   it('maps editor owner colors through semantic tokens without a parent token warehouse', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/insight/studio/CharacterStudioEditor.vue'),
-      'utf8',
+      'utf8'
     )
     const childFiles = [
       'src/components/insight/studio/DiagnosticsPanel.vue',
@@ -149,13 +153,19 @@ describe('CharacterStudioEditor tabs', () => {
   it('keeps editor grids responsive to split-pane width instead of only viewport breakpoints', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/insight/studio/CharacterStudioEditor.vue'),
-      'utf8',
+      'utf8'
     )
 
-    for (const selector of ['.studio-editor__onboarding-tip-grid', '.studio-editor__download-grid', '.studio-editor__form-grid']) {
+    for (const selector of [
+      '.studio-editor__onboarding-tip-grid',
+      '.studio-editor__download-grid',
+      '.studio-editor__form-grid',
+    ]) {
       expect(
-        cssRules(source, selector).some(rule => rule.includes('repeat(auto-fit, minmax(min(100%, 280px), 1fr))')),
-        selector,
+        cssRules(source, selector).some(rule =>
+          rule.includes('repeat(auto-fit, minmax(min(100%, 280px), 1fr))')
+        ),
+        selector
       ).toBe(true)
     }
     expect(source).not.toContain('repeat(2, minmax(0, 1fr))')
@@ -175,18 +185,22 @@ describe('CharacterStudioEditor tabs', () => {
           ? '.task-workbench__grid'
           : '.lorebook-tree-branch__grid'
       expect(
-        cssRules(source, gridSelector).some(rule => rule.includes('repeat(auto-fit, minmax(min(100%, 280px), 1fr))')),
-        file,
+        cssRules(source, gridSelector).some(rule =>
+          rule.includes('repeat(auto-fit, minmax(min(100%, 280px), 1fr))')
+        ),
+        file
       ).toBe(true)
       expect(source, file).not.toContain('repeat(2, minmax(0, 1fr))')
     }
 
     const diagnosticsSource = readFileSync(
       resolve(process.cwd(), 'src/components/insight/studio/DiagnosticsPanel.vue'),
-      'utf8',
+      'utf8'
     )
     expect(
-      cssRules(diagnosticsSource, '.diagnostics-panel__summary-grid').some(rule => rule.includes('repeat(auto-fit, minmax(min(100%, 160px), 1fr))')),
+      cssRules(diagnosticsSource, '.diagnostics-panel__summary-grid').some(rule =>
+        rule.includes('repeat(auto-fit, minmax(min(100%, 160px), 1fr))')
+      )
     ).toBe(true)
     expect(diagnosticsSource).not.toContain('repeat(3, minmax(0, 1fr))')
   })
@@ -197,71 +211,165 @@ describe('CharacterStudioEditor tabs', () => {
       ['src/components/insight/studio/TaskWorkbench.vue', 'task-workbench'],
     ] as const) {
       const source = readFileSync(resolve(process.cwd(), file), 'utf8')
-      expect(source, file).not.toContain(`.${owner}__head,\r\n  .${owner}__card-head,\r\n  .${owner}__grid`)
-      expect(source, file).not.toContain(`.${owner}__head,\n  .${owner}__card-head,\n  .${owner}__grid`)
+      expect(source, file).not.toContain(
+        `.${owner}__head,\r\n  .${owner}__card-head,\r\n  .${owner}__grid`
+      )
+      expect(source, file).not.toContain(
+        `.${owner}__head,\n  .${owner}__card-head,\n  .${owner}__grid`
+      )
     }
   })
 
   it('lets Studio workbench headers wrap instead of relying on viewport breakpoints', () => {
     const greetingSource = readFileSync(
       resolve(process.cwd(), 'src/components/insight/studio/GreetingWorkbench.vue'),
-      'utf8',
+      'utf8'
     )
     const regexSource = readFileSync(
       resolve(process.cwd(), 'src/components/insight/studio/RegexWorkbench.vue'),
-      'utf8',
+      'utf8'
     )
     const taskSource = readFileSync(
       resolve(process.cwd(), 'src/components/insight/studio/TaskWorkbench.vue'),
-      'utf8',
+      'utf8'
     )
     const branchSource = readFileSync(
       resolve(process.cwd(), 'src/components/insight/studio/LorebookTreeBranch.vue'),
-      'utf8',
+      'utf8'
     )
     const treeSource = readFileSync(
       resolve(process.cwd(), 'src/components/insight/studio/LorebookTreeEditor.vue'),
-      'utf8',
+      'utf8'
     )
 
-    expect(cssRules(greetingSource, '.greeting-workbench__section-head').some(rule => rule.includes('flex-wrap: wrap'))).toBe(true)
-    expect(cssRules(greetingSource, '.greeting-workbench__alternate-head').some(rule => rule.includes('flex-wrap: wrap'))).toBe(true)
-    expect(cssRules(regexSource, '.regex-workbench__head').some(rule => rule.includes('flex-wrap: wrap'))).toBe(true)
-    expect(cssRules(regexSource, '.regex-workbench__card-head').some(rule => rule.includes('flex-wrap: wrap'))).toBe(true)
-    expect(cssRules(taskSource, '.task-workbench__head').some(rule => rule.includes('flex-wrap: wrap'))).toBe(true)
-    expect(cssRules(taskSource, '.task-workbench__card-head').some(rule => rule.includes('flex-wrap: wrap'))).toBe(true)
-    expect(cssRules(branchSource, '.lorebook-tree-branch__summary').some(rule => rule.includes('flex-wrap: wrap'))).toBe(true)
-    expect(cssRules(treeSource, '.lorebook-tree-editor__head').some(rule => rule.includes('flex-wrap: wrap'))).toBe(true)
+    expect(
+      cssRules(greetingSource, '.greeting-workbench__section-head').some(rule =>
+        rule.includes('flex-wrap: wrap')
+      )
+    ).toBe(true)
+    expect(
+      cssRules(greetingSource, '.greeting-workbench__alternate-head').some(rule =>
+        rule.includes('flex-wrap: wrap')
+      )
+    ).toBe(true)
+    expect(
+      cssRules(regexSource, '.regex-workbench__head').some(rule => rule.includes('flex-wrap: wrap'))
+    ).toBe(true)
+    expect(
+      cssRules(regexSource, '.regex-workbench__card-head').some(rule =>
+        rule.includes('flex-wrap: wrap')
+      )
+    ).toBe(true)
+    expect(
+      cssRules(taskSource, '.task-workbench__head').some(rule => rule.includes('flex-wrap: wrap'))
+    ).toBe(true)
+    expect(
+      cssRules(taskSource, '.task-workbench__card-head').some(rule =>
+        rule.includes('flex-wrap: wrap')
+      )
+    ).toBe(true)
+    expect(
+      cssRules(branchSource, '.lorebook-tree-branch__summary').some(rule =>
+        rule.includes('flex-wrap: wrap')
+      )
+    ).toBe(true)
+    expect(
+      cssRules(treeSource, '.lorebook-tree-editor__head').some(rule =>
+        rule.includes('flex-wrap: wrap')
+      )
+    ).toBe(true)
   })
 
   it('keeps editor parent, overview, and lorebook editor hooks under their component owners', () => {
     const ownerContracts = [
       {
         file: 'src/components/insight/studio/CharacterStudioEditor.vue',
-        required: ['studio-editor__shell', 'studio-editor__panel-stack', 'studio-editor__form-grid', 'studio-editor__onboarding-tip-title', 'studio-editor__onboarding-tip-description', 'studio-editor__download-card', 'studio-editor__download-title', 'studio-editor__download-description'],
-        legacy: ['editor-onboarding', 'onboarding-tip-grid', 'onboarding-tip-card', 'editor-shell', 'panel-stack', 'form-grid', 'full', 'option-row', 'toggle-chip', 'script-panel', 'download-grid', 'download-card', 'download-icon'],
+        required: [
+          'studio-editor__shell',
+          'studio-editor__panel-stack',
+          'studio-editor__form-grid',
+          'studio-editor__onboarding-tip-title',
+          'studio-editor__onboarding-tip-description',
+          'studio-editor__download-card',
+          'studio-editor__download-title',
+          'studio-editor__download-description',
+        ],
+        legacy: [
+          'editor-onboarding',
+          'onboarding-tip-grid',
+          'onboarding-tip-card',
+          'editor-shell',
+          'panel-stack',
+          'form-grid',
+          'full',
+          'option-row',
+          'toggle-chip',
+          'script-panel',
+          'download-grid',
+          'download-card',
+          'download-icon',
+        ],
       },
       {
         file: 'src/components/insight/studio/editor/StudioOverviewTab.vue',
-        required: ['studio-overview-tab', 'studio-overview-tab__summary-grid', 'studio-overview-tab__summary-card', 'studio-overview-tab__summary-value', 'studio-overview-tab__summary-description', 'studio-overview-tab__quick-card', 'studio-overview-tab__quick-title', 'studio-overview-tab__quick-description', 'studio-overview-tab__freeze-item'],
-        legacy: ['panel-stack', 'summary-grid', 'summary-card', 'summary-label', 'workspace-row', 'quick-grid', 'quick-card', 'quick-icon', 'freeze-grid', 'freeze-item', 'freeze-item-label', 'freeze-item-control', 'review-summary', 'review-list', 'suggestions', 'single'],
+        required: [
+          'studio-overview-tab',
+          'studio-overview-tab__summary-grid',
+          'studio-overview-tab__summary-card',
+          'studio-overview-tab__summary-value',
+          'studio-overview-tab__summary-description',
+          'studio-overview-tab__quick-card',
+          'studio-overview-tab__quick-title',
+          'studio-overview-tab__quick-description',
+          'studio-overview-tab__freeze-item',
+        ],
+        legacy: [
+          'panel-stack',
+          'summary-grid',
+          'summary-card',
+          'summary-label',
+          'workspace-row',
+          'quick-grid',
+          'quick-card',
+          'quick-icon',
+          'freeze-grid',
+          'freeze-item',
+          'freeze-item-label',
+          'freeze-item-control',
+          'review-summary',
+          'review-list',
+          'suggestions',
+          'single',
+        ],
       },
       {
         file: 'src/components/insight/studio/editor/StudioEditorSectionPanel.vue',
-        required: ['studio-editor-section-panel', 'studio-editor-section-panel__head', 'studio-editor-section-panel__title', 'studio-editor-section-panel__description'],
+        required: [
+          'studio-editor-section-panel',
+          'studio-editor-section-panel__head',
+          'studio-editor-section-panel__title',
+          'studio-editor-section-panel__description',
+        ],
         legacy: ['section-panel', 'section-head'],
       },
       {
         file: 'src/components/insight/studio/LorebookTreeEditor.vue',
-        required: ['lorebook-tree-editor', 'lorebook-tree-editor__head', 'lorebook-tree-editor__title', 'lorebook-tree-editor__description', 'lorebook-tree-editor__tree-list'],
+        required: [
+          'lorebook-tree-editor',
+          'lorebook-tree-editor__head',
+          'lorebook-tree-editor__title',
+          'lorebook-tree-editor__description',
+          'lorebook-tree-editor__tree-list',
+        ],
         legacy: ['workshop-card', 'section-head', 'tree-list'],
       },
     ]
 
     for (const contract of ownerContracts) {
       const source = readFileSync(resolve(process.cwd(), contract.file), 'utf8')
-      const classTokens = [...source.matchAll(/class="([^"]+)"/g)]
-        .flatMap(match => match[1]!.split(/\s+/).filter(Boolean))
+      const classTokens = [...source.matchAll(/class="([^"]+)"/g)].flatMap(match =>
+        match[1]!.split(/\s+/).filter(Boolean)
+      )
 
       for (const requiredClass of contract.required) {
         expect(classTokens, contract.file).toContain(requiredClass)
@@ -301,10 +409,11 @@ describe('CharacterStudioEditor tabs', () => {
   it('keeps lorebook tree branch hooks under the component owner', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/insight/studio/LorebookTreeBranch.vue'),
-      'utf8',
+      'utf8'
     )
-    const classTokens = [...source.matchAll(/class="([^"]+)"/g)]
-      .flatMap(match => match[1]!.split(/\s+/).filter(Boolean))
+    const classTokens = [...source.matchAll(/class="([^"]+)"/g)].flatMap(match =>
+      match[1]!.split(/\s+/).filter(Boolean)
+    )
 
     expect(classTokens).toContain('lorebook-tree-branch')
     expect(classTokens).toContain('lorebook-tree-branch__summary')
@@ -334,30 +443,91 @@ describe('CharacterStudioEditor tabs', () => {
     const ownerContracts = [
       {
         file: 'src/components/insight/studio/GreetingWorkbench.vue',
-        required: ['greeting-workbench', 'greeting-workbench__section-head', 'greeting-workbench__section-title', 'greeting-workbench__section-description', 'greeting-workbench__textarea', 'greeting-workbench__alternate-card', 'greeting-workbench__alternate-name'],
-        legacy: ['workbench', 'hero-block', 'hero-head', 'list-block', 'list-head', 'workbench-textarea', 'alternate-list', 'alternate-card', 'alternate-head', 'title', 'index-chip'],
+        required: [
+          'greeting-workbench',
+          'greeting-workbench__section-head',
+          'greeting-workbench__section-title',
+          'greeting-workbench__section-description',
+          'greeting-workbench__textarea',
+          'greeting-workbench__alternate-card',
+          'greeting-workbench__alternate-name',
+        ],
+        legacy: [
+          'workbench',
+          'hero-block',
+          'hero-head',
+          'list-block',
+          'list-head',
+          'workbench-textarea',
+          'alternate-list',
+          'alternate-card',
+          'alternate-head',
+          'title',
+          'index-chip',
+        ],
       },
       {
         file: 'src/components/insight/studio/RegexWorkbench.vue',
-        required: ['regex-workbench', 'regex-workbench__head', 'regex-workbench__title', 'regex-workbench__description', 'regex-workbench__script-card', 'regex-workbench__grid'],
-        legacy: ['workbench', 'workbench-head', 'script-list', 'script-card', 'card-head', 'title-input', 'workbench-grid', 'full', 'toggles'],
+        required: [
+          'regex-workbench',
+          'regex-workbench__head',
+          'regex-workbench__title',
+          'regex-workbench__description',
+          'regex-workbench__script-card',
+          'regex-workbench__grid',
+        ],
+        legacy: [
+          'workbench',
+          'workbench-head',
+          'script-list',
+          'script-card',
+          'card-head',
+          'title-input',
+          'workbench-grid',
+          'full',
+          'toggles',
+        ],
       },
       {
         file: 'src/components/insight/studio/TaskWorkbench.vue',
-        required: ['task-workbench', 'task-workbench__head', 'task-workbench__title', 'task-workbench__description', 'task-workbench__task-card', 'task-workbench__grid'],
-        legacy: ['workbench', 'workbench-head', 'task-list', 'task-card', 'card-head', 'title-input', 'workbench-grid', 'full', 'toggles'],
+        required: [
+          'task-workbench',
+          'task-workbench__head',
+          'task-workbench__title',
+          'task-workbench__description',
+          'task-workbench__task-card',
+          'task-workbench__grid',
+        ],
+        legacy: [
+          'workbench',
+          'workbench-head',
+          'task-list',
+          'task-card',
+          'card-head',
+          'title-input',
+          'workbench-grid',
+          'full',
+          'toggles',
+        ],
       },
       {
         file: 'src/components/insight/studio/DiagnosticsPanel.vue',
-        required: ['diagnostics-panel', 'diagnostics-panel__summary-value', 'diagnostics-panel__issue-title', 'diagnostics-panel__issue-list', 'diagnostics-panel__checks-title'],
+        required: [
+          'diagnostics-panel',
+          'diagnostics-panel__summary-value',
+          'diagnostics-panel__issue-title',
+          'diagnostics-panel__issue-list',
+          'diagnostics-panel__checks-title',
+        ],
         legacy: [],
       },
     ]
 
     for (const contract of ownerContracts) {
       const source = readFileSync(resolve(process.cwd(), contract.file), 'utf8')
-      const classTokens = [...source.matchAll(/class="([^"]+)"/g)]
-        .flatMap(match => match[1]!.split(/\s+/).filter(Boolean))
+      const classTokens = [...source.matchAll(/class="([^"]+)"/g)].flatMap(match =>
+        match[1]!.split(/\s+/).filter(Boolean)
+      )
 
       for (const requiredClass of contract.required) {
         expect(classTokens, contract.file).toContain(requiredClass)
@@ -369,24 +539,27 @@ describe('CharacterStudioEditor tabs', () => {
     }
 
     const forbiddenSelectorsByFile = new Map([
-      ['src/components/insight/studio/GreetingWorkbench.vue', [
-        '.greeting-workbench__section-head h3',
-        '.greeting-workbench__section-head p',
-      ]],
-      ['src/components/insight/studio/RegexWorkbench.vue', [
-        '.regex-workbench__head h3',
-        '.regex-workbench__head p',
-      ]],
-      ['src/components/insight/studio/TaskWorkbench.vue', [
-        '.task-workbench__head h3',
-        '.task-workbench__head p',
-      ]],
-      ['src/components/insight/studio/DiagnosticsPanel.vue', [
-        '.diagnostics-panel__summary-card strong',
-        '.diagnostics-panel__issue-card h4',
-        '.diagnostics-panel__checks-card h4',
-        '.diagnostics-panel__issue-card ul',
-      ]],
+      [
+        'src/components/insight/studio/GreetingWorkbench.vue',
+        ['.greeting-workbench__section-head h3', '.greeting-workbench__section-head p'],
+      ],
+      [
+        'src/components/insight/studio/RegexWorkbench.vue',
+        ['.regex-workbench__head h3', '.regex-workbench__head p'],
+      ],
+      [
+        'src/components/insight/studio/TaskWorkbench.vue',
+        ['.task-workbench__head h3', '.task-workbench__head p'],
+      ],
+      [
+        'src/components/insight/studio/DiagnosticsPanel.vue',
+        [
+          '.diagnostics-panel__summary-card strong',
+          '.diagnostics-panel__issue-card h4',
+          '.diagnostics-panel__checks-card h4',
+          '.diagnostics-panel__issue-card ul',
+        ],
+      ],
     ])
 
     for (const [file, forbiddenSelectors] of forbiddenSelectorsByFile) {
@@ -400,7 +573,7 @@ describe('CharacterStudioEditor tabs', () => {
   it('uses product action rows for editor head actions', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/insight/studio/CharacterStudioEditor.vue'),
-      'utf8',
+      'utf8'
     )
 
     expect(source).toContain('ProductActionRow')
@@ -413,11 +586,11 @@ describe('CharacterStudioEditor tabs', () => {
   it('uses the shared segmented-tab primitive without Studio-only wrapper tabs', () => {
     const editorSource = readFileSync(
       resolve(process.cwd(), 'src/components/insight/studio/CharacterStudioEditor.vue'),
-      'utf8',
+      'utf8'
     )
     const previewSource = readFileSync(
       resolve(process.cwd(), 'src/components/insight/studio/CharacterStudioPreview.vue'),
-      'utf8',
+      'utf8'
     )
 
     expect(editorSource).toContain('ProductSegmentedTabs')
@@ -426,21 +599,29 @@ describe('CharacterStudioEditor tabs', () => {
     expect(previewSource).toContain('ProductSegmentedTabs')
     expect(previewSource).not.toContain('<PreviewTabs')
     expect(previewSource).not.toContain("from './preview/PreviewTabs.vue'")
-    expect(existsSync(resolve(process.cwd(), 'src/components/insight/studio/StudioSectionTabs.vue'))).toBe(false)
-    expect(existsSync(resolve(process.cwd(), 'src/components/insight/studio/preview/PreviewTabs.vue'))).toBe(false)
+    expect(
+      existsSync(resolve(process.cwd(), 'src/components/insight/studio/StudioSectionTabs.vue'))
+    ).toBe(false)
+    expect(
+      existsSync(resolve(process.cwd(), 'src/components/insight/studio/preview/PreviewTabs.vue'))
+    ).toBe(false)
   })
 
   it('uses a Studio editor section panel shell instead of repeated local workspace cards', () => {
     const editorSource = readFileSync(
       resolve(process.cwd(), 'src/components/insight/studio/CharacterStudioEditor.vue'),
-      'utf8',
+      'utf8'
     )
     const overviewSource = readFileSync(
       resolve(process.cwd(), 'src/components/insight/studio/editor/StudioOverviewTab.vue'),
-      'utf8',
+      'utf8'
     )
 
-    expect(existsSync(resolve(process.cwd(), 'src/components/insight/studio/editor/StudioEditorSectionPanel.vue'))).toBe(true)
+    expect(
+      existsSync(
+        resolve(process.cwd(), 'src/components/insight/studio/editor/StudioEditorSectionPanel.vue')
+      )
+    ).toBe(true)
     expect(editorSource).toContain('StudioEditorSectionPanel')
     expect(overviewSource).toContain('StudioEditorSectionPanel')
     for (const source of [editorSource, overviewSource]) {
@@ -454,7 +635,7 @@ describe('CharacterStudioEditor tabs', () => {
   it('renders the no-document onboarding state through product feedback and record cards', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/insight/studio/CharacterStudioEditor.vue'),
-      'utf8',
+      'utf8'
     )
     expect(source).toContain('ProductEmptyState')
     expect(source).not.toContain('empty-card')
@@ -495,7 +676,7 @@ describe('CharacterStudioEditor tabs', () => {
   it('does not reskin editor head buttons through local UiButton variables', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/insight/studio/CharacterStudioEditor.vue'),
-      'utf8',
+      'utf8'
     )
 
     expect(source).not.toContain('class="head-actions"')
@@ -526,7 +707,7 @@ describe('CharacterStudioEditor tabs', () => {
   it('uses the product avatar contract in the Studio hero', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/insight/studio/editor/StudioHeroSection.vue'),
-      'utf8',
+      'utf8'
     )
 
     expect(source).toContain("import ProductAvatar from '@/components/product/ProductAvatar.vue'")
@@ -540,10 +721,11 @@ describe('CharacterStudioEditor tabs', () => {
   it('keeps Studio hero hooks under the component owner', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/insight/studio/editor/StudioHeroSection.vue'),
-      'utf8',
+      'utf8'
     )
-    const classTokens = [...source.matchAll(/class="([^"]+)"/g)]
-      .flatMap(match => match[1]!.split(/\s+/).filter(Boolean))
+    const classTokens = [...source.matchAll(/class="([^"]+)"/g)].flatMap(match =>
+      match[1]!.split(/\s+/).filter(Boolean)
+    )
 
     expect(classTokens).toContain('studio-hero-section')
     expect(classTokens).toContain('studio-hero-section__main')
@@ -582,7 +764,7 @@ describe('CharacterStudioEditor tabs', () => {
   it('uses the shared number primitive for lorebook numeric fields', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/insight/studio/LorebookTreeBranch.vue'),
-      'utf8',
+      'utf8'
     )
 
     expect(source).toContain('UiNumberField')
@@ -592,7 +774,7 @@ describe('CharacterStudioEditor tabs', () => {
   it('uses the shared number primitive for state task intervals', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/insight/studio/TaskWorkbench.vue'),
-      'utf8',
+      'utf8'
     )
 
     expect(source).toContain('UiNumberField')
@@ -694,16 +876,13 @@ describe('CharacterStudioEditor tabs', () => {
     await promoteButton!.trigger('click')
 
     const greetingValues = wrapper.findAll('textarea').map(textarea => textarea.element.value)
-    expect(greetingValues.slice(0, 2)).toEqual([
-      '今天也要继续努力。',
-      '我是上杉风太郎。',
-    ])
+    expect(greetingValues.slice(0, 2)).toEqual(['今天也要继续努力。', '我是上杉风太郎。'])
   })
 
   it('uses the typed file-input primitive boundary for lorebook imports', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/insight/studio/LorebookTreeEditor.vue'),
-      'utf8',
+      'utf8'
     )
 
     expect(source).toContain('@files-change="handleWorldbookSelect"')
@@ -716,7 +895,7 @@ describe('CharacterStudioEditor tabs', () => {
   it('does not keep orphaned local form/button selectors after primitive migration', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/insight/studio/CharacterStudioEditor.vue'),
-      'utf8',
+      'utf8'
     )
 
     expect(source).not.toMatch(/^label\s*\{/m)
@@ -740,15 +919,22 @@ describe('CharacterStudioEditor tabs', () => {
     }
   })
 
-  it('keeps editor document and lorebook tree sync on the shared clone helper', () => {
+  it('keeps one document clone boundary without recursive lorebook clone watchers', () => {
+    const editorSource = readFileSync(
+      resolve(process.cwd(), 'src/components/insight/studio/CharacterStudioEditor.vue'),
+      'utf8'
+    )
+    expect(editorSource).toContain("import { deepClone } from '@/utils/deepClone'")
+
     for (const file of [
-      'src/components/insight/studio/CharacterStudioEditor.vue',
       'src/components/insight/studio/LorebookTreeEditor.vue',
       'src/components/insight/studio/LorebookTreeBranch.vue',
     ]) {
       const source = readFileSync(resolve(process.cwd(), file), 'utf8')
 
-      expect(source, file).toContain("import { deepClone } from '@/utils/deepClone'")
+      expect(source, file).not.toContain("import { deepClone } from '@/utils/deepClone'")
+      expect(source, file).not.toContain('watch(')
+      expect(source, file).not.toContain('nextTick')
       expect(source, file).not.toContain('JSON.parse(JSON.stringify')
     }
   })
@@ -805,7 +991,7 @@ describe('CharacterStudioEditor tabs', () => {
 
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/insight/studio/CharacterStudioEditor.vue'),
-      'utf8',
+      'utf8'
     )
     expect(source).toContain('UiField')
     expect(source).toContain('UiFormGrid')
@@ -853,7 +1039,7 @@ describe('CharacterStudioEditor tabs', () => {
 
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/insight/studio/CharacterStudioEditor.vue'),
-      'utf8',
+      'utf8'
     )
     expect(source).toContain('ProductRecordCard')
     expect(source).not.toContain('class="export-card"')
@@ -886,65 +1072,73 @@ describe('CharacterStudioEditor tabs', () => {
   })
 
   it('shows loading copy for section generation and validation actions', async () => {
-    const generationWrapper = mount(defineComponent({
-      components: { CharacterStudioEditor },
-      setup() {
-        return () => h(CharacterStudioEditor, {
-          document,
-          avatarUrl: '',
-          diagnostics: null,
-          activeTab: 'character',
-          activeScriptTab: 'regex',
-          pendingState: {
-            generatingSection: 'identity',
-            validating: true,
-            importingWorldbook: false,
-            deleting: false,
-            saving: false,
-            downloadingFormat: null,
-          },
-        })
-      },
-    }), {
-      global: {
-        stubs: {
-          LorebookTreeEditor: {
-            template: '<div class="lorebook-stub">世界书树编辑器</div>',
+    const generationWrapper = mount(
+      defineComponent({
+        components: { CharacterStudioEditor },
+        setup() {
+          return () =>
+            h(CharacterStudioEditor, {
+              document,
+              avatarUrl: '',
+              diagnostics: null,
+              activeTab: 'character',
+              activeScriptTab: 'regex',
+              pendingState: {
+                generatingSection: 'identity',
+                validating: true,
+                importingWorldbook: false,
+                deleting: false,
+                saving: false,
+                downloadingFormat: null,
+              },
+            })
+        },
+      }),
+      {
+        global: {
+          stubs: {
+            LorebookTreeEditor: {
+              template: '<div class="lorebook-stub">世界书树编辑器</div>',
+            },
           },
         },
-      },
-    })
+      }
+    )
 
     expect(generationWrapper.text()).toContain('重写中...')
 
-    const validationWrapper = mount(defineComponent({
-      components: { CharacterStudioEditor },
-      setup() {
-        return () => h(CharacterStudioEditor, {
-          document,
-          avatarUrl: '',
-          diagnostics: null,
-          activeTab: 'overview',
-          activeScriptTab: 'regex',
-          pendingState: {
-            generatingSection: null,
-            validating: true,
-            importingWorldbook: false,
-            deleting: false,
-            saving: false,
-            downloadingFormat: null,
-          },
-        })
-      },
-    }), {
-      global: {
-        stubs: {
-          LorebookTreeEditor: {
-            template: '<div class="lorebook-stub">世界书树编辑器</div>',
+    const validationWrapper = mount(
+      defineComponent({
+        components: { CharacterStudioEditor },
+        setup() {
+          return () =>
+            h(CharacterStudioEditor, {
+              document,
+              avatarUrl: '',
+              diagnostics: null,
+              activeTab: 'overview',
+              activeScriptTab: 'regex',
+              pendingState: {
+                generatingSection: null,
+                validating: true,
+                importingWorldbook: false,
+                deleting: false,
+                saving: false,
+                downloadingFormat: null,
+              },
+            })
+        },
+      }),
+      {
+        global: {
+          stubs: {
+            LorebookTreeEditor: {
+              template: '<div class="lorebook-stub">世界书树编辑器</div>',
+            },
           },
         },
-      },
-    })
+      }
+    )
 
     expect(validationWrapper.text()).toContain('诊断中...')
   })
@@ -953,34 +1147,38 @@ describe('CharacterStudioEditor tabs', () => {
     const idleWrapper = mountHarness()
     expect(idleWrapper.text()).toContain('AI 一键补全整卡')
 
-    const wrapper = mount(defineComponent({
-      components: { CharacterStudioEditor },
-      setup() {
-        return () => h(CharacterStudioEditor, {
-          document,
-          avatarUrl: '',
-          diagnostics: null,
-          activeTab: 'overview',
-          activeScriptTab: 'regex',
-          pendingState: {
-            generatingSection: 'full',
-            validating: false,
-            importingWorldbook: false,
-            deleting: false,
-            saving: false,
-            downloadingFormat: null,
-          },
-        })
-      },
-    }), {
-      global: {
-        stubs: {
-          LorebookTreeEditor: {
-            template: '<div class="lorebook-stub">世界书树编辑器</div>',
+    const wrapper = mount(
+      defineComponent({
+        components: { CharacterStudioEditor },
+        setup() {
+          return () =>
+            h(CharacterStudioEditor, {
+              document,
+              avatarUrl: '',
+              diagnostics: null,
+              activeTab: 'overview',
+              activeScriptTab: 'regex',
+              pendingState: {
+                generatingSection: 'full',
+                validating: false,
+                importingWorldbook: false,
+                deleting: false,
+                saving: false,
+                downloadingFormat: null,
+              },
+            })
+        },
+      }),
+      {
+        global: {
+          stubs: {
+            LorebookTreeEditor: {
+              template: '<div class="lorebook-stub">世界书树编辑器</div>',
+            },
           },
         },
-      },
-    })
+      }
+    )
 
     expect(wrapper.text()).toContain('整卡补全中...')
   })
@@ -1000,7 +1198,7 @@ describe('CharacterStudioEditor tabs', () => {
 
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/insight/studio/editor/StudioOverviewTab.vue'),
-      'utf8',
+      'utf8'
     )
     expect(source).not.toMatch(/<label\b/)
   })

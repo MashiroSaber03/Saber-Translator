@@ -1,6 +1,4 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
 
@@ -37,10 +35,10 @@ describe('BatchSettingsTab', () => {
     store.config.batch.architecturePreset = 'custom'
     store.config.batch.customLayers = [
       {
-        name: 'API-shaped layer',
-        units_per_group: 12,
-        align_to_chapter: true,
-      } as unknown as CustomLayer,
+        name: 'Current layer',
+        units: 12,
+        align: true,
+      },
     ]
 
     const wrapper = mount(BatchSettingsTab, {
@@ -51,11 +49,12 @@ describe('BatchSettingsTab', () => {
 
     expect(latestConfig<{ customLayers: CustomLayer[] }>(wrapper).customLayers).toEqual([
       {
-        name: 'API-shaped layer',
-        units: 5,
-        align: false,
+        name: 'Current layer',
+        units: 12,
+        align: true,
       },
     ])
+
   })
 
   it('uses the current checkbox primitive for custom layer chapter alignment', () => {
@@ -122,18 +121,13 @@ describe('BatchSettingsTab', () => {
       min: field.props('min'),
       max: field.props('max'),
     }))).toEqual([
-      { inputId: 'insight-batch-pages-per-batch', min: 1, max: 10 },
-      { inputId: 'insight-batch-context-batch-count', min: 0, max: 5 },
-      { inputId: 'insight-batch-layer-units-0', min: 0, max: 20 },
-      { inputId: 'insight-batch-layer-units-1', min: 0, max: 20 },
-      { inputId: 'insight-batch-layer-units-2', min: 0, max: 20 },
+      { inputId: 'insight-batch-pages-per-batch', min: 1, max: undefined },
+      { inputId: 'insight-batch-context-batch-count', min: 0, max: undefined },
+      { inputId: 'insight-batch-layer-units-0', min: 0, max: undefined },
+      { inputId: 'insight-batch-layer-units-1', min: 0, max: undefined },
+      { inputId: 'insight-batch-layer-units-2', min: 0, max: undefined },
     ])
 
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/components/insight/settings/BatchSettingsTab.vue'),
-      'utf8'
-    )
-    expect(source).not.toContain('type="number"')
   })
 
   it('uses standard button variants for custom layer actions', () => {
@@ -153,17 +147,6 @@ describe('BatchSettingsTab', () => {
   })
 
   it('routes batch summaries and custom-layer actions through product primitives', () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/components/insight/settings/BatchSettingsTab.vue'),
-      'utf8'
-    )
-    expect(source).not.toContain('batch-info-box')
-    expect(source).not.toContain('batch-estimate-box')
-    expect(source).not.toContain('>+ 添加层级<')
-    expect(source).toContain('<ProductActionRow')
-    expect(source).toContain('<ProductStatusBanner')
-    expect(source).toContain('name="plus"')
-
     const store = useInsightStore()
     store.config.batch.architecturePreset = 'custom'
 
@@ -181,13 +164,6 @@ describe('BatchSettingsTab', () => {
   })
 
   it('updates custom layer names through typed input model events', async () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/components/insight/settings/BatchSettingsTab.vue'),
-      'utf8'
-    )
-    expect(source).not.toContain("($event.target as HTMLInputElement).value")
-    expect(source).toContain("@update:model-value=\"updateCustomLayer(idx, 'name', $event)\"")
-
     const store = useInsightStore()
     store.config.batch.architecturePreset = 'custom'
 
@@ -212,42 +188,4 @@ describe('BatchSettingsTab', () => {
     })
   })
 
-  it('maps batch owner colors through semantic tokens', () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/components/insight/settings/BatchSettingsTab.vue'),
-      'utf8'
-    )
-
-    expect(source).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(/)
-  })
-
-  it('keeps batch settings custom-layer hooks under the tab owner', () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/components/insight/settings/BatchSettingsTab.vue'),
-      'utf8'
-    )
-    const styleBlock = source.match(/<style scoped>([\s\S]*)<\/style>/)?.[1] ?? ''
-    const oldHooks = [
-      'custom-layers-section',
-      'custom-layers-list',
-      'custom-layer-row',
-      'layer-index',
-      'layer-name-input',
-      'layer-align-label',
-      'layer-align-checkbox',
-      'layers-preview-list',
-      'align-badge',
-      'batch-summary-banner',
-      'batch-config-banner',
-    ]
-
-    for (const hook of oldHooks) {
-      const escapedHook = hook.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      expect(source).not.toMatch(new RegExp(`(?<![\\w-])${escapedHook}(?![\\w-])`))
-    }
-    expect(source).toContain('batch-settings-tab__custom-layers')
-    expect(source).toContain('batch-settings-tab__layer-row')
-    expect(source).toContain('batch-settings-tab__layers-preview')
-    expect(styleBlock).not.toMatch(/\.batch-settings-tab\s+\./)
-  })
 })

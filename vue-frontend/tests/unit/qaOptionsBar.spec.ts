@@ -99,10 +99,10 @@ describe('QAOptionsBar', () => {
     expect(numberFields[0]?.props()).toMatchObject({
       inputId: 'qaTopK',
       min: 1,
-      max: 20,
       modelValue: 5,
       size: 'xs',
     })
+    expect(numberFields[0]?.props('max')).toBeUndefined()
     expect(numberFields[1]?.props()).toMatchObject({
       inputId: 'qaThreshold',
       min: 0,

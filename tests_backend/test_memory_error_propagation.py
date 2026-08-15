@@ -121,4 +121,4 @@ def test_insight_image_resize_does_not_fallback_after_memory_failure(
     )
 
     with pytest.raises(RuntimeError, match="Insufficient memory"):
-        vlm_client.resize_image_if_needed(b"image", 1024)
+        vlm_client._prepare_image(b"image", 1024)

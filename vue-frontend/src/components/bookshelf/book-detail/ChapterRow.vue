@@ -36,17 +36,10 @@ defineEmits<{
 
 const taskCenterStore = useTaskCenterStore()
 const imageCount = computed(() => props.chapter.imageCount ?? 0)
-const hasActiveTranslation = computed(() => {
-  const live = taskCenterStore.queue.some(job => (
-    job.chapterId === props.chapter.id
-    && job.kind === 'translation'
-    && ['queued', 'running', 'pausing', 'paused', 'cancelling', 'interrupted'].includes(job.status)
-  ))
-  if (live) return true
-  const summary = props.chapter.jobStatusSummary || {}
-  return ['queued', 'running', 'pausing', 'paused', 'cancelling', 'interrupted']
-    .some(status => (summary[status as keyof typeof summary] || 0) > 0)
-})
+const hasActiveTranslation = computed(() => taskCenterStore.hasActiveTranslation(
+  props.chapter.id,
+  props.chapter.jobStatusSummary,
+))
 const canSelect = computed(() => imageCount.value > 0 && !hasActiveTranslation.value)
 </script>
 
@@ -173,6 +166,8 @@ const canSelect = computed(() => imageCount.value > 0 && !hasActiveTranslation.v
 }
 
 .chapter-row__title {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   color: var(--color-text-default);
   font-weight: 500;
@@ -183,8 +178,10 @@ const canSelect = computed(() => imageCount.value > 0 && !hasActiveTranslation.v
 }
 
 .chapter-row__meta {
+  flex: 0 0 auto;
   color: var(--color-text-supporting);
   font-size: 0.75rem;
+  white-space: nowrap;
 }
 
 .chapter-row__actions {
@@ -213,5 +210,14 @@ const canSelect = computed(() => imageCount.value > 0 && !hasActiveTranslation.v
 
 .chapter-row__delete-action:hover {
   color: var(--color-status-error);
+}
+
+@media (--breakpoint-sm-down) {
+  .chapter-row__actions {
+    display: grid;
+    flex-basis: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
 }
 </style>

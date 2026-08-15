@@ -13,11 +13,6 @@ export default defineConfig({
     include: ['src/**/*.{test,spec}.{js,ts}', 'tests/**/*.{test,spec,property}.{js,ts}'],
     exclude: ['node_modules', 'dist', 'tests/visual/**'],
     testTimeout: 30000,
-    coverage: {
-      provider: 'v8',
-      reporter: ['text', 'json', 'html'],
-      exclude: ['node_modules/', 'tests/'],
-    },
   },
   resolve: {
     alias: {

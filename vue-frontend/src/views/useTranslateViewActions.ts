@@ -1,29 +1,27 @@
-import type { ComputedRef, Ref } from 'vue'
+import type { Ref } from 'vue'
 import { showToast } from '@/utils/toast'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settings'
+import { useBubbleStore } from '@/stores/bubbleStore'
 import { useTranslation } from '@/composables/useTranslationPipeline'
 import { useTranslateInit } from '@/composables/useTranslateInit'
 import { confirmProductAction, type ProductConfirmAction } from '@/composables/useProductConfirm'
 import type { WorkflowRunRequest } from '@/types/workflow'
 import { clearChapterPages, deletePage, resetQuickWorkspace } from '@/api/v2/content'
-import { flushPageDocument } from '@/services/pageDocumentPersistence'
+import {
+  discardPageDocument,
+  flushPageDocument,
+} from '@/services/pageDocumentPersistence'
 
 type TranslateValidationMode = 'normal' | 'hq' | 'proofread'
 
-interface TranslateImageLike {
-  fileName?: string
-}
-
 interface UseTranslateViewActionsOptions {
   imageStore: ReturnType<typeof useImageStore>
+  bubbleStore: ReturnType<typeof useBubbleStore>
   settingsStore: ReturnType<typeof useSettingsStore>
   translation: ReturnType<typeof useTranslation>
   translateInit: ReturnType<typeof useTranslateInit>
   validateBeforeTranslation: (mode: TranslateValidationMode) => boolean
-  currentImage: ComputedRef<TranslateImageLike | null | undefined>
-  hasImages: ComputedRef<boolean>
-  hasFailedImages: ComputedRef<boolean>
   isEditMode: Ref<boolean>
   confirmAction?: ProductConfirmAction
 }
@@ -31,83 +29,85 @@ interface UseTranslateViewActionsOptions {
 export function useTranslateViewActions(options: UseTranslateViewActionsOptions) {
   const {
     imageStore,
+    bubbleStore,
     settingsStore,
     translation,
     translateInit,
     validateBeforeTranslation,
-    currentImage,
-    hasImages,
-    hasFailedImages,
     isEditMode,
     confirmAction = confirmProductAction,
   } = options
 
-  async function loadChapterSession() {
+  async function loadChapterSession(): Promise<boolean> {
     try {
-      await translateInit.initializeBookChapterContext()
-    } catch {
-      showToast('刷新后端章节失败', 'error')
+      return await translateInit.initializeBookChapterContext()
+    } catch (error) {
+      showToast(
+        `刷新后端章节失败：${error instanceof Error ? error.message : '未知错误'}`,
+        'error',
+      )
+      return false
     }
   }
 
   async function handleUploadComplete() {
-    await translateInit.initializeBookChapterContext()
+    await loadChapterSession()
   }
 
   async function translateCurrentImage() {
-    if (!currentImage.value) return
+    if (!imageStore.currentImage) return
     if (!validateBeforeTranslation('normal')) return
     await translation.translateCurrentImage()
   }
 
   async function translateAllImages() {
-    if (!hasImages.value) return
+    if (!imageStore.hasImages) return
     if (!validateBeforeTranslation('normal')) return
     await translation.translateAllImages()
   }
 
   async function startHqTranslation() {
-    if (!hasImages.value) return
+    if (!imageStore.hasImages) return
     if (!validateBeforeTranslation('hq')) return
     await translation.executeHqTranslation()
   }
 
   async function startProofreading() {
-    if (!hasImages.value) return
+    if (!imageStore.hasImages) return
     if (!validateBeforeTranslation('proofread')) return
     await translation.executeProofreading()
   }
 
   async function removeTextOnly() {
-    if (!currentImage.value) return
+    if (!imageStore.currentImage) return
     await translation.removeTextOnly()
   }
 
   async function removeAllText() {
-    if (!hasImages.value) return
+    if (!imageStore.hasImages) return
     await translation.removeAllTexts()
   }
 
   async function translateSelectedImages(pages: number[]) {
-    if (!hasImages.value) return
+    if (!imageStore.hasImages) return
     if (!validateBeforeTranslation('normal')) return
     await translation.translateSelectedImages({ pages })
   }
 
   async function startHqTranslationSelection(pages: number[]) {
-    if (!hasImages.value) return
+    if (!imageStore.hasImages) return
     if (!validateBeforeTranslation('hq')) return
     await translation.executeHqTranslation({ pages })
   }
 
   async function startProofreadingSelection(pages: number[]) {
-    if (!hasImages.value) return
+    if (!imageStore.hasImages) return
     if (!validateBeforeTranslation('proofread')) return
     await translation.executeProofreading({ pages })
   }
 
   async function removeTextSelection(pages: number[]) {
-    if (!hasImages.value) return
+    if (!imageStore.hasImages) return
     await translation.removeTextSelection({ pages })
   }
 
@@ -146,14 +146,16 @@ export function useTranslateViewActions(options: UseTranslateViewActionsOptions)
       case 'clear-all':
         await clearAllImages()
         return
-      default:
-        return
     }
+    const exhaustive: never = payload.mode
+    return exhaustive
   }
 
   async function deleteCurrentImage() {
-    if (!currentImage.value) return
-    const fileName = currentImage.value.fileName || `图片 ${imageStore.currentImageIndex + 1}`
+    const target = imageStore.currentImage
+    if (!target) return
+    const pageId = target.id
+    const fileName = target.fileName
     const confirmed = await confirmAction({
       title: '删除当前图片',
       message: `确定要删除当前图片 (${fileName}) 吗？`,
@@ -161,15 +163,35 @@ export function useTranslateViewActions(options: UseTranslateViewActionsOptions)
       tone: 'danger',
     })
     if (!confirmed) return
-    const pageId = imageStore.currentImage?.id
-    if (!pageId) return
-    await deletePage(pageId)
-    await translateInit.initializeBookChapterContext()
+    if (imageStore.currentImage?.id !== pageId) {
+      showToast('当前图片已切换，未执行删除', 'warning')
+      return
+    }
+    await flushPageDocument(pageId).catch(() => undefined)
+    try {
+      await deletePage(pageId)
+    } catch (error) {
+      showToast(
+        `删除图片失败：${error instanceof Error ? error.message : '未知错误'}`,
+        'error',
+      )
+      return
+    }
+    discardPageDocument(pageId)
+    imageStore.clearImages()
+    bubbleStore.clearBubblesLocal()
     showToast('图片已删除', 'success')
+    await loadChapterSession()
   }
 
   async function clearAllImages() {
-    if (!hasImages.value) return
+    if (!imageStore.hasImages) return
+    const bookshelfMode = translateInit.isBookshelfMode.value
+    const chapterId = imageStore.currentImage?.chapterId ?? imageStore.images[0]?.chapterId
+    if (!chapterId) {
+      showToast('当前图片不属于后端章节', 'error')
+      return
+    }
     const confirmed = await confirmAction({
       title: '清空图片',
       message: '确定要从后端章节中删除所有图片和翻译结果吗？',
@@ -177,15 +199,32 @@ export function useTranslateViewActions(options: UseTranslateViewActionsOptions)
       tone: 'danger',
     })
     if (!confirmed) return
-    if (!translateInit.isBookshelfMode.value) {
-      await resetQuickWorkspace()
-    } else {
-      const chapterId = imageStore.currentImage?.chapterId ?? imageStore.images[0]?.chapterId
-      if (!chapterId) throw new Error('当前图片不属于后端章节')
-      await clearChapterPages(chapterId)
+    const currentChapterId = imageStore.currentImage?.chapterId
+      ?? imageStore.images[0]?.chapterId
+    if (
+      translateInit.isBookshelfMode.value !== bookshelfMode
+      || currentChapterId !== chapterId
+    ) {
+      showToast('当前章节已切换，未执行清空', 'warning')
+      return
     }
-    await translateInit.initializeBookChapterContext()
+    const pageIds = imageStore.images.map(image => image.id)
+    await Promise.allSettled(pageIds.map(pageId => flushPageDocument(pageId)))
+    try {
+      if (bookshelfMode) await clearChapterPages(chapterId)
+      else await resetQuickWorkspace()
+    } catch (error) {
+      showToast(
+        `清空图片失败：${error instanceof Error ? error.message : '未知错误'}`,
+        'error',
+      )
+      return
+    }
+    for (const pageId of pageIds) discardPageDocument(pageId)
+    imageStore.clearImages()
+    bubbleStore.clearBubblesLocal()
     showToast('所有图片已清除', 'success')
+    await loadChapterSession()
   }
 
   async function goToPrevious() {
@@ -201,13 +240,15 @@ export function useTranslateViewActions(options: UseTranslateViewActionsOptions)
       isEditMode.value = false
       return
     }
+    const pageId = imageStore.currentImage?.id
+    if (!pageId) return
     if (!(await translateInit.flushChapterWorkState())) {
       showToast('章节工作态设置尚未写入后端，无法进入编辑模式', 'error')
       return
     }
-    const pageId = imageStore.currentImage?.id
+    if (imageStore.currentImage?.id !== pageId) return
     try {
-      if (pageId) await flushPageDocument(pageId)
+      await flushPageDocument(pageId)
     } catch (error) {
       showToast(
         `当前页写入后端失败：${error instanceof Error ? error.message : '未知错误'}`,
@@ -215,11 +256,12 @@ export function useTranslateViewActions(options: UseTranslateViewActionsOptions)
       )
       return
     }
+    if (imageStore.currentImage?.id !== pageId) return
     isEditMode.value = true
   }
 
   async function handleRetryFailed() {
-    if (!hasFailedImages.value) {
+    if (imageStore.failedImageCount === 0) {
       showToast('没有失败的图片需要重新翻译', 'info')
       return
     }
@@ -229,12 +271,10 @@ export function useTranslateViewActions(options: UseTranslateViewActionsOptions)
   }
 
   function handleKeydown(event: KeyboardEvent) {
-    const target = event.target as HTMLElement
-    const isInTextInput =
-      target instanceof HTMLInputElement ||
-      target instanceof HTMLTextAreaElement ||
-      target.getAttribute('contenteditable') === 'true' ||
-      target.id === 'bubbleTextEditor'
+    const target = event.target instanceof Element ? event.target : null
+    const isInTextInput = Boolean(target?.closest(
+      'input, textarea, select, button, [contenteditable]:not([contenteditable="false"]), #bubbleTextEditor',
+    ))
 
     if (isInTextInput || isEditMode.value) return
 
@@ -242,11 +282,11 @@ export function useTranslateViewActions(options: UseTranslateViewActionsOptions)
       switch (event.key) {
         case 'ArrowLeft':
           event.preventDefault()
-          goToPrevious()
+          void goToPrevious()
           break
         case 'ArrowRight':
           event.preventDefault()
-          goToNext()
+          void goToNext()
           break
         case 'ArrowUp':
           event.preventDefault()
@@ -258,7 +298,7 @@ export function useTranslateViewActions(options: UseTranslateViewActionsOptions)
           event.preventDefault()
           if (!settingsStore.settings.textStyle.autoFontSize) {
             settingsStore.updateTextStyle({
-              fontSize: Math.max(10, settingsStore.settings.textStyle.fontSize - 1),
+              fontSize: Math.max(1, settingsStore.settings.textStyle.fontSize - 1),
             })
           }
           break

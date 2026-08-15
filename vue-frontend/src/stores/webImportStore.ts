@@ -5,7 +5,7 @@ import type {
   ExtractResult,
   WebImportProviderConfigs,
   WebImportSettings,
-  WebImportState,
+  WebImportStatus,
 } from '@/types/webImport'
 import {
   getV2Settings,
@@ -23,6 +23,7 @@ import {
 import {
   parseWebImportSettingsPayload,
   serializeWebImportSettingsValue,
+  WEB_IMPORT_SETTINGS_SCHEMA_VERSION,
 } from './webImportSettingsPayload'
 
 const STORAGE_KEY_DISCLAIMER_ACCEPTED = 'webImportDisclaimerAccepted'
@@ -31,34 +32,35 @@ export { WEB_IMPORT_SETTINGS_SCHEMA_VERSION } from './webImportSettingsPayload'
 function parseCustomHeaders(value: string): Record<string, string> | undefined {
   const trimmed = value.trim()
   if (!trimmed) return undefined
+  let parsed: unknown
   try {
-    const parsed = JSON.parse(trimmed)
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return Object.fromEntries(
-        Object.entries(parsed).map(([name, headerValue]) => [name, String(headerValue)]),
-      )
-    }
+    parsed = JSON.parse(trimmed)
   } catch {
-    // Fall through to the user-friendly "Header: value" format.
+    throw new Error('自定义 Headers 必须是有效的 JSON 对象')
   }
-  const headers: Record<string, string> = {}
-  for (const line of trimmed.split(/\r?\n/)) {
-    const separator = line.indexOf(':')
-    if (separator <= 0) continue
-    const name = line.slice(0, separator).trim()
-    const headerValue = line.slice(separator + 1).trim()
-    if (name && headerValue) headers[name] = headerValue
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('自定义 Headers 必须是 JSON 对象')
   }
-  return Object.keys(headers).length > 0 ? headers : undefined
+  const entries = Object.entries(parsed)
+  if (
+    entries.length === 0 ||
+    entries.some(
+      ([name, headerValue]) =>
+        !name.trim() || typeof headerValue !== 'string' || !headerValue.trim()
+    )
+  ) {
+    throw new Error('自定义 Headers 的名称和值必须是非空字符串')
+  }
+  return Object.fromEntries(entries)
 }
 
 function hydrateBackendWebImportSettings(value: unknown): unknown {
   const payload = deepClone(value) as Record<string, unknown>
   if (payload.firecrawl && typeof payload.firecrawl === 'object') {
-    (payload.firecrawl as Record<string, unknown>).apiKey = ''
+    ;(payload.firecrawl as Record<string, unknown>).apiKey = ''
   }
   if (payload.agent && typeof payload.agent === 'object') {
-    (payload.agent as Record<string, unknown>).apiKey = ''
+    ;(payload.agent as Record<string, unknown>).apiKey = ''
   }
   if (payload.advanced && typeof payload.advanced === 'object') {
     const advanced = payload.advanced as Record<string, unknown>
@@ -75,13 +77,14 @@ export const useWebImportStore = defineStore('webImport', () => {
   const draftSettings = ref<WebImportSettings>(deepClone(settings.value))
   const draftProviderConfigs = ref<WebImportProviderConfigs>(deepClone(providerConfigs.value))
   const isSavingSettings = ref(false)
+  const settingsSaveError = ref<string | null>(null)
   const hasLoadedBackendSettings = ref(false)
   const credentialSummaries = ref<V2CredentialSummary[]>([])
   let settingsRevision = 0
   let providerRevisions = new Map<string, number>()
   let initPromise: Promise<void> | null = null
 
-  const status = ref<WebImportState['status']>('idle')
+  const status = ref<WebImportStatus>('idle')
   const url = ref('')
   const logs = ref<AgentLog[]>([])
   const extractResult = ref<ExtractResult | null>(null)
@@ -99,8 +102,10 @@ export const useWebImportStore = defineStore('webImport', () => {
   const selectedCount = computed(() => selectedPageCount.value)
   const hasUnsavedSettings = computed(() => {
     return (
-      serializeWebImportSettingsValue(settings.value) !== serializeWebImportSettingsValue(draftSettings.value) ||
-      serializeWebImportSettingsValue(providerConfigs.value) !== serializeWebImportSettingsValue(draftProviderConfigs.value)
+      serializeWebImportSettingsValue(settings.value) !==
+        serializeWebImportSettingsValue(draftSettings.value) ||
+      serializeWebImportSettingsValue(providerConfigs.value) !==
+        serializeWebImportSettingsValue(draftProviderConfigs.value)
     )
   })
 
@@ -122,13 +127,18 @@ export const useWebImportStore = defineStore('webImport', () => {
 
   function hasCredential(domain: string, provider: string): boolean {
     return credentialSummaries.value.some(
-      row => row.domain === domain && row.provider === provider && row.hasKey,
+      row => row.domain === domain && row.provider === provider && row.hasKey
     )
   }
 
   async function loadFromBackend(): Promise<boolean> {
     try {
-      const response = await getV2Settings(['web_import', 'web_import_agent', 'web_import_firecrawl', 'web_import_http'])
+      const response = await getV2Settings([
+        'web_import',
+        'web_import_agent',
+        'web_import_firecrawl',
+        'web_import_http',
+      ])
       const entry = response.settings.find(row => row.domain === 'web_import')
       if (!entry) {
         hasLoadedBackendSettings.value = false
@@ -136,23 +146,25 @@ export const useWebImportStore = defineStore('webImport', () => {
       }
       settingsRevision = entry.revision
       providerRevisions = new Map(
-        response.providerSettings.map(row => [`${row.domain}\u0000${row.provider}`, row.revision]),
+        response.providerSettings.map(row => [`${row.domain}\u0000${row.provider}`, row.revision])
       )
       credentialSummaries.value = response.credentials
-      const loadedProviderConfigs = createDefaultWebImportProviderConfigs()
+      const loadedAgentProviderConfigs: Record<string, unknown> = {}
       for (const row of response.providerSettings) {
         if (row.domain !== 'web_import_agent') continue
-        loadedProviderConfigs.agent[row.provider] = {
+        loadedAgentProviderConfigs[row.provider] = {
           apiKey: '',
-          modelName: String(row.payload.modelName ?? ''),
-          customBaseUrl: String(row.payload.customBaseUrl ?? ''),
+          ...row.payload,
         }
       }
       const loadedSettings = hydrateBackendWebImportSettings(entry.payload)
-      if (!applyLoadedPayload({
-        settings: loadedSettings,
-        providerConfigs: loadedProviderConfigs,
-      })) {
+      if (
+        !applyLoadedPayload({
+          webImportSettingsSchemaVersion: WEB_IMPORT_SETTINGS_SCHEMA_VERSION,
+          settings: loadedSettings,
+          providerConfigs: { agent: loadedAgentProviderConfigs },
+        })
+      ) {
         hasLoadedBackendSettings.value = false
         return false
       }
@@ -172,6 +184,7 @@ export const useWebImportStore = defineStore('webImport', () => {
   }
 
   async function saveToBackend(): Promise<boolean> {
+    settingsSaveError.value = null
     try {
       const providerSettings: V2ProviderSettingMutation[] = []
       const credentialEdits: V2CredentialEdit[] = []
@@ -179,14 +192,14 @@ export const useWebImportStore = defineStore('webImport', () => {
         domain: string,
         provider: string,
         payload: Record<string, unknown>,
-        secret: Record<string, unknown>,
+        secret: Record<string, unknown>
       ) => {
         const identity = `${domain}\u0000${provider}`
         const existing = credentialSummaries.value.find(
-          row => row.domain === domain && row.provider === provider,
+          row => row.domain === domain && row.provider === provider
         )
         const nonEmptySecret = Object.fromEntries(
-          Object.entries(secret).filter(([, value]) => value !== '' && value != null),
+          Object.entries(secret).filter(([, value]) => value !== '' && value != null)
         )
         const mutation: V2ProviderSettingMutation = {
           domain,
@@ -220,14 +233,14 @@ export const useWebImportStore = defineStore('webImport', () => {
             modelName: config.modelName,
             customBaseUrl: config.customBaseUrl,
           },
-          { api_key: config.apiKey },
+          { api_key: config.apiKey }
         )
       }
       addProvider(
         'web_import_firecrawl',
         'firecrawl',
         {},
-        { api_key: settings.value.firecrawl.apiKey },
+        { api_key: settings.value.firecrawl.apiKey }
       )
       addProvider(
         'web_import_http',
@@ -236,7 +249,7 @@ export const useWebImportStore = defineStore('webImport', () => {
         {
           cookie: settings.value.advanced.customCookie,
           headers: parseCustomHeaders(settings.value.advanced.customHeaders),
-        },
+        }
       )
 
       const payload = deepClone(settings.value)
@@ -244,31 +257,54 @@ export const useWebImportStore = defineStore('webImport', () => {
       delete (payload.agent as Partial<typeof payload.agent>).apiKey
       delete (payload.advanced as Partial<typeof payload.advanced>).customCookie
       delete (payload.advanced as Partial<typeof payload.advanced>).customHeaders
-      await saveV2SettingsTransaction({
-        settings: [{
-          domain: 'web_import',
-          payload: payload as unknown as Record<string, unknown>,
-          baseRevision: settingsRevision,
-          schemaVersion: 1,
-        }],
+      const result = await saveV2SettingsTransaction({
+        settings: [
+          {
+            domain: 'web_import',
+            payload: payload as unknown as Record<string, unknown>,
+            baseRevision: settingsRevision,
+            schemaVersion: 1,
+          },
+        ],
         providerSettings,
         credentialEdits,
       })
-      return await loadFromBackend()
-    } catch {
+      const savedSetting = result.settings.find(row => row.domain === 'web_import')
+      if (!savedSetting) {
+        throw new Error('后端未返回网页导入设置 revision')
+      }
+      settingsRevision = savedSetting.revision
+      for (const row of result.providerSettings) {
+        if (typeof row.provider !== 'string') continue
+        providerRevisions.set(`${row.domain}\u0000${row.provider}`, row.revision)
+      }
+      for (const summary of result.credentials) {
+        credentialSummaries.value = [
+          ...credentialSummaries.value.filter(
+            existing => existing.domain !== summary.domain || existing.provider !== summary.provider
+          ),
+          summary,
+        ]
+      }
+      settings.value.firecrawl.apiKey = ''
+      settings.value.agent.apiKey = ''
+      settings.value.advanced.customCookie = ''
+      settings.value.advanced.customHeaders = ''
+      for (const config of Object.values(providerConfigs.value.agent)) {
+        config.apiKey = ''
+      }
+      return true
+    } catch (error) {
+      settingsSaveError.value = error instanceof Error ? error.message : '网页导入设置保存失败'
       return false
     }
   }
 
-  async function initSettings(force = false): Promise<void> {
-    if (hasLoadedBackendSettings.value && !force) return
-    if (initPromise && !force) {
+  async function initSettings(): Promise<void> {
+    if (hasLoadedBackendSettings.value) return
+    if (initPromise) {
       await initPromise
       return
-    }
-
-    if (force) {
-      hasLoadedBackendSettings.value = false
     }
 
     initPromise = loadFromBackend().then(() => undefined)
@@ -290,6 +326,7 @@ export const useWebImportStore = defineStore('webImport', () => {
 
   async function saveSettings(): Promise<boolean> {
     if (isSavingSettings.value) return false
+    settingsSaveError.value = null
 
     settingsMethods.saveAgentProviderConfig(draftSettings.value.agent.provider)
 
@@ -297,10 +334,12 @@ export const useWebImportStore = defineStore('webImport', () => {
     const previousProviderConfigs = deepClone(providerConfigs.value)
 
     const parsedDraft = parseWebImportSettingsPayload({
+      webImportSettingsSchemaVersion: WEB_IMPORT_SETTINGS_SCHEMA_VERSION,
       settings: draftSettings.value,
       providerConfigs: draftProviderConfigs.value,
     })
     if (!parsedDraft) {
+      settingsSaveError.value = '网页导入设置包含无效值'
       return false
     }
     settings.value = parsedDraft.settings
@@ -391,30 +430,19 @@ export const useWebImportStore = defineStore('webImport', () => {
     logs.value.push(log)
   }
 
-  function setExtractResult(result: ExtractResult): void {
-    extractResult.value = result
-    selectedPages.value = new Set(
-      result.success ? result.pages.map(page => page.pageNumber) : [],
-    )
-    selectedPageCount.value = selectedPages.value.size
-  }
-
   function setPagedExtractResult(
     result: ExtractResult,
     loadedSelectedPages: Iterable<number>,
-    totalSelectedCount: number,
+    totalSelectedCount: number
   ): void {
     extractResult.value = result
     selectedPages.value = new Set(loadedSelectedPages)
-    selectedPageCount.value = Math.max(
-      0,
-      Math.min(result.totalPages, totalSelectedCount),
-    )
+    selectedPageCount.value = Math.max(0, Math.min(result.totalPages, totalSelectedCount))
   }
 
   function appendExtractResultPages(
     pages: ExtractResult['pages'],
-    loadedSelectedPages: Iterable<number>,
+    loadedSelectedPages: Iterable<number>
   ): void {
     if (!extractResult.value) return
     const known = new Set(extractResult.value.pages.map(page => page.pageNumber))
@@ -433,7 +461,7 @@ export const useWebImportStore = defineStore('webImport', () => {
       selectedPages.value.add(pageNumber)
       selectedPageCount.value = Math.min(
         extractResult.value?.totalPages ?? selectedPageCount.value + 1,
-        selectedPageCount.value + 1,
+        selectedPageCount.value + 1
       )
     }
     selectedPages.value = new Set(selectedPages.value)
@@ -442,7 +470,7 @@ export const useWebImportStore = defineStore('webImport', () => {
   function setAllPageSelection(selected: boolean): void {
     if (!extractResult.value?.pages) return
     if (selected) {
-      selectedPages.value = new Set(extractResult.value.pages.map((p) => p.pageNumber))
+      selectedPages.value = new Set(extractResult.value.pages.map(p => p.pageNumber))
       selectedPageCount.value = extractResult.value.totalPages
     } else {
       selectedPages.value = new Set()
@@ -450,11 +478,7 @@ export const useWebImportStore = defineStore('webImport', () => {
     }
   }
 
-  function toggleSelectAll(): void {
-    setAllPageSelection(selectedPageCount.value !== extractResult.value?.totalPages)
-  }
-
-  function setStatus(newStatus: WebImportState['status']): void {
+  function setStatus(newStatus: WebImportStatus): void {
     status.value = newStatus
   }
 
@@ -487,11 +511,11 @@ export const useWebImportStore = defineStore('webImport', () => {
     error,
     modalVisible,
     disclaimerVisible,
-    isDownloading,
     isProcessing,
     selectedCount,
     hasUnsavedSettings,
     isSavingSettings,
+    settingsSaveError,
     hasCredential,
     loadFromBackend,
     saveToBackend,
@@ -501,11 +525,9 @@ export const useWebImportStore = defineStore('webImport', () => {
     resetState,
     setUrl,
     addLog,
-    setExtractResult,
     setPagedExtractResult,
     appendExtractResultPages,
     togglePageSelection,
-    toggleSelectAll,
     setAllPageSelection,
     setStatus,
     setError,
@@ -514,6 +536,6 @@ export const useWebImportStore = defineStore('webImport', () => {
     rejectDisclaimer,
     discardSettingsChanges,
     saveSettings,
-    ...settingsMethods
+    ...settingsMethods,
   }
 })

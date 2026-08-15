@@ -4,7 +4,7 @@
       label="快速选择"
       aria-label="已保存提示词"
       :items="promptChipItems"
-      @select="(id) => handleSelect(String(id))"
+      @select="handleSelect"
     />
   </div>
 </template>
@@ -15,7 +15,7 @@ import { computed, ref, onBeforeUnmount, onMounted, watch } from 'vue'
 import { listV2Prompts, type V2Prompt } from '@/api/v2/settings'
 
 const props = defineProps<{
-  promptType: string
+  promptType: V2Prompt['type']
 }>()
 
 const emit = defineEmits<{
@@ -24,6 +24,7 @@ const emit = defineEmits<{
 
 const promptList = ref<V2Prompt[]>([])
 const isLoading = ref(false)
+const loadError = ref(false)
 const promptChipItems = computed<ProductChipItem[]>(() => {
   if (isLoading.value) {
     return [{
@@ -32,6 +33,16 @@ const promptChipItems = computed<ProductChipItem[]>(() => {
       iconName: 'refresh',
       interactive: false,
       tone: 'neutral',
+    }]
+  }
+
+  if (loadError.value) {
+    return [{
+      id: 'error',
+      label: '加载失败，点击重试',
+      iconName: 'alert-triangle',
+      interactive: true,
+      tone: 'danger',
     }]
   }
 
@@ -54,13 +65,13 @@ const promptChipItems = computed<ProductChipItem[]>(() => {
   }))
 })
 let promptListRequestId = 0
-let promptContentRequestId = 0
 let isMounted = true
 
 async function loadPromptList() {
   const requestId = ++promptListRequestId
   const promptType = props.promptType
   isLoading.value = true
+  loadError.value = false
   try {
     const result = await listV2Prompts(promptType)
     if (!isMounted || requestId !== promptListRequestId || props.promptType !== promptType) {
@@ -71,7 +82,7 @@ async function loadPromptList() {
     if (!isMounted || requestId !== promptListRequestId || props.promptType !== promptType) {
       return
     }
-    promptList.value = []
+    loadError.value = true
   } finally {
     if (isMounted && requestId === promptListRequestId && props.promptType === promptType) {
       isLoading.value = false
@@ -79,20 +90,14 @@ async function loadPromptList() {
   }
 }
 
-async function handleSelect(promptId: string) {
-  const requestId = ++promptContentRequestId
-  const promptType = props.promptType
-  try {
-    const prompt = promptList.value.find(item => item.id === promptId)
-    if (!isMounted || requestId !== promptContentRequestId || props.promptType !== promptType) {
-      return
-    }
-    if (prompt?.content) {
-      emit('select', prompt.content, prompt.name)
-    }
-  } catch {
-    // Prompt selection is optional; the picker remains available for another choice.
+function handleSelect(promptId: string | number) {
+  if (typeof promptId !== 'string') return
+  if (promptId === 'error') {
+    void loadPromptList()
+    return
   }
+  const prompt = promptList.value.find(item => item.id === promptId)
+  if (prompt) emit('select', prompt.content, prompt.name)
 }
 
 watch(() => props.promptType, () => {
@@ -106,7 +111,6 @@ onMounted(() => {
 onBeforeUnmount(() => {
   isMounted = false
   promptListRequestId += 1
-  promptContentRequestId += 1
 })
 </script>
 

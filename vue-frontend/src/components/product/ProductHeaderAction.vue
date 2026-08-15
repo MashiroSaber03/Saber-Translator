@@ -67,7 +67,7 @@ const actionAttrs = computed(() => {
     return {
       href: props.disabled ? undefined : props.href,
       target: props.target,
-      rel: props.rel,
+      rel: props.rel ?? (props.target === '_blank' ? 'noopener noreferrer' : undefined),
       'aria-disabled': props.disabled ? 'true' : undefined,
     }
   }

@@ -8,6 +8,7 @@ same isolated API and Worker lifecycle used by the terminal Launcher role.
 
 import os
 import shutil
+from importlib.util import find_spec
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules, collect_all, copy_metadata
 
 block_cipher = None
@@ -26,11 +27,12 @@ module_collection_mode = {
 }
 
 # ===================== 项目资源文件 =====================
-# 1. v2 静态资源、内置字体、契约和迁移
+# 1. v2 静态资源、内置字体、契约和存储基线
 datas.append((os.path.join(PROJECT_ROOT, 'src', 'backend_v2', 'static'), os.path.join('src', 'backend_v2', 'static')))
 datas.append((os.path.join(PROJECT_ROOT, 'src', 'backend_v2', 'resources'), os.path.join('src', 'backend_v2', 'resources')))
 datas.append((os.path.join(PROJECT_ROOT, 'src', 'backend_v2', 'desktop', 'assets'), os.path.join('src', 'backend_v2', 'desktop', 'assets')))
 datas.append((os.path.join(PROJECT_ROOT, 'src', 'shared', 'text_style_defaults_factory.json'), os.path.join('src', 'shared')))
+datas.append((os.path.join(PROJECT_ROOT, 'src', 'shared', 'prompt_defaults_factory.json'), os.path.join('src', 'shared')))
 datas.append((os.path.join(PROJECT_ROOT, 'src', 'shared', 'ai_provider_manifest.json'), os.path.join('src', 'shared')))
 datas.append((os.path.join(PROJECT_ROOT, 'src', 'backend_v2', 'plugins', 'plugin_builder_skill.md'), os.path.join('src', 'backend_v2', 'plugins')))
 datas.append((os.path.join(PROJECT_ROOT, 'openapi', 'v2.yaml'), 'openapi'))
@@ -50,11 +52,6 @@ if os.path.exists(models_path):
 # 4. 插件目录
 plugins_path = os.path.join(PROJECT_ROOT, 'plugins')
 
-# 5. 图片资源
-pic_path = os.path.join(PROJECT_ROOT, 'pic')
-if os.path.exists(pic_path):
-    datas.append((pic_path, 'pic'))
-
 # ===================== 关键: 使用 collect_all 完整收集库 =====================
 # transformers 使用动态导入，必须用 collect_all 完整收集
 critical_packages = [
@@ -63,7 +60,6 @@ critical_packages = [
     'tokenizers',
     'huggingface_hub',
     'safetensors',
-    'accelerate',            # GPU device_map 必需
     'sentencepiece',         # PaddleOCR-VL tokenizer 必需
     'rapidocr_onnxruntime',  # PaddleOCR ONNX 版本
     'onnxruntime',           # ONNX 推理引擎 (GPU/CPU 模块名相同)
@@ -73,29 +69,43 @@ critical_packages = [
 ]
 
 for pkg in critical_packages:
-    try:
-        pkg_datas, pkg_binaries, pkg_hiddenimports = collect_all(pkg)
-        datas += pkg_datas
-        binaries += pkg_binaries
-        hiddenimports += pkg_hiddenimports
-        print(f"[SPEC] collect_all({pkg}): OK")
-    except Exception as e:
-        print(f"[SPEC] collect_all({pkg}) FAILED: {e}")
+    if find_spec(pkg) is None:
+        raise ModuleNotFoundError(f"required packaging dependency is missing: {pkg}")
+    pkg_datas, pkg_binaries, pkg_hiddenimports = collect_all(pkg)
+    datas += pkg_datas
+    binaries += pkg_binaries
+    hiddenimports += pkg_hiddenimports
+    print(f"[SPEC] collect_all({pkg}): OK")
+
+# accelerate 只由 GPU 版的 transformers device_map 使用。CPU 依赖集不安装
+# 它，因此仅在当前构建环境实际存在时收集。
+optional_packages = ['accelerate']
+installed_optional_packages = [
+    pkg for pkg in optional_packages if find_spec(pkg) is not None
+]
+for pkg in installed_optional_packages:
+    pkg_datas, pkg_binaries, pkg_hiddenimports = collect_all(pkg)
+    datas += pkg_datas
+    binaries += pkg_binaries
+    hiddenimports += pkg_hiddenimports
+    print(f"[SPEC] collect_all({pkg}): OK (optional)")
 
 # 其他库的数据文件
-for pkg in ['rapidocr_onnxruntime', 'unidic_lite', 'fugashi', 'litelama']:
-    try:
-        datas += collect_data_files(pkg)
-        print(f"[SPEC] collect_data_files({pkg}): OK")
-    except Exception as e:
-        print(f"[SPEC] collect_data_files({pkg}) FAILED: {e}")
+for pkg in ['unidic_lite', 'fugashi', 'litelama']:
+    datas += collect_data_files(pkg)
+    print(f"[SPEC] collect_data_files({pkg}): OK")
 
 # 收集元数据
-for pkg in ['transformers', 'tokenizers', 'huggingface_hub', 'safetensors', 'manga_ocr', 'accelerate', 'sentencepiece']:
-    try:
-        datas += copy_metadata(pkg)
-    except:
-        pass
+metadata_packages = [
+    'transformers',
+    'tokenizers',
+    'huggingface_hub',
+    'safetensors',
+    'manga_ocr',
+    'sentencepiece',
+] + installed_optional_packages
+for pkg in metadata_packages:
+    datas += copy_metadata(pkg)
 
 # ===================== 隐藏导入 =====================
 hiddenimports += [
@@ -126,11 +136,7 @@ hiddenimports += [
     # backend v2 仍复用的 Manga Insight 模型和传输适配器
     'src.core.manga_insight', 'src.core.manga_insight.config_models',
     'src.core.manga_insight.embedding_client', 'src.core.manga_insight.vlm_client',
-    'src.core.manga_insight.clients', 'src.core.manga_insight.clients.base_client',
-    'src.core.manga_insight.clients.image_gen_client',
-    'src.core.manga_insight.clients.provider_registry',
-    'src.core.manga_insight.config', 'src.core.manga_insight.config.serialization',
-    'src.core.manga_insight.utils', 'src.core.manga_insight.utils.json_parser',
+    'src.core.manga_insight.clients', 'src.core.manga_insight.clients.image_gen_client',
 
     # backend v2 immutable plugin agent metadata/controller
     'src.core.plugin_agent', 'src.core.plugin_agent.controller', 'src.core.plugin_agent.models',
@@ -144,7 +150,7 @@ hiddenimports += [
     'src.core.detector.backends.default_backend', 'src.core.detector.backends.yolo_backend',
     
     # interfaces 基础
-    'src.interfaces', 'src.interfaces.manga_ocr_interface', 'src.interfaces.paddle_ocr_interface', 'src.interfaces.paddle_ocr_onnx_interface',
+    'src.interfaces', 'src.interfaces.manga_ocr_interface', 'src.interfaces.paddle_ocr_onnx_interface',
     'src.interfaces.baidu_ocr_interface', 'src.interfaces.baidu_translate_interface',
     'src.interfaces.youdao_translate_interface', 'src.interfaces.lama_interface', 'src.interfaces.vision_interface',
     
@@ -165,19 +171,19 @@ hiddenimports += [
     # core.color_extractor (颜色提取模块)
     'src.core.color_extractor',
     
-    # interfaces.ctd (完整 - 包含所有子模块)
+    # interfaces.ctd (当前 CTD 推理图与后处理)
     'src.interfaces.ctd', 'src.interfaces.ctd.detector', 'src.interfaces.ctd.basemodel',
     # ctd.utils 子模块
     'src.interfaces.ctd.utils', 'src.interfaces.ctd.utils.db_utils', 'src.interfaces.ctd.utils.imgproc_utils',
-    'src.interfaces.ctd.utils.weight_init', 'src.interfaces.ctd.utils.yolov5_utils',
+    'src.interfaces.ctd.utils.yolov5_utils',
     # ctd.yolov5 子模块
     'src.interfaces.ctd.yolov5',
     'src.interfaces.ctd.yolov5.common',
     'src.interfaces.ctd.yolov5.yolo',
     
-    # shared (完整)
+    # shared runtime helpers
     'src.shared', 'src.shared.constants', 'src.shared.path_helpers',
-    'src.shared.exceptions', 'src.shared.image_helpers', 'src.shared.performance', 'src.shared.types', 'src.shared.validators',
+    'src.shared.image_helpers',
     'src.shared.openai_helpers',  # OpenAI 客户端辅助函数
     
     # PyTorch
@@ -200,8 +206,8 @@ hiddenimports += [
     'shapely', 'pyclipper', 'networkx', 'multiprocessing', 'concurrent.futures',
     'freetype',  # 字体回退支持 (rendering.py)
     
-    # PaddleOCR-VL / accelerate 依赖
-    'accelerate', 'sentencepiece',
+    # PaddleOCR-VL tokenizer 依赖；GPU 构建的 accelerate 由上方按环境收集
+    'sentencepiece',
     
     # manga_insight 依赖
     'chromadb',
@@ -216,16 +222,13 @@ hiddenimports += [
     'mobi', 'fitz', 'pymupdf',
     
     # utils 模块
-    'src.utils', 'src.utils.image_rearrange', 'src.utils.performance_monitor',
+    'src.utils', 'src.utils.image_rearrange',
 ]
 
 # Collect submodules
 print("[SPEC] Collecting submodules...")
 for mod in ['src.backend_v2', 'flask', 'werkzeug', 'jinja2', 'torch', 'torchvision', 'onnxruntime', 'safetensors', 'ultralytics', 'networkx', 'kornia', 'litelama']:
-    try:
-        hiddenimports += collect_submodules(mod)
-    except:
-        pass
+    hiddenimports += collect_submodules(mod)
 
 # ===================== 排除项 =====================
 excludes = [
@@ -294,4 +297,15 @@ bundle_plugins_path = os.path.join(coll.name, 'plugins')
 if os.path.exists(bundle_plugins_path):
     shutil.rmtree(bundle_plugins_path)
 if os.path.exists(plugins_path):
-    shutil.copytree(plugins_path, bundle_plugins_path)
+    shutil.copytree(
+        plugins_path,
+        bundle_plugins_path,
+        ignore=shutil.ignore_patterns('__pycache__', '*.pyc', '*.pyo'),
+    )
+    for name in os.listdir(bundle_plugins_path):
+        candidate = os.path.join(bundle_plugins_path, name)
+        if (
+            os.path.isdir(candidate)
+            and not os.path.isfile(os.path.join(candidate, 'plugin.json'))
+        ):
+            shutil.rmtree(candidate)

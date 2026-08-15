@@ -11,8 +11,11 @@ from sqlalchemy import Engine
 
 from src.backend_v2.api.request_helpers import (
     error_response as _error,
+    integer_value as _integer_value,
     json_body as _json_body,
     require_idempotency_key as _require_idempotency_key,
+    required_integer as _required_integer,
+    required_string as _required_string,
 )
 from src.backend_v2.jobs.events import JobEventBroadcaster
 from src.backend_v2.jobs.repository import (
@@ -57,7 +60,12 @@ def create_jobs_blueprint(
                 status=request.args.get("status"),
                 kind=request.args.get("type"),
                 book_id=request.args.get("book_id"),
-                limit=int(request.args.get("limit", "200")),
+                limit=_integer_value(
+                    request.args.get("limit", "200"),
+                    "limit",
+                    minimum=1,
+                    maximum=200,
+                ),
             )
         )
 
@@ -65,7 +73,11 @@ def create_jobs_blueprint(
     def stream_events() -> Response:
         header_cursor = request.headers.get("Last-Event-ID")
         query_cursor = request.args.get("after")
-        after = int(header_cursor or query_cursor or "0")
+        after = _integer_value(
+            header_cursor or query_cursor or "0",
+            "event cursor",
+            minimum=0,
+        )
         subscription = broadcaster.subscribe()
 
         @stream_with_context
@@ -134,17 +146,23 @@ def create_jobs_blueprint(
         after = request.args.get("after")
         if before is not None and after is not None:
             raise ValueError("before and after cannot be used together")
+        limit = _integer_value(
+            request.args.get("limit", "200"),
+            "limit",
+            minimum=1,
+            maximum=1000,
+        )
         items = (
             repository.events_before(
                 job_id=job_id,
-                before=int(before),
-                limit=int(request.args.get("limit", "200")),
+                before=_integer_value(before, "before", minimum=1),
+                limit=limit,
             )
             if before is not None
             else repository.events_after(
                 job_id=job_id,
-                after=int(after or "0"),
-                limit=int(request.args.get("limit", "200")),
+                after=_integer_value(after or "0", "after", minimum=0),
+                limit=limit,
             )
         )
         return jsonify({"items": items})
@@ -194,11 +212,16 @@ def create_jobs_blueprint(
     @blueprint.post("/jobs/<job_id>/retry")
     def retry_job(job_id: str) -> Response:
         body = _json_body(allowed_keys={"strategy"}, optional=True)
+        strategy = (
+            _required_string(body, "strategy")
+            if "strategy" in body
+            else "current"
+        )
         return jsonify(
             retry_service.retry(
                 job_id=job_id,
                 failed_only=False,
-                strategy=str(body.get("strategy", "current")),
+                strategy=strategy,
                 idempotency_key=_require_idempotency_key(),
             )
         ), 202
@@ -206,11 +229,16 @@ def create_jobs_blueprint(
     @blueprint.post("/jobs/<job_id>/retry-failed")
     def retry_failed_job(job_id: str) -> Response:
         body = _json_body(allowed_keys={"strategy"}, optional=True)
+        strategy = (
+            _required_string(body, "strategy")
+            if "strategy" in body
+            else "current"
+        )
         return jsonify(
             retry_service.retry(
                 job_id=job_id,
                 failed_only=True,
-                strategy=str(body.get("strategy", "current")),
+                strategy=strategy,
                 idempotency_key=_require_idempotency_key(),
             )
         ), 202
@@ -220,13 +248,17 @@ def create_jobs_blueprint(
         _require_idempotency_key()
         body = _json_body(allowed_keys={"orderedJobIds", "baseRevision"})
         ordered = body.get("orderedJobIds")
-        if not isinstance(ordered, list) or not all(
-            isinstance(value, str) for value in ordered
+        if not isinstance(ordered, list) or not ordered or not all(
+            isinstance(value, str) and bool(value.strip()) for value in ordered
         ):
-            raise ValueError("orderedJobIds must be a string array")
+            raise ValueError("orderedJobIds must be a non-empty string array")
         revision = repository.reorder(
             ordered_job_ids=ordered,
-            base_revision=int(body.get("baseRevision", 0)),
+            base_revision=_required_integer(
+                body,
+                "baseRevision",
+                minimum=1,
+            ),
         )
         return jsonify({"queueRevision": revision})
 
@@ -257,7 +289,11 @@ def create_jobs_blueprint(
             {
                 "queueRevision": repository.prioritize_batch(
                     batch_id=batch_id,
-                    base_revision=int(body.get("baseRevision", 0)),
+                    base_revision=_required_integer(
+                        body,
+                        "baseRevision",
+                        minimum=1,
+                    ),
                 )
             }
         )

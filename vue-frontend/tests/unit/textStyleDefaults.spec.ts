@@ -50,5 +50,8 @@ describe('textStyleDefaults factory fallback', () => {
     expect(normalizeTextStyleSettings(partialStyle)).toMatchObject(partialStyle)
     expect(normalizeImageTextStyleFields(partialStyle)).toMatchObject(partialStyle)
     expect(() => normalizeImageTextStyleFields({ fontSize: -1 })).toThrow('fontSize must be a positive integer')
+    expect(() => normalizeImageTextStyleFields({ fontSize: '24' } as never)).toThrow(
+      'fontSize must be a positive integer',
+    )
   })
 })

@@ -5,7 +5,8 @@
 """
 
 from dataclasses import dataclass, field
-from typing import List, Tuple, Optional
+import math
+from typing import List, Optional, Tuple
 from functools import cached_property
 import numpy as np
 import cv2
@@ -30,13 +31,39 @@ class TextLine:
     bg_color: Tuple[int, int, int] = (255, 255, 255)
     
     def __post_init__(self):
-        # 确保 pts 是正确的格式
-        if isinstance(self.pts, list):
-            self.pts = np.array(self.pts, dtype=np.int32)
-        if self.pts.shape != (4, 2):
-            self.pts = self.pts.reshape(4, 2)
+        pts = np.asarray(self.pts)
+        if pts.shape != (4, 2) or not np.issubdtype(pts.dtype, np.number):
+            raise ValueError("文本行坐标必须是 4×2 数字数组")
+        if not np.isfinite(pts).all():
+            raise ValueError("文本行坐标必须是有限数字")
+        if (
+            isinstance(self.confidence, bool)
+            or not isinstance(self.confidence, (int, float))
+            or not math.isfinite(float(self.confidence))
+            or not 0 <= float(self.confidence) <= 1
+        ):
+            raise ValueError("文本行置信度必须是 0 到 1 之间的数字")
+        self.pts = pts.astype(np.int32)
         # 排序点
         self.pts, self._is_vertical = self._sort_points(self.pts)
+
+    def _invalidate_geometry_cache(self) -> None:
+        for cache_key in (
+            'xyxy',
+            'xywh',
+            'center',
+            'centroid',
+            'structure',
+            'font_size',
+            'aspect_ratio',
+            'is_vertical',
+            'direction',
+            'angle',
+            'angle_degrees',
+            'polygon',
+            'area',
+        ):
+            self.__dict__.pop(cache_key, None)
     
     @staticmethod
     def _sort_points(pts: np.ndarray) -> Tuple[np.ndarray, bool]:
@@ -196,8 +223,13 @@ class TextLine:
     
     def clip(self, width: int, height: int):
         """裁剪到图像边界"""
-        self.pts[:, 0] = np.clip(self.pts[:, 0], 0, width)
-        self.pts[:, 1] = np.clip(self.pts[:, 1], 0, height)
+        if width < 0 or height < 0:
+            raise ValueError("图像尺寸不能小于零")
+        clipped = self.pts.copy()
+        clipped[:, 0] = np.clip(clipped[:, 0], 0, width)
+        clipped[:, 1] = np.clip(clipped[:, 1], 0, height)
+        self.pts, self._is_vertical = self._sort_points(clipped)
+        self._invalidate_geometry_cache()
 
 
 @dataclass
@@ -233,9 +265,41 @@ class TextBlock:
     panel_index: int = -1
     
     def __post_init__(self):
-        # 如果 lines 是 np.ndarray 列表，转换为 TextLine
-        if self.lines and isinstance(self.lines[0], np.ndarray):
-            self.lines = [TextLine(pts=pts) for pts in self.lines]
+        if not isinstance(self.lines, list) or any(
+            not isinstance(line, TextLine) for line in self.lines
+        ):
+            raise TypeError("文本块 lines 必须是 TextLine 列表")
+        if not isinstance(self.texts, list) or any(
+            not isinstance(text, str) for text in self.texts
+        ):
+            raise TypeError("文本块 texts 必须是字符串列表")
+        if self._direction not in ('auto', 'h', 'v', 'hr', 'vr'):
+            raise ValueError(f"未知的排版方向: {self._direction}")
+        if (
+            isinstance(self._angle, bool)
+            or not isinstance(self._angle, (int, float))
+            or not math.isfinite(float(self._angle))
+        ):
+            raise ValueError("文本块角度必须是有限数字")
+        if (
+            isinstance(self.prob, bool)
+            or not isinstance(self.prob, (int, float))
+            or not math.isfinite(float(self.prob))
+            or not 0 <= float(self.prob) <= 1
+        ):
+            raise ValueError("文本块置信度必须是 0 到 1 之间的数字")
+
+    def invalidate_geometry_cache(self) -> None:
+        for cache_key in (
+            'xyxy',
+            'xywh',
+            'center',
+            'vertical',
+            'min_rect',
+            'polygon',
+            'area',
+        ):
+            self.__dict__.pop(cache_key, None)
     
     @cached_property
     def xyxy(self) -> Tuple[int, int, int, int]:
@@ -324,6 +388,7 @@ class TextBlock:
     @angle.setter
     def angle(self, value: float):
         self._angle = value
+        self.invalidate_geometry_cache()
     
     @property
     def direction(self) -> str:
@@ -347,7 +412,10 @@ class TextBlock:
     
     @direction.setter
     def direction(self, value: str):
+        if value not in ('auto', 'h', 'v', 'hr', 'vr'):
+            raise ValueError(f"未知的排版方向: {value}")
         self._direction = value
+        self.__dict__.pop('vertical', None)
     
     @cached_property
     def vertical(self) -> bool:
@@ -394,6 +462,20 @@ class DetectionResult:
     
     # 原始文本行（合并前）
     raw_lines: List[TextLine] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.blocks, list) or any(
+            not isinstance(block, TextBlock) for block in self.blocks
+        ):
+            raise TypeError("检测结果 blocks 必须是 TextBlock 列表")
+        if not isinstance(self.raw_lines, list) or any(
+            not isinstance(line, TextLine) for line in self.raw_lines
+        ):
+            raise TypeError("检测结果 raw_lines 必须是 TextLine 列表")
+        if self.mask is not None and (
+            not isinstance(self.mask, np.ndarray) or self.mask.ndim != 2
+        ):
+            raise TypeError("检测结果 mask 必须是二维 numpy 数组")
     
     def __len__(self) -> int:
         return len(self.blocks)

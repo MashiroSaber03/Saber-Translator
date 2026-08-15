@@ -16,6 +16,7 @@ from src.shared.ai_providers import (
     VISION_OCR_CAPABILITY,
     ProviderManifest,
 )
+from src.core.ocr_types import create_ocr_result
 
 
 DETERMINISTIC_FAKE_PROVIDER_ID = "deterministic_fake"
@@ -71,7 +72,13 @@ class DeterministicFakeProvider:
         }
 
     def ocr(self, _image, _payloads, _config):
-        return {"texts": ["こんにちは"], "results": [{"confidence": 0.99}]}
+        result = create_ocr_result(
+            "こんにちは",
+            "deterministic_fake_ocr",
+            confidence=0.99,
+            confidence_supported=True,
+        )
+        return {"texts": [result.text], "results": [result.to_dict()]}
 
     def colors(self, _image, _payloads):
         return [

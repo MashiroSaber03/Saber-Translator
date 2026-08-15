@@ -2,17 +2,14 @@
 import UiField from '@/components/ui/UiField.vue'
 import UiNumberField from '@/components/ui/UiNumberField.vue'
 import { computed, ref } from 'vue'
-import { providerRequiresApiKey, providerRequiresBaseUrl, providerRequiresModel, getProviderBaseUrl } from '@/config/aiProviders'
+import { getProviderDefaultModel, providerRequiresApiKey, providerRequiresBaseUrl, providerRequiresModel } from '@/config/aiProviders'
 import { useInsightStore } from '@/stores/insightStore'
 import * as insightApi from '@/api/insight'
 import type { StoreImageGenConfig } from '@/types/insight'
 import InsightModelProviderSection from './InsightModelProviderSection.vue'
 import InsightSettingsPanel from './InsightSettingsPanel.vue'
 import { useInsightSettingsDraft } from './useInsightSettingsDraft'
-import {
-  IMAGE_GEN_PROVIDER_OPTIONS,
-  PROVIDER_DEFAULT_MODELS,
-} from './types'
+import { IMAGE_GEN_PROVIDER_OPTIONS } from './types'
 
 const emit = defineEmits<{
   (e: 'update:config', config: StoreImageGenConfig): void
@@ -23,15 +20,15 @@ const props = defineProps<{
 }>()
 
 const insightStore = useInsightStore()
-const initialProvider = insightStore.config.imageGen?.provider || 'gpt2api'
+const initialProvider = insightStore.config.imageGen.provider
 
 const provider = ref(initialProvider)
-const apiKey = ref(insightStore.config.imageGen?.apiKey || '')
-const model = ref(insightStore.config.imageGen?.model ?? (PROVIDER_DEFAULT_MODELS[initialProvider]?.imageGen || 'gpt-image-2'))
-const baseUrl = ref(insightStore.config.imageGen?.baseUrl || '')
-const transportRetries = ref(insightStore.config.imageGen?.transportRetries ?? 10)
-const businessRetries = ref(insightStore.config.imageGen?.businessRetries ?? 10)
-const timeoutSeconds = ref(insightStore.config.imageGen?.timeoutSeconds ?? 0)
+const apiKey = ref(insightStore.config.imageGen.apiKey)
+const model = ref(insightStore.config.imageGen.model)
+const baseUrl = ref(insightStore.config.imageGen.baseUrl)
+const transportRetries = ref(insightStore.config.imageGen.transportRetries)
+const businessRetries = ref(insightStore.config.imageGen.businessRetries)
+const timeoutSeconds = ref(insightStore.config.imageGen.timeoutSeconds)
 
 const showBaseUrl = computed(() => providerRequiresBaseUrl(provider.value))
 const showModelWarning = computed(() => providerRequiresModel(provider.value) && !model.value.trim())
@@ -40,7 +37,7 @@ const hasStoredCredential = computed(() => (
 ))
 
 function getDefaultModel(providerId: string): string {
-  return PROVIDER_DEFAULT_MODELS[providerId]?.imageGen || ''
+  return getProviderDefaultModel(providerId, 'imageGen')
 }
 
 function onProviderChange(): void {
@@ -66,13 +63,13 @@ function buildDraftConfig(): StoreImageGenConfig {
 }
 
 function applyDraftConfig(config: StoreImageGenConfig): void {
-  provider.value = config.provider || 'gpt2api'
-  apiKey.value = config.apiKey || ''
-  model.value = config.model ?? getDefaultModel(provider.value)
-  baseUrl.value = config.baseUrl || getProviderBaseUrl(provider.value, 'imageGen')
-  transportRetries.value = config.transportRetries ?? 10
-  businessRetries.value = config.businessRetries ?? 10
-  timeoutSeconds.value = config.timeoutSeconds ?? 0
+  provider.value = config.provider
+  apiKey.value = config.apiKey
+  model.value = config.model
+  baseUrl.value = config.baseUrl
+  transportRetries.value = config.transportRetries
+  businessRetries.value = config.businessRetries
+  timeoutSeconds.value = config.timeoutSeconds
 }
 
 useInsightSettingsDraft<StoreImageGenConfig>({
@@ -112,16 +109,16 @@ useInsightSettingsDraft<StoreImageGenConfig>({
       @provider-change="onProviderChange"
     />
 
-    <UiField variant="settings" label="传输重试次数" hint="网络超时、连接错误、429/5xx 的自动重试次数，默认 10" control-id="insight-imagegen-transport-retries">
-      <UiNumberField v-model="transportRetries" input-id="insight-imagegen-transport-retries" :min="0" :max="100" />
+    <UiField variant="settings" label="传输重试次数" hint="网络超时、连接错误、429/5xx 默认重试 1 次" control-id="insight-imagegen-transport-retries">
+      <UiNumberField v-model="transportRetries" input-id="insight-imagegen-transport-retries" :min="0" />
     </UiField>
 
-    <UiField variant="settings" label="业务重试次数" hint="当接口返回空图片结果或结果不可解析时的额外重试次数，默认 10" control-id="insight-imagegen-business-retries">
-      <UiNumberField v-model="businessRetries" input-id="insight-imagegen-business-retries" :min="0" :max="100" />
+    <UiField variant="settings" label="业务重试次数" hint="空图片或结果不可解析时默认不额外重试" control-id="insight-imagegen-business-retries">
+      <UiNumberField v-model="businessRetries" input-id="insight-imagegen-business-retries" :min="0" />
     </UiField>
 
     <UiField variant="settings" label="单次请求超时（秒）" hint="0 表示不限制；大于 0 时作为单次生图 HTTP 请求超时" control-id="insight-imagegen-timeout-seconds">
-      <UiNumberField v-model="timeoutSeconds" input-id="insight-imagegen-timeout-seconds" :min="0" :max="3600" :step="1" />
+      <UiNumberField v-model="timeoutSeconds" input-id="insight-imagegen-timeout-seconds" :min="0" :step="1" />
     </UiField>
   </InsightSettingsPanel>
 </template>

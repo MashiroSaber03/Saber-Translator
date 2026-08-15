@@ -4,6 +4,7 @@ import UiIcon from '@/components/ui/UiIcon.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
 import type { BubbleCoords, BubbleState } from '@/types/bubble'
 import type { ImageData } from '@/types/image'
+import type { BrushMode } from '@/composables/useBrush'
 import BubbleEditor from './BubbleEditor.vue'
 import BubbleOverlay from './BubbleOverlay.vue'
 
@@ -22,7 +23,7 @@ const props = defineProps<{
   scale: number
   originalScale: number
   isDrawingMode: boolean
-  brushMode: string | null
+  brushMode: BrushMode
   currentImageWidth: number
   currentImageHeight: number
   currentDrawingRect: [number, number, number, number] | null
@@ -31,6 +32,7 @@ const props = defineProps<{
   translatedTransformStyle: Record<string, string>
   isOcrLoading: boolean
   isTranslateLoading: boolean
+  isBusy: boolean
 }>()
 
 const processedImageUrl = computed(
@@ -60,7 +62,6 @@ const emit = defineEmits<{
   bubbleDragEnd: [index: number, newCoords: BubbleCoords]
   bubbleResizeEnd: [index: number, newCoords: BubbleCoords]
   bubbleRotateEnd: [index: number, angle: number]
-  drawBubble: [rect: [number, number, number, number]]
   bubbleUpdate: [updates: Partial<BubbleState>]
   applyToAllStyle: [updates: Partial<BubbleState>]
   ocrRecognize: [index: number]
@@ -152,7 +153,7 @@ defineExpose({
               :selected-index="selectedBubbleIndex"
               :selected-indices="selectedIndices"
               :scale="originalScale"
-              :is-drawing-mode="isDrawingMode"
+              :disabled="isBusy"
               :is-brush-mode="!!brushMode"
               :image-width="currentImageWidth"
               :image-height="currentImageHeight"
@@ -161,7 +162,6 @@ defineExpose({
               @drag-end="(index, newCoords) => emit('bubbleDragEnd', index, newCoords)"
               @resize-end="(index, newCoords) => emit('bubbleResizeEnd', index, newCoords)"
               @rotate-end="(index, angle) => emit('bubbleRotateEnd', index, angle)"
-              @draw-bubble="emit('drawBubble', $event)"
             />
             <div
               v-if="currentDrawingRect"
@@ -229,7 +229,7 @@ defineExpose({
               :selected-index="selectedBubbleIndex"
               :selected-indices="selectedIndices"
               :scale="scale"
-              :is-drawing-mode="isDrawingMode"
+              :disabled="isBusy"
               :is-brush-mode="!!brushMode"
               :image-width="currentImageWidth"
               :image-height="currentImageHeight"
@@ -238,7 +238,6 @@ defineExpose({
               @drag-end="(index, newCoords) => emit('bubbleDragEnd', index, newCoords)"
               @resize-end="(index, newCoords) => emit('bubbleResizeEnd', index, newCoords)"
               @rotate-end="(index, angle) => emit('bubbleRotateEnd', index, angle)"
-              @draw-bubble="emit('drawBubble', $event)"
             />
             <div
               v-if="currentDrawingRect"
@@ -262,6 +261,7 @@ defineExpose({
         :bubble-index="selectedBubbleIndex"
         :is-ocr-loading="isOcrLoading"
         :is-translate-loading="isTranslateLoading"
+        :disabled="isBusy"
         @update="emit('bubbleUpdate', $event)"
         @apply-to-all-style="emit('applyToAllStyle', $event)"
         @ocr-recognize="emit('ocrRecognize', $event)"
@@ -555,6 +555,10 @@ defineExpose({
 }
 
 @media (--breakpoint-md-down) {
+  .edit-image-comparison {
+    flex-direction: column;
+  }
+
   .edit-image-comparison__canvas-region {
     flex-direction: column;
   }
@@ -566,6 +570,25 @@ defineExpose({
   }
 
   .edit-image-comparison__divider-handle {
+    writing-mode: horizontal-tb;
+  }
+
+  .edit-image-comparison__editor-panel {
+    flex: 0 0 auto;
+    flex-direction: column;
+    width: 100%;
+    min-width: 0;
+    min-height: 200px;
+    max-width: none;
+    max-height: 45%;
+    border-top: 1px solid var(--color-border-muted);
+    border-left: none;
+  }
+
+  .edit-image-comparison__editor-resize-handle--vertical {
+    width: 100%;
+    height: 10px;
+    cursor: ns-resize;
     writing-mode: horizontal-tb;
   }
 }

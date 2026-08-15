@@ -65,7 +65,11 @@ function selectAdjacentTab(event: KeyboardEvent, tab: ProductSegmentedTab): void
 
   if (nextIndex === null) return
   event.preventDefault()
-  selectTab(enabledTabs[nextIndex])
+  const nextTab = enabledTabs[nextIndex]!
+  selectTab(nextTab)
+  const tablist = (event.currentTarget as HTMLElement).closest('[role="tablist"]')
+  const tabIndex = props.tabs.findIndex(candidate => candidate.id === nextTab.id)
+  tablist?.querySelectorAll<HTMLElement>('[role="tab"]')[tabIndex]?.focus()
 }
 </script>
 

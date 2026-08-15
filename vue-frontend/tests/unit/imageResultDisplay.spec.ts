@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import ImageResultDisplay from '@/components/translate/ImageResultDisplay.vue'
+import DetectedTextPanel from '@/components/translate/DetectedTextPanel.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductScrollStack from '@/components/product/ProductScrollStack.vue'
 import UiButton from '@/components/ui/UiButton.vue'
@@ -20,6 +21,7 @@ import { createBubbleState } from '@/utils/bubbleFactory'
 const exportImportMock = vi.hoisted(() => ({
   state: {
     isDownloading: true,
+    isImporting: false,
     downloadProgressText: '正在打包下载',
     downloadProgress: 42,
   },
@@ -32,6 +34,7 @@ const exportImportMock = vi.hoisted(() => ({
 vi.mock('@/composables/useExportImport', () => ({
   useExportImport: () => ({
     isDownloading: { value: exportImportMock.state.isDownloading },
+    isImporting: { value: exportImportMock.state.isImporting },
     downloadProgressText: { value: exportImportMock.state.downloadProgressText },
     downloadProgress: { value: exportImportMock.state.downloadProgress },
     downloadCurrentImage: exportImportMock.downloadCurrentImage,
@@ -45,6 +48,7 @@ describe('ImageResultDisplay', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     exportImportMock.state.isDownloading = true
+    exportImportMock.state.isImporting = false
     exportImportMock.state.downloadProgressText = '正在打包下载'
     exportImportMock.state.downloadProgress = 42
     exportImportMock.downloadCurrentImage.mockReset()
@@ -63,6 +67,39 @@ describe('ImageResultDisplay', () => {
     expect(progress.props('value')).toBe(42)
     expect(progress.text()).toContain('正在打包下载')
     expect(wrapper.find('.progress').exists()).toBe(false)
+    expect(wrapper.findAllComponents(UiButton).filter(button => (
+      ['下载当前图片', '下载所有图片', '导出文本', '导入文本'].includes(button.text())
+    )).every(button => button.props('disabled'))).toBe(true)
+  })
+
+  it('lets the image-size control enlarge the image beyond its frame width', async () => {
+    exportImportMock.state.isDownloading = false
+    const imageStore = useImageStore()
+    addTestImage(imageStore, 'page.png', '/api/v2/assets/source-1')
+    const wrapper = mount(ImageResultDisplay)
+
+    const slider = wrapper.getComponent(UiInput)
+    slider.vm.$emit('update:modelValue', 200)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.get('.result-image-canvas__image-layer').attributes('style')).toContain('width: 200%')
+    const canvasSource = readFileSync(
+      resolve(process.cwd(), 'src/components/translate/result/ResultImageCanvas.vue'),
+      'utf8',
+    )
+    const layerStyles = canvasSource.match(/\.result-image-canvas__image-layer\s*\{([\s\S]*?)\n\}/)?.[1] ?? ''
+    expect(layerStyles).toContain('flex: 0 0 auto')
+    expect(layerStyles).not.toContain('max-width: 100%')
+  })
+
+  it('preserves source text and leaves visual wrapping to CSS', () => {
+    const text = '这是一段不会被组件擅自插入换行符的长文本。'.repeat(5)
+    const wrapper = mount(DetectedTextPanel, {
+      props: { items: [{ original: text, translated: text }] },
+    })
+
+    expect(wrapper.get('.detected-text-panel__original').text()).toBe(text)
+    expect(wrapper.get('.detected-text-panel__translated').text()).toBe(text)
   })
 
   it('shows a clean asset as the final remove-text result and can toggle back to source', async () => {
@@ -184,8 +221,8 @@ describe('ImageResultDisplay', () => {
   it('prevents overlapping backend export submissions while one export is pending', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/components/translate/result/ExportActions.vue'), 'utf8')
 
-    expect(source).toContain(':disabled="!hasImages || isDownloading"')
-    expect(source).toContain(':disabled="isDownloading"')
+    expect(source).toContain(':disabled="!hasImages || isDownloading || isImporting"')
+    expect(source).toContain(':disabled="isDownloading || isImporting"')
   })
 
   it('updates image size through typed range model events', async () => {

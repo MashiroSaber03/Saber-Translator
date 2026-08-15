@@ -109,3 +109,20 @@ def immediate_transaction(engine: Engine) -> Iterator[Connection]:
         connection.commit()
     finally:
         connection.close()
+
+
+@contextmanager
+def read_transaction(engine: Engine) -> Iterator[Connection]:
+    """Read several SQLite tables from one consistent WAL snapshot."""
+
+    connection = engine.connect()
+    try:
+        connection.exec_driver_sql("BEGIN")
+        yield connection
+    except BaseException:
+        connection.rollback()
+        raise
+    else:
+        connection.commit()
+    finally:
+        connection.close()

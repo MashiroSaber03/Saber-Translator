@@ -5,8 +5,8 @@ import { newIdempotencyKey } from './content'
 
 const ROOT = '/api/v2/insight'
 
-export type V2AcceptedJob = components['schemas']['JobBatchAccepted'] &
-  Partial<Pick<components['schemas']['InsightAnalysisJobAccepted'], 'runId'>>
+export type V2AcceptedJob = components['schemas']['JobBatchAccepted']
+export type V2InsightAnalysisJobAccepted = components['schemas']['InsightAnalysisJobAccepted']
 export type V2InsightArtifact = components['schemas']['InsightArtifact']
 export type V2InsightBootstrap = components['schemas']['InsightBootstrap']
 export type V2InsightNote = components['schemas']['InsightNote']
@@ -17,7 +17,9 @@ export type V2InsightOverviewTemplateList = components['schemas']['InsightOvervi
 export type V2InsightRecentPageAnalysisList = components['schemas']['InsightRecentPageAnalysisList']
 
 type V2InsightChapterList = components['schemas']['InsightChapterList']
+type V2InsightNoteCreateCommand = components['schemas']['InsightNoteCreateCommand']
 type V2InsightNoteList = components['schemas']['InsightNoteList']
+type V2InsightNoteUpdateCommand = components['schemas']['InsightNoteUpdateCommand']
 type V2InsightPageList = components['schemas']['InsightPageList']
 type V2InsightTimeline = components['schemas']['InsightTimeline']
 
@@ -52,17 +54,22 @@ export function listRecentInsightPageAnalyses(
   )
 }
 
-export function getInsightPage(pageId: string): Promise<V2InsightPageDetail> {
-  return apiClient.get(`${ROOT}/pages/${encodeURIComponent(pageId)}`)
+export function getInsightPage(
+  pageId: string,
+  options: { runId?: string } = {}
+): Promise<V2InsightPageDetail> {
+  const url = `${ROOT}/pages/${encodeURIComponent(pageId)}`
+  return options.runId
+    ? apiClient.get(url, { params: { runId: options.runId } })
+    : apiClient.get(url)
 }
 
 export function createInsightAnalysisJob(command: {
   bookId: string
   chapterIds?: string[]
-  force?: boolean
   pageIds?: string[]
   scope: 'chapter' | 'full' | 'incremental' | 'page'
-}): Promise<V2AcceptedJob> {
+}): Promise<V2InsightAnalysisJobAccepted> {
   assertBackendActionAllowed()
   return apiClient.post(`${ROOT}/analysis-jobs`, command, {
     headers: { 'Idempotency-Key': newIdempotencyKey() },
@@ -162,15 +169,7 @@ export function getInsightNote(noteId: string): Promise<V2InsightNote> {
   return apiClient.get(`${ROOT}/notes/${encodeURIComponent(noteId)}`)
 }
 
-export function createInsightNote(command: {
-  bookId: string
-  citations: Array<Record<string, unknown>>
-  comments: Array<Record<string, unknown> | string>
-  content: string
-  kind: 'qa' | 'text'
-  tags: string[]
-  title: string
-}): Promise<V2InsightNote> {
+export function createInsightNote(command: V2InsightNoteCreateCommand): Promise<V2InsightNote> {
   return apiClient.post(`${ROOT}/notes`, command, {
     headers: { 'Idempotency-Key': newIdempotencyKey() },
   })
@@ -178,15 +177,7 @@ export function createInsightNote(command: {
 
 export function updateInsightNote(
   noteId: string,
-  command: {
-    baseRevision: number
-    citations: Array<Record<string, unknown>>
-    comments: Array<Record<string, unknown> | string>
-    content: string
-    kind: 'qa' | 'text'
-    tags: string[]
-    title: string
-  }
+  command: V2InsightNoteUpdateCommand
 ): Promise<V2InsightNote> {
   return apiClient.patch(`${ROOT}/notes/${encodeURIComponent(noteId)}`, command, {
     headers: { 'Idempotency-Key': newIdempotencyKey() },

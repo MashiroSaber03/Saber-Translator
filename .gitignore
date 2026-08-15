@@ -62,8 +62,12 @@ data-v2/
 *.tmp
 *.bak
 *.cache
+.tmp-*/
 Thumbs.db
 .DS_Store
+
+# --- 根目录工具依赖与缓存 ---
+/node_modules/
 
 # --- Jupyter Notebook ---
 .ipynb_checkpoints/
@@ -79,6 +83,7 @@ docs/*
 .claude/
 .gemini/
 .playwright-mcp/
+.ace-tool/
 CLAUDE.md
 .windsurfchatopen/
 .windsurfrules

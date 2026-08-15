@@ -18,22 +18,24 @@ interface UseEditWorkspaceKeyboardShortcutsOptions {
 }
 
 export function useEditWorkspaceKeyboardShortcuts(options: UseEditWorkspaceKeyboardShortcutsOptions) {
-  function handleKeyDown(event: KeyboardEvent): void {
-    const target = event.target as HTMLElement
-    const key = event.key.toLowerCase()
+  function isEditableTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof Element)) return false
+    return Boolean(target.closest(
+      'input, textarea, select, button, [contenteditable]:not([contenteditable="false"])',
+    ))
+  }
 
-    if (key === 'r' || key === 'u' || key === 'a' || key === 'd') {
-      if (target.tagName === 'TEXTAREA') return
-      if (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'BUTTON') {
-        target.blur()
-      }
-    } else if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') {
-      return
-    }
+  function handleKeyDown(event: KeyboardEvent): void {
+    if (isEditableTarget(event.target)) return
 
     switch (event.key) {
       case 'Escape':
-        void options.exitEditMode()
+        if (options.brushMode.value) {
+          options.exitBrushMode()
+        } else {
+          void options.exitEditMode()
+        }
+        event.preventDefault()
         break
       case 'Delete':
       case 'Backspace':
@@ -93,6 +95,7 @@ export function useEditWorkspaceKeyboardShortcuts(options: UseEditWorkspaceKeybo
   }
 
   function handleKeyUp(event: KeyboardEvent): void {
+    if (isEditableTarget(event.target)) return
     if (event.key === 'r' || event.key === 'R' || event.key === 'u' || event.key === 'U') {
       options.exitBrushMode()
       event.preventDefault()

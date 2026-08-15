@@ -192,6 +192,30 @@ function parseCurrentWebImportSettings(value: unknown): WebImportSettings | null
     return null
   }
 
+  const nonnegativeIntegers = [
+    parsed.agent.maxRetries,
+    parsed.download.retries,
+    parsed.download.delay,
+    parsed.imagePreprocess.compression.maxWidth,
+    parsed.imagePreprocess.compression.maxHeight,
+  ]
+  const positiveIntegers = [
+    parsed.agent.timeout,
+    parsed.extraction.maxIterations,
+    parsed.download.concurrency,
+    parsed.download.timeout,
+  ]
+  const quality = parsed.imagePreprocess.compression.quality
+  if (
+    nonnegativeIntegers.some(value => !Number.isInteger(value) || value < 0)
+    || positiveIntegers.some(value => !Number.isInteger(value) || value < 1)
+    || !Number.isInteger(quality)
+    || quality < 1
+    || quality > 100
+  ) {
+    return null
+  }
+
   return parsed as WebImportSettings
 }
 
@@ -216,12 +240,11 @@ function parseCurrentProviderConfigs(value: unknown): WebImportProviderConfigs |
   const agent: WebImportProviderConfigs['agent'] = {}
   for (const [provider, config] of Object.entries(value.agent)) {
     if (!isWebImportAgentProvider(provider)) {
-      continue
+      return null
     }
     const parsed = parseCurrentAgentProviderConfig(config)
-    if (parsed) {
-      agent[provider] = parsed
-    }
+    if (!parsed) return null
+    agent[provider] = parsed
   }
   return { agent }
 }
@@ -238,7 +261,17 @@ function buildWebImportSettingsPayload(
 }
 
 export function parseWebImportSettingsPayload(value: unknown): WebImportSettingsPayload | null {
-  if (!isPlainRecord(value)) return null
+  if (
+    !isPlainRecord(value)
+    || !hasExactKeys(value, [
+      'webImportSettingsSchemaVersion',
+      'settings',
+      'providerConfigs',
+    ])
+    || value.webImportSettingsSchemaVersion !== WEB_IMPORT_SETTINGS_SCHEMA_VERSION
+  ) {
+    return null
+  }
   const settings = parseCurrentWebImportSettings(value.settings)
   const providerConfigs = parseCurrentProviderConfigs(value.providerConfigs)
   if (!settings || !providerConfigs) return null

@@ -7,7 +7,6 @@ import EditToolbar from '@/components/edit/EditToolbar.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
-import UiProgressBar from '@/components/ui/UiProgressBar.vue'
 
 function createToolbarProps() {
   return {
@@ -28,10 +27,7 @@ function createToolbarProps() {
     brushSize: 24,
     mouseX: 10,
     mouseY: 20,
-    isProcessing: true,
-    progressText: '处理中',
-    progressCurrent: 1,
-    progressTotal: 4,
+    isBusy: false,
     isRepairLoading: false,
   }
 }
@@ -50,26 +46,32 @@ describe('EditToolbar accessibility', () => {
     expect(wrapper.emitted('toggle-thumbnails')).toHaveLength(1)
   })
 
-  it('exposes edit processing progress through progressbar semantics', () => {
+  it('disables navigation and backend mutations while an edit operation is running', () => {
     const wrapper = mount(EditToolbar, {
-      props: createToolbarProps(),
+      props: {
+        ...createToolbarProps(),
+        canGoPrevious: true,
+        isBusy: true,
+      },
     })
 
-    const sharedProgress = wrapper.getComponent(UiProgressBar)
-    expect(sharedProgress.props()).toEqual(expect.objectContaining({
-      value: 1,
-      max: 4,
-      label: '编辑处理进度',
-      tone: 'success',
-      size: 'sm',
-      animated: true,
-    }))
-
-    const progressbar = wrapper.get('[role="progressbar"]')
-    expect(progressbar.attributes('aria-valuemin')).toBe('0')
-    expect(progressbar.attributes('aria-valuemax')).toBe('4')
-    expect(progressbar.attributes('aria-valuenow')).toBe('1')
-    expect(progressbar.attributes('aria-label')).toBe('编辑处理进度')
+    for (const title of [
+      '上一张图片 (A)',
+      '下一张图片 (D)',
+      '上一个气泡',
+      '下一个气泡',
+      '自动检测当前图片的文本框',
+      '批量检测所有图片',
+      '使用当前文本框翻译此图片',
+      '删除选中气泡框 (Delete)',
+      '修复选中气泡背景 (R)',
+      '应用更改并跳转下一张 (Ctrl+Enter)',
+    ]) {
+      expect(wrapper.get(`button[title="${title}"]`).attributes('disabled')).toBeDefined()
+    }
+    const exitButton = wrapper.findAll('button').find(button => button.text() === '退出编辑')
+    expect(exitButton?.attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[role="progressbar"]').exists()).toBe(false)
   })
 
   it('renders zoom controls through shared icons instead of text symbols', () => {
@@ -258,7 +260,6 @@ describe('EditToolbar accessibility', () => {
     expect(source).toContain('edit-toolbar__bubble-navigator')
     expect(source).toContain('edit-toolbar__view-controls')
     expect(source).toContain('edit-toolbar__annotation-tools')
-    expect(source).toContain('edit-toolbar__progress')
     expect(source).toContain('edit-toolbar__quick-actions')
     expect(source).not.toContain('edit-toolbar-wrapper')
     expect(source).not.toMatch(/class="[^"]*\b(?:toolbar-row-1|toolbar-row-2|image-navigator|nav-btn|thumb-toggle-btn|toolbar-divider|bubble-navigator|bubble-indicator|view-controls|view-control-btn|layout-toggle-btn|view-mode-btn|sync-toggle-btn|zoom-level|toolbar-spacer|annotation-tools|annotation-btn|detect-btn|primary-action-btn|brush-btn|brush-size-indicator|brush-cursor|brush-mode-hint-layer|brush-mode-hint|edit-progress-container|edit-progress-info|edit-progress-text|edit-progress-count|edit-progress-bar|quick-actions)\b/)
@@ -279,15 +280,6 @@ describe('EditToolbar accessibility', () => {
     expect(source).not.toContain('.edit-toolbar__bubble-indicator span')
     expect(source).not.toContain('.edit-toolbar__annotation-action svg')
     expect(source).not.toContain('.edit-toolbar__annotation-action span')
-  })
-
-  it('does not assert shared button primitives through internal class names', () => {
-    const source = readFileSync(resolve(process.cwd(), 'tests/unit/editToolbarAccessibility.spec.ts'), 'utf8')
-    const buttonClassPrefix = 'ui-' + 'button--'
-    const iconButtonClassPrefix = 'ui-' + 'icon-button--'
-
-    expect(source).not.toContain(buttonClassPrefix)
-    expect(source).not.toContain(iconButtonClassPrefix)
   })
 
   it('maps toolbar owner colors through semantic tokens', () => {

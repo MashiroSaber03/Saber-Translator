@@ -4,16 +4,16 @@
       <template #title>翻译服务配置</template>
       <UiFormGrid>
         <AiProviderSelectField
-          :model-value="localSettings.modelProvider"
+          :model-value="modelProvider"
           input-id="settingsModelProvider"
           :options="providerOptions"
           label="翻译服务商"
           @change="handleProviderSelect"
         />
         <AiProviderCredentialFields
-          :api-key="localSettings.apiKey"
+          :api-key="translationSettings.apiKey"
           api-key-input-id="settingsApiKey"
-          :base-url="localSettings.customBaseUrl"
+          :base-url="translationSettings.customBaseUrl"
           base-url-input-id="settingsCustomBaseUrl"
           :show-api-key="!isLocalProvider"
           :show-base-url="false"
@@ -21,23 +21,23 @@
           :api-key-label="apiKeyLabel"
           :api-key-placeholder="apiKeyPlaceholder"
           :has-stored-credential="
-            settingsStore.hasCredential('translation', localSettings.modelProvider)
+            settingsStore.hasCredential('translation', modelProvider)
           "
           api-key-show-label="显示翻译 API Key"
           api-key-hide-label="隐藏翻译 API Key"
-          @update:api-key="localSettings.apiKey = $event"
+          @update:api-key="updateTranslationString('apiKey', $event)"
         />
       </UiFormGrid>
       <AiProviderCredentialFields
-        :api-key="localSettings.apiKey"
+        :api-key="translationSettings.apiKey"
         api-key-input-id="settingsApiKey"
-        :base-url="localSettings.customBaseUrl"
+        :base-url="translationSettings.customBaseUrl"
         base-url-input-id="settingsCustomBaseUrl"
         :show-api-key="false"
-        :show-base-url="providerRequiresBaseUrl(localSettings.modelProvider)"
+        :show-base-url="providerRequiresBaseUrl(modelProvider)"
         :include-api-key="false"
         base-url-placeholder="例如: https://api.example.com/v1"
-        @update:base-url="localSettings.customBaseUrl = $event"
+        @update:base-url="updateTranslationString('customBaseUrl', $event)"
       />
       <UiField
         v-show="!isLocalProvider"
@@ -47,7 +47,7 @@
       >
         <UiModelPicker
           input-id="settingsModelName"
-          v-model="localSettings.modelName"
+          :model-value="translationSettings.modelName"
           :placeholder="modelNamePlaceholder"
           :show-fetch="supportsFetchModels"
           fetch-variant="primary"
@@ -55,7 +55,7 @@
           :fetch-disabled="isFetchingModels"
           :options="modelListOptions"
           :model-count="modelList.length"
-          @change="handleModelSelect"
+          @update:model-value="handleModelSelect"
           @fetch="fetchModels"
         />
       </UiField>
@@ -67,9 +67,9 @@
       >
         <UiModelPicker
           input-id="settingsLocalModelName"
-          v-model="localSettings.modelName"
+          :model-value="translationSettings.modelName"
           :placeholder="
-            localSettings.modelProvider === 'ollama'
+            modelProvider === 'ollama'
               ? '例如: qwen2.5:7b'
               : '例如: sakura-14b-qwen2.5-v1.0'
           "
@@ -79,7 +79,7 @@
           :fetch-disabled="isFetchingModels"
           :options="localModelListOptions"
           :model-count="localModelList.length"
-          @change="handleModelSelect"
+          @update:model-value="handleModelSelect"
           @fetch="fetchLocalModels"
         />
       </UiField>
@@ -93,9 +93,11 @@
         >
           <UiNumberField
             input-id="settingsRpmTranslation"
-            v-model="localSettings.rpmTranslation"
+            :model-value="translationSettings.openaiOptions.execution.rpmLimit"
             :min="0"
+            :max="100000"
             :step="1"
+            @update:model-value="updateTranslationNumber('rpmLimit', $event)"
           />
         </UiField>
         <UiField
@@ -106,10 +108,11 @@
         >
           <UiNumberField
             input-id="settingsTranslationMaxRetries"
-            v-model="localSettings.translationBusinessRetries"
+            :model-value="translationSettings.openaiOptions.execution.businessRetries"
             :min="0"
-            :max="10"
+            :max="100"
             :step="1"
+            @update:model-value="updateTranslationNumber('businessRetries', $event)"
           />
         </UiField>
         <UiField
@@ -120,10 +123,11 @@
         >
           <UiNumberField
             input-id="settingsTranslationTransportRetries"
-            v-model="localSettings.translationTransportRetries"
+            :model-value="translationSettings.openaiOptions.execution.transportRetries"
             :min="0"
-            :max="10"
+            :max="100"
             :step="1"
+            @update:model-value="updateTranslationNumber('transportRetries', $event)"
           />
         </UiField>
       </UiFormGrid>
@@ -133,10 +137,17 @@
         control="checkbox"
         hint="同时作用于整页批量和逐气泡翻译"
       >
-        <UiCheckbox v-model="localSettings.useStream" label="流式调用" />
+        <UiCheckbox
+          :model-value="translationSettings.openaiOptions.execution.useStream"
+          label="流式调用"
+          @update:model-value="updateTranslationBoolean('useStream', $event)"
+        />
       </UiField>
       <UiField v-show="showRpmLimit" variant="settings">
-        <OpenAIExtraBodyEditor v-model="localSettings.extraBody" />
+        <OpenAIExtraBodyEditor
+          :model-value="translationSettings.openaiOptions.request.extraBody"
+          @update:model-value="updateTranslationExtraBody"
+        />
       </UiField>
       <UiField
         variant="settings"
@@ -146,13 +157,13 @@
       >
         <UiSelect
           id="settingsTranslationMode"
-          :model-value="localSettings.translationMode"
+          :model-value="translationSettings.translationMode"
           :options="translationModeOptions"
           @change="handleTranslationModeChange"
         />
       </UiField>
       <ProductStatusBanner
-        v-if="localSettings.modelProvider === 'sakura'"
+        v-if="modelProvider === 'sakura'"
         tone="warning"
         role="note"
       >
@@ -182,14 +193,15 @@
       <UiField variant="settings" label="翻译提示词" control-id="settingsPromptContent">
         <UiTextarea
           id="settingsPromptContent"
-          v-model="localSettings.promptContent"
+          :model-value="currentPrompt"
           variant="panel"
           rows="4"
           placeholder="翻译提示词"
+          @update:model-value="settingsStore.setTranslatePrompt"
         />
         <ProductActionRow aria-label="翻译提示词格式" justify="start">
           <UiSelect
-            :model-value="localSettings.translatePromptMode"
+            :model-value="translatePromptMode"
             :options="promptModeOptions"
             @change="handlePromptModeSelect"
           />
@@ -208,20 +220,25 @@
         </ProductActionRow>
       </UiField>
       <UiField variant="settings" control="checkbox">
-        <UiCheckbox v-model="localSettings.enableTextboxPrompt" label="启用文本框提示词" />
+        <UiCheckbox
+          :model-value="settings.useTextboxPrompt"
+          label="启用文本框提示词"
+          @update:model-value="settingsStore.setUseTextboxPrompt"
+        />
       </UiField>
       <UiField
-        v-show="localSettings.enableTextboxPrompt"
+        v-show="settings.useTextboxPrompt"
         variant="settings"
         label="文本框提示词"
         control-id="settingsTextboxPromptContent"
       >
         <UiTextarea
           id="settingsTextboxPromptContent"
-          v-model="localSettings.textboxPromptContent"
+          :model-value="settings.textboxPrompt"
           variant="panel"
           rows="3"
           placeholder="文本框提示词"
+          @update:model-value="settingsStore.setTextboxPrompt"
         />
         <SavedPromptsPicker prompt-type="textbox" @select="handleTextboxPromptSelect" />
       </UiField>
@@ -243,7 +260,7 @@ import AiProviderSelectField from '@/components/settings/AiProviderSelectField.v
 import type { UiSelectValue } from '@/components/ui/selectTypes'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import {
   getProviderDisplayName as getProviderDisplayNameFromManifest,
   providerSupportsRpmLimit,
@@ -294,34 +311,19 @@ const translationModeOptions = [
 ]
 const settingsStore = useSettingsStore()
 const toast = useToast()
-const currentTranslationMode = settingsStore.settings.translation.translationMode || 'batch'
-const currentForceJsonOutput =
-  settingsStore.settings.translation.openaiOptions.request.forceJsonOutput || false
-const getCurrentPrompt = (): string => {
-  const t = settingsStore.settings.translation
-  if (currentTranslationMode === 'single') {
-    return currentForceJsonOutput ? t.singleJsonPrompt : t.singleNormalPrompt
-  } else {
-    return currentForceJsonOutput ? t.batchJsonPrompt : t.batchNormalPrompt
+const settings = computed(() => settingsStore.settings)
+const translationSettings = computed(() => settings.value.translation)
+const modelProvider = computed(() => normalizeProviderId(translationSettings.value.provider))
+const translatePromptMode = computed(() => (
+  translationSettings.value.openaiOptions.request.forceJsonOutput ? 'json' : 'normal'
+))
+const currentPrompt = computed(() => {
+  const translation = translationSettings.value
+  const useJson = translation.openaiOptions.request.forceJsonOutput
+  if (translation.translationMode === 'single') {
+    return useJson ? translation.singleJsonPrompt : translation.singleNormalPrompt
   }
-}
-const localSettings = ref({
-  modelProvider: normalizeProviderId(settingsStore.settings.translation.provider),
-  apiKey: settingsStore.settings.translation.apiKey,
-  modelName: settingsStore.settings.translation.modelName,
-  customBaseUrl: settingsStore.settings.translation.customBaseUrl,
-  rpmTranslation: settingsStore.settings.translation.openaiOptions.execution.rpmLimit,
-  translationTransportRetries:
-    settingsStore.settings.translation.openaiOptions.execution.transportRetries,
-  translationBusinessRetries:
-    settingsStore.settings.translation.openaiOptions.execution.businessRetries,
-  useStream: settingsStore.settings.translation.openaiOptions.execution.useStream,
-  extraBody: settingsStore.settings.translation.openaiOptions.request.extraBody,
-  translationMode: currentTranslationMode,
-  promptContent: getCurrentPrompt(),
-  translatePromptMode: currentForceJsonOutput ? 'json' : 'normal',
-  enableTextboxPrompt: settingsStore.settings.useTextboxPrompt,
-  textboxPromptContent: settingsStore.settings.textboxPrompt,
+  return useJson ? translation.batchJsonPrompt : translation.batchNormalPrompt
 })
 const isTesting = ref(false)
 const isFetchingLocalModels = ref(false)
@@ -332,12 +334,12 @@ function notifyModelDiscovery(message: string, tone: AiModelDiscoveryMessageTone
 }
 const remoteModelDiscovery = useAiModelDiscovery({
   source: () => ({
-    provider: localSettings.value.modelProvider,
-    apiKey: localSettings.value.apiKey,
-    baseUrl: localSettings.value.customBaseUrl,
+    provider: modelProvider.value,
+    apiKey: translationSettings.value.apiKey,
+    baseUrl: translationSettings.value.customBaseUrl,
     hasStoredCredential: settingsStore.hasCredential(
       'translation',
-      localSettings.value.modelProvider
+      modelProvider.value
     ),
   }),
   fetcher: (provider, apiKey, baseUrl) => fetchV2Models(provider, apiKey, baseUrl, 'translation'),
@@ -364,78 +366,72 @@ const localModelListOptions = computed(() => {
   return options
 })
 const isLocalProvider = computed(() => {
-  return isLocalProviderId(localSettings.value.modelProvider)
+  return isLocalProviderId(modelProvider.value)
 })
 const showRpmLimit = computed(() => {
-  return providerSupportsRpmLimit(localSettings.value.modelProvider)
+  return providerSupportsRpmLimit(modelProvider.value)
 })
 const supportsFetchModels = computed(() => {
   return (
-    providerSupportsCapability(localSettings.value.modelProvider, 'modelFetch') &&
-    !isLocalProviderId(localSettings.value.modelProvider)
+    providerSupportsCapability(modelProvider.value, 'modelFetch') &&
+    !isLocalProviderId(modelProvider.value)
   )
 })
-const apiKeyLabel = computed(() => getTranslationApiKeyLabel(localSettings.value.modelProvider))
+const apiKeyLabel = computed(() => getTranslationApiKeyLabel(modelProvider.value))
 const apiKeyPlaceholder = computed(() =>
-  getTranslationApiKeyPlaceholder(localSettings.value.modelProvider)
+  getTranslationApiKeyPlaceholder(modelProvider.value)
 )
 const modelNameLabel = computed(() =>
-  getTranslationModelNameLabel(localSettings.value.modelProvider)
+  getTranslationModelNameLabel(modelProvider.value)
 )
 const modelNamePlaceholder = computed(() =>
-  getTranslationModelNamePlaceholder(localSettings.value.modelProvider)
+  getTranslationModelNamePlaceholder(modelProvider.value)
 )
 const translationModeHint = computed(() =>
-  localSettings.value.translationMode === 'batch'
+  translationSettings.value.translationMode === 'batch'
     ? '整页批量翻译：一次发送全部气泡，效率高，需要模型支持复杂指令'
     : '逐气泡翻译：每个气泡单独翻译，更稳定，适合小模型或格式敏感场景'
 )
-function selectValueToString(value: UiSelectValue): string {
-  return String(value)
-}
 function handleProviderSelect(value: UiSelectValue) {
-  localSettings.value.modelProvider = selectValueToString(value)
-  handleProviderChange()
+  if (typeof value !== 'string' || !providerSupportsCapability(value, 'translation')) return
+  const newProvider = normalizeProviderId(value)
+  if (!providerSupportsCapability(newProvider, 'translation')) return
+  invalidateModelFetchRequests()
+  settingsStore.setTranslationProvider(newProvider as TranslationProvider)
+  settingsStore.setTranslatePromptMode(
+    settingsStore.settings.translation.openaiOptions.request.forceJsonOutput,
+  )
 }
 function handleModelSelect(value: UiSelectValue) {
-  localSettings.value.modelName = selectValueToString(value)
+  if (typeof value === 'string') settingsStore.updateTranslationService({ modelName: value })
 }
 function handlePromptModeSelect(value: UiSelectValue) {
-  localSettings.value.translatePromptMode =
-    selectValueToString(value) === 'json' ? 'json' : 'normal'
-  handlePromptModeChange()
+  if (value !== 'normal' && value !== 'json') return
+  if (value === translatePromptMode.value) return
+  settingsStore.setTranslatePromptMode(value === 'json')
 }
-function handleProviderChange() {
-  const newProvider = localSettings.value.modelProvider as TranslationProvider
-  localSettings.value.modelProvider = normalizeProviderId(newProvider)
-  settingsStore.setTranslationProvider(localSettings.value.modelProvider as TranslationProvider)
-  localSettings.value.apiKey = settingsStore.settings.translation.apiKey
-  localSettings.value.modelName = settingsStore.settings.translation.modelName
-  localSettings.value.customBaseUrl = settingsStore.settings.translation.customBaseUrl
-  localSettings.value.rpmTranslation =
-    settingsStore.settings.translation.openaiOptions.execution.rpmLimit
-  localSettings.value.translationTransportRetries =
-    settingsStore.settings.translation.openaiOptions.execution.transportRetries
-  localSettings.value.translationBusinessRetries =
-    settingsStore.settings.translation.openaiOptions.execution.businessRetries
-  localSettings.value.useStream =
-    settingsStore.settings.translation.openaiOptions.execution.useStream
-  localSettings.value.extraBody = settingsStore.settings.translation.openaiOptions.request.extraBody
-  localSettings.value.translationMode =
-    settingsStore.settings.translation.translationMode || 'batch'
-  const forceJsonOutput = settingsStore.settings.translation.openaiOptions.request.forceJsonOutput
-  localSettings.value.translatePromptMode = forceJsonOutput ? 'json' : 'normal'
-  const translation = settingsStore.settings.translation
-  localSettings.value.promptContent =
-    localSettings.value.translationMode === 'single'
-      ? forceJsonOutput
-        ? translation.singleJsonPrompt
-        : translation.singleNormalPrompt
-      : forceJsonOutput
-        ? translation.batchJsonPrompt
-        : translation.batchNormalPrompt
-  settingsStore.setTranslatePrompt(localSettings.value.promptContent)
-  invalidateModelFetchRequests()
+
+function updateTranslationString(
+  field: 'apiKey' | 'customBaseUrl',
+  value: string,
+): void {
+  settingsStore.updateTranslationService({ [field]: value })
+}
+
+function updateTranslationNumber(
+  field: 'rpmLimit' | 'businessRetries' | 'transportRetries',
+  value: number | null,
+): void {
+  if (value === null) return
+  settingsStore.updateTranslationService({ [field]: value })
+}
+
+function updateTranslationBoolean(field: 'useStream', value: boolean): void {
+  settingsStore.updateTranslationService({ [field]: value })
+}
+
+function updateTranslationExtraBody(value: Record<string, unknown> | undefined): void {
+  settingsStore.updateTranslationService({ extraBody: value })
 }
 
 function invalidateModelFetchRequests() {
@@ -445,164 +441,21 @@ function invalidateModelFetchRequests() {
   localModelList.value = []
 }
 
-function handlePromptModeChange() {
-  const newForceJsonOutput = localSettings.value.translatePromptMode === 'json'
-  const previousForceJsonOutput = !newForceJsonOutput
-  const isSingleMode = localSettings.value.translationMode === 'single'
-  if (isSingleMode) {
-    if (previousForceJsonOutput) {
-      settingsStore.updateTranslationService({
-        singleJsonPrompt: localSettings.value.promptContent,
-      })
-    } else {
-      settingsStore.updateTranslationService({
-        singleNormalPrompt: localSettings.value.promptContent,
-      })
-    }
-  } else {
-    if (previousForceJsonOutput) {
-      settingsStore.updateTranslationService({ batchJsonPrompt: localSettings.value.promptContent })
-    } else {
-      settingsStore.updateTranslationService({
-        batchNormalPrompt: localSettings.value.promptContent,
-      })
-    }
-  }
-  const t = settingsStore.settings.translation
-  let newPrompt: string
-  if (isSingleMode) {
-    newPrompt = newForceJsonOutput ? t.singleJsonPrompt : t.singleNormalPrompt
-  } else {
-    newPrompt = newForceJsonOutput ? t.batchJsonPrompt : t.batchNormalPrompt
-  }
-  localSettings.value.promptContent = newPrompt
-  settingsStore.updateTranslationService({ forceJsonOutput: newForceJsonOutput })
-  settingsStore.setTranslatePrompt(newPrompt)
-}
 function handleTranslationModeChange(value: UiSelectValue) {
-  const newMode: TranslationMode = selectValueToString(value) === 'single' ? 'single' : 'batch'
-  const previousMode = localSettings.value.translationMode
-  const forceJsonOutput = localSettings.value.translatePromptMode === 'json'
+  if (value !== 'single' && value !== 'batch') return
+  const newMode: TranslationMode = value
+  const previousMode = translationSettings.value.translationMode
   if (newMode === previousMode) return
-  if (previousMode === 'batch') {
-    if (forceJsonOutput) {
-      settingsStore.updateTranslationService({ batchJsonPrompt: localSettings.value.promptContent })
-    } else {
-      settingsStore.updateTranslationService({
-        batchNormalPrompt: localSettings.value.promptContent,
-      })
-    }
-  } else {
-    if (forceJsonOutput) {
-      settingsStore.updateTranslationService({
-        singleJsonPrompt: localSettings.value.promptContent,
-      })
-    } else {
-      settingsStore.updateTranslationService({
-        singleNormalPrompt: localSettings.value.promptContent,
-      })
-    }
-  }
-  localSettings.value.translationMode = newMode
   settingsStore.updateTranslationService({ translationMode: newMode })
-  const t = settingsStore.settings.translation
-  let savedPrompt: string
-  if (newMode === 'single') {
-    savedPrompt = forceJsonOutput ? t.singleJsonPrompt : t.singleNormalPrompt
-  } else {
-    savedPrompt = forceJsonOutput ? t.batchJsonPrompt : t.batchNormalPrompt
-  }
-  localSettings.value.promptContent = savedPrompt
-  settingsStore.setTranslatePrompt(savedPrompt)
+  settingsStore.setTranslatePromptMode(translatePromptMode.value === 'json')
 }
-watch(
-  () => localSettings.value.apiKey,
-  newVal => {
-    settingsStore.updateTranslationService({ apiKey: newVal })
-  }
-)
-watch(
-  () => localSettings.value.modelName,
-  newVal => {
-    settingsStore.updateTranslationService({ modelName: newVal })
-  }
-)
-watch(
-  () => localSettings.value.customBaseUrl,
-  newVal => {
-    settingsStore.updateTranslationService({ customBaseUrl: newVal })
-  }
-)
-watch(
-  () => localSettings.value.rpmTranslation,
-  newVal => {
-    settingsStore.updateTranslationService({ rpmLimit: newVal })
-  }
-)
-watch(
-  () => localSettings.value.translationTransportRetries,
-  newVal => {
-    settingsStore.updateTranslationService({ transportRetries: newVal })
-  }
-)
-watch(
-  () => localSettings.value.translationBusinessRetries,
-  newVal => {
-    settingsStore.updateTranslationService({ businessRetries: newVal })
-  }
-)
-watch(
-  () => localSettings.value.useStream,
-  newVal => {
-    settingsStore.updateTranslationService({ useStream: newVal })
-  }
-)
-watch(
-  () => localSettings.value.extraBody,
-  newVal => {
-    settingsStore.updateTranslationService({ extraBody: newVal })
-  }
-)
-watch(
-  () => localSettings.value.promptContent,
-  newVal => {
-    settingsStore.setTranslatePrompt(newVal)
-    const isBatch = localSettings.value.translationMode === 'batch'
-    const isJson = localSettings.value.translatePromptMode === 'json'
-    if (isBatch) {
-      if (isJson) {
-        settingsStore.updateTranslationService({ batchJsonPrompt: newVal })
-      } else {
-        settingsStore.updateTranslationService({ batchNormalPrompt: newVal })
-      }
-    } else {
-      if (isJson) {
-        settingsStore.updateTranslationService({ singleJsonPrompt: newVal })
-      } else {
-        settingsStore.updateTranslationService({ singleNormalPrompt: newVal })
-      }
-    }
-  }
-)
-watch(
-  () => localSettings.value.enableTextboxPrompt,
-  newVal => {
-    settingsStore.setUseTextboxPrompt(newVal)
-  }
-)
-watch(
-  () => localSettings.value.textboxPromptContent,
-  newVal => {
-    settingsStore.setTextboxPrompt(newVal)
-  }
-)
 const fetchModels = remoteModelDiscovery.fetchModels
 function getProviderDisplayName(provider: string): string {
   return getProviderDisplayNameFromManifest(provider)
 }
 
 async function fetchLocalModels() {
-  const provider = localSettings.value.modelProvider
+  const provider = modelProvider.value
   const requestId = localModelFetchGuard.next()
   isFetchingLocalModels.value = true
   try {
@@ -631,8 +484,8 @@ async function fetchLocalModels() {
   }
 }
 async function testLocalConnection() {
-  const provider = localSettings.value.modelProvider
-  const modelName = localSettings.value.modelName?.trim()
+  const provider = modelProvider.value
+  const modelName = translationSettings.value.modelName?.trim()
   if (provider === 'ollama' && !modelName) {
     toast.warning('请填写模型名称')
     return
@@ -666,10 +519,10 @@ async function testLocalConnection() {
   }
 }
 async function testCloudConnection() {
-  const provider = localSettings.value.modelProvider
-  const apiKey = localSettings.value.apiKey?.trim()
-  const modelName = localSettings.value.modelName?.trim()
-  const baseUrl = localSettings.value.customBaseUrl?.trim()
+  const provider = modelProvider.value
+  const apiKey = translationSettings.value.apiKey?.trim()
+  const modelName = translationSettings.value.modelName?.trim()
+  const baseUrl = translationSettings.value.customBaseUrl?.trim()
   if (
     providerRequiresApiKey(provider) &&
     !apiKey &&
@@ -719,24 +572,26 @@ async function testCloudConnection() {
   }
 }
 function handleTranslatePromptSelect(content: string, name: string) {
-  localSettings.value.promptContent = content
+  settingsStore.setTranslatePrompt(content)
   toast.success(`已应用提示词: ${name}`)
 }
 function handleTextboxPromptSelect(content: string, name: string) {
-  localSettings.value.textboxPromptContent = content
+  settingsStore.setTextboxPrompt(content)
   toast.success(`已应用提示词: ${name}`)
 }
 function resetTranslatePromptToDefault() {
-  const forceJsonOutput = localSettings.value.translatePromptMode === 'json'
-  if (localSettings.value.translationMode === 'single') {
-    localSettings.value.promptContent = forceJsonOutput
+  const forceJsonOutput = translatePromptMode.value === 'json'
+  let prompt: string
+  if (translationSettings.value.translationMode === 'single') {
+    prompt = forceJsonOutput
       ? DEFAULT_SINGLE_BUBBLE_JSON_PROMPT
       : DEFAULT_SINGLE_BUBBLE_PROMPT
   } else {
-    localSettings.value.promptContent = forceJsonOutput
+    prompt = forceJsonOutput
       ? DEFAULT_TRANSLATE_JSON_PROMPT
       : DEFAULT_TRANSLATE_PROMPT
   }
+  settingsStore.setTranslatePrompt(prompt)
   toast.success('已重置为默认提示词')
 }
 </script>

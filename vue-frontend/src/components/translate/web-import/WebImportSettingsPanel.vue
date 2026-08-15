@@ -72,83 +72,96 @@ function updateSettingsTab(tabId: string): void {
     @update:expanded="$emit('update:settingsExpanded', $event)"
   >
     <template #icon>⚙️</template>
-    <ProductSegmentedTabs
-      :tabs="settingsTabs"
-      :active-tab="activeSettingsTab"
-      aria-label="网页导入设置分类"
-      class="web-import-settings__tabs"
-      @update:active-tab="updateSettingsTab"
-    />
-
-    <ProductStatusBanner
-      class="web-import-settings__sync-status"
-      :class="{ 'web-import-settings__sync-status--dirty': hasUnsavedSettings }"
-      :tone="hasUnsavedSettings ? 'warning' : 'success'"
-      role="status"
-      aria-live="polite"
+    <fieldset
+      class="web-import-settings__fieldset"
+      :disabled="isSavingSettings"
+      :aria-busy="isSavingSettings"
     >
-      {{ hasUnsavedSettings ? '有未保存的修改' : '设置已同步' }}
-      <template #actions>
-        <UiButton
-          variant="secondary"
-          size="sm"
-          :disabled="!hasUnsavedSettings || isSavingSettings"
-          @click="$emit('discard-settings')"
-        >
-          取消修改
-        </UiButton>
-        <UiButton
-          variant="primary"
-          size="sm"
-          :disabled="!hasUnsavedSettings || isSavingSettings"
-          @click="$emit('save-settings')"
-        >
-          {{ isSavingSettings ? '保存中...' : '保存设置' }}
-        </UiButton>
-      </template>
-    </ProductStatusBanner>
-
-    <div v-show="activeSettingsTab === 'basic'" class="web-import-settings__tab-content">
-      <WebImportBasicSettingsPanel
-        :agent-provider-options="agentProviderOptions"
-        :draft-settings="draftSettings"
-        :has-agent-credential="hasAgentCredential"
-        :has-firecrawl-credential="hasFirecrawlCredential"
-        :is-fetching-models="isFetchingModels"
-        :model-list="modelList"
-        :model-list-options="modelListOptions"
-        :provider-requires-api-key="providerRequiresApiKey"
-        :settings-actions="settingsActions"
-        :show-custom-url="showCustomUrl"
-        :supports-fetch-models="supportsFetchModels"
-        :testing-agent="testingAgent"
-        :testing-firecrawl="testingFirecrawl"
-        @fetch-models="$emit('fetch-models')"
-        @reset-prompt="$emit('reset-prompt')"
-        @test-agent="$emit('test-agent')"
-        @test-firecrawl="$emit('test-firecrawl')"
+      <ProductSegmentedTabs
+        :tabs="settingsTabs"
+        :active-tab="activeSettingsTab"
+        aria-label="网页导入设置分类"
+        class="web-import-settings__tabs"
+        @update:active-tab="updateSettingsTab"
       />
-    </div>
 
-    <div v-show="activeSettingsTab === 'preprocess'" class="web-import-settings__tab-content">
-      <WebImportPreprocessSettings
-        :draft-settings="draftSettings"
-        :settings-actions="settingsActions"
-      />
-    </div>
+      <ProductStatusBanner
+        class="web-import-settings__sync-status"
+        :class="{ 'web-import-settings__sync-status--dirty': hasUnsavedSettings }"
+        :tone="hasUnsavedSettings ? 'warning' : 'success'"
+        role="status"
+        aria-live="polite"
+      >
+        {{ hasUnsavedSettings ? '有未保存的修改' : '设置已同步' }}
+        <template #actions>
+          <UiButton
+            variant="secondary"
+            size="sm"
+            :disabled="!hasUnsavedSettings || isSavingSettings"
+            @click="$emit('discard-settings')"
+          >
+            取消修改
+          </UiButton>
+          <UiButton
+            variant="primary"
+            size="sm"
+            :disabled="!hasUnsavedSettings || isSavingSettings"
+            @click="$emit('save-settings')"
+          >
+            {{ isSavingSettings ? '保存中...' : '保存设置' }}
+          </UiButton>
+        </template>
+      </ProductStatusBanner>
 
-    <div v-show="activeSettingsTab === 'advanced'" class="web-import-settings__tab-content">
-      <WebImportAdvancedSettingsPanel
-        :draft-settings="draftSettings"
-        :settings-actions="settingsActions"
-      />
-    </div>
+      <div v-show="activeSettingsTab === 'basic'" class="web-import-settings__tab-content">
+        <WebImportBasicSettingsPanel
+          :agent-provider-options="agentProviderOptions"
+          :draft-settings="draftSettings"
+          :has-agent-credential="hasAgentCredential"
+          :has-firecrawl-credential="hasFirecrawlCredential"
+          :is-fetching-models="isFetchingModels"
+          :model-list="modelList"
+          :model-list-options="modelListOptions"
+          :provider-requires-api-key="providerRequiresApiKey"
+          :settings-actions="settingsActions"
+          :show-custom-url="showCustomUrl"
+          :supports-fetch-models="supportsFetchModels"
+          :testing-agent="testingAgent"
+          :testing-firecrawl="testingFirecrawl"
+          @fetch-models="$emit('fetch-models')"
+          @reset-prompt="$emit('reset-prompt')"
+          @test-agent="$emit('test-agent')"
+          @test-firecrawl="$emit('test-firecrawl')"
+        />
+      </div>
+
+      <div v-show="activeSettingsTab === 'preprocess'" class="web-import-settings__tab-content">
+        <WebImportPreprocessSettings
+          :draft-settings="draftSettings"
+          :settings-actions="settingsActions"
+        />
+      </div>
+
+      <div v-show="activeSettingsTab === 'advanced'" class="web-import-settings__tab-content">
+        <WebImportAdvancedSettingsPanel
+          :draft-settings="draftSettings"
+          :settings-actions="settingsActions"
+        />
+      </div>
+    </fieldset>
   </ProductCollapsibleSection>
 </template>
 
 <style scoped>
 .web-import-settings-section {
   margin-bottom: 16px;
+}
+
+.web-import-settings__fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 
 .web-import-settings__sync-status {

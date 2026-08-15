@@ -21,6 +21,7 @@ from typing import List, Tuple
 import time
 
 from src.shared.path_helpers import resource_path
+from src.shared.image_helpers import image_to_rgb_array
 from src.shared.memory_errors import is_memory_allocation_error
 from src.core.ocr_types import OcrResult, create_ocr_result
 
@@ -100,7 +101,9 @@ class PaddleOCRHandlerONNX:
         det_path = os.path.join(self.model_base_dir, "detection", "v5", "det.onnx")
         
         # 识别模型 - 根据语言选择
-        model_dir = self.LANG_TO_MODEL_DIR.get(lang, "chinese")
+        model_dir = self.LANG_TO_MODEL_DIR.get(lang)
+        if model_dir is None:
+            raise ValueError(f"PaddleOCR ONNX 不支持源语言: {lang}")
         rec_path = os.path.join(self.model_base_dir, "languages", model_dir, "rec.onnx")
         dict_path = os.path.join(self.model_base_dir, "languages", model_dir, "dict.txt")
         
@@ -138,7 +141,7 @@ class PaddleOCRHandlerONNX:
             
             # 获取模型路径
             det_path, rec_path, dict_path = self._get_model_paths(lang)
-            model_dir = self.LANG_TO_MODEL_DIR.get(lang, "chinese")
+            model_dir = self.LANG_TO_MODEL_DIR[lang]
             
             logger.debug(f"初始化 PaddleOCR ONNX: 语言={lang}, 模型={model_dir}")
             
@@ -186,7 +189,11 @@ class PaddleOCRHandlerONNX:
                 raise
             return False
     
-    def recognize_text(self, image: Image.Image, bubble_coords: List[Tuple[int, int, int, int]]) -> List[str]:
+    def recognize_text(
+        self,
+        image: Image.Image,
+        bubble_coords: List[Tuple[int, int, int, int]],
+    ) -> List[str]:
         """
         使用 PaddleOCR ONNX 识别文本
         
@@ -203,7 +210,13 @@ class PaddleOCRHandlerONNX:
         Returns:
             List[str]: 识别的文本列表，与 bubble_coords 一一对应
         """
-        return [result.text for result in self.recognize_text_with_details(image, bubble_coords)]
+        return [
+            result.text
+            for result in self.recognize_text_with_details(
+                image,
+                bubble_coords,
+            )
+        ]
 
     def recognize_text_with_details(
         self,
@@ -213,87 +226,67 @@ class PaddleOCRHandlerONNX:
         fallback_used: bool = False,
     ) -> List[OcrResult]:
         if not self.initialized or self.ocr is None:
-            print("❌ PaddleOCR ONNX 未初始化")
-            return [
-                create_ocr_result(
-                    "",
-                    "paddle_ocr",
-                    confidence=0.0,
-                    confidence_supported=True,
-                    primary_engine=primary_engine,
-                    fallback_used=fallback_used,
-                )
-                for _ in bubble_coords
-            ]
+            raise RuntimeError("PaddleOCR ONNX 未初始化")
 
         if not bubble_coords:
-            print("没有气泡坐标，跳过 OCR")
+            logger.info("没有气泡坐标，跳过 OCR")
             return []
 
         try:
             if isinstance(image, Image.Image):
-                img_np = np.array(image.convert('RGB'))
+                img_np = image_to_rgb_array(image)
             else:
                 img_np = image
         except Exception as e:
-            print(f"❌ 图像转换失败: {e}")
-            if is_memory_allocation_error(e):
-                raise
-            return [
-                create_ocr_result(
-                    "",
-                    "paddle_ocr",
-                    confidence=0.0,
-                    confidence_supported=True,
-                    primary_engine=primary_engine,
-                    fallback_used=fallback_used,
-                )
-                for _ in bubble_coords
-            ]
+            logger.error(f"图像转换失败: {e}", exc_info=True)
+            raise
 
         recognized_results: List[OcrResult] = []
 
         for i, (x1, y1, x2, y2) in enumerate(bubble_coords):
             try:
-                print(f"处理气泡 {i+1}/{len(bubble_coords)}，坐标: ({x1}, {y1}, {x2}, {y2})")
+                logger.debug(
+                    "处理气泡 %d/%d，坐标: (%s, %s, %s, %s)",
+                    i + 1,
+                    len(bubble_coords),
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                )
 
                 bubble_img = img_np[y1:y2, x1:x2]
                 if bubble_img.size == 0 or bubble_img.shape[0] == 0 or bubble_img.shape[1] == 0:
-                    print(f"气泡 {i} 图像无效，跳过")
-                    recognized_results.append(
-                        create_ocr_result(
-                            "",
-                            "paddle_ocr",
-                            confidence=0.0,
-                            confidence_supported=True,
-                            primary_engine=primary_engine,
-                            fallback_used=fallback_used,
-                        )
-                    )
-                    continue
+                    raise ValueError(f"气泡 {i} 图像区域无效")
 
-                print(f"气泡 {i} 图像尺寸: {bubble_img.shape[1]}x{bubble_img.shape[0]}")
-                print(f"开始调用 RapidOCR 识别气泡 {i} 内容...")
+                logger.debug(
+                    "气泡 %d 图像尺寸: %dx%d",
+                    i,
+                    bubble_img.shape[1],
+                    bubble_img.shape[0],
+                )
 
                 start_time = time.time()
-                result, elapsed_info = self.ocr(bubble_img)
+                result, _elapsed_info = self.ocr(bubble_img)
                 elapsed = time.time() - start_time
 
                 if result and len(result) > 0:
                     texts = []
                     scores = []
                     for line in result:
-                        if len(line) >= 2 and line[1]:
-                            text_content = line[1]
-                            if isinstance(text_content, str):
-                                texts.append(text_content)
-                            elif isinstance(text_content, (tuple, list)) and len(text_content) > 0:
-                                texts.append(str(text_content[0]))
-
-                        if len(line) >= 3:
-                            score = line[2]
-                            if isinstance(score, (int, float)):
-                                scores.append(float(score))
+                        if not isinstance(line, (list, tuple)) or len(line) < 3:
+                            raise RuntimeError("RapidOCR 返回了无效文本行")
+                        text_content = line[1]
+                        score = line[2]
+                        if not isinstance(text_content, str):
+                            raise RuntimeError("RapidOCR 文本必须是字符串")
+                        if isinstance(score, bool) or not isinstance(
+                            score,
+                            (int, float),
+                        ):
+                            raise RuntimeError("RapidOCR 置信度必须是数字")
+                        texts.append(text_content)
+                        scores.append(float(score))
 
                     text = " ".join(texts)
                     confidence = float(np.mean(scores)) if scores else 0.0
@@ -308,9 +301,9 @@ class PaddleOCRHandlerONNX:
                         )
                     )
 
-                    print(f"气泡 {i} 识别文本: '{text}' (耗时: {elapsed:.2f}s)")
+                    logger.info(f"气泡 {i} 识别文本: '{text}' (耗时: {elapsed:.2f}s)")
                     if scores:
-                        print(f"气泡 {i} 平均置信度: {confidence:.4f}")
+                        logger.debug(f"气泡 {i} 平均置信度: {confidence:.4f}")
                 else:
                     recognized_results.append(
                         create_ocr_result(
@@ -322,45 +315,20 @@ class PaddleOCRHandlerONNX:
                             fallback_used=fallback_used,
                         )
                     )
-                    print(f"气泡 {i} 未识别出文本")
+                    logger.info(f"气泡 {i} 未识别出文本")
 
             except Exception as e:
-                print(f"❌ 气泡 {i} 识别失败: {e}")
-                if is_memory_allocation_error(e):
-                    raise
-                import traceback
-                traceback.print_exc()
-                recognized_results.append(
-                    create_ocr_result(
-                        "",
-                        "paddle_ocr",
-                        confidence=0.0,
-                        confidence_supported=True,
-                        primary_engine=primary_engine,
-                        fallback_used=fallback_used,
-                    )
-                )
+                logger.error(f"气泡 {i} 识别失败: {e}", exc_info=True)
+                raise
 
-        print(f"✅ 识别完成，成功识别 {sum(1 for r in recognized_results if r.text)} / {len(bubble_coords)} 个气泡")
+        logger.info(
+            "识别完成，成功识别 %d / %d 个气泡",
+            sum(1 for result in recognized_results if result.text),
+            len(bubble_coords),
+        )
 
         if len(recognized_results) != len(bubble_coords):
-            print(f"⚠️ 结果数量调整: {len(recognized_results)} -> {len(bubble_coords)}")
-            if len(recognized_results) < len(bubble_coords):
-                recognized_results.extend(
-                    [
-                        create_ocr_result(
-                            "",
-                            "paddle_ocr",
-                            confidence=0.0,
-                            confidence_supported=True,
-                            primary_engine=primary_engine,
-                            fallback_used=fallback_used,
-                        )
-                        for _ in range(len(bubble_coords) - len(recognized_results))
-                    ]
-                )
-            else:
-                recognized_results = recognized_results[:len(bubble_coords)]
+            raise RuntimeError("PaddleOCR 结果数量与气泡数量不一致")
 
         return recognized_results
 
@@ -375,3 +343,16 @@ def get_paddle_ocr_handler() -> PaddleOCRHandlerONNX:
     if _paddle_ocr_onnx_handler is None:
         _paddle_ocr_onnx_handler = PaddleOCRHandlerONNX()
     return _paddle_ocr_onnx_handler
+
+
+def reset_paddle_ocr_handler() -> None:
+    """Release RapidOCR/ONNX sessions and reset the lazy singleton."""
+    global _paddle_ocr_onnx_handler
+    handler = _paddle_ocr_onnx_handler
+    _paddle_ocr_onnx_handler = None
+    if handler is None:
+        return
+    handler.ocr = None
+    handler.current_lang = None
+    handler.current_model_dir = None
+    handler.initialized = False

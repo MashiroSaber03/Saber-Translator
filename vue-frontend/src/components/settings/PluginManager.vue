@@ -10,7 +10,12 @@
           <UiButton variant="secondary" @click="showAgentModal = true" size="sm">
             自动生成插件
           </UiButton>
-          <UiButton variant="secondary" :disabled="isRefreshing" @click="refreshPluginList" size="sm">
+          <UiButton
+            variant="secondary"
+            :disabled="isRefreshing || isImporting || pendingPluginCommands.size > 0 || isSavingConfig"
+            @click="refreshPluginList"
+            size="sm"
+          >
             {{ isRefreshing ? '刷新中...' : '刷新插件' }}
           </UiButton>
         </div>
@@ -30,6 +35,19 @@
         title="正在加载插件"
       >
         正在读取已安装插件列表...
+      </ProductStatusBanner>
+      <ProductStatusBanner
+        v-else-if="loadError"
+        class="plugin-manager__status"
+        tone="danger"
+        role="alert"
+        icon-name="alert-triangle"
+        title="插件列表加载失败"
+      >
+        {{ loadError }}
+        <template #actions>
+          <UiButton variant="secondary" size="sm" @click="loadPlugins">重试</UiButton>
+        </template>
       </ProductStatusBanner>
       <ProductStatusBanner
         v-else-if="plugins.length === 0"
@@ -54,6 +72,7 @@
             <div class="plugin-manager__plugin-controls">
               <UiSwitch
                 :model-value="plugin.runtimeEnabled"
+                :disabled="pendingPluginCommands.has(plugin.pluginId)"
                 :accessibility-label="`${plugin.runtimeEnabled ? '禁用' : '启用'}插件 ${plugin.displayName}`"
                 @change="setPluginEnabled(plugin, $event)"
               />
@@ -71,6 +90,7 @@
                 variant="danger"
                 size="sm"
                 :label="`删除插件 ${plugin.displayName}`"
+                :disabled="pendingPluginCommands.has(plugin.pluginId)"
                 @click="deletePlugin(plugin)"
               >
                 <UiIcon name="trash" />
@@ -88,14 +108,15 @@
       </div>
     </ProductFormSection>
 
-    <ProductFormSection>
+    <ProductFormSection v-if="plugins.length > 0">
       <template #title>默认启用状态</template>
       <p class="plugin-manager__settings-hint">设置插件在新会话中的默认启用状态</p>
       <div v-for="plugin in plugins" :key="'default-' + plugin.pluginId" class="plugin-manager__default-state-item">
         <span class="plugin-manager__plugin-name">{{ plugin.displayName }}</span>
         <UiSwitch
-          :model-value="Boolean(defaultStates[plugin.pluginId])"
-          :accessibility-label="`${defaultStates[plugin.pluginId] ? '关闭' : '开启'} ${plugin.displayName} 默认启用状态`"
+          :model-value="plugin.defaultEnabled"
+          :disabled="pendingPluginCommands.has(plugin.pluginId)"
+          :accessibility-label="`${plugin.defaultEnabled ? '关闭' : '开启'} ${plugin.displayName} 默认启用状态`"
           @change="updateDefaultState(plugin.pluginId, $event)"
         />
       </div>
@@ -116,6 +137,9 @@
       body-display="flex"
       body-direction="column"
       body-min-height="0"
+      :show-close-button="!isSavingConfig"
+      :close-on-overlay="!isSavingConfig"
+      :close-on-esc="!isSavingConfig"
       footer-padding="18px 24px 22px"
       @update:model-value="value => { if (!value) closeConfigModal() }"
       @close="closeConfigModal"
@@ -133,7 +157,7 @@
           <UiField
             variant="settings"
             :label="field.label || key"
-            :description="field.description"
+            :hint="field.description"
             :control-id="'config-' + key"
           >
             <template v-if="field.type === 'boolean'">
@@ -159,9 +183,8 @@
               <UiNumberField
                 :input-id="'config-' + key"
                 :model-value="getNumberConfigValue(key)"
-                nullable
-                :min="field.min"
-                :max="field.max"
+                :min="field.minimum"
+                :max="field.maximum"
                 @update:model-value="value => setConfigValue(key, value)"
               />
             </template>
@@ -180,8 +203,10 @@
 
       <template #footer>
         <ProductActionRow variant="dialog" aria-label="插件配置操作">
-          <UiButton variant="secondary" @click="closeConfigModal">取消</UiButton>
-          <UiButton variant="primary" @click="savePluginConfig">保存</UiButton>
+          <UiButton variant="secondary" :disabled="isSavingConfig" @click="closeConfigModal">取消</UiButton>
+          <UiButton variant="primary" :disabled="isSavingConfig" @click="savePluginConfig">
+            {{ isSavingConfig ? '保存中...' : '保存' }}
+          </UiButton>
         </ProductActionRow>
       </template>
     </BaseModal>
@@ -189,6 +214,7 @@
     <PluginAgentModal
       v-model="showAgentModal"
       @plugins-changed="handlePluginAgentRefresh"
+      @settings-saved="emit('settingsSaved')"
     />
   </div>
 </template>
@@ -209,7 +235,7 @@ import UiNumberField from '@/components/ui/UiNumberField.vue'
 import UiSwitch from '@/components/ui/UiSwitch.vue'
 
 import UiButton from '@/components/ui/UiButton.vue'
-import { ref, onMounted } from 'vue'
+import { ref, onBeforeUnmount, onMounted } from 'vue'
 import * as pluginApi from '@/api/plugin'
 import type { PluginData } from '@/api/plugin'
 import { useToast } from '@/utils/toast'
@@ -220,21 +246,17 @@ import UiSelect from '@/components/ui/UiSelect.vue'
 
 type Plugin = PluginData
 
-interface ConfigField {
-  type: string
-  label?: string
-  description?: string
-  placeholder?: string
-  options?: { value: string; label: string }[]
-  min?: number
-  max?: number
-}
+const emit = defineEmits<{
+  (event: 'settingsSaved'): void
+}>()
+
+type ConfigField = Plugin['configSchema'][string]
 
 const toast = useToast()
 
 const plugins = ref<Plugin[]>([])
-const defaultStates = ref<Record<string, boolean>>({})
 const isLoading = ref(false)
+const loadError = ref('')
 const isRefreshing = ref(false)
 const isImporting = ref(false)
 const pluginImportInputRef = ref<InstanceType<typeof UiFileInput> | null>(null)
@@ -244,6 +266,24 @@ const configPlugin = ref<Plugin | null>(null)
 const configSchema = ref<Record<string, ConfigField>>({})
 const configValues = ref<Record<string, unknown>>({})
 const showAgentModal = ref(false)
+const isSavingConfig = ref(false)
+const pendingPluginCommands = ref(new Set<string>())
+let configLoadRequestId = 0
+let pluginListRequestId = 0
+let pluginRefreshRequestId = 0
+let isMounted = true
+
+function beginPluginCommand(pluginId: string): boolean {
+  if (pendingPluginCommands.value.has(pluginId)) return false
+  pendingPluginCommands.value = new Set([...pendingPluginCommands.value, pluginId])
+  return true
+}
+
+function finishPluginCommand(pluginId: string): void {
+  const next = new Set(pendingPluginCommands.value)
+  next.delete(pluginId)
+  pendingPluginCommands.value = next
+}
 
 function getNumberConfigValue(key: string | number): number | null {
   const value = configValues.value[String(key)]
@@ -255,24 +295,20 @@ function setConfigValue(key: string | number, value: unknown): void {
 }
 
 async function loadPlugins() {
+  const requestId = ++pluginListRequestId
   isLoading.value = true
+  loadError.value = ''
   try {
     const result = await pluginApi.getPlugins()
+    if (!isMounted || requestId !== pluginListRequestId) return
     plugins.value = result
   } catch (error: unknown) {
+    if (!isMounted || requestId !== pluginListRequestId) return
     const errorMessage = error instanceof Error ? error.message : '加载插件列表失败'
+    loadError.value = errorMessage
     toast.error(errorMessage)
   } finally {
-    isLoading.value = false
-  }
-}
-
-async function loadDefaultStates() {
-  try {
-    const result = await pluginApi.getPluginDefaultStates()
-    defaultStates.value = result
-  } catch {
-    defaultStates.value = {}
+    if (isMounted && requestId === pluginListRequestId) isLoading.value = false
   }
 }
 
@@ -281,12 +317,20 @@ async function refreshPluginList() {
 }
 
 async function refreshPluginListCore(options: { showToast: boolean }) {
+  if (isRefreshing.value || pendingPluginCommands.value.size > 0 || isSavingConfig.value) return
+  const refreshRequestId = ++pluginRefreshRequestId
+  const listRequestId = ++pluginListRequestId
   isRefreshing.value = true
   closeConfigModal()
   try {
     const result = await pluginApi.refreshPlugins()
+    if (
+      !isMounted
+      || refreshRequestId !== pluginRefreshRequestId
+      || listRequestId !== pluginListRequestId
+    ) return
+    isLoading.value = false
     plugins.value = result.plugins
-    defaultStates.value = result.defaultStates
 
     if (options.showToast) {
       if (result.partialSuccess) {
@@ -301,61 +345,74 @@ async function refreshPluginListCore(options: { showToast: boolean }) {
       }
     }
   } catch (error: unknown) {
+    if (!isMounted || refreshRequestId !== pluginRefreshRequestId) return
     const errorMessage = error instanceof Error ? error.message : '刷新插件失败'
     toast.error(errorMessage)
   } finally {
-    isRefreshing.value = false
+    if (isMounted && refreshRequestId === pluginRefreshRequestId) {
+      isRefreshing.value = false
+    }
   }
 }
 
 async function setPluginEnabled(plugin: Plugin, enabled: boolean) {
   if (plugin.runtimeEnabled === enabled) return
+  if (!beginPluginCommand(plugin.pluginId)) return
 
   try {
     if (enabled) {
-      await pluginApi.enablePlugin(plugin.pluginId)
-      plugin.runtimeEnabled = true
+      const updated = await pluginApi.enablePlugin(plugin.pluginId)
+      Object.assign(plugin, updated)
       toast.success(`已启用 ${plugin.displayName}`)
     } else {
-      await pluginApi.disablePlugin(plugin.pluginId)
-      plugin.runtimeEnabled = false
+      const updated = await pluginApi.disablePlugin(plugin.pluginId)
+      Object.assign(plugin, updated)
       toast.success(`已禁用 ${plugin.displayName}`)
     }
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '操作失败'
     toast.error(errorMessage)
+  } finally {
+    finishPluginCommand(plugin.pluginId)
   }
 }
 
 async function updateDefaultState(pluginName: string, enabled: boolean) {
+  if (!beginPluginCommand(pluginName)) return
   try {
-    await pluginApi.setPluginDefaultState(pluginName, enabled)
-    defaultStates.value[pluginName] = enabled
+    const updated = await pluginApi.setPluginDefaultState(pluginName, enabled)
+    const index = plugins.value.findIndex(plugin => plugin.pluginId === pluginName)
+    if (index >= 0) plugins.value[index] = updated
     toast.success('默认状态已更新')
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '设置失败'
     toast.error(errorMessage)
-    defaultStates.value[pluginName] = !enabled
+  } finally {
+    finishPluginCommand(pluginName)
   }
 }
 
 async function openPluginConfig(plugin: Plugin) {
-  configPlugin.value = plugin
+  const requestId = ++configLoadRequestId
+  configPlugin.value = null
   try {
-    const schemaResult = await pluginApi.getPluginConfigSchema(plugin.pluginId)
-    configSchema.value = schemaResult as Record<string, ConfigField>
-
-    const configResult = await pluginApi.getPluginConfig(plugin.pluginId)
-    configValues.value = configResult
+    const config = await pluginApi.getPluginConfigDocument(plugin.pluginId)
+    if (requestId !== configLoadRequestId) return
+    configPlugin.value = plugin
+    configSchema.value = config.schema
+    configValues.value = config.value
 
     showConfigModal.value = true
   } catch (error: unknown) {
+    if (requestId !== configLoadRequestId) return
     const errorMessage = error instanceof Error ? error.message : '加载配置失败'
     toast.error(errorMessage)
   }
 }
 
 function closeConfigModal() {
+  if (isSavingConfig.value) return
+  configLoadRequestId += 1
   showConfigModal.value = false
   configPlugin.value = null
   configSchema.value = {}
@@ -363,18 +420,25 @@ function closeConfigModal() {
 }
 
 async function savePluginConfig() {
-  if (!configPlugin.value) return
+  if (!configPlugin.value || isSavingConfig.value) return
+  const pluginId = configPlugin.value.pluginId
+  let saved = false
+  isSavingConfig.value = true
   try {
-    await pluginApi.savePluginConfig(configPlugin.value.pluginId, configValues.value)
+    await pluginApi.savePluginConfig(pluginId, configValues.value)
     toast.success('配置保存成功')
-    closeConfigModal()
+    saved = true
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '保存配置失败'
     toast.error(errorMessage)
+  } finally {
+    isSavingConfig.value = false
   }
+  if (saved) closeConfigModal()
 }
 
 async function deletePlugin(plugin: Plugin) {
+  if (pendingPluginCommands.value.has(plugin.pluginId)) return
   const confirmed = await confirmProductAction({
     title: '删除插件',
     message: `确定要删除插件 "${plugin.displayName}" 吗？`,
@@ -383,14 +447,16 @@ async function deletePlugin(plugin: Plugin) {
     tone: 'danger',
   })
   if (!confirmed) return
+  if (!beginPluginCommand(plugin.pluginId)) return
   try {
     await pluginApi.deletePlugin(plugin.pluginId)
+    plugins.value = plugins.value.filter(item => item.pluginId !== plugin.pluginId)
     toast.success('插件删除成功')
-    await loadPlugins()
-    await loadDefaultStates()
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : '删除插件失败'
     toast.error(errorMessage)
+  } finally {
+    finishPluginCommand(plugin.pluginId)
   }
 }
 
@@ -414,6 +480,7 @@ async function importPluginFile(file: File, replace = false) {
 }
 
 async function handleImportFiles(files: File[]) {
+  if (isImporting.value) return
   const file = files[0]
   if (!file) return
 
@@ -434,9 +501,16 @@ async function handleImportFiles(files: File[]) {
         tone: 'danger',
       })
       if (confirmed) {
-        await importPluginFile(file, true)
-        await refreshPluginListCore({ showToast: false })
-        toast.success('插件导入成功')
+        try {
+          await importPluginFile(file, true)
+          await refreshPluginListCore({ showToast: false })
+          toast.success('插件导入成功')
+        } catch (replacementError: unknown) {
+          const errorMessage = replacementError instanceof Error
+            ? replacementError.message
+            : '替换插件失败'
+          toast.error(errorMessage)
+        }
       }
     } else {
       const errorMessage = error instanceof Error ? error.message : '导入插件失败'
@@ -450,12 +524,17 @@ async function handleImportFiles(files: File[]) {
 
 async function handlePluginAgentRefresh() {
   await loadPlugins()
-  await loadDefaultStates()
 }
 
 onMounted(() => {
   loadPlugins()
-  loadDefaultStates()
+})
+
+onBeforeUnmount(() => {
+  isMounted = false
+  configLoadRequestId += 1
+  pluginListRequestId += 1
+  pluginRefreshRequestId += 1
 })
 </script>
 

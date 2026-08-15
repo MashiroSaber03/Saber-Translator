@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 import hashlib
 import json
+import re
 import secrets
 from typing import Any
 import uuid
@@ -48,6 +49,10 @@ PUBLIC_PAGE_OPERATION_KINDS = frozenset(
 WORKER_OPERATION_KINDS = frozenset(
     {"bubble_ocr", "bubble_color", "page_detect"}
 )
+RETRYABLE_EXPIRED_OPERATION_KINDS = WORKER_OPERATION_KINDS | {
+    "page_repair"
+}
+_REPAIR_COLOR_PATTERN = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 
 class OperationNotFound(LookupError):
@@ -63,6 +68,10 @@ class OperationLocked(RuntimeError):
 
 
 class OperationFenced(OperationConflict):
+    pass
+
+
+class OperationDataInvalid(RuntimeError):
     pass
 
 
@@ -87,8 +96,25 @@ class RenderFence:
     lease_expires_at: datetime
 
 
-def _load_json(value: str | None, default: object) -> object:
-    return json.loads(value) if value else default
+def _load_required_object(value: object, field: str) -> dict[str, Any]:
+    if not isinstance(value, str) or not value:
+        raise OperationDataInvalid(f"{field} is missing")
+    try:
+        decoded = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise OperationDataInvalid(f"{field} contains invalid JSON") from exc
+    if not isinstance(decoded, Mapping):
+        raise OperationDataInvalid(f"{field} must contain a JSON object")
+    return dict(decoded)
+
+
+def _load_optional_object(
+    value: object,
+    field: str,
+) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    return _load_required_object(value, field)
 
 
 def _operation_secret_values(
@@ -129,14 +155,24 @@ class OperationRepository:
         payload: Mapping[str, Any],
         idempotency_key: str,
     ) -> tuple[dict[str, object], bool]:
-        if kind not in PUBLIC_PAGE_OPERATION_KINDS:
+        if not isinstance(kind, str) or kind not in PUBLIC_PAGE_OPERATION_KINDS:
             raise ValueError(f"unsupported public page operation kind: {kind}")
-        if base_revision < 1:
+        if (
+            isinstance(base_revision, bool)
+            or not isinstance(base_revision, int)
+            or base_revision < 1
+        ):
             raise ValueError("baseRevision must be positive")
-        if not idempotency_key or len(idempotency_key) > 200:
+        if not isinstance(payload, Mapping):
+            raise ValueError("operation payload must be an object")
+        if (
+            not isinstance(idempotency_key, str)
+            or not idempotency_key
+            or len(idempotency_key) > 200
+        ):
             raise ValueError("Idempotency-Key is required")
         if kind in {"bubble_ocr", "bubble_color", "bubble_translate"}:
-            if not bubble_id:
+            if not isinstance(bubble_id, str) or not bubble_id:
                 raise ValueError(f"{kind} requires bubbleId")
         elif bubble_id is not None:
             raise ValueError("page_detect does not accept bubbleId")
@@ -268,17 +304,23 @@ class OperationRepository:
         mask_checksum: str,
         idempotency_key: str,
     ) -> tuple[dict[str, object], bool]:
-        if method not in {"solid", "lama_mpe", "litelama", "restore_source"}:
-            raise ValueError("unsupported page repair method")
-        if method != "restore_source" and (
-            not isinstance(fill_color, str) or not fill_color
+        self.validate_page_repair_identity(
+            base_revision=base_revision,
+            method=method,
+            fill_color=fill_color,
+        )
+        if (
+            not isinstance(idempotency_key, str)
+            or not idempotency_key
+            or len(idempotency_key) > 200
         ):
-            raise ValueError("fillColor is required for this repair method")
+            raise ValueError("Idempotency-Key is required")
         request_identity = {
             "method": method,
-            "fillColor": fill_color if method != "restore_source" else None,
             "repairRevision": base_revision + 1,
         }
+        if method == "solid":
+            request_identity["fillColor"] = fill_color
         request_hash = self._page_repair_request_hash(
             payload=request_identity,
             mask_checksum=mask_checksum,
@@ -379,7 +421,7 @@ class OperationRepository:
                     connection,
                     operation_id=operation_id,
                 )
-            connection.execute(
+            changed = connection.execute(
                 update(pages)
                 .where(
                     pages.c.id == page_id,
@@ -388,6 +430,16 @@ class OperationRepository:
                 .values(
                     document_revision=repair_revision,
                     render_status="awaiting_repair",
+                    updated_at=now,
+                )
+            )
+            if changed.rowcount != 1:
+                raise OperationConflict("page document revision changed")
+            connection.execute(
+                update(bubbles)
+                .where(bubbles.c.page_id == page_id)
+                .values(
+                    updated_revision=repair_revision,
                     updated_at=now,
                 )
             )
@@ -444,13 +496,23 @@ class OperationRepository:
         mask_checksum: str,
         idempotency_key: str,
     ) -> dict[str, object] | None:
-        if method not in {"solid", "lama_mpe", "litelama", "restore_source"}:
-            raise ValueError("unsupported page repair method")
+        self.validate_page_repair_identity(
+            base_revision=base_revision,
+            method=method,
+            fill_color=fill_color,
+        )
+        if (
+            not isinstance(idempotency_key, str)
+            or not idempotency_key
+            or len(idempotency_key) > 200
+        ):
+            raise ValueError("Idempotency-Key is required")
         payload = {
             "method": method,
-            "fillColor": fill_color if method != "restore_source" else None,
             "repairRevision": base_revision + 1,
         }
+        if method == "solid":
+            payload["fillColor"] = fill_color
         request_hash = self._page_repair_request_hash(
             payload=payload,
             mask_checksum=mask_checksum,
@@ -480,7 +542,14 @@ class OperationRepository:
         after: int = 0,
         limit: int = 500,
     ) -> list[dict[str, object]]:
-        if limit < 1 or limit > 2000:
+        if isinstance(after, bool) or not isinstance(after, int) or after < 0:
+            raise ValueError("after must be a non-negative integer")
+        if (
+            isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or limit < 1
+            or limit > 2000
+        ):
             raise ValueError("limit must be between 1 and 2000")
         with self.engine.connect() as connection:
             if connection.execute(
@@ -494,7 +563,7 @@ class OperationRepository:
                     select(operation_events)
                     .where(
                         operation_events.c.operation_id == operation_id,
-                        operation_events.c.id > max(0, after),
+                        operation_events.c.id > after,
                     )
                     .order_by(operation_events.c.id)
                     .limit(limit)
@@ -505,7 +574,10 @@ class OperationRepository:
                 "eventId": int(row["id"]),
                 "operationId": str(row["operation_id"]),
                 "type": str(row["type"]),
-                "payload": _load_json(row["payload_json"], {}),
+                "payload": _load_required_object(
+                    row["payload_json"],
+                    "operation_events.payload_json",
+                ),
                 "createdAt": row["created_at"].isoformat() + "Z",
             }
             for row in rows
@@ -518,17 +590,30 @@ class OperationRepository:
         event_type: str,
         payload: Mapping[str, Any],
     ) -> int:
-        if not event_type or len(event_type) > 64:
+        if (
+            not isinstance(event_type, str)
+            or not event_type
+            or len(event_type) > 64
+        ):
             raise ValueError("operation event type is invalid")
+        if not isinstance(payload, Mapping):
+            raise ValueError("operation event payload must be an object")
         now = utcnow()
         with immediate_transaction(self.engine) as connection:
             self._assert_fence(connection, fence, now)
+            secret_values = _operation_secret_values(
+                connection,
+                fence.operation_id,
+            )
             cursor = connection.execute(
                 insert(operation_events).values(
                     operation_id=fence.operation_id,
                     type=event_type,
                     payload_json=_json(
-                        redact_sensitive_value(dict(payload))
+                        redact_sensitive_value(
+                            dict(payload),
+                            secret_values=secret_values,
+                        )
                     ),
                     created_at=now,
                 )
@@ -565,7 +650,19 @@ class OperationRepository:
                 .order_by(operations.c.created_at)
                 .limit(1)
             ).scalar_one_or_none()
-        if pending_id is None:
+            expired_id = connection.execute(
+                select(operations.c.id)
+                .where(
+                    operations.c.executor_role == executor_role,
+                    operations.c.executor_epoch_id == executor_epoch_id,
+                    operations.c.status == "running",
+                    operations.c.kind.in_(tuple(allowed_kinds)),
+                    operations.c.lease_expires_at <= now,
+                )
+                .order_by(operations.c.lease_expires_at)
+                .limit(1)
+            ).scalar_one_or_none()
+        if pending_id is None and expired_id is None:
             return None
 
         now = utcnow()
@@ -577,6 +674,13 @@ class OperationRepository:
                 epoch_id=executor_epoch_id,
                 now=now,
             )
+            self._recover_one_expired_attempt(
+                connection,
+                executor_role=executor_role,
+                executor_epoch_id=executor_epoch_id,
+                allowed_kinds=allowed_kinds,
+                now=now,
+            )
             row = connection.execute(
                 select(operations)
                 .where(*claim_conditions)
@@ -584,6 +688,49 @@ class OperationRepository:
                 .limit(1)
             ).mappings().one_or_none()
             if row is None:
+                return None
+            try:
+                dto = self._dto(row)
+            except OperationDataInvalid as exc:
+                error = {
+                    "code": "OPERATION_DATA_INVALID",
+                    "message": str(exc),
+                }
+                try:
+                    preserved_request = _load_required_object(
+                        row["request_json"],
+                        "operations.request_json",
+                    )
+                except OperationDataInvalid:
+                    preserved_request = {
+                        "discardedInvalidStoredRequest": True,
+                    }
+                connection.execute(
+                    update(operations)
+                    .where(
+                        operations.c.id == row["id"],
+                        operations.c.status == "pending",
+                    )
+                    .values(
+                        status="failed",
+                        request_json=_json(preserved_request),
+                        request_schema_version=1,
+                        result_json=None,
+                        error_json=_json(error),
+                        finished_at=now,
+                        updated_at=now,
+                    )
+                )
+                connection.execute(
+                    insert(operation_events).values(
+                        operation_id=row["id"],
+                        type="operation_failed",
+                        payload_json=_json(
+                            {"status": "failed", "error": error}
+                        ),
+                        created_at=now,
+                    )
+                )
                 return None
             attempt_id = str(uuid.uuid4())
             lease_token = secrets.token_urlsafe(32)
@@ -613,7 +760,6 @@ class OperationRepository:
                     created_at=now,
                 )
             )
-            dto = self._dto(dict(row))
             dto["status"] = "running"
             dto["inputs"] = {
                 str(role): str(asset_id)
@@ -637,6 +783,124 @@ class OperationRepository:
                 ),
                 dto,
             )
+
+    @staticmethod
+    def validate_page_repair_identity(
+        *,
+        base_revision: object,
+        method: object,
+        fill_color: object,
+    ) -> tuple[int, str, str | None]:
+        if (
+            isinstance(base_revision, bool)
+            or not isinstance(base_revision, int)
+            or base_revision < 1
+        ):
+            raise ValueError("baseRevision must be positive")
+        if not isinstance(method, str) or method not in {
+            "solid",
+            "lama_mpe",
+            "litelama",
+            "restore_source",
+        }:
+            raise ValueError("unsupported page repair method")
+        if method != "solid":
+            if fill_color is not None:
+                raise ValueError(f"{method} does not accept fillColor")
+            return base_revision, method, None
+        if (
+            not isinstance(fill_color, str)
+            or _REPAIR_COLOR_PATTERN.fullmatch(fill_color) is None
+        ):
+            raise ValueError("fillColor must be a #RRGGBB color")
+        return base_revision, method, fill_color
+
+    @staticmethod
+    def _recover_one_expired_attempt(
+        connection: Connection,
+        *,
+        executor_role: str,
+        executor_epoch_id: str,
+        allowed_kinds: Sequence[str],
+        now: datetime,
+    ) -> None:
+        row = connection.execute(
+            select(operations.c.id, operations.c.kind)
+            .where(
+                operations.c.executor_role == executor_role,
+                operations.c.executor_epoch_id == executor_epoch_id,
+                operations.c.status == "running",
+                operations.c.kind.in_(tuple(allowed_kinds)),
+                operations.c.lease_expires_at <= now,
+            )
+            .order_by(operations.c.lease_expires_at)
+            .limit(1)
+        ).mappings().one_or_none()
+        if row is None:
+            return
+        operation_id = str(row["id"])
+        kind = str(row["kind"])
+        if kind in RETRYABLE_EXPIRED_OPERATION_KINDS:
+            connection.execute(
+                update(operations)
+                .where(
+                    operations.c.id == operation_id,
+                    operations.c.status == "running",
+                    operations.c.executor_epoch_id == executor_epoch_id,
+                    operations.c.lease_expires_at <= now,
+                )
+                .values(
+                    status="pending",
+                    executor_epoch_id=None,
+                    attempt_id=None,
+                    lease_token=None,
+                    lease_expires_at=None,
+                    started_at=None,
+                    error_json=None,
+                    updated_at=now,
+                )
+            )
+            connection.execute(
+                insert(operation_events).values(
+                    operation_id=operation_id,
+                    type="operation_requeued",
+                    payload_json=_json({"reason": "ATTEMPT_LEASE_EXPIRED"}),
+                    created_at=now,
+                )
+            )
+            return
+
+        error = {
+            "code": "OPERATION_LEASE_EXPIRED",
+            "message": "operation attempt lease expired before publication",
+        }
+        connection.execute(
+            update(operations)
+            .where(
+                operations.c.id == operation_id,
+                operations.c.status == "running",
+                operations.c.executor_epoch_id == executor_epoch_id,
+                operations.c.lease_expires_at <= now,
+            )
+            .values(
+                status="failed",
+                error_json=_json(error),
+                executor_epoch_id=None,
+                attempt_id=None,
+                lease_token=None,
+                lease_expires_at=None,
+                finished_at=now,
+                updated_at=now,
+            )
+        )
+        connection.execute(
+            insert(operation_events).values(
+                operation_id=operation_id,
+                type="operation_failed",
+                payload_json=_json({"status": "failed", "error": error}),
+                created_at=now,
+            )
+        )
 
     def renew(self, fence: OperationFence) -> OperationFence | None:
         now = utcnow()
@@ -934,7 +1198,10 @@ class OperationRepository:
             raise OperationConflict(
                 "Idempotency-Key was reused for a different operation"
             )
-        return json.loads(row["response_json"])
+        return _load_required_object(
+            row["response_json"],
+            "idempotency_records.response_json",
+        )
 
     @staticmethod
     def _page_repair_request_hash(
@@ -950,28 +1217,59 @@ class OperationRepository:
 
     @staticmethod
     def _dto(row: Mapping[str, Any]) -> dict[str, object]:
+        if row["request_schema_version"] != 1:
+            raise OperationDataInvalid(
+                "operations.request_schema_version is invalid"
+            )
+        request = _load_required_object(
+            row["request_json"],
+            "operations.request_json",
+        )
+        result = _load_optional_object(
+            row["result_json"],
+            "operations.result_json",
+        )
+        error = _load_optional_object(
+            row["error_json"],
+            "operations.error_json",
+        )
+        status = row["status"]
+        if status in {"pending", "running", "cancelled"}:
+            valid_terminal_shape = result is None and error is None
+        elif status == "completed":
+            valid_terminal_shape = result is not None and error is None
+        elif status == "failed":
+            valid_terminal_shape = result is None and error is not None
+        else:
+            valid_terminal_shape = False
+        if not valid_terminal_shape:
+            raise OperationDataInvalid(
+                "operation status/result/error state is invalid"
+            )
         return {
             "operationId": row["id"],
             "kind": row["kind"],
             "executorRole": row["executor_role"],
-            "status": row["status"],
-            "pageId": row.get("page_id"),
-            "bubbleId": row.get("bubble_id"),
-            "studioDocumentId": row.get("studio_document_id"),
-            "studioSessionId": row.get("studio_session_id"),
-            "baseRevision": row.get("base_revision"),
-            "baseGeneration": row.get("base_generation"),
-            "request": _load_json(row.get("request_json"), {}),
-            "result": _load_json(row.get("result_json"), None),
-            "error": _load_json(row.get("error_json"), None),
-            "createdAt": _iso(row.get("created_at")),
-            "startedAt": _iso(row.get("started_at")),
-            "finishedAt": _iso(row.get("finished_at")),
+            "status": status,
+            "pageId": row["page_id"],
+            "bubbleId": row["bubble_id"],
+            "studioDocumentId": row["studio_document_id"],
+            "studioSessionId": row["studio_session_id"],
+            "baseRevision": row["base_revision"],
+            "baseGeneration": row["base_generation"],
+            "request": request,
+            "result": result,
+            "error": error,
+            "createdAt": _iso(row["created_at"]),
+            "startedAt": _iso(row["started_at"]),
+            "finishedAt": _iso(row["finished_at"]),
         }
 
 
 class RenderRequestRepository:
     def __init__(self, engine: Engine, *, attempt_lease_seconds: int = 30) -> None:
+        if attempt_lease_seconds < 3:
+            raise ValueError("attempt_lease_seconds must be at least 3")
         self.engine = engine
         self.attempt_lease_seconds = attempt_lease_seconds
 
@@ -983,6 +1281,12 @@ class RenderRequestRepository:
         requested_revision: int,
         existing_chain: bool = False,
     ) -> str:
+        if (
+            isinstance(requested_revision, bool)
+            or not isinstance(requested_revision, int)
+            or requested_revision < 1
+        ):
+            raise ValueError("requested_revision must be a positive integer")
         page = connection.execute(
             select(pages.c.chapter_id, pages.c.document_revision).where(
                 pages.c.id == page_id
@@ -1036,7 +1340,14 @@ class RenderRequestRepository:
         # The render executor polls frequently.  Avoid taking SQLite's write
         # reservation when there is no eligible work; the transactional query
         # below remains the authoritative claim and safely handles races.
+        now = utcnow()
         with self.engine.connect() as connection:
+            OperationRepository._assert_epoch(
+                connection,
+                role="api",
+                epoch_id=api_epoch_id,
+                now=now,
+            )
             has_pending = connection.execute(
                 select(render_requests.c.id)
                 .join(pages, pages.c.id == render_requests.c.page_id)
@@ -1048,7 +1359,17 @@ class RenderRequestRepository:
                 )
                 .limit(1)
             ).scalar_one_or_none()
-        if has_pending is None:
+            has_expired = connection.execute(
+                select(render_requests.c.id)
+                .where(
+                    render_requests.c.status == "running",
+                    render_requests.c.executor_epoch_id == api_epoch_id,
+                    render_requests.c.lease_expires_at <= now,
+                )
+                .order_by(render_requests.c.lease_expires_at)
+                .limit(1)
+            ).scalar_one_or_none()
+        if has_pending is None and has_expired is None:
             return None
 
         now = utcnow()
@@ -1056,6 +1377,11 @@ class RenderRequestRepository:
         with immediate_transaction(self.engine) as connection:
             OperationRepository._assert_epoch(
                 connection, role="api", epoch_id=api_epoch_id, now=now
+            )
+            self._requeue_one_expired_attempt(
+                connection,
+                api_epoch_id=api_epoch_id,
+                now=now,
             )
             row = connection.execute(
                 select(render_requests)
@@ -1108,6 +1434,58 @@ class RenderRequestRepository:
                 api_epoch_id=api_epoch_id,
                 lease_expires_at=expires,
             )
+
+    @staticmethod
+    def _requeue_one_expired_attempt(
+        connection: Connection,
+        *,
+        api_epoch_id: str,
+        now: datetime,
+    ) -> None:
+        row = connection.execute(
+            select(
+                render_requests.c.id,
+                render_requests.c.page_id,
+                render_requests.c.requested_revision,
+            )
+            .where(
+                render_requests.c.status == "running",
+                render_requests.c.executor_epoch_id == api_epoch_id,
+                render_requests.c.lease_expires_at <= now,
+            )
+            .order_by(render_requests.c.lease_expires_at)
+            .limit(1)
+        ).mappings().one_or_none()
+        if row is None:
+            return
+        connection.execute(
+            update(render_requests)
+            .where(
+                render_requests.c.id == row["id"],
+                render_requests.c.status == "running",
+                render_requests.c.executor_epoch_id == api_epoch_id,
+                render_requests.c.lease_expires_at <= now,
+            )
+            .values(
+                status="pending",
+                rendering_revision=None,
+                executor_epoch_id=None,
+                attempt_id=None,
+                lease_token=None,
+                lease_expires_at=None,
+                error_json=None,
+                updated_at=now,
+            )
+        )
+        connection.execute(
+            update(pages)
+            .where(
+                pages.c.id == row["page_id"],
+                pages.c.document_revision == row["requested_revision"],
+                pages.c.render_status == "rendering",
+            )
+            .values(render_status="stale", updated_at=now)
+        )
 
     def renew(self, fence: RenderFence) -> RenderFence | None:
         now = utcnow()
@@ -1201,6 +1579,15 @@ class RenderRequestRepository:
                         updated_at=now,
                     )
                 )
+                connection.execute(
+                    update(pages)
+                    .where(
+                        pages.c.id == fence.page_id,
+                        pages.c.document_revision == row["requested_revision"],
+                        pages.c.render_status == "rendering",
+                    )
+                    .values(render_status="stale", updated_at=now)
+                )
                 return False
             publisher(connection)
             connection.execute(
@@ -1233,15 +1620,72 @@ class RenderRequestRepository:
     def fail(self, fence: RenderFence, *, code: str, message: str) -> None:
         now = utcnow()
         with immediate_transaction(self.engine) as connection:
+            row = connection.execute(
+                select(render_requests).where(
+                    render_requests.c.id == fence.render_request_id,
+                    render_requests.c.status == "running",
+                    render_requests.c.rendering_revision
+                    == fence.rendering_revision,
+                    render_requests.c.attempt_id == fence.attempt_id,
+                    render_requests.c.lease_token == fence.lease_token,
+                    render_requests.c.executor_epoch_id == fence.api_epoch_id,
+                    render_requests.c.lease_expires_at > now,
+                    exists(
+                        select(process_epochs.c.id).where(
+                            process_epochs.c.id == fence.api_epoch_id,
+                            process_epochs.c.role == "api",
+                            process_epochs.c.status == "active",
+                            process_epochs.c.lease_expires_at > now,
+                        )
+                    ),
+                )
+            ).mappings().one_or_none()
+            if row is None:
+                raise OperationFenced("render failure write was fenced")
+            document_revision = connection.execute(
+                select(pages.c.document_revision).where(
+                    pages.c.id == fence.page_id
+                )
+            ).scalar_one_or_none()
+            if (
+                row["requested_revision"] != fence.rendering_revision
+                or document_revision != fence.rendering_revision
+            ):
+                connection.execute(
+                    update(render_requests)
+                    .where(render_requests.c.id == fence.render_request_id)
+                    .values(
+                        status="pending",
+                        rendering_revision=None,
+                        executor_epoch_id=None,
+                        attempt_id=None,
+                        lease_token=None,
+                        lease_expires_at=None,
+                        error_json=None,
+                        updated_at=now,
+                    )
+                )
+                connection.execute(
+                    update(pages)
+                    .where(
+                        pages.c.id == fence.page_id,
+                        pages.c.document_revision == row["requested_revision"],
+                        pages.c.render_status == "rendering",
+                    )
+                    .values(render_status="stale", updated_at=now)
+                )
+                return
+
             changed = connection.execute(
                 update(render_requests)
                 .where(
                     render_requests.c.id == fence.render_request_id,
                     render_requests.c.status == "running",
+                    render_requests.c.rendering_revision
+                    == fence.rendering_revision,
                     render_requests.c.attempt_id == fence.attempt_id,
                     render_requests.c.lease_token == fence.lease_token,
                     render_requests.c.executor_epoch_id == fence.api_epoch_id,
-                    render_requests.c.lease_expires_at > now,
                 )
                 .values(
                     status="failed",
@@ -1261,6 +1705,9 @@ class RenderRequestRepository:
                 raise OperationFenced("render failure write was fenced")
             connection.execute(
                 update(pages)
-                .where(pages.c.id == fence.page_id)
+                .where(
+                    pages.c.id == fence.page_id,
+                    pages.c.document_revision == fence.rendering_revision,
+                )
                 .values(render_status="render_failed", updated_at=now)
             )

@@ -1,7 +1,7 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { defineComponent, nextTick } from 'vue'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import BookModal from '@/components/bookshelf/BookModal.vue'
@@ -9,6 +9,7 @@ import ProductChipList from '@/components/product/ProductChipList.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductFileDropzone from '@/components/product/ProductFileDropzone.vue'
 import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
+import UiButton from '@/components/ui/UiButton.vue'
 import UiField from '@/components/ui/UiField.vue'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
 import { setTestBooks, setTestTags } from '../helpers/bookshelfFixtures'
@@ -16,6 +17,14 @@ import { setTestBooks, setTestTags } from '../helpers/bookshelfFixtures'
 const BaseModalStub = defineComponent({
   template: '<section class="base-modal-stub"><slot /><footer><slot name="footer" /></footer></section>',
 })
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
+}
 
 describe('BookModal', () => {
   beforeEach(() => {
@@ -141,9 +150,34 @@ describe('BookModal', () => {
     expect(actionRow.props('ariaLabel')).toBe('书籍表单操作')
   })
 
+  it('submits a slow book creation only once', async () => {
+    const store = useBookshelfStore()
+    const pending = deferred<{ id: string; title: string }>()
+    store.createBook = vi.fn().mockReturnValue(pending.promise)
+    const wrapper = mount(BookModal, {
+      global: {
+        stubs: {
+          BaseModal: BaseModalStub,
+        },
+      },
+    })
+    await wrapper.get('#bookTitle').setValue('Slow Book')
+    const saveButton = wrapper.findAllComponents(UiButton)
+      .find(button => button.text() === '保存')!
+
+    await saveButton.trigger('click')
+    await saveButton.trigger('click')
+
+    expect(store.createBook).toHaveBeenCalledTimes(1)
+    expect(saveButton.props('loading')).toBe(true)
+
+    pending.resolve({ id: 'book-slow', title: 'Slow Book' })
+    await flushPromises()
+  })
+
   it('renders tag suggestions through product record-card buttons', async () => {
     const store = useBookshelfStore()
-    setTestTags(store, [{ name: 'Drama', color: '#4466aa', book_count: 1 }])
+    setTestTags(store, [{ id: 'tag-drama', name: 'Drama', color: '#4466aa', bookCount: 1 }])
 
     const wrapper = mount(BookModal, {
       global: {

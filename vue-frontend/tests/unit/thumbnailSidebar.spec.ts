@@ -17,7 +17,6 @@ function createImage(id: string, fileName: string, folderPath = ''): ImageData {
     id,
     fileName,
     folderPath,
-    relativePath: folderPath ? `${folderPath}/${fileName}` : fileName,
     width: 100,
     height: 100,
     sourceAssetUrl: `/api/v2/assets/${id}`,
@@ -26,7 +25,6 @@ function createImage(id: string, fileName: string, folderPath = ''): ImageData {
     cleanAssetUrl: null,
     bubbleStates: null,
     translationStatus: 'pending',
-    translationFailed: false,
     hasUnsavedChanges: false,
     fontSize: 18,
     fontFamily: 'Arial',
@@ -49,11 +47,7 @@ function mountSidebar(images: ImageData[]) {
   imageStore.images = images
   imageStore.currentImageIndex = images.length > 0 ? 0 : -1
 
-  return mount(ThumbnailSidebar, {
-    props: {
-      isVisible: true,
-    },
-  })
+  return mount(ThumbnailSidebar)
 }
 
 describe('ThumbnailSidebar', () => {
@@ -167,6 +161,26 @@ describe('ThumbnailSidebar', () => {
     expect(styleBlock).toContain('--color-surface-card')
   })
 
+  it('shows processing ahead of the manual-annotation marker and uses constant-time indexes', () => {
+    const processing = createImage('page-1', '001.png')
+    processing.translationStatus = 'processing'
+    processing.isManuallyAnnotated = true
+    const wrapper = mountSidebar([processing])
+
+    expect(wrapper.getComponent(ProductThumbnailGrid).props('items')).toMatchObject([{
+      id: 0,
+      cornerLabel: '处理中',
+      disabledTitle: '正在处理',
+    }])
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/composables/useThumbnailSelection.ts'),
+      'utf8',
+    )
+    expect(source).toContain('const imageIndexes = computed')
+    expect(source).not.toContain('.findIndex(')
+    expect(source).not.toContain('点击可重试')
+  })
+
   it('keeps the sidebar panel owned by the thumbnail sidebar instead of an orphaned global class', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/components/translate/ThumbnailSidebar.vue'), 'utf8')
 
@@ -188,15 +202,6 @@ describe('ThumbnailSidebar', () => {
 
     expect(source).not.toContain('id="thumbnail-sidebar"')
     expect(source).not.toContain('id="thumbnailList"')
-  })
-
-  it('does not assert shared button primitives through internal class names', () => {
-    const source = readFileSync(resolve(process.cwd(), 'tests/unit/thumbnailSidebar.spec.ts'), 'utf8')
-    const buttonClassPrefix = 'ui-' + 'button--'
-    const iconButtonClassPrefix = 'ui-' + 'icon-button--'
-
-    expect(source).not.toContain(buttonClassPrefix)
-    expect(source).not.toContain(iconButtonClassPrefix)
   })
 
   it('uses the shared button primitive contract for folder navigation actions', () => {

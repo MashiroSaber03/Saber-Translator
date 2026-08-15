@@ -7,10 +7,10 @@ the API import graph stays dependency-light.
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import datetime
 import hashlib
 import re
 from typing import Any, Mapping
-import uuid
 
 
 def create_empty_document(book_id: str, *, title: str = "新角色") -> dict[str, Any]:
@@ -20,6 +20,7 @@ def create_empty_document(book_id: str, *, title: str = "新角色") -> dict[str
         "status": {
             "is_favorite": False,
             "frozen_sections": [],
+            "last_diagnostics": None,
             "last_validated_at": None,
         },
         "meta": {"title": title, "tags": []},
@@ -55,92 +56,585 @@ def select_provider_section(
 
     primary_name = "vlm" if prefer_vlm else "chat"
     fallback_name = "chat" if prefer_vlm else "vlm"
-    primary = _object(config.get(primary_name))
-    fallback = _object(config.get(fallback_name))
+    primary = _provider_section(config, primary_name)
+    fallback = _provider_section(config, fallback_name)
     if primary.get("provider") or not fallback.get("provider"):
         return primary_name, primary
     return fallback_name, fallback
 
 
-def ensure_document_shape(
+def validate_current_document(
     document: Mapping[str, Any],
     *,
     book_id: str,
+    title: str | None = None,
 ) -> dict[str, Any]:
-    base = create_empty_document(book_id)
-    result = _deep_merge(base, document)
-    result["bookId"] = book_id
-    origin = _object(result.get("origin"))
-    result["origin"] = origin
-    identity = _object(result.get("identity"))
-    meta = _object(result.get("meta"))
-    name = str(identity.get("name") or meta.get("title") or "新角色").strip()
-    identity["name"] = name
-    identity["aliases"] = _strings(identity.get("aliases"))
-    meta["title"] = name
-    meta["tags"] = _strings(meta.get("tags"))
-    result["identity"] = identity
-    result["meta"] = meta
-    core = _object(result.get("coreMessages"))
-    core["alternate_greetings"] = _strings(core.get("alternate_greetings"))
-    result["coreMessages"] = core
-    lorebook = _object(result.get("lorebook"))
-    lorebook["entries"] = _normalize_entries(lorebook.get("entries"))
-    result["lorebook"] = lorebook
-    result["regexScripts"] = _normalize_items(
-        result.get("regexScripts"),
-        prefix="regex",
+    raw = _exact_object(
+        document,
+        allowed={
+            "bookId",
+            "title",
+            "origin",
+            "status",
+            "meta",
+            "identity",
+            "coreMessages",
+            "lorebook",
+            "regexScripts",
+            "stateTasks",
+            "exportArtifacts",
+            "id",
+            "revision",
+            "avatarAssetId",
+            "avatarUrl",
+            "createdAt",
+            "updatedAt",
+        },
+        required={
+            "origin",
+            "status",
+            "meta",
+            "identity",
+            "coreMessages",
+            "lorebook",
+            "regexScripts",
+            "stateTasks",
+            "exportArtifacts",
+        },
+        label="Studio document",
     )
-    result["stateTasks"] = _normalize_items(
-        result.get("stateTasks"),
-        prefix="task",
+    if "bookId" in raw and _required_string(
+        raw["bookId"],
+        "Studio document bookId",
+    ) != book_id:
+        raise ValueError("Studio document bookId does not match its book")
+    if "id" in raw:
+        _required_string(raw["id"], "Studio document id")
+    if "revision" in raw:
+        _integer(raw["revision"], "Studio document revision", minimum=1)
+    if "avatarAssetId" in raw:
+        _nullable_string(raw["avatarAssetId"], "Studio document avatarAssetId")
+    if "avatarUrl" in raw:
+        _nullable_string(raw["avatarUrl"], "Studio document avatarUrl")
+    for field in ("createdAt", "updatedAt"):
+        if field in raw:
+            _date_string(raw[field], f"Studio document {field}")
+
+    origin = _exact_object(
+        raw["origin"],
+        allowed={"type", "source_character"},
+        required={"type", "source_character"},
+        label="Studio document origin",
     )
+    origin_type = _required_string(
+        origin["type"],
+        "Studio document origin.type",
+    )
+    if origin_type not in {"analysis", "manual", "imported"}:
+        raise ValueError("Studio document origin.type is invalid")
+
+    status = _exact_object(
+        raw["status"],
+        allowed={
+            "is_favorite",
+            "frozen_sections",
+            "last_diagnostics",
+            "last_validated_at",
+        },
+        required={
+            "is_favorite",
+            "frozen_sections",
+            "last_diagnostics",
+            "last_validated_at",
+        },
+        label="Studio document status",
+    )
+    frozen_sections = _string_array(
+        status["frozen_sections"],
+        "Studio document status.frozen_sections",
+    )
+    allowed_frozen = {
+        "identity",
+        "greetings",
+        "lorebook",
+        "regex",
+        "state-tasks",
+    }
+    if any(value not in allowed_frozen for value in frozen_sections):
+        raise ValueError("Studio document frozen_sections contains an invalid value")
+    diagnostics = (
+        None
+        if status["last_diagnostics"] is None
+        else _current_diagnostics(status["last_diagnostics"])
+    )
+    validated_at = (
+        None
+        if status["last_validated_at"] is None
+        else _date_string(
+            status["last_validated_at"],
+            "Studio document status.last_validated_at",
+        )
+    )
+
+    meta = _exact_object(
+        raw["meta"],
+        allowed={"title", "tags"},
+        required={"title", "tags"},
+        label="Studio document meta",
+    )
+    identity = _exact_object(
+        raw["identity"],
+        allowed={"name", "aliases", "description", "personality", "scenario"},
+        required={"name", "aliases", "description", "personality", "scenario"},
+        label="Studio document identity",
+    )
+    identity_name = _required_string(
+        identity["name"],
+        "Studio document identity.name",
+    )
+    meta_title = _required_string(meta["title"], "Studio document meta.title")
+    raw_title = (
+        _required_string(raw["title"], "Studio document title")
+        if "title" in raw
+        else identity_name
+    )
+    explicit_title = (
+        _required_string(title, "Studio document title")
+        if title is not None
+        else identity_name
+    )
+    if len({identity_name, meta_title, raw_title, explicit_title}) != 1:
+        raise ValueError(
+            "title, meta.title and identity.name must agree"
+        )
+
+    core = _exact_object(
+        raw["coreMessages"],
+        allowed={
+            "first_message",
+            "message_example",
+            "alternate_greetings",
+            "system_prompt",
+            "post_history_instructions",
+            "creator_notes",
+            "character_version",
+        },
+        required={
+            "first_message",
+            "message_example",
+            "alternate_greetings",
+            "system_prompt",
+            "post_history_instructions",
+            "creator_notes",
+            "character_version",
+        },
+        label="Studio document coreMessages",
+    )
+    lorebook = _exact_object(
+        raw["lorebook"],
+        allowed={"name", "entries"},
+        required={"name", "entries"},
+        label="Studio document lorebook",
+    )
+
+    return {
+        "bookId": book_id,
+        "title": identity_name,
+        "origin": {
+            "type": origin_type,
+            "source_character": _nullable_string(
+                origin["source_character"],
+                "Studio document origin.source_character",
+            ),
+        },
+        "status": {
+            "is_favorite": _boolean(
+                status["is_favorite"],
+                "Studio document status.is_favorite",
+            ),
+            "frozen_sections": frozen_sections,
+            "last_diagnostics": diagnostics,
+            "last_validated_at": validated_at,
+        },
+        "meta": {
+            "title": identity_name,
+            "tags": _string_array(meta["tags"], "Studio document meta.tags"),
+        },
+        "identity": {
+            "name": identity_name,
+            "aliases": _string_array(
+                identity["aliases"],
+                "Studio document identity.aliases",
+            ),
+            "description": _string(
+                identity["description"],
+                "Studio document identity.description",
+            ),
+            "personality": _string(
+                identity["personality"],
+                "Studio document identity.personality",
+            ),
+            "scenario": _string(
+                identity["scenario"],
+                "Studio document identity.scenario",
+            ),
+        },
+        "coreMessages": {
+            "first_message": _string(
+                core["first_message"],
+                "Studio document coreMessages.first_message",
+            ),
+            "message_example": _string(
+                core["message_example"],
+                "Studio document coreMessages.message_example",
+            ),
+            "alternate_greetings": _string_array(
+                core["alternate_greetings"],
+                "Studio document coreMessages.alternate_greetings",
+            ),
+            "system_prompt": _string(
+                core["system_prompt"],
+                "Studio document coreMessages.system_prompt",
+            ),
+            "post_history_instructions": _string(
+                core["post_history_instructions"],
+                "Studio document coreMessages.post_history_instructions",
+            ),
+            "creator_notes": _string(
+                core["creator_notes"],
+                "Studio document coreMessages.creator_notes",
+            ),
+            "character_version": _string(
+                core["character_version"],
+                "Studio document coreMessages.character_version",
+            ),
+        },
+        "lorebook": {
+            "name": _string(lorebook["name"], "Studio document lorebook.name"),
+            "entries": _current_entries(lorebook["entries"]),
+        },
+        "regexScripts": _current_regex_scripts(raw["regexScripts"]),
+        "stateTasks": _current_state_tasks(raw["stateTasks"]),
+        "exportArtifacts": deepcopy(
+            _mapping_value(
+                raw["exportArtifacts"],
+                "Studio document exportArtifacts",
+            )
+        ),
+    }
+
+
+def _exact_object(
+    value: object,
+    *,
+    allowed: set[str],
+    required: set[str],
+    label: str,
+) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{label} must be an object")
+    result = dict(value)
+    if not required.issubset(result) or not set(result).issubset(allowed):
+        raise ValueError(f"{label} fields are invalid")
+    return result
+
+
+def _mapping_value(value: object, label: str) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{label} must be an object")
+    return value
+
+
+def _string(value: object, label: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{label} must be a string")
+    return value
+
+
+def _required_string(value: object, label: str) -> str:
+    result = _string(value, label)
+    if not result:
+        raise ValueError(f"{label} must not be empty")
+    return result
+
+
+def _nullable_string(value: object, label: str) -> str | None:
+    return None if value is None else _string(value, label)
+
+
+def _boolean(value: object, label: str) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError(f"{label} must be a boolean")
+    return value
+
+
+def _integer(value: object, label: str, *, minimum: int | None = None) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{label} must be an integer")
+    if minimum is not None and value < minimum:
+        raise ValueError(f"{label} must be at least {minimum}")
+    return value
+
+
+def _string_array(value: object, label: str) -> list[str]:
+    if not isinstance(value, list):
+        raise ValueError(f"{label} must be a string array")
+    return [_string(item, f"{label}[{index}]") for index, item in enumerate(value)]
+
+
+def _date_string(value: object, label: str) -> str:
+    rendered = _required_string(value, label)
+    parsed = rendered[:-1] + "+00:00" if rendered.endswith("Z") else rendered
+    try:
+        datetime.fromisoformat(parsed)
+    except ValueError as exc:
+        raise ValueError(f"{label} must be an ISO timestamp") from exc
+    return rendered
+
+
+def _current_diagnostics(value: object) -> dict[str, Any]:
+    diagnostics = _exact_object(
+        value,
+        allowed={"valid", "errors", "warnings", "checks"},
+        required={"valid", "errors", "warnings", "checks"},
+        label="Studio document diagnostics",
+    )
+    checks = _exact_object(
+        diagnostics["checks"],
+        allowed={"document", "v3_export", "v2_export"},
+        required={"document", "v3_export", "v2_export"},
+        label="Studio document diagnostics.checks",
+    )
+    return {
+        "valid": _boolean(
+            diagnostics["valid"],
+            "Studio document diagnostics.valid",
+        ),
+        "errors": _string_array(
+            diagnostics["errors"],
+            "Studio document diagnostics.errors",
+        ),
+        "warnings": _string_array(
+            diagnostics["warnings"],
+            "Studio document diagnostics.warnings",
+        ),
+        "checks": {
+            key: _boolean(
+                checks[key],
+                f"Studio document diagnostics.checks.{key}",
+            )
+            for key in ("document", "v3_export", "v2_export")
+        },
+    }
+
+
+def _current_entries(value: object, *, label: str = "Studio lorebook entries") -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        raise ValueError(f"{label} must be an array")
+    return [
+        _current_entry(item, label=f"{label}[{index}]")
+        for index, item in enumerate(value)
+    ]
+
+
+def _current_entry(value: object, *, label: str) -> dict[str, Any]:
+    optional = {
+        "secondary_keys",
+        "probability",
+        "prevent_recursion",
+        "use_regex",
+        "match_persona_description",
+        "match_character_description",
+        "match_character_personality",
+        "match_character_depth_prompt",
+        "match_scenario",
+    }
+    required = {
+        "id",
+        "comment",
+        "keys",
+        "content",
+        "enabled",
+        "constant",
+        "selective",
+        "priority",
+        "position",
+        "depth",
+        "children",
+    }
+    entry = _exact_object(
+        value,
+        allowed=required | optional,
+        required=required,
+        label=label,
+    )
+    result: dict[str, Any] = {
+        "id": _required_string(entry["id"], f"{label}.id"),
+        "comment": _string(entry["comment"], f"{label}.comment"),
+        "keys": _string_array(entry["keys"], f"{label}.keys"),
+        "content": _string(entry["content"], f"{label}.content"),
+        "enabled": _boolean(entry["enabled"], f"{label}.enabled"),
+        "constant": _boolean(entry["constant"], f"{label}.constant"),
+        "selective": _boolean(entry["selective"], f"{label}.selective"),
+        "priority": _integer(entry["priority"], f"{label}.priority"),
+        "position": _required_string(entry["position"], f"{label}.position"),
+        "depth": _integer(entry["depth"], f"{label}.depth", minimum=0),
+        "children": _current_entries(
+            entry["children"],
+            label=f"{label}.children",
+        ),
+    }
+    if "secondary_keys" in entry:
+        result["secondary_keys"] = _string_array(
+            entry["secondary_keys"],
+            f"{label}.secondary_keys",
+        )
+    if "probability" in entry:
+        probability = _integer(
+            entry["probability"],
+            f"{label}.probability",
+            minimum=0,
+        )
+        if probability > 100:
+            raise ValueError(f"{label}.probability must not exceed 100")
+        result["probability"] = probability
+    for key in optional - {"secondary_keys", "probability"}:
+        if key in entry:
+            result[key] = _boolean(entry[key], f"{label}.{key}")
+    return result
+
+
+def _current_regex_scripts(value: object) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        raise ValueError("Studio document regexScripts must be an array")
+    result = []
+    fields = {
+        "id",
+        "scriptName",
+        "findRegex",
+        "replaceString",
+        "placement",
+        "markdownOnly",
+        "promptOnly",
+        "runOnEdit",
+        "disabled",
+    }
+    for index, raw in enumerate(value):
+        label = f"Studio document regexScripts[{index}]"
+        script = _exact_object(
+            raw,
+            allowed=fields,
+            required=fields,
+            label=label,
+        )
+        placement = script["placement"]
+        if not isinstance(placement, list):
+            raise ValueError(f"{label}.placement must be an integer array")
+        result.append(
+            {
+                "id": _required_string(script["id"], f"{label}.id"),
+                "scriptName": _string(
+                    script["scriptName"],
+                    f"{label}.scriptName",
+                ),
+                "findRegex": _string(
+                    script["findRegex"],
+                    f"{label}.findRegex",
+                ),
+                "replaceString": _string(
+                    script["replaceString"],
+                    f"{label}.replaceString",
+                ),
+                "placement": [
+                    _integer(item, f"{label}.placement[{item_index}]")
+                    for item_index, item in enumerate(placement)
+                ],
+                **{
+                    key: _boolean(script[key], f"{label}.{key}")
+                    for key in (
+                        "markdownOnly",
+                        "promptOnly",
+                        "runOnEdit",
+                        "disabled",
+                    )
+                },
+            }
+        )
+    return result
+
+
+def _current_state_tasks(value: object) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        raise ValueError("Studio document stateTasks must be an array")
+    result = []
+    fields = {"id", "name", "triggerTiming", "interval", "commands", "disabled"}
+    for index, raw in enumerate(value):
+        label = f"Studio document stateTasks[{index}]"
+        task = _exact_object(
+            raw,
+            allowed=fields,
+            required=fields,
+            label=label,
+        )
+        result.append(
+            {
+                "id": _required_string(task["id"], f"{label}.id"),
+                "name": _string(task["name"], f"{label}.name"),
+                "triggerTiming": _string(
+                    task["triggerTiming"],
+                    f"{label}.triggerTiming",
+                ),
+                "interval": _integer(task["interval"], f"{label}.interval"),
+                "commands": _string(task["commands"], f"{label}.commands"),
+                "disabled": _boolean(task["disabled"], f"{label}.disabled"),
+            }
+        )
     return result
 
 
 def build_export_bundle(document: Mapping[str, Any]) -> dict[str, Any]:
-    book_id = str(document.get("bookId", "unknown"))
-    doc = ensure_document_shape(document, book_id=book_id)
-    identity = _object(doc["identity"])
-    core = _object(doc["coreMessages"])
-    lorebook = _object(doc["lorebook"])
+    book_id = _required_string(
+        document.get("bookId"),
+        "Studio document bookId",
+    )
+    doc = validate_current_document(document, book_id=book_id)
+    identity = doc["identity"]
+    core = doc["coreMessages"]
+    lorebook = doc["lorebook"]
     v3_entries = [_entry_v3(entry) for entry in lorebook["entries"]]
     shared = {
         "name": identity["name"],
-        "description": identity.get("description", ""),
-        "personality": identity.get("personality", ""),
-        "scenario": identity.get("scenario", ""),
-        "first_mes": core.get("first_message", ""),
-        "mes_example": core.get("message_example", ""),
-        "creator_notes": core.get("creator_notes", ""),
-        "system_prompt": core.get("system_prompt", ""),
-        "post_history_instructions": core.get(
-            "post_history_instructions",
-            "",
-        ),
-        "alternate_greetings": core.get("alternate_greetings", []),
-        "tags": _object(doc["meta"]).get("tags", []),
+        "description": identity["description"],
+        "personality": identity["personality"],
+        "scenario": identity["scenario"],
+        "first_mes": core["first_message"],
+        "mes_example": core["message_example"],
+        "creator_notes": core["creator_notes"],
+        "system_prompt": core["system_prompt"],
+        "post_history_instructions": core["post_history_instructions"],
+        "alternate_greetings": core["alternate_greetings"],
+        "tags": doc["meta"]["tags"],
         "creator": "Saber Translator",
-        "character_version": core.get("character_version", "2.0.0"),
+        "character_version": core["character_version"],
         "extensions": {
-            "fav": bool(_object(doc["status"]).get("is_favorite")),
-            "regex_scripts": deepcopy(doc.get("regexScripts", [])),
+            "fav": doc["status"]["is_favorite"],
+            "regex_scripts": deepcopy(doc["regexScripts"]),
             "xiaobaix-tasks": {
-                "tasks": deepcopy(doc.get("stateTasks", []))
+                "tasks": deepcopy(doc["stateTasks"])
             },
         },
     }
     v3_data = {
         **shared,
         "character_book": {
-            "name": lorebook.get("name", ""),
+            "name": lorebook["name"],
             "entries": v3_entries,
         },
     }
     v2_data = {
         **shared,
         "character_book": {
-            "name": lorebook.get("name", ""),
+            "name": lorebook["name"],
             "entries": [
                 _entry_v2(entry, index)
                 for index, entry in enumerate(_flatten(lorebook["entries"]), 1)
@@ -161,7 +655,7 @@ def build_export_bundle(document: Mapping[str, Any]) -> dict[str, Any]:
             "data": v2_data,
         },
         "worldbook": {
-            "name": lorebook.get("name", ""),
+            "name": lorebook["name"],
             "entries": v3_entries,
         },
     }
@@ -171,50 +665,118 @@ def import_document_payload(
     book_id: str,
     payload: Mapping[str, Any],
 ) -> dict[str, Any]:
-    spec = str(payload.get("spec", "")).lower()
+    raw_spec = payload.get("spec")
+    if raw_spec is not None and not isinstance(raw_spec, str):
+        raise ValueError("Studio import spec must be a string")
+    spec = raw_spec.lower() if raw_spec is not None else ""
     if spec in {"chara_card_v2", "chara_card_v3"}:
-        data = _object(payload.get("data"))
-        name = str(data.get("name") or payload.get("name") or "导入角色")
+        data = _external_object(payload, "data", label="Studio card data")
+        name = _external_name(
+            (data, "name", "Studio card data.name"),
+            (payload, "name", "Studio card name"),
+            fallback="导入角色",
+        )
         doc = create_empty_document(book_id, title=name)
         doc["origin"]["type"] = "imported"
         doc["identity"].update(
             {
                 "name": name,
-                "description": data.get("description", ""),
-                "personality": data.get("personality", ""),
-                "scenario": data.get("scenario", ""),
+                "description": _external_string(
+                    data,
+                    "description",
+                    label="Studio card description",
+                ),
+                "personality": _external_string(
+                    data,
+                    "personality",
+                    label="Studio card personality",
+                ),
+                "scenario": _external_string(
+                    data,
+                    "scenario",
+                    label="Studio card scenario",
+                ),
             }
         )
         doc["coreMessages"].update(
             {
-                "first_message": data.get("first_mes", ""),
-                "message_example": data.get("mes_example", ""),
-                "alternate_greetings": data.get(
+                "first_message": _external_string(
+                    data,
+                    "first_mes",
+                    label="Studio card first_mes",
+                ),
+                "message_example": _external_string(
+                    data,
+                    "mes_example",
+                    label="Studio card mes_example",
+                ),
+                "alternate_greetings": _external_string_array(
+                    data,
                     "alternate_greetings",
-                    [],
+                    label="Studio card alternate_greetings",
                 ),
-                "system_prompt": data.get("system_prompt", ""),
-                "post_history_instructions": data.get(
+                "system_prompt": _external_string(
+                    data,
+                    "system_prompt",
+                    label="Studio card system_prompt",
+                ),
+                "post_history_instructions": _external_string(
+                    data,
                     "post_history_instructions",
-                    "",
+                    label="Studio card post_history_instructions",
                 ),
-                "creator_notes": data.get("creator_notes", ""),
-                "character_version": data.get(
+                "creator_notes": _external_string(
+                    data,
+                    "creator_notes",
+                    label="Studio card creator_notes",
+                ),
+                "character_version": _external_string(
+                    data,
                     "character_version",
-                    "2.0.0",
+                    label="Studio card character_version",
+                    default="2.0.0",
                 ),
             }
         )
-        doc["meta"]["tags"] = data.get("tags", [])
-        extensions = _object(data.get("extensions"))
-        doc["status"]["is_favorite"] = bool(extensions.get("fav", False))
-        doc["regexScripts"] = extensions.get("regex_scripts", [])
-        doc["stateTasks"] = _object(
-            extensions.get("xiaobaix-tasks")
-        ).get("tasks", [])
-        book = _object(data.get("character_book"))
+        doc["meta"]["tags"] = _external_string_array(
+            data,
+            "tags",
+            label="Studio card tags",
+        )
+        extensions = _external_object(
+            data,
+            "extensions",
+            label="Studio card extensions",
+            required=False,
+        )
+        doc["status"]["is_favorite"] = _external_boolean(
+            extensions,
+            "fav",
+            label="Studio card extensions.fav",
+        )
+        doc["regexScripts"] = _external_regex_scripts(
+            extensions.get("regex_scripts")
+        )
+        task_extension = _external_object(
+            extensions,
+            "xiaobaix-tasks",
+            label="Studio card xiaobaix-tasks",
+            required=False,
+        )
+        doc["stateTasks"] = _external_state_tasks(
+            task_extension.get("tasks")
+        )
+        book = _external_object(
+            data,
+            "character_book",
+            label="Studio card character_book",
+            required=False,
+        )
         doc["lorebook"] = {
-            "name": book.get("name") or f"{name} 世界书",
+            "name": _external_name(
+                (book, "name", "Studio card character_book.name"),
+                fallback=f"{name} 世界书",
+            ),
             "entries": [
                 _entry_internal(entry, index)
                 for index, entry in enumerate(
@@ -222,9 +784,12 @@ def import_document_payload(
                 )
             ],
         }
-        return ensure_document_shape(doc, book_id=book_id)
+        return validate_current_document(doc, book_id=book_id)
     if "entries" in payload:
-        name = str(payload.get("name") or "导入世界书")
+        name = _external_name(
+            (payload, "name", "Studio worldbook name"),
+            fallback="导入世界书",
+        )
         doc = create_empty_document(book_id, title=name)
         doc["origin"]["type"] = "imported"
         doc["lorebook"] = {
@@ -236,52 +801,45 @@ def import_document_payload(
                 )
             ],
         }
-        return ensure_document_shape(doc, book_id=book_id)
+        return validate_current_document(doc, book_id=book_id)
     raise ValueError("unable to recognize Studio import format")
 
 
 def build_diagnostics_report(document: Mapping[str, Any]) -> dict[str, Any]:
-    doc = ensure_document_shape(
-        document,
-        book_id=str(document.get("bookId", "unknown")),
+    book_id = _required_string(
+        document.get("bookId"),
+        "Studio document bookId",
     )
+    doc = validate_current_document(document, book_id=book_id)
     errors: list[str] = []
     warnings: list[str] = []
-    if not str(_object(doc["identity"]).get("name", "")).strip():
-        errors.append("identity.name 不能为空")
-    if not str(_object(doc["coreMessages"]).get("first_message", "")).strip():
+    if not doc["coreMessages"]["first_message"].strip():
         warnings.append("coreMessages.first_message 为空")
-    for index, script in enumerate(doc.get("regexScripts", [])):
-        pattern = str(_object(script).get("findRegex", ""))
+    for index, script in enumerate(doc["regexScripts"]):
+        pattern = script["findRegex"]
         try:
             re.compile(pattern)
         except re.error as exc:
             errors.append(f"regexScripts[{index}] 正则非法: {exc}")
-    for index, entry in enumerate(_object(doc["lorebook"]).get("entries", [])):
-        if not _object(entry).get("keys"):
+    for index, entry in enumerate(_flatten(doc["lorebook"]["entries"])):
+        if not entry["keys"]:
             errors.append(f"lorebook.entries[{index}].keys 必须为非空数组")
     allowed_task_events = {
         "initialization",
         "message_received",
         "message_sent",
     }
-    for index, task in enumerate(doc.get("stateTasks", [])):
-        item = _object(task)
-        if not str(item.get("name", "")).strip():
+    for index, task in enumerate(doc["stateTasks"]):
+        if not task["name"].strip():
             errors.append(f"stateTasks[{index}].name 不能为空")
-        trigger = str(item.get("triggerTiming", ""))
+        trigger = task["triggerTiming"]
         if trigger not in allowed_task_events:
             errors.append(
                 f"stateTasks[{index}].triggerTiming 不支持值: {trigger}"
             )
-        try:
-            interval = int(item.get("interval", 0) or 0)
-        except (TypeError, ValueError):
-            errors.append(f"stateTasks[{index}].interval 必须为整数")
-        else:
-            if interval < 0:
-                errors.append(f"stateTasks[{index}].interval 不能为负数")
-        commands = str(item.get("commands", "") or "")
+        if task["interval"] < 0:
+            errors.append(f"stateTasks[{index}].interval 不能为负数")
+        commands = task["commands"]
         if not commands.strip():
             errors.append(f"stateTasks[{index}].commands 不能为空")
         if "<<taskjs>>" in commands and "<</taskjs>>" not in commands:
@@ -309,35 +867,33 @@ def apply_regex_scripts(
     visible = text
     prompt = text
     hits: list[dict[str, Any]] = []
-    for script in scripts or []:
-        if script.get("disabled"):
+    for script in scripts:
+        if script["disabled"]:
             continue
-        if respect_run_on_edit and not bool(script.get("runOnEdit", True)):
+        if respect_run_on_edit and not script["runOnEdit"]:
             continue
-        placements = script.get("placement", [2])
-        if isinstance(placements, int):
-            placements = [placements]
+        placements = script["placement"]
         if placement not in placements:
             continue
-        pattern = str(script.get("findRegex", ""))
+        pattern = script["findRegex"]
         if not pattern:
             continue
         try:
             regex = re.compile(pattern)
         except re.error:
             continue
-        replacement = str(script.get("replaceString", ""))
+        replacement = script["replaceString"]
         if regex.search(visible) or regex.search(prompt):
             hits.append(
                 {
                     "type": "regex",
-                    "scriptName": script.get("scriptName", ""),
+                    "scriptName": script["scriptName"],
                     "pattern": pattern,
                 }
             )
-        if script.get("promptOnly"):
+        if script["promptOnly"]:
             prompt = regex.sub(replacement, prompt)
-        elif script.get("markdownOnly"):
+        elif script["markdownOnly"]:
             visible = regex.sub(replacement, visible)
         else:
             visible = regex.sub(replacement, visible)
@@ -356,25 +912,26 @@ def match_lorebook(
     matched: list[dict[str, Any]] = []
     for entry in _flatten(entries):
         entry = dict(entry)
-        if not entry.get("enabled", True):
+        if not entry["enabled"]:
             continue
-        entry_id = str(entry.get("id", ""))
+        entry_id = entry["id"]
         if entry.get("prevent_recursion") and entry_id in matched_ids:
             continue
-        keys = _strings(entry.get("keys"))
-        secondary = _strings(entry.get("secondary_keys"))
-        primary_hit = _matches(text, keys, bool(entry.get("use_regex")))
+        keys = entry["keys"]
+        secondary = entry.get("secondary_keys", [])
+        use_regex = entry.get("use_regex", False)
+        primary_hit = _matches(text, keys, use_regex)
         secondary_hit = _matches(
             text,
             secondary,
-            bool(entry.get("use_regex")),
+            use_regex,
         )
-        if entry.get("constant"):
+        if entry["constant"]:
             hit = True
         elif secondary:
             hit = (
                 primary_hit and secondary_hit
-                if entry.get("selective", True)
+                if entry["selective"]
                 else primary_hit or secondary_hit
             )
         else:
@@ -393,9 +950,9 @@ def sort_lorebook_hits(entries: list[Mapping[str, Any]]) -> list[dict[str, Any]]
     return sorted(
         (dict(entry) for entry in entries),
         key=lambda entry: (
-            order.get(str(entry.get("position", "before_char")), 1),
-            -int(entry.get("priority", 100) or 100),
-            str(entry.get("comment", "")),
+            order.get(entry["position"], 1),
+            -entry["priority"],
+            entry["comment"],
         ),
     )
 
@@ -408,21 +965,24 @@ def run_state_tasks(
 ) -> list[dict[str, Any]]:
     runtime = session.setdefault("_runtime", {})
     counts = runtime.setdefault("event_counts", {})
+    previous_count = counts.get(event, 0)
+    if isinstance(previous_count, bool) or not isinstance(previous_count, int):
+        raise ValueError("Studio runtime event count must be an integer")
     if event != "initialization":
-        counts[event] = int(counts.get(event, 0)) + 1
-    current_count = int(counts.get(event, 0))
+        counts[event] = previous_count + 1
+    current_count = counts.get(event, 0)
     logs: list[dict[str, Any]] = []
-    for task in tasks or []:
-        if task.get("disabled") or task.get("triggerTiming") != event:
+    for task in tasks:
+        if task["disabled"] or task["triggerTiming"] != event:
             continue
-        interval = int(task.get("interval", 0) or 0)
+        interval = task["interval"]
         if (
             event != "initialization"
             and interval > 1
             and current_count % interval
         ):
             continue
-        for line in str(task.get("commands", "")).splitlines():
+        for line in task["commands"].splitlines():
             match = re.search(
                 r"/setvar\s+key=([A-Za-z0-9_\-\.]+)\s+([^'\")]+)",
                 line.strip(),
@@ -434,7 +994,7 @@ def run_state_tasks(
         logs.append(
             {
                 "type": "task",
-                "name": task.get("name", ""),
+                "name": task["name"],
                 "event": event,
                 "interval": interval,
             }
@@ -442,74 +1002,46 @@ def run_state_tasks(
     return logs
 
 
-def _deep_merge(base: Mapping[str, Any], override: Mapping[str, Any]) -> dict[str, Any]:
-    result = deepcopy(dict(base))
-    for key, value in override.items():
-        if isinstance(value, Mapping) and isinstance(result.get(key), Mapping):
-            result[key] = _deep_merge(result[key], value)
-        else:
-            result[key] = deepcopy(value)
-    return result
-
-
-def _object(value: object) -> dict[str, Any]:
-    return dict(value) if isinstance(value, Mapping) else {}
-
-
-def _strings(value: object) -> list[str]:
-    return [str(item) for item in value] if isinstance(value, list) else []
-
-
-def _normalize_items(value: object, *, prefix: str) -> list[dict[str, Any]]:
-    result = []
-    for raw in value if isinstance(value, list) else []:
-        if isinstance(raw, Mapping):
-            item = deepcopy(dict(raw))
-            item["id"] = str(item.get("id") or f"{prefix}_{uuid.uuid4().hex[:8]}")
-            result.append(item)
-    return result
-
-
-def _normalize_entries(value: object) -> list[dict[str, Any]]:
-    result = []
-    for raw in value if isinstance(value, list) else []:
-        if not isinstance(raw, Mapping):
-            continue
-        entry = deepcopy(dict(raw))
-        entry["id"] = str(entry.get("id") or f"entry_{uuid.uuid4().hex[:8]}")
-        entry["children"] = _normalize_entries(entry.get("children"))
-        result.append(entry)
-    return result
+def _provider_section(
+    config: Mapping[str, Any],
+    name: str,
+) -> dict[str, Any]:
+    value = config.get(name)
+    if value is None:
+        return {}
+    if not isinstance(value, Mapping):
+        raise ValueError(f"Studio provider section {name} must be an object")
+    return dict(value)
 
 
 def _flatten(entries: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
-    for entry in entries or []:
+    for entry in entries:
         result.append(dict(entry))
-        result.extend(_flatten(_object(entry).get("children", [])))
+        result.extend(_flatten(entry["children"]))
     return result
 
 
 def _entry_v3(entry: Mapping[str, Any]) -> dict[str, Any]:
     return {
-        "id": entry.get("id"),
-        "keys": entry.get("keys", []),
+        "id": entry["id"],
+        "keys": entry["keys"],
         "secondary_keys": entry.get("secondary_keys", []),
-        "comment": entry.get("comment", ""),
-        "content": entry.get("content", ""),
-        "constant": bool(entry.get("constant", False)),
-        "selective": bool(entry.get("selective", True)),
-        "insertion_order": int(entry.get("priority", 100) or 100),
-        "enabled": bool(entry.get("enabled", True)),
-        "position": entry.get("position", "before_char"),
-        "use_regex": bool(entry.get("use_regex", False)),
+        "comment": entry["comment"],
+        "content": entry["content"],
+        "constant": entry["constant"],
+        "selective": entry["selective"],
+        "insertion_order": entry["priority"],
+        "enabled": entry["enabled"],
+        "position": entry["position"],
+        "use_regex": entry.get("use_regex", False),
         "extensions": {
-            "depth": int(entry.get("depth", 4) or 4),
-            "probability": int(entry.get("probability", 100) or 100),
-            "prevent_recursion": bool(entry.get("prevent_recursion", True)),
+            "depth": entry["depth"],
+            "probability": entry.get("probability", 100),
+            "prevent_recursion": entry.get("prevent_recursion", True),
         },
         "children": [
-            _entry_v3(child) for child in entry.get("children", []) or []
+            _entry_v3(child) for child in entry["children"]
         ],
     }
 
@@ -517,60 +1049,318 @@ def _entry_v3(entry: Mapping[str, Any]) -> dict[str, Any]:
 def _entry_v2(entry: Mapping[str, Any], uid: int) -> dict[str, Any]:
     return {
         "uid": uid,
-        "key": entry.get("keys", []),
+        "key": entry["keys"],
         "keysecondary": entry.get("secondary_keys", []),
-        "comment": entry.get("comment", ""),
-        "content": entry.get("content", ""),
-        "constant": bool(entry.get("constant", False)),
-        "selective": bool(entry.get("selective", True)),
-        "enabled": bool(entry.get("enabled", True)),
-        "position": entry.get("position", "before_char"),
+        "comment": entry["comment"],
+        "content": entry["content"],
+        "constant": entry["constant"],
+        "selective": entry["selective"],
+        "enabled": entry["enabled"],
+        "position": entry["position"],
         "extensions": {
-            "depth": int(entry.get("depth", 4) or 4),
-            "probability": int(entry.get("probability", 100) or 100),
+            "depth": entry["depth"],
+            "probability": entry.get("probability", 100),
         },
     }
 
 
+def _external_name(
+    *candidates: tuple[Mapping[str, Any], str, str],
+    fallback: str,
+) -> str:
+    for source, field, label in candidates:
+        value = source.get(field)
+        if value is None:
+            continue
+        rendered = _string(value, label).strip()
+        if rendered:
+            return rendered
+    return fallback
+
+
+def _external_object(
+    source: Mapping[str, Any],
+    field: str,
+    *,
+    label: str,
+    required: bool = True,
+) -> dict[str, Any]:
+    if field not in source or source[field] is None:
+        if required:
+            raise ValueError(f"{label} must be an object")
+        return {}
+    return dict(_mapping_value(source[field], label))
+
+
+def _external_string(
+    source: Mapping[str, Any],
+    field: str,
+    *,
+    label: str,
+    default: str = "",
+) -> str:
+    value = source.get(field)
+    return default if value is None else _string(value, label)
+
+
+def _external_string_array(
+    source: Mapping[str, Any],
+    field: str,
+    *,
+    label: str,
+) -> list[str]:
+    value = source.get(field)
+    return [] if value is None else _string_array(value, label)
+
+
+def _external_boolean(
+    source: Mapping[str, Any],
+    field: str,
+    *,
+    label: str,
+    default: bool = False,
+) -> bool:
+    value = source.get(field)
+    return default if value is None else _boolean(value, label)
+
+
+def _external_alias(
+    source: Mapping[str, Any],
+    *fields: str,
+    label: str,
+    default: object,
+) -> object:
+    present = [field for field in fields if source.get(field) is not None]
+    if not present:
+        return default
+    value = source[present[0]]
+    if any(source[field] != value for field in present[1:]):
+        raise ValueError(f"{label} aliases disagree")
+    return value
+
+
+def _external_regex_scripts(value: object) -> list[dict[str, Any]]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError("Studio card regex_scripts must be an array")
+    result = []
+    for index, raw in enumerate(value):
+        label = f"Studio card regex_scripts[{index}]"
+        script = dict(_mapping_value(raw, label))
+        placement = _external_alias(
+            script,
+            "placement",
+            label=f"{label}.placement",
+            default=[2],
+        )
+        if not isinstance(placement, list):
+            raise ValueError(f"{label}.placement must be an integer array")
+        result.append(
+            {
+                "id": _string(
+                    _external_alias(
+                        script,
+                        "id",
+                        label=f"{label}.id",
+                        default=f"regex_{index}",
+                    ),
+                    f"{label}.id",
+                ),
+                "scriptName": _string(
+                    _external_alias(
+                        script,
+                        "scriptName",
+                        "script_name",
+                        label=f"{label}.scriptName",
+                        default="",
+                    ),
+                    f"{label}.scriptName",
+                ),
+                "findRegex": _string(
+                    _external_alias(
+                        script,
+                        "findRegex",
+                        "find_regex",
+                        label=f"{label}.findRegex",
+                        default="",
+                    ),
+                    f"{label}.findRegex",
+                ),
+                "replaceString": _string(
+                    _external_alias(
+                        script,
+                        "replaceString",
+                        "replace_string",
+                        label=f"{label}.replaceString",
+                        default="",
+                    ),
+                    f"{label}.replaceString",
+                ),
+                "placement": [
+                    _integer(item, f"{label}.placement[{item_index}]")
+                    for item_index, item in enumerate(placement)
+                ],
+                **{
+                    internal: _boolean(
+                        _external_alias(
+                            script,
+                            internal,
+                            external,
+                            label=f"{label}.{internal}",
+                            default=default,
+                        ),
+                        f"{label}.{internal}",
+                    )
+                    for internal, external, default in (
+                        ("markdownOnly", "markdown_only", False),
+                        ("promptOnly", "prompt_only", False),
+                        ("runOnEdit", "run_on_edit", True),
+                        ("disabled", "disabled", False),
+                    )
+                },
+            }
+        )
+    return result
+
+
+def _external_state_tasks(value: object) -> list[dict[str, Any]]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError("Studio card state tasks must be an array")
+    result = []
+    for index, raw in enumerate(value):
+        label = f"Studio card state tasks[{index}]"
+        task = dict(_mapping_value(raw, label))
+        result.append(
+            {
+                "id": _string(task.get("id", f"task_{index}"), f"{label}.id"),
+                "name": _external_string(task, "name", label=f"{label}.name"),
+                "triggerTiming": _string(
+                    _external_alias(
+                        task,
+                        "triggerTiming",
+                        "trigger_timing",
+                        label=f"{label}.triggerTiming",
+                        default="initialization",
+                    ),
+                    f"{label}.triggerTiming",
+                ),
+                "interval": _integer(
+                    task.get("interval", 0),
+                    f"{label}.interval",
+                ),
+                "commands": _external_string(
+                    task,
+                    "commands",
+                    label=f"{label}.commands",
+                ),
+                "disabled": _external_boolean(
+                    task,
+                    "disabled",
+                    label=f"{label}.disabled",
+                ),
+            }
+        )
+    return result
+
+
 def _entry_values(value: object) -> list[Mapping[str, Any]]:
+    if value is None:
+        return []
     if isinstance(value, Mapping):
-        return [item for item in value.values() if isinstance(item, Mapping)]
+        items = list(value.values())
     if isinstance(value, list):
-        return [item for item in value if isinstance(item, Mapping)]
-    return []
+        items = value
+    elif not isinstance(value, Mapping):
+        raise ValueError("Studio worldbook entries must be an array or object")
+    if not all(isinstance(item, Mapping) for item in items):
+        raise ValueError("Studio worldbook entries must contain objects")
+    return items
 
 
 def _entry_internal(entry: Mapping[str, Any], index: int) -> dict[str, Any]:
-    extensions = _object(entry.get("extensions"))
-    return {
-        "id": str(entry.get("id", entry.get("uid", f"entry_{index}"))),
-        "comment": entry.get("comment", entry.get("name", "")),
-        "keys": entry.get("keys", entry.get("key", [])) or [],
-        "secondary_keys": entry.get(
-            "secondary_keys",
-            entry.get("keysecondary", []),
+    extensions = _external_object(
+        entry,
+        "extensions",
+        label=f"Studio worldbook entries[{index}].extensions",
+        required=False,
+    )
+    raw_id = entry.get("id", entry.get("uid", f"entry_{index}"))
+    if isinstance(raw_id, bool) or not isinstance(raw_id, (str, int)):
+        raise ValueError(f"Studio worldbook entries[{index}].id is invalid")
+    enabled = (
+        _boolean(
+            entry["enabled"],
+            f"Studio worldbook entries[{index}].enabled",
         )
-        or [],
-        "content": entry.get("content", ""),
-        "enabled": bool(entry.get("enabled", not entry.get("disable", False))),
-        "constant": bool(entry.get("constant", False)),
-        "selective": bool(entry.get("selective", True)),
-        "priority": int(
-            entry.get("insertion_order", entry.get("priority", 100)) or 100
+        if entry.get("enabled") is not None
+        else not _external_boolean(
+            entry,
+            "disable",
+            label=f"Studio worldbook entries[{index}].disable",
+        )
+    )
+    priority = entry.get("insertion_order", entry.get("priority", 100))
+    depth = extensions.get("depth", entry.get("depth", 4))
+    probability = extensions.get(
+        "probability",
+        entry.get("probability", 100),
+    )
+    return {
+        "id": str(raw_id),
+        "comment": _string(
+            entry.get("comment", entry.get("name", "")),
+            f"Studio worldbook entries[{index}].comment",
         ),
-        "position": entry.get("position", "before_char"),
-        "depth": int(extensions.get("depth", entry.get("depth", 4)) or 4),
-        "probability": int(
-            extensions.get(
-                "probability",
-                entry.get("probability", 100),
-            )
-            or 100
+        "keys": _string_array(
+            entry.get("keys", entry.get("key", [])),
+            f"Studio worldbook entries[{index}].keys",
         ),
-        "prevent_recursion": bool(
-            extensions.get("prevent_recursion", True)
+        "secondary_keys": _string_array(
+            entry.get("secondary_keys", entry.get("keysecondary", [])),
+            f"Studio worldbook entries[{index}].secondary_keys",
         ),
-        "use_regex": bool(entry.get("use_regex", False)),
+        "content": _string(
+            entry.get("content", ""),
+            f"Studio worldbook entries[{index}].content",
+        ),
+        "enabled": enabled,
+        "constant": _boolean(
+            entry.get("constant", False),
+            f"Studio worldbook entries[{index}].constant",
+        ),
+        "selective": _boolean(
+            entry.get("selective", True),
+            f"Studio worldbook entries[{index}].selective",
+        ),
+        "priority": _integer(
+            priority,
+            f"Studio worldbook entries[{index}].priority",
+        ),
+        "position": _string(
+            entry.get("position", "before_char"),
+            f"Studio worldbook entries[{index}].position",
+        ),
+        "depth": _integer(
+            depth,
+            f"Studio worldbook entries[{index}].depth",
+            minimum=0,
+        ),
+        "probability": _integer(
+            probability,
+            f"Studio worldbook entries[{index}].probability",
+            minimum=0,
+        ),
+        "prevent_recursion": _boolean(
+            extensions.get("prevent_recursion", True),
+            f"Studio worldbook entries[{index}].prevent_recursion",
+        ),
+        "use_regex": _boolean(
+            entry.get("use_regex", False),
+            f"Studio worldbook entries[{index}].use_regex",
+        ),
         "children": [
             _entry_internal(child, child_index)
             for child_index, child in enumerate(
@@ -593,10 +1383,10 @@ def _matches(text: str, keys: list[str], use_regex: bool) -> bool:
 
 
 def _probability(entry: Mapping[str, Any], text: str) -> bool:
-    probability = int(entry.get("probability", 100) or 100)
+    probability = entry.get("probability", 100)
     if probability <= 0:
         return False
     if probability >= 100:
         return True
-    token = f"{entry.get('id', '')}|{text}".encode("utf-8")
+    token = f"{entry['id']}|{text}".encode("utf-8")
     return int(hashlib.sha1(token).hexdigest()[:8], 16) % 100 < probability

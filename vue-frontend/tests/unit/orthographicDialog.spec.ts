@@ -1,6 +1,4 @@
 import { mount } from '@vue/test-utils'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { defineComponent, nextTick } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -10,8 +8,6 @@ import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import ProductThumbnailGrid from '@/components/product/ProductThumbnailGrid.vue'
 import UiSpinner from '@/components/ui/UiSpinner.vue'
-
-const componentSourcePath = resolve(process.cwd(), 'src/components/insight/continuation/OrthographicDialog.vue')
 
 const dialogShellStub = defineComponent({
   template: '<div><slot /><slot name="footer" /></div>',
@@ -166,16 +162,6 @@ describe('OrthographicDialog', () => {
     expect(wrapper.get('img[alt="主角三视图生成结果"]').attributes('src')).toContain('result.png')
   })
 
-  it('uses typed props for generation state instead of exposed instance methods', () => {
-    const source = readFileSync(componentSourcePath, 'utf8')
-
-    expect(source).toContain('resultImagePath')
-    expect(source).toContain('isGenerating')
-    expect(source).not.toContain('defineExpose')
-    expect(source).not.toContain('setResult')
-    expect(source).not.toContain('setGenerating')
-  })
-
   it('renders source-image upload through the product file dropzone', () => {
     const wrapper = mount(OrthographicDialog, {
       props: {
@@ -198,14 +184,13 @@ describe('OrthographicDialog', () => {
     expect(dropzone.props()).toMatchObject({
       inputId: 'orthographicSourceImages',
       accept: 'image/*',
-      multiple: true,
+      multiple: false,
       label: '上传 主角 默认 三视图源图',
     })
     expect(wrapper.find('.upload-area').exists()).toBe(false)
-    expect(readFileSync(componentSourcePath, 'utf8')).not.toContain("import UiFileInput from '@/components/ui/UiFileInput.vue'")
   })
 
-  it('renders selected source-image previews through the product thumbnail grid', async () => {
+  it('renders the selected source-image preview through the product thumbnail grid', async () => {
     vi
       .spyOn(window.URL, 'createObjectURL')
       .mockImplementation(file => `blob:${(file as File).name}`)
@@ -227,10 +212,7 @@ describe('OrthographicDialog', () => {
     })
 
     const input = wrapper.find('input[type="file"]').element as HTMLInputElement
-    setInputFiles(input, [
-      new File(['first'], 'first.png', { type: 'image/png' }),
-      new File(['second'], 'second.png', { type: 'image/png' }),
-    ])
+    setInputFiles(input, [new File(['first'], 'first.png', { type: 'image/png' })])
     await wrapper.find('input[type="file"]').trigger('change')
     await nextTick()
 
@@ -239,72 +221,14 @@ describe('OrthographicDialog', () => {
     expect(thumbnailGrid.props('items')).toEqual([
       expect.objectContaining({
         id: 'blob:first.png',
-        alt: '源图1',
-        cornerLabel: '1',
+        alt: '角色参考图',
         interactive: false,
-        label: '源图 1',
+        label: '角色参考图',
         src: 'blob:first.png',
-      }),
-      expect.objectContaining({
-        id: 'blob:second.png',
-        alt: '源图2',
-        cornerLabel: '2',
-        interactive: false,
-        label: '源图 2',
-        src: 'blob:second.png',
       }),
     ])
     expect(wrapper.find('.source-images').exists()).toBe(false)
     expect(wrapper.find('.source-image').exists()).toBe(false)
   })
 
-  it('maps local upload roles through semantic tokens', () => {
-    const source = readFileSync(componentSourcePath, 'utf8')
-
-    expect(source).not.toContain('--orthographic-dialog-upload-hover-background: rgba(99, 102, 241, .05)')
-    expect(source).toContain('--product-file-dropzone-background-hover: var(--color-focus-brand-soft)')
-    expect(source).not.toContain('.source-images')
-    expect(source).not.toContain('.source-image')
-    expect(source).not.toContain('.image-index')
-  })
-
-  it('keeps dialog presentation hooks under the orthographic-dialog owner', () => {
-    const source = readFileSync(componentSourcePath, 'utf8')
-
-    for (const oldClass of [
-      'orthographic-dialog-body',
-      'ortho-upload-section',
-      'upload-placeholder',
-      'upload-icon',
-      'generating-state',
-      'progress-message',
-      'progress-tip',
-      'ortho-result',
-      'result-preview',
-    ]) {
-      expect(source).not.toMatch(new RegExp(`class="[^"]*\\b${oldClass}\\b`))
-      expect(source).not.toMatch(new RegExp(`\\.${oldClass}\\b`))
-    }
-    expect(source).not.toContain('class="hint"')
-    expect(source).not.toContain('.hint')
-    expect(source).not.toMatch(/\.orthographic-dialog__[^{]+ p\b/)
-    expect(source).not.toMatch(/\.orthographic-dialog__[^{]+ img\b/)
-
-    for (const ownerClass of [
-      'orthographic-dialog__body',
-      'orthographic-dialog__upload-section',
-      'orthographic-dialog__upload-placeholder',
-      'orthographic-dialog__upload-icon',
-      'orthographic-dialog__upload-hint',
-      'orthographic-dialog__generating-state',
-      'orthographic-dialog__generating-content',
-      'orthographic-dialog__progress-message',
-      'orthographic-dialog__progress-tip',
-      'orthographic-dialog__result',
-      'orthographic-dialog__result-preview',
-      'orthographic-dialog__result-image',
-    ]) {
-      expect(source).toContain(ownerClass)
-    }
-  })
 })

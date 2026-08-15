@@ -34,13 +34,18 @@ const liveJobs = computed(() => (
 ))
 
 const resolved = computed(() => {
-  const counts: JobStatusSummary = liveJobs.value.length
-    ? liveJobs.value.reduce<JobStatusSummary>((result, job) => {
-        result[job.status as keyof JobStatusSummary] = (
-          result[job.status as keyof JobStatusSummary] || 0
-        ) + 1
-        return result
-      }, {})
+  const liveCounts = liveJobs.value.reduce<JobStatusSummary>((result, job) => {
+    result[job.status as keyof JobStatusSummary] = (
+      result[job.status as keyof JobStatusSummary] || 0
+    ) + 1
+    return result
+  }, {})
+  const counts: JobStatusSummary = store.snapshotLoaded || liveJobs.value.length > 0
+    ? {
+        ...liveCounts,
+        interrupted: Math.max(liveCounts.interrupted || 0, props.summary.interrupted || 0),
+        failed: Math.max(liveCounts.failed || 0, props.summary.failed || 0),
+      }
     : props.summary
   const entries = [
     { statuses: ['interrupted'], tone: 'danger', label: '中断' },

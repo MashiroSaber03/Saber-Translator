@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useId } from 'vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 
 interface ProductSelectableImageItem {
@@ -20,12 +21,18 @@ withDefaults(defineProps<{
 defineEmits<{
   toggle: [id: string | number]
 }>()
+
+const inputIdPrefix = useId()
+
+function inputId(index: number): string {
+  return `${inputIdPrefix}-${index}`
+}
 </script>
 
 <template>
   <div class="product-selectable-image-grid" role="list" :aria-label="ariaLabel">
-    <label
-      v-for="item in items"
+    <div
+      v-for="(item, index) in items"
       :key="item.id"
       class="product-selectable-image-grid__item"
       :class="{
@@ -36,17 +43,20 @@ defineEmits<{
     >
       <span class="product-selectable-image-grid__checkbox">
         <UiCheckbox
+          :input-id="inputId(index)"
           :aria-label="`选择${item.label}`"
           :disabled="item.disabled"
           :model-value="item.selected"
           @change="$emit('toggle', item.id)"
         />
       </span>
-      <span class="product-selectable-image-grid__preview">
-        <img class="product-selectable-image-grid__preview-image" :src="item.src" :alt="item.alt" loading="lazy">
-      </span>
-      <span class="product-selectable-image-grid__label">{{ item.label }}</span>
-    </label>
+      <label class="product-selectable-image-grid__body" :for="inputId(index)">
+        <span class="product-selectable-image-grid__preview">
+          <img class="product-selectable-image-grid__preview-image" :src="item.src" :alt="item.alt" loading="lazy">
+        </span>
+        <span class="product-selectable-image-grid__label">{{ item.label }}</span>
+      </label>
+    </div>
   </div>
 </template>
 
@@ -88,6 +98,11 @@ defineEmits<{
   top: 6px;
   left: 6px;
   z-index: var(--z-local);
+}
+
+.product-selectable-image-grid__body {
+  display: block;
+  cursor: inherit;
 }
 
 .product-selectable-image-grid__preview {

@@ -10,9 +10,9 @@
           @change="handleProviderChange"
         />
         <AiProviderCredentialFields
-          :api-key="localHqSettings.apiKey"
+          :api-key="hqSettings.apiKey"
           api-key-input-id="settingsHqApiKey"
-          :base-url="localHqSettings.customBaseUrl"
+          :base-url="hqSettings.customBaseUrl"
           base-url-input-id="settingsHqCustomBaseUrl"
           :show-api-key="providerRequiresApiKey(hqSettings.provider)"
           :show-base-url="false"
@@ -21,32 +21,33 @@
           :has-stored-credential="settingsStore.hasCredential('hq', hqSettings.provider)"
           api-key-show-label="显示高质量翻译 API Key"
           api-key-hide-label="隐藏高质量翻译 API Key"
-          @update:api-key="localHqSettings.apiKey = $event"
+          @update:api-key="updateHqString('apiKey', $event)"
         />
       </UiFormGrid>
 
       <AiProviderCredentialFields
-        :api-key="localHqSettings.apiKey"
+        :api-key="hqSettings.apiKey"
         api-key-input-id="settingsHqApiKey"
-        :base-url="localHqSettings.customBaseUrl"
+        :base-url="hqSettings.customBaseUrl"
         base-url-input-id="settingsHqCustomBaseUrl"
         :show-api-key="false"
         :show-base-url="providerRequiresBaseUrl(hqSettings.provider)"
         :include-api-key="false"
         base-url-placeholder="例如: https://api.example.com/v1"
-        @update:base-url="localHqSettings.customBaseUrl = $event"
+        @update:base-url="updateHqString('customBaseUrl', $event)"
       />
 
       <UiField variant="settings" label="模型名称" control-id="settingsHqModelName">
         <UiModelPicker
           input-id="settingsHqModelName"
-          v-model="localHqSettings.modelName"
+          :model-value="hqSettings.modelName"
           placeholder="请输入模型名称"
           fetch-variant="primary"
           :fetching="isFetchingModels"
           :fetch-disabled="isFetchingModels"
           :options="modelListOptions"
           :model-count="modelList.length"
+          @update:model-value="updateHqModel"
           @fetch="fetchModels"
         />
       </UiField>
@@ -73,10 +74,11 @@
         >
           <UiNumberField
             input-id="settingsHqBatchSize"
-            v-model="localHqSettings.batchSize"
+            :model-value="hqSettings.batchSize"
             :min="1"
             :max="10"
             :step="1"
+            @update:model-value="updateHqNumber('batchSize', $event)"
           />
         </UiField>
       </UiFormGrid>
@@ -89,9 +91,11 @@
         >
           <UiNumberField
             input-id="settingsHqRpmLimit"
-            v-model="localHqSettings.rpmLimit"
+            :model-value="hqSettings.openaiOptions.execution.rpmLimit"
             :min="0"
+            :max="100000"
             :step="1"
+            @update:model-value="updateHqNumber('rpmLimit', $event)"
           />
         </UiField>
         <UiField
@@ -102,10 +106,11 @@
         >
           <UiNumberField
             input-id="settingsHqMaxRetries"
-            v-model="localHqSettings.businessRetries"
+            :model-value="hqSettings.openaiOptions.execution.businessRetries"
             :min="0"
-            :max="10"
+            :max="100"
             :step="1"
+            @update:model-value="updateHqNumber('businessRetries', $event)"
           />
         </UiField>
         <UiField
@@ -116,10 +121,11 @@
         >
           <UiNumberField
             input-id="settingsHqTransportRetries"
-            v-model="localHqSettings.transportRetries"
+            :model-value="hqSettings.openaiOptions.execution.transportRetries"
             :min="0"
-            :max="10"
+            :max="100"
             :step="1"
+            @update:model-value="updateHqNumber('transportRetries', $event)"
           />
         </UiField>
       </UiFormGrid>
@@ -129,14 +135,25 @@
       <template #title>高级选项</template>
       <UiFormGrid>
         <UiField variant="settings" control="checkbox" hint="使用 response_format: json_object">
-          <UiCheckbox v-model="localHqSettings.forceJsonOutput" label="强制JSON输出" />
+          <UiCheckbox
+            :model-value="hqSettings.openaiOptions.request.forceJsonOutput"
+            label="强制JSON输出"
+            @update:model-value="settingsStore.setHqForceJsonOutput"
+          />
         </UiField>
         <UiField variant="settings" control="checkbox" hint="使用流式API调用">
-          <UiCheckbox v-model="localHqSettings.useStream" label="流式调用" />
+          <UiCheckbox
+            :model-value="hqSettings.openaiOptions.execution.useStream"
+            label="流式调用"
+            @update:model-value="settingsStore.setHqUseStream"
+          />
         </UiField>
       </UiFormGrid>
       <UiField variant="settings">
-        <OpenAIExtraBodyEditor v-model="localHqSettings.extraBody" />
+        <OpenAIExtraBodyEditor
+          :model-value="hqSettings.openaiOptions.request.extraBody"
+          @update:model-value="updateHqExtraBody"
+        />
       </UiField>
     </ProductFormSection>
 
@@ -145,10 +162,11 @@
       <UiField variant="settings" label="高质量翻译提示词" control-id="settingsHqPrompt">
         <UiTextarea
           id="settingsHqPrompt"
-          v-model="localHqSettings.prompt"
+          :model-value="hqSettings.prompt"
           variant="panel"
           rows="6"
           placeholder="高质量翻译提示词"
+          @update:model-value="updateHqString('prompt', $event)"
         />
         <SavedPromptsPicker prompt-type="hq_translate" @select="handleHqPromptSelect" />
         <ProductActionRow aria-label="高质量翻译提示词操作" justify="start">
@@ -172,7 +190,7 @@ import AiProviderCredentialFields from '@/components/settings/AiProviderCredenti
 import AiProviderSelectField from '@/components/settings/AiProviderSelectField.vue'
 import type { UiSelectValue } from '@/components/ui/selectTypes'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import {
   getProviderDisplayName,
   getProviderOptionsForCapability,
@@ -198,87 +216,6 @@ const toast = useToast()
 
 const hqSettings = computed(() => settingsStore.settings.hqTranslation)
 
-const localHqSettings = ref({
-  apiKey: settingsStore.settings.hqTranslation.apiKey,
-  modelName: settingsStore.settings.hqTranslation.modelName,
-  customBaseUrl: settingsStore.settings.hqTranslation.customBaseUrl,
-  batchSize: settingsStore.settings.hqTranslation.batchSize,
-  rpmLimit: settingsStore.settings.hqTranslation.openaiOptions.execution.rpmLimit,
-  transportRetries: settingsStore.settings.hqTranslation.openaiOptions.execution.transportRetries,
-  businessRetries: settingsStore.settings.hqTranslation.openaiOptions.execution.businessRetries,
-  forceJsonOutput: settingsStore.settings.hqTranslation.openaiOptions.request.forceJsonOutput,
-  extraBody: settingsStore.settings.hqTranslation.openaiOptions.request.extraBody,
-  useStream: settingsStore.settings.hqTranslation.openaiOptions.execution.useStream,
-  prompt: settingsStore.settings.hqTranslation.prompt,
-})
-
-watch(
-  () => localHqSettings.value.apiKey,
-  val => {
-    settingsStore.updateHqTranslation({ apiKey: val })
-  }
-)
-watch(
-  () => localHqSettings.value.modelName,
-  val => {
-    settingsStore.updateHqTranslation({ modelName: val })
-  }
-)
-watch(
-  () => localHqSettings.value.customBaseUrl,
-  val => {
-    settingsStore.updateHqTranslation({ customBaseUrl: val })
-  }
-)
-watch(
-  () => localHqSettings.value.batchSize,
-  val => {
-    settingsStore.updateHqTranslation({ batchSize: val })
-  }
-)
-watch(
-  () => localHqSettings.value.rpmLimit,
-  val => {
-    settingsStore.updateHqTranslation({ rpmLimit: val })
-  }
-)
-watch(
-  () => localHqSettings.value.transportRetries,
-  val => {
-    settingsStore.updateHqTranslation({ transportRetries: val })
-  }
-)
-watch(
-  () => localHqSettings.value.businessRetries,
-  val => {
-    settingsStore.updateHqTranslation({ businessRetries: val })
-  }
-)
-watch(
-  () => localHqSettings.value.forceJsonOutput,
-  val => {
-    settingsStore.updateHqTranslation({ forceJsonOutput: val })
-  }
-)
-watch(
-  () => localHqSettings.value.extraBody,
-  val => {
-    settingsStore.updateHqTranslation({ extraBody: val })
-  }
-)
-watch(
-  () => localHqSettings.value.useStream,
-  val => {
-    settingsStore.updateHqTranslation({ useStream: val })
-  }
-)
-watch(
-  () => localHqSettings.value.prompt,
-  val => {
-    settingsStore.updateHqTranslation({ prompt: val })
-  }
-)
-
 function notifyModelDiscovery(message: string, tone: AiModelDiscoveryMessageTone): void {
   toast[tone](message)
 }
@@ -286,8 +223,8 @@ function notifyModelDiscovery(message: string, tone: AiModelDiscoveryMessageTone
 const modelDiscovery = useAiModelDiscovery({
   source: () => ({
     provider: hqSettings.value.provider,
-    apiKey: localHqSettings.value.apiKey,
-    baseUrl: localHqSettings.value.customBaseUrl,
+    apiKey: hqSettings.value.apiKey,
+    baseUrl: hqSettings.value.customBaseUrl,
     hasStoredCredential: settingsStore.hasCredential('hq', hqSettings.value.provider),
   }),
   fetcher: (provider, apiKey, baseUrl) => fetchV2Models(provider, apiKey, baseUrl, 'hq'),
@@ -306,33 +243,43 @@ const modelListOptions = computed(() => {
 })
 
 function handleProviderChange(newProvider: UiSelectValue) {
+  if (typeof newProvider !== 'string') return
+  if (!providerOptions.some(option => option.value === newProvider)) return
   modelDiscovery.invalidate()
-  settingsStore.setHqProvider(String(newProvider) as HqTranslationProvider)
-  syncLocalHqSettings()
+  settingsStore.setHqProvider(newProvider as HqTranslationProvider)
 }
 
-function syncLocalHqSettings() {
-  const hq = settingsStore.settings.hqTranslation
-  localHqSettings.value.apiKey = hq.apiKey
-  localHqSettings.value.modelName = hq.modelName
-  localHqSettings.value.customBaseUrl = hq.customBaseUrl
-  localHqSettings.value.batchSize = hq.batchSize
-  localHqSettings.value.rpmLimit = hq.openaiOptions.execution.rpmLimit
-  localHqSettings.value.transportRetries = hq.openaiOptions.execution.transportRetries
-  localHqSettings.value.businessRetries = hq.openaiOptions.execution.businessRetries
-  localHqSettings.value.forceJsonOutput = hq.openaiOptions.request.forceJsonOutput
-  localHqSettings.value.extraBody = hq.openaiOptions.request.extraBody
-  localHqSettings.value.useStream = hq.openaiOptions.execution.useStream
-  localHqSettings.value.prompt = hq.prompt
+function updateHqString(
+  field: 'apiKey' | 'customBaseUrl' | 'prompt',
+  value: string,
+): void {
+  settingsStore.updateHqTranslation({ [field]: value })
+}
+
+function updateHqModel(value: UiSelectValue): void {
+  if (typeof value !== 'string') return
+  settingsStore.updateHqTranslation({ modelName: value })
+}
+
+function updateHqNumber(
+  field: 'batchSize' | 'rpmLimit' | 'businessRetries' | 'transportRetries',
+  value: number | null,
+): void {
+  if (value === null) return
+  settingsStore.updateHqTranslation({ [field]: value })
+}
+
+function updateHqExtraBody(value: Record<string, unknown> | undefined): void {
+  settingsStore.updateHqTranslation({ extraBody: value })
 }
 
 const fetchModels = modelDiscovery.fetchModels
 
 async function testConnection() {
   const provider = hqSettings.value.provider
-  const apiKey = localHqSettings.value.apiKey?.trim()
-  const modelName = localHqSettings.value.modelName?.trim()
-  const baseUrl = localHqSettings.value.customBaseUrl?.trim()
+  const apiKey = hqSettings.value.apiKey?.trim()
+  const modelName = hqSettings.value.modelName?.trim()
+  const baseUrl = hqSettings.value.customBaseUrl?.trim()
 
   if (providerRequiresApiKey(provider) && !apiKey && !settingsStore.hasCredential('hq', provider)) {
     toast.warning('请先填写 API Key')
@@ -376,13 +323,11 @@ async function testConnection() {
 
 function resetHqPrompt() {
   settingsStore.updateHqTranslation({ prompt: DEFAULT_HQ_TRANSLATE_PROMPT })
-  localHqSettings.value.prompt = DEFAULT_HQ_TRANSLATE_PROMPT
   toast.success('已重置为默认提示词')
 }
 
 function handleHqPromptSelect(content: string, name: string) {
   settingsStore.updateHqTranslation({ prompt: content })
-  localHqSettings.value.prompt = content
   toast.success(`已应用提示词: ${name}`)
 }
 </script>

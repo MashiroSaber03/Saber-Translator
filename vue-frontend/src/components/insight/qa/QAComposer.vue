@@ -2,13 +2,10 @@
 import { computed } from 'vue'
 import ProductComposer from '@/components/product/ProductComposer.vue'
 
-const props = withDefaults(defineProps<{
-  disabled?: boolean
-  isStreaming: boolean
+const props = defineProps<{
+  disabled: boolean
   question: string
-}>(), {
-  disabled: false,
-})
+}>()
 
 const emit = defineEmits<{
   (event: 'submit'): void
@@ -26,7 +23,7 @@ const questionModel = computed({
     class="qa-composer"
     v-model="questionModel"
     placeholder="输入你的问题..."
-    :disabled="disabled || isStreaming"
+    :disabled="disabled"
     :show-submit-icon="false"
     submit-label="发送"
     @submit="emit('submit')"

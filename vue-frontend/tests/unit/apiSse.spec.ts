@@ -18,13 +18,13 @@ describe('api SSE helpers', () => {
     const onMessage = vi.fn()
 
     await readSseStream(new Response(streamFromChunks([
-      'event: log\n',
+      'id: 17\nevent: log\n',
       'data: {"message":"hel',
       'lo"}\n\n',
       'event: done\ndata: {"ok":true}\n\n',
     ])), { onMessage })
 
-    expect(onMessage).toHaveBeenCalledWith({ event: 'log', data: { message: 'hello' } })
+    expect(onMessage).toHaveBeenCalledWith({ id: '17', event: 'log', data: { message: 'hello' } })
     expect(onMessage).toHaveBeenCalledWith({ event: 'done', data: { ok: true } })
   })
 
@@ -39,6 +39,18 @@ describe('api SSE helpers', () => {
     ])), { onMessage })
 
     expect(onMessage).toHaveBeenCalledWith({ event: 'log', data: { message: 'hello' } })
+  })
+
+  it('preserves JSON string whitespace and dispatches a final event without a blank line', async () => {
+    const { readSseStream } = await import('@/api/sse')
+    const onMessage = vi.fn()
+
+    await readSseStream(new Response(streamFromChunks([
+      'event: chunk\r\n',
+      'data: {"text":"tail  "}',
+    ])), { onMessage })
+
+    expect(onMessage).toHaveBeenCalledWith({ event: 'chunk', data: { text: 'tail  ' } })
   })
 
   it('reports parse errors and missing response bodies', async () => {

@@ -14,10 +14,11 @@ import pytest
 from sqlalchemy import insert, select, update
 
 from src.backend_v2.content.image_import import ImageImportService
-from src.backend_v2.content.repository import ContentRepository
+from src.backend_v2.content.repository import ContentConflict, ContentRepository
 from src.backend_v2.operations.executor import _LeaseHeartbeat, WorkerOperationRunner
 from src.backend_v2.operations.repository import (
     OperationConflict,
+    OperationDataInvalid,
     OperationFence,
     OperationFenced,
     OperationLocked,
@@ -41,6 +42,8 @@ from src.backend_v2.storage.schema import (
     credentials,
     credential_versions,
     metadata,
+    operations,
+    operation_events,
     operation_credential_snapshots,
     page_assets,
     pages,
@@ -51,6 +54,52 @@ from src.backend_v2.storage.seeding import seed_system_records
 from src.backend_v2.translation.interactive_operations import (
     InteractivePageOperationService,
 )
+
+
+def _stored_job_progress(status: str) -> str:
+    return json.dumps(
+        {
+            "executionMode": "sequential",
+            "jobStatus": status,
+            "totalItems": 0,
+            "completedItems": 0,
+            "failedItems": 0,
+            "skippedItems": 0,
+            "cancelledItems": 0,
+            "pools": [],
+        },
+        separators=(",", ":"),
+    )
+
+
+def _bubble_payload(**updates: object) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "originalText": "",
+        "translatedText": "",
+        "textboxText": "",
+        "coords": [4, 4, 20, 20],
+        "polygon": [],
+        "fontSize": 26,
+        "textDirection": "horizontal",
+        "autoTextDirection": "horizontal",
+        "textColor": "#000000",
+        "fillColor": "#ff0000",
+        "rotationAngle": 0,
+        "position": {"x": 0, "y": 0},
+        "strokeEnabled": False,
+        "strokeColor": "#FFFFFF",
+        "strokeWidth": 0,
+        "lineSpacing": 1.0,
+        "textAlign": "center",
+        "inpaintMethod": "solid",
+        "autoFgColor": None,
+        "autoBgColor": None,
+        "colorConfidence": 0.0,
+        "textlines": [],
+        "ocrResult": None,
+    }
+    payload.update(updates)
+    return payload
 
 
 @pytest.fixture()
@@ -86,10 +135,7 @@ def operation_platform(tmp_path: Path):
                 id=bubble_id,
                 page_id=page_id,
                 ordinal=1,
-                payload_json=(
-                    '{"coords":[4,4,20,20],"fillColor":"#ff0000",'
-                    '"inpaintMethod":"solid","originalText":""}'
-                ),
+                payload_json=json.dumps(_bubble_payload()),
                 updated_revision=1,
             )
         )
@@ -156,6 +202,150 @@ def test_empty_operation_claim_still_fences_an_inactive_epoch(
         )
 
 
+def test_corrupt_pending_operation_is_failed_once_instead_of_repolled(
+    operation_platform,
+) -> None:
+    platform = operation_platform
+    repository = OperationRepository(platform["engine"])
+    accepted, _ = repository.create_page_operation(
+        page_id=platform["page_id"],
+        kind="bubble_ocr",
+        base_revision=1,
+        bubble_id=platform["bubble_id"],
+        payload={},
+        idempotency_key="corrupt-operation",
+    )
+    operation_id = str(accepted["operationId"])
+    with platform["engine"].begin() as connection:
+        connection.execute(
+            update(operations)
+            .where(operations.c.id == operation_id)
+            .values(request_json="[]")
+        )
+
+    claimed = repository.claim_next(
+        executor_role="worker",
+        executor_epoch_id=platform["worker_epoch_id"],
+        allowed_kinds=("bubble_ocr",),
+    )
+
+    assert claimed is None
+    failed = repository.get(operation_id)
+    assert failed["status"] == "failed"
+    assert failed["request"] == {"discardedInvalidStoredRequest": True}
+    assert failed["error"] == {
+        "code": "OPERATION_DATA_INVALID",
+        "message": "operations.request_json must contain a JSON object",
+    }
+    assert [
+        event["type"] for event in repository.events_after(operation_id)
+    ] == ["operation_failed"]
+
+    with platform["engine"].begin() as connection:
+        connection.execute(
+            update(operation_events)
+            .where(operation_events.c.operation_id == operation_id)
+            .values(payload_json="[]")
+        )
+    with pytest.raises(OperationDataInvalid, match="JSON object"):
+        repository.events_after(operation_id)
+
+
+def test_expired_local_operation_is_reclaimed_with_a_new_attempt(
+    operation_platform,
+) -> None:
+    platform = operation_platform
+    repository = OperationRepository(
+        platform["engine"],
+        attempt_lease_seconds=3,
+    )
+    accepted, _ = repository.create_page_operation(
+        page_id=platform["page_id"],
+        kind="bubble_ocr",
+        base_revision=1,
+        bubble_id=platform["bubble_id"],
+        payload={},
+        idempotency_key="expired-local-operation",
+    )
+    first = repository.claim_next(
+        executor_role="worker",
+        executor_epoch_id=platform["worker_epoch_id"],
+        allowed_kinds=("bubble_ocr",),
+    )
+    assert first is not None
+    first_fence, _ = first
+    with platform["engine"].begin() as connection:
+        connection.execute(
+            update(operations)
+            .where(operations.c.id == accepted["operationId"])
+            .values(
+                lease_expires_at=datetime.now(timezone.utc).replace(tzinfo=None)
+                - timedelta(seconds=1)
+            )
+        )
+
+    second = repository.claim_next(
+        executor_role="worker",
+        executor_epoch_id=platform["worker_epoch_id"],
+        allowed_kinds=("bubble_ocr",),
+    )
+
+    assert second is not None
+    second_fence, _ = second
+    assert second_fence.attempt_id != first_fence.attempt_id
+    assert "operation_requeued" in {
+        event["type"]
+        for event in repository.events_after(str(accepted["operationId"]))
+    }
+    with pytest.raises(OperationFenced):
+        repository.complete(first_fence, result={})
+
+
+def test_expired_remote_operation_fails_without_replaying_provider_call(
+    operation_platform,
+) -> None:
+    platform = operation_platform
+    repository = OperationRepository(
+        platform["engine"],
+        attempt_lease_seconds=3,
+    )
+    accepted, _ = repository.create_page_operation(
+        page_id=platform["page_id"],
+        kind="bubble_translate",
+        base_revision=1,
+        bubble_id=platform["bubble_id"],
+        payload={},
+        idempotency_key="expired-remote-operation",
+    )
+    claimed = repository.claim_next(
+        executor_role="api",
+        executor_epoch_id=platform["api_epoch_id"],
+        allowed_kinds=("bubble_translate",),
+    )
+    assert claimed is not None
+    fence, _ = claimed
+    with platform["engine"].begin() as connection:
+        connection.execute(
+            update(operations)
+            .where(operations.c.id == accepted["operationId"])
+            .values(
+                lease_expires_at=datetime.now(timezone.utc).replace(tzinfo=None)
+                - timedelta(seconds=1)
+            )
+        )
+
+    assert repository.claim_next(
+        executor_role="api",
+        executor_epoch_id=platform["api_epoch_id"],
+        allowed_kinds=("bubble_translate",),
+    ) is None
+    failed = repository.get(str(accepted["operationId"]))
+    assert failed["status"] == "failed"
+    assert failed["error"]["code"] == "OPERATION_LEASE_EXPIRED"
+    with pytest.raises(OperationFenced):
+        repository.complete(fence, result={})
+
+
 def test_page_operation_is_idempotent_fenced_and_persistent(
     operation_platform,
 ) -> None:
@@ -205,6 +395,35 @@ def test_page_operation_is_idempotent_fenced_and_persistent(
     assert stored["result"] == {"text": "hello"}
 
 
+def test_active_page_operation_blocks_concurrent_document_mutation(
+    operation_platform,
+) -> None:
+    platform = operation_platform
+    OperationRepository(platform["engine"]).create_page_operation(
+        page_id=platform["page_id"],
+        kind="bubble_ocr",
+        base_revision=1,
+        bubble_id=platform["bubble_id"],
+        payload={},
+        idempotency_key="active-operation-document-fence",
+    )
+
+    with pytest.raises(ContentConflict, match="active operation"):
+        platform["content"].mutate_page_document(
+            page_id=platform["page_id"],
+            base_revision=1,
+            mutations=[
+                {
+                    "op": "patch",
+                    "clientMutationId": "concurrent-document-mutation",
+                    "bubbleId": platform["bubble_id"],
+                    "fields": {"translatedText": "must not publish"},
+                }
+            ],
+            idempotency_key="concurrent-document-mutation",
+        )
+
+
 def test_page_detect_publishes_precise_mask_and_keeps_page_state_consistent(
     operation_platform,
 ) -> None:
@@ -213,18 +432,12 @@ def test_page_detect_publishes_precise_mask_and_keeps_page_state_consistent(
     with platform["engine"].begin() as connection:
         connection.execute(
             update(bubbles)
-            .where(bubbles.c.id == platform["bubble_id"])
-            .values(
-                payload_json=json.dumps(
-                    {
-                        "coords": [4, 4, 20, 20],
-                        "fillColor": "#ff0000",
-                        "inpaintMethod": "solid",
-                        "originalText": "保留原文",
-                        "translatedText": "",
-                    }
+                .where(bubbles.c.id == platform["bubble_id"])
+                .values(
+                    payload_json=json.dumps(
+                        _bubble_payload(originalText="保留原文")
+                    )
                 )
-            )
         )
     accepted, _ = repository.create_page_operation(
         page_id=platform["page_id"],
@@ -441,7 +654,16 @@ def test_worker_ocr_plugin_mutates_domain_result_before_publish(
         def ocr(self, _image, _bubbles, _config):
             return {
                 "texts": ["こんにちは"],
-                "results": [{"confidence": 1.0}],
+                "results": [
+                    {
+                        "text": "こんにちは",
+                        "confidence": 1.0,
+                        "confidenceSupported": True,
+                        "engine": "test",
+                        "primaryEngine": "test",
+                        "fallbackUsed": False,
+                    }
+                ],
             }
 
     runtime = PluginOperationRuntime(
@@ -533,6 +755,7 @@ def test_operation_creation_obeys_revision_and_write_intent(
                 queue_rank=1,
                 chapter_id=platform["chapter"]["id"],
                 config_json="{}",
+                latest_progress_json=_stored_job_progress("queued"),
             )
         )
         connection.execute(
@@ -586,13 +809,8 @@ def test_bubble_translate_freezes_credential_and_publishes_document(
         )
         connection.execute(
             update(bubbles)
-            .where(bubbles.c.id == platform["bubble_id"])
-            .values(
-                payload_json=(
-                    '{"coords":[4,4,20,20],"fillColor":"#ff0000",'
-                    '"inpaintMethod":"solid","originalText":"source"}'
-                )
-            )
+                .where(bubbles.c.id == platform["bubble_id"])
+                .values(payload_json=json.dumps(_bubble_payload(originalText="source")))
         )
 
     accepted, replayed = repository.create_page_operation(
@@ -664,6 +882,114 @@ def test_bubble_translate_freezes_credential_and_publishes_document(
     assert repository.get(str(accepted["operationId"]))["status"] == "completed"
 
 
+def test_single_bubble_operation_advances_every_bubble_revision(
+    operation_platform,
+) -> None:
+    platform = operation_platform
+    second_bubble_id = str(uuid.uuid4())
+    with platform["engine"].begin() as connection:
+        connection.execute(
+            update(bubbles)
+                .where(bubbles.c.id == platform["bubble_id"])
+                .values(payload_json=json.dumps(_bubble_payload(originalText="source")))
+        )
+        connection.execute(
+            insert(bubbles).values(
+                id=second_bubble_id,
+                page_id=platform["page_id"],
+                ordinal=2,
+                payload_json=json.dumps(
+                    _bubble_payload(
+                        coords=[24, 24, 40, 40],
+                        fillColor="#ffffff",
+                        originalText="untouched",
+                    )
+                ),
+                updated_revision=1,
+            )
+        )
+
+    repository = OperationRepository(platform["engine"])
+    repository.create_page_operation(
+        page_id=platform["page_id"],
+        kind="bubble_translate",
+        base_revision=1,
+        bubble_id=platform["bubble_id"],
+        payload={},
+        idempotency_key="translate-one-of-two-bubbles",
+    )
+
+    class TranslateOnlyAlgorithms:
+        def translate(self, texts, _config, *, mode):
+            assert texts == ["source"]
+            assert mode == "single"
+            return {"translated": ["译文"], "textbox": []}
+
+    service = InteractivePageOperationService(
+        data_root=platform["data_root"],
+        engine=platform["engine"],
+        repository=repository,
+        algorithms=TranslateOnlyAlgorithms(),
+    )
+    claimed = repository.claim_next(
+        executor_role="api",
+        executor_epoch_id=platform["api_epoch_id"],
+        allowed_kinds=("bubble_translate",),
+    )
+    assert claimed is not None
+    service.handle(*claimed)
+
+    with platform["engine"].connect() as connection:
+        revision = connection.execute(
+            select(pages.c.document_revision).where(
+                pages.c.id == platform["page_id"]
+            )
+        ).scalar_one()
+        bubble_revisions = list(
+            connection.execute(
+                select(bubbles.c.updated_revision)
+                .where(bubbles.c.page_id == platform["page_id"])
+                .order_by(bubbles.c.ordinal)
+            ).scalars()
+        )
+    assert revision == 2
+    assert bubble_revisions == [2, 2]
+
+
+def test_single_bubble_ocr_rejects_missing_detail_result(
+    operation_platform,
+) -> None:
+    platform = operation_platform
+    repository = OperationRepository(platform["engine"])
+    repository.create_page_operation(
+        page_id=platform["page_id"],
+        kind="bubble_ocr",
+        base_revision=1,
+        bubble_id=platform["bubble_id"],
+        payload={},
+        idempotency_key="ocr-missing-detail",
+    )
+
+    class MissingDetailAlgorithms:
+        def ocr(self, _image, _bubbles, _config):
+            return {"texts": ["recognized"], "results": []}
+
+    service = InteractivePageOperationService(
+        data_root=platform["data_root"],
+        engine=platform["engine"],
+        repository=repository,
+        algorithms=MissingDetailAlgorithms(),
+    )
+    claimed = repository.claim_next(
+        executor_role="worker",
+        executor_epoch_id=platform["worker_epoch_id"],
+        allowed_kinds=("bubble_ocr",),
+    )
+    assert claimed is not None
+    with pytest.raises(RuntimeError, match="invalid result count"):
+        service.handle(*claimed)
+
+
 def test_operation_errors_and_events_never_expose_frozen_credentials(
     operation_platform,
 ) -> None:
@@ -713,6 +1039,7 @@ def test_operation_errors_and_events_never_expose_frozen_credentials(
         payload={
             "apiKey": canary,
             "header": f"Authorization: Bearer {canary}",
+            "providerMessage": f"upstream echoed {canary}",
         },
     )
     repository.fail(
@@ -792,7 +1119,137 @@ def test_render_request_coalesces_and_old_revision_cannot_publish(
                 pages.c.id == platform["page_id"]
             )
         ).one()
-        assert page == (2, "ready")
+    assert page == (2, "ready")
+
+
+def test_non_rendering_page_edit_advances_an_existing_render_chain(
+    operation_platform,
+) -> None:
+    platform = operation_platform
+    renders = RenderRequestRepository(platform["engine"])
+    with immediate_transaction(platform["engine"]) as connection:
+        connection.execute(
+            update(pages)
+            .where(pages.c.id == platform["page_id"])
+            .values(render_status="stale")
+        )
+        request_id = renders.upsert(
+            connection,
+            page_id=platform["page_id"],
+            requested_revision=1,
+        )
+
+    platform["content"].mutate_page_document(
+        page_id=platform["page_id"],
+        base_revision=1,
+        mutations=[
+            {
+                "op": "patch",
+                "clientMutationId": "non-rendering-edit",
+                "bubbleId": platform["bubble_id"],
+                "fields": {"fillColor": "#112233"},
+            }
+        ],
+        idempotency_key="non-rendering-edit",
+    )
+
+    with platform["engine"].connect() as connection:
+        render = connection.execute(
+            select(
+                render_requests.c.status,
+                render_requests.c.requested_revision,
+            ).where(render_requests.c.id == request_id)
+        ).one()
+        page = connection.execute(
+            select(
+                pages.c.document_revision,
+                pages.c.render_status,
+            ).where(pages.c.id == platform["page_id"])
+        ).one()
+    assert render == ("pending", 2)
+    assert page == (2, "stale")
+
+
+def test_old_render_failure_preserves_the_newer_coalesced_request(
+    operation_platform,
+) -> None:
+    platform = operation_platform
+    repository = RenderRequestRepository(platform["engine"])
+    with immediate_transaction(platform["engine"]) as connection:
+        request_id = repository.upsert(
+            connection,
+            page_id=platform["page_id"],
+            requested_revision=1,
+        )
+    first = repository.claim_next(api_epoch_id=platform["api_epoch_id"])
+    assert first is not None
+    with immediate_transaction(platform["engine"]) as connection:
+        connection.execute(
+            update(pages)
+            .where(pages.c.id == platform["page_id"])
+            .values(document_revision=2, render_status="stale")
+        )
+        repository.upsert(
+            connection,
+            page_id=platform["page_id"],
+            requested_revision=2,
+        )
+
+    repository.fail(first, code="OLD_RENDER_FAILED", message="old attempt")
+
+    with platform["engine"].connect() as connection:
+        render = connection.execute(
+            select(
+                render_requests.c.status,
+                render_requests.c.requested_revision,
+                render_requests.c.error_json,
+            ).where(render_requests.c.id == request_id)
+        ).one()
+        page_status = connection.execute(
+            select(pages.c.render_status).where(
+                pages.c.id == platform["page_id"]
+            )
+        ).scalar_one()
+    assert render == ("pending", 2, None)
+    assert page_status == "stale"
+    second = repository.claim_next(api_epoch_id=platform["api_epoch_id"])
+    assert second is not None
+    assert second.rendering_revision == 2
+
+
+def test_expired_render_attempt_is_reclaimed_and_old_fence_is_rejected(
+    operation_platform,
+) -> None:
+    platform = operation_platform
+    repository = RenderRequestRepository(
+        platform["engine"],
+        attempt_lease_seconds=3,
+    )
+    with immediate_transaction(platform["engine"]) as connection:
+        request_id = repository.upsert(
+            connection,
+            page_id=platform["page_id"],
+            requested_revision=1,
+        )
+    first = repository.claim_next(api_epoch_id=platform["api_epoch_id"])
+    assert first is not None
+    with platform["engine"].begin() as connection:
+        connection.execute(
+            update(render_requests)
+            .where(render_requests.c.id == request_id)
+            .values(
+                lease_expires_at=datetime.now(timezone.utc).replace(tzinfo=None)
+                - timedelta(seconds=1)
+            )
+        )
+
+    second = repository.claim_next(api_epoch_id=platform["api_epoch_id"])
+
+    assert second is not None
+    assert second.attempt_id != first.attempt_id
+    assert second.rendering_revision == 1
+    with pytest.raises(OperationFenced):
+        repository.complete(first, publisher=lambda _connection: None)
 
 
 def test_page_repair_advances_revision_replays_without_new_mask_and_renders(
@@ -868,6 +1325,66 @@ def test_page_repair_advances_revision_replays_without_new_mask_and_renders(
         assert repaired.getpixel((30, 30)) == (12, 34, 56)
 
 
+def test_bubble_repair_rejects_incomplete_legacy_payload(
+    operation_platform,
+) -> None:
+    platform = operation_platform
+    repository = OperationRepository(platform["engine"])
+    service = PageRepairService(
+        data_root=platform["data_root"],
+        engine=platform["engine"],
+        repository=repository,
+    )
+    with platform["engine"].begin() as connection:
+        connection.execute(
+            update(bubbles)
+            .where(bubbles.c.id == platform["bubble_id"])
+            .values(payload_json=json.dumps({"coords": [4, 4, 20, 20]}))
+        )
+
+    with pytest.raises(ValueError, match="missing fields"):
+        service.create_for_bubble(
+            page_id=platform["page_id"],
+            bubble_id=platform["bubble_id"],
+            base_revision=1,
+            idempotency_key="repair-rejects-legacy-payload",
+        )
+    with platform["engine"].connect() as connection:
+        assert connection.execute(select(operations.c.id)).all() == []
+
+
+def test_bubble_repair_rejects_empty_geometry_without_creating_operation(
+    operation_platform,
+) -> None:
+    platform = operation_platform
+    repository = OperationRepository(platform["engine"])
+    service = PageRepairService(
+        data_root=platform["data_root"],
+        engine=platform["engine"],
+        repository=repository,
+    )
+    with platform["engine"].begin() as connection:
+        connection.execute(
+            update(bubbles)
+                .where(bubbles.c.id == platform["bubble_id"])
+                .values(
+                    payload_json=json.dumps(
+                        _bubble_payload(coords=[4, 4, 4, 20])
+                    )
+                )
+        )
+
+    with pytest.raises(ValueError, match="positive-area"):
+        service.create_for_bubble(
+            page_id=platform["page_id"],
+            bubble_id=platform["bubble_id"],
+            base_revision=1,
+            idempotency_key="repair-empty-geometry",
+        )
+    with platform["engine"].connect() as connection:
+        assert connection.execute(select(operations.c.id)).all() == []
+
+
 def test_page_repair_mask_requires_and_accepts_the_browser_grayscale_contract(
     operation_platform,
 ) -> None:
@@ -916,6 +1433,50 @@ def test_page_repair_mask_requires_and_accepts_the_browser_grayscale_contract(
     assert accepted["documentRevision"] == 2
 
 
+def test_page_repair_rejects_non_contract_fill_color_before_image_work(
+    operation_platform,
+) -> None:
+    platform = operation_platform
+    service = PageRepairService(
+        data_root=platform["data_root"],
+        engine=platform["engine"],
+        repository=OperationRepository(platform["engine"]),
+    )
+
+    with pytest.raises(ValueError, match="#RRGGBB"):
+        service.create_for_mask(
+            page_id=platform["page_id"],
+            upload=BytesIO(b"not-read"),
+            base_revision=1,
+            method="solid",
+            fill_color="white",
+            idempotency_key="invalid-fill-color",
+        )
+
+
+@pytest.mark.parametrize("method", ["lama_mpe", "litelama", "restore_source"])
+def test_non_solid_page_repair_rejects_unused_fill_color(
+    operation_platform,
+    method: str,
+) -> None:
+    platform = operation_platform
+    service = PageRepairService(
+        data_root=platform["data_root"],
+        engine=platform["engine"],
+        repository=OperationRepository(platform["engine"]),
+    )
+
+    with pytest.raises(ValueError, match="does not accept fillColor"):
+        service.create_for_mask(
+            page_id=platform["page_id"],
+            upload=BytesIO(b"not-read"),
+            base_revision=1,
+            method=method,
+            fill_color="#112233",
+            idempotency_key=f"unused-fill-color-{method}",
+        )
+
+
 def test_lama_page_repair_freezes_and_consumes_disable_resize(
     operation_platform,
     monkeypatch: pytest.MonkeyPatch,
@@ -953,9 +1514,7 @@ def test_lama_page_repair_freezes_and_consumes_disable_resize(
 
     def fake_inpaint(image, _coords, **kwargs):
         captured.update(kwargs)
-        repaired = image.copy()
-        repaired._lama_inpainted = True
-        return repaired, None
+        return image.copy()
 
     from src.core import inpainting
 
@@ -983,6 +1542,7 @@ def test_lama_page_repair_freezes_and_consumes_disable_resize(
     fence, operation = claimed
     assert operation["request"]["disableResize"] is True
     assert operation["request"]["settingsSnapshot"]["appRevision"] == 1
+    assert "fillColor" not in operation["request"]
     result = service.handle(fence, operation)
 
     assert result["documentRevision"] == accepted["documentRevision"]

@@ -10,6 +10,8 @@ from sqlalchemy import Engine
 from src.backend_v2.api.request_helpers import (
     error_response as _error,
     json_body as _json_body,
+    required_integer as _required_integer,
+    required_string as _required_string,
     require_idempotency_key as _require_idempotency_key,
     validate_multipart_fields as _validate_multipart_fields,
 )
@@ -34,7 +36,7 @@ def create_translation_blueprint(*, engine: Engine) -> Blueprint:
     @blueprint.post("/chapters/<chapter_id>/translation-jobs")
     def create_chapter_translation(chapter_id: str):
         body = _json_body(allowed_keys={"config", "pageIds"})
-        config = body.get("config", {})
+        config = body.get("config")
         page_ids = body.get("pageIds")
         if not isinstance(config, dict):
             raise ValueError("config must be an object")
@@ -56,7 +58,7 @@ def create_translation_blueprint(*, engine: Engine) -> Blueprint:
         body = _json_body(allowed_keys={"bookIds", "chapterIds", "config"})
         chapter_ids = body.get("chapterIds")
         book_ids = body.get("bookIds")
-        config = body.get("config", {})
+        config = body.get("config")
         if (chapter_ids is None) == (book_ids is None):
             raise ValueError("provide exactly one of chapterIds or bookIds")
         if chapter_ids is not None and (
@@ -97,7 +99,7 @@ def create_translation_blueprint(*, engine: Engine) -> Blueprint:
             raise ValueError("pageIds must be a string array")
         config = {
             "mode": "remove_text",
-            "executionMode": str(body.get("executionMode", "sequential")),
+            "executionMode": body.get("executionMode", "sequential"),
         }
         for key in ("styleSourcePageId", "styleSourceDocumentRevision"):
             if key in body:
@@ -149,9 +151,11 @@ def create_translation_blueprint(*, engine: Engine) -> Blueprint:
             jsonify(
                 auxiliary.create_style_apply_job(
                     chapter_id=chapter_id,
-                    source_page_id=str(body.get("sourcePageId", "")),
-                    source_document_revision=int(
-                        body.get("sourceDocumentRevision", 0)
+                    source_page_id=_required_string(body, "sourcePageId"),
+                    source_document_revision=_required_integer(
+                        body,
+                        "sourceDocumentRevision",
+                        minimum=1,
                     ),
                     selected_fields=selected,
                     idempotency_key=_require_idempotency_key(),

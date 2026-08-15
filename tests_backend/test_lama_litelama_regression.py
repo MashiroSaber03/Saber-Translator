@@ -1,5 +1,4 @@
 import unittest
-from unittest import mock
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -34,12 +33,9 @@ class LiteLamaInpainterRegressionTests(unittest.TestCase):
         LiteLamaInpainter._loaded = True
         LiteLamaInpainter._model = self.fake_model
         LiteLamaInpainter._device = "cpu"
-        self.cleanup_patcher = mock.patch.object(LiteLamaInpainter, "_cleanup_memory", lambda self: None)
-        self.cleanup_patcher.start()
         self.inpainter = LiteLamaInpainter()
 
     def tearDown(self) -> None:
-        self.cleanup_patcher.stop()
         LiteLamaInpainter._loaded = self.original_loaded
         LiteLamaInpainter._model = self.original_model
         LiteLamaInpainter._device = self.original_device

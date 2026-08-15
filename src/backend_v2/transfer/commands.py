@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from typing import BinaryIO
+from typing import Any, BinaryIO, Mapping
 import uuid
 
 from sqlalchemy import Engine, select
@@ -25,6 +25,147 @@ from src.backend_v2.storage.schema import (
 
 CONTAINER_SUFFIXES = {".pdf", ".zip", ".cbz", ".mobi", ".azw", ".azw3"}
 EXPORT_FORMATS = {"zip", "cbz", "pdf"}
+
+
+class TransferDataInvalid(RuntimeError):
+    pass
+
+
+def _required_text(value: Mapping[str, Any], field: str) -> str:
+    selected = value.get(field)
+    if not isinstance(selected, str) or not selected:
+        raise TransferDataInvalid(f"transfer config {field} must be a non-empty string")
+    return selected
+
+
+def _required_integer(
+    value: Mapping[str, Any],
+    field: str,
+    *,
+    minimum: int = 0,
+) -> int:
+    selected = value.get(field)
+    if isinstance(selected, bool) or not isinstance(selected, int) or selected < minimum:
+        raise TransferDataInvalid(f"transfer config {field} is invalid")
+    return selected
+
+
+def _checksum(value: object, field: str) -> str:
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise TransferDataInvalid(f"transfer config {field} is invalid")
+    return value
+
+
+def validate_container_config(value: object) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise TransferDataInvalid("container import config must be an object")
+    config = dict(value)
+    base_fields = {
+        "containerRelativePath",
+        "containerType",
+        "filename",
+        "checksum",
+        "executionMode",
+    }
+    scanned_fields = base_fields | {"entries", "entryItemOrdinalBase"}
+    container_type = _required_text(config, "containerType")
+    expected = (
+        scanned_fields | {"extractedRelativePath"}
+        if container_type in {"mobi", "azw", "azw3"} and "entries" in config
+        else scanned_fields
+        if "entries" in config
+        else base_fields
+    )
+    if set(config) != expected:
+        raise TransferDataInvalid("container import config fields are invalid")
+    if container_type not in {"zip", "cbz", "pdf", "mobi", "azw", "azw3"}:
+        raise TransferDataInvalid("container import type is invalid")
+    _required_text(config, "containerRelativePath")
+    _required_text(config, "filename")
+    _checksum(config.get("checksum"), "checksum")
+    if config.get("executionMode") != "sequential":
+        raise TransferDataInvalid("container import execution mode is invalid")
+    if "entries" not in config:
+        return config
+    if container_type in {"mobi", "azw", "azw3"}:
+        _required_text(config, "extractedRelativePath")
+    _required_integer(config, "entryItemOrdinalBase", minimum=1)
+    entries = config["entries"]
+    if not isinstance(entries, list) or not entries:
+        raise TransferDataInvalid("container import entries must be a non-empty array")
+    for index, raw_entry in enumerate(entries):
+        if not isinstance(raw_entry, Mapping):
+            raise TransferDataInvalid(f"container import entry {index} must be an object")
+        entry = dict(raw_entry)
+        kind = entry.get("kind")
+        expected_entry_fields = {
+            "zip": {"kind", "member", "logicalPath", "byteSize"},
+            "pdf": {"kind", "pageIndex", "logicalPath"},
+            "file": {"kind", "relativePath", "logicalPath", "byteSize"},
+        }.get(kind)
+        if expected_entry_fields is None or set(entry) != expected_entry_fields:
+            raise TransferDataInvalid(f"container import entry {index} fields are invalid")
+        expected_kind = (
+            "zip"
+            if container_type in {"zip", "cbz"}
+            else "pdf"
+            if container_type == "pdf"
+            else "file"
+        )
+        if kind != expected_kind:
+            raise TransferDataInvalid(
+                f"container import entry {index} kind does not match its container"
+            )
+        _required_text(entry, "logicalPath")
+        if kind == "zip":
+            _required_text(entry, "member")
+            _required_integer(entry, "byteSize")
+        elif kind == "pdf":
+            _required_integer(entry, "pageIndex")
+        else:
+            _required_text(entry, "relativePath")
+            _required_integer(entry, "byteSize")
+    return config
+
+
+def validate_export_config(value: object) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise TransferDataInvalid("export config must be an object")
+    config = dict(value)
+    if set(config) != {"format", "entries", "executionMode"}:
+        raise TransferDataInvalid("export config fields are invalid")
+    if config.get("format") not in EXPORT_FORMATS:
+        raise TransferDataInvalid("export format is invalid")
+    if config.get("executionMode") != "sequential":
+        raise TransferDataInvalid("export execution mode is invalid")
+    entries = config.get("entries")
+    if not isinstance(entries, list) or not entries:
+        raise TransferDataInvalid("export entries must be a non-empty array")
+    page_ids: set[str] = set()
+    asset_ids: set[str] = set()
+    for index, raw_entry in enumerate(entries):
+        if not isinstance(raw_entry, Mapping) or set(raw_entry) != {
+            "pageId",
+            "logicalPath",
+            "assetId",
+            "assetRole",
+        }:
+            raise TransferDataInvalid(f"export entry {index} fields are invalid")
+        entry = dict(raw_entry)
+        page_id = _required_text(entry, "pageId")
+        asset_id = _required_text(entry, "assetId")
+        _required_text(entry, "logicalPath")
+        if entry.get("assetRole") not in {"source", "clean", "translated"}:
+            raise TransferDataInvalid(f"export entry {index} asset role is invalid")
+        if page_id in page_ids or asset_id in asset_ids:
+            raise TransferDataInvalid("export entries contain duplicate page or asset IDs")
+        page_ids.add(page_id)
+        asset_ids.add(asset_id)
+    return config
 
 
 class TransferCommandService:
@@ -96,6 +237,7 @@ class TransferCommandService:
                 "checksum": checksum,
                 "executionMode": "sequential",
             }
+            validate_container_config(config)
             return self.jobs.create_batch(
                 kind="container_import",
                 display_name=f"导入 {safe_filename}",
@@ -189,6 +331,13 @@ class TransferCommandService:
             f"page:{index:06d}": str(entry["assetId"])
             for index, entry in enumerate(entries, start=1)
         }
+        config = validate_export_config(
+            {
+                "format": export_format,
+                "entries": entries,
+                "executionMode": "sequential",
+            }
+        )
         return self.jobs.create_batch(
             kind="export",
             display_name=f"导出 {chapter['book_title']} / {chapter['title']}",
@@ -197,11 +346,7 @@ class TransferCommandService:
                     kind="export",
                     book_id=str(chapter["book_id"]),
                     chapter_id=chapter_id,
-                    config={
-                        "format": export_format,
-                        "entries": entries,
-                        "executionMode": "sequential",
-                    },
+                    config=config,
                     items=(
                         JobItemSpec(
                             page_id=None,

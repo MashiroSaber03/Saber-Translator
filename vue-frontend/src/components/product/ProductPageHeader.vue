@@ -1,6 +1,8 @@
 <script setup lang="ts">
 type ProductPageHeaderVariant = 'default' | 'brand' | 'fixed' | 'reader'
 
+const logoUrl = '/pic/logo.png'
+
 withDefaults(defineProps<{
   actionsLabel?: string
   variant?: ProductPageHeaderVariant
@@ -22,7 +24,7 @@ withDefaults(defineProps<{
       <div class="product-page-header__brand">
         <slot v-if="$slots.brand" name="brand" />
         <RouterLink v-else :to="homeTo" :title="logoTitle" class="product-page-header__brand-link">
-          <img src="/pic/logo.png" alt="Saber-Translator Logo" class="product-page-header__logo">
+          <img :src="logoUrl" alt="Saber-Translator Logo" class="product-page-header__logo">
           <span class="product-page-header__name">Saber-Translator</span>
         </RouterLink>
       </div>
@@ -237,8 +239,7 @@ withDefaults(defineProps<{
 }
 
 .product-page-header--brand .product-page-header__actions,
-.product-page-header--fixed .product-page-header__actions,
-.product-page-header--reader .product-page-header__actions {
+.product-page-header--fixed .product-page-header__actions {
   margin-right: 136px;
 }
 
@@ -358,8 +359,7 @@ withDefaults(defineProps<{
   }
 
   .product-page-header--brand .product-page-header__actions,
-  .product-page-header--fixed .product-page-header__actions,
-  .product-page-header--reader .product-page-header__actions {
+  .product-page-header--fixed .product-page-header__actions {
     margin-right: 72px;
   }
 }

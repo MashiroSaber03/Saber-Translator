@@ -4,11 +4,22 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QPoint, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QBitmap, QGuiApplication, QImage, QMouseEvent, QPainter, QRegion
+from PySide6.QtGui import (
+    QAction,
+    QBitmap,
+    QGuiApplication,
+    QHideEvent,
+    QImage,
+    QMouseEvent,
+    QPainter,
+    QRegion,
+    QShowEvent,
+)
 from PySide6.QtWidgets import QApplication, QMenu, QWidget
 
 from src.backend_v2.desktop.pet_state import PetState
@@ -16,6 +27,7 @@ from src.backend_v2.desktop.settings import PET_SCALES
 
 
 PET_SCHEMA_VERSION = 1
+LOGGER = logging.getLogger("saber.desktop.pet")
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,17 +52,49 @@ class PetManifest:
         payload = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(payload, dict) or payload.get("schemaVersion") != PET_SCHEMA_VERSION:
             raise ValueError("unsupported pet manifest schema")
+        if set(payload) != {
+            "schemaVersion",
+            "id",
+            "displayName",
+            "description",
+            "spritesheetPath",
+            "cell",
+            "columns",
+            "rows",
+        }:
+            raise ValueError("pet manifest fields do not match the current schema")
+        if any(
+            not isinstance(payload.get(field), str) or not str(payload[field]).strip()
+            for field in ("id", "displayName", "description")
+        ):
+            raise ValueError("pet manifest metadata is invalid")
         cell = payload.get("cell")
         rows = payload.get("rows")
         columns = payload.get("columns")
         sheet_name = payload.get("spritesheetPath")
         if not isinstance(cell, dict) or not isinstance(rows, list):
             raise ValueError("pet manifest geometry is missing")
+        if set(cell) != {"width", "height"}:
+            raise ValueError("pet cell fields do not match the current schema")
         width = cell.get("width")
         height = cell.get("height")
-        if not isinstance(width, int) or not isinstance(height, int) or width < 1 or height < 1:
+        if (
+            not isinstance(width, int)
+            or isinstance(width, bool)
+            or not isinstance(height, int)
+            or isinstance(height, bool)
+            or width < 1
+            or height < 1
+        ):
             raise ValueError("invalid pet cell geometry")
-        if columns != 8 or not isinstance(sheet_name, str):
+        if (
+            not isinstance(columns, int)
+            or isinstance(columns, bool)
+            or columns != 8
+            or not isinstance(sheet_name, str)
+            or not sheet_name
+            or Path(sheet_name).name != sheet_name
+        ):
             raise ValueError("invalid pet atlas declaration")
 
         animations: dict[PetState, PetAnimation] = {}
@@ -58,6 +102,8 @@ class PetManifest:
         for raw in rows:
             if not isinstance(raw, dict):
                 raise ValueError("invalid pet animation row")
+            if set(raw) != {"state", "row", "frameCount", "durationsMs", "loop"}:
+                raise ValueError("pet animation fields do not match the current schema")
             state = PetState(str(raw.get("state")))
             row = raw.get("row")
             frame_count = raw.get("frameCount")
@@ -65,9 +111,12 @@ class PetManifest:
             loop = raw.get("loop")
             if (
                 not isinstance(row, int)
+                or isinstance(row, bool)
                 or row < 0
                 or row in occupied_rows
+                or state in animations
                 or not isinstance(frame_count, int)
+                or isinstance(frame_count, bool)
                 or not 1 <= frame_count <= columns
                 or not isinstance(durations, list)
                 or len(durations) != frame_count
@@ -85,7 +134,10 @@ class PetManifest:
             )
         missing = set(PetState) - set(animations)
         if missing:
-            raise ValueError(f"pet manifest is missing states: {sorted(item.value for item in missing)}")
+            names = sorted(item.value for item in missing)
+            raise ValueError(f"pet manifest is missing states: {names}")
+        if occupied_rows != set(range(len(PetState))):
+            raise ValueError("pet animation rows must be contiguous")
         return cls(
             spritesheet_path=path.parent / sheet_name,
             cell_width=width,
@@ -154,7 +206,8 @@ class PetWindow(QWidget):
             manifest.validate_image(atlas)
             self._manifest = manifest
             self._atlas = atlas
-        except (OSError, ValueError, json.JSONDecodeError):
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            LOGGER.warning("桌宠资源加载失败，改用项目图标：%s", error)
             self._manifest = None
         self._resize_for_scale()
         self._restart_animation()
@@ -187,6 +240,8 @@ class PetWindow(QWidget):
         self.move(center - QPoint(self.width() // 2, self.height() // 2))
         self.clamp_to_visible_screen()
         self._render_frame()
+        if self.isVisible():
+            self._emit_position()
 
     def set_always_on_top(self, enabled: bool) -> None:
         if enabled == self._always_on_top:
@@ -230,6 +285,14 @@ class PetWindow(QWidget):
         frame = self._current_frame()
         painter.drawImage(self.rect(), frame)
 
+    def showEvent(self, event: QShowEvent) -> None:
+        super().showEvent(event)
+        self._restart_animation()
+
+    def hideEvent(self, event: QHideEvent) -> None:
+        self._timer.stop()
+        super().hideEvent(event)
+
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.RightButton:
             self._show_menu(event.globalPosition().toPoint())
@@ -252,7 +315,11 @@ class PetWindow(QWidget):
             self._dragged = True
         if self._dragged:
             self.move(self._window_origin + delta)
-            direction = PetState.DRAG_RIGHT if current.x() >= self._last_drag_x else PetState.DRAG_LEFT
+            direction = (
+                PetState.DRAG_RIGHT
+                if current.x() >= self._last_drag_x
+                else PetState.DRAG_LEFT
+            )
             if self._visible_state != direction:
                 self._transient = False
                 self._play(direction, force=True)
@@ -303,8 +370,8 @@ class PetWindow(QWidget):
         self._timer.stop()
         self._render_frame()
         animation = self._animation()
-        if animation is not None and animation.frame_count > 1:
-            self._timer.start(animation.durations_ms[0])
+        if animation is not None and animation.frame_count > 1 and self.isVisible():
+            self._timer.start(animation.durations_ms[self._frame_index])
 
     def _advance_frame(self) -> None:
         animation = self._animation()
@@ -327,7 +394,8 @@ class PetWindow(QWidget):
                 return
         self._frame_index = next_frame
         self._render_frame()
-        self._timer.start(animation.durations_ms[self._frame_index])
+        if self.isVisible():
+            self._timer.start(animation.durations_ms[self._frame_index])
 
     def _animation(self) -> PetAnimation | None:
         if self._manifest is None:

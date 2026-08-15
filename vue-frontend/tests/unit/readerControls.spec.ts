@@ -32,6 +32,11 @@ function readScopedStyle(filePath: string): string {
   return source.match(/<style scoped>([\s\S]*)<\/style>/)?.[1] ?? ''
 }
 
+function lastPublishedSettings(wrapper: ReturnType<typeof mountControls>) {
+  const events = wrapper.emitted('settingsChange') ?? []
+  return events.at(-1)?.[0]
+}
+
 function readCssBlock(style: string, selector: string): string {
   const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   return style.match(new RegExp(`${escapedSelector}\\s*\\{([\\s\\S]*?)\\}`))?.[1] ?? ''
@@ -49,9 +54,6 @@ describe('ReaderControls', () => {
     vi.restoreAllMocks()
     localStorage.clear()
     document.querySelectorAll('.reader-canvas__stream').forEach(element => element.remove())
-    document.documentElement.style.removeProperty('--reader-page-background')
-    document.documentElement.style.removeProperty('--reader-image-width')
-    document.documentElement.style.removeProperty('--reader-gap')
   })
 
   it('names icon-only controls and color swatches', async () => {
@@ -66,8 +68,12 @@ describe('ReaderControls', () => {
     expect(settingsPanel.attributes('role')).toBe('dialog')
     expect(settingsPanel.attributes('aria-modal')).toBe('true')
     expect(settingsPanel.attributes('aria-label')).toBe('阅读设置')
-    expect(wrapper.get('.reader-controls__close-button').attributes('aria-label')).toBe('关闭阅读设置')
-    expect(wrapper.get('.reader-controls__close-button').getComponent(UiIcon).props('name')).toBe('x')
+    expect(wrapper.get('.reader-controls__close-button').attributes('aria-label')).toBe(
+      '关闭阅读设置'
+    )
+    expect(wrapper.get('.reader-controls__close-button').getComponent(UiIcon).props('name')).toBe(
+      'x'
+    )
     expect(wrapper.get('.reader-controls__close-button').text()).not.toContain('×')
     const swatches = wrapper.getComponent(UiColorSwatchGroup)
     expect(swatches.props('ariaLabel')).toBe('阅读背景颜色')
@@ -81,32 +87,42 @@ describe('ReaderControls', () => {
   })
 
   it('ignores incomplete or invalid stored settings payloads', () => {
-    localStorage.setItem('readerSettings', JSON.stringify({
-      imageWidth: 10,
-      imageGap: 200,
-      bgColor: 'not-a-reader-preset',
-    }))
+    localStorage.setItem(
+      'readerSettings',
+      JSON.stringify({
+        imageWidth: 10,
+        imageGap: 200,
+        bgColor: 'not-a-reader-preset',
+      })
+    )
 
-    mountControls()
+    const wrapper = mountControls()
 
-    expect(document.documentElement.style.getPropertyValue('--reader-image-width')).toBe('100%')
-    expect(document.documentElement.style.getPropertyValue('--reader-gap')).toBe('8px')
-    expect(document.documentElement.style.getPropertyValue('--reader-page-background')).toBe('#1a1a2e')
+    expect(lastPublishedSettings(wrapper)).toEqual({
+      imageWidth: 100,
+      imageGap: 8,
+      bgColor: '#1a1a2e',
+    })
   })
 
   it('loads complete current-schema stored settings', () => {
-    localStorage.setItem('readerSettings', JSON.stringify({
-      readerSettingsSchemaVersion: 1,
+    localStorage.setItem(
+      'readerSettings',
+      JSON.stringify({
+        readerSettingsSchemaVersion: 1,
+        imageWidth: 80,
+        imageGap: 12,
+        bgColor: '#ffffff',
+      })
+    )
+
+    const wrapper = mountControls()
+
+    expect(lastPublishedSettings(wrapper)).toEqual({
       imageWidth: 80,
       imageGap: 12,
       bgColor: '#ffffff',
-    }))
-
-    mountControls()
-
-    expect(document.documentElement.style.getPropertyValue('--reader-image-width')).toBe('80%')
-    expect(document.documentElement.style.getPropertyValue('--reader-gap')).toBe('12px')
-    expect(document.documentElement.style.getPropertyValue('--reader-page-background')).toBe('#ffffff')
+    })
   })
 
   it('tracks and scrolls the virtual page stream instead of the window', async () => {
@@ -136,7 +152,8 @@ describe('ReaderControls', () => {
     await nextTick()
     expect(wrapper.get('.reader-controls__scroll-top-layer').isVisible()).toBe(true)
 
-    const scrollTopButton = wrapper.findAllComponents(UiIconButton)
+    const scrollTopButton = wrapper
+      .findAllComponents(UiIconButton)
       .find(item => item.props('label') === '回到顶部')
     await scrollTopButton!.trigger('click')
     expect(scrollTo).toHaveBeenLastCalledWith({ top: 0, behavior: 'smooth' })
@@ -148,13 +165,30 @@ describe('ReaderControls', () => {
     expect(scrollTo).toHaveBeenLastCalledWith({ top: 0, behavior: 'smooth' })
   })
 
+  it('uses chapter arrow shortcuts only while the settings dialog is closed', async () => {
+    const wrapper = mountControls()
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }))
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+    expect(wrapper.emitted('navigateChapter')).toEqual([['prev'], ['next']])
+
+    await requestSettingsPanel(wrapper)
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }))
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+    expect(wrapper.emitted('navigateChapter')).toEqual([['prev'], ['next']])
+  })
+
   it('renders reader settings fields through the shared settings field primitive', async () => {
     const wrapper = mountControls()
 
     await requestSettingsPanel(wrapper)
 
     const fields = wrapper.findAllComponents(UiField)
-    expect(fields.map(field => field.props('variant'))).toEqual(['settings', 'settings', 'settings'])
+    expect(fields.map(field => field.props('variant'))).toEqual([
+      'settings',
+      'settings',
+      'settings',
+    ])
     expect(fields.map(field => field.props('tone'))).toEqual(['inverse', 'inverse', 'inverse'])
     expect(fields.map(field => field.props('label'))).toEqual(['图片宽度', '图片间距', '背景颜色'])
     expect(fields.map(field => field.props('controlId'))).toEqual([
@@ -186,7 +220,9 @@ describe('ReaderControls', () => {
 
     const iconButtons = wrapper.findAllComponents(UiIconButton)
     const scrollTopButton = iconButtons.find(item => item.props('label') === '回到顶部')
-    const closeButton = iconButtons.find(item => item.classes().includes('reader-controls__close-button'))
+    const closeButton = iconButtons.find(item =>
+      item.classes().includes('reader-controls__close-button')
+    )
 
     expect(scrollTopButton?.props()).toMatchObject({
       variant: 'primary',
@@ -202,26 +238,29 @@ describe('ReaderControls', () => {
 
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/reader/ReaderControls.vue'),
-      'utf8',
+      'utf8'
     )
     expect(source).not.toContain('variant="toolbar"')
     expect(source).not.toContain('--ui-button-')
 
     const style = readScopedStyle('src/components/reader/ReaderControls.vue')
-    const localButtonSkinProperties = /^\s*(background|border(?:-radius)?|color|cursor|font-size|height|padding|transition|width)\s*:/m
+    const localButtonSkinProperties =
+      /^\s*(background|border(?:-radius)?|color|cursor|font-size|height|padding|transition|width)\s*:/m
     for (const selector of [
       '.reader-controls__nav-button',
       '.reader-controls__scroll-top-button',
       '.reader-controls__close-button',
     ]) {
-      expect(nonVariableDeclarations(readCssBlock(style, selector))).not.toMatch(localButtonSkinProperties)
+      expect(nonVariableDeclarations(readCssBlock(style, selector))).not.toMatch(
+        localButtonSkinProperties
+      )
     }
   })
 
   it('does not keep legacy DOM id hooks for reader controls', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/reader/ReaderControls.vue'),
-      'utf8',
+      'utf8'
     )
 
     for (const legacyId of [
@@ -240,11 +279,15 @@ describe('ReaderControls', () => {
   it('uses typed model updates for reader range settings', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/reader/ReaderControls.vue'),
-      'utf8',
+      'utf8'
     )
 
-    expect(source).not.toContain('@input="updateImageWidth(Number(($event.target as HTMLInputElement).value))"')
-    expect(source).not.toContain('@input="updateImageGap(Number(($event.target as HTMLInputElement).value))"')
+    expect(source).not.toContain(
+      '@input="updateImageWidth(Number(($event.target as HTMLInputElement).value))"'
+    )
+    expect(source).not.toContain(
+      '@input="updateImageGap(Number(($event.target as HTMLInputElement).value))"'
+    )
     expect(source).toContain('@update:model-value="value => updateImageWidth(Number(value))"')
     expect(source).toContain('@update:model-value="value => updateImageGap(Number(value))"')
   })
@@ -252,12 +295,9 @@ describe('ReaderControls', () => {
   it('opens settings from a typed request prop instead of exposed instance methods', () => {
     const controlsSource = readFileSync(
       resolve(process.cwd(), 'src/components/reader/ReaderControls.vue'),
-      'utf8',
+      'utf8'
     )
-    const viewSource = readFileSync(
-      resolve(process.cwd(), 'src/views/ReaderView.vue'),
-      'utf8',
-    )
+    const viewSource = readFileSync(resolve(process.cwd(), 'src/views/ReaderView.vue'), 'utf8')
 
     expect(controlsSource).not.toContain('defineExpose')
     expect(controlsSource).toContain('settingsRequestId')
@@ -283,7 +323,7 @@ describe('ReaderControls', () => {
 
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/reader/ReaderControls.vue'),
-      'utf8',
+      'utf8'
     )
     expect(source).toContain('useDialogLifecycle')
     expect(source).not.toContain("case 'Escape':")
@@ -299,13 +339,15 @@ describe('ReaderControls', () => {
 
     expect(style).not.toMatch(/#[0-9A-Fa-f]{3,8}\b|rgba?\(/)
     expect(style).toContain('--reader-controls-chapter-nav-start: color-mix')
-    expect(style).toContain('--reader-controls-settings-panel-background: var(--color-surface-inverse-raised)')
+    expect(style).toContain(
+      '--reader-controls-settings-panel-background: var(--color-surface-inverse-raised)'
+    )
   })
 
   it('keeps settings panel text hooks explicit instead of element descendant selectors', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/reader/ReaderControls.vue'),
-      'utf8',
+      'utf8'
     )
 
     expect(source).toContain('reader-controls__settings-title')

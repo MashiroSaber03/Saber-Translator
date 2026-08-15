@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import type { ProductClassValue } from '@/components/product/productClassTypes'
@@ -27,7 +27,15 @@ const emit = defineEmits<{
   select: [tabId: string]
 }>()
 
+const tabsElement = ref<HTMLElement | null>(null)
 const tablistAriaLabel = computed(() => props.ariaLabel ? `${props.ariaLabel}标签` : undefined)
+
+function revealActiveTab(): void {
+  void nextTick(() => {
+    const activeTab = tabsElement.value?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
+    activeTab?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+  })
+}
 
 function selectTab(tab: ProductWorkspaceTab): void {
   if (tab.disabled) return
@@ -37,22 +45,15 @@ function selectTab(tab: ProductWorkspaceTab): void {
 
 function activeTabIndex(tab: ProductWorkspaceTab): number {
   if (tab.disabled) return -1
-  if (tab.id === props.activeTab) return 0
-
-  const enabledTabs = props.tabs.filter(candidate => !candidate.disabled)
-  const hasActiveEnabledTab = enabledTabs.some(candidate => candidate.id === props.activeTab)
-  return !hasActiveEnabledTab && enabledTabs[0]?.id === tab.id ? 0 : -1
+  return tab.id === props.activeTab ? 0 : -1
 }
 
 function selectAdjacentTab(event: KeyboardEvent, tab: ProductWorkspaceTab): void {
   const enabledTabs = props.tabs.filter(candidate => !candidate.disabled)
   if (enabledTabs.length === 0) return
 
-  const currentIndex = Math.max(
-    enabledTabs.findIndex(candidate => candidate.id === tab.id),
-    enabledTabs.findIndex(candidate => candidate.id === props.activeTab),
-    0,
-  )
+  const currentIndex = enabledTabs.findIndex(candidate => candidate.id === tab.id)
+  if (currentIndex < 0) return
   let nextIndex: number | null = null
 
   if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
@@ -68,6 +69,9 @@ function selectAdjacentTab(event: KeyboardEvent, tab: ProductWorkspaceTab): void
   if (nextIndex === null) return
   event.preventDefault()
   selectTab(enabledTabs[nextIndex])
+  const tabElements = (event.currentTarget as HTMLElement).parentElement
+    ?.querySelectorAll<HTMLElement>('[role="tab"]:not(:disabled)')
+  tabElements?.[nextIndex]?.focus()
 }
 
 function tabControlId(tabId: string): string {
@@ -77,6 +81,17 @@ function tabControlId(tabId: string): string {
 function tabPanelId(tabId: string): string {
   return `product-workspace-panel-${tabId}`
 }
+
+watch(() => props.activeTab, revealActiveTab, { flush: 'post' })
+
+onMounted(() => {
+  window.addEventListener('resize', revealActiveTab)
+  revealActiveTab()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', revealActiveTab)
+})
 </script>
 
 <template>
@@ -84,7 +99,12 @@ function tabPanelId(tabId: string): string {
     <div class="product-tabbed-workspace__bar">
       <slot name="beforeTabs" />
 
-      <div class="product-tabbed-workspace__tabs" role="tablist" :aria-label="tablistAriaLabel">
+      <div
+        ref="tabsElement"
+        class="product-tabbed-workspace__tabs"
+        role="tablist"
+        :aria-label="tablistAriaLabel"
+      >
         <UiButton
           v-for="tab in props.tabs"
           :id="tabControlId(tab.id)"

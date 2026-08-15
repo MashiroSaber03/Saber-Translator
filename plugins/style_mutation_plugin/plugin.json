@@ -19,9 +19,15 @@
   "default_enabled": false,
   "config_schema": {
     "force_detector_type": {
-      "type": "text",
+      "type": "select",
       "default": "",
-      "label": "强制检测器"
+      "label": "强制检测器",
+      "options": [
+        {"value": "", "label": "保持任务设置"},
+        {"value": "ctd", "label": "CTD"},
+        {"value": "yolo", "label": "YOLO"},
+        {"value": "default", "label": "默认检测器"}
+      ]
     },
     "override_text_color": {
       "type": "text",

@@ -17,16 +17,24 @@ const props = withDefaults(defineProps<{
 
 const iconComponent = computed(() => uiIconRegistry[props.name])
 const isDecorative = computed(() => props.decorative || props.label.length === 0)
-const normalizedSize = computed(() => Number(props.size))
-const normalizedStrokeWidth = computed(() => Number(props.strokeWidth))
+const numericSize = computed(() => {
+  const value = Number(props.size)
+  return Number.isFinite(value) && value > 0 ? value : undefined
+})
+const cssSize = computed(() => numericSize.value === undefined ? String(props.size) : undefined)
+const numericStrokeWidth = computed(() => {
+  const value = Number(props.strokeWidth)
+  return Number.isFinite(value) && value >= 0 ? value : 2
+})
 </script>
 
 <template>
   <component
     :is="iconComponent"
     class="ui-icon"
-    :size="normalizedSize"
-    :stroke-width="normalizedStrokeWidth"
+    :size="numericSize"
+    :stroke-width="numericStrokeWidth"
+    :style="cssSize ? { width: cssSize, height: cssSize } : undefined"
     :aria-hidden="isDecorative ? 'true' : undefined"
     :aria-label="isDecorative ? undefined : label"
     :role="isDecorative ? undefined : 'img'"

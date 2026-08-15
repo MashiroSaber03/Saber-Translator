@@ -1,4 +1,4 @@
-import { computed, ref, type Ref } from 'vue'
+import { computed, ref, watch, type Ref } from 'vue'
 import type { ImageData } from '@/types/image'
 import type { FolderNode } from '@/types/folder'
 
@@ -71,6 +71,15 @@ export function useFolderTree(images: Ref<ImageData[]>) {
 
   const currentSubfolders = computed(() => currentFolder.value?.subfolders || [])
   const currentImages = computed(() => currentFolder.value?.images || [])
+
+  watch(folderTree, tree => {
+    if (
+      currentFolderPath.value
+      && (!tree || !findFolder(tree, currentFolderPath.value))
+    ) {
+      currentFolderPath.value = ''
+    }
+  })
 
   function enterFolder(folderPath: string): void {
     currentFolderPath.value = folderPath

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  TASK_EVENT_TYPES,
   eventTypeLabel,
   formatTaskDuration,
   jobKindLabel,
@@ -14,6 +15,8 @@ describe('task display labels', () => {
     expect(stepKindLabel('insight_analyze_page')).toBe('分析漫画页面')
     expect(stepKindLabel('insight_build_layer_3')).toBe('构建分析层 3')
     expect(eventTypeLabel('job_finished')).toBe('任务已完成')
+    expect(TASK_EVENT_TYPES).toContain('plugin_agent_tool_result')
+    expect(TASK_EVENT_TYPES).toContain('web_import_agent_log')
   })
 
   it('keeps an explicit diagnostic fallback for future backend identifiers', () => {

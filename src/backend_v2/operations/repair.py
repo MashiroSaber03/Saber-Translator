@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import ExitStack
 import hashlib
 from io import BytesIO
 import json
@@ -26,6 +27,7 @@ from src.backend_v2.storage.schema import (
     page_assets,
     pages,
 )
+from src.core.config_models import validate_bubble_payload
 
 
 class PageRepairService:
@@ -59,6 +61,8 @@ class PageRepairService:
                     assets.c.width,
                     assets.c.height,
                     bubbles.c.payload_json,
+                    bubbles.c.payload_schema_version,
+                    bubbles.c.updated_revision,
                 )
                 .join(bubbles, bubbles.c.page_id == pages.c.id)
                 .join(
@@ -74,33 +78,46 @@ class PageRepairService:
             ).mappings().one_or_none()
         if row is None:
             raise ValueError("page or bubble not found")
-        payload = json.loads(row["payload_json"])
+        if row["payload_schema_version"] != 1:
+            raise ValueError("bubble payload schema version is not current")
+        if row["updated_revision"] != row["document_revision"]:
+            raise ValueError("bubble revision does not match page document")
+        payload = validate_bubble_payload(
+            json.loads(row["payload_json"]),
+            render=False,
+        )
         width, height = int(row["width"]), int(row["height"])
-        method = str(payload.get("inpaintMethod", "solid"))
-        fill_color = payload.get("fillColor")
-        mask = Image.new("L", (width, height), 0)
-        draw = ImageDraw.Draw(mask)
-        polygon = payload.get("polygon")
-        if isinstance(polygon, list) and len(polygon) >= 3:
-            draw.polygon(
-                [
-                    (int(point[0]), int(point[1]))
-                    for point in polygon
-                    if isinstance(point, (list, tuple)) and len(point) >= 2
-                ],
-                fill=255,
+        method = payload["inpaintMethod"]
+        fill_color = payload["fillColor"] if method == "solid" else None
+        base_revision, method, fill_color = (
+            self.repository.validate_page_repair_identity(
+                base_revision=base_revision,
+                method=method,
+                fill_color=fill_color,
             )
-        else:
-            coords = payload.get("coords", [0, 0, 0, 0])
-            draw.rectangle(tuple(int(value) for value in coords[:4]), fill=255)
-        mask_payload = self._mask_payload(mask)
-        mask.close()
+        )
+        mask = Image.new("L", (width, height), 0)
+        try:
+            draw = ImageDraw.Draw(mask)
+            polygon = payload["polygon"]
+            if polygon:
+                draw.polygon(
+                    [tuple(point) for point in polygon],
+                    fill=255,
+                )
+            else:
+                draw.rectangle(tuple(payload["coords"]), fill=255)
+            if mask.getbbox() is None:
+                raise ValueError("bubble repair mask is empty")
+            mask_payload = self._mask_payload(mask)
+        finally:
+            mask.close()
         mask_checksum = hashlib.sha256(mask_payload).hexdigest()
         replay = self.repository.find_page_repair_replay(
             page_id=page_id,
             base_revision=base_revision,
             method=method,
-            fill_color=str(fill_color) if fill_color is not None else None,
+            fill_color=fill_color,
             mask_checksum=mask_checksum,
             idempotency_key=idempotency_key,
         )
@@ -118,12 +135,15 @@ class PageRepairService:
             width=width,
             height=height,
         )
+        disable_resize = repair_settings["disableResize"]
+        if not isinstance(disable_resize, bool):
+            raise RuntimeError("repair disableResize must be boolean")
         return self.repository.create_page_repair(
             page_id=page_id,
             base_revision=base_revision,
             method=method,
-            fill_color=str(fill_color) if fill_color is not None else None,
-            disable_resize=bool(repair_settings["disableResize"]),
+            fill_color=fill_color,
+            disable_resize=disable_resize,
             settings_snapshot=repair_settings["settingsSnapshot"],
             mask_asset_id=mask_asset.id,
             mask_checksum=mask_checksum,
@@ -140,6 +160,13 @@ class PageRepairService:
         fill_color: str | None,
         idempotency_key: str,
     ) -> tuple[dict[str, object], bool]:
+        base_revision, method, fill_color = (
+            self.repository.validate_page_repair_identity(
+                base_revision=base_revision,
+                method=method,
+                fill_color=fill_color,
+            )
+        )
         try:
             with Image.open(upload) as opened:
                 if (
@@ -155,31 +182,38 @@ class PageRepairService:
             raise ValueError(
                 "repair mask must be a single-frame 8-bit grayscale PNG"
             ) from exc
-        colors = mask.getcolors(maxcolors=3)
-        if (
-            colors is None
-            or any(value not in {0, 255} for _count, value in colors)
-            or not any(value == 255 for _count, value in colors)
-        ):
-            mask.close()
-            raise ValueError(
-                "repair mask must be binary (0=keep, 255=repair) and non-empty"
-            )
-        with self.engine.connect() as connection:
-            dimensions = connection.execute(
-                select(assets.c.width, assets.c.height)
-                .join(page_assets, page_assets.c.asset_id == assets.c.id)
-                .where(
-                    page_assets.c.page_id == page_id,
-                    page_assets.c.role == "source",
+        try:
+            colors = mask.getcolors(maxcolors=3)
+            if (
+                colors is None
+                or any(value not in {0, 255} for _count, value in colors)
+                or not any(value == 255 for _count, value in colors)
+            ):
+                raise ValueError(
+                    "repair mask must be binary (0=keep, 255=repair) and non-empty"
                 )
-            ).one_or_none()
-        if dimensions is None or mask.size != tuple(dimensions):
+            with self.engine.connect() as connection:
+                page = connection.execute(
+                    select(
+                        assets.c.width,
+                        assets.c.height,
+                        pages.c.document_revision,
+                    )
+                    .join(page_assets, page_assets.c.asset_id == assets.c.id)
+                    .join(pages, pages.c.id == page_assets.c.page_id)
+                    .where(
+                        page_assets.c.page_id == page_id,
+                        page_assets.c.role == "source",
+                    )
+                ).one_or_none()
+            if page is None or mask.size != (int(page[0]), int(page[1])):
+                raise ValueError(
+                    "repair mask dimensions must match the source image"
+                )
+            mask_payload = self._mask_payload(mask)
+        finally:
             mask.close()
-            raise ValueError("repair mask dimensions must match the source image")
-        mask_payload = self._mask_payload(mask)
         mask_checksum = hashlib.sha256(mask_payload).hexdigest()
-        mask.close()
         replay = self.repository.find_page_repair_replay(
             page_id=page_id,
             base_revision=base_revision,
@@ -190,6 +224,8 @@ class PageRepairService:
         )
         if replay is not None:
             return replay, True
+        if int(page[2]) != base_revision:
+            raise OperationConflict("page document revision changed")
         repair_settings = (
             self.settings.resolve_page_repair(page_id=page_id)
             if method in {"lama_mpe", "litelama"}
@@ -197,15 +233,18 @@ class PageRepairService:
         )
         mask_asset = self._publish_mask_payload(
             mask_payload,
-            width=int(dimensions[0]),
-            height=int(dimensions[1]),
+            width=int(page[0]),
+            height=int(page[1]),
         )
+        disable_resize = repair_settings["disableResize"]
+        if not isinstance(disable_resize, bool):
+            raise RuntimeError("repair disableResize must be boolean")
         return self.repository.create_page_repair(
             page_id=page_id,
             base_revision=base_revision,
             method=method,
             fill_color=fill_color,
-            disable_resize=bool(repair_settings["disableResize"]),
+            disable_resize=disable_resize,
             settings_snapshot=repair_settings["settingsSnapshot"],
             mask_asset_id=mask_asset.id,
             mask_checksum=mask_checksum,
@@ -220,24 +259,56 @@ class PageRepairService:
         request = operation.get("request")
         if not isinstance(request, Mapping):
             raise RuntimeError("repair operation request is invalid")
-        method = str(request.get("method", ""))
+        method = request.get("method")
+        fill_color = request.get("fillColor")
+        revision = operation.get("baseRevision")
+        revision, method, fill_color = (
+            self.repository.validate_page_repair_identity(
+                base_revision=revision,
+                method=method,
+                fill_color=fill_color,
+            )
+        )
+        frozen_method = method
+        if method in {"lama_mpe", "litelama"} and not isinstance(
+            request.get("disableResize"),
+            bool,
+        ):
+            raise RuntimeError("repair disableResize must be boolean")
         inputs = operation.get("inputs")
         if not isinstance(inputs, Mapping):
             raise RuntimeError("repair operation inputs are missing")
-        page_id = str(operation["pageId"])
+        page_id = self._required_text(operation, "pageId")
         with self.engine.connect() as connection:
-            bubble_payloads = [
-                json.loads(value)
-                for value in connection.execute(
-                    select(bubbles.c.payload_json)
-                    .where(bubbles.c.page_id == page_id)
-                    .order_by(bubbles.c.ordinal)
-                ).scalars()
-            ]
-        source_asset_id = str(inputs["source"])
-        input_asset_id = str(
-            inputs.get("parent_clean") or inputs["source"]
+            bubble_payloads: list[dict[str, Any]] = []
+            for row in connection.execute(
+                select(
+                    bubbles.c.payload_json,
+                    bubbles.c.payload_schema_version,
+                    bubbles.c.updated_revision,
+                )
+                .where(bubbles.c.page_id == page_id)
+                .order_by(bubbles.c.ordinal)
+            ).mappings():
+                if row["payload_schema_version"] != 1:
+                    raise RuntimeError(
+                        "bubble payload schema version is not current"
+                    )
+                if row["updated_revision"] != revision:
+                    raise RuntimeError(
+                        "bubble revision does not match page document"
+                    )
+                bubble_payload = validate_bubble_payload(
+                    json.loads(row["payload_json"]),
+                    render=False,
+                )
+                bubble_payloads.append(bubble_payload)
+        source_asset_id = self._required_text(inputs, "source")
+        input_asset_id = self._required_text(
+            inputs,
+            "parent_clean" if "parent_clean" in inputs else "source",
         )
+        repair_mask_asset_id = self._required_text(inputs, "repair_mask")
         before = self._atomic_hook(
             fence,
             phase="before",
@@ -246,26 +317,51 @@ class PageRepairService:
                 "pageId": page_id,
                 "sourceAssetId": source_asset_id,
                 "inputAssetId": input_asset_id,
-                "textMaskAssetId": str(inputs["repair_mask"]),
+                "textMaskAssetId": repair_mask_asset_id,
                 "bubbles": bubble_payloads,
                 "method": method,
-                "fillColor": request.get("fillColor"),
+                "fillColor": fill_color,
             },
         )
-        method = str(before["method"])
-        source = self._open_asset(str(before["sourceAssetId"]), "RGB")
-        parent = (
-            self._open_asset(str(before["inputAssetId"]), "RGB")
+        method = before.get("method")
+        fill_color = before.get("fillColor")
+        revision, method, fill_color = (
+            self.repository.validate_page_repair_identity(
+                base_revision=revision,
+                method=method,
+                fill_color=fill_color,
+            )
         )
-        mask = self._open_asset(str(before["textMaskAssetId"]), "L")
-        warning: dict[str, str] | None = None
-        try:
+        if method != frozen_method:
+            raise RuntimeError("repair plugin cannot change the frozen method")
+        with ExitStack() as opened_assets:
+            source = opened_assets.enter_context(
+                self._open_asset(
+                    self._required_text(before, "sourceAssetId"),
+                    "RGB",
+                )
+            )
+            parent = opened_assets.enter_context(
+                self._open_asset(
+                    self._required_text(before, "inputAssetId"),
+                    "RGB",
+                )
+            )
+            mask = opened_assets.enter_context(
+                self._open_asset(
+                    self._required_text(before, "textMaskAssetId"),
+                    "L",
+                )
+            )
+            if parent.size != source.size or mask.size != source.size:
+                raise RuntimeError("repair assets must have identical dimensions")
+            expected_size = source.size
             if method == "solid":
                 repaired = parent.copy()
                 fill = Image.new(
                     "RGB",
                     repaired.size,
-                    str(before.get("fillColor") or "#FFFFFF"),
+                    fill_color,
                 )
                 try:
                     repaired.paste(fill, mask=mask)
@@ -278,34 +374,21 @@ class PageRepairService:
                 import numpy as np
                 from src.core.inpainting import inpaint_bubbles
 
-                repaired, clean_background = inpaint_bubbles(
+                repaired = inpaint_bubbles(
                     parent,
                     [(0, 0, parent.width, parent.height)],
                     method="lama",
-                    fill_color=str(before.get("fillColor") or "#FFFFFF"),
                     user_mask=np.array(mask),
                     lama_model=method,
-                    disable_resize=bool(request["disableResize"]),
+                    disable_resize=request["disableResize"],
                 )
-                if not bool(getattr(repaired, "_lama_inpainted", False)):
-                    warning = {
-                        "code": "lama_fallback_to_solid",
-                        "message": "LaMA failed; frozen fillColor was applied",
-                    }
-                if clean_background is not None:
-                    clean_background.close()
             else:
                 raise RuntimeError(f"unsupported repair method: {method}")
             try:
                 record = self._publish_png(repaired)
             finally:
                 repaired.close()
-        finally:
-            source.close()
-            parent.close()
-            mask.close()
 
-        revision = int(operation["baseRevision"])
         after = self._atomic_hook(
             fence,
             phase="after",
@@ -316,7 +399,19 @@ class PageRepairService:
                 "documentRevision": revision,
             },
         )
-        record = self._asset_record(str(after["cleanAssetId"]))
+        record = self._asset_record(
+            self._required_text(after, "cleanAssetId")
+        )
+        if (
+            record.mime_type != "image/png"
+            or (record.width, record.height) != expected_size
+        ):
+            raise RuntimeError("repair output asset does not match the source image")
+        with self._open_asset(record.id, "RGB") as published:
+            if published.size != expected_size:
+                raise RuntimeError(
+                    "repair output image does not match the source image"
+                )
 
         def publish(connection: Connection, _row: Mapping[str, Any]) -> None:
             source_revision = int(
@@ -376,10 +471,15 @@ class PageRepairService:
             "documentRevision": revision,
             "method": method,
         }
-        if method in {"lama_mpe", "litelama"} and warning is not None:
-            result["warning"] = warning
         self.repository.complete(fence, result=result, publisher=publish)
         return {**result, "__already_published__": True}
+
+    @staticmethod
+    def _required_text(value: Mapping[str, Any], field: str) -> str:
+        result = value.get(field)
+        if not isinstance(result, str) or not result:
+            raise RuntimeError(f"repair {field} must be a non-empty string")
+        return result
 
     @staticmethod
     def _mask_payload(mask: Image.Image) -> bytes:

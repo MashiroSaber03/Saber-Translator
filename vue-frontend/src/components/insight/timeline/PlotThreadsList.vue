@@ -13,11 +13,11 @@ function isResolved(thread: PlotThread): boolean {
 }
 
 function threadStatus(thread: PlotThread): string {
-  return thread.status || '进行中'
+  return thread.status
 }
 
 function threadName(thread: PlotThread): string {
-  return thread.name || '未命名线索'
+  return thread.name
 }
 
 function threadChips(thread: PlotThread): ProductChipItem[] {
@@ -55,7 +55,9 @@ function threadChips(thread: PlotThread): ProductChipItem[] {
         <span class="plot-threads-list__thread-name">{{ threadName(thread) }}</span>
       </template>
 
-      <p v-if="thread.description" class="plot-threads-list__thread-description">{{ thread.description }}</p>
+      <p v-if="thread.description" class="plot-threads-list__thread-description">
+        {{ thread.description }}
+      </p>
 
       <template #footer>
         <ProductChipList aria-label="线索状态" :items="threadChips(thread)" />

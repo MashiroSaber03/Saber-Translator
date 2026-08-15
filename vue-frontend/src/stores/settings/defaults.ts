@@ -25,29 +25,15 @@ import {
   DEFAULT_RPM_AI_VISION_OCR,
   DEFAULT_AI_VISION_OCR_MIN_IMAGE_SIZE,
   DEFAULT_TRANSLATION_MAX_RETRIES,
-  DEFAULT_HQ_TRANSLATION_MAX_RETRIES,
-  DEFAULT_PROOFREADING_MAX_RETRIES
+  DEFAULT_HQ_TRANSLATION_MAX_RETRIES
 } from '@/constants'
 import { createDefaultOpenAiOptions } from '@/utils/openaiOptions'
 import { deepClone } from '@/utils/deepClone'
 
+export const TRANSLATION_SETTINGS_SCHEMA_VERSION = 5
+
 export function createDefaultTextStyle(): TextStyleSettings {
-  const defaults = getTextStyleDefaults()
-  return {
-    fontSize: defaults.fontSize,
-    autoFontSize: defaults.autoFontSize,
-    fontFamily: defaults.fontFamily,
-    layoutDirection: defaults.layoutDirection,
-    textColor: defaults.textColor,
-    fillColor: defaults.fillColor,
-    strokeEnabled: defaults.strokeEnabled,
-    strokeColor: defaults.strokeColor,
-    strokeWidth: defaults.strokeWidth,
-    inpaintMethod: defaults.inpaintMethod,
-    useAutoTextColor: defaults.useAutoTextColor,
-    lineSpacing: defaults.lineSpacing,
-    textAlign: defaults.textAlign
-  }
+  return getTextStyleDefaults()
 }
 
 export const DEFAULT_BAIDU_OCR: BaiduOcrSettings = {
@@ -132,16 +118,15 @@ export const DEFAULT_PLUGIN_AGENT: PluginAgentSettings = {
     execution: {
       useStream: true,
       rpmLimit: 0,
-      transportRetries: 10,
-      businessRetries: 10
+      transportRetries: 1,
+      businessRetries: 0
     }
   })
 }
 
 export const DEFAULT_PROOFREADING: ProofreadingSettings = {
   enabled: false,
-  rounds: [],
-  maxRetries: DEFAULT_PROOFREADING_MAX_RETRIES
+  rounds: []
 }
 
 export const DEFAULT_BOX_EXPAND: BoxExpandSettings = {
@@ -164,7 +149,7 @@ export const DEFAULT_PARALLEL: ParallelSettings = {
 
 export function createDefaultSettings(): TranslationSettings {
   return {
-    settingsSchemaVersion: 3,
+    settingsSchemaVersion: TRANSLATION_SETTINGS_SCHEMA_VERSION,
     textStyle: createDefaultTextStyle(),
     ocrEngine: 'manga_ocr',
     sourceLanguage: 'japanese',

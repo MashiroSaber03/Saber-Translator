@@ -34,7 +34,8 @@ const options = computed(() => [
 ])
 
 function handleChange(value: UiSelectValue): void {
-  const bookId = String(value)
+  if (typeof value !== 'string') return
+  const bookId = value
   emit('update:modelValue', bookId)
   if (bookId) {
     emit('select', bookId)

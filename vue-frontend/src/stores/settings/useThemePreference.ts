@@ -31,11 +31,7 @@ export function useThemePreference(storageKey: string) {
 
   function detachSystemThemeListener(): void {
     if (!systemThemeMedia) return
-    if (typeof systemThemeMedia.removeEventListener === 'function') {
-      systemThemeMedia.removeEventListener('change', handleSystemThemeChange)
-    } else {
-      systemThemeMedia.removeListener(handleSystemThemeChange)
-    }
+    systemThemeMedia.removeEventListener('change', handleSystemThemeChange)
     systemThemeMedia = null
   }
 
@@ -43,11 +39,7 @@ export function useThemePreference(storageKey: string) {
     detachSystemThemeListener()
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
     systemThemeMedia = window.matchMedia('(prefers-color-scheme: dark)')
-    if (typeof systemThemeMedia.addEventListener === 'function') {
-      systemThemeMedia.addEventListener('change', handleSystemThemeChange)
-    } else {
-      systemThemeMedia.addListener(handleSystemThemeChange)
-    }
+    systemThemeMedia.addEventListener('change', handleSystemThemeChange)
   }
 
   function applyThemePreference(): void {

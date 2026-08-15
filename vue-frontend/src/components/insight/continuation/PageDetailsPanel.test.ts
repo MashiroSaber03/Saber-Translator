@@ -12,9 +12,15 @@ import UiField from '@/components/ui/UiField.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 
-const componentSourcePath = resolve(process.cwd(), 'src/components/insight/continuation/PageDetailsPanel.vue')
+const componentSourcePath = resolve(
+  process.cwd(),
+  'src/components/insight/continuation/PageDetailsPanel.vue'
+)
 const parentSourcePath = resolve(process.cwd(), 'src/components/insight/ContinuationPanel.vue')
-const storyTypesSourcePath = resolve(process.cwd(), 'src/components/insight/continuation/pageStoryTypes.ts')
+const storyTypesSourcePath = resolve(
+  process.cwd(),
+  'src/components/insight/continuation/pageStoryTypes.ts'
+)
 
 function createPage() {
   return {
@@ -23,7 +29,6 @@ function createPage() {
     story_text: '剧情',
     dialogue_text: '对白',
     characters: ['主角'],
-    character_forms: [],
     final_prompt: '',
     image_url: '',
     previous_url: '',
@@ -85,8 +90,10 @@ describe('PageDetailsPanel', () => {
 
   it('keeps generated page card headers responsive in narrow panels', () => {
     const source = readFileSync(componentSourcePath, 'utf8')
-    const pageHeaderStyle = source.match(/\.page-details-panel__page-header \{(?<body>[\s\S]*?)\n\}/)?.groups?.body ?? ''
-    const pageTitleStyle = source.match(/\.page-details-panel__page-title \{(?<body>[\s\S]*?)\n\}/)?.groups?.body ?? ''
+    const pageHeaderStyle =
+      source.match(/\.page-details-panel__page-header \{(?<body>[\s\S]*?)\n\}/)?.groups?.body ?? ''
+    const pageTitleStyle =
+      source.match(/\.page-details-panel__page-title \{(?<body>[\s\S]*?)\n\}/)?.groups?.body ?? ''
 
     expect(pageHeaderStyle).toContain('flex-wrap: wrap')
     expect(pageHeaderStyle).toContain('min-width: 0')
@@ -126,7 +133,11 @@ describe('PageDetailsPanel', () => {
     const rootStyle = source.match(/\.page-details-panel \{(?<body>[\s\S]*?)\n\}/)
 
     expect(rootStyle?.groups?.body ?? '').not.toMatch(/--ui-(input|textarea)-/)
-    expect(wrapper.findAllComponents(UiTextarea).map(field => field.props('size'))).toEqual(['sm', 'sm', 'sm'])
+    expect(wrapper.findAllComponents(UiTextarea).map(field => field.props('size'))).toEqual([
+      'sm',
+      'sm',
+      'sm',
+    ])
     expect(wrapper.findAllComponents(UiTextarea).map(field => field.props('variant'))).toEqual([
       'panel',
       'panel',
@@ -195,7 +206,9 @@ describe('PageDetailsPanel', () => {
     expect(emptyState.props('title')).toBe('尚未生成页面剧情')
     expect(wrapper.find('.empty-state').exists()).toBe(false)
 
-    const generateButton = wrapper.findAll('button').find(button => button.text().includes('生成页面剧情'))
+    const generateButton = wrapper
+      .findAll('button')
+      .find(button => button.text().includes('生成页面剧情'))
     expect(generateButton).toBeTruthy()
     await generateButton!.trigger('click')
     expect(wrapper.emitted('generate-details')).toEqual([[]])

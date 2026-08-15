@@ -46,14 +46,22 @@ from src.backend_v2.storage.schema import (
 from src.backend_v2.storage.seeding import seed_system_records
 from src.backend_v2.timestamps import utcnow
 from src.backend_v2.transfer.commands import TransferCommandService
-from src.backend_v2.web_import.commands import WebImportCommandService
+from src.backend_v2.web_import.commands import (
+    WebImportCommandService,
+    WebImportDataInvalid,
+)
 from src.backend_v2.web_import.worker import (
     WebImportWorkerService,
+    _ImageTagParser,
+    _deduplicate_urls,
     _gallery_dl_urls,
 )
 from src.backend_v2.jobs.worker_loop import JobWorkerLoop
 from src.backend_v2.worker.maintenance import WorkerMaintenance
-from src.core.web_import.agent import MangaScraperAgent
+from src.core.web_import.agent import (
+    MangaScraperAgent,
+    WebImportAgentControlRequested,
+)
 
 
 def _png(color: tuple[int, int, int]) -> bytes:
@@ -98,6 +106,13 @@ def test_web_agent_result_parser_accepts_only_the_current_schema() -> None:
     )
     assert not retired.success
 
+    wrapped = parser._parse_result(
+        'prefix {"comic_title":"Comic","chapter_title":"Chapter",'
+        '"pages":[],"total_pages":0} suffix',
+        "https://example.test/chapter",
+    )
+    assert not wrapped.success
+
 
 def test_gallery_dl_memory_failure_is_not_treated_as_no_candidates(
     monkeypatch: pytest.MonkeyPatch,
@@ -111,10 +126,91 @@ def test_gallery_dl_memory_failure_is_not_treated_as_no_candidates(
 
     module = ModuleType("gallery_dl")
     module.job = SimpleNamespace(Job=FakeJob)  # type: ignore[attr-defined]
+    module.exception = SimpleNamespace(NoExtractorError=RuntimeError)  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "gallery_dl", module)
 
     with pytest.raises(MemoryError, match="allocation failed"):
-        _gallery_dl_urls("https://example.test/chapter", max_candidates=10)
+        _gallery_dl_urls("https://example.test/chapter")
+
+
+def test_gallery_dl_execution_failure_is_not_treated_as_unsupported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class NoExtractorError(Exception):
+        pass
+
+    class FakeJob:
+        def __init__(self, _url: str) -> None:
+            pass
+
+        def run(self) -> int:
+            return 8
+
+    module = ModuleType("gallery_dl")
+    module.job = SimpleNamespace(Job=FakeJob)  # type: ignore[attr-defined]
+    module.exception = SimpleNamespace(NoExtractorError=NoExtractorError)  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "gallery_dl", module)
+
+    with pytest.raises(RuntimeError, match="status 8"):
+        _gallery_dl_urls("https://example.test/chapter")
+
+
+def test_web_import_candidate_collection_has_no_page_count_gate() -> None:
+    urls = [f"https://example.test/{index}.jpg" for index in range(10_005)]
+    parser = _ImageTagParser("https://example.test/chapter")
+
+    for url in urls:
+        parser.feed(f'<img src="{url}">')
+
+    assert parser.urls == urls
+    assert _deduplicate_urls([*urls, urls[-1]]) == urls
+
+
+def test_web_import_page_config_does_not_rescan_the_complete_entry_list() -> None:
+    class FrozenEntries(list[dict[str, object]]):
+        def __iter__(self):
+            raise AssertionError("page handling must not rescan every frozen entry")
+
+    entries = FrozenEntries([{"draftPageId": str(uuid.uuid4())}])
+    config = {"entries": entries}
+
+    resolved = WebImportWorkerService._config(
+        {
+            "stepKind": "web_extract_page",
+            "config": config,
+        }
+    )
+
+    assert resolved["entries"] is entries
+
+
+def test_web_import_draft_rejects_noncurrent_config_schema(tmp_path: Path) -> None:
+    data_root = tmp_path / "data-v2"
+    data_root.mkdir()
+    engine = create_sqlite_engine(data_root / "saber.sqlite3")
+    metadata.create_all(engine)
+    seed_system_records(engine)
+    content = ContentRepository(engine)
+    book = content.create_book(title="Schema")
+    chapter = content.create_chapter(book_id=str(book["id"]), title="Chapter")
+    service = WebImportCommandService(data_root=data_root, engine=engine)
+    accepted = service.create_draft(
+        chapter_id=str(chapter["id"]),
+        source_url="https://example.test/chapter",
+        requested_engine="auto",
+        idempotency_key="schema-draft",
+    )
+    draft_id = str(accepted["draftId"])
+    with engine.begin() as connection:
+        connection.execute(
+            update(web_import_drafts)
+            .where(web_import_drafts.c.id == draft_id)
+            .values(config_schema_version=2)
+        )
+
+    with pytest.raises(WebImportDataInvalid, match="schema version"):
+        service.get_draft(draft_id)
+    engine.dispose()
 
 
 def _run_job(
@@ -286,25 +382,25 @@ def test_web_import_ai_agent_config_is_resolved_and_frozen_server_side(
                         "modelName": "agent-model",
                         "useStream": False,
                         "forceJsonOutput": True,
-                        "maxRetries": 2,
-                        "timeout": 60,
+                        "maxRetries": 101,
+                        "timeout": 3_601,
                     },
                     "download": {
-                        "concurrency": 4,
-                        "timeout": 30,
-                        "retries": 2,
-                        "delay": 0,
+                        "concurrency": 33,
+                        "timeout": 3_601,
+                        "retries": 101,
+                        "delay": 60_001,
                         "useReferer": True,
                     },
-                    "extraction": {"prompt": "extract", "maxIterations": 4},
+                    "extraction": {"prompt": "extract", "maxIterations": 101},
                     "imagePreprocess": {
                         "enabled": False,
                         "autoRotate": True,
                         "compression": {
                             "enabled": False,
                             "quality": 85,
-                            "maxWidth": 0,
-                            "maxHeight": 0,
+                            "maxWidth": 100_001,
+                            "maxHeight": 100_001,
                         },
                         "formatConvert": {
                             "enabled": False,
@@ -385,7 +481,9 @@ def test_web_import_ai_agent_config_is_resolved_and_frozen_server_side(
     assert "agent-secret" not in config_json
     assert "firecrawl-secret" not in config_json
     assert '"model_name":"agent-model"' in config_json
-    assert '"concurrency":4' in config_json
+    assert '"concurrency":33' in config_json
+    assert '"maxIterations":101' in config_json
+    assert '"maxWidth":100001' in config_json
     assert '"autoImport":false' in config_json
     assert credential_count == 2
     engine.dispose()
@@ -600,6 +698,84 @@ def test_web_import_download_batch_uses_the_frozen_concurrency(
         {"options": {"concurrency": 4}},
         step_ordinal=1,
     ) == 4
+
+
+def test_web_import_download_batch_propagates_memory_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    failed_steps: list[str] = []
+    worker = object.__new__(WebImportWorkerService)
+    worker.jobs = type(
+        "Jobs",
+        (),
+        {
+            "fail_step": staticmethod(
+                lambda _fence, *, step_id, **_kwargs: failed_steps.append(
+                    step_id
+                )
+            )
+        },
+    )()
+
+    def fail_with_memory(_fence, _step):
+        raise MemoryError("native allocation failed")
+
+    monkeypatch.setattr(worker, "handle", fail_with_memory)
+
+    with pytest.raises(MemoryError, match="allocation failed"):
+        worker.handle_download_batch(
+            object(),
+            [{"stepId": "memory", "stepKind": "web_extract_page"}],
+        )
+
+    assert failed_steps == []
+
+
+def test_web_import_failure_recording_cannot_mask_original_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    worker = object.__new__(WebImportWorkerService)
+
+    def fail_scan(_fence, _step):
+        raise ValueError("original extraction failure")
+
+    def fail_record(_fence, _step, _error):
+        raise RuntimeError("failure journal is busy")
+
+    monkeypatch.setattr(worker, "_scan", fail_scan)
+    monkeypatch.setattr(worker, "_record_extract_failure", fail_record)
+
+    with pytest.raises(ValueError, match="original extraction failure"):
+        worker.handle(object(), {"stepKind": "web_extract_scan"})
+
+
+@pytest.mark.parametrize("status", ["pausing", "cancelling"])
+def test_web_import_agent_control_yields_the_running_step(
+    monkeypatch: pytest.MonkeyPatch,
+    status: str,
+) -> None:
+    checkpoints: list[tuple[str, dict[str, object]]] = []
+    worker = object.__new__(WebImportWorkerService)
+    worker.jobs = SimpleNamespace(
+        checkpoint_step=lambda _fence, *, step_id, checkpoint: (
+            checkpoints.append((step_id, checkpoint)) or status
+        )
+    )
+
+    def request_control(_fence, _step):
+        raise WebImportAgentControlRequested("control requested")
+
+    monkeypatch.setattr(worker, "_scan", request_control)
+    result = worker.handle(
+        object(),
+        {"stepKind": "web_extract_scan", "stepId": "scan-step"},
+    )
+
+    assert result == {
+        "__already_published__": True,
+        "__control_drained__": True,
+    }
+    assert checkpoints == [("scan-step", {})]
 
 
 def test_cancelled_web_extract_draft_is_not_restored_as_active(

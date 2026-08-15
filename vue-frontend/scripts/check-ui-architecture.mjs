@@ -2,7 +2,6 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 
 const ROOTS = [
-  '.stylelintignore',
   '.stylelintrc.json',
   'eslint.config.js',
   'package.json',
@@ -132,7 +131,9 @@ const PUBLIC_PRIMITIVE_CUSTOM_PROPERTY_RE = /^--(?:ui|product)-/
 const RAW_BUTTON_RE = /<button\b/
 const RAW_BUTTON_ALLOWED_FILES = new Set([
   'src/components/ui/UiButton.vue',
+  'src/components/ui/UiCombobox.vue',
   'src/components/ui/UiIconButton.vue',
+  'src/components/ui/UiSelect.vue',
 ])
 const RAW_FORM_CONTROL_ALLOWED_FILES = new Set([
   'src/components/ui/UiCheckbox.vue',
@@ -289,7 +290,6 @@ const RESERVED_GLOBAL_CUSTOM_PROPERTIES = new Set([
   ...LEGACY_SHORT_ALIAS_VARIABLES,
 ])
 const UI_MINDSET_SCAN_ROOTS = [
-  '.stylelintignore',
   '.stylelintrc.json',
   'eslint.config.js',
   'package.json',
@@ -403,7 +403,7 @@ function scanPath(path) {
     checkFile(path)
     return
   }
-  if (/\.(?:js|jsx|ts|tsx|json)$/.test(path) || path.endsWith('.stylelintignore')) {
+  if (/\.(?:js|jsx|ts|tsx|json)$/.test(path)) {
     checkScriptFile(path)
   }
 }
@@ -1607,7 +1607,8 @@ function checkFile(path) {
     checkUiPrimitiveSelectors(path, normalizedPath, content)
   }
 
-  if (CSS_ID_SELECTOR_RE.test(content)) {
+  const styleContent = extractStyleContents(content, path).join('\n')
+  if (CSS_ID_SELECTOR_RE.test(styleContent)) {
     addFailure(path, 'CSS ID selectors are not allowed in frontend UI source')
   }
 

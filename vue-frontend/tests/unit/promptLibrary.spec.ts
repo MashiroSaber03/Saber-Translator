@@ -5,17 +5,21 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const {
-  updateTranslationServiceMock,
-  updateAiVisionOcrMock,
+  setTranslatePromptModeMock,
+  setAiVisionOcrPromptModeMock,
   toastInfoMock,
   listV2PromptsMock,
+  createPromptMock,
+  updatePromptMock,
   deletePromptMock,
   confirmProductActionMock,
 } = vi.hoisted(() => ({
-  updateTranslationServiceMock: vi.fn(),
-  updateAiVisionOcrMock: vi.fn(),
+  setTranslatePromptModeMock: vi.fn(),
+  setAiVisionOcrPromptModeMock: vi.fn(),
   toastInfoMock: vi.fn(),
   listV2PromptsMock: vi.fn(),
+  createPromptMock: vi.fn(),
+  updatePromptMock: vi.fn(),
   deletePromptMock: vi.fn(),
   confirmProductActionMock: vi.fn(),
 }))
@@ -41,8 +45,8 @@ const settingsState = reactive({
 vi.mock('@/stores/settings', () => ({
   useSettingsStore: () => ({
     settings: settingsState,
-    updateTranslationService: updateTranslationServiceMock,
-    updateAiVisionOcr: updateAiVisionOcrMock,
+    setTranslatePromptMode: setTranslatePromptModeMock,
+    setAiVisionOcrPromptMode: setAiVisionOcrPromptModeMock,
   }),
 }))
 
@@ -57,8 +61,8 @@ vi.mock('@/utils/toast', () => ({
 
 vi.mock('@/api/v2/settings', () => ({
   listV2Prompts: listV2PromptsMock,
-  createV2Prompt: vi.fn(),
-  updateV2Prompt: vi.fn(),
+  createV2Prompt: createPromptMock,
+  updateV2Prompt: updatePromptMock,
   deleteV2Prompt: deletePromptMock,
 }))
 
@@ -101,15 +105,19 @@ function deferred<T>() {
 
 describe('PromptLibrary', () => {
   beforeEach(() => {
-    updateTranslationServiceMock.mockReset()
-    updateAiVisionOcrMock.mockReset()
+    setTranslatePromptModeMock.mockReset()
+    setAiVisionOcrPromptModeMock.mockReset()
     toastInfoMock.mockReset()
     listV2PromptsMock.mockReset()
+    createPromptMock.mockReset()
+    updatePromptMock.mockReset()
     deletePromptMock.mockReset()
     confirmProductActionMock.mockReset()
     listV2PromptsMock.mockResolvedValue([])
     deletePromptMock.mockResolvedValue(undefined)
     confirmProductActionMock.mockResolvedValue(true)
+    createPromptMock.mockResolvedValue(prompt('created', 'new prompt', 'content'))
+    updatePromptMock.mockResolvedValue(prompt('updated', 'updated prompt', 'content'))
 
     settingsState.translation.openaiOptions.request.forceJsonOutput = false
     settingsState.aiVisionOcr.openaiOptions.request.forceJsonOutput = false
@@ -138,9 +146,7 @@ describe('PromptLibrary', () => {
 
     selects[1]!.vm.$emit('change', 'json')
 
-    expect(updateTranslationServiceMock).toHaveBeenLastCalledWith({
-      forceJsonOutput: true,
-    })
+    expect(setTranslatePromptModeMock).toHaveBeenLastCalledWith(true)
     expect(toastInfoMock).toHaveBeenCalledWith('已切换到JSON格式模式')
   })
 
@@ -163,10 +169,7 @@ describe('PromptLibrary', () => {
 
     modeSelect.vm.$emit('change', 'paddleocr_vl')
 
-    expect(updateAiVisionOcrMock).toHaveBeenLastCalledWith({
-      forceJsonOutput: false,
-      promptMode: 'paddleocr_vl',
-    })
+    expect(setAiVisionOcrPromptModeMock).toHaveBeenLastCalledWith('paddleocr_vl')
     expect(toastInfoMock).toHaveBeenCalledWith('已切换到OCR模型提示词模式')
   })
 
@@ -231,15 +234,6 @@ describe('PromptLibrary', () => {
     expect(source).not.toContain('class="prompt-actions"')
     expect(rootStyle?.groups?.body ?? '').not.toMatch(/--ui-button-/)
     expect(source).not.toContain('.prompt-library__delete-action:disabled')
-  })
-
-  it('does not assert shared icon-button primitives through internal class names', () => {
-    const source = readFileSync(resolve(process.cwd(), 'tests/unit/promptLibrary.spec.ts'), 'utf8')
-    const buttonClassPrefix = 'ui-' + 'button--'
-    const iconButtonClassPrefix = 'ui-' + 'icon-button--'
-
-    expect(source).not.toContain(buttonClassPrefix)
-    expect(source).not.toContain(iconButtonClassPrefix)
   })
 
   it('routes prompt list loading and empty states through product status feedback', async () => {
@@ -321,6 +315,39 @@ describe('PromptLibrary', () => {
     expect(wrapper.text()).not.toContain('translate-stale')
   })
 
+  it('clears the previous type list when the next prompt list fails to load', async () => {
+    listV2PromptsMock
+      .mockResolvedValueOnce([prompt('translate-old', 'translate-old')])
+      .mockRejectedValueOnce(new Error('load failed'))
+
+    const wrapper = mount(PromptLibrary)
+    await flushPromises()
+    expect(wrapper.text()).toContain('translate-old')
+
+    wrapper.findAllComponents(UiSelect)[0]!.vm.$emit('change', 'textbox')
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('translate-old')
+    expect(wrapper.getComponent(ProductStatusBanner).props('title')).toBe('提示词加载失败')
+    expect(wrapper.text()).toContain('load failed')
+  })
+
+  it('lets the user retry after the prompt list fails', async () => {
+    listV2PromptsMock
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce([prompt('retry-id', 'retry prompt')])
+
+    const wrapper = mount(PromptLibrary)
+    await flushPromises()
+    expect(wrapper.getComponent(ProductStatusBanner).props('title')).toBe('提示词加载失败')
+
+    await wrapper.getComponent(ProductStatusBanner).get('button').trigger('click')
+    await flushPromises()
+
+    expect(listV2PromptsMock).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('retry prompt')
+  })
+
   it('confirms before deleting custom prompts', async () => {
     listV2PromptsMock.mockResolvedValue([
       prompt('prompt-custom', 'custom'),
@@ -348,5 +375,53 @@ describe('PromptLibrary', () => {
     await flushPromises()
 
     expect(deletePromptMock).toHaveBeenCalledWith('prompt-custom')
+  })
+
+  it('serializes prompt mutations so a double click cannot submit twice', async () => {
+    const pendingCreate = deferred<ReturnType<typeof prompt>>()
+    createPromptMock.mockReturnValueOnce(pendingCreate.promise)
+    const wrapper = mount(PromptLibrary)
+    await flushPromises()
+    await wrapper.get<HTMLInputElement>('#promptName').setValue('new prompt')
+    await wrapper.get<HTMLTextAreaElement>('#promptContent').setValue('content')
+
+    const saveButton = wrapper.findAll('button')
+      .find(button => button.text().includes('保存提示词'))
+    expect(saveButton).toBeTruthy()
+    await saveButton!.trigger('click')
+    await saveButton!.trigger('click')
+
+    expect(createPromptMock).toHaveBeenCalledTimes(1)
+    expect(wrapper.findAllComponents(UiSelect).every(select => select.props('disabled'))).toBe(true)
+
+    pendingCreate.resolve(prompt('created-id', 'new prompt', 'content'))
+    await flushPromises()
+  })
+
+  it('uses mutation responses directly instead of refetching the whole list', async () => {
+    const created = prompt('created-id', 'created prompt', '')
+    createPromptMock.mockResolvedValueOnce(created)
+    const wrapper = mount(PromptLibrary)
+    await flushPromises()
+    await wrapper.get<HTMLInputElement>('#promptName').setValue('created prompt')
+
+    const saveButton = wrapper.findAll('button')
+      .find(button => button.text().includes('保存提示词'))
+    await saveButton!.trigger('click')
+    await flushPromises()
+
+    expect(createPromptMock).toHaveBeenCalledWith('translate', 'created prompt', '')
+    expect(listV2PromptsMock).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('created prompt')
+
+    await wrapper.get('button[aria-label="选择提示词：created prompt"]').trigger('click')
+    await wrapper.get<HTMLInputElement>('#promptName').setValue('renamed prompt')
+    updatePromptMock.mockResolvedValueOnce({ ...created, name: 'renamed prompt', revision: 2 })
+    await saveButton!.trigger('click')
+    await flushPromises()
+
+    expect(listV2PromptsMock).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('renamed prompt')
+    expect(wrapper.text()).not.toContain('created prompt')
   })
 })

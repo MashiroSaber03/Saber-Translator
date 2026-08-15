@@ -30,7 +30,7 @@
           <UiNumberField
             input-id="textDefaultsFontSize"
             :model-value="draftDefaults.fontSize"
-            :min="10"
+            :min="1"
             :disabled="draftDefaults.autoFontSize"
             size="sm"
             @change="updateFontSize"
@@ -56,11 +56,13 @@
           aria-label="文本字体"
           :model-value="draftDefaults.fontFamily"
           :options="fontSelectOptions"
+          :disabled="isLoading || isUploadingFont"
           @change="handleFontSelectChange"
         />
         <UiFileInput
           ref="fontUploadInput"
           :accept="FONT_FILE_ACCEPT"
+          :disabled="isLoading || isUploadingFont"
           hidden
           @files-change="handleFontUpload"
         />
@@ -89,13 +91,12 @@
         variant="settings"
         label="行间距"
         control-id="textDefaultsLineSpacing"
-        hint="行间距倍数（0.5 - 3.0）"
+        hint="行间距倍数，必须大于 0。"
       >
         <UiNumberField
           input-id="textDefaultsLineSpacing"
           :model-value="draftDefaults.lineSpacing"
-          :min="0.5"
-          :max="3"
+          :min="0.1"
           :step="0.1"
           size="sm"
           @change="updateLineSpacing"
@@ -185,7 +186,6 @@
             input-id="textDefaultsStrokeWidth"
             :model-value="draftDefaults.strokeWidth"
             :min="0"
-            :max="10"
             size="sm"
             @change="updateStrokeWidth"
           />
@@ -207,11 +207,12 @@ import UiNumberField from '@/components/ui/UiNumberField.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
-import { computed, ref, watch } from 'vue'
-import type { InpaintMethod, TextAlign, TextDirection } from '@/types/bubble'
+import { computed, ref } from 'vue'
 import type { TextStyleSettings } from '@/types/settings'
-import { getFactoryTextStyleDefaults } from '@/defaults/textStyleFactoryDefaults'
-import { normalizeTextStyleSettings } from '@/defaults/textStyleDefaults'
+import {
+  getTextStyleDefaults,
+  normalizeTextStyleSettings,
+} from '@/defaults/textStyleDefaults'
 import { listV2Fonts, uploadV2Font, type V2Font } from '@/api/v2/settings'
 import { useSettingsStore } from '@/stores/settings'
 import { useToast } from '@/utils/toast'
@@ -222,96 +223,54 @@ import {
 } from '@/utils/fontFiles'
 import UiCombobox from '@/components/ui/UiCombobox.vue'
 import {
-  clampLineSpacing,
-  getFontDisplayName,
   inpaintMethodOptions,
   layoutDirectionOptions,
   textAlignOptions,
 } from '@/utils/textStyleForm'
 
-const props = defineProps<{
-  isOpen: boolean
-}>()
-
 const toast = useToast()
 const settingsStore = useSettingsStore()
-const draftDefaults = ref<TextStyleSettings>(getFactoryTextStyleDefaults())
+const draftDefaults = computed(() => settingsStore.textStyleDefaults)
 const isLoading = ref(false)
+const isUploadingFont = ref(false)
 const errorMessage = ref('')
-const fontList = ref<V2Font[]>([])
+const fontList = computed<V2Font[]>(() => settingsStore.fontCatalog)
 const fontUploadInput = ref<InstanceType<typeof UiFileInput> | null>(null)
 
 const fontSelectOptions = computed(() => {
-  const backendOptions = fontList.value.map(font => ({
+  const options = fontList.value.map(font => ({
     label: font.displayName,
     value: font.id,
   }))
-  const known = new Set(backendOptions.map(option => option.value))
-  const options = [...backendOptions]
-  const currentFont = draftDefaults.value.fontFamily
-  if (currentFont && !known.has(currentFont)) {
-    options.unshift({
-      label: getFontDisplayName(currentFont),
-      value: currentFont,
-    })
-  }
   options.push({ label: '自定义字体...', value: 'custom-font' })
   return options
 })
 
 async function loadFontList(): Promise<void> {
-  try {
-    fontList.value = await listV2Fonts()
-    settingsStore.hydrateResourceCatalogs(
-      fontList.value,
-      settingsStore.promptCatalog,
-    )
-  } catch {
-    fontList.value = []
-  }
-}
-
-async function loadDefaults(): Promise<void> {
   isLoading.value = true
   errorMessage.value = ''
   try {
-    await Promise.all([
-      settingsStore.isBackendReady ? Promise.resolve(true) : settingsStore.loadFromBackend(),
-      loadFontList(),
-    ])
-    if (!settingsStore.isBackendReady) {
-      throw new Error(settingsStore.backendError || '获取文本默认值失败')
-    }
-    const normalized = normalizeTextStyleSettings(settingsStore.textStyleDefaults)
-    draftDefaults.value = normalized
+    const fonts = await listV2Fonts()
+    settingsStore.hydrateResourceCatalogs(fonts, settingsStore.promptCatalog)
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : '获取文本默认值失败'
+    errorMessage.value = error instanceof Error ? error.message : '获取字体列表失败'
   } finally {
     isLoading.value = false
   }
 }
 
-watch(
-  () => props.isOpen,
-  (isOpen) => {
-    if (isOpen) {
-      void loadDefaults()
-    }
-  },
-  { immediate: true }
-)
+void loadFontList()
 
 function updateDraft(updates: Partial<TextStyleSettings>): void {
   const normalized = normalizeTextStyleSettings({
     ...draftDefaults.value,
     ...updates,
   })
-  draftDefaults.value = normalized
   settingsStore.textStyleDefaults = normalized
 }
 
 function updateFontSize(value: number | null): void {
-  if (value !== null && value > 0) {
+  if (value !== null && Number.isInteger(value) && value >= 1) {
     updateDraft({ fontSize: value })
   }
 }
@@ -321,22 +280,24 @@ function updateAutoFontSize(value: boolean): void {
 }
 
 function handleLayoutDirectionChange(value: string | number): void {
-  updateDraft({ layoutDirection: String(value) as TextDirection })
+  if (value !== 'auto' && value !== 'vertical' && value !== 'horizontal') return
+  updateDraft({ layoutDirection: value })
 }
 
 function handleTextAlignChange(value: string | number): void {
-  updateDraft({ textAlign: String(value) as TextAlign })
+  if (value !== 'start' && value !== 'center' && value !== 'end') return
+  updateDraft({ textAlign: value })
 }
 
 function handleInpaintMethodChange(value: string | number): void {
-  updateDraft({ inpaintMethod: String(value) as InpaintMethod })
+  if (value !== 'solid' && value !== 'lama_mpe' && value !== 'litelama') return
+  updateDraft({ inpaintMethod: value })
 }
 
 function updateLineSpacing(value: number | null): void {
-  const lineSpacing = value === null
-    ? draftDefaults.value.lineSpacing
-    : clampLineSpacing(value, draftDefaults.value.lineSpacing)
-  updateDraft({ lineSpacing })
+  if (value !== null && Number.isFinite(value) && value > 0) {
+    updateDraft({ lineSpacing: value })
+  }
 }
 
 function updateTextColor(value: string): void {
@@ -360,19 +321,18 @@ function updateStrokeColor(value: string): void {
 }
 
 function updateStrokeWidth(value: number | null): void {
-  if (value !== null && value >= 0) {
+  if (value !== null && Number.isInteger(value) && value >= 0) {
     updateDraft({ strokeWidth: value })
   }
 }
 
 function resetDraftToFactory(): void {
-  const normalized = normalizeTextStyleSettings(getFactoryTextStyleDefaults())
-  draftDefaults.value = normalized
-  settingsStore.textStyleDefaults = normalized
+  settingsStore.textStyleDefaults = getTextStyleDefaults()
   errorMessage.value = ''
 }
 
 async function handleFontUpload(files: File[]): Promise<void> {
+  if (isUploadingFont.value) return
   const file = files[0]
   if (!file) return
 
@@ -382,25 +342,30 @@ async function handleFontUpload(files: File[]): Promise<void> {
     return
   }
 
+  isUploadingFont.value = true
   try {
-    const response = await uploadV2Font(file)
-    await loadFontList()
-    updateDraft({ fontFamily: response.id })
+    const uploadedFont = await uploadV2Font(file)
+    settingsStore.upsertFont(uploadedFont)
+    updateDraft({ fontFamily: uploadedFont.id })
     toast.success('字体上传成功')
   } catch (error) {
     toast.error(error instanceof Error ? error.message : '字体上传失败')
   } finally {
+    isUploadingFont.value = false
     fontUploadInput.value?.clear()
   }
 }
 
 function handleFontSelectChange(value: string | number): void {
-  const nextValue = String(value)
-  if (nextValue === 'custom-font') {
+  if (typeof value !== 'string') return
+  if (value === 'custom-font') {
+    if (isUploadingFont.value) return
     fontUploadInput.value?.click()
     return
   }
-  updateDraft({ fontFamily: nextValue })
+  if (value) {
+    updateDraft({ fontFamily: value })
+  }
 }
 
 </script>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted } from 'vue'
-import { RouterView } from 'vue-router'
+import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
+import { RouterView, useRoute } from 'vue-router'
 import { useSettingsStore } from '@/stores/settings'
 import ToastNotification from '@/components/common/ToastNotification.vue'
 import ProductConfirmProvider from '@/components/product/ProductConfirmProvider.vue'
@@ -14,23 +14,44 @@ import { useTaskCenterStore } from '@/stores/taskCenterStore'
 
 const settingsStore = useSettingsStore()
 const taskCenterStore = useTaskCenterStore()
+const route = useRoute()
+const readerImmersiveMode = computed(() => route.name === 'reader')
+let appMounted = false
 
 settingsStore.initSettings()
 
+async function syncTaskCenterLifecycle() {
+  if (!appMounted) return
+  if (readerImmersiveMode.value) {
+    taskCenterStore.close()
+    taskCenterStore.disconnect()
+    return
+  }
+
+  await taskCenterStore.initialize()
+  if (!appMounted || readerImmersiveMode.value) {
+    taskCenterStore.disconnect()
+  }
+}
+
 onMounted(() => {
+  appMounted = true
   void settingsStore.loadFromBackend()
-  void taskCenterStore.initialize()
+  void syncTaskCenterLifecycle()
 })
 
-onBeforeUnmount(() => taskCenterStore.disconnect())
+watch(readerImmersiveMode, () => {
+  void syncTaskCenterLifecycle()
+})
+
+onBeforeUnmount(() => {
+  appMounted = false
+  taskCenterStore.disconnect()
+})
 </script>
 
 <template>
-  <OverlayLayer
-    v-if="settingsStore.backendError"
-    level="popover"
-    passthrough
-  >
+  <OverlayLayer v-if="settingsStore.backendError" level="mobile-overlay" passthrough>
     <ProductStatusBanner
       class="backend-restricted-banner"
       tone="danger"
@@ -39,19 +60,15 @@ onBeforeUnmount(() => taskCenterStore.disconnect())
     >
       设置加载失败，当前为受限模式：{{ settingsStore.backendError }}
       <template #actions>
-        <UiButton
-          variant="secondary"
-          size="sm"
-          @click="settingsStore.loadFromBackend()"
-        >
+        <UiButton variant="secondary" size="sm" @click="settingsStore.loadFromBackend()">
           重试
         </UiButton>
       </template>
     </ProductStatusBanner>
   </OverlayLayer>
   <RouterView />
-  <TaskCenterLauncher />
-  <TaskCenterDrawer />
+  <TaskCenterLauncher v-if="!readerImmersiveMode" />
+  <TaskCenterDrawer v-if="!readerImmersiveMode" />
   <ProductConfirmProvider />
   <ProductTextInputProvider />
   <ToastNotification />

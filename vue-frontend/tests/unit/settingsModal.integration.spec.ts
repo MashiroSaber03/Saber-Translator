@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 
-const { saveToBackendMock, saveDefaultsMock } = vi.hoisted(() => ({
+const { loadFromBackendMock, saveToBackendMock, saveDefaultsMock } = vi.hoisted(() => ({
+  loadFromBackendMock: vi.fn().mockResolvedValue(true),
   saveToBackendMock: vi.fn(),
   saveDefaultsMock: vi.fn(),
 }))
@@ -12,7 +13,7 @@ vi.mock('@/stores/settings', () => ({
     isBackendReady: true,
     settings: {},
     providerConfigs: {},
-    loadFromBackend: vi.fn().mockResolvedValue(true),
+    loadFromBackend: loadFromBackendMock,
     saveToBackend: saveToBackendMock,
   }),
 }))
@@ -48,7 +49,6 @@ vi.mock('@/components/settings/MoreSettings.vue', () => ({
 vi.mock('@/components/settings/TextStyleDefaultsSettings.vue', () => ({
   default: {
     name: 'TextStyleDefaultsSettings',
-    props: ['isOpen'],
     template: '<div>TextStyleDefaultsSettings stub</div>',
     methods: {
       saveDefaults: saveDefaultsMock,
@@ -79,6 +79,20 @@ afterEach(() => {
 })
 
 describe('SettingsModal integration', () => {
+  it('loads content when mounted directly in the open state', async () => {
+    loadFromBackendMock.mockClear()
+    const wrapper = mount(SettingsModal, {
+      attachTo: document.body,
+      props: { modelValue: true },
+    })
+    mountedWrappers.push(wrapper)
+    await wrapper.vm.$nextTick()
+
+    expect(loadFromBackendMock).toHaveBeenCalledTimes(1)
+    expect(document.body.textContent).toContain('OcrSettings stub')
+    expect(document.body.textContent).not.toContain('正在读取后端设置')
+  })
+
   it('propagates a complete overlay close through BaseModal and hides itself', async () => {
     const wrapper = mount(SettingsModal, {
       attachTo: document.body,

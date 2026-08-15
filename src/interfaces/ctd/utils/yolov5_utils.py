@@ -1,4 +1,5 @@
 import math
+
 import torch
 import torch.nn as nn
 
@@ -36,9 +37,7 @@ def check_anchor_order(m):
 def initialize_weights(model):
     for m in model.modules():
         t = type(m)
-        if t is nn.Conv2d:
-            pass  # nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-        elif t is nn.BatchNorm2d:
+        if t is nn.BatchNorm2d:
             m.eps = 1e-3
             m.momentum = 0.03
         elif t in [nn.Hardswish, nn.LeakyReLU, nn.ReLU, nn.ReLU6, nn.SiLU]:
@@ -46,17 +45,4 @@ def initialize_weights(model):
 
 def make_divisible(x, divisor):
     # Returns nearest x divisible by divisor
-    if isinstance(divisor, torch.Tensor):
-        divisor = int(divisor.max())  # to int
     return math.ceil(x / divisor) * divisor
-
-
-def check_version(current='0.0.0', minimum='0.0.0', name='version ', pinned=False, hard=False):
-    # Check version vs. required version
-    from packaging import version
-    current, minimum = (version.parse(x) for x in (current, minimum))
-    result = (current == minimum) if pinned else (current >= minimum)  # bool
-    if hard:  # assert min requirements met
-        assert result, f'{name}{minimum} required by YOLOv5, but {name}{current} is currently installed'
-    else:
-        return result

@@ -1,20 +1,7 @@
 import type { OpenAICompatibleOptions } from './settings'
+import type { components } from '@/api/generated/v2'
 
-export type AnalysisStatus =
-  | 'idle'
-  | 'queued'
-  | 'running'
-  | 'pausing'
-  | 'paused'
-  | 'cancelling'
-  | 'interrupted'
-  | 'completed'
-  | 'completed_with_errors'
-  | 'failed'
-  | 'cancelled'
-  | 'error'
-
-export type AnalysisMode = 'full' | 'chapter' | 'page' | 'chapters' | 'incremental' | 'reanalyze'
+export type AnalysisStatus = 'idle' | components['schemas']['JobStatus']
 
 export type OverviewTemplateType =
   | 'no_spoiler'
@@ -24,6 +11,8 @@ export type OverviewTemplateType =
   | 'world_setting'
   | 'highlights'
   | 'reading_notes'
+
+export type QAMode = 'precise' | 'global'
 
 export interface ChapterInfo {
   id: string
@@ -40,10 +29,8 @@ export interface QAMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
-  timestamp: string
-  sources?: Array<{ page: number; content: string }>
   isLoading?: boolean
-  mode?: string
+  mode?: QAMode
   citations?: Array<{ page: number }>
   saved?: boolean
 }
@@ -61,9 +48,9 @@ export interface StoreVlmConfig {
   provider: string
   apiKey: string
   model: string
-  baseUrl?: string
+  baseUrl: string
   openaiOptions: StoreOpenAICompatibleOptions
-  imageMaxSize?: number
+  imageMaxSize: number
 }
 
 export interface StoreLlmConfig {
@@ -79,32 +66,31 @@ export interface StoreEmbeddingConfig {
   provider: string
   apiKey: string
   model: string
-  baseUrl?: string
-  rpmLimit?: number
-  transportRetries?: number
-  businessRetries?: number
-  timeoutSeconds?: number
+  baseUrl: string
+  rpmLimit: number
+  transportRetries: number
+  businessRetries: number
+  timeoutSeconds: number
 }
 
 export interface StoreRerankerConfig {
   provider: string
   apiKey: string
   model: string
-  baseUrl?: string
-  topK?: number
-  transportRetries?: number
-  businessRetries?: number
-  timeoutSeconds?: number
+  baseUrl: string
+  transportRetries: number
+  businessRetries: number
+  timeoutSeconds: number
 }
 
 export interface StoreImageGenConfig {
   provider: string
   apiKey: string
   model: string
-  baseUrl?: string
-  transportRetries?: number
-  businessRetries?: number
-  timeoutSeconds?: number
+  baseUrl: string
+  transportRetries: number
+  businessRetries: number
+  timeoutSeconds: number
 }
 
 export interface StoreAnalysisProgress {
@@ -122,4 +108,23 @@ export interface StoreInsightConfig {
   imageGen: StoreImageGenConfig
   batch: BatchConfig
   prompts: Record<string, string>
+}
+
+export type InsightVlmProviderDraft = Omit<StoreVlmConfig, 'provider'>
+export type InsightLlmProviderDraft = Omit<StoreLlmConfig, 'provider' | 'useSameAsVlm'>
+export type InsightEmbeddingProviderDraft = Omit<StoreEmbeddingConfig, 'provider'>
+export type InsightRerankerProviderDraft = Omit<StoreRerankerConfig, 'provider'>
+export type InsightImageGenProviderDraft = Omit<StoreImageGenConfig, 'provider'>
+
+export interface InsightProviderDrafts {
+  vlm: Record<string, InsightVlmProviderDraft>
+  llm: Record<string, InsightLlmProviderDraft>
+  embedding: Record<string, InsightEmbeddingProviderDraft>
+  reranker: Record<string, InsightRerankerProviderDraft>
+  imageGen: Record<string, InsightImageGenProviderDraft>
+}
+
+export interface InsightSettingsSnapshot {
+  config: StoreInsightConfig
+  providerDrafts: InsightProviderDrafts
 }

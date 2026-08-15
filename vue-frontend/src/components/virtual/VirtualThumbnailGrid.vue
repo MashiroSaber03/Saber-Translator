@@ -9,7 +9,6 @@ const props = withDefaults(defineProps<{
   activeId?: string | number | null
   ariaLabel?: string
   columns?: number
-  gap?: number
   items: ProductThumbnailGridItem[]
   maxHeight?: number
   minItemWidth?: number
@@ -18,15 +17,13 @@ const props = withDefaults(defineProps<{
   activeId: null,
   ariaLabel: '漫画页面缩略图',
   columns: 4,
-  gap: 6,
   maxHeight: 420,
   minItemWidth: 0,
   overscanRows: 2,
 })
 
-const emit = defineEmits<{
+defineEmits<{
   select: [id: string | number]
-  visibleChange: [ids: Array<string | number>]
 }>()
 
 const containerRef = ref<HTMLElement | null>(null)
@@ -34,13 +31,14 @@ const scrollTop = ref(0)
 const viewportHeight = ref(0)
 const viewportWidth = ref(0)
 let resizeObserver: ResizeObserver | null = null
+const GRID_GAP = 6
 
 const normalizedColumns = computed(() => {
   if (props.minItemWidth > 0) {
     const width = Math.max(1, viewportWidth.value || props.minItemWidth)
     return Math.max(
       1,
-      Math.floor((width + props.gap) / (props.minItemWidth + props.gap)),
+      Math.floor((width + GRID_GAP) / (props.minItemWidth + GRID_GAP)),
     )
   }
   return Math.max(1, Math.floor(props.columns))
@@ -50,9 +48,9 @@ const rowHeight = computed(() => {
   const width = Math.max(1, viewportWidth.value || 240)
   const cardWidth = Math.max(
     1,
-    (width - props.gap * (normalizedColumns.value - 1)) / normalizedColumns.value,
+    (width - GRID_GAP * (normalizedColumns.value - 1)) / normalizedColumns.value,
   )
-  return cardWidth * 4 / 3 + props.gap
+  return cardWidth * 4 / 3 + GRID_GAP
 })
 const windowState = computed(() => fixedVirtualWindow(
   rowCount.value,
@@ -65,11 +63,15 @@ const visibleItems = computed(() => props.items.slice(
   windowState.value.start * normalizedColumns.value,
   windowState.value.end * normalizedColumns.value,
 ))
+const contentSize = computed(() => Math.max(
+  0,
+  windowState.value.totalSize - (rowCount.value > 0 ? GRID_GAP : 0),
+))
 const containerStyle = computed(() => ({
-  blockSize: `${Math.min(props.maxHeight, windowState.value.totalSize)}px`,
+  blockSize: `${Math.min(props.maxHeight, contentSize.value)}px`,
 }))
 const innerStyle = computed(() => ({
-  blockSize: `${windowState.value.totalSize}px`,
+  blockSize: `${contentSize.value}px`,
 }))
 const windowStyle = computed(() => ({
   transform: `translateY(${windowState.value.offset}px)`,
@@ -101,20 +103,16 @@ function scrollActiveIntoView(): void {
 function scrollToEnd(): void {
   const container = containerRef.value
   if (!container) return
-  container.scrollTop = Math.max(0, windowState.value.totalSize - container.clientHeight)
+  container.scrollTop = Math.max(0, contentSize.value - container.clientHeight)
   syncViewport()
 }
 
 defineExpose({
-  scrollActiveIntoView,
   scrollToEnd,
 })
 
-watch(visibleItems, items => {
-  emit('visibleChange', items.map(item => item.id))
-}, { immediate: true })
-watch(() => props.activeId, () => nextTick(scrollActiveIntoView))
-watch(() => props.items.length, () => nextTick(syncViewport))
+watch(() => props.activeId, () => void nextTick(scrollActiveIntoView))
+watch(() => props.items.length, () => void nextTick(syncViewport))
 
 onMounted(() => {
   syncViewport()

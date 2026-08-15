@@ -14,6 +14,7 @@ import {
 import { useToast } from '@/utils/toast'
 import ReaderCanvas from '@/components/reader/ReaderCanvas.vue'
 import ReaderControls from '@/components/reader/ReaderControls.vue'
+import { DEFAULT_READER_SETTINGS, type ReaderSettings } from '@/components/reader/readerSettings'
 
 const props = defineProps<{
   bookId: string
@@ -25,15 +26,14 @@ const toast = useToast()
 
 const bookInfo = ref<V2BookDetail | null>(null)
 const chaptersData = ref<V2Chapter[]>([])
-const currentChapterInfo = computed(() =>
-  chaptersData.value.find(c => c.id === props.chapterId)
-)
+const currentChapterInfo = computed(() => chaptersData.value.find(c => c.id === props.chapterId))
 
 const imagesData = ref<V2PageSummary[]>([])
 const isLoading = ref(true)
 const currentViewMode = ref<'original' | 'translated'>('translated')
 const currentPage = ref(1)
 const settingsRequestId = ref(0)
+const readerSettings = ref<ReaderSettings>({ ...DEFAULT_READER_SETTINGS })
 
 let failureRedirectTimer: ReturnType<typeof setTimeout> | null = null
 let readerLoadSequence = 0
@@ -45,9 +45,8 @@ const currentChapterIndex = computed(() =>
 
 const hasPrevChapter = computed(() => currentChapterIndex.value > 0)
 
-const hasNextChapter = computed(() =>
-  currentChapterIndex.value >= 0 &&
-  currentChapterIndex.value < chaptersData.value.length - 1
+const hasNextChapter = computed(
+  () => currentChapterIndex.value >= 0 && currentChapterIndex.value < chaptersData.value.length - 1
 )
 
 const pageTitle = computed(() => {
@@ -57,9 +56,9 @@ const pageTitle = computed(() => {
 })
 
 const showChapterNav = computed(() => !isLoading.value && imagesData.value.length > 0)
-const translatedPageCount = computed(() => (
-  imagesData.value.filter(page => Boolean(page.translatedUrl)).length
-))
+const translatedPageCount = computed(
+  () => imagesData.value.filter(page => Boolean(page.translatedUrl)).length
+)
 
 function clearFailureRedirectTimer() {
   if (failureRedirectTimer !== null) {
@@ -82,6 +81,10 @@ async function loadReaderData() {
   const chapterId = props.chapterId
   clearFailureRedirectTimer()
   isLoading.value = true
+  currentPage.value = 1
+  bookInfo.value = null
+  chaptersData.value = []
+  imagesData.value = []
 
   try {
     const [bookResult, imagesResult] = await Promise.all([
@@ -91,12 +94,22 @@ async function loadReaderData() {
 
     if (!isReaderViewMounted || loadId !== readerLoadSequence) return
 
+    const chapter = bookResult.chapters.find(item => item.id === chapterId)
+    if (!chapter) {
+      throw new Error('章节不属于当前书籍')
+    }
+    if (imagesResult.nextCursor !== null) {
+      throw new Error('章节页面列表不完整')
+    }
+    if (imagesResult.items.some(page => page.chapterId !== chapterId)) {
+      throw new Error('章节页面归属不一致')
+    }
+
     bookInfo.value = bookResult
-    chaptersData.value = bookResult.chapters || []
+    chaptersData.value = bookResult.chapters
     imagesData.value = imagesResult.items
 
     document.title = pageTitle.value
-
   } catch (error) {
     if (!isReaderViewMounted || loadId !== readerLoadSequence) return
     toast.error('加载失败: ' + (error instanceof Error ? error.message : '未知错误'))
@@ -113,9 +126,8 @@ function setViewMode(mode: 'original' | 'translated') {
 }
 
 function navigateChapter(direction: 'prev' | 'next') {
-  const newIndex = direction === 'prev'
-    ? currentChapterIndex.value - 1
-    : currentChapterIndex.value + 1
+  const newIndex =
+    direction === 'prev' ? currentChapterIndex.value - 1 : currentChapterIndex.value + 1
 
   if (newIndex >= 0 && newIndex < chaptersData.value.length) {
     const newChapter = chaptersData.value[newIndex]
@@ -141,6 +153,10 @@ function handlePageChange(page: number) {
   currentPage.value = page
 }
 
+function handleSettingsChange(settings: ReaderSettings) {
+  readerSettings.value = { ...settings }
+}
+
 onMounted(() => {
   isReaderViewMounted = true
   void loadReaderData()
@@ -156,7 +172,6 @@ watch(
   () => [props.bookId, props.chapterId],
   () => {
     void loadReaderData()
-    window.scrollTo({ top: 0 })
   }
 )
 </script>
@@ -166,7 +181,6 @@ watch(
     class="reader-page"
     chrome="fixed"
     header-height="56px"
-    header-offset="56px"
     content-padding="0 20px"
     content-class="reader-page__content"
   >
@@ -186,7 +200,9 @@ watch(
             <div class="reader-header__book-info">
               <span class="reader-header__book-title">{{ bookInfo?.title || '加载中...' }}</span>
               <span class="reader-header__separator">·</span>
-              <span class="reader-header__chapter-title">{{ currentChapterInfo?.title || '-' }}</span>
+              <span class="reader-header__chapter-title">{{
+                currentChapterInfo?.title || '-'
+              }}</span>
             </div>
           </div>
         </template>
@@ -217,10 +233,7 @@ watch(
                 @click="setViewMode('translated')"
               />
             </div>
-            <span
-              class="reader-header__translated-count"
-              aria-label="已翻译页面数量"
-            >
+            <span class="reader-header__translated-count" aria-label="已翻译页面数量">
               已翻译 {{ translatedPageCount }}/{{ imagesData.length }}
             </span>
             <ProductHeaderAction
@@ -251,6 +264,9 @@ watch(
       :images="imagesData"
       :view-mode="currentViewMode"
       :is-loading="isLoading"
+      :image-width="readerSettings.imageWidth"
+      :image-gap="readerSettings.imageGap"
+      :background-color="readerSettings.bgColor"
       @page-change="handlePageChange"
       @go-translate="goToTranslate"
     />
@@ -261,6 +277,7 @@ watch(
       :show-chapter-nav="showChapterNav"
       :settings-request-id="settingsRequestId"
       @navigate-chapter="navigateChapter"
+      @settings-change="handleSettingsChange"
     />
   </AppShell>
 </template>

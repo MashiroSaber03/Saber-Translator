@@ -53,10 +53,11 @@ export const useBubbleStore = defineStore('bubble', () => {
     const selectedIdentities = selectedIndices.value
       .map(index => bubbleIdentity(bubbles.value[index]))
       .filter((identity): identity is string => Boolean(identity))
-    bubbles.value = newBubbles
-    initialStates.value = cloneBubbleStates(newBubbles)
+    const ownedBubbles = cloneBubbleStates(newBubbles)
+    bubbles.value = ownedBubbles
+    initialStates.value = cloneBubbleStates(ownedBubbles)
     const indexByIdentity = new Map(
-      newBubbles
+      ownedBubbles
         .map((bubble, index) => [bubbleIdentity(bubble), index] as const)
         .filter((entry): entry is readonly [string, number] => Boolean(entry[0])),
     )
@@ -195,9 +196,6 @@ export const useBubbleStore = defineStore('bubble', () => {
 
     const bubble = bubbles.value[index]
     if (bubble) {
-      if (updates.coords) {
-        updates.autoTextDirection = detectTextDirection(updates.coords)
-      }
       Object.assign(bubble, updates)
       syncToCurrentImage()
       return true
@@ -216,11 +214,7 @@ export const useBubbleStore = defineStore('bubble', () => {
     for (let i = 0; i < bubbles.value.length; i++) {
       const bubble = bubbles.value[i]
       if (bubble) {
-        const updatesWithAutoDirection = { ...updates }
-        if (updates.coords) {
-          updatesWithAutoDirection.autoTextDirection = detectTextDirection(updates.coords)
-        }
-        Object.assign(bubble, updatesWithAutoDirection)
+        Object.assign(bubble, updates)
       }
     }
     syncToCurrentImage()

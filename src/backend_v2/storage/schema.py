@@ -40,6 +40,7 @@ metadata = MetaData(naming_convention=NAMING_CONVENTION)
 
 UUID_LENGTH = 36
 HASH_LENGTH = 64
+PLUGIN_ID_LENGTH = 100
 
 JOB_STATUSES = (
     "queued",
@@ -80,6 +81,9 @@ JOB_KINDS = (
     "plugin_agent",
 )
 OPERATION_STATUSES = ("pending", "running", "completed", "failed", "cancelled")
+ACTIVE_OPERATION_STATUSES = OPERATION_STATUSES[:2]
+RENDER_REQUEST_STATUSES = ("pending", "running", "completed", "failed")
+ACTIVE_RENDER_REQUEST_STATUSES = RENDER_REQUEST_STATUSES[:2]
 OPERATION_KINDS = (
     "bubble_ocr",
     "bubble_color",
@@ -152,6 +156,10 @@ assets = Table(
     *_timestamps(),
     CheckConstraint("byte_size >= 0", name="byte_size_nonnegative"),
     CheckConstraint(
+        "(width IS NULL AND height IS NULL) OR (width >= 1 AND height >= 1)",
+        name="dimensions_shape",
+    ),
+    CheckConstraint(
         "integrity_status IN ('ok', 'missing')",
         name="integrity_status_values",
     ),
@@ -212,7 +220,7 @@ credential_current_versions = Table(
 plugins = Table(
     "plugins",
     metadata,
-    Column("id", String(UUID_LENGTH), primary_key=True),
+    Column("id", String(PLUGIN_ID_LENGTH), primary_key=True),
     Column("name", String(200), nullable=False),
     Column("state", String(16), nullable=False, server_default="enabled"),
     Column("author", String(200), nullable=False, server_default=text("''")),
@@ -231,7 +239,12 @@ plugin_versions = Table(
     "plugin_versions",
     metadata,
     Column("id", String(UUID_LENGTH), primary_key=True),
-    Column("plugin_id", String(UUID_LENGTH), ForeignKey("plugins.id", ondelete="CASCADE"), nullable=False),
+    Column(
+        "plugin_id",
+        String(PLUGIN_ID_LENGTH),
+        ForeignKey("plugins.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
     Column("version", String(64), nullable=False),
     Column("package_relative_path", Text, nullable=False, unique=True),
     Column("checksum", String(HASH_LENGTH), nullable=False),
@@ -239,6 +252,10 @@ plugin_versions = Table(
     Column("config_schema_json", Text, nullable=False, server_default="{}"),
     Column("manifest_schema_version", Integer, nullable=False, server_default="3"),
     *_timestamps(),
+    CheckConstraint(
+        "manifest_schema_version >= 1",
+        name="manifest_schema_version_positive",
+    ),
 )
 
 plugin_current_versions = Table(
@@ -246,7 +263,7 @@ plugin_current_versions = Table(
     metadata,
     Column(
         "plugin_id",
-        String(UUID_LENGTH),
+        String(PLUGIN_ID_LENGTH),
         ForeignKey("plugins.id", ondelete="CASCADE"),
         primary_key=True,
     ),
@@ -321,6 +338,14 @@ chapters = Table(
     CheckConstraint("ordinal >= 1", name="ordinal_positive"),
     CheckConstraint("page_order_revision >= 1", name="page_order_revision_positive"),
     CheckConstraint("write_intent_generation >= 0", name="intent_generation_nonnegative"),
+    CheckConstraint(
+        "settings_memory_schema_version >= 1",
+        name="settings_memory_schema_version_positive",
+    ),
+    CheckConstraint(
+        "settings_memory_revision >= 1",
+        name="settings_memory_revision_positive",
+    ),
 )
 
 pages = Table(
@@ -353,6 +378,18 @@ pages = Table(
     CheckConstraint("ordinal >= 1", name="ordinal_positive"),
     CheckConstraint("source_revision >= 1", name="source_revision_positive"),
     CheckConstraint("document_revision >= 1", name="document_revision_positive"),
+    CheckConstraint(
+        "rendered_revision IS NULL OR rendered_revision >= 1",
+        name="rendered_revision_positive",
+    ),
+    CheckConstraint(
+        "page_style_schema_version >= 1",
+        name="page_style_schema_version_positive",
+    ),
+    CheckConstraint(
+        "detection_state IN ('unprocessed','processed')",
+        name="detection_state_values",
+    ),
     CheckConstraint(
         "render_status IN ("
         "'not_rendered','ready','stale','rendering','render_failed',"
@@ -394,6 +431,10 @@ bubbles = Table(
     UniqueConstraint("page_id", "ordinal"),
     CheckConstraint("ordinal >= 1", name="ordinal_positive"),
     CheckConstraint("updated_revision >= 1", name="updated_revision_positive"),
+    CheckConstraint(
+        "payload_schema_version >= 1",
+        name="payload_schema_version_positive",
+    ),
 )
 
 tags = Table(
@@ -421,6 +462,7 @@ translation_constraints = Table(
     Column("schema_version", Integer, nullable=False, server_default="1"),
     *_timestamps(),
     CheckConstraint("revision >= 1", name="revision_positive"),
+    CheckConstraint("schema_version >= 1", name="schema_version_positive"),
 )
 
 app_settings = Table(
@@ -432,6 +474,7 @@ app_settings = Table(
     Column("schema_version", Integer, nullable=False, server_default="1"),
     *_timestamps(),
     CheckConstraint("revision >= 1", name="revision_positive"),
+    CheckConstraint("schema_version >= 1", name="schema_version_positive"),
 )
 
 book_settings = Table(
@@ -443,6 +486,8 @@ book_settings = Table(
     Column("payload_json", Text, nullable=False),
     Column("schema_version", Integer, nullable=False, server_default="1"),
     *_timestamps(),
+    CheckConstraint("revision >= 1", name="revision_positive"),
+    CheckConstraint("schema_version >= 1", name="schema_version_positive"),
 )
 
 provider_settings = Table(
@@ -459,6 +504,8 @@ provider_settings = Table(
         ForeignKey("credential_versions.id", ondelete="RESTRICT"),
     ),
     *_timestamps(),
+    CheckConstraint("revision >= 1", name="revision_positive"),
+    CheckConstraint("schema_version >= 1", name="schema_version_positive"),
 )
 
 prompts = Table(
@@ -493,6 +540,11 @@ web_import_drafts = Table(
         "status IN ('extracting','ready','committing','completed','failed','cancelled')",
         name="status_values",
     ),
+    CheckConstraint("revision >= 1", name="revision_positive"),
+    CheckConstraint(
+        "config_schema_version >= 1",
+        name="config_schema_version_positive",
+    ),
 )
 
 web_import_draft_pages = Table(
@@ -514,6 +566,7 @@ web_import_draft_pages = Table(
     Column("error_json", Text),
     *_timestamps(),
     UniqueConstraint("draft_id", "ordinal"),
+    CheckConstraint("ordinal >= 1", name="ordinal_positive"),
 )
 
 job_batches = Table(
@@ -570,7 +623,7 @@ jobs = Table(
     ),
     Column("config_json", Text, nullable=False),
     Column("config_schema_version", Integer, nullable=False, server_default="1"),
-    Column("latest_progress_json", Text, nullable=False, server_default="{}"),
+    Column("latest_progress_json", Text, nullable=False),
     Column("target_display_json", Text, nullable=False, server_default="{}"),
     Column("started_at", DateTime(timezone=True)),
     Column("finished_at", DateTime(timezone=True)),
@@ -591,6 +644,10 @@ jobs = Table(
         "blocked_reason IS NULL OR blocked_reason IN ("
         "'blocked_by_job','draining_immediate_writes')",
         name="blocked_reason_values",
+    ),
+    CheckConstraint(
+        "config_schema_version >= 1",
+        name="config_schema_version_positive",
     ),
 )
 
@@ -676,6 +733,10 @@ job_steps = Table(
         "status IN ('pending','running','completed','failed','skipped','cancelled')",
         name="status_values",
     ),
+    CheckConstraint(
+        "checkpoint_schema_version >= 1",
+        name="checkpoint_schema_version_positive",
+    ),
 )
 
 job_drain_acks = Table(
@@ -704,6 +765,10 @@ job_events = Table(
     Column("payload_json", Text, nullable=False, server_default="{}"),
     Column("payload_schema_version", Integer, nullable=False, server_default="1"),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP")),
+    CheckConstraint(
+        "payload_schema_version >= 1",
+        name="payload_schema_version_positive",
+    ),
     sqlite_autoincrement=True,
 )
 Index("ix_job_events_job_cursor", job_events.c.job_id, job_events.c.id)
@@ -720,6 +785,7 @@ job_config_snapshots = Table(
     Column("job_id", String(UUID_LENGTH), ForeignKey("jobs.id", ondelete="CASCADE"), primary_key=True),
     Column("payload_json", Text, nullable=False),
     Column("schema_version", Integer, nullable=False),
+    CheckConstraint("schema_version >= 1", name="schema_version_positive"),
 )
 
 job_credential_snapshots = Table(
@@ -801,6 +867,7 @@ process_epochs = Table(
     *_timestamps(),
     CheckConstraint("role IN ('launcher','api','worker')", name="role_values"),
     CheckConstraint("status IN ('active','lost','closed')", name="status_values"),
+    CheckConstraint("pid >= 0", name="pid_nonnegative"),
 )
 Index("ix_process_epochs_role_status", process_epochs.c.role, process_epochs.c.status)
 
@@ -940,6 +1007,7 @@ studio_documents = Table(
         "origin_type IN ('analysis','manual','imported')",
         name="origin_type_values",
     ),
+    CheckConstraint("schema_version >= 1", name="schema_version_positive"),
 )
 
 studio_chat_sessions = Table(
@@ -967,6 +1035,10 @@ studio_chat_sessions = Table(
     CheckConstraint("revision >= 1", name="revision_positive"),
     CheckConstraint("generation >= 1", name="generation_positive"),
     CheckConstraint("summary_generation >= 0", name="summary_generation_nonnegative"),
+    CheckConstraint(
+        "runtime_schema_version >= 1",
+        name="runtime_schema_version_positive",
+    ),
 )
 Index(
     "uq_studio_chat_sessions_one_active",
@@ -993,7 +1065,7 @@ studio_messages = Table(
     Column("ordinal", Integer, nullable=False),
     Column("role", String(16), nullable=False),
     Column("content", Text, nullable=False),
-    Column("runtime_log", Text, nullable=False, server_default=text("''")),
+    Column("runtime_log", Text, nullable=False, server_default="[]"),
     Column("variables_snapshot_json", Text, nullable=False, server_default="{}"),
     Column("generation_meta_json", Text, nullable=False, server_default="{}"),
     *_timestamps(),
@@ -1069,6 +1141,7 @@ analysis_runs = Table(
         "target_count >= 0 AND success_count >= 0 AND failed_count >= 0",
         name="counts_nonnegative",
     ),
+    CheckConstraint("schema_version >= 1", name="schema_version_positive"),
 )
 Index("ix_analysis_runs_book_created", analysis_runs.c.book_id, analysis_runs.c.created_at)
 
@@ -1150,6 +1223,11 @@ analysis_page_results = Table(
         "status IN ('staging','published','stale')",
         name="status_values",
     ),
+    CheckConstraint(
+        "page_number_snapshot >= 1",
+        name="page_number_positive",
+    ),
+    CheckConstraint("schema_version >= 1", name="schema_version_positive"),
 )
 Index(
     "ix_analysis_page_results_page_created",
@@ -1255,6 +1333,10 @@ analysis_layer_result_pages = Table(
     Column("page_id_snapshot", String(UUID_LENGTH), nullable=False),
     Column("page_number_snapshot", Integer, nullable=False),
     CheckConstraint("ordinal >= 1", name="ordinal_positive"),
+    CheckConstraint(
+        "page_number_snapshot >= 1",
+        name="page_number_positive",
+    ),
 )
 
 analysis_artifacts = Table(
@@ -1350,6 +1432,7 @@ timeline_events = Table(
     Column("ordinal", Integer, nullable=False),
     Column("payload_json", Text, nullable=False),
     UniqueConstraint("timeline_version_id", "ordinal"),
+    CheckConstraint("ordinal >= 1", name="ordinal_positive"),
 )
 Index(
     "ix_timeline_events_version_ordinal",
@@ -1397,6 +1480,10 @@ vector_generations = Table(
     UniqueConstraint("book_id", "generation"),
     CheckConstraint("generation >= 1", name="generation_positive"),
     CheckConstraint("status IN ('ready','stale','building','failed','degraded')", name="status_values"),
+    CheckConstraint(
+        "page_count >= 0 AND event_count >= 0",
+        name="counts_nonnegative",
+    ),
 )
 Index(
     "uq_vector_generations_active",
@@ -1451,6 +1538,11 @@ note_citations = Table(
     ),
     Column("excerpt", Text, nullable=False, server_default=text("''")),
     Column("score", Float),
+    CheckConstraint("ordinal >= 1", name="ordinal_positive"),
+    CheckConstraint(
+        "page_number_snapshot >= 1",
+        name="page_number_positive",
+    ),
 )
 
 continuation_projects = Table(
@@ -1472,6 +1564,7 @@ continuation_projects = Table(
     Column("revision", Integer, nullable=False, server_default="1"),
     Column("payload_json", Text, nullable=False, server_default="{}"),
     *_timestamps(),
+    CheckConstraint("revision >= 1", name="revision_positive"),
 )
 
 continuation_scripts = Table(
@@ -1487,6 +1580,7 @@ continuation_scripts = Table(
     Column("revision", Integer, nullable=False, server_default="1"),
     Column("content", Text, nullable=False, server_default=text("''")),
     *_timestamps(),
+    CheckConstraint("revision >= 1", name="revision_positive"),
 )
 
 continuation_pages = Table(
@@ -1503,6 +1597,8 @@ continuation_pages = Table(
     Column("revision", Integer, nullable=False, server_default="1"),
     Column("payload_json", Text, nullable=False, server_default="{}"),
     UniqueConstraint("project_id", "ordinal"),
+    CheckConstraint("ordinal >= 1", name="ordinal_positive"),
+    CheckConstraint("revision >= 1", name="revision_positive"),
 )
 
 continuation_image_versions = Table(
@@ -1531,6 +1627,13 @@ continuation_image_versions = Table(
     Column("is_active", Boolean, nullable=False, server_default="0"),
     *_timestamps(),
     UniqueConstraint("continuation_page_id", "version"),
+    CheckConstraint("version >= 1", name="version_positive"),
+)
+Index(
+    "uq_continuation_image_versions_active",
+    continuation_image_versions.c.continuation_page_id,
+    unique=True,
+    sqlite_where=continuation_image_versions.c.is_active.is_(True),
 )
 
 continuation_project_reference_assets = Table(
@@ -1570,6 +1673,7 @@ continuation_characters = Table(
     Column("revision", Integer, nullable=False, server_default="1"),
     *_timestamps(),
     UniqueConstraint("project_id", "name"),
+    CheckConstraint("revision >= 1", name="revision_positive"),
 )
 
 continuation_character_forms = Table(
@@ -1602,6 +1706,7 @@ continuation_character_forms = Table(
     Column("revision", Integer, nullable=False, server_default="1"),
     *_timestamps(),
     UniqueConstraint("character_id", "name"),
+    CheckConstraint("revision >= 1", name="revision_positive"),
 )
 
 continuation_form_image_versions = Table(
@@ -1630,6 +1735,13 @@ continuation_form_image_versions = Table(
     Column("is_adopted", Boolean, nullable=False, server_default="0"),
     *_timestamps(),
     UniqueConstraint("form_id", "version"),
+    CheckConstraint("version >= 1", name="version_positive"),
+)
+Index(
+    "uq_continuation_form_image_versions_adopted",
+    continuation_form_image_versions.c.form_id,
+    unique=True,
+    sqlite_where=continuation_form_image_versions.c.is_adopted.is_(True),
 )
 
 operations = Table(
@@ -1697,6 +1809,18 @@ operations = Table(
         "AND studio_session_id IS NOT NULL) "
         "OR status IN ('completed','failed','cancelled'))))",
         name="kind_target_shape",
+    ),
+    CheckConstraint(
+        "base_revision IS NULL OR base_revision >= 1",
+        name="base_revision_positive",
+    ),
+    CheckConstraint(
+        "base_generation IS NULL OR base_generation >= 1",
+        name="base_generation_positive",
+    ),
+    CheckConstraint(
+        "request_schema_version >= 1",
+        name="request_schema_version_positive",
     ),
 )
 Index(
@@ -1891,7 +2015,18 @@ render_requests = Table(
     Column("error_json", Text),
     *_timestamps(),
     CheckConstraint("requested_revision >= 1", name="requested_revision_positive"),
-    CheckConstraint("status IN ('pending','running','completed','failed')", name="status_values"),
+    CheckConstraint(
+        "rendering_revision IS NULL OR rendering_revision >= 1",
+        name="rendering_revision_positive",
+    ),
+    CheckConstraint(
+        "completed_revision IS NULL OR completed_revision >= 1",
+        name="completed_revision_positive",
+    ),
+    CheckConstraint(
+        f"status IN ({_sql_values(RENDER_REQUEST_STATUSES)})",
+        name="status_values",
+    ),
 )
 Index("ix_render_requests_claim", render_requests.c.status, render_requests.c.updated_at)
 
@@ -1923,6 +2058,14 @@ page_assets = Table(
         "(role = 'thumbnail_source' AND parent_asset_id IS NOT NULL) OR "
         "role != 'thumbnail_source'",
         name="thumbnail_parent_required",
+    ),
+    CheckConstraint(
+        "input_source_revision IS NULL OR input_source_revision >= 1",
+        name="input_source_revision_positive",
+    ),
+    CheckConstraint(
+        "input_document_revision IS NULL OR input_document_revision >= 1",
+        name="input_document_revision_positive",
     ),
 )
 
@@ -1956,6 +2099,7 @@ provider_rate_limits = Table(
     Column("revision", Integer, nullable=False, server_default="1"),
     CheckConstraint("request_count >= 0", name="request_count_nonnegative"),
     CheckConstraint("rpm_limit >= 1", name="rpm_limit_positive"),
+    CheckConstraint("revision >= 1", name="revision_positive"),
 )
 
 idempotency_records = Table(

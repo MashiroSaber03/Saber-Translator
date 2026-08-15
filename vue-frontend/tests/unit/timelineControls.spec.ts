@@ -157,6 +157,7 @@ describe('Timeline child controls', () => {
       props: {
         characters: [
           {
+            character_id: 'character-1',
             name: '夏',
             description: '主角',
             first_appearance: 3,
@@ -179,7 +180,7 @@ describe('Timeline child controls', () => {
   it('keeps the character grid responsive inside narrow timeline panels', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/insight/timeline/TimelineCharacterGrid.vue'),
-      'utf8',
+      'utf8'
     )
 
     expect(source).toContain('minmax(min(100%, 280px), 1fr)')
@@ -215,8 +216,6 @@ describe('Timeline child controls', () => {
           total_characters: 4,
           total_threads: 2,
         },
-        totalEvents: 12,
-        totalPages: 30,
       },
     })
 
@@ -235,7 +234,9 @@ describe('Timeline child controls', () => {
     const wrapper = mount(TimelineHeader, {
       props: {
         isLoading: false,
+        isPending: false,
         isRegenerating: true,
+        showRegenerate: true,
       },
     })
 
@@ -244,31 +245,16 @@ describe('Timeline child controls', () => {
     expect(wrapper.text()).toContain('生成中...')
   })
 
-  it('renders story summary themes through the product chip contract', () => {
+  it('does not relabel plot threads as story themes or cap them in the summary', () => {
     const wrapper = mount(TimelineSummaryCard, {
       props: {
         storySummary: '主角在冲突中建立新的同盟。',
-        plotThreads: [
-          { id: 'thread-1', name: '同盟', description: '盟友伏笔' },
-          { id: 'thread-2', name: '背叛', description: '反转伏笔' },
-          { id: 'thread-3', name: '钥匙', description: '道具伏笔' },
-          { id: 'thread-4', name: '预言', description: '主题伏笔' },
-          { id: 'thread-5', name: '牺牲', description: '结局伏笔' },
-          { id: 'thread-6', name: '隐藏', description: '不应显示' },
-        ],
       },
     })
 
-    const chipList = wrapper.getComponent(ProductChipList)
-    expect(chipList.props('ariaLabel')).toBe('故事主题')
-    expect(chipList.props('label')).toBe('主题：')
-    expect(chipList.props('items')).toEqual([
-      { id: 'thread-1', label: '同盟', tone: 'inverse' },
-      { id: 'thread-2', label: '背叛', tone: 'inverse' },
-      { id: 'thread-3', label: '钥匙', tone: 'inverse' },
-      { id: 'thread-4', label: '预言', tone: 'inverse' },
-      { id: 'thread-5', label: '牺牲', tone: 'inverse' },
-    ])
+    expect(wrapper.text()).toContain('主角在冲突中建立新的同盟。')
+    expect(wrapper.findComponent(ProductChipList).exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('主题：')
   })
 
   it('renders plot threads through product record cards and status chips', () => {
@@ -306,7 +292,11 @@ describe('Timeline child controls', () => {
       { id: 'thread-1-status', label: '进行中', tone: 'warning' },
       { id: 'thread-1-introduced', label: '第 4 页引入', tone: 'neutral' },
     ])
-    expect(chipLists[1].props('items')[0]).toEqual({ id: 'thread-2-status', label: '已解决', tone: 'success' })
+    expect(chipLists[1].props('items')[0]).toEqual({
+      id: 'thread-2-status',
+      label: '已解决',
+      tone: 'success',
+    })
   })
 
   it('uses explicit owner hooks across timeline child components', () => {
@@ -319,7 +309,9 @@ describe('Timeline child controls', () => {
       'src/components/insight/timeline/TimelineArcCard.vue',
       'src/components/insight/timeline/TimelineGroupCard.vue',
       'src/components/insight/timeline/PlotThreadsList.vue',
-    ].map(file => readFileSync(resolve(process.cwd(), file), 'utf8')).join('\n')
+    ]
+      .map(file => readFileSync(resolve(process.cwd(), file), 'utf8'))
+      .join('\n')
 
     for (const currentHook of [
       'timeline-header__title',
@@ -332,8 +324,8 @@ describe('Timeline child controls', () => {
       'timeline-track__node-dot',
       'timeline-event-card-shell__thumbnail-action',
       'timeline-event-card-shell__toggle',
+      'timeline-event-card-shell__summary--expanded',
       'timeline-arc-card__mood-label',
-      'timeline-group-card__event-item',
       'plot-threads-list__card',
       'plot-threads-list__thread-name',
     ]) {

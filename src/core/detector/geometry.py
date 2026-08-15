@@ -50,6 +50,8 @@ def can_merge_textlines(a, b,
     fs_a = a.font_size
     fs_b = b.font_size
     char_size = min(fs_a, fs_b)
+    if char_size <= 0:
+        return False
     
     # 字号差异过大
     if max(fs_a, fs_b) / char_size > font_size_ratio_tol:

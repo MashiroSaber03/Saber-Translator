@@ -108,6 +108,13 @@ describe('UI primitives architecture contracts', () => {
     ]))
   })
 
+  it('keeps solid primary button text inverse when a semantic tone is present', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/components/ui/UiButton.vue'), 'utf8')
+
+    expect(source).toContain('.ui-button--primary.ui-button--tone-success')
+    expect(source).toContain(':not(:where(.ui-button--bare, .ui-button--primary, .ui-button--danger, .ui-button--inverse))')
+  })
+
   it('maps solid button text colors through semantic inverse text tokens', () => {
     const buttonSource = readFileSync(resolve(process.cwd(), 'src/components/ui/UiButton.vue'), 'utf8')
     const iconButtonSource = readFileSync(resolve(process.cwd(), 'src/components/ui/UiIconButton.vue'), 'utf8')
@@ -253,6 +260,12 @@ describe('UI primitives architecture contracts', () => {
     expect(labelled.find('svg').attributes('role')).toBe('img')
     expect(labelled.find('svg').attributes('aria-label')).toBe('设置')
     expect(labelled.find('svg').attributes('aria-hidden')).toBeUndefined()
+
+    const relativeSize = mount(UiIcon, {
+      props: { name: 'search', size: '1em' },
+    })
+    expect(relativeSize.find('svg').attributes('style')).toContain('width: 1em;')
+    expect(relativeSize.find('svg').attributes('style')).toContain('height: 1em;')
   })
 
   it('provides shared spinner and progress primitives for task surfaces', () => {
@@ -460,6 +473,35 @@ describe('UI primitives architecture contracts', () => {
     expect(wrapper.emitted('change')?.at(-1)).toEqual([null])
   })
 
+  it('keeps non-nullable number input drafts empty and rounds decimal step controls', async () => {
+    const draft = mount(UiNumberField, {
+      props: {
+        modelValue: 5,
+        min: -10,
+      },
+    })
+
+    await draft.get('input').setValue('')
+    expect(draft.emitted('update:modelValue')).toBeUndefined()
+
+    await draft.get('input').setValue('-2')
+    expect(draft.emitted('update:modelValue')?.at(-1)).toEqual([-2])
+
+    await draft.get('input').setValue('')
+    await draft.get('input').trigger('blur')
+    expect((draft.get('input').element as HTMLInputElement).value).toBe('5')
+
+    const stepped = mount(UiNumberField, {
+      props: {
+        modelValue: 0.2,
+        controls: true,
+        step: 0.1,
+      },
+    })
+    await stepped.findAllComponents(UiButton)[1]!.trigger('click')
+    expect(stepped.emitted('update:modelValue')?.at(-1)).toEqual([0.3])
+  })
+
   it('exposes focus for composite owners without requiring DOM queries', () => {
     const wrapper = mount(UiInput, {
       props: {
@@ -615,7 +657,7 @@ describe('UI primitives architecture contracts', () => {
     const wrapper = mount(UiField, {
       props: {
         label: 'API Key',
-        description: 'Used for requests',
+        hint: 'Used for requests',
         error: 'Required',
         controlId: 'api-key',
         required: true,
@@ -635,6 +677,8 @@ describe('UI primitives architecture contracts', () => {
 
     expect(source).not.toContain('ui-checkbox-label')
     expect(source).not.toContain('error-hint')
+    expect(source).not.toContain('forId')
+    expect(source).not.toContain('description?:')
   })
 
   it('renders label-adjacent actions through a dedicated field slot', () => {
@@ -724,24 +768,20 @@ describe('UI primitives architecture contracts', () => {
 
   it('exposes shell slots and layout variables for page-level composition', () => {
     const shell = mount(AppShell, {
-      props: { variant: 'reader', contentClass: 'reader-content' },
+      props: { contentClass: 'reader-content' },
       slots: {
         header: '<header>Header</header>',
         default: '<main>Main</main>',
-        overlay: '<aside>Overlay</aside>',
       },
     })
-    expect(shell.classes()).toContain('ui-app-shell--reader')
     expect(shell.find('.ui-app-shell__header').text()).toBe('Header')
     expect(shell.find('.reader-content').text()).toBe('Main')
-    expect(shell.find('.ui-app-shell__overlay').text()).toBe('Overlay')
 
     const layout = mount(SidebarLayout, {
       props: {
         leftWidth: '300px',
         rightWidth: '220px',
         gap: '12px',
-        mode: 'fixed',
         collapsed: 'left',
       },
       slots: {
@@ -751,7 +791,6 @@ describe('UI primitives architecture contracts', () => {
       },
     })
     expect(layout.classes()).toEqual(expect.arrayContaining([
-      'ui-sidebar-layout--fixed',
       'ui-sidebar-layout--left-collapsed',
     ]))
     expect(layout.attributes('style')).toContain('--ui-sidebar-left-width: 300px;')
@@ -771,14 +810,10 @@ describe('UI primitives architecture contracts', () => {
   it('keeps page layout algorithms in shell primitives instead of page CSS', () => {
     const shell = mount(AppShell, {
       props: {
-        variant: 'studio',
         chrome: 'fixed',
         viewportMode: 'locked',
         headerHeight: '72px',
-        headerOffset: '72px',
         contentPadding: '16px',
-        scrollMode: 'content',
-        fullHeight: true,
       },
       slots: {
         header: '<header>Header</header>',
@@ -787,14 +822,10 @@ describe('UI primitives architecture contracts', () => {
     })
 
     expect(shell.classes()).toEqual(expect.arrayContaining([
-      'ui-app-shell--studio',
       'ui-app-shell--chrome-fixed',
       'ui-app-shell--viewport-locked',
-      'ui-app-shell--full-height',
-      'ui-app-shell--scroll-content',
     ]))
     expect(shell.attributes('style')).toContain('--ui-app-shell-header-height: 72px;')
-    expect(shell.attributes('style')).toContain('--ui-app-shell-header-offset: 72px;')
     expect(shell.attributes('style')).toContain('--ui-app-shell-content-padding: 16px;')
     const shellSource = readFileSync(resolve(process.cwd(), 'src/components/ui/AppShell.vue'), 'utf8')
     expect(shellSource).not.toContain('contentScroll')
@@ -883,6 +914,7 @@ describe('UI primitives architecture contracts', () => {
     })
     expect(select.find('select').exists()).toBe(false)
     const selectTrigger = select.get('[role="combobox"]')
+    expect(selectTrigger.element.tagName).toBe('BUTTON')
     expect(selectTrigger.classes()).toContain('ui-select--sm')
     expect(selectTrigger.classes()).toContain('ui-select--error')
     await selectTrigger.trigger('click')
@@ -948,6 +980,38 @@ describe('UI primitives architecture contracts', () => {
     expect(fileInput.get('input').attributes('accept')).toBe('.json')
     expect(fileInput.get('input').attributes('multiple')).toBeDefined()
     expect(fileInput.get('input').attributes('hidden')).toBeDefined()
+  })
+
+  it('moves select active descendants by keyboard and skips disabled options', async () => {
+    const wrapper = mount(UiSelect, {
+      attachTo: document.body,
+      props: {
+        modelValue: 'b',
+        options: [
+          { label: 'Disabled A', value: 'a', disabled: true },
+          { label: 'Option B', value: 'b' },
+          { label: 'Option C', value: 'c' },
+        ],
+      },
+    })
+    const trigger = wrapper.get('[role="combobox"]')
+
+    await trigger.trigger('keydown', { key: 'Enter' })
+    expect(document.getElementById(trigger.attributes('aria-activedescendant'))?.textContent).toContain('Option B')
+
+    await trigger.trigger('keydown', { key: 'ArrowDown' })
+    expect(document.getElementById(trigger.attributes('aria-activedescendant'))?.textContent).toContain('Option C')
+
+    await trigger.trigger('keydown', { key: 'Enter' })
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['c'])
+    expect(trigger.attributes('aria-expanded')).toBe('false')
+    expect(document.activeElement).toBe(trigger.element)
+
+    await trigger.trigger('keydown', { key: 'ArrowDown' })
+    expect(document.getElementById(trigger.attributes('aria-activedescendant'))?.textContent).toContain('Option B')
+    await wrapper.setProps({ disabled: true })
+    expect(document.body.querySelector('.ui-select-dropdown')).toBeNull()
+    wrapper.unmount()
   })
 
   it('routes fixed and searchable selectors through the shared selector visual contract', () => {
@@ -1074,11 +1138,23 @@ describe('UI primitives architecture contracts', () => {
     })
     const hiddenInput = hiddenWrapper.get('input[type="color"]')
     expect(hiddenInput.attributes('hidden')).toBeDefined()
-    expect(hiddenInput.classes()).toContain('ui-color-input--hidden')
+    expect(hiddenInput.classes()).toContain('ui-color-input--md')
+    expect(hiddenInput.classes()).not.toContain('ui-color-input--hidden')
 
     const clickSpy = vi.spyOn(hiddenInput.element, 'click').mockImplementation(() => undefined)
     ;(hiddenWrapper.vm as unknown as { click: () => void }).click()
     expect(clickSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('exposes only the file actions used by current owners', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/components/ui/UiFileInput.vue'), 'utf8')
+    expect(source).not.toContain('get value()')
+    expect(source).not.toContain('set value(')
+    expect(source).not.toContain('get files()')
+
+    const inputSource = readFileSync(resolve(process.cwd(), 'src/components/ui/UiInput.vue'), 'utf8')
+    expect(inputSource).not.toContain('string | number | boolean')
+    expect(inputSource).not.toContain("props.type === 'checkbox'")
   })
 
   it('provides a shared model picker for settings model fetch controls', async () => {

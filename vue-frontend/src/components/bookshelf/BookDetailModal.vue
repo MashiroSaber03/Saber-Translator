@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
-import { createTag, getBookDetail } from '@/api/bookshelf'
+import { getBookDetail } from '@/api/bookshelf'
 import { showToast } from '@/utils/toast'
 import BaseModal from '@/components/common/BaseModal.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
@@ -32,6 +32,10 @@ const selectedChapterIds = ref(new Set<string>())
 const showDeleteConfirm = ref(false)
 const deleteTarget = ref<'book' | 'chapter'>('book')
 const deleteChapterId = ref<string | null>(null)
+const isDeleting = ref(false)
+const isChapterSaving = ref(false)
+const isBatchTranslating = ref(false)
+const isReordering = ref(false)
 
 const currentBook = computed(() => bookshelfStore.currentBook)
 const chapters = computed(() => currentBook.value?.chapters || [])
@@ -67,22 +71,20 @@ function deleteCurrentBook() {
 }
 
 async function confirmDelete() {
+  if (isDeleting.value) return
+  isDeleting.value = true
   try {
     if (deleteTarget.value === 'book' && currentBook.value) {
-      const success = await bookshelfStore.deleteBookApi(currentBook.value.id)
-      if (success) {
-        showToast('书籍已删除', 'success')
-        emit('close')
-      } else {
-        showToast('删除失败', 'error')
-      }
+      await bookshelfStore.deleteBookApi(currentBook.value.id)
+      showToast('书籍已删除', 'success')
+      emit('close')
     } else if (deleteTarget.value === 'chapter' && deleteChapterId.value && currentBook.value) {
-      const success = await bookshelfStore.deleteChapterApi(currentBook.value.id, deleteChapterId.value)
-      if (success) {
-        showToast('章节已删除', 'success')
-      } else {
-        showToast('删除失败', 'error')
-      }
+      const deletedChapterId = deleteChapterId.value
+      await bookshelfStore.deleteChapterApi(currentBook.value.id, deletedChapterId)
+      const nextSelection = new Set(selectedChapterIds.value)
+      nextSelection.delete(deletedChapterId)
+      selectedChapterIds.value = nextSelection
+      showToast('章节已删除', 'success')
     }
   } catch (error) {
     if (
@@ -99,9 +101,11 @@ async function confirmDelete() {
     } else {
       showToast(error instanceof Error ? error.message : '删除失败', 'error')
     }
+  } finally {
+    isDeleting.value = false
+    showDeleteConfirm.value = false
+    deleteChapterId.value = null
   }
-  showDeleteConfirm.value = false
-  deleteChapterId.value = null
 }
 
 function selectChapter(chapterId: string, selected: boolean) {
@@ -117,11 +121,12 @@ function selectAllChapters(chapterIds: string[]) {
 
 async function translateSelectedChapters() {
   const chapterIds = [...selectedChapterIds.value]
-  if (!chapterIds.length) return
+  if (!chapterIds.length || isBatchTranslating.value) return
+  isBatchTranslating.value = true
   try {
     const result = await createTranslationBatch({ chapterIds }, { mode: 'standard' })
     selectedChapterIds.value = new Set()
-    await taskCenterStore.refresh()
+    await taskCenterStore.refresh().catch(() => undefined)
     await refreshBookDetail()
     const skipped = result.skipped.length
     showToast(
@@ -133,6 +138,8 @@ async function translateSelectedChapters() {
     taskCenterStore.open({ batchId: result.batchId })
   } catch (error) {
     showToast(error instanceof Error ? error.message : '创建批量翻译任务失败', 'error')
+  } finally {
+    isBatchTranslating.value = false
   }
 }
 
@@ -152,32 +159,26 @@ function openEditChapterModal(chapterId: string) {
 }
 
 async function saveChapter() {
+  if (isChapterSaving.value) return
   if (!chapterTitle.value.trim() || !currentBook.value) {
     showToast('请输入章节名称', 'warning')
     return
   }
 
+  isChapterSaving.value = true
   try {
     if (editingChapterId.value) {
-      const success = await bookshelfStore.updateChapterApi(
+      await bookshelfStore.updateChapterApi(
         currentBook.value.id,
         editingChapterId.value,
         chapterTitle.value.trim()
       )
-      if (success) {
-        showToast('章节更新成功', 'success')
-        showChapterModal.value = false
-      } else {
-        showToast('更新失败', 'error')
-      }
+      showToast('章节更新成功', 'success')
+      showChapterModal.value = false
     } else {
-      const chapter = await bookshelfStore.createChapterApi(currentBook.value.id, chapterTitle.value.trim())
-      if (chapter) {
-        showToast('章节创建成功', 'success')
-        showChapterModal.value = false
-      } else {
-        showToast('创建失败', 'error')
-      }
+      await bookshelfStore.createChapterApi(currentBook.value.id, chapterTitle.value.trim())
+      showToast('章节创建成功', 'success')
+      showChapterModal.value = false
     }
   } catch (error) {
     const status = (
@@ -194,6 +195,8 @@ async function saveChapter() {
     } else {
       showToast(error instanceof Error ? error.message : '保存失败', 'error')
     }
+  } finally {
+    isChapterSaving.value = false
   }
 }
 
@@ -239,21 +242,18 @@ function goToInsight() {
 }
 
 async function handleChapterReorder(chapterIds: string[]): Promise<boolean> {
-  if (!currentBook.value) return false
+  if (!currentBook.value || isReordering.value) return false
+  isReordering.value = true
   try {
-    const success = await bookshelfStore.reorderChaptersApi(currentBook.value.id, chapterIds)
-    if (success) {
-      showToast('章节排序已更新', 'success')
-      return true
-    } else {
-      showToast('排序保存失败', 'error')
-      await refreshBookDetail()
-      return false
-    }
+    await bookshelfStore.reorderChaptersApi(currentBook.value.id, chapterIds)
+    showToast('章节排序已更新', 'success')
+    return true
   } catch (error) {
     showToast('排序保存失败', 'error')
     await refreshBookDetail()
     return false
+  } finally {
+    isReordering.value = false
   }
 }
 
@@ -354,8 +354,8 @@ function closeAddTagModal() {
 async function handleQuickTagInputEnter() {
   const tagName = quickTagFilter.value.trim()
   if (tagName) {
-    await quickAddTagToBook(tagName)
-    quickTagFilter.value = ''
+    const added = await quickAddTagToBook(tagName)
+    if (added) quickTagFilter.value = ''
   }
 }
 
@@ -370,51 +370,48 @@ async function removeTag(tagName: string) {
     const currentTags = currentBook.value.tags || []
     const newTags = currentTags.filter(t => t !== tagName)
 
-    const success = await bookshelfStore.updateBookApi(currentBook.value.id, {
+    await bookshelfStore.updateBookApi(currentBook.value.id, {
       tags: newTags
     })
-
-    if (success) {
-      showToast('标签已移除', 'success')
-    } else {
-      showToast('移除标签失败', 'error')
-    }
-  } catch {
-    showToast('操作失败', 'error')
+    showToast('标签已移除', 'success')
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '操作失败', 'error')
   } finally {
     isTagLoading.value = false
   }
 }
 
-async function quickAddTagToBook(tagName: string) {
-  if (!currentBook.value || !tagName || isTagLoading.value) return
+async function quickAddTagToBook(tagName: string): Promise<boolean> {
+  if (!currentBook.value || !tagName || isTagLoading.value) return false
 
-  if (currentBook.value.tags?.includes(tagName)) {
+  const existingTag = allTags.value.find(
+    tag => tag.name.toLowerCase() === tagName.toLowerCase(),
+  )
+  const canonicalName = existingTag?.name ?? tagName
+
+  if (currentBook.value.tags?.includes(canonicalName)) {
     showToast('该标签已存在', 'info')
-    return
+    return false
   }
 
   isTagLoading.value = true
 
   try {
-    if (!allTags.value.some(t => t.name === tagName)) {
-      await createTag(tagName)
+    if (!existingTag) {
+      await bookshelfStore.createTag(canonicalName)
     }
 
     const currentTags = currentBook.value.tags || []
-    const newTags = [...currentTags, tagName]
+    const newTags = [...currentTags, canonicalName]
 
-    const success = await bookshelfStore.updateBookApi(currentBook.value.id, {
+    await bookshelfStore.updateBookApi(currentBook.value.id, {
       tags: newTags
     })
-
-    if (success) {
-      showToast('标签已添加', 'success')
-    } else {
-      showToast('添加标签失败', 'error')
-    }
-  } catch {
-    showToast('操作失败', 'error')
+    showToast('标签已添加', 'success')
+    return true
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '操作失败', 'error')
+    return false
   } finally {
     isTagLoading.value = false
   }
@@ -448,6 +445,7 @@ async function quickAddTagToBook(tagName: string) {
         :drag-over-chapter-index="dragOverChapterIndex"
         :dragged-chapter-index="draggedChapterIndex"
         :selected-chapter-ids="selectedChapterIds"
+        :translation-pending="isBatchTranslating"
         @create="openCreateChapterModal"
         @delete="deleteChapter"
         @drag-end="handleChapterDragEnd"
@@ -479,7 +477,7 @@ async function quickAddTagToBook(tagName: string) {
         variant="dialog"
       >
         <UiButton type="button" variant="secondary" @click="showChapterModal = false">取消</UiButton>
-        <UiButton type="button" variant="primary" @click="saveChapter">保存</UiButton>
+        <UiButton type="button" variant="primary" :loading="isChapterSaving" @click="saveChapter">保存</UiButton>
       </ProductActionRow>
     </template>
   </BaseModal>
@@ -524,7 +522,7 @@ async function quickAddTagToBook(tagName: string) {
         variant="dialog"
       >
         <UiButton type="button" variant="secondary" @click="showDeleteConfirm = false">取消</UiButton>
-        <UiButton type="button" variant="danger" @click="confirmDelete">删除</UiButton>
+        <UiButton type="button" variant="danger" :loading="isDeleting" @click="confirmDelete">删除</UiButton>
       </ProductActionRow>
     </template>
   </BaseModal>

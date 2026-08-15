@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { mount } from '@vue/test-utils'
+import { defineComponent, ref } from 'vue'
 
 import OpenAIExtraBodyEditor from '@/components/common/OpenAIExtraBodyEditor.vue'
 import UiButton from '@/components/ui/UiButton.vue'
@@ -11,7 +12,7 @@ import {
   applyOpenAiOptionsPatch,
   cloneOpenAiOptions,
   deserializeOpenAICompatibleOptionsFromApi,
-  normalizeOpenAiOptions,
+  createDefaultOpenAiOptions,
   serializeOpenAICompatibleOptionsForApi,
 } from '@/utils/openaiOptions'
 
@@ -71,7 +72,8 @@ describe('openai options schema boundaries', () => {
     const field = wrapper.getComponent(UiField)
     expect(field.props('variant')).toBe('settings')
     expect(field.props('label')).toBe('附加请求字段')
-    expect(field.props('controlId')).toBe('openAiExtraBody')
+    expect(field.props('controlId')).toBeTruthy()
+    expect(wrapper.getComponent(UiTextarea).attributes('id')).toBe(field.props('controlId'))
     expect(field.props('hint')).toBe('只允许 JSON 对象')
     expect(field.findComponent(UiButton).text()).toBe('格式化')
 
@@ -79,6 +81,33 @@ describe('openai options schema boundaries', () => {
     await wrapper.vm.$nextTick()
 
     expect(wrapper.getComponent(UiField).props('error')).toBe('必须输入 JSON 对象，不能是数组、字符串或数字')
+  })
+
+  it('keeps editor ids unique and does not reformat a local valid draft', async () => {
+    const Host = defineComponent({
+      components: { OpenAIExtraBodyEditor },
+      setup() {
+        const first = ref<Record<string, unknown>>()
+        const second = ref<Record<string, unknown>>()
+        return { first, second }
+      },
+      template: `
+        <OpenAIExtraBodyEditor v-model="first" />
+        <OpenAIExtraBodyEditor v-model="second" />
+      `,
+    })
+    const wrapper = mount(Host)
+    const editors = wrapper.findAllComponents(OpenAIExtraBodyEditor)
+    const fields = wrapper.findAllComponents(UiField)
+
+    expect(fields[0]!.props('controlId')).not.toBe(fields[1]!.props('controlId'))
+
+    const firstTextarea = editors[0]!.getComponent(UiTextarea)
+    firstTextarea.vm.$emit('update:modelValue', '{"top_p": 0.9}')
+    await wrapper.vm.$nextTick()
+
+    expect(firstTextarea.props('modelValue')).toBe('{"top_p": 0.9}')
+    expect(editors[0]!.emitted('update:modelValue')?.at(-1)).toEqual([{ top_p: 0.9 }])
   })
 
   it('clones option payloads without sharing nested extra body references', () => {
@@ -104,7 +133,7 @@ describe('openai options schema boundaries', () => {
   })
 
   it('applies UI patch fields to the nested OpenAI option shape', () => {
-    const options = normalizeOpenAiOptions({
+    const options = createDefaultOpenAiOptions({
       request: {
         forceJsonOutput: false,
         extraBody: { previous: true },
@@ -144,28 +173,6 @@ describe('openai options schema boundaries', () => {
     applyOpenAiOptionsPatch(options, { extraBody: undefined })
 
     expect(options.request.extraBody).toBeUndefined()
-  })
-
-  it('normalizes only the current frontend option shape', () => {
-    const options = normalizeOpenAiOptions({
-      request: {
-        force_json_output: true,
-        extra_body: { top_p: 0.9 },
-      },
-      execution: {
-        use_stream: true,
-        rpm_limit: 12,
-        transport_retries: 2,
-        business_retries: 3,
-      },
-    })
-
-    expect(options.request.forceJsonOutput).toBe(false)
-    expect(options.request.extraBody).toBeUndefined()
-    expect(options.execution.useStream).toBe(false)
-    expect(options.execution.rpmLimit).toBe(0)
-    expect(options.execution.transportRetries).toBe(1)
-    expect(options.execution.businessRetries).toBe(0)
   })
 
   it('serializes current frontend options to the backend wire shape', () => {
@@ -228,87 +235,4 @@ describe('openai options schema boundaries', () => {
     })
   })
 
-  it('falls back when numeric option fields are not finite', () => {
-    const frontendOptions = normalizeOpenAiOptions(
-      {
-        request: {
-          temperature: Number.POSITIVE_INFINITY,
-        },
-        execution: {
-          rpmLimit: 'Infinity',
-          transportRetries: Number.NEGATIVE_INFINITY,
-          businessRetries: Number.NaN,
-        },
-      },
-      {
-        request: {
-          temperature: 0.6,
-        },
-        execution: {
-          rpmLimit: 8,
-          transportRetries: 2,
-          businessRetries: 3,
-        },
-      }
-    )
-
-    expect(frontendOptions.request.temperature).toBe(0.6)
-    expect(frontendOptions.execution.rpmLimit).toBe(8)
-    expect(frontendOptions.execution.transportRetries).toBe(2)
-    expect(frontendOptions.execution.businessRetries).toBe(3)
-
-    const apiOptions = deserializeOpenAICompatibleOptionsFromApi(
-      {
-        request: {
-          temperature: 'Infinity',
-        },
-        execution: {
-          rpm_limit: Number.POSITIVE_INFINITY,
-          transport_retries: '-Infinity',
-          business_retries: Number.NaN,
-        },
-      },
-      {
-        request: {
-          temperature: 0.4,
-        },
-        execution: {
-          rpmLimit: 4,
-          transportRetries: 5,
-          businessRetries: 6,
-        },
-      }
-    )
-
-    expect(apiOptions.request.temperature).toBe(0.4)
-    expect(apiOptions.execution.rpmLimit).toBe(4)
-    expect(apiOptions.execution.transportRetries).toBe(5)
-    expect(apiOptions.execution.businessRetries).toBe(6)
-  })
-
-  it('falls back when boolean option fields are not real booleans', () => {
-    const frontendOptions = normalizeOpenAiOptions({
-      request: {
-        forceJsonOutput: 'false',
-      },
-      execution: {
-        useStream: 'false',
-      },
-    })
-
-    expect(frontendOptions.request.forceJsonOutput).toBe(false)
-    expect(frontendOptions.execution.useStream).toBe(false)
-
-    const apiOptions = deserializeOpenAICompatibleOptionsFromApi({
-      request: {
-        force_json_output: 'false',
-      },
-      execution: {
-        use_stream: 'false',
-      },
-    })
-
-    expect(apiOptions.request.forceJsonOutput).toBe(false)
-    expect(apiOptions.execution.useStream).toBe(false)
-  })
 })

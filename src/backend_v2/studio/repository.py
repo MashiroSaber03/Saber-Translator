@@ -11,7 +11,6 @@ import uuid
 
 from sqlalchemy import Engine, delete, func, insert, select, update
 from sqlalchemy.engine import Connection
-from sqlalchemy.exc import IntegrityError
 
 from src.backend_v2.serialization import canonical_json as _json
 from src.backend_v2.operations.repository import (
@@ -22,6 +21,7 @@ from src.backend_v2.operations.repository import (
 from src.backend_v2.timestamps import iso_utc, utcnow
 from src.backend_v2.storage.database import immediate_transaction
 from src.backend_v2.storage.schema import (
+    ACTIVE_OPERATION_STATUSES,
     assets,
     books,
     idempotency_records,
@@ -46,9 +46,6 @@ from src.backend_v2.studio.pure import (
 )
 
 
-ACTIVE_OPERATION_STATUSES = ("pending", "running")
-
-
 class StudioNotFound(LookupError):
     pass
 
@@ -61,8 +58,96 @@ class StudioBusy(StudioConflict):
     pass
 
 
-def _load(value: str | None, default: object) -> object:
-    return json.loads(value) if value else default
+class StudioDataInvalid(RuntimeError):
+    pass
+
+
+def _load_json(value: object, field: str) -> object:
+    if not isinstance(value, str) or not value:
+        raise StudioDataInvalid(f"{field} is missing")
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise StudioDataInvalid(f"{field} contains invalid JSON") from exc
+
+
+def _load_object(value: object, field: str) -> dict[str, Any]:
+    decoded = _load_json(value, field)
+    if not isinstance(decoded, Mapping):
+        raise StudioDataInvalid(f"{field} must contain a JSON object")
+    return dict(decoded)
+
+
+def _load_array(value: object, field: str) -> list[Any]:
+    decoded = _load_json(value, field)
+    if not isinstance(decoded, list):
+        raise StudioDataInvalid(f"{field} must contain a JSON array")
+    return decoded
+
+
+def _load_string_array(value: object, field: str) -> list[str]:
+    decoded = _load_array(value, field)
+    if not all(isinstance(item, str) for item in decoded):
+        raise StudioDataInvalid(f"{field} must contain a string array")
+    return decoded
+
+
+def _load_object_array(value: object, field: str) -> list[dict[str, Any]]:
+    decoded = _load_array(value, field)
+    if not all(isinstance(item, Mapping) for item in decoded):
+        raise StudioDataInvalid(f"{field} must contain an object array")
+    return [dict(item) for item in decoded]
+
+
+def _load_summary_blocks(value: object) -> list[dict[str, str]]:
+    blocks = _load_object_array(value, "studio_chat_sessions.summary_blocks_json")
+    for block in blocks:
+        if set(block) != {"summary"} or not isinstance(
+            block["summary"],
+            str,
+        ) or not block["summary"].strip():
+            raise StudioDataInvalid(
+                "studio_chat_sessions.summary_blocks_json contains an invalid summary"
+            )
+    return blocks
+
+
+def _require_exact_keys(
+    value: Mapping[str, Any],
+    expected: set[str],
+    label: str,
+) -> None:
+    if set(value) != expected:
+        raise ValueError(f"{label} fields are invalid")
+
+
+def _greeting_source(value: Mapping[str, Any]) -> dict[str, Any]:
+    source = dict(value)
+    if not source:
+        return {}
+    if set(source) != {"type", "index"}:
+        raise ValueError("greeting source fields are invalid")
+    source_type = source["type"]
+    index = source["index"]
+    if source_type not in {"first_message", "alternate_greeting"}:
+        raise ValueError("greeting source type is invalid")
+    if isinstance(index, bool) or not isinstance(index, int) or index < 0:
+        raise ValueError("greeting source index must be a non-negative integer")
+    if source_type == "first_message" and index != 0:
+        raise ValueError("first message greeting source index must be zero")
+    return source
+
+
+def _load_greeting_source(value: object) -> dict[str, Any]:
+    try:
+        return _greeting_source(
+            _load_object(
+                value,
+                "studio_chat_sessions.greeting_source_json",
+            )
+        )
+    except ValueError as exc:
+        raise StudioDataInvalid(str(exc)) from exc
 
 
 def _default_chat_runtime_state() -> dict[str, Any]:
@@ -104,7 +189,10 @@ class StudioRepository:
                     "avatarAssetId": row["avatar_asset_id"],
                     "hasAvatar": row["avatar_asset_id"] is not None,
                     "sourceCharacter": row["source_character"],
-                    "tags": _load(row["tags_json"], []),
+                    "tags": _load_string_array(
+                        row["tags_json"],
+                        "studio_documents.tags_json",
+                    ),
                     "isFavorite": bool(row["is_favorite"]),
                     "updatedAt": iso_utc(row["updated_at"]),
                 }
@@ -130,7 +218,7 @@ class StudioRepository:
             document=document or new_document(book_id, title=title),
         )
         canonical["origin"] = {
-            **_mapping(canonical.get("origin")),
+            **canonical["origin"],
             "type": kind,
         }
         canonical_title, storage_values = to_storage(canonical)
@@ -225,12 +313,14 @@ class StudioRepository:
             )
             if changed.rowcount != 1:
                 raise StudioConflict("studio document revision changed")
+            updated = self._document_from_connection(connection, document_id)
+            self._align_active_draft(connection, updated, now)
             return (
-                self._document_from_connection(connection, document_id),
+                updated,
                 document_id,
             )
 
-        updated, replayed = self._execute_short_command(
+        updated, _replayed = self._execute_short_command(
             scope=(
                 idempotency_scope
                 or f"PUT:updateStudioDocument:{document_id}"
@@ -247,9 +337,6 @@ class StudioRepository:
             resource_type="studio_document",
             mutation=mutate,
         )
-        if not replayed:
-            self._align_active_draft(updated)
-            return self.get_document(document_id)
         return updated
 
     def validate_document(
@@ -268,9 +355,11 @@ class StudioRepository:
             row = self._assert_document(connection, document_id)
             if int(row["revision"]) != base_revision:
                 raise StudioConflict("studio document revision changed")
+            if self._active_operation(connection, document_id=document_id):
+                raise StudioBusy("studio document has an active operation")
             document = from_storage(row)
             report = build_diagnostics_report(document)
-            status = _mapping(document.get("status"))
+            status = dict(document["status"])
             status["last_diagnostics"] = report
             status["last_validated_at"] = iso_utc(
                 now.replace(microsecond=0)
@@ -485,11 +574,11 @@ class StudioRepository:
         }
         initial_runtime_log = run_state_tasks(
             session_work,
-            from_storage(document).get("stateTasks", []),
+            from_storage(document)["stateTasks"],
             event="initialization",
         )
-        initial_variables = _mapping(session_work.get("variables"))
-        initial_runtime = _mapping(session_work.get("_runtime"))
+        initial_variables = dict(session_work["variables"])
+        initial_runtime = dict(session_work["_runtime"])
         connection.execute(
             insert(studio_chat_sessions).values(
                 id=session_id,
@@ -497,7 +586,9 @@ class StudioRepository:
                 title=title or f"{document['title']} 对话",
                 revision=1,
                 generation=1,
-                greeting_source_json=_json(dict(greeting_source or {})),
+                greeting_source_json=_json(
+                    _greeting_source(greeting_source or {})
+                ),
                 variables_json=_json(initial_variables),
                 summary_blocks_json="[]",
                 summary_generation=0,
@@ -517,13 +608,13 @@ class StudioRepository:
                     content=greeting,
                     runtime_log=_json(initial_runtime_log),
                     variables_snapshot_json=_json(initial_variables),
-                        generation_meta_json=_json(
-                            {
-                                "source": "greeting",
-                                "runtimeState": initial_runtime,
-                            }
-                        ),
-                        created_at=now,
+                    generation_meta_json=_json(
+                        {
+                            "source": "greeting",
+                            "runtimeState": initial_runtime,
+                        }
+                    ),
+                    created_at=now,
                     updated_at=now,
                 )
             )
@@ -561,34 +652,130 @@ class StudioRepository:
         idempotency_key: str | None = None,
         idempotency_request: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
-        raw_messages = payload.get("messages", [])
+        _require_exact_keys(
+            payload,
+            {
+                "title",
+                "greetingSource",
+                "variables",
+                "summaryBlocks",
+                "summaryThroughMessageId",
+                "summaryGeneration",
+                "runtimeState",
+                "messages",
+            },
+            "session import",
+        )
+        raw_messages = payload["messages"]
         if not isinstance(raw_messages, list):
             raise ValueError("session messages must be an array")
+        raw_title = payload["title"]
+        if not isinstance(raw_title, str) or not raw_title.strip():
+            raise ValueError("session title must be a non-empty string")
+        raw_summary_blocks = payload["summaryBlocks"]
+        if not isinstance(raw_summary_blocks, list):
+            raise ValueError("summaryBlocks must be an array")
+        summary_blocks: list[dict[str, str]] = []
+        for raw_block in raw_summary_blocks:
+            if not isinstance(raw_block, Mapping):
+                raise ValueError("each summary block must be an object")
+            _require_exact_keys(raw_block, {"summary"}, "summary block")
+            summary = raw_block["summary"]
+            if not isinstance(summary, str) or not summary.strip():
+                raise ValueError("each summary block requires summary text")
+            summary_blocks.append({"summary": summary.strip()})
+        variables = payload["variables"]
+        if not isinstance(variables, Mapping):
+            raise ValueError("session variables must be an object")
+        runtime_state = payload["runtimeState"]
+        if not isinstance(runtime_state, Mapping):
+            raise ValueError("session runtimeState must be an object")
+        raw_greeting_source = payload["greetingSource"]
+        if not isinstance(raw_greeting_source, Mapping):
+            raise ValueError("session greetingSource must be an object")
+        greeting_source = _greeting_source(raw_greeting_source)
+        summary_generation = payload["summaryGeneration"]
+        if isinstance(summary_generation, bool) or not isinstance(
+            summary_generation,
+            int,
+        ) or summary_generation < 0:
+            raise ValueError("summaryGeneration must be a non-negative integer")
+        raw_summary_through_id = payload["summaryThroughMessageId"]
+        if raw_summary_through_id is not None and not isinstance(
+            raw_summary_through_id,
+            str,
+        ):
+            raise ValueError("summaryThroughMessageId must be a string or null")
+        if bool(summary_blocks) != bool(raw_summary_through_id):
+            raise ValueError(
+                "summaryBlocks and summaryThroughMessageId must be provided together"
+            )
         normalized_messages: list[dict[str, Any]] = []
         all_asset_ids: list[str] = []
+        source_ids: set[str] = set()
         for raw in raw_messages:
             if not isinstance(raw, Mapping):
                 raise ValueError("each session message must be an object")
-            role = str(raw.get("role", ""))
-            if role not in {"system", "user", "assistant"}:
+            _require_exact_keys(
+                raw,
+                {
+                    "messageId",
+                    "role",
+                    "content",
+                    "assetIds",
+                    "runtimeLog",
+                    "variablesSnapshot",
+                    "generationMeta",
+                },
+                "session message",
+            )
+            role = raw["role"]
+            if not isinstance(role, str) or role not in {
+                "system",
+                "user",
+                "assistant",
+            }:
                 raise ValueError("session message role is invalid")
-            asset_ids = raw.get("assetIds", [])
+            source_id = raw["messageId"]
+            if not isinstance(source_id, str) or not source_id:
+                raise ValueError("messageId must be a non-empty string")
+            if source_id in source_ids:
+                raise ValueError("messageId values must be unique")
+            source_ids.add(source_id)
+            content = raw["content"]
+            if not isinstance(content, str):
+                raise ValueError("message content must be a string")
+            asset_ids = raw["assetIds"]
             if not isinstance(asset_ids, list) or not all(
                 isinstance(value, str) for value in asset_ids
             ):
                 raise ValueError("message assetIds must be a string array")
+            if len(set(asset_ids)) != len(asset_ids):
+                raise ValueError("message assetIds must be unique")
             all_asset_ids.extend(asset_ids)
+            runtime_log = raw["runtimeLog"]
+            if not isinstance(runtime_log, list) or not all(
+                isinstance(item, Mapping) for item in runtime_log
+            ):
+                raise ValueError("message runtimeLog must be an object array")
+            variables_snapshot = raw["variablesSnapshot"]
+            if not isinstance(variables_snapshot, Mapping):
+                raise ValueError("message variablesSnapshot must be an object")
+            generation_meta = raw["generationMeta"]
+            if not isinstance(generation_meta, Mapping):
+                raise ValueError("message generationMeta must be an object")
+            if not isinstance(generation_meta.get("runtimeState"), Mapping):
+                raise ValueError(
+                    "message generationMeta.runtimeState must be an object"
+                )
             normalized_messages.append(
                 {
-                    "source_id": str(
-                        raw.get("messageId", "")
-                        or ""
-                    ),
+                    "source_id": source_id,
                     "role": role,
-                    "content": str(raw.get("content", "")),
-                    "runtime_log": raw.get("runtimeLog", []),
-                    "variables_snapshot": raw.get("variablesSnapshot", {}),
-                    "generation_meta": raw.get("generationMeta", {}),
+                    "content": content,
+                    "runtime_log": list(runtime_log),
+                    "variables_snapshot": dict(variables_snapshot),
+                    "generation_meta": dict(generation_meta),
                     "asset_ids": list(asset_ids),
                 }
             )
@@ -624,35 +811,20 @@ class StudioRepository:
                     .where(studio_chat_sessions.c.id == active["id"])
                     .values(archived_at=now, updated_at=now)
                 )
-            summary_blocks = payload.get("summaryBlocks", [])
-            variables = payload.get("variables", {})
-            runtime_state = payload.get("runtimeState", {})
             connection.execute(
                 insert(studio_chat_sessions).values(
                     id=session_id,
                     document_id=document_id,
-                    title=str(payload.get("title") or "导入对话"),
+                    title=raw_title.strip(),
                     revision=1,
                     generation=1,
                     greeting_source_json=_json(
-                        _mapping(
-                            payload.get(
-                                "greetingSource",
-                                {},
-                            )
-                        )
+                        dict(greeting_source)
                     ),
-                    variables_json=_json(_mapping(variables)),
-                    summary_blocks_json=_json(
-                        list(summary_blocks)
-                        if isinstance(summary_blocks, list)
-                        else []
-                    ),
-                    summary_generation=int(
-                        payload.get("summaryGeneration", 0)
-                        or 0
-                    ),
-                    runtime_state_json=_json(_mapping(runtime_state)),
+                    variables_json=_json(dict(variables)),
+                    summary_blocks_json=_json(summary_blocks),
+                    summary_generation=summary_generation,
+                    runtime_state_json=_json(dict(runtime_state)),
                     runtime_schema_version=1,
                     created_at=now,
                     updated_at=now,
@@ -699,10 +871,7 @@ class StudioRepository:
                             )
                         ],
                     )
-            source_summary_through_id = str(
-                payload.get("summaryThroughMessageId", "")
-                or ""
-            )
+            source_summary_through_id = raw_summary_through_id or ""
             if source_summary_through_id:
                 summary_through_id = imported_message_ids.get(
                     source_summary_through_id
@@ -864,6 +1033,7 @@ class StudioRepository:
                         "revision": int(row["revision"]),
                         "generation": int(row["generation"]),
                         "archived": row["archived_at"] is not None,
+                        "archivedAt": iso_utc(row["archived_at"]),
                         "updatedAt": iso_utc(row["updated_at"]),
                         "messageCount": int(row["message_count"]),
                         "lastMessageExcerpt": str(
@@ -946,7 +1116,7 @@ class StudioRepository:
                 document_id=document_id,
                 session_id=None,
                 base_revision=base_revision,
-                base_generation=0,
+                base_generation=None,
                 request_payload=request_payload,
                 now=now,
             )
@@ -1018,13 +1188,13 @@ class StudioRepository:
                     ordinal=ordinal,
                     role="user",
                     content=content,
-                    runtime_log="",
+                    runtime_log=_json([]),
                     variables_snapshot_json=session["variables_json"],
                     generation_meta_json=_json(
                         {
-                            "runtimeState": _load(
+                            "runtimeState": _load_object(
                                 session["runtime_state_json"],
-                                _default_chat_runtime_state(),
+                                "studio_chat_sessions.runtime_state_json",
                             )
                         }
                     ),
@@ -1080,14 +1250,16 @@ class StudioRepository:
                 request_payload={
                     "document": document,
                     "messages": message_dtos,
-                    "variables": _load(session["variables_json"], {}),
-                    "runtimeState": _load(
-                        session["runtime_state_json"],
-                        {},
+                    "variables": _load_object(
+                        session["variables_json"],
+                        "studio_chat_sessions.variables_json",
                     ),
-                    "summaryBlocks": _load(
-                        session["summary_blocks_json"],
-                        [],
+                    "runtimeState": _load_object(
+                        session["runtime_state_json"],
+                        "studio_chat_sessions.runtime_state_json",
+                    ),
+                    "summaryBlocks": _load_summary_blocks(
+                        session["summary_blocks_json"]
                     ),
                     "summaryThroughMessageId": session[
                         "summary_through_message_id"
@@ -1167,9 +1339,8 @@ class StudioRepository:
                     message_dtos = message_dtos[through_index + 1 :]
             if not message_dtos:
                 raise StudioConflict("当前会话没有待总结的新消息")
-            existing_summaries = _load(
-                session["summary_blocks_json"],
-                [],
+            existing_summaries = _load_summary_blocks(
+                session["summary_blocks_json"]
             )
             if existing_summaries:
                 message_dtos.insert(
@@ -1673,9 +1844,8 @@ class StudioRepository:
                     "summaryBlocks": (
                         []
                         if clear_summary
-                        else _load(
-                            session["summary_blocks_json"],
-                            [],
+                        else _load_summary_blocks(
+                            session["summary_blocks_json"]
                         )
                     ),
                     "summaryThroughMessageId": (
@@ -1956,30 +2126,27 @@ class StudioRepository:
         document_id: str | None,
         session_id: str | None,
         base_revision: int,
-        base_generation: int,
+        base_generation: int | None,
         request_payload: Mapping[str, Any],
         now,
     ) -> dict[str, Any]:
         operation_id = str(uuid.uuid4())
-        try:
-            connection.execute(
-                insert(operations).values(
-                    id=operation_id,
-                    kind=kind,
-                    executor_role="api",
-                    status="pending",
-                    studio_document_id=document_id,
-                    studio_session_id=session_id,
-                    base_revision=base_revision,
-                    base_generation=base_generation,
-                    request_json=_json(dict(request_payload)),
-                    request_schema_version=1,
-                    created_at=now,
-                    updated_at=now,
-                )
+        connection.execute(
+            insert(operations).values(
+                id=operation_id,
+                kind=kind,
+                executor_role="api",
+                status="pending",
+                studio_document_id=document_id,
+                studio_session_id=session_id,
+                base_revision=base_revision,
+                base_generation=base_generation,
+                request_json=_json(dict(request_payload)),
+                request_schema_version=1,
+                created_at=now,
+                updated_at=now,
             )
-        except IntegrityError as exc:
-            raise StudioBusy("studio target already has an active operation") from exc
+        )
         for role, credential_id in _credential_references(request_payload).items():
             connection.execute(
                 insert(operation_credential_snapshots).values(
@@ -2161,90 +2328,95 @@ class StudioRepository:
 
     def _align_active_draft(
         self,
+        connection: Connection,
         document: Mapping[str, Any],
+        now,
     ) -> None:
         document_id = str(document["id"])
-        now = utcnow()
-        with immediate_transaction(self.engine) as connection:
-            session = connection.execute(
-                select(studio_chat_sessions).where(
-                    studio_chat_sessions.c.document_id == document_id,
-                    studio_chat_sessions.c.archived_at.is_(None),
-                )
-            ).mappings().one_or_none()
-            if session is None or self._active_operation(
-                connection,
-                session_id=str(session["id"]),
-            ):
-                return
-            messages = self._message_rows(connection, str(session["id"]))
-            if _load(session["summary_blocks_json"], []):
-                return
-            if any(str(message["role"]) == "user" for message in messages):
-                return
-            if len(messages) > 1 or (
-                messages and str(messages[0]["role"]) != "assistant"
-            ):
-                return
-            source = _mapping(
-                _load(session["greeting_source_json"], {})
+        session = connection.execute(
+            select(studio_chat_sessions).where(
+                studio_chat_sessions.c.document_id == document_id,
+                studio_chat_sessions.c.archived_at.is_(None),
             )
-            core = _mapping(document.get("coreMessages"))
-            if source.get("type") == "alternate_greeting":
-                alternatives = core.get("alternate_greetings", [])
-                index = int(source.get("index", 0) or 0)
-                desired = (
-                    str(alternatives[index])
-                    if isinstance(alternatives, list)
-                    and 0 <= index < len(alternatives)
-                    else ""
+        ).mappings().one_or_none()
+        if session is None or self._active_operation(
+            connection,
+            session_id=str(session["id"]),
+        ):
+            return
+        messages = self._message_rows(connection, str(session["id"]))
+        if _load_summary_blocks(session["summary_blocks_json"]):
+            return
+        if any(str(message["role"]) == "user" for message in messages):
+            return
+        if len(messages) > 1 or (
+            messages and str(messages[0]["role"]) != "assistant"
+        ):
+            return
+        source = _load_greeting_source(session["greeting_source_json"])
+        core = document["coreMessages"]
+        if source.get("type") == "alternate_greeting":
+            alternatives = core["alternate_greetings"]
+            index = source["index"]
+            desired = (
+                alternatives[index]
+                if 0 <= index < len(alternatives)
+                else ""
+            )
+        else:
+            desired = core["first_message"]
+            source = {"type": "first_message", "index": 0}
+        desired = desired.strip()
+        changed = False
+        if not messages and desired:
+            connection.execute(
+                insert(studio_messages).values(
+                    id=str(uuid.uuid4()),
+                    session_id=session["id"],
+                    ordinal=1,
+                    role="assistant",
+                    content=desired,
+                    runtime_log=_json([]),
+                    variables_snapshot_json=session["variables_json"],
+                    generation_meta_json=_json(
+                        {
+                            "source": "greeting",
+                            "runtimeState": _load_object(
+                                session["runtime_state_json"],
+                                "studio_chat_sessions.runtime_state_json",
+                            ),
+                        }
+                    ),
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            changed = True
+        elif messages and str(messages[0]["content"]) != desired:
+            if desired:
+                connection.execute(
+                    update(studio_messages)
+                    .where(studio_messages.c.id == messages[0]["id"])
+                    .values(content=desired, updated_at=now)
                 )
             else:
-                desired = str(core.get("first_message", ""))
-                source = {"type": "first_message", "index": 0}
-            desired = desired.strip()
-            changed = False
-            if not messages and desired:
                 connection.execute(
-                    insert(studio_messages).values(
-                        id=str(uuid.uuid4()),
-                        session_id=session["id"],
-                        ordinal=1,
-                        role="assistant",
-                        content=desired,
-                        runtime_log="",
-                        variables_snapshot_json=session["variables_json"],
-                        generation_meta_json=_json({"source": "greeting"}),
-                        created_at=now,
-                        updated_at=now,
+                    delete(studio_messages).where(
+                        studio_messages.c.id == messages[0]["id"]
                     )
                 )
-                changed = True
-            elif messages and str(messages[0]["content"]) != desired:
-                if desired:
-                    connection.execute(
-                        update(studio_messages)
-                        .where(studio_messages.c.id == messages[0]["id"])
-                        .values(content=desired, updated_at=now)
-                    )
-                else:
-                    connection.execute(
-                        delete(studio_messages).where(
-                            studio_messages.c.id == messages[0]["id"]
-                        )
-                    )
-                changed = True
-            if changed:
-                connection.execute(
-                    update(studio_chat_sessions)
-                    .where(studio_chat_sessions.c.id == session["id"])
-                    .values(
-                        revision=int(session["revision"]) + 1,
-                        generation=int(session["generation"]) + 1,
-                        greeting_source_json=_json(source),
-                        updated_at=now,
-                    )
+            changed = True
+        if changed:
+            connection.execute(
+                update(studio_chat_sessions)
+                .where(studio_chat_sessions.c.id == session["id"])
+                .values(
+                    revision=int(session["revision"]) + 1,
+                    generation=int(session["generation"]) + 1,
+                    greeting_source_json=_json(source),
+                    updated_at=now,
                 )
+            )
 
     @staticmethod
     def _active_operation(
@@ -2319,68 +2491,24 @@ class StudioRepository:
         session_id: str,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Restore the session state represented by the retained linear chain."""
-        variables: dict[str, Any] = {}
-        runtime = _default_chat_runtime_state()
-        pending_user = False
-
-        for row in StudioRepository._message_rows(connection, session_id):
-            snapshot = _load(row["variables_snapshot_json"], {})
-            if isinstance(snapshot, Mapping):
-                variables = dict(snapshot)
-
-            generation_meta = _load(row["generation_meta_json"], {})
-            meta = (
-                dict(generation_meta)
-                if isinstance(generation_meta, Mapping)
-                else {}
+        messages = StudioRepository._message_rows(connection, session_id)
+        if not messages:
+            return {}, _default_chat_runtime_state()
+        last_message = messages[-1]
+        variables = _load_object(
+            last_message["variables_snapshot_json"],
+            "studio_messages.variables_snapshot_json",
+        )
+        generation_meta = _load_object(
+            last_message["generation_meta_json"],
+            "studio_messages.generation_meta_json",
+        )
+        runtime_snapshot = generation_meta.get("runtimeState")
+        if not isinstance(runtime_snapshot, Mapping):
+            raise StudioDataInvalid(
+                "studio_messages.generation_meta_json.runtimeState must be an object"
             )
-            runtime_snapshot = meta.get("runtimeState")
-            if isinstance(runtime_snapshot, Mapping):
-                runtime = json.loads(_json(dict(runtime_snapshot)))
-
-            role = str(row["role"])
-            if role == "user":
-                pending_user = True
-                continue
-            if role != "assistant":
-                continue
-            if isinstance(runtime_snapshot, Mapping):
-                pending_user = False
-                continue
-            if meta.get("source") == "greeting" or not pending_user:
-                pending_user = False
-                continue
-
-            counts = runtime.setdefault("event_counts", {})
-            if not isinstance(counts, dict):
-                counts = {}
-                runtime["event_counts"] = counts
-            counts["message_received"] = int(
-                counts.get("message_received", 0)
-            ) + 1
-            counts["message_sent"] = int(
-                counts.get("message_sent", 0)
-            ) + 1
-
-            matched = runtime.setdefault("matched_lorebook_ids", [])
-            if not isinstance(matched, list):
-                matched = []
-                runtime["matched_lorebook_ids"] = matched
-            logs = _load(row["runtime_log"], [])
-            for item in logs if isinstance(logs, list) else []:
-                if not isinstance(item, Mapping):
-                    continue
-                entry_id = item.get("id")
-                if (
-                    item.get("type") == "lorebook"
-                    and isinstance(entry_id, str)
-                    and entry_id
-                    and entry_id not in matched
-                ):
-                    matched.append(entry_id)
-            pending_user = False
-
-        return variables, runtime
+        return variables, json.loads(_json(dict(runtime_snapshot)))
 
     @staticmethod
     def _message_dto(
@@ -2394,12 +2522,18 @@ class StudioRepository:
             "role": str(row["role"]),
             "content": str(row["content"]),
             "attachments": [dict(item) for item in attachments],
-            "runtimeLog": _load(row["runtime_log"], []),
-            "variablesSnapshot": _load(
-                row["variables_snapshot_json"],
-                {},
+            "runtimeLog": _load_object_array(
+                row["runtime_log"],
+                "studio_messages.runtime_log",
             ),
-            "generationMeta": _load(row["generation_meta_json"], {}),
+            "variablesSnapshot": _load_object(
+                row["variables_snapshot_json"],
+                "studio_messages.variables_snapshot_json",
+            ),
+            "generationMeta": _load_object(
+                row["generation_meta_json"],
+                "studio_messages.generation_meta_json",
+            ),
             "createdAt": iso_utc(row["created_at"]),
             "updatedAt": iso_utc(row["updated_at"]),
         }
@@ -2469,14 +2603,9 @@ class StudioRepository:
     ) -> None:
         asset_ids: list[str] = []
         for message in messages:
-            attachments = message.get("attachments", [])
-            if not isinstance(attachments, list):
-                continue
-            for attachment in attachments:
-                if not isinstance(attachment, Mapping):
-                    continue
-                asset_id = attachment.get("assetId")
-                if isinstance(asset_id, str) and asset_id not in asset_ids:
+            for attachment in message["attachments"]:
+                asset_id = attachment["assetId"]
+                if asset_id not in asset_ids:
                     asset_ids.append(asset_id)
         if asset_ids:
             connection.execute(
@@ -2509,13 +2638,24 @@ class StudioRepository:
             "title": str(row["title"]),
             "revision": int(row["revision"]),
             "generation": int(row["generation"]),
-            "greetingSource": _load(row["greeting_source_json"], {}),
-            "variables": _load(row["variables_json"], {}),
-            "summaryBlocks": _load(row["summary_blocks_json"], []),
+            "greetingSource": _load_greeting_source(
+                row["greeting_source_json"]
+            ),
+            "variables": _load_object(
+                row["variables_json"],
+                "studio_chat_sessions.variables_json",
+            ),
+            "summaryBlocks": _load_summary_blocks(
+                row["summary_blocks_json"]
+            ),
             "summaryThroughMessageId": row["summary_through_message_id"],
             "summaryGeneration": int(row["summary_generation"]),
-            "runtimeState": _load(row["runtime_state_json"], {}),
+            "runtimeState": _load_object(
+                row["runtime_state_json"],
+                "studio_chat_sessions.runtime_state_json",
+            ),
             "archived": row["archived_at"] is not None,
+            "archivedAt": iso_utc(row["archived_at"]),
             "messages": self._messages_dto(connection, messages),
             "createdAt": iso_utc(row["created_at"]),
             "updatedAt": iso_utc(row["updated_at"]),
@@ -2556,7 +2696,10 @@ class StudioRepository:
             raise StudioConflict(
                 "Idempotency-Key was reused for a different request"
             )
-        return dict(_load(row["response_json"], {}))
+        return _load_object(
+            row["response_json"],
+            "idempotency_records.response_json",
+        )
 
     @staticmethod
     def _store_idempotency(
@@ -2624,14 +2767,9 @@ def _messages_have_attachments(
     include = summary_through_message_id is None
     for message in messages:
         if not include:
-            if message.get("messageId") == summary_through_message_id:
+            if message["messageId"] == summary_through_message_id:
                 include = True
             continue
-        attachments = message.get("attachments")
-        if isinstance(attachments, list) and attachments:
+        if message["attachments"]:
             return True
     return False
-
-
-def _mapping(value: object) -> dict[str, Any]:
-    return dict(value) if isinstance(value, Mapping) else {}

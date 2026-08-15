@@ -5,8 +5,9 @@
       <UiField variant="settings" label="检测器类型" control-id="settingsTextDetector">
         <UiSelect
           id="settingsTextDetector"
-          v-model="settings.textDetector"
+          :model-value="settings.textDetector"
           :options="detectorOptions"
+          @change="updateTextDetector"
         />
       </UiField>
       <UiField
@@ -17,10 +18,11 @@
       >
         <UiNumberField
           input-id="settingsMinTextBlockAreaPercent"
-          v-model="settings.minTextBlockAreaPercent"
+          :model-value="settings.minTextBlockAreaPercent"
           :min="0"
           :max="100"
           :step="0.01"
+          @change="updateNumber(settingsStore.setMinTextBlockAreaPercent, $event)"
         />
       </UiField>
       <UiField
@@ -28,25 +30,31 @@
         control="checkbox"
         hint="使用 YSGYolo 在一阶段检测后补框/替框，提升主检测器结果质量"
       >
-        <UiCheckbox v-model="settings.enableAuxYoloDetection" label="启用辅助 YSGYolo 检测" />
+        <UiCheckbox
+          :model-value="settings.enableAuxYoloDetection"
+          label="启用辅助 YSGYolo 检测"
+          @change="settingsStore.setEnableAuxYoloDetection"
+        />
       </UiField>
       <UiFormGrid>
         <UiField variant="settings" label="辅助 YSGYolo 置信度" control-id="settingsAuxYoloConfThreshold">
           <UiNumberField
             input-id="settingsAuxYoloConfThreshold"
-            v-model="settings.auxYoloConfThreshold"
+            :model-value="settings.auxYoloConfThreshold"
             :min="0"
             :max="1"
             :step="0.05"
+            @change="updateNumber(settingsStore.setAuxYoloConfThreshold, $event)"
           />
         </UiField>
         <UiField variant="settings" label="辅助 YSGYolo 重叠阈值" control-id="settingsAuxYoloOverlapThreshold">
           <UiNumberField
             input-id="settingsAuxYoloOverlapThreshold"
-            v-model="settings.auxYoloOverlapThreshold"
+            :model-value="settings.auxYoloOverlapThreshold"
             :min="0"
             :max="1"
             :step="0.05"
+            @change="updateNumber(settingsStore.setAuxYoloOverlapThreshold, $event)"
           />
         </UiField>
       </UiFormGrid>
@@ -55,7 +63,11 @@
         control="checkbox"
         hint="使用 SaberYOLO 对误合并的大文本块进行二次拆分修正"
       >
-        <UiCheckbox v-model="settings.enableSaberYoloRefine" label="启用 SaberYOLO 二阶段纠错" />
+        <UiCheckbox
+          :model-value="settings.enableSaberYoloRefine"
+          label="启用 SaberYOLO 二阶段纠错"
+          @change="settingsStore.setEnableSaberYoloRefine"
+        />
       </UiField>
       <UiField
         variant="settings"
@@ -65,10 +77,11 @@
       >
         <UiNumberField
           input-id="settingsSaberYoloRefineOverlapThreshold"
-          v-model="settings.saberYoloRefineOverlapThreshold"
+          :model-value="settings.saberYoloRefineOverlapThreshold"
           :min="0"
           :max="100"
           :step="1"
+          @change="updateNumber(settingsStore.setSaberYoloRefineOverlapThreshold, $event)"
         />
       </UiField>
     </ProductFormSection>
@@ -81,22 +94,29 @@
         control-id="settingsBoxExpandRatio"
         hint="向四周均匀扩展的百分比 (0-50%)"
       >
-        <UiNumberField input-id="settingsBoxExpandRatio" v-model="settings.boxExpandRatio" :min="0" :max="50" :step="1" />
+        <UiNumberField
+          input-id="settingsBoxExpandRatio"
+          :model-value="settings.boxExpand.ratio"
+          :min="0"
+          :max="50"
+          :step="1"
+          @change="updateBoxExpand('ratio', $event)"
+        />
       </UiField>
       <UiFormGrid>
         <UiField variant="settings" label="上方扩展 (%)" control-id="settingsBoxExpandTop">
-          <UiNumberField input-id="settingsBoxExpandTop" v-model="settings.boxExpandTop" :min="0" :max="50" :step="1" />
+          <UiNumberField input-id="settingsBoxExpandTop" :model-value="settings.boxExpand.top" :min="0" :max="50" :step="1" @change="updateBoxExpand('top', $event)" />
         </UiField>
         <UiField variant="settings" label="下方扩展 (%)" control-id="settingsBoxExpandBottom">
-          <UiNumberField input-id="settingsBoxExpandBottom" v-model="settings.boxExpandBottom" :min="0" :max="50" :step="1" />
+          <UiNumberField input-id="settingsBoxExpandBottom" :model-value="settings.boxExpand.bottom" :min="0" :max="50" :step="1" @change="updateBoxExpand('bottom', $event)" />
         </UiField>
       </UiFormGrid>
       <UiFormGrid>
         <UiField variant="settings" label="左侧扩展 (%)" control-id="settingsBoxExpandLeft">
-          <UiNumberField input-id="settingsBoxExpandLeft" v-model="settings.boxExpandLeft" :min="0" :max="50" :step="1" />
+          <UiNumberField input-id="settingsBoxExpandLeft" :model-value="settings.boxExpand.left" :min="0" :max="50" :step="1" @change="updateBoxExpand('left', $event)" />
         </UiField>
         <UiField variant="settings" label="右侧扩展 (%)" control-id="settingsBoxExpandRight">
-          <UiNumberField input-id="settingsBoxExpandRight" v-model="settings.boxExpandRight" :min="0" :max="50" :step="1" />
+          <UiNumberField input-id="settingsBoxExpandRight" :model-value="settings.boxExpand.right" :min="0" :max="50" :step="1" @change="updateBoxExpand('right', $event)" />
         </UiField>
       </UiFormGrid>
     </ProductFormSection>
@@ -110,7 +130,7 @@
           control-id="settingsMaskDilateSize"
           hint="掩膜膨胀像素数"
         >
-          <UiNumberField input-id="settingsMaskDilateSize" v-model="settings.maskDilateSize" :min="0" :step="1" />
+          <UiNumberField input-id="settingsMaskDilateSize" :model-value="settings.preciseMask.dilateSize" :min="0" :step="1" @change="updatePreciseMask('dilateSize', $event)" />
         </UiField>
         <UiField
           variant="settings"
@@ -120,10 +140,11 @@
         >
           <UiNumberField
             input-id="settingsMaskBoxExpandRatio"
-            v-model="settings.maskBoxExpandRatio"
+            :model-value="settings.preciseMask.boxExpandRatio"
             :min="0"
             :max="100"
             :step="1"
+            @change="updatePreciseMask('boxExpandRatio', $event)"
           />
         </UiField>
       </UiFormGrid>
@@ -136,7 +157,11 @@
         control="checkbox"
         hint="在翻译结果中显示气泡检测框，用于调试"
       >
-        <UiCheckbox v-model="settings.showDetectionDebug" label="显示检测框调试信息" />
+        <UiCheckbox
+          :model-value="settings.showDetectionDebug"
+          label="显示检测框调试信息"
+          @change="settingsStore.setShowDetectionDebug"
+        />
       </UiField>
     </ProductFormSection>
   </div>
@@ -149,8 +174,10 @@ import ProductFormSection from '@/components/product/ProductFormSection.vue'
 import UiNumberField from '@/components/ui/UiNumberField.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
-import { reactive, watch } from 'vue'
+import { computed } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
+import type { BoxExpandSettings, PreciseMaskSettings } from '@/types/settings'
+import type { UiSelectValue } from '@/components/ui/selectTypes'
 
 const detectorOptions = [
   { label: 'CTD (Comic Text Detector)', value: 'ctd' },
@@ -160,81 +187,23 @@ const detectorOptions = [
 
 const settingsStore = useSettingsStore()
 
-const settings = reactive({
-  textDetector: settingsStore.settings.textDetector,
-  minTextBlockAreaPercent: settingsStore.settings.minTextBlockAreaPercent,
-  enableAuxYoloDetection: settingsStore.settings.enableAuxYoloDetection,
-  auxYoloConfThreshold: settingsStore.settings.auxYoloConfThreshold,
-  auxYoloOverlapThreshold: settingsStore.settings.auxYoloOverlapThreshold,
-  enableSaberYoloRefine: settingsStore.settings.enableSaberYoloRefine,
-  saberYoloRefineOverlapThreshold: settingsStore.settings.saberYoloRefineOverlapThreshold,
-  boxExpandRatio: settingsStore.settings.boxExpand.ratio,
-  boxExpandTop: settingsStore.settings.boxExpand.top,
-  boxExpandBottom: settingsStore.settings.boxExpand.bottom,
-  boxExpandLeft: settingsStore.settings.boxExpand.left,
-  boxExpandRight: settingsStore.settings.boxExpand.right,
-  maskDilateSize: settingsStore.settings.preciseMask.dilateSize,
-  maskBoxExpandRatio: settingsStore.settings.preciseMask.boxExpandRatio,
-  showDetectionDebug: settingsStore.settings.showDetectionDebug
-})
+const settings = computed(() => settingsStore.settings)
 
-watch(() => settings.textDetector, (value) => {
-  settingsStore.setTextDetector(value as 'ctd' | 'yolo' | 'default')
-})
+function updateTextDetector(value: UiSelectValue): void {
+  if (value === 'ctd' || value === 'yolo' || value === 'default') {
+    settingsStore.setTextDetector(value)
+  }
+}
 
-watch(() => settings.minTextBlockAreaPercent, (value) => {
-  settingsStore.setMinTextBlockAreaPercent(value)
-})
+function updateNumber(commit: (value: number) => void, value: number | null): void {
+  if (value !== null) commit(value)
+}
 
-watch(() => settings.enableAuxYoloDetection, (value) => {
-  settingsStore.setEnableAuxYoloDetection(value)
-})
+function updateBoxExpand(key: keyof BoxExpandSettings, value: number | null): void {
+  if (value !== null) settingsStore.updateBoxExpand({ [key]: value })
+}
 
-watch(() => settings.auxYoloConfThreshold, (value) => {
-  settingsStore.setAuxYoloConfThreshold(value)
-})
-
-watch(() => settings.auxYoloOverlapThreshold, (value) => {
-  settingsStore.setAuxYoloOverlapThreshold(value)
-})
-
-watch(() => settings.enableSaberYoloRefine, (value) => {
-  settingsStore.setEnableSaberYoloRefine(value)
-})
-
-watch(() => settings.saberYoloRefineOverlapThreshold, (value) => {
-  settingsStore.setSaberYoloRefineOverlapThreshold(value)
-})
-
-watch(() => settings.boxExpandRatio, (value) => {
-  settingsStore.updateBoxExpand({ ratio: value })
-})
-
-watch(() => settings.boxExpandTop, (value) => {
-  settingsStore.updateBoxExpand({ top: value })
-})
-
-watch(() => settings.boxExpandBottom, (value) => {
-  settingsStore.updateBoxExpand({ bottom: value })
-})
-
-watch(() => settings.boxExpandLeft, (value) => {
-  settingsStore.updateBoxExpand({ left: value })
-})
-
-watch(() => settings.boxExpandRight, (value) => {
-  settingsStore.updateBoxExpand({ right: value })
-})
-
-watch(() => settings.maskDilateSize, (value) => {
-  settingsStore.updatePreciseMask({ dilateSize: value })
-})
-
-watch(() => settings.maskBoxExpandRatio, (value) => {
-  settingsStore.updatePreciseMask({ boxExpandRatio: value })
-})
-
-watch(() => settings.showDetectionDebug, (value) => {
-  settingsStore.setShowDetectionDebug(value)
-})
+function updatePreciseMask(key: keyof PreciseMaskSettings, value: number | null): void {
+  if (value !== null) settingsStore.updatePreciseMask({ [key]: value })
+}
 </script>

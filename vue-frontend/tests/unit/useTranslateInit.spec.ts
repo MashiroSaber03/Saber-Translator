@@ -10,12 +10,13 @@ import { createDefaultSettings } from '@/stores/settings/defaults'
 const mocks = vi.hoisted(() => ({
   getPageDocument: vi.fn(),
   getTranslationBootstrap: vi.fn(),
+  showToast: vi.fn(),
   updateChapterSettingsMemory: vi.fn(),
   updateLastVisitedPage: vi.fn(),
 }))
 
 const routeState = vi.hoisted(() => ({
-  query: {} as Record<string, string | undefined>,
+  query: {} as Record<string, string | string[] | null | undefined>,
 }))
 
 vi.mock('vue-router', () => ({
@@ -30,7 +31,7 @@ vi.mock('@/api/v2/content', () => ({
 }))
 
 vi.mock('@/utils/toast', () => ({
-  showToast: vi.fn(),
+  showToast: mocks.showToast,
   useToast: () => ({
     error: vi.fn(),
     info: vi.fn(),
@@ -64,7 +65,7 @@ function bootstrap(
           domain: 'translation',
           payload: createDefaultSettings() as unknown as Record<string, unknown>,
           revision: 1,
-          schemaVersion: 3,
+          schemaVersion: 5,
         },
         {
           domain: 'text_style_defaults',
@@ -92,13 +93,13 @@ function bootstrap(
       items: [{
         chapterId,
         cleanUrl: null,
-        detectionState: 'not_started',
+        detectionState: 'unprocessed',
         documentRevision: 1,
         height: 1600,
         id: 'page-1',
         logicalSourcePath: '001.png',
         ordinal: 0,
-        renderStatus: 'idle',
+        renderStatus: 'not_rendered',
         renderedRevision: null,
         sourceRevision: 1,
         sourceUrl: '/api/v2/assets/source-1',
@@ -107,7 +108,7 @@ function bootstrap(
         width: 1200,
       }],
       nextCursor: null,
-      total: 1,
+      pageOrderRevision: 1,
     },
   }
 }
@@ -121,16 +122,18 @@ describe('useTranslateInit', () => {
       bootstrap('quick', 'quick-chapter', 'quick_workspace'),
     )
     const { fontFamily, ...pageStyleDefaults } = createDefaultSettings().textStyle
-    mocks.getPageDocument.mockResolvedValue({
+    mocks.getPageDocument.mockImplementation(async (pageId: string) => ({
       bubbles: [],
-      chapterId: 'quick-chapter',
+      chapterId: typeof routeState.query.chapter === 'string'
+        ? routeState.query.chapter
+        : 'quick-chapter',
       defaultFontId: fontFamily,
       documentRevision: 1,
-      pageId: 'page-1',
+      pageId,
       pageStyleDefaults,
       pageStyleSchemaVersion: 1,
       renderStatus: 'not_rendered',
-    })
+    }))
     mocks.updateLastVisitedPage.mockImplementation(
       async (chapterId: string, pageId: string) => ({
         chapterId,
@@ -151,10 +154,7 @@ describe('useTranslateInit', () => {
     await useTranslateInit().initializeApp()
     const imageStore = useImageStore()
 
-    expect(mocks.getTranslationBootstrap).toHaveBeenCalledWith({
-      bookId: undefined,
-      chapterId: undefined,
-    })
+    expect(mocks.getTranslationBootstrap).toHaveBeenCalledWith({})
     expect(imageStore.images).toHaveLength(1)
     expect(imageStore.images[0]?.sourceAssetUrl).toBe('/api/v2/assets/source-1')
     expect(imageStore.images[0]?.thumbnailSourceUrl).toBe('/api/v2/assets/thumb-1')
@@ -228,6 +228,63 @@ describe('useTranslateInit', () => {
     expect(state.currentChapterId.value).toBe('chapter-1')
   })
 
+  it.each([
+    { book: 'book-1' },
+    { chapter: 'chapter-1' },
+    { book: ['book-1', 'book-2'], chapter: 'chapter-1' },
+    { book: '', chapter: 'chapter-1' },
+  ])('rejects an incomplete or non-scalar translation route: %o', async query => {
+    routeState.query = query
+    const state = useTranslateInit()
+
+    await state.initializeBookChapterContext()
+
+    expect(mocks.getTranslationBootstrap).not.toHaveBeenCalled()
+    expect(state.currentBookId.value).toBeNull()
+    expect(useImageStore().images).toEqual([])
+    expect(mocks.showToast).toHaveBeenCalledWith(
+      '翻译页面地址无效：book 与 chapter 必须同时且各自只提供一个值',
+      'error',
+    )
+  })
+
+  it('rejects a bootstrap that belongs to a different requested chapter', async () => {
+    routeState.query = { book: 'book-1', chapter: 'chapter-1' }
+    mocks.getTranslationBootstrap.mockResolvedValue(
+      bootstrap('book-1', 'other-chapter'),
+    )
+    const state = useTranslateInit()
+
+    await state.initializeBookChapterContext()
+
+    expect(state.currentBookId.value).toBeNull()
+    expect(useImageStore().images).toEqual([])
+    expect(mocks.showToast).toHaveBeenCalledWith(
+      '加载后端章节数据失败：后端返回了其他翻译工作区的数据',
+      'error',
+    )
+  })
+
+  it('clears a previously loaded chapter when the next authoritative bootstrap fails', async () => {
+    const state = useTranslateInit()
+    await expect(state.initializeBookChapterContext()).resolves.toBe(true)
+    expect(state.currentBookId.value).toBe('quick')
+    expect(useImageStore().images).toHaveLength(1)
+
+    routeState.query = { book: 'book-1', chapter: 'chapter-1' }
+    mocks.getTranslationBootstrap.mockRejectedValueOnce(new Error('backend unavailable'))
+
+    await expect(state.initializeBookChapterContext()).resolves.toBe(false)
+
+    expect(state.currentBookId.value).toBeNull()
+    expect(state.currentChapterId.value).toBeNull()
+    expect(useImageStore().images).toEqual([])
+    expect(mocks.showToast).toHaveBeenCalledWith(
+      '加载后端章节数据失败：backend unavailable',
+      'error',
+    )
+  })
+
   it('serializes last-write-wins page navigation updates', async () => {
     const payload = bootstrap('quick', 'quick-chapter', 'quick_workspace')
     payload.pages.items.push({
@@ -238,7 +295,7 @@ describe('useTranslateInit', () => {
       sourceUrl: '/api/v2/assets/source-2',
       thumbnailSourceUrl: '/api/v2/assets/thumb-2',
     })
-    payload.pages.total = 2
+    payload.pages.pageOrderRevision = 2
     mocks.getTranslationBootstrap.mockResolvedValue(payload)
 
     const state = useTranslateInit()
@@ -258,6 +315,48 @@ describe('useTranslateInit', () => {
       2,
       'quick-chapter',
       'page-1',
+    )
+  })
+
+  it('keeps the current page selected when the target document cannot be loaded', async () => {
+    const payload = bootstrap('quick', 'quick-chapter', 'quick_workspace')
+    payload.pages.items.push({
+      ...payload.pages.items[0]!,
+      id: 'page-2',
+      logicalSourcePath: '002.png',
+      ordinal: 1,
+      sourceUrl: '/api/v2/assets/source-2',
+      thumbnailSourceUrl: '/api/v2/assets/thumb-2',
+    })
+    payload.pages.pageOrderRevision = 2
+    mocks.getTranslationBootstrap.mockResolvedValue(payload)
+    const state = useTranslateInit()
+    await expect(state.initializeApp()).resolves.toBe(true)
+    mocks.getPageDocument.mockRejectedValueOnce(new Error('document unavailable'))
+
+    await expect(state.switchImage(1)).resolves.toBe(false)
+
+    expect(useImageStore().currentImage?.id).toBe('page-1')
+    expect(state.isSwitchingImage.value).toBe(false)
+    expect(mocks.updateLastVisitedPage).not.toHaveBeenCalled()
+    expect(mocks.showToast).toHaveBeenCalledWith(
+      '加载当前页编辑数据失败：document unavailable',
+      'error',
+    )
+  })
+
+  it('clears a bootstrap that cannot load its initial page document', async () => {
+    mocks.getPageDocument.mockRejectedValueOnce(new Error('document unavailable'))
+    const state = useTranslateInit()
+
+    await expect(state.initializeApp()).resolves.toBe(false)
+
+    expect(state.currentBookId.value).toBeNull()
+    expect(state.currentChapterId.value).toBeNull()
+    expect(useImageStore().images).toEqual([])
+    expect(mocks.showToast).toHaveBeenCalledWith(
+      '加载当前页编辑数据失败：document unavailable',
+      'error',
     )
   })
 
@@ -282,7 +381,67 @@ describe('useTranslateInit', () => {
     expect(state.isBookshelfMode.value).toBe(false)
   })
 
+  it('invalidates an active page read as soon as a newer chapter refresh starts', async () => {
+    const initial = bootstrap('quick', 'quick-chapter', 'quick_workspace')
+    initial.pages.items.push({
+      ...initial.pages.items[0]!,
+      id: 'page-2',
+      logicalSourcePath: '002.png',
+      ordinal: 1,
+      sourceUrl: '/api/v2/assets/source-2',
+      thumbnailSourceUrl: '/api/v2/assets/thumb-2',
+    })
+    initial.pages.pageOrderRevision = 2
+    mocks.getTranslationBootstrap.mockResolvedValueOnce(initial)
+    const state = useTranslateInit()
+    await expect(state.initializeApp()).resolves.toBe(true)
+
+    let resolveOldPage!: (value: Record<string, unknown>) => void
+    mocks.getPageDocument.mockImplementationOnce(() => new Promise(resolve => {
+      resolveOldPage = resolve
+    }))
+    const staleSwitch = state.switchImage(1)
+    await vi.waitFor(() => {
+      expect(mocks.getPageDocument).toHaveBeenCalledTimes(2)
+    })
+
+    let resolveRefresh!: (value: ReturnType<typeof bootstrap>) => void
+    mocks.getTranslationBootstrap.mockImplementationOnce(() => new Promise(resolve => {
+      resolveRefresh = resolve
+    }))
+    const refresh = state.initializeBookChapterContext()
+    await vi.waitFor(() => {
+      expect(mocks.getTranslationBootstrap).toHaveBeenCalledTimes(2)
+    })
+
+    resolveOldPage({
+      bubbles: [],
+      chapterId: 'quick-chapter',
+      defaultFontId: null,
+      documentRevision: 1,
+      pageId: 'page-2',
+      pageStyleDefaults: createDefaultSettings().textStyle,
+      pageStyleSchemaVersion: 1,
+      renderStatus: 'not_rendered',
+    })
+    await expect(staleSwitch).resolves.toBe(false)
+    expect(useImageStore().currentImage?.id).toBe('page-1')
+
+    const refreshed = bootstrap('quick', 'quick-chapter', 'quick_workspace')
+    Object.assign(refreshed.pages.items[0]!, {
+      id: 'page-new',
+      logicalSourcePath: 'new.png',
+      sourceUrl: '/api/v2/assets/source-new',
+      thumbnailSourceUrl: '/api/v2/assets/thumb-new',
+    })
+    resolveRefresh(refreshed)
+
+    await expect(refresh).resolves.toBe(true)
+    expect(useImageStore().currentImage?.id).toBe('page-new')
+  })
+
   it('restores backend active job progress without overwriting completed pages', async () => {
+    routeState.query = { book: 'book-1', chapter: 'chapter-1' }
     const payload = bootstrap('book-1', 'chapter-1')
     Object.assign(payload.pages.items[0], {
       documentRevision: 2,
@@ -310,6 +469,7 @@ describe('useTranslateInit', () => {
           completed: 0,
           failed: 0,
           skipped: 0,
+          cancelled: 0,
           waiting: 0,
           processing: 1,
           lockWaiting: false,
@@ -329,6 +489,7 @@ describe('useTranslateInit', () => {
   })
 
   it('hydrates and CAS-persists chapter-scoped non-style work state', async () => {
+    routeState.query = { book: 'book-1', chapter: 'chapter-1' }
     const payload = bootstrap('book-1', 'chapter-1')
     payload.chapter.settingsMemory = {
       sourceLanguage: 'english',

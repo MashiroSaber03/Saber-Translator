@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, toRef, watch } from 'vue'
 import OverlayLayer from '@/components/ui/OverlayLayer.vue'
 import TaskBatchAnalysisModal from '@/components/task-center/TaskBatchAnalysisModal.vue'
 import UiButton from '@/components/ui/UiButton.vue'
@@ -22,8 +22,10 @@ import { jobsApi } from '@/api/v2/jobs'
 import { triggerUrlDownload } from '@/utils/browserDownload'
 import { showToast } from '@/utils/toast'
 import { releaseWorkerModelCache } from '@/api/v2/system'
-import type { V2AcceptedJob } from '@/api/v2/insight'
+import type { V2InsightAnalysisJobAccepted } from '@/api/v2/insight'
 import { confirmProductAction } from '@/composables/useProductConfirm'
+import { useBodyScrollLock } from '@/composables/useBodyScrollLock'
+import { useDialogLifecycle } from '@/composables/useDialogLifecycle'
 import {
   eventTypeLabel,
   formatTaskDuration,
@@ -37,6 +39,14 @@ const expanded = ref(new Set<string>())
 const downloading = ref(new Set<string>())
 const analysisModalOpen = ref(false)
 const releasingModels = ref(false)
+const panelRef = ref<HTMLElement | null>(null)
+
+useBodyScrollLock(toRef(store, 'drawerOpen'))
+useDialogLifecycle({
+  open: toRef(store, 'drawerOpen'),
+  container: panelRef,
+  close: store.close,
+})
 
 interface TaskGroupView extends JobBatchProjection {
   zone: 'current' | 'waiting' | 'history'
@@ -66,9 +76,9 @@ const groups = computed<TaskGroupView[]>(() => {
   }))
   return [...current, ...waiting]
 })
-const availableKinds = computed(() => (
+const availableKinds = computed(() =>
   [...new Set([...store.queue, ...store.history].map(job => job.kind))].sort()
-))
+)
 const statusOptions = computed<UiSelectOption[]>(() => [
   { label: '全部', value: '' },
   ...Object.entries(statusLabels).map(([value, label]) => ({ label, value })),
@@ -84,13 +94,10 @@ const bookOptions = computed<UiSelectOption[]>(() => {
     const target = job.target as Record<string, unknown>
     labels.set(
       job.bookId,
-      typeof target.book === 'string' && target.book ? target.book : job.bookId,
+      typeof target.book === 'string' && target.book ? target.book : job.bookId
     )
   }
-  return [
-    { label: '全部', value: '' },
-    ...[...labels].map(([value, label]) => ({ label, value })),
-  ]
+  return [{ label: '全部', value: '' }, ...[...labels].map(([value, label]) => ({ label, value }))]
 })
 
 watch(
@@ -106,24 +113,22 @@ watch(
     const allJobs = [...store.queue, ...store.history]
     const focusedJob = target.jobId
       ? allJobs.find(job => job.jobId === target.jobId)
-      : allJobs.find(job => (
-          (!target.batchId || job.batchId === target.batchId)
-          && (!target.chapterId || job.chapterId === target.chapterId)
-          && (!target.bookId || job.bookId === target.bookId)
-        ))
+      : allJobs.find(
+          job =>
+            (!target.batchId || job.batchId === target.batchId) &&
+            (!target.chapterId || job.chapterId === target.chapterId) &&
+            (!target.bookId || job.bookId === target.bookId)
+        )
     const batchId = target.batchId || focusedJob?.batchId || undefined
-    if (
-      focusedJob
-      && store.history.some(job => job.jobId === focusedJob.jobId)
-    ) {
+    if (focusedJob && store.history.some(job => job.jobId === focusedJob.jobId)) {
       tab.value = 'history'
     } else {
       tab.value = 'queue'
     }
     await nextTick()
-    const group = groups.value.find(item => (
-      item.jobs.some(job => job.jobId === focusedJob?.jobId)
-    )) || groups.value.find(item => batchId && item.batchId === batchId)
+    const group =
+      groups.value.find(item => item.jobs.some(job => job.jobId === focusedJob?.jobId)) ||
+      groups.value.find(item => batchId && item.batchId === batchId)
     if (group) {
       expanded.value = new Set([...expanded.value, group.key])
     }
@@ -133,12 +138,10 @@ watch(
       : batchId
         ? `[data-task-batch-id="${batchId}"]`
         : ''
-    const element = selector
-      ? document.querySelector<HTMLElement>(selector)
-      : null
+    const element = selector ? document.querySelector<HTMLElement>(selector) : null
     element?.scrollIntoView({ block: 'center', behavior: 'smooth' })
     if (element) store.focusTarget = null
-  },
+  }
 )
 
 const statusLabels: Record<string, string> = {
@@ -172,18 +175,18 @@ function hasBatchContinuations(jobs: V2Job[]) {
   return jobs.some(job => ['paused', 'interrupted'].includes(job.status))
 }
 
-async function runAction(action: () => Promise<unknown>, success: string) {
+async function runAction(action: () => Promise<unknown>, success?: string) {
   try {
     await action()
-    showToast(success, 'success')
+    if (success) showToast(success, 'success')
   } catch (error) {
     showToast(error instanceof Error ? error.message : '任务命令执行失败', 'error')
   }
 }
 
 async function toggleDetail(job: V2Job) {
-  if (store.selectedDetail?.jobId === job.jobId) {
-    store.selectedDetail = null
+  if (store.selectedDetailJobId === job.jobId) {
+    store.clearDetail()
     return
   }
   try {
@@ -193,11 +196,23 @@ async function toggleDetail(job: V2Job) {
   }
 }
 
+async function loadOlderEvents() {
+  try {
+    await store.loadOlderEvents()
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '读取更早任务事件失败', 'error')
+  }
+}
+
 function retryJob(job: V2Job, strategy: 'current' | 'original') {
-  const command = job.status === 'completed_with_errors'
-    ? () => store.retryFailed(job.jobId, strategy)
-    : () => store.retry(job.jobId, strategy)
-  return runAction(command, strategy === 'current' ? '已按当前设置创建重试任务' : '已沿用原快照创建重试任务')
+  const command =
+    job.status === 'completed_with_errors'
+      ? () => store.retryFailed(job.jobId, strategy)
+      : () => store.retry(job.jobId, strategy)
+  return runAction(
+    command,
+    strategy === 'current' ? '已按当前设置创建重试任务' : '已沿用原快照创建重试任务'
+  )
 }
 
 function formatPayload(value: unknown): string {
@@ -206,29 +221,57 @@ function formatPayload(value: unknown): string {
   return JSON.stringify(value, null, 2)
 }
 
+function detailProgress(job: V2Job) {
+  const detail = store.selectedDetail
+  if (job.kind !== 'insight_analysis') {
+    return {
+      label: '完成',
+      completed: detail?.counts.completed ?? 0,
+      total: detail?.counts.total ?? 0,
+      failed: detail?.counts.failed ?? 0,
+      skipped: detail?.counts.skipped ?? 0,
+      cancelled: detail?.counts.cancelled ?? 0,
+    }
+  }
+
+  const pagePool = job.progress.pools.find(pool => pool.kind === 'insight_analyze_page')
+  if (!pagePool) {
+    return {
+      label: '页进度',
+      completed: 0,
+      total: 0,
+      failed: 0,
+      skipped: 0,
+      cancelled: 0,
+    }
+  }
+  return {
+    label: '页进度',
+    completed: pagePool.completed + pagePool.failed + pagePool.skipped + pagePool.cancelled,
+    total: pagePool.total,
+    failed: pagePool.failed,
+    skipped: pagePool.skipped,
+    cancelled: pagePool.cancelled,
+  }
+}
+
 function setStatusFilter(value: UiSelectValue) {
   store.statusFilter = String(value) as typeof store.statusFilter
-  void store.refresh()
 }
 
 function setKindFilter(value: UiSelectValue) {
   store.kindFilter = String(value) as typeof store.kindFilter
-  void store.refresh()
 }
 
 function setBookFilter(value: UiSelectValue) {
   store.bookFilter = String(value)
-  void store.refresh()
 }
 
 function queuePosition(job: V2Job): number | null {
   if (job.status !== 'queued') return null
   const index = store.queue.findIndex(item => item.jobId === job.jobId)
   if (index < 0) return null
-  return store.queue
-    .slice(0, index + 1)
-    .filter(item => item.status === 'queued')
-    .length
+  return store.queue.slice(0, index + 1).filter(item => item.status === 'queued').length
 }
 
 function blockedReasonLabel(job: V2Job): string {
@@ -258,9 +301,7 @@ function batchStatusLabel(jobs: V2Job[]): string {
 function formatTimestamp(value?: string | null): string {
   if (!value) return '—'
   const parsed = new Date(value)
-  return Number.isNaN(parsed.getTime())
-    ? value
-    : parsed.toLocaleString('zh-CN', { hour12: false })
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString('zh-CN', { hour12: false })
 }
 
 function canDownloadArtifact(job: V2Job): boolean {
@@ -282,7 +323,7 @@ async function cancelJob(job: V2Job) {
   }
   await runAction(
     () => store.cancel(job.jobId),
-    job.status === 'queued' ? '排队任务已取消' : '已提交取消请求',
+    job.status === 'queued' ? '排队任务已取消' : '已提交取消请求'
   )
 }
 
@@ -298,6 +339,18 @@ async function clearHistory() {
   await runAction(() => store.clearHistory(), '任务历史已清空')
 }
 
+async function cancelQueuedJobs() {
+  const confirmed = await confirmProductAction({
+    title: '取消全部排队任务',
+    message: '确定取消当前所有仍在排队的任务吗？正在运行、暂停或中断的任务不会受影响。',
+    confirmText: '全部取消',
+    cancelText: '返回',
+    tone: 'danger',
+  })
+  if (!confirmed) return
+  await runAction(() => store.cancelQueued(), '所有排队任务已取消')
+}
+
 async function downloadArtifact(job: V2Job) {
   const pending = new Set(downloading.value)
   pending.add(job.jobId)
@@ -311,13 +364,10 @@ async function downloadArtifact(job: V2Job) {
     }
     const separator = artifact.url.includes('?') ? '&' : '?'
     triggerUrlDownload(
-      `${artifact.url}${separator}download=1&filename=${encodeURIComponent(`${job.kind}-${job.jobId}`)}`,
+      `${artifact.url}${separator}download=1&filename=${encodeURIComponent(`${job.kind}-${job.jobId}`)}`
     )
   } catch (error) {
-    showToast(
-      `读取任务产物失败：${error instanceof Error ? error.message : '未知错误'}`,
-      'error',
-    )
+    showToast(`读取任务产物失败：${error instanceof Error ? error.message : '未知错误'}`, 'error')
   } finally {
     const next = new Set(downloading.value)
     next.delete(job.jobId)
@@ -332,26 +382,22 @@ async function releaseModels() {
     await releaseWorkerModelCache()
     showToast('已提交显存释放命令，Worker 将在安全点立即执行', 'success')
   } catch (error) {
-    const status = (
-      error
-      && typeof error === 'object'
-      && 'status' in error
-    ) ? Number(error.status) : 0
+    const status =
+      error && typeof error === 'object' && 'status' in error ? Number(error.status) : 0
     showToast(
       status === 409
         ? '本地模型正在推理，请等待当前模型步骤完成后再试'
         : error instanceof Error
           ? error.message
           : '释放显存失败',
-      status === 409 ? 'warning' : 'error',
+      status === 409 ? 'warning' : 'error'
     )
   } finally {
     releasingModels.value = false
   }
 }
 
-async function analysisCreated(result: V2AcceptedJob) {
-  await store.refresh()
+function analysisCreated(result: V2InsightAnalysisJobAccepted) {
   store.open({
     batchId: result.batchId,
     jobId: result.jobIds[0],
@@ -371,26 +417,17 @@ async function analysisCreated(result: V2AcceptedJob) {
       aria-label="任务中心"
       @backdrop="store.close"
     >
-      <aside class="task-center__panel">
+      <aside ref="panelRef" class="task-center__panel" tabindex="-1">
         <header class="task-center__header">
           <div>
             <h2>任务中心</h2>
             <p>后端持续执行 · 关闭页面不会停止任务</p>
           </div>
           <div class="task-center__header-actions">
-            <UiButton
-              size="xs"
-              variant="secondary"
-              @click="analysisModalOpen = true"
-            >
+            <UiButton size="xs" variant="secondary" @click="analysisModalOpen = true">
               新建批量分析
             </UiButton>
-            <UiButton
-              size="xs"
-              variant="ghost"
-              :disabled="releasingModels"
-              @click="releaseModels"
-            >
+            <UiButton size="xs" variant="ghost" :disabled="releasingModels" @click="releaseModels">
               {{ releasingModels ? '提交中…' : '释放显存' }}
             </UiButton>
             <UiButton size="sm" variant="ghost" class="task-center__close" @click="store.close">
@@ -431,7 +468,7 @@ async function analysisCreated(result: V2AcceptedJob) {
             size="xs"
             variant="ghost"
             tone="danger"
-            @click="store.cancelQueued"
+            @click="cancelQueuedJobs"
           >
             取消全部排队
           </UiButton>
@@ -493,16 +530,19 @@ async function analysisCreated(result: V2AcceptedJob) {
               队列已因暂停阻塞
             </div>
 
-            <p
-              v-if="tab === 'history' && !groups.length"
-              class="task-center__empty"
-            >
+            <p v-if="tab === 'history' && !groups.length" class="task-center__empty">
               没有符合筛选条件的历史任务
             </p>
 
             <template v-for="group in groups" :key="group.key">
               <h3 v-if="group.zoneStart" class="task-zone__heading">
-                {{ group.zone === 'current' ? '当前任务' : group.zone === 'waiting' ? '等待队列' : '历史' }}
+                {{
+                  group.zone === 'current'
+                    ? '当前任务'
+                    : group.zone === 'waiting'
+                      ? '等待队列'
+                      : '历史'
+                }}
               </h3>
               <section
                 class="task-batch"
@@ -524,13 +564,23 @@ async function analysisCreated(result: V2AcceptedJob) {
                   <span>{{ expanded.has(group.key) ? '收起' : '展开' }}</span>
                 </UiButton>
                 <div
-                  v-if="group.zone === 'waiting' && group.batchId && group.jobs.length > 1"
+                  v-if="
+                    group.batchId &&
+                      ((group.zone === 'waiting' && group.jobs.length > 1) ||
+                        hasBatchContinuations(group.jobs))
+                  "
                   class="task-batch__actions"
                 >
                   <UiButton
+                    v-if="group.zone === 'waiting' && group.jobs.length > 1"
                     size="xs"
                     variant="ghost"
-                    @click="runAction(() => store.prioritizeBatch(group.batchId!), '批次已移到普通排队任务前方')"
+                    @click="
+                      runAction(
+                        () => store.prioritizeBatch(group.batchId!),
+                        '批次已移到普通排队任务前方'
+                      )
+                    "
                   >
                     整批置顶
                   </UiButton>
@@ -538,15 +588,26 @@ async function analysisCreated(result: V2AcceptedJob) {
                     v-if="hasBatchContinuations(group.jobs)"
                     size="xs"
                     variant="ghost"
-                    @click="runAction(() => store.continueBatch(group.batchId!), '批次中的暂停/中断任务已继续')"
+                    @click="
+                      runAction(
+                        () => store.continueBatch(group.batchId!),
+                        '批次中的暂停/中断任务已继续'
+                      )
+                    "
                   >
                     全部继续
                   </UiButton>
                   <UiButton
+                    v-if="group.zone === 'waiting' && group.jobs.length > 1"
                     size="xs"
                     variant="ghost"
                     tone="danger"
-                    @click="runAction(() => store.cancelBatch(group.batchId!), '批次中仍在排队的任务已取消')"
+                    @click="
+                      runAction(
+                        () => store.cancelBatch(group.batchId!),
+                        '批次中仍在排队的任务已取消'
+                      )
+                    "
                   >
                     整批取消
                   </UiButton>
@@ -567,7 +628,8 @@ async function analysisCreated(result: V2AcceptedJob) {
                         <strong>{{ describeJobTarget(job) }}</strong>
                         <span>
                           <span :title="job.kind">{{ jobKindLabel(job.kind) }}</span>
-                          <template v-if="queuePosition(job)"> · 队列第 {{ queuePosition(job) }} 位</template>
+                          <template v-if="queuePosition(job)">
+                            · 队列第 {{ queuePosition(job) }} 位</template>
                         </span>
                       </div>
                       <span class="task-job__status" :data-status="job.status">
@@ -587,7 +649,9 @@ async function analysisCreated(result: V2AcceptedJob) {
                       <div v-for="pool in poolProgress(job)" :key="pool.kind">
                         <strong :title="pool.kind">{{ stepKindLabel(pool.kind) }}</strong>
                         <span>
-                          等待 {{ pool.waiting }} · 处理中 {{ pool.processing }} · 完成 {{ pool.completed }}
+                          完成 {{ pool.completed }} / {{ pool.total }} · 失败 {{ pool.failed }} ·
+                          跳过 {{ pool.skipped }} · 取消 {{ pool.cancelled }} · 处理中 {{ pool.processing }} · 等待
+                          {{ pool.waiting }}
                           <template v-if="pool.lockWaiting"> · 等待深度学习锁</template>
                         </span>
                       </div>
@@ -638,8 +702,22 @@ async function analysisCreated(result: V2AcceptedJob) {
                       >
                         置顶
                       </UiButton>
-                      <UiButton v-if="job.status === 'queued' && !job.blockedReason" size="xs" variant="ghost" @click="store.moveQueued(job.jobId, -1)">上移</UiButton>
-                      <UiButton v-if="job.status === 'queued' && !job.blockedReason" size="xs" variant="ghost" @click="store.moveQueued(job.jobId, 1)">下移</UiButton>
+                      <UiButton
+                        v-if="job.status === 'queued' && !job.blockedReason"
+                        size="xs"
+                        variant="ghost"
+                        @click="runAction(() => store.moveQueued(job.jobId, -1))"
+                      >
+                        上移
+                      </UiButton>
+                      <UiButton
+                        v-if="job.status === 'queued' && !job.blockedReason"
+                        size="xs"
+                        variant="ghost"
+                        @click="runAction(() => store.moveQueued(job.jobId, 1))"
+                      >
+                        下移
+                      </UiButton>
                       <UiButton
                         v-if="job.status === 'failed' || job.status === 'completed_with_errors'"
                         size="xs"
@@ -649,7 +727,10 @@ async function analysisCreated(result: V2AcceptedJob) {
                         {{ job.status === 'completed_with_errors' ? '重试失败项' : '重试任务' }}
                       </UiButton>
                       <UiButton
-                        v-if="(job.status === 'failed' || job.status === 'completed_with_errors') && job.kind !== 'style_apply'"
+                        v-if="
+                          (job.status === 'failed' || job.status === 'completed_with_errors') &&
+                            job.kind !== 'style_apply'
+                        "
                         size="xs"
                         variant="ghost"
                         @click="retryJob(job, 'original')"
@@ -657,26 +738,76 @@ async function analysisCreated(result: V2AcceptedJob) {
                         沿用原快照
                       </UiButton>
                       <UiButton size="xs" variant="ghost" @click="toggleDetail(job)">
-                        {{ store.selectedDetail?.jobId === job.jobId ? '收起详情' : '详情' }}
+                        {{ store.selectedDetailJobId === job.jobId ? '收起详情' : '详情' }}
                       </UiButton>
-                      <UiButton v-if="canCancel(job)" size="xs" variant="ghost" tone="danger" @click="cancelJob(job)">取消</UiButton>
+                      <UiButton
+                        v-if="canCancel(job)"
+                        size="xs"
+                        variant="ghost"
+                        tone="danger"
+                        @click="cancelJob(job)"
+                      >
+                        取消
+                      </UiButton>
                     </div>
-                    <div
-                      v-if="store.selectedDetail?.jobId === job.jobId"
-                      class="task-job__detail"
-                    >
+                    <div v-if="store.selectedDetailJobId === job.jobId" class="task-job__detail">
                       <p v-if="store.detailLoading">正在读取详情…</p>
-                      <template v-else>
+                      <template v-else-if="store.selectedDetail">
                         <dl>
-                          <div><dt>状态</dt><dd>{{ statusLabels[store.selectedDetail.status] || store.selectedDetail.status }}</dd></div>
-                          <div><dt>队列位置</dt><dd>{{ queuePosition(store.selectedDetail) ? `第 ${queuePosition(store.selectedDetail)} 位` : '—' }}</dd></div>
-                          <div><dt>创建时间</dt><dd>{{ formatTimestamp(store.selectedDetail.createdAt) }}</dd></div>
-                          <div><dt>开始时间</dt><dd>{{ formatTimestamp(store.selectedDetail.startedAt) }}</dd></div>
-                          <div><dt>结束时间</dt><dd>{{ formatTimestamp(store.selectedDetail.finishedAt) }}</dd></div>
-                          <div><dt>耗时</dt><dd>{{ formatTaskDuration(store.selectedDetail.durationMs) }}</dd></div>
-                          <div><dt>完成</dt><dd>{{ store.selectedDetail.counts.completed }} / {{ store.selectedDetail.counts.total }}</dd></div>
-                          <div><dt>失败</dt><dd>{{ store.selectedDetail.counts.failed }}</dd></div>
-                          <div><dt>跳过</dt><dd>{{ store.selectedDetail.counts.skipped }}</dd></div>
+                          <div>
+                            <dt>状态</dt>
+                            <dd>
+                              {{
+                                statusLabels[store.selectedDetail.status] ||
+                                  store.selectedDetail.status
+                              }}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>队列位置</dt>
+                            <dd>
+                              {{
+                                queuePosition(store.selectedDetail)
+                                  ? `第 ${queuePosition(store.selectedDetail)} 位`
+                                  : '—'
+                              }}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>创建时间</dt>
+                            <dd>{{ formatTimestamp(store.selectedDetail.createdAt) }}</dd>
+                          </div>
+                          <div>
+                            <dt>开始时间</dt>
+                            <dd>{{ formatTimestamp(store.selectedDetail.startedAt) }}</dd>
+                          </div>
+                          <div>
+                            <dt>结束时间</dt>
+                            <dd>{{ formatTimestamp(store.selectedDetail.finishedAt) }}</dd>
+                          </div>
+                          <div>
+                            <dt>耗时</dt>
+                            <dd>{{ formatTaskDuration(store.selectedDetail.durationMs) }}</dd>
+                          </div>
+                          <div>
+                            <dt>{{ detailProgress(job).label }}</dt>
+                            <dd>
+                              {{ detailProgress(job).completed }} /
+                              {{ detailProgress(job).total }}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>失败</dt>
+                            <dd>{{ detailProgress(job).failed }}</dd>
+                          </div>
+                          <div>
+                            <dt>跳过</dt>
+                            <dd>{{ detailProgress(job).skipped }}</dd>
+                          </div>
+                          <div>
+                            <dt>取消</dt>
+                            <dd>{{ detailProgress(job).cancelled }}</dd>
+                          </div>
                         </dl>
                         <section v-if="store.selectedDetail.error">
                           <strong>任务错误</strong>
@@ -686,7 +817,9 @@ async function analysisCreated(result: V2AcceptedJob) {
                           <strong>失败项</strong>
                           <ul>
                             <li v-for="item in store.selectedDetail.failedItems" :key="item.itemId">
-                              #{{ item.ordinal }} · {{ item.stepKind ? stepKindLabel(item.stepKind) : '未知步骤' }} · {{ formatPayload(item.error) }}
+                              #{{ item.ordinal }} ·
+                              {{ item.stepKind ? stepKindLabel(item.stepKind) : '未知步骤' }} ·
+                              {{ formatPayload(item.error) }}
                             </li>
                           </ul>
                         </section>
@@ -701,12 +834,15 @@ async function analysisCreated(result: V2AcceptedJob) {
                             size="xs"
                             variant="ghost"
                             :disabled="store.olderEventsLoading"
-                            @click="store.loadOlderEvents"
+                            @click="loadOlderEvents"
                           >
                             {{ store.olderEventsLoading ? '读取中…' : '加载更早事件' }}
                           </UiButton>
                           <ul>
-                            <li v-for="event in [...store.selectedDetail.recentEvents].reverse()" :key="event.eventId">
+                            <li
+                              v-for="event in [...store.selectedDetail.recentEvents].reverse()"
+                              :key="event.eventId"
+                            >
                               <span :title="event.type">#{{ event.eventId }} · {{ eventTypeLabel(event.type) }}</span>
                             </li>
                           </ul>
@@ -729,10 +865,7 @@ async function analysisCreated(result: V2AcceptedJob) {
         </main>
       </aside>
     </OverlayLayer>
-    <TaskBatchAnalysisModal
-      v-model="analysisModalOpen"
-      @created="analysisCreated"
-    />
+    <TaskBatchAnalysisModal v-model="analysisModalOpen" @created="analysisCreated" />
   </Teleport>
 </template>
 
@@ -747,7 +880,7 @@ async function analysisCreated(result: V2AcceptedJob) {
   right: 0;
   display: flex;
   flex-direction: column;
-  width: min(520px, 100vw);
+  width: min(520px, 100%);
   height: 100%;
   color: var(--color-text-default);
   background: var(--color-surface-base);

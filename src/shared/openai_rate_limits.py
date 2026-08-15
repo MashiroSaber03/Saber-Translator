@@ -6,6 +6,7 @@ import asyncio
 from collections import defaultdict
 from dataclasses import dataclass
 import logging
+import math
 import threading
 import time
 from typing import Protocol
@@ -58,8 +59,17 @@ class SharedRPMLimiter:
         provider: str,
         credential_version_id: str | None,
     ) -> None:
-        self.rpm_limit = max(0, int(rpm_limit or 0))
-        self.provider = normalize_provider_id(provider) or "unknown"
+        if isinstance(rpm_limit, bool) or not isinstance(rpm_limit, int) or rpm_limit < 0:
+            raise ValueError("rpm_limit 必须是非负整数")
+        if not isinstance(provider, str) or not provider.strip():
+            raise ValueError("provider 必须是非空字符串")
+        if credential_version_id is not None and (
+            not isinstance(credential_version_id, str)
+            or not credential_version_id
+        ):
+            raise ValueError("credential_version_id 必须是非空字符串或 null")
+        self.rpm_limit = rpm_limit
+        self.provider = normalize_provider_id(provider)
         self.credential_version_id = credential_version_id
 
     def wait_sync(self) -> None:
@@ -97,7 +107,29 @@ class SharedRPMLimiter:
                 credential_version_id=self.credential_version_id,
                 rpm_limit=self.rpm_limit,
             )
-            return 0.0 if decision.allowed else decision.retry_after_seconds
+            if not isinstance(decision, RateLimitDecision):
+                raise RuntimeError("provider rate-limit store returned an invalid decision")
+            if not isinstance(decision.allowed, bool):
+                raise RuntimeError("provider rate-limit decision.allowed must be boolean")
+            if (
+                isinstance(decision.remaining, bool)
+                or not isinstance(decision.remaining, int)
+                or decision.remaining < 0
+            ):
+                raise RuntimeError("provider rate-limit decision.remaining is invalid")
+            retry_after = decision.retry_after_seconds
+            if (
+                isinstance(retry_after, bool)
+                or not isinstance(retry_after, (int, float))
+                or not math.isfinite(float(retry_after))
+                or retry_after < 0
+            ):
+                raise RuntimeError("provider rate-limit retry_after_seconds is invalid")
+            if decision.allowed:
+                return 0.0
+            if retry_after <= 0:
+                raise RuntimeError("denied provider rate-limit decision must include a positive retry delay")
+            return float(retry_after)
         return self._acquire_local()
 
     def _acquire_local(self) -> float:

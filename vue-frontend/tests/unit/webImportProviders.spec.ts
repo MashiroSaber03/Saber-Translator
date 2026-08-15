@@ -7,6 +7,10 @@ import {
   createDefaultWebImportSettings,
   useWebImportSettings,
 } from '@/stores/settings/modules/webImport'
+import {
+  parseWebImportSettingsPayload,
+  WEB_IMPORT_SETTINGS_SCHEMA_VERSION,
+} from '@/stores/webImportSettingsPayload'
 
 describe('web import provider settings', () => {
   it('exposes canonical custom provider in the selector list', () => {
@@ -55,5 +59,67 @@ describe('web import provider settings', () => {
     expect(settings.value.agent.apiKey).toBe('')
     expect(settings.value.agent.modelName).toBe('')
     expect(settings.value.agent.customBaseUrl).toBe('')
+  })
+
+  it('accepts only the current web-import payload schema and providers', () => {
+    const current = {
+      webImportSettingsSchemaVersion: WEB_IMPORT_SETTINGS_SCHEMA_VERSION,
+      settings: createDefaultWebImportSettings(),
+      providerConfigs: createDefaultWebImportProviderConfigs(),
+    }
+    expect(parseWebImportSettingsPayload(current)).not.toBeNull()
+
+    expect(parseWebImportSettingsPayload({
+      settings: current.settings,
+      providerConfigs: current.providerConfigs,
+    })).toBeNull()
+    expect(parseWebImportSettingsPayload({
+      ...current,
+      webImportSettingsSchemaVersion: 0,
+    })).toBeNull()
+    expect(parseWebImportSettingsPayload({
+      ...current,
+      removedField: true,
+    })).toBeNull()
+    expect(parseWebImportSettingsPayload({
+      ...current,
+      providerConfigs: {
+        agent: {
+          retired: {
+            apiKey: '',
+            modelName: 'retired-model',
+            customBaseUrl: '',
+          },
+        },
+      },
+    })).toBeNull()
+  })
+
+  it('uses the same numeric boundaries as the backend without arbitrary size gates', () => {
+    const providerConfigs = createDefaultWebImportProviderConfigs()
+    const fractional = createDefaultWebImportSettings()
+    fractional.download.concurrency = 1.5
+    expect(parseWebImportSettingsPayload({
+      webImportSettingsSchemaVersion: WEB_IMPORT_SETTINGS_SCHEMA_VERSION,
+      settings: fractional,
+      providerConfigs,
+    })).toBeNull()
+
+    const negative = createDefaultWebImportSettings()
+    negative.download.retries = -1
+    expect(parseWebImportSettingsPayload({
+      webImportSettingsSchemaVersion: WEB_IMPORT_SETTINGS_SCHEMA_VERSION,
+      settings: negative,
+      providerConfigs,
+    })).toBeNull()
+
+    const largeDimensions = createDefaultWebImportSettings()
+    largeDimensions.imagePreprocess.compression.maxWidth = 1_000_000
+    largeDimensions.imagePreprocess.compression.maxHeight = 1_000_000
+    expect(parseWebImportSettingsPayload({
+      webImportSettingsSchemaVersion: WEB_IMPORT_SETTINGS_SCHEMA_VERSION,
+      settings: largeDimensions,
+      providerConfigs,
+    })).not.toBeNull()
   })
 })

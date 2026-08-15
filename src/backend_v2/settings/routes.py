@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from io import BytesIO
 import logging
 from pathlib import Path
@@ -29,11 +30,13 @@ from src.backend_v2.storage.platform_repositories import (
     CredentialEdit,
     FontRepository,
     PromptRepository,
+    PromptMutation,
     ProviderSettingMutation,
     RevisionConflict,
     SettingMutation,
     SettingsRepository,
 )
+from src.shared.memory_errors import is_memory_allocation_error
 
 LOGGER = logging.getLogger("saber.api.settings")
 
@@ -45,7 +48,6 @@ _DIAGNOSTIC_FIELDS = frozenset(
         "model",
         "prompt",
         "secret",
-        "credentialId",
     }
 )
 
@@ -87,25 +89,16 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
             )
         )
 
-    @blueprint.get("/provider-settings")
-    def get_provider_settings() -> Response:
-        domains = tuple(
-            value
-            for value in request.args.get("domains", "").split(",")
-            if value
-        )
-        loaded = settings.load(domains=domains)
-        return jsonify({"items": loaded["providerSettings"]})
-
-    @blueprint.get("/credentials")
-    def list_credentials() -> Response:
-        return jsonify({"items": settings.credential_summaries()})
-
     @blueprint.delete("/credentials/<credential_id>")
     def delete_credential(credential_id: str) -> Response:
-        _require_idempotency_key()
-        settings.delete_credential(credential_id)
-        return jsonify({"deleted": True})
+        result, replayed = settings.delete_credential_idempotent(
+            idempotency_key=_require_idempotency_key(),
+            credential_id=credential_id,
+        )
+        response = jsonify(result)
+        if replayed:
+            response.headers["Idempotency-Replayed"] = "true"
+        return response
 
     @blueprint.put("/settings/transactions")
     def save_settings_transaction() -> Response:
@@ -116,6 +109,7 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
                 "bookSettings",
                 "providerSettings",
                 "credentialEdits",
+                "promptEdits",
             }
         )
         setting_rows = _object_array(
@@ -159,6 +153,21 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
                 "clientRef",
             },
         )
+        prompt_rows = _object_array(
+            body,
+            "promptEdits",
+            allowed_keys={"id", "name", "content", "baseRevision"},
+        )
+        if not any(
+            (
+                setting_rows,
+                book_setting_rows,
+                provider_rows,
+                credential_rows,
+                prompt_rows,
+            )
+        ):
+            raise ValueError("settings transaction must contain at least one mutation")
         result, replayed = settings.save_transaction_idempotent(
             idempotency_key=idempotency_key,
             request_body=body,
@@ -188,12 +197,12 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
                     payload=_required_object(row, "payload"),
                     base_revision=_required_integer(row, "baseRevision", minimum=0),
                     credential_version_id=(
-                        str(row["credentialVersionId"])
+                        _required_string(row, "credentialVersionId")
                         if row.get("credentialVersionId") is not None
                         else None
                     ),
                     credential_edit_ref=(
-                        str(row["credentialEditRef"])
+                        _required_string(row, "credentialEditRef")
                         if row.get("credentialEditRef") is not None
                         else None
                     ),
@@ -208,22 +217,31 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
                     secret=_required_object(row, "secret"),
                     base_revision=_required_integer(row, "baseRevision", minimum=0),
                     credential_id=(
-                        str(row["credentialId"])
+                        _required_string(row, "credentialId")
                         if row.get("credentialId") is not None
                         else None
                     ),
-                    client_ref=(
-                        str(row["clientRef"])
-                        if row.get("clientRef") is not None
-                        else None
-                    ),
+                    client_ref=_required_string(row, "clientRef"),
                 )
                 for row in credential_rows
+            ),
+            prompt_edits=tuple(
+                PromptMutation(
+                    prompt_id=_required_string(row, "id"),
+                    name=_required_string(row, "name"),
+                    content=_required_text(row, "content"),
+                    base_revision=_required_integer(
+                        row,
+                        "baseRevision",
+                        minimum=1,
+                    ),
+                )
+                for row in prompt_rows
             ),
         )
         LOGGER.info(
             "设置事务已保存：domains=%s book_settings=%s providers=%s "
-            "credentials=%s replayed=%s",
+            "credentials=%s prompts=%s replayed=%s",
             ",".join(str(row.get("domain", "?")) for row in setting_rows) or "-",
             len(book_setting_rows),
             ",".join(
@@ -236,6 +254,7 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
                 for row in credential_rows
             )
             or "-",
+            len(prompt_rows),
             replayed,
         )
         response = jsonify(result)
@@ -245,9 +264,11 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
 
     @blueprint.patch("/settings/workflow-preferences")
     def update_workflow_preferences() -> Response:
-        _require_idempotency_key()
+        idempotency_key = _require_idempotency_key()
         body = _json_body(allowed_keys={"payload", "baseRevision"})
-        result = settings.save_transaction(
+        result, replayed = settings.save_transaction_idempotent(
+            idempotency_key=idempotency_key,
+            request_body=body,
             settings=(
                 SettingMutation(
                     domain="workflow_preferences",
@@ -257,7 +278,10 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
                 ),
             )
         )
-        return jsonify(result["settings"][0])
+        response = jsonify(result["settings"][0])
+        if replayed:
+            response.headers["Idempotency-Replayed"] = "true"
+        return response
 
     @blueprint.post("/model-catalog")
     def model_catalog() -> Response:
@@ -286,50 +310,69 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
 
     @blueprint.post("/prompts")
     def create_prompt() -> tuple[Response, int]:
-        _require_idempotency_key()
+        idempotency_key = _require_idempotency_key()
         body = _json_body(allowed_keys={"type", "name", "content"})
-        return (
-            jsonify(
-                prompt_repository.create(
-                    prompt_type=_required_string(body, "type"),
-                    name=_required_string(body, "name"),
-                    content=str(body.get("content", "")),
-                )
-            ),
-            201,
+        result, replayed = prompt_repository.create_idempotent(
+            idempotency_key=idempotency_key,
+            prompt_type=_required_string(body, "type"),
+            name=_required_string(body, "name"),
+            content=_required_text(body, "content"),
         )
+        response = jsonify(result)
+        if replayed:
+            response.headers["Idempotency-Replayed"] = "true"
+        return response, 201
 
     @blueprint.put("/prompts/<prompt_id>")
     def update_prompt(prompt_id: str) -> Response:
-        _require_idempotency_key()
+        idempotency_key = _require_idempotency_key()
         body = _json_body(
             allowed_keys={"name", "content", "baseRevision"}
         )
-        return jsonify(
-            prompt_repository.update(
-                prompt_id=prompt_id,
-                name=_required_string(body, "name"),
-                content=str(body.get("content", "")),
-                base_revision=int(body.get("baseRevision", 0)),
-            )
+        result, replayed = prompt_repository.update_idempotent(
+            idempotency_key=idempotency_key,
+            prompt_id=prompt_id,
+            name=_required_string(body, "name"),
+            content=_required_text(body, "content"),
+            base_revision=_required_integer(
+                body,
+                "baseRevision",
+                minimum=1,
+            ),
         )
+        response = jsonify(result)
+        if replayed:
+            response.headers["Idempotency-Replayed"] = "true"
+        return response
 
     @blueprint.delete("/prompts/<prompt_id>")
     def delete_prompt(prompt_id: str) -> Response:
-        _require_idempotency_key()
-        prompt_repository.delete(prompt_id)
-        return jsonify({"deleted": True})
+        result, replayed = prompt_repository.delete_idempotent(
+            idempotency_key=_require_idempotency_key(),
+            prompt_id=prompt_id,
+        )
+        response = jsonify(result)
+        if replayed:
+            response.headers["Idempotency-Replayed"] = "true"
+        return response
 
     @blueprint.post("/prompts/<prompt_id>/reset")
     def reset_prompt(prompt_id: str) -> Response:
-        _require_idempotency_key()
+        idempotency_key = _require_idempotency_key()
         body = _json_body(allowed_keys={"baseRevision"})
-        return jsonify(
-            prompt_repository.reset(
-                prompt_id,
-                base_revision=int(body.get("baseRevision", 0)),
-            )
+        result, replayed = prompt_repository.reset_idempotent(
+            idempotency_key=idempotency_key,
+            prompt_id=prompt_id,
+            base_revision=_required_integer(
+                body,
+                "baseRevision",
+                minimum=1,
+            ),
         )
+        response = jsonify(result)
+        if replayed:
+            response.headers["Idempotency-Replayed"] = "true"
+        return response
 
     @blueprint.get("/fonts")
     def list_fonts() -> Response:
@@ -337,7 +380,7 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
 
     @blueprint.post("/fonts")
     def upload_font() -> tuple[Response, int]:
-        _require_idempotency_key()
+        idempotency_key = _require_idempotency_key()
         _validate_multipart_fields(
             allowed_form_keys={"displayName"},
             allowed_file_keys={"file"},
@@ -351,6 +394,28 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
         suffix = Path(upload.filename or "").suffix.lower()
         if suffix not in SUPPORTED_FONT_SUFFIXES:
             raise ValueError("font extension must be ttf, ttc, otf, woff, or woff2")
+        raw_display_name = request.form.get("displayName")
+        display_name = (
+            Path(upload.filename or "font").stem
+            if raw_display_name is None
+            else raw_display_name.strip()
+        )
+        if not display_name:
+            raise ValueError("font displayName must not be empty")
+        idempotency_body = {
+            "checksum": hashlib.sha256(payload).hexdigest(),
+            "byteSize": len(payload),
+            "extension": suffix,
+            "displayName": display_name,
+        }
+        replay = font_repository.replay_upload(
+            idempotency_key=idempotency_key,
+            request_body=idempotency_body,
+        )
+        if replay is not None:
+            response = jsonify(replay)
+            response.headers["Idempotency-Replayed"] = "true"
+            return response, 201
         try:
             font = (
                 TTCollection(BytesIO(payload), lazy=True)
@@ -359,6 +424,8 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
             )
             font.close()
         except Exception as exc:
+            if is_memory_allocation_error(exc):
+                raise
             raise ValueError("uploaded file is not a valid font") from exc
         mime_types = {
             ".ttf": "font/ttf",
@@ -372,34 +439,53 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
             extension=suffix[1:],
             mime_type=mime_types[suffix],
         )
-        font_id = font_repository.register_uploaded(
+        result, replayed = font_repository.register_uploaded_idempotent(
+            idempotency_key=idempotency_key,
+            request_body=idempotency_body,
             asset_id=asset.id,
-            display_name=(
-                request.form.get("displayName")
-                or Path(upload.filename or "font").stem
-            ),
+            display_name=display_name,
         )
-        return jsonify({"id": font_id, "assetUrl": f"/api/v2/assets/{asset.id}"}), 201
+        response = jsonify(result)
+        if replayed:
+            response.headers["Idempotency-Replayed"] = "true"
+        return response, 201
 
     @blueprint.delete("/fonts/<font_id>")
     def delete_font(font_id: str) -> Response:
-        _require_idempotency_key()
-        font_repository.delete_uploaded(font_id)
-        return jsonify({"deleted": True})
+        result, replayed = font_repository.delete_uploaded_idempotent(
+            idempotency_key=_require_idempotency_key(),
+            font_id=font_id,
+        )
+        response = jsonify(result)
+        if replayed:
+            response.headers["Idempotency-Replayed"] = "true"
+        return response
 
     @blueprint.post("/maintenance/clean-temp")
     def clean_temp() -> Response:
-        _require_idempotency_key()
+        idempotency_key = _require_idempotency_key()
+        scope = "POST:cleanTemporaryAssets"
+        replay = settings.replay_idempotent_command(
+            scope=scope,
+            idempotency_key=idempotency_key,
+            request_body={},
+        )
+        if replay is not None:
+            response = jsonify(replay)
+            response.headers["Idempotency-Replayed"] = "true"
+            return response
         recovered = storage.recover_journal()
-        return jsonify({"recovered": recovered})
-
-    @blueprint.post("/maintenance/clean-debug")
-    def clean_debug() -> Response:
-        _require_idempotency_key()
-        # Debug cleanup is intentionally owned by the backend.  Debug outputs
-        # are not business facts, and physical removal is added when v2 debug
-        # producers are introduced.
-        return jsonify({"removed": 0})
+        result, replayed = settings.record_idempotent_command(
+            scope=scope,
+            idempotency_key=idempotency_key,
+            request_body={},
+            response={"recovered": recovered},
+            resource_type="asset_maintenance",
+        )
+        response = jsonify(result)
+        if replayed:
+            response.headers["Idempotency-Replayed"] = "true"
+        return response
 
     return blueprint
 
@@ -432,4 +518,11 @@ def _required_object(
     value = body.get(key)
     if not isinstance(value, dict):
         raise ValueError(f"{key} must be an object")
+    return value
+
+
+def _required_text(body: dict[str, object], key: str) -> str:
+    value = body.get(key)
+    if not isinstance(value, str):
+        raise ValueError(f"{key} must be a string")
     return value

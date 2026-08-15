@@ -1,13 +1,13 @@
 import requests
 import base64
 import logging
+import threading
 import time
-from typing import List, Optional
-
-from src.shared.memory_errors import is_memory_allocation_error
+from typing import List
 
 # 配置日志
 logger = logging.getLogger(__name__)
+REQUEST_TIMEOUT_SECONDS = 120.0
 
 class BaiduOCRInterface:
     # 百度OCR API端点
@@ -22,6 +22,7 @@ class BaiduOCRInterface:
         "japanese": "JAP",   # 日语（必须大写）
         "korean": "KOR",     # 韩语（必须大写）
         "chinese": "CHN_ENG", # 中文和英文
+        "en": "ENG",         # 当前前端使用的英文代码
         "english": "ENG",    # 英文
         "french": "FRE",     # 法语（必须大写）
         "german": "GER",     # 德语（必须大写）
@@ -40,29 +41,38 @@ class BaiduOCRInterface:
             secret_key: 百度OCR Secret Key
             version: OCR版本，"standard"(标准版)或"high_precision"(高精度版)
         """
+        if not isinstance(api_key, str) or not api_key:
+            raise ValueError("百度 OCR API Key 不能为空")
+        if not isinstance(secret_key, str) or not secret_key:
+            raise ValueError("百度 OCR Secret Key 不能为空")
+        if version not in self.API_ENDPOINTS:
+            raise ValueError(f"不支持的百度OCR版本: {version}")
         self.api_key = api_key
         self.secret_key = secret_key
         self.version = version
         self.access_token = None
         self.last_request_time = 0  # 上次请求时间戳
+        self._request_interval_lock = threading.Lock()
         
-    def _get_access_token(self) -> Optional[str]:
+    def _get_access_token(self) -> str:
         """获取百度API访问令牌"""
-        url = f"https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id={self.api_key}&client_secret={self.secret_key}"
-        
-        try:
-            response = requests.post(url)
-            result = response.json()
-            if 'access_token' in result:
-                return result['access_token']
-            else:
-                logger.error(f"获取百度访问令牌失败: {result}")
-                return None
-        except Exception as e:
-            logger.error(f"获取百度访问令牌时出错: {str(e)}")
-            if is_memory_allocation_error(e):
-                raise
-            return None
+        response = requests.post(
+            "https://aip.baidubce.com/oauth/2.0/token",
+            data={
+                "grant_type": "client_credentials",
+                "client_id": self.api_key,
+                "client_secret": self.secret_key,
+            },
+            timeout=REQUEST_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        result = response.json()
+        if not isinstance(result, dict):
+            raise RuntimeError("百度访问令牌响应必须是对象")
+        access_token = result.get('access_token')
+        if not isinstance(access_token, str) or not access_token:
+            raise RuntimeError(f"获取百度访问令牌失败: {result}")
+        return access_token
     
     def _ensure_request_interval(self, min_interval_ms: int = 500):
         """
@@ -71,17 +81,16 @@ class BaiduOCRInterface:
         Args:
             min_interval_ms: 最小请求间隔(毫秒)
         """
-        current_time = time.time() * 1000  # 转换为毫秒
-        elapsed = current_time - self.last_request_time
-        
-        if elapsed < min_interval_ms:
-            # 计算需要等待的时间
-            sleep_time = (min_interval_ms - elapsed) / 1000  # 转回秒
-            logger.info(f"强制请求延迟 {sleep_time:.2f}s 以避免QPS限制")
-            time.sleep(sleep_time)
-            
-        # 更新上次请求时间
-        self.last_request_time = time.time() * 1000
+        with self._request_interval_lock:
+            current_time = time.time() * 1000  # 转换为毫秒
+            elapsed = current_time - self.last_request_time
+
+            if elapsed < min_interval_ms:
+                sleep_time = (min_interval_ms - elapsed) / 1000
+                logger.info(f"强制请求延迟 {sleep_time:.2f}s 以避免QPS限制")
+                time.sleep(sleep_time)
+
+            self.last_request_time = time.time() * 1000
     
     def recognize_text(self, image_bytes: bytes, language: str = "auto") -> List[str]:
         """
@@ -94,14 +103,19 @@ class BaiduOCRInterface:
         Returns:
             识别出的文本列表
         """
+        if not isinstance(image_bytes, bytes) or not image_bytes:
+            raise ValueError("百度 OCR 图像字节不能为空")
+        if not isinstance(language, str) or not language:
+            raise ValueError("百度 OCR 语言必须是非空字符串")
+
         # 确保我们有访问令牌
         if not self.access_token:
             self.access_token = self._get_access_token()
-            if not self.access_token:
-                return []
         
         # 准备API端点
-        endpoint = self.API_ENDPOINTS.get(self.version, self.API_ENDPOINTS["standard"])
+        if self.version not in self.API_ENDPOINTS:
+            raise ValueError(f"不支持的百度OCR版本: {self.version}")
+        endpoint = self.API_ENDPOINTS[self.version]
         
         # 准备请求参数
         params = {
@@ -141,8 +155,17 @@ class BaiduOCRInterface:
                 # 不记录完整请求参数，仅记录端点和是否有语言设置
                 logger.info(f"请求端点: {endpoint.split('/')[-1]}, 语言设置: {'有' if 'language_type' in data else '无'}")
                 
-                response = requests.post(endpoint, params=params, data=data, headers=headers)
+                response = requests.post(
+                    endpoint,
+                    params=params,
+                    data=data,
+                    headers=headers,
+                    timeout=REQUEST_TIMEOUT_SECONDS,
+                )
+                response.raise_for_status()
                 result = response.json()
+                if not isinstance(result, dict):
+                    raise RuntimeError("百度OCR响应必须是对象")
                 
                 if 'error_code' in result:
                     error_code = result.get('error_code')
@@ -153,63 +176,56 @@ class BaiduOCRInterface:
                     if error_code in [110, 111]:  # 令牌过期
                         logger.info("访问令牌过期，重新获取...")
                         self.access_token = self._get_access_token()
-                        if self.access_token:
-                            params["access_token"] = self.access_token
-                            continue  # 使用新令牌重试
-                        else:
-                            return []
+                        params["access_token"] = self.access_token
+                        continue  # 使用新令牌重试
                             
                     elif error_code == 18:  # QPS限制
                         if retry < max_retries - 1:
-                            wait_time = retry_delay * (retry + 1)  # 指数退避
+                            wait_time = retry_delay * (retry + 1)
                             logger.info(f"触发QPS限制，等待 {wait_time} 秒后重试...")
                             time.sleep(wait_time)
                             continue  # 等待后重试
                         else:
-                            logger.error("达到最大重试次数，QPS限制仍然存在")
-                            return []
+                            raise RuntimeError("百度OCR达到最大重试次数，QPS限制仍然存在")
                     
-                    elif error_code == 216100:  # 语言参数错误
-                        logger.warning("语言类型参数无效，尝试移除语言参数使用自动检测...")
-                        # 移除语言参数
-                        if 'language_type' in data:
-                            del data['language_type']
-                            continue  # 重试，但不设置语言参数
-                        else:
-                            logger.error("即使不设置语言参数也出错")
-                            return []
-                    else:
-                        # 其他错误直接返回空结果
-                        logger.error(f"未处理的百度OCR错误: {error_code} - {error_msg}")
-                        return []
+                    raise RuntimeError(
+                        f"百度OCR错误: {error_code} - {error_msg}"
+                    )
                 
                 # 提取识别文本
+                words_result = result.get("words_result")
+                if not isinstance(words_result, list):
+                    raise RuntimeError("百度OCR words_result 必须是数组")
                 text_results = []
-                if 'words_result' in result:
-                    for item in result['words_result']:
-                        if 'words' in item:
-                            text_results.append(item['words'])
+                for index, item in enumerate(words_result):
+                    if not isinstance(item, dict) or not isinstance(
+                        item.get("words"),
+                        str,
+                    ):
+                        raise RuntimeError(
+                            f"百度OCR words_result[{index}] 格式无效"
+                        )
+                    text_results.append(item["words"])
                 
                 logger.info(f"百度OCR识别成功，返回 {len(text_results)} 个文本结果")
                 return text_results
             
-            except Exception as e:
+            except (requests.RequestException, ValueError) as e:
                 logger.error(f"百度OCR识别时出错: {str(e)}")
-                if is_memory_allocation_error(e):
-                    raise
                 if retry < max_retries - 1:
                     wait_time = retry_delay * (retry + 1)
                     logger.info(f"将在 {wait_time} 秒后重试...")
                     time.sleep(wait_time)
                 else:
-                    return []
+                    raise RuntimeError("百度OCR请求重试耗尽") from e
         
-        return []  # 所有重试都失败
+        raise RuntimeError("百度OCR请求重试耗尽")
 
 # 单例实例
 _baidu_ocr_instance = None
+_baidu_ocr_lock = threading.Lock()
 
-def get_baidu_ocr(api_key: str = None, secret_key: str = None, version: str = "standard") -> Optional[BaiduOCRInterface]:
+def get_baidu_ocr(api_key: str, secret_key: str, version: str = "standard") -> BaiduOCRInterface:
     """
     获取百度OCR实例（单例模式）
     
@@ -219,31 +235,31 @@ def get_baidu_ocr(api_key: str = None, secret_key: str = None, version: str = "s
         version: OCR版本，"standard"(标准版)或"high_precision"(高精度版)
         
     Returns:
-        BaiduOCRInterface实例或None（如果创建失败）
+        BaiduOCRInterface实例
     """
     global _baidu_ocr_instance
-    
-    # 如果实例不存在或者参数改变，创建新实例
-    if (api_key and secret_key) and (_baidu_ocr_instance is None or 
-                                    _baidu_ocr_instance.api_key != api_key or
-                                    _baidu_ocr_instance.secret_key != secret_key or
-                                    _baidu_ocr_instance.version != version):
-        try:
-            _baidu_ocr_instance = BaiduOCRInterface(api_key, secret_key, version)
-            # 检查令牌是否可以获取（作为连接测试）
-            if _baidu_ocr_instance._get_access_token() is None:
-                logger.error("无法获取百度OCR访问令牌，请检查API密钥")
-                _baidu_ocr_instance = None
-        except Exception as e:
-            logger.error(f"初始化百度OCR时出错: {str(e)}")
-            _baidu_ocr_instance = None
-            if is_memory_allocation_error(e):
-                raise
-    
-    return _baidu_ocr_instance
 
-def recognize_text_with_baidu_ocr(image_bytes: bytes, language: str = "auto", api_key: str = None, 
-                               secret_key: str = None, version: str = "standard") -> List[str]:
+    with _baidu_ocr_lock:
+        if (
+            _baidu_ocr_instance is None
+            or _baidu_ocr_instance.api_key != api_key
+            or _baidu_ocr_instance.secret_key != secret_key
+            or _baidu_ocr_instance.version != version
+        ):
+            _baidu_ocr_instance = BaiduOCRInterface(
+                api_key,
+                secret_key,
+                version,
+            )
+        return _baidu_ocr_instance
+
+def recognize_text_with_baidu_ocr(
+    image_bytes: bytes,
+    language: str = "auto",
+    api_key: str | None = None,
+    secret_key: str | None = None,
+    version: str = "standard",
+) -> List[str]:
     """
     使用百度OCR识别文本
     
@@ -257,7 +273,11 @@ def recognize_text_with_baidu_ocr(image_bytes: bytes, language: str = "auto", ap
     Returns:
         识别出的文本列表
     """
-    ocr = get_baidu_ocr(api_key, secret_key, version)
-    if ocr:
-        return ocr.recognize_text(image_bytes, language)
-    return []
+    if not isinstance(api_key, str) or not api_key:
+        raise ValueError("百度OCR缺少 API Key")
+    if not isinstance(secret_key, str) or not secret_key:
+        raise ValueError("百度OCR缺少 Secret Key")
+    return get_baidu_ocr(api_key, secret_key, version).recognize_text(
+        image_bytes,
+        language,
+    )

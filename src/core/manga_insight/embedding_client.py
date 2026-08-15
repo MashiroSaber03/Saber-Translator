@@ -4,7 +4,7 @@ Manga Insight Embedding / Chat clients backed by shared async transport.
 
 import asyncio
 import logging
-from typing import Any, Callable, List, Optional, TypeVar
+from typing import Any
 
 from src.shared.ai_transport import (
     AsyncOpenAICompatibleTransport,
@@ -27,10 +27,6 @@ from src.shared.ai_providers import (
 from .config_models import EmbeddingConfig, ChatLLMConfig
 
 logger = logging.getLogger("MangaInsight.Embedding")
-DEFAULT_EMBEDDING_MAX_RETRIES = 10
-DEFAULT_EMBEDDING_BUSINESS_RETRIES = 10
-DEFAULT_EMBEDDING_REQUEST_BATCH_SIZE = 16
-T = TypeVar("T")
 
 
 class EmbeddingBusinessRetryableError(ValueError):
@@ -50,51 +46,38 @@ class EmbeddingClient:
             EMBEDDING_CAPABILITY,
             config.base_url,
         ) or ""
-        timeout_value = float(config.timeout_seconds or 0)
-        self._timeout = None if timeout_value <= 0 else timeout_value
-        transport_retries = config.transport_retries if config.transport_retries is not None else DEFAULT_EMBEDDING_MAX_RETRIES
-        business_retries = config.business_retries if config.business_retries is not None else DEFAULT_EMBEDDING_BUSINESS_RETRIES
-        self._transport = AsyncOpenAICompatibleTransport(
-            max_retries=max(0, int(transport_retries))
+        self._timeout = (
+            None if config.timeout_seconds == 0 else config.timeout_seconds
         )
-        self._business_retries = max(0, int(business_retries))
+        self._transport = AsyncOpenAICompatibleTransport(
+            max_retries=config.transport_retries,
+        )
+        self._business_retries = config.business_retries
 
-        logger.info(f"EmbeddingClient 初始化: provider={config.provider}, base_url={self._base_url}")
+        logger.info(
+            "EmbeddingClient 初始化: provider=%s, base_url=%s",
+            config.provider,
+            self._base_url,
+        )
 
-    @property
-    def base_url(self) -> str:
-        return self._base_url
-
-    async def close(self):
-        return None
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.close()
-
-    async def embed(self, text: str) -> List[float]:
+    async def embed(self, text: str) -> list[float]:
         embeddings = await self.embed_batch([text])
-        return embeddings[0] if embeddings else []
+        return embeddings[0]
 
-    async def embed_batch(self, texts: List[str]) -> List[List[float]]:
+    async def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        if not isinstance(texts, list):
+            raise TypeError("embedding texts must be a list")
         if not texts:
             return []
+        if any(not isinstance(text, str) or not text.strip() for text in texts):
+            raise ValueError("embedding texts must contain non-empty strings")
 
         if not self._base_url:
             raise ValueError(f"服务商 '{self.config.provider}' 需要设置 base_url")
+        return await self._embed_request(texts)
 
-        embeddings: List[List[float]] = []
-        for offset in range(0, len(texts), DEFAULT_EMBEDDING_REQUEST_BATCH_SIZE):
-            batch = texts[
-                offset : offset + DEFAULT_EMBEDDING_REQUEST_BATCH_SIZE
-            ]
-            embeddings.extend(await self._embed_request(batch))
-        return embeddings
-
-    async def _embed_request(self, texts: List[str]) -> List[List[float]]:
-        last_error: Optional[Exception] = None
+    async def _embed_request(self, texts: list[str]) -> list[list[float]]:
+        last_error: Exception | None = None
         total_attempts = self._business_retries + 1
 
         for attempt in range(total_attempts):
@@ -127,10 +110,13 @@ class EmbeddingClient:
 
         if last_error:
             raise last_error
-        return []
+        raise RuntimeError("embedding request completed without a result")
 
     @staticmethod
-    def _validate_embeddings_result(texts: List[str], embeddings: List[List[float]]) -> None:
+    def _validate_embeddings_result(
+        texts: list[str],
+        embeddings: list[list[float]],
+    ) -> None:
         if len(embeddings) != len(texts):
             raise EmbeddingBusinessRetryableError(
                 f"Embedding 返回数量不匹配: 期望 {len(texts)}，实际 {len(embeddings)}"
@@ -138,19 +124,9 @@ class EmbeddingClient:
         if any(not isinstance(item, list) or len(item) == 0 for item in embeddings):
             raise EmbeddingBusinessRetryableError("Embedding 响应包含空向量")
 
-    async def test_connection(self) -> bool:
-        try:
-            embedding = await self.embed("测试文本")
-            return len(embedding) > 0
-        except Exception as e:
-            logger.error(f"Embedding 连接测试失败: {e}")
-            return False
-
 
 class ChatClient:
-    """
-    对话模型客户端（复用共享 async transport）。
-    """
+    """JSON chat client used by Insight derived-result builders."""
 
     def __init__(self, config: ChatLLMConfig):
         self.config = config
@@ -168,50 +144,52 @@ class ChatClient:
         self._transport = AsyncOpenAICompatibleTransport()
         self._executor = OpenAICompatibleAsyncExecutor(self._transport)
 
-        logger.info(f"ChatClient 初始化: provider={provider}, base_url={self._base_url}")
+        logger.info(
+            "ChatClient 初始化: provider=%s, base_url=%s",
+            provider,
+            self._base_url,
+        )
 
-    @property
-    def base_url(self) -> str:
-        return self._base_url
-
-    async def close(self):
-        return None
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.close()
-
-    def _build_messages(self, prompt: str, system: Optional[str] = None) -> List[dict[str, str]]:
-        messages: List[dict[str, str]] = []
+    def _build_messages(
+        self,
+        prompt: str,
+        system: str | None = None,
+    ) -> list[dict[str, str]]:
+        messages: list[dict[str, str]] = []
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
         return messages
 
-    def _build_options(self, temperature: Optional[float] = None) -> OpenAICompatibleOptions:
-        options = OpenAICompatibleOptions.from_dict(self.config.openai_options.to_dict())
-        if temperature is not None:
-            options.request.temperature = temperature
-        return options
-
-    async def _execute_request(
+    async def generate_json(
         self,
         prompt: str,
         *,
-        system: Optional[str] = None,
-        temperature: Optional[float] = None,
-        parser: Optional[Callable[[str], T]] = None,
-    ) -> T | str:
-        logger.debug(f"[ChatClient] provider={self.config.provider}, base_url={self._base_url}, model={self.config.model}")
+        system: str | None = None,
+    ) -> Any:
+        if not isinstance(prompt, str) or not prompt.strip():
+            raise ValueError("chat prompt must be a non-empty string")
+        if system is not None and not isinstance(system, str):
+            raise TypeError("chat system prompt must be a string")
+        logger.debug(
+            "[ChatClient] provider=%s, base_url=%s, model=%s",
+            self.config.provider,
+            self._base_url,
+            self.config.model,
+        )
 
         if not self._base_url:
             raise ValueError(f"服务商 '{self.config.provider}' 需要设置 base_url")
 
-        options = self._build_options(temperature)
+        options = OpenAICompatibleOptions.from_dict(
+            self.config.openai_options.to_dict()
+        )
         use_stream = options.execution.use_stream
-        logger.debug(f"[ChatClient] use_stream={use_stream}, config_type={type(self.config).__name__}")
+        logger.debug(
+            "[ChatClient] use_stream=%s, config_type=%s",
+            use_stream,
+            type(self.config).__name__,
+        )
 
         try:
             result = await asyncio.wait_for(
@@ -232,7 +210,7 @@ class ChatClient:
                         ),
                     ),
                     capability="chat",
-                    parser=parser,
+                    parser=parse_json_block_from_text,
                     logger_instance=logger,
                 ),
                 timeout=self._total_timeout,
@@ -242,54 +220,3 @@ class ChatClient:
                 f"对话模型调用超过总时限（{self._total_timeout:g} 秒）"
             ) from exc
         return result.parsed
-
-    async def generate(
-        self,
-        prompt: str,
-        system: Optional[str] = None,
-        temperature: Optional[float] = None
-    ) -> str:
-        result = await self._execute_request(
-            prompt,
-            system=system,
-            temperature=temperature,
-        )
-        return str(result)
-
-    async def generate_parsed(
-        self,
-        prompt: str,
-        *,
-        parser: Callable[[str], T],
-        system: Optional[str] = None,
-        temperature: Optional[float] = None,
-    ) -> T:
-        result = await self._execute_request(
-            prompt,
-            system=system,
-            temperature=temperature,
-            parser=parser,
-        )
-        return result  # type: ignore[return-value]
-
-    async def generate_json(
-        self,
-        prompt: str,
-        *,
-        system: Optional[str] = None,
-        temperature: Optional[float] = None,
-    ) -> Any:
-        return await self.generate_parsed(
-            prompt,
-            parser=parse_json_block_from_text,
-            system=system,
-            temperature=temperature,
-        )
-
-    async def test_connection(self) -> bool:
-        try:
-            response = await self.generate("测试", temperature=0)
-            return len(response) > 0
-        except Exception as e:
-            logger.error(f"LLM 连接测试失败: {e}")
-            return False

@@ -69,8 +69,8 @@
       </thead>
       <tbody>
         <tr
-          v-for="({ row, originalIndex }, index) in filteredRows"
-          :key="`${rowKeyPrefix}-${index}`"
+          v-for="{ row, originalIndex } in filteredRows"
+          :key="`${rowKeyPrefix}-${originalIndex}`"
         >
           <td v-for="column in columns" :key="column.key">
             <div v-if="column.type === 'select'" class="translation-constraint-table__select-cell">

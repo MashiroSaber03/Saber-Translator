@@ -8,7 +8,6 @@ import type {
 import {
   applyOpenAiOptionsPatch,
   cloneOpenAiOptions,
-  normalizeOpenAiOptions,
   omitOpenAiOptionsPatchFields,
   type OpenAiOptionsPatch,
 } from '@/utils/openaiOptions'
@@ -20,13 +19,16 @@ import {
   saveProviderCacheEntry,
   snapshotProviderCredentials,
 } from '../providerConfigCache'
+import { createDefaultSettings } from '../defaults'
 
 export function useHqTranslationSettings(
   settings: Ref<TranslationSettings>,
   providerConfigs: Ref<ProviderConfigsCache>,
 ) {
-  type HqTranslationUiUpdates = Partial<HqTranslationSettings> & OpenAiOptionsPatch
+  type HqTranslationUiUpdates = Partial<Omit<HqTranslationSettings, 'provider'>>
+    & OpenAiOptionsPatch
   const hqProvider = computed(() => settings.value.hqTranslation.provider)
+  const defaultHqTranslation = createDefaultSettings().hqTranslation
 
   function setHqProvider(provider: HqTranslationProvider): void {
     provider = normalizeProviderId(provider) as HqTranslationProvider
@@ -75,15 +77,17 @@ export function useHqTranslationSettings(
         applyProviderCredentials(settings.value.hqTranslation, cached)
         if (cached.batchSize !== undefined) settings.value.hqTranslation.batchSize = cached.batchSize
         if (cached.openaiOptions !== undefined) {
-          settings.value.hqTranslation.openaiOptions = normalizeOpenAiOptions(
-            cached.openaiOptions,
-            settings.value.hqTranslation.openaiOptions,
-          )
+          settings.value.hqTranslation.openaiOptions = cloneOpenAiOptions(cached.openaiOptions)
         }
         if (cached.prompt !== undefined) settings.value.hqTranslation.prompt = cached.prompt
       },
       applyMissing: () => {
         clearProviderCredentials(settings.value.hqTranslation)
+        settings.value.hqTranslation.openaiOptions = cloneOpenAiOptions(
+          defaultHqTranslation.openaiOptions,
+        )
+        settings.value.hqTranslation.batchSize = defaultHqTranslation.batchSize
+        settings.value.hqTranslation.prompt = defaultHqTranslation.prompt
       },
     })
   }

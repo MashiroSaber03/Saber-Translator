@@ -63,7 +63,19 @@ withDefaults(defineProps<{
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  animation: slideIn 0.3s ease;
+  animation: product-message-bubble-slide-in 0.3s ease;
+}
+
+@keyframes product-message-bubble-slide-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
 }
 
 .product-message-bubble--user {

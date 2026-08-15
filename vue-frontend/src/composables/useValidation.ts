@@ -1,14 +1,16 @@
 import { getCurrentInstance, onUnmounted, ref } from 'vue'
 import {
   getProviderDisplayName,
-  isLocalProviderId,
   normalizeProviderId,
   providerRequiresApiKey,
-  providerRequiresBaseUrl
+  providerRequiresBaseUrl,
+  providerRequiresModel,
+  providerSupportsCapability,
 } from '@/config/aiProviders'
 import { useSettingsStore } from '@/stores/settings'
 import { useToast } from '@/utils/toast'
 import type { ProofreadingRound } from '@/types/settings'
+import { proofreadingProviderDomain } from '@/stores/settings/proofreadingIdentity'
 import { isSupportedHybridOcrCombo } from '@/utils/hybridOcr'
 
 interface ValidationResult {
@@ -31,9 +33,7 @@ export function useValidation() {
   let highlightTimer: ReturnType<typeof setTimeout> | null = null
 
   function hasStoredCredential(domain: string, provider: string): boolean {
-    const normalized = normalizeProviderId(provider)
-    return settingsStore.hasCredential(domain, provider)
-      || (normalized !== provider && settingsStore.hasCredential(domain, normalized))
+    return settingsStore.hasCredential(domain, normalizeProviderId(provider))
   }
 
   function hasUsableApiKey(
@@ -74,7 +74,10 @@ export function useValidation() {
       }
 
       if (ocrEngine === 'ai_vision') {
-        if (!aiVisionOcr?.provider) {
+        if (
+          !aiVisionOcr?.provider
+          || !providerSupportsCapability(aiVisionOcr.provider, 'visionOcr')
+        ) {
           missingItems.push(`${prefix}AI视觉OCR 的服务商`)
         }
         if (
@@ -88,11 +91,17 @@ export function useValidation() {
         ) {
           missingItems.push(`${prefix}AI视觉OCR 的 API Key`)
         }
-        if (!aiVisionOcr?.modelName || aiVisionOcr.modelName.trim() === '') {
+        if (
+          aiVisionOcr?.provider
+          && providerRequiresModel(aiVisionOcr.provider)
+          && (!aiVisionOcr?.modelName || aiVisionOcr.modelName.trim() === '')
+        ) {
           missingItems.push(`${prefix}AI视觉OCR 的模型名称`)
         }
         if (
-          normalizeProviderId(aiVisionOcr?.provider) === 'custom' &&
+          aiVisionOcr?.provider
+          && providerRequiresBaseUrl(aiVisionOcr.provider)
+          &&
           (!aiVisionOcr?.customBaseUrl || aiVisionOcr.customBaseUrl.trim() === '')
         ) {
           missingItems.push(`${prefix}AI视觉OCR 的自定义 Base URL`)
@@ -129,7 +138,7 @@ export function useValidation() {
     const { provider, apiKey, modelName, customBaseUrl } = translation
     const missingItems: string[] = []
 
-    if (!provider) {
+    if (!provider || !providerSupportsCapability(provider, 'translation')) {
       return {
         valid: false,
         message: '请先在顶部设置菜单中选择翻译服务商',
@@ -143,10 +152,11 @@ export function useValidation() {
       }
     }
 
-    if (!modelName || modelName.trim() === '') {
-      if (isLocalProviderId(provider) || providerRequiresApiKey(provider)) {
-        missingItems.push(`${getProviderDisplayName(provider)} 的模型名称`)
-      }
+    if (
+      providerRequiresModel(provider)
+      && (!modelName || modelName.trim() === '')
+    ) {
+      missingItems.push(`${getProviderDisplayName(provider)} 的模型名称`)
     }
 
     if (providerRequiresBaseUrl(provider)) {
@@ -171,7 +181,7 @@ export function useValidation() {
     const { provider, apiKey, modelName, customBaseUrl } = hqTranslation
     const missingItems: string[] = []
 
-    if (!provider) {
+    if (!provider || !providerSupportsCapability(provider, 'hqTranslation')) {
       return {
         valid: false,
         message: '请先在顶部设置菜单中选择高质量翻译的服务商',
@@ -186,7 +196,7 @@ export function useValidation() {
       missingItems.push('高质量翻译的 API Key')
     }
 
-    if (!modelName || modelName.trim() === '') {
+    if (providerRequiresModel(provider) && (!modelName || modelName.trim() === '')) {
       missingItems.push('高质量翻译的模型名称')
     }
 
@@ -225,19 +235,36 @@ export function useValidation() {
 
       const roundName = round.name || `轮次${i + 1}`
 
-      if (!round.provider) {
+      if (
+        !round.provider
+        || !providerSupportsCapability(round.provider, 'hqTranslation')
+      ) {
         missingItems.push(`校对 ${roundName} 的服务商`)
       }
 
       if (
         providerRequiresApiKey(round.provider)
-        && !hasUsableApiKey(round.apiKey, `proofreading_${i}`, round.provider)
+        && !hasUsableApiKey(
+          round.apiKey,
+          proofreadingProviderDomain(round.id),
+          round.provider,
+        )
       ) {
         missingItems.push(`校对 ${roundName} 的 API Key`)
       }
 
-      if (!round.modelName || round.modelName.trim() === '') {
+      if (
+        providerRequiresModel(round.provider)
+        && (!round.modelName || round.modelName.trim() === '')
+      ) {
         missingItems.push(`校对 ${roundName} 的模型名称`)
+      }
+
+      if (
+        providerRequiresBaseUrl(round.provider)
+        && (!round.customBaseUrl || round.customBaseUrl.trim() === '')
+      ) {
+        missingItems.push(`校对 ${roundName} 的 Base URL`)
       }
 
       if (missingItems.length > 0) {
@@ -271,8 +298,10 @@ export function useValidation() {
       case 'ocr':
         result = validateOcrConfig()
         break
-      default:
-        result = validateTranslationConfig()
+      default: {
+        const exhaustive: never = type
+        return exhaustive
+      }
     }
 
     if (!result.valid) {

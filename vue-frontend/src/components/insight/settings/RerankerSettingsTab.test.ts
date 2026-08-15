@@ -40,7 +40,6 @@ describe('RerankerSettingsTab', () => {
       apiKey: 'rerank-key',
       model: 'jina-reranker-v2-base-multilingual',
       baseUrl: 'https://rerank.example.com/v1',
-      topK: 6,
       transportRetries: 7,
       businessRetries: 8,
       timeoutSeconds: 9,
@@ -59,8 +58,7 @@ describe('RerankerSettingsTab', () => {
       provider: 'jina',
       apiKey: 'rerank-key',
       model: 'jina-reranker-v2-base-multilingual',
-      baseUrl: 'https://rerank.example.com/v1',
-      topK: 6,
+      baseUrl: '',
       transportRetries: 7,
       businessRetries: 8,
       timeoutSeconds: 9,
@@ -97,7 +95,7 @@ describe('RerankerSettingsTab', () => {
     expect(modelPicker.props('placeholder')).toBe('例如: jina-reranker-v2-base-multilingual')
   })
 
-  it('passes retry and timeout settings to the reranker connection test API', async () => {
+  it('tests the current reranker endpoint without replaying runtime retry policy', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
 
@@ -109,7 +107,6 @@ describe('RerankerSettingsTab', () => {
 
     await wrapper.get('#reranker-api-key').setValue('rerank-key')
     await wrapper.get('input#reranker-model').setValue('jina-reranker-v2-base-multilingual')
-    await wrapper.get('#reranker-top-k').setValue('6')
     await wrapper.get('#reranker-transport-retries').setValue('7')
     await wrapper.get('#reranker-business-retries').setValue('8')
     await wrapper.get('#reranker-timeout-seconds').setValue('9')
@@ -121,10 +118,7 @@ describe('RerankerSettingsTab', () => {
       provider: 'jina',
       api_key: 'rerank-key',
       model: 'jina-reranker-v2-base-multilingual',
-      base_url: undefined,
-      transport_retries: 7,
-      business_retries: 8,
-      timeout_seconds: 9,
+      base_url: '',
     })
   })
 })

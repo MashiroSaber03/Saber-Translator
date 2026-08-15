@@ -13,27 +13,29 @@ const webImportStore = useWebImportStore()
 const REQUIRED_CONFIRMATION_TEXT = '我已阅读并同意'
 const userInput = ref('')
 const isVisible = computed(() => webImportStore.disclaimerVisible)
-const isInputCorrect = computed(() =>
-  userInput.value.trim() === REQUIRED_CONFIRMATION_TEXT
-)
-const confirmationError = computed(() => (
+const isInputCorrect = computed(() => userInput.value.trim() === REQUIRED_CONFIRMATION_TEXT)
+const confirmationError = computed(() =>
   userInput.value && !isInputCorrect.value
     ? `输入不正确，请完整输入「${REQUIRED_CONFIRMATION_TEXT}」`
     : ''
-))
+)
 
 function handleConfirm() {
   if (isInputCorrect.value) {
-    webImportStore.acceptDisclaimer()
+    void webImportStore.acceptDisclaimer()
     userInput.value = ''
   }
+}
+
+function handleConfirmationEnter(event: KeyboardEvent) {
+  if (event.isComposing) return
+  handleConfirm()
 }
 
 function handleCancel() {
   webImportStore.rejectDisclaimer()
   userInput.value = ''
 }
-
 </script>
 
 <template>
@@ -42,7 +44,6 @@ function handleCancel() {
     :show-header="false"
     custom-class="web-import-disclaimer-modal"
     backdrop="strong"
-    overlay-layer="popover"
     backdrop-effect="blur-sm"
     frame-variant="warning"
     width="90%"
@@ -53,7 +54,11 @@ function handleCancel() {
     body-display="flex"
     body-direction="column"
     body-min-height="0"
-    @update:model-value="value => { if (!value) handleCancel() }"
+    @update:model-value="
+      value => {
+        if (!value) handleCancel()
+      }
+    "
   >
     <div class="web-import-disclaimer">
       <div class="web-import-disclaimer__header">
@@ -71,30 +76,58 @@ function handleCancel() {
           <div class="web-import-disclaimer__section">
             <h4 class="web-import-disclaimer__section-title">1. 功能说明</h4>
             <p class="web-import-disclaimer__paragraph">
-              "从网页导入"功能允许您从互联网网页中提取图片。此功能仅供<strong class="web-import-disclaimer__emphasis">技术研究与个人学习</strong>之目的提供。
+              "从网页导入"功能允许您从互联网网页中提取图片。此功能仅供<strong
+                class="web-import-disclaimer__emphasis"
+              >技术研究与个人学习</strong>之目的提供。
             </p>
           </div>
 
           <div class="web-import-disclaimer__section">
             <h4 class="web-import-disclaimer__section-title">2. 用户责任</h4>
             <ul class="web-import-disclaimer__list">
-              <li class="web-import-disclaimer__list-item">您应当确保拥有<strong class="web-import-disclaimer__emphasis">合法权利</strong>访问和下载目标内容</li>
-              <li class="web-import-disclaimer__list-item">您应当遵守目标网站的<strong class="web-import-disclaimer__emphasis">服务条款</strong>和<strong class="web-import-disclaimer__emphasis">使用协议</strong></li>
-              <li class="web-import-disclaimer__list-item">您应当尊重内容创作者的<strong class="web-import-disclaimer__emphasis">版权</strong>和<strong class="web-import-disclaimer__emphasis">知识产权</strong></li>
-              <li class="web-import-disclaimer__list-item">您<strong class="web-import-disclaimer__emphasis">不得</strong>将下载的内容用于商业目的或非法传播</li>
-              <li class="web-import-disclaimer__list-item">您<strong class="web-import-disclaimer__emphasis">不得</strong>使用本功能绕过付费内容的访问限制</li>
+              <li class="web-import-disclaimer__list-item">
+                您应当确保拥有<strong class="web-import-disclaimer__emphasis">合法权利</strong>访问和下载目标内容
+              </li>
+              <li class="web-import-disclaimer__list-item">
+                您应当遵守目标网站的<strong class="web-import-disclaimer__emphasis">服务条款</strong>和<strong class="web-import-disclaimer__emphasis">使用协议</strong>
+              </li>
+              <li class="web-import-disclaimer__list-item">
+                您应当尊重内容创作者的<strong class="web-import-disclaimer__emphasis">版权</strong>和<strong class="web-import-disclaimer__emphasis">知识产权</strong>
+              </li>
+              <li class="web-import-disclaimer__list-item">
+                您<strong class="web-import-disclaimer__emphasis">不得</strong>将下载的内容用于商业目的或非法传播
+              </li>
+              <li class="web-import-disclaimer__list-item">
+                您<strong class="web-import-disclaimer__emphasis">不得</strong>使用本功能绕过付费内容的访问限制
+              </li>
             </ul>
           </div>
 
           <div class="web-import-disclaimer__section">
             <h4 class="web-import-disclaimer__section-title">3. 使用限制</h4>
-            <p class="web-import-disclaimer__paragraph">本功能<strong class="web-import-disclaimer__emphasis">严禁</strong>用于以下目的：</p>
+            <p class="web-import-disclaimer__paragraph">
+              本功能<strong class="web-import-disclaimer__emphasis">严禁</strong>用于以下目的：
+            </p>
             <ul class="web-import-disclaimer__list">
-              <li class="web-import-disclaimer__list-item">下载、存储或传播<strong class="web-import-disclaimer__emphasis">侵权内容</strong></li>
-              <li class="web-import-disclaimer__list-item">绕过网站的<strong class="web-import-disclaimer__emphasis">付费墙</strong>或<strong class="web-import-disclaimer__emphasis">访问控制</strong></li>
-              <li class="web-import-disclaimer__list-item">进行<strong class="web-import-disclaimer__emphasis">商业用途</strong>或大规模<strong class="web-import-disclaimer__emphasis">批量爬取</strong></li>
-              <li class="web-import-disclaimer__list-item">任何违反<strong class="web-import-disclaimer__emphasis">当地法律法规</strong>的活动</li>
-              <li class="web-import-disclaimer__list-item">对目标网站造成<strong class="web-import-disclaimer__emphasis">服务器负担</strong>或<strong class="web-import-disclaimer__emphasis">恶意攻击</strong></li>
+              <li class="web-import-disclaimer__list-item">
+                下载、存储或传播<strong class="web-import-disclaimer__emphasis">侵权内容</strong>
+              </li>
+              <li class="web-import-disclaimer__list-item">
+                绕过网站的<strong class="web-import-disclaimer__emphasis">付费墙</strong>或<strong
+                  class="web-import-disclaimer__emphasis"
+                >访问控制</strong>
+              </li>
+              <li class="web-import-disclaimer__list-item">
+                进行<strong class="web-import-disclaimer__emphasis">商业用途</strong>或大规模<strong
+                  class="web-import-disclaimer__emphasis"
+                >批量爬取</strong>
+              </li>
+              <li class="web-import-disclaimer__list-item">
+                任何违反<strong class="web-import-disclaimer__emphasis">当地法律法规</strong>的活动
+              </li>
+              <li class="web-import-disclaimer__list-item">
+                对目标网站造成<strong class="web-import-disclaimer__emphasis">服务器负担</strong>或<strong class="web-import-disclaimer__emphasis">恶意攻击</strong>
+              </li>
             </ul>
           </div>
 
@@ -117,9 +150,15 @@ function handleCancel() {
               使用本功能即表示您<strong class="web-import-disclaimer__emphasis">已阅读、理解并同意</strong>上述所有条款，并承诺：
             </p>
             <ul class="web-import-disclaimer__list">
-              <li class="web-import-disclaimer__list-item">仅将本功能用于<strong class="web-import-disclaimer__emphasis">合法、合规</strong>的目的</li>
-              <li class="web-import-disclaimer__list-item"><strong class="web-import-disclaimer__emphasis">自行承担</strong>使用本功能所带来的一切风险和责任</li>
-              <li class="web-import-disclaimer__list-item">如因使用本功能导致任何争议，<strong class="web-import-disclaimer__emphasis">与本软件作者无关</strong></li>
+              <li class="web-import-disclaimer__list-item">
+                仅将本功能用于<strong class="web-import-disclaimer__emphasis">合法、合规</strong>的目的
+              </li>
+              <li class="web-import-disclaimer__list-item">
+                <strong class="web-import-disclaimer__emphasis">自行承担</strong>使用本功能所带来的一切风险和责任
+              </li>
+              <li class="web-import-disclaimer__list-item">
+                如因使用本功能导致任何争议，<strong class="web-import-disclaimer__emphasis">与本软件作者无关</strong>
+              </li>
             </ul>
           </div>
         </div>
@@ -129,7 +168,9 @@ function handleCancel() {
             如果您已完整阅读并同意以上条款，请在下方输入框中准确输入：
           </p>
           <p class="web-import-disclaimer__required-text">
-            <code class="web-import-disclaimer__required-code">{{ REQUIRED_CONFIRMATION_TEXT }}</code>
+            <code class="web-import-disclaimer__required-code">{{
+              REQUIRED_CONFIRMATION_TEXT
+            }}</code>
           </p>
           <UiField
             variant="dialog"
@@ -143,7 +184,7 @@ function handleCancel() {
               type="text"
               size="lg"
               :placeholder="`请输入: ${REQUIRED_CONFIRMATION_TEXT}`"
-              @keyup.enter="handleConfirm"
+              @keydown.enter="handleConfirmationEnter"
             />
           </UiField>
         </div>
@@ -264,7 +305,11 @@ function handleCancel() {
 .web-import-disclaimer__confirmation {
   margin-top: 24px;
   padding: 20px;
-  background: linear-gradient(135deg, var(--color-surface-interactive-hover), var(--color-surface-muted));
+  background: linear-gradient(
+    135deg,
+    var(--color-surface-interactive-hover),
+    var(--color-surface-muted)
+  );
   border-radius: 12px;
   border: 2px solid var(--color-border-accent);
 }

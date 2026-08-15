@@ -18,20 +18,27 @@ const emit = defineEmits<{
 }>()
 
 const citationChips = computed<ProductChipItem[]>(() => {
-  return props.message.citations?.map(citation => ({
-    id: citation.page,
-    label: `第${citation.page}页`,
-    ariaLabel: `查看第 ${citation.page} 页`,
-    interactive: true,
-    tone: 'primary',
-  })) ?? []
+  return (
+    props.message.citations?.map(citation => ({
+      id: citation.page,
+      label: `第${citation.page}页`,
+      ariaLabel: `查看第 ${citation.page} 页`,
+      interactive: true,
+      tone: 'primary',
+    })) ?? []
+  )
 })
 
-const avatarLabel = computed(() => props.message.role === 'user' ? '用户' : '智能助手')
-const messageLabel = computed(() => props.message.role === 'user' ? '用户问题' : '智能回答')
+const avatarLabel = computed(() => (props.message.role === 'user' ? '用户' : '智能助手'))
+const messageLabel = computed(() => (props.message.role === 'user' ? '用户问题' : '智能回答'))
+const modeLabel = computed(() => {
+  if (props.message.mode === 'precise') return '🎯 精确模式'
+  if (props.message.mode === 'global') return '🌐 全局模式'
+  return ''
+})
 
 function selectCitation(id: string | number): void {
-  emit('selectPage', Number(id))
+  if (typeof id === 'number') emit('selectPage', id)
 }
 </script>
 
@@ -52,12 +59,15 @@ function selectCitation(id: string | number): void {
         {{ message.content }}
       </div>
       <template v-else>
-        <div v-if="message.mode" class="qa-message-item__mode-badge">{{ message.mode }}</div>
+        <div v-if="modeLabel" class="qa-message-item__mode-badge">{{ modeLabel }}</div>
         <div class="qa-message-item__answer-text" v-html="renderMarkdown(message.content)"></div>
       </template>
     </template>
 
-    <template v-if="message.role === 'assistant' && citationChips.length > 0 && !message.isLoading" #footer>
+    <template
+      v-if="message.role === 'assistant' && citationChips.length > 0 && !message.isLoading"
+      #footer
+    >
       <ProductChipList
         class="qa-message-item__citations"
         aria-label="引用页码"
@@ -68,7 +78,10 @@ function selectCitation(id: string | number): void {
       />
     </template>
 
-    <template v-if="message.role === 'assistant' && message.content && !message.isLoading" #actions>
+    <template
+      v-if="message.role === 'assistant' && message.mode && message.content && !message.isLoading"
+      #actions
+    >
       <UiButton
         variant="secondary"
         size="xs"
@@ -120,9 +133,22 @@ function selectCitation(id: string | number): void {
 }
 
 @keyframes dots {
-  0%, 20% { content: ''; }
-  40% { content: '.'; }
-  60% { content: '..'; }
-  80%, 100% { content: '...'; }
+  0%,
+  20% {
+    content: '';
+  }
+
+  40% {
+    content: '.';
+  }
+
+  60% {
+    content: '..';
+  }
+
+  80%,
+  100% {
+    content: '...';
+  }
 }
 </style>

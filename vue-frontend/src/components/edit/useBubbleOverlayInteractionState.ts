@@ -28,12 +28,6 @@ export function useBubbleOverlayInteractionState() {
   const rotateCenterX = ref(0)
   const rotateCenterY = ref(0)
 
-  const isDrawing = ref(false)
-  const drawStartX = ref(0)
-  const drawStartY = ref(0)
-  const drawingRect = ref<BubbleCoords | null>(null)
-  const isMiddleButtonDown = ref(false)
-
   function resetDragging(): void {
     isDragging.value = false
     draggingIndex.value = -1
@@ -52,11 +46,6 @@ export function useBubbleOverlayInteractionState() {
   function resetRotating(): void {
     isRotating.value = false
     rotatingIndex.value = -1
-  }
-
-  function resetDrawing(): void {
-    isDrawing.value = false
-    drawingRect.value = null
   }
 
   return {
@@ -82,14 +71,8 @@ export function useBubbleOverlayInteractionState() {
     rotateInitialAngle,
     rotateCenterX,
     rotateCenterY,
-    isDrawing,
-    drawStartX,
-    drawStartY,
-    drawingRect,
-    isMiddleButtonDown,
     resetDragging,
     resetResizing,
     resetRotating,
-    resetDrawing,
   }
 }

@@ -48,6 +48,15 @@ describe('TranslationConstraintTable', () => {
     expect(validateRegexEntries(rows, { patternField: 'source' })).toContain('第 2 行正则无效')
   })
 
+  it('rejects malformed import rows instead of dropping or stringifying them', () => {
+    const columns = [{ key: 'source', label: '原文' }]
+
+    expect(() => importRowsFromJson('[null]', columns)).toThrow('JSON 第 1 行必须是对象')
+    expect(() => importRowsFromJson('[{"source":42}]', columns)).toThrow(
+      '第 1 行原文必须是文本',
+    )
+  })
+
   it('exposes sortable headers as named button controls', async () => {
     const wrapper = mount(TranslationConstraintTable, {
       props: {
@@ -120,6 +129,8 @@ describe('TranslationConstraintTable', () => {
     expect(source).not.toContain('@input="\n                updateCell')
     expect(source).not.toContain('($event.target as HTMLInputElement).value')
     expect(source).toContain('@update:model-value="updateCell(originalIndex, column.key, $event)"')
+    expect(source).toContain(':key="`${rowKeyPrefix}-${originalIndex}`"')
+    expect(source).not.toContain(':key="`${rowKeyPrefix}-${index}`"')
 
     const wrapper = mount(TranslationConstraintTable, {
       props: {

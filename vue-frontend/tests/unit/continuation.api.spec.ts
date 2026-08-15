@@ -177,7 +177,7 @@ describe('continuation v2 api facade', () => {
         continuation_direction: 'forward',
       },
     })
-    expect(characters[0]).toMatchObject({
+    expect(characters.items[0]).toMatchObject({
       name: '阿尔托莉雅',
       description: '骑士王',
       forms: [
@@ -218,6 +218,30 @@ describe('continuation v2 api facade', () => {
     ])
   })
 
+  it('keeps ready page stories generated when no image exists yet', async () => {
+    getMock.mockResolvedValueOnce({
+      ...state,
+      project: {
+        ...project,
+        pages: project.pages.map(page => ({
+          ...page,
+          imageVersions: [],
+        })),
+      },
+    })
+    const { prepareContinuation } = await import('@/api/continuation')
+
+    const prepared = await prepareContinuation('book/id one')
+
+    expect(prepared.saved_data.pages).toEqual([
+      expect.objectContaining({
+        image_url: '',
+        page_number: 1,
+        status: 'generated',
+      }),
+    ])
+  })
+
   it('loads character forms one cursor page at a time', async () => {
     const secondForm = {
       ...form,
@@ -236,13 +260,12 @@ describe('continuation v2 api facade', () => {
       }
       throw new Error(`Unexpected GET ${url}`)
     })
-    const { getCharacters, hasMoreCharacterForms, loadMoreCharacterForms } =
-      await import('@/api/continuation')
+    const { getCharacters } = await import('@/api/continuation')
 
     const firstPage = await getCharacters('book/id one')
 
-    expect(firstPage[0]?.forms.map(item => item.form_id)).toEqual(['form-1'])
-    expect(hasMoreCharacterForms('book/id one')).toBe(true)
+    expect(firstPage.items[0]?.forms.map(item => item.form_id)).toEqual(['form-1'])
+    expect(firstPage.nextCursor).toBe(100)
     expect(getMock).toHaveBeenCalledWith(
       '/api/v2/insight/continuation/projects/project-1/forms',
       { params: { cursor: 0, limit: 100 } },
@@ -252,55 +275,44 @@ describe('continuation v2 api facade', () => {
       { params: { cursor: 100, limit: 100 } },
     )
 
-    const secondPage = await loadMoreCharacterForms('book/id one')
+    const secondPage = await getCharacters('book/id one', firstPage.nextCursor!)
 
-    expect(secondPage[0]?.forms.map(item => item.form_id)).toEqual(['form-1', 'form-2'])
-    expect(hasMoreCharacterForms('book/id one')).toBe(false)
+    expect(secondPage.items[0]?.forms.map(item => item.form_id)).toEqual(['form-2'])
+    expect(secondPage.nextCursor).toBeNull()
     expect(getMock).toHaveBeenCalledWith(
       '/api/v2/insight/continuation/projects/project-1/forms',
       { params: { cursor: 100, limit: 100 } },
     )
   })
 
-  it('bounds cached continuation projects and their form pages', async () => {
-    getMock.mockImplementation((url: string) => {
-      const stateMatch = url.match(/\/books\/book-(\d+)\/continuation$/)
-      if (stateMatch) {
-        const index = Number(stateMatch[1])
-        return Promise.resolve({
-          ...state,
-          bookId: `book-${index}`,
-          project: {
-            ...project,
-            bookId: `book-${index}`,
-            projectId: `project-${index}`,
-          },
-        })
-      }
-      const formsMatch = url.match(/\/projects\/project-(\d+)\/forms$/)
-      if (formsMatch) {
-        const index = Number(formsMatch[1])
-        return Promise.resolve({
-          items: [{ ...form, formId: `form-${index}` }],
-          nextCursor: 100,
-        })
-      }
-      throw new Error(`Unexpected GET ${url}`)
-    })
-    const { getCharacters, hasMoreCharacterForms } = await import('@/api/continuation')
+  it('reads the current project revision before every mutation', async () => {
+    getMock
+      .mockResolvedValueOnce(state)
+      .mockResolvedValueOnce({
+        ...state,
+        project: { ...project, revision: 6 },
+      })
+    patchMock
+      .mockResolvedValueOnce({ ...project, revision: 6 })
+      .mockResolvedValueOnce({ ...project, revision: 7 })
+    const { saveConfig } = await import('@/api/continuation')
 
-    for (let index = 0; index < 5; index += 1) {
-      await getCharacters(`book-${index}`)
+    const config = {
+      page_count: 3,
+      style_reference_pages: 2,
+      continuation_direction: 'forward',
     }
+    await saveConfig('book/id one', config)
+    await saveConfig('book/id one', config)
 
-    expect(hasMoreCharacterForms('book-0')).toBe(false)
-    expect(hasMoreCharacterForms('book-4')).toBe(true)
+    expect(getMock).toHaveBeenCalledTimes(2)
+    expect(patchMock.mock.calls.map(call => call[1].baseRevision)).toEqual([5, 6])
   })
 
-  it('loads a bounded original-page summary window without loading originals', async () => {
-    const { getAvailableImages } = await import('@/api/continuation')
+  it('loads a bounded original-page summary without touching continuation data', async () => {
+    const { getOriginalReferenceImages } = await import('@/api/continuation')
 
-    await expect(getAvailableImages('book/id one')).resolves.toMatchObject({
+    await expect(getOriginalReferenceImages('book/id one')).resolves.toMatchObject({
       original_images: [
         {
           token: 'source-7',
@@ -309,9 +321,7 @@ describe('continuation v2 api facade', () => {
           has_image: true,
         },
       ],
-      total_original_pages: 7,
       original_cursor: 0,
-      has_older_original_images: false,
     })
     expect(getMock).toHaveBeenCalledWith(
       '/api/v2/insight/books/book%2Fid%20one/chapters',
@@ -319,7 +329,24 @@ describe('continuation v2 api facade', () => {
     expect(getMock).toHaveBeenCalledWith('/api/v2/insight/books/book%2Fid%20one/pages', {
       params: { cursor: 0, limit: 100 },
     })
+    expect(getMock).not.toHaveBeenCalledWith(
+      '/api/v2/insight/books/book%2Fid%20one/continuation',
+    )
+    expect(getMock).not.toHaveBeenCalledWith(
+      '/api/v2/insight/continuation/projects/project-1/forms',
+      expect.anything(),
+    )
     expect(getMock).not.toHaveBeenCalledWith('/api/v2/assets/source-7')
+  })
+
+  it('loads continuation images and the first form cursor page for image generation', async () => {
+    const { getAvailableImages } = await import('@/api/continuation')
+
+    await expect(getAvailableImages('book/id one')).resolves.toMatchObject({
+      continuation_images: [{ token: 'generated-1', page_number: 1 }],
+      character_forms: [{ token: 'reference-1', form_id: 'form-1' }],
+      character_forms_cursor: null,
+    })
   })
 
   it('uses stable IDs and CAS revisions for character and form mutations', async () => {
@@ -352,6 +379,36 @@ describe('continuation v2 api facade', () => {
     expect(deleteMock).toHaveBeenCalledWith(
       '/api/v2/insight/continuation/characters/character-1?baseRevision=3',
       { headers: { 'Idempotency-Key': expect.any(String) } }
+    )
+  })
+
+  it('uploads exactly the selected reference image before creating a character-sheet job', async () => {
+    const sourceImage = new File(['reference'], 'reference.png', { type: 'image/png' })
+    uploadMock.mockImplementation((_url: string, body: FormData) => {
+      expect(body.get('file')).toBe(sourceImage)
+      expect(body.get('baseRevision')).toBe('2')
+      return Promise.resolve({ ...form, revision: 3 })
+    })
+    postMock.mockResolvedValue({
+      batchId: 'ortho-batch',
+      jobIds: ['ortho-job'],
+      status: 'queued',
+    })
+    const { generateFormOrtho } = await import('@/api/continuation')
+
+    await expect(
+      generateFormOrtho('book/id one', '阿尔托莉雅', 'form-1', sourceImage),
+    ).resolves.toBe('ortho-job')
+
+    expect(uploadMock).toHaveBeenCalledWith(
+      '/api/v2/insight/continuation/forms/form-1/reference',
+      expect.any(FormData),
+      { headers: { 'Idempotency-Key': expect.any(String) } },
+    )
+    expect(postMock).toHaveBeenCalledWith(
+      '/api/v2/insight/books/book%2Fid%20one/continuation/jobs',
+      { kind: 'character_sheet', formId: 'form-1' },
+      { headers: { 'Idempotency-Key': expect.any(String) } },
     )
   })
 

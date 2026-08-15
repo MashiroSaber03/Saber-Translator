@@ -18,7 +18,7 @@ except ImportError:
 # 导入常量和路径助手
 from src.shared import constants
 from src.shared.memory_errors import is_memory_allocation_error
-from src.shared.path_helpers import get_font_path, resource_path
+from src.shared.path_helpers import get_font_path
 
 # 类型提示（避免循环导入）
 if TYPE_CHECKING:
@@ -208,10 +208,7 @@ def get_cached_freetype_font(path: str) -> Optional["freetype.Face"]:
     path = path.replace('\\', '/')
     if path not in _freetype_font_cache:
         try:
-            # 使用 resource_path 处理打包后的路径
-            abs_path = resource_path(path)
-            if not os.path.exists(abs_path):
-                abs_path = get_font_path(path)
+            abs_path = get_font_path(path)
             
             if os.path.exists(abs_path):
                 # 保存文件句柄引用，防止被关闭
@@ -630,11 +627,7 @@ def get_font(font_family_relative_path=constants.DEFAULT_FONT_RELATIVE_PATH, fon
         FileNotFoundError: 字体文件不存在。
         OSError: 字体文件无法被 Pillow 读取。
     """
-    try:
-        font_size = int(font_size)
-    except (ValueError, TypeError) as exc:
-        raise ValueError("font_size must be a positive integer") from exc
-    if font_size <= 0:
+    if isinstance(font_size, bool) or not isinstance(font_size, int) or font_size <= 0:
         raise ValueError("font_size must be a positive integer")
 
     cache_key = (font_family_relative_path, font_size)
@@ -688,52 +681,42 @@ def calculate_auto_font_size(text, bubble_width, bubble_height, text_direction='
         mid = (low + high) // 2
         if mid == 0: break
 
-        try:
-            font = get_font(font_family_relative_path, mid)
-            if font is None:
-                high = mid - 1
-                continue
+        get_font(font_family_relative_path, mid)
 
-            avg_char_width = mid * c_w
-            avg_char_height = mid
+        avg_char_width = mid * c_w
+        avg_char_height = mid
 
-            if text_direction == 'horizontal':
-                chars_per_line = max(1, int(W / avg_char_width)) if avg_char_width > 0 else N
-                # 考虑换行符：每个段落至少占一行
-                lines_needed = 0
-                for length in paragraph_lengths:
-                    if length > 0:
-                        lines_needed += math.ceil(length / chars_per_line)
-                    else:
-                        lines_needed += 1  # 空段落也占一行
-                # 至少需要 num_paragraphs 行（用户手动换行）
-                lines_needed = max(lines_needed, num_paragraphs)
-                total_height_needed = lines_needed * mid * l_h
-                fits = total_height_needed <= H
-            else: # vertical
-                chars_per_column = max(1, int(H / avg_char_height)) if avg_char_height > 0 else N
-                # 考虑换行符：每个段落至少占一列
-                columns_needed = 0
-                for length in paragraph_lengths:
-                    if length > 0:
-                        columns_needed += math.ceil(length / chars_per_column)
-                    else:
-                        columns_needed += 1  # 空段落也占一列
-                # 至少需要 num_paragraphs 列（用户手动换行）
-                columns_needed = max(columns_needed, num_paragraphs)
-                total_width_needed = columns_needed * mid * l_h
-                fits = total_width_needed <= W
+        if text_direction == 'horizontal':
+            chars_per_line = max(1, int(W / avg_char_width)) if avg_char_width > 0 else N
+            # 考虑换行符：每个段落至少占一行
+            lines_needed = 0
+            for length in paragraph_lengths:
+                if length > 0:
+                    lines_needed += math.ceil(length / chars_per_line)
+                else:
+                    lines_needed += 1  # 空段落也占一行
+            # 至少需要 num_paragraphs 行（用户手动换行）
+            lines_needed = max(lines_needed, num_paragraphs)
+            total_height_needed = lines_needed * mid * l_h
+            fits = total_height_needed <= H
+        else: # vertical
+            chars_per_column = max(1, int(H / avg_char_height)) if avg_char_height > 0 else N
+            # 考虑换行符：每个段落至少占一列
+            columns_needed = 0
+            for length in paragraph_lengths:
+                if length > 0:
+                    columns_needed += math.ceil(length / chars_per_column)
+                else:
+                    columns_needed += 1  # 空段落也占一列
+            # 至少需要 num_paragraphs 列（用户手动换行）
+            columns_needed = max(columns_needed, num_paragraphs)
+            total_width_needed = columns_needed * mid * l_h
+            fits = total_width_needed <= W
 
-            if fits:
-                best_size = mid
-                low = mid + 1
-            else:
-                high = mid - 1
-
-        except Exception as e:
-            if is_memory_allocation_error(e):
-                raise
-            logger.error(f"计算字号 {mid} 时出错: {e}", exc_info=True)
+        if fits:
+            best_size = mid
+            low = mid + 1
+        else:
             high = mid - 1
 
     result = max(min_size, best_size)
@@ -1650,24 +1633,19 @@ def render_bubbles_unified(
         bubble_height = y2 - y1
         
         if bubble_width <= 0 or bubble_height <= 0:
-            logger.warning(f"气泡 {i} 坐标无效: {state.coords}，跳过。")
-            continue
+            raise ValueError(f"气泡 {i}: coords must describe a positive-area box")
         
         # 直接使用保存的字号
-        current_font_size = state.font_size if state.font_size > 0 else constants.DEFAULT_FONT_SIZE
+        current_font_size = state.font_size
         
         # 加载字体
         font = get_font(state.font_family, current_font_size)
-        if font is None:
-            raise RuntimeError(
-                f"气泡 {i}: 无法加载字体 {state.font_family}"
-            )
         
         # 计算绘制参数
-        offset_x = state.position_offset.get('x', 0)
-        offset_y = state.position_offset.get('y', 0)
-        max_text_width = max(10, bubble_width)
-        max_text_height = max(10, bubble_height)
+        offset_x = state.position_offset['x']
+        offset_y = state.position_offset['y']
+        max_text_width = bubble_width
+        max_text_height = bubble_height
         
         try:
             if state.rotation_angle != 0:
@@ -1700,7 +1678,7 @@ def render_bubbles_unified(
                             line_spacing=state.line_spacing,
                             text_align=state.text_align
                         )
-                    else:
+                    elif state.text_direction == 'horizontal':
                         draw_multiline_text_horizontal(
                             temp_draw, text, font,
                             temp_offset_x, temp_offset_y, max_text_width,
@@ -1713,6 +1691,10 @@ def render_bubbles_unified(
                             line_spacing=state.line_spacing,
                             text_align=state.text_align
                         )
+                    else:
+                        raise ValueError(
+                            f"气泡 {i}: unsupported text direction {state.text_direction!r}"
+                        )
 
                     temp_center = temp_size // 2
                     rotated_img = temp_img.rotate(
@@ -1724,8 +1706,8 @@ def render_bubbles_unified(
 
                     bubble_center_x = (x1 + x2) // 2
                     bubble_center_y = (y1 + y2) // 2
-                    paste_x = bubble_center_x - temp_center + offset_x
-                    paste_y = bubble_center_y - temp_center + offset_y
+                    paste_x = int(round(bubble_center_x - temp_center + offset_x))
+                    paste_y = int(round(bubble_center_y - temp_center + offset_y))
                     image.paste(rotated_img, (paste_x, paste_y), rotated_img)
                 finally:
                     _close_images(rotated_img, temp_img)
@@ -1747,7 +1729,7 @@ def render_bubbles_unified(
                         line_spacing=state.line_spacing,
                         text_align=state.text_align
                     )
-                else:
+                elif state.text_direction == 'horizontal':
                     draw_multiline_text_horizontal(
                         draw, text, font, draw_x, draw_y, max_text_width,
                         fill=state.text_color,
@@ -1758,6 +1740,10 @@ def render_bubbles_unified(
                         font_family_path=state.font_family,
                         line_spacing=state.line_spacing,
                         text_align=state.text_align
+                    )
+                else:
+                    raise ValueError(
+                        f"气泡 {i}: unsupported text direction {state.text_direction!r}"
                     )
                     
         except Exception as render_e:

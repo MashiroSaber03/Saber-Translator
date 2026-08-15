@@ -65,6 +65,7 @@ describe('SponsorModal', () => {
     expect(source).toContain('var(--color-text-supporting)')
     expect(source).not.toContain('color-border-subtle')
     expect(source).not.toContain('color-text-secondary')
+    expect(source).toContain('flex-wrap: wrap')
   })
 
   it('keeps sponsor modal hooks under the sponsor-modal owner', () => {

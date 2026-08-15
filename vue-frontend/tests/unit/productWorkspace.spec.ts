@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import ProductTabbedWorkspace from '@/components/product/ProductTabbedWorkspace.vue'
 import ProductThreePaneWorkspace from '@/components/product/ProductThreePaneWorkspace.vue'
@@ -10,6 +10,10 @@ import ProductSegmentedTabs from '@/components/product/ProductSegmentedTabs.vue'
 import ProductWorkspacePanel from '@/components/product/ProductWorkspacePanel.vue'
 import ProductCollapsibleSection from '@/components/product/ProductCollapsibleSection.vue'
 import ProductWizardSteps from '@/components/product/ProductWizardSteps.vue'
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 describe('ProductWorkspacePanel', () => {
   it('shares class-binding prop types across product workspace shells', () => {
@@ -128,6 +132,48 @@ describe('ProductWorkspacePanel', () => {
     expect(source).not.toContain('writing-mode')
   })
 
+  it('reveals the selected tab after selection and responsive viewport changes', async () => {
+    const scrollIntoView = vi.fn()
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView
+    Object.defineProperty(window.HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    })
+
+    const wrapper = mount(ProductTabbedWorkspace, {
+      props: {
+        tabs: [
+          { id: 'overview', label: '概览' },
+          { id: 'qa', label: '智能问答' },
+          { id: 'timeline', label: '时间线' },
+        ],
+        activeTab: 'overview',
+      },
+    })
+    await wrapper.vm.$nextTick()
+    scrollIntoView.mockClear()
+
+    await wrapper.setProps({ activeTab: 'timeline' })
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+    expect(scrollIntoView).toHaveBeenLastCalledWith({ block: 'nearest', inline: 'nearest' })
+
+    scrollIntoView.mockClear()
+    window.dispatchEvent(new Event('resize'))
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+    expect(scrollIntoView).toHaveBeenCalled()
+    wrapper.unmount()
+    if (originalScrollIntoView) {
+      Object.defineProperty(window.HTMLElement.prototype, 'scrollIntoView', {
+        configurable: true,
+        value: originalScrollIntoView,
+      })
+    } else {
+      delete (window.HTMLElement.prototype as Partial<HTMLElement>).scrollIntoView
+    }
+  })
+
   it('keeps shared tabbed workspaces independent from business domain tokens', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/product/ProductTabbedWorkspace.vue'),
@@ -137,14 +183,9 @@ describe('ProductWorkspacePanel', () => {
     expect(source).not.toContain('--insight-')
   })
 
-  it('keeps product workspace tests on current typed contracts', () => {
-    const source = readFileSync(resolve(process.cwd(), 'tests/unit/productWorkspace.spec.ts'), 'utf8')
-
-    expect(source).not.toMatch(/\bas any\b|:\s*any\b|any\[\]/)
-  })
-
   it('keeps shared workspace tabs keyboard navigable', async () => {
     const wrapper = mount(ProductTabbedWorkspace, {
+      attachTo: document.body,
       props: {
         tabs: [
           { id: 'overview', label: '概览' },
@@ -160,11 +201,16 @@ describe('ProductWorkspacePanel', () => {
     const tabs = wrapper.findAll('[role="tab"]')
     expect(tabs.map(tab => tab.attributes('tabindex'))).toEqual(['0', '-1', '-1', '-1'])
 
+    const firstTab = tabs[0]!.element as HTMLElement
+    firstTab.focus()
     await tabs[0].trigger('keydown', { key: 'ArrowRight' })
+    expect(document.activeElement).toBe(tabs[1]!.element)
     await tabs[0].trigger('keydown', { key: 'End' })
+    expect(document.activeElement).toBe(tabs[3]!.element)
 
     expect(wrapper.emitted('update:activeTab')).toEqual([['qa'], ['continuation']])
     expect(wrapper.emitted('select')).toEqual([['qa'], ['continuation']])
+    wrapper.unmount()
   })
 
   it('renders tab icons only through the current iconName contract', () => {
@@ -252,6 +298,7 @@ describe('ProductWorkspacePanel', () => {
 
   it('keeps segmented tabs keyboard navigable without global generated ids', async () => {
     const wrapper = mount(ProductSegmentedTabs, {
+      attachTo: document.body,
       props: {
         tabs: [
           { id: 'basic', label: '基本设置' },
@@ -272,9 +319,12 @@ describe('ProductWorkspacePanel', () => {
     await tabs[0].trigger('keydown', { key: 'ArrowRight' })
     expect(wrapper.emitted('update:activeTab')?.[0]).toEqual(['advanced'])
     expect(wrapper.emitted('select')?.[0]).toEqual(['advanced'])
+    expect(document.activeElement).toBe(tabs[2]!.element)
 
     await tabs[0].trigger('keydown', { key: 'End' })
     expect(wrapper.emitted('update:activeTab')?.[1]).toEqual(['advanced'])
+    expect(document.activeElement).toBe(tabs[2]!.element)
+    wrapper.unmount()
   })
 
   it('owns product collapsible section disclosure semantics', async () => {
@@ -379,6 +429,20 @@ describe('ProductWorkspacePanel', () => {
     expect(wrapper.find('.product-three-pane-workspace__pane--right .right-content').exists()).toBe(true)
   })
 
+  it('does not reserve an empty right pane before its owner content is ready', async () => {
+    const wrapper = mount(ProductThreePaneWorkspace, {
+      props: { showRight: false },
+      slots: {
+        default: '<div>Main</div>',
+        right: '<div class="right-content">Right</div>',
+      },
+    })
+
+    expect(wrapper.find('.product-three-pane-workspace__pane--right').exists()).toBe(false)
+    await wrapper.setProps({ showRight: true })
+    expect(wrapper.find('.product-three-pane-workspace__pane--right .right-content').exists()).toBe(true)
+  })
+
   it('switches drawer panes before fixed sidebars squeeze the main workspace', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/product/ProductThreePaneWorkspace.vue'),
@@ -429,5 +493,15 @@ describe('ProductWorkspacePanel', () => {
 
     expect(wrapper.emitted('update:leftPaneWidth')?.[0]).toEqual([54])
     expect(wrapper.emitted('resize')?.[0]).toEqual([54])
+
+    resizer.element.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 2 }))
+    await Promise.resolve()
+    expect(wrapper.classes()).not.toContain('product-split-workspace--resizing')
+    resizer.element.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }))
+    await Promise.resolve()
+    expect(wrapper.classes()).toContain('product-split-workspace--resizing')
+    window.dispatchEvent(new Event('pointercancel'))
+    await Promise.resolve()
+    expect(wrapper.classes()).not.toContain('product-split-workspace--resizing')
   })
 })

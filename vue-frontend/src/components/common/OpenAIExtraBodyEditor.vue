@@ -3,7 +3,7 @@
     class="openai-extra-body-editor"
     variant="settings"
     :label="label"
-    control-id="openAiExtraBody"
+    :control-id="resolvedInputId"
     :hint="errorMessage ? '' : hint"
     :error="errorMessage"
   >
@@ -19,7 +19,7 @@
       </UiButton>
     </template>
     <UiTextarea
-      id="openAiExtraBody"
+      :id="resolvedInputId"
       :model-value="localText"
       :rows="rows"
       :placeholder="placeholder"
@@ -37,7 +37,7 @@ import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiField from '@/components/ui/UiField.vue'
 import { deepClone } from '@/utils/deepClone'
-import { ref, watch } from 'vue'
+import { computed, ref, toRaw, useId, watch } from 'vue'
 
 const props = withDefaults(defineProps<{
   modelValue?: Record<string, unknown>
@@ -46,6 +46,7 @@ const props = withDefaults(defineProps<{
   placeholder?: string
   rows?: number
   disabled?: boolean
+  inputId?: string
   reservedKeys?: string[]
 }>(), {
   label: '附加请求字段(JSON对象):',
@@ -53,6 +54,7 @@ const props = withDefaults(defineProps<{
   placeholder: '{\n  "thinking": {\n    "type": "disabled"\n  }\n}',
   rows: 6,
   disabled: false,
+  inputId: '',
   reservedKeys: () => ['model', 'messages', 'temperature', 'response_format', 'stream']
 })
 
@@ -62,6 +64,10 @@ const emit = defineEmits<{
 
 const localText = ref('')
 const errorMessage = ref('')
+const generatedInputId = useId()
+const resolvedInputId = computed(() => props.inputId || generatedInputId)
+let pendingLocalModel: Record<string, unknown> | undefined
+let hasPendingLocalModel = false
 
 function formatValue(value?: Record<string, unknown>): string {
   if (!value || Object.keys(value).length === 0) return ''
@@ -84,6 +90,14 @@ function parseObject(text: string): Record<string, unknown> {
 watch(
   () => props.modelValue,
   (value) => {
+    if (hasPendingLocalModel && toRaw(value) === pendingLocalModel) {
+      hasPendingLocalModel = false
+      pendingLocalModel = undefined
+      errorMessage.value = ''
+      return
+    }
+    hasPendingLocalModel = false
+    pendingLocalModel = undefined
     const formatted = formatValue(value)
     if (formatted !== localText.value) {
       localText.value = formatted
@@ -93,20 +107,26 @@ watch(
   { immediate: true, deep: true }
 )
 
+function emitValue(value: Record<string, unknown> | undefined): void {
+  hasPendingLocalModel = true
+  pendingLocalModel = value
+  emit('update:modelValue', value)
+}
+
 function handleInput(nextValue: string): void {
   localText.value = nextValue
 
   const trimmed = nextValue.trim()
   if (!trimmed) {
     errorMessage.value = ''
-    emit('update:modelValue', undefined)
+    emitValue(undefined)
     return
   }
 
   try {
     const parsed = parseObject(trimmed)
     errorMessage.value = ''
-    emit('update:modelValue', deepClone(parsed))
+    emitValue(deepClone(parsed))
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'JSON 解析失败'
   }
@@ -121,7 +141,7 @@ function formatJson(): void {
     const formatted = JSON.stringify(parsed, null, 2)
     localText.value = formatted
     errorMessage.value = ''
-    emit('update:modelValue', deepClone(parsed))
+    emitValue(deepClone(parsed))
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'JSON 解析失败'
   }

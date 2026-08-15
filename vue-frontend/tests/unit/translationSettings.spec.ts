@@ -196,6 +196,29 @@ describe('TranslationSettings', () => {
     expect(selectedValues).toContain('json')
   })
 
+  it('keeps controls and the active prompt bound to a replaced store draft', async () => {
+    const store = useSettingsStore()
+    const wrapper = mount(TranslationSettings)
+    const replacement = JSON.parse(JSON.stringify(store.settings)) as typeof store.settings
+    replacement.translation.provider = 'ollama'
+    replacement.translation.modelName = 'replacement-local-model'
+    replacement.translation.translationMode = 'single'
+    replacement.translation.openaiOptions.request.forceJsonOutput = true
+    replacement.translation.singleJsonPrompt = 'replacement single JSON prompt'
+    store.settings = replacement
+    await wrapper.vm.$nextTick()
+
+    const modelPickers = wrapper.findAllComponents(UiModelPicker)
+    expect(modelPickers.some(picker => picker.props('modelValue') === 'replacement-local-model'))
+      .toBe(true)
+    expect(wrapper.get<HTMLTextAreaElement>('#settingsPromptContent').element.value)
+      .toBe('replacement single JSON prompt')
+    const selectedValues = wrapper.findAllComponents(UiSelect).map(select => select.props('modelValue'))
+    expect(selectedValues).toContain('ollama')
+    expect(selectedValues).toContain('single')
+    expect(selectedValues).toContain('json')
+  })
+
   it('uses fixed select primitives for provider and prompt mode fields', () => {
     const wrapper = mount(TranslationSettings)
 

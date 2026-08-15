@@ -5,6 +5,7 @@ import { defineComponent, h, type PropType } from 'vue'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { UiSelectOption } from '@/components/ui/selectTypes'
+import { DEFAULT_AUTO_GLOSSARY_PROMPT } from '@/constants'
 
 vi.mock('@/api/v2/settings', async importOriginal => ({
   ...await importOriginal<typeof import('@/api/v2/settings')>(),
@@ -74,9 +75,14 @@ describe('SettingsSidebar book constraints entrypoints', () => {
   it('enables buttons and emits open events when in bookshelf mode', async () => {
     const constraintStore = useBookTranslationConstraintsStore()
     constraintStore.loadBookConstraints('book-1', {
-      glossary: { enabled: false, entries: [] },
-      non_translate: { enabled: false, entries: [] },
-    })
+      glossary: {
+        enabled: false,
+        autoExtractEnabled: false,
+        autoExtractPrompt: DEFAULT_AUTO_GLOSSARY_PROMPT,
+        entries: [],
+      },
+      nonTranslate: { enabled: false, entries: [] },
+    }, 1)
 
     const wrapper = mount(SettingsSidebar)
     const buttons = wrapper.findAll('button')

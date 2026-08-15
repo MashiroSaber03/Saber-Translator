@@ -2,9 +2,7 @@
 withDefaults(defineProps<{
   label?: string
   hint?: string
-  description?: string
   error?: string
-  forId?: string
   controlId?: string
   required?: boolean
   variant?: 'default' | 'settings' | 'dialog' | 'editor'
@@ -15,9 +13,7 @@ withDefaults(defineProps<{
 }>(), {
   label: '',
   hint: '',
-  description: '',
   error: '',
-  forId: '',
   controlId: '',
   required: false,
   variant: 'default',
@@ -47,7 +43,7 @@ withDefaults(defineProps<{
       class="ui-field__header"
       :class="{ 'ui-field__header--visually-hidden': labelVisuallyHidden }"
     >
-      <label v-if="label" class="ui-field__label" :for="controlId || forId || undefined">
+      <label v-if="label" class="ui-field__label" :for="controlId || undefined">
         {{ label }}
         <span v-if="required" class="ui-field__required" aria-hidden="true">*</span>
       </label>
@@ -56,7 +52,7 @@ withDefaults(defineProps<{
       </div>
     </div>
     <slot />
-    <p v-if="description || hint" class="ui-field__hint">{{ description || hint }}</p>
+    <p v-if="hint" class="ui-field__hint">{{ hint }}</p>
     <p v-if="error" class="ui-field__error">{{ error }}</p>
   </div>
 </template>

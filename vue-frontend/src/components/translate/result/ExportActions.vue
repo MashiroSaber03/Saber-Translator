@@ -20,6 +20,7 @@ defineProps<{
   hasDownloadableImage: boolean
   hasImages: boolean
   isDownloading: boolean
+  isImporting: boolean
 }>()
 
 const emit = defineEmits<{
@@ -69,7 +70,7 @@ function handleImportFile(files: File[]): void {
       <UiButton
         class="result-export-actions__button result-export-actions__button--primary"
         variant="primary"
-        :disabled="!hasDownloadableImage"
+        :disabled="!hasDownloadableImage || isDownloading || isImporting"
         @click="$emit('downloadCurrent')"
       >
         下载当前图片
@@ -79,7 +80,7 @@ function handleImportFile(files: File[]): void {
         <UiButton
           class="result-export-actions__button result-export-actions__button--primary"
           variant="primary"
-          :disabled="!hasImages || isDownloading"
+          :disabled="!hasImages || isDownloading || isImporting"
           @click="$emit('downloadAll')"
         >
           下载所有图片
@@ -88,7 +89,7 @@ function handleImportFile(files: File[]): void {
           <UiSelect
             :model-value="downloadFormat"
             :options="downloadFormatOptions"
-            :disabled="isDownloading"
+            :disabled="isDownloading || isImporting"
             size="sm"
             aria-label="下载格式"
             @update:model-value="updateDownloadFormat"
@@ -99,7 +100,7 @@ function handleImportFile(files: File[]): void {
       <UiButton
         class="result-export-actions__button result-export-actions__button--success"
         variant="primary"
-        :disabled="!hasImages"
+        :disabled="!hasImages || isDownloading || isImporting"
         @click="$emit('exportText')"
       >
         导出文本
@@ -108,10 +109,10 @@ function handleImportFile(files: File[]): void {
       <UiButton
         class="result-export-actions__button result-export-actions__button--success"
         variant="primary"
-        :disabled="!hasImages"
+        :disabled="!hasImages || isDownloading || isImporting"
         @click="triggerImportText"
       >
-        导入文本
+        {{ isImporting ? '导入中…' : '导入文本' }}
       </UiButton>
 
       <UiFileInput

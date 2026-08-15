@@ -19,6 +19,8 @@ from urllib.request import urlopen
 import uuid
 import webbrowser
 
+import psutil
+
 from src.backend_v2.logging_config import LOG_LEVEL_ENV, configure_backend_logging
 from src.backend_v2.paths import (
     DATA_ROOT_ENV,
@@ -30,6 +32,7 @@ from src.backend_v2.paths import (
 from src.backend_v2.runtime_identity import (
     API_EPOCH_ID_ENV,
     API_EPOCH_TOKEN_ENV,
+    LAUNCHER_PID_ENV,
     WORKER_EPOCH_ID_ENV,
     WORKER_EPOCH_TOKEN_ENV,
 )
@@ -48,6 +51,9 @@ MAX_CONSECUTIVE_RESTARTS = 3
 API_HEALTH_CHECK_INTERVAL_SECONDS = 1.0
 API_HEALTH_FAILURE_LIMIT = 3
 RESTART_STABILITY_SECONDS = 30.0
+PREVIOUS_CHILD_EXIT_TIMEOUT_SECONDS = 5.0
+TORCH_CUDNN_V8_API_LRU_CACHE_LIMIT_ENV = "TORCH_CUDNN_V8_API_LRU_CACHE_LIMIT"
+WORKER_CUDNN_V8_API_LRU_CACHE_LIMIT = "1000"
 LOGGER = logging.getLogger("saber.launcher")
 
 
@@ -135,6 +141,7 @@ def _child_environment(
 ) -> dict[str, str]:
     environment = os.environ.copy()
     environment[DATA_ROOT_ENV] = str(data_root)
+    environment[LAUNCHER_PID_ENV] = str(os.getpid())
     if log_level:
         environment[LOG_LEVEL_ENV] = log_level
     if registration.role != role:
@@ -153,6 +160,11 @@ def _child_environment(
             {
                 WORKER_EPOCH_ID_ENV: registration.epoch_id,
                 WORKER_EPOCH_TOKEN_ENV: registration.token,
+                # 48px OCR uses variable-width batches. Bound cuDNN's host-side
+                # execution-plan cache before the Worker imports PyTorch.
+                TORCH_CUDNN_V8_API_LRU_CACHE_LIMIT_ENV: (
+                    WORKER_CUDNN_V8_API_LRU_CACHE_LIMIT
+                ),
             }
         )
         environment.pop(API_EPOCH_ID_ENV, None)
@@ -385,6 +397,66 @@ def _probe_payload(data_root: Path, host: str, port: int) -> dict[str, Any]:
     }
 
 
+def _is_expected_previous_child(pid: int, *, role: str, data_root: Path) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        command = psutil.Process(pid).cmdline()
+    except psutil.NoSuchProcess:
+        return False
+    except psutil.AccessDenied:
+        return True
+    try:
+        role_index = command.index("--role")
+        data_index = command.index("--data-dir")
+    except ValueError:
+        return False
+    if role_index + 1 >= len(command) or command[role_index + 1] != role:
+        return False
+    if data_index + 1 >= len(command):
+        return False
+    try:
+        child_data_root = Path(command[data_index + 1]).expanduser().resolve()
+    except OSError:
+        return False
+    return child_data_root == data_root
+
+
+def _wait_for_previous_children_to_exit(
+    repository: ProcessEpochRepository,
+    *,
+    data_root: Path,
+    stop_event: threading.Event,
+) -> None:
+    previous = [
+        (role, epoch_id, pid)
+        for role in ("api", "worker")
+        for epoch_id, pid in repository.active_epoch_processes(role)
+        if _is_expected_previous_child(pid, role=role, data_root=data_root)
+    ]
+    if not previous:
+        return
+    deadline = time.monotonic() + PREVIOUS_CHILD_EXIT_TIMEOUT_SECONDS
+    while previous and time.monotonic() < deadline:
+        if stop_event.wait(0.05):
+            raise _LauncherStopRequested
+        previous = [
+            item
+            for item in previous
+            if _is_expected_previous_child(
+                item[2],
+                role=item[0],
+                data_root=data_root,
+            )
+        ]
+    if previous:
+        rendered = ", ".join(
+            f"{role} pid={pid} epoch={epoch_id[:8]}"
+            for role, epoch_id, pid in previous
+        )
+        raise RuntimeError(f"previous backend child did not exit: {rendered}")
+
+
 def _reconcile_all_previous_epochs(repository: ProcessEpochRepository) -> None:
     for epoch_id in repository.active_epochs("api"):
         repository.reconcile_dead_api(epoch_id)
@@ -407,16 +479,16 @@ def _start_child(
 ) -> ManagedChild:
     _raise_if_stop_requested(stop_event)
     registration = _new_registration(role)
-    repository.register(registration)
     started_at = time.monotonic()
     process: subprocess.Popen[str] | None = None
-    LOGGER.info(
-        "正在启动 %s 子进程（epoch=%s，restart=%s）",
-        role.upper(),
-        registration.epoch_id[:8],
-        restart_count,
-    )
     try:
+        repository.register(registration)
+        LOGGER.info(
+            "正在启动 %s 子进程（epoch=%s，restart=%s）",
+            role.upper(),
+            registration.epoch_id[:8],
+            restart_count,
+        )
         process = _spawn(
             _role_command(role, data_root=data_root, host=host, port=port),
             _child_environment(
@@ -605,6 +677,11 @@ class LauncherSupervisor:
                 launcher_registration = _new_registration("launcher", pid=os.getpid())
                 repository.register(launcher_registration)
                 try:
+                    _wait_for_previous_children_to_exit(
+                        repository,
+                        data_root=config.data_root,
+                        stop_event=self._stop_event,
+                    )
                     _reconcile_all_previous_epochs(repository)
                     LOGGER.info("已完成历史进程租约与中断任务恢复")
                     recovered = object_storage.recover_journal()

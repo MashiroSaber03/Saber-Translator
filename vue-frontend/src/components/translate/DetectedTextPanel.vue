@@ -11,47 +11,9 @@ defineProps<{
   items: DetectedTextItem[]
 }>()
 
-const MAX_LINE_LENGTH = 60
-
-function wrapText(text: string): string {
-  if (!text || text.length <= MAX_LINE_LENGTH) return text
-
-  let result = ''
-  let currentLine = ''
-
-  for (let i = 0; i < text.length; i++) {
-    currentLine += text[i]
-    if (currentLine.length >= MAX_LINE_LENGTH) {
-      let breakPoint = -1
-      for (let j = currentLine.length - 1; j >= 0; j--) {
-        const char = currentLine[j]
-        if (char && ['。', '！', '？', '.', '!', '?', '；', ';', '，', ','].includes(char)) {
-          breakPoint = j + 1
-          break
-        }
-      }
-
-      if (breakPoint > MAX_LINE_LENGTH * 0.6) {
-        result += `${currentLine.substring(0, breakPoint)}\n`
-        currentLine = currentLine.substring(breakPoint)
-      } else {
-        result += `${currentLine}\n`
-        currentLine = ''
-      }
-    }
-  }
-
-  if (currentLine) {
-    result += currentLine
-  }
-
-  return result
-}
-
 function formatText(text: string): string {
-  return wrapText((text || '').trim())
+  return text.trim()
 }
-
 </script>
 
 <template>

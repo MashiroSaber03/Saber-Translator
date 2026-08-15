@@ -6,10 +6,15 @@ import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductRecordCard from '@/components/product/ProductRecordCard.vue'
 import DiagnosticsPanel from '../DiagnosticsPanel.vue'
 import StudioEditorSectionPanel from './StudioEditorSectionPanel.vue'
-import type { CharacterStudioDocument, CharacterStudioEditorPendingState, ExportDiagnostic } from '@/types/characterStudio'
+import type {
+  CharacterStudioDocument,
+  CharacterStudioEditorPendingState,
+  CharacterStudioSection,
+  ExportDiagnostic,
+} from '@/types/characterStudio'
 
 type FreezeItem = {
-  key: string
+  key: CharacterStudioSection
   label: string
 }
 
@@ -25,14 +30,14 @@ defineProps<{
   flattenedLorebookCount: number
   formatOrigin: (origin: CharacterStudioDocument['origin']['type']) => string
   freezeItems: readonly FreezeItem[]
-  isFrozen: (section: string) => boolean
+  isFrozen: (section: CharacterStudioSection) => boolean
   latestReview: ReviewSummary
   pendingState: CharacterStudioEditorPendingState
 }>()
 
 defineEmits<{
   (event: 'tab', value: 'character' | 'greetings' | 'lorebook' | 'scripts'): void
-  (event: 'toggleFrozen', section: string, value: boolean): void
+  (event: 'toggleFrozen', section: CharacterStudioSection, value: boolean): void
   (event: 'validate'): void
 }>()
 </script>
@@ -42,52 +47,90 @@ defineEmits<{
     <div class="studio-overview-tab__summary-grid">
       <ProductRecordCard class="studio-overview-tab__summary-card">
         <span class="studio-overview-tab__summary-label">来源摘要</span>
-        <strong class="studio-overview-tab__summary-value">{{ formatOrigin(document.origin.type) }}</strong>
-        <p v-if="document.origin.source_character" class="studio-overview-tab__summary-description">通过分析候选「{{ document.origin.source_character }}」锁定角色名创建</p>
-        <p v-else class="studio-overview-tab__summary-description">当前文档为手工或外部导入角色。</p>
+        <strong class="studio-overview-tab__summary-value">{{
+          formatOrigin(document.origin.type)
+        }}</strong>
+        <p v-if="document.origin.source_character" class="studio-overview-tab__summary-description">
+          通过分析候选「{{ document.origin.source_character }}」锁定角色名创建
+        </p>
+        <p v-else class="studio-overview-tab__summary-description">
+          当前文档为手工或外部导入角色。
+        </p>
       </ProductRecordCard>
       <ProductRecordCard class="studio-overview-tab__summary-card">
         <span class="studio-overview-tab__summary-label">运行时资源</span>
-        <strong class="studio-overview-tab__summary-value">{{ document.regexScripts.length + document.stateTasks.length }}</strong>
-        <p class="studio-overview-tab__summary-description">{{ document.regexScripts.length }} 个脚本 · {{ document.stateTasks.length }} 个任务</p>
+        <strong class="studio-overview-tab__summary-value">{{
+          document.regexScripts.length + document.stateTasks.length
+        }}</strong>
+        <p class="studio-overview-tab__summary-description">
+          {{ document.regexScripts.length }} 个脚本 · {{ document.stateTasks.length }} 个任务
+        </p>
       </ProductRecordCard>
       <ProductRecordCard class="studio-overview-tab__summary-card">
         <span class="studio-overview-tab__summary-label">问候语库存</span>
-        <strong class="studio-overview-tab__summary-value">{{ document.coreMessages.alternate_greetings.length + (document.coreMessages.first_message ? 1 : 0) }}</strong>
-        <p class="studio-overview-tab__summary-description">1 条主问候 + {{ document.coreMessages.alternate_greetings.length }} 条备用问候</p>
+        <strong class="studio-overview-tab__summary-value">{{
+          document.coreMessages.alternate_greetings.length +
+            (document.coreMessages.first_message ? 1 : 0)
+        }}</strong>
+        <p class="studio-overview-tab__summary-description">
+          {{ document.coreMessages.first_message ? 1 : 0 }} 条主问候 +
+          {{ document.coreMessages.alternate_greetings.length }} 条备用问候
+        </p>
       </ProductRecordCard>
       <ProductRecordCard class="studio-overview-tab__summary-card">
         <span class="studio-overview-tab__summary-label">知识量</span>
         <strong class="studio-overview-tab__summary-value">{{ flattenedLorebookCount }}</strong>
-        <p class="studio-overview-tab__summary-description">世界书树当前共有 {{ flattenedLorebookCount }} 个节点。</p>
+        <p class="studio-overview-tab__summary-description">
+          世界书树当前共有 {{ flattenedLorebookCount }} 个节点。
+        </p>
       </ProductRecordCard>
     </div>
 
     <div class="studio-overview-tab__workspace-row">
       <StudioEditorSectionPanel title="快速入口" description="直接跳到你现在最可能继续编辑的模块。">
         <div class="studio-overview-tab__quick-grid">
-          <ProductRecordCard as="button" class="studio-overview-tab__quick-card" aria-label="打开角色设定" @click="$emit('tab', 'character')">
+          <ProductRecordCard
+            as="button"
+            class="studio-overview-tab__quick-card"
+            aria-label="打开角色设定"
+            @click="$emit('tab', 'character')"
+          >
             <span class="studio-overview-tab__quick-icon">
               <UiIcon name="users" size="18" />
             </span>
             <strong class="studio-overview-tab__quick-title">角色设定</strong>
             <p class="studio-overview-tab__quick-description">完善简介、性格、场景、标签。</p>
           </ProductRecordCard>
-          <ProductRecordCard as="button" class="studio-overview-tab__quick-card" aria-label="打开问候语" @click="$emit('tab', 'greetings')">
+          <ProductRecordCard
+            as="button"
+            class="studio-overview-tab__quick-card"
+            aria-label="打开问候语"
+            @click="$emit('tab', 'greetings')"
+          >
             <span class="studio-overview-tab__quick-icon">
               <UiIcon name="message" size="18" />
             </span>
             <strong class="studio-overview-tab__quick-title">问候语</strong>
             <p class="studio-overview-tab__quick-description">打磨主问候和备用开场。</p>
           </ProductRecordCard>
-          <ProductRecordCard as="button" class="studio-overview-tab__quick-card" aria-label="打开世界书" @click="$emit('tab', 'lorebook')">
+          <ProductRecordCard
+            as="button"
+            class="studio-overview-tab__quick-card"
+            aria-label="打开世界书"
+            @click="$emit('tab', 'lorebook')"
+          >
             <span class="studio-overview-tab__quick-icon">
               <UiIcon name="book-open" size="18" />
             </span>
             <strong class="studio-overview-tab__quick-title">世界书</strong>
             <p class="studio-overview-tab__quick-description">维护角色知识树和触发条目。</p>
           </ProductRecordCard>
-          <ProductRecordCard as="button" class="studio-overview-tab__quick-card" aria-label="打开脚本任务" @click="$emit('tab', 'scripts')">
+          <ProductRecordCard
+            as="button"
+            class="studio-overview-tab__quick-card"
+            aria-label="打开脚本任务"
+            @click="$emit('tab', 'scripts')"
+          >
             <span class="studio-overview-tab__quick-icon">
               <UiIcon name="settings" size="18" />
             </span>
@@ -97,7 +140,10 @@ defineEmits<{
         </div>
       </StudioEditorSectionPanel>
 
-      <StudioEditorSectionPanel title="保护设置" description="被钉住的区块不会被 AI 再生成或 Agent patch 覆盖。">
+      <StudioEditorSectionPanel
+        title="保护设置"
+        description="被钉住的区块不会被 AI 再生成或 Agent patch 覆盖。"
+      >
         <div class="studio-overview-tab__freeze-grid">
           <div v-for="item in freezeItems" :key="item.key" class="studio-overview-tab__freeze-item">
             <span class="studio-overview-tab__freeze-item-label">{{ item.label }}</span>
@@ -115,7 +161,10 @@ defineEmits<{
     </div>
 
     <div class="studio-overview-tab__workspace-row studio-overview-tab__workspace-row--single">
-      <StudioEditorSectionPanel title="最近诊断摘要" description="导出前先看这里，能快速判断当前角色是否存在结构性问题。">
+      <StudioEditorSectionPanel
+        title="最近诊断摘要"
+        description="导出前先看这里，能快速判断当前角色是否存在结构性问题。"
+      >
         <template #actions>
           <ProductActionRow appearance="accent" aria-label="诊断操作">
             <UiButton
@@ -132,7 +181,10 @@ defineEmits<{
       </StudioEditorSectionPanel>
     </div>
 
-    <div v-if="latestReview" class="studio-overview-tab__workspace-row studio-overview-tab__workspace-row--single">
+    <div
+      v-if="latestReview"
+      class="studio-overview-tab__workspace-row studio-overview-tab__workspace-row--single"
+    >
       <StudioEditorSectionPanel
         title="最近审查"
         description="这里展示最近一次“AI 审查当前角色”的结果，方便你直接据此继续补卡。"
@@ -140,10 +192,20 @@ defineEmits<{
         <div class="studio-overview-tab__review-summary">
           <strong class="studio-overview-tab__review-title">{{ latestReview.summary }}</strong>
           <ul v-if="latestReview.issues.length > 0" class="studio-overview-tab__review-list">
-            <li v-for="(item, index) in latestReview.issues" :key="`review-issue-${index}`">{{ item }}</li>
+            <li v-for="(item, index) in latestReview.issues" :key="`review-issue-${index}`">
+              {{ item }}
+            </li>
           </ul>
-          <ul v-if="latestReview.suggestions.length > 0" class="studio-overview-tab__review-list studio-overview-tab__review-list--suggestions">
-            <li v-for="(item, index) in latestReview.suggestions" :key="`review-suggestion-${index}`">{{ item }}</li>
+          <ul
+            v-if="latestReview.suggestions.length > 0"
+            class="studio-overview-tab__review-list studio-overview-tab__review-list--suggestions"
+          >
+            <li
+              v-for="(item, index) in latestReview.suggestions"
+              :key="`review-suggestion-${index}`"
+            >
+              {{ item }}
+            </li>
           </ul>
         </div>
       </StudioEditorSectionPanel>
@@ -195,7 +257,11 @@ defineEmits<{
 
 .studio-overview-tab__summary-label {
   display: block;
-  color: color-mix(in srgb, var(--color-action-primary) 27%, color-mix(in srgb, var(--color-action-brand-strong) 17.808%, var(--color-text-subtle)));
+  color: color-mix(
+    in srgb,
+    var(--color-action-primary) 27%,
+    color-mix(in srgb, var(--color-action-brand-strong) 17.808%, var(--color-text-subtle))
+  );
   font-size: 12px;
 }
 
@@ -217,7 +283,10 @@ defineEmits<{
   --product-record-card-padding: 16px;
 
   padding: 16px;
-  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    border-color 0.18s ease;
 }
 
 .studio-overview-tab__quick-card:hover {

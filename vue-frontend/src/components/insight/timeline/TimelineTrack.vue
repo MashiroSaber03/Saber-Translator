@@ -17,10 +17,6 @@ defineEmits<{
   (event: 'toggle', id: string): void
 }>()
 
-function arcId(arc: TimelineArc, index: number): string {
-  return arc.id || `arc-${index}`
-}
-
 function arcStartPage(arc: TimelineArc): number {
   return arc.page_range.start
 }
@@ -33,10 +29,10 @@ function isExpanded(id: string): boolean {
 <template>
   <div v-if="isEnhancedData && plotArcs.length > 0" class="timeline-track">
     <div
-      v-for="(arc, index) in plotArcs"
-      :key="arcId(arc, index)"
+      v-for="arc in plotArcs"
+      :key="arc.id"
       class="timeline-track__group"
-      :class="{ 'timeline-track__group--expanded': isExpanded(arcId(arc, index)) }"
+      :class="{ 'timeline-track__group--expanded': isExpanded(arc.id) }"
     >
       <div class="timeline-track__node">
         <UiButton
@@ -44,15 +40,15 @@ function isExpanded(id: string): boolean {
           type="button"
           class="timeline-track__node-dot"
           :aria-label="`切换剧情弧 ${arc.name}`"
-          :aria-expanded="String(isExpanded(arcId(arc, index)))"
-          @click="$emit('toggle', arcId(arc, index))"
+          :aria-expanded="String(isExpanded(arc.id))"
+          @click="$emit('toggle', arc.id)"
         ></UiButton>
         <div class="timeline-track__node-line"></div>
       </div>
       <TimelineArcCard
         :arc="arc"
-        :arc-id="arcId(arc, index)"
-        :expanded="isExpanded(arcId(arc, index))"
+        :arc-id="arc.id"
+        :expanded="isExpanded(arc.id)"
         :thumbnail-url="thumbnailUrlFor(arcStartPage(arc))"
         @show-page="$emit('showPage', $event)"
         @toggle="$emit('toggle', $event)"
@@ -81,7 +77,7 @@ function isExpanded(id: string): boolean {
       <TimelineGroupCard
         :expanded="isExpanded(group.id)"
         :group="group"
-        :thumbnail-url="thumbnailUrlFor(group.thumbnail_page || group.page_range.start)"
+        :thumbnail-url="thumbnailUrlFor(group.thumbnail_page)"
         @show-page="$emit('showPage', $event)"
         @toggle="$emit('toggle', $event)"
       />

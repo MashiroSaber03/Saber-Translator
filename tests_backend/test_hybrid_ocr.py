@@ -9,7 +9,8 @@ from src.core.ocr_types import create_ocr_result, create_ocr_textline_result
 
 class HybridOcrCoreTests(unittest.TestCase):
     def test_backend_bubble_state_round_trips_textlines(self) -> None:
-        state = BubbleState.from_dict({
+        payload = BubbleState().to_dict()
+        payload.update({
             "coords": [1, 2, 3, 4],
             "textlines": [
                 {
@@ -27,6 +28,7 @@ class HybridOcrCoreTests(unittest.TestCase):
                 "fallbackUsed": False,
             },
         })
+        state = BubbleState.from_dict(payload)
 
         payload = state.to_dict()
 
@@ -40,8 +42,7 @@ class HybridOcrCoreTests(unittest.TestCase):
         self.assertEqual(payload["ocrResult"]["text"], "原文")
 
     def test_plain_manga_ocr_no_longer_uses_48px_composite_confidence(self) -> None:
-        with mock.patch("src.core.ocr.get_manga_ocr_instance", return_value=object()), \
-             mock.patch("src.core.ocr.recognize_japanese_text", return_value="こんにちは"), \
+        with mock.patch("src.core.ocr.recognize_japanese_text", return_value="こんにちは"), \
              mock.patch("src.interfaces.ocr_48px.get_48px_ocr_handler", side_effect=AssertionError("48px should not be used")):
             results = recognize_ocr_results_in_bubbles(
                 Image.new("RGB", (16, 16), color="white"),
@@ -53,6 +54,25 @@ class HybridOcrCoreTests(unittest.TestCase):
         self.assertEqual(results[0].text, "こんにちは")
         self.assertIsNone(results[0].confidence)
         self.assertFalse(results[0].confidence_supported)
+
+    def test_ocr_rejects_out_of_bounds_bubble_coordinates(self) -> None:
+        with self.assertRaisesRegex(ValueError, "超出图像范围"):
+            recognize_ocr_results_in_bubbles(
+                Image.new("RGB", (16, 16), color="white"),
+                [(0, 0, 17, 16)],
+                ocr_engine="manga_ocr",
+            )
+
+    def test_hybrid_ocr_requires_current_textline_array(self) -> None:
+        with self.assertRaisesRegex(ValueError, "文本行必须是数组"):
+            recognize_ocr_results_in_bubbles(
+                Image.new("RGB", (16, 16), color="white"),
+                [(0, 0, 16, 16)],
+                ocr_engine="48px_ocr",
+                enable_hybrid_ocr=True,
+                secondary_ocr_engine="manga_ocr",
+                textlines_per_bubble=None,
+            )
 
     def test_supported_hybrid_combo_uses_specialized_adapter(self) -> None:
         mocked_results = [

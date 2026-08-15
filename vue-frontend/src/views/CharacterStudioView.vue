@@ -1,5 +1,5 @@
 <template>
-  <AppShell class="studio-page" variant="studio" viewport-mode="immersive">
+  <AppShell class="studio-page" viewport-mode="immersive">
     <StudioTopbar
       :book-title="currentBookTitle"
       :document-title="store.currentDocument?.meta.title || ''"
@@ -34,7 +34,9 @@
       >
         {{ store.errorMessage }}
         <template #actions>
-          <UiButton variant="secondary" size="sm" @click="store.clearErrorMessage()">知道了</UiButton>
+          <UiButton variant="secondary" size="sm" @click="store.clearErrorMessage()">
+            知道了
+          </UiButton>
         </template>
       </ProductStatusBanner>
 
@@ -85,6 +87,7 @@
               :chat-loading="store.isChatLoading"
               :chat-streaming="store.isChatStreaming"
               :chat-abortable="Boolean(store.activeChatOperationId)"
+              :accepted-chat-submission-count="store.acceptedChatSubmissionCount"
               :chat-mutating="store.isChatMutating"
               :chat-summarizing="store.isChatSummarizing"
               :chat-exporting="store.isChatExporting"
@@ -117,50 +120,59 @@
       </ProductSplitWorkspace>
     </div>
 
-    <template #overlay>
-      <div
-        v-if="store.resourcePanelOpen"
-        class="studio-page__resource-overlay"
-        data-testid="resource-overlay"
-        @click.self="store.resourcePanelOpen = false"
-      >
-        <div class="studio-page__resource-dialog" data-testid="resource-dialog">
-          <CharacterStudioSidebar
-            :documents="store.filteredDocuments"
-            :candidates="store.filteredCandidates"
-            :search="store.selectedLibrarySearch"
-            :current-document-id="store.currentDocument?.id || ''"
-            :has-timeline="store.hasTimeline"
-            :workspace-loading="store.isWorkspaceLoading"
-            :creating-manual="store.isCreatingManual"
-            :importing-file="store.isImportingFile"
-            :opening-document-id="store.openingDocumentId"
-            :creating-candidate-name="store.creatingCandidateName"
-            @update:search="store.selectedLibrarySearch = $event"
-            @open-document="openDocument"
-            @create-manual="createManual"
-            @create-from-candidate="createFromCandidate"
-            @import-file="importFile"
-          />
-        </div>
+    <BaseModal
+      v-model="store.resourcePanelOpen"
+      title="角色资源"
+      size="full"
+      backdrop-effect="blur-sm"
+      body-padding="none"
+      scroll-mode="none"
+      mobile-presentation="fullscreen"
+      width="min(1180px, calc(100vw - 40px))"
+      height="calc(100dvh - 80px)"
+      max-height="calc(100dvh - 80px)"
+      body-display="flex"
+      body-min-height="0"
+    >
+      <div class="studio-page__resource-dialog" data-testid="resource-dialog">
+        <CharacterStudioSidebar
+          :documents="store.filteredDocuments"
+          :candidates="store.filteredCandidates"
+          :search="store.selectedLibrarySearch"
+          :current-document-id="store.currentDocument?.id || ''"
+          :has-timeline="store.hasTimeline"
+          :workspace-loading="store.isWorkspaceLoading"
+          :creating-manual="store.isCreatingManual"
+          :importing-file="store.isImportingFile"
+          :opening-document-id="store.openingDocumentId"
+          :creating-candidate-id="store.creatingCandidateId"
+          @update:search="store.selectedLibrarySearch = $event"
+          @open-document="openDocument"
+          @create-manual="createManual"
+          @create-from-candidate="createFromCandidate"
+          @import-file="importFile"
+        />
       </div>
-    </template>
+    </BaseModal>
   </AppShell>
 </template>
 
 <script setup lang="ts">
 import UiButton from '@/components/ui/UiButton.vue'
 import AppShell from '@/components/ui/AppShell.vue'
+import BaseModal from '@/components/common/BaseModal.vue'
 import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
 import ProductSplitWorkspace from '@/components/product/ProductSplitWorkspace.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { getCharacterStudioAvatarUrl } from '@/api/characterStudio'
 import { useCharacterStudioStore } from '@/stores/characterStudioStore'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
 import { confirmProductAction } from '@/composables/useProductConfirm'
-import type { CharacterStudioChatSessionSummary } from '@/types/characterStudio'
+import type {
+  CharacterStudioChatSessionSummary,
+  CharacterStudioGenerationSection,
+} from '@/types/characterStudio'
 import CharacterStudioSidebar from '@/components/insight/studio/CharacterStudioSidebar.vue'
 import CharacterStudioEditor from '@/components/insight/studio/CharacterStudioEditor.vue'
 import CharacterStudioPreview from '@/components/insight/studio/CharacterStudioPreview.vue'
@@ -195,8 +207,8 @@ const currentDocumentOrigin = computed(() => {
 })
 
 const avatarUrl = computed(() => {
-  if (!props.bookId || !store.currentDocument?.id || !store.currentDocument.avatarUrl) return ''
-  return getCharacterStudioAvatarUrl(store.currentDocument.id)
+  if (!props.bookId) return ''
+  return store.currentDocument?.avatarUrl || ''
 })
 
 async function runAction(action: () => Promise<void>) {
@@ -217,9 +229,7 @@ async function hydrateWorkspace(nextBookId: string) {
   const requestedDocId = props.docId
   try {
     await Promise.all([
-      bookshelfStore.books.length
-        ? Promise.resolve()
-        : bookshelfStore.loadBooks(),
+      bookshelfStore.books.length ? Promise.resolve() : bookshelfStore.loadBooks(),
       store.loadWorkspace(nextBookId),
     ])
     if (!isActiveHydration(requestId, nextBookId, requestedDocId)) return
@@ -242,7 +252,10 @@ async function hydrateWorkspace(nextBookId: string) {
       const openedFallback = await runAction(() => store.openDocument(fallbackDocId))
       if (!isActiveHydration(requestId, nextBookId, requestedDocId)) return
       if (openedFallback) {
-        void router.replace({ name: 'character-studio', query: { book: nextBookId, doc: fallbackDocId } })
+        void router.replace({
+          name: 'character-studio',
+          query: { book: nextBookId, doc: fallbackDocId },
+        })
       }
     }
   } catch {
@@ -271,15 +284,21 @@ async function createManual() {
   if (!ok) return
   store.resourcePanelOpen = false
   if (!props.bookId || !store.currentDocument) return
-  void router.replace({ name: 'character-studio', query: { book: props.bookId, doc: store.currentDocument.id } })
+  void router.replace({
+    name: 'character-studio',
+    query: { book: props.bookId, doc: store.currentDocument.id },
+  })
 }
 
-async function createFromCandidate(candidateName: string) {
-  const ok = await runAction(() => store.createDocumentFromCandidate(candidateName))
+async function createFromCandidate(candidateId: string) {
+  const ok = await runAction(() => store.createDocumentFromCandidate(candidateId))
   if (!ok) return
   store.resourcePanelOpen = false
   if (!props.bookId || !store.currentDocument) return
-  void router.replace({ name: 'character-studio', query: { book: props.bookId, doc: store.currentDocument.id } })
+  void router.replace({
+    name: 'character-studio',
+    query: { book: props.bookId, doc: store.currentDocument.id },
+  })
 }
 
 async function importFile(file: File) {
@@ -287,7 +306,10 @@ async function importFile(file: File) {
   if (!ok) return
   store.resourcePanelOpen = false
   if (!props.bookId || !store.currentDocument) return
-  void router.replace({ name: 'character-studio', query: { book: props.bookId, doc: store.currentDocument.id } })
+  void router.replace({
+    name: 'character-studio',
+    query: { book: props.bookId, doc: store.currentDocument.id },
+  })
 }
 
 async function importWorldbook(file: File) {
@@ -302,7 +324,7 @@ async function validate() {
   await runAction(() => store.validateCurrentDocument())
 }
 
-async function generateSection(section: string) {
+async function generateSection(section: CharacterStudioGenerationSection) {
   await runAction(() => store.generateSection(section))
 }
 
@@ -346,9 +368,7 @@ async function abortChat() {
   await runAction(() => store.abortActiveChatOperation())
 }
 
-async function deleteArchivedChatSession(
-  session: CharacterStudioChatSessionSummary,
-) {
+async function deleteArchivedChatSession(session: CharacterStudioChatSessionSummary) {
   const confirmed = await confirmProductAction({
     title: '永久删除归档会话',
     message: `确定永久删除“${session.title}”吗？聊天消息和附件引用将一并删除，无法恢复。`,
@@ -356,10 +376,7 @@ async function deleteArchivedChatSession(
     tone: 'danger',
   })
   if (!confirmed) return
-  await runAction(() => store.deleteArchivedChatSession(
-    session.session_id,
-    session.revision,
-  ))
+  await runAction(() => store.deleteArchivedChatSession(session.session_id, session.revision))
 }
 
 async function sendChat(payload: { content: string; attachments: File[] }) {
@@ -410,18 +427,25 @@ onUnmounted(() => {
   hydrateRequestId += 1
 })
 
-watch(() => props.bookId, async nextBookId => {
-  if (!nextBookId) {
-    hydrateRequestId += 1
-    return
+watch(
+  () => props.bookId,
+  async nextBookId => {
+    if (!nextBookId) {
+      hydrateRequestId += 1
+      return
+    }
+    await hydrateWorkspace(nextBookId)
   }
-  await hydrateWorkspace(nextBookId)
-})
+)
 
-watch(() => props.docId, async nextDocId => {
-  if (!nextDocId || nextDocId === store.currentDocument?.id) return
-  await runAction(() => store.openDocument(nextDocId))
-})
+watch(
+  () => props.docId,
+  async nextDocId => {
+    if (!nextDocId || nextDocId === store.currentDocument?.id) return
+    if (!props.bookId) return
+    await hydrateWorkspace(props.bookId)
+  }
+)
 </script>
 
 <style scoped>
@@ -461,9 +485,12 @@ watch(() => props.docId, async nextDocId => {
   --ui-textarea-studio-line-height: 1.7;
   --studio-view-accent-primary: color-mix(in srgb, var(--color-action-primary) 8%, transparent);
   --studio-view-accent-secondary: var(--color-surface-page);
-  --studio-view-accent-muted: color-mix(in srgb, var(--color-surface-page) 55%, var(--color-surface-base));
+  --studio-view-accent-muted: color-mix(
+    in srgb,
+    var(--color-surface-page) 55%,
+    var(--color-surface-base)
+  );
   --studio-view-accent-strong: var(--color-surface-quiet);
-  --studio-view-surface-raised: color-mix(in srgb, var(--color-overlay-backdrop-solid) 38%, transparent);
   --studio-view-text-primary: var(--color-text-heading);
 
   margin: 0;
@@ -472,7 +499,12 @@ watch(() => props.docId, async nextDocId => {
   overflow: hidden;
   background:
     radial-gradient(circle at top right, var(--studio-view-accent-primary), transparent 24%),
-    linear-gradient(180deg, var(--studio-view-accent-secondary) 0%, var(--studio-view-accent-muted) 48%, var(--studio-view-accent-strong) 100%);
+    linear-gradient(
+      180deg,
+      var(--studio-view-accent-secondary) 0%,
+      var(--studio-view-accent-muted) 48%,
+      var(--studio-view-accent-strong) 100%
+    );
   color: var(--studio-view-text-primary);
 }
 
@@ -514,7 +546,11 @@ watch(() => props.docId, async nextDocId => {
   --product-empty-state-max-width: 560px;
   --product-empty-state-min-height: 0;
   --product-empty-state-padding: 48px 32px;
-  --product-empty-state-eyebrow-background: color-mix(in srgb, var(--color-text-link-strong) 12%, transparent);
+  --product-empty-state-eyebrow-background: color-mix(
+    in srgb,
+    var(--color-text-link-strong) 12%,
+    transparent
+  );
   --product-empty-state-eyebrow-text: var(--color-text-link-strong);
   --product-empty-state-title: var(--color-text-heading);
   --product-empty-state-title-font-size: 30px;
@@ -538,25 +574,12 @@ watch(() => props.docId, async nextDocId => {
   overflow: visible;
 }
 
-.studio-page__resource-overlay {
+.studio-page__resource-dialog {
   width: 100%;
   height: 100%;
-  background: var(--studio-view-surface-raised);
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding: 82px 20px 20px;
-  overflow-y: auto;
-}
-
-.studio-page__resource-dialog {
-  width: min(1180px, 100%);
-  height: calc(100dvh - 120px);
-  max-height: calc(100dvh - 120px);
   min-height: 0;
   display: flex;
   overflow: hidden;
-  flex-shrink: 0;
 }
 
 .studio-page__resource-dialog > * {

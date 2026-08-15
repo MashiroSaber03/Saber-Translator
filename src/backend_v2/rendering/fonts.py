@@ -12,6 +12,7 @@ from src.backend_v2.content.page_style import rgb_to_hex, validate_page_style
 from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.storage.builtin_fonts import resolve_bundled_font_path
 from src.backend_v2.storage.schema import assets, bubbles, fonts, pages
+from src.core.config_models import validate_bubble_payload
 
 
 def resolve_font_path(
@@ -81,7 +82,10 @@ def materialize_render_payloads(
     )
     result = []
     for row in rows:
-        persisted = json.loads(row["payload_json"])
+        persisted = validate_bubble_payload(
+            json.loads(row["payload_json"]),
+            render=False,
+        )
         font_path = resolve_font_path(
             connection,
             storage,
@@ -95,36 +99,37 @@ def materialize_render_payloads(
             "layoutDirection" in initialize_auto_fields
             and style_defaults["layoutDirection"] == "auto"
         ):
-            auto_direction = persisted.get("autoTextDirection")
-            if auto_direction in {"vertical", "horizontal"}:
-                persisted["textDirection"] = auto_direction
+            persisted["textDirection"] = persisted["autoTextDirection"]
         if (
             initialize_auto_fields.intersection({"textColor", "fillColor"})
             and style_defaults["useAutoTextColor"]
         ):
             if (
                 "textColor" in initialize_auto_fields
-                and persisted.get("autoFgColor") is not None
+                and persisted["autoFgColor"] is not None
             ):
                 persisted["textColor"] = rgb_to_hex(persisted["autoFgColor"])
             if (
                 "fillColor" in initialize_auto_fields
-                and persisted.get("autoBgColor") is not None
+                and persisted["autoBgColor"] is not None
             ):
                 persisted["fillColor"] = rgb_to_hex(persisted["autoBgColor"])
         if (
             "fontSize" in initialize_auto_fields
             and style_defaults["autoFontSize"]
         ):
-            coords = persisted.get("coords")
-            if isinstance(coords, list) and len(coords) == 4:
-                persisted["fontSize"] = calculate_auto_font_size(
-                    str(persisted.get("translatedText", "")),
-                    max(0, float(coords[2]) - float(coords[0])),
-                    max(0, float(coords[3]) - float(coords[1])),
-                    str(persisted.get("textDirection", "vertical")),
-                    font_path,
-                )
-        render_payload = {**persisted, "fontFamily": font_path}
+            coords = persisted["coords"]
+            persisted["fontSize"] = calculate_auto_font_size(
+                persisted["translatedText"],
+                coords[2] - coords[0],
+                coords[3] - coords[1],
+                persisted["textDirection"],
+                font_path,
+            )
+        persisted = validate_bubble_payload(persisted, render=False)
+        render_payload = validate_bubble_payload(
+            {**persisted, "fontFamily": font_path},
+            render=True,
+        )
         result.append((str(row["id"]), persisted, render_payload))
     return result

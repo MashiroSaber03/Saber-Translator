@@ -24,6 +24,7 @@ describe('settings chapter work state', () => {
     normalized.proofreading.enabled = true
     normalized.proofreading.rounds = [{
       ...normalized.hqTranslation,
+      id: '11111111-1111-4111-8111-111111111111',
       name: '第1轮校对',
       modelName: 'text-model',
     }]

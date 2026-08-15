@@ -25,6 +25,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'navigateChapter', direction: 'prev' | 'next'): void
+  (e: 'settingsChange', settings: ReaderSettings): void
 }>()
 
 const settings = ref<ReaderSettings>({ ...DEFAULT_READER_SETTINGS })
@@ -93,34 +94,32 @@ function loadSettings() {
   if (storedSettings) {
     settings.value = storedSettings
   }
-  applySettings()
+  publishSettings()
 }
 
 function saveSettings() {
   saveReaderSettings(settings.value)
 }
 
-function applySettings() {
-  document.documentElement.style.setProperty('--reader-page-background', settings.value.bgColor)
-  document.documentElement.style.setProperty('--reader-image-width', `${settings.value.imageWidth}%`)
-  document.documentElement.style.setProperty('--reader-gap', `${settings.value.imageGap}px`)
+function publishSettings() {
+  emit('settingsChange', { ...settings.value })
 }
 
 function updateImageWidth(value: number) {
   settings.value.imageWidth = value
-  applySettings()
+  publishSettings()
   saveSettings()
 }
 
 function updateImageGap(value: number) {
   settings.value.imageGap = value
-  applySettings()
+  publishSettings()
   saveSettings()
 }
 
 function updateBgColor(color: string) {
   settings.value.bgColor = color
-  applySettings()
+  publishSettings()
   saveSettings()
 }
 
@@ -128,14 +127,20 @@ function navigateChapter(direction: 'prev' | 'next') {
   emit('navigateChapter', direction)
 }
 
-watch(() => props.settingsRequestId, (requestId, previousRequestId) => {
-  if (requestId !== undefined && requestId !== previousRequestId) {
-    openSettings()
+watch(
+  () => props.settingsRequestId,
+  (requestId, previousRequestId) => {
+    if (requestId !== undefined && requestId !== previousRequestId) {
+      openSettings()
+    }
   }
-})
-watch(() => props.showChapterNav, () => {
-  void nextTick(bindScrollContainer)
-})
+)
+watch(
+  () => props.showChapterNav,
+  () => {
+    void nextTick(bindScrollContainer)
+  }
+)
 
 onMounted(() => {
   loadSettings()
@@ -148,10 +153,6 @@ onUnmounted(() => {
   scrollContainer?.removeEventListener('scroll', handleScroll)
   scrollContainer = null
   document.removeEventListener('keydown', handleKeydown)
-
-  document.documentElement.style.removeProperty('--reader-page-background')
-  document.documentElement.style.removeProperty('--reader-image-width')
-  document.documentElement.style.removeProperty('--reader-gap')
 })
 </script>
 
@@ -283,13 +284,25 @@ onUnmounted(() => {
 .reader-controls__chapter-nav-layer,
 .reader-controls__scroll-top-layer,
 .reader-controls__settings-panel {
-  --reader-controls-chapter-nav-start: color-mix(in srgb, var(--color-surface-inverse) 95%, transparent);
-  --reader-controls-chapter-nav-end: color-mix(in srgb, var(--color-surface-inverse) 80%, transparent);
+  --reader-controls-chapter-nav-start: color-mix(
+    in srgb,
+    var(--color-surface-inverse) 95%,
+    transparent
+  );
+  --reader-controls-chapter-nav-end: color-mix(
+    in srgb,
+    var(--color-surface-inverse) 80%,
+    transparent
+  );
   --reader-controls-settings-overlay-background: var(--color-overlay-scrim);
   --reader-controls-settings-panel-background: var(--color-surface-inverse-raised);
   --reader-controls-settings-panel-shadow: var(--color-overlay-scrim-subtle);
   --reader-controls-settings-divider: var(--color-overlay-inverse-subtle);
-  --reader-controls-setting-label-text: color-mix(in srgb, var(--color-text-inverse) 70%, transparent);
+  --reader-controls-setting-label-text: color-mix(
+    in srgb,
+    var(--color-text-inverse) 70%,
+    transparent
+  );
   --reader-controls-range-track: var(--color-overlay-inverse-muted);
 }
 
@@ -302,7 +315,11 @@ onUnmounted(() => {
 .reader-controls__chapter-nav {
   height: 60px;
   width: 100%;
-  background: linear-gradient(to top, var(--reader-controls-chapter-nav-start), var(--reader-controls-chapter-nav-end));
+  background: linear-gradient(
+    to top,
+    var(--reader-controls-chapter-nav-start),
+    var(--reader-controls-chapter-nav-end)
+  );
   backdrop-filter: blur(10px);
   display: flex;
   align-items: center;

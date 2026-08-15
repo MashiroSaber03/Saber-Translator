@@ -69,6 +69,7 @@ describe('useBubbleActions backend-first operations', () => {
     runBubbleRepairMock.mockReset().mockResolvedValue(undefined)
     getPageDocumentMock.mockReset().mockResolvedValue({
       pageId: 'page-1',
+      chapterId: 'chapter-1',
       documentRevision: 8,
       bubbles: [],
     })
@@ -120,6 +121,25 @@ describe('useBubbleActions backend-first operations', () => {
     )
     expect(onReRender).toHaveBeenCalledTimes(1)
     expect(JSON.stringify(runBubbleRepairMock.mock.calls)).not.toContain('data:image')
+  })
+
+  it('rejects an operation reload that belongs to another chapter', async () => {
+    getPageDocumentMock.mockResolvedValueOnce({
+      pageId: 'page-1',
+      chapterId: 'other-chapter',
+      documentRevision: 8,
+      bubbles: [],
+    })
+    const actions = useBubbleActions()
+
+    await actions.handleOcrRecognize(0)
+
+    expect(registerPageDocumentMock).not.toHaveBeenCalled()
+    expect(useImageStore().currentImage?.documentRevision).toBe(7)
+    expect(showToastMock).toHaveBeenCalledWith(
+      '页面 page-1 的后端文档身份不匹配',
+      'error',
+    )
   })
 
   it('runs one trailing preview after edits arrive during an in-flight preview', async () => {

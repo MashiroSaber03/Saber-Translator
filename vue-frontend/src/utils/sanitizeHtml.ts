@@ -79,18 +79,8 @@ function sanitizeChildren(parent: ParentNode): void {
   }
 }
 
-function escapeHtml(text: string): string {
-  return text
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;')
-}
-
 export function sanitizeHtml(html: string): string {
   if (!html) return ''
-  if (typeof document === 'undefined') return escapeHtml(html)
 
   const template = document.createElement('template')
   template.innerHTML = html

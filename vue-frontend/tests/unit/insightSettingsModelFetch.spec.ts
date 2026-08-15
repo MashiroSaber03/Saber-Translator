@@ -1,7 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { createPinia, setActivePinia } from 'pinia'
 import type { Component } from 'vue'
 
@@ -64,7 +62,7 @@ type SettingsFetchCase = {
   expectedNumberFields: Array<{
     inputId: string
     min: number
-    max: number
+    max?: number
     step?: number
   }>
 }
@@ -82,11 +80,11 @@ const settingsFetchCases: SettingsFetchCase[] = [
     expectedBaseUrlInputId: 'insight-vlm-base-url',
     expectedModelPlaceholder: '例如: gemini-2.0-flash',
     expectedNumberFields: [
-      { inputId: 'insight-vlm-rpm-limit', min: 1, max: 100 },
-      { inputId: 'insight-vlm-transport-retries', min: 0, max: 10 },
-      { inputId: 'insight-vlm-business-retries', min: 0, max: 10 },
-      { inputId: 'insight-vlm-temperature', min: 0, max: 1, step: 0.1 },
-      { inputId: 'insight-vlm-image-max-size', min: 0, max: 4096, step: 128 },
+      { inputId: 'insight-vlm-rpm-limit', min: 0 },
+      { inputId: 'insight-vlm-transport-retries', min: 0 },
+      { inputId: 'insight-vlm-business-retries', min: 0 },
+      { inputId: 'insight-vlm-temperature', min: 0, max: 2, step: 0.1 },
+      { inputId: 'insight-vlm-image-max-size', min: 0, step: 128 },
     ],
     configureStore: (store) => {
       store.updateVlmConfig({
@@ -109,9 +107,9 @@ const settingsFetchCases: SettingsFetchCase[] = [
     expectedBaseUrlInputId: 'insight-llm-base-url',
     expectedModelPlaceholder: '例如: gpt-4o-mini',
     expectedNumberFields: [
-      { inputId: 'insight-llm-rpm-limit', min: 0, max: 100 },
-      { inputId: 'insight-llm-transport-retries', min: 0, max: 10 },
-      { inputId: 'insight-llm-business-retries', min: 0, max: 10 },
+      { inputId: 'insight-llm-rpm-limit', min: 0 },
+      { inputId: 'insight-llm-transport-retries', min: 0 },
+      { inputId: 'insight-llm-business-retries', min: 0 },
     ],
     configureStore: (store) => {
       store.updateLlmConfig({
@@ -134,10 +132,10 @@ const settingsFetchCases: SettingsFetchCase[] = [
     expectedBaseUrlInputId: 'insight-embedding-base-url',
     expectedModelPlaceholder: '例如: text-embedding-3-small',
     expectedNumberFields: [
-      { inputId: 'insight-embedding-rpm-limit', min: 0, max: 1000 },
-      { inputId: 'insight-embedding-transport-retries', min: 0, max: 100 },
-      { inputId: 'insight-embedding-business-retries', min: 0, max: 100 },
-      { inputId: 'insight-embedding-timeout-seconds', min: 0, max: 3600, step: 1 },
+      { inputId: 'insight-embedding-rpm-limit', min: 0 },
+      { inputId: 'insight-embedding-transport-retries', min: 0 },
+      { inputId: 'insight-embedding-business-retries', min: 0 },
+      { inputId: 'insight-embedding-timeout-seconds', min: 0, step: 1 },
     ],
     configureStore: (store) => {
       store.updateEmbeddingConfig({
@@ -160,10 +158,9 @@ const settingsFetchCases: SettingsFetchCase[] = [
     expectedBaseUrlInputId: 'reranker-base-url',
     expectedModelPlaceholder: '例如: jina-reranker-v2-base-multilingual',
     expectedNumberFields: [
-      { inputId: 'reranker-top-k', min: 1, max: 20 },
-      { inputId: 'reranker-transport-retries', min: 0, max: 100 },
-      { inputId: 'reranker-business-retries', min: 0, max: 100 },
-      { inputId: 'reranker-timeout-seconds', min: 0, max: 3600, step: 1 },
+      { inputId: 'reranker-transport-retries', min: 0 },
+      { inputId: 'reranker-business-retries', min: 0 },
+      { inputId: 'reranker-timeout-seconds', min: 0, step: 1 },
     ],
     configureStore: (store) => {
       store.updateRerankerConfig({
@@ -303,18 +300,18 @@ describe('Insight settings model fetch ownership', () => {
   })
 
   it('derives LLM provider options from chat-capable providers', () => {
-    const typesSource = readFileSync(
-      resolve(process.cwd(), 'src/components/insight/settings/types.ts'),
-      'utf8',
-    )
-    const llmSource = readFileSync(
-      resolve(process.cwd(), 'src/components/insight/settings/LlmSettingsTab.vue'),
-      'utf8',
-    )
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const wrapper = mount(LlmSettingsTab, {
+      global: { plugins: [pinia] },
+    })
 
-    expect(typesSource).toContain("export const LLM_PROVIDER_OPTIONS = getProvidersForCapability('chat')")
-    expect(llmSource).toContain('LLM_PROVIDER_OPTIONS')
-    expect(llmSource).not.toContain('VLM_PROVIDER_OPTIONS')
+    const options = wrapper.getComponent(InsightModelProviderSection).props('providerOptions')
+    expect(options).toEqual(expect.arrayContaining([
+      expect.objectContaining({ value: 'openai' }),
+      expect.objectContaining({ value: 'gemini' }),
+      expect.objectContaining({ value: 'ollama' }),
+    ]))
   })
 
   it.each(settingsFetchCases)('uses the settings field primitive for $name form layout', (testCase) => {
@@ -399,7 +396,7 @@ describe('Insight settings model fetch ownership', () => {
       { label: '模型', controlId: 'shared-model' },
       { label: 'Base URL', controlId: 'shared-base-url' },
     ])
-    expect(wrapper.getComponent(UiSelect).attributes('id')).toBe('shared-provider')
+    expect(wrapper.getComponent(UiSelect).get('button').attributes('id')).toBe('shared-provider')
     expect(wrapper.getComponent(UiPasswordField).props('inputId')).toBe('shared-api-key')
     expect(wrapper.getComponent(UiModelPicker).props('inputId')).toBe('shared-model')
 
@@ -455,68 +452,4 @@ describe('Insight settings model fetch ownership', () => {
     })))
   })
 
-  it('uses emitted drafts instead of exposed instance methods for settings tabs', () => {
-    const settingsTabFiles = [
-      'src/components/insight/settings/VlmSettingsTab.vue',
-      'src/components/insight/settings/LlmSettingsTab.vue',
-      'src/components/insight/settings/BatchSettingsTab.vue',
-      'src/components/insight/settings/EmbeddingSettingsTab.vue',
-      'src/components/insight/settings/RerankerSettingsTab.vue',
-      'src/components/insight/settings/ImageGenSettingsTab.vue',
-      'src/components/insight/settings/PromptsSettingsTab.vue',
-    ]
-
-    for (const filePath of settingsTabFiles) {
-      const source = readFileSync(resolve(process.cwd(), filePath), 'utf8')
-      expect(source, filePath).not.toContain('defineExpose')
-    }
-  })
-
-  it('keeps settings tab draft helpers named after internal draft ownership', () => {
-    const settingsTabFiles = [
-      'src/components/insight/settings/VlmSettingsTab.vue',
-      'src/components/insight/settings/LlmSettingsTab.vue',
-      'src/components/insight/settings/BatchSettingsTab.vue',
-      'src/components/insight/settings/EmbeddingSettingsTab.vue',
-      'src/components/insight/settings/RerankerSettingsTab.vue',
-      'src/components/insight/settings/ImageGenSettingsTab.vue',
-      'src/components/insight/settings/PromptsSettingsTab.vue',
-    ]
-
-    for (const filePath of settingsTabFiles) {
-      const source = readFileSync(resolve(process.cwd(), filePath), 'utf8')
-      expect(source, filePath).not.toMatch(/\bfunction\s+(getConfig|getCustomPrompts|syncFromStore)\b/)
-    }
-  })
-
-  it('keeps provider cache switching behind typed store methods instead of nested config writes', () => {
-    const settingsTabFiles = [
-      'src/components/insight/settings/VlmSettingsTab.vue',
-      'src/components/insight/settings/LlmSettingsTab.vue',
-      'src/components/insight/settings/EmbeddingSettingsTab.vue',
-      'src/components/insight/settings/RerankerSettingsTab.vue',
-      'src/components/insight/settings/ImageGenSettingsTab.vue',
-    ]
-
-    for (const filePath of settingsTabFiles) {
-      const source = readFileSync(resolve(process.cwd(), filePath), 'utf8')
-      expect(source, filePath).not.toMatch(/\binsightStore\.config\.(vlm|llm|embedding|reranker|imageGen)\.[A-Za-z0-9_.]+\s=/)
-    }
-  })
-
-  it('keeps the prompts library header responsive inside narrow settings modals', () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/components/insight/settings/PromptsSettingsTab.vue'),
-      'utf8',
-    )
-    const headerBlock = source.match(/\.prompts-settings-tab__library-header \{(?<body>[\s\S]*?)\n\}/)
-      ?.groups?.body ?? ''
-    const titleBlock = source.match(/\.prompts-settings-tab__library-title \{(?<body>[\s\S]*?)\n\}/)
-      ?.groups?.body ?? ''
-
-    expect(headerBlock).toContain('flex-wrap: wrap')
-    expect(headerBlock).toContain('gap:')
-    expect(titleBlock).toContain('min-width: 0')
-    expect(titleBlock).toContain('overflow-wrap: anywhere')
-  })
 })

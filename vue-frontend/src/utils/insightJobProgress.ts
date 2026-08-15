@@ -8,12 +8,8 @@ export interface InsightPageProgress {
 
 export type InsightTerminalEventType = 'job_finished' | 'job_failed' | 'job_cancelled'
 
-export function projectInsightPageProgress(
-  progress: V2Job['progress'],
-): InsightPageProgress {
-  const pagePool = progress.pools?.find(
-    pool => pool.kind === 'insight_analyze_page',
-  )
+export function projectInsightPageProgress(progress: V2Job['progress']): InsightPageProgress {
+  const pagePool = progress.pools?.find(pool => pool.kind === 'insight_analyze_page')
   const currentStepKind = progress.currentStep?.kind ?? ''
 
   if (!pagePool) {
@@ -21,10 +17,7 @@ export function projectInsightPageProgress(
   }
 
   return {
-    current: Math.min(
-      pagePool.total,
-      pagePool.completed + pagePool.failed + pagePool.skipped,
-    ),
+    current: pagePool.completed + pagePool.failed + pagePool.skipped + pagePool.cancelled,
     total: pagePool.total,
     currentStepKind,
   }
@@ -32,7 +25,7 @@ export function projectInsightPageProgress(
 
 export function projectTerminalInsightPageProgress(
   progress: V2Job['progress'],
-  eventType: InsightTerminalEventType,
+  eventType: InsightTerminalEventType
 ): InsightPageProgress {
   const projected = projectInsightPageProgress(progress)
   return {

@@ -11,7 +11,7 @@ export type ProductChoiceCardItem = {
   disabled?: boolean
 }
 
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   accessibilityLabel: string
   items: ProductChoiceCardItem[]
   modelValue: string
@@ -29,6 +29,42 @@ function selectItem(item: ProductChoiceCardItem): void {
   if (item.disabled) return
   emit('update:modelValue', item.id)
   emit('select', item.id)
+}
+
+function choiceTabIndex(item: ProductChoiceCardItem): number {
+  if (item.disabled) return -1
+  const enabledItems = props.items.filter(candidate => !candidate.disabled)
+  const selectedItem = enabledItems.find(candidate => candidate.id === props.modelValue)
+  return item.id === (selectedItem ?? enabledItems[0])?.id ? 0 : -1
+}
+
+function selectAdjacentItem(event: KeyboardEvent, item: ProductChoiceCardItem): void {
+  const enabledItems = props.items.filter(candidate => !candidate.disabled)
+  if (enabledItems.length === 0) return
+  const currentIndex = Math.max(
+    enabledItems.findIndex(candidate => candidate.id === item.id),
+    enabledItems.findIndex(candidate => candidate.id === props.modelValue),
+    0,
+  )
+  let nextIndex: number | null = null
+
+  if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+    nextIndex = (currentIndex + 1) % enabledItems.length
+  } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+    nextIndex = (currentIndex - 1 + enabledItems.length) % enabledItems.length
+  } else if (event.key === 'Home') {
+    nextIndex = 0
+  } else if (event.key === 'End') {
+    nextIndex = enabledItems.length - 1
+  }
+
+  if (nextIndex === null) return
+  event.preventDefault()
+  const nextItem = enabledItems[nextIndex]!
+  selectItem(nextItem)
+  const group = (event.currentTarget as HTMLElement).closest('[role="radiogroup"]')
+  const itemIndex = props.items.findIndex(candidate => candidate.id === nextItem.id)
+  group?.querySelectorAll<HTMLElement>('[role="radio"]')[itemIndex]?.focus()
 }
 </script>
 
@@ -51,7 +87,9 @@ function selectItem(item: ProductChoiceCardItem): void {
       role="radio"
       :aria-checked="item.id === modelValue ? 'true' : 'false'"
       :disabled="item.disabled"
+      :tabindex="choiceTabIndex(item)"
       @click="selectItem(item)"
+      @keydown="selectAdjacentItem($event, item)"
     >
       <UiIcon
         v-if="item.iconName"

@@ -6,7 +6,7 @@ import asyncio
 import base64
 import io
 import logging
-from typing import List, Dict, Optional
+from typing import Any
 
 from PIL import Image
 
@@ -16,59 +16,56 @@ from src.shared.ai_providers import (
     resolve_provider_base_url_for_capability,
 )
 from src.shared.ai_transport import AsyncOpenAICompatibleTransport, UnifiedChatRequest
-from src.shared.memory_errors import is_memory_allocation_error
 from src.shared.openai_execution import (
     OpenAICompatibleAsyncExecutor,
     OpenAICompatibleBusinessRetryableError,
     build_openai_compatible_runtime_options,
-    extract_json_block_from_text,
+    parse_json_block_from_text,
 )
 from src.shared.openai_options import OpenAICompatibleOptions
 
-from .config_models import (
-    VLMConfig,
-    PromptsConfig,
-)
-from .utils.json_parser import parse_llm_json
+from .config_models import VLMConfig
 
 logger = logging.getLogger("MangaInsight.VLM")
 
 
-def resize_image_if_needed(image_bytes: bytes, max_size: int) -> bytes:
-    if max_size <= 0:
-        return image_bytes
+def _prepare_image(image_bytes: bytes, max_size: int) -> tuple[bytes, str]:
+    if not isinstance(image_bytes, bytes) or not image_bytes:
+        raise ValueError("VLM image must be non-empty bytes")
+    if isinstance(max_size, bool) or not isinstance(max_size, int) or max_size < 0:
+        raise ValueError("VLM image_max_size must be a non-negative integer")
 
-    try:
-        img = Image.open(io.BytesIO(image_bytes))
-        width, height = img.size
-
-        if max(width, height) <= max_size:
-            return image_bytes
+    with Image.open(io.BytesIO(image_bytes)) as image:
+        image.load()
+        media_type = Image.MIME.get(image.format or "")
+        if not media_type or not media_type.startswith("image/"):
+            raise ValueError("VLM image format is unsupported")
+        width, height = image.size
+        if width <= 0 or height <= 0:
+            raise ValueError("VLM image dimensions are invalid")
+        if max_size == 0 or max(width, height) <= max_size:
+            return image_bytes, media_type
 
         ratio = max_size / max(width, height)
-        new_width = int(width * ratio)
-        new_height = int(height * ratio)
-
-        logger.debug(f"压缩图片: {width}x{height} -> {new_width}x{new_height}")
-
-        img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-
+        resized = image.resize(
+            (max(1, round(width * ratio)), max(1, round(height * ratio))),
+            Image.Resampling.LANCZOS,
+        )
+        if resized.mode != "RGB":
+            resized = resized.convert("RGB")
         output = io.BytesIO()
-        if img.mode != 'RGB':
-            img = img.convert('RGB')
-        img.save(output, format='JPEG', quality=85)
-
-        compressed_bytes = output.getvalue()
-        original_size = len(image_bytes) / 1024
-        compressed_size = len(compressed_bytes) / 1024
-        logger.debug(f"图片大小: {original_size:.1f}KB -> {compressed_size:.1f}KB")
-
-        return compressed_bytes
-    except Exception as e:
-        if is_memory_allocation_error(e):
-            raise
-        logger.warning(f"图片压缩失败，使用原图: {e}")
-        return image_bytes
+        resized.save(output, format="JPEG", quality=85)
+        result = output.getvalue()
+        if not result:
+            raise ValueError("VLM image compression produced an empty image")
+        logger.debug(
+            "压缩 VLM 图片: %sx%s -> %sx%s",
+            width,
+            height,
+            resized.width,
+            resized.height,
+        )
+        return result, "image/jpeg"
 
 
 class VLMClient:
@@ -76,9 +73,8 @@ class VLMClient:
     多模态大模型客户端（复用共享 async transport）。
     """
 
-    def __init__(self, config: VLMConfig, prompts_config: Optional[PromptsConfig] = None):
+    def __init__(self, config: VLMConfig):
         self.config = config
-        self.prompts_config = prompts_config or PromptsConfig()
         self.provider = normalize_provider_id(config.provider)
         self._base_url = resolve_provider_base_url_for_capability(
             self.provider,
@@ -92,14 +88,11 @@ class VLMClient:
         self._transport = AsyncOpenAICompatibleTransport()
         self._executor = OpenAICompatibleAsyncExecutor(self._transport)
 
-        logger.info(f"VLMClient 初始化: provider={config.provider}, base_url={self._base_url}")
-
-    @property
-    def base_url(self) -> str:
-        return self._base_url
-
-    async def close(self):
-        return None
+        logger.info(
+            "VLMClient 初始化: provider=%s, base_url=%s",
+            config.provider,
+            self._base_url,
+        )
 
     async def _execute_with_total_timeout(self, *args, **kwargs):
         """Bound the complete logical VLM call, including all retry layers.
@@ -120,69 +113,47 @@ class VLMClient:
                 f"视觉模型调用超过总时限（{self._total_timeout:g} 秒）"
             ) from exc
 
-
-    async def analyze_batch(
+    async def analyze_page(
         self,
-        images: List[bytes],
-        start_page: int,
-        context: Optional[Dict] = None,
-        custom_prompt: Optional[str] = None
-    ) -> Dict:
-        end_page = start_page + len(images) - 1
-        prompt = custom_prompt or self._build_batch_analysis_prompt(start_page, end_page, len(images), context)
-        return await self._call_vlm(
-            images=images,
-            prompt=prompt,
-            parser=self._build_batch_analysis_parser(start_page, end_page),
-        )
-
-
-    def _build_batch_analysis_prompt(self, start_page: int, end_page: int, page_count: int, context: Dict = None) -> str:
-        base_prompt = self.prompts_config.batch_analysis.strip()
-        if not base_prompt:
-            raise ValueError("batch analysis prompt is required")
-        prompt = base_prompt.replace("{page_count}", str(page_count))
-        prompt = prompt.replace("{start_page}", str(start_page))
-        prompt = prompt.replace("{end_page}", str(end_page))
-
-        if context and context.get("previous_summary"):
-            batch_count = context.get("context_batch_count", 3)
-            if batch_count > 1:
-                prompt += f"\n\n【前文概要（前{batch_count}批内容）】\n请参考以下前文信息，确保剧情连贯：\n{context['previous_summary']}"
-            else:
-                prompt += f"\n\n【前文概要】\n{context['previous_summary']}"
-
-        return prompt
-
-    def _build_batch_analysis_parser(self, start_page: int, end_page: int):
-        def parser(response_text: str) -> Dict:
-            result = self._parse_batch_analysis(response_text, start_page, end_page)
-            if result.get("parse_error"):
-                raise OpenAICompatibleBusinessRetryableError(
-                    f"第{start_page}-{end_page}页 JSON 解析失败"
-                )
-            return result
-
-        return parser
-
-    async def _call_vlm(
-        self,
-        images: List[bytes],
+        image_bytes: bytes,
+        page_number: int,
         prompt: str,
-        parser=None,
-    ):
+    ) -> dict[str, Any]:
+        if (
+            isinstance(page_number, bool)
+            or not isinstance(page_number, int)
+            or page_number < 1
+        ):
+            raise ValueError("page_number must be a positive integer")
+
+        def parser(response_text: str) -> dict[str, Any]:
+            try:
+                return self._parse_page_analysis(response_text, page_number)
+            except (TypeError, ValueError) as exc:
+                raise OpenAICompatibleBusinessRetryableError(
+                    f"第{page_number}页 JSON 解析失败"
+                ) from exc
+
+        if not isinstance(prompt, str) or not prompt.strip():
+            raise ValueError("VLM prompt must be a non-empty string")
         provider = self.provider
         base_url = self._base_url
 
-        content = []
-        for img in images:
-            img = resize_image_if_needed(img, self.config.image_max_size)
-            content.append({
+        prepared, media_type = _prepare_image(
+            image_bytes,
+            self.config.image_max_size,
+        )
+        content: list[dict[str, Any]] = [
+            {
                 "type": "image_url",
                 "image_url": {
-                    "url": f"data:image/jpeg;base64,{base64.b64encode(img).decode()}"
-                }
-            })
+                    "url": (
+                        f"data:{media_type};base64,"
+                        f"{base64.b64encode(prepared).decode('ascii')}"
+                    )
+                },
+            }
+        ]
         content.append({"type": "text", "text": prompt})
 
         if not base_url:
@@ -209,74 +180,32 @@ class VLMClient:
             parser=parser,
             logger_instance=logger,
         )
-        return result.parsed
+        parsed = result.parsed
+        if not isinstance(parsed, dict):
+            raise TypeError("VLM page analysis must be an object")
+        return parsed
 
-    def _extract_json_from_text(self, text: str) -> str:
-        return extract_json_block_from_text(text)
+    def _parse_page_analysis(
+        self,
+        response_text: str,
+        page_number: int,
+    ) -> dict[str, Any]:
+        result = parse_json_block_from_text(response_text)
+        if not isinstance(result, dict) or set(result) != {"pages"}:
+            raise ValueError("模型结果必须是只包含 pages 的对象")
 
-    def _parse_batch_analysis(self, response_text: str, start_page: int, end_page: int) -> Dict:
-        try:
-            text = self._extract_json_from_text(response_text)
-            result = parse_llm_json(text)
-            expected_page_count = end_page - start_page + 1
-            if not isinstance(result, dict) or set(result) != {"pages"}:
-                raise ValueError("模型结果必须是只包含 pages 的对象")
-
-            pages = result["pages"]
-            if not isinstance(pages, list):
-                raise ValueError("pages 必须是数组")
-            if len(pages) != expected_page_count:
-                raise ValueError(
-                    f"页面数必须为 {expected_page_count}，实际为 {len(pages)}"
-                )
-
-            expected_numbers = list(range(start_page, end_page + 1))
-            page_numbers: list[int] = []
-            for index, page in enumerate(pages):
-                if not isinstance(page, dict):
-                    raise ValueError(f"pages[{index}] 必须是对象")
-                page_number = page.get("page_number")
-                if isinstance(page_number, bool) or not isinstance(page_number, int):
-                    raise ValueError(f"pages[{index}].page_number 必须是整数")
-                page_numbers.append(page_number)
-            if expected_page_count == 1:
-                pages[0] = {**pages[0], "page_number": start_page}
-                return {"pages": pages}
-            if page_numbers != expected_numbers:
-                raise ValueError(
-                    f"page_number 必须依次为 {expected_numbers}，实际为 {page_numbers}"
-                )
-
-            return {"pages": pages}
-        except (OpenAICompatibleBusinessRetryableError, TypeError, ValueError) as exc:
-            logger.warning(
-                f"批量 JSON 结果无效，第{start_page}-{end_page}页: {exc}"
+        pages = result["pages"]
+        if not isinstance(pages, list):
+            raise ValueError("pages 必须是数组")
+        if len(pages) != 1 or not isinstance(pages[0], dict):
+            raise ValueError("pages 必须只包含一个页面对象")
+        actual_page_number = pages[0].get("page_number")
+        if (
+            isinstance(actual_page_number, bool)
+            or not isinstance(actual_page_number, int)
+            or actual_page_number != page_number
+        ):
+            raise ValueError(
+                f"page_number 必须为 {page_number}，实际为 {actual_page_number}"
             )
-            return {"pages": [], "parse_error": True}
-
-    async def test_connection(self) -> bool:
-        try:
-            test_prompt = "请回复'连接成功'"
-            if not self._base_url:
-                logger.error(f"服务商 '{self.config.provider}' 未配置 base_url")
-                return False
-
-            await self._transport.complete(
-                UnifiedChatRequest(
-                    provider=self.provider,
-                    api_key=self.config.api_key,
-                    model=self.config.model,
-                    credential_version_id=self.config.credential_version_id,
-                    messages=[{"role": "user", "content": test_prompt}],
-                    base_url=self.config.base_url or None,
-                    capability="vlm",
-                    openai_options=OpenAICompatibleOptions(),
-                    runtime_options=build_openai_compatible_runtime_options(
-                        timeout=self._timeout,
-                    ),
-                )
-            )
-            return True
-        except Exception as e:
-            logger.error(f"连接测试失败: {e}")
-            return False
+        return {"pages": pages}

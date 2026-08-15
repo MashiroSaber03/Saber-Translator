@@ -3,7 +3,11 @@ import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import type { CharacterStudioChatStreamEvent } from '@/api/characterStudio'
-import type { CharacterStudioAgentPatchV2, CharacterStudioChatSession, CharacterStudioDocument } from '@/types/characterStudio'
+import type {
+  CharacterStudioAgentPatchV2,
+  CharacterStudioChatSession,
+  CharacterStudioDocument,
+} from '@/types/characterStudio'
 import { buildCharacterStudioGreetingOptions } from '@/utils/characterStudioGreetings'
 import { deepClone } from '@/utils/deepClone'
 
@@ -17,14 +21,31 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
-const demoDocument = {
+const demoDocument: CharacterStudioDocument = {
   id: 'doc_alpha',
   bookId: 'book-demo',
+  revision: 1,
+  avatarUrl: null,
+  createdAt: '2026-05-15T00:00:00',
+  updatedAt: '2026-05-15T00:00:00',
   origin: { type: 'manual', source_character: null },
-  status: { is_favorite: false, frozen_sections: [], last_validated_at: null },
-  meta: { title: '阿尔法', tags: ['主角'], created_at: '2026-05-15T00:00:00', updated_at: '2026-05-15T00:00:00' },
-  avatar: { asset_path: null },
-  identity: { name: '阿尔法', aliases: [], description: '测试角色', personality: '沉稳', scenario: '测试场景' },
+  status: {
+    is_favorite: false,
+    frozen_sections: [],
+    last_diagnostics: null,
+    last_validated_at: null,
+  },
+  meta: {
+    title: '阿尔法',
+    tags: ['主角'],
+  },
+  identity: {
+    name: '阿尔法',
+    aliases: [],
+    description: '测试角色',
+    personality: '沉稳',
+    scenario: '测试场景',
+  },
   coreMessages: {
     first_message: '我是阿尔法。',
     message_example: '<START>',
@@ -37,8 +58,6 @@ const demoDocument = {
   lorebook: { name: '阿尔法世界书', entries: [] },
   regexScripts: [],
   stateTasks: [],
-  chatPreset: { opening_mode: 'first_message' },
-  grounding: { timeline_mode: 'enhanced', sample_pages: [1], relationships: [], key_moments: [] },
   exportArtifacts: {},
 }
 
@@ -113,7 +132,7 @@ const structuredDocument: CharacterStudioDocument = {
       name: '初始化任务',
       triggerTiming: 'initialization',
       interval: 0,
-      commands: '<<taskjs>>\nawait STscript(\'/setvar key=trust_score 20\');\n<</taskjs>>',
+      commands: "<<taskjs>>\nawait STscript('/setvar key=trust_score 20');\n<</taskjs>>",
       disabled: false,
     },
   ],
@@ -124,12 +143,18 @@ const candidateDocument: CharacterStudioDocument = {
   id: 'doc_candidate',
   origin: { type: 'analysis', source_character: '候选角色' },
   meta: { ...demoDocument.meta, title: '候选角色', tags: [] },
-  identity: { ...demoDocument.identity, name: '候选角色', aliases: [], description: '', personality: '', scenario: '' },
+  identity: {
+    ...demoDocument.identity,
+    name: '候选角色',
+    aliases: [],
+    description: '',
+    personality: '',
+    scenario: '',
+  },
   coreMessages: { ...demoDocument.coreMessages, first_message: '', alternate_greetings: [] },
   lorebook: { name: '候选角色世界书', entries: [] },
   regexScripts: [],
   stateTasks: [],
-  grounding: { timeline_mode: '', sample_pages: [], relationships: [], key_moments: [] },
 }
 
 const getCharacterStudioIndexMock = vi.fn().mockResolvedValue({
@@ -144,17 +169,17 @@ const getCharacterStudioIndexMock = vi.fn().mockResolvedValue({
       tags: ['主角'],
       is_favorite: false,
       has_avatar: false,
-      sample_pages: [1],
     },
   ],
   candidates: [
     {
+      id: 'candidate-alpha',
       name: '阿尔法',
       aliases: [],
-      first_appearance: 1,
-      dialogue_count: 2,
-      has_dialogues: true,
-      sample_pages: [1],
+      first_appearance_page: 1,
+      key_moment_count: 2,
+      related_page_count: 1,
+      related_page_numbers: [1],
     },
   ],
   count: 1,
@@ -163,17 +188,20 @@ const getCharacterStudioIndexMock = vi.fn().mockResolvedValue({
 
 const getCharacterStudioDocumentMock = vi.fn().mockResolvedValue(demoDocument)
 
-const saveCharacterStudioDocumentMock = vi.fn().mockImplementation(async (_docId: string, payload: Record<string, unknown>) => ({
+const saveCharacterStudioDocumentMock = vi
+  .fn()
+  .mockImplementation(async (_docId: string, payload: Record<string, unknown>) => ({
     ...demoDocument,
     ...payload,
+    updatedAt: new Date().toISOString(),
     meta: {
       ...demoDocument.meta,
       ...((payload.meta as Record<string, unknown> | undefined) || {}),
-      updated_at: new Date().toISOString(),
     },
-}))
+  }))
 
 const createCharacterStudioDocumentMock = vi.fn().mockResolvedValue(candidateDocument)
+const deleteCharacterStudioDocumentMock = vi.fn().mockResolvedValue(undefined)
 const generateCharacterStudioSectionMock = vi.fn()
 const getCharacterStudioChatStateMock = vi.fn()
 const createCharacterStudioChatSessionMock = vi.fn()
@@ -189,10 +217,14 @@ const exportCharacterStudioChatSessionMock = vi.fn()
 const importCharacterStudioChatSessionMock = vi.fn()
 const getCharacterStudioChatPromptPreviewMock = vi.fn()
 const importWorldbookIntoCharacterStudioDocumentMock = vi.fn()
+const runCharacterStudioAgentMock = vi.fn()
 
 const demoChatSession: CharacterStudioChatSession = {
   session_id: 'chat_alpha',
   doc_id: 'doc_alpha',
+  index_revision: 2,
+  revision: 4,
+  generation: 1,
   title: '新对话',
   created_at: '2026-05-15T00:00:00',
   updated_at: '2026-05-15T00:00:00',
@@ -213,8 +245,6 @@ const demoChatSession: CharacterStudioChatSession = {
     },
   ],
   variables: { trust_score: 20 },
-  _runtime: {},
-  last_prompt_preview: '',
 }
 
 const conversationChatSession: CharacterStudioChatSession = {
@@ -253,6 +283,7 @@ const conversationChatSession: CharacterStudioChatSession = {
 
 vi.mock('@/api/characterStudio', () => ({
   createCharacterStudioDocument: createCharacterStudioDocumentMock,
+  deleteCharacterStudioDocument: deleteCharacterStudioDocumentMock,
   createCharacterStudioChatSession: createCharacterStudioChatSessionMock,
   switchCharacterStudioChatSession: switchCharacterStudioChatSessionMock,
   deleteCharacterStudioChatSession: deleteCharacterStudioChatSessionMock,
@@ -267,6 +298,7 @@ vi.mock('@/api/characterStudio', () => ({
   importCharacterStudioChatSession: importCharacterStudioChatSessionMock,
   getCharacterStudioChatPromptPreview: getCharacterStudioChatPromptPreviewMock,
   importWorldbookIntoCharacterStudioDocument: importWorldbookIntoCharacterStudioDocumentMock,
+  runCharacterStudioAgent: runCharacterStudioAgentMock,
   generateCharacterStudioSection: generateCharacterStudioSectionMock,
   getCharacterStudioIndex: getCharacterStudioIndexMock,
   getCharacterStudioDocument: getCharacterStudioDocumentMock,
@@ -281,6 +313,7 @@ describe('characterStudioStore', () => {
     getCharacterStudioDocumentMock.mockClear()
     saveCharacterStudioDocumentMock.mockClear()
     createCharacterStudioDocumentMock.mockClear()
+    deleteCharacterStudioDocumentMock.mockClear()
     generateCharacterStudioSectionMock.mockReset()
     getCharacterStudioChatStateMock.mockReset()
     createCharacterStudioChatSessionMock.mockReset()
@@ -296,6 +329,7 @@ describe('characterStudioStore', () => {
     importCharacterStudioChatSessionMock.mockReset()
     getCharacterStudioChatPromptPreviewMock.mockReset()
     importWorldbookIntoCharacterStudioDocumentMock.mockReset()
+    runCharacterStudioAgentMock.mockReset()
     getCharacterStudioIndexMock.mockResolvedValue({
       book_id: 'book-demo',
       documents: [
@@ -308,17 +342,17 @@ describe('characterStudioStore', () => {
           tags: ['主角'],
           is_favorite: false,
           has_avatar: false,
-          sample_pages: [1],
         },
       ],
       candidates: [
         {
+          id: 'candidate-alpha',
           name: '阿尔法',
           aliases: [],
-          first_appearance: 1,
-          dialogue_count: 2,
-          has_dialogues: true,
-          sample_pages: [1],
+          first_appearance_page: 1,
+          key_moment_count: 2,
+          related_page_count: 1,
+          related_page_numbers: [1],
         },
       ],
       count: 1,
@@ -327,6 +361,7 @@ describe('characterStudioStore', () => {
     getCharacterStudioDocumentMock.mockResolvedValue(demoDocument)
     getCharacterStudioChatStateMock.mockResolvedValue({
       doc_id: 'doc_alpha',
+      index_revision: 2,
       active_session: demoChatSession,
       archived_sessions: [],
       available_greetings: [],
@@ -334,7 +369,10 @@ describe('characterStudioStore', () => {
   })
 
   it('keeps agent patch cloning on the shared clone helper', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/stores/characterStudioPatch.ts'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/stores/characterStudioPatch.ts'),
+      'utf8'
+    )
 
     expect(source).toContain("import { deepClone } from '@/utils/deepClone'")
     expect(source).not.toContain('function cloneDocument')
@@ -342,22 +380,32 @@ describe('characterStudioStore', () => {
     expect(source).not.toContain('JSON.parse(JSON.stringify')
   })
 
-  it('keeps agent patch dynamic writes behind a named document boundary', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/stores/characterStudioPatch.ts'), 'utf8')
+  it('applies agent set fields through an explicit document whitelist', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/stores/characterStudioPatch.ts'),
+      'utf8'
+    )
 
-    expect(source).not.toContain('setByPath(nextDocument as unknown as Record<string, unknown>, path, value)')
-    expect(source).toContain('type MutableCharacterStudioDocument')
+    expect(source).toContain('function applySetField')
+    expect(source).not.toContain('type MutableCharacterStudioDocument')
+    expect(source).not.toContain('function setByPath')
   })
 
-  it('keeps dynamic patch path traversal behind a named record helper', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/stores/characterStudioPatch.ts'), 'utf8')
+  it('does not create missing records while traversing model-provided paths', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/stores/characterStudioPatch.ts'),
+      'utf8'
+    )
 
-    expect(source).toContain('function ensurePathRecord')
-    expect(source).not.toContain('current = current[key] as Record<string, unknown>')
+    expect(source).not.toContain('function ensurePathRecord')
+    expect(source).not.toContain('current = current[key]')
   })
 
   it('keeps store snapshots on the shared clone helper', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/stores/characterStudioStore.ts'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/stores/characterStudioStore.ts'),
+      'utf8'
+    )
 
     expect(source).toContain("import { deepClone } from '@/utils/deepClone'")
     expect(source).not.toContain('function cloneDocument')
@@ -365,7 +413,10 @@ describe('characterStudioStore', () => {
   })
 
   it('saves current documents without generic record payload casts', () => {
-    const storeSource = readFileSync(resolve(process.cwd(), 'src/stores/characterStudioStore.ts'), 'utf8')
+    const storeSource = readFileSync(
+      resolve(process.cwd(), 'src/stores/characterStudioStore.ts'),
+      'utf8'
+    )
     const apiSource = readFileSync(resolve(process.cwd(), 'src/api/characterStudio.ts'), 'utf8')
 
     expect(storeSource).not.toContain('currentDocument.value as unknown as Record<string, unknown>')
@@ -373,8 +424,14 @@ describe('characterStudioStore', () => {
   })
 
   it('keeps export download transport behind a Studio export helper', () => {
-    const storeSource = readFileSync(resolve(process.cwd(), 'src/stores/characterStudioStore.ts'), 'utf8')
-    const exportSource = readFileSync(resolve(process.cwd(), 'src/stores/characterStudioExports.ts'), 'utf8')
+    const storeSource = readFileSync(
+      resolve(process.cwd(), 'src/stores/characterStudioStore.ts'),
+      'utf8'
+    )
+    const exportSource = readFileSync(
+      resolve(process.cwd(), 'src/stores/characterStudioExports.ts'),
+      'utf8'
+    )
 
     expect(storeSource).toContain("from '@/stores/characterStudioExports'")
     expect(storeSource).not.toContain('downloadCharacterStudioExport')
@@ -385,8 +442,14 @@ describe('characterStudioStore', () => {
   })
 
   it('keeps busy action copy behind a Studio activity helper', () => {
-    const storeSource = readFileSync(resolve(process.cwd(), 'src/stores/characterStudioStore.ts'), 'utf8')
-    const activitySource = readFileSync(resolve(process.cwd(), 'src/stores/characterStudioActivity.ts'), 'utf8')
+    const storeSource = readFileSync(
+      resolve(process.cwd(), 'src/stores/characterStudioStore.ts'),
+      'utf8'
+    )
+    const activitySource = readFileSync(
+      resolve(process.cwd(), 'src/stores/characterStudioActivity.ts'),
+      'utf8'
+    )
 
     expect(storeSource).toContain("from '@/stores/characterStudioActivity'")
     expect(storeSource).toContain('getCharacterStudioActionLabel')
@@ -398,8 +461,14 @@ describe('characterStudioStore', () => {
   })
 
   it('keeps agent output parsing behind a Studio agent output helper', () => {
-    const storeSource = readFileSync(resolve(process.cwd(), 'src/stores/characterStudioStore.ts'), 'utf8')
-    const outputSource = readFileSync(resolve(process.cwd(), 'src/stores/characterStudioAgentOutput.ts'), 'utf8')
+    const storeSource = readFileSync(
+      resolve(process.cwd(), 'src/stores/characterStudioStore.ts'),
+      'utf8'
+    )
+    const outputSource = readFileSync(
+      resolve(process.cwd(), 'src/stores/characterStudioAgentOutput.ts'),
+      'utf8'
+    )
 
     expect(storeSource).toContain("from '@/stores/characterStudioAgentOutput'")
     expect(storeSource).toContain('parseCharacterStudioAgentOutput')
@@ -409,27 +478,62 @@ describe('characterStudioStore', () => {
     expect(outputSource).toContain('export function parseCharacterStudioAgentOutput')
   })
 
+  it('rolls back the temporary agent message when the provider call fails', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+    runCharacterStudioAgentMock.mockRejectedValueOnce(new Error('provider unavailable'))
+
+    await store.loadWorkspace('book-demo')
+    await store.openDocument('doc_alpha')
+    await expect(store.sendAgentMessage('请检查')).rejects.toThrow('provider unavailable')
+
+    expect(store.agentMessages).toEqual([])
+  })
+
+  it('keeps the user and assistant agent messages after a successful reply', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+    runCharacterStudioAgentMock.mockResolvedValueOnce('检查完成')
+
+    await store.loadWorkspace('book-demo')
+    await store.openDocument('doc_alpha')
+    await store.sendAgentMessage('请检查')
+
+    expect(store.agentMessages).toEqual([
+      { role: 'user', content: '请检查' },
+      { role: 'assistant', content: '检查完成' },
+    ])
+  })
+
   it('keeps chat stream message mutations behind a Studio chat session helper', () => {
-    const storeSource = readFileSync(resolve(process.cwd(), 'src/stores/characterStudioStore.ts'), 'utf8')
-    const chatWorkflowSource = readFileSync(resolve(process.cwd(), 'src/stores/characterStudio/useCharacterStudioChat.ts'), 'utf8')
-    const chatSessionSource = readFileSync(resolve(process.cwd(), 'src/stores/characterStudioChatSession.ts'), 'utf8')
+    const storeSource = readFileSync(
+      resolve(process.cwd(), 'src/stores/characterStudioStore.ts'),
+      'utf8'
+    )
+    const chatWorkflowSource = readFileSync(
+      resolve(process.cwd(), 'src/stores/characterStudio/useCharacterStudioChat.ts'),
+      'utf8'
+    )
+    const chatSessionSource = readFileSync(
+      resolve(process.cwd(), 'src/stores/characterStudioChatSession.ts'),
+      'utf8'
+    )
 
     expect(storeSource).toContain("from './characterStudio/useCharacterStudioChat'")
     expect(chatWorkflowSource).toContain("from '@/stores/characterStudioChatSession'")
     expect(chatWorkflowSource).toContain('applyAssistantStreamContent')
-    expect(chatWorkflowSource).toContain('applyAssistantRuntimeState')
     expect(chatWorkflowSource).toContain('findRegenerationUserMessageIndex')
     expect(chatWorkflowSource).not.toContain('lastMessage.content = event.content')
     expect(chatWorkflowSource).not.toContain('lastMessage.runtime_log = event.runtime_log')
-    expect(chatWorkflowSource).not.toContain('messages.findIndex(item => item.message_id === messageId)')
+    expect(chatWorkflowSource).not.toContain(
+      'messages.findIndex(item => item.message_id === messageId)'
+    )
     expect(chatSessionSource).toContain('export function applyAssistantStreamContent')
-    expect(chatSessionSource).toContain('export function applyAssistantRuntimeState')
     expect(chatSessionSource).toContain('export function findRegenerationUserMessageIndex')
   })
 
-  it('updates assistant stream messages through the Studio chat session helper', async () => {
+  it('updates assistant stream content through the Studio chat session helper', async () => {
     const {
-      applyAssistantRuntimeState,
       applyAssistantStreamContent,
       findRegenerationUserMessageIndex,
     } = await import('@/stores/characterStudioChatSession')
@@ -437,16 +541,6 @@ describe('characterStudioStore', () => {
 
     expect(applyAssistantStreamContent(session, '新的流式内容')).toBe(true)
     expect(session.messages.at(-1)?.content).toBe('新的流式内容')
-
-    const runtimeLog = [{ stage: '变量更新' }]
-    const variables = { trust_score: 35 }
-    expect(applyAssistantRuntimeState(session, runtimeLog, variables)).toBe(true)
-    expect(session.messages.at(-1)?.runtime_log).toEqual([{ stage: '变量更新' }])
-    expect(session.messages.at(-1)?.variables_snapshot).toEqual({ trust_score: 35 })
-    runtimeLog[0]!.stage = '外部复用'
-    variables.trust_score = 99
-    expect(session.messages.at(-1)?.runtime_log).toEqual([{ stage: '变量更新' }])
-    expect(session.messages.at(-1)?.variables_snapshot).toEqual({ trust_score: 35 })
     expect(findRegenerationUserMessageIndex(session.messages, 'msg_assistant_1')).toBe(1)
     expect(findRegenerationUserMessageIndex(session.messages, 'msg_user_1')).toBe(1)
     expect(findRegenerationUserMessageIndex(session.messages, 'missing')).toBe(-1)
@@ -472,6 +566,22 @@ describe('characterStudioStore', () => {
 
     expect(store.currentDocument?.id).toBe('doc_alpha')
     expect(store.currentDocument?.identity.name).toBe('阿尔法')
+  })
+
+  it('rejects a document returned for a different book', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+
+    await store.loadWorkspace('book-demo')
+    await store.openDocument('doc_alpha')
+    getCharacterStudioDocumentMock.mockResolvedValueOnce({
+      ...deepClone(demoDocument),
+      id: 'doc_foreign',
+      bookId: 'book-other',
+    })
+
+    await expect(store.openDocument('doc_foreign')).rejects.toThrow('角色文档不属于当前书籍')
+    expect(store.currentDocument?.id).toBe('doc_alpha')
   })
 
   it('restores persisted diagnostics and invalidates them on document edits', async () => {
@@ -509,22 +619,26 @@ describe('characterStudioStore', () => {
     let resolveFirst!: (value: Awaited<ReturnType<typeof getCharacterStudioIndexMock>>) => void
 
     getCharacterStudioIndexMock
-      .mockImplementationOnce(() => new Promise((resolve) => {
-        resolveFirst = resolve
-      }))
+      .mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            resolveFirst = resolve
+          })
+      )
       .mockResolvedValueOnce({
         book_id: 'book-beta',
-        documents: [{
-          id: 'doc_beta',
-          title: '贝塔',
-          origin: 'manual',
-          source_character: null,
-          updated_at: '2026-05-16T00:00:00',
-          tags: [],
-          is_favorite: false,
-          has_avatar: false,
-          sample_pages: [],
-        }],
+        documents: [
+          {
+            id: 'doc_beta',
+            title: '贝塔',
+            origin: 'manual',
+            source_character: null,
+            updated_at: '2026-05-16T00:00:00',
+            tags: [],
+            is_favorite: false,
+            has_avatar: false,
+          },
+        ],
         candidates: [],
         count: 1,
         has_timeline: true,
@@ -536,17 +650,18 @@ describe('characterStudioStore', () => {
 
     resolveFirst({
       book_id: 'book-alpha',
-      documents: [{
-        id: 'doc_alpha',
-        title: '阿尔法',
-        origin: 'manual',
-        source_character: null,
-        updated_at: '2026-05-15T00:00:00',
-        tags: [],
-        is_favorite: false,
-        has_avatar: false,
-        sample_pages: [],
-      }],
+      documents: [
+        {
+          id: 'doc_alpha',
+          title: '阿尔法',
+          origin: 'manual',
+          source_character: null,
+          updated_at: '2026-05-15T00:00:00',
+          tags: [],
+          is_favorite: false,
+          has_avatar: false,
+        },
+      ],
       candidates: [],
       count: 1,
       has_timeline: true,
@@ -569,9 +684,12 @@ describe('characterStudioStore', () => {
     }
 
     getCharacterStudioDocumentMock
-      .mockImplementationOnce(() => new Promise((resolve) => {
-        resolveFirst = resolve
-      }))
+      .mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            resolveFirst = resolve
+          })
+      )
       .mockResolvedValueOnce(betaDocument)
 
     await store.loadWorkspace('book-demo')
@@ -598,6 +716,29 @@ describe('characterStudioStore', () => {
     expect(store.activeChatSession?.variables.trust_score).toBe(20)
   })
 
+  it('clears document and chat state after deleting the current document', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+
+    await store.loadWorkspace('book-demo')
+    await store.openDocument('doc_alpha')
+    getCharacterStudioIndexMock.mockResolvedValueOnce({
+      book_id: 'book-demo',
+      documents: [],
+      candidates: [],
+      count: 0,
+      has_timeline: false,
+    })
+
+    await store.deleteCurrentDocument()
+
+    expect(deleteCharacterStudioDocumentMock).toHaveBeenCalledWith('doc_alpha')
+    expect(store.currentDocument).toBeNull()
+    expect(store.activeChatSession).toBeNull()
+    expect(store.chatIndexRevision).toBeNull()
+    expect(store.archivedChatSessions).toEqual([])
+  })
+
   it('does not start autosave loop immediately after opening a document', async () => {
     vi.useFakeTimers()
     const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
@@ -608,6 +749,18 @@ describe('characterStudioStore', () => {
     await vi.advanceTimersByTimeAsync(2500)
 
     expect(saveCharacterStudioDocumentMock).not.toHaveBeenCalled()
+  })
+
+  it('does not send an unchanged document when save is requested', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+
+    await store.loadWorkspace('book-demo')
+    await store.openDocument('doc_alpha')
+    await store.persistCurrentDocument()
+
+    expect(saveCharacterStudioDocumentMock).not.toHaveBeenCalled()
+    expect(store.isSaving).toBe(false)
   })
 
   it('autosaves user edits only once instead of re-saving server-updated document metadata', async () => {
@@ -668,7 +821,6 @@ describe('characterStudioStore', () => {
       title: '更新后的阿尔法',
       tags: ['主角', '已更新'],
       is_favorite: true,
-      sample_pages: [1],
     })
   })
 
@@ -733,18 +885,17 @@ describe('characterStudioStore', () => {
     })
 
     const firstPayload = deepClone(
-      saveCharacterStudioDocumentMock.mock.calls[0]![1] as CharacterStudioDocument,
+      saveCharacterStudioDocumentMock.mock.calls[0]![1] as CharacterStudioDocument
     )
     firstSave.resolve({
       ...firstPayload,
       revision: 2,
-      meta: { ...firstPayload.meta, updated_at: '2026-05-15T00:01:00' },
       updatedAt: '2026-05-15T00:01:00',
     })
 
     await vi.waitFor(() => expect(saveCharacterStudioDocumentMock).toHaveBeenCalledTimes(2))
     const secondPayload = deepClone(
-      saveCharacterStudioDocumentMock.mock.calls[1]![1] as CharacterStudioDocument,
+      saveCharacterStudioDocumentMock.mock.calls[1]![1] as CharacterStudioDocument
     )
     expect(secondPayload.identity.description).toBe('保存期间继续输入的内容')
     expect(secondPayload.revision).toBe(2)
@@ -752,7 +903,6 @@ describe('characterStudioStore', () => {
     secondSave.resolve({
       ...secondPayload,
       revision: 3,
-      meta: { ...secondPayload.meta, updated_at: '2026-05-15T00:02:00' },
       updatedAt: '2026-05-15T00:02:00',
     })
     await saving
@@ -766,6 +916,7 @@ describe('characterStudioStore', () => {
     vi.useFakeTimers()
     const chatRefresh = deferred<{
       doc_id: string
+      index_revision: number
       active_session: CharacterStudioChatSession
       archived_sessions: never[]
       available_greetings: never[]
@@ -781,6 +932,7 @@ describe('characterStudioStore', () => {
       .mockReturnValueOnce(chatRefresh.promise)
       .mockResolvedValue({
         doc_id: 'doc_alpha',
+        index_revision: 2,
         active_session: deepClone(demoChatSession),
         archived_sessions: [],
         available_greetings: [],
@@ -812,6 +964,7 @@ describe('characterStudioStore', () => {
     })
     chatRefresh.resolve({
       doc_id: 'doc_alpha',
+      index_revision: 2,
       active_session: deepClone(demoChatSession),
       archived_sessions: [],
       available_greetings: [],
@@ -850,6 +1003,24 @@ describe('characterStudioStore', () => {
     expect(store.pendingAgentPatch).toBeNull()
   })
 
+  it('does not leave the previous book lists visible when a new workspace fails', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+
+    await store.loadWorkspace('book-demo')
+    expect(store.documents).toHaveLength(1)
+    expect(store.candidates).toHaveLength(1)
+    getCharacterStudioIndexMock.mockRejectedValueOnce(new Error('加载失败'))
+
+    await store.loadWorkspace('book-broken')
+
+    expect(store.bookId).toBe('book-broken')
+    expect(store.documents).toEqual([])
+    expect(store.candidates).toEqual([])
+    expect(store.hasTimeline).toBe(false)
+    expect(store.errorMessage).toBe('加载失败')
+  })
+
   it('creates a fresh active session when starting a new conversation', async () => {
     const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
     const store = useCharacterStudioStore()
@@ -859,9 +1030,11 @@ describe('characterStudioStore', () => {
 
     createCharacterStudioChatSessionMock.mockResolvedValueOnce({
       doc_id: 'doc_alpha',
+      index_revision: 3,
       active_session: {
         ...demoChatSession,
         session_id: 'chat_beta',
+        index_revision: 3,
         messages: [
           {
             ...demoChatSession.messages[0],
@@ -874,8 +1047,12 @@ describe('characterStudioStore', () => {
         {
           session_id: 'chat_alpha',
           title: '新对话',
+          revision: 4,
+          generation: 1,
           message_count: 1,
           updated_at: '2026-05-15T00:00:00',
+          archived_at: '2026-05-15T00:00:00',
+          last_message_excerpt: '我是阿尔法。',
         },
       ],
       available_greetings: [],
@@ -883,39 +1060,85 @@ describe('characterStudioStore', () => {
 
     await store.createChatSession()
 
+    expect(createCharacterStudioChatSessionMock).toHaveBeenCalledWith('doc_alpha', 2, undefined)
     expect(store.activeChatSession?.session_id).toBe('chat_beta')
     expect(store.activeChatSession?.messages[0]?.content).toBe('新的开场白')
     expect(store.archivedChatSessions[0]?.session_id).toBe('chat_alpha')
+  })
+
+  it('applies an explicit empty active session from a full chat state', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+
+    await store.loadWorkspace('book-demo')
+    await store.openDocument('doc_alpha')
+    switchCharacterStudioChatSessionMock.mockResolvedValueOnce({
+      doc_id: 'doc_alpha',
+      index_revision: 3,
+      active_session: null,
+      archived_sessions: [],
+      available_greetings: [],
+    })
+
+    await store.switchChatSession('chat_archived')
+
+    expect(switchCharacterStudioChatSessionMock).toHaveBeenCalledWith(
+      'doc_alpha',
+      'chat_archived',
+      2
+    )
+    expect(store.chatIndexRevision).toBe(3)
+    expect(store.activeChatSession).toBeNull()
   })
 
   it('creates a candidate document without prefilled card content', async () => {
     const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
     const store = useCharacterStudioStore()
 
-    getCharacterStudioIndexMock.mockResolvedValue({
-      book_id: 'book-demo',
-      documents: [
-        {
-          id: 'doc_candidate',
-          title: '候选角色',
-          origin: 'analysis',
-          source_character: '候选角色',
-          updated_at: '2026-05-15T00:00:00',
-          tags: [],
-          is_favorite: false,
-          has_avatar: false,
-          sample_pages: [],
-        },
-      ],
-      candidates: [],
-      count: 1,
-      has_timeline: true,
-    })
+    getCharacterStudioIndexMock
+      .mockResolvedValueOnce({
+        book_id: 'book-demo',
+        documents: [],
+        candidates: [
+          {
+            id: 'candidate-role',
+            name: '候选角色',
+            aliases: [],
+            first_appearance_page: 1,
+            key_moment_count: 2,
+            related_page_count: 1,
+            related_page_numbers: [1],
+          },
+        ],
+        count: 0,
+        has_timeline: true,
+      })
+      .mockResolvedValueOnce({
+        book_id: 'book-demo',
+        documents: [
+          {
+            id: 'doc_candidate',
+            title: '候选角色',
+            origin: 'analysis',
+            source_character: '候选角色',
+            updated_at: '2026-05-15T00:00:00',
+            tags: [],
+            is_favorite: false,
+            has_avatar: false,
+          },
+        ],
+        candidates: [],
+        count: 1,
+        has_timeline: true,
+      })
     getCharacterStudioDocumentMock.mockResolvedValueOnce(candidateDocument)
 
     await store.loadWorkspace('book-demo')
-    await store.createDocumentFromCandidate('候选角色')
+    await store.createDocumentFromCandidate('candidate-role')
 
+    expect(createCharacterStudioDocumentMock).toHaveBeenCalledWith('book-demo', {
+      candidate_id: 'candidate-role',
+    })
     expect(store.currentDocument?.identity.name).toBe('候选角色')
     expect(store.currentDocument?.identity.description).toBe('')
     expect(store.currentDocument?.coreMessages.first_message).toBe('')
@@ -936,6 +1159,33 @@ describe('characterStudioStore', () => {
     expect(store.activeActionLabel).toBe('正在补全整张角色卡')
   })
 
+  it('flushes pending edits before generation and sends the saved revision', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+
+    await store.loadWorkspace('book-demo')
+    await store.openDocument('doc_alpha')
+    const edited = deepClone(store.currentDocument!)
+    edited.identity.description = '生成前保存的描述'
+    store.updateCurrentDocument(edited)
+    saveCharacterStudioDocumentMock.mockResolvedValueOnce({
+      ...edited,
+      revision: 2,
+      updatedAt: '2026-05-15T00:01:00',
+    })
+    generateCharacterStudioSectionMock.mockResolvedValueOnce({
+      ...edited,
+      revision: 3,
+    })
+
+    await store.generateSection('identity')
+
+    expect(generateCharacterStudioSectionMock).toHaveBeenCalledWith('doc_alpha', 2, 'identity')
+    expect(saveCharacterStudioDocumentMock.mock.invocationCallOrder[0]).toBeLessThan(
+      generateCharacterStudioSectionMock.mock.invocationCallOrder[0]!
+    )
+  })
+
   it('preserves backend validation messages when section generation fails', async () => {
     const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
     const { ApiClientError } = await import('@/api/client')
@@ -944,12 +1194,14 @@ describe('characterStudioStore', () => {
     await store.loadWorkspace('book-demo')
     await store.openDocument('doc_alpha')
 
-    generateCharacterStudioSectionMock.mockRejectedValueOnce(new ApiClientError({
-      code: 'ERR_BAD_REQUEST',
-      message: 'AI 生成结果缺少 identity。',
-      status: 400,
-      details: { section: 'full' },
-    }))
+    generateCharacterStudioSectionMock.mockRejectedValueOnce(
+      new ApiClientError({
+        code: 'ERR_BAD_REQUEST',
+        message: 'AI 生成结果缺少 identity。',
+        status: 400,
+        details: { section: 'full' },
+      })
+    )
 
     await expect(store.generateSection('full')).rejects.toThrow('AI 生成结果缺少 identity。')
     expect(store.errorMessage).toBe('AI 生成结果缺少 identity。')
@@ -967,27 +1219,32 @@ describe('characterStudioStore', () => {
     })
 
     editCharacterStudioChatMessageMock.mockResolvedValueOnce({
-        ...deepClone(conversationChatSession),
-        messages: [
-          deepClone(conversationChatSession.messages[0]!),
-          {
-            ...deepClone(conversationChatSession.messages[1]!),
-            content: '编辑后的用户消息',
-            generation_meta: { original_content: '编辑后的用户消息' },
-          },
-          {
-            ...deepClone(conversationChatSession.messages[2]!),
-            message_id: 'msg_assistant_regenerated',
-            content: '新的回答',
-          },
-        ],
+      ...deepClone(conversationChatSession),
+      messages: [
+        deepClone(conversationChatSession.messages[0]!),
+        {
+          ...deepClone(conversationChatSession.messages[1]!),
+          content: '编辑后的用户消息',
+          generation_meta: { original_content: '编辑后的用户消息' },
+        },
+        {
+          ...deepClone(conversationChatSession.messages[2]!),
+          message_id: 'msg_assistant_regenerated',
+          content: '新的回答',
+        },
+      ],
     })
 
     await store.loadWorkspace('book-demo')
     await store.openDocument('doc_alpha')
     await store.editChatMessage('msg_user_1', '编辑后的用户消息')
 
-    expect(editCharacterStudioChatMessageMock).toHaveBeenCalledTimes(1)
+    expect(editCharacterStudioChatMessageMock).toHaveBeenCalledWith(
+      'chat_alpha',
+      4,
+      'msg_user_1',
+      '编辑后的用户消息'
+    )
     expect(regenerateCharacterStudioChatMessageMock).not.toHaveBeenCalled()
     expect(store.activeChatSession?.messages.map(item => item.content)).toEqual([
       '我是阿尔法。',
@@ -1014,15 +1271,13 @@ describe('characterStudioStore', () => {
       ],
     }
     abortCharacterStudioChatOperationMock.mockResolvedValueOnce(abortedSession)
-    streamCharacterStudioChatMessageMock.mockImplementationOnce(async (
-      options: {
-        onAccepted?: (operationId: string) => void
-        signal: AbortSignal
-      },
-    ) => new Promise<void>((_resolve, reject) => {
-      options.onAccepted?.('chat-op-abort')
-      options.signal.addEventListener('abort', () => reject(new Error('aborted')))
-    }))
+    streamCharacterStudioChatMessageMock.mockImplementationOnce(
+      async (options: { onAccepted?: (operationId: string) => void; signal: AbortSignal }) =>
+        new Promise<void>((_resolve, reject) => {
+          options.onAccepted?.('chat-op-abort')
+          options.signal.addEventListener('abort', () => reject(new Error('aborted')))
+        })
+    )
 
     await store.loadWorkspace('book-demo')
     await store.openDocument('doc_alpha')
@@ -1035,11 +1290,79 @@ describe('characterStudioStore', () => {
 
     expect(abortCharacterStudioChatOperationMock).toHaveBeenCalledWith(
       'chat_alpha',
-      'chat-op-abort',
+      'chat-op-abort'
     )
     expect(store.isChatStreaming).toBe(false)
     expect(store.activeChatOperationId).toBeNull()
     expect(store.activeChatSession?.messages.at(-1)?.content).toBe('保留这条用户消息')
+  })
+
+  it('reloads the persisted user message when an accepted provider operation fails', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+    const persistedAfterFailure = deepClone(demoChatSession)
+    persistedAfterFailure.revision += 1
+    persistedAfterFailure.generation += 1
+    persistedAfterFailure.messages.push({
+      message_id: 'msg-provider-failed-user',
+      role: 'user',
+      content: '服务商失败也已持久化',
+      attachments: [],
+      runtime_log: [],
+      variables_snapshot: { trust_score: 20 },
+      generation_meta: {},
+      created_at: '2026-05-15T00:02:00',
+      updated_at: '2026-05-15T00:02:00',
+    })
+    getCharacterStudioChatStateMock
+      .mockResolvedValueOnce({
+        doc_id: 'doc_alpha',
+        index_revision: 2,
+        active_session: demoChatSession,
+        archived_sessions: [],
+        available_greetings: [],
+      })
+      .mockResolvedValueOnce({
+        doc_id: 'doc_alpha',
+        index_revision: 2,
+        active_session: persistedAfterFailure,
+        archived_sessions: [],
+        available_greetings: [],
+      })
+    streamCharacterStudioChatMessageMock.mockImplementationOnce(
+      async (options: { onAccepted?: (operationId: string) => void }) => {
+        options.onAccepted?.('provider-failed-operation')
+        throw new Error('provider unavailable')
+      }
+    )
+
+    await store.loadWorkspace('book-demo')
+    await store.openDocument('doc_alpha')
+    await expect(store.sendChatMessage('服务商失败也已持久化')).rejects.toThrow(
+      'provider unavailable'
+    )
+
+    expect(getCharacterStudioChatStateMock).toHaveBeenCalledTimes(2)
+    expect(store.activeChatSession?.messages.at(-1)?.content).toBe(
+      '服务商失败也已持久化'
+    )
+  })
+
+  it('rolls back an unaccepted chat send without reloading the session', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+    streamCharacterStudioChatMessageMock.mockRejectedValueOnce(
+      new Error('attachment upload failed')
+    )
+
+    await store.loadWorkspace('book-demo')
+    await store.openDocument('doc_alpha')
+    await expect(store.sendChatMessage('尚未写入')).rejects.toThrow(
+      'attachment upload failed'
+    )
+
+    expect(getCharacterStudioChatStateMock).toHaveBeenCalledTimes(1)
+    expect(store.activeChatSession).toEqual(demoChatSession)
   })
 
   it('permanently deletes an archived session with its current revision', async () => {
@@ -1048,14 +1371,16 @@ describe('characterStudioStore', () => {
     getCharacterStudioChatStateMock.mockResolvedValueOnce({
       doc_id: 'doc_alpha',
       active_session: deepClone(demoChatSession),
-      archived_sessions: [{
-        session_id: 'chat_archived',
-        title: '旧会话',
-        updated_at: '2026-05-14T00:00:00',
-        message_count: 3,
-        revision: 7,
-        generation: 1,
-      }],
+      archived_sessions: [
+        {
+          session_id: 'chat_archived',
+          title: '旧会话',
+          updated_at: '2026-05-14T00:00:00',
+          message_count: 3,
+          revision: 7,
+          generation: 1,
+        },
+      ],
       available_greetings: [],
     })
     deleteCharacterStudioChatSessionMock.mockResolvedValueOnce({
@@ -1072,7 +1397,7 @@ describe('characterStudioStore', () => {
     expect(deleteCharacterStudioChatSessionMock).toHaveBeenCalledWith(
       'doc_alpha',
       'chat_archived',
-      7,
+      7
     )
     expect(store.archivedChatSessions).toEqual([])
   })
@@ -1120,12 +1445,12 @@ describe('characterStudioStore', () => {
       })
 
     generateCharacterStudioSectionMock.mockResolvedValueOnce({
-        ...deepClone(demoDocument),
-        coreMessages: {
-          ...deepClone(demoDocument.coreMessages),
-          first_message: '新的默认开场白',
-          alternate_greetings: ['备用问候'],
-        },
+      ...deepClone(demoDocument),
+      coreMessages: {
+        ...deepClone(demoDocument.coreMessages),
+        first_message: '新的默认开场白',
+        alternate_greetings: ['备用问候'],
+      },
     })
 
     await store.loadWorkspace('book-demo')
@@ -1142,9 +1467,12 @@ describe('characterStudioStore', () => {
     const store = useCharacterStudioStore()
 
     let resolveStream: (() => void) | null = null
-    streamCharacterStudioChatMessageMock.mockImplementationOnce(async () => new Promise<void>(resolve => {
-      resolveStream = resolve
-    }))
+    streamCharacterStudioChatMessageMock.mockImplementationOnce(
+      async () =>
+        new Promise<void>(resolve => {
+          resolveStream = resolve
+        })
+    )
 
     getCharacterStudioChatStateMock
       .mockResolvedValueOnce({
@@ -1183,11 +1511,11 @@ describe('characterStudioStore', () => {
       })
 
     saveCharacterStudioDocumentMock.mockResolvedValueOnce({
-        ...deepClone(demoDocument),
-        coreMessages: {
-          ...deepClone(demoDocument.coreMessages),
-          first_message: '保存后同步的新开场',
-        },
+      ...deepClone(demoDocument),
+      coreMessages: {
+        ...deepClone(demoDocument.coreMessages),
+        first_message: '保存后同步的新开场',
+      },
     })
 
     await store.loadWorkspace('book-demo')
@@ -1198,6 +1526,9 @@ describe('characterStudioStore', () => {
 
     expect(store.isChatStreaming).toBe(true)
 
+    const editedDocument = deepClone(store.currentDocument!)
+    editedDocument.coreMessages.first_message = '保存后同步的新开场'
+    store.updateCurrentDocument(editedDocument)
     await store.persistCurrentDocument()
 
     expect(getCharacterStudioChatStateMock).toHaveBeenCalledTimes(1)
@@ -1227,9 +1558,12 @@ describe('characterStudioStore', () => {
       archived_sessions: [],
       available_greetings: [],
     })
-    streamCharacterStudioChatMessageMock.mockImplementationOnce(async () => new Promise<void>(resolve => {
-      resolveStream = resolve
-    }))
+    streamCharacterStudioChatMessageMock.mockImplementationOnce(
+      async () =>
+        new Promise<void>(resolve => {
+          resolveStream = resolve
+        })
+    )
 
     await store.loadWorkspace('book-demo')
     await store.openDocument('doc_alpha')
@@ -1262,17 +1596,16 @@ describe('characterStudioStore', () => {
     const createObjectURLSpy = vi
       .spyOn(URL, 'createObjectURL')
       .mockImplementation(file => `blob:${(file as File).name}`)
-    const revokeObjectURLSpy = vi
-      .spyOn(URL, 'revokeObjectURL')
-      .mockImplementation(() => {})
+    const revokeObjectURLSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
     const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
     const store = useCharacterStudioStore()
 
-    streamCharacterStudioChatMessageMock.mockImplementationOnce(async (
-      options: { signal: AbortSignal },
-    ) => new Promise<void>((_resolve, reject) => {
-      options.signal.addEventListener('abort', () => reject(new Error('aborted')))
-    }))
+    streamCharacterStudioChatMessageMock.mockImplementationOnce(
+      async (options: { signal: AbortSignal }) =>
+        new Promise<void>((_resolve, reject) => {
+          options.signal.addEventListener('abort', () => reject(new Error('aborted')))
+        })
+    )
 
     await store.loadWorkspace('book-demo')
     await store.openDocument('doc_alpha')
@@ -1301,28 +1634,20 @@ describe('characterStudioStore', () => {
     revokeObjectURLSpy.mockRestore()
   })
 
-  it('releases optimistic attachment URLs when a new send supersedes active streaming chat', async () => {
+  it('ignores a second send while an active chat operation is streaming', async () => {
     const createObjectURLSpy = vi
       .spyOn(URL, 'createObjectURL')
       .mockImplementation(file => `blob:${(file as File).name}`)
-    const revokeObjectURLSpy = vi
-      .spyOn(URL, 'revokeObjectURL')
-      .mockImplementation(() => {})
+    const revokeObjectURLSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
     const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
     const store = useCharacterStudioStore()
-    let secondSend: Promise<void> | null = null
 
-    streamCharacterStudioChatMessageMock
-      .mockImplementationOnce(async (
-        options: { signal: AbortSignal },
-      ) => new Promise<void>((_resolve, reject) => {
-        options.signal.addEventListener('abort', () => reject(new Error('aborted')))
-      }))
-      .mockImplementationOnce(async (
-        options: { signal: AbortSignal },
-      ) => new Promise<void>((_resolve, reject) => {
-        options.signal.addEventListener('abort', () => reject(new Error('aborted')))
-      }))
+    streamCharacterStudioChatMessageMock.mockImplementationOnce(
+      async (options: { signal: AbortSignal }) =>
+        new Promise<void>((_resolve, reject) => {
+          options.signal.addEventListener('abort', () => reject(new Error('aborted')))
+        })
+    )
 
     try {
       await store.loadWorkspace('book-demo')
@@ -1332,23 +1657,33 @@ describe('characterStudioStore', () => {
       const firstSend = store.sendChatMessage('第一条带图消息', [file])
       await Promise.resolve()
 
-      secondSend = store.sendChatMessage('第二条消息')
+      await store.sendChatMessage('第二条消息')
       await Promise.resolve()
+
+      expect(streamCharacterStudioChatMessageMock).toHaveBeenCalledTimes(1)
+      expect(streamCharacterStudioChatMessageMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: 'chat_alpha',
+          baseSessionRevision: 4,
+          content: '第一条带图消息',
+        })
+      )
+      expect(
+        store.activeChatSession?.messages.some(message => message.content === '第二条消息')
+      ).toBe(false)
+
+      getCharacterStudioIndexMock.mockResolvedValueOnce({
+        book_id: 'book-other',
+        documents: [],
+        candidates: [],
+        count: 0,
+        has_timeline: false,
+      })
+      await store.loadWorkspace('book-other')
       await firstSend
 
       expect(revokeObjectURLSpy).toHaveBeenCalledWith('blob:superseded.png')
     } finally {
-      if (secondSend) {
-        getCharacterStudioIndexMock.mockResolvedValueOnce({
-          book_id: 'book-other',
-          documents: [],
-          candidates: [],
-          count: 0,
-          has_timeline: false,
-        })
-        await store.loadWorkspace('book-other')
-        await secondSend
-      }
       createObjectURLSpy.mockRestore()
       revokeObjectURLSpy.mockRestore()
     }
@@ -1360,16 +1695,17 @@ describe('characterStudioStore', () => {
     let emitStaleEvent: ((event: CharacterStudioChatStreamEvent) => void) | null = null
     let resolveStream: (() => void) | null = null
 
-    streamCharacterStudioChatMessageMock.mockImplementationOnce(async (
-      options: {
+    streamCharacterStudioChatMessageMock.mockImplementationOnce(
+      async (options: {
         onEvent: (event: CharacterStudioChatStreamEvent) => void
         signal: AbortSignal
-      },
-    ) => new Promise<void>(resolve => {
-      emitStaleEvent = options.onEvent
-      resolveStream = resolve
-      options.signal.addEventListener('abort', () => {})
-    }))
+      }) =>
+        new Promise<void>(resolve => {
+          emitStaleEvent = options.onEvent
+          resolveStream = resolve
+          options.signal.addEventListener('abort', () => {})
+        })
+    )
 
     await store.loadWorkspace('book-demo')
     await store.openDocument('doc_alpha')
@@ -1438,10 +1774,9 @@ describe('characterStudioStore', () => {
       },
     })
 
-    expect(buildCharacterStudioGreetingOptions(store.currentDocument).map(item => item.content)).toEqual([
-      '本地立即可见的主问候',
-      '备用问候 A',
-    ])
+    expect(
+      buildCharacterStudioGreetingOptions(store.currentDocument).map(item => item.content)
+    ).toEqual(['本地立即可见的主问候', '备用问候 A'])
     expect(store.diagnostics).toBeNull()
     expect(store.chatPromptPreview).toBe('')
     expect(store.chatPromptPreviewError).toBe('')
@@ -1513,7 +1848,9 @@ describe('characterStudioStore', () => {
 
     store.applyPendingPatch()
 
-    expect(store.currentDocument?.lorebook.entries[0]?.children[0]?.content).toBe('更新后的子条目内容')
+    expect(store.currentDocument?.lorebook.entries[0]?.children[0]?.content).toBe(
+      '更新后的子条目内容'
+    )
     expect(store.currentDocument?.lorebook.entries[0]?.children[0]?.keys).toEqual(['测试', '支线'])
 
     store.pendingAgentPatch = {
@@ -1548,7 +1885,7 @@ describe('characterStudioStore', () => {
         id: 'task_alpha',
         changes: {
           interval: 3,
-          commands: '<<taskjs>>\nawait STscript(\'/setvar key=trust_score 40\');\n<</taskjs>>',
+          commands: "<<taskjs>>\nawait STscript('/setvar key=trust_score 40');\n<</taskjs>>",
         },
       },
     }
@@ -1701,6 +2038,45 @@ describe('characterStudioStore', () => {
     expect(store.errorMessage).toContain('before_char、at_depth、after_char')
   })
 
+  it('rejects unknown set paths instead of creating arbitrary document fields', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+    getCharacterStudioDocumentMock.mockResolvedValueOnce(deepClone(structuredDocument))
+    await store.loadWorkspace('book-demo')
+    await store.openDocument('doc_alpha')
+
+    const before = deepClone(store.currentDocument)
+    const patch = { set: { 'identity.legacy_field': '旧字段' } }
+    store.pendingAgentPatch = patch as unknown as CharacterStudioAgentPatchV2
+    store.applyPendingPatch()
+
+    expect(store.currentDocument).toEqual(before)
+    expect(store.pendingAgentPatch).toEqual(patch)
+    expect(store.errorMessage).toContain('set 不支持字段路径')
+  })
+
+  it('rejects scalar coercion and unknown fields in agent collection patches', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+    getCharacterStudioDocumentMock.mockResolvedValueOnce(deepClone(structuredDocument))
+    await store.loadWorkspace('book-demo')
+    await store.openDocument('doc_alpha')
+    const before = deepClone(store.currentDocument)
+
+    for (const patch of [
+      { regex_add: { scriptName: 42 } },
+      { regex_add: { placement: 1 } },
+      { task_add: { interval: '3' } },
+      { worldbook_add: { legacy_field: true } },
+    ]) {
+      store.pendingAgentPatch = patch as unknown as CharacterStudioAgentPatchV2
+      store.applyPendingPatch()
+      expect(store.currentDocument).toEqual(before)
+      expect(store.pendingAgentPatch).toEqual(patch)
+      expect(store.errorMessage).not.toBe('')
+    }
+  })
+
   it('skips frozen section operations while applying other valid patch ops', async () => {
     const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
     const store = useCharacterStudioStore()
@@ -1756,7 +2132,11 @@ describe('characterStudioStore', () => {
       valid: true,
       errors: [],
       warnings: [],
-      checks: {},
+      checks: {
+        document: true,
+        v3_export: true,
+        v2_export: true,
+      },
     }
     store.chatPromptPreview = '过期提示词缓存'
     store.chatPromptPreviewError = '过期错误'
@@ -1806,7 +2186,7 @@ describe('characterStudioStore', () => {
 
     expect(saveCharacterStudioDocumentMock).toHaveBeenCalledTimes(2)
     expect(
-      (saveCharacterStudioDocumentMock.mock.calls[1]![1] as CharacterStudioDocument).revision,
+      (saveCharacterStudioDocumentMock.mock.calls[1]![1] as CharacterStudioDocument).revision
     ).toBe(2)
     expect(store.currentDocument?.revision).toBe(3)
   })

@@ -1,0 +1,978 @@
+status	group	path	lines	main_relation	result	evidence
+PASS	project-config-docs-scripts	.editorconfig	L1-L43	UNCHANGED	当前文件逐行审查及调用链对照完成	逐文件核对当前唯一入口、架构、构建与工具链；解析、help、lint、build 和测试门禁通过
+FIXED	project-config-docs-scripts	.github/workflows/release.yml	L1-L396	MODIFIED	CPU/GPU 构建、版本校验、完整门禁、生成物与失败摘要闭合	AUDIT-154；YAML 解析与打包契约测试通过
+FIXED	project-config-docs-scripts	.gitignore	L1-L92	MODIFIED	AUDIT-164	根目录依赖缓存与独立临时探针目录纳入生成物忽略边界
+PASS	project-config-docs-scripts	LICENSE	L1-L674	UNCHANGED	当前文件逐行审查及调用链对照完成	逐文件核对当前唯一入口、架构、构建与工具链；解析、help、lint、build 和测试门禁通过
+FIXED	project-config-docs-scripts	README.md	L1-L427	MODIFIED	用户文档已与当前功能、平台和无迁移数据策略对齐	AUDIT-155；本地资源引用闭包及启动入口核对
+FIXED	project-config-docs-scripts	alembic.ini	L1-L39	NEW	只保留当前 foundation revision 所需 Alembic 配置	AUDIT-155；Alembic 配置解析与存储测试通过
+PASS	project-config-docs-scripts	app.spec	L1-L311	MODIFIED	当前文件逐行审查及调用链对照完成	逐文件核对当前唯一入口、架构、构建与工具链；解析、help、lint、build 和测试门禁通过
+FIXED	project-config-docs-scripts	docs/refactor/backend-first-architecture-plan.md	L1-L4081	NEW	最终架构基线逐领域与实现同步；删除旧对照入口描述；AUDIT-169 统一 CLI/GUI 本机监听默认值	AUDIT-007/AUDIT-155/AUDIT-159/AUDIT-162/AUDIT-169；全文契约搜索与全量门禁通过
+FIXED	project-config-docs-scripts	openapi/v2.yaml	L1-L7920	NEW	181 条当前 HTTP operation 与运行时路由、生成类型完整闭包；AUDIT-168 删除 Studio 伪上限；AUDIT-170 同步真实 URL 边界	确定性生成哈希、运行时 route coverage、AUDIT-168/AUDIT-170 定向测试与 Backend 全量测试通过
+PASS	plugins	plugins/README.md	L1-L159	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查当前 v3 插件契约、运行时及示例包；插件组合测试通过
+PASS	plugins	plugins/pipeline_lifecycle_plugin/plugin.json	L1-L27	NEW	当前文件逐行审查及调用链对照完成	逐行审查当前 v3 插件契约、运行时及示例包；插件组合测试通过
+PASS	plugins	plugins/pipeline_lifecycle_plugin/plugin.py	L1-L32	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查当前 v3 插件契约、运行时及示例包；插件组合测试通过
+PASS	plugins	plugins/style_mutation_plugin/plugin.json	L1-L53	NEW	当前文件逐行审查及调用链对照完成	逐行审查当前 v3 插件契约、运行时及示例包；插件组合测试通过
+PASS	plugins	plugins/style_mutation_plugin/plugin.py	L1-L39	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查当前 v3 插件契约、运行时及示例包；插件组合测试通过
+PASS	plugins	plugins/text_mutation_plugin/plugin.json	L1-L42	NEW	当前文件逐行审查及调用链对照完成	逐行审查当前 v3 插件契约、运行时及示例包；插件组合测试通过
+PASS	plugins	plugins/text_mutation_plugin/plugin.py	L1-L35	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查当前 v3 插件契约、运行时及示例包；插件组合测试通过
+PASS	project-config-docs-scripts	requirements-cpu.txt	L1-L60	MODIFIED	当前文件逐行审查及调用链对照完成	逐文件核对当前唯一入口、架构、构建与工具链；解析、help、lint、build 和测试门禁通过
+PASS	project-config-docs-scripts	requirements-gpu.txt	L1-L73	MODIFIED	当前文件逐行审查及调用链对照完成	逐文件核对当前唯一入口、架构、构建与工具链；解析、help、lint、build 和测试门禁通过
+PASS	desktop-launcher	saber_v2.py	L1-L22	NEW	当前文件逐行审查及调用链对照完成	逐行审查 Launcher、GUI、桌宠、进程与设置生命周期；桌面契约测试通过，实机验收另列
+PASS	project-config-docs-scripts	scripts/build_desktop_app_icon.py	L1-L52	NEW	当前文件逐行审查及调用链对照完成	逐文件核对当前唯一入口、架构、构建与工具链；解析、help、lint、build 和测试门禁通过
+PASS	project-config-docs-scripts	scripts/build_desktop_pet_assets.py	L1-L352	NEW	当前文件逐行审查及调用链对照完成	逐文件核对当前唯一入口、架构、构建与工具链；解析、help、lint、build 和测试门禁通过
+PASS	project-config-docs-scripts	scripts/check_v2_consistency.py	L1-L51	NEW	当前文件逐行审查及调用链对照完成	逐文件核对当前唯一入口、架构、构建与工具链；解析、help、lint、build 和测试门禁通过
+PASS	backend-v2	src/backend_v2/__init__.py	L1-L1	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/api/__init__.py	L1-L1	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/api/app.py	L1-L312	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/api/entrypoint.py	L1-L159	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/api/request_helpers.py	L1-L116	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/api/system_routes.py	L1-L31	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/api/web.py	L1-L47	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/checksums.py	L1-L14	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/content/__init__.py	L1-L1	NEW	Content 包边界为空且无旧导出/兼容入口	逐行阅读、导入闭包与 main 替代关系核对完成
+FIXED	backend-v2	src/backend_v2/content/image_import.py	L1-L428	NEW	AUDIT-034	逐行阅读；导入保持逐项落盘与缩略图发布，删除任意页数/条目/聚合大小门槛，保留压缩比和流式资源边界
+PASS	backend-v2	src/backend_v2/content/media.py	L1-L66	NEW	资源读取/缩略图响应只解析当前资产记录，不持有业务状态或兼容路径	逐行阅读、调用者、文件生命周期与 Stage2 测试核对完成
+FIXED	backend-v2	src/backend_v2/content/page_style.py	L1-L202	NEW	AUDIT-035	逐行阅读；当前样式 schema 与 RGB 输入严格验证，不再夹取或回退畸形颜色
+FIXED	backend-v2	src/backend_v2/content/repository.py	L1-L2861	NEW	AUDIT-034/AUDIT-035/AUDIT-037/AUDIT-167；内容状态与共享领域小工具保持唯一 owner	逐行阅读；事务、CAS、排序、当前 schema、快速工作区、标签唯一性、active operation 屏障与 render revision 均已核对
+FIXED	backend-v2	src/backend_v2/content/routes.py	L1-L735	NEW	AUDIT-035	逐行阅读；所有 Content JSON、multipart 和 query 命令按当前精确类型/字段校验，不做标量强转或旧命令兼容
+FIXED	backend-v2	src/backend_v2/content/translation_constraints.py	L1-L266	NEW	AUDIT-034/AUDIT-035	逐行阅读；无任意条目上限、无重复静默去重、无默认回退，只接受当前完整约束结构
+PASS	desktop-launcher	src/backend_v2/desktop/__init__.py	L1-L1	NEW	当前文件逐行审查及调用链对照完成	逐行审查 Launcher、GUI、桌宠、进程与设置生命周期；桌面契约测试通过，实机验收另列
+PASS	desktop-launcher	src/backend_v2/desktop/assets/pet/saber_chan/pet.json	L1-L27	NEW	当前文件逐行审查及调用链对照完成	逐行审查 Launcher、GUI、桌宠、进程与设置生命周期；桌面契约测试通过，实机验收另列
+FIXED	desktop-launcher	src/backend_v2/desktop/entrypoint.py	L1-L475	NEW	AUDIT-094	逐行核对服务/托盘/窗口/桌宠编排；显式停止、无托盘退出、位置恢复和启动日志生命周期闭合
+FIXED	desktop-launcher	src/backend_v2/desktop/pet.py	L1-L482	NEW	AUDIT-094	严格加载当前 atlas；隐藏停表、显示续播、缩放位置保存及跨屏约束完成
+PASS	desktop-launcher	src/backend_v2/desktop/pet_state.py	L1-L148	NEW	顶层任务粗粒度投影和前台锁存职责单一，不按原子步骤抖动	逐行核对 15 类任务映射、启动/降级/暂停/终态优先级与 3 秒反应；test_desktop_pet_state.py 7 项覆盖
+FIXED	desktop-launcher	src/backend_v2/desktop/settings.py	L1-L183	NEW	AUDIT-094	当前 schema 精确校验、原子保存、无旧版迁移；非法/不可表示值直接舍弃
+FIXED	desktop-launcher	src/backend_v2/desktop/task_client.py	L1-L290	NEW	AUDIT-094/AUDIT-163	实时队列不截断，SSE/命令/重试按代次隔离，停止时同步 finished 回调安全，有限超时与错误边界闭合
+PASS	desktop-launcher	src/backend_v2/desktop/theme.py	L1-L186	NEW	单一无状态 QSS 主题资源，无业务状态、兼容分支或重复 owner	逐项核对扁平粉白控件、表格、日志、窄滚动条、禁用/悬停/焦点状态；桌面四页实机已验
+FIXED	desktop-launcher	src/backend_v2/desktop/window.py	L1-L899	NEW	AUDIT-094	逐页核对概览/任务/日志/设置；即时设置、暂停投影、日志上限和无托盘退出闭合
+FIXED	backend-v2	src/backend_v2/dispatch.py	L1-L59	NEW	AUDIT-169；CLI 与 GUI 默认仅监听本机，局域网暴露必须显式启用	逐行核对命令分发与启动参数；AUDIT-169 定向测试及后端全量测试通过
+PASS	backend-v2	src/backend_v2/domain/__init__.py	L1-L1	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/domain/state_machines.py	L1-L66	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/import_guard.py	L1-L37	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/insight/__init__.py	L1-L2	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+FIXED	backend-v2	src/backend_v2/insight/commands.py	L1-L517	NEW	AUDIT-049/AUDIT-167；命令到 resolver、job 与 run 的状态所有权唯一	逐行核对当前字段、类型、replay 与事务链；删除 force 和旧 run 回查；后端全量测试通过
+FIXED	backend-v2	src/backend_v2/insight/continuation.py	L1-L4009	NEW	AUDIT-030/AUDIT-031/AUDIT-049	逐行阅读；严格当前 schema、完整版本历史、无迁移/fallback/任意数量上限；共享 Insight 配置不再传递死 force 字段
+FIXED	backend-v2	src/backend_v2/insight/derived.py	L1-L4639	NEW	AUDIT-019/AUDIT-033/AUDIT-048/AUDIT-049/AUDIT-051/AUDIT-052/AUDIT-167；派生数据与状态 owner 归一	逐行核对 snapshot、layer、overview、timeline、vector 与 QA 链；严格当前 generation、原子导出准入和显式冲突；Stage5 及全量测试通过
+FIXED	backend-v2	src/backend_v2/insight/exports.py	L1-L924	NEW	AUDIT-167；复用唯一状态集合与共享后端工具，不保留重复 owner	逐行核对导出冻结快照、事务、并发和失败语义；后端全量测试通过
+PASS	backend-v2	src/backend_v2/insight/gc.py	L1-L216	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/insight/page_schema.py	L1-L215	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+FIXED	backend-v2	src/backend_v2/insight/provider_runtime.py	L1-L243	NEW	AUDIT-048	逐行阅读、调用者及无 main 对应关系核对；只从冻结配置和凭据快照构造当前精确 Provider dataclass，不含兼容、迁移或默认回退
+FIXED	backend-v2	src/backend_v2/insight/qa.py	L1-L1763	NEW	AUDIT-048/AUDIT-050	逐行阅读、无 main 对应关系及路由/Worker/派生/设置调用链核对；临时请求租约、连接心跳、严格候选/全局上下文/重排/流式模型契约与无任意数量上限均有回归覆盖
+FIXED	backend-v2	src/backend_v2/insight/repository.py	L1-L3820	NEW	AUDIT-167；Insight 持久状态与共享小工具保持唯一 owner	逐行核对事务、并发、generation、失败语义和当前 schema；后端全量测试通过
+FIXED	backend-v2	src/backend_v2/insight/routes.py	L1-L1212	NEW	AUDIT-030/AUDIT-049/AUDIT-050/AUDIT-052	逐行阅读所有 Insight/续写/QA/笔记/导出 HTTP 与 SSE 路由；严格 query/命令边界、连接续租、空流失败和领域错误映射，无旧路由或兼容分支
+PASS	backend-v2	src/backend_v2/insight/worker.py	L1-L383	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/jobs/__init__.py	L1-L1	NEW	Durable jobs 包边界仅声明当前职责，无旧导出或兼容入口	逐行阅读、导入闭包与 main 替代关系核对完成
+PASS	backend-v2	src/backend_v2/jobs/events.py	L1-L139	NEW	单一有界广播器按持久 cursor 分发并断开慢消费者；生产启动主动运行，不依赖浏览器首次订阅	逐行阅读线程/关闭/队列/Worker epoch 恢复与 SSE 消费链；Stage3 43 tests 通过
+FIXED	backend-v2	src/backend_v2/jobs/repository.py	L1-L5083	NEW	AUDIT-007/AUDIT-036/AUDIT-167；任务状态、批次与事件集合保持唯一 owner	逐行核对 N+1、领取、取消/失败子图、secret 检查点、写锁与 SQLite 预检；任务及后端全量测试通过
+FIXED	backend-v2	src/backend_v2/jobs/retry.py	L1-L1168	NEW	AUDIT-036	逐行阅读；重试只接受当前 schema 和精确冻结结构，不过滤畸形条目、不补旧默认或迁移旧快照
+FIXED	backend-v2	src/backend_v2/jobs/routes.py	L1-L314	NEW	AUDIT-036	逐行阅读；所有筛选、cursor、revision、策略和顺序 ID 使用精确请求校验，拒绝标量强转与未知枚举
+FIXED	backend-v2	src/backend_v2/jobs/worker_loop.py	L1-L1175	NEW	AUDIT-036/AUDIT-040/AUDIT-167；Worker 复用唯一任务状态定义	逐行核对 handler、batch、并行配置与批量大小；Insight layer 动态解析且未知 kind 明确失败；任务及后端全量测试通过
+PASS	desktop-launcher	src/backend_v2/launcher/__init__.py	L1-L1	NEW	仅作为无副作用 Launcher 包边界	全文仅职责 docstring，无旧入口导出或初始化副作用
+FIXED	desktop-launcher	src/backend_v2/launcher/entrypoint.py	L1-L887	NEW	AUDIT-095	逐行核对单实例、epoch、子进程健康/有限重启与停止闭包；注册失败纳入真实诊断，Windows 真进程恢复通过
+PASS	desktop-launcher	src/backend_v2/launcher/windows_job.py	L1-L117	NEW	Windows Job Object 只负责子进程随 Launcher 退出，跨平台边界明确	逐行核对 create/set/assign/close 句柄生命周期；非 Windows no-op 由 POSIX parent monitor 接管；角色集成测试通过
+PASS	backend-v2	src/backend_v2/logging_config.py	L1-L144	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/operations/__init__.py	L1-L1	NEW	Operations 包边界为空且不暴露旧 manager/兼容入口	逐行阅读、导入闭包与 main 替代关系核对完成
+FIXED	backend-v2	src/backend_v2/operations/executor.py	L1-L406	NEW	AUDIT-037	逐行阅读；attempt heartbeat 有限处理 SQLite BUSY，失租后由持权调度器恢复；handler 结果与发布标记严格验证
+FIXED	backend-v2	src/backend_v2/operations/repair.py	L1-L546	NEW	AUDIT-037	逐行阅读；repair 使用当前页样式继承、严格几何/颜色/二值 mask、完整图片资源释放和当前冻结 request，不做旧数据回退
+FIXED	backend-v2	src/backend_v2/operations/repository.py	L1-L1713	NEW	AUDIT-037/AUDIT-045	逐行阅读；页面 repair 的 document revision 与全部气泡 updated revision 在同一事务推进，保留 attempt/fence/secret/idempotency 不变量
+FIXED	backend-v2	src/backend_v2/operations/routes.py	L1-L235	NEW	AUDIT-037	逐行阅读；operation/repair/event JSON、multipart、cursor、stream 与 limit 精确校验，不接受 bool/object/string 数值强转
+PASS	backend-v2	src/backend_v2/paths.py	L1-L57	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/plugins/__init__.py	L1-L2	NEW	仅作为无副作用插件包职责边界	全文不导出旧注册表、不导入模型或启动运行时
+FIXED	backend-v2	src/backend_v2/plugins/agent.py	L1-L962	NEW	AUDIT-089	会话状态、规划/启动重入、快照与严格当前 JSON 逐行核对；Plugins 46 tests 通过
+PASS	backend-v2	src/backend_v2/plugins/agent_routes.py	L1-L115	NEW	路由只校验当前请求并委托会话服务和持久任务队列	逐行核对严格 allowed_keys、404/409/422 映射、幂等 start；Stage5 Plugin HTTP 契约覆盖
+FIXED	backend-v2	src/backend_v2/plugins/agent_tools.py	L1-L254	NEW	AUDIT-089	Agent 工具工作区边界核对；内存分配错误不再转换为可修正验证结果
+PASS	backend-v2	src/backend_v2/plugins/agent_worker.py	L1-L345	NEW	Worker 独占 Agent 执行、受控工作区、发布前复验与暂停/取消安全点	逐行核对精确快照、data-root 路径封闭、事件、失败重抛、checkpoint 与 finally 清理；Stage5 Plugin Worker 回归覆盖
+FIXED	backend-v2	src/backend_v2/plugins/contract.py	L1-L1115	NEW	AUDIT-092	manifest、配置 schema、hook source/data/output 逐行核对并收紧为当前精确结构；Plugins 51 tests 通过
+FIXED	backend-v2	src/backend_v2/plugins/package.py	L1-L166	NEW	AUDIT-087	包哈希、ZIP 建包改为流式，保留确定性元数据与解压安全不变量
+FIXED	backend-v2	src/backend_v2/plugins/plugin_builder_skill.md	L1-L109	NEW	AUDIT-092	构建说明与严格 config 默认值、number/select 元数据及无兼容契约同步
+FIXED	backend-v2	src/backend_v2/plugins/repository.py	L1-L844	NEW	AUDIT-087/AUDIT-090/AUDIT-144	长文件操作移出 SQLite 写事务，导入/删除文件回滚闭合；版本替换舍弃旧配置；持久命令在同一短事务内提交事实与幂等响应，公开 DTO 不泄漏内部包路径
+FIXED	backend-v2	src/backend_v2/plugins/routes.py	L1-L198	NEW	AUDIT-088/AUDIT-144	持久插件命令返回真实幂等重放语义和冲突码；revision 只接受精确正整数
+FIXED	backend-v2	src/backend_v2/plugins/runtime.py	L1-L979	NEW	AUDIT-086/AUDIT-092	模块加载全局状态串行化；当前 JSON 严格拒绝；内存失败立即传播；资产发布与原子页面形状边界修正
+FIXED	backend-v2	src/backend_v2/plugins/snapshots.py	L1-L78	NEW	AUDIT-086	任务插件快照只接受当前合法 JSON 对象，不默认空值
+PASS	backend-v2	src/backend_v2/redaction.py	L1-L185	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/rendering/__init__.py	L1-L2	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/rendering/fonts.py	L1-L135	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/rendering/service.py	L1-L170	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+FIXED	backend-v2	src/backend_v2/runtime_heartbeat.py	L1-L107	NEW	AUDIT-038	逐行核对有限 SQLite BUSY 重试、零行续租自隔离和 shutdown callback；4 tests passed
+PASS	backend-v2	src/backend_v2/runtime_identity.py	L1-L113	NEW	Launcher-issued API/Worker 身份与 POSIX 父进程监视职责闭合	逐行核对环境身份、test-mode 隔离、父 PID 校验和 monitor stop 生命周期；角色边界测试通过
+PASS	backend-v2	src/backend_v2/serialization.py	L1-L14	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/settings/__init__.py	L1-L1	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/settings/diagnostics.py	L1-L689	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+FIXED	backend-v2	src/backend_v2/settings/resolver.py	L1-L1065	NEW	AUDIT-170；删除检测链隐式参数并保持当前 URL/Provider 配置边界	逐行核对设置解析、凭据物化、默认值与严格类型；AUDIT-170 定向测试及后端全量测试通过
+PASS	backend-v2	src/backend_v2/settings/routes.py	L1-L528	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/settings/validation.py	L1-L953	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+GENERATED-VERIFIED	generated-static	src/backend_v2/static/vue/assets/AppShell.BZ8ZSVXd.css	L1-L1	NEW	当前前端干净构建产物	前端 emptyOutDir 干净构建；39 文件引用闭包完整、0 orphan
+GENERATED-VERIFIED	generated-static	src/backend_v2/static/vue/assets/BookshelfView.C6odT9Wf.css	L1-L1	NEW	当前前端干净构建产物	前端 emptyOutDir 干净构建；39 文件引用闭包完整、0 orphan
+GENERATED-VERIFIED	generated-static	src/backend_v2/static/vue/assets/CharacterStudioView.DwdItkIa.css	L1-L1	NEW	当前前端干净构建产物	前端 emptyOutDir 干净构建；39 文件引用闭包完整、0 orphan
+GENERATED-VERIFIED	generated-static	src/backend_v2/static/vue/assets/InsightView.DAgLPAJn.css	L1-L1	NEW	当前前端干净构建产物	前端 emptyOutDir 干净构建；39 文件引用闭包完整、0 orphan
+GENERATED-VERIFIED	generated-static	src/backend_v2/static/vue/assets/ProductChoiceCardGrid.BIPqwzYi.css	L1-L1	NEW	当前前端干净构建产物	前端 emptyOutDir 干净构建；39 文件引用闭包完整、0 orphan
+GENERATED-VERIFIED	generated-static	src/backend_v2/static/vue/assets/ProductSearchField.C3ahDeXn.css	L1-L1	NEW	当前前端干净构建产物	前端 emptyOutDir 干净构建；39 文件引用闭包完整、0 orphan
+GENERATED-VERIFIED	generated-static	src/backend_v2/static/vue/assets/ProductThemeToggle.DwAhjRrf.css	L1-L1	NEW	当前前端干净构建产物	前端 emptyOutDir 干净构建；39 文件引用闭包完整、0 orphan
+GENERATED-VERIFIED	generated-static	src/backend_v2/static/vue/assets/ReaderView.BRLLlDsl.css	L1-L1	NEW	当前前端干净构建产物	前端 emptyOutDir 干净构建；39 文件引用闭包完整、0 orphan
+GENERATED-VERIFIED	generated-static	src/backend_v2/static/vue/assets/TranslateView.BvR1r1bJ.css	L1-L1	NEW	当前前端干净构建产物	前端 emptyOutDir 干净构建；39 文件引用闭包完整、0 orphan
+GENERATED-VERIFIED	generated-static	src/backend_v2/static/vue/assets/UiColorInput.Lm-u05mB.css	L1-L1	NEW	当前前端干净构建产物	前端 emptyOutDir 干净构建；39 文件引用闭包完整、0 orphan
+GENERATED-VERIFIED	generated-static	src/backend_v2/static/vue/assets/UiSpinner.I1u1Z8QV.css	L1-L1	NEW	当前前端干净构建产物	前端 emptyOutDir 干净构建；39 文件引用闭包完整、0 orphan
+GENERATED-VERIFIED	generated-static	src/backend_v2/static/vue/assets/clipboard.Bjg8a2lZ.css	L1-L1	NEW	当前前端干净构建产物	前端 emptyOutDir 干净构建；39 文件引用闭包完整、0 orphan
+GENERATED-VERIFIED	generated-static	src/backend_v2/static/vue/assets/index.DlCBNTpj.css	L1-L1	NEW	当前前端干净构建产物	前端 emptyOutDir 干净构建；39 文件引用闭包完整、0 orphan
+GENERATED-VERIFIED	generated-static	src/backend_v2/static/vue/assets/sanitizeHtml.Bn_hH2uQ.css	L1-L1	NEW	当前前端干净构建产物	前端 emptyOutDir 干净构建；39 文件引用闭包完整、0 orphan
+GENERATED-VERIFIED	generated-static	src/backend_v2/static/vue/assets/sse.Dvgv5dEj.css	L1-L1	NEW	当前前端干净构建产物	前端 emptyOutDir 干净构建；39 文件引用闭包完整、0 orphan
+GENERATED-VERIFIED	generated-static	src/backend_v2/static/vue/index.html	L1-L21	NEW	当前前端干净构建产物	前端 emptyOutDir 干净构建；39 文件引用闭包完整、0 orphan
+GENERATED-VERIFIED	generated-static	src/backend_v2/static/vue/js/AppShell.BomhbYxb.js	L1-L1	NEW	当前前端干净构建产物	前端 emptyOutDir 干净构建；39 文件引用闭包完整、0 orphan
+GENERATED-VERIFIED	generated-static	src/backend_v2/static/vue/js/BookshelfView.Cp5K6nw3.js	L1-L1	NEW	当前前端干净构建产物	前端 emptyOutDir 干净构建；39 文件引用闭包完整、0 orphan
+GENERATED-VERIFIED	generated-static	src/backend_v2/static/vue/js/CharacterStudioView.Ce0_G9wy.js	L1-L9	NEW	当前前端干净构建产物	前端 emptyOutDir 干净构建；39 文件引用闭包完整、0 orphan
+GENERATED-VERIFIED	generated-static	src/backend_v2/static/vue/js/InsightView.BFVFlMi9.js	L1-L2	NEW	当前前端干净构建产物	前端 emptyOutDir 干净构建；39 文件引用闭包完整、0 orphan
+GENERATED-VERIFIED	generated-static	src/backend_v2/static/vue/js/ProductChoiceCardGrid.CIdR0uK1.js	L1-L1	NEW	当前前端干净构建产物	前端 emptyOutDir 干净构建；39 文件引用闭包完整、0 orphan
+GENERATED-VERIFIED	generated-static	src/backend_v2/static/vue/js/ProductSearchField.Cb3n_IlF.js	L1-L1	NEW	当前前端干净构建产物	前端 emptyOutDir 干净构建；39 文件引用闭包完整、0 orphan
+GENERATED-VERIFIED	generated-static	src/backend_v2/static/vue/js/ProductThemeToggle.DAoUR1k3.js	L1-L1	NEW	当前前端干净构建产物	前端 emptyOutDir 干净构建；39 文件引用闭包完整、0 orphan
+GENERATED-VERIFIED	generated-static	src/backend_v2/static/vue/js/ReaderView.Cl3mmJGM.js	L1-L1	NEW	当前前端干净构建产物	前端 emptyOutDir 干净构建；39 文件引用闭包完整、0 orphan
+GENERATED-VERIFIED	generated-static	src/backend_v2/static/vue/js/TranslateView.DjEqSXNs.js	L1-L140	NEW	当前前端干净构建产物	前端 emptyOutDir 干净构建；39 文件引用闭包完整、0 orphan
+GENERATED-VERIFIED	generated-static	src/backend_v2/static/vue/js/UiColorInput.iXCOqq1p.js	L1-L1	NEW	当前前端干净构建产物	前端 emptyOutDir 干净构建；39 文件引用闭包完整、0 orphan
+GENERATED-VERIFIED	generated-static	src/backend_v2/static/vue/js/UiSpinner.DABDgElj.js	L1-L1	NEW	当前前端干净构建产物	前端 emptyOutDir 干净构建；39 文件引用闭包完整、0 orphan
+GENERATED-VERIFIED	generated-static	src/backend_v2/static/vue/js/clipboard.5LnxOATG.js	L1-L1	NEW	当前前端干净构建产物	前端 emptyOutDir 干净构建；39 文件引用闭包完整、0 orphan
+GENERATED-VERIFIED	generated-static	src/backend_v2/static/vue/js/index.D1zwhhMf.js	L1-L150	NEW	当前前端干净构建产物	前端 emptyOutDir 干净构建；39 文件引用闭包完整、0 orphan
+GENERATED-VERIFIED	generated-static	src/backend_v2/static/vue/js/operations.Dy6ccEwc.js	L1-L1	NEW	当前前端干净构建产物	前端 emptyOutDir 干净构建；39 文件引用闭包完整、0 orphan
+GENERATED-VERIFIED	generated-static	src/backend_v2/static/vue/js/sanitizeHtml.ki_d6GoB.js	L1-L63	NEW	当前前端干净构建产物	前端 emptyOutDir 干净构建；39 文件引用闭包完整、0 orphan
+GENERATED-VERIFIED	generated-static	src/backend_v2/static/vue/js/sse.DAskglAB.js	L1-L3	NEW	当前前端干净构建产物	前端 emptyOutDir 干净构建；39 文件引用闭包完整、0 orphan
+GENERATED-VERIFIED	generated-static	src/backend_v2/static/vue/js/utils-vendor.CzApALvg.js	L1-L9	NEW	当前前端干净构建产物	前端 emptyOutDir 干净构建；39 文件引用闭包完整、0 orphan
+GENERATED-VERIFIED	generated-static	src/backend_v2/static/vue/js/virtualWindow.i1jqd56o.js	L1-L1	NEW	当前前端干净构建产物	前端 emptyOutDir 干净构建；39 文件引用闭包完整、0 orphan
+GENERATED-VERIFIED	generated-static	src/backend_v2/static/vue/js/vue-vendor.BdhY7NUI.js	L1-L1	NEW	当前前端干净构建产物	前端 emptyOutDir 干净构建；39 文件引用闭包完整、0 orphan
+PASS	backend-v2	src/backend_v2/storage/__init__.py	L1-L1	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/storage/assets.py	L1-L571	NEW	不可变资产发布、崩溃恢复、完整性与两阶段有界 GC 职责闭合	逐行核对流式 1MiB 写入、fsync/journal/事务绑定、路径逃逸、动态 FK 引用复核和物理孤儿清理；Stage1/Storage GC 契约覆盖
+PASS	backend-v2	src/backend_v2/storage/builtin_fonts.py	L1-L132	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/storage/consistency.py	L1-L145	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/storage/database.py	L1-L128	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+FIXED	backend-v2	src/backend_v2/storage/defaults.py	L1-L249	NEW	AUDIT-068/AUDIT-083	出厂设置与算法提示词协议一致，翻译 schema 版本只有一个事实源
+FIXED	backend-v2	src/backend_v2/storage/epochs.py	L1-L546	NEW	AUDIT-038	逐行核对注册/校验/续租/关闭及 API/Worker 失联恢复；补齐租约判断、任务子图、operation 事件和 render 页面状态
+PASS	backend-v2	src/backend_v2/storage/lifecycle.py	L1-L143	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/storage/migrations/README	L1-L1	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/storage/migrations/env.py	L1-L84	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/storage/migrations/script.py.mako	L1-L28	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+FIXED	backend-v2	src/backend_v2/storage/migrations/versions/v2_foundation_20260810_backend_v2_foundation.py	L1-L1541	NEW	AUDIT-093	唯一 foundation 与 metadata 的类型、索引和全部 CHECK 逐项一致；upgrade/check/downgrade 通过，无迁移兼容层
+FIXED	backend-v2	src/backend_v2/storage/platform_repositories.py	L1-L1704	NEW	AUDIT-170；平台设置仓储只保存当前明确字段，不接受隐式参数	逐行核对事务、凭据、提示词和当前 schema；AUDIT-170 定向测试及后端全量测试通过
+FIXED	backend-v2	src/backend_v2/storage/schema.py	L1-L2201	NEW	AUDIT-093/AUDIT-167；80 张当前事实表及状态集合保持唯一 schema owner	逐表核对插件 ID、版本、序号、页码、尺寸与 continuation 单一当前版本约束；存储及后端全量测试通过
+PASS	backend-v2	src/backend_v2/storage/seeding.py	L1-L186	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/storage/single_instance.py	L1-L103	NEW	data-root 范围单实例锁跨平台实现最小且释放可靠	逐行核对 Windows byte lock、POSIX flock、owner PID 写入与 BaseException 清理；Stage1 单实例测试通过
+PASS	backend-v2	src/backend_v2/studio/__init__.py	L1-L2	NEW	Studio package 只导出正式 router	逐行阅读、导入闭包和应用挂载点核对完成
+PASS	backend-v2	src/backend_v2/studio/io.py	L1-L431	NEW	角色卡导入导出只处理当前格式与显式错误	逐行阅读、媒体/仓储调用链及 Studio 后端测试通过
+PASS	backend-v2	src/backend_v2/studio/media.py	L1-L90	NEW	媒体类型、解码和大小校验职责单一，不重建前端路径	逐行阅读、资产调用链与媒体测试通过
+PASS	backend-v2	src/backend_v2/studio/model.py	L1-L237	NEW	Studio 表定义、约束与当前 revision/asset 关系一致	逐行阅读、repository 读写闭包和数据库测试通过
+FIXED	backend-v2	src/backend_v2/studio/pure.py	L1-L1392	NEW	AUDIT-021/AUDIT-023	模型输出和诊断纯函数改为 canonical 严格验证及递归世界书检查；后端测试通过
+FIXED	backend-v2	src/backend_v2/studio/repository.py	L1-L2775	NEW	AUDIT-018/AUDIT-019/AUDIT-021/AUDIT-024	CAS、导入数据、稳定身份和单事务草稿对齐已收紧；Stage5 Studio 35 tests 通过
+FIXED	backend-v2	src/backend_v2/studio/routes.py	L1-L847	NEW	AUDIT-019/AUDIT-021	创建命令最小化，所有 revision/title/message 严格校验且不信任浏览器文档；路由测试通过
+FIXED	backend-v2	src/backend_v2/studio/service.py	L1-L1274	NEW	AUDIT-021/AUDIT-022/AUDIT-023/AUDIT-174	生成 section、摘要、审阅和聊天空结果均显式失败；空自定义 Base URL 使用服务商默认值；operation/service 测试通过
+PASS	backend-v2	src/backend_v2/timestamps.py	L1-L17	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/transfer/__init__.py	L1-L1	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+FIXED	backend-v2	src/backend_v2/transfer/commands.py	L1-L409	NEW	AUDIT-167；复用唯一状态集合与共享校验工具	逐行核对导入导出命令、事务、并发和失败语义；后端全量测试通过
+PASS	backend-v2	src/backend_v2/transfer/routes.py	L1-L64	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/transfer/worker.py	L1-L614	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/translation/__init__.py	L1-L2	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/translation/auxiliary.py	L1-L1463	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/translation/commands.py	L1-L895	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/translation/interactive_operations.py	L1-L866	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/translation/pipeline.py	L1-L3515	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/translation/routes.py	L1-L220	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	backend-v2	src/backend_v2/web_import/__init__.py	L1-L2	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+FIXED	backend-v2	src/backend_v2/web_import/commands.py	L1-L1159	NEW	AUDIT-167；网页导入命令复用唯一状态集合与共享校验工具	逐行核对命令、事务、并发、失败语义与当前 URL 边界；后端全量测试通过
+PASS	backend-v2	src/backend_v2/web_import/routes.py	L1-L181	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+FIXED	backend-v2	src/backend_v2/web_import/worker.py	L1-L1351	NEW	AUDIT-085/AUDIT-091	流式下载、批并发、失败脱敏/传播和冻结配置边界逐行核对；Web Import 21 tests 通过
+PASS	backend-v2	src/backend_v2/worker/__init__.py	L1-L5	NEW	Worker 包边界明确禁止模型与插件初始化副作用	全文仅职责说明，无旧 Worker 编排导出
+FIXED	backend-v2	src/backend_v2/worker/entrypoint.py	L1-L436	NEW	AUDIT-040	逐行核对 Worker identity/heartbeat、服务注册、任务/operation 安全点及关闭顺序；动态 Insight layer 不再受 8 层处理器上限
+PASS	backend-v2	src/backend_v2/worker/maintenance.py	L1-L387	NEW	Worker 安全点上的有界维护 owner，无第二调度器或长写事务	逐行核对 11 个独立 action、500 项批次、活跃任务/幂等/临时输入保护和失败隔离；maintenance/GC/Web Import 回归覆盖
+PASS	backend-v2	src/backend_v2/worker/model_lifecycle.py	L1-L499	NEW	当前文件逐行审查及调用链对照完成	逐行审查后端领域、事务、并发、失败语义与旧逻辑残留；后端 858 tests
+PASS	retained-core	src/core/__init__.py	L1-L1	UNCHANGED	当前文件逐行审查及调用链对照完成	逐行确认当前 Worker 真实消费者及算法/模型错误传播；后端 858 tests
+FIXED	retained-core	src/core/color_extractor.py	L1-L255	MODIFIED	AUDIT-044	逐行阅读；设备/结果基数/颜色与置信度按当前契约校验，内存及原生分配失败传播
+FIXED	retained-core	src/core/config_models.py	L1-L433	MODIFIED	AUDIT-042	逐行阅读；BubbleState 只接受当前完整精确字段与类型，旧/部分文档直接拒绝
+FIXED	retained-core	src/core/detection.py	L1-L338	MODIFIED	AUDIT-043	逐行阅读；检测异常直接传播，坐标/方向/掩膜按当前结果输出，不返回伪空成功
+PASS	retained-core	src/core/detector/__init__.py	L1-L33	MODIFIED	统一导出仅覆盖当前检测器和结果类型	逐行阅读并核对调用闭包
+FIXED	retained-core	src/core/detector/aux_yolo.py	L1-L184	MODIFIED	AUDIT-043	逐行阅读；辅助检测输入与模型失败严格传播
+PASS	retained-core	src/core/detector/backends/__init__.py	L1-L1	MODIFIED	包标记无业务状态	逐行阅读并核对导入闭包
+FIXED	retained-core	src/core/detector/backends/ctd_backend.py	L1-L175	MODIFIED	AUDIT-043/AUDIT-170；CTD 仅接受当前明确检测参数	逐行核对输出类型、尺寸与失败边界；检测定向测试及后端全量测试通过
+FIXED	retained-core	src/core/detector/backends/default_backend.py	L1-L233	MODIFIED	AUDIT-043/AUDIT-170；默认检测后端删除隐式参数扩展面	逐行核对模型资源、输出与异常边界；检测定向测试及后端全量测试通过
+FIXED	retained-core	src/core/detector/backends/saber_yolo_backend.py	L1-L96	MODIFIED	AUDIT-043/AUDIT-170；Saber YOLO 仅保留当前 refine 所需显式参数	逐行核对构造、检测、输出和失败传播；检测定向测试及后端全量测试通过
+FIXED	retained-core	src/core/detector/backends/yolo_backend.py	L1-L221	MODIFIED	AUDIT-043/AUDIT-170；YOLO 只接受当前明确参数	逐行核对模型输出、置信度参数和失败传播；检测定向测试及后端全量测试通过
+FIXED	retained-core	src/core/detector/base.py	L1-L209	MODIFIED	AUDIT-043/AUDIT-170；统一检测接口删除任意 kwargs	逐行核对后处理不吞模型或内存错误、不制造成功结果；检测及内存错误测试通过
+FIXED	retained-core	src/core/detector/data_types.py	L1-L484	MODIFIED	AUDIT-043	逐行阅读；检测几何和结果结构使用当前精确类型/基数
+FIXED	retained-core	src/core/detector/geometry.py	L1-L85	MODIFIED	AUDIT-043	逐行阅读；几何计算拒绝畸形输入
+FIXED	retained-core	src/core/detector/panel_detector.py	L1-L215	MODIFIED	AUDIT-043	逐行阅读；分镜排序辅助逻辑无状态回退
+FIXED	retained-core	src/core/detector/postprocess.py	L1-L167	MODIFIED	AUDIT-043/AUDIT-170；后处理只接收当前显式参数	逐行核对结果基数、有效几何和异常传播；检测定向测试通过
+FIXED	retained-core	src/core/detector/refinement.py	L1-L242	MODIFIED	AUDIT-043	逐行阅读；refine 模型/阈值/结果失败直接传播
+FIXED	retained-core	src/core/detector/registry.py	L1-L171	MODIFIED	AUDIT-043/AUDIT-170；注册表只构造当前检测器及明确参数	逐行核对单例、释放和未知类型失败边界；检测与模型生命周期测试通过
+PASS	retained-core	src/core/detector/smart_sort.py	L1-L228	MODIFIED	阅读顺序排序为纯当前算法，无兼容状态	逐行阅读并与 main 对照
+FIXED	retained-core	src/core/detector/textline_merge.py	L1-L285	MODIFIED	AUDIT-043	逐行阅读并复核当前修改；文本行合并保持合法几何和方向
+FIXED	retained-core	src/core/inpainting.py	L1-L353	MODIFIED	AUDIT-045	逐行阅读；删除 LaMA 到纯色 fallback、冗余背景副本和任意面积侵蚀启发式，严格图像/掩膜/配置
+FIXED	retained-core	src/core/large_image_detection.py	L1-L205	MODIFIED	AUDIT-043/AUDIT-170；大图检测只转发当前显式参数	逐行核对分块尺寸、坐标、结果合并与异常传播，不伪造空结果；检测测试通过
+PASS	retained-core	src/core/manga_insight/__init__.py	L1-L1	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认当前 Worker 真实消费者及算法/模型错误传播；后端 858 tests
+PASS	retained-core	src/core/manga_insight/clients/__init__.py	L1-L1	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认当前 Worker 真实消费者及算法/模型错误传播；后端 858 tests
+FIXED	retained-core	src/core/manga_insight/clients/image_gen_client.py	L1-L426	MODIFIED	AUDIT-048	逐行阅读、main 对照及 continuation 调用链核对；严格当前图片生成响应/错误语义并复用共享传输配置
+FIXED	retained-core	src/core/manga_insight/config_models.py	L1-L400	MODIFIED	AUDIT-048	逐行阅读并与 main 对照；所有 Provider 配置使用当前完整精确字段/类型，无旧 prompts 容器和默认补值
+FIXED	retained-core	src/core/manga_insight/embedding_client.py	L1-L222	MODIFIED	AUDIT-048	逐行阅读、QA/derived 调用链与 main 对照；删除无消费者 raw API/no-op lifecycle，保留严格 embedding 与 JSON 派生结果入口
+FIXED	retained-core	src/core/manga_insight/vlm_client.py	L1-L211	MODIFIED	AUDIT-048	逐行阅读、main 对照及 Worker 调用链核对；收敛为单页分析，严格页码/JSON/图片准备和错误传播，无批量/默认 prompt/测试 API
+FIXED	retained-core	src/core/ocr.py	L1-L545	MODIFIED	AUDIT-044/AUDIT-167；OCR 复用唯一结果模型与共享图像工具	逐行核对图像、坐标、引擎、混合 OCR 和提示模式；删除旧语言 fallback，服务失败直接传播；OCR 测试通过
+FIXED	retained-core	src/core/ocr_hybrid_manga_48.py	L1-L303	MODIFIED	AUDIT-044/AUDIT-167；混合 OCR 复用唯一结果模型	逐行核对当前 MangaOCR/48px 组合、文本行和结果基数；后备结果标记明确；OCR 测试通过
+FIXED	retained-core	src/core/ocr_types.py	L1-L213	MODIFIED	AUDIT-044	逐行阅读；OCR 结果与文本行使用精确当前 schema，非法类型/置信度拒绝
+PASS	retained-core	src/core/plugin_agent/__init__.py	L1-L1	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认当前 Worker 真实消费者及算法/模型错误传播；后端 858 tests
+PASS	retained-core	src/core/plugin_agent/controller.py	L1-L779	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认当前 Worker 真实消费者及算法/模型错误传播；后端 858 tests
+PASS	retained-core	src/core/plugin_agent/models.py	L1-L121	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认当前 Worker 真实消费者及算法/模型错误传播；后端 858 tests
+FIXED	retained-core	src/core/rendering.py	L1-L1754	MODIFIED	AUDIT-046	删除旧渲染编排与隐式字号/字体 fallback；自动字号和气泡失败严格传播，临时图像关闭，旋转小数偏移按像素落点
+FIXED	retained-core	src/core/translation.py	L1-L708	MODIFIED	AUDIT-047、AUDIT-173	当前 Provider/单条/整页批量协议、严格解析、有限分层重试、默认 Base URL 语义与无任意字符拆批；翻译故障语义及 Stage4+Provider 组合验证
+PASS	retained-core	src/core/web_import/__init__.py	L1-L5	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认当前 Worker 真实消费者及算法/模型错误传播；后端 858 tests
+PASS	retained-core	src/core/web_import/agent.py	L1-L560	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认当前 Worker 真实消费者及算法/模型错误传播；后端 858 tests
+PASS	retained-core	src/core/web_import/firecrawl_tools.py	L1-L210	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认当前 Worker 真实消费者及算法/模型错误传播；后端 858 tests
+PASS	retained-core	src/interfaces/__init__.py	L1-L4	UNCHANGED	当前文件逐行审查及调用链对照完成	逐行确认当前 Worker 真实消费者及算法/模型错误传播；后端 858 tests
+FIXED	retained-core	src/interfaces/baidu_ocr_interface.py	L1-L283	MODIFIED	AUDIT-044	逐行阅读；密钥不进 URL，当前语言映射/响应结构/有限重试/线程安全实例严格
+FIXED	retained-core	src/interfaces/baidu_translate_interface.py	L1-L102	MODIFIED	AUDIT-047	官方 HTTPS 表单单请求、精确凭据/超时/响应校验；无单例与嵌套重试
+PASS	retained-core	src/interfaces/ctd/__init__.py	L1-L1	UNCHANGED	当前文件逐行审查及调用链对照完成	逐行确认当前 Worker 真实消费者及算法/模型错误传播；后端 858 tests
+PASS	retained-core	src/interfaces/ctd/basemodel.py	L1-L168	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认当前 Worker 真实消费者及算法/模型错误传播；后端 858 tests
+PASS	retained-core	src/interfaces/ctd/detector.py	L1-L39	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认当前 Worker 真实消费者及算法/模型错误传播；后端 858 tests
+PASS	retained-core	src/interfaces/ctd/utils/__init__.py	L1-L1	UNCHANGED	当前文件逐行审查及调用链对照完成	逐行确认当前 Worker 真实消费者及算法/模型错误传播；后端 858 tests
+PASS	retained-core	src/interfaces/ctd/utils/db_utils.py	L1-L118	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认当前 Worker 真实消费者及算法/模型错误传播；后端 858 tests
+PASS	retained-core	src/interfaces/ctd/utils/imgproc_utils.py	L1-L31	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认当前 Worker 真实消费者及算法/模型错误传播；后端 858 tests
+PASS	retained-core	src/interfaces/ctd/utils/yolov5_utils.py	L1-L48	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认当前 Worker 真实消费者及算法/模型错误传播；后端 858 tests
+PASS	retained-core	src/interfaces/ctd/yolov5/__init__.py	L1-L1	UNCHANGED	当前文件逐行审查及调用链对照完成	逐行确认当前 Worker 真实消费者及算法/模型错误传播；后端 858 tests
+PASS	retained-core	src/interfaces/ctd/yolov5/common.py	L1-L148	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认当前 Worker 真实消费者及算法/模型错误传播；后端 858 tests
+PASS	retained-core	src/interfaces/ctd/yolov5/yolo.py	L1-L272	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认当前 Worker 真实消费者及算法/模型错误传播；后端 858 tests
+PASS	retained-core	src/interfaces/default/DBHead.py	L1-L41	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认当前 Worker 真实消费者及算法/模型错误传播；后端 858 tests
+PASS	retained-core	src/interfaces/default/DBNet_resnet34.py	L1-L110	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认当前 Worker 真实消费者及算法/模型错误传播；后端 858 tests
+PASS	retained-core	src/interfaces/default/__init__.py	L1-L1	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认当前 Worker 真实消费者及算法/模型错误传播；后端 858 tests
+PASS	retained-core	src/interfaces/default/imgproc.py	L1-L29	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认当前 Worker 真实消费者及算法/模型错误传播；后端 858 tests
+FIXED	retained-core	src/interfaces/lama_interface.py	L1-L393	MODIFIED	AUDIT-045	逐行阅读；所选模型单一路径、严格尺寸/基数/设备状态，失败不切换模型
+FIXED	retained-core	src/interfaces/lama_mpe_interface.py	L1-L823	MODIFIED	AUDIT-045	逐行阅读；按 8 倍数填充后裁剪、严格 checkpoint/tensor/有限值，删除逐页 GC/cache 同步和未使用模型分支
+FIXED	retained-core	src/interfaces/manga_ocr_interface.py	L1-L147	MODIFIED	AUDIT-044	逐行阅读；模型线程安全惰性初始化，仅成功后发布单例，初始化/推理失败传播
+PASS	retained-core	src/interfaces/ocr_48px/__init__.py	L1-L24	UNCHANGED	当前 48px OCR 公开入口单一	逐行阅读并核对调用闭包
+PASS	retained-core	src/interfaces/ocr_48px/core.py	L1-L372	MODIFIED	当前模型结构与 checkpoint 加载职责清晰	逐行阅读并核对 interface 调用
+FIXED	retained-core	src/interfaces/ocr_48px/interface.py	L1-L800	MODIFIED	AUDIT-044	逐行阅读；批处理结果基数、设备/内存失败传播与模型生命周期严格
+PASS	retained-core	src/interfaces/ocr_48px/xpos.py	L1-L65	MODIFIED	当前位置编码纯模型实现	逐行阅读并核对模型调用
+FIXED	retained-core	src/interfaces/paddle_ocr_onnx_interface.py	L1-L358	MODIFIED	AUDIT-039/AUDIT-044	逐行阅读；内存/原生分配失败传播，ONNX session 可由 Worker 统一释放，OCR strict 契约收口
+FIXED	retained-core	src/interfaces/paddleocr_vl_interface.py	L1-L387	MODIFIED	AUDIT-044	逐行阅读；模型初始化、语言、输出基数与资源失败按当前契约处理
+FIXED	retained-core	src/interfaces/vision_interface.py	L1-L151	MODIFIED	AUDIT-044	逐行阅读；当前 normal/json/paddleocr_vl 模式、Provider 能力、空/畸形响应与重试失败严格传播
+FIXED	retained-core	src/interfaces/youdao_translate_interface.py	L1-L102	MODIFIED	AUDIT-047	官方 HTTPS v3 表单单请求、UUID salt、精确响应与超时校验
+PASS	retained-core	src/shared/__init__.py	L1-L1	UNCHANGED	当前文件逐行审查及调用链对照完成	逐行确认当前 Worker 真实消费者及算法/模型错误传播；后端 858 tests
+FIXED	retained-core	src/shared/ai_adapters.py	L1-L73	MODIFIED	AUDIT-047	非 OpenAI 翻译适配器逐调用隔离凭据并严格映射目标语言/响应
+PASS	retained-core	src/shared/ai_provider_manifest.json	L1-L252	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认当前 Worker 真实消费者及算法/模型错误传播；后端 858 tests
+FIXED	retained-core	src/shared/ai_providers.py	L1-L341	MODIFIED	AUDIT-047	唯一 Provider 注册表、未知项严格拒绝、仅暴露已声明能力 endpoint
+FIXED	retained-core	src/shared/ai_transport.py	L1-L1203	MODIFIED	AUDIT-047	同步/异步统一严格请求响应、流截止时间、有限传输重试、无请求覆盖旁路
+FIXED	retained-core	src/shared/constants.py	L1-L186	MODIFIED	AUDIT-047/AUDIT-135	逐行阅读和全仓消费者核对；删除任意 4000 字拆批常量，九组提示词改由共享工厂资源拥有，其余保留常量均有当前算法消费者
+FIXED	retained-core	src/shared/http_config.py	L1-L53	MODIFIED	AUDIT-047	代理旁路仅按 URL hostname 判断，恶意 path/query 不再误判本地
+FIXED	retained-core	src/shared/image_helpers.py	L1-L43	MODIFIED	AUDIT-167；共享 RGB 转换只服务多个真实消费者	逐行核对所有调用者、资源释放和内存错误传播；后端全量测试通过
+PASS	retained-core	src/shared/memory_errors.py	L1-L57	NEW	当前文件逐行审查及调用链对照完成	逐行确认当前 Worker 真实消费者及算法/模型错误传播；后端 858 tests
+FIXED	retained-core	src/shared/openai_execution.py	L1-L448	MODIFIED	AUDIT-047	仅显式业务异常重试；严格 JSON 块/围栏；内存异常立即传播
+FIXED	retained-core	src/shared/openai_helpers.py	L1-L87	MODIFIED	AUDIT-047	统一客户端参数精确校验、本地空 key 占位与代理策略
+FIXED	retained-core	src/shared/openai_options.py	L1-L267	MODIFIED	AUDIT-047	只接受当前完整选项结构与 JSON extra_body，禁止保留字段覆盖/类型强转
+FIXED	retained-core	src/shared/openai_rate_limits.py	L1-L157	MODIFIED	AUDIT-047	精确 RPM/共享决策校验；拒绝决定必须携带正等待时间
+PASS	retained-core	src/shared/path_helpers.py	L1-L69	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认当前 Worker 真实消费者及算法/模型错误传播；后端 858 tests
+FIXED	retained-core	src/shared/prompt_defaults.py	L1-L44	NEW	AUDIT-135	严格读取九组非空工厂提示词并返回防御副本，不包含运行时设置、兼容或迁移逻辑
+FIXED	retained-core	src/shared/prompt_defaults_factory.json	L1-L12	NEW	AUDIT-135	前后端唯一只读提示词工厂资源；九组键和文本由双端契约测试逐项核对
+PASS	retained-core	src/shared/text_style_defaults.py	L1-L103	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认当前 Worker 真实消费者及算法/模型错误传播；后端 858 tests
+PASS	retained-core	src/shared/text_style_defaults_factory.json	L1-L15	UNCHANGED	当前文件逐行审查及调用链对照完成	逐行确认当前 Worker 真实消费者及算法/模型错误传播；后端 858 tests
+PASS	retained-core	src/utils/__init__.py	L1-L1	UNCHANGED	当前文件逐行审查及调用链对照完成	逐行确认当前 Worker 真实消费者及算法/模型错误传播；后端 858 tests
+PASS	retained-core	src/utils/image_rearrange.py	L1-L410	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认当前 Worker 真实消费者及算法/模型错误传播；后端 858 tests
+PASS	tests	tests_backend/fake_provider.py	L1-L154	NEW	AUDIT-142	唯一确定性测试 Provider，作用域注册、故障注入与真实流水线接口核对通过
+FIXED	tests	tests_backend/test_ai_provider_unification.py	L1-L897	MODIFIED	AUDIT-047/AUDIT-143	完整核对共享请求选项、同步/异步传输、重试与 Provider manifest 行为；删除一项完全重复的顶层字段合并用例，后端剩余测试组合 110 项通过
+FIXED	tests	tests_backend/test_ai_transport_async_unification.py	L1-L320	MODIFIED	AUDIT-047	异步 chat/stream/embedding/rerank 当前请求与畸形响应回归完整核对
+FIXED	tests	tests_backend/test_aux_yolo_detection.py	L1-L379	MODIFIED	AUDIT-143	逐项覆盖辅助检测、注册表、大图包装和重排契约；测试图片在 tearDown 显式关闭，110 项组合通过
+PASS	tests	tests_backend/test_color_extractor_device_selection.py	L1-L161	MODIFIED	只验证当前颜色提取设备、模型释放重载和严格失败语义	与 main 对照后新增初始化失败、推理失败、结果缺失不得伪成功的回归；无旧 API 自证
+FIXED	tests	tests_backend/test_hybrid_ocr.py	L1-L204	MODIFIED	AUDIT-044	逐行阅读；覆盖当前混合组合、精确文本行、越界坐标与后备标记
+PASS	tests	tests_backend/test_inpainting_failure_semantics.py	L1-L96	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	tests_backend/test_lama_interfaces.py	L1-L150	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	tests_backend/test_lama_litelama_regression.py	L1-L81	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	tests_backend/test_manga_insight_config_cleanup.py	L1-L129	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	tests_backend/test_manga_insight_image_gen_unification.py	L1-L270	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	tests_backend/test_manga_insight_transport_unification.py	L1-L574	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	tests_backend/test_memory_error_propagation.py	L1-L124	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	tests_backend/test_ocr_48px_batching.py	L1-L188	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	tests_backend/test_packaging_torchscript_sources.py	L1-L41	UNCHANGED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	tests_backend/test_path_helpers.py	L1-L45	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+FIXED	tests	tests_backend/test_prompt_defaults.py	L1-L67	NEW	AUDIT-135	逐行阅读；九组后端常量、共享资源和防御副本契约 2 tests 通过
+PASS	tests	tests_backend/test_saber_yolo_refinement.py	L1-L218	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	tests_backend/test_text_style_defaults.py	L1-L78	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	tests_backend/test_translation_failure_semantics.py	L1-L532	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；空 Base URL 单条/批量回归及翻译/Provider 组合 148 tests 通过
+FIXED	tests	tests_backend/test_vertical_punctuation_rendering.py	L1-L329	MODIFIED	AUDIT-046	覆盖字体/字号/自动字号失败传播、气泡异常传播、旋转有限小数偏移及竖排视觉行为
+PASS	tests	tests_backend/test_web_import_agent_runtime.py	L1-L412	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	tests_backend/v2/conftest.py	L1-L9	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	tests_backend/v2/test_desktop_app_icon.py	L1-L40	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	tests_backend/v2/test_desktop_pet_assets.py	L1-L117	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	tests_backend/v2/test_desktop_pet_state.py	L1-L114	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	tests_backend/v2/test_desktop_settings.py	L1-L103	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+FIXED	tests	tests_backend/v2/test_desktop_ui.py	L1-L455	NEW	AUDIT-163	补齐桌面 SSE 停止同步回调竞态回归；只测试当前契约且无兼容自证
+PASS	tests	tests_backend/v2/test_domain_contracts.py	L1-L26	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	tests_backend/v2/test_launcher_supervisor.py	L1-L28	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	tests_backend/v2/test_logging_config.py	L1-L146	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	tests_backend/v2/test_openapi_contract.py	L1-L243	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+FIXED	tests	tests_backend/v2/test_packaging_contract.py	L1-L129	NEW	AUDIT-169；覆盖 CLI/GUI 本机监听默认值与当前打包边界	逐行确认只测试当前契约且无兼容自证；打包定向测试及后端全量测试通过
+FIXED	tests	tests_backend/v2/test_role_boundaries.py	L1-L715	NEW	AUDIT-040	逐行核对 API/Worker/Launcher 角色隔离、identity、健康重启与 Windows 进程监督；新增动态 layer resolver；14 tests passed
+PASS	tests	tests_backend/v2/test_runtime_heartbeat.py	L1-L112	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+FIXED	tests	tests_backend/v2/test_stage1_platform.py	L1-L2611	NEW	AUDIT-038	逐行核对平台/存储/epoch 恢复测试；补齐任务子图、operation durable event 与 render 页面 stale；48 tests passed
+FIXED	tests	tests_backend/v2/test_stage2_content.py	L1-L2352	NEW	AUDIT-034/AUDIT-035/AUDIT-037	逐行阅读并补齐无任意数量门槛、严格请求、当前 schema、传播 mutation、active operation 编辑屏障与快速提升回滚回归；60 tests passed
+FIXED	tests	tests_backend/v2/test_stage3_jobs.py	L1-L2327	NEW	AUDIT-007/AUDIT-036/AUDIT-040/AUDIT-041	逐行核对队列/状态图/动态 handler/恢复轮询；修复过期 epoch 测试假阳性并覆盖无上限 layer resolver
+FIXED	tests	tests_backend/v2/test_stage3_operations.py	L1-L1617	NEW	AUDIT-037/AUDIT-042/AUDIT-045	逐行核对 operation/render/repair/epoch/attempt/lease/插件/凭据/资源生命周期与并发 revision；完整当前气泡 fixture，29 tests passed
+PASS	tests	tests_backend/v2/test_stage3_transfer.py	L1-L318	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	tests_backend/v2/test_stage3_web_import.py	L1-L1210	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	tests_backend/v2/test_stage4_translation.py	L1-L3594	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+FIXED	tests	tests_backend/v2/test_stage5_insight.py	L1-L4966	NEW	AUDIT-030/AUDIT-031/AUDIT-047/AUDIT-048/AUDIT-049/AUDIT-050/AUDIT-051/AUDIT-052/AUDIT-058/AUDIT-059	逐行核对 Stage5 当前契约回归；补充缺失/重复剧情弧身份、畸形伏笔与精确 QA 终止事件，100 tests passed
+FIXED	tests	tests_backend/v2/test_stage5_plugins.py	L1-L2626	NEW	AUDIT-086/AUDIT-087/AUDIT-088/AUDIT-089/AUDIT-090/AUDIT-092	覆盖运行时、包事务、Agent、严格配置/原子输出、资产发布、内存失败与版本替换；51 tests 通过
+FIXED	tests	tests_backend/v2/test_stage5_studio.py	L1-L2582	NEW	AUDIT-019/AUDIT-021/AUDIT-023/AUDIT-024/AUDIT-174	逐行阅读；覆盖候选身份、非法请求、模型输出、嵌套诊断、单事务草稿及空 Base URL 默认语义；Studio 定向测试通过
+FIXED	tests	tests_backend/v2/test_storage_contracts.py	L1-L809	NEW	AUDIT-093	索引、外键、局部唯一、全部 CHECK 与唯一 foundation 升降级逐项验证；12 tests 通过
+PASS	tests	tests_backend/v2/test_worker_maintenance_gc.py	L1-L406	NEW	只验证当前 TTL/可达性 GC 与活跃工作保护	逐行核对 operation/idempotency/artifact 以及 Insight head/continuation/job/derived/recent 可达关系；2 tests passed
+FIXED	tests	tests_backend/v2/test_worker_model_lifecycle.py	L1-L330	NEW	AUDIT-039	逐行核对 release 命令、空闲检测、BUSY 续办及 Paddle ONNX resetter；6 tests passed
+PASS	tests	tests_backend/v2/worker_memory_probe.py	L1-L149	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+FIXED	project-config-docs-scripts	vue-frontend/.gitignore	L1-L30	MODIFIED	AUDIT-171；完整忽略 Playwright test-results 生成目录	git check-ignore、视觉测试、构建与生成物闭包检查通过
+PASS	project-config-docs-scripts	vue-frontend/.prettierrc	L1-L11	UNCHANGED	当前文件逐行审查及调用链对照完成	逐文件核对当前唯一入口、架构、构建与工具链；解析、help、lint、build 和测试门禁通过
+PASS	project-config-docs-scripts	vue-frontend/.stylelintrc.json	L1-L49	MODIFIED	当前文件逐行审查及调用链对照完成	逐文件核对当前唯一入口、架构、构建与工具链；解析、help、lint、build 和测试门禁通过
+PASS	project-config-docs-scripts	vue-frontend/CODING_STYLE.md	L1-L104	MODIFIED	重构后 UI owner/token/layout 规范完整且无旧兼容规则	全文阅读并与 main 旧 CSS 规范对照
+PASS	project-config-docs-scripts	vue-frontend/README.md	L1-L117	MODIFIED	当前文件逐行审查及调用链对照完成	逐文件核对当前唯一入口、架构、构建与工具链；解析、help、lint、build 和测试门禁通过
+PASS	project-config-docs-scripts	vue-frontend/docs/frontend-architecture.md	L1-L76	NEW	当前文件逐行审查及调用链对照完成	逐文件核对当前唯一入口、架构、构建与工具链；解析、help、lint、build 和测试门禁通过
+PASS	project-config-docs-scripts	vue-frontend/docs/ui-maintenance-decisions.md	L1-L75	NEW	当前文件逐行审查及调用链对照完成	逐文件核对当前唯一入口、架构、构建与工具链；解析、help、lint、build 和测试门禁通过
+PASS	project-config-docs-scripts	vue-frontend/eslint.config.js	L1-L77	MODIFIED	当前文件逐行审查及调用链对照完成	逐文件核对当前唯一入口、架构、构建与工具链；解析、help、lint、build 和测试门禁通过
+PASS	project-config-docs-scripts	vue-frontend/index.html	L1-L17	MODIFIED	当前文件逐行审查及调用链对照完成	逐文件核对当前唯一入口、架构、构建与工具链；解析、help、lint、build 和测试门禁通过
+GENERATED-VERIFIED	project-config-docs-scripts	vue-frontend/package-lock.json	L1-L6871	MODIFIED	当前 package.json 唯一 npm 锁文件	npm ci 成功、npm audit 0、Frontend 1969 tests 与 build:check
+PASS	project-config-docs-scripts	vue-frontend/package.json	L1-L60	MODIFIED	当前文件逐行审查及调用链对照完成	逐文件核对当前唯一入口、架构、构建与工具链；解析、help、lint、build 和测试门禁通过
+PASS	project-config-docs-scripts	vue-frontend/playwright.config.ts	L1-L32	NEW	当前文件逐行审查及调用链对照完成	逐文件核对当前唯一入口、架构、构建与工具链；解析、help、lint、build 和测试门禁通过
+PASS	project-config-docs-scripts	vue-frontend/postcss.config.mjs	L1-L8	NEW	当前文件逐行审查及调用链对照完成	逐文件核对当前唯一入口、架构、构建与工具链；解析、help、lint、build 和测试门禁通过
+FIXED	project-config-docs-scripts	vue-frontend/scripts/check-ui-architecture.mjs	L1-L1920	NEW	当前 UI 所有权规则唯一自动门禁且无已删除配置根	AUDIT-138/AUDIT-158/AUDIT-162；default/audit 模式通过
+FIXED	frontend-support	vue-frontend/src/App.vue	L1-L96	MODIFIED	AUDIT-011/AUDIT-066/AUDIT-124	全文阅读并与 main 对照；全局 Provider、受限提示、阅读器沉浸与任务中心快速路由往返生命周期闭合 · App/TaskCenter 18 tests、typecheck、ESLint 与页面浏览器验收通过
+FIXED	frontend-support	vue-frontend/src/adapters/v2ContentAdapter.ts	L1-L324	NEW	AUDIT-042	逐行阅读并核对当前 OpenAPI/持久化调用链；只接受完整当前气泡文档，不补旧字段、不镜像后端状态
+FIXED	frontend-support	vue-frontend/src/api/bookshelf.ts	L1-L348	MODIFIED	AUDIT-013/AUDIT-015/AUDIT-128	逐行阅读并与 OpenAPI/main 对照；书籍部分更新及约束专用 CAS 均直接消费写响应，不重复读取或缓存约束 revision，7 API tests/typecheck 通过
+FIXED	frontend-support	vue-frontend/src/api/characterStudio.ts	L1-L1095	MODIFIED	AUDIT-019/AUDIT-021/AUDIT-025/AUDIT-168；Studio 只消费当前 OpenAPI 契约，不保留伪上限	逐行核对创建命令、revision、消息与 summary 映射；Studio API 定向测试和类型检查通过
+FIXED	frontend-support	vue-frontend/src/api/client.ts	L1-L135	MODIFIED	AUDIT-112	请求取消与网络故障使用不同错误语义；后端元数据和写访问门保持当前契约
+FIXED	frontend-support	vue-frontend/src/api/continuation.ts	L1-L709	MODIFIED	AUDIT-029/AUDIT-031/AUDIT-032	删除实体缓存、死字段与兼容转换；每次 mutation 读取当前 revision，API 测试通过
+PASS	frontend-support	vue-frontend/src/api/download.ts	L1-L77	NEW	当前文件逐行审查及调用链对照完成	逐行审查状态所有权、API/生命周期/工具边界；typecheck、lint 与前端 1969 tests
+GENERATED-VERIFIED	frontend-support	vue-frontend/src/api/generated/v2.ts	L1-L9795	NEW	AUDIT-025/AUDIT-026/AUDIT-030/AUDIT-031/AUDIT-042/AUDIT-050/AUDIT-051/AUDIT-058/AUDIT-088/AUDIT-092/AUDIT-144	由 openapi/v2.yaml 确定性生成；插件持久命令真实幂等与严格 config schema 当前契约已同步
+FIXED	frontend-support	vue-frontend/src/api/insight.ts	L1-L1993	MODIFIED	AUDIT-028/AUDIT-029/AUDIT-030/AUDIT-049/AUDIT-050/AUDIT-051/AUDIT-053/AUDIT-055/AUDIT-056/AUDIT-058/AUDIT-059/AUDIT-060/AUDIT-063/AUDIT-064	全文件逐行阅读并追踪全部 facade 调用；设置直接使用当前 Store 快照与后端 DTO，严格解析当前响应，事务成功后不再重复整套读取，未保存草稿直接采用共享 Provider Manifest 默认模型 · Insight API 配置 10 tests、相邻 25 tests、typecheck、ESLint 及全新数据库浏览器验收通过
+FIXED	frontend-support	vue-frontend/src/api/plugin.ts	L1-L193	MODIFIED	AUDIT-076/AUDIT-088/AUDIT-092/AUDIT-123	只为真实导入生成幂等 key；严格当前 config/冲突契约；删除默认状态镜像并按权威列表清理 CAS，6 tests 通过
+FIXED	frontend-support	vue-frontend/src/api/pluginAgent.ts	L1-L309	MODIFIED	AUDIT-077/AUDIT-122	活动会话仅 404 清除；任务事件以 1000 条页完整遍历并去重终态；8 tests 通过
+FIXED	frontend-support	vue-frontend/src/api/sse.ts	L1-L82	NEW	AUDIT-125	逐行阅读并核对 Operation、Insight QA、Studio Agent 三个消费者；保留 data 尾空格并正确处理 decoder/EOF 尾事件 · 三类调用方 51 tests、typecheck、ESLint 通过
+PASS	frontend-support	vue-frontend/src/api/v2/content.ts	L1-L384	NEW	当前文件逐行审查及调用链对照完成	逐行审查状态所有权、API/生命周期/工具边界；typecheck、lint 与前端 1969 tests
+PASS	frontend-support	vue-frontend/src/api/v2/continuation.ts	L1-L242	NEW	当前 OpenAPI 的薄请求边界	逐行阅读；所有命令只发送当前 canonical 字段并携带幂等键/revision
+PASS	frontend-support	vue-frontend/src/api/v2/diagnostics.ts	L1-L104	NEW	当前文件逐行审查及调用链对照完成	逐行审查状态所有权、API/生命周期/工具边界；typecheck、lint 与前端 1969 tests
+FIXED	frontend-support	vue-frontend/src/api/v2/insight.ts	L1-L221	NEW	AUDIT-049	逐行阅读并追踪 facade/任务中心调用；分析创建响应使用当前必需 runId 契约，普通派生任务保持 JobBatchAccepted
+FIXED	frontend-support	vue-frontend/src/api/v2/jobs.ts	L1-L183	NEW	AUDIT-167；前端任务状态复用唯一 API owner	逐行核对 API、生命周期和状态边界；类型检查、lint 与前端全量测试通过
+PASS	frontend-support	vue-frontend/src/api/v2/operations.ts	L1-L424	NEW	当前文件逐行审查及调用链对照完成	逐行审查状态所有权、API/生命周期/工具边界；typecheck、lint 与前端 1969 tests
+FIXED	frontend-support	vue-frontend/src/api/v2/settings.ts	L1-L152	NEW	AUDIT-026/AUDIT-118	设置事务与字体上传均直接消费当前生成类型，无旧 payload 兼容或成功后追加读取 · 逐行阅读、后端路由调用链、生成契约与 API 测试通过
+PASS	frontend-support	vue-frontend/src/api/v2/studio.ts	L1-L297	NEW	当前文件逐行审查及调用链对照完成	逐行审查状态所有权、API/生命周期/工具边界；typecheck、lint 与前端 1969 tests
+PASS	frontend-support	vue-frontend/src/api/v2/system.ts	L1-L15	NEW	当前文件逐行审查及调用链对照完成	逐行审查状态所有权、API/生命周期/工具边界；typecheck、lint 与前端 1969 tests
+PASS	frontend-support	vue-frontend/src/api/v2/translation.ts	L1-L133	NEW	当前文件逐行审查及调用链对照完成	逐行审查状态所有权、API/生命周期/工具边界；typecheck、lint 与前端 1969 tests
+FIXED	frontend-support	vue-frontend/src/api/v2/webImport.ts	L1-L88	NEW	AUDIT-107	复用生成命令类型，选择更新纳入统一写访问门并删除无消费者别名
+PASS	frontend-components	vue-frontend/src/components/bookshelf/BookCard.vue	L1-L261	MODIFIED	封面/无封面、长标题、标签与批量选择结构清晰	全文阅读、7 tests 及隔离数据桌面/窄屏三种书籍卡片验证通过
+FIXED	frontend-components	vue-frontend/src/components/bookshelf/BookDetailModal.vue	L1-L537	MODIFIED	AUDIT-014/AUDIT-016/AUDIT-017	逐行阅读；写操作在途态、选择清理、任务刷新与响应式详情修正，22 个详情组件测试及浏览器通过
+FIXED	frontend-components	vue-frontend/src/components/bookshelf/BookModal.vue	L1-L351	MODIFIED	AUDIT-014/AUDIT-015	创建/编辑异常与重复提交修正，部分更新契约一致；10 tests 和隔离 API 操作通过
+FIXED	frontend-components	vue-frontend/src/components/bookshelf/BookSearch.vue	L1-L157	MODIFIED	AUDIT-013/AUDIT-017	查询受控恢复、标签搜索及单一清除入口修正；10 tests 与浏览器通过
+FIXED	frontend-components	vue-frontend/src/components/bookshelf/SponsorModal.vue	L1-L110	MODIFIED	AUDIT-104	二维码保持桌面视觉并在窄屏换行缩放
+FIXED	frontend-components	vue-frontend/src/components/bookshelf/TagManageModal.vue	L1-L424	MODIFIED	AUDIT-014/AUDIT-016/AUDIT-017	标签错误重试、真实异常反馈、重复提交和窄屏操作布局修正；16 tests 及浏览器通过
+PASS	frontend-components	vue-frontend/src/components/bookshelf/book-detail/BookDeleteConfirmContent.vue	L1-L15	NEW	单一确认文案 owner，无状态或兼容分支	全文阅读并覆盖书籍/章节两类删除弹窗
+FIXED	frontend-components	vue-frontend/src/components/bookshelf/book-detail/BookDetailSummary.vue	L1-L212	NEW	AUDIT-017	无封面占位、长标题和窄屏摘要布局修正；桌面/390px 实测通过
+PASS	frontend-components	vue-frontend/src/components/bookshelf/book-detail/ChapterFormContent.vue	L1-L41	NEW	单一章节标题字段并通过 emit 保存	全文阅读；创建/编辑章节浏览器与组件测试通过
+FIXED	frontend-components	vue-frontend/src/components/bookshelf/book-detail/ChapterList.vue	L1-L149	NEW	AUDIT-014/AUDIT-017	批量翻译在途态、有效章节选择及小屏列表约束修正；组件测试与浏览器通过
+FIXED	frontend-components	vue-frontend/src/components/bookshelf/book-detail/ChapterRow.vue	L1-L223	NEW	AUDIT-017	长标题/图片数收缩和小屏 2×2 操作布局修正；长短章节浏览器验证通过
+PASS	frontend-components	vue-frontend/src/components/bookshelf/book-detail/QuickTagPicker.vue	L1-L161	NEW	候选、创建和键盘提交边界清晰且不重复展示已选标签	全文阅读；快速添加/移除/创建标签浏览器及组件测试通过
+FIXED	frontend-components	vue-frontend/src/components/common/BaseModal.vue	L1-L482	MODIFIED	AUDIT-008/AUDIT-010/AUDIT-017/AUDIT-108	逐行阅读并与 main 对照；删除无消费者公共 API 和免责声明专用层级分支，焦点栈/嵌套滚动锁/弹窗横向约束及 18 tests 通过
+PASS	frontend-components	vue-frontend/src/components/common/ConfirmModal.vue	L1-L72	MODIFIED	确认/取消单一职责且完全委托 BaseModal/UiButton	全文阅读、调用闭包和 ProductConfirm 2 tests 通过
+FIXED	frontend-components	vue-frontend/src/components/common/OpenAIExtraBodyEditor.vue	L1-L161	MODIFIED	AUDIT-103	唯一实例 id 且本地合法 JSON 草稿不被 v-model 自动格式化
+FIXED	frontend-components	vue-frontend/src/components/common/ToastNotification.vue	L1-L145	MODIFIED	AUDIT-009	逐行阅读并与 main 对照；删除无生产消费者的 HTML 渲染分支，公共组件/Toast 测试通过
+PASS	frontend-components	vue-frontend/src/components/edit/BubbleEditor.vue	L1-L865	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/edit/BubbleOverlay.vue	L1-L542	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	tests	vue-frontend/src/components/edit/EditImageComparison.test.ts	L1-L265	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	frontend-components	vue-frontend/src/components/edit/EditImageComparison.vue	L1-L595	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/edit/EditThumbnailPanel.vue	L1-L160	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/edit/EditToolbar.vue	L1-L626	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/edit/EditToolbarHelp.vue	L1-L193	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/edit/EditWorkspace.vue	L1-L208	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/edit/JapaneseKeyboard.vue	L1-L562	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/edit/bubbleOverlayGeometry.ts	L1-L66	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+FIXED	frontend-components	vue-frontend/src/components/edit/useBubbleEditor.ts	L1-L485	NEW	AUDIT-112	输入同步、Unicode 光标操作、字体加载与禁用边界逐行核对
+PASS	frontend-components	vue-frontend/src/components/edit/useBubbleOverlayInteractionState.ts	L1-L78	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/edit/useEditWorkspace.ts	L1-L966	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+FIXED	frontend-components	vue-frontend/src/components/insight/AnalysisProgress.vue	L1-L764	MODIFIED	AUDIT-167；分析进度复用唯一非终态集合与后端投影	逐行核对组件职责、响应式、公开契约和可访问性；视觉与前端全量测试通过
+PASS	frontend-components	vue-frontend/src/components/insight/BookSelector.vue	L1-L97	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/insight/ChapterSelectModal.vue	L1-L161	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/insight/CharacterStudioEntryPanel.vue	L1-L109	MODIFIED	入口只负责当前书籍/章节状态与正式路由跳转	逐行阅读、调用链与 3 个入口状态测试通过；无第二份 Studio 业务状态
+FIXED	tests	vue-frontend/src/components/insight/ContinuationPanel.test.ts	L1-L910	MODIFIED	AUDIT-029/AUDIT-032	覆盖书籍身份、autosave owner、步骤状态与无旧请求投影
+FIXED	frontend-components	vue-frontend/src/components/insight/ContinuationPanel.vue	L1-L855	MODIFIED	AUDIT-029/AUDIT-031/AUDIT-032	逐行阅读并与 main 对照；四步及全部弹层内置浏览器复核通过
+FIXED	frontend-components	vue-frontend/src/components/insight/InsightSettingsModal.vue	L1-L373	MODIFIED	AUDIT-026/AUDIT-027/AUDIT-062/AUDIT-063	设置草稿统一深拷贝；成功事务直接应用 API 返回的无密钥权威快照，删除保存后的重复配置/提示词读取及其假失败分支 · 设置弹窗 11 tests、typecheck、ESLint 通过
+PASS	frontend-components	vue-frontend/src/components/insight/NotesPanel.vue	L1-L306	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/insight/OverviewPanel.vue	L1-L725	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/insight/PageDetail.vue	L1-L892	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/insight/PagesTree.vue	L1-L492	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/insight/QAPanel.vue	L1-L718	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/insight/TimelinePanel.vue	L1-L240	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+FIXED	frontend-components	vue-frontend/src/components/insight/continuation/AddCharacterDialog.vue	L1-L104	MODIFIED	AUDIT-029/AUDIT-031	逐行阅读并与 main 对照；角色弹层浏览器、字段与计时器契约测试通过
+FIXED	frontend-components	vue-frontend/src/components/insight/continuation/AddFormDialog.vue	L1-L88	MODIFIED	AUDIT-029/AUDIT-031	逐行阅读并与 main 对照；形态弹层浏览器、字段与计时器契约测试通过
+PASS	frontend-components	vue-frontend/src/components/insight/continuation/CharacterDetailPanel.vue	L1-L188	MODIFIED	角色详情只组合当前后端角色/形态投影	逐行阅读并与 main 对照；全部角色与形态操作在内置浏览器复核
+FIXED	frontend-components	vue-frontend/src/components/insight/continuation/CharacterManagementPanel.vue	L1-L613	MODIFIED	AUDIT-029/AUDIT-031	删除双轨状态并统一单图三视图命令；角色控制测试与浏览器复核通过
+PASS	frontend-components	vue-frontend/src/components/insight/continuation/ContinuationDialogActions.vue	L1-L9	NEW	真实续写弹层共享的单一操作行	逐行阅读；四个角色/形态弹层消费者与契约测试已核对
+PASS	frontend-components	vue-frontend/src/components/insight/continuation/ContinuationDialogField.vue	L1-L37	NEW	真实续写弹层共享的字段语义包装	逐行阅读；label/required/description 契约测试已核对
+PASS	frontend-components	vue-frontend/src/components/insight/continuation/ContinuationDialogForm.vue	L1-L13	NEW	真实续写弹层共享的表单容器	逐行阅读；无状态镜像或业务反向依赖
+FIXED	frontend-components	vue-frontend/src/components/insight/continuation/ContinuationDialogShell.vue	L1-L53	NEW	AUDIT-029/AUDIT-031	统一真实弹层 owner 与关闭语义；Shell/计时器测试及浏览器焦点复核通过
+FIXED	frontend-components	vue-frontend/src/components/insight/continuation/EditCharacterDialog.vue	L1-L95	MODIFIED	AUDIT-029/AUDIT-031	严格当前角色字段并移除冗余弹层结构；浏览器与字段契约测试通过
+FIXED	frontend-components	vue-frontend/src/components/insight/continuation/EditFormDialog.vue	L1-L91	MODIFIED	AUDIT-029/AUDIT-031	严格当前形态字段并移除冗余弹层结构；浏览器与字段契约测试通过
+FIXED	frontend-components	vue-frontend/src/components/insight/continuation/ExportPanel.vue	L1-L184	MODIFIED	AUDIT-031/AUDIT-032	导出只按真实图片版本计数并消费后端 job；四步浏览器复核通过
+PASS	frontend-components	vue-frontend/src/components/insight/continuation/FormTile.vue	L1-L246	MODIFIED	形态卡片只投影当前参考图与版本操作	逐行阅读并与 main 对照；角色控制及浏览器全操作复核通过
+FIXED	tests	vue-frontend/src/components/insight/continuation/ImageGenerationPanel.test.ts	L1-L525	MODIFIED	AUDIT-029/AUDIT-031/AUDIT-032	覆盖游标分页、完整提示词、无 max 与剧情 ready/图片待生成分离
+FIXED	frontend-components	vue-frontend/src/components/insight/continuation/ImageGenerationPanel.vue	L1-L718	MODIFIED	AUDIT-029/AUDIT-031/AUDIT-032	逐行阅读；参考图 owner、图片状态与完整提示词修正，浏览器无溢出
+FIXED	frontend-components	vue-frontend/src/components/insight/continuation/OrthographicDialog.vue	L1-L315	MODIFIED	AUDIT-031	删除虚假的 1-5 图交互，当前契约只上传一张源图；浏览器弹层复核通过
+FIXED	tests	vue-frontend/src/components/insight/continuation/PageDetailsPanel.test.ts	L1-L227	NEW	AUDIT-032	覆盖剧情状态、编辑事件、响应式与产品组件契约
+FIXED	frontend-components	vue-frontend/src/components/insight/continuation/PageDetailsPanel.vue	L1-L249	MODIFIED	AUDIT-032	剧情状态只消费后端页面 payload；浏览器确认 ready 页面显示已生成
+PASS	tests	vue-frontend/src/components/insight/continuation/ReferenceImageSelector.test.ts	L1-L327	MODIFIED	当前参考图分页、选择与弹层契约覆盖完整	11 tests 与浏览器参考图弹层通过
+FIXED	frontend-components	vue-frontend/src/components/insight/continuation/ReferenceImageSelector.vue	L1-L457	MODIFIED	AUDIT-029/AUDIT-031/AUDIT-053	删除重复 has-more 与 Insight 缩略图缓存依赖，直接使用后端返回的当前资源路径 · 11 tests、typecheck、ESLint 通过
+FIXED	tests	vue-frontend/src/components/insight/continuation/ScriptGenerationPanel.test.ts	L1-L308	MODIFIED	AUDIT-029/AUDIT-031	覆盖无 max、独立原图读取、提示词与参考图弹层
+FIXED	frontend-components	vue-frontend/src/components/insight/continuation/ScriptGenerationPanel.vue	L1-L323	MODIFIED	AUDIT-029/AUDIT-031	删除无关项目/形态加载和任意上限；浏览器脚本步骤复核通过
+PASS	frontend-components	vue-frontend/src/components/insight/continuation/pageStoryTypes.ts	L1-L3	NEW	页面剧情编辑字段的最小共享类型	逐行阅读；仅被两个真实 owner 消费
+PASS	frontend-components	vue-frontend/src/components/insight/notes/NoteCard.vue	L1-L217	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/insight/notes/NoteEditorModal.vue	L1-L230	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/insight/notes/NotesList.vue	L1-L73	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/insight/notes/NotesToolbar.vue	L1-L28	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/insight/qa/EmbeddingRebuildControl.vue	L1-L33	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/insight/qa/QAComposer.vue	L1-L39	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/insight/qa/QAMessageItem.vue	L1-L154	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/insight/qa/QAMessageList.vue	L1-L94	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/insight/qa/QAOptionsBar.vue	L1-L251	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/insight/qa/QASaveNoteModal.vue	L1-L144	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+FIXED	frontend-components	vue-frontend/src/components/insight/settings/BatchSettingsTab.vue	L1-L367	MODIFIED	AUDIT-028	只消费当前 Batch schema、共享 draft owner 并保留末层 units=0；组件测试与浏览器实测通过
+FIXED	frontend-components	vue-frontend/src/components/insight/settings/EmbeddingSettingsTab.vue	L1-L234	MODIFIED	AUDIT-027	模型发现/连接测试按当前 provider 快照提交，无旧请求覆盖；定向竞态测试通过
+PASS	tests	vue-frontend/src/components/insight/settings/ImageGenSettingsTab.test.ts	L1-L202	MODIFIED	覆盖生图 provider、连接测试与输入边界的当前契约	逐行阅读、main 对照并随设置 110 tests 通过
+FIXED	frontend-components	vue-frontend/src/components/insight/settings/ImageGenSettingsTab.vue	L1-L132	MODIFIED	AUDIT-027/AUDIT-062	严格消费完整当前配置，切换服务商时不再把明确空值当作缺失值回填；组件测试通过
+PASS	frontend-components	vue-frontend/src/components/insight/settings/InsightModelProviderSection.vue	L1-L182	NEW	五个模型标签复用的受控 provider/config 视图，不持有持久事实	逐行阅读、全部消费者与键盘/诊断状态测试通过
+PASS	frontend-components	vue-frontend/src/components/insight/settings/InsightSettingsPanel.vue	L1-L40	NEW	六个设置标签复用的纯布局/语义 panel	逐行阅读、全部消费者与 Stylelint 通过
+FIXED	frontend-components	vue-frontend/src/components/insight/settings/LlmSettingsTab.vue	L1-L237	MODIFIED	AUDIT-027	连接与模型列表请求只提交到当前配置，无重复状态机；竞态测试通过
+FIXED	frontend-components	vue-frontend/src/components/insight/settings/PromptsSettingsTab.vue	L1-L568	MODIFIED	AUDIT-026/AUDIT-170；提示词不再施加前端伪上限	恢复、保存、删除和导入使用当前严格事务与操作锁，无旧格式兼容；API 与组件测试通过
+PASS	tests	vue-frontend/src/components/insight/settings/RerankerSettingsTab.test.ts	L1-L124	MODIFIED	覆盖重排序 provider、连接测试和数字边界的当前契约	逐行阅读、main 对照并随设置 110 tests 通过
+FIXED	frontend-components	vue-frontend/src/components/insight/settings/RerankerSettingsTab.vue	L1-L216	MODIFIED	AUDIT-027	共享连接测试与最新模型请求提交，保留后端真实参数范围；组件测试通过
+FIXED	frontend-components	vue-frontend/src/components/insight/settings/VlmSettingsTab.vue	L1-L285	MODIFIED	AUDIT-027	模型发现/连接测试按当前 provider 配置提交，无标签私有重复实现；竞态测试通过
+FIXED	frontend-components	vue-frontend/src/components/insight/settings/types.ts	L1-L74	MODIFIED	AUDIT-028	删除本地 provider 身份 wrapper，设置标签直接使用唯一 capability 选项源 · 逐行阅读、全部导入者与 typecheck 通过
+FIXED	tests	vue-frontend/src/components/insight/settings/useInsightConnectionTest.test.ts	L1-L62	NEW	AUDIT-027	覆盖重复点击和旧连接测试后返回的提交边界 · 逐行阅读并通过 2 tests
+FIXED	frontend-components	vue-frontend/src/components/insight/settings/useInsightConnectionTest.ts	L1-L72	NEW	AUDIT-027	四个模型标签共享的最小请求身份/忙碌状态 owner · 逐行阅读、四个真实消费者和竞态测试通过
+FIXED	frontend-components	vue-frontend/src/components/insight/settings/useInsightModelFetch.ts	L1-L95	NEW	AUDIT-027	模型发现按请求与配置身份提交，删除无消费者错误格式化扩展点 · 逐行阅读、全部消费者与 37 tests 通过
+PASS	frontend-components	vue-frontend/src/components/insight/settings/useInsightSettingsDraft.ts	L1-L36	NEW	六个设置标签共享的单一 draft 同步边界，无持久化或兼容逻辑	逐行阅读、全部消费者与 2 tests 通过
+PASS	frontend-components	vue-frontend/src/components/insight/studio/CandidateListPane.vue	L1-L138	MODIFIED	候选列表只渲染后端无截断投影并提交稳定 ID	逐行阅读、main 对照与候选空态/选择测试通过
+FIXED	frontend-components	vue-frontend/src/components/insight/studio/CharacterStudioEditor.vue	L1-L763	MODIFIED	AUDIT-018/AUDIT-020	删除重复归一化 watcher，编辑事件保持单向不可变；逐标签浏览器与组件测试通过
+FIXED	frontend-components	vue-frontend/src/components/insight/studio/CharacterStudioPreview.vue	L1-L299	MODIFIED	AUDIT-020/AUDIT-022	预览工作区、资源弹层、聊天接受信号与忙碌态统一；逐标签/弹层浏览器和组件测试通过
+FIXED	frontend-components	vue-frontend/src/components/insight/studio/CharacterStudioPreviewModals.vue	L1-L233	NEW	AUDIT-020	资源/变量弹层统一使用 BaseModal，无自建遮罩或业务穿透样式；浏览器焦点/Escape/窄屏复核通过
+FIXED	frontend-components	vue-frontend/src/components/insight/studio/CharacterStudioSidebar.vue	L1-L239	MODIFIED	AUDIT-018/AUDIT-023	书籍/文档异步上下文和诊断投影已收紧；快速切换与错误/警告状态测试通过
+FIXED	frontend-components	vue-frontend/src/components/insight/studio/DiagnosticsPanel.vue	L1-L160	MODIFIED	AUDIT-023	诊断状态按 error/warning/valid 明确排序；未执行、错误、警告、通过测试及真实浏览器复核通过
+PASS	frontend-components	vue-frontend/src/components/insight/studio/DocumentListPane.vue	L1-L189	MODIFIED	文档列表仅渲染 store 投影并发出 typed 选择/删除事件	逐行阅读、main 对照、空态和操作禁用测试通过
+PASS	frontend-components	vue-frontend/src/components/insight/studio/GreetingWorkbench.vue	L1-L186	MODIFIED	问候语增删改由文档 owner 统一提交	逐行阅读、main 对照和编辑器测试通过
+FIXED	frontend-components	vue-frontend/src/components/insight/studio/LorebookTreeBranch.vue	L1-L397	MODIFIED	AUDIT-020/AUDIT-023	嵌套世界书使用不可变更新并与递归诊断一致；嵌套编辑/诊断测试通过
+FIXED	frontend-components	vue-frontend/src/components/insight/studio/LorebookTreeEditor.vue	L1-L172	MODIFIED	AUDIT-020	删除递归深拷贝 watcher，组件只转发不可变树事件；Lorebook 测试通过
+PASS	frontend-components	vue-frontend/src/components/insight/studio/RegexWorkbench.vue	L1-L195	MODIFIED	正则脚本编辑保持受控数组事件且无隐式持久化	逐行阅读、main 对照与编辑器测试通过
+PASS	frontend-components	vue-frontend/src/components/insight/studio/StudioTopbar.vue	L1-L219	MODIFIED	顶栏只拥有导航、保存/导入导出和当前文档动作	逐行阅读、main 对照、Topbar 5 tests 及浏览器禁用态复核通过
+PASS	frontend-components	vue-frontend/src/components/insight/studio/TaskWorkbench.vue	L1-L203	MODIFIED	状态任务编辑保持受控数组事件且无第二事实源	逐行阅读、main 对照与编辑器测试通过
+PASS	frontend-components	vue-frontend/src/components/insight/studio/characterStudioEditorConfig.ts	L1-L36	NEW	编辑标签与 section 配置单一且无业务状态	逐行阅读、全部调用者和 editor 标签测试通过
+PASS	frontend-components	vue-frontend/src/components/insight/studio/characterStudioPreviewHelpers.ts	L1-L34	NEW	预览标题和计数均为纯派生函数	逐行阅读与调用点核对完成
+PASS	frontend-components	vue-frontend/src/components/insight/studio/editor/StudioEditorSectionPanel.vue	L1-L56	NEW	编辑 section 壳只拥有标题、提示和 slot 布局	逐行阅读与全部消费者核对完成
+PASS	frontend-components	vue-frontend/src/components/insight/studio/editor/StudioHeroSection.vue	L1-L150	NEW	头像与基础资料字段保持受控组件边界	逐行阅读、资源 URL 调用链与 editor 测试通过
+FIXED	frontend-components	vue-frontend/src/components/insight/studio/editor/StudioOverviewTab.vue	L1-L386	NEW	AUDIT-020	候选字段只使用当前 keyMoment/relatedPages 语义，不保留旧字段别名；editor 契约测试通过
+FIXED	frontend-components	vue-frontend/src/components/insight/studio/preview/AgentWorkspace.vue	L1-L309	NEW	AUDIT-022	失败时保留待采纳 Agent 结果，成功接受后才清理；失败/接受/取消测试通过
+FIXED	frontend-components	vue-frontend/src/components/insight/studio/preview/ChatComposer.vue	L1-L268	NEW	AUDIT-022	草稿只在后端接受计数变化后清空，接受前失败保持输入；极快完成竞态测试通过
+FIXED	frontend-components	vue-frontend/src/components/insight/studio/preview/ChatWorkspace.vue	L1-L171	NEW	AUDIT-020/AUDIT-022	接受信号、发送锁和会话工具栏事件边界统一；Preview 测试通过
+PASS	frontend-components	vue-frontend/src/components/insight/studio/preview/MessageList.vue	L1-L303	NEW	消息列表严格呈现 canonical role、附件和运行态，不拥有持久状态	逐行阅读、三类角色/附件/空态测试通过
+PASS	frontend-components	vue-frontend/src/components/insight/studio/preview/RuntimeWorkspace.vue	L1-L142	NEW	运行态只读投影与复制操作边界清晰	逐行阅读和预览标签测试通过
+FIXED	frontend-components	vue-frontend/src/components/insight/studio/preview/SessionToolbar.vue	L1-L484	NEW	AUDIT-020	伪 ARIA menu 改为 disclosure region，补齐焦点/Escape 和统一禁用；键盘/浏览器测试通过
+PASS	frontend-components	vue-frontend/src/components/insight/studio/preview/StudioPreviewWorkspaceHeader.vue	L1-L48	NEW	预览标题壳仅拥有 tab 标题/说明	逐行阅读与全部调用者核对完成
+PASS	frontend-components	vue-frontend/src/components/insight/studio/preview/StudioPreviewWorkspacePanel.vue	L1-L24	NEW	预览 panel 只提供语义容器	逐行阅读与全部调用者核对完成
+PASS	frontend-components	vue-frontend/src/components/insight/timeline/PlotThreadsList.vue	L1-L101	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/insight/timeline/TimelineArcCard.vue	L1-L61	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/insight/timeline/TimelineCharacterGrid.vue	L1-L101	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/insight/timeline/TimelineEventCardShell.vue	L1-L209	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/insight/timeline/TimelineGroupCard.vue	L1-L32	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/insight/timeline/TimelineHeader.vue	L1-L56	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/insight/timeline/TimelineStats.vue	L1-L74	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/insight/timeline/TimelineSummaryCard.vue	L1-L46	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/insight/timeline/TimelineTrack.vue	L1-L136	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+FIXED	frontend-components	vue-frontend/src/components/insight/timeline/useTimelinePanel.ts	L1-L243	NEW	AUDIT-051/AUDIT-053	逐行阅读；缩略图随当前 timeline 响应持有，分页使用权威 cursor 和稳定 ID 去重，generation 改变时原子替换 · 时间线 12 tests、API 21 tests、typecheck、ESLint 通过
+FIXED	frontend-components	vue-frontend/src/components/insight/useQANoteModal.ts	L1-L114	NEW	AUDIT-059	逐行阅读、无 main 对应关系及 QAPanel/笔记 API 调用核对；保存使用完整问题标题、清理空白输入并阻止重复提交
+PASS	frontend-components	vue-frontend/src/components/product/ProductActionRow.vue	L1-L119	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/product/ProductAvatar.vue	L1-L101	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/product/ProductBookSelector.vue	L1-L73	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/product/ProductBreadcrumbTrail.vue	L1-L102	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/product/ProductCardGrid.vue	L1-L38	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/product/ProductChipList.vue	L1-L201	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/product/ProductChoiceCardGrid.vue	L1-L194	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/product/ProductCollapsibleSection.vue	L1-L147	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/product/ProductComposer.vue	L1-L110	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/product/ProductConfirmProvider.vue	L1-L23	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/product/ProductDetailPanel.vue	L1-L25	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/product/ProductDetailSection.vue	L1-L84	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/product/ProductEmptyState.vue	L1-L164	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/product/ProductFileDropzone.vue	L1-L138	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/product/ProductFolderCard.vue	L1-L83	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/product/ProductFormSection.vue	L1-L54	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/product/ProductHeaderAction.vue	L1-L260	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/product/ProductHeaderMetaPill.vue	L1-L56	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/product/ProductLogPanel.vue	L1-L153	NEW	日志 disclosure、滚动 owner 与语义职责单一	逐行核对 aria-expanded/controls、role=log、空态、长文本换行和 tone token；生产调用与 productFeedback 测试覆盖
+PASS	frontend-components	vue-frontend/src/components/product/ProductMessageBubble.vue	L1-L234	NEW	消息外观只组合头像、正文、元信息与动作，不持有会话事实	逐行核对 assistant/user/reading 两种布局、长文本、移动端单列、ARIA 头像和 Studio token 覆写；productFeedback 测试覆盖
+PASS	frontend-components	vue-frontend/src/components/product/ProductPageHeader.vue	L1-L366	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/product/ProductRecordCard.vue	L1-L166	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/product/ProductScrollStack.vue	L1-L84	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/product/ProductSearchField.vue	L1-L132	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/product/ProductSearchToolbar.vue	L1-L53	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/product/ProductSectionHeader.vue	L1-L117	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/product/ProductSegmentedTabs.vue	L1-L212	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/product/ProductSelectableImageGrid.vue	L1-L132	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/product/ProductSplitWorkspace.vue	L1-L202	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/product/ProductStatusBanner.vue	L1-L151	NEW	状态提示的 tone、图标、语义和 actions 组合边界明确	逐行核对 danger 默认 alert、调用方可选 live region、五种 token 化 tone、窄内容收缩与 actions 换行
+FIXED	frontend-components	vue-frontend/src/components/product/ProductTabbedWorkspace.vue	L1-L217	NEW	AUDIT-060/AUDIT-113	标签页 ARIA、键盘焦点与禁用项跳过已验证；活动标签在选择和响应式变窄时保持完整可见
+FIXED	frontend-components	vue-frontend/src/components/product/ProductTextInputProvider.vue	L1-L75	NEW	AUDIT-012	全文阅读；增加输入目的型 autofocus，FIFO/提交/取消 3 tests 通过
+PASS	frontend-components	vue-frontend/src/components/product/ProductThemeToggle.vue	L1-L57	NEW	主题切换仅投影全局设置 owner，无第二主题状态	逐行核对 light/dark/system 的 label/icon/循环和 HeaderAction 可访问名称；settingsTheme 与产品组件测试覆盖
+FIXED	frontend-components	vue-frontend/src/components/product/ProductThreePaneWorkspace.vue	L1-L133	NEW	AUDIT-060	右栏显式可见性防止未选书时预留空白宽度；三栏及抽屉断点已验证
+FIXED	frontend-components	vue-frontend/src/components/product/ProductThumbnailGrid.vue	L1-L296	NEW	AUDIT-100	显式数字徽标 0 正常渲染
+PASS	frontend-components	vue-frontend/src/components/product/ProductWizardSteps.vue	L1-L164	NEW	向导步骤只呈现父级提供的 active/disabled 状态并发出选择	逐行核对 aria-current、禁用拦截、完成态、fit-content 和移动端纵排；productWorkspace 测试覆盖
+PASS	frontend-components	vue-frontend/src/components/product/ProductWorkspacePanel.vue	L1-L102	NEW	单一工作区滚动 owner 与 header/body/footer 插槽边界清晰	逐行核对 min-height:0、overflow、stable gutter、四种纯视觉 variant 和 flush；productWorkspace 测试覆盖
+PASS	frontend-components	vue-frontend/src/components/product/productClassTypes.ts	L1-L1	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+FIXED	frontend-components	vue-frontend/src/components/reader/ReaderCanvas.vue	L1-L151	MODIFIED	AUDIT-066	窗口化页面列表、原图/译图/未翻译投影及空态已逐行核对；宽度、间距与背景现直接消费当前设置，删除 URL/ID 伪回退 · 10 tests、实机滑块/背景即时生效验证通过
+FIXED	frontend-components	vue-frontend/src/components/reader/ReaderControls.vue	L1-L445	MODIFIED	AUDIT-066	逐行核对章节导航、键盘、回顶、弹层生命周期和设置持久化；设置变更现通过 typed event 即时发布给画布，不再写入无消费者的全局 CSS 变量 · 13 tests、桌面/移动弹层实机验收通过
+PASS	frontend-components	vue-frontend/src/components/reader/readerSettings.ts	L1-L84	NEW	当前 schema 严格校验并拒绝无效旧载荷，无迁移/兼容读取	全文阅读；5 property tests 共 500 轮持久化不变量通过
+PASS	frontend-components	vue-frontend/src/components/settings/AiProviderCredentialFields.vue	L1-L103	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/settings/AiProviderSelectField.vue	L1-L46	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+FIXED	frontend-components	vue-frontend/src/components/settings/DetectionSettings.vue	L1-L209	MODIFIED	AUDIT-117	唯一 Store 草稿受控字段；整体替换回归、设置组合测试及静态检查通过
+FIXED	frontend-components	vue-frontend/src/components/settings/HqTranslationSettings.vue	L1-L333	MODIFIED	AUDIT-117	删除 11 个本地镜像监听；Provider、模型、连接和提示词均直接消费当前 Store 草稿
+FIXED	frontend-components	vue-frontend/src/components/settings/MoreSettings.vue	L1-L276	MODIFIED	AUDIT-117/AUDIT-118	布尔设置无本地镜像；字体上传直接消费完整成功响应，不追加权威 GET
+FIXED	frontend-components	vue-frontend/src/components/settings/OcrSettings.vue	L1-L628	MODIFIED	AUDIT-117	删除百度与 AI 视觉两套镜像及 14 个监听；只保留专用提示词语言 UI 状态
+FIXED	frontend-components	vue-frontend/src/components/settings/ParallelSettings.vue	L1-L111	MODIFIED	AUDIT-117	直接读取唯一 Store 草稿并经所属 updateParallel action 更新，5 tests 通过
+PASS	frontend-components	vue-frontend/src/components/settings/PluginAgentModal.vue	L1-L893	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+FIXED	frontend-components	vue-frontend/src/components/settings/PluginManager.vue	L1-L684	MODIFIED	AUDIT-076/AUDIT-092	单请求/竞态/提交锁已核对；删除旧配置 schema 归一化并直接消费生成的当前类型，20 tests 通过
+PASS	frontend-components	vue-frontend/src/components/settings/PromptLibrary.vue	L1-L449	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+FIXED	frontend-components	vue-frontend/src/components/settings/ProofreadingSettings.vue	L1-L538	MODIFIED	AUDIT-120	轮次字段统一经 Store action 更新；卸载统一失效模型请求，37 个相关测试通过
+PASS	frontend-components	vue-frontend/src/components/settings/SavedPromptsPicker.vue	L1-L126	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+FIXED	frontend-components	vue-frontend/src/components/settings/SettingsModal.vue	L1-L366	MODIFIED	AUDIT-119	首次打开由自身立即装载；取消统一回滚；保存期间所有关闭路径锁定并在成功后明确关闭
+FIXED	frontend-components	vue-frontend/src/components/settings/TextStyleDefaultsSettings.vue	L1-L380	MODIFIED	AUDIT-117/AUDIT-118/AUDIT-134	直接编辑父弹窗事务草稿；字体目录保持资源状态且上传响应直接 upsert；重置直接使用唯一工厂默认值入口
+FIXED	frontend-components	vue-frontend/src/components/settings/TranslationSettings.vue	L1-L604	MODIFIED	AUDIT-117	删除整套本地镜像和 11 个监听；四分支提示词、Provider 与模型请求读取当前 Store 草稿
+PASS	frontend-components	vue-frontend/src/components/settings/ocrSettingsOptions.ts	L1-L108	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/settings/pluginAgentTimeline.ts	L1-L274	NEW	持久事件到纯展示卡片的单向折叠，无会话事实副本	逐行核对 assistant stream 合并、tool call/result 配对、validation/terminal/state 映射与稳定事件 key；Plugin Agent 组合测试通过
+PASS	frontend-components	vue-frontend/src/components/settings/shared/TranslationConstraintTable.vue	L1-L383	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/settings/translationSettingsLabels.ts	L1-L51	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/settings/usePluginAgentDisplayAnimation.ts	L1-L126	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/settings/usePluginAgentModal.ts	L1-L869	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+FIXED	frontend-components	vue-frontend/src/components/task-center/TaskBatchAnalysisModal.vue	L1-L258	NEW	AUDIT-004/AUDIT-104	乱序请求、首屏加载与失败反馈边界闭环
+FIXED	frontend-components	vue-frontend/src/components/task-center/TaskCenterDrawer.vue	L1-L1201	NEW	AUDIT-001/AUDIT-003/AUDIT-010/AUDIT-061/AUDIT-065	逐行阅读、SSE 生产者全集和后端控制契约已核对；并行池显示完整计数，Insight 详情使用与卡片相同的页进度口径 · 7 个控制测试、真实队列/历史任务卡、详情展开、取消及桌面视觉验收通过
+PASS	frontend-components	vue-frontend/src/components/task-center/TaskCenterLauncher.vue	L1-L96	NEW	全局唯一入口，计数/中断状态及窄屏折叠契约明确	全文阅读、页眉预留测试及桌面/390px 浏览器实测通过
+FIXED	frontend-components	vue-frontend/src/components/task-center/TaskStatusBadge.vue	L1-L92	NEW	AUDIT-104	快照加载后仍保留持久 interrupted/failed 摘要
+FIXED	frontend-components	vue-frontend/src/components/translate/BookGlossaryModal.vue	L1-L253	MODIFIED	AUDIT-111	删除双轨可见状态和重复关闭回传，保存期间不允许关闭或改写草稿
+FIXED	frontend-components	vue-frontend/src/components/translate/BookNonTranslateModal.vue	L1-L168	MODIFIED	AUDIT-111	删除双轨可见状态和重复关闭回传，保存期间不允许关闭或改写草稿
+FIXED	frontend-components	vue-frontend/src/components/translate/DetectedTextPanel.vue	L1-L119	NEW	AUDIT-109	删除 60 字符手工断行，保留原始文本并由 CSS 自然折行
+PASS	frontend-components	vue-frontend/src/components/translate/FirstTimeGuide.vue	L1-L155	NEW	首次提示只持有当前弹窗 UI 状态，设置事实仍由设置 owner 管理	逐行核对 mounted 判定、关闭/立即配置 dismissal、BaseModal/ActionRow/Checkbox 组合和 token 样式；commonComponents/property 测试覆盖
+FIXED	frontend-components	vue-frontend/src/components/translate/ImageResultDisplay.vue	L1-L205	MODIFIED	AUDIT-109	结果图、消字图、原图、文本与导入导出状态逐项核对；接入真实缩放和导入互斥
+FIXED	frontend-components	vue-frontend/src/components/translate/ImageUpload.vue	L1-L394	MODIFIED	AUDIT-110	单一在途批次冻结章节身份，跨章节旧结果/重试不再污染当前页面
+FIXED	frontend-components	vue-frontend/src/components/translate/PageSelectionModal.vue	L1-L397	MODIFIED	AUDIT-110/AUDIT-111	选择集合改为 O(1) 查询并删除一次关闭的重复父级回传
+FIXED	frontend-components	vue-frontend/src/components/translate/QuickWorkspacePromoteModal.vue	L1-L222	NEW	AUDIT-111	首次打开即加载书架，呈现加载失败、尊重 IME，并区分保存中取消与成功关闭
+PASS	tests	vue-frontend/src/components/translate/SettingsSidebar.test.ts	L1-L201	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	frontend-components	vue-frontend/src/components/translate/SettingsSidebar.vue	L1-L255	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/translate/ThumbnailSidebar.vue	L1-L307	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/translate/TranslationProgress.vue	L1-L209	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/translate/WebImportDisclaimer.vue	L1-L370	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/translate/WebImportModal.vue	L1-L190	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/translate/WebImportPreprocessSettings.vue	L1-L152	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/translate/firstTimeGuideState.ts	L1-L29	NEW	唯一 UI dismissal marker，受限存储时安全退化而不伪造业务设置	逐行核对显式 Storage 注入、读取失败显示、写入失败不阻断关闭；firstTimeGuide.property.ts 覆盖
+PASS	frontend-components	vue-frontend/src/components/translate/result/ExportActions.vue	L1-L173	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/translate/result/ResultImageCanvas.vue	L1-L164	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/translate/result/ResultToolbar.vue	L1-L129	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/translate/settings-sidebar/ApplyOptionsSection.vue	L1-L199	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/translate/settings-sidebar/BookConstraintSection.vue	L1-L109	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/translate/settings-sidebar/NavigationButtons.vue	L1-L66	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/translate/settings-sidebar/PageSelectionSection.vue	L1-L192	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/translate/settings-sidebar/TextStyleSection.vue	L1-L529	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/translate/settings-sidebar/WorkflowSection.vue	L1-L166	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+FIXED	frontend-components	vue-frontend/src/components/translate/useSettingsSidebar.ts	L1-L560	NEW	AUDIT-111/AUDIT-126	冲突工作流统一服从所有翻译任务在途态，字体上传直接消费结果并修复外部点击边界
+PASS	frontend-components	vue-frontend/src/components/translate/useWebImportModal.ts	L1-L979	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/translate/web-import/WebImportAdvancedSettingsPanel.vue	L1-L61	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/translate/web-import/WebImportBasicSettingsPanel.vue	L1-L290	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/translate/web-import/WebImportExtractBar.vue	L1-L231	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+FIXED	frontend-components	vue-frontend/src/components/translate/web-import/WebImportFooterActions.vue	L1-L46	NEW	AUDIT-105	下载 spinner 改为装饰性，避免重复读屏播报
+FIXED	frontend-components	vue-frontend/src/components/translate/web-import/WebImportLogsPanel.vue	L1-L46	NEW	AUDIT-105	按日志类别映射独立语义 tone
+PASS	frontend-components	vue-frontend/src/components/translate/web-import/WebImportResultsGrid.vue	L1-L161	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/translate/web-import/WebImportSettingsPanel.vue	L1-L219	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/translate/web-import/webImportSettingsActions.ts	L1-L35	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/translate/workflowModeConfig.ts	L1-L85	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/ui/AppShell.vue	L1-L101	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/ui/OverlayLayer.vue	L1-L53	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/ui/SidebarLayout.vue	L1-L232	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/ui/UiButton.vue	L1-L292	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/ui/UiCheckbox.vue	L1-L97	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/ui/UiColorInput.vue	L1-L81	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/ui/UiColorSwatchGroup.vue	L1-L77	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+FIXED	frontend-components	vue-frontend/src/components/ui/UiCombobox.vue	L1-L520	NEW	AUDIT-101	补齐禁用项和完整 trigger 键盘模型，删除未使用变体
+PASS	frontend-components	vue-frontend/src/components/ui/UiField.vue	L1-L252	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/ui/UiFileInput.vue	L1-L63	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/ui/UiFormGrid.vue	L1-L18	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/ui/UiIcon.vue	L1-L53	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/ui/UiIconButton.vue	L1-L150	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/ui/UiInput.vue	L1-L194	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/ui/UiModelPicker.vue	L1-L191	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/ui/UiNumberField.vue	L1-L202	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/ui/UiPasswordField.vue	L1-L91	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/ui/UiProgressBar.vue	L1-L141	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+FIXED	frontend-components	vue-frontend/src/components/ui/UiSelect.vue	L1-L477	NEW	AUDIT-101	使用可关联 button trigger 并补齐 active-descendant 键盘交互
+PASS	frontend-components	vue-frontend/src/components/ui/UiSpinner.vue	L1-L45	NEW	纯视觉 spinner primitive，尺寸与非装饰语义均显式	逐行核对 numeric/string size、decorative aria-hidden、label status role 和单一动画；ui-primitives 测试覆盖
+PASS	frontend-components	vue-frontend/src/components/ui/UiSwitch.vue	L1-L110	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/ui/UiTextarea.vue	L1-L190	NEW	受控 textarea primitive 正确转发属性、IME 输入和选择区能力	逐行核对 composition 结束单次 input、v-model、focus/selection expose、ARIA error、尺寸/variant token；ui-primitives 及业务组件测试覆盖
+PASS	frontend-components	vue-frontend/src/components/ui/iconRegistry.ts	L1-L166	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+PASS	frontend-components	vue-frontend/src/components/ui/selectTypes.ts	L1-L12	NEW	当前文件逐行审查及调用链对照完成	逐行审查组件职责、公开契约、响应式与可访问性；Playwright 全状态及前端 1969 tests
+FIXED	frontend-components	vue-frontend/src/components/virtual/VirtualPageStream.vue	L1-L249	NEW	AUDIT-066	逐行核对可变高度窗口、交叉可见性、缩放重算和 URL 切换；单页资产失败保留预留几何并显示明确错误占位 · 3 component tests、3 个窗口算法 tests 及阅读器实机验收通过
+FIXED	frontend-components	vue-frontend/src/components/virtual/VirtualThumbnailGrid.vue	L1-L171	NEW	AUDIT-102	统一真实卡片间距并删除无消费者的可配置/事件接口
+FIXED	frontend-components	vue-frontend/src/components/virtual/VirtualThumbnailList.vue	L1-L135	NEW	AUDIT-102	按实测容器宽度计算 3:4 缩略图虚拟步长
+FIXED	frontend-components	vue-frontend/src/components/virtual/virtualWindow.ts	L1-L90	NEW	AUDIT-102	陈旧超界滚动位置钳到最后一个有效窗口
+FIXED	frontend-support	vue-frontend/src/composables/continuation/continuationActionRunner.ts	L1-L44	NEW	AUDIT-029	统一真实续写命令的忙碌态与错误边界，无缓存或持久事实
+PASS	tests	vue-frontend/src/composables/continuation/promptValidation.test.ts	L1-L57	MODIFIED	当前剧情与图片提示词最小有效性测试	4 tests 通过
+FIXED	frontend-support	vue-frontend/src/composables/continuation/promptValidation.ts	L1-L34	MODIFIED	AUDIT-031	不截断提示词，仅判断当前生成所需的非空内容
+FIXED	tests	vue-frontend/src/composables/continuation/useCharacterManagement.test.ts	L1-L87	MODIFIED	AUDIT-029/AUDIT-031	覆盖 owner 状态与单图三视图命令
+FIXED	frontend-support	vue-frontend/src/composables/continuation/useCharacterManagement.ts	L1-L237	MODIFIED	AUDIT-029/AUDIT-031	角色/形态 UI owner 不镜像后端实体；命令完成后重新读取权威状态
+FIXED	tests	vue-frontend/src/composables/continuation/useContinuationState.test.ts	L1-L422	MODIFIED	AUDIT-029	覆盖分页合并、切书竞态、清理与后端恢复
+FIXED	frontend-support	vue-frontend/src/composables/continuation/useContinuationState.ts	L1-L368	MODIFIED	AUDIT-029	cursor 与请求身份归 UI owner，删除全局缓存和重复 has-more
+PASS	tests	vue-frontend/src/composables/continuation/useImageGeneration.test.ts	L1-L170	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	frontend-support	vue-frontend/src/composables/continuation/useImageGeneration.ts	L1-L166	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查状态所有权、API/生命周期/工具边界；typecheck、lint 与前端 1969 tests
+PASS	frontend-support	vue-frontend/src/composables/edit/useEditWorkspaceKeyboardShortcuts.ts	L1-L109	NEW	当前文件逐行审查及调用链对照完成	逐行审查状态所有权、API/生命周期/工具边界；typecheck、lint 与前端 1969 tests
+PASS	frontend-support	vue-frontend/src/composables/edit/useEditWorkspaceProcessingActions.ts	L1-L236	NEW	当前文件逐行审查及调用链对照完成	逐行审查状态所有权、API/生命周期/工具边界；typecheck、lint 与前端 1969 tests
+PASS	frontend-support	vue-frontend/src/composables/edit/useEditWorkspaceResizeActions.ts	L1-L134	NEW	当前文件逐行审查及调用链对照完成	逐行审查状态所有权、API/生命周期/工具边界；typecheck、lint 与前端 1969 tests
+PASS	frontend-support	vue-frontend/src/composables/useAiModelDiscovery.ts	L1-L156	NEW	当前文件逐行审查及调用链对照完成	逐行审查状态所有权、API/生命周期/工具边界；typecheck、lint 与前端 1969 tests
+PASS	frontend-support	vue-frontend/src/composables/useBodyScrollLock.ts	L1-L40	NEW	AUDIT-010	两个真实消费者共享的最小计数锁；嵌套锁、卸载恢复、浏览器与 BaseModal/任务中心测试通过
+PASS	frontend-support	vue-frontend/src/composables/useBrush.ts	L1-L370	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查状态所有权、API/生命周期/工具边界；typecheck、lint 与前端 1969 tests
+PASS	frontend-support	vue-frontend/src/composables/useBubbleActions.ts	L1-L262	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查状态所有权、API/生命周期/工具边界；typecheck、lint 与前端 1969 tests
+PASS	frontend-support	vue-frontend/src/composables/useDialogLifecycle.ts	L1-L128	NEW	顶层 dialog 焦点进入/循环/Esc/恢复单一状态栈	全文阅读；BaseModal 与任务中心嵌套弹层浏览器及单元测试通过
+FIXED	frontend-support	vue-frontend/src/composables/useEditRender.ts	L1-L145	MODIFIED	AUDIT-112	轻量渲染状态轮询、有限等待、AbortController、请求所有权和精确状态映射完成
+PASS	frontend-support	vue-frontend/src/composables/useExportImport.ts	L1-L242	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查状态所有权、API/生命周期/工具边界；typecheck、lint 与前端 1969 tests
+FIXED	frontend-support	vue-frontend/src/composables/useFolderTree.ts	L1-L136	MODIFIED	AUDIT-110	当前文件夹消失时自动回根，嵌套树和计数保持单一派生事实
+PASS	frontend-support	vue-frontend/src/composables/useImageViewer.ts	L1-L149	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查状态所有权、API/生命周期/工具边界；typecheck、lint 与前端 1969 tests
+PASS	frontend-support	vue-frontend/src/composables/useLatestRequestGuard.ts	L1-L28	NEW	当前文件逐行审查及调用链对照完成	逐行审查状态所有权、API/生命周期/工具边界；typecheck、lint 与前端 1969 tests
+PASS	frontend-support	vue-frontend/src/composables/useOverlayDismiss.ts	L1-L89	UNCHANGED	按下与松开均在遮罩才关闭，监听随 enabled/卸载正确回收	全文阅读；与 main 一致，BaseModal 覆盖四种指针路径
+FIXED	frontend-support	vue-frontend/src/composables/useProductConfirm.ts	L1-L70	NEW	AUDIT-005 删除无效请求 ID	逐行阅读、全仓调用核对与 typecheck 通过
+FIXED	frontend-support	vue-frontend/src/composables/useProductTextInput.ts	L1-L69	NEW	AUDIT-005 删除无效请求 ID	逐行阅读、FIFO 行为测试与 typecheck 通过
+PASS	tests	vue-frontend/src/composables/useTextStyleSync.test.ts	L1-L220	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+FIXED	frontend-support	vue-frontend/src/composables/useTextStyleSync.ts	L1-L385	MODIFIED	AUDIT-112	按页有限轮询、同页取消、失败回载后端事实与样式任务互斥完成
+FIXED	frontend-support	vue-frontend/src/composables/useThumbnailSelection.ts	L1-L67	MODIFIED	AUDIT-110/AUDIT-137	索引映射从逐项 findIndex 收敛为一次 Map，缩略图只读取唯一 translationStatus，处理态优先且提示不再声称点击重试
+FIXED	frontend-support	vue-frontend/src/composables/useTranslateInit.ts	L1-L530	MODIFIED	AUDIT-098	book/page request generations reviewed; stale page request regression passed
+FIXED	frontend-support	vue-frontend/src/composables/useTranslationPipeline.ts	L1-L792	MODIFIED	AUDIT-126/AUDIT-137	逐行阅读；修正任务竞态并在权威刷新中保留真实 UI 状态；删除未消费结果包装与图片错误镜像
+FIXED	frontend-support	vue-frontend/src/composables/useValidation.ts	L1-L343	MODIFIED	AUDIT-129	逐行阅读 OCR/普通/HQ/校对入口；仅做即时表单预检并消费共享 manifest/后端凭据摘要，删除 canonical ID 双查兼容，11 tests 通过
+PASS	frontend-support	vue-frontend/src/config/aiProviders.ts	L1-L97	MODIFIED	AUDIT-047/AUDIT-064	逐行阅读并与 Python 消费者对照；直接消费唯一共享 manifest，Provider ID 只做当前 trim/lowercase，不保留 legacy 映射，9 tests 通过
+PASS	frontend-support	vue-frontend/src/constants/bookshelf.ts	L1-L1	NEW	当前文件逐行审查及调用链对照完成	逐行审查状态所有权、API/生命周期/工具边界；typecheck、lint 与前端 1969 tests
+PASS	frontend-support	vue-frontend/src/constants/edit.ts	L1-L10	NEW	AUDIT-112	只保留真实字体/画笔交互范围与布局键，无图像或数据数量限制
+PASS	frontend-support	vue-frontend/src/constants/index.ts	L1-L15	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查状态所有权、API/生命周期/工具边界；typecheck、lint 与前端 1969 tests
+PASS	frontend-support	vue-frontend/src/constants/ocr.ts	L1-L1	NEW	当前文件逐行审查及调用链对照完成	逐行审查状态所有权、API/生命周期/工具边界；typecheck、lint 与前端 1969 tests
+FIXED	frontend-support	vue-frontend/src/constants/prompts.ts	L1-L51	NEW	AUDIT-135	九组工厂提示词直接消费唯一共享资源；Paddle 当前语言投影与模式推断保留为前端交互职责；22 tests 通过
+FIXED	frontend-support	vue-frontend/src/constants/rateLimits.ts	L1-L5	NEW	AUDIT-078/AUDIT-083	删除无效校对全局重试默认，只保留真实消费者使用的当前重试默认
+PASS	frontend-support	vue-frontend/src/constants/routes.ts	L1-L7	NEW	唯一路径常量与 main 路由值一致	逐行阅读、全仓引用和路由测试核对
+PASS	frontend-support	vue-frontend/src/constants/storage.ts	L1-L1	NEW	当前文件逐行审查及调用链对照完成	逐行审查状态所有权、API/生命周期/工具边界；typecheck、lint 与前端 1969 tests
+PASS	frontend-support	vue-frontend/src/constants/webImport.ts	L1-L6	NEW	网页导入 Provider 选项直接派生自唯一能力清单	全文仅将共享 manifest 的 webImportAgent 能力投影为只读 label/value；选择器和 provider 契约测试覆盖
+FIXED	frontend-support	vue-frontend/src/defaults/textStyleDefaults.ts	L1-L190	MODIFIED	AUDIT-130	工厂结构、局部样式和图像样式边界逐字段核对；删除 Number 强转，当前设置只接受真实数值；3 tests 通过
+PASS	frontend-support	vue-frontend/src/env.d.ts	L1-L7	MODIFIED	仅保留 Vite/Vue 类型声明	逐行阅读；tsconfig.app src/**/*.ts 明确纳入
+FIXED	frontend-support	vue-frontend/src/main.ts	L1-L25	MODIFIED	AUDIT-138	全文阅读并与 main 对照；入口只装载实际 token/reset，Pinia/router/error handler 与挂载顺序闭合
+FIXED	frontend-pages	vue-frontend/src/router/index.ts	L1-L67	MODIFIED	AUDIT-060	删除 Insight 路由未消费的 props 映射；五个正式路由、守卫及查询参数契约已核对
+PASS	frontend-support	vue-frontend/src/services/backendAccessGate.ts	L1-L28	NEW	受限模式只封锁新写和 Provider 调用，不复制后端业务状态	逐行追踪所有 mutation 消费者及 settings owner；读取、任务查看和取消控制不受阻；client.api 测试覆盖 503 错误
+FIXED	frontend-support	vue-frontend/src/services/pageDocumentPersistence.ts	L1-L451	NEW	AUDIT-097	CAS revision and flush lifecycle reviewed; persistence regressions passed
+FIXED	frontend-support	vue-frontend/src/stores/bookTranslationConstraintsStore.ts	L1-L72	MODIFIED	AUDIT-128	当前书籍 payload/revision 唯一 owner；专用 CAS、错误传播、保存锁与切书晚到响应 fencing，6 tests 通过
+FIXED	frontend-support	vue-frontend/src/stores/bookshelfStore.ts	L1-L496	MODIFIED	AUDIT-013/AUDIT-014/AUDIT-016/AUDIT-136	逐行阅读；请求版本、错误语义与标签投影收敛，Store 作为业务创建入口拥有唯一品牌默认色
+FIXED	frontend-support	vue-frontend/src/stores/bubbleStore.ts	L1-L256	MODIFIED	AUDIT-112	Store 拥有独立气泡快照并以稳定后端/客户端身份恢复选择，避免共享引用反写
+FIXED	frontend-support	vue-frontend/src/stores/characterStudio/useCharacterStudioChat.ts	L1-L316	NEW	AUDIT-022	接受计数、瞬态消息回滚、草稿与 active stream 身份收敛于单一 chat owner；竞态测试通过
+PASS	frontend-support	vue-frontend/src/stores/characterStudioActivity.ts	L1-L93	NEW	活动/忙碌状态为纯 operation 投影	逐行阅读、调用闭包和 store 测试通过
+PASS	frontend-support	vue-frontend/src/stores/characterStudioAgentOutput.ts	L1-L35	NEW	Agent 输出格式化为纯函数且不吞错误	逐行阅读与单元测试通过
+PASS	frontend-support	vue-frontend/src/stores/characterStudioChatSession.ts	L1-L32	NEW	会话映射只维护当前 canonical 类型	逐行阅读与 API/store 调用链核对完成
+PASS	frontend-support	vue-frontend/src/stores/characterStudioExports.ts	L1-L23	NEW	导出动作只使用后端资源 URL 和统一下载工具	逐行阅读与导出调用链核对完成
+FIXED	frontend-support	vue-frontend/src/stores/characterStudioPatch.ts	L1-L730	MODIFIED	AUDIT-168；补丁生成与应用保持纯函数、明确路径错误和当前 Studio 字段契约	逐行阅读、main 对照、非法草稿和 patch 回归测试通过
+PASS	frontend-support	vue-frontend/src/stores/characterStudioPatchSummary.ts	L1-L190	UNCHANGED	补丁摘要无旧 DTO 或隐式状态	逐行阅读、调用者和 patch 测试通过
+FIXED	frontend-support	vue-frontend/src/stores/characterStudioStore.ts	L1-L1127	MODIFIED	AUDIT-018/AUDIT-021/AUDIT-022/AUDIT-132	删除缓存/旧字段适配，加入上下文、CAS、自动保存和 accepted operation 约束；生成 section 只接受当前联合类型
+FIXED	frontend-support	vue-frontend/src/stores/imageStore.ts	L1-L188	MODIFIED	AUDIT-126/AUDIT-137	逐行阅读；任务忙碌事实统一为所有翻译任务在途态，失败计数只由唯一 translationStatus 派生
+PASS	frontend-support	vue-frontend/src/stores/insight/insightConfigDefaults.ts	L1-L52	NEW	当前 UI 草稿/服务商切换默认值有真实消费者，不承担持久数据兼容	逐行阅读、provider cache 调用链及 main 新增关系核对完成
+FIXED	frontend-support	vue-frontend/src/stores/insight/useInsightConfigManager.ts	L1-L163	MODIFIED	AUDIT-062/AUDIT-063	逐行阅读并与五类设置标签、Store 和 API 对照；草稿类型归入唯一领域类型源，manager 只管理当前模态服务商切换，不再导出重复 DTO · 配置/Insight 设置组合 115 tests、typecheck、ESLint 通过
+FIXED	frontend-support	vue-frontend/src/stores/insight/useInsightNotes.ts	L1-L241	MODIFIED	AUDIT-055/AUDIT-062	筛选和分页由后端 kind 查询拥有，跨书/跨筛选响应 fenced；写操作保留 error 投影并原样抛出真实异常，不再转换为 null/false 伪结果 · 配置/笔记组合 121 tests、typecheck、ESLint 通过
+FIXED	frontend-support	vue-frontend/src/stores/insight/useInsightQA.ts	L1-L22	MODIFIED	AUDIT-049/AUDIT-059	删除第二份漂移的 QAMessage 声明，复用唯一领域类型；状态 owner、模式切换与 store 调用链核对完成
+PASS	tests	vue-frontend/src/stores/insightStore.defaults.test.ts	L1-L101	MODIFIED	当前默认配置与唯一 InsightSettingsSnapshot round-trip 契约	逐行阅读；合法零值和当前 camelCase 快照 4 tests 通过
+FIXED	tests	vue-frontend/src/stores/insightStore.imageGen.test.ts	L1-L208	MODIFIED	AUDIT-062/AUDIT-063	逐行阅读并与 main 对照；覆盖当前 provider、显式零值、直接草稿快照、深拷贝、服务商切换及明确空 Base URL 保留 · 8 tests 通过
+FIXED	frontend-support	vue-frontend/src/stores/insightStore.ts	L1-L407	MODIFIED	AUDIT-054/AUDIT-055/AUDIT-062/AUDIT-063/AUDIT-167；Insight 状态与 provider 草稿保持唯一 owner	逐行核对调用链；使用唯一深拷贝快照，不承担重复 HTTP 映射或校验；配置与前端全量测试通过
+PASS	tests	vue-frontend/src/stores/settings.current-schema.test.ts	L1-L438	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/src/stores/settings.defaults.test.ts	L1-L23	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+FIXED	frontend-support	vue-frontend/src/stores/settings/defaults.ts	L1-L183	MODIFIED	AUDIT-068/AUDIT-083	出厂提示词协议、唯一 schema-v5 常量及无死字段默认文档已核对
+FIXED	frontend-support	vue-frontend/src/stores/settings/index.ts	L1-L922	MODIFIED	AUDIT-067/AUDIT-071/AUDIT-072/AUDIT-074/AUDIT-083/AUDIT-117/AUDIT-118/AUDIT-122	设置装载、事务、凭据、章节记忆、资源目录及当前 schema 全链路逐行核对；插件 Agent 独立事务只合并所属域，不覆盖其他凭据/revision
+PASS	frontend-support	vue-frontend/src/stores/settings/modules/detection.ts	L1-L59	MODIFIED	检测 action 仅修改唯一当前设置草稿	与 main 对照已删除逐字段 localStorage/console 副作用；无强转、默认回填或第二事实源，持久化由上层统一 owner 负责
+FIXED	frontend-support	vue-frontend/src/stores/settings/modules/hqTranslation.ts	L1-L104	MODIFIED	AUDIT-072/AUDIT-078/AUDIT-130	Provider 草稿隔离和 OpenAI 数值边界统一，不吞掉损坏当前值
+PASS	frontend-support	vue-frontend/src/stores/settings/modules/index.ts	L1-L9	MODIFIED	设置模块出口与唯一设置 owner 的真实消费者一致	逐项追踪 9 个导出；与 main 对照仅删除冗余注释，无旧模块或死别名
+FIXED	frontend-support	vue-frontend/src/stores/settings/modules/misc.ts	L1-L53	MODIFIED	AUDIT-117	通用设置及 parallel patch action 直接更新唯一草稿且类型闭合
+FIXED	frontend-support	vue-frontend/src/stores/settings/modules/ocr.ts	L1-L162	MODIFIED	AUDIT-072/AUDIT-078/AUDIT-130	OCR Provider 草稿隔离、提示词与数值更新边界统一；混合 OCR 只应用真实业务不变量
+FIXED	frontend-support	vue-frontend/src/stores/settings/modules/pluginAgent.ts	L1-L88	MODIFIED	AUDIT-048/AUDIT-072/AUDIT-122/AUDIT-130	逐行阅读并与 main 对照；服务商草稿只克隆当前 canonical 选项，子弹窗直接经本模块 action 更新唯一 Store
+PASS	frontend-support	vue-frontend/src/stores/settings/modules/prompts.ts	L1-L19	MODIFIED	文本框提示词 action 只修改唯一当前草稿	与 main 对照已删除逐字段 localStorage 副作用；无重复状态、兼容映射或隐藏持久化
+FIXED	frontend-support	vue-frontend/src/stores/settings/modules/proofreading.ts	L1-L58	MODIFIED	AUDIT-067/AUDIT-083	稳定轮次身份及嵌套 OpenAI 更新保留；删除无消费者全局重试 action
+FIXED	frontend-support	vue-frontend/src/stores/settings/modules/translation.ts	L1-L129	MODIFIED	AUDIT-072/AUDIT-078/AUDIT-130	Provider 草稿、模式提示词与 OpenAI 参数只维护当前结构，不再二次归一化严格设置
+FIXED	frontend-support	vue-frontend/src/stores/settings/modules/webImport.ts	L1-L274	MODIFIED	AUDIT-079/AUDIT-107	网页导入当前设置与 Provider 草稿逐项核对，补齐 Agent 重试/超时，无旧 provider 兼容
+PASS	frontend-support	vue-frontend/src/stores/settings/proofreadingIdentity.ts	L1-L14	NEW	当前文件逐行审查及调用链对照完成	逐行审查状态所有权、API/生命周期/工具边界；typecheck、lint 与前端 1969 tests
+FIXED	frontend-support	vue-frontend/src/stores/settings/providerConfigCache.ts	L1-L99	NEW	AUDIT-072	统一保存/恢复 Provider 独立草稿，缺失项只使用当前 manifest 默认
+FIXED	frontend-support	vue-frontend/src/stores/settings/schema.ts	L1-L326	NEW	AUDIT-069/AUDIT-072/AUDIT-078/AUDIT-083	完整当前 schema 严格解析，统一边界并只接受 schema-v5
+FIXED	frontend-support	vue-frontend/src/stores/settings/types.ts	L1-L42	MODIFIED	AUDIT-130	Provider 缓存 DTO 直接使用当前完整 OpenAI 选项结构；稀疏 Provider 行仍由后端当前 overlay 契约拥有
+PASS	frontend-support	vue-frontend/src/stores/settings/useThemePreference.ts	L1-L88	NEW	主题偏好、有效主题与单一系统监听的生命周期闭合	逐行核对 light/dark/system 循环、listener 切换去重、DOM 投影和 best-effort UI 持久化；settingsTheme 测试覆盖
+FIXED	frontend-support	vue-frontend/src/stores/taskCenterProjection.ts	L1-L142	NEW	AUDIT-061	删除进度字段强转、静默归零、完成数夹断及 Insight 目标页数回退；完整投影并行池结果
+FIXED	frontend-support	vue-frontend/src/stores/taskCenterStore.ts	L1-L646	NEW	AUDIT-002/AUDIT-003/AUDIT-124/AUDIT-167；任务中心是前端任务状态唯一 owner	逐行核对权威快照、持久事件投影、游标缺口、详情、命令刷新与连接释放；Store、路由竞态及前端全量测试通过
+FIXED	frontend-support	vue-frontend/src/stores/webImportSettingsPayload.ts	L1-L279	NEW	AUDIT-079	只接收完整当前网页导入 schema，并与后端共享类型、整数和固有质量边界
+FIXED	frontend-support	vue-frontend/src/stores/webImportStore.ts	L1-L541	MODIFIED	AUDIT-107/AUDIT-108	直接消费设置事务结果，严格校验 Headers，成功后清空 secret 草稿并删除旧结果/死 API
+FIXED	frontend-support	vue-frontend/src/styles/reset.css	L1-L24	NEW	AUDIT-138	全文阅读；保留全局盒模型/body/app/绘制光标边界，删除已由通配规则覆盖的表单重复声明
+FIXED	frontend-support	vue-frontend/src/styles/tokens/component.css	L1-L53	NEW	AUDIT-101	删除无生产消费者的 selector workflow token；全量 token 使用审计通过
+PASS	frontend-support	vue-frontend/src/styles/tokens/domain.css	L1-L16	NEW	AUDIT-138	全文阅读；Insight surface/text/action/status token 均有真实组件消费者且映射语义 token
+PASS	frontend-support	vue-frontend/src/styles/tokens/foundation.css	L1-L38	NEW	AUDIT-138	全文阅读；断点、层级、字体、圆角与阴影均由构建或生产组件消费，无死 token
+PASS	frontend-support	vue-frontend/src/styles/tokens/semantic.css	L1-L176	NEW	AUDIT-138	全文阅读；亮/暗主题语义颜色与阴影由组件/token 图消费，主题测试和架构门禁通过
+PASS	frontend-support	vue-frontend/src/types/api.ts	L1-L3	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查状态所有权、API/生命周期/工具边界；typecheck、lint 与前端 1969 tests
+PASS	frontend-support	vue-frontend/src/types/apiCore.ts	L1-L6	NEW	当前文件逐行审查及调用链对照完成	逐行审查状态所有权、API/生命周期/工具边界；typecheck、lint 与前端 1969 tests
+FIXED	frontend-support	vue-frontend/src/types/bookTranslationConstraints.ts	L1-L3	MODIFIED	AUDIT-128	直接引用 OpenAPI 当前 TranslationConstraintPayload，删除手写重复 DTO 与旧 snake_case 字段
+FIXED	frontend-support	vue-frontend/src/types/bookshelf.ts	L1-L28	NEW	AUDIT-136	全文阅读并追踪投影消费者；任务摘要和 Tag 直接引用生成契约，删除三个无消费者书架 revision/ordinal 镜像
+FIXED	frontend-support	vue-frontend/src/types/bubble.ts	L1-L65	MODIFIED	AUDIT-042	逐行阅读；气泡类型与后端当前 23 字段文档一致，删除可选旧字段语义
+PASS	frontend-support	vue-frontend/src/types/characterStudio.ts	L1-L9	MODIFIED	类型入口只重导出当前 Studio 领域类型	逐行阅读、main 对照和类型引用闭包核对完成
+FIXED	frontend-support	vue-frontend/src/types/characterStudioApi.ts	L1-L53	NEW	AUDIT-019/AUDIT-021/AUDIT-025	候选、诊断和 API 投影类型与严格 OpenAPI 契约一致；typecheck 通过
+FIXED	frontend-support	vue-frontend/src/types/characterStudioChat.ts	L1-L56	NEW	AUDIT-021/AUDIT-022	消息/摘要/接受信号只保留当前 canonical 结构；typecheck 和聊天测试通过
+FIXED	frontend-support	vue-frontend/src/types/characterStudioDocument.ts	L1-L118	NEW	AUDIT-020/AUDIT-025/AUDIT-132/AUDIT-168；Studio 类型只描述当前文档与生成区段	删除候选旧字段别名；唯一联合类型覆盖业务区段和 translate/full/review；类型与 Studio 测试通过
+PASS	frontend-support	vue-frontend/src/types/characterStudioEditor.ts	L1-L8	NEW	编辑 tab 类型来源唯一	逐行阅读与全部引用核对完成
+PASS	frontend-support	vue-frontend/src/types/characterStudioPatch.ts	L1-L70	NEW	补丁路径与 operation 类型来源唯一	逐行阅读与 patch 调用链核对完成
+PASS	frontend-support	vue-frontend/src/types/diagnostics.ts	L1-L4	NEW	当前文件逐行审查及调用链对照完成	逐行审查状态所有权、API/生命周期/工具边界；typecheck、lint 与前端 1969 tests
+PASS	frontend-support	vue-frontend/src/types/folder.ts	L1-L8	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查状态所有权、API/生命周期/工具边界；typecheck、lint 与前端 1969 tests
+FIXED	frontend-support	vue-frontend/src/types/image.ts	L1-L74	MODIFIED	AUDIT-137	全文阅读并追踪所有字段消费者；删除 sourceRevision、relativePath、errorMessage 与 translationFailed 镜像，只保留当前 UI/编辑/目录事实
+PASS	frontend-support	vue-frontend/src/types/index.ts	L1-L23	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查状态所有权、API/生命周期/工具边界；typecheck、lint 与前端 1969 tests
+PASS	frontend-support	vue-frontend/src/types/insight.ts	L1-L7	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查状态所有权、API/生命周期/工具边界；typecheck、lint 与前端 1969 tests
+FIXED	frontend-support	vue-frontend/src/types/insightNotesQaTypes.ts	L1-L23	NEW	AUDIT-055	逐行阅读；NoteData 收敛为唯一当前完整 DTO，mutation 只暴露可写字段 · 笔记组合 45 tests、typecheck 通过
+PASS	frontend-support	vue-frontend/src/types/insightResponseTypes.ts	L1-L16	NEW	当前文件逐行审查及调用链对照完成	逐行审查状态所有权、API/生命周期/工具边界；typecheck、lint 与前端 1969 tests
+FIXED	frontend-support	vue-frontend/src/types/insightStoreTypes.ts	L1-L130	NEW	AUDIT-049/AUDIT-057/AUDIT-059/AUDIT-063	逐行阅读并核对全部引用；当前活动配置、五类 provider 草稿和设置快照均由唯一领域类型源定义，不保留旧 API DTO
+FIXED	frontend-support	vue-frontend/src/types/insightTimelineTypes.ts	L1-L76	NEW	AUDIT-051/AUDIT-053/AUDIT-058	逐行核对全部引用；删除旧分组字段并要求稳定剧情弧/角色身份与当前完整描述
+PASS	frontend-support	vue-frontend/src/types/ocr.ts	L1-L3	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查状态所有权、API/生命周期/工具边界；typecheck、lint 与前端 1969 tests
+PASS	frontend-support	vue-frontend/src/types/ocrSettings.ts	L1-L30	NEW	OCR 设置类型按当前领域拆分且无旧字段别名	逐字段对照 TranslationSettings/OpenAPI 消费者与 Provider 联合；typeSourceContracts 和 typecheck 覆盖
+PASS	frontend-support	vue-frontend/src/types/openaiSettings.ts	L1-L17	NEW	OpenAI request 与 execution 选项只有一份前端声明	逐字段追踪 settings/Insight/Web Import 消费者；无兼容字段、镜像转换或重复接口
+PASS	frontend-support	vue-frontend/src/types/settings.ts	L1-L37	MODIFIED	设置类型文件只做领域类型聚合，不再承载 321 行单体定义	与 main 对照确认拆分到 providers/openai/ocr/text-style/translation 唯一 owner；无旧 custom_openai/PDF 类型残留
+PASS	frontend-support	vue-frontend/src/types/settingsProviders.ts	L1-L33	NEW	当前 OCR/检测/翻译/Agent Provider 联合职责单一	逐项对照共享 provider manifest 能力集合；无 custom_openai、qwen 等旧 ID 或兼容联合
+PASS	frontend-support	vue-frontend/src/types/textStyleSettings.ts	L1-L29	NEW	文字样式及可变字段联合与当前页面/后端契约闭合	逐字段对照 bubble/style mutation；自动字号与自动颜色只由专用命令修改，类型层无默认或兼容逻辑
+PASS	frontend-support	vue-frontend/src/types/translationConstraints.ts	L1-L12	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查状态所有权、API/生命周期/工具边界；typecheck、lint 与前端 1969 tests
+FIXED	frontend-support	vue-frontend/src/types/translationSettings.ts	L1-L118	NEW	AUDIT-067/AUDIT-083	校对轮次稳定 ID 与独立重试设置保留，删除死全局重试字段
+FIXED	frontend-support	vue-frontend/src/types/webImport.ts	L1-L116	MODIFIED	AUDIT-108	删除后端不再提供的旧结果/运行态字段，实际引擎收窄为非 auto 当前类型
+PASS	frontend-support	vue-frontend/src/types/workflow.ts	L1-L12	MODIFIED	当前文件逐行审查及调用链对照完成	逐行审查状态所有权、API/生命周期/工具边界；typecheck、lint 与前端 1969 tests
+PASS	frontend-support	vue-frontend/src/utils/binaryMaskPng.ts	L1-L119	NEW	AUDIT-139	逐行核对 PNG 签名、CRC、灰度 scanline、deflate 与内存边界；浏览器必须生成后端要求的灰度二值掩膜，非通用图片编码过度设计 · 2 unit tests 通过，Chromium 契约纳入最终实机回归
+FIXED	frontend-support	vue-frontend/src/utils/bookTranslationConstraints.ts	L1-L17	MODIFIED	AUDIT-128	仅保留创建当前空约束文档的真实职责；删除旧数据归一化、字段迁移及身份映射
+PASS	frontend-support	vue-frontend/src/utils/browserDownload.ts	L1-L21	NEW	AUDIT-139	URL/Blob 下载唯一边界，临时节点与 object URL 均在异常路径释放 · 2 tests 通过
+PASS	frontend-support	vue-frontend/src/utils/bubbleDrag.ts	L1-L19	NEW	AUDIT-112	拖动几何钳制到真实图像边界并处理大于画布的输入框
+FIXED	frontend-support	vue-frontend/src/utils/bubbleFactory.ts	L1-L101	MODIFIED	AUDIT-042	逐行阅读；只创建当前完整气泡文档，默认值由唯一当前 factory 提供
+PASS	frontend-support	vue-frontend/src/utils/bubbleResize.ts	L1-L163	UNCHANGED	AUDIT-112	旋转局部坐标缩放、最小可交互尺寸和图像边界计算逐行核对
+PASS	frontend-support	vue-frontend/src/utils/characterStudioDocumentContent.ts	L1-L21	NEW	当前文件逐行审查及调用链对照完成	逐行审查状态所有权、API/生命周期/工具边界；typecheck、lint 与前端 1969 tests
+PASS	frontend-support	vue-frontend/src/utils/characterStudioGreetings.ts	L1-L34	MODIFIED	问候语选择与来源映射为无副作用纯函数	逐行阅读、main 对照及会话测试通过
+PASS	frontend-support	vue-frontend/src/utils/clipboard.ts	L1-L34	NEW	AUDIT-139	统一 Clipboard API 边界；textarea 路径服务 LAN HTTP/权限拒绝的真实浏览器能力差异，不属于旧数据兼容 · 4 tests 通过
+PASS	frontend-support	vue-frontend/src/utils/deepClone.ts	L1-L14	NEW	AUDIT-139	只克隆当前纯数据/Date，保留 undefined 并可处理 Vue 响应式对象，不使用会拒绝 Proxy 的 structuredClone · 2 tests 及全部设置/Studio 消费链通过
+PASS	frontend-support	vue-frontend/src/utils/fontFiles.ts	L1-L15	NEW	AUDIT-139	上传选择器、提示与即时校验共用后端相同五种后缀；不增加文件大小限制 · 1 test 及字体组件组合通过
+FIXED	frontend-support	vue-frontend/src/utils/hybridOcr.ts	L1-L80	MODIFIED	AUDIT-130	逐行核对 OCR 设置 schema 与调用方；删除数字转换/夹断/default fallback，只保留主辅引擎业务不变量
+FIXED	frontend-support	vue-frontend/src/utils/insightJobProgress.ts	L1-L36	NEW	AUDIT-061	只投影权威 insight_analyze_page 池并保留异常超量事实；终态事件仅关闭合法完成进度
+PASS	frontend-support	vue-frontend/src/utils/insightStatus.ts	L1-L20	MODIFIED	当前状态投影纯函数职责单一	逐行阅读并与 main/调用者对照；9 个状态组合测试通过
+FIXED	frontend-support	vue-frontend/src/utils/openaiOptions.ts	L1-L140	MODIFIED	AUDIT-130	删除兼容归一化和静默 fallback；默认只用于显式新建，wire 映射、克隆和 patch 只处理当前完整结构；9 tests 通过
+FIXED	frontend-support	vue-frontend/src/utils/pageSelection.ts	L1-L28	MODIFIED	AUDIT-139	页码只接受正整数、去重排序并按真实页数裁剪，不再把小数静默转换成另一页 · 4 tests 通过
+FIXED	frontend-support	vue-frontend/src/utils/sanitizeHtml.ts	L1-L89	NEW	AUDIT-139	Markdown HTML 白名单、危险内容删除、属性剥离和 URL 协议校验闭合；删除生产环境无 DOM 兼容分支 · Overview/QA/Plugin Agent 55 tests 通过
+FIXED	frontend-support	vue-frontend/src/utils/taskDisplay.ts	L1-L140	NEW	AUDIT-139	任务种类映射由生成 JobKind 完整性约束；事件标签与 EventSource 订阅共享唯一集合；duration 直接消费后端非负整数 · 任务显示/投影/Store 27 tests 通过
+FIXED	frontend-support	vue-frontend/src/utils/textStyleForm.ts	L1-L17	MODIFIED	AUDIT-139	只保留三组当前表单选项；删除整套旧字体路径映射，修复方式同时供全局设置、侧栏和气泡编辑器消费 · 字体/样式/编辑器组合 59 tests 通过
+FIXED	frontend-support	vue-frontend/src/utils/toast.ts	L1-L104	MODIFIED	AUDIT-009	逐行阅读、全仓消费者与 main 对照；删除无消费者兼容 API，13 个定向测试通过
+FIXED	frontend-support	vue-frontend/src/utils/translationConstraintTable.ts	L1-L119	MODIFIED	AUDIT-131	JSON/XLSX 导入逐行严格验证对象和文本单元格并报告真实行号；不丢行、不字符串化坏值；10 tests 通过
+FIXED	frontend-pages	vue-frontend/src/views/BookshelfView.vue	L1-L643	MODIFIED	AUDIT-013/AUDIT-014/AUDIT-016/AUDIT-017/AUDIT-136	逐行阅读并与 main 对照；批量标签使用当前必需后端 ID；桌面/390px 全状态及书架组合测试通过
+FIXED	frontend-pages	vue-frontend/src/views/CharacterStudioView.vue	L1-L599	MODIFIED	AUDIT-018/AUDIT-020/AUDIT-022/AUDIT-132	逐行阅读并与 main 对照；路由上下文、未保存状态、生成区段、操作反馈及桌面/390px 全状态浏览器复核完成
+FIXED	frontend-pages	vue-frontend/src/views/InsightView.vue	L1-L786	MODIFIED	AUDIT-060	书籍核心快照原子装载、路由/卸载 fencing、任务终态投影、面板持久化及桌面/移动视觉验证完成
+FIXED	frontend-pages	vue-frontend/src/views/ReaderView.vue	L1-L407	MODIFIED	AUDIT-066	逐行阅读并与 main/阅读器设计对照；当前书籍-章节-页面归属严格闭合，路由切换清理旧快照，设置由父页面显式投影到画布 · Reader 组合 50 tests、桌面/390px 内置浏览器及 2 个 Playwright 视觉用例通过
+FIXED	frontend-pages	vue-frontend/src/views/TranslateView.vue	L1-L665	MODIFIED	AUDIT-098/AUDIT-167；翻译页面复用唯一任务状态与编辑上下文 owner	逐行核对页面组合、任务事件、编辑状态和卸载边界；定向测试、ESLint 与前端全量测试通过
+FIXED	frontend-pages	vue-frontend/src/views/useTranslateViewActions.ts	L1-L326	NEW	AUDIT-098	edit entry and global shortcut boundary reviewed; 48 focused tests and ESLint passed
+PASS	tests	vue-frontend/tests/helpers/bookshelfFixtures.ts	L1-L12	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/helpers/imageFixtures.ts	L1-L56	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/property/bookCrud.property.ts	L1-L41	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/property/bookshelfStore.property.ts	L1-L159	MODIFIED	书籍/标签/章节投影的集合操作保持不变量	全文阅读；3 property tests passed
+PASS	tests	vue-frontend/tests/property/brush.property.ts	L1-L132	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/property/bubbleFactory.property.ts	L1-L50	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/property/bubbleStore.property.ts	L1-L158	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/property/download.property.ts	L1-L34	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/property/editMode.property.ts	L1-L269	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+FIXED	tests	vue-frontend/tests/property/exportImport.property.ts	L1-L260	MODIFIED	AUDIT-167；属性测试复用当前唯一状态与映射 owner	逐行确认只测试当前契约且无兼容自证；前端全量测试与视觉测试通过
+PASS	tests	vue-frontend/tests/property/firstTimeGuide.property.ts	L1-L95	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/property/imageStore.property.ts	L1-L215	MODIFIED	AUDIT-126	全文阅读；所有翻译任务在途态清理属性测试通过
+PASS	tests	vue-frontend/tests/property/imageViewer.property.ts	L1-L127	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+FIXED	tests	vue-frontend/tests/property/insightProgress.property.ts	L1-L131	MODIFIED	AUDIT-057	逐行阅读；当前任务状态全集与进度性质测试通过
+FIXED	tests	vue-frontend/tests/property/insightQA.property.ts	L1-L101	MODIFIED	AUDIT-059	逐行阅读并与 main 对照；移除死时间戳字段，QA 消息/流拼接性质保持，4 tests passed
+PASS	tests	vue-frontend/tests/property/keyboard.property.ts	L1-L223	MODIFIED	AUDIT-112	真实快捷键 composable 的表单、contenteditable、画笔和导航边界通过
+PASS	tests	vue-frontend/tests/property/promptMode.property.ts	L1-L223	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/property/readerSettings.property.ts	L1-L112	MODIFIED	当前阅读偏好 schema 往返、覆盖与非法载荷拒绝的性质闭合	全文阅读；5 property tests/500 轮通过
+PASS	tests	vue-frontend/tests/property/responsive-sidebar.property.ts	L1-L85	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/property/router.property.ts	L1-L103	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/property/settingsStore.property.ts	L1-L80	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+FIXED	tests	vue-frontend/tests/property/sidebarButtons.property.ts	L1-L256	MODIFIED	AUDIT-111/AUDIT-126	单页与批量翻译在途期间冲突工作流统一禁用；属性测试通过
+FIXED	tests	vue-frontend/tests/property/toast.property.ts	L1-L104	MODIFIED	AUDIT-009	删除仅保护旧兼容 API 的属性测试；当前队列/ID/定时器 5 tests passed
+PASS	tests	vue-frontend/tests/property/translationState.property.ts	L1-L151	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/property/validation.property.ts	L1-L239	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/aiProviderFields.spec.ts	L1-L75	NEW	只验证共享 Provider 选择与凭据字段的公开组件契约	3 tests 覆盖 normalized emit、字段显示/更新和后端已存凭据提示；无私有实现或旧 Provider 自证
+PASS	tests	vue-frontend/tests/unit/aiProviders.spec.ts	L1-L70	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+FIXED	tests	vue-frontend/tests/unit/analysis-progress.spec.ts	L1-L443	MODIFIED	AUDIT-057	逐行阅读并与 main 对照；16 个启动、控制、竞态、反馈和结构测试通过
+PASS	tests	vue-frontend/tests/unit/apiDownload.spec.ts	L1-L62	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/apiSourceContracts.spec.ts	L1-L87	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+FIXED	tests	vue-frontend/tests/unit/apiSse.spec.ts	L1-L69	NEW	AUDIT-125	覆盖分块、多行 data、严格错误、尾空格和无空行 EOF 完整事件 · 4 tests 通过
+FIXED	tests	vue-frontend/tests/unit/appReaderImmersion.spec.ts	L1-L118	NEW	AUDIT-066/AUDIT-124	覆盖阅读路由不初始化/不挂载任务中心、离开恢复，以及旧初始化晚到不关闭当前连接 · 2 tests passed
+FIXED	tests	vue-frontend/tests/unit/baseModal.spec.ts	L1-L299	MODIFIED	AUDIT-008/AUDIT-010	删除测试自证变体，保留真实弹层/焦点/滚动/typed variants 共 18 tests passed
+PASS	tests	vue-frontend/tests/unit/batchSettingsTab.spec.ts	L1-L191	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/binaryMaskPng.spec.ts	L1-L68	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/bookCard.spec.ts	L1-L134	NEW	书籍卡片封面、占位、标签、批量选择与可访问语义	全文阅读；7 tests passed
+PASS	tests	vue-frontend/tests/unit/bookConstraintContext.spec.ts	L1-L17	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+FIXED	tests	vue-frontend/tests/unit/bookDetailComponents.spec.ts	L1-L647	NEW	AUDIT-014/AUDIT-016/AUDIT-017	补充写操作失败/防重、选择清理、任务状态和结构回归；22 tests passed
+FIXED	tests	vue-frontend/tests/unit/bookGlossaryModal.spec.ts	L1-L226	MODIFIED	AUDIT-111	单一开关来源与保存期间关闭保护；定向测试通过
+FIXED	tests	vue-frontend/tests/unit/bookModal.spec.ts	L1-L252	NEW	AUDIT-014/AUDIT-015	覆盖创建/编辑失败、单次提交和部分更新；10 tests passed
+FIXED	tests	vue-frontend/tests/unit/bookSearch.spec.ts	L1-L180	NEW	AUDIT-013/AUDIT-017	覆盖受控查询、标签搜索、清除及无重复控件；10 tests passed
+FIXED	tests	vue-frontend/tests/unit/bookSelector.spec.ts	L1-L104	NEW	AUDIT-060	完整列表、加载/空/错/重试、卸载 fencing 与非字符串身份覆盖
+PASS	tests	vue-frontend/tests/unit/bookTranslationConstraintsStore.spec.ts	L1-L133	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+FIXED	tests	vue-frontend/tests/unit/bookshelf.api.spec.ts	L1-L236	NEW	AUDIT-015	覆盖字段级更新、无冗余详情读取和摘要不清空章节；7 tests passed
+FIXED	tests	vue-frontend/tests/unit/bookshelfStore.spec.ts	L1-L421	NEW	AUDIT-013/AUDIT-014/AUDIT-016	覆盖乱序、错误传播、刷新失败与本地投影；15 tests passed
+FIXED	tests	vue-frontend/tests/unit/bookshelfView.spec.ts	L1-L315	NEW	AUDIT-013/AUDIT-016/AUDIT-017	覆盖详情乱序、加载/标签错误与重试、批量工具栏；12 tests passed
+PASS	tests	vue-frontend/tests/unit/browserDownload.spec.ts	L1-L56	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/bubbleDrag.spec.ts	L1-L20	NEW	AUDIT-112	2 个拖动边界用例通过
+PASS	tests	vue-frontend/tests/unit/bubbleEditor.buttonLabels.spec.ts	L1-L785	MODIFIED	AUDIT-112	22 个编辑器控件、空态和标签契约测试通过
+PASS	tests	vue-frontend/tests/unit/bubbleFactorySource.spec.ts	L1-L40	NEW	AUDIT-112	气泡工厂当前字段事实源测试通过
+PASS	tests	vue-frontend/tests/unit/bubbleOverlay.resize.spec.ts	L1-L392	MODIFIED	AUDIT-112	10 个拖动/缩放/旋转、非法边界与无变化提交测试通过
+PASS	tests	vue-frontend/tests/unit/bubbleStore.spec.ts	L1-L106	MODIFIED	AUDIT-112	4 个选择稳定性、快照隔离与静默状态测试通过
+FIXED	tests	vue-frontend/tests/unit/chapterSelectModal.spec.ts	L1-L107	NEW	AUDIT-060	当前/失效选择、零页范围、关闭与确认契约覆盖
+PASS	tests	vue-frontend/tests/unit/characterManagementPanel.spec.ts	L1-L366	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+FIXED	tests	vue-frontend/tests/unit/characterStudio.api.spec.ts	L1-L688	NEW	AUDIT-019/AUDIT-021/AUDIT-025/AUDIT-168；覆盖当前 Studio/OpenAPI 严格契约	最小创建命令、canonical summary/message、非法草稿和严格映射回归通过
+PASS	tests	vue-frontend/tests/unit/characterStudioAgentOutput.spec.ts	L1-L22	NEW	Agent 输出纯格式化契约	逐行阅读，2 tests passed
+FIXED	tests	vue-frontend/tests/unit/characterStudioEditor.spec.ts	L1-L1205	MODIFIED	AUDIT-018/AUDIT-020	逐行阅读；受控字段、不可变编辑、无重复 watcher 和 tab 行为回归通过
+FIXED	tests	vue-frontend/tests/unit/characterStudioEntryPanel.spec.ts	L1-L59	NEW	AUDIT-114	入口加载/禁用/导航及 390px 单列网格契约，3 tests passed
+FIXED	tests	vue-frontend/tests/unit/characterStudioLorebook.spec.ts	L1-L114	MODIFIED	AUDIT-020/AUDIT-023	逐行阅读；嵌套不可变更新与诊断输入回归通过
+FIXED	tests	vue-frontend/tests/unit/characterStudioPreview.spec.ts	L1-L1301	MODIFIED	AUDIT-020/AUDIT-022	逐行阅读；会话 disclosure、失败回滚、草稿接受及极快 operation 竞态回归通过
+PASS	tests	vue-frontend/tests/unit/characterStudioSidebar.spec.ts	L1-L419	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/characterStudioStore.spec.ts	L1-L2223	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/characterStudioView.spec.ts	L1-L500	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/client.api.spec.ts	L1-L196	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/clipboard.spec.ts	L1-L58	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/commonComponents.spec.ts	L1-L98	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+FIXED	tests	vue-frontend/tests/unit/contentCommands.api.spec.ts	L1-L71	NEW	AUDIT-127	覆盖显式零分页参数和不完整工作区身份转交后端权威校验；3 tests 通过
+PASS	tests	vue-frontend/tests/unit/contentUpload.api.spec.ts	L1-L138	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/continuation.api.spec.ts	L1-L475	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/continuationCharacterControls.spec.ts	L1-L397	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/continuationDialogFieldNames.spec.ts	L1-L241	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/continuationDialogShell.spec.ts	L1-L51	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/continuationDialogTimers.spec.ts	L1-L69	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/continuationSectionHeaders.spec.ts	L1-L55	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/deepClone.spec.ts	L1-L32	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/diagnostics.api.spec.ts	L1-L80	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/docsSourceContracts.spec.ts	L1-L35	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/editThumbnailPanel.spec.ts	L1-L95	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/editToolbarAccessibility.spec.ts	L1-L306	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/editWorkspace.applyAndNext.spec.ts	L1-L30	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/editWorkspace.exitWithSave.spec.ts	L1-L28	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/editWorkspaceResizeActions.spec.ts	L1-L88	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/fontFiles.spec.ts	L1-L14	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/hybridOcr.spec.ts	L1-L23	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/imageResultDisplay.spec.ts	L1-L385	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/imageStore.spec.ts	L1-L178	MODIFIED	AUDIT-126	全文阅读；Store 当前字段、清理与更新边界 14 tests 通过
+PASS	tests	vue-frontend/tests/unit/imageUpload.spec.ts	L1-L237	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/insight-job-progress.spec.ts	L1-L100	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/insight-status.spec.ts	L1-L53	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/insight-view.task-events.spec.ts	L1-L856	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/insight.api.config.spec.ts	L1-L532	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/insight.api.spec.ts	L1-L893	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/insightCardControls.spec.ts	L1-L599	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+FIXED	tests	vue-frontend/tests/unit/insightNotes.spec.ts	L1-L360	NEW	AUDIT-055	逐行阅读；覆盖后端类型筛选、分页去重及跨书/跨筛选迟到响应 · 12 tests 通过
+PASS	tests	vue-frontend/tests/unit/insightProviderManifest.spec.ts	L1-L41	UNCHANGED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+FIXED	tests	vue-frontend/tests/unit/insightSettingsModal.spec.ts	L1-L496	NEW	AUDIT-063	逐行阅读；成功事务直接采用无密钥权威快照，不再保存后重复读取；失败、取消、卸载和并发 fencing 契约完整 · 11 tests 通过
+PASS	tests	vue-frontend/tests/unit/insightSettingsModelFetch.spec.ts	L1-L455	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/insightStore.notes.spec.ts	L1-L33	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/insightStoreOpenAiExtraBodyClear.spec.ts	L1-L137	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/japaneseKeyboard.spec.ts	L1-L208	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+FIXED	tests	vue-frontend/tests/unit/jobs.api.spec.ts	L1-L69	NEW	AUDIT-007/AUDIT-127	覆盖实时/历史查询边界、命令路径编码、快照去重和后端 200 项契约；7 tests 通过
+PASS	tests	vue-frontend/tests/unit/moreSettings.spec.ts	L1-L167	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/noteCard.spec.ts	L1-L72	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/noteEditorModal.spec.ts	L1-L135	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+FIXED	tests	vue-frontend/tests/unit/notesPanel.spec.ts	L1-L225	NEW	AUDIT-055	逐行阅读；覆盖当前文本新建与 QA 只读元数据编辑边界 · 6 tests 通过
+PASS	tests	vue-frontend/tests/unit/notesToolbar.spec.ts	L1-L54	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/openaiOptions.spec.ts	L1-L238	NEW	AUDIT-103	12 个 OpenAI 当前结构、唯一编辑器实例与序列化边界用例通过
+FIXED	tests	vue-frontend/tests/unit/operations.api.spec.ts	L1-L289	NEW	AUDIT-127	覆盖严格 Operation DTO、SSE durable cursor/type/identity、受限写门和修复上传；9 tests 通过
+PASS	tests	vue-frontend/tests/unit/orthographicDialog.spec.ts	L1-L234	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+FIXED	tests	vue-frontend/tests/unit/overview-panel.spec.ts	L1-L481	MODIFIED	AUDIT-056/AUDIT-115	覆盖直接内容读取、元数据失败、最近分析错误、窄列错误卡片及请求 fencing · 17 tests 通过
+PASS	tests	vue-frontend/tests/unit/paddleOcrPromptLanguage.spec.ts	L1-L23	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+FIXED	tests	vue-frontend/tests/unit/page-detail.spec.ts	L1-L712	MODIFIED	AUDIT-054	五态页面与终态刷新回归已补，并完成对应浏览器全状态验收 · 25 tests 通过
+PASS	tests	vue-frontend/tests/unit/pageDocumentPersistence.spec.ts	L1-L500	NEW	AUDIT-097	12 tests passed including stale revision and in-flight flush regression
+PASS	tests	vue-frontend/tests/unit/pageSelection.spec.ts	L1-L29	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+FIXED	tests	vue-frontend/tests/unit/pageSelectionModal.spec.ts	L1-L260	MODIFIED	AUDIT-110/AUDIT-111	大批页面选择查询与单次关闭事件；定向测试通过
+FIXED	tests	vue-frontend/tests/unit/pages-tree.spec.ts	L1-L528	MODIFIED	AUDIT-054	发布态计数与同计数终态刷新回归已补，并完成完整/空树浏览器验收 · 14 tests 通过
+FIXED	tests	vue-frontend/tests/unit/parallelSettings.spec.ts	L1-L95	NEW	AUDIT-117	并行开关与无任意上限并发字段经 Store action 更新；5 tests 通过
+FIXED	tests	vue-frontend/tests/unit/plugin.api.spec.ts	L1-L260	MODIFIED	AUDIT-076/AUDIT-088/AUDIT-092/AUDIT-123	插件 API 单请求、严格冲突元数据、真实幂等头及陈旧 CAS 清理；6 tests 通过
+FIXED	tests	vue-frontend/tests/unit/pluginAgent.api.spec.ts	L1-L320	MODIFIED	AUDIT-122	瞬时会话失败、404 清理及跨千条事件分页回归；8 tests 通过
+FIXED	tests	vue-frontend/tests/unit/pluginAgentModal.spec.ts	L1-L1230	MODIFIED	AUDIT-077/AUDIT-122	恢复、切换、失败保留、命令串行、事件补拉/释放、设置 owner 与渲染；31 tests 通过
+FIXED	tests	vue-frontend/tests/unit/pluginManager.spec.ts	L1-L853	MODIFIED	AUDIT-076/AUDIT-092	插件切换竞态、单次配置读取、导入替换错误与当前 config schema UI；20 tests 通过
+PASS	tests	vue-frontend/tests/unit/productConfirm.spec.ts	L1-L57	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/productFeedback.spec.ts	L1-L858	NEW	AUDIT-100	40 个 Product 反馈、选择与输入边界用例通过
+PASS	tests	vue-frontend/tests/unit/productFileDropzone.spec.ts	L1-L94	NEW	AUDIT-100	4 个文件拖拽边界用例通过
+PASS	tests	vue-frontend/tests/unit/productPageHeader.spec.ts	L1-L259	NEW	AUDIT-100	14 个页眉布局与外链语义用例通过
+PASS	tests	vue-frontend/tests/unit/productSearchToolbar.spec.ts	L1-L51	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+FIXED	tests	vue-frontend/tests/unit/productTextInput.spec.ts	L1-L75	NEW	AUDIT-012	提交/取消/产品动作行及 autofocus 3 tests passed
+PASS	tests	vue-frontend/tests/unit/productThemeToggle.spec.ts	L1-L35	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+FIXED	tests	vue-frontend/tests/unit/productWorkspace.spec.ts	L1-L507	NEW	AUDIT-060/AUDIT-100/AUDIT-113	21 个共享工作区布局、ARIA、键盘焦点、活动标签滚动、拖动取消、空右栏和响应式契约通过
+PASS	tests	vue-frontend/tests/unit/promptLibrary.spec.ts	L1-L427	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+FIXED	tests	vue-frontend/tests/unit/qa-panel.markdown.spec.ts	L1-L273	NEW	AUDIT-050/AUDIT-059	逐行阅读、无 main 对应关系与 QAPanel 调用核对；覆盖 Markdown 消毒、流合并、切书/切模式中止旧请求并清空历史，7 tests passed
+FIXED	tests	vue-frontend/tests/unit/qa-panel.rebuild.spec.ts	L1-L341	MODIFIED	AUDIT-059	逐行阅读并与 main 对照；覆盖中断任务恢复投影、确认期间卸载、派生修复去重及组件自动卸载，8 tests passed
+FIXED	tests	vue-frontend/tests/unit/qaMessageItem.spec.ts	L1-L91	NEW	AUDIT-059	逐行阅读、无 main 对应关系；覆盖精确/全局领域模式标签、引用与渲染，4 tests passed
+FIXED	tests	vue-frontend/tests/unit/qaOptionsBar.spec.ts	L1-L186	NEW	AUDIT-050/AUDIT-059	逐行阅读、无 main 对应关系与组件契约核对；覆盖无 Top K 上限、共享控件、事件类型、响应式和可访问性，7 tests passed
+FIXED	tests	vue-frontend/tests/unit/qaSaveNoteModal.spec.ts	L1-L156	NEW	AUDIT-059/AUDIT-062	覆盖完整默认标题、空白清理、重复保存阻断、跨书隔离及真实后端错误提示 · 5 tests passed
+FIXED	tests	vue-frontend/tests/unit/quickWorkspacePromoteModal.spec.ts	L1-L105	NEW	AUDIT-111	首次打开加载、输入法确认与保存期间关闭保护；定向测试通过
+FIXED	tests	vue-frontend/tests/unit/readerCanvas.spec.ts	L1-L244	NEW	AUDIT-066	当前完整 PageSummary、原/译图、缺译图、空/加载态与宽度/间距/背景投影均覆盖 · 10 tests passed
+FIXED	tests	vue-frontend/tests/unit/readerControls.spec.ts	L1-L359	NEW	AUDIT-066	当前设置 schema、即时发布、滚动 owner、章节快捷键、dialog 与共享 UI 契约均覆盖 · 13 tests passed
+FIXED	tests	vue-frontend/tests/unit/readerView.spec.ts	L1-L557	NEW	AUDIT-066	当前完整 DTO、请求竞态、书/章/页归属、all-pages 完整性、失败清理、导航与设置投影均覆盖 · 15 tests passed
+PASS	tests	vue-frontend/tests/unit/referenceImageSelector.spec.ts	L1-L46	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/router.test.ts	L1-L20	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+FIXED	tests	vue-frontend/tests/unit/savedPromptsPicker.spec.ts	L1-L192	NEW	AUDIT-121	请求竞态、错误重试与选择契约；5 tests 通过
+PASS	tests	vue-frontend/tests/unit/settingsChapterWorkState.spec.ts	L1-L40	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+FIXED	tests	vue-frontend/tests/unit/settingsModal.integration.spec.ts	L1-L117	MODIFIED	AUDIT-119	真实 BaseModal 首次打开装载与遮罩关闭回归；2 tests 通过
+FIXED	tests	vue-frontend/tests/unit/settingsModal.spec.ts	L1-L333	MODIFIED	AUDIT-117/AUDIT-119	单事务草稿、延迟保存关闭锁、装载 fencing 与九标签结构；13 tests 通过
+FIXED	tests	vue-frontend/tests/unit/settingsProviderSelects.spec.ts	L1-L635	NEW	AUDIT-117/AUDIT-120	设置标签/Provider 结构、整体 Store 替换与模型请求竞态；21 tests 通过
+PASS	tests	vue-frontend/tests/unit/settingsSidebar.bookConstraints.spec.ts	L1-L180	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+FIXED	tests	vue-frontend/tests/unit/settingsSidebar.pageSelection.spec.ts	L1-L231	MODIFIED	AUDIT-111	页面文档加载期间纯后端工作流可用性；定向测试通过
+FIXED	tests	vue-frontend/tests/unit/settingsSidebar.workflowPreferences.spec.ts	L1-L629	MODIFIED	AUDIT-111	工作流偏好、非元素外部点击与字体直写目录边界；定向测试通过
+PASS	tests	vue-frontend/tests/unit/settingsStore.quiet.spec.ts	L1-L39	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/settingsStoreCurrentSchemaBoundaries.spec.ts	L1-L408	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/settingsStoreMinTextBlockArea.spec.ts	L1-L99	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/settingsStoreOpenAiExtraBodyClear.spec.ts	L1-L89	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+FIXED	tests	vue-frontend/tests/unit/settingsStorePluginAgent.spec.ts	L1-L248	MODIFIED	AUDIT-074/AUDIT-122	插件 Agent 独立事务保留其他域凭据与 revision，清除已提交密钥；5 tests 通过
+PASS	tests	vue-frontend/tests/unit/settingsStoreSaberRefine.spec.ts	L1-L121	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/settingsTheme.spec.ts	L1-L86	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/sponsorModal.spec.ts	L1-L104	NEW	AUDIT-104	4 个赞助弹窗文案、结构、token 与响应式契约用例通过
+FIXED	tests	vue-frontend/tests/unit/storeSourceContracts.spec.ts	L1-L156	NEW	AUDIT-062/AUDIT-063	逐行阅读；源码契约要求 Store/API 共享唯一当前快照、序列化只在 API 边界，并拒绝三份已删除映射层残留 · 19 tests 通过
+PASS	tests	vue-frontend/tests/unit/studioTopbar.spec.ts	L1-L101	MODIFIED	顶栏导航/保存/导出/禁用契约	逐行阅读，5 tests passed
+FIXED	tests	vue-frontend/tests/unit/tagManageModal.spec.ts	L1-L368	NEW	AUDIT-014/AUDIT-016/AUDIT-017	覆盖失败反馈、防重、确认、错误重试和组件 owner；16 tests passed
+FIXED	tests	vue-frontend/tests/unit/taskCenterControls.spec.ts	L1-L398	NEW	AUDIT-001/AUDIT-004/AUDIT-010/AUDIT-061/AUDIT-065/AUDIT-104	9 个任务弹窗、终态摘要、dialog 生命周期、完整并行池计数及 Insight 页进度用例通过
+FIXED	tests	vue-frontend/tests/unit/taskCenterProjection.spec.ts	L1-L221	NEW	AUDIT-061	8 个批次、进度、严格目标类型、当前步骤及并行池投影用例使用完整当前 DTO
+FIXED	tests	vue-frontend/tests/unit/taskCenterStore.spec.ts	L1-L648	NEW	补充 AUDIT-002/AUDIT-003 回归测试	全文阅读；13 tests passed
+PASS	tests	vue-frontend/tests/unit/taskDisplay.spec.ts	L1-L35	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+PASS	tests	vue-frontend/tests/unit/textStyleDefaults.spec.ts	L1-L57	MODIFIED	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+FIXED	tests	vue-frontend/tests/unit/textStyleDefaultsSettings.spec.ts	L1-L384	MODIFIED	AUDIT-117/AUDIT-118	父级事务草稿、严格数值、字体上传权威响应及资源失败；14 tests 通过
+PASS	tests	vue-frontend/tests/unit/textStyleSection.spec.ts	L1-L184	NEW	当前文件逐行审查及调用链对照完成	逐行确认只测试当前契约且无兼容自证；后端 858 tests、前端 1969 tests、Playwright 34 tests
+FIXED	tests	vue-frontend/tests/unit/thumbnailSidebar.spec.ts	L1-L232	NEW	AUDIT-110	虚拟列表滚动职责、状态优先级与索引映射；定向测试通过
+FIXED	tests	vue-frontend/tests/unit/timeline-panel.spec.ts	L1-L508	MODIFIED	AUDIT-053/AUDIT-058	全部 fixture 使用当前完整 TimelineData；加载、错误、排队、竞态和分页测试及浏览器总体验收完成 · 12 tests 通过
+FIXED	tests	vue-frontend/tests/unit/timelineControls.spec.ts	L1-L367	NEW	AUDIT-058	逐行阅读；14 个稳定身份、操作、共享组件、统计、响应式和语义测试通过
+FIXED	tests	vue-frontend/tests/unit/toastService.spec.ts	L1-L60	NEW	AUDIT-009	删除无消费者兼容契约测试；紧凑实现与定时清理 3 tests passed
+PASS	tests	vue-frontend/tests/unit/translateView.spec.ts	L1-L284	NEW	AUDIT-098	8 tests passed including edit exit when page disappears
+PASS	tests	vue-frontend/tests/unit/translateViewActions.spec.ts	L1-L273	NEW	AUDIT-098	10 tests passed including empty page and shortcut boundaries
+FIXED	tests	vue-frontend/tests/unit/translationConstraintTable.spec.ts	L1-L264	NEW	AUDIT-084/AUDIT-131	约束行身份、排序、筛选、编辑、删除与坏导入行拒绝；10 tests 通过
+PASS	tests	vue-frontend/tests/unit/translationConstraintTableUtils.spec.ts	L1-L32	UNCHANGED	当前纯导入导出契约与 main 一致且仍有真实消费者	2 tests 以完整 source/target/note/matchMode 行验证 JSON/XLSX 无损往返；不维持旧结构
+FIXED	tests	vue-frontend/tests/unit/translationProgress.spec.ts	L1-L191	NEW	AUDIT-110	暂停动画与取消数量统计回归；定向测试通过
+FIXED	tests	vue-frontend/tests/unit/translationSettings.spec.ts	L1-L287	MODIFIED	AUDIT-117	当前 Store 草稿替换、四提示词分支、Provider 恢复与模型竞态；8 tests 通过
+FIXED	tests	vue-frontend/tests/unit/typeSourceContracts.spec.ts	L1-L455	NEW	AUDIT-132/AUDIT-136	全文阅读；生成 OCR/约束/工作流/任务/标签类型来源和 owner 分层契约均有源码门禁
+FIXED	tests	vue-frontend/tests/unit/ui-primitives.spec.ts	L1-L1237	NEW	AUDIT-008/AUDIT-101	49 个基础控件与 AppShell 当前契约用例通过；AppShell 视觉项仍由页面验收追踪
+PASS	tests	vue-frontend/tests/unit/uiArchitectureLint.spec.ts	L1-L1578	NEW	AUDIT-099/AUDIT-101	89 个架构门禁测试通过，覆盖 Vue slot/CSS ID 与 selector primitive 原生按钮边界
+PASS	tests	vue-frontend/tests/unit/uiCombobox.spec.ts	L1-L140	NEW	AUDIT-101	5 个 Combobox ARIA、禁用项和分组键盘用例通过
+PASS	tests	vue-frontend/tests/unit/useAiModelDiscovery.spec.ts	L1-L124	NEW	只验证当前模型发现的输入边界与异步请求 fencing	5 tests 覆盖凭据/Base URL、后端已存密钥、结果、上下文变化和主动失效；无缓存兼容或旧响应提交
+PASS	tests	vue-frontend/tests/unit/useBrush.spec.ts	L1-L307	NEW	AUDIT-112	8 个视口内存、互斥、页面身份和修复提交测试通过
+PASS	tests	vue-frontend/tests/unit/useBubbleActions.cleanup.spec.ts	L1-L52	UNCHANGED	AUDIT-112	预览定时器卸载清理测试通过
+PASS	tests	vue-frontend/tests/unit/useBubbleActions.spec.ts	L1-L187	MODIFIED	AUDIT-112	5 个后端修复/OCR、身份拒绝和重渲染测试通过
+PASS	tests	vue-frontend/tests/unit/useEditRender.spec.ts	L1-L183	MODIFIED	AUDIT-112	5 个渲染成功/失败/身份/卸载/乱序响应测试通过
+PASS	tests	vue-frontend/tests/unit/useEditWorkspaceProcessingActions.spec.ts	L1-L188	NEW	AUDIT-112	4 个页面操作、重译、身份与错误语义测试通过
+FIXED	tests	vue-frontend/tests/unit/useFolderTree.spec.ts	L1-L96	NEW	AUDIT-110/AUDIT-137	只消费后端逻辑路径投影的 folderPath，并在当前目录消失后回根目录；定向测试通过
+PASS	tests	vue-frontend/tests/unit/useImageViewer.spec.ts	L1-L77	NEW	AUDIT-112	5 个缩放中心、重置与非法变换输入测试通过
+PASS	tests	vue-frontend/tests/unit/useInsightModelFetch.spec.ts	L1-L116	NEW	只验证 Insight 当前模型发现公共行为	3 tests 覆盖凭据预检、晚到响应失效、公开选项与选择回写；无私有实现耦合或旧 Provider 映射
+PASS	tests	vue-frontend/tests/unit/useInsightSettingsDraft.spec.ts	L1-L109	NEW	只验证唯一设置草稿的单向 emit 与显式父级同步	2 tests 覆盖初始化/字段变化和 syncRequestId；没有双轨持久化或旧字段 hydration 自证
+PASS	tests	vue-frontend/tests/unit/useLatestRequestGuard.spec.ts	L1-L20	NEW	AUDIT-141	最新请求身份守卫真实乱序行为测试通过
+PASS	tests	vue-frontend/tests/unit/useOverlayDismiss.spec.ts	L1-L111	UNCHANGED	当前遮罩关闭行为与 main 一致且由多个真实弹层复用	4 tests 用真实 DOM 事件覆盖按下/松开身份、内容拖出、禁用和中途禁用清理
+PASS	tests	vue-frontend/tests/unit/useTextStyleSync.spec.ts	L1-L407	MODIFIED	AUDIT-112	11 个后端权威样式、有限轮询及同页/跨页并发测试通过
+PASS	tests	vue-frontend/tests/unit/useTranslateInit.spec.ts	L1-L582	NEW	AUDIT-098	18 tests passed including page-read/context-refresh race
+FIXED	tests	vue-frontend/tests/unit/useTranslationPipeline.spec.ts	L1-L826	NEW	AUDIT-126/AUDIT-167；覆盖唯一任务投影与翻译进度 owner	覆盖创建防重、冻结模式、终态切页竞态、实时/持久进度和失败重试；定向及前端全量测试通过
+FIXED	tests	vue-frontend/tests/unit/useValidation.spec.ts	L1-L60	NEW	AUDIT-141	删除两项源码元测试，保留三项生产校验行为测试
+FIXED	tests	vue-frontend/tests/unit/useWebImportModal.spec.ts	L1-L557	NEW	AUDIT-106/AUDIT-108	13 tests 覆盖跨会话提交、分页失败、漏事件轮询、瞬时读取失败与实际引擎契约
+FIXED	tests	vue-frontend/tests/unit/v2ContentAdapter.spec.ts	L1-L172	NEW	AUDIT-042/AUDIT-137	完整当前气泡 payload 严格拒绝旧结构；canonical 根/嵌套逻辑路径投影回归通过
+FIXED	tests	vue-frontend/tests/unit/virtualPageStream.spec.ts	L1-L75	NEW	AUDIT-066	覆盖占位几何、真实视口 IntersectionObserver 与资产失败/URL 重试占位 · 3 tests passed
+PASS	tests	vue-frontend/tests/unit/virtualThumbnailGrid.spec.ts	L1-L99	NEW	AUDIT-102	4 个千页窗口、动态尺寸、滚动定位与选择用例通过
+FIXED	tests	vue-frontend/tests/unit/virtualWindow.spec.ts	L1-L52	NEW	AUDIT-102	4 个固定/可变尺寸及集合缩短边界用例通过
+FIXED	tests	vue-frontend/tests/unit/webImport.api.spec.ts	L1-L88	NEW	AUDIT-107	4 tests 覆盖生成命令、写访问门和提取请求
+FIXED	tests	vue-frontend/tests/unit/webImportDisclaimer.spec.ts	L1-L226	NEW	AUDIT-108	5 tests 覆盖普通层级、IME 与确认关闭行为
+FIXED	tests	vue-frontend/tests/unit/webImportModal.spec.ts	L1-L462	MODIFIED	AUDIT-106/AUDIT-108/AUDIT-167；覆盖当前网页导入状态 owner	测试覆盖模态组合、会话关闭、分页日志和当前结果投影；前端全量测试通过
+FIXED	tests	vue-frontend/tests/unit/webImportPanels.spec.ts	L1-L944	NEW	AUDIT-105/AUDIT-107/AUDIT-108	全文审查并增加日志 tone、引擎提示、设置锁定及下载状态回归，25 tests passed
+PASS	tests	vue-frontend/tests/unit/webImportProviders.spec.ts	L1-L125	MODIFIED	只验证当前网页导入 Provider 与精确 schema	与 main 对照已删除 custom_openai normalization 自证；5 tests 覆盖唯一清单、按 Provider 凭据、旧/额外字段拒绝及无任意图片尺寸门槛
+FIXED	tests	vue-frontend/tests/unit/webImportResultsGrid.spec.ts	L1-L226	NEW	AUDIT-108	8 tests 覆盖当前结果字段、页状态与实际引擎显示
+FIXED	tests	vue-frontend/tests/unit/webImportStore.spec.ts	L1-L206	MODIFIED	AUDIT-107	6 tests 覆盖事务结果、revision、secret 清理和严格 Headers
+PASS	tests	vue-frontend/tests/visual/binary-mask-contract.spec.ts	L1-L32	NEW	严格二值 PNG 的解码、像素通道与导出边界完整覆盖	Playwright Chromium 1 test passed
+FIXED	tests	vue-frontend/tests/visual/ui-regression.spec.ts	L1-L2376	NEW	五页面、关键弹层、主题、移动端和大章节资源边界完整视觉契约	AUDIT-145/AUDIT-162；Playwright 34/34
+PASS	project-config-docs-scripts	vue-frontend/tsconfig.app.json	L1-L36	MODIFIED	当前文件逐行审查及调用链对照完成	逐文件核对当前唯一入口、架构、构建与工具链；解析、help、lint、build 和测试门禁通过
+PASS	project-config-docs-scripts	vue-frontend/tsconfig.json	L1-L7	UNCHANGED	当前文件逐行审查及调用链对照完成	逐文件核对当前唯一入口、架构、构建与工具链；解析、help、lint、build 和测试门禁通过
+PASS	project-config-docs-scripts	vue-frontend/tsconfig.node.json	L1-L24	MODIFIED	当前文件逐行审查及调用链对照完成	逐文件核对当前唯一入口、架构、构建与工具链；解析、help、lint、build 和测试门禁通过
+PASS	project-config-docs-scripts	vue-frontend/vite.config.ts	L1-L69	MODIFIED	当前文件逐行审查及调用链对照完成	逐文件核对当前唯一入口、架构、构建与工具链；解析、help、lint、build 和测试门禁通过
+PASS	project-config-docs-scripts	vue-frontend/vitest.config.ts	L1-L22	MODIFIED	当前文件逐行审查及调用链对照完成	逐文件核对当前唯一入口、架构、构建与工具链；解析、help、lint、build 和测试门禁通过

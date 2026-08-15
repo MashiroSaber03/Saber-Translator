@@ -5,6 +5,7 @@ AI视觉OCR服务接口模块：用于调用不同服务商的视觉API进行OCR
 import json
 import logging
 import time
+from PIL import Image
 
 from src.shared import constants
 from src.shared.ai_providers import (
@@ -26,7 +27,6 @@ from src.shared.openai_options import (
     create_openai_compatible_options,
 )
 from src.shared.image_helpers import image_to_base64
-from src.shared.memory_errors import is_memory_allocation_error
 
 # 设置日志
 logger = logging.getLogger("VisionInterface")
@@ -41,7 +41,16 @@ def _parse_ai_vision_ocr_response(content: str, *, use_json_format: bool) -> str
             payload = json.loads(text)
         except json.JSONDecodeError as exc:
             raise OpenAICompatibleBusinessRetryableError(f"AI视觉OCR JSON 解析失败: {exc}") from exc
-        text = str(payload.get("extracted_text") or "").strip()
+        if not isinstance(payload, dict):
+            raise OpenAICompatibleBusinessRetryableError(
+                "AI视觉OCR JSON 响应必须是对象"
+            )
+        extracted_text = payload.get("extracted_text")
+        if not isinstance(extracted_text, str):
+            raise OpenAICompatibleBusinessRetryableError(
+                "AI视觉OCR extracted_text 必须是字符串"
+            )
+        text = extracted_text.strip()
     if not text:
         raise OpenAICompatibleBusinessRetryableError("AI视觉OCR 返回空结果")
     return text
@@ -52,36 +61,33 @@ def call_ai_vision_ocr_service(image_pil, provider='siliconflow', api_key=None, 
                                custom_base_url=None,
                                openai_options: OpenAICompatibleOptions | None = None,
                                credential_version_id: str | None = None):
-    if not image_pil:
-        logger.error("未提供有效图像")
-        return ""
+    if not isinstance(image_pil, Image.Image):
+        raise ValueError("未提供有效图像")
+    if prompt_mode not in {"normal", "json", "paddleocr_vl"}:
+        raise ValueError(
+            "AI视觉OCR提示词模式必须是 normal、json 或 paddleocr_vl"
+        )
 
     start_time = time.time()
     try:
         image_base64 = image_to_base64(image_pil)
     except Exception as e:
-        logger.error(f"图像转Base64失败: {e}")
-        if is_memory_allocation_error(e):
-            raise
-        return ""
+        logger.error(f"图像转Base64失败: {e}", exc_info=True)
+        raise
 
     try:
         provider_lower = normalize_provider_id(provider)
         manifest = get_provider_manifest(provider_lower)
         if not provider_supports_capability(provider_lower, VISION_OCR_CAPABILITY):
-            logger.error(f"不支持的AI视觉OCR服务提供商: {provider}")
-            return ""
+            raise ValueError(f"不支持的AI视觉OCR服务提供商: {provider}")
         if manifest.requires_api_key and not api_key:
-            logger.error(f"未提供 {provider} 的API密钥")
-            return ""
+            raise ValueError(f"未提供 {provider} 的API密钥")
         if manifest.requires_model and not model_name:
-            logger.error(f"未提供 {provider} 的模型名称")
-            return ""
+            raise ValueError(f"未提供 {provider} 的模型名称")
 
         resolved_base_url = resolve_provider_base_url(provider_lower, custom_base_url)
         if not resolved_base_url:
-            logger.error(f"未提供 {provider_lower} 的 Base URL")
-            return ""
+            raise ValueError(f"未提供 {provider_lower} 的 Base URL")
 
         effective_options = openai_options or create_openai_compatible_options(
             force_json_output=False,
@@ -91,7 +97,7 @@ def call_ai_vision_ocr_service(image_pil, provider='siliconflow', api_key=None, 
             business_retries=0,
         )
         if not prompt:
-            if effective_options.request.force_json_output or (prompt_mode or "").strip().lower() == "json":
+            if effective_options.request.force_json_output or prompt_mode == "json":
                 prompt = constants.DEFAULT_AI_VISION_OCR_JSON_PROMPT
             else:
                 prompt = constants.DEFAULT_AI_VISION_OCR_PROMPT
@@ -131,7 +137,10 @@ def call_ai_vision_ocr_service(image_pil, provider='siliconflow', api_key=None, 
             ),
             logger_instance=logger,
         )
-        content = str(result.parsed or "").strip()
+        content = result.parsed
+        if not isinstance(content, str) or not content.strip():
+            raise RuntimeError("AI视觉OCR 执行器返回了无效结果")
+        content = content.strip()
 
         elapsed_time = time.time() - start_time
         logger.info(f"{provider_lower} 视觉OCR识别成功，耗时: {elapsed_time:.2f}秒")
@@ -139,6 +148,4 @@ def call_ai_vision_ocr_service(image_pil, provider='siliconflow', api_key=None, 
         return content
     except Exception as e:
         logger.error(f"调用AI视觉OCR服务 ({provider}) 时发生顶层异常: {e}", exc_info=True)
-        if is_memory_allocation_error(e):
-            raise
-        return ""
+        raise

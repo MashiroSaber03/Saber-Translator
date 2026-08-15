@@ -12,8 +12,9 @@ const dateStringArbitrary = fc.date({ min: new Date('2020-01-01'), max: new Date
   .map(d => d.toISOString())
 
 const tagDataArbitrary = fc.record({
+  id: fc.uuid(),
   name: fc.string({ minLength: 1, maxLength: 50 }),
-  color: fc.option(fc.hexaString({ minLength: 6, maxLength: 6 }).map(h => `#${h}`), { nil: undefined }),
+  color: fc.hexaString({ minLength: 6, maxLength: 6 }).map(h => `#${h}`),
 }) as fc.Arbitrary<TagData>
 
 const uniqueTagsArbitrary = (

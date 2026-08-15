@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { ref } from 'vue'
+import { nextTick, ref } from 'vue'
 import { useFolderTree } from '@/composables/useFolderTree'
 import type { ImageData } from '@/types/image'
 
@@ -14,7 +14,6 @@ function createImage(id: string, fileName: string, folderPath = ''): ImageData {
     cleanAssetUrl: null,
     bubbleStates: null,
     translationStatus: 'pending',
-    translationFailed: false,
     fontSize: 24,
     autoFontSize: true,
     fontFamily: 'Arial',
@@ -27,7 +26,6 @@ function createImage(id: string, fileName: string, folderPath = ''): ImageData {
     strokeWidth: 0,
     hasUnsavedChanges: false,
     folderPath,
-    relativePath: folderPath ? `${folderPath}/${fileName}` : fileName,
   }
 }
 
@@ -79,5 +77,20 @@ describe('useFolderTree', () => {
     ]) {
       expect(source).not.toContain(staleNarration)
     }
+  })
+
+  it('returns to root when the current folder no longer exists', async () => {
+    const images = ref([
+      createImage('chapter-1', 'page-1.png', 'book/chapter-a'),
+      createImage('extra-1', 'extra.png', 'book/extras'),
+    ])
+    const tree = useFolderTree(images)
+    tree.enterFolder('book/chapter-a')
+
+    images.value = [createImage('extra-1', 'extra.png', 'book/extras')]
+    await nextTick()
+
+    expect(tree.currentFolderPath.value).toBe('')
+    expect(tree.currentSubfolders.value.map(folder => folder.name)).toEqual(['book'])
   })
 })

@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { onUnmounted, ref } from 'vue'
+import { onUnmounted, ref, watch } from 'vue'
 import UiFileInput from '@/components/ui/UiFileInput.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import { attachmentTypeLabel, type PendingAttachmentCard } from '../characterStudioPreviewHelpers'
 
-defineProps<{
+const props = defineProps<{
+  acceptedChatSubmissionCount?: number
   chatAbortable?: boolean
   chatStreaming: boolean
 }>()
@@ -19,6 +20,34 @@ const emit = defineEmits<{
 const chatInput = ref('')
 const pendingFiles = ref<PendingAttachmentCard[]>([])
 const attachmentInput = ref<InstanceType<typeof UiFileInput> | null>(null)
+const submissionPending = ref(false)
+let acceptedCountAtSubmission = 0
+
+function clearDraft() {
+  chatInput.value = ''
+  pendingFiles.value.forEach(item => URL.revokeObjectURL(item.previewUrl))
+  pendingFiles.value = []
+  submissionPending.value = false
+}
+
+watch(
+  () => props.acceptedChatSubmissionCount ?? 0,
+  acceptedCount => {
+    if (
+      submissionPending.value &&
+      acceptedCount !== acceptedCountAtSubmission
+    ) clearDraft()
+  }
+)
+
+watch(
+  () => props.chatStreaming,
+  (streaming, wasStreaming) => {
+    if (!streaming && wasStreaming && submissionPending.value) {
+      submissionPending.value = false
+    }
+  }
+)
 
 function pickAttachments() {
   attachmentInput.value?.click()
@@ -45,11 +74,13 @@ function removePendingFile(index: number) {
 
 function sendChat() {
   const content = chatInput.value.trim()
-  if (!content && pendingFiles.value.length === 0) return
+  if (
+    props.chatStreaming ||
+    (!content && pendingFiles.value.length === 0)
+  ) return
+  acceptedCountAtSubmission = props.acceptedChatSubmissionCount ?? 0
+  submissionPending.value = true
   emit('send-chat', { content, attachments: pendingFiles.value.map(item => item.file) })
-  chatInput.value = ''
-  pendingFiles.value.forEach(item => URL.revokeObjectURL(item.previewUrl))
-  pendingFiles.value = []
 }
 
 onUnmounted(() => {

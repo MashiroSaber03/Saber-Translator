@@ -39,6 +39,8 @@ class LargeImageDetectorWrapper:
         detector: BaseTextDetector,
         target_size: int = DEFAULT_TARGET_SIZE
     ):
+        if isinstance(target_size, bool) or not isinstance(target_size, int) or target_size <= 0:
+            raise ValueError("长图检测目标尺寸必须是正整数")
         self.detector = detector
         self.target_size = target_size
     
@@ -47,15 +49,19 @@ class LargeImageDetectorWrapper:
         image: Image.Image,
         merge_lines: bool = None,
         edge_ratio_threshold: float = 0.0,
-        expand_ratio: float = 0,
-        expand_top: float = 0,
-        expand_bottom: float = 0,
-        expand_left: float = 0,
-        expand_right: float = 0,
-        **kwargs
+        sort_method: str = 'smart',
+        right_to_left: bool = True,
+        enable_aux_yolo_detection: bool = None,
+        aux_yolo_conf_threshold: float = None,
+        aux_yolo_overlap_threshold: float = None,
     ) -> DetectionResult:
         """带自动切割的检测"""
-        img_np = np.array(image.convert('RGB'))
+        converted = image.convert('RGB')
+        try:
+            img_np = np.array(converted)
+        finally:
+            if converted is not image:
+                converted.close()
         img_cv = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
         im_w, im_h = image.width, image.height
         
@@ -67,12 +73,11 @@ class LargeImageDetectorWrapper:
                 image,
                 merge_lines=merge_lines,
                 edge_ratio_threshold=edge_ratio_threshold,
-                expand_ratio=expand_ratio,
-                expand_top=expand_top,
-                expand_bottom=expand_bottom,
-                expand_left=expand_left,
-                expand_right=expand_right,
-                **kwargs
+                sort_method=sort_method,
+                right_to_left=right_to_left,
+                enable_aux_yolo_detection=enable_aux_yolo_detection,
+                aux_yolo_conf_threshold=aux_yolo_conf_threshold,
+                aux_yolo_overlap_threshold=aux_yolo_overlap_threshold,
             )
         
         logger.info(f"图像尺寸过大 ({im_w}x{im_h})，启用切割检测")
@@ -81,12 +86,11 @@ class LargeImageDetectorWrapper:
             img_cv, im_w, im_h,
             merge_lines=merge_lines if merge_lines is not None else self.detector.requires_merge,
             edge_ratio_threshold=edge_ratio_threshold,
-            expand_ratio=expand_ratio,
-            expand_top=expand_top,
-            expand_bottom=expand_bottom,
-            expand_left=expand_left,
-            expand_right=expand_right,
-            **kwargs
+            sort_method=sort_method,
+            right_to_left=right_to_left,
+            enable_aux_yolo_detection=enable_aux_yolo_detection,
+            aux_yolo_conf_threshold=aux_yolo_conf_threshold,
+            aux_yolo_overlap_threshold=aux_yolo_overlap_threshold,
         )
     
     def _detect_with_slicing(
@@ -96,12 +100,11 @@ class LargeImageDetectorWrapper:
         im_h: int,
         merge_lines: bool,
         edge_ratio_threshold: float,
-        expand_ratio: float,
-        expand_top: float,
-        expand_bottom: float,
-        expand_left: float,
-        expand_right: float,
-        **kwargs
+        sort_method: str = 'smart',
+        right_to_left: bool = True,
+        enable_aux_yolo_detection: bool = None,
+        aux_yolo_conf_threshold: float = None,
+        aux_yolo_overlap_threshold: float = None,
     ) -> DetectionResult:
         """执行切割检测"""
         
@@ -109,31 +112,14 @@ class LargeImageDetectorWrapper:
         patches, context = slice_image_for_detection(
             img_cv,
             tgt_size=self.target_size,
-            verbose=True
         )
         
         if not patches or not context.is_rearranged:
-            logger.warning("切割失败，回退到普通检测")
-            img_pil = Image.fromarray(cv2.cvtColor(img_cv, cv2.COLOR_BGR2RGB))
-            return self.detector.detect(
-                img_pil,
-                merge_lines=merge_lines,
-                edge_ratio_threshold=edge_ratio_threshold,
-                expand_ratio=expand_ratio,
-                expand_top=expand_top,
-                expand_bottom=expand_bottom,
-                expand_left=expand_left,
-                expand_right=expand_right,
-                **kwargs
-            )
+            raise RuntimeError("长图切片未生成有效结果")
         
         # 2. 逐切片检测
         all_textlines = []
-        all_masks = []
-        enable_aux_yolo_detection = kwargs.pop('enable_aux_yolo_detection', None)
-        aux_yolo_conf_threshold = kwargs.pop('aux_yolo_conf_threshold', None)
-        aux_yolo_overlap_threshold = kwargs.pop('aux_yolo_overlap_threshold', None)
-
+        patch_masks = []
         if enable_aux_yolo_detection is None:
             from src.shared import constants
 
@@ -144,7 +130,11 @@ class LargeImageDetectorWrapper:
         for patch_idx, patch in enumerate(patches):
             logger.info(f"检测切片 {patch_idx + 1}/{len(patches)}...")
             
-            patch_textlines, patch_mask = self.detector._detect_raw(patch, **kwargs)
+            patch_textlines, patch_mask = BaseTextDetector._validate_raw_result(
+                self.detector._detect_raw(patch),
+                patch.shape[1],
+                patch.shape[0],
+            )
             if enable_aux_yolo_detection:
                 patch_textlines = maybe_merge_with_aux_yolo(
                     patch,
@@ -165,15 +155,12 @@ class LargeImageDetectorWrapper:
                 all_textlines.extend(transformed_textlines)
                 logger.info(f"  切片 {patch_idx + 1}: 坐标转换后 {len(transformed_textlines)} 个文本行")
             
-            if patch_mask is not None:
-                all_masks.append(patch_mask)
+            patch_masks.append(patch_mask)
         
         logger.info(f"切割检测完成: 共检测到 {len(all_textlines)} 个文本行 (来自 {len(patches)} 个切片)")
         
         # 3. 合并掩码
-        final_mask = None
-        if all_masks:
-            final_mask = merge_masks_from_patches(all_masks, context)
+        final_mask = merge_masks_from_patches(patch_masks, context)
         
         # 4. 处理文本行
         if not all_textlines:
@@ -205,12 +192,10 @@ class LargeImageDetectorWrapper:
         
         # 6. 后处理
         blocks = postprocess_blocks(
-            blocks, im_w, im_h,
-            expand_ratio=expand_ratio,
-            expand_top=expand_top,
-            expand_bottom=expand_bottom,
-            expand_left=expand_left,
-            expand_right=expand_right
+            blocks,
+            sort_method=sort_method,
+            img=img_cv,
+            right_to_left=right_to_left,
         )
         
         return DetectionResult(

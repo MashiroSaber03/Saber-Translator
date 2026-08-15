@@ -13,14 +13,19 @@ import UiNumberField from '@/components/ui/UiNumberField.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import type { NoteData } from '@/types/insight'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   editingNote: NoteData | null
+  isSaving?: boolean
+  maxPage?: number
   noteContent: string
   notePageNum: number | null
   noteTags: string
   noteTitle: string
   visible: boolean
-}>()
+}>(), {
+  isSaving: false,
+  maxPage: undefined,
+})
 
 const emit = defineEmits<{
   (event: 'close'): void
@@ -52,7 +57,10 @@ const noteTagsModel = computed({
   set: value => emit('update:noteTags', value),
 })
 
-const saveDisabled = computed(() => props.editingNote?.type !== 'qa' && !props.noteContent.trim())
+const saveDisabled = computed(() => (
+  props.isSaving
+  || (props.editingNote?.type !== 'qa' && !props.noteContent.trim())
+))
 const qaCitationChips = computed<ProductChipItem[]>(() => {
   return props.editingNote?.citations?.map(citation => ({
     id: citation.page,
@@ -77,6 +85,9 @@ function showCitationPage(id: string | number): void {
     frame-variant="soft"
     width="90%"
     max-width="450px"
+    :show-close-button="!isSaving"
+    :close-on-esc="!isSaving"
+    :close-on-overlay="!isSaving"
     @close="$emit('close')"
   >
     <template #title>
@@ -91,11 +102,11 @@ function showCitationPage(id: string | number): void {
           </ProductDetailSection>
 
           <ProductDetailSection label="回答" scroll>
-            {{ editingNote.answer }}
+            {{ editingNote.content }}
           </ProductDetailSection>
 
           <ProductDetailSection
-            v-if="editingNote.citations && editingNote.citations.length > 0"
+            v-if="editingNote.citations.length > 0"
             label="引用页码"
             :framed="false"
           >
@@ -121,6 +132,7 @@ function showCitationPage(id: string | number): void {
             id="noteEditorQaTitle"
             v-model="noteTitleModel"
             type="text"
+            :disabled="isSaving"
             placeholder="修改标题..."
           />
         </UiField>
@@ -137,6 +149,7 @@ function showCitationPage(id: string | number): void {
             id="noteEditorTitle"
             v-model="noteTitleModel"
             type="text"
+            :disabled="isSaving"
             placeholder="给笔记起个标题..."
           />
         </UiField>
@@ -152,6 +165,7 @@ function showCitationPage(id: string | number): void {
             v-model="noteContentModel"
             rows="5"
             variant="panel"
+            :disabled="isSaving"
             placeholder="写下你的想法..."
           />
         </UiField>
@@ -168,6 +182,8 @@ function showCitationPage(id: string | number): void {
             nullable
             aria-label="关联页码"
             :min="1"
+            :max="maxPage"
+            :disabled="isSaving"
           />
         </UiField>
 
@@ -181,6 +197,7 @@ function showCitationPage(id: string | number): void {
             id="noteEditorTags"
             v-model="noteTagsModel"
             type="text"
+            :disabled="isSaving"
             placeholder="多个标签用逗号分隔，如: 角色,剧情"
           />
         </UiField>
@@ -192,13 +209,14 @@ function showCitationPage(id: string | number): void {
         aria-label="笔记编辑操作"
         variant="dialog"
       >
-        <UiButton variant="secondary" @click="$emit('close')">取消</UiButton>
+        <UiButton variant="secondary" :disabled="isSaving" @click="$emit('close')">取消</UiButton>
         <UiButton
           variant="primary"
+          :loading="isSaving"
           :disabled="saveDisabled"
           @click="$emit('save')"
         >
-          保存
+          {{ isSaving ? '保存中...' : '保存' }}
         </UiButton>
       </ProductActionRow>
     </template>

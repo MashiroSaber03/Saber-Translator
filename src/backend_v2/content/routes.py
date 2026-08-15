@@ -11,8 +11,12 @@ from sqlalchemy import Engine
 
 from src.backend_v2.api.request_helpers import (
     error_response as _error,
+    integer_value as _integer_value,
     json_body as _json_body,
     require_idempotency_key as _require_idempotency_key,
+    required_boolean as _required_boolean,
+    required_integer as _required_integer,
+    required_string as _required_string,
     validate_multipart_fields as _validate_multipart_fields,
 )
 from src.backend_v2.content.image_import import (
@@ -122,7 +126,7 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
         cover = request.files.get("cover")
         cover_asset = importer.publish_cover(cover.stream) if cover else None
         created = repository.create_book(
-            title=str(body.get("title", "")),
+            title=_required_string(body, "title"),
             tag_ids=tag_ids,
             cover_asset_id=cover_asset.id if cover_asset else None,
         )
@@ -136,6 +140,9 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
     def update_book(book_id: str) -> Response:
         _require_idempotency_key()
         body = _book_body(update=True)
+        title = body.get("title")
+        if title is not None and not isinstance(title, str):
+            raise ValueError("title must be a string")
         tag_ids = body.get("tagIds")
         if tag_ids is not None and (
             not isinstance(tag_ids, list)
@@ -143,14 +150,20 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
         ):
             raise ValueError("tagIds must be a string array")
         cover = request.files.get("cover")
+        if not body and cover is None:
+            raise ValueError("book update must contain at least one field")
         cover_asset = importer.publish_cover(cover.stream) if cover else None
-        clear_cover = _as_bool(body.get("clearCover", False))
+        clear_cover = (
+            _required_boolean(body, "clearCover")
+            if "clearCover" in body
+            else False
+        )
         result = repository.update_book(
             book_id=book_id,
-            title=str(body.get("title", "")),
+            title=title,
             tag_ids=tag_ids,
             cover_asset_id=cover_asset.id if cover_asset else None,
-            replace_cover=bool(cover_asset) or clear_cover,
+            replace_cover=cover_asset is not None or clear_cover,
         )
         return jsonify(result)
 
@@ -188,7 +201,7 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
         repository.batch_update_tags(
             book_ids=book_ids,
             tag_ids=tag_ids,
-            action=str(body.get("action", "")),
+            action=_required_string(body, "action"),
         )
         return jsonify({"updated": len(book_ids)})
 
@@ -202,7 +215,7 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
         body = _json_body(allowed_keys={"title"})
         created = repository.create_chapter(
             book_id=book_id,
-            title=str(body.get("title", "")),
+            title=_required_string(body, "title"),
         )
         return jsonify(created), 201
 
@@ -213,7 +226,7 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
         return jsonify(
             repository.update_chapter(
                 chapter_id=chapter_id,
-                title=str(body.get("title", "")),
+                title=_required_string(body, "title"),
             )
         )
 
@@ -235,15 +248,27 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
         revision = repository.reorder_chapters(
             book_id=book_id,
             ordered_ids=ordered_ids,
-            base_revision=int(body.get("baseRevision", 0)),
+            base_revision=_required_integer(
+                body,
+                "baseRevision",
+                minimum=1,
+            ),
         )
         return jsonify({"chapterOrderRevision": revision})
 
     @blueprint.get("/chapters/<chapter_id>/pages")
     def list_pages(chapter_id: str) -> Response:
-        all_pages = request.args.get("all") == "1"
-        cursor = int(request.args.get("cursor", "0"))
-        limit = int(request.args.get("limit", "50"))
+        all_pages = _query_boolean("all", default=False)
+        cursor = _integer_value(
+            request.args.get("cursor", "0"),
+            "cursor",
+            minimum=0,
+        )
+        limit = _integer_value(
+            request.args.get("limit", "50"),
+            "limit",
+            minimum=1,
+        )
         return jsonify(
             repository.list_pages(
                 chapter_id=chapter_id,
@@ -275,7 +300,11 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
         revision = repository.reorder_pages(
             chapter_id=chapter_id,
             ordered_ids=ordered_ids,
-            base_revision=int(body.get("baseRevision", 0)),
+            base_revision=_required_integer(
+                body,
+                "baseRevision",
+                minimum=1,
+            ),
         )
         return jsonify({"pageOrderRevision": revision})
 
@@ -297,8 +326,10 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
             raise ValueError("multipart field 'file' is required")
         result, replayed = importer.replace_page_source(
             page_id=page_id,
-            base_source_revision=int(
-                request.form.get("baseSourceRevision", "0")
+            base_source_revision=_integer_value(
+                request.form.get("baseSourceRevision"),
+                "baseSourceRevision",
+                minimum=1,
             ),
             upload=upload.stream,
             idempotency_key=idempotency_key,
@@ -336,7 +367,11 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
         return jsonify(
             repository.update_chapter_settings_memory(
                 chapter_id=chapter_id,
-                base_revision=int(body.get("baseRevision", 0)),
+                base_revision=_required_integer(
+                    body,
+                    "baseRevision",
+                    minimum=1,
+                ),
                 payload=payload,
             )
         )
@@ -348,7 +383,7 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
         return jsonify(
             repository.update_last_visited_page(
                 chapter_id=chapter_id,
-                page_id=str(body.get("pageId", "")),
+                page_id=_required_string(body, "pageId"),
             )
         )
 
@@ -366,7 +401,11 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
         return jsonify(
             repository.update_constraints(
                 book_id=book_id,
-                base_revision=int(body.get("baseRevision", 0)),
+                base_revision=_required_integer(
+                    body,
+                    "baseRevision",
+                    minimum=1,
+                ),
                 payload=payload,
             )
         )
@@ -391,7 +430,11 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
             optional_arguments["default_font_id"] = body["defaultFontId"]
         result, replayed = repository.mutate_page_document(
             page_id=page_id,
-            base_revision=int(body.get("baseRevision", 0)),
+            base_revision=_required_integer(
+                body,
+                "baseRevision",
+                minimum=1,
+            ),
             mutations=mutations,
             idempotency_key=idempotency_key,
             page_style_defaults_patch=_optional_object(
@@ -424,9 +467,13 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
                 else {"baseRevision", "fields"}
             )
         )
-        fields = body.get("fields", {})
-        if not isinstance(fields, dict):
-            raise ValueError("fields must be an object")
+        if operation == "delete":
+            fields: dict[str, object] = {}
+        else:
+            fields_value = body.get("fields")
+            if not isinstance(fields_value, dict):
+                raise ValueError("fields must be an object")
+            fields = fields_value
         correlation_id = str(
             uuid.uuid5(
                 uuid.NAMESPACE_URL,
@@ -442,7 +489,11 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
             mutation["bubbleId"] = bubble_id
         result, replayed = repository.mutate_page_document(
             page_id=page_id,
-            base_revision=int(body.get("baseRevision", 0)),
+            base_revision=_required_integer(
+                body,
+                "baseRevision",
+                minimum=1,
+            ),
             mutations=[mutation],
             idempotency_key=idempotency_key,
         )
@@ -528,9 +579,14 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
 
     @blueprint.get("/translation/bootstrap")
     def translation_bootstrap() -> Response:
+        book_id = request.args.get("bookId")
+        chapter_id = request.args.get("chapterId")
+        if book_id is not None or chapter_id is not None:
+            if not book_id or not book_id.strip() or not chapter_id or not chapter_id.strip():
+                raise ValueError("bookId and chapterId must be non-empty strings")
         result = repository.translation_bootstrap(
-            book_id=request.args.get("bookId"),
-            chapter_id=request.args.get("chapterId"),
+            book_id=book_id,
+            chapter_id=chapter_id,
         )
         result["settings"] = settings_repository.load()
         result["fonts"] = font_repository.list()
@@ -547,22 +603,25 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
         body = _json_body(
             allowed_keys={"mode", "chapterTitle", "title", "bookId"}
         )
-        mode = str(body.get("mode", ""))
+        mode = _required_string(body, "mode")
         if mode not in {"new_book", "existing_book"}:
             raise ValueError("mode must be new_book or existing_book")
+        chapter_title = _required_string(body, "chapterTitle")
+        if mode == "new_book":
+            if "bookId" in body:
+                raise ValueError("bookId is not valid for new_book mode")
+            new_book_title = _required_string(body, "title")
+            target_book_id = None
+        else:
+            if "title" in body:
+                raise ValueError("title is not valid for existing_book mode")
+            new_book_title = None
+            target_book_id = _required_string(body, "bookId")
         return jsonify(
             repository.promote_quick_workspace(
-                chapter_title=str(body.get("chapterTitle", "")),
-                new_book_title=(
-                    str(body["title"])
-                    if mode == "new_book" and body.get("title") is not None
-                    else None
-                ),
-                target_book_id=(
-                    str(body["bookId"])
-                    if mode == "existing_book" and body.get("bookId") is not None
-                    else None
-                ),
+                chapter_title=chapter_title,
+                new_book_title=new_book_title,
+                target_book_id=target_book_id,
             )
         )
 
@@ -577,8 +636,8 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
         return (
             jsonify(
                 repository.create_tag(
-                    name=str(body.get("name", "")),
-                    color=str(body.get("color", "")),
+                    name=_required_string(body, "name"),
+                    color=_required_string(body, "color"),
                 )
             ),
             201,
@@ -591,8 +650,8 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
         return jsonify(
             repository.update_tag(
                 tag_id=tag_id,
-                name=str(body.get("name", "")),
-                color=str(body.get("color", "")),
+                name=_required_string(body, "name"),
+                color=_required_string(body, "color"),
             )
         )
 
@@ -615,33 +674,48 @@ def _book_body(*, update: bool) -> dict[str, object]:
         allowed_form_keys=allowed_keys,
         allowed_file_keys={"cover"},
     )
-    raw_tags = request.form.get("tagIds", "[]")
-    try:
-        tag_ids = json.loads(raw_tags)
-    except json.JSONDecodeError as exc:
-        raise ValueError("tagIds must be a JSON string array") from exc
-    body: dict[str, object] = {
-        "title": request.form.get("title", ""),
-        "tagIds": tag_ids,
-    }
-    if update:
-        body["clearCover"] = request.form.get("clearCover", "false")
+    body: dict[str, object] = {}
+    if not update or "title" in request.form:
+        body["title"] = request.form.get("title", "")
+    if not update or "tagIds" in request.form:
+        raw_tags = request.form.get("tagIds", "[]")
+        try:
+            body["tagIds"] = json.loads(raw_tags)
+        except json.JSONDecodeError as exc:
+            raise ValueError("tagIds must be a JSON string array") from exc
+    if update and "clearCover" in request.form:
+        body["clearCover"] = _multipart_boolean("clearCover")
     return body
 
 
-def _as_bool(value: object) -> bool:
-    if isinstance(value, bool):
-        return value
-    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+def _multipart_boolean(key: str) -> bool:
+    value = request.form[key].strip().casefold()
+    if value in {"1", "true"}:
+        return True
+    if value in {"0", "false"}:
+        return False
+    raise ValueError(f"{key} must be a boolean")
+
+
+def _query_boolean(key: str, *, default: bool) -> bool:
+    value = request.args.get(key)
+    if value is None:
+        return default
+    normalized = value.strip().casefold()
+    if normalized in {"1", "true"}:
+        return True
+    if normalized in {"0", "false"}:
+        return False
+    raise ValueError(f"{key} must be a boolean")
 
 
 def _optional_object(
     body: dict[str, object],
     key: str,
 ) -> dict[str, object] | None:
-    value = body.get(key)
-    if value is None:
+    if key not in body:
         return None
+    value = body[key]
     if not isinstance(value, dict):
         raise ValueError(f"{key} must be an object")
     return value
@@ -651,9 +725,9 @@ def _optional_string_array(
     body: dict[str, object],
     key: str,
 ) -> list[str] | None:
-    value = body.get(key)
-    if value is None:
+    if key not in body:
         return None
+    value = body[key]
     if not isinstance(value, list) or not all(
         isinstance(item, str) for item in value
     ):

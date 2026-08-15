@@ -39,18 +39,21 @@ import type {
   CharacterStudioCandidate,
   CharacterStudioDocument,
   CharacterStudioEditorPendingState,
+  CharacterStudioGenerationSection,
   CharacterStudioGreetingOption,
   CharacterStudioSummary,
   ExportDiagnostic,
 } from '@/types/characterStudio'
 import { deepClone } from '@/utils/deepClone'
+import { characterStudioDocumentContent } from '@/utils/characterStudioDocumentContent'
 
 export const useCharacterStudioStore = defineStore('character-studio', () => {
   const bookId = ref('')
   const documents = ref<CharacterStudioSummary[]>([])
   const candidates = ref<CharacterStudioCandidate[]>([])
-  const hasTimeline = ref(true)
+  const hasTimeline = ref(false)
   const currentDocument = ref<CharacterStudioDocument | null>(null)
+  const chatIndexRevision = ref<number | null>(null)
   const activeChatSession = ref<CharacterStudioChatSession | null>(null)
   const archivedChatSessions = ref<CharacterStudioChatSessionSummary[]>([])
   const availableChatGreetings = ref<CharacterStudioGreetingOption[]>([])
@@ -60,7 +63,9 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   const agentMessages = ref<Array<{ role: 'user' | 'assistant'; content: string }>>([])
   const agentHtmlPreview = ref('')
   const pendingAgentPatch = ref<CharacterStudioAgentPatchV2 | null>(null)
-  const activeEditorTab = ref<'overview' | 'character' | 'greetings' | 'lorebook' | 'scripts' | 'export'>('overview')
+  const activeEditorTab = ref<
+    'overview' | 'character' | 'greetings' | 'lorebook' | 'scripts' | 'export'
+  >('overview')
   const activeScriptTab = ref<'regex' | 'tasks'>('regex')
   const resourcePanelOpen = ref(false)
   const activeWorkspaceTab = ref<'chat' | 'assistant' | 'runtime'>('chat')
@@ -80,6 +85,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   const isDeleting = ref(false)
   const isValidating = ref(false)
   const openingDocumentId = ref('')
+  const creatingCandidateId = ref('')
   const creatingCandidateName = ref('')
   const generatingSection = ref<string | null>(null)
   const downloadingFormat = ref<string | null>(null)
@@ -104,14 +110,16 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     errorMessage,
     applySession: session => applyChatStatePayload({ active_session: session }),
     flushPendingRehydrate: flushPendingChatRehydrate,
+    reloadChatState: loadChatState,
   })
   const {
     activeChatOperationId,
+    acceptedChatSubmissionCount,
     isChatStreaming,
     abortActiveChatOperation,
     abortActiveChatStream,
-    sendChatMessage,
-    regenerateChatMessage,
+    sendChatMessage: sendChatMessageWithoutDocumentFlush,
+    regenerateChatMessage: regenerateChatMessageWithoutDocumentFlush,
   } = chat
 
   const canUndoPatch = computed(() => patchSnapshot.value !== null)
@@ -176,6 +184,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     chatStateLoadRequestId += 1
     chatPromptPreviewRequestId += 1
     activeChatSession.value = null
+    chatIndexRevision.value = null
     archivedChatSessions.value = []
     availableChatGreetings.value = []
     chatPromptPreview.value = ''
@@ -191,7 +200,11 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     return requestId === documentLoadRequestId && bookId.value === requestedBookId
   }
 
-  function isActiveChatStateRequest(requestId: number, requestedBookId: string, requestedDocId: string) {
+  function isActiveChatStateRequest(
+    requestId: number,
+    requestedBookId: string,
+    requestedDocId: string
+  ) {
     return (
       requestId === chatStateLoadRequestId &&
       bookId.value === requestedBookId &&
@@ -203,7 +216,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     requestId: number,
     requestedBookId: string,
     requestedDocId: string,
-    requestedSessionId: string,
+    requestedSessionId: string
   ) {
     return (
       requestId === chatPromptPreviewRequestId &&
@@ -281,6 +294,10 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     errorMessage.value = ''
     if (isBookChanged) {
       resetWorkspaceState()
+      documents.value = []
+      candidates.value = []
+      hasTimeline.value = false
+      selectedLibrarySearch.value = ''
     }
     bookId.value = nextBookId
     try {
@@ -315,6 +332,9 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     try {
       const document = await getCharacterStudioDocument(docId)
       if (!isActiveDocumentRequest(requestId, requestedBookId)) return
+      if (document.bookId !== requestedBookId) {
+        throw new Error('角色文档不属于当前书籍')
+      }
       await runWithoutAutosave(async () => {
         abortActiveChatStream()
         currentDocument.value = document
@@ -361,17 +381,25 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     }
   }
 
-  async function createDocumentFromCandidate(candidateName: string) {
+  async function createDocumentFromCandidate(candidateId: string) {
     if (!bookId.value) return
-    creatingCandidateName.value = candidateName
+    const candidate = candidates.value.find(item => item.id === candidateId)
+    if (!candidate) {
+      throw createActionError(new Error('候选角色不存在'), '创建角色失败')
+    }
+    creatingCandidateId.value = candidateId
+    creatingCandidateName.value = candidate.name
     clearErrorMessage()
     try {
-      const document = await createCharacterStudioDocument(bookId.value, { candidate_name: candidateName })
+      const document = await createCharacterStudioDocument(bookId.value, {
+        candidate_id: candidateId,
+      })
       await loadWorkspace(bookId.value)
       await openDocument(document.id)
     } catch (error) {
       throw createActionError(error, '创建角色失败')
     } finally {
+      creatingCandidateId.value = ''
       creatingCandidateName.value = ''
     }
   }
@@ -383,6 +411,8 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
       autosaveTimer = null
     }
     if (activeDocumentSave) return activeDocumentSave
+    if (buildAutosaveFingerprint(currentDocument.value) === lastSyncedFingerprint.value)
+      return Promise.resolve()
 
     activeDocumentSave = savePendingDocumentEdits().finally(() => {
       isSaving.value = false
@@ -406,23 +436,16 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
         }
         const document = await saveCharacterStudioDocument(snapshot.id, snapshot)
 
-        if (
-          bookId.value !== requestedBookId
-          || currentDocument.value?.id !== snapshot.id
-        ) return
+        if (bookId.value !== requestedBookId || currentDocument.value?.id !== snapshot.id) return
 
-        chatStateChanged ||= (
-          buildChatFingerprint(snapshot) !== lastSyncedChatFingerprint.value
-          || buildChatFingerprint(document) !== lastSyncedChatFingerprint.value
-        )
+        chatStateChanged ||=
+          buildChatFingerprint(snapshot) !== lastSyncedChatFingerprint.value ||
+          buildChatFingerprint(document) !== lastSyncedChatFingerprint.value
         const editedWhileSaving =
           buildAutosaveFingerprint(currentDocument.value) !== snapshotFingerprint
         await runWithoutAutosave(async () => {
           if (editedWhileSaving && currentDocument.value) {
-            currentDocument.value = rebaseUnsavedDocument(
-              currentDocument.value,
-              document,
-            )
+            currentDocument.value = rebaseUnsavedDocument(currentDocument.value, document)
           } else {
             currentDocument.value = document
           }
@@ -436,9 +459,10 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
           chatStateChanged = false
         }
         if (
-          currentDocument.value
-          && buildAutosaveFingerprint(currentDocument.value) !== lastSyncedFingerprint.value
-        ) continue
+          currentDocument.value &&
+          buildAutosaveFingerprint(currentDocument.value) !== lastSyncedFingerprint.value
+        )
+          continue
         return
       }
     } catch (error) {
@@ -458,10 +482,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
 
   function buildAutosaveFingerprint(document: CharacterStudioDocument | null) {
     if (!document) return ''
-    const snapshot = deepClone(document)
-    snapshot.meta.updated_at = ''
-    snapshot.status.last_validated_at = null
-    return JSON.stringify(snapshot)
+    return JSON.stringify(characterStudioDocumentContent(document))
   }
 
   function buildChatFingerprint(document: CharacterStudioDocument | null) {
@@ -480,19 +501,15 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   function updateDocumentSummary(document: CharacterStudioDocument | null) {
     if (!document) return
     const index = documents.value.findIndex(item => item.id === document.id)
-    const previous = index >= 0 ? documents.value[index] : undefined
     const summary: CharacterStudioSummary = {
       id: document.id,
       title: document.meta.title,
       origin: document.origin.type,
       source_character: document.origin.source_character ?? null,
-      updated_at: document.meta.updated_at || document.updatedAt || '',
+      updated_at: document.updatedAt,
       tags: [...document.meta.tags],
       is_favorite: document.status.is_favorite,
-      has_avatar: document.avatarUrl === undefined
-        ? previous?.has_avatar ?? false
-        : Boolean(document.avatarUrl),
-      sample_pages: previous?.sample_pages ?? [],
+      has_avatar: Boolean(document.avatarUrl),
     }
     if (index < 0) {
       documents.value = [summary, ...documents.value]
@@ -505,20 +522,25 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
 
   function rebaseUnsavedDocument(
     localDocument: CharacterStudioDocument,
-    savedDocument: CharacterStudioDocument,
+    savedDocument: CharacterStudioDocument
   ): CharacterStudioDocument {
     const rebased = deepClone(localDocument)
     rebased.revision = savedDocument.revision
     rebased.avatarUrl = savedDocument.avatarUrl
     rebased.createdAt = savedDocument.createdAt
     rebased.updatedAt = savedDocument.updatedAt
-    rebased.meta.created_at = savedDocument.meta.created_at
-    rebased.meta.updated_at = savedDocument.meta.updated_at
     return rebased
   }
 
   function clearErrorMessage() {
     errorMessage.value = ''
+  }
+
+  function requireChatIndexRevision(): number {
+    if (chatIndexRevision.value === null) {
+      throw new Error('聊天状态版本缺失，请重新加载')
+    }
+    return chatIndexRevision.value
   }
 
   function createActionError(error: unknown, fallback: string): Error {
@@ -556,13 +578,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     clearErrorMessage()
     try {
       await deleteCharacterStudioDocument(docId)
-      currentDocument.value = null
-      markDocumentSynced(null)
-      invalidateDocumentDerivedCaches()
-      agentMessages.value = []
-      pendingAgentPatch.value = null
-      agentHtmlPreview.value = ''
-      patchSnapshot.value = null
+      resetWorkspaceState()
       await loadWorkspace(bookId.value)
     } catch (error) {
       throw createActionError(error, '删除失败')
@@ -571,12 +587,18 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     }
   }
 
-  async function generateSection(section: string) {
+  async function generateSection(section: CharacterStudioGenerationSection) {
     if (!bookId.value || !currentDocument.value) return
     generatingSection.value = section
     clearErrorMessage()
     try {
-      const document = await generateCharacterStudioSection(currentDocument.value.id, section)
+      await persistCurrentDocument()
+      if (!currentDocument.value) return
+      const document = await generateCharacterStudioSection(
+        currentDocument.value.id,
+        currentDocument.value.revision,
+        section
+      )
       await runWithoutAutosave(async () => {
         currentDocument.value = document
         markDocumentSynced(document)
@@ -596,7 +618,12 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     isValidating.value = true
     clearErrorMessage()
     try {
-      const response = await validateCharacterStudioDocument(currentDocument.value.id)
+      await persistCurrentDocument()
+      if (!currentDocument.value) return
+      const response = await validateCharacterStudioDocument(
+        currentDocument.value.id,
+        currentDocument.value.revision
+      )
       diagnostics.value = {
         valid: response.valid,
         errors: response.errors,
@@ -619,8 +646,13 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     if (!currentDocument.value || !pendingAgentPatch.value) return
     clearErrorMessage()
     try {
-      const nextDocument = applyCharacterStudioAgentPatch(currentDocument.value, pendingAgentPatch.value)
-      if (buildAutosaveFingerprint(nextDocument) === buildAutosaveFingerprint(currentDocument.value)) {
+      const nextDocument = applyCharacterStudioAgentPatch(
+        currentDocument.value,
+        pendingAgentPatch.value
+      )
+      if (
+        buildAutosaveFingerprint(nextDocument) === buildAutosaveFingerprint(currentDocument.value)
+      ) {
         pendingAgentPatch.value = null
         return
       }
@@ -638,9 +670,10 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     if (!patchSnapshot.value) return
     const snapshot = patchSnapshot.value
     const latestDocument = currentDocument.value
-    currentDocument.value = latestDocument?.id === snapshot.id
-      ? rebaseUnsavedDocument(snapshot, latestDocument)
-      : snapshot
+    currentDocument.value =
+      latestDocument?.id === snapshot.id
+        ? rebaseUnsavedDocument(snapshot, latestDocument)
+        : snapshot
     patchSnapshot.value = null
     pendingAgentPatch.value = null
     invalidateDocumentDerivedCaches()
@@ -648,17 +681,35 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   }
 
   async function sendAgentMessage(message: string) {
-    if (!bookId.value || !currentDocument.value || !message.trim()) return
+    if (
+      !bookId.value ||
+      !currentDocument.value ||
+      !message.trim() ||
+      isAgentBusy.value
+    ) return
     isAgentBusy.value = true
     clearErrorMessage()
-    agentMessages.value.push({ role: 'user', content: message })
+    let pendingMessageIndex = -1
     try {
+      await persistCurrentDocument()
+      if (!currentDocument.value) return
+      pendingMessageIndex = agentMessages.value.length
+      agentMessages.value.push({ role: 'user', content: message })
       const content = await runCharacterStudioAgent(currentDocument.value.id, message)
       const output = parseCharacterStudioAgentOutput(content)
       agentMessages.value.push({ role: 'assistant', content })
       pendingAgentPatch.value = output.patch
       agentHtmlPreview.value = output.htmlPreview
     } catch (error) {
+      const pendingMessage = agentMessages.value[pendingMessageIndex]
+      if (
+        pendingMessageIndex >= 0 &&
+        agentMessages.value.length === pendingMessageIndex + 1 &&
+        pendingMessage?.role === 'user' &&
+        pendingMessage.content === message
+      ) {
+        agentMessages.value.splice(pendingMessageIndex, 1)
+      }
       throw createActionError(error, 'Agent 调用失败')
     } finally {
       isAgentBusy.value = false
@@ -666,22 +717,27 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   }
 
   function applyChatStatePayload(payload: {
-    active_session?: CharacterStudioChatSession
+    index_revision?: number
+    active_session?: CharacterStudioChatSession | null
     archived_sessions?: CharacterStudioChatSessionSummary[]
     available_greetings?: CharacterStudioGreetingOption[]
     prompt_preview?: string
   }) {
-    const nextSession = payload.active_session || null
-    if (nextSession) {
-      if (activeChatSession.value?.session_id !== nextSession.session_id) {
+    if ('active_session' in payload) {
+      const nextSession = payload.active_session ?? null
+      if (activeChatSession.value?.session_id !== nextSession?.session_id) {
         chatPromptPreview.value = ''
       }
       activeChatSession.value = nextSession
+      if (nextSession) chatIndexRevision.value = nextSession.index_revision
     }
-    if (payload.archived_sessions) {
+    if (typeof payload.index_revision === 'number') {
+      chatIndexRevision.value = payload.index_revision
+    }
+    if ('archived_sessions' in payload && payload.archived_sessions) {
       archivedChatSessions.value = payload.archived_sessions
     }
-    if (payload.available_greetings) {
+    if ('available_greetings' in payload && payload.available_greetings) {
       availableChatGreetings.value = payload.available_greetings
     }
     if (typeof payload.prompt_preview === 'string') {
@@ -710,12 +766,17 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   }
 
   async function createChatSession(greetingId?: string) {
-    if (!bookId.value || !currentDocument.value) return
-    abortActiveChatStream()
+    if (!bookId.value || !currentDocument.value || isChatStreaming.value) return
     isChatMutating.value = true
     clearErrorMessage()
     try {
-      const state = await createCharacterStudioChatSession(currentDocument.value.id, greetingId)
+      await persistCurrentDocument()
+      if (!currentDocument.value) return
+      const state = await createCharacterStudioChatSession(
+        currentDocument.value.id,
+        requireChatIndexRevision(),
+        greetingId
+      )
       applyChatStatePayload(state)
     } catch (error) {
       throw createActionError(error, '创建聊天会话失败')
@@ -726,12 +787,15 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   }
 
   async function switchChatSession(sessionId: string) {
-    if (!bookId.value || !currentDocument.value || !sessionId) return
-    abortActiveChatStream()
+    if (!bookId.value || !currentDocument.value || !sessionId || isChatStreaming.value) return
     isChatMutating.value = true
     clearErrorMessage()
     try {
-      const state = await switchCharacterStudioChatSession(currentDocument.value.id, sessionId)
+      const state = await switchCharacterStudioChatSession(
+        currentDocument.value.id,
+        sessionId,
+        requireChatIndexRevision()
+      )
       applyChatStatePayload(state)
     } catch (error) {
       throw createActionError(error, '切换聊天会话失败')
@@ -741,18 +805,15 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     }
   }
 
-  async function deleteArchivedChatSession(
-    sessionId: string,
-    revision?: number,
-  ) {
-    if (!bookId.value || !currentDocument.value || !sessionId) return
+  async function deleteArchivedChatSession(sessionId: string, revision: number) {
+    if (!bookId.value || !currentDocument.value || !sessionId || isChatStreaming.value) return
     isChatMutating.value = true
     clearErrorMessage()
     try {
       const state = await deleteCharacterStudioChatSession(
         currentDocument.value.id,
         sessionId,
-        revision,
+        revision
       )
       applyChatStatePayload(state)
     } catch (error) {
@@ -764,14 +825,21 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   }
 
   async function editChatMessage(messageId: string, content: string) {
-    if (!bookId.value || !currentDocument.value || !activeChatSession.value) return
+    if (
+      !bookId.value ||
+      !currentDocument.value ||
+      !activeChatSession.value ||
+      isChatStreaming.value
+    )
+      return
     isChatMutating.value = true
     clearErrorMessage()
     try {
       const session = await editCharacterStudioChatMessage(
         activeChatSession.value.session_id,
+        activeChatSession.value.revision,
         messageId,
-        content,
+        content
       )
       applyChatStatePayload({ active_session: session })
     } catch (error) {
@@ -783,13 +851,20 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   }
 
   async function deleteChatMessage(messageId: string) {
-    if (!bookId.value || !currentDocument.value || !activeChatSession.value) return
+    if (
+      !bookId.value ||
+      !currentDocument.value ||
+      !activeChatSession.value ||
+      isChatStreaming.value
+    )
+      return
     isChatMutating.value = true
     clearErrorMessage()
     try {
       const session = await deleteCharacterStudioChatMessage(
         activeChatSession.value.session_id,
-        messageId,
+        activeChatSession.value.revision,
+        messageId
       )
       applyChatStatePayload({ active_session: session })
     } catch (error) {
@@ -801,12 +876,19 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   }
 
   async function summarizeChatSession() {
-    if (!bookId.value || !currentDocument.value || !activeChatSession.value) return
+    if (
+      !bookId.value ||
+      !currentDocument.value ||
+      !activeChatSession.value ||
+      isChatStreaming.value
+    )
+      return
     isChatSummarizing.value = true
     clearErrorMessage()
     try {
       const session = await summarizeCharacterStudioChatSession(
         activeChatSession.value.session_id,
+        activeChatSession.value.revision
       )
       applyChatStatePayload({ active_session: session })
     } catch (error) {
@@ -822,9 +904,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     isChatExporting.value = true
     clearErrorMessage()
     try {
-      await downloadStudioChatTranscript(
-        activeChatSession.value.session_id,
-      )
+      await downloadStudioChatTranscript(activeChatSession.value.session_id)
     } catch (error) {
       throw createActionError(error, '导出聊天记录失败')
     } finally {
@@ -834,11 +914,17 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   }
 
   async function importChatSession(file: File) {
-    if (!bookId.value || !currentDocument.value) return
+    if (!bookId.value || !currentDocument.value || isChatStreaming.value) return
     isChatImporting.value = true
     clearErrorMessage()
     try {
-      const state = await importCharacterStudioChatSession(currentDocument.value.id, file)
+      await persistCurrentDocument()
+      if (!currentDocument.value) return
+      const state = await importCharacterStudioChatSession(
+        currentDocument.value.id,
+        requireChatIndexRevision(),
+        file
+      )
       applyChatStatePayload(state)
     } catch (error) {
       throw createActionError(error, '导入聊天记录失败')
@@ -859,13 +945,29 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     chatPromptPreview.value = ''
     chatPromptPreviewError.value = ''
     try {
-      const promptPreview = await getCharacterStudioChatPromptPreview(
-        requestedSessionId,
+      await persistCurrentDocument()
+      if (!activeChatSession.value) return
+      const promptPreview = await getCharacterStudioChatPromptPreview(requestedSessionId)
+      if (
+        !isActiveChatPromptPreviewRequest(
+          requestId,
+          requestedBookId,
+          requestedDocId,
+          requestedSessionId
+        )
       )
-      if (!isActiveChatPromptPreviewRequest(requestId, requestedBookId, requestedDocId, requestedSessionId)) return
+        return
       chatPromptPreview.value = promptPreview
     } catch (error) {
-      if (!isActiveChatPromptPreviewRequest(requestId, requestedBookId, requestedDocId, requestedSessionId)) return
+      if (
+        !isActiveChatPromptPreviewRequest(
+          requestId,
+          requestedBookId,
+          requestedDocId,
+          requestedSessionId
+        )
+      )
+        return
       chatPromptPreviewError.value = error instanceof Error ? error.message : '加载提示词预览失败'
       throw createActionError(error, '加载提示词预览失败')
     } finally {
@@ -895,7 +997,13 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     isImportingWorldbook.value = true
     clearErrorMessage()
     try {
-      const document = await importWorldbookIntoCharacterStudioDocument(currentDocument.value.id, file)
+      await persistCurrentDocument()
+      if (!currentDocument.value) return
+      const document = await importWorldbookIntoCharacterStudioDocument(
+        currentDocument.value.id,
+        currentDocument.value.revision,
+        file
+      )
       await runWithoutAutosave(async () => {
         currentDocument.value = document
         markDocumentSynced(document)
@@ -916,6 +1024,8 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     downloadingFormat.value = format
     clearErrorMessage()
     try {
+      await persistCurrentDocument()
+      if (!currentDocument.value) return
       await downloadStudioDocumentExport(currentDocument.value.id, format)
     } catch (error) {
       throw createActionError(error, '导出失败')
@@ -924,12 +1034,23 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     }
   }
 
+  async function sendChatMessage(content: string, attachments: File[] = []): Promise<void> {
+    await persistCurrentDocument()
+    await sendChatMessageWithoutDocumentFlush(content, attachments)
+  }
+
+  async function regenerateChatMessage(messageId: string): Promise<void> {
+    await persistCurrentDocument()
+    await regenerateChatMessageWithoutDocumentFlush(messageId)
+  }
+
   return {
     bookId,
     documents,
     candidates,
     hasTimeline,
     currentDocument,
+    chatIndexRevision,
     activeChatSession,
     archivedChatSessions,
     availableChatGreetings,
@@ -953,6 +1074,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     isChatLoading,
     isChatStreaming,
     activeChatOperationId,
+    acceptedChatSubmissionCount,
     isChatMutating,
     isChatSummarizing,
     isChatImporting,
@@ -965,6 +1087,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     isDeleting,
     isValidating,
     openingDocumentId,
+    creatingCandidateId,
     creatingCandidateName,
     generatingSection,
     downloadingFormat,

@@ -27,6 +27,7 @@ from src.backend_v2.studio.pure import (
     run_state_tasks,
     select_provider_section,
     sort_lorebook_hits,
+    validate_current_document,
 )
 
 
@@ -177,23 +178,33 @@ class DefaultStudioAlgorithms:
         remote_messages: list[dict[str, Any]] = []
         system_parts = [system] if system else []
         has_image_attachments = False
-        for raw in messages:
-            role = str(raw.get("role", "assistant"))
-            content = str(raw.get("content", ""))
+        for index, raw in enumerate(messages):
+            if not isinstance(raw, Mapping):
+                raise ValueError(f"Studio chat message {index} must be an object")
+            role = _required_string(raw.get("role"), f"Studio chat message {index} role")
+            if role not in {"system", "user", "assistant"}:
+                raise ValueError(f"Studio chat message {index} role is invalid")
+            content = _string(raw.get("content"), f"Studio chat message {index} content")
             if role == "system":
                 if content:
                     system_parts.append(content)
                 continue
             attachments = raw.get("attachmentDataUrls", [])
-            if role == "user" and isinstance(attachments, list) and attachments:
+            if not isinstance(attachments, list) or not all(
+                isinstance(value, str) and value
+                for value in attachments
+            ):
+                raise ValueError(
+                    f"Studio chat message {index} attachmentDataUrls is invalid"
+                )
+            if role == "user" and attachments:
                 has_image_attachments = True
                 parts: list[dict[str, Any]] = [
                     {
                         "type": "image_url",
-                        "image_url": {"url": str(value)},
+                        "image_url": {"url": value},
                     }
                     for value in attachments
-                    if isinstance(value, str)
                 ]
                 parts.append({"type": "text", "text": content})
                 remote_messages.append({"role": role, "content": parts})
@@ -204,7 +215,7 @@ class DefaultStudioAlgorithms:
                 0,
                 {"role": "system", "content": "\n\n".join(system_parts)},
             )
-        return self._complete(
+        result = self._complete(
             remote_messages,
             config=config,
             temperature=0.7,
@@ -212,6 +223,9 @@ class DefaultStudioAlgorithms:
             on_chunk=on_chunk,
             prefer_vlm=has_image_attachments,
         )
+        if not isinstance(result, str) or not result.strip():
+            raise ValueError("Studio chat did not return response text")
+        return result
 
     def summarize(
         self,
@@ -230,11 +244,12 @@ class DefaultStudioAlgorithms:
             config=config,
             on_chunk=on_chunk,
         )
-        return (
-            dict(result)
-            if isinstance(result, Mapping)
-            else {"summary": str(result)}
-        )
+        if not isinstance(result, Mapping):
+            raise ValueError("Studio summary did not return a JSON object")
+        summary = result.get("summary")
+        if not isinstance(summary, str) or not summary.strip():
+            raise ValueError("Studio summary did not return summary text")
+        return {"summary": summary.strip()}
 
     def _chat_json(
         self,
@@ -277,34 +292,46 @@ class DefaultStudioAlgorithms:
         from src.shared.openai_options import OpenAICompatibleOptions
 
         section = _provider_config(config, prefer_vlm=prefer_vlm)
-        provider = str(section.get("provider", ""))
-        model = str(section.get("model", ""))
+        provider = _required_string(
+            section.get("provider"),
+            "Studio provider",
+        )
+        model = _required_string(section.get("model"), "Studio model")
         if not provider or not model:
             raise ValueError("Studio chat provider/model is not configured")
         options = OpenAICompatibleOptions.from_dict(
-            _object(section.get("openai_options"))
+            _required_mapping(
+                section.get("openai_options"),
+                "Studio openai_options",
+            )
         )
         options.request.force_json_output = force_json
         if options.request.temperature is None:
             options.request.temperature = temperature
         request = UnifiedChatRequest(
             provider=provider,
-            api_key=str(section.get("api_key", "")),
+            api_key=_string(section.get("api_key"), "Studio api_key"),
             model=model,
             credential_version_id=(
-                str(section["credential_version_id"])
-                if section.get("credential_version_id")
+                _required_string(
+                    section["credential_version_id"],
+                    "Studio credential_version_id",
+                )
+                if section.get("credential_version_id") is not None
                 else None
             ),
             messages=[dict(message) for message in messages],
             base_url=(
-                str(section["base_url"])
-                if section.get("base_url")
+                _required_string(section["base_url"], "Studio base_url")
+                if section.get("base_url") is not None
                 else None
             ),
             openai_options=options,
             runtime_options=build_openai_compatible_runtime_options(
-                timeout=float(section.get("timeout_seconds", 120) or 120),
+                timeout=_positive_number(
+                    section.get("timeout_seconds"),
+                    "Studio timeout_seconds",
+                ),
                 on_stream_chunk=on_chunk,
             ),
         )
@@ -335,22 +362,46 @@ class StudioOperationService:
         fence: OperationFence,
         operation: Mapping[str, Any],
     ) -> Mapping[str, Any]:
-        request = _object(operation.get("request"))
-        kind = str(operation["kind"])
+        request = _required_mapping(
+            operation.get("request"),
+            "Studio operation request",
+        )
+        kind = _required_string(
+            operation.get("kind"),
+            "Studio operation kind",
+        )
         on_chunk = self._event_callback(fence)
         if kind == "studio_generate":
-            config = self._with_credentials(
-                _object(request.get("config")),
+            _exact_keys(
+                request,
+                {"config", "document", "section", "analysisContext"},
+                "Studio generation request",
             )
-            document = _object(request.get("document"))
-            section = str(request.get("section", ""))
+            config = self._with_credentials(
+                _required_mapping(
+                    request.get("config"),
+                    "Studio generation config",
+                ),
+            )
+            document = _current_document(request.get("document"))
+            section = _required_string(
+                request.get("section"),
+                "Studio generation section",
+            )
+            raw_analysis = request.get("analysisContext")
+            analysis_context = (
+                None
+                if raw_analysis is None
+                else _required_mapping(
+                    raw_analysis,
+                    "Studio analysis context",
+                )
+            )
             generated = self.algorithms.generate(
                 document,
                 section=section,
                 config=config,
-                analysis_context=_object(
-                    request.get("analysisContext")
-                ),
+                analysis_context=analysis_context,
                 on_chunk=on_chunk,
             )
             if section == "review":
@@ -374,27 +425,63 @@ class StudioOperationService:
                 generated_document=merged,
             )
         if kind == "studio_chat":
+            _exact_keys(
+                request,
+                {
+                    "config",
+                    "document",
+                    "messages",
+                    "runtimeState",
+                    "summaryBlocks",
+                    "summaryThroughMessageId",
+                    "variables",
+                },
+                "Studio chat request",
+            )
             return self._chat(
                 fence,
                 request,
-                input_assets=_object(operation.get("inputs")),
-                config=_object(request.get("config")),
+                input_assets=_required_mapping(
+                    operation.get("inputs"),
+                    "Studio operation inputs",
+                ),
+                config=_required_mapping(
+                    request.get("config"),
+                    "Studio chat config",
+                ),
             )
         if kind == "studio_summary":
-            config = self._with_credentials(
-                _object(request.get("config")),
+            _exact_keys(
+                request,
+                {"config", "messages"},
+                "Studio summary request",
             )
-            messages = request.get("messages", [])
-            if not isinstance(messages, list):
-                raise ValueError("Studio summary messages are invalid")
+            config = self._with_credentials(
+                _required_mapping(
+                    request.get("config"),
+                    "Studio summary config",
+                ),
+            )
+            messages = _operation_messages(
+                request.get("messages"),
+                label="Studio summary messages",
+                require_nonempty=True,
+            )
             summary = self.algorithms.summarize(
                 messages,
                 config=config,
                 on_chunk=on_chunk,
             )
+            if not isinstance(summary, Mapping):
+                raise ValueError("Studio summary did not return a JSON object")
+            if set(summary) != {"summary"}:
+                raise ValueError("Studio summary fields are invalid")
+            summary_text = summary.get("summary")
+            if not isinstance(summary_text, str) or not summary_text.strip():
+                raise ValueError("Studio summary did not return summary text")
             return self.repository.publish_summary(
                 fence,
-                summary=summary,
+                summary={"summary": summary_text.strip()},
             )
         raise ValueError(f"unsupported Studio operation: {kind}")
 
@@ -406,27 +493,41 @@ class StudioOperationService:
         input_assets: Mapping[str, Any],
         config: Mapping[str, Any],
     ) -> Mapping[str, Any]:
-        document = _object(request.get("document"))
-        messages = request.get("messages", [])
-        if not isinstance(messages, list) or not messages:
-            raise ValueError("Studio chat has no messages")
-        last = _object(messages[-1])
-        raw_user = str(last.get("content", ""))
-        runtime_state = deepcopy(_object(request.get("runtimeState")))
-        variables = deepcopy(_object(request.get("variables")))
+        document = _current_document(request.get("document"))
+        messages = _operation_messages(
+            request.get("messages"),
+            label="Studio chat messages",
+            require_nonempty=True,
+        )
+        last = messages[-1]
+        if last["role"] != "user":
+            raise ValueError("Studio chat last message must be a user message")
+        raw_user = last["content"]
+        runtime_state = deepcopy(
+            _required_mapping(
+                request.get("runtimeState"),
+                "Studio chat runtimeState",
+            )
+        )
+        variables = deepcopy(
+            _required_mapping(
+                request.get("variables"),
+                "Studio chat variables",
+            )
+        )
         session_work = {
             "variables": variables,
             "_runtime": runtime_state,
         }
         _, prompt_user, regex_hits = apply_regex_scripts(
             raw_user,
-            document.get("regexScripts", []),
+            document["regexScripts"],
             placement=1,
             respect_run_on_edit=True,
         )
         lorebook_hits = sort_lorebook_hits(
             match_lorebook(
-                _object(document.get("lorebook")).get("entries", []),
+                document["lorebook"]["entries"],
                 prompt_user,
                 session=session_work,
             )
@@ -435,54 +536,72 @@ class StudioOperationService:
         runtime_log.extend(
             {
                 "type": "lorebook",
-                "id": entry.get("id"),
-                "comment": entry.get("comment", ""),
+                "id": entry["id"],
+                "comment": entry["comment"],
             }
             for entry in lorebook_hits
         )
         runtime_log.extend(
             run_state_tasks(
                 session_work,
-                document.get("stateTasks", []),
+                document["stateTasks"],
                 event="message_received",
             )
         )
-        summaries = request.get("summaryBlocks", [])
+        summaries = _summary_blocks(request.get("summaryBlocks"))
         system = _build_system_prompt(
             document=document,
             variables=variables,
             summaries=summaries,
             lorebook_hits=lorebook_hits,
         )
-        allowed_asset_ids = {
-            str(value)
-            for key, value in input_assets.items()
-            if str(key).startswith("attachment:")
-        }
+        allowed_asset_ids: set[str] = set()
+        for role, value in input_assets.items():
+            if not isinstance(role, str) or not role.startswith("attachment:"):
+                raise ValueError("Studio operation input role is invalid")
+            allowed_asset_ids.add(
+                _required_string(value, "Studio operation input asset id")
+            )
         asset_data_urls = self._asset_data_urls(allowed_asset_ids)
         summarized_through = request.get("summaryThroughMessageId")
+        if summarized_through is not None and not isinstance(
+            summarized_through,
+            str,
+        ):
+            raise ValueError(
+                "Studio chat summaryThroughMessageId must be a string or null"
+            )
+        if summarized_through is not None and not any(
+            item["messageId"] == summarized_through for item in messages
+        ):
+            raise ValueError(
+                "Studio chat summaryThroughMessageId does not identify a message"
+            )
         include = summarized_through is None
         conversation: list[dict[str, Any]] = []
         for index, message in enumerate(messages):
-            item = _object(message)
             if not include:
-                if item.get("messageId") == summarized_through:
+                if message["messageId"] == summarized_through:
                     include = True
                 continue
             attachment_urls: list[str] = []
-            for attachment in item.get("attachments", []) or []:
-                asset_id = str(_object(attachment).get("assetId", ""))
-                if asset_id and asset_id in allowed_asset_ids:
-                    data_url = asset_data_urls.get(asset_id)
-                    if data_url is not None:
-                        attachment_urls.append(data_url)
+            for attachment in message["attachments"]:
+                asset_id = attachment["assetId"]
+                if asset_id not in allowed_asset_ids:
+                    raise ValueError(
+                        "Studio chat attachment is not bound to the operation"
+                    )
+                data_url = asset_data_urls.get(asset_id)
+                if data_url is None:
+                    raise ValueError("Studio chat attachment is unavailable")
+                attachment_urls.append(data_url)
             conversation.append(
                 {
-                    "role": str(item.get("role", "assistant")),
+                    "role": message["role"],
                     "content": (
                         prompt_user
                         if index == len(messages) - 1
-                        else str(item.get("content", ""))
+                        else message["content"]
                     ),
                     "attachmentDataUrls": attachment_urls,
                 }
@@ -509,9 +628,11 @@ class StudioOperationService:
             ),
             on_chunk=self._event_callback(fence),
         )
+        if not isinstance(assistant, str) or not assistant.strip():
+            raise ValueError("Studio chat did not return response text")
         visible_assistant, _, output_hits = apply_regex_scripts(
             assistant,
-            document.get("regexScripts", []),
+            document["regexScripts"],
             placement=2,
             respect_run_on_edit=True,
         )
@@ -519,7 +640,7 @@ class StudioOperationService:
         runtime_log.extend(
             run_state_tasks(
                 session_work,
-                document.get("stateTasks", []),
+                document["stateTasks"],
                 event="message_sent",
             )
         )
@@ -527,8 +648,8 @@ class StudioOperationService:
             fence,
             content=visible_assistant,
             runtime_log=runtime_log,
-            variables=_object(session_work.get("variables")),
-            runtime_state=_object(session_work.get("_runtime")),
+            variables=session_work["variables"],
+            runtime_state=session_work["_runtime"],
         )
 
     def prompt_preview(
@@ -537,83 +658,102 @@ class StudioOperationService:
         document: Mapping[str, Any],
         session: Mapping[str, Any],
     ) -> dict[str, Any]:
-        messages = session.get("messages", [])
-        if not isinstance(messages, list):
-            messages = []
+        document = _current_document(document)
+        messages = _operation_messages(
+            session.get("messages"),
+            label="Studio session messages",
+        )
         last_user_index = next(
             (
                 index
                 for index in range(len(messages) - 1, -1, -1)
-                if isinstance(messages[index], Mapping)
-                and messages[index].get("role") == "user"
+                if messages[index].get("role") == "user"
             ),
             None,
         )
         last_user = (
-            str(messages[last_user_index].get("content", ""))
+            messages[last_user_index]["content"]
             if last_user_index is not None
-            and isinstance(messages[last_user_index], Mapping)
             else ""
         )
         _, prompt_user, _regex_hits = apply_regex_scripts(
             last_user,
-            document.get("regexScripts", []),
+            document["regexScripts"],
             placement=1,
             respect_run_on_edit=True,
         )
         work = {
-            "variables": deepcopy(_object(session.get("variables"))),
-            "_runtime": deepcopy(_object(session.get("runtimeState"))),
+            "variables": deepcopy(
+                _required_mapping(
+                    session.get("variables"),
+                    "Studio session variables",
+                )
+            ),
+            "_runtime": deepcopy(
+                _required_mapping(
+                    session.get("runtimeState"),
+                    "Studio session runtimeState",
+                )
+            ),
         }
         hits = sort_lorebook_hits(
             match_lorebook(
-                _object(document.get("lorebook")).get("entries", []),
+                document["lorebook"]["entries"],
                 prompt_user,
                 session=work,
             )
         )
         system = _build_system_prompt(
             document=document,
-            variables=_object(work.get("variables")),
-            summaries=session.get("summaryBlocks", []),
+            variables=work["variables"],
+            summaries=_summary_blocks(session.get("summaryBlocks")),
             lorebook_hits=hits,
         )
         summarized_through = session.get("summaryThroughMessageId")
+        if summarized_through is not None and not isinstance(
+            summarized_through,
+            str,
+        ):
+            raise ValueError(
+                "Studio session summaryThroughMessageId must be a string or null"
+            )
+        if summarized_through is not None and not any(
+            message["messageId"] == summarized_through
+            for message in messages
+        ):
+            raise ValueError(
+                "Studio session summaryThroughMessageId does not identify a message"
+            )
         include = summarized_through is None
         visible: list[dict[str, Any]] = []
         for index, message in enumerate(messages):
-            if not isinstance(message, Mapping):
-                continue
             if not include:
                 if message.get("messageId") == summarized_through:
                     include = True
                 continue
             visible.append(
                 {
-                    "role": str(message.get("role", "assistant")),
+                    "role": message["role"],
                     "content": (
                         prompt_user
                         if index == last_user_index
-                        else str(message.get("content", ""))
+                        else message["content"]
                     ),
                     "assetIds": [
-                        str(attachment.get("assetId"))
-                        for attachment in message.get("attachments", [])
-                        if isinstance(attachment, Mapping)
-                        and attachment.get("assetId")
+                        attachment["assetId"]
+                        for attachment in message["attachments"]
                     ],
                 }
             )
+        lorebook_hits = []
+        for index, entry in enumerate(hits):
+            entry_id = entry["id"]
+            comment = entry["comment"]
+            lorebook_hits.append({"id": entry_id, "comment": comment})
         return {
             "system": system,
             "messages": visible,
-            "lorebookHits": [
-                {
-                    "id": entry.get("id"),
-                    "comment": entry.get("comment", ""),
-                }
-                for entry in hits
-            ],
+            "lorebookHits": lorebook_hits,
         }
 
     def agent_chunks(
@@ -624,14 +764,51 @@ class StudioOperationService:
         config: Mapping[str, Any],
         cancelled: threading.Event,
     ) -> Iterator[str]:
+        document = _current_document(document)
+        config = _required_mapping(config, "Studio agent config")
+        agent_messages: list[dict[str, Any]] = []
+        for index, message in enumerate(messages):
+            raw = _required_mapping(
+                message,
+                f"Studio agent message {index}",
+            )
+            _exact_keys(
+                raw,
+                {"role", "content"},
+                f"Studio agent message {index}",
+            )
+            role = _required_string(
+                raw.get("role"),
+                f"Studio agent message {index} role",
+            )
+            if role not in {"user", "assistant"}:
+                raise ValueError(f"Studio agent message {index} role is invalid")
+            agent_messages.append(
+                {
+                    "role": role,
+                    "content": _string(
+                        raw.get("content"),
+                        f"Studio agent message {index} content",
+                    ),
+                }
+            )
         chunks: queue.Queue[object] = queue.Queue(maxsize=128)
         done = object()
         emitted_stream_chunk = threading.Event()
+        streamed_text = ""
 
         class AgentDisconnected(RuntimeError):
             pass
 
-        def on_chunk(chunk: str, _full_text: str) -> None:
+        def on_chunk(chunk: str, full_text: str) -> None:
+            nonlocal streamed_text
+            if not isinstance(chunk, str) or not isinstance(full_text, str):
+                raise ValueError("Studio agent returned an invalid stream chunk")
+            if not chunk:
+                return
+            if full_text != streamed_text + chunk:
+                raise ValueError("Studio agent stream content is inconsistent")
+            streamed_text = full_text
             emitted_stream_chunk.set()
             while not cancelled.is_set():
                 try:
@@ -664,17 +841,22 @@ class StudioOperationService:
                     + json.dumps(document, ensure_ascii=False)
                 )
                 result = self.algorithms.chat(
-                    messages=messages,
+                    messages=agent_messages,
                     system=system,
                     config=self._with_credentials(config),
                     on_chunk=on_chunk,
                 )
+                if not isinstance(result, str) or not result.strip():
+                    raise ValueError("Studio agent did not return response text")
                 # The saved model configuration may intentionally disable
                 # streaming. In that mode the transport returns the complete
                 # response without invoking ``on_chunk``; the SSE endpoint
                 # still has to deliver that response to the browser.
-                if result and not emitted_stream_chunk.is_set():
-                    publish_control(str(result))
+                if emitted_stream_chunk.is_set():
+                    if result != streamed_text:
+                        raise ValueError("Studio agent stream result is inconsistent")
+                else:
+                    publish_control(result)
             except Exception as exc:
                 if not isinstance(exc, AgentDisconnected):
                     publish_control(exc)
@@ -694,7 +876,9 @@ class StudioOperationService:
                     return
                 if isinstance(item, Exception):
                     raise item
-                yield str(item)
+                if not isinstance(item, str):
+                    raise TypeError("Studio agent produced an invalid stream item")
+                yield item
         finally:
             cancelled.set()
 
@@ -702,7 +886,17 @@ class StudioOperationService:
         self,
         fence: OperationFence,
     ) -> Callable[[str, str], None]:
+        previous_full_text = ""
+
         def emit(chunk: str, full_text: str) -> None:
+            nonlocal previous_full_text
+            if not isinstance(chunk, str) or not isinstance(full_text, str):
+                raise ValueError("Studio provider returned an invalid stream chunk")
+            if not chunk:
+                return
+            if full_text != previous_full_text + chunk:
+                raise ValueError("Studio provider stream content is inconsistent")
+            previous_full_text = full_text
             self.repository.operations.append_event(
                 fence,
                 event_type="chunk",
@@ -772,13 +966,23 @@ def _provider_config(
         config,
         prefer_vlm=prefer_vlm,
     )
+    raw_options = section.get("openai_options")
+    options = (
+        {}
+        if raw_options is None
+        else _required_mapping(raw_options, "Studio provider openai_options")
+    )
+    timeout = section.get("timeout_seconds")
+    base_url = section.get("custom_base_url")
+    if base_url == "":
+        base_url = None
     return {
         "provider": section.get("provider", ""),
         "api_key": section.get("api_key", ""),
         "model": section.get("model_name", ""),
-        "base_url": section.get("custom_base_url"),
-        "openai_options": _object(section.get("openai_options")),
-        "timeout_seconds": section.get("timeout_seconds", 120),
+        "base_url": base_url,
+        "openai_options": options,
+        "timeout_seconds": 120 if timeout is None else timeout,
     }
 
 
@@ -789,20 +993,20 @@ def _build_system_prompt(
     summaries: object,
     lorebook_hits: Sequence[Mapping[str, Any]],
 ) -> str:
-    identity = _object(document.get("identity"))
-    core = _object(document.get("coreMessages"))
+    identity = document["identity"]
+    core = document["coreMessages"]
     lorebook_text = "\n".join(
-        str(entry.get("content", "")) for entry in lorebook_hits
+        entry["content"] for entry in lorebook_hits
     )
     return "\n\n".join(
         value
         for value in (
-            str(core.get("system_prompt", "")),
-            f"角色：{identity.get('name', document.get('title', ''))}",
-            str(identity.get("description", "")),
-            str(identity.get("personality", "")),
-            str(identity.get("scenario", "")),
-            str(core.get("post_history_instructions", "")),
+            core["system_prompt"],
+            f"角色：{identity['name']}",
+            identity["description"],
+            identity["personality"],
+            identity["scenario"],
+            core["post_history_instructions"],
             f"变量：{json.dumps(dict(variables), ensure_ascii=False)}",
             f"会话摘要：{json.dumps(summaries, ensure_ascii=False)}",
             f"世界书：{lorebook_text}",
@@ -812,25 +1016,26 @@ def _build_system_prompt(
 
 
 def _normalize_review(generated: Mapping[str, Any]) -> dict[str, Any]:
-    nested = generated.get("review")
-    source = dict(nested) if isinstance(nested, Mapping) else dict(generated)
-    summary = str(source.get("summary") or "").strip()
-    if not summary:
+    if not set(generated).issubset({"summary", "issues", "suggestions"}):
+        raise ValueError("Studio review fields are invalid")
+    summary = generated.get("summary")
+    if not isinstance(summary, str) or not summary.strip():
         raise ValueError("Studio review did not return a summary")
 
-    def string_list(value: object) -> list[str]:
-        if not isinstance(value, list):
+    def string_list(field: str) -> list[str]:
+        value = generated.get(field)
+        if value is None:
             return []
-        return [
-            rendered
-            for item in value
-            if (rendered := str(item).strip())
-        ]
+        if not isinstance(value, list) or not all(
+            isinstance(item, str) for item in value
+        ):
+            raise ValueError(f"Studio review {field} must be a string array")
+        return [item.strip() for item in value if item.strip()]
 
     return {
-        "summary": summary,
-        "issues": string_list(source.get("issues")),
-        "suggestions": string_list(source.get("suggestions")),
+        "summary": summary.strip(),
+        "issues": string_list("issues"),
+        "suggestions": string_list("suggestions"),
     }
 
 
@@ -840,11 +1045,26 @@ def _validate_generated_payload(
     *,
     section: str,
 ) -> None:
-    if section not in {"full", "translate"}:
+    section_fields: dict[str, tuple[str, type]] = {
+        "identity": ("identity", Mapping),
+        "greetings": ("coreMessages", Mapping),
+        "lorebook": ("lorebook", Mapping),
+        "regex": ("regexScripts", list),
+        "state-tasks": ("stateTasks", list),
+    }
+    if section in section_fields:
+        field, expected_type = section_fields[section]
+        if set(generated) != {field}:
+            raise ValueError("Studio generation fields are invalid")
+        if not isinstance(generated.get(field), expected_type):
+            expected = "an object" if expected_type is Mapping else "an array"
+            raise ValueError(
+                f"Studio generation field {field} must be {expected}"
+            )
         return
-    frozen = set(
-        _object(document.get("status")).get("frozen_sections", [])
-    )
+    if section not in {"full", "translate"}:
+        raise ValueError("unsupported Studio generation section")
+    frozen = set(document["status"]["frozen_sections"])
     section_keys = {
         "identity": "identity",
         "greetings": "coreMessages",
@@ -852,6 +1072,8 @@ def _validate_generated_payload(
         "regex": "regexScripts",
         "state-tasks": "stateTasks",
     }
+    if not set(generated).issubset(set(section_keys.values())):
+        raise ValueError("Studio generation fields are invalid")
     missing = [
         key
         for section_name, key in section_keys.items()
@@ -881,31 +1103,28 @@ def _apply_generated_section(
     section: str,
 ) -> dict[str, Any]:
     result = deepcopy(dict(document))
-    frozen = set(
-        _object(result.get("status")).get("frozen_sections", [])
-    )
+    frozen = set(result["status"]["frozen_sections"])
     if section in frozen:
         return result
     if section == "identity":
-        identity = _object(generated.get("identity")) or dict(generated)
+        identity = dict(generated["identity"])
         result["identity"] = {
-            **_object(result.get("identity")),
+            **result["identity"],
             **identity,
         }
-        name = str(_object(result["identity"]).get("name", "")).strip()
-        if name:
-            result["title"] = name
-            result.setdefault("meta", {})["title"] = name
+        name = result["identity"].get("name")
+        if isinstance(name, str) and name.strip():
+            result["title"] = name.strip()
+            result["identity"]["name"] = name.strip()
+            result["meta"]["title"] = name.strip()
     elif section == "greetings":
-        value = _object(generated.get("coreMessages")) or dict(generated)
+        value = dict(generated["coreMessages"])
         result["coreMessages"] = {
-            **_object(result.get("coreMessages")),
+            **result["coreMessages"],
             **value,
         }
     elif section == "lorebook":
-        result["lorebook"] = (
-            _object(generated.get("lorebook")) or dict(generated)
-        )
+        result["lorebook"] = dict(generated["lorebook"])
     elif section == "regex":
         result["regexScripts"] = list(generated.get("regexScripts", []))
     elif section == "state-tasks":
@@ -921,14 +1140,135 @@ def _apply_generated_section(
         for section_name, key in section_keys.items():
             if key in generated and section_name not in frozen:
                 result[key] = deepcopy(generated[key])
-        name = str(_object(result.get("identity")).get("name", "")).strip()
-        if name and "identity" not in frozen:
-            result["title"] = name
-            result.setdefault("meta", {})["title"] = name
+        name = result["identity"].get("name")
+        if (
+            isinstance(name, str)
+            and name.strip()
+            and "identity" not in frozen
+        ):
+            result["title"] = name.strip()
+            result["identity"]["name"] = name.strip()
+            result["meta"]["title"] = name.strip()
     else:
         raise ValueError("unsupported Studio generation section")
     return result
 
 
-def _object(value: object) -> dict[str, Any]:
-    return dict(value) if isinstance(value, Mapping) else {}
+def _required_mapping(value: object, label: str) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{label} must be an object")
+    return dict(value)
+
+
+def _exact_keys(
+    value: Mapping[str, Any],
+    fields: set[str],
+    label: str,
+) -> None:
+    if set(value) != fields:
+        raise ValueError(f"{label} fields are invalid")
+
+
+def _string(value: object, label: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{label} must be a string")
+    return value
+
+
+def _required_string(value: object, label: str) -> str:
+    result = _string(value, label)
+    if not result:
+        raise ValueError(f"{label} must not be empty")
+    return result
+
+
+def _positive_number(value: object, label: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{label} must be a number")
+    if value <= 0:
+        raise ValueError(f"{label} must be positive")
+    return float(value)
+
+
+def _current_document(value: object) -> dict[str, Any]:
+    document = _required_mapping(value, "Studio document")
+    book_id = _required_string(
+        document.get("bookId"),
+        "Studio document bookId",
+    )
+    return validate_current_document(document, book_id=book_id)
+
+
+def _operation_messages(
+    value: object,
+    *,
+    label: str,
+    require_nonempty: bool = False,
+) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        raise ValueError(f"{label} must be an array")
+    if require_nonempty and not value:
+        raise ValueError(f"{label} must not be empty")
+    result: list[dict[str, Any]] = []
+    message_ids: set[str] = set()
+    for index, raw in enumerate(value):
+        message = _required_mapping(raw, f"{label}[{index}]")
+        message_id = _required_string(
+            message.get("messageId"),
+            f"{label}[{index}].messageId",
+        )
+        if message_id in message_ids:
+            raise ValueError(f"{label} contains duplicate message IDs")
+        message_ids.add(message_id)
+        role = _required_string(
+            message.get("role"),
+            f"{label}[{index}].role",
+        )
+        if role not in {"system", "user", "assistant"}:
+            raise ValueError(f"{label}[{index}].role is invalid")
+        content = _string(
+            message.get("content"),
+            f"{label}[{index}].content",
+        )
+        attachments = message.get("attachments")
+        if not isinstance(attachments, list):
+            raise ValueError(f"{label}[{index}].attachments must be an array")
+        normalized_attachments: list[dict[str, Any]] = []
+        for attachment_index, raw_attachment in enumerate(attachments):
+            attachment = _required_mapping(
+                raw_attachment,
+                f"{label}[{index}].attachments[{attachment_index}]",
+            )
+            _required_string(
+                attachment.get("assetId"),
+                f"{label}[{index}].attachments[{attachment_index}].assetId",
+            )
+            normalized_attachments.append(attachment)
+        result.append(
+            {
+                **message,
+                "messageId": message_id,
+                "role": role,
+                "content": content,
+                "attachments": normalized_attachments,
+            }
+        )
+    return result
+
+
+def _summary_blocks(value: object) -> list[dict[str, str]]:
+    if not isinstance(value, list):
+        raise ValueError("Studio summaryBlocks must be an array")
+    result = []
+    for index, raw in enumerate(value):
+        block = _required_mapping(raw, f"Studio summaryBlocks[{index}]")
+        _exact_keys(block, {"summary"}, f"Studio summaryBlocks[{index}]")
+        result.append(
+            {
+                "summary": _required_string(
+                    block.get("summary"),
+                    f"Studio summaryBlocks[{index}].summary",
+                )
+            }
+        )
+    return result

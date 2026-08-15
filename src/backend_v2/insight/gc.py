@@ -9,9 +9,8 @@ continuation project, note citation, or live derived generation.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Any
-
 from sqlalchemy import Engine, delete, or_, select
+from sqlalchemy.engine import Connection
 from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.schema import Table
 
@@ -34,6 +33,14 @@ DEFAULT_INSIGHT_GC_GRACE = timedelta(hours=1)
 DEFAULT_INSIGHT_GC_LIMIT = 200
 
 
+def _stored_id(value: object, field: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise RuntimeError(
+            f"stored {field} is invalid; clear current Insight data"
+        )
+    return value
+
+
 class InsightReachabilityGarbageCollector:
     """Delete bounded batches of unreachable Insight database generations."""
 
@@ -44,15 +51,19 @@ class InsightReachabilityGarbageCollector:
         grace: timedelta = DEFAULT_INSIGHT_GC_GRACE,
         limit: int = DEFAULT_INSIGHT_GC_LIMIT,
     ) -> None:
+        if not isinstance(grace, timedelta):
+            raise TypeError("Insight GC grace must be a timedelta")
         if grace.total_seconds() < 0:
             raise ValueError("Insight GC grace must not be negative")
-        if limit < 1:
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
             raise ValueError("Insight GC limit must be positive")
         self.engine = engine
         self.grace = grace
         self.limit = limit
 
     def collect(self, *, now: datetime | None = None) -> dict[str, int]:
+        if now is not None and not isinstance(now, datetime):
+            raise TypeError("Insight GC now must be a datetime")
         cutoff = (now or utcnow()) - self.grace
         with immediate_transaction(self.engine) as connection:
             # Inactive generations are not roots merely because they point to
@@ -77,7 +88,7 @@ class InsightReachabilityGarbageCollector:
 
             reachable = self._run_is_reachable()
             run_ids = [
-                str(value)
+                _stored_id(value, "analysis run id")
                 for value in connection.execute(
                     select(analysis_runs.c.id)
                     .where(
@@ -89,9 +100,11 @@ class InsightReachabilityGarbageCollector:
                 ).scalars()
             ]
             if run_ids:
-                connection.execute(
+                deleted = connection.execute(
                     delete(analysis_runs).where(analysis_runs.c.id.in_(run_ids))
                 )
+                if deleted.rowcount != len(run_ids):
+                    raise RuntimeError("Insight run garbage collection was fenced")
 
         return {
             "analysisArtifacts": artifacts,
@@ -102,7 +115,7 @@ class InsightReachabilityGarbageCollector:
 
     def _delete_inactive_generations(
         self,
-        connection: Any,
+        connection: Connection,
         *,
         table: Table,
         cutoff: datetime,
@@ -124,7 +137,7 @@ class InsightReachabilityGarbageCollector:
             .exists()
         )
         generation_ids = [
-            str(value)
+            _stored_id(value, f"{table.name} id")
             for value in connection.execute(
                 select(table.c.id)
                 .where(
@@ -137,7 +150,13 @@ class InsightReachabilityGarbageCollector:
             ).scalars()
         ]
         if generation_ids:
-            connection.execute(delete(table).where(table.c.id.in_(generation_ids)))
+            deleted = connection.execute(
+                delete(table).where(table.c.id.in_(generation_ids))
+            )
+            if deleted.rowcount != len(generation_ids):
+                raise RuntimeError(
+                    f"{table.name} garbage collection was fenced"
+                )
         return len(generation_ids)
 
     @staticmethod

@@ -6,15 +6,13 @@ import { resolve } from 'node:path'
 
 const {
   getPluginsMock,
-  getPluginDefaultStatesMock,
   refreshPluginsMock,
   enablePluginMock,
   disablePluginMock,
   deletePluginMock,
   exportPluginMock,
   importPluginMock,
-  getPluginConfigSchemaMock,
-  getPluginConfigMock,
+  getPluginConfigDocumentMock,
   savePluginConfigMock,
   setPluginDefaultStateMock,
   toastSuccessMock,
@@ -23,15 +21,13 @@ const {
   confirmProductActionMock,
 } = vi.hoisted(() => ({
   getPluginsMock: vi.fn(),
-  getPluginDefaultStatesMock: vi.fn(),
   refreshPluginsMock: vi.fn(),
   enablePluginMock: vi.fn(),
   disablePluginMock: vi.fn(),
   deletePluginMock: vi.fn(),
   exportPluginMock: vi.fn(),
   importPluginMock: vi.fn(),
-  getPluginConfigSchemaMock: vi.fn(),
-  getPluginConfigMock: vi.fn(),
+  getPluginConfigDocumentMock: vi.fn(),
   savePluginConfigMock: vi.fn(),
   setPluginDefaultStateMock: vi.fn(),
   toastSuccessMock: vi.fn(),
@@ -42,15 +38,13 @@ const {
 
 vi.mock('@/api/plugin', () => ({
   getPlugins: getPluginsMock,
-  getPluginDefaultStates: getPluginDefaultStatesMock,
   refreshPlugins: refreshPluginsMock,
   enablePlugin: enablePluginMock,
   disablePlugin: disablePluginMock,
   deletePlugin: deletePluginMock,
   exportPlugin: exportPluginMock,
   importPlugin: importPluginMock,
-  getPluginConfigSchema: getPluginConfigSchemaMock,
-  getPluginConfig: getPluginConfigMock,
+  getPluginConfigDocument: getPluginConfigDocumentMock,
   savePluginConfig: savePluginConfigMock,
   setPluginDefaultState: setPluginDefaultStateMock,
 }))
@@ -76,6 +70,7 @@ vi.mock('@/components/settings/PluginAgentModal.vue', () => ({
         default: false,
       },
     },
+    emits: ['update:modelValue', 'pluginsChanged', 'settingsSaved'],
     setup(props) {
       return () => h(
         'div',
@@ -171,8 +166,8 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
       plugin_id: 'plugin_one',
       display_name: 'Plugin One',
       package_version: '1.0.0',
-      entrypoint: 'plugin:run',
-      hooks: [],
+      entrypoint: 'plugin.py:Plugin',
+      hooks: ['before_ocr'],
       supported_steps: ['ocr'],
       supported_modes: ['standard'],
       priority: 0,
@@ -187,20 +182,24 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
   }
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(res => { resolve = res })
+  return { promise, resolve }
+}
+
 describe('PluginManager', () => {
   enableAutoUnmount(afterEach)
 
   beforeEach(() => {
     getPluginsMock.mockReset()
-    getPluginDefaultStatesMock.mockReset()
     refreshPluginsMock.mockReset()
     enablePluginMock.mockReset()
     disablePluginMock.mockReset()
     deletePluginMock.mockReset()
     exportPluginMock.mockReset()
     importPluginMock.mockReset()
-    getPluginConfigSchemaMock.mockReset()
-    getPluginConfigMock.mockReset()
+    getPluginConfigDocumentMock.mockReset()
     savePluginConfigMock.mockReset()
     setPluginDefaultStateMock.mockReset()
     toastSuccessMock.mockReset()
@@ -210,9 +209,9 @@ describe('PluginManager', () => {
     confirmProductActionMock.mockResolvedValue(true)
 
     getPluginsMock.mockResolvedValue([makePlugin()])
-    getPluginDefaultStatesMock.mockResolvedValue({
-      plugin_one: false,
-    })
+    enablePluginMock.mockResolvedValue(makePlugin({ state: 'enabled', runtimeEnabled: true }))
+    disablePluginMock.mockResolvedValue(makePlugin())
+    setPluginDefaultStateMock.mockResolvedValue(makePlugin({ defaultEnabled: true }))
     exportPluginMock.mockResolvedValue({
       blob: new Blob(['zip-bytes'], { type: 'application/zip' }),
       filename: 'plugin_one.zip',
@@ -235,19 +234,10 @@ describe('PluginManager', () => {
         runtimeEnabled: true,
         defaultEnabled: true,
       })],
-      defaultStates: {
-        plugin_two: true,
-      },
       summary: {
-        added: 1,
-        reloaded: 0,
-        removed: 0,
+        checked: 2,
         failed: 1,
       },
-      failures: [{
-        plugin_name: 'broken_plugin',
-        error: 'bad import',
-      }],
     })
 
     const wrapper = mount(PluginManager)
@@ -281,6 +271,15 @@ describe('PluginManager', () => {
     expect(wrapper.find('.plugin-agent-modal-stub').attributes('data-open')).toBe('true')
   })
 
+  it('forwards independently saved plugin Agent settings to the settings modal', async () => {
+    const wrapper = mount(PluginManager)
+    await flushPromises()
+
+    wrapper.getComponent({ name: 'PluginAgentModal' }).vm.$emit('settingsSaved')
+
+    expect(wrapper.emitted('settingsSaved')).toHaveLength(1)
+  })
+
   it('keeps scoped manager colors on semantic tokens instead of raw owner palettes', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/components/settings/PluginManager.vue'), 'utf8')
     const styleBlock = source.match(/<style scoped>([\s\S]*)<\/style>/)?.[1] ?? ''
@@ -309,8 +308,6 @@ describe('PluginManager', () => {
 
     getPluginsMock.mockReset()
     getPluginsMock.mockResolvedValue([])
-    getPluginDefaultStatesMock.mockResolvedValue({})
-
     const emptyWrapper = mount(PluginManager)
     await flushPromises()
 
@@ -327,6 +324,58 @@ describe('PluginManager', () => {
     expect(source).toContain("import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'")
     expect(source).not.toContain('loading-hint')
     expect(source).not.toContain('empty-hint')
+  })
+
+  it('shows a retryable error instead of misreporting a failed load as an empty list', async () => {
+    getPluginsMock
+      .mockRejectedValueOnce(new Error('backend unavailable'))
+      .mockResolvedValueOnce([makePlugin()])
+
+    const wrapper = mount(PluginManager)
+    await flushPromises()
+
+    const status = wrapper.getComponent(ProductStatusBanner)
+    expect(status.props()).toMatchObject({
+      tone: 'danger',
+      role: 'alert',
+      title: '插件列表加载失败',
+    })
+    expect(wrapper.text()).toContain('backend unavailable')
+    expect(wrapper.text()).not.toContain('暂无已安装的插件')
+
+    await status.get('button').trigger('click')
+    await flushPromises()
+
+    expect(getPluginsMock).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('Plugin One')
+    expect(wrapper.findComponent(ProductStatusBanner).exists()).toBe(false)
+  })
+
+  it('does not apply a refresh response after the manager is unmounted', async () => {
+    const pendingRefresh = createDeferred<{
+      plugins: ReturnType<typeof makePlugin>[]
+      partialSuccess: boolean
+      summary: { checked: number; failed: number }
+    }>()
+    refreshPluginsMock.mockReturnValueOnce(pendingRefresh.promise)
+
+    const wrapper = mount(PluginManager)
+    await flushPromises()
+    const refreshButton = wrapper.findAll('button').find(
+      button => button.text().includes('刷新插件'),
+    )
+
+    await refreshButton!.trigger('click')
+    wrapper.unmount()
+    pendingRefresh.resolve({
+      plugins: [makePlugin({ displayName: 'Stale Plugin' })],
+      partialSuccess: false,
+      summary: { checked: 1, failed: 0 },
+    })
+    await flushPromises()
+
+    expect(toastSuccessMock).not.toHaveBeenCalledWith('插件列表已刷新')
+    expect(toastWarningMock).not.toHaveBeenCalled()
   })
 
   it('exports a plugin package from the export button', async () => {
@@ -422,9 +471,8 @@ describe('PluginManager', () => {
   })
 
   it('closes plugin configuration through the product modal close action', async () => {
-    getPluginsMock.mockResolvedValue([makePlugin({ configSchema: { configured: { type: 'boolean' } } })])
-    getPluginConfigSchemaMock.mockResolvedValue({})
-    getPluginConfigMock.mockResolvedValue({})
+    getPluginsMock.mockResolvedValue([makePlugin({ configSchema: { configured: { type: 'boolean', default: false } } })])
+    getPluginConfigDocumentMock.mockResolvedValue({ schema: {}, value: {} })
 
     const wrapper = mount(PluginManager)
     await flushPromises()
@@ -448,9 +496,8 @@ describe('PluginManager', () => {
   })
 
   it('uses the product modal shell for plugin configuration', async () => {
-    getPluginsMock.mockResolvedValue([makePlugin({ configSchema: { configured: { type: 'boolean' } } })])
-    getPluginConfigSchemaMock.mockResolvedValue({})
-    getPluginConfigMock.mockResolvedValue({})
+    getPluginsMock.mockResolvedValue([makePlugin({ configSchema: { configured: { type: 'boolean', default: false } } })])
+    getPluginConfigDocumentMock.mockResolvedValue({ schema: {}, value: {} })
 
     const wrapper = mount(PluginManager)
     await flushPromises()
@@ -474,24 +521,28 @@ describe('PluginManager', () => {
   })
 
   it('uses product field primitives for plugin configuration fields', async () => {
-    getPluginsMock.mockResolvedValue([makePlugin({ configSchema: { configured: { type: 'boolean' } } })])
-    getPluginConfigSchemaMock.mockResolvedValue({
-      retries: {
-        type: 'number',
-        label: 'Retries',
-        description: 'Retry count',
-        min: 0,
-        max: 5,
+    getPluginsMock.mockResolvedValue([makePlugin({ configSchema: { configured: { type: 'boolean', default: false } } })])
+    getPluginConfigDocumentMock.mockResolvedValue({
+      schema: {
+        retries: {
+          type: 'number',
+          default: 0,
+          label: 'Retries',
+          description: 'Retry count',
+          minimum: 0,
+          maximum: 5,
+        },
+        endpoint: {
+          type: 'text',
+          default: '',
+          label: 'Endpoint',
+          description: 'Service URL',
+        },
       },
-      endpoint: {
-        type: 'text',
-        label: 'Endpoint',
-        description: 'Service URL',
+      value: {
+        retries: 2,
+        endpoint: 'https://example.test',
       },
-    })
-    getPluginConfigMock.mockResolvedValue({
-      retries: 2,
-      endpoint: 'https://example.test',
     })
 
     const wrapper = mount(PluginManager)
@@ -510,7 +561,7 @@ describe('PluginManager', () => {
     const fields = wrapper.findAllComponents(UiField)
       .filter(field => field.props('variant') === 'settings')
     expect(fields.map(field => field.props('label'))).toEqual(['Retries', 'Endpoint'])
-    expect(fields.map(field => field.props('description'))).toEqual(['Retry count', 'Service URL'])
+    expect(fields.map(field => field.props('hint'))).toEqual(['Retry count', 'Service URL'])
 
     const source = readFileSync(resolve(process.cwd(), 'src/components/settings/PluginManager.vue'), 'utf8')
     expect(source).not.toContain('class="config-field"')
@@ -520,17 +571,20 @@ describe('PluginManager', () => {
   })
 
   it('uses the shared nullable number primitive for plugin number configuration fields', async () => {
-    getPluginsMock.mockResolvedValue([makePlugin({ configSchema: { configured: { type: 'boolean' } } })])
-    getPluginConfigSchemaMock.mockResolvedValue({
-      retries: {
-        type: 'number',
-        label: 'Retries',
-        min: 0,
-        max: 10,
+    getPluginsMock.mockResolvedValue([makePlugin({ configSchema: { configured: { type: 'boolean', default: false } } })])
+    getPluginConfigDocumentMock.mockResolvedValue({
+      schema: {
+        retries: {
+          type: 'number',
+          default: 0,
+          label: 'Retries',
+          minimum: 0,
+          maximum: 10,
+        },
       },
-    })
-    getPluginConfigMock.mockResolvedValue({
-      retries: 2,
+      value: {
+        retries: 2,
+      },
     })
     savePluginConfigMock.mockResolvedValue(undefined)
 
@@ -545,11 +599,11 @@ describe('PluginManager', () => {
 
     const numberField = wrapper.getComponent(UiNumberField)
     expect(numberField.props('modelValue')).toBe(2)
-    expect(numberField.props('nullable')).toBe(true)
+    expect(numberField.props('nullable')).toBe(false)
     expect(numberField.props('min')).toBe(0)
     expect(numberField.props('max')).toBe(10)
 
-    numberField.vm.$emit('update:modelValue', null)
+    numberField.vm.$emit('update:modelValue', 0)
     await flushPromises()
 
     const saveButton = wrapper.findAll('button').find(button => button.text().includes('保存'))
@@ -557,7 +611,7 @@ describe('PluginManager', () => {
     await saveButton!.trigger('click')
     await flushPromises()
 
-    expect(savePluginConfigMock).toHaveBeenCalledWith('plugin_one', { retries: null })
+    expect(savePluginConfigMock).toHaveBeenCalledWith('plugin_one', { retries: 0 })
 
     const source = readFileSync(resolve(process.cwd(), 'src/components/settings/PluginManager.vue'), 'utf8')
     expect(source).toContain('UiNumberField')
@@ -607,6 +661,27 @@ describe('PluginManager', () => {
     confirmSpy.mockRestore()
   })
 
+  it('reports a replacement upload failure instead of leaving an unhandled rejection', async () => {
+    importPluginMock
+      .mockRejectedValueOnce({
+        message: '插件已存在',
+        status: 409,
+        details: { pluginId: 'plugin_one', currentRevision: 1 },
+      })
+      .mockRejectedValueOnce(new Error('替换上传失败'))
+
+    const wrapper = mount(PluginManager)
+    await flushPromises()
+
+    const file = new File(['zip-bytes'], 'plugin_one.zip', { type: 'application/zip' })
+    wrapper.getComponent(UiFileInput).vm.$emit('files-change', [file])
+    await flushPromises()
+
+    expect(importPluginMock).toHaveBeenNthCalledWith(2, file, true)
+    expect(refreshPluginsMock).not.toHaveBeenCalled()
+    expect(toastErrorMock).toHaveBeenCalledWith('替换上传失败')
+  })
+
   it('imports plugin packages through the typed file-input boundary', async () => {
     importPluginMock.mockResolvedValue(undefined)
 
@@ -652,7 +727,7 @@ describe('PluginManager', () => {
   })
 
   it('uses icon-button primitives instead of root button skins for plugin row icon actions', async () => {
-    getPluginsMock.mockResolvedValue([makePlugin({ configSchema: { configured: { type: 'boolean' } } })])
+    getPluginsMock.mockResolvedValue([makePlugin({ configSchema: { configured: { type: 'boolean', default: false } } })])
 
     const wrapper = mount(PluginManager)
     await flushPromises()
@@ -674,27 +749,28 @@ describe('PluginManager', () => {
     })
   })
 
-  it('does not assert shared icon-button primitives through internal class names', () => {
-    const source = readFileSync(resolve(process.cwd(), 'tests/unit/pluginManager.spec.ts'), 'utf8')
-    const buttonClassPrefix = 'ui-' + 'button--'
-    const iconButtonClassPrefix = 'ui-' + 'icon-button--'
-
-    expect(source).not.toContain(buttonClassPrefix)
-    expect(source).not.toContain(iconButtonClassPrefix)
-  })
-
   it('uses shared switches for plugin enabled default and boolean config controls', async () => {
-    getPluginsMock.mockResolvedValue([makePlugin({ configSchema: { configured: { type: 'boolean' } } })])
-    enablePluginMock.mockResolvedValue(undefined)
-    setPluginDefaultStateMock.mockResolvedValue(undefined)
-    getPluginConfigSchemaMock.mockResolvedValue({
-      feature_enabled: {
-        type: 'boolean',
-        label: 'Feature enabled',
+    getPluginsMock.mockResolvedValue([makePlugin({ configSchema: { configured: { type: 'boolean', default: false } } })])
+    enablePluginMock.mockResolvedValue(makePlugin({
+      state: 'enabled',
+      runtimeEnabled: true,
+      configSchema: { configured: { type: 'boolean', default: false } },
+    }))
+    setPluginDefaultStateMock.mockResolvedValue(makePlugin({
+      defaultEnabled: true,
+      configSchema: { configured: { type: 'boolean', default: false } },
+    }))
+    getPluginConfigDocumentMock.mockResolvedValue({
+      schema: {
+        feature_enabled: {
+          type: 'boolean',
+          default: false,
+          label: 'Feature enabled',
+        },
       },
-    })
-    getPluginConfigMock.mockResolvedValue({
-      feature_enabled: false,
+      value: {
+        feature_enabled: false,
+      },
     })
     savePluginConfigMock.mockResolvedValue(undefined)
 
@@ -732,19 +808,22 @@ describe('PluginManager', () => {
   })
 
   it('uses the fixed select primitive for plugin config select fields', async () => {
-    getPluginsMock.mockResolvedValue([makePlugin({ configSchema: { configured: { type: 'boolean' } } })])
-    getPluginConfigSchemaMock.mockResolvedValue({
-      mode: {
-        type: 'select',
-        label: 'Mode',
-        options: [
-          { label: 'Fast', value: 'fast' },
-          { label: 'Safe', value: 'safe' },
-        ],
+    getPluginsMock.mockResolvedValue([makePlugin({ configSchema: { configured: { type: 'boolean', default: false } } })])
+    getPluginConfigDocumentMock.mockResolvedValue({
+      schema: {
+        mode: {
+          type: 'select',
+          default: 'fast',
+          label: 'Mode',
+          options: [
+            { label: 'Fast', value: 'fast' },
+            { label: 'Safe', value: 'safe' },
+          ],
+        },
       },
-    })
-    getPluginConfigMock.mockResolvedValue({
-      mode: 'fast',
+      value: {
+        mode: 'fast',
+      },
     })
     savePluginConfigMock.mockResolvedValue(undefined)
 

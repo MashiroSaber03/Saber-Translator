@@ -4,12 +4,68 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
+import threading
+from collections.abc import Callable
 
 
 API_EPOCH_ID_ENV = "SABER_V2_API_EPOCH_ID"
 API_EPOCH_TOKEN_ENV = "SABER_V2_API_EPOCH_TOKEN"
 WORKER_EPOCH_ID_ENV = "SABER_V2_WORKER_EPOCH_ID"
 WORKER_EPOCH_TOKEN_ENV = "SABER_V2_WORKER_EPOCH_TOKEN"
+LAUNCHER_PID_ENV = "SABER_V2_LAUNCHER_PID"
+
+
+@dataclass(slots=True)
+class LauncherParentMonitor:
+    """Stop a POSIX role when its owning Launcher process disappears."""
+
+    stop_event: threading.Event
+    thread: threading.Thread
+
+    def stop(self) -> None:
+        self.stop_event.set()
+        self.thread.join(timeout=2.0)
+
+
+def _watch_launcher_parent(
+    launcher_pid: int,
+    on_parent_lost: Callable[[], None],
+    stop_event: threading.Event,
+    *,
+    get_parent_pid: Callable[[], int] = os.getppid,
+    interval_seconds: float = 0.5,
+) -> None:
+    while not stop_event.wait(interval_seconds):
+        if get_parent_pid() != launcher_pid:
+            on_parent_lost()
+            return
+
+
+def start_launcher_parent_monitor(
+    on_parent_lost: Callable[[], None],
+    *,
+    test_mode: bool,
+) -> LauncherParentMonitor | None:
+    """Watch the direct Launcher parent where Windows Job Objects are unavailable."""
+
+    if test_mode or os.name == "nt":
+        return None
+    raw_pid = os.environ.get(LAUNCHER_PID_ENV, "")
+    try:
+        launcher_pid = int(raw_pid)
+    except ValueError as exc:
+        raise RuntimeError("Launcher-issued parent process identity is missing") from exc
+    if launcher_pid <= 0 or os.getppid() != launcher_pid:
+        raise RuntimeError("Launcher-issued parent process identity is invalid")
+    stop_event = threading.Event()
+    thread = threading.Thread(
+        target=_watch_launcher_parent,
+        args=(launcher_pid, on_parent_lost, stop_event),
+        name="saber-launcher-parent-monitor",
+        daemon=True,
+    )
+    thread.start()
+    return LauncherParentMonitor(stop_event=stop_event, thread=thread)
 
 
 @dataclass(frozen=True, slots=True)

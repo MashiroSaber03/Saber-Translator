@@ -7,26 +7,13 @@ from collections.abc import Mapping
 import re
 from typing import Any
 
+from src.shared.prompt_defaults import get_prompt_factory_defaults
+
 
 TRANSLATION_CONSTRAINTS_SCHEMA_VERSION = 2
-DEFAULT_AUTO_GLOSSARY_PROMPT = """请从以下 OCR 文本中提取适合加入漫画术语表的实体。
-
-提取范围：
-1. 人名
-2. 专有名词
-
-输出要求：
-1. 只输出 JSON 数组
-2. 每项必须包含 source 和 target 字段
-3. 不要输出空字段
-4. 不要输出解释性文字
-5. 如果没有可提取内容，返回 []
-
-OCR 文本：
-{ocr_text}"""
+DEFAULT_AUTO_GLOSSARY_PROMPT = get_prompt_factory_defaults()["autoGlossary"]
 
 _MATCH_MODES = frozenset({"text", "regex"})
-_MAX_ENTRIES = 10_000
 _MAX_TERM_LENGTH = 2_000
 _MAX_NOTE_LENGTH = 10_000
 _MAX_PROMPT_LENGTH = 100_000
@@ -94,9 +81,9 @@ def _string(
 
 
 def _match_mode(value: object, *, field: str) -> str:
-    if value not in _MATCH_MODES:
+    if not isinstance(value, str) or value not in _MATCH_MODES:
         raise ValueError(f"{field} must be text or regex")
-    return str(value)
+    return value
 
 
 def _compile_regex(value: str, *, field: str) -> None:
@@ -109,8 +96,6 @@ def _compile_regex(value: str, *, field: str) -> None:
 def _entries(value: object, *, field: str) -> list[object]:
     if not isinstance(value, list):
         raise ValueError(f"{field} must be an array")
-    if len(value) > _MAX_ENTRIES:
-        raise ValueError(f"{field} exceeds {_MAX_ENTRIES} entries")
     return value
 
 
@@ -158,11 +143,9 @@ def _glossary_entries(value: object) -> list[dict[str, str]]:
         key = (match_mode, source)
         existing = seen.get(key)
         if existing is not None:
-            if existing != candidate:
-                raise ValueError(
-                    f"{field} conflicts with an earlier glossary entry for {source}"
-                )
-            continue
+            raise ValueError(
+                f"{field} duplicates an earlier glossary entry for {source}"
+            )
         seen[key] = candidate
         normalized.append(candidate)
     return normalized
@@ -205,11 +188,9 @@ def _non_translate_entries(value: object) -> list[dict[str, str]]:
         key = (match_mode, pattern)
         existing = seen.get(key)
         if existing is not None:
-            if existing != candidate:
-                raise ValueError(
-                    f"{field} conflicts with an earlier non-translate entry for {pattern}"
-                )
-            continue
+            raise ValueError(
+                f"{field} duplicates an earlier non-translate entry for {pattern}"
+            )
         seen[key] = candidate
         normalized.append(candidate)
     return normalized
@@ -240,7 +221,7 @@ def validate_translation_constraints(payload: object) -> dict[str, Any]:
         glossary["autoExtractPrompt"],
         field="glossary.autoExtractPrompt",
         maximum=_MAX_PROMPT_LENGTH,
-        allow_empty=True,
+        allow_empty=False,
     )
     return {
         "glossary": {
@@ -249,7 +230,7 @@ def validate_translation_constraints(payload: object) -> dict[str, Any]:
                 glossary["autoExtractEnabled"],
                 field="glossary.autoExtractEnabled",
             ),
-            "autoExtractPrompt": prompt or DEFAULT_AUTO_GLOSSARY_PROMPT,
+            "autoExtractPrompt": prompt,
             "entries": _glossary_entries(glossary["entries"]),
         },
         "nonTranslate": {
@@ -271,22 +252,15 @@ def with_glossary_delta(
     result = validate_translation_constraints(deepcopy(dict(payload)))
     glossary = result["glossary"]
     existing = {
-        (str(entry["matchMode"]), str(entry["source"]))
+        (entry["matchMode"], entry["source"])
         for entry in glossary["entries"]
     }
     added = 0
-    for raw in delta:
-        source = str(raw.get("source", "")).strip()
-        target = str(raw.get("target", "")).strip()
-        if not source or not target or ("text", source) in existing:
+    for entry in _glossary_entries(list(delta)):
+        key = (entry["matchMode"], entry["source"])
+        if key in existing:
             continue
-        entry = {
-            "source": source,
-            "target": target,
-            "note": str(raw.get("note", "")).strip(),
-            "matchMode": "text",
-        }
         glossary["entries"].append(entry)
-        existing.add(("text", source))
+        existing.add(key)
         added += 1
     return validate_translation_constraints(result), added

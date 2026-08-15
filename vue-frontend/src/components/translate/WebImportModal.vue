@@ -124,7 +124,7 @@ const {
         @discard-settings="handleDiscardSettings"
         @fetch-models="handleFetchModels"
         @reset-prompt="handleResetPrompt"
-        @save-settings="() => handleSaveSettings()"
+        @save-settings="handleSaveSettings"
         @test-agent="handleTestAgent"
         @test-firecrawl="handleTestFirecrawl"
       />
@@ -178,7 +178,11 @@ const {
   display: block;
 
   --ui-button-primary-background: var(--color-border-info);
-  --ui-button-primary-hover-background: color-mix(in srgb, var(--color-border-info) 84%, var(--color-overlay-backdrop-solid));
+  --ui-button-primary-hover-background: color-mix(
+    in srgb,
+    var(--color-border-info) 84%,
+    var(--color-overlay-backdrop-solid)
+  );
   --ui-button-primary-shadow: none;
   --ui-button-primary-disabled-background: var(--color-border-info);
   --ui-button-primary-disabled-opacity: 0.6;

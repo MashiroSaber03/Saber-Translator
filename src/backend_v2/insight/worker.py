@@ -11,6 +11,7 @@ from typing import Any, Protocol
 from sqlalchemy import Engine
 
 from src.backend_v2.insight.page_schema import normalize_page_analysis
+from src.backend_v2.insight.provider_runtime import frozen_vlm_config
 from src.backend_v2.insight.repository import InsightConflict, InsightRepository
 from src.backend_v2.jobs.repository import (
     AttemptFence,
@@ -42,26 +43,21 @@ class ProviderInsightAlgorithms:
         page_number: int,
         config: Mapping[str, Any],
     ) -> Mapping[str, Any]:
-        from src.core.manga_insight.config_models import (
-            PromptsConfig,
-            VLMConfig,
-        )
         from src.core.manga_insight.vlm_client import VLMClient
 
-        vlm_section = _object(config.get("vlm"))
-        options = _object(vlm_section.get("openai_options"))
-        vlm_payload = {
-            "provider": vlm_section.get("provider", ""),
-            "api_key": vlm_section.get("api_key", ""),
-            "model": vlm_section.get("model_name", ""),
-            "base_url": vlm_section.get("custom_base_url"),
-            "credential_version_id": vlm_section.get("credential_version_id"),
-            "openai_options": options,
-            "image_max_size": int(vlm_section.get("image_max_size", 1280)),
-        }
-        prompts = _object(config.get("prompts"))
-        prompt_section = _object(prompts.get("batch_analysis"))
-        prompt = str(prompt_section.get("content", "")).strip()
+        vlm_config = frozen_vlm_config(config)
+        prompts = _required_mapping(
+            config.get("prompts"),
+            "frozen Insight prompts",
+        )
+        prompt_section = _required_mapping(
+            prompts.get("batch_analysis"),
+            "frozen Insight batch_analysis prompt",
+        )
+        prompt = _required_string(
+            prompt_section.get("content"),
+            "frozen Insight batch_analysis prompt content",
+        ).strip()
         strict_suffix = (
             "\n\n只分析这一页并输出 JSON："
             '{"pages":[{"page_number":'
@@ -73,20 +69,14 @@ class ProviderInsightAlgorithms:
             "不要输出 scene、mood、panels、dialogues、speaker_name、"
             "original_text、translated_text、characters 或 character_mentions。"
         )
-        client = VLMClient(
-            VLMConfig.from_dict(vlm_payload),
-            PromptsConfig(batch_analysis=prompt),
-        )
+        client = VLMClient(vlm_config)
 
         async def execute() -> Mapping[str, Any]:
-            try:
-                return await client.analyze_batch(
-                    [image_bytes],
-                    page_number,
-                    custom_prompt=(prompt + strict_suffix).strip(),
-                )
-            finally:
-                await client.close()
+            return await client.analyze_page(
+                image_bytes,
+                page_number,
+                (prompt + strict_suffix).strip(),
+            )
 
         return asyncio.run(execute())
 
@@ -111,7 +101,7 @@ class InsightAnalysisWorkerService:
         fence: AttemptFence,
         step: Mapping[str, Any],
     ) -> Mapping[str, Any]:
-        kind = str(step["stepKind"])
+        kind = _required_string(step.get("stepKind"), "Insight step kind")
         if kind == "insight_analyze_page":
             return self._analyze_page(fence, step)
         if kind == "insight_validate_run":
@@ -125,43 +115,67 @@ class InsightAnalysisWorkerService:
         fence: AttemptFence,
         step: Mapping[str, Any],
     ) -> Mapping[str, Any]:
-        config = _object(step.get("config"))
-        run_id = str(config.get("runId", ""))
-        scope = str(config.get("scope", ""))
-        page_id = str(step.get("pageId", ""))
-        if not run_id or not page_id:
-            raise JobConflict("Insight step is missing its frozen run/page identity")
+        config = _required_mapping(
+            step.get("config"),
+            "frozen Insight job config",
+        )
+        run_id = _required_string(config.get("runId"), "Insight runId")
+        scope = _required_string(config.get("scope"), "Insight scope")
+        step_id = _required_string(step.get("stepId"), "Insight stepId")
+        item_id = _required_string(step.get("itemId"), "Insight itemId")
+        page_id = _required_string(step.get("pageId"), "Insight pageId")
         target = self.repository.run_target(run_id=run_id, page_id=page_id)
+        source_asset_id = _required_string(
+            target.get("source_asset_id"),
+            "Insight source asset id",
+        )
+        source_checksum = _required_string(
+            target.get("source_checksum"),
+            "Insight source checksum",
+        )
+        page_number = _required_positive_integer(
+            target.get("page_number_snapshot"),
+            "Insight page number snapshot",
+        )
         try:
             bound = self.jobs.bind_item_inputs(
                 fence,
-                item_id=str(step["itemId"]),
+                item_id=item_id,
                 page_id=page_id,
                 roles=("source",),
             )["source"]
-            if str(bound["id"]) != str(target["source_asset_id"]):
+            if _required_string(
+                bound.get("id"),
+                "bound source asset id",
+            ) != source_asset_id:
                 raise JobConflict("frozen source asset binding changed")
-            if str(bound["checksum"]) != str(target["source_checksum"]):
+            if _required_string(
+                bound.get("checksum"),
+                "bound source checksum",
+            ) != source_checksum:
                 raise JobConflict("frozen source checksum changed")
             path = self.storage.resolve_relative_path(
-                str(bound["relative_path"])
+                _required_string(
+                    bound.get("relative_path"),
+                    "bound source relative path",
+                )
             )
             image_bytes = path.read_bytes()
             digest = hashlib.sha256(image_bytes).hexdigest()
-            if digest != str(target["source_checksum"]):
+            if digest != source_checksum:
                 raise JobConflict("source file checksum failed validation")
             algorithm_config = self._with_vlm_credentials(config)
             raw = self.algorithms.analyze_page(
                 image_bytes,
-                page_number=int(target["page_number_snapshot"]),
+                page_number=page_number,
                 config=algorithm_config,
             )
             canonical = normalize_page_analysis(
                 raw,
                 page_id=page_id,
-                source_asset_id=str(target["source_asset_id"]),
-                source_checksum=str(target["source_checksum"]),
-                page_number=int(target["page_number_snapshot"]),
+                source_asset_id=source_asset_id,
+                source_checksum=source_checksum,
+                page_number=page_number,
             )
 
             checkpoint = {
@@ -176,16 +190,16 @@ class InsightAnalysisWorkerService:
                     run_id=run_id,
                     scope=scope,
                     page_id=page_id,
-                    source_asset_id=str(target["source_asset_id"]),
-                    source_checksum=str(target["source_checksum"]),
-                    page_number=int(target["page_number_snapshot"]),
+                    source_asset_id=source_asset_id,
+                    source_checksum=source_checksum,
+                    page_number=page_number,
                     payload=canonical,
                 )
                 checkpoint["analysisResultId"] = result_id
 
             self.jobs.complete_step(
                 fence,
-                step_id=str(step["stepId"]),
+                step_id=step_id,
                 checkpoint=checkpoint,
                 input_fingerprint=digest,
                 publisher=publish,
@@ -210,7 +224,7 @@ class InsightAnalysisWorkerService:
 
             self.jobs.fail_step(
                 fence,
-                step_id=str(step["stepId"]),
+                step_id=step_id,
                 code="INSIGHT_PAGE_FAILED",
                 message=message,
                 publisher=publish_failure,
@@ -227,58 +241,29 @@ class InsightAnalysisWorkerService:
         fence: AttemptFence,
         step: Mapping[str, Any],
     ) -> Mapping[str, Any]:
-        config = _object(step.get("config"))
-        run_id = str(config.get("runId", ""))
-        if not run_id:
-            raise JobConflict("Insight validation step is missing runId")
-        checkpoint: dict[str, Any] = {}
-
-        def publish(connection) -> None:
-            checkpoint.update(
-                InsightRepository.validate_run_sources(
-                    connection,
-                    run_id=run_id,
-                )
-            )
-            if int(checkpoint["successCount"]) == 0:
-                InsightRepository.mark_run_failed(
-                    connection,
-                    run_id=run_id,
-                )
-                raise InsightConflict(
-                    "analysis run has no successful pages"
-                )
-
-        self.jobs.complete_step(
-            fence,
-            step_id=str(step["stepId"]),
-            checkpoint=checkpoint,
-            publisher=publish,
+        config = _required_mapping(
+            step.get("config"),
+            "frozen Insight job config",
         )
-        return {**checkpoint, "__already_published__": True}
-
-    def _publish_run(
-        self,
-        fence: AttemptFence,
-        step: Mapping[str, Any],
-    ) -> Mapping[str, Any]:
-        config = _object(step.get("config"))
-        run_id = str(config.get("runId", ""))
-        if not run_id:
-            raise JobConflict("Insight publish step is missing runId")
-        checkpoint: dict[str, Any] = {"runId": run_id}
+        run_id = _required_string(config.get("runId"), "Insight runId")
+        step_id = _required_string(step.get("stepId"), "Insight stepId")
+        checkpoint: dict[str, Any] = {}
         try:
             def publish(connection) -> None:
                 checkpoint.update(
-                    InsightRepository.finalize_run(
+                    InsightRepository.validate_run_sources(
                         connection,
                         run_id=run_id,
                     )
                 )
+                if checkpoint["successCount"] == 0:
+                    raise InsightConflict(
+                        "analysis run has no successful pages"
+                    )
 
             self.jobs.complete_step(
                 fence,
-                step_id=str(step["stepId"]),
+                step_id=step_id,
                 checkpoint=checkpoint,
                 publisher=publish,
             )
@@ -299,7 +284,62 @@ class InsightAnalysisWorkerService:
 
             self.jobs.fail_step(
                 fence,
-                step_id=str(step["stepId"]),
+                step_id=step_id,
+                code="INSIGHT_VALIDATION_FAILED",
+                message=message,
+                publisher=publish_failure,
+            )
+            return {
+                "runId": run_id,
+                "failed": True,
+                "__already_published__": True,
+            }
+
+    def _publish_run(
+        self,
+        fence: AttemptFence,
+        step: Mapping[str, Any],
+    ) -> Mapping[str, Any]:
+        config = _required_mapping(
+            step.get("config"),
+            "frozen Insight job config",
+        )
+        run_id = _required_string(config.get("runId"), "Insight runId")
+        step_id = _required_string(step.get("stepId"), "Insight stepId")
+        checkpoint: dict[str, Any] = {"runId": run_id}
+        try:
+            def publish(connection) -> None:
+                checkpoint.update(
+                    InsightRepository.finalize_run(
+                        connection,
+                        run_id=run_id,
+                    )
+                )
+
+            self.jobs.complete_step(
+                fence,
+                step_id=step_id,
+                checkpoint=checkpoint,
+                publisher=publish,
+            )
+            return {**checkpoint, "__already_published__": True}
+        except AttemptFenced:
+            raise
+        except Exception as exc:
+            message = self.jobs.redact_attempt_message(
+                fence,
+                str(exc) or exc.__class__.__name__,
+            )
+
+            def publish_failure(connection) -> None:
+                InsightRepository.mark_run_failed(
+                    connection,
+                    run_id=run_id,
+                )
+
+            self.jobs.fail_step(
+                fence,
+                step_id=step_id,
                 code="INSIGHT_PUBLISH_FAILED",
                 message=message,
                 publisher=publish_failure,
@@ -325,5 +365,19 @@ class InsightAnalysisWorkerService:
             ) from exc
 
 
-def _object(value: object) -> dict[str, Any]:
-    return dict(value) if isinstance(value, Mapping) else {}
+def _required_mapping(value: object, field: str) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise JobConflict(f"{field} must be an object")
+    return dict(value)
+
+
+def _required_string(value: object, field: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise JobConflict(f"{field} must be a non-empty string")
+    return value
+
+
+def _required_positive_integer(value: object, field: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise JobConflict(f"{field} must be a positive integer")
+    return value

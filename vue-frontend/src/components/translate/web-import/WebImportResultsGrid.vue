@@ -9,7 +9,7 @@ import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import UiProgressBar from '@/components/ui/UiProgressBar.vue'
-import type { ExtractResult, WebImportState } from '@/types/webImport'
+import type { ExtractResult, WebImportStatus } from '@/types/webImport'
 
 const props = defineProps<{
   downloadProgress: { current: number; total: number }
@@ -21,7 +21,7 @@ const props = defineProps<{
   isLoadingMorePages?: boolean
   selectedCount: number
   selectedPages: Set<number>
-  status: WebImportState['status']
+  status: WebImportStatus
 }>()
 
 const emit = defineEmits<{
@@ -31,17 +31,19 @@ const emit = defineEmits<{
 }>()
 
 const imageItems = computed(() => {
-  return props.extractResult?.pages.map(page => ({
-    id: page.pageNumber,
-    src: page.imageUrl,
-    alt: `第${page.pageNumber}页`,
-    label: `第 ${page.pageNumber} 页`,
-    selected: props.selectedPages.has(page.pageNumber),
-  })) ?? []
+  return (
+    props.extractResult?.pages.map(page => ({
+      id: page.pageNumber,
+      src: page.imageUrl,
+      alt: `第${page.pageNumber}页`,
+      label: `第 ${page.pageNumber} 页`,
+      selected: props.selectedPages.has(page.pageNumber),
+    })) ?? []
+  )
 })
 
 const resultMetadataChips = computed<ProductChipItem[]>(() => {
-  if (!props.extractResult?.success) return []
+  if (!props.extractResult) return []
 
   const items: ProductChipItem[] = [
     {
@@ -62,11 +64,6 @@ const resultMetadataChips = computed<ProductChipItem[]>(() => {
   return items
 })
 
-const resultTitle = computed(() => {
-  if (!props.extractResult?.success) return ''
-  return `《${props.extractResult.comicTitle}》- ${props.extractResult.chapterTitle}`
-})
-
 function handleToggleImage(id: string | number): void {
   if (typeof id === 'number') {
     emit('togglePage', id)
@@ -80,12 +77,8 @@ function handleToggleImage(id: string | number): void {
       {{ error }}
     </ProductStatusBanner>
 
-    <div v-if="extractResult?.success" class="web-import-results-grid__section">
-      <ProductSectionHeader
-        :title="resultTitle"
-        icon-name="book-open"
-        size="sm"
-      >
+    <div v-if="extractResult" class="web-import-results-grid__section">
+      <ProductSectionHeader title="提取结果" icon-name="book-open" size="sm">
         <template #actions>
           <ProductChipList
             class="web-import-results-grid__details"
@@ -165,5 +158,4 @@ function handleToggleImage(id: string | number): void {
 .web-import-results-grid__progress-section {
   margin-bottom: 16px;
 }
-
 </style>

@@ -19,12 +19,10 @@ interface NormalizedProductTextInputOptions {
 }
 
 interface ProductTextInputRequest {
-  id: number
   options: NormalizedProductTextInputOptions
   resolve: (value: string | null) => void
 }
 
-let nextRequestId = 1
 const activeRequest = shallowRef<ProductTextInputRequest | null>(null)
 const pendingRequests: ProductTextInputRequest[] = []
 
@@ -55,7 +53,6 @@ function settleActiveRequest(value: string | null) {
 export function requestProductTextInput(options: ProductTextInputOptions): Promise<string | null> {
   return new Promise(resolve => {
     pendingRequests.push({
-      id: nextRequestId++,
       options: normalizeTextInputOptions(options),
       resolve,
     })

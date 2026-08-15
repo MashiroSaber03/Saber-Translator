@@ -8,11 +8,16 @@ import os
 from pathlib import Path
 import signal
 import threading
+from typing import Any
 
 from src.backend_v2.logging_config import configure_backend_logging
 from src.backend_v2.paths import data_root_fingerprint, ensure_data_root, resolve_data_root
 from src.backend_v2.runtime_heartbeat import EpochHeartbeat
-from src.backend_v2.runtime_identity import RuntimeIdentity
+from src.backend_v2.runtime_identity import (
+    LauncherParentMonitor,
+    RuntimeIdentity,
+    start_launcher_parent_monitor,
+)
 from src.backend_v2.storage.database import (
     create_sqlite_engine,
     database_path_for,
@@ -22,6 +27,19 @@ from src.backend_v2.storage.epochs import ProcessEpochRepository
 
 
 LOGGER = logging.getLogger("saber.worker")
+
+
+def _insight_layer_handler(step_kind: str, service: Any):
+    prefix = "insight_build_layer_"
+    suffix = step_kind.removeprefix(prefix)
+    if (
+        step_kind.startswith(prefix)
+        and suffix.isascii()
+        and suffix.isdigit()
+        and str(int(suffix)) == suffix
+    ):
+        return service.handle
+    return None
 
 
 def _write_ready_marker(data_root: Path, identity: RuntimeIdentity) -> None:
@@ -92,6 +110,7 @@ def run_worker(args: object) -> int:
         identity.epoch_id[:8],
     )
     stop_event = threading.Event()
+    parent_monitor: LauncherParentMonitor | None = None
     heartbeat = (
         EpochHeartbeat(
             repository,
@@ -107,11 +126,26 @@ def run_worker(args: object) -> int:
         LOGGER.info("Worker 收到终止信号")
         stop_event.set()
 
+    def stop_orphaned_worker() -> None:
+        LOGGER.critical("Launcher 进程已退出，Worker 立即终止")
+        os._exit(75)
+
     signal.signal(signal.SIGINT, request_stop)
     signal.signal(signal.SIGTERM, request_stop)
 
     if heartbeat is not None:
         heartbeat.start()
+    try:
+        parent_monitor = start_launcher_parent_monitor(
+            stop_orphaned_worker,
+            test_mode=identity.test_mode,
+        )
+    except BaseException:
+        if heartbeat is not None:
+            heartbeat.stop()
+        if engine is not None:
+            engine.dispose()
+        raise
     try:
         if engine is None:
             while not stop_event.wait(timeout=0.5):
@@ -271,10 +305,6 @@ def run_worker(args: object) -> int:
                     "insight_stage_vectors": insight_derived.handle,
                 }
             )
-            for layer_index in range(8):
-                job_handlers[
-                    f"insight_build_layer_{layer_index}"
-                ] = insight_derived.handle
             continuation = ContinuationWorkerService(
                 data_root=data_root,
                 engine=engine,
@@ -350,7 +380,7 @@ def run_worker(args: object) -> int:
             )
             maintenance.run_if_due(force=True)
             LOGGER.info(
-                "Worker 服务初始化完成：任务步骤处理器=%s，批处理器=2，操作处理器=4",
+                "Worker 服务初始化完成：任务步骤处理器=%s，批处理器=3，操作处理器=4",
                 len(job_handlers),
             )
             LOGGER.info("Worker 调度循环已就绪，开始从 SQLite 队列领取任务")
@@ -382,6 +412,10 @@ def run_worker(args: object) -> int:
                     "proofread": translation.batch_handler,
                     "web_extract_page": web_import.handle_download_batch,
                 },
+                handler_resolver=lambda step_kind: _insight_layer_handler(
+                    step_kind,
+                    insight_derived,
+                ),
                 safe_point=run_immediate_work,
                 on_activity=model_lifecycle.note_activity,
                 plugin_runtime=plugin_job_runtime,
@@ -393,6 +427,8 @@ def run_worker(args: object) -> int:
         LOGGER.info("Worker 正在关闭")
         if heartbeat is not None:
             heartbeat.stop()
+        if parent_monitor is not None:
+            parent_monitor.stop()
         if engine is not None:
             engine.dispose()
         LOGGER.info("Worker 已关闭")

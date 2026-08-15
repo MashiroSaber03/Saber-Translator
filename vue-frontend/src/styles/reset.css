@@ -4,13 +4,6 @@
   box-sizing: border-box;
 }
 
-input,
-textarea,
-select,
-button {
-  box-sizing: border-box;
-}
-
 body {
   font-family: var(--font-sans);
   margin: 0;

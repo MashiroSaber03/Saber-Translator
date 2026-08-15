@@ -33,25 +33,6 @@ describe('useImageViewer', () => {
     }
   })
 
-  it('keeps image viewer property tests on the production composable contract', () => {
-    const content = source('tests/property/imageViewer.property.ts')
-
-    for (const shadowImplementation of [
-      'interface ViewerState',
-      'interface ViewerConfig',
-      'function zoomAt(',
-      'function zoom(',
-      'function reset(',
-      'function fitToViewport(',
-      'function pan(',
-      'ImageViewer 组件属性测试',
-      '@param',
-      '@returns',
-    ]) {
-      expect(content).not.toContain(shadowImplementation)
-    }
-  })
-
   it('clamps setTransform scale before later zoom math uses it', () => {
     const viewer = useImageViewer({ minScale: 0.25, maxScale: 4 })
 
@@ -78,5 +59,19 @@ describe('useImageViewer', () => {
     expect(transform.scale).toBeGreaterThan(0)
     expect(Number.isFinite(transform.translateX)).toBe(true)
     expect(Number.isFinite(transform.translateY)).toBe(true)
+  })
+
+  it('keeps reset and drag state valid for constrained or malformed input', () => {
+    const viewer = useImageViewer({ minScale: 2, maxScale: 4 })
+
+    expect(viewer.scale.value).toBe(2)
+    viewer.startDrag(Number.NaN, 10)
+    viewer.drag(100, 100)
+    expect(viewer.getTransform()).toEqual({ scale: 2, translateX: 0, translateY: 0 })
+
+    viewer.startDrag(10, 10)
+    viewer.drag(Number.POSITIVE_INFINITY, 20)
+    viewer.resetZoom()
+    expect(viewer.getTransform()).toEqual({ scale: 2, translateX: 0, translateY: 0 })
   })
 })

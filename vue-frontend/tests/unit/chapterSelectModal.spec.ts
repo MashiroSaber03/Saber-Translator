@@ -63,6 +63,28 @@ describe('ChapterSelectModal', () => {
     expect(actionRow.props('ariaLabel')).toBe('章节选择操作')
   })
 
+  it('does not confirm a chapter that disappeared from the current chapter list', async () => {
+    const wrapper = mountModal()
+    await wrapper.findAllComponents(ProductRecordCard)[1]!.trigger('click')
+    await wrapper.setProps({
+      chapters: [{ id: 'chapter-1', title: '第一章', startPage: 1, endPage: 12 }],
+    })
+
+    const confirmButton = wrapper.findAll('button').find(button => button.text() === '确定')
+    expect(confirmButton?.attributes('disabled')).toBeDefined()
+    await confirmButton!.trigger('click')
+    expect(wrapper.emitted('select')).toBeUndefined()
+  })
+
+  it('renders explicit zero page boundaries without truthiness fallback', async () => {
+    const wrapper = mountModal()
+    await wrapper.setProps({
+      chapters: [{ id: 'chapter-0', title: '空章节', startPage: 0, endPage: 0 }],
+    })
+
+    expect(wrapper.text()).toContain('第 0-0 页')
+  })
+
   it('keeps chapter select modal hooks under the modal owner', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/components/insight/ChapterSelectModal.vue'), 'utf8')
     const oldHooks = [

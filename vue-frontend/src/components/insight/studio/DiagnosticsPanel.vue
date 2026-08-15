@@ -3,7 +3,7 @@
     <div class="diagnostics-panel__summary-grid">
       <ProductRecordCard class="diagnostics-panel__summary-card">
         <span class="diagnostics-panel__summary-label">结构诊断</span>
-        <strong class="diagnostics-panel__summary-value">{{ diagnostics ? (diagnostics.valid ? '通过' : '存在错误') : '未执行' }}</strong>
+        <strong class="diagnostics-panel__summary-value">{{ diagnosticStatus }}</strong>
       </ProductRecordCard>
       <ProductRecordCard class="diagnostics-panel__summary-card">
         <span class="diagnostics-panel__summary-label">错误数</span>
@@ -63,6 +63,13 @@ import type { ExportDiagnostic } from '@/types/characterStudio'
 const props = defineProps<{
   diagnostics: ExportDiagnostic | null
 }>()
+
+const diagnosticStatus = computed(() => {
+  if (!props.diagnostics) return '未执行'
+  if (props.diagnostics.errors.length > 0) return '存在错误'
+  if (props.diagnostics.warnings.length > 0) return '存在警告'
+  return props.diagnostics.valid ? '通过' : '未通过'
+})
 
 const checkItems = computed<ProductChipItem[]>(() => {
   if (!props.diagnostics) return []

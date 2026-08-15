@@ -231,6 +231,9 @@ describe('product feedback components', () => {
     await wrapper.get('input').trigger('keydown.enter')
     expect(wrapper.emitted('search')?.[0]).toEqual(['Rin'])
 
+    await wrapper.get('input').trigger('keydown', { key: 'Enter', isComposing: true })
+    expect(wrapper.emitted('search')).toHaveLength(1)
+
     await wrapper.get('button[aria-label="清除搜索"]').trigger('click')
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([''])
     expect(wrapper.emitted('clear')).toBeTruthy()
@@ -258,6 +261,9 @@ describe('product feedback components', () => {
 
     const checkbox = wrapper.getComponent(UiCheckbox)
     expect(checkbox.props('ariaLabel')).toBe('选择第 1 页')
+    expect(wrapper.find('label label').exists()).toBe(false)
+    expect(wrapper.get('.product-selectable-image-grid__body').attributes('for'))
+      .toBe(wrapper.get('input[type="checkbox"]').attributes('id'))
 
     checkbox.vm.$emit('change', true)
     expect(wrapper.emitted('toggle')?.[0]).toEqual([1])
@@ -286,6 +292,29 @@ describe('product feedback components', () => {
 
     expect(wrapper.emitted('update:modelValue')).toEqual([['pdf']])
     expect(wrapper.emitted('select')).toEqual([['pdf']])
+  })
+
+  it('moves exclusive choice-card focus with radio-group keyboard navigation', async () => {
+    const wrapper = mount(ProductChoiceCardGrid, {
+      attachTo: document.body,
+      props: {
+        accessibilityLabel: '导出格式',
+        modelValue: 'images',
+        items: [
+          { id: 'images', label: '图片 ZIP' },
+          { id: 'disabled', label: '暂不可用', disabled: true },
+          { id: 'pdf', label: 'PDF 文档' },
+        ],
+      },
+    })
+    const options = wrapper.findAll('[role="radio"]')
+    expect(options.map(option => option.attributes('tabindex'))).toEqual(['0', '-1', '-1'])
+
+    await options[0]!.trigger('keydown', { key: 'ArrowRight' })
+
+    expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['pdf'])
+    expect(document.activeElement).toBe(options[2]!.element)
+    wrapper.unmount()
   })
 
   it('renders clickable thumbnail cards with selected and marked states', async () => {
@@ -345,6 +374,22 @@ describe('product feedback components', () => {
     expect(wrapper.text()).toContain('占位页')
     expect(wrapper.text()).toContain('续写')
     expect(wrapper.text()).toContain('1')
+  })
+
+  it('renders numeric zero as an explicit thumbnail selection badge', () => {
+    const wrapper = mount(ProductThumbnailGrid, {
+      props: {
+        items: [{
+          id: 'zero',
+          src: '',
+          alt: '零号页',
+          label: '零号页',
+          selectedBadge: 0,
+        }],
+      },
+    })
+
+    expect(wrapper.get('.product-thumbnail-grid__selected-badge').text()).toBe('0')
   })
 
   it('renders static thumbnail cards without exposing button behavior', () => {
@@ -559,6 +604,9 @@ describe('product feedback components', () => {
     expect(wrapper.emitted('submit')).toBeTruthy()
 
     await wrapper.get('textarea').trigger('keydown', { key: 'Enter', shiftKey: true })
+    expect(wrapper.emitted('submit')).toHaveLength(1)
+
+    await wrapper.get('textarea').trigger('keydown', { key: 'Enter', isComposing: true })
     expect(wrapper.emitted('submit')).toHaveLength(1)
 
     await wrapper.get('button[aria-label="发送"]').trigger('click')

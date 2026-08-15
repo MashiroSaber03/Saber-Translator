@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { nextTick, reactive, ref, type Ref } from 'vue'
@@ -112,8 +112,6 @@ function createStateStub(currentStep = 0) {
     resetState: vi.fn().mockResolvedValue(undefined),
     showMessage: vi.fn(),
     getCharacterImageUrl: vi.fn().mockReturnValue(''),
-    getFormImageUrl: vi.fn().mockReturnValue(''),
-    getGeneratedImageUrl: vi.fn().mockReturnValue(''),
   }
 }
 
@@ -131,9 +129,11 @@ const pageDetailsPanelStub = {
 }
 
 const imagePanelPromptStub = {
-  emits: ['prompt-change'],
+  props: ['pages', 'isGenerating', 'progress', 'bookId', 'state'],
+  emits: ['prompt-change', 'batch-generate', 'regenerate', 'usePrevious'],
   template:
-    '<button class="trigger-prompt-change" @click="$emit(\'prompt-change\', 1, \'新提示词\')">prompt</button>',
+    '<button class="trigger-prompt-change" @click="$emit(\'prompt-change\', 1, \'新提示词\')">prompt</button>' +
+    '<button class="trigger-batch-generate" @click="$emit(\'batch-generate\', null)">generate</button>',
 }
 
 function getButtonByText(wrapper: ReturnType<typeof mount>, text: string) {
@@ -365,6 +365,27 @@ describe('ContinuationPanel', () => {
     }
   })
 
+  it('keeps the settings step active when config persistence fails', async () => {
+    mocks.saveConfig.mockRejectedValueOnce(new Error('database busy'))
+    const wrapper = mount(ContinuationPanel, {
+      global: {
+        stubs: {
+          CharacterManagementPanel: true,
+          ScriptGenerationPanel: scriptPanelStub,
+          PageDetailsPanel: true,
+          ImageGenerationPanel: true,
+          ExportPanel: true,
+        },
+      },
+    })
+
+    await getButtonByText(wrapper, '下一步：生成脚本').trigger('click')
+    await flushPromises()
+
+    expect(mocks.state.currentStep.value).toBe(0)
+    expect(mocks.state.showMessage).toHaveBeenCalledWith('续写配置保存失败：database busy', 'error')
+  })
+
   it('renders settings controls through the shared field and form grid primitives', () => {
     const wrapper = mount(ContinuationPanel, {
       global: {
@@ -395,14 +416,14 @@ describe('ContinuationPanel', () => {
     expect(numberFields).toHaveLength(2)
     expect(numberFields[0]?.props()).toMatchObject({
       inputId: 'continuationPageCount',
-      min: 5,
-      max: 50,
+      min: 1,
+      max: undefined,
       modelValue: 10,
     })
     expect(numberFields[1]?.props()).toMatchObject({
       inputId: 'continuationStyleRefPages',
       min: 1,
-      max: 10,
+      max: undefined,
       modelValue: 3,
     })
     expect(wrapper.getComponent(UiTextarea).props('variant')).toBe('panel')
@@ -537,6 +558,59 @@ describe('ContinuationPanel', () => {
     )
   })
 
+  it('does not submit duplicate script jobs while the first command is pending', async () => {
+    mocks.state = createStateStub(1)
+    const command = deferred<string>()
+    mocks.generateScriptWithRefs.mockReturnValueOnce(command.promise)
+    const wrapper = mount(ContinuationPanel, {
+      global: {
+        stubs: {
+          CharacterManagementPanel: true,
+          ScriptGenerationPanel: scriptPanelStub,
+          PageDetailsPanel: true,
+          ImageGenerationPanel: true,
+          ExportPanel: true,
+        },
+      },
+    })
+
+    await wrapper.find('.trigger-script-generate').trigger('click')
+    await wrapper.find('.trigger-script-generate').trigger('click')
+
+    expect(mocks.generateScriptWithRefs).toHaveBeenCalledTimes(1)
+    command.resolve('job-1')
+    await flushPromises()
+  })
+
+  it('does not project an old-book script completion into the newly selected book', async () => {
+    mocks.state = createStateStub(1)
+    const job = deferred<{ status: string }>()
+    mocks.waitForJob.mockReturnValueOnce(job.promise)
+    const wrapper = mount(ContinuationPanel, {
+      global: {
+        stubs: {
+          CharacterManagementPanel: true,
+          ScriptGenerationPanel: scriptPanelStub,
+          PageDetailsPanel: true,
+          ImageGenerationPanel: true,
+          ExportPanel: true,
+        },
+      },
+    })
+
+    await wrapper.find('.trigger-script-generate').trigger('click')
+    await vi.waitFor(() => expect(mocks.waitForJob).toHaveBeenCalled())
+    mocks.insightStore.currentBookId = 'book-2'
+    await nextTick()
+    job.resolve({ status: 'completed' })
+    await flushPromises()
+
+    expect(mocks.state.showMessage).not.toHaveBeenCalledWith(
+      expect.stringContaining('脚本生成成功'),
+      'success'
+    )
+  })
+
   it('provides a manual sync button and triggers manual sync without resetting continuation data', async () => {
     const wrapper = mount(ContinuationPanel, {
       global: {
@@ -591,7 +665,6 @@ describe('ContinuationPanel', () => {
         story_text: '剧情',
         dialogue_text: '对白',
         characters: ['主角'],
-        character_forms: [],
         final_prompt: '',
         image_url: '',
         previous_url: '',
@@ -633,7 +706,6 @@ describe('ContinuationPanel', () => {
       story_text: '旧剧情',
       dialogue_text: '对白',
       characters: ['主角'],
-      character_forms: [],
       final_prompt: '',
       image_url: '',
       previous_url: '',
@@ -680,7 +752,6 @@ describe('ContinuationPanel', () => {
       story_text: '旧剧情',
       dialogue_text: '对白',
       characters: ['主角'],
-      character_forms: [],
       final_prompt: '',
       image_url: '',
       previous_url: '',
@@ -723,7 +794,6 @@ describe('ContinuationPanel', () => {
       story_text: '剧情',
       dialogue_text: '对白',
       characters: ['主角'],
-      character_forms: [],
       final_prompt: '旧提示词',
       image_url: '',
       previous_url: '',
@@ -752,6 +822,87 @@ describe('ContinuationPanel', () => {
       await vi.advanceTimersByTimeAsync(600)
 
       expect(mocks.savePages).toHaveBeenCalledWith('book-1', [page])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('flushes edited prompts before submitting an image generation job', async () => {
+    mocks.state = createStateStub(3)
+    const page = {
+      page_number: 1,
+      continuity_text: '承接',
+      story_text: '剧情',
+      dialogue_text: '对白',
+      characters: ['主角'],
+      final_prompt: '旧提示词',
+      image_url: '',
+      previous_url: '',
+      status: 'pending' as const,
+    }
+    mocks.state.pages.value = [page]
+    const wrapper = mount(ContinuationPanel, {
+      global: {
+        stubs: {
+          CharacterManagementPanel: true,
+          ScriptGenerationPanel: scriptPanelStub,
+          PageDetailsPanel: true,
+          ImageGenerationPanel: imagePanelPromptStub,
+          ExportPanel: true,
+        },
+      },
+    })
+
+    await wrapper.find('.trigger-prompt-change').trigger('click')
+    await wrapper.find('.trigger-batch-generate').trigger('click')
+    await flushPromises()
+
+    expect(mocks.savePages).toHaveBeenCalledWith('book-1', [
+      expect.objectContaining({ final_prompt: '新提示词' }),
+    ])
+    expect(mocks.imageGeneration.batchGenerateImages).toHaveBeenCalledOnce()
+    expect(mocks.savePages.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.imageGeneration.batchGenerateImages.mock.invocationCallOrder[0]!
+    )
+  })
+
+  it('autosaves only the edited page instead of rewriting every page', async () => {
+    vi.useFakeTimers()
+    mocks.state = createStateStub(2)
+    const firstPage = {
+      page_number: 1,
+      continuity_text: '承接',
+      story_text: '旧剧情',
+      dialogue_text: '对白',
+      characters: ['主角'],
+      final_prompt: '',
+      image_url: '',
+      previous_url: '',
+      status: 'pending' as const,
+    }
+    const secondPage = { ...firstPage, page_number: 2, story_text: '第二页' }
+    mocks.state.pages.value = [firstPage, secondPage]
+
+    try {
+      const wrapper = mount(ContinuationPanel, {
+        global: {
+          stubs: {
+            CharacterManagementPanel: true,
+            ScriptGenerationPanel: scriptPanelStub,
+            PageDetailsPanel: pageDetailsPanelStub,
+            ImageGenerationPanel: true,
+            ExportPanel: true,
+          },
+        },
+      })
+
+      await wrapper.find('.trigger-story-change').trigger('click')
+      await vi.advanceTimersByTimeAsync(600)
+
+      expect(mocks.savePages).toHaveBeenCalledWith('book-1', [
+        expect.objectContaining({ page_number: 1, story_text: '新剧情' }),
+      ])
+      expect(mocks.savePages.mock.calls[0]?.[1]).toHaveLength(1)
     } finally {
       vi.useRealTimers()
     }

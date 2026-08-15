@@ -15,22 +15,26 @@ import UiField from '@/components/ui/UiField.vue'
 import UiNumberField from '@/components/ui/UiNumberField.vue'
 import UiProgressBar from '@/components/ui/UiProgressBar.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
-import { getAvailableImages } from '@/api/continuation'
+import { getAvailableImages, loadMoreAvailableCharacterForms } from '@/api/continuation'
 
-const componentSourcePath = resolve(process.cwd(), 'src/components/insight/continuation/ImageGenerationPanel.vue')
+const componentSourcePath = resolve(
+  process.cwd(),
+  'src/components/insight/continuation/ImageGenerationPanel.vue'
+)
 
 vi.mock('@/api/continuation', () => ({
   getAvailableImages: vi.fn().mockResolvedValue({
     original_images: [],
     continuation_images: [],
     character_forms: [],
-    total_original_pages: 0,
+    original_cursor: 0,
+    character_forms_cursor: null,
   }),
+  loadMoreAvailableCharacterForms: vi.fn(),
 }))
 
 const stateStub = {
   styleRefPages: ref(3),
-  getGeneratedImageUrl: vi.fn((path: string) => path),
   showMessage: vi.fn(),
 }
 
@@ -45,8 +49,8 @@ function createPage(overrides: Record<string, unknown> = {}) {
     story_text: '本页剧情很长很长很长很长很长很长很长很长很长很长。',
     dialogue_text: '二乃：这是一段很长很长很长很长的对白。',
     characters: [],
-    character_forms: [],
-    final_prompt: '上一页剧情：foo\n本页剧情：bar\n关键对白：baz\n风格约束：保持原作漫画线条、脸型、上色、页面密度和分镜节奏。',
+    final_prompt:
+      '上一页剧情：foo\n本页剧情：bar\n关键对白：baz\n风格约束：保持原作漫画线条、脸型、上色、页面密度和分镜节奏。',
     image_url: '/tmp/page.png',
     previous_url: '',
     status: 'generated',
@@ -77,10 +81,11 @@ describe('ImageGenerationPanel', () => {
       original_images: [],
       continuation_images: [],
       character_forms: [],
-      total_original_pages: 0,
+      original_cursor: 0,
+      character_forms_cursor: null,
     })
+    vi.mocked(loadMoreAvailableCharacterForms).mockReset()
     stateStub.styleRefPages.value = 3
-    stateStub.getGeneratedImageUrl.mockClear()
     stateStub.showMessage.mockClear()
   })
 
@@ -89,7 +94,7 @@ describe('ImageGenerationPanel', () => {
       props: {
         pages: [
           createPage({ page_number: 1 }),
-          createPage({ page_number: 2, status: 'pending', image_url: '' }),
+          createPage({ page_number: 2, status: 'generated', image_url: '' }),
         ],
         isGenerating: false,
         progress: 0,
@@ -104,22 +109,30 @@ describe('ImageGenerationPanel', () => {
     })
 
     const fields = wrapper.findAllComponents(UiField)
-    expect(fields.some(field => (
-      field.props('label') === '画风参考图数量'
-      && field.props('controlId') === 'continuation-style-reference-count'
-    ))).toBe(true)
+    expect(
+      fields.some(
+        field =>
+          field.props('label') === '画风参考图数量' &&
+          field.props('controlId') === 'continuation-style-reference-count'
+      )
+    ).toBe(true)
 
     const numberField = wrapper.getComponent(UiNumberField)
     expect(numberField.props('inputId')).toBe('continuation-style-reference-count')
     expect(numberField.props('min')).toBe(1)
-    expect(numberField.props('max')).toBe(10)
+    expect(numberField.props('max')).toBeUndefined()
     expect(numberField.props('modelValue')).toBe(3)
 
     expect(wrapper.findAllComponents(ProductRecordCard)).toHaveLength(2)
-    expect(wrapper.findAllComponents(ProductChipList).some(chips => (
-      chips.props('ariaLabel') === '页面 2 生成状态'
-      && chips.props('items')[0]?.label === '待生成'
-    ))).toBe(true)
+    expect(
+      wrapper
+        .findAllComponents(ProductChipList)
+        .some(
+          chips =>
+            chips.props('ariaLabel') === '页面 2 生成状态' &&
+            chips.props('items')[0]?.label === '待生成'
+        )
+    ).toBe(true)
     expect(wrapper.findAllComponents(ProductActionRow).length).toBeGreaterThanOrEqual(2)
   })
 
@@ -156,8 +169,12 @@ describe('ImageGenerationPanel', () => {
 
     await toggleButtons[0]!.trigger('click')
 
-    expect(wrapper.findAll('.image-generation-panel__context-text')[0]?.classes()).toContain('image-generation-panel__context-text--expanded')
-    expect(wrapper.findAll('.image-generation-panel__context-text')[1]?.classes()).toContain('image-generation-panel__context-text--clamped')
+    expect(wrapper.findAll('.image-generation-panel__context-text')[0]?.classes()).toContain(
+      'image-generation-panel__context-text--expanded'
+    )
+    expect(wrapper.findAll('.image-generation-panel__context-text')[1]?.classes()).toContain(
+      'image-generation-panel__context-text--clamped'
+    )
     const collapseButton = wrapper
       .findAllComponents(UiButton)
       .find(button => button.text().includes('收起'))
@@ -195,7 +212,11 @@ describe('ImageGenerationPanel', () => {
       '关键对白',
       '最终生图提示词',
     ])
-    expect(detailSections.every(section => section.find('.product-detail-section__label-actions').exists())).toBe(true)
+    expect(
+      detailSections.every(section =>
+        section.find('.product-detail-section__label-actions').exists()
+      )
+    ).toBe(true)
 
     const source = readFileSync(componentSourcePath, 'utf8')
     expect(source).not.toMatch(/<label\b/)
@@ -229,9 +250,13 @@ describe('ImageGenerationPanel', () => {
 
     expect(wrapper.find('.prompt-preview').exists()).toBe(false)
     expect(wrapper.find('.image-generation-panel__prompt-edit').exists()).toBe(false)
-    expect(wrapper.find('.image-generation-panel__prompt-collapsed-hint').text()).toContain('默认已折叠')
+    expect(wrapper.find('.image-generation-panel__prompt-collapsed-hint').text()).toContain(
+      '默认已折叠'
+    )
 
-    const promptToggle = wrapper.findAllComponents(UiButton).find(button => button.text().includes('编辑'))
+    const promptToggle = wrapper
+      .findAllComponents(UiButton)
+      .find(button => button.text().includes('编辑'))
     expect(promptToggle?.props('variant')).toBe('secondary')
     expect(promptToggle?.props('size')).toBe('xs')
     const source = readFileSync(componentSourcePath, 'utf8')
@@ -318,7 +343,9 @@ describe('ImageGenerationPanel', () => {
 
     expect(source).not.toContain('--image-generation-panel-empty-preview-background: #f7f7f7')
     expect(source).not.toContain('--image-generation-panel-focus-ring: rgba(99, 102, 241, .25)')
-    expect(source).toContain('--image-generation-panel-empty-preview-background: var(--color-surface-muted)')
+    expect(source).toContain(
+      '--image-generation-panel-empty-preview-background: var(--color-surface-muted)'
+    )
     expect(source).not.toContain('ref-count-input')
     expect(rootStyle?.groups?.body ?? '').not.toMatch(/--ui-(?:input|textarea)-/)
   })
@@ -335,10 +362,13 @@ describe('ImageGenerationPanel', () => {
 
   it('wraps long generated story and prompt text inside narrow continuation panels', () => {
     const source = readFileSync(componentSourcePath, 'utf8')
-    const contextStyle = source.match(/\.image-generation-panel__context-text \{(?<body>[\s\S]*?)\n\}/)
-      ?.groups?.body ?? ''
-    const promptStyle = source.match(/\.image-generation-panel__prompt-(?:input|collapsed-hint) \{(?<body>[\s\S]*?)\n\}/g)
-      ?.join('\n') ?? ''
+    const contextStyle =
+      source.match(/\.image-generation-panel__context-text \{(?<body>[\s\S]*?)\n\}/)?.groups
+        ?.body ?? ''
+    const promptStyle =
+      source
+        .match(/\.image-generation-panel__prompt-(?:input|collapsed-hint) \{(?<body>[\s\S]*?)\n\}/g)
+        ?.join('\n') ?? ''
 
     expect(contextStyle).toContain('overflow-wrap: anywhere')
     expect(promptStyle).toContain('overflow-wrap: anywhere')
@@ -379,7 +409,8 @@ describe('ImageGenerationPanel', () => {
           default: () => [],
         },
       },
-      template: '<div class="reference-selector-stub">{{ originalImages.map(image => image.token).join(",") }}</div>',
+      template:
+        '<div class="reference-selector-stub">{{ originalImages.map(image => image.token).join(",") }}</div>',
     }
 
     const wrapper = mount(ImageGenerationPanel, {
@@ -407,7 +438,8 @@ describe('ImageGenerationPanel', () => {
       ],
       continuation_images: [],
       character_forms: [],
-      total_original_pages: 1,
+      original_cursor: 0,
+      character_forms_cursor: null,
     })
     await Promise.resolve()
     await wrapper.vm.$nextTick()
@@ -420,11 +452,74 @@ describe('ImageGenerationPanel', () => {
       ],
       continuation_images: [],
       character_forms: [],
-      total_original_pages: 1,
+      original_cursor: 0,
+      character_forms_cursor: null,
     })
     await Promise.resolve()
     await wrapper.vm.$nextTick()
 
     expect(wrapper.find('.reference-selector-stub').text()).toBe('book-2-token')
+  })
+
+  it('merges cursor-paginated character forms without replacing the first page', async () => {
+    vi.mocked(getAvailableImages).mockResolvedValue({
+      original_images: [],
+      continuation_images: [],
+      character_forms: [
+        {
+          token: 'form-token-1',
+          character_name: '主角',
+          form_id: 'form-1',
+          form_name: '常服',
+          path: '/form-1.png',
+          has_image: true,
+        },
+      ],
+      original_cursor: 0,
+      character_forms_cursor: 100,
+    })
+    vi.mocked(loadMoreAvailableCharacterForms).mockResolvedValue({
+      character_forms: [
+        {
+          token: 'form-token-2',
+          character_name: '主角',
+          form_id: 'form-2',
+          form_name: '战斗服',
+          path: '/form-2.png',
+          has_image: true,
+        },
+      ],
+      next_cursor: null,
+    })
+    const selectorStub = {
+      props: ['characterForms', 'hasMoreCharacterForms'],
+      emits: ['load-more-character-forms'],
+      template: `
+        <div class="reference-selector-stub">
+          <span class="form-tokens">{{ characterForms.map(form => form.token).join(',') }}</span>
+          <button type="button" @click="$emit('load-more-character-forms')">more</button>
+        </div>
+      `,
+    }
+    const wrapper = mount(ImageGenerationPanel, {
+      props: {
+        pages: [createPage()],
+        isGenerating: false,
+        progress: 0,
+        bookId: 'book-1',
+        state: stateStub,
+      },
+      global: { stubs: { ReferenceImageSelector: selectorStub } },
+    })
+
+    await getButtonByText(wrapper, '选择初始参考图').trigger('click')
+    await Promise.resolve()
+    await wrapper.vm.$nextTick()
+    await wrapper.get('.reference-selector-stub button').trigger('click')
+    await Promise.resolve()
+    await wrapper.vm.$nextTick()
+
+    expect(loadMoreAvailableCharacterForms).toHaveBeenCalledWith('book-1', 100)
+    expect(wrapper.get('.form-tokens').text()).toBe('form-token-1,form-token-2')
   })
 })

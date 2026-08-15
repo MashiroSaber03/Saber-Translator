@@ -43,11 +43,25 @@ const pluginV2 = {
   packageVersion: '1.0.0',
   currentRevision: 7,
   manifest: {
+    schema_version: 3,
+    plugin_id: 'sample_plugin',
+    display_name: 'Sample Plugin',
+    package_version: '1.0.0',
+    entrypoint: 'plugin.py:Plugin',
+    hooks: ['before_ocr'],
     supported_steps: ['ocr'],
     supported_modes: ['standard'],
+    priority: 0,
+    failure_policy: 'continue',
+    author: 'Tests',
+    description: 'v3 plugin',
+    default_enabled: false,
+    config_schema: {
+      enabled: { type: 'boolean', default: true },
+    },
   },
   configSchema: {
-    enabled: { type: 'boolean' },
+    enabled: { type: 'boolean', default: true },
   },
 }
 
@@ -142,6 +156,26 @@ describe('plugin v3 api', () => {
     expect(getMock).not.toHaveBeenCalled()
   })
 
+  it('does not coerce malformed import conflict metadata', async () => {
+    const file = new File(['backend-owned-zip'], 'malformed-conflict.zip', {
+      type: 'application/zip',
+    })
+    uploadMock.mockRejectedValueOnce({
+      status: 409,
+      details: {
+        pluginId: 'sample_plugin',
+        currentRevision: '7',
+      },
+    })
+    const { importPlugin } = await import('@/api/plugin')
+
+    await expect(importPlugin(file)).rejects.toMatchObject({ status: 409 })
+    await expect(importPlugin(file, true)).rejects.toThrow(
+      '插件替换上下文已失效',
+    )
+    expect(uploadMock).toHaveBeenCalledTimes(1)
+  })
+
   it('uses v2 management routes and cached CAS revisions', async () => {
     getMock
       .mockResolvedValueOnce({ items: [pluginV2] })
@@ -165,7 +199,7 @@ describe('plugin v3 api', () => {
     const {
       deletePlugin,
       enablePlugin,
-      getPluginConfig,
+      getPluginConfigDocument,
       getPlugins,
       savePluginConfig,
       setPluginDefaultState,
@@ -173,7 +207,10 @@ describe('plugin v3 api', () => {
 
     await getPlugins()
     await enablePlugin('sample_plugin')
-    await getPluginConfig('sample_plugin')
+    await expect(getPluginConfigDocument('sample_plugin')).resolves.toEqual({
+      schema: pluginV2.configSchema,
+      value: pluginV2.config,
+    })
     await savePluginConfig('sample_plugin', { enabled: false })
     await setPluginDefaultState('sample_plugin', true)
     await deletePlugin('sample_plugin')
@@ -204,5 +241,20 @@ describe('plugin v3 api', () => {
         },
       },
     )
+  })
+
+  it('drops CAS revisions for plugins absent from an authoritative list', async () => {
+    getMock
+      .mockResolvedValueOnce({ items: [pluginV2] })
+      .mockResolvedValueOnce({ items: [] })
+
+    const { deletePlugin, getPlugins } = await import('@/api/plugin')
+    await getPlugins()
+    await getPlugins()
+
+    await expect(deletePlugin('sample_plugin')).rejects.toThrow(
+      '插件版本已变化，请刷新后重试',
+    )
+    expect(deleteMock).not.toHaveBeenCalled()
   })
 })

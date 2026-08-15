@@ -53,6 +53,11 @@ function handleDragOver(event: DragEvent): void {
 
 function handleDragLeave(event: DragEvent): void {
   event.preventDefault()
+  const nextTarget = event.relatedTarget
+  if (
+    nextTarget instanceof Node
+    && (event.currentTarget as HTMLElement).contains(nextTarget)
+  ) return
   isDragging.value = false
 }
 </script>

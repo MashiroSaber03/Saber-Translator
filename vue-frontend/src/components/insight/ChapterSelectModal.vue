@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import BaseModal from '@/components/common/BaseModal.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductChipList from '@/components/product/ProductChipList.vue'
@@ -19,7 +19,7 @@ interface Props {
   chapters: Chapter[]
 }
 
-defineProps<Props>()
+const props = defineProps<Props>()
 
 const emit = defineEmits<{
   close: []
@@ -27,13 +27,16 @@ const emit = defineEmits<{
 }>()
 
 const selectedChapterId = ref<string>('')
+const hasValidSelection = computed(() => (
+  props.chapters.some(chapter => chapter.id === selectedChapterId.value)
+))
 
 function selectChapter(chapterId: string): void {
   selectedChapterId.value = chapterId
 }
 
 function chapterPageItems(chapter: Chapter): ProductChipItem[] {
-  if (!chapter.startPage || !chapter.endPage) return []
+  if (chapter.startPage === undefined || chapter.endPage === undefined) return []
 
   return [
     {
@@ -45,7 +48,7 @@ function chapterPageItems(chapter: Chapter): ProductChipItem[] {
 }
 
 function confirmSelection(): void {
-  if (selectedChapterId.value) {
+  if (hasValidSelection.value) {
     emit('select', selectedChapterId.value)
   }
 }
@@ -77,7 +80,7 @@ function close(): void {
           :class="{ 'chapter-select-modal__choice-card--selected': selectedChapterId === chapter.id }"
           :accent="selectedChapterId === chapter.id"
           :aria-label="`选择章节：${chapter.title}`"
-          :aria-pressed="String(selectedChapterId === chapter.id)"
+          :aria-pressed="selectedChapterId === chapter.id"
           @click="selectChapter(chapter.id)"
         >
           <template #meta>
@@ -110,7 +113,7 @@ function close(): void {
         <UiButton variant="secondary" @click="close">取消</UiButton>
         <UiButton
           variant="primary"
-          :disabled="!selectedChapterId"
+          :disabled="!hasValidSelection"
           @click="confirmSelection"
         >
           确定

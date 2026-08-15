@@ -25,11 +25,20 @@ function settingsDocument(
         domain: 'translation',
         payload: settings as unknown as Record<string, unknown>,
         revision,
-        schemaVersion: 3,
+        schemaVersion: 5,
       },
       {
         domain: 'text_style_defaults',
         payload: settings.textStyle as unknown as Record<string, unknown>,
+        revision,
+        schemaVersion: 1,
+      },
+      {
+        domain: 'workflow_preferences',
+        payload: {
+          rememberWorkflowModeEnabled: false,
+          lastWorkflowMode: 'translate-current',
+        },
         revision,
         schemaVersion: 1,
       },
@@ -51,6 +60,7 @@ describe('settings store saber yolo refine', () => {
       bookSettings: [],
       providerSettings: [],
       credentials: [],
+      prompts: [],
     })
   })
 
@@ -105,7 +115,7 @@ describe('settings store saber yolo refine', () => {
       enableAuxYoloDetection: true,
       auxYoloConfThreshold: 0.55,
       auxYoloOverlapThreshold: 0.2,
-      settingsSchemaVersion: 3,
+      settingsSchemaVersion: 5,
     })
   })
 })

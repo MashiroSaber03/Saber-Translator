@@ -25,7 +25,6 @@ export function createTestImage(
     cleanAssetUrl: null,
     bubbleStates: null,
     translationStatus: 'pending',
-    translationFailed: false,
     hasUnsavedChanges: false,
     ...overrides,
   }

@@ -5,19 +5,22 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 import hashlib
 import json
+import time
 import uuid
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import Engine, and_, case, delete, func, insert, select, update
+from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
 
 from src.backend_v2.serialization import canonical_json as _canonical_json
 from src.backend_v2.timestamps import utcnow as _utcnow
 from src.backend_v2.content.page_style import validate_text_style_defaults
 from src.backend_v2.settings.validation import (
+    is_proofreading_provider_domain,
     validate_book_setting_payload,
     validate_credential_secret,
     validate_provider_setting_payload,
@@ -37,7 +40,11 @@ from src.backend_v2.storage.schema import (
     provider_settings,
     prompts,
 )
-from src.backend_v2.storage.database import immediate_transaction
+from src.backend_v2.storage.database import (
+    immediate_transaction,
+    is_sqlite_busy_error,
+    read_transaction,
+)
 from src.shared.openai_rate_limits import RateLimitDecision
 
 
@@ -49,6 +56,85 @@ def _require_object(value: object, label: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"{label} must be a JSON object")
     return value
+
+
+def _idempotency_replay(
+    connection: Connection,
+    *,
+    scope: str,
+    key: str,
+    request_body: Mapping[str, Any],
+    now: datetime,
+) -> tuple[str, dict[str, Any] | None]:
+    request_hash = hashlib.sha256(
+        _canonical_json(dict(request_body)).encode("utf-8")
+    ).hexdigest()
+    row = connection.execute(
+        select(
+            idempotency_records.c.request_hash,
+            idempotency_records.c.response_json,
+            idempotency_records.c.expires_at,
+        ).where(
+            idempotency_records.c.scope == scope,
+            idempotency_records.c.key == key,
+        )
+    ).mappings().one_or_none()
+    if row is None:
+        return request_hash, None
+    expires_at = row["expires_at"]
+    if not isinstance(expires_at, datetime):
+        raise RevisionConflict(
+            "stored idempotency record is invalid; clear current data"
+        )
+    if expires_at <= now:
+        connection.execute(
+            delete(idempotency_records).where(
+                idempotency_records.c.scope == scope,
+                idempotency_records.c.key == key,
+            )
+        )
+        return request_hash, None
+    if row["request_hash"] != request_hash:
+        raise RevisionConflict(
+            "Idempotency-Key was reused for a different request"
+        )
+    try:
+        response = json.loads(row["response_json"])
+    except (TypeError, ValueError) as exc:
+        raise RevisionConflict(
+            "stored idempotency response is invalid; clear current data"
+        ) from exc
+    if not isinstance(response, dict):
+        raise RevisionConflict(
+            "stored idempotency response is invalid; clear current data"
+        )
+    return request_hash, response
+
+
+def _record_idempotency(
+    connection: Connection,
+    *,
+    scope: str,
+    key: str,
+    request_hash: str,
+    response: Mapping[str, Any],
+    http_status: int,
+    resource_type: str,
+    resource_id: str | None = None,
+    now: datetime,
+) -> None:
+    connection.execute(
+        insert(idempotency_records).values(
+            scope=scope,
+            key=key,
+            request_hash=request_hash,
+            http_status=http_status,
+            response_json=_canonical_json(dict(response)),
+            resource_type=resource_type,
+            resource_id=resource_id,
+            expires_at=now + timedelta(hours=24),
+        )
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +175,64 @@ class BookSettingMutation:
     schema_version: int
 
 
+@dataclass(frozen=True, slots=True)
+class PromptMutation:
+    prompt_id: str
+    name: str
+    content: str
+    base_revision: int
+
+
+def _validate_prompt(prompt_type: str, name: str) -> None:
+    if prompt_type not in PROMPT_TYPES:
+        raise ValueError("unsupported prompt type")
+    if not name.strip() or len(name.strip()) > 200:
+        raise ValueError("prompt name must contain 1-200 characters")
+
+
+def _update_prompt(
+    connection: object,
+    mutation: PromptMutation,
+) -> dict[str, object]:
+    row = connection.execute(
+        select(prompts.c.type, prompts.c.is_factory_default).where(
+            prompts.c.id == mutation.prompt_id
+        )
+    ).mappings().one_or_none()
+    if row is None:
+        raise LookupError("prompt not found")
+    prompt_type = str(row["type"])
+    _validate_prompt(prompt_type, mutation.name)
+    try:
+        changed = connection.execute(
+            update(prompts)
+            .where(
+                prompts.c.id == mutation.prompt_id,
+                prompts.c.revision == mutation.base_revision,
+            )
+            .values(
+                name=mutation.name.strip(),
+                content=mutation.content,
+                revision=mutation.base_revision + 1,
+                updated_at=_utcnow(),
+            )
+        )
+    except IntegrityError as exc:
+        raise RevisionConflict(
+            "prompt name already exists for this type"
+        ) from exc
+    if changed.rowcount != 1:
+        raise RevisionConflict("prompt revision changed")
+    return {
+        "id": mutation.prompt_id,
+        "type": prompt_type,
+        "name": mutation.name.strip(),
+        "content": mutation.content,
+        "revision": mutation.base_revision + 1,
+        "isFactoryDefault": bool(row["is_factory_default"]),
+    }
+
+
 class SettingsRepository:
     def __init__(self, engine: Engine) -> None:
         self.engine = engine
@@ -100,6 +244,7 @@ class SettingsRepository:
         book_settings_edits: tuple[BookSettingMutation, ...] = (),
         providers: tuple[ProviderSettingMutation, ...] = (),
         credentials_edits: tuple[CredentialEdit, ...] = (),
+        prompt_edits: tuple[PromptMutation, ...] = (),
     ) -> dict[str, list[dict[str, object]]]:
         with immediate_transaction(self.engine) as connection:
             return self._save_transaction(
@@ -108,6 +253,7 @@ class SettingsRepository:
                 book_settings_edits=book_settings_edits,
                 providers=providers,
                 credentials_edits=credentials_edits,
+                prompt_edits=prompt_edits,
             )
 
     def save_transaction_idempotent(
@@ -119,48 +265,88 @@ class SettingsRepository:
         book_settings_edits: tuple[BookSettingMutation, ...] = (),
         providers: tuple[ProviderSettingMutation, ...] = (),
         credentials_edits: tuple[CredentialEdit, ...] = (),
+        prompt_edits: tuple[PromptMutation, ...] = (),
     ) -> tuple[dict[str, list[dict[str, object]]], bool]:
         now = _utcnow()
-        request_hash = hashlib.sha256(
-            _canonical_json(request_body).encode("utf-8")
-        ).hexdigest()
         scope = "settings-transaction"
         with immediate_transaction(self.engine) as connection:
-            replay = connection.execute(
-                select(
-                    idempotency_records.c.request_hash,
-                    idempotency_records.c.response_json,
-                ).where(
-                    idempotency_records.c.scope == scope,
-                    idempotency_records.c.key == idempotency_key,
-                    idempotency_records.c.expires_at > now,
-                )
-            ).mappings().one_or_none()
+            request_hash, replay = _idempotency_replay(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                request_body=request_body,
+                now=now,
+            )
             if replay is not None:
-                if replay["request_hash"] != request_hash:
-                    raise RevisionConflict(
-                        "Idempotency-Key was reused for a different settings transaction"
-                    )
-                return json.loads(replay["response_json"]), True
+                return cast(dict[str, list[dict[str, object]]], replay), True
             result = self._save_transaction(
                 connection,
                 settings=settings,
                 book_settings_edits=book_settings_edits,
                 providers=providers,
                 credentials_edits=credentials_edits,
+                prompt_edits=prompt_edits,
             )
-            connection.execute(
-                insert(idempotency_records).values(
-                    scope=scope,
-                    key=idempotency_key,
-                    request_hash=request_hash,
-                    http_status=200,
-                    response_json=_canonical_json(result),
-                    resource_type="settings",
-                    expires_at=now + timedelta(hours=24),
-                )
+            _record_idempotency(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                request_hash=request_hash,
+                response=result,
+                http_status=200,
+                resource_type="settings",
+                now=now,
             )
             return result, False
+
+    def replay_idempotent_command(
+        self,
+        *,
+        scope: str,
+        idempotency_key: str,
+        request_body: Mapping[str, Any],
+    ) -> dict[str, Any] | None:
+        with immediate_transaction(self.engine) as connection:
+            _request_hash, replay = _idempotency_replay(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                request_body=request_body,
+                now=_utcnow(),
+            )
+            return replay
+
+    def record_idempotent_command(
+        self,
+        *,
+        scope: str,
+        idempotency_key: str,
+        request_body: Mapping[str, Any],
+        response: Mapping[str, Any],
+        resource_type: str,
+    ) -> tuple[dict[str, Any], bool]:
+        now = _utcnow()
+        with immediate_transaction(self.engine) as connection:
+            request_hash, replay = _idempotency_replay(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                request_body=request_body,
+                now=now,
+            )
+            if replay is not None:
+                return replay, True
+            _record_idempotency(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                request_hash=request_hash,
+                response=response,
+                http_status=200,
+                resource_type=resource_type,
+                now=now,
+            )
+            return dict(response), False
 
     def _save_transaction(
         self,
@@ -170,16 +356,28 @@ class SettingsRepository:
         book_settings_edits: tuple[BookSettingMutation, ...],
         providers: tuple[ProviderSettingMutation, ...],
         credentials_edits: tuple[CredentialEdit, ...],
+        prompt_edits: tuple[PromptMutation, ...],
     ) -> dict[str, list[dict[str, object]]]:
         self._validate_transaction_keys(
             settings=settings,
             book_settings_edits=book_settings_edits,
             providers=providers,
             credentials_edits=credentials_edits,
+            prompt_edits=prompt_edits,
         )
         setting_results = [
             self._save_setting(connection, mutation) for mutation in settings
         ]
+        translation_mutation = next(
+            (mutation for mutation in settings if mutation.domain == "translation"),
+            None,
+        )
+        if translation_mutation is not None:
+            self._prune_proofreading_provider_settings(
+                connection,
+                translation_payload=translation_mutation.payload,
+                providers=providers,
+            )
         book_setting_results = [
             self._save_book_setting(connection, mutation)
             for mutation in book_settings_edits
@@ -204,12 +402,56 @@ class SettingsRepository:
                     credential_version_id=credential_version_id,
                 )
             )
+        prompt_results = [
+            _update_prompt(connection, mutation) for mutation in prompt_edits
+        ]
         return {
             "settings": setting_results,
             "bookSettings": book_setting_results,
             "providerSettings": provider_results,
             "credentials": credential_results,
+            "prompts": prompt_results,
         }
+
+    @staticmethod
+    def _prune_proofreading_provider_settings(
+        connection: Connection,
+        *,
+        translation_payload: Mapping[str, Any],
+        providers: tuple[ProviderSettingMutation, ...],
+    ) -> None:
+        proofreading = cast(Mapping[str, Any], translation_payload["proofreading"])
+        rounds = cast(list[Mapping[str, Any]], proofreading["rounds"])
+        active_pairs = {
+            (f"proofreading_{round_config['id']}", str(round_config["provider"]))
+            for round_config in rounds
+        }
+        submitted_pairs = {
+            (mutation.domain, mutation.provider)
+            for mutation in providers
+            if is_proofreading_provider_domain(mutation.domain)
+        }
+        orphaned_submissions = submitted_pairs - active_pairs
+        if orphaned_submissions:
+            raise ValueError(
+                "proofreading provider settings must belong to active rounds"
+            )
+
+        stored_provider_pairs = connection.execute(
+            select(provider_settings.c.domain, provider_settings.c.provider).where(
+                provider_settings.c.domain.like("proofreading_%")
+            )
+        ).all()
+        for domain, provider in stored_provider_pairs:
+            pair = (str(domain), str(provider))
+            if pair in active_pairs:
+                continue
+            connection.execute(
+                delete(provider_settings).where(
+                    provider_settings.c.domain == pair[0],
+                    provider_settings.c.provider == pair[1],
+                )
+            )
 
     @staticmethod
     def _validate_transaction_keys(
@@ -218,6 +460,7 @@ class SettingsRepository:
         book_settings_edits: tuple[BookSettingMutation, ...],
         providers: tuple[ProviderSettingMutation, ...],
         credentials_edits: tuple[CredentialEdit, ...],
+        prompt_edits: tuple[PromptMutation, ...],
     ) -> None:
         def require_unique(values: list[object], label: str) -> None:
             if len(values) != len(set(values)):
@@ -235,6 +478,10 @@ class SettingsRepository:
         require_unique(
             [(row.domain, row.provider) for row in credentials_edits],
             "credential edits",
+        )
+        require_unique(
+            [row.prompt_id for row in prompt_edits],
+            "prompt edits",
         )
         client_refs = [
             row.client_ref for row in credentials_edits if row.client_ref is not None
@@ -268,7 +515,7 @@ class SettingsRepository:
         provider_condition = (
             provider_settings.c.domain.in_(domains) if domains else True
         )
-        with self.engine.connect() as connection:
+        with read_transaction(self.engine) as connection:
             setting_rows = list(
                 connection.execute(
                     select(app_settings)
@@ -303,6 +550,10 @@ class SettingsRepository:
                 )
                 if book_id
                 else []
+            )
+            credential_rows = self._credential_summaries_from_connection(
+                connection,
+                domains=domains,
             )
         return {
             "settings": [
@@ -360,7 +611,7 @@ class SettingsRepository:
                 }
                 for row in provider_rows
             ],
-            "credentials": self.credential_summaries(),
+            "credentials": credential_rows,
         }
 
     @staticmethod
@@ -565,6 +816,16 @@ class SettingsRepository:
         if edit.credential_id is None:
             if edit.base_revision != 0:
                 raise RevisionConflict("credential does not exist at requested revision")
+            existing_id = connection.execute(  # type: ignore[attr-defined]
+                select(credentials.c.id).where(
+                    credentials.c.domain == edit.domain,
+                    credentials.c.provider == edit.provider,
+                )
+            ).scalar_one_or_none()
+            if existing_id is not None:
+                raise RevisionConflict(
+                    "credential already exists; its current ID and revision are required"
+                )
             credential_id = str(uuid.uuid4())
             version_id = str(uuid.uuid4())
             connection.execute(  # type: ignore[attr-defined]
@@ -660,37 +921,49 @@ class SettingsRepository:
 
     def credential_summaries(self) -> list[dict[str, object]]:
         with self.engine.connect() as connection:
-            rows = connection.execute(
-                select(
-                    credentials.c.id,
-                    credentials.c.domain,
-                    credentials.c.provider,
-                    credential_current_versions.c.revision,
-                    credential_current_versions.c.credential_version_id,
-                    credential_versions.c.version,
-                )
-                .join(
-                    credential_current_versions,
-                    credential_current_versions.c.credential_id == credentials.c.id,
-                )
-                .join(
-                    credential_versions,
-                    credential_versions.c.id
-                    == credential_current_versions.c.credential_version_id,
-                )
-            ).mappings()
-            return [
-                {
-                    "credentialId": row["id"],
-                    "credentialVersionId": row["credential_version_id"],
-                    "domain": row["domain"],
-                    "provider": row["provider"],
-                    "hasKey": True,
-                    "currentVersion": row["version"],
-                    "revision": row["revision"],
-                }
-                for row in rows
-            ]
+            return self._credential_summaries_from_connection(connection)
+
+    @staticmethod
+    def _credential_summaries_from_connection(
+        connection: Connection,
+        *,
+        domains: tuple[str, ...] = (),
+    ) -> list[dict[str, object]]:
+        statement = (
+            select(
+                credentials.c.id,
+                credentials.c.domain,
+                credentials.c.provider,
+                credential_current_versions.c.revision,
+                credential_current_versions.c.credential_version_id,
+                credential_versions.c.version,
+            )
+            .join(
+                credential_current_versions,
+                credential_current_versions.c.credential_id == credentials.c.id,
+            )
+            .join(
+                credential_versions,
+                credential_versions.c.id
+                == credential_current_versions.c.credential_version_id,
+            )
+            .order_by(credentials.c.domain, credentials.c.provider)
+        )
+        if domains:
+            statement = statement.where(credentials.c.domain.in_(domains))
+        rows = connection.execute(statement).mappings()
+        return [
+            {
+                "credentialId": row["id"],
+                "credentialVersionId": row["credential_version_id"],
+                "domain": row["domain"],
+                "provider": row["provider"],
+                "hasKey": True,
+                "currentVersion": row["version"],
+                "revision": row["revision"],
+            }
+            for row in rows
+        ]
 
     def resolve_secret(self, credential_version_id: str) -> dict[str, Any]:
         with self.engine.connect() as connection:
@@ -753,24 +1026,6 @@ class SettingsRepository:
             result[section_name].update(secret)
         return result
 
-    def resolve_current_secret(self, credential_id: str) -> dict[str, Any]:
-        with self.engine.connect() as connection:
-            value = connection.execute(
-                select(credential_versions.c.secret_json)
-                .join(
-                    credential_current_versions,
-                    credential_current_versions.c.credential_version_id
-                    == credential_versions.c.id,
-                )
-                .where(
-                    credential_current_versions.c.credential_id
-                    == credential_id
-                )
-            ).scalar_one_or_none()
-        if value is None:
-            raise LookupError("credential not found")
-        return _require_object(json.loads(value), "stored credential secret")
-
     def resolve_provider_secret(
         self,
         *,
@@ -801,15 +1056,60 @@ class SettingsRepository:
     def delete_credential(self, credential_id: str) -> None:
         try:
             with immediate_transaction(self.engine) as connection:
-                removed = connection.execute(
-                    delete(credentials).where(credentials.c.id == credential_id)
-                )
-                if removed.rowcount != 1:
-                    raise LookupError("credential not found")
+                self._delete_credential(connection, credential_id)
         except IntegrityError as exc:
             raise RevisionConflict(
                 "credential is still referenced by settings or history"
             ) from exc
+
+    def delete_credential_idempotent(
+        self,
+        *,
+        idempotency_key: str,
+        credential_id: str,
+    ) -> tuple[dict[str, object], bool]:
+        scope = f"DELETE:deleteCredential:{credential_id}"
+        now = _utcnow()
+        try:
+            with immediate_transaction(self.engine) as connection:
+                request_hash, replay = _idempotency_replay(
+                    connection,
+                    scope=scope,
+                    key=idempotency_key,
+                    request_body={},
+                    now=now,
+                )
+                if replay is not None:
+                    return replay, True
+                self._delete_credential(connection, credential_id)
+                result = {"deleted": True}
+                _record_idempotency(
+                    connection,
+                    scope=scope,
+                    key=idempotency_key,
+                    request_hash=request_hash,
+                    response=result,
+                    http_status=200,
+                    resource_type="credential",
+                    resource_id=credential_id,
+                    now=now,
+                )
+                return result, False
+        except IntegrityError as exc:
+            raise RevisionConflict(
+                "credential is still referenced by settings or history"
+            ) from exc
+
+    @staticmethod
+    def _delete_credential(
+        connection: Connection,
+        credential_id: str,
+    ) -> None:
+        removed = connection.execute(
+            delete(credentials).where(credentials.c.id == credential_id)
+        )
+        if removed.rowcount != 1:
+            raise LookupError("credential not found")
 
 
 class PromptRepository:
@@ -835,18 +1135,72 @@ class PromptRepository:
         name: str,
         content: str,
     ) -> dict[str, object]:
-        self._validate(prompt_type, name, content)
+        with immediate_transaction(self.engine) as connection:
+            return self._create(
+                connection,
+                prompt_type=prompt_type,
+                name=name,
+                content=content,
+            )
+
+    def create_idempotent(
+        self,
+        *,
+        idempotency_key: str,
+        prompt_type: str,
+        name: str,
+        content: str,
+    ) -> tuple[dict[str, object], bool]:
+        body = {"type": prompt_type, "name": name, "content": content}
+        now = _utcnow()
+        with immediate_transaction(self.engine) as connection:
+            request_hash, replay = _idempotency_replay(
+                connection,
+                scope="POST:createPrompt",
+                key=idempotency_key,
+                request_body=body,
+                now=now,
+            )
+            if replay is not None:
+                return replay, True
+            result = self._create(
+                connection,
+                prompt_type=prompt_type,
+                name=name,
+                content=content,
+            )
+            _record_idempotency(
+                connection,
+                scope="POST:createPrompt",
+                key=idempotency_key,
+                request_hash=request_hash,
+                response=result,
+                http_status=201,
+                resource_type="prompt",
+                resource_id=str(result["id"]),
+                now=now,
+            )
+            return result, False
+
+    @staticmethod
+    def _create(
+        connection: Connection,
+        *,
+        prompt_type: str,
+        name: str,
+        content: str,
+    ) -> dict[str, object]:
+        _validate_prompt(prompt_type, name)
         prompt_id = str(uuid.uuid4())
         try:
-            with immediate_transaction(self.engine) as connection:
-                connection.execute(
-                    insert(prompts).values(
-                        id=prompt_id,
-                        type=prompt_type,
-                        name=name.strip(),
-                        content=content,
-                    )
+            connection.execute(
+                insert(prompts).values(
+                    id=prompt_id,
+                    type=prompt_type,
+                    name=name.strip(),
+                    content=content,
                 )
+            )
         except IntegrityError as exc:
             raise RevisionConflict("prompt name already exists for this type") from exc
         return {
@@ -867,77 +1221,188 @@ class PromptRepository:
         base_revision: int,
     ) -> dict[str, object]:
         with immediate_transaction(self.engine) as connection:
-            row = connection.execute(
-                select(prompts.c.type).where(prompts.c.id == prompt_id)
-            ).scalar_one_or_none()
-            if row is None:
-                raise LookupError("prompt not found")
-            self._validate(str(row), name, content)
-            try:
-                changed = connection.execute(
-                    update(prompts)
-                    .where(
-                        prompts.c.id == prompt_id,
-                        prompts.c.revision == base_revision,
-                    )
-                    .values(
-                        name=name.strip(),
-                        content=content,
-                        revision=base_revision + 1,
-                        updated_at=_utcnow(),
-                    )
-                )
-            except IntegrityError as exc:
-                raise RevisionConflict(
-                    "prompt name already exists for this type"
-                ) from exc
-            if changed.rowcount != 1:
-                raise RevisionConflict("prompt revision changed")
-        return {
-            "id": prompt_id,
-            "type": str(row),
-            "name": name.strip(),
+            return _update_prompt(
+                connection,
+                PromptMutation(
+                    prompt_id=prompt_id,
+                    name=name,
+                    content=content,
+                    base_revision=base_revision,
+                ),
+            )
+
+    def update_idempotent(
+        self,
+        *,
+        idempotency_key: str,
+        prompt_id: str,
+        name: str,
+        content: str,
+        base_revision: int,
+    ) -> tuple[dict[str, object], bool]:
+        body = {
+            "name": name,
             "content": content,
-            "revision": base_revision + 1,
+            "baseRevision": base_revision,
         }
+        scope = f"PUT:updatePrompt:{prompt_id}"
+        now = _utcnow()
+        with immediate_transaction(self.engine) as connection:
+            request_hash, replay = _idempotency_replay(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                request_body=body,
+                now=now,
+            )
+            if replay is not None:
+                return replay, True
+            result = _update_prompt(
+                connection,
+                PromptMutation(
+                    prompt_id=prompt_id,
+                    name=name,
+                    content=content,
+                    base_revision=base_revision,
+                ),
+            )
+            _record_idempotency(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                request_hash=request_hash,
+                response=result,
+                http_status=200,
+                resource_type="prompt",
+                resource_id=prompt_id,
+                now=now,
+            )
+            return result, False
 
     def delete(self, prompt_id: str) -> None:
         with immediate_transaction(self.engine) as connection:
-            factory = connection.execute(
-                select(prompts.c.is_factory_default).where(
-                    prompts.c.id == prompt_id
-                )
-            ).scalar_one_or_none()
-            if factory is None:
-                raise LookupError("prompt not found")
-            if factory:
-                raise RevisionConflict("factory prompt cannot be deleted")
-            connection.execute(delete(prompts).where(prompts.c.id == prompt_id))
+            self._delete(connection, prompt_id)
+
+    def delete_idempotent(
+        self,
+        *,
+        idempotency_key: str,
+        prompt_id: str,
+    ) -> tuple[dict[str, object], bool]:
+        scope = f"DELETE:deletePrompt:{prompt_id}"
+        now = _utcnow()
+        with immediate_transaction(self.engine) as connection:
+            request_hash, replay = _idempotency_replay(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                request_body={},
+                now=now,
+            )
+            if replay is not None:
+                return replay, True
+            self._delete(connection, prompt_id)
+            result = {"deleted": True}
+            _record_idempotency(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                request_hash=request_hash,
+                response=result,
+                http_status=200,
+                resource_type="prompt",
+                resource_id=prompt_id,
+                now=now,
+            )
+            return result, False
+
+    @staticmethod
+    def _delete(connection: Connection, prompt_id: str) -> None:
+        factory = connection.execute(
+            select(prompts.c.is_factory_default).where(
+                prompts.c.id == prompt_id
+            )
+        ).scalar_one_or_none()
+        if factory is None:
+            raise LookupError("prompt not found")
+        if factory:
+            raise RevisionConflict("factory prompt cannot be deleted")
+        connection.execute(delete(prompts).where(prompts.c.id == prompt_id))
 
     def reset(self, prompt_id: str, *, base_revision: int) -> dict[str, object]:
         with immediate_transaction(self.engine) as connection:
-            row = connection.execute(
-                select(prompts.c.type, prompts.c.name).where(
-                    prompts.c.id == prompt_id,
-                    prompts.c.is_factory_default.is_(True),
-                )
-            ).mappings().one_or_none()
-            if row is None:
-                raise RevisionConflict("only factory prompts can be reset")
-            changed = connection.execute(
-                update(prompts)
-                .where(
-                    prompts.c.id == prompt_id,
-                    prompts.c.revision == base_revision,
-                )
-                .values(
-                    content=FACTORY_PROMPTS[str(row["type"])],
-                    revision=base_revision + 1,
-                    updated_at=_utcnow(),
-                )
+            return self._reset(connection, prompt_id, base_revision=base_revision)
+
+    def reset_idempotent(
+        self,
+        *,
+        idempotency_key: str,
+        prompt_id: str,
+        base_revision: int,
+    ) -> tuple[dict[str, object], bool]:
+        scope = f"POST:resetPrompt:{prompt_id}"
+        body = {"baseRevision": base_revision}
+        now = _utcnow()
+        with immediate_transaction(self.engine) as connection:
+            request_hash, replay = _idempotency_replay(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                request_body=body,
+                now=now,
             )
-            if changed.rowcount != 1:
-                raise RevisionConflict("prompt revision changed")
+            if replay is not None:
+                return replay, True
+            result = self._reset(
+                connection,
+                prompt_id,
+                base_revision=base_revision,
+            )
+            _record_idempotency(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                request_hash=request_hash,
+                response=result,
+                http_status=200,
+                resource_type="prompt",
+                resource_id=prompt_id,
+                now=now,
+            )
+            return result, False
+
+    @staticmethod
+    def _reset(
+        connection: Connection,
+        prompt_id: str,
+        *,
+        base_revision: int,
+    ) -> dict[str, object]:
+        row = connection.execute(
+            select(
+                prompts.c.type,
+                prompts.c.name,
+                prompts.c.is_factory_default,
+            ).where(prompts.c.id == prompt_id)
+        ).mappings().one_or_none()
+        if row is None:
+            raise LookupError("prompt not found")
+        if not row["is_factory_default"]:
+            raise RevisionConflict("only factory prompts can be reset")
+        changed = connection.execute(
+            update(prompts)
+            .where(
+                prompts.c.id == prompt_id,
+                prompts.c.revision == base_revision,
+            )
+            .values(
+                content=FACTORY_PROMPTS[str(row["type"])],
+                revision=base_revision + 1,
+                updated_at=_utcnow(),
+            )
+        )
+        if changed.rowcount != 1:
+            raise RevisionConflict("prompt revision changed")
         return {
             "id": prompt_id,
             "type": row["type"],
@@ -946,15 +1411,6 @@ class PromptRepository:
             "revision": base_revision + 1,
             "isFactoryDefault": True,
         }
-
-    @staticmethod
-    def _validate(prompt_type: str, name: str, content: str) -> None:
-        if prompt_type not in PROMPT_TYPES:
-            raise ValueError("unsupported prompt type")
-        if not name.strip() or len(name.strip()) > 200:
-            raise ValueError("prompt name must contain 1-200 characters")
-        if len(content) > 200_000:
-            raise ValueError("prompt content is too large")
 
     @staticmethod
     def _dto(row: object) -> dict[str, object]:
@@ -975,15 +1431,92 @@ class FontRepository:
     def register_uploaded(self, *, asset_id: str, display_name: str) -> str:
         font_id = str(uuid.uuid4())
         with self.engine.begin() as connection:
-            connection.execute(
-                insert(fonts).values(
-                    id=font_id,
-                    kind="uploaded",
-                    asset_id=asset_id,
-                    display_name=display_name,
-                )
+            self._register_uploaded(
+                connection,
+                font_id=font_id,
+                asset_id=asset_id,
+                display_name=display_name,
             )
         return font_id
+
+    def replay_upload(
+        self,
+        *,
+        idempotency_key: str,
+        request_body: Mapping[str, Any],
+    ) -> dict[str, Any] | None:
+        with immediate_transaction(self.engine) as connection:
+            _request_hash, replay = _idempotency_replay(
+                connection,
+                scope="POST:uploadFont",
+                key=idempotency_key,
+                request_body=request_body,
+                now=_utcnow(),
+            )
+            return replay
+
+    def register_uploaded_idempotent(
+        self,
+        *,
+        idempotency_key: str,
+        request_body: Mapping[str, Any],
+        asset_id: str,
+        display_name: str,
+    ) -> tuple[dict[str, object], bool]:
+        now = _utcnow()
+        with immediate_transaction(self.engine) as connection:
+            request_hash, replay = _idempotency_replay(
+                connection,
+                scope="POST:uploadFont",
+                key=idempotency_key,
+                request_body=request_body,
+                now=now,
+            )
+            if replay is not None:
+                return replay, True
+            font_id = str(uuid.uuid4())
+            self._register_uploaded(
+                connection,
+                font_id=font_id,
+                asset_id=asset_id,
+                display_name=display_name,
+            )
+            result = {
+                "id": font_id,
+                "kind": "uploaded",
+                "displayName": display_name,
+                "builtinKey": None,
+                "assetUrl": f"/api/v2/assets/{asset_id}",
+            }
+            _record_idempotency(
+                connection,
+                scope="POST:uploadFont",
+                key=idempotency_key,
+                request_hash=request_hash,
+                response=result,
+                http_status=201,
+                resource_type="font",
+                resource_id=font_id,
+                now=now,
+            )
+            return result, False
+
+    @staticmethod
+    def _register_uploaded(
+        connection: Connection,
+        *,
+        font_id: str,
+        asset_id: str,
+        display_name: str,
+    ) -> None:
+        connection.execute(
+            insert(fonts).values(
+                id=font_id,
+                kind="uploaded",
+                asset_id=asset_id,
+                display_name=display_name,
+            )
+        )
 
     def list(self) -> list[dict[str, object]]:
         with self.engine.connect() as connection:
@@ -1012,20 +1545,61 @@ class FontRepository:
     def delete_uploaded(self, font_id: str) -> str:
         try:
             with immediate_transaction(self.engine) as connection:
-                row = connection.execute(
-                    select(fonts.c.kind, fonts.c.asset_id).where(
-                        fonts.c.id == font_id
-                    )
-                ).one_or_none()
-                if row is None:
-                    raise LookupError("font not found")
-                if row.kind != "uploaded":
-                    raise ValueError("built-in fonts cannot be deleted")
-                connection.execute(delete(fonts).where(fonts.c.id == font_id))
+                asset_id = self._delete_uploaded(connection, font_id)
         except IntegrityError as exc:
             raise RevisionConflict(
                 "font is still referenced by content or history"
             ) from exc
+        return asset_id
+
+    def delete_uploaded_idempotent(
+        self,
+        *,
+        idempotency_key: str,
+        font_id: str,
+    ) -> tuple[dict[str, object], bool]:
+        scope = f"DELETE:deleteFont:{font_id}"
+        now = _utcnow()
+        try:
+            with immediate_transaction(self.engine) as connection:
+                request_hash, replay = _idempotency_replay(
+                    connection,
+                    scope=scope,
+                    key=idempotency_key,
+                    request_body={},
+                    now=now,
+                )
+                if replay is not None:
+                    return replay, True
+                self._delete_uploaded(connection, font_id)
+                result = {"deleted": True}
+                _record_idempotency(
+                    connection,
+                    scope=scope,
+                    key=idempotency_key,
+                    request_hash=request_hash,
+                    response=result,
+                    http_status=200,
+                    resource_type="font",
+                    resource_id=font_id,
+                    now=now,
+                )
+                return result, False
+        except IntegrityError as exc:
+            raise RevisionConflict(
+                "font is still referenced by content or history"
+            ) from exc
+
+    @staticmethod
+    def _delete_uploaded(connection: Connection, font_id: str) -> str:
+        row = connection.execute(
+            select(fonts.c.kind, fonts.c.asset_id).where(fonts.c.id == font_id)
+        ).one_or_none()
+        if row is None:
+            raise LookupError("font not found")
+        if row.kind != "uploaded":
+            raise ValueError("built-in fonts cannot be deleted")
+        connection.execute(delete(fonts).where(fonts.c.id == font_id))
         return str(row.asset_id)
 
 
@@ -1045,79 +1619,86 @@ class ProviderRateLimiter:
         current_time = _utcnow()
         window_cutoff = current_time - timedelta(minutes=1)
 
+        busy_failures = 0
         for _attempt in range(8):
-            with self.engine.begin() as connection:
-                row = connection.execute(
-                    select(provider_rate_limits).where(
-                        provider_rate_limits.c.provider == provider,
-                        provider_rate_limits.c.credential_version_id
-                        == credential_version_id,
-                    )
-                ).mappings().one_or_none()
-                if row is None:
-                    try:
-                        connection.execute(
-                            insert(provider_rate_limits).values(
-                                provider=provider,
-                                credential_version_id=credential_version_id,
-                                window_started_at=current_time,
-                                request_count=1,
-                                rpm_limit=rpm_limit,
-                                revision=1,
+            try:
+                with self.engine.begin() as connection:
+                    row = connection.execute(
+                        select(provider_rate_limits).where(
+                            provider_rate_limits.c.provider == provider,
+                            provider_rate_limits.c.credential_version_id
+                            == credential_version_id,
+                        )
+                    ).mappings().one_or_none()
+                    if row is None:
+                        try:
+                            connection.execute(
+                                insert(provider_rate_limits).values(
+                                    provider=provider,
+                                    credential_version_id=credential_version_id,
+                                    window_started_at=current_time,
+                                    request_count=1,
+                                    rpm_limit=rpm_limit,
+                                    revision=1,
+                                )
                             )
-                        )
-                    except IntegrityError:
-                        continue
-                    return RateLimitDecision(
-                        allowed=True,
-                        remaining=rpm_limit - 1,
-                        retry_after_seconds=0,
-                    )
-
-                revision = int(row["revision"])
-                window_started_at = row["window_started_at"]
-                if window_started_at <= window_cutoff:
-                    count = 1
-                    started_at = current_time
-                    effective_limit = rpm_limit
-                else:
-                    effective_limit = min(int(row["rpm_limit"]), rpm_limit)
-                    if int(row["request_count"]) >= effective_limit:
-                        retry_after = max(
-                            0.0,
-                            (
-                                window_started_at
-                                + timedelta(minutes=1)
-                                - current_time
-                            ).total_seconds(),
-                        )
+                        except IntegrityError:
+                            continue
                         return RateLimitDecision(
-                            allowed=False,
-                            remaining=0,
-                            retry_after_seconds=retry_after,
+                            allowed=True,
+                            remaining=rpm_limit - 1,
+                            retry_after_seconds=0,
                         )
-                    count = int(row["request_count"]) + 1
-                    started_at = window_started_at
 
-                changed = connection.execute(
-                    update(provider_rate_limits)
-                    .where(
-                        provider_rate_limits.c.provider == provider,
-                        provider_rate_limits.c.credential_version_id
-                        == credential_version_id,
-                        provider_rate_limits.c.revision == revision,
+                    revision = int(row["revision"])
+                    window_started_at = row["window_started_at"]
+                    if window_started_at <= window_cutoff:
+                        count = 1
+                        started_at = current_time
+                        effective_limit = rpm_limit
+                    else:
+                        effective_limit = min(int(row["rpm_limit"]), rpm_limit)
+                        if int(row["request_count"]) >= effective_limit:
+                            retry_after = max(
+                                0.0,
+                                (
+                                    window_started_at
+                                    + timedelta(minutes=1)
+                                    - current_time
+                                ).total_seconds(),
+                            )
+                            return RateLimitDecision(
+                                allowed=False,
+                                remaining=0,
+                                retry_after_seconds=retry_after,
+                            )
+                        count = int(row["request_count"]) + 1
+                        started_at = window_started_at
+
+                    changed = connection.execute(
+                        update(provider_rate_limits)
+                        .where(
+                            provider_rate_limits.c.provider == provider,
+                            provider_rate_limits.c.credential_version_id
+                            == credential_version_id,
+                            provider_rate_limits.c.revision == revision,
+                        )
+                        .values(
+                            window_started_at=started_at,
+                            request_count=count,
+                            rpm_limit=effective_limit,
+                            revision=revision + 1,
+                        )
                     )
-                    .values(
-                        window_started_at=started_at,
-                        request_count=count,
-                        rpm_limit=effective_limit,
-                        revision=revision + 1,
-                    )
-                )
-                if changed.rowcount == 1:
-                    return RateLimitDecision(
-                        allowed=True,
-                        remaining=max(0, effective_limit - count),
-                        retry_after_seconds=0,
-                    )
+                    if changed.rowcount == 1:
+                        return RateLimitDecision(
+                            allowed=True,
+                            remaining=max(0, effective_limit - count),
+                            retry_after_seconds=0,
+                        )
+            except Exception as exc:
+                if not is_sqlite_busy_error(exc) or busy_failures >= 2:
+                    raise
+                busy_failures += 1
+                time.sleep(0.05)
         raise RuntimeError("provider limiter CAS remained contended")

@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -29,11 +27,20 @@ function settingsDocument(
         domain: 'translation',
         payload: settings as unknown as Record<string, unknown>,
         revision,
-        schemaVersion: 3,
+        schemaVersion: 5,
       },
       {
         domain: 'text_style_defaults',
         payload: settings.textStyle as unknown as Record<string, unknown>,
+        revision,
+        schemaVersion: 1,
+      },
+      {
+        domain: 'workflow_preferences',
+        payload: {
+          rememberWorkflowModeEnabled: false,
+          lastWorkflowMode: 'translate-current',
+        },
         revision,
         schemaVersion: 1,
       },
@@ -55,46 +62,52 @@ describe('settings store current schema boundaries', () => {
       bookSettings: [],
       providerSettings: [],
       credentials: [],
+      prompts: [],
     })
   })
 
-  it('keeps settings store cloning on shared helpers', () => {
-    for (const file of [
-      'src/stores/settings/defaults.ts',
-      'src/stores/settings/index.ts',
-    ]) {
-      const source = readFileSync(resolve(process.cwd(), file), 'utf8')
-      expect(source, file).toContain("import { deepClone } from '@/utils/deepClone'")
-      expect(source, file).not.toContain('function cloneJson')
-      expect(source, file).not.toContain('JSON.parse(JSON.stringify')
-    }
+  it('uses factory runtime options for a provider with no saved memory', () => {
+    const store = useSettingsStore()
+    const defaults = createDefaultSettings()
 
-    for (const file of [
-      'src/stores/settings/modules/translation.ts',
-      'src/stores/settings/modules/hqTranslation.ts',
-      'src/stores/settings/modules/ocr.ts',
-      'src/stores/settings/modules/pluginAgent.ts',
-    ]) {
-      const source = readFileSync(resolve(process.cwd(), file), 'utf8')
-      expect(source, file).toContain('cloneOpenAiOptions')
-      expect(source, file).not.toContain('JSON.parse(JSON.stringify')
-    }
-  })
+    store.updateTranslationService({
+      translationMode: 'single',
+      forceJsonOutput: true,
+      rpmLimit: 91,
+    })
+    store.setTranslationProvider('deepseek')
+    expect(store.settings.translation.translationMode).toBe(
+      defaults.translation.translationMode,
+    )
+    expect(store.settings.translation.openaiOptions).toEqual(
+      defaults.translation.openaiOptions,
+    )
 
-  it('keeps provider cache switching on shared settings helpers', () => {
-    for (const file of [
-      'src/stores/settings/modules/translation.ts',
-      'src/stores/settings/modules/hqTranslation.ts',
-      'src/stores/settings/modules/ocr.ts',
-      'src/stores/settings/modules/pluginAgent.ts',
-      'src/stores/settings/modules/webImport.ts',
-    ]) {
-      const source = readFileSync(resolve(process.cwd(), file), 'utf8')
-      expect(source, file).toContain("from '../providerConfigCache'")
-      expect(source, file).toContain('saveProviderCacheEntry')
-      expect(source, file).toContain('restoreProviderCacheEntry')
-      expect(source, file).not.toMatch(/providerConfigs\.value\.\w+\[[^\]]+\]\s*=/)
-    }
+    store.updateHqTranslation({
+      batchSize: 9,
+      prompt: 'provider-specific HQ prompt',
+      rpmLimit: 88,
+    })
+    store.setHqProvider('deepseek')
+    expect(store.settings.hqTranslation).toMatchObject({
+      batchSize: defaults.hqTranslation.batchSize,
+      prompt: defaults.hqTranslation.prompt,
+      openaiOptions: defaults.hqTranslation.openaiOptions,
+    })
+
+    store.updateAiVisionOcr({
+      minImageSize: 777,
+      prompt: 'provider-specific OCR prompt',
+      promptMode: 'json',
+      rpmLimit: 66,
+    })
+    store.setAiVisionOcrProvider('siliconflow')
+    expect(store.settings.aiVisionOcr).toMatchObject({
+      minImageSize: defaults.aiVisionOcr.minImageSize,
+      prompt: defaults.aiVisionOcr.prompt,
+      promptMode: defaults.aiVisionOcr.promptMode,
+      openaiOptions: defaults.aiVisionOcr.openaiOptions,
+    })
   })
 
   it('rejects extra fields instead of treating them as an older settings shape', () => {
@@ -107,22 +120,140 @@ describe('settings store current schema boundaries', () => {
     const proofreading = deepClone(createDefaultSettings())
     proofreading.proofreading.rounds = [{
       ...proofreading.hqTranslation,
+      id: '11111111-1111-4111-8111-111111111111',
       name: '第1轮',
     }]
     ;(proofreading.proofreading.rounds[0] as unknown as Record<string, unknown>).sessionReset = true
 
+    const retiredProofreadingRetry = deepClone(createDefaultSettings())
+    ;(retiredProofreadingRetry.proofreading as unknown as Record<string, unknown>).maxRetries = 2
+
     expect(parseCurrentSettings(topLevel)).toBeNull()
     expect(parseCurrentSettings(nested)).toBeNull()
     expect(parseCurrentSettings(proofreading)).toBeNull()
+    expect(parseCurrentSettings(retiredProofreadingRetry)).toBeNull()
   })
 
-  it('keeps removed-field probes typed without broad any escapes', () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'tests/unit/settingsStoreCurrentSchemaBoundaries.spec.ts'),
-      'utf8',
-    )
+  it('rejects malformed numeric runtime options instead of coercing them', () => {
+    const fractionalRetry = deepClone(createDefaultSettings())
+    fractionalRetry.translation.openaiOptions.execution.transportRetries = 1.5
 
-    expect(source).not.toMatch(/\bas any\b|:\s*any\b|any\[\]/)
+    const invalidTemperature = deepClone(createDefaultSettings())
+    invalidTemperature.translation.openaiOptions.request.temperature = 2.1
+
+    const fractionalBatch = deepClone(createDefaultSettings())
+    fractionalBatch.hqTranslation.batchSize = 1.5
+
+    expect(parseCurrentSettings(fractionalRetry)).toBeNull()
+    expect(parseCurrentSettings(invalidTemperature)).toBeNull()
+    expect(parseCurrentSettings(fractionalBatch)).toBeNull()
+  })
+
+  it('rejects duplicate proofreading round identities', () => {
+    const settings = createDefaultSettings()
+    const id = '11111111-1111-4111-8111-111111111111'
+    settings.proofreading.rounds = [
+      { ...settings.hqTranslation, id, name: '第1轮' },
+      { ...settings.hqTranslation, id, name: '第2轮' },
+    ]
+
+    expect(parseCurrentSettings(settings)).toBeNull()
+  })
+
+  it('accepts backend-valid text styles without frontend-only upper bounds', () => {
+    const settings = createDefaultSettings()
+    settings.textStyle = {
+      ...settings.textStyle,
+      fontSize: 1024,
+      strokeWidth: 80,
+      lineSpacing: 12.5,
+    }
+
+    expect(parseCurrentSettings(settings)?.textStyle).toMatchObject({
+      fontSize: 1024,
+      strokeWidth: 80,
+      lineSpacing: 12.5,
+    })
+  })
+
+  it('finishes a successful transaction without a post-commit settings reload', async () => {
+    const store = useSettingsStore()
+    expect(await store.loadFromBackend()).toBe(true)
+    store.settings.translation.apiKey = 'new-secret'
+    store.settings.translation.modelName = 'new-model'
+    settingsApiMocks.saveV2SettingsTransaction.mockResolvedValueOnce({
+      settings: [
+        { domain: 'translation', revision: 9 },
+        { domain: 'text_style_defaults', revision: 9 },
+      ],
+      bookSettings: [],
+      providerSettings: [{
+        domain: 'translation',
+        provider: 'siliconflow',
+        revision: 1,
+      }],
+      credentials: [{
+        credentialId: '11111111-1111-4111-8111-111111111111',
+        credentialVersionId: '22222222-2222-4222-8222-222222222222',
+        currentVersion: 1,
+        domain: 'translation',
+        hasKey: true,
+        provider: 'siliconflow',
+        revision: 1,
+      }],
+      prompts: [],
+    })
+
+    expect(await store.saveToBackend()).toBe(true)
+
+    expect(settingsApiMocks.getV2Settings).toHaveBeenCalledTimes(1)
+    expect(store.settings.translation.apiKey).toBe('')
+    expect(store.hasCredential('translation', 'siliconflow')).toBe(true)
+
+    expect(await store.saveToBackend()).toBe(true)
+    const secondTransaction = (
+      settingsApiMocks.saveV2SettingsTransaction.mock.calls[1]?.[0]
+    ) as V2SettingsTransaction
+    expect(secondTransaction.settings?.[0]?.baseRevision).toBe(9)
+    expect(secondTransaction.providerSettings?.find(
+      row => row.domain === 'translation' && row.provider === 'siliconflow',
+    )?.baseRevision).toBe(1)
+    expect(settingsApiMocks.getV2Settings).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps proofreading provider identities stable after removing a middle round', async () => {
+    const store = useSettingsStore()
+    expect(await store.loadFromBackend()).toBe(true)
+    const ids = [
+      '11111111-1111-4111-8111-111111111111',
+      '22222222-2222-4222-8222-222222222222',
+      '33333333-3333-4333-8333-333333333333',
+    ]
+    ids.forEach((id, index) => {
+      store.addProofreadingRound({
+        ...deepClone(store.settings.hqTranslation),
+        id,
+        name: `第${index + 1}轮`,
+        apiKey: `proof-key-${index + 1}`,
+      })
+    })
+
+    store.removeProofreadingRound(1)
+    expect(await store.saveToBackend()).toBe(true)
+
+    const transaction = (
+      settingsApiMocks.saveV2SettingsTransaction.mock.calls[0]?.[0]
+    ) as V2SettingsTransaction
+    const proofreadingDomains = transaction.providerSettings
+      ?.filter(row => row.domain.startsWith('proofreading_'))
+      .map(row => row.domain)
+    expect(proofreadingDomains).toEqual([
+      `proofreading_${ids[0]}`,
+      `proofreading_${ids[2]}`,
+    ])
+    expect(transaction.credentialEdits
+      ?.filter(row => row.domain.startsWith('proofreading_'))
+      .map(row => row.domain)).toEqual(proofreadingDomains)
   })
 
   it('does not send removed session reset fields in v2 settings transactions', async () => {
@@ -130,6 +261,7 @@ describe('settings store current schema boundaries', () => {
     expect(await store.loadFromBackend()).toBe(true)
     store.settings.hqTranslation.openaiOptions.execution.rpmLimit = 9
     store.settings.proofreading.rounds = [{
+      id: '11111111-1111-4111-8111-111111111111',
       name: '第1轮',
       provider: 'siliconflow',
       apiKey: 'proof-key',
@@ -166,10 +298,10 @@ describe('settings store current schema boundaries', () => {
       openaiOptions: { execution: { rpmLimit: 7 } },
     })
     const proofreadingProvider = transaction.providerSettings?.find(
-      row => row.domain === 'proofreading_0',
+      row => row.domain === 'proofreading_11111111-1111-4111-8111-111111111111',
     )
     expect(proofreadingProvider).toMatchObject({
-      domain: 'proofreading_0',
+      domain: 'proofreading_11111111-1111-4111-8111-111111111111',
       provider: 'siliconflow',
       payload: {
         modelName: 'proof-model',
@@ -188,6 +320,7 @@ describe('settings store current schema boundaries', () => {
     const store = useSettingsStore()
     store.setProofreadingEnabled(true)
     store.addProofreadingRound({
+      id: '11111111-1111-4111-8111-111111111111',
       name: '第1轮',
       provider: 'siliconflow',
       apiKey: 'proof-key',
@@ -234,7 +367,7 @@ describe('settings store current schema boundaries', () => {
 
   it('rejects malformed authoritative backend settings', async () => {
     settingsApiMocks.getV2Settings.mockResolvedValue(settingsDocument({
-      settingsSchemaVersion: 3,
+      settingsSchemaVersion: 5,
       translation: { provider: 'custom' },
     } as unknown as ReturnType<typeof createDefaultSettings>))
     const store = useSettingsStore()
@@ -243,5 +376,33 @@ describe('settings store current schema boundaries', () => {
     expect(store.isBackendReady).toBe(false)
     expect(store.backendError).toContain('格式无效')
     expect(store.settings).toEqual(createDefaultSettings())
+  })
+
+  it('rejects missing or malformed current workflow preferences', async () => {
+    const missing = settingsDocument()
+    missing.settings = missing.settings.filter(
+      entry => entry.domain !== 'workflow_preferences',
+    )
+    settingsApiMocks.getV2Settings.mockResolvedValueOnce(missing)
+
+    const missingStore = useSettingsStore()
+    expect(await missingStore.loadFromBackend()).toBe(false)
+    expect(missingStore.backendError).toContain('工作流偏好设置缺失')
+
+    setActivePinia(createPinia())
+    const malformed = settingsDocument()
+    const workflow = malformed.settings.find(
+      entry => entry.domain === 'workflow_preferences',
+    )
+    if (!workflow) throw new Error('test fixture is missing workflow preferences')
+    workflow.payload = {
+      rememberWorkflowModeEnabled: 'false',
+      lastWorkflowMode: 'retired-mode',
+    }
+    settingsApiMocks.getV2Settings.mockResolvedValueOnce(malformed)
+
+    const malformedStore = useSettingsStore()
+    expect(await malformedStore.loadFromBackend()).toBe(false)
+    expect(malformedStore.backendError).toContain('工作流偏好设置格式无效')
   })
 })

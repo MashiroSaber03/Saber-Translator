@@ -10,9 +10,12 @@ export type V2ContainerImportAccepted = components['schemas']['JobBatchAccepted'
 export type V2PageDocument = components['schemas']['PageDocument']
 export type V2PageDocumentBatchMutation = components['schemas']['PageDocumentBatchMutation']
 export type V2PageDocumentMutationResponse = components['schemas']['PageDocumentMutationResponse']
+export type V2CompleteBubbleMutationFields = components['schemas']['CompleteBubbleMutationFields']
 export type V2PageImportResult = components['schemas']['PageImportResult']
 export type V2PageList = components['schemas']['PageList']
+export type V2PageRenderStatus = components['schemas']['PageRenderStatus']
 export type V2PageSummary = components['schemas']['PageSummary']
+export type V2QuickWorkspaceContext = components['schemas']['QuickWorkspaceContext']
 export type V2TranslationBootstrap = components['schemas']['TranslationBootstrap']
 
 const API_ROOT = '/api/v2'
@@ -78,7 +81,7 @@ export function newIdempotencyKey(): string {
   return crypto.randomUUID()
 }
 
-export function browserImportFiles(files: FileList | File[]): BrowserImportFile[] {
+function browserImportFiles(files: FileList | File[]): BrowserImportFile[] {
   return Array.from(files)
     .map(file => ({
       file,
@@ -96,8 +99,8 @@ export async function listChapterPages(
 ): Promise<V2PageList> {
   const query = new URLSearchParams()
   if (options.all) query.set('all', '1')
-  if (options.cursor) query.set('cursor', String(options.cursor))
-  if (options.limit) query.set('limit', String(options.limit))
+  if (options.cursor !== undefined) query.set('cursor', String(options.cursor))
+  if (options.limit !== undefined) query.set('limit', String(options.limit))
   const suffix = query.size > 0 ? `?${query}` : ''
   return apiClient.get<V2PageList>(
     `${API_ROOT}/chapters/${encodeURIComponent(chapterId)}/pages${suffix}`,
@@ -115,6 +118,16 @@ export async function getPageSummary(
   )
 }
 
+export async function getPageRenderStatus(
+  pageId: string,
+  signal?: AbortSignal,
+): Promise<V2PageRenderStatus> {
+  return apiClient.get<V2PageRenderStatus>(
+    `${API_ROOT}/pages/${encodeURIComponent(pageId)}/render-status`,
+    { signal },
+  )
+}
+
 export async function getBook(bookId: string, signal?: AbortSignal): Promise<V2BookDetail> {
   return apiClient.get<V2BookDetail>(
     `${API_ROOT}/books/${encodeURIComponent(bookId)}`,
@@ -126,8 +139,10 @@ export async function getTranslationBootstrap(
   options: { bookId?: string; chapterId?: string; signal?: AbortSignal } = {},
 ): Promise<V2TranslationBootstrap> {
   const query = new URLSearchParams()
-  if (options.bookId && options.chapterId) {
+  if (options.bookId !== undefined) {
     query.set('bookId', options.bookId)
+  }
+  if (options.chapterId !== undefined) {
     query.set('chapterId', options.chapterId)
   }
   const suffix = query.size > 0 ? `?${query}` : ''
@@ -137,7 +152,7 @@ export async function getTranslationBootstrap(
   )
 }
 
-export async function importChapterPage(
+async function importChapterPage(
   chapterId: string,
   entry: BrowserImportFile,
   options: { idempotencyKey: string; signal?: AbortSignal },
@@ -299,13 +314,12 @@ export async function clearChapterPages(chapterId: string): Promise<number> {
   return result.deletedCount
 }
 
-export async function resetQuickWorkspace(): Promise<V2TranslationBootstrap> {
-  await apiClient.post(
+export async function resetQuickWorkspace(): Promise<V2QuickWorkspaceContext> {
+  return apiClient.post<V2QuickWorkspaceContext>(
     `${API_ROOT}/quick-workspace/reset`,
     undefined,
     { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
-  return getTranslationBootstrap()
 }
 
 export type QuickWorkspacePromoteCommand =

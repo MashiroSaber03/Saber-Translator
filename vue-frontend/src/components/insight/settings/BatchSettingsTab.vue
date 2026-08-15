@@ -8,11 +8,12 @@ import UiField from '@/components/ui/UiField.vue'
 import UiFormGrid from '@/components/ui/UiFormGrid.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiNumberField from '@/components/ui/UiNumberField.vue'
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import { useInsightStore } from '@/stores/insightStore'
 import type { BatchConfig } from '@/types/insight'
 import InsightSettingsPanel from './InsightSettingsPanel.vue'
+import { useInsightSettingsDraft } from './useInsightSettingsDraft'
 import { ARCHITECTURE_OPTIONS, ARCHITECTURE_PRESETS, type CustomLayer } from './types'
 
 const emit = defineEmits<{
@@ -40,13 +41,13 @@ function createDefaultCustomLayers(): CustomLayer[] {
 function cloneCustomLayers(layers: CustomLayer[]): CustomLayer[] {
   return layers.map(layer => ({
     name: layer.name,
-    units: layer.units ?? 5,
-    align: layer.align ?? false,
+    units: layer.units,
+    align: layer.align,
   }))
 }
 
 const customLayers = ref<CustomLayer[]>(
-  insightStore.config.batch.customLayers?.length > 0
+  insightStore.config.batch.customLayers.length > 0
     ? cloneCustomLayers(insightStore.config.batch.customLayers)
     : createDefaultCustomLayers()
 )
@@ -123,31 +124,26 @@ function buildDraftConfig(): BatchConfig {
   }
 }
 
-function refreshDraftFromStore(): void {
-  pagesPerBatch.value = insightStore.config.batch.pagesPerBatch
-  contextBatchCount.value = insightStore.config.batch.contextBatchCount
-  architecturePreset.value = insightStore.config.batch.architecturePreset
+function applyDraftConfig(config: BatchConfig): void {
+  pagesPerBatch.value = config.pagesPerBatch
+  contextBatchCount.value = config.contextBatchCount
+  architecturePreset.value = config.architecturePreset
 
-  if (insightStore.config.batch.customLayers?.length > 0) {
-    customLayers.value = cloneCustomLayers(insightStore.config.batch.customLayers)
+  if (config.customLayers.length > 0) {
+    customLayers.value = cloneCustomLayers(config.customLayers)
   } else {
     customLayers.value = createDefaultCustomLayers()
   }
 }
 
-function emitConfig(): void {
-  emit('update:config', buildDraftConfig())
-}
-
-watch(
-  [pagesPerBatch, contextBatchCount, architecturePreset, customLayers],
-  emitConfig,
-  { deep: true, immediate: true }
-)
-
-watch(() => props.syncRequestId, () => {
-  refreshDraftFromStore()
-  emitConfig()
+useInsightSettingsDraft<BatchConfig>({
+  sources: [pagesPerBatch, contextBatchCount, architecturePreset, customLayers],
+  buildDraft: buildDraftConfig,
+  applyDraft: applyDraftConfig,
+  loadDraft: () => insightStore.config.batch,
+  emitDraft: config => emit('update:config', config),
+  syncRequestId: () => props.syncRequestId,
+  deep: true,
 })
 </script>
 
@@ -164,7 +160,6 @@ watch(() => props.syncRequestId, () => {
           v-model="pagesPerBatch"
           input-id="insight-batch-pages-per-batch"
           :min="1"
-          :max="10"
           @change="onPagesPerBatchChange"
         />
       </UiField>
@@ -179,7 +174,6 @@ watch(() => props.syncRequestId, () => {
           v-model="contextBatchCount"
           input-id="insight-batch-context-batch-count"
           :min="0"
-          :max="5"
         />
       </UiField>
     </UiFormGrid>
@@ -206,12 +200,11 @@ watch(() => props.syncRequestId, () => {
               @update:model-value="updateCustomLayer(idx, 'name', $event)"
             />
             <UiNumberField
-              :model-value="layer.units ?? 0"
+              :model-value="layer.units"
               :disabled="!canEditLayerUnits(idx)"
               :input-id="`insight-batch-layer-units-${idx}`"
               :title="getLayerUnitsTitle(idx)"
               :min="0"
-              :max="20"
               size="xs"
               @change="updateCustomLayer(idx, 'units', $event)"
             />

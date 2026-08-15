@@ -16,7 +16,7 @@ defineEmits<{
 function firstAppearanceItems(character: TimelineCharacter): ProductChipItem[] {
   return [
     {
-      id: `${character.name}-first-appearance`,
+      id: `${character.character_id}-first-appearance`,
       label: `首次出现：第 ${character.first_appearance} 页`,
       tone: 'neutral',
     },
@@ -33,7 +33,7 @@ function firstAppearanceItems(character: TimelineCharacter): ProductChipItem[] {
     <div class="timeline-character-grid__grid">
       <ProductRecordCard
         v-for="character in characters"
-        :key="character.name"
+        :key="character.character_id"
         as="button"
         class="timeline-character-grid__card"
         :aria-label="`查看角色${character.name}首次出现的第 ${character.first_appearance} 页`"
@@ -42,10 +42,7 @@ function firstAppearanceItems(character: TimelineCharacter): ProductChipItem[] {
         <span class="timeline-character-grid__name">{{ character.name }}</span>
         <span class="timeline-character-grid__description">{{ character.description }}</span>
         <template #footer>
-          <ProductChipList
-            aria-label="角色出现信息"
-            :items="firstAppearanceItems(character)"
-          />
+          <ProductChipList aria-label="角色出现信息" :items="firstAppearanceItems(character)" />
         </template>
       </ProductRecordCard>
     </div>

@@ -15,6 +15,35 @@ vi.mock('@/api/v2/content', () => ({
   mutatePageDocument: mutateMock,
 }))
 
+function bubblePayload(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    originalText: '',
+    translatedText: '',
+    textboxText: '',
+    coords: [0, 0, 100, 80],
+    polygon: [],
+    fontSize: 24,
+    textDirection: 'vertical',
+    autoTextDirection: 'vertical',
+    textColor: '#000000',
+    fillColor: '#ffffff',
+    rotationAngle: 0,
+    position: { x: 0, y: 0 },
+    strokeEnabled: false,
+    strokeColor: '#ffffff',
+    strokeWidth: 0,
+    lineSpacing: 1.2,
+    textAlign: 'center',
+    inpaintMethod: 'solid',
+    autoFgColor: null,
+    autoBgColor: null,
+    colorConfidence: 0,
+    textlines: [],
+    ocrResult: null,
+    ...overrides,
+  }
+}
+
 describe('page document persistence coordinator', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -61,10 +90,10 @@ describe('page document persistence coordinator', () => {
       bubbleId,
       fontId: 'font-2',
       ordinal: 1,
-      payload: {
+      payload: bubblePayload({
         coords: [0, 0, 100, 80],
         translatedText,
-      },
+      }),
       updatedRevision: documentRevision,
     }], documentRevision), [{
       bubbleId,
@@ -82,11 +111,11 @@ describe('page document persistence coordinator', () => {
         bubbleId: 'bubble-1',
         fontId: 'font-2',
         ordinal: 1,
-        payload: {
+        payload: bubblePayload({
           coords: [0, 0, 100, 80],
           fontSize: 28,
           translatedText: '译文',
-        },
+        }),
         updatedRevision: 3,
       }], 3),
       pageStyleDefaults: { fontSize: 28 },
@@ -225,6 +254,48 @@ describe('page document persistence coordinator', () => {
     }
   })
 
+  it('restores trailing debounce after a flush requested during an active write', async () => {
+    vi.useFakeTimers()
+    try {
+      let resolveFirst!: () => void
+      mutateMock.mockImplementationOnce((
+        _pageId: string,
+        command: { mutations: Array<{ clientMutationId: string; op: string }> },
+      ) => new Promise(resolve => {
+        resolveFirst = () => resolve(createResponse(command, '第一次输入', 2))
+      })).mockResolvedValueOnce(mutationResponse(serverDocument([], 3)))
+      const {
+        flushPageDocument,
+        queuePageDocumentSave,
+        registerPageDocument,
+      } = await import('@/services/pageDocumentPersistence')
+      registerPageDocument(serverDocument([], 1))
+
+      const first = queuePageDocumentSave('page-1', 1, [createBubbleState({
+        translatedText: '第一次输入',
+      })])
+      await vi.advanceTimersByTimeAsync(150)
+      expect(mutateMock).toHaveBeenCalledTimes(1)
+
+      const flush = flushPageDocument('page-1')
+      resolveFirst()
+      await flush
+      await first
+
+      const second = queuePageDocumentSave('page-1', 2, [createBubbleState({
+        translatedText: '第二次输入',
+      })])
+      await vi.advanceTimersByTimeAsync(149)
+      expect(mutateMock).toHaveBeenCalledTimes(1)
+
+      await vi.advanceTimersByTimeAsync(1)
+      await second
+      expect(mutateMock).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('serializes reactive editor bubbles before queueing a backend CAS', async () => {
     mutateMock.mockImplementation(async (
       _pageId: string,
@@ -280,7 +351,6 @@ describe('page document persistence coordinator', () => {
       id: 'page-1',
       sourceAssetUrl: '/api/v2/assets/source',
       translatedAssetUrl: null,
-      translationFailed: false,
       translationStatus: 'pending',
     }])
     const bubbleStore = useBubbleStore()
@@ -323,6 +393,90 @@ describe('page document persistence coordinator', () => {
     expect(mutateMock).toHaveBeenCalledTimes(2)
     expect(mutateMock.mock.calls[1]?.[1]).toEqual(mutateMock.mock.calls[0]?.[1])
     expect(mutateMock.mock.calls[1]?.[2]).toBe(mutateMock.mock.calls[0]?.[2])
+  })
+
+  it('requires an authoritative backend document before queueing mutations', async () => {
+    const { queuePageDocumentSave } = await import('@/services/pageDocumentPersistence')
+
+    expect(() => queuePageDocumentSave('missing-page', 1, [createBubbleState()]))
+      .toThrow('页面文档 missing-page 尚未从后端注册')
+    expect(mutateMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects a stale document revision before changing editor bubble identity', async () => {
+    const {
+      queuePageDocumentSave,
+      registerPageDocument,
+    } = await import('@/services/pageDocumentPersistence')
+    registerPageDocument(serverDocument([], 2))
+    const bubble = createBubbleState({ translatedText: '过期编辑' })
+
+    expect(() => queuePageDocumentSave('page-1', 1, [bubble])).toThrow(
+      '页面文档 page-1 版本已变化：当前为 2，提交版本为 1',
+    )
+    expect(bubble.clientMutationId).toBeUndefined()
+    expect(mutateMock).not.toHaveBeenCalled()
+  })
+
+  it('accepts an authoritative reload after a conflict and resumes from its revision', async () => {
+    mutateMock.mockRejectedValueOnce(new ApiClientError({
+      code: 'page_revision_conflict',
+      message: 'revision conflict',
+      status: 409,
+    })).mockResolvedValueOnce(mutationResponse(serverDocument([{
+      bubbleId: 'bubble-1',
+      fontId: 'font-2',
+      ordinal: 1,
+      payload: bubblePayload({ translatedText: '冲突后新编辑' }),
+      updatedRevision: 3,
+    }], 3)))
+    const {
+      queuePageDocumentSave,
+      registerPageDocument,
+    } = await import('@/services/pageDocumentPersistence')
+    registerPageDocument(serverDocument([], 1))
+
+    await expect(queuePageDocumentSave('page-1', 1, [createBubbleState({
+      translatedText: '过期编辑',
+    })])).rejects.toThrow('revision conflict')
+    const authoritative = registerPageDocument(serverDocument([{
+      bubbleId: 'bubble-1',
+      fontId: 'font-2',
+      ordinal: 1,
+      payload: bubblePayload({ translatedText: '后端版本' }),
+      updatedRevision: 2,
+    }], 2))
+    authoritative[0]!.translatedText = '冲突后新编辑'
+
+    await queuePageDocumentSave('page-1', 2, authoritative)
+
+    expect(mutateMock).toHaveBeenNthCalledWith(2, 'page-1', expect.objectContaining({
+      baseRevision: 2,
+    }), expect.any(String))
+  })
+
+  it('does not let failed settled documents grow beyond the three-page cache', async () => {
+    mutateMock.mockRejectedValueOnce(new Error('write failed'))
+    const {
+      isPageDocumentRegistered,
+      queuePageDocumentSave,
+      registerPageDocument,
+    } = await import('@/services/pageDocumentPersistence')
+    registerPageDocument(serverDocument([], 1))
+    await expect(queuePageDocumentSave('page-1', 1, [createBubbleState()]))
+      .rejects.toThrow('write failed')
+
+    for (let index = 2; index <= 4; index += 1) {
+      registerPageDocument({
+        ...serverDocument([], 1),
+        pageId: `page-${index}`,
+      })
+    }
+
+    expect(isPageDocumentRegistered('page-1')).toBe(false)
+    expect(isPageDocumentRegistered('page-2')).toBe(true)
+    expect(isPageDocumentRegistered('page-3')).toBe(true)
+    expect(isPageDocumentRegistered('page-4')).toBe(true)
   })
 
   it('keeps only the three most recently registered settled documents', async () => {

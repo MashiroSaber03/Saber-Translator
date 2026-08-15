@@ -15,3 +15,15 @@ export interface TextStyleSettings {
   lineSpacing: number
   textAlign: TextAlign
 }
+
+export type TextStyleMutationField = Exclude<
+  keyof TextStyleSettings,
+  'autoFontSize' | 'useAutoTextColor'
+>
+
+export type TextStyleMutationArgs = {
+  [Field in TextStyleMutationField]: [
+    settingKey: Field,
+    newValue: TextStyleSettings[Field],
+  ]
+}[TextStyleMutationField]

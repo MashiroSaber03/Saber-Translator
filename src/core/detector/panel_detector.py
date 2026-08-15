@@ -5,6 +5,7 @@
 """
 
 import logging
+import math
 import cv2
 import numpy as np
 from typing import List, Tuple, Optional
@@ -72,7 +73,19 @@ class PanelDetector:
         Args:
             min_panel_ratio: 最小面板面积占比（相对于整页）
         """
-        self.min_panel_ratio = min_panel_ratio or self.DEFAULT_MIN_PANEL_RATIO
+        ratio = (
+            self.DEFAULT_MIN_PANEL_RATIO
+            if min_panel_ratio is None
+            else min_panel_ratio
+        )
+        if (
+            isinstance(ratio, bool)
+            or not isinstance(ratio, (int, float))
+            or not math.isfinite(float(ratio))
+            or not 0 <= float(ratio) <= 1
+        ):
+            raise ValueError("最小分镜面积比例必须是 0 到 1 之间的数字")
+        self.min_panel_ratio = float(ratio)
     
     def detect_panels(self, img: np.ndarray) -> List[Panel]:
         """
@@ -84,9 +97,8 @@ class PanelDetector:
         Returns:
             Panel 列表，按面积从大到小排序
         """
-        if img is None or img.size == 0:
-            logger.warning("输入图像为空")
-            return []
+        if not isinstance(img, np.ndarray) or img.ndim != 3 or img.size == 0:
+            raise ValueError("分镜检测输入必须是非空三通道图像")
         
         img_h, img_w = img.shape[:2]
         min_panel_area = int(img_w * img_h * self.min_panel_ratio)
@@ -121,9 +133,27 @@ class PanelDetector:
         ddepth = cv2.CV_16S
         
         # X 方向梯度
-        grad_x = cv2.Sobel(gray, ddepth, 1, 0, ksize=3, scale=1, delta=0, borderType=cv2.BORDER_DEFAULT)
+        grad_x = cv2.Sobel(
+            gray,
+            ddepth,
+            1,
+            0,
+            ksize=3,
+            scale=1,
+            delta=0,
+            borderType=cv2.BORDER_DEFAULT,
+        )
         # Y 方向梯度
-        grad_y = cv2.Sobel(gray, ddepth, 0, 1, ksize=3, scale=1, delta=0, borderType=cv2.BORDER_DEFAULT)
+        grad_y = cv2.Sobel(
+            gray,
+            ddepth,
+            0,
+            1,
+            ksize=3,
+            scale=1,
+            delta=0,
+            borderType=cv2.BORDER_DEFAULT,
+        )
         
         # 转换为绝对值
         abs_grad_x = cv2.convertScaleAbs(grad_x)
@@ -166,7 +196,10 @@ class PanelDetector:
         return Panel(x=x, y=y, w=w, h=h)
 
 
-def get_panels_from_array(img: np.ndarray, min_panel_ratio: float = None) -> List[Tuple[int, int, int, int]]:
+def get_panels_from_array(
+    img: np.ndarray,
+    min_panel_ratio: float = None,
+) -> List[Tuple[int, int, int, int]]:
     """
     从图像数组检测分镜。
     

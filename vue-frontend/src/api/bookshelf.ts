@@ -7,6 +7,7 @@ import type { BookTranslationConstraints } from '@/types/bookTranslationConstrai
 type V2Book = components['schemas']['Book']
 type V2BookList = components['schemas']['BookList']
 type V2Chapter = components['schemas']['Chapter']
+type V2ChapterTitleResult = components['schemas']['ChapterTitleResult']
 type V2ConstraintDocument = components['schemas']['TranslationConstraintDocument']
 type V2Tag = components['schemas']['Tag']
 type V2TagList = components['schemas']['TagList']
@@ -15,7 +16,6 @@ const BOOKS_ENDPOINT = '/api/v2/books'
 const TAGS_ENDPOINT = '/api/v2/tags'
 const tagIdsByName = new Map<string, string>()
 const chapterOrderRevisions = new Map<string, number>()
-const constraintRevisions = new Map<string, number>()
 
 export interface GetBooksParams {
   search?: string
@@ -57,8 +57,6 @@ function toChapter(chapter: V2Chapter): ChapterData {
     title: chapter.title,
     order: Math.max(0, chapter.ordinal - 1),
     imageCount: chapter.pageCount || 0,
-    ordinal: chapter.ordinal,
-    pageOrderRevision: chapter.pageOrderRevision,
     jobStatusSummary: chapter.jobStatusSummary,
   }
 }
@@ -69,13 +67,11 @@ function toBook(
 ): BookData {
   chapterOrderRevisions.set(book.id, book.chapterOrderRevision)
   const chapters = book.chapters?.map(toChapter)
-  return {
+  const result: BookData = {
     id: book.id,
     title: book.title,
     cover: book.coverAssetUrl || undefined,
     tags: rememberTags(book.tags),
-    translationConstraints: constraints,
-    chapters,
     chapterCount: book.chapterCount ?? chapters?.length ?? 0,
     totalPages: book.pageCount ?? chapters?.reduce(
       (total, chapter) => total + (chapter.imageCount || 0),
@@ -83,19 +79,20 @@ function toBook(
     ) ?? 0,
     createdAt: book.createdAt,
     updatedAt: book.updatedAt,
-    chapterOrderRevision: book.chapterOrderRevision,
     jobStatusSummary: book.jobStatusSummary,
   }
+  if (chapters !== undefined) {
+    result.chapters = chapters
+  }
+  if (constraints !== undefined) {
+    result.translationConstraints = constraints
+  }
+  return result
 }
 
-function toTag(tag: V2Tag): TagData {
+function rememberTag(tag: V2Tag): TagData {
   tagIdsByName.set(tag.name, tag.id)
-  return {
-    id: tag.id,
-    name: tag.name,
-    color: tag.color,
-    bookCount: tag.bookCount || 0,
-  }
+  return tag
 }
 
 async function resolveTagIds(names: string[] | undefined): Promise<string[] | undefined> {
@@ -109,42 +106,30 @@ async function resolveTagIds(names: string[] | undefined): Promise<string[] | un
   })
 }
 
-function constraintsFromV2(document: V2ConstraintDocument): BookTranslationConstraints {
-  constraintRevisions.set(document.bookId, document.revision)
-  return {
-    glossary: (document.payload.glossary || {}) as BookTranslationConstraints['glossary'],
-    non_translate: (document.payload.nonTranslate || {}) as BookTranslationConstraints['non_translate'],
-  }
-}
-
 async function getConstraints(bookId: string): Promise<BookTranslationConstraints> {
   const document = await apiClient.get<V2ConstraintDocument>(
     bookPath(bookId, '/translation-constraints'),
   )
-  return constraintsFromV2(document)
+  return document.payload
 }
 
-async function saveConstraints(
+export async function updateBookTranslationConstraints(
   bookId: string,
   constraints: BookTranslationConstraints,
-): Promise<BookTranslationConstraints> {
-  let baseRevision = constraintRevisions.get(bookId)
-  if (baseRevision === undefined) {
-    await getConstraints(bookId)
-    baseRevision = constraintRevisions.get(bookId)
-  }
+  baseRevision: number,
+): Promise<{ constraints: BookTranslationConstraints; revision: number }> {
   const document = await apiClient.put<V2ConstraintDocument>(
     bookPath(bookId, '/translation-constraints'),
     {
       baseRevision,
-      payload: {
-        glossary: constraints.glossary,
-        nonTranslate: constraints.non_translate,
-      },
+      payload: constraints,
     },
     idempotencyConfig(),
   )
-  return constraintsFromV2(document)
+  return {
+    constraints: document.payload,
+    revision: document.revision,
+  }
 }
 
 export async function getBooks(params?: GetBooksParams): Promise<BookData[]> {
@@ -174,15 +159,22 @@ export async function getBookDetail(bookId: string): Promise<BookData> {
   return toBook(book, constraints)
 }
 
-function bookFormData(
-  title: string,
-  tagIds: string[],
-  cover?: File,
-): FormData {
+function createBookFormData(title: string, tagIds: string[], cover: File): FormData {
   const body = new FormData()
   body.append('title', title)
   body.append('tagIds', JSON.stringify(tagIds))
-  if (cover) body.append('cover', cover, cover.name)
+  body.append('cover', cover, cover.name)
+  return body
+}
+
+function updateBookFormData(
+  data: { title?: string; cover: File },
+  tagIds?: string[],
+): FormData {
+  const body = new FormData()
+  if (data.title !== undefined) body.append('title', data.title)
+  if (tagIds !== undefined) body.append('tagIds', JSON.stringify(tagIds))
+  body.append('cover', data.cover, data.cover.name)
   return body
 }
 
@@ -190,13 +182,12 @@ export async function createBook(
   title: string,
   cover?: File,
   tags?: string[],
-  translationConstraints?: BookTranslationConstraints,
 ): Promise<BookData> {
   const tagIds = await resolveTagIds(tags) || []
   const created = cover
     ? await apiClient.upload<V2Book>(
         BOOKS_ENDPOINT,
-        bookFormData(title, tagIds, cover),
+        createBookFormData(title, tagIds, cover),
         idempotencyConfig(),
       )
     : await apiClient.post<V2Book>(
@@ -204,10 +195,7 @@ export async function createBook(
         { title, tagIds },
         idempotencyConfig(),
       )
-  if (translationConstraints) {
-    await saveConstraints(created.id, translationConstraints)
-  }
-  return getBookDetail(created.id)
+  return toBook(created)
 }
 
 export async function updateBook(
@@ -216,44 +204,30 @@ export async function updateBook(
     title?: string
     cover?: File
     tags?: string[]
-    translationConstraints?: BookTranslationConstraints
   },
 ): Promise<BookData> {
-  if (
-    data.title !== undefined
-    || data.tags !== undefined
-    || data.cover !== undefined
-  ) {
-    const current = await apiClient.get<V2Book & { chapters: V2Chapter[] }>(
-      bookPath(bookId),
-    )
-    const tagIds = await resolveTagIds(data.tags ?? rememberTags(current.tags)) || []
-    const title = data.title ?? current.title
-    if (data.cover) {
-      await apiClient.upload(
+  const tagIds = await resolveTagIds(data.tags)
+  const updated = data.cover
+    ? await apiClient.upload<V2Book & { chapters?: V2Chapter[] }>(
         bookPath(bookId),
-        bookFormData(title, tagIds, data.cover),
+        updateBookFormData({ title: data.title, cover: data.cover }, tagIds),
         idempotencyConfig(),
         'put',
       )
-    } else {
-      await apiClient.put(
+    : await apiClient.put<V2Book & { chapters?: V2Chapter[] }>(
         bookPath(bookId),
-        { title, tagIds },
+        {
+          ...(data.title !== undefined ? { title: data.title } : {}),
+          ...(tagIds !== undefined ? { tagIds } : {}),
+        },
         idempotencyConfig(),
       )
-    }
-  }
-  if (data.translationConstraints) {
-    await saveConstraints(bookId, data.translationConstraints)
-  }
-  return getBookDetail(bookId)
+  return toBook(updated)
 }
 
 export async function deleteBook(bookId: string): Promise<void> {
   await apiClient.delete(bookPath(bookId), idempotencyConfig())
   chapterOrderRevisions.delete(bookId)
-  constraintRevisions.delete(bookId)
 }
 
 export function batchDeleteBooks(bookIds: string[]): Promise<BookBatchDeleteResult> {
@@ -292,13 +266,12 @@ export async function createChapter(
 export async function updateChapter(
   chapterId: string,
   title: string,
-): Promise<ChapterData> {
-  const chapter = await apiClient.put<V2Chapter>(
+): Promise<{ id: string; title: string }> {
+  return apiClient.put<V2ChapterTitleResult>(
     chapterPath(chapterId),
     { title },
     idempotencyConfig(),
   )
-  return toChapter(chapter)
 }
 
 export async function deleteChapter(
@@ -329,19 +302,19 @@ export async function reorderChapters(
 
 export async function getTags(): Promise<TagData[]> {
   const result = await apiClient.get<V2TagList>(TAGS_ENDPOINT)
-  return result.items.map(toTag)
+  return result.items.map(rememberTag)
 }
 
 export async function createTag(
   name: string,
-  color = '#808080',
+  color: string,
 ): Promise<TagData> {
   const tag = await apiClient.post<V2Tag>(
     TAGS_ENDPOINT,
     { name, color },
     idempotencyConfig(),
   )
-  return toTag(tag)
+  return rememberTag(tag)
 }
 
 function requireTagId(name: string): string {
@@ -371,5 +344,5 @@ export async function updateTag(
     idempotencyConfig(),
   )
   tagIdsByName.delete(currentName)
-  return toTag(tag)
+  return rememberTag(tag)
 }

@@ -23,6 +23,7 @@ export interface AiProviderManifestEntry {
   kind: ProviderKind
   defaultBaseUrl?: string
   capabilityBaseUrls?: Partial<Record<ProviderCapability, string>>
+  capabilityEndpoints?: Partial<Record<ProviderCapability, string>>
   capabilities: ProviderCapability[]
   requiresApiKey: boolean
   requiresModel: boolean
@@ -31,6 +32,7 @@ export interface AiProviderManifestEntry {
   supportsStream: boolean
   supportsJsonResponse: boolean
   defaultModels?: Partial<Record<ProviderModelType, string>>
+  modelCatalogs?: Partial<Record<ProviderModelType, string[]>>
 }
 
 export const AI_PROVIDER_MANIFEST = providerManifestData as AiProviderManifestEntry[]
@@ -39,7 +41,7 @@ const PROVIDER_MAP = new Map(AI_PROVIDER_MANIFEST.map(entry => [entry.id, entry]
 
 export function normalizeProviderId(provider?: string | null): string {
   if (!provider) return ''
-  return String(provider).trim().toLowerCase()
+  return provider.trim().toLowerCase()
 }
 
 export function getProviderManifest(provider?: string | null): AiProviderManifestEntry | undefined {

@@ -17,7 +17,6 @@ from src.interfaces.manga_ocr_interface import recognize_japanese_text
 from src.interfaces.ocr_48px import get_48px_ocr_handler
 from src.interfaces.ocr_48px.interface import get_transformed_region
 from src.shared import constants
-from src.shared.memory_errors import is_memory_allocation_error
 
 
 logger = logging.getLogger("HybridOcrManga48")
@@ -54,15 +53,15 @@ def _polygon_area(polygon: Sequence[Sequence[int]]) -> float:
 
 
 def _mangaocr_textline_height(line_info: Dict[str, Any]) -> int:
-    x1, y1, x2, y2 = _polygon_bounds(line_info.get('polygon', []))
-    direction = line_info.get('direction', 'h')
+    x1, y1, x2, y2 = _polygon_bounds(line_info['polygon'])
+    direction = line_info['direction']
     if direction == 'h':
         return max(x2 - x1, 2)
     return max(y2 - y1, 2)
 
 
 def _get_mangaocr_region(image_np: np.ndarray, line_info: Dict[str, Any]) -> np.ndarray:
-    polygon = line_info.get('polygon', [])
+    polygon = line_info['polygon']
     pts = np.array(polygon, dtype=np.float32)
     target_height = _mangaocr_textline_height(line_info)
     # 对齐上游 mocr：无论原方向如何，都使用 horizontal 输出给 MangaOCR
@@ -88,31 +87,14 @@ def _recognize_manga_textlines(
     results: List[OcrTextlineResult] = []
 
     for line_info in textlines:
-        polygon = line_info.get('polygon', [])
-        direction = line_info.get('direction', 'h')
+        polygon = line_info['polygon']
+        direction = line_info['direction']
         if not polygon or len(polygon) != 4:
-            results.append(
-                create_ocr_textline_result(
-                    "",
-                    'manga_ocr',
-                    confidence=None,
-                    confidence_supported=False,
-                    primary_engine=primary_engine,
-                    fallback_used=fallback_used,
-                    polygon=polygon,
-                    direction=direction,
-                )
-            )
-            continue
+            raise ValueError("MangaOCR 文本行几何无效")
 
-        try:
-            region = _get_mangaocr_region(img_np, line_info)
-            with Image.fromarray(region) as region_image:
-                text = recognize_japanese_text(region_image)
-        except Exception as error:
-            if is_memory_allocation_error(error):
-                raise
-            text = ""
+        region = _get_mangaocr_region(img_np, line_info)
+        with Image.fromarray(region) as region_image:
+            text = recognize_japanese_text(region_image)
 
         results.append(
             create_ocr_textline_result(
@@ -135,7 +117,7 @@ def _aggregate_bubble_result(
     primary_engine: str,
     secondary_engine: str,
 ) -> OcrResult:
-    non_empty_lines = [line for line in line_results if str(line.text or "").strip()]
+    non_empty_lines = [line for line in line_results if line.text.strip()]
     if not non_empty_lines:
         return create_ocr_result(
             "",
@@ -152,8 +134,7 @@ def _aggregate_bubble_result(
     valid_probability_found = False
 
     for line in non_empty_lines:
-        polygon = line.polygon or []
-        area = _polygon_area(polygon)
+        area = _polygon_area(line.polygon)
         if area <= 0:
             area = 1.0
 
@@ -198,11 +179,11 @@ def recognize_manga_48_hybrid(
     if not ocr48_handler.initialize(device):
         raise RuntimeError("48px OCR 初始化失败")
 
+    if len(textlines_per_bubble) != len(bubble_coords):
+        raise ValueError("混合 OCR 文本行分组数量与气泡数量不匹配")
+
     hybrid_results: List[OcrResult] = []
-    bubble_textlines: List[List[Dict[str, Any]]] = [
-        textlines_per_bubble[bubble_index] if bubble_index < len(textlines_per_bubble) else []
-        for bubble_index in range(len(bubble_coords))
-    ]
+    bubble_textlines = textlines_per_bubble
     flat_textlines: List[Dict[str, Any]] = []
     bubble_line_spans: Dict[int, tuple[int, int]] = {}
 
@@ -221,6 +202,8 @@ def recognize_manga_48_hybrid(
             primary_engine=primary_engine,
             fallback_used=False,
         )
+        if len(flat_ocr48_lines) != len(flat_textlines):
+            raise RuntimeError("48px OCR 文本行结果数量不匹配")
 
     for bubble_index, bubble_coords_item in enumerate(bubble_coords):
         textlines = bubble_textlines[bubble_index]
@@ -237,7 +220,9 @@ def recognize_manga_48_hybrid(
                         primary_engine=primary_engine,
                         fallback_used=False,
                     )
-                    hybrid_results.append(bubble_results[0] if bubble_results else create_ocr_result("", primary_engine, confidence=0.0, confidence_supported=True, primary_engine=primary_engine))
+                    if len(bubble_results) != 1:
+                        raise RuntimeError("48px OCR 整块结果数量不匹配")
+                    hybrid_results.append(bubble_results[0])
                 else:
                     text = recognize_japanese_text(bubble_image)
                     hybrid_results.append(
@@ -249,18 +234,14 @@ def recognize_manga_48_hybrid(
                     )
             continue
 
-        span = bubble_line_spans.get(bubble_index)
-        if span is None:
-            ocr48_lines = []
-        else:
-            start, end = span
-            ocr48_lines = flat_ocr48_lines[start:end]
+        start, end = bubble_line_spans[bubble_index]
+        ocr48_lines = flat_ocr48_lines[start:end]
 
         if primary_engine == constants.OCR_ENGINE_48PX:
             manga_retry_lines = [
                 textlines[index]
                 for index, line in enumerate(ocr48_lines)
-                if not str(line.text or "").strip() or float(line.confidence or 0.0) < threshold
+                if not line.text.strip() or line.confidence < threshold
             ]
             manga_retry_results = _recognize_manga_textlines(
                 image,
@@ -272,11 +253,11 @@ def recognize_manga_48_hybrid(
             retry_cursor = 0
             final_lines: List[OcrTextlineResult] = []
             for line in ocr48_lines:
-                needs_retry = (not str(line.text or "").strip()) or float(line.confidence or 0.0) < threshold
+                needs_retry = not line.text.strip() or line.confidence < threshold
                 if needs_retry:
                     fallback_line = manga_retry_results[retry_cursor]
                     retry_cursor += 1
-                    if str(fallback_line.text or "").strip():
+                    if fallback_line.text.strip():
                         line.text = fallback_line.text
                         line.engine = secondary_engine
                         line.fallback_used = True
@@ -303,8 +284,8 @@ def recognize_manga_48_hybrid(
                     fg_color=line_48.fg_color,
                     bg_color=line_48.bg_color,
                 )
-                needs_retry = not str(combined_line.text or "").strip()
-                if needs_retry and str(line_48.text or "").strip():
+                needs_retry = not combined_line.text.strip()
+                if needs_retry and line_48.text.strip():
                     line_48.primary_engine = primary_engine
                     line_48.fallback_used = True
                     final_lines.append(line_48)

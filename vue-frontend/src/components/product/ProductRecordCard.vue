@@ -103,7 +103,7 @@ function handleClick(event: MouseEvent): void {
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.product-record-card:hover {
+.product-record-card:not(.product-record-card--disabled):hover {
   border-color: var(--product-record-card-accent, var(--color-action-primary));
   box-shadow: var(--product-record-card-shadow-hover, 0 2px 8px var(--color-focus-brand-soft));
 }

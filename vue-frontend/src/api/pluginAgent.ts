@@ -127,8 +127,17 @@ export async function getPluginAgentSettings(): Promise<PluginAgentSettings> {
   if (activeSessionId) {
     try {
       session = await getPluginAgentSession(activeSessionId)
-    } catch {
-      activeSessionId = ''
+    } catch (error) {
+      if (
+        error
+        && typeof error === 'object'
+        && 'status' in error
+        && error.status === 404
+      ) {
+        activeSessionId = ''
+      } else {
+        throw error
+      }
     }
   }
   return {
@@ -227,6 +236,25 @@ export function pluginAgentEventFromJobEvent(event: V2JobEvent): PluginAgentEven
       timestamp: event.createdAt ?? '',
     }
   }
+  const activeState = {
+    job_started: ['running', '执行中'],
+    job_request_pause: ['pausing', '正在暂停'],
+    job_paused: ['paused', '已暂停'],
+    job_resume: ['running', '执行中'],
+    job_request_cancel: ['cancelling', '正在取消'],
+  }[event.type] as [PluginAgentRunState, string] | undefined
+  if (activeState) {
+    return {
+      id: event.eventId,
+      eventKey: `job:${event.eventId}`,
+      type: 'state',
+      payload: {
+        run_state: activeState[0],
+        label: activeState[1],
+      },
+      timestamp: event.createdAt ?? '',
+    }
+  }
   if (!['job_failed', 'job_cancelled', 'job_finished'].includes(event.type)) return null
   const status =
     event.type === 'job_failed'
@@ -256,22 +284,26 @@ export async function listPluginAgentJobEvents(
   jobId: string,
   afterId = 0
 ): Promise<{ cursor: number; events: PluginAgentEvent[] }> {
-  const response = await jobsApi.events(jobId, {
-    after: Math.max(0, Math.floor(afterId)),
-    limit: 200,
-  })
   const events: PluginAgentEvent[] = []
   let sawPluginTerminal = false
-  let cursor = afterId
-  for (const event of response.items) {
-    cursor = Math.max(cursor, event.eventId)
-    const mapped = pluginAgentEventFromJobEvent(event)
-    if (!mapped) continue
-    if (mapped.type === 'done' || mapped.type === 'error') {
-      if (sawPluginTerminal && mapped.type === 'error') continue
-      sawPluginTerminal = true
+  let cursor = Math.max(0, Math.floor(afterId))
+  const pageSize = 1000
+  while (true) {
+    const response = await jobsApi.events(jobId, {
+      after: cursor,
+      limit: pageSize,
+    })
+    for (const event of response.items) {
+      cursor = Math.max(cursor, event.eventId)
+      const mapped = pluginAgentEventFromJobEvent(event)
+      if (!mapped) continue
+      if (mapped.type === 'done' || mapped.type === 'error') {
+        if (sawPluginTerminal && mapped.type === 'error') continue
+        sawPluginTerminal = true
+      }
+      events.push(mapped)
     }
-    events.push(mapped)
+    if (response.items.length < pageSize) break
   }
   return { cursor, events }
 }

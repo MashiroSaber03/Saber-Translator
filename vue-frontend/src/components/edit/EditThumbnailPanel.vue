@@ -3,7 +3,7 @@
     <div
       ref="viewportRef"
       class="edit-thumbnails-panel__viewport"
-      role="list"
+      role="navigation"
       aria-label="编辑图片缩略图导航"
       @scroll="updateWindow"
     >
@@ -18,7 +18,7 @@
           :class="{ 'edit-thumbnails-panel__item--selected': item.index === currentImageIndex }"
           :style="{ transform: `translateX(${item.index * ITEM_WIDTH}px)` }"
           variant="card-action"
-          role="listitem"
+          :disabled="isBusy"
           :aria-label="`切换到图片 ${item.index + 1}`"
           :aria-current="item.index === currentImageIndex ? 'page' : undefined"
           @click="emit('switch-to-image', item.index)"
@@ -49,6 +49,7 @@ const props = defineProps<{
   visible: boolean
   images: ImageData[]
   currentImageIndex: number
+  isBusy: boolean
 }>()
 
 const emit = defineEmits<{

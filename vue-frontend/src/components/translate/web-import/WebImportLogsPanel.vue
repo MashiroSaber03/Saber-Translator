@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import ProductLogPanel from '@/components/product/ProductLogPanel.vue'
-import type { AgentLog, WebImportState } from '@/types/webImport'
+import type { AgentLog, WebImportStatus } from '@/types/webImport'
 
 type ProductLogTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger' | 'accent'
 
 const props = defineProps<{
   expanded: boolean
   logs: AgentLog[]
-  status: WebImportState['status']
+  status: WebImportStatus
 }>()
 
 defineEmits<{
@@ -16,10 +16,10 @@ defineEmits<{
 }>()
 
 const toneByLogType: Record<AgentLog['type'], ProductLogTone> = {
-  info: 'warning',
-  tool_call: 'accent',
+  info: 'info',
+  tool_call: 'warning',
   tool_result: 'success',
-  thinking: 'warning',
+  thinking: 'accent',
   error: 'danger',
 }
 

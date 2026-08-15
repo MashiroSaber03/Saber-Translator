@@ -43,12 +43,6 @@ const translationStatusArbitrary = fc.constantFrom<TranslationStatus>(
   'failed',
 )
 
-const activeStatusArbitrary = fc.constantFrom<TranslationStatus>(
-  'pending',
-  'processing',
-  'completed',
-)
-
 describe('translation state properties', () => {
   it('adds images in the pending state and can move them into processing', () => {
     fc.assert(
@@ -59,43 +53,13 @@ describe('translation state properties', () => {
         expect(image.fileName).toBe(imageInput.fileName)
         expect(image.sourceAssetUrl).toBe(imageInput.sourceAssetUrl)
         expect(image.translationStatus).toBe('pending')
-        expect(image.translationFailed).toBe(false)
         expect(store.images.filter(item => item.translationStatus === 'pending')).toHaveLength(1)
 
         store.setTranslationStatus(0, 'processing')
 
         expect(store.images[0]?.translationStatus).toBe('processing')
-        expect(store.images[0]?.translationFailed).toBe(false)
         expect(store.images.filter(item => item.translationStatus === 'pending')).toHaveLength(0)
       }),
-    )
-  })
-
-  it('records failure messages and clears stale errors when work resumes', () => {
-    fc.assert(
-      fc.property(
-        imageInputArbitrary,
-        fc.string({ minLength: 1, maxLength: 100 }),
-        activeStatusArbitrary,
-        (imageInput, errorMessage, recoveryStatus) => {
-          const store = createStore()
-          addTestImage(store, imageInput.fileName, imageInput.sourceAssetUrl)
-
-          store.setTranslationStatus(0, 'failed', errorMessage)
-
-          expect(store.images[0]?.translationStatus).toBe('failed')
-          expect(store.images[0]?.translationFailed).toBe(true)
-          expect(store.images[0]?.errorMessage).toBe(errorMessage)
-          expect(store.failedImageCount).toBe(1)
-
-          store.setTranslationStatus(0, recoveryStatus)
-
-          expect(store.images[0]?.translationStatus).toBe(recoveryStatus)
-          expect(store.images[0]?.translationFailed).toBe(false)
-          expect(store.images[0]?.errorMessage).toBeUndefined()
-          expect(store.failedImageCount).toBe(0)
-        },
-      ),
     )
   })
 
@@ -109,14 +73,14 @@ describe('translation state properties', () => {
           sourceAssetUrl: `data:image/png;base64,test${index}`,
         })))
         failedFlags.forEach((shouldFail, index) => {
-          store.setTranslationStatus(index, shouldFail ? 'failed' : 'completed', `error-${index}`)
+          store.setTranslationStatus(index, shouldFail ? 'failed' : 'completed')
         })
 
         const expectedFailedIndices = failedFlags
           .map((shouldFail, index) => (shouldFail ? index : -1))
           .filter(index => index >= 0)
 
-        expect(store.images.flatMap((image, index) => image.translationFailed ? [index] : [])).toEqual(
+        expect(store.images.flatMap((image, index) => image.translationStatus === 'failed' ? [index] : [])).toEqual(
           expectedFailedIndices,
         )
         expect(store.failedImageCount).toBe(expectedFailedIndices.length)
@@ -132,20 +96,17 @@ describe('translation state properties', () => {
       fc.property(
         fc.array(imageInputArbitrary, { minLength: 1, maxLength: 6 }),
         fc.nat(),
-        fc.string({ minLength: 1, maxLength: 100 }),
-        (imageInputs, targetSeed, errorMessage) => {
+        (imageInputs, targetSeed) => {
           const store = createStore()
           setTestImages(store, imageInputs)
           const targetIndex = targetSeed % store.imageCount
 
           store.setCurrentImageIndex(targetIndex)
-          store.setTranslationStatus(targetIndex, 'failed', errorMessage)
+          store.setTranslationStatus(targetIndex, 'failed')
 
           expect(store.currentImageIndex).toBe(targetIndex)
           expect(store.currentImage?.translationStatus).toBe('failed')
-          expect(store.currentImage?.translationFailed).toBe(true)
-          expect(store.currentImage?.errorMessage).toBe(errorMessage)
-          expect(store.images.flatMap((image, index) => image.translationFailed ? [index] : [])).toEqual(
+          expect(store.images.flatMap((image, index) => image.translationStatus === 'failed' ? [index] : [])).toEqual(
             [targetIndex],
           )
         },
@@ -159,8 +120,7 @@ describe('translation state properties', () => {
         fc.array(imageInputArbitrary, { minLength: 2, maxLength: 6 }),
         translationStatusArbitrary,
         fc.nat(),
-        fc.string({ minLength: 1, maxLength: 100 }),
-        (imageInputs, nextStatus, targetSeed, errorMessage) => {
+        (imageInputs, nextStatus, targetSeed) => {
           const store = createStore()
           setTestImages(store, imageInputs)
           const targetIndex = targetSeed % store.imageCount
@@ -168,10 +128,9 @@ describe('translation state properties', () => {
             fileName: image.fileName,
             sourceAssetUrl: image.sourceAssetUrl,
             translationStatus: image.translationStatus,
-            translationFailed: image.translationFailed,
           }))
 
-          store.setTranslationStatus(targetIndex, nextStatus, errorMessage)
+          store.setTranslationStatus(targetIndex, nextStatus)
 
           store.images.forEach((image, index) => {
             const snapshot = snapshots[index]
@@ -180,16 +139,8 @@ describe('translation state properties', () => {
 
             if (index === targetIndex) {
               expect(image.translationStatus).toBe(nextStatus)
-              expect(image.translationFailed).toBe(nextStatus === 'failed')
-              if (nextStatus === 'failed') {
-                expect(image.errorMessage).toBe(errorMessage)
-              } else {
-                expect(image.errorMessage).toBeUndefined()
-              }
             } else {
               expect(image.translationStatus).toBe(snapshot?.translationStatus)
-              expect(image.translationFailed).toBe(snapshot?.translationFailed)
-              expect(image.errorMessage).toBeUndefined()
             }
           })
         },

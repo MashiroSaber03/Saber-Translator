@@ -35,6 +35,24 @@ def _png(color: tuple[int, int, int]) -> bytes:
     return output.getvalue()
 
 
+def test_container_page_config_does_not_rescan_the_complete_entry_list() -> None:
+    class FrozenEntries(list[dict[str, object]]):
+        def __iter__(self):
+            raise AssertionError("page handling must not rescan every frozen entry")
+
+    entries = FrozenEntries([{"kind": "zip"}])
+    config = {"entries": entries}
+
+    resolved = TransferWorkerService._config(
+        {
+            "stepKind": "container_import_page",
+            "config": config,
+        }
+    )
+
+    assert resolved["entries"] is entries
+
+
 def _run_job(
     repository: JobQueueRepository,
     worker: TransferWorkerService,
@@ -192,6 +210,32 @@ def test_container_import_and_export_are_worker_owned_and_durable(
             "chapter/translated_001.png",
             "chapter/clean_002.png",
         ]
+
+    broken_export = commands.create_export(
+        chapter_id=str(chapter["id"]),
+        export_format="cbz",
+        page_ids=None,
+        idempotency_key="export-missing-page",
+    )
+    AssetStorageService(data_root, engine).resolve_relative_path(
+        clean_assets[1].relative_path
+    ).unlink()
+    broken_fence = jobs.claim_next(worker_epoch_id=epoch_id)
+    assert broken_fence is not None
+    assert broken_fence.job_id == broken_export["jobIds"][0]
+    broken_step = jobs.next_step(broken_fence)
+    assert broken_step is not None
+    with pytest.raises(FileNotFoundError):
+        worker.handler(broken_fence, broken_step)
+    with engine.connect() as connection:
+        assert connection.execute(
+            select(job_artifacts.c.asset_id).where(
+                job_artifacts.c.job_id == broken_fence.job_id
+            )
+        ).scalar_one_or_none() is None
+    assert not (
+        data_root / "temp" / "exports" / f"{broken_fence.job_id}.cbz"
+    ).exists()
     engine.dispose()
 
 

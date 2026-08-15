@@ -94,4 +94,16 @@ function openStudio() {
     padding: 22px;
   }
 }
+
+@media (--breakpoint-sm-down) {
+  .character-studio-entry-panel {
+    --product-record-card-grid-template-columns: minmax(0, 1fr);
+    --product-record-card-grid-template-rows: auto auto auto;
+    --product-record-card-actions-grid-column: 1;
+    --product-record-card-actions-grid-row: 3;
+
+    margin: 12px;
+    padding: 20px;
+  }
+}
 </style>

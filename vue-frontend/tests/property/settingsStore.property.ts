@@ -53,7 +53,8 @@ describe('settings store properties', () => {
       (provider, rpmLimit, businessRetries) => {
         const store = createSettingsStore()
 
-        store.updateTranslationService({ provider, rpmLimit, businessRetries })
+        store.setTranslationProvider(provider)
+        store.updateTranslationService({ rpmLimit, businessRetries })
 
         expect(store.settings.translation.provider).toBe(provider)
         expect(store.settings.translation.openaiOptions.execution.rpmLimit).toBe(rpmLimit)

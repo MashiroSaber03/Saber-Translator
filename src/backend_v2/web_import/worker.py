@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import codecs
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 import hashlib
 from html.parser import HTMLParser
+import logging
 from pathlib import Path
 import time
 from typing import Any, Mapping, Sequence
@@ -17,6 +19,8 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from sqlalchemy import Engine, delete, func, insert, select, update
 from sqlalchemy.engine import Connection
 
+from src.backend_v2.checksums import sha256_file
+from src.backend_v2.redaction import redact_sensitive_text
 from src.backend_v2.serialization import canonical_json as _json
 from src.backend_v2.content.image_import import (
     FORMAT_DETAILS,
@@ -26,8 +30,11 @@ from src.backend_v2.content.image_import import (
 from src.backend_v2.content.page_style import resolve_new_page_style
 from src.backend_v2.content.repository import (
     ContentRepository,
-    _deduplicate_logical_path,
+    deduplicate_logical_path,
     normalize_logical_path,
+)
+from src.backend_v2.insight.repository import (
+    mark_book_insight_derived_stale,
 )
 from src.backend_v2.jobs.repository import (
     AttemptFence,
@@ -50,7 +57,13 @@ from src.backend_v2.storage.schema import (
     web_import_draft_pages,
     web_import_drafts,
 )
-from src.backend_v2.web_import.commands import WebImportCommandService
+from src.backend_v2.web_import.commands import (
+    WebImportCommandService,
+    validate_web_commit_config,
+    validate_web_extract_config,
+    validate_web_import_options,
+)
+from src.core.web_import import WebImportAgentControlRequested
 from src.shared.memory_errors import is_memory_allocation_error
 
 
@@ -62,6 +75,8 @@ IMAGE_CONTENT_TYPES = {
     "image/bmp",
     "image/tiff",
 }
+
+logger = logging.getLogger(__name__)
 
 
 class WebImportWorkerService:
@@ -94,7 +109,9 @@ class WebImportWorkerService:
         fence: AttemptFence,
         step: Mapping[str, Any],
     ) -> Mapping[str, Any]:
-        kind = str(step["stepKind"])
+        kind = step.get("stepKind")
+        if not isinstance(kind, str):
+            raise ValueError("web import step kind is invalid")
         try:
             if kind == "web_extract_scan":
                 return self._scan(fence, step)
@@ -110,9 +127,38 @@ class WebImportWorkerService:
                 return self._finalize_commit(fence, step)
         except AttemptFenced:
             raise
+        except WebImportAgentControlRequested:
+            step_id = step.get("stepId")
+            if not isinstance(step_id, str) or not step_id:
+                raise ValueError("web import step id is invalid")
+            status = self.jobs.checkpoint_step(
+                fence,
+                step_id=step_id,
+                checkpoint={},
+            )
+            if status not in {"pausing", "cancelling"}:
+                raise RuntimeError(
+                    "web import control checkpoint lost its control state"
+                )
+            return {
+                "__already_published__": True,
+                "__control_drained__": True,
+            }
         except Exception as exc:
+            if is_memory_allocation_error(exc):
+                raise
             if kind.startswith("web_extract"):
-                self._record_extract_failure(fence, step, exc)
+                try:
+                    self._record_extract_failure(fence, step, exc)
+                except Exception as record_error:
+                    if is_memory_allocation_error(record_error):
+                        raise
+                    logger.warning(
+                        "网页导入失败状态记录失败："
+                        "original=%s, record=%s",
+                        redact_sensitive_text(exc),
+                        redact_sensitive_text(record_error),
+                    )
             raise
         raise ValueError(f"unsupported web import step: {kind}")
 
@@ -137,11 +183,13 @@ class WebImportWorkerService:
                 except AttemptFenced:
                     raise
                 except Exception as exc:
+                    if is_memory_allocation_error(exc):
+                        raise
                     self.jobs.fail_step(
                         fence,
                         step_id=str(step["stepId"]),
                         code="WEB_IMPORT_DOWNLOAD_FAILED",
-                        message=str(exc),
+                        message=redact_sensitive_text(exc),
                     )
         return {
             "processed": len(steps),
@@ -177,6 +225,7 @@ class WebImportWorkerService:
             "actualEngine": actual_engine,
             "entries": entries,
         }
+        validate_web_extract_config(new_config)
         now = utcnow()
         draft_id = str(config["draftId"])
 
@@ -273,7 +322,7 @@ class WebImportWorkerService:
                 existing_path.is_file()
                 and thumbnail_path is not None
                 and thumbnail_path.is_file()
-                and _sha256_file(existing_path) == existing["checksum"]
+                and sha256_file(existing_path) == existing["checksum"]
             ):
                 checkpoint = {
                     "draftPageId": draft_page_id,
@@ -453,7 +502,7 @@ class WebImportWorkerService:
         )
         if not source_path.is_file():
             raise ValueError("draft source file expired or is missing")
-        if _sha256_file(source_path) != entry["checksum"]:
+        if sha256_file(source_path) != entry["checksum"]:
             raise ValueError("draft source checksum changed")
         thumbnail = self.storage.get_record(str(entry["thumbnailAssetId"]))
         if (
@@ -482,11 +531,14 @@ class WebImportWorkerService:
             ).scalar_one_or_none() is None:
                 raise RuntimeError("web import commit lost its chapter lock")
             draft = connection.execute(
-                select(web_import_drafts.c.status).where(
+                select(
+                    web_import_drafts.c.book_id,
+                    web_import_drafts.c.status,
+                ).where(
                     web_import_drafts.c.id == draft_id
                 )
-            ).scalar_one_or_none()
-            if draft != "committing":
+            ).mappings().one_or_none()
+            if draft is None or draft["status"] != "committing":
                 raise RuntimeError("web import draft is no longer committing")
             ordinal = int(
                 connection.execute(
@@ -539,6 +591,11 @@ class WebImportWorkerService:
                     page_order_revision=chapters.c.page_order_revision + 1,
                     updated_at=now,
                 )
+            )
+            mark_book_insight_derived_stale(
+                connection,
+                book_id=str(draft["book_id"]),
+                now=now,
             )
             connection.execute(
                 update(web_import_drafts)
@@ -619,10 +676,12 @@ class WebImportWorkerService:
             )
             entries: list[dict[str, Any]] = []
             for entry, candidate in candidates:
-                logical_path = _deduplicate_logical_path(candidate, used_paths)
+                logical_path = deduplicate_logical_path(candidate, used_paths)
                 used_paths.add(logical_path)
                 entries.append({**entry, "logicalPath": logical_path})
-            frozen = {**config, "entries": entries}
+            frozen = validate_web_commit_config(
+                {**config, "entries": entries}
+            )
             changed = connection.execute(
                 update(jobs)
                 .where(
@@ -679,40 +738,25 @@ class WebImportWorkerService:
     ) -> tuple[list[str], str]:
         options = self._options(config)
         if requested in {"gallery-dl", "auto"}:
-            gallery_urls = _gallery_dl_urls(
-                source_url,
-                max_candidates=self.limits.max_container_pages,
-            )
+            gallery_urls = _gallery_dl_urls(source_url)
             if gallery_urls:
-                return (
-                    _deduplicate_urls(
-                        gallery_urls,
-                        max_candidates=self.limits.max_container_pages,
-                    ),
-                    "gallery-dl",
-                )
+                return _deduplicate_urls(gallery_urls), "gallery-dl"
             if requested == "gallery-dl":
                 raise ValueError("gallery-dl does not support this URL")
         if requested == "ai-agent":
             agent = options.get("agent")
-            if not isinstance(agent, Mapping) or not agent.get(
-                "credentialVersionId"
-            ):
-                raise ValueError(
-                    "ai-agent extraction requires a credentialVersionId"
-                )
+            if not isinstance(agent, Mapping):
+                raise ValueError("ai-agent extraction requires agent settings")
             return self._run_ai_agent(fence, source_url, options), "ai-agent"
         return (
             _html_image_urls(
                 source_url,
-                timeout=float(options["timeout"]),
+                timeout=options["timeout"],
                 headers=self._request_headers(
                     options,
                     accept="text/html,image/*;q=0.8,*/*;q=0.5",
                 ),
-                bypass_proxy=bool(options["bypassProxy"]),
-                max_html_bytes=self.limits.max_html_bytes,
-                max_candidates=self.limits.max_container_pages,
+                bypass_proxy=options["bypassProxy"],
                 stream_chunk_bytes=self.limits.stream_chunk_bytes,
             ),
             "html",
@@ -729,72 +773,71 @@ class WebImportWorkerService:
         agent_options = options.get("agent")
         if not isinstance(agent_options, Mapping):
             raise ValueError("AI Agent settings are missing")
-        agent_secret = self._credential_secret(
-            agent_options.get("credentialVersionId")
+        agent_secret = self._api_key_secret(
+            agent_options.get("credentialVersionId"),
+            required=False,
+            field="AI Agent",
         )
         firecrawl_options = options.get("firecrawl")
         firecrawl_secret = (
-            self._credential_secret(
-                firecrawl_options.get("credentialVersionId")
+            self._api_key_secret(
+                firecrawl_options.get("credentialVersionId"),
+                required=True,
+                field="Firecrawl",
             )
             if isinstance(firecrawl_options, Mapping)
             else {}
         )
-        api_key = agent_secret.get("api_key", "")
-        firecrawl_key = firecrawl_secret.get("api_key", "")
-        if not api_key:
-            raise ValueError("AI Agent credential has no API key")
-        if not firecrawl_key:
-            raise ValueError("Firecrawl credential is required for AI Agent")
-        extraction = options.get("extraction")
-        extraction_options = (
-            dict(extraction) if isinstance(extraction, Mapping) else {}
-        )
+        api_key = agent_secret["api_key"] if agent_secret else ""
+        firecrawl_key = firecrawl_secret["api_key"]
         agent = MangaScraperAgent(
-            {
-                "firecrawl": {"apiKey": firecrawl_key},
-                "agent": {
-                    "provider": agent_options.get("provider", ""),
-                    "apiKey": api_key,
-                    "customBaseUrl": agent_options.get(
-                        "custom_base_url",
-                        "",
-                    ),
-                    "modelName": agent_options.get("model_name", ""),
-                    "useStream": bool(agent_options.get("useStream", False)),
-                    "forceJsonOutput": bool(
-                        agent_options.get("forceJsonOutput", True)
-                    ),
-                    "maxRetries": int(agent_options.get("maxRetries", 3)),
-                    "timeout": int(agent_options.get("timeout", 120)),
-                },
-                "extraction": extraction_options,
-                "bypassProxy": bool(options["bypassProxy"]),
-            }
+            firecrawl_api_key=firecrawl_key,
+            provider=agent_options["provider"],
+            api_key=api_key,
+            base_url=agent_options["custom_base_url"],
+            model_name=agent_options["model_name"],
+            use_stream=agent_options["useStream"],
+            force_json=agent_options["forceJsonOutput"],
+            max_retries=agent_options["maxRetries"],
+            timeout=agent_options["timeout"],
+            prompt=options["extraction"]["prompt"],
+            max_iterations=options["extraction"]["maxIterations"],
+            bypass_proxy=options["bypassProxy"],
         )
-        result = agent.extract(
-            source_url,
-            on_log=lambda log: self.jobs.append_worker_event(
-                fence,
-                event_type="web_import_agent_log",
-                payload={
-                    "timestamp": log.timestamp,
-                    "type": log.type,
-                    "message": log.message,
-                },
-            ),
-        )
+        last_control_check = 0.0
+        control_requested = False
+
+        def should_stop() -> bool:
+            nonlocal last_control_check, control_requested
+            now = time.monotonic()
+            if not control_requested and now - last_control_check >= 0.25:
+                control_requested = self.jobs.control_status(fence) in {
+                    "pausing",
+                    "cancelling",
+                }
+                last_control_check = now
+            return control_requested
+
+        try:
+            result = agent.extract(
+                source_url,
+                on_log=lambda log: self.jobs.append_worker_event(
+                    fence,
+                    event_type="web_import_agent_log",
+                    payload={
+                        "timestamp": log.timestamp,
+                        "type": log.type,
+                        "message": log.message,
+                    },
+                ),
+                should_stop=should_stop,
+            )
+        finally:
+            agent.close()
         if not result.success:
             raise ValueError(result.error or "AI Agent extraction failed")
-        urls = [
-            str(page.get("imageUrl", "")).strip()
-            for page in result.pages
-            if isinstance(page, Mapping) and page.get("imageUrl")
-        ]
-        return _deduplicate_urls(
-            urls,
-            max_candidates=self.limits.max_container_pages,
-        )
+        urls = [page["imageUrl"] for page in result.pages]
+        return _deduplicate_urls(urls)
 
     def _download(
         self,
@@ -1001,7 +1044,7 @@ class WebImportWorkerService:
             raise ValueError("candidate is not a decodable image") from exc
         finally:
             temporary.unlink(missing_ok=True)
-        return _sha256_file(path)
+        return sha256_file(path)
 
     def _credential_secret(self, version_id: object) -> dict[str, Any]:
         if not isinstance(version_id, str) or not version_id:
@@ -1012,6 +1055,24 @@ class WebImportWorkerService:
             raise ValueError(
                 "frozen web import credential no longer exists"
             ) from exc
+
+    def _api_key_secret(
+        self,
+        version_id: object,
+        *,
+        required: bool,
+        field: str,
+    ) -> dict[str, str]:
+        if version_id is None and not required:
+            return {}
+        secret = self._credential_secret(version_id)
+        if (
+            set(secret) != {"api_key"}
+            or not isinstance(secret["api_key"], str)
+            or not secret["api_key"]
+        ):
+            raise ValueError(f"frozen {field} credential is invalid")
+        return {"api_key": secret["api_key"]}
 
     def _record_extract_failure(
         self,
@@ -1030,7 +1091,7 @@ class WebImportWorkerService:
                     config,
                     int(step["itemOrdinal"]) - 2,
                 )
-            except Exception:
+            except (IndexError, KeyError, RuntimeError, TypeError, ValueError):
                 entry = None
             if entry:
                 with self.engine.begin() as connection:
@@ -1053,7 +1114,7 @@ class WebImportWorkerService:
                             error_json=_json(
                                 {
                                     "code": "download_failed",
-                                    "message": str(error),
+                                    "message": redact_sensitive_text(error),
                                 }
                             ),
                             created_at=now,
@@ -1113,16 +1174,26 @@ class WebImportWorkerService:
     @staticmethod
     def _config(step: Mapping[str, Any]) -> dict[str, Any]:
         value = step.get("config")
+        kind = step.get("stepKind")
+        if kind not in {
+            "web_extract_scan",
+            "web_extract_page",
+            "web_extract_finalize",
+            "web_extract_auto_commit",
+            "web_import_commit_page",
+            "web_import_commit_finalize",
+        }:
+            raise RuntimeError("web import step kind is invalid")
         if not isinstance(value, Mapping):
             raise RuntimeError("web import job configuration is invalid")
+        # The command boundary validates initial snapshots, and scan/path-freeze
+        # validates each expanded snapshot before it is persisted. Revalidating
+        # the entire entry array for every page turns large imports into O(n²).
         return dict(value)
 
     @staticmethod
     def _options(config: Mapping[str, Any]) -> dict[str, Any]:
-        value = config.get("options")
-        if not isinstance(value, Mapping):
-            raise RuntimeError("web import settings snapshot is invalid")
-        return dict(value)
+        return validate_web_import_options(config.get("options"))
 
     @staticmethod
     def _entry(
@@ -1154,14 +1225,13 @@ class WebImportWorkerService:
         try:
             return normalize_logical_path(name)
         except ValueError:
-            return f"page_{int(entry['ordinal']):05d}.png"
+            return f"page_{int(entry['ordinal']):05d}.{extension}"
 
 
 class _ImageTagParser(HTMLParser):
-    def __init__(self, base_url: str, max_candidates: int) -> None:
+    def __init__(self, base_url: str) -> None:
         super().__init__(convert_charrefs=True)
         self.base_url = base_url
-        self.max_candidates = max_candidates
         self.urls: list[str] = []
         self._seen: set[str] = set()
 
@@ -1169,8 +1239,6 @@ class _ImageTagParser(HTMLParser):
         url = urljoin(self.base_url, value)
         if url in self._seen:
             return
-        if len(self.urls) >= self.max_candidates:
-            raise ValueError("webpage returned too many image candidates")
         self._seen.add(url)
         self.urls.append(url)
 
@@ -1208,8 +1276,6 @@ def _html_image_urls(
     timeout: float,
     headers: Mapping[str, str],
     bypass_proxy: bool,
-    max_html_bytes: int,
-    max_candidates: int,
     stream_chunk_bytes: int = ImportSafetyLimits().stream_chunk_bytes,
 ) -> list[str]:
     with httpx.Client(
@@ -1225,53 +1291,46 @@ def _html_image_urls(
             ).split(";", 1)[0]
             if content_type.casefold() in IMAGE_CONTENT_TYPES:
                 return [str(response.url)]
-            payload = bytearray()
+            parser = _ImageTagParser(str(response.url))
+            decoder = codecs.getincrementaldecoder(
+                response.encoding or "utf-8"
+            )(errors="replace")
             for chunk in response.iter_bytes(stream_chunk_bytes):
-                payload.extend(chunk)
-                if len(payload) > max_html_bytes:
-                    raise ValueError("webpage HTML exceeds the configured byte limit")
-            final_url = str(response.url)
-            encoding = response.encoding or "utf-8"
-    parser = _ImageTagParser(final_url, max_candidates)
-    parser.feed(payload.decode(encoding, errors="replace"))
+                parser.feed(decoder.decode(chunk))
+            parser.feed(decoder.decode(b"", final=True))
+            parser.close()
     return parser.urls
 
 
-def _gallery_dl_urls(url: str, *, max_candidates: int) -> list[str]:
+def _gallery_dl_urls(url: str) -> list[str]:
     try:
-        from gallery_dl import job
-
-        class Collector(job.Job):
-            def __init__(self, target_url: str) -> None:
-                self.urls: list[str] = []
-                self.max_candidates = max_candidates
-                super().__init__(target_url)
-
-            def handle_url(
-                self,
-                found_url: str,
-                _keywords: object,
-            ) -> None:
-                if len(self.urls) >= self.max_candidates:
-                    raise ValueError("gallery-dl returned too many candidates")
-                self.urls.append(found_url)
-
-        collector = Collector(url)
-        collector.run()
-        return collector.urls
-    except ValueError:
-        raise
-    except Exception as exc:
-        if is_memory_allocation_error(exc):
-            raise
+        from gallery_dl import exception, job
+    except ImportError:
         return []
 
+    class Collector(job.Job):
+        def __init__(self, target_url: str) -> None:
+            self.urls: list[str] = []
+            super().__init__(target_url)
 
-def _deduplicate_urls(
-    values: list[str],
-    *,
-    max_candidates: int,
-) -> list[str]:
+        def handle_url(
+            self,
+            found_url: str,
+            _keywords: object,
+        ) -> None:
+            self.urls.append(found_url)
+
+    try:
+        collector = Collector(url)
+    except exception.NoExtractorError:
+        return []
+    status = collector.run()
+    if status:
+        raise RuntimeError(f"gallery-dl extraction failed with status {status}")
+    return collector.urls
+
+
+def _deduplicate_urls(values: list[str]) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
     for value in values:
@@ -1280,19 +1339,9 @@ def _deduplicate_urls(
             continue
         if value in seen:
             continue
-        if len(result) >= max_candidates:
-            raise ValueError("webpage returned too many image candidates")
         seen.add(value)
         result.append(value)
     return result
-
-
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as source:
-        while chunk := source.read(1024 * 1024):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _retryable_download_error(error: Exception) -> bool:

@@ -13,7 +13,7 @@ from typing import Any, Protocol
 import uuid
 import zipfile
 
-from sqlalchemy import Engine, delete, exists, func, insert, select, update
+from sqlalchemy import Engine, delete, func, insert, select, update
 from sqlalchemy.engine import Connection
 
 from src.backend_v2.serialization import canonical_json as _json
@@ -24,7 +24,10 @@ from src.backend_v2.insight.derived import (
 from src.backend_v2.insight.repository import (
     InsightConflict,
     InsightNotFound,
+    _idempotency_replay,
+    _record_idempotency,
 )
+from src.backend_v2.insight.provider_runtime import frozen_image_gen_config
 from src.backend_v2.timestamps import utcnow
 from src.backend_v2.jobs.repository import (
     AttemptFence,
@@ -38,9 +41,9 @@ from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.storage.database import immediate_transaction
 from src.backend_v2.storage.platform_repositories import SettingsRepository
 from src.backend_v2.storage.schema import (
+    NONTERMINAL_JOB_STATUSES,
     analysis_artifacts,
     analysis_heads,
-    analysis_page_results,
     assets,
     continuation_character_forms,
     continuation_characters,
@@ -53,7 +56,6 @@ from src.backend_v2.storage.schema import (
     chapters,
     jobs,
     job_artifacts,
-    job_asset_inputs,
     page_assets,
     pages,
     timeline_characters,
@@ -61,18 +63,10 @@ from src.backend_v2.storage.schema import (
 )
 
 
-NONTERMINAL_JOB_STATUSES = (
-    "queued",
-    "running",
-    "pausing",
-    "paused",
-    "cancelling",
-    "interrupted",
-)
-
-
-def _load(value: str | None, default: object) -> object:
-    return json.loads(value) if value else default
+def _load(value: object) -> object:
+    if not isinstance(value, str) or not value:
+        raise ValueError("continuation JSON payload is missing")
+    return json.loads(value)
 
 
 class ContinuationRepository:
@@ -135,9 +129,31 @@ class ContinuationRepository:
                 ),
             }
 
-    def sync_latest(self, *, book_id: str) -> dict[str, Any]:
-        snapshot = self._snapshot_or_none(book_id=book_id)
-        with self.engine.connect() as connection:
+    def sync_latest(
+        self,
+        *,
+        idempotency_key: str,
+        book_id: str,
+    ) -> dict[str, Any]:
+        now = utcnow()
+        with immediate_transaction(self.engine) as connection:
+            scope = f"POST:syncContinuationAnalysis:{book_id}"
+            request_hash, replay = _idempotency_replay(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                payload={},
+                now=now,
+            )
+            if replay is not None:
+                return replay
+            try:
+                snapshot = InsightDerivedRepository._snapshot(
+                    connection,
+                    book_id=book_id,
+                )
+            except (InsightConflict, InsightNotFound):
+                snapshot = None
             prerequisites, timeline = self._snapshot_prerequisites(
                 connection,
                 book_id=book_id,
@@ -145,22 +161,22 @@ class ContinuationRepository:
                 active_only=True,
                 allow_stale=False,
             )
-        missing = _missing_prerequisites(
-            analysis_ready=snapshot is not None,
-            prerequisites=prerequisites,
-            timeline=timeline,
-        )
-        if missing:
-            raise InsightConflict(
-                "continuation prerequisites are missing: "
-                + ", ".join(missing)
+            missing = _missing_prerequisites(
+                analysis_ready=snapshot is not None,
+                prerequisites=prerequisites,
+                timeline=timeline,
             )
-        assert snapshot is not None
-        assert timeline is not None
-        run_id = snapshot.source_run_id
-        analysis_inputs = _snapshot_inputs(snapshot)
-        now = utcnow()
-        with immediate_transaction(self.engine) as connection:
+            if missing:
+                raise InsightConflict(
+                    "continuation prerequisites are missing: "
+                    + ", ".join(missing)
+                )
+            if snapshot is None or timeline is None:
+                raise InsightConflict(
+                    "continuation prerequisites changed during synchronization"
+                )
+            run_id = snapshot.source_run_id
+            analysis_inputs = _snapshot_inputs(snapshot)
             project = connection.execute(
                 select(continuation_projects).where(
                     continuation_projects.c.book_id == book_id
@@ -189,14 +205,32 @@ class ContinuationRepository:
                 )
             else:
                 project_id = str(project["id"])
-                project_payload = _mapping(
-                    _load(project["payload_json"], {})
+                try:
+                    project_payload = _required_mapping_json(
+                        project["payload_json"],
+                        "continuation project",
+                    )
+                    _public_project_config(project_payload)
+                    stored_inputs = _validated_analysis_inputs(
+                        project_payload.get("analysisInputs")
+                    )
+                except (json.JSONDecodeError, TypeError, ValueError) as exc:
+                    raise InsightConflict(
+                        "continuation project schema is invalid; clear the project"
+                    ) from exc
+                stored_fingerprint = project_payload.get(
+                    "analysisInputFingerprint"
                 )
+                if (
+                    not _is_sha256(stored_fingerprint)
+                ):
+                    raise InsightConflict(
+                        "continuation project schema is invalid; clear the project"
+                    )
                 snapshot_changed = (
                     project["source_run_id"] != run_id
-                    or project_payload.get("analysisInputs") != analysis_inputs
-                    or project_payload.get("analysisInputFingerprint")
-                    != snapshot.fingerprint
+                    or stored_inputs != analysis_inputs
+                    or stored_fingerprint != snapshot.fingerprint
                 )
                 if snapshot_changed:
                     project_payload.update(
@@ -237,23 +271,22 @@ class ContinuationRepository:
             for name, payload in characters:
                 if str(name) in existing_names:
                     continue
-                loaded = _load(payload, {})
+                loaded = _mapping(_load(payload))
+                aliases = loaded.get("aliases", [])
+                if not isinstance(aliases, list) or any(
+                    not isinstance(value, str) for value in aliases
+                ):
+                    raise InsightConflict(
+                        "timeline character aliases are invalid"
+                    )
                 connection.execute(
                     insert(continuation_characters).values(
                         id=str(uuid.uuid4()),
                         project_id=project_id,
                         name=str(name),
-                        aliases_json=_json(
-                            loaded.get("aliases", [])
-                            if isinstance(loaded, Mapping)
-                            else []
-                        ),
+                        aliases_json=_json(aliases),
                         enabled=True,
-                        payload_json=_json(
-                            dict(loaded)
-                            if isinstance(loaded, Mapping)
-                            else {}
-                        ),
+                        payload_json=_json(loaded),
                     )
                 )
             project = connection.execute(
@@ -261,35 +294,77 @@ class ContinuationRepository:
                     continuation_projects.c.id == project_id
                 )
             ).mappings().one()
-            return self._project_dto(connection, project)
+            response = self._project_dto(connection, project)
+            _record_idempotency(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                request_hash=request_hash,
+                response=response,
+                http_status=200,
+                resource_type="continuation_project",
+                resource_id=project_id,
+                now=now,
+            )
+            return response
 
     def update_project(
         self,
         *,
+        idempotency_key: str,
         project_id: str,
         base_revision: int,
         config: Mapping[str, Any],
     ) -> dict[str, Any]:
-        normalized = {
-            "pageCount": max(1, min(100, int(config.get("pageCount", 15)))),
-            "styleReferencePages": max(
-                1,
-                min(20, int(config.get("styleReferencePages", 3))),
-            ),
-            "direction": str(config.get("direction", "")),
-        }
+        base_revision = _positive_integer(base_revision, "baseRevision")
+        normalized = _validated_project_config(config)
         now = utcnow()
         with immediate_transaction(self.engine) as connection:
+            scope = f"PATCH:updateContinuationProject:{project_id}"
+            request_hash, replay = _idempotency_replay(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                payload={
+                    "baseRevision": base_revision,
+                    "config": normalized,
+                },
+                now=now,
+            )
+            if replay is not None:
+                return replay
             current = connection.execute(
-                select(continuation_projects.c.payload_json).where(
+                select(continuation_projects).where(
                     continuation_projects.c.id == project_id
                 )
-            ).scalar_one_or_none()
-            if current is not None:
-                current_payload = _mapping(_load(current, {}))
-                for key in ("analysisInputs", "analysisInputFingerprint"):
-                    if key in current_payload:
-                        normalized[key] = current_payload[key]
+            ).mappings().one_or_none()
+            if current is None:
+                raise InsightNotFound("continuation project not found")
+            try:
+                current_payload = _required_mapping_json(
+                    current["payload_json"],
+                    "continuation project",
+                )
+                analysis_inputs = _validated_analysis_inputs(
+                    current_payload.get("analysisInputs")
+                )
+                analysis_fingerprint = current_payload.get(
+                    "analysisInputFingerprint"
+                )
+                if not _is_sha256(analysis_fingerprint):
+                    raise ValueError(
+                        "analysisInputFingerprint must be SHA-256"
+                    )
+            except (json.JSONDecodeError, TypeError, ValueError) as exc:
+                raise InsightConflict(
+                    "continuation project schema is invalid; clear the project"
+                ) from exc
+            normalized.update(
+                {
+                    "analysisInputs": analysis_inputs,
+                    "analysisInputFingerprint": analysis_fingerprint,
+                }
+            )
             changed = connection.execute(
                 update(continuation_projects)
                 .where(
@@ -304,37 +379,77 @@ class ContinuationRepository:
             )
             if changed.rowcount != 1:
                 raise InsightConflict("continuation project revision changed")
+            connection.execute(
+                delete(continuation_pages).where(
+                    continuation_pages.c.project_id == project_id,
+                    continuation_pages.c.ordinal > normalized["pageCount"],
+                )
+            )
             row = connection.execute(
                 select(continuation_projects).where(
                     continuation_projects.c.id == project_id
                 )
             ).mappings().one()
-            return self._project_dto(connection, row)
+            response = self._project_dto(connection, row)
+            _record_idempotency(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                request_hash=request_hash,
+                response=response,
+                http_status=200,
+                resource_type="continuation_project",
+                resource_id=project_id,
+                now=now,
+            )
+            return response
 
     def set_project_references(
         self,
         *,
+        idempotency_key: str,
         project_id: str,
         base_revision: int,
         asset_ids: Sequence[str],
     ) -> dict[str, Any]:
-        normalized = list(dict.fromkeys(str(value) for value in asset_ids))
-        if len(normalized) != len(asset_ids) or len(normalized) > 20:
-            raise ValueError(
-                "reference assetIds must be unique and contain at most 20 items"
-            )
+        base_revision = _positive_integer(base_revision, "baseRevision")
+        normalized = list(asset_ids)
+        if any(not isinstance(value, str) or not value for value in normalized):
+            raise ValueError("reference assetIds must be non-empty strings")
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("reference assetIds must be unique")
+        now = utcnow()
         with immediate_transaction(self.engine) as connection:
+            scope = f"PUT:setContinuationReferences:{project_id}"
+            request_hash, replay = _idempotency_replay(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                payload={
+                    "baseRevision": base_revision,
+                    "assetIds": normalized,
+                },
+                now=now,
+            )
+            if replay is not None:
+                return replay
+            self._require_project(connection, project_id)
             if normalized:
-                existing = set(
-                    str(value)
-                    for value in connection.execute(
-                        select(assets.c.id).where(
+                asset_rows = {
+                    str(row["id"]): str(row["mime_type"])
+                    for row in connection.execute(
+                        select(assets.c.id, assets.c.mime_type).where(
                             assets.c.id.in_(tuple(normalized))
                         )
-                    ).scalars()
-                )
-                if existing != set(normalized):
+                    ).mappings()
+                }
+                if set(asset_rows) != set(normalized):
                     raise InsightNotFound("reference asset not found")
+                if any(
+                    not mime_type.startswith("image/")
+                    for mime_type in asset_rows.values()
+                ):
+                    raise ValueError("continuation references must be images")
             changed = connection.execute(
                 update(continuation_projects)
                 .where(
@@ -343,7 +458,7 @@ class ContinuationRepository:
                 )
                 .values(
                     revision=base_revision + 1,
-                    updated_at=utcnow(),
+                    updated_at=now,
                 )
             )
             if changed.rowcount != 1:
@@ -376,23 +491,58 @@ class ContinuationRepository:
                     continuation_projects.c.id == project_id
                 )
             ).mappings().one()
-            return self._project_dto(connection, row)
+            response = self._project_dto(connection, row)
+            _record_idempotency(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                request_hash=request_hash,
+                response=response,
+                http_status=200,
+                resource_type="continuation_project",
+                resource_id=project_id,
+                now=now,
+            )
+            return response
 
     def update_script(
         self,
         *,
+        idempotency_key: str,
         project_id: str,
         base_revision: int,
         content: str,
     ) -> dict[str, Any]:
+        if (
+            isinstance(base_revision, bool)
+            or not isinstance(base_revision, int)
+            or base_revision < 0
+        ):
+            raise ValueError("baseRevision must be a non-negative integer")
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError("continuation script content is required")
         now = utcnow()
         with immediate_transaction(self.engine) as connection:
+            scope = f"PATCH:updateContinuationScript:{project_id}"
+            request_hash, replay = _idempotency_replay(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                payload={
+                    "baseRevision": base_revision,
+                    "content": content,
+                },
+                now=now,
+            )
+            if replay is not None:
+                return replay
             row = connection.execute(
                 select(continuation_scripts).where(
                     continuation_scripts.c.project_id == project_id
                 )
             ).mappings().one_or_none()
             if row is None:
+                self._require_project(connection, project_id)
                 if base_revision != 0:
                     raise InsightConflict("continuation script does not exist")
                 script_id = str(uuid.uuid4())
@@ -438,21 +588,50 @@ class ContinuationRepository:
                     revision=continuation_pages.c.revision + 1,
                 )
             )
-        return {
-            "scriptId": script_id,
-            "projectId": project_id,
-            "revision": revision,
-            "content": content,
-        }
+            response = {
+                "scriptId": script_id,
+                "projectId": project_id,
+                "revision": revision,
+                "content": content,
+            }
+            _record_idempotency(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                request_hash=request_hash,
+                response=response,
+                http_status=200,
+                resource_type="continuation_script",
+                resource_id=script_id,
+                now=now,
+            )
+            return response
 
     def update_page(
         self,
         *,
+        idempotency_key: str,
         page_id: str,
         base_revision: int,
         payload: Mapping[str, Any],
     ) -> dict[str, Any]:
+        base_revision = _positive_integer(base_revision, "baseRevision")
+        normalized = _validated_page_payload(payload)
+        now = utcnow()
         with immediate_transaction(self.engine) as connection:
+            scope = f"PATCH:updateContinuationPage:{page_id}"
+            request_hash, replay = _idempotency_replay(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                payload={
+                    "baseRevision": base_revision,
+                    "payload": normalized,
+                },
+                now=now,
+            )
+            if replay is not None:
+                return replay
             changed = connection.execute(
                 update(continuation_pages)
                 .where(
@@ -460,27 +639,54 @@ class ContinuationRepository:
                     continuation_pages.c.revision == base_revision,
                 )
                 .values(
-                    payload_json=_json(dict(payload)),
+                    payload_json=_json(normalized),
                     revision=base_revision + 1,
                 )
             )
             if changed.rowcount != 1:
-                raise InsightConflict("continuation page revision changed")
+                self._raise_page_cas(connection, page_id)
             row = connection.execute(
                 select(continuation_pages).where(
                     continuation_pages.c.id == page_id
                 )
             ).mappings().one()
-        return _page_dto(row)
+            response = _page_dto(row)
+            _record_idempotency(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                request_hash=request_hash,
+                response=response,
+                http_status=200,
+                resource_type="continuation_page",
+                resource_id=page_id,
+                now=now,
+            )
+            return response
 
     def switch_image_version(
         self,
         *,
+        idempotency_key: str,
         continuation_page_id: str,
         version: int,
     ) -> dict[str, Any]:
+        version = _positive_integer(version, "version")
         now = utcnow()
         with immediate_transaction(self.engine) as connection:
+            scope = (
+                "POST:activateContinuationImage:"
+                f"{continuation_page_id}:{version}"
+            )
+            request_hash, replay = _idempotency_replay(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                payload={},
+                now=now,
+            )
+            if replay is not None:
+                return replay
             target = connection.execute(
                 select(continuation_image_versions).where(
                     continuation_image_versions.c.continuation_page_id
@@ -503,15 +709,28 @@ class ContinuationRepository:
                 .where(continuation_image_versions.c.id == target["id"])
                 .values(is_active=True, updated_at=now)
             )
-        return {
-            "continuationPageId": continuation_page_id,
-            "version": version,
-            "assetId": str(target["asset_id"]),
-        }
+            response = {
+                "continuationPageId": continuation_page_id,
+                "version": version,
+                "assetId": str(target["asset_id"]),
+            }
+            _record_idempotency(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                request_hash=request_hash,
+                response=response,
+                http_status=200,
+                resource_type="continuation_page",
+                resource_id=continuation_page_id,
+                now=now,
+            )
+            return response
 
     def create_character(
         self,
         *,
+        idempotency_key: str,
         project_id: str,
         name: str,
         aliases: Sequence[str],
@@ -519,10 +738,30 @@ class ContinuationRepository:
         payload: Mapping[str, Any],
     ) -> dict[str, Any]:
         name, aliases = _normalize_character_identity(name, aliases)
-        character_id = str(uuid.uuid4())
+        if not isinstance(enabled, bool):
+            raise ValueError("enabled must be a boolean")
+        if not isinstance(payload, Mapping):
+            raise ValueError("character payload must be an object")
+        normalized_payload = dict(payload)
         now = utcnow()
         with immediate_transaction(self.engine) as connection:
+            scope = f"POST:createContinuationCharacter:{project_id}"
+            request_hash, replay = _idempotency_replay(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                payload={
+                    "name": name,
+                    "aliases": aliases,
+                    "enabled": enabled,
+                    "payload": normalized_payload,
+                },
+                now=now,
+            )
+            if replay is not None:
+                return replay
             self._require_project(connection, project_id)
+            character_id = str(uuid.uuid4())
             connection.execute(
                 insert(continuation_characters).values(
                     id=character_id,
@@ -530,7 +769,7 @@ class ContinuationRepository:
                     name=name,
                     aliases_json=_json(aliases),
                     enabled=enabled,
-                    payload_json=_json(dict(payload)),
+                    payload_json=_json(normalized_payload),
                     revision=1,
                     created_at=now,
                     updated_at=now,
@@ -541,11 +780,24 @@ class ContinuationRepository:
                     continuation_characters.c.id == character_id
                 )
             ).mappings().one()
-        return _character_dto(row)
+            response = _character_dto(row)
+            _record_idempotency(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                request_hash=request_hash,
+                response=response,
+                http_status=201,
+                resource_type="continuation_character",
+                resource_id=character_id,
+                now=now,
+            )
+            return response
 
     def update_character(
         self,
         *,
+        idempotency_key: str,
         character_id: str,
         base_revision: int,
         name: str,
@@ -553,8 +805,31 @@ class ContinuationRepository:
         enabled: bool,
         payload: Mapping[str, Any],
     ) -> dict[str, Any]:
+        base_revision = _positive_integer(base_revision, "baseRevision")
         name, aliases = _normalize_character_identity(name, aliases)
+        if not isinstance(enabled, bool):
+            raise ValueError("enabled must be a boolean")
+        if not isinstance(payload, Mapping):
+            raise ValueError("character payload must be an object")
+        normalized_payload = dict(payload)
+        now = utcnow()
         with immediate_transaction(self.engine) as connection:
+            scope = f"PATCH:updateContinuationCharacter:{character_id}"
+            request_hash, replay = _idempotency_replay(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                payload={
+                    "baseRevision": base_revision,
+                    "name": name,
+                    "aliases": aliases,
+                    "enabled": enabled,
+                    "payload": normalized_payload,
+                },
+                now=now,
+            )
+            if replay is not None:
+                return replay
             changed = connection.execute(
                 update(continuation_characters)
                 .where(
@@ -565,9 +840,9 @@ class ContinuationRepository:
                     name=name,
                     aliases_json=_json(aliases),
                     enabled=enabled,
-                    payload_json=_json(dict(payload)),
+                    payload_json=_json(normalized_payload),
                     revision=base_revision + 1,
-                    updated_at=utcnow(),
+                    updated_at=now,
                 )
             )
             if changed.rowcount != 1:
@@ -577,15 +852,40 @@ class ContinuationRepository:
                     continuation_characters.c.id == character_id
                 )
             ).mappings().one()
-        return _character_dto(row)
+            response = _character_dto(row)
+            _record_idempotency(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                request_hash=request_hash,
+                response=response,
+                http_status=200,
+                resource_type="continuation_character",
+                resource_id=character_id,
+                now=now,
+            )
+            return response
 
     def delete_character(
         self,
         *,
+        idempotency_key: str,
         character_id: str,
         base_revision: int,
     ) -> None:
+        base_revision = _positive_integer(base_revision, "baseRevision")
+        now = utcnow()
         with immediate_transaction(self.engine) as connection:
+            scope = f"DELETE:deleteContinuationCharacter:{character_id}"
+            request_hash, replay = _idempotency_replay(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                payload={"baseRevision": base_revision},
+                now=now,
+            )
+            if replay is not None:
+                return
             changed = connection.execute(
                 delete(continuation_characters).where(
                     continuation_characters.c.id == character_id,
@@ -594,30 +894,55 @@ class ContinuationRepository:
             )
             if changed.rowcount != 1:
                 self._raise_character_cas(connection, character_id)
+            _record_idempotency(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                request_hash=request_hash,
+                response={"deleted": True},
+                http_status=200,
+                resource_type="continuation_character",
+                resource_id=character_id,
+                now=now,
+            )
 
     def create_form(
         self,
         *,
+        idempotency_key: str,
         character_id: str,
         name: str,
         payload: Mapping[str, Any],
     ) -> dict[str, Any]:
         name = _form_name(name)
-        form_id = str(uuid.uuid4())
+        if not isinstance(payload, Mapping):
+            raise ValueError("form payload must be an object")
+        normalized_payload = dict(payload)
         now = utcnow()
         with immediate_transaction(self.engine) as connection:
+            scope = f"POST:createContinuationForm:{character_id}"
+            request_hash, replay = _idempotency_replay(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                payload={"name": name, "payload": normalized_payload},
+                now=now,
+            )
+            if replay is not None:
+                return replay
             if connection.execute(
                 select(continuation_characters.c.id).where(
                     continuation_characters.c.id == character_id
                 )
             ).scalar_one_or_none() is None:
                 raise InsightNotFound("continuation character not found")
+            form_id = str(uuid.uuid4())
             connection.execute(
                 insert(continuation_character_forms).values(
                     id=form_id,
                     character_id=character_id,
                     name=name,
-                    payload_json=_json(dict(payload)),
+                    payload_json=_json(normalized_payload),
                     revision=1,
                     created_at=now,
                     updated_at=now,
@@ -628,18 +953,50 @@ class ContinuationRepository:
                     continuation_character_forms.c.id == form_id
                 )
             ).mappings().one()
-        return self._form_dto(row, image_versions=[])
+            response = self._form_dto(row, image_versions=[])
+            _record_idempotency(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                request_hash=request_hash,
+                response=response,
+                http_status=201,
+                resource_type="continuation_form",
+                resource_id=form_id,
+                now=now,
+            )
+            return response
 
     def update_form(
         self,
         *,
+        idempotency_key: str,
         form_id: str,
         base_revision: int,
         name: str,
         payload: Mapping[str, Any],
     ) -> dict[str, Any]:
+        base_revision = _positive_integer(base_revision, "baseRevision")
         name = _form_name(name)
+        if not isinstance(payload, Mapping):
+            raise ValueError("form payload must be an object")
+        normalized_payload = dict(payload)
+        now = utcnow()
         with immediate_transaction(self.engine) as connection:
+            scope = f"PATCH:updateContinuationForm:{form_id}"
+            request_hash, replay = _idempotency_replay(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                payload={
+                    "baseRevision": base_revision,
+                    "name": name,
+                    "payload": normalized_payload,
+                },
+                now=now,
+            )
+            if replay is not None:
+                return replay
             changed = connection.execute(
                 update(continuation_character_forms)
                 .where(
@@ -649,9 +1006,9 @@ class ContinuationRepository:
                 )
                 .values(
                     name=name,
-                    payload_json=_json(dict(payload)),
+                    payload_json=_json(normalized_payload),
                     revision=base_revision + 1,
-                    updated_at=utcnow(),
+                    updated_at=now,
                 )
             )
             if changed.rowcount != 1:
@@ -662,15 +1019,40 @@ class ContinuationRepository:
                 )
             ).mappings().one()
             versions = self._form_versions(connection, form_id)
-        return self._form_dto(row, image_versions=versions)
+            response = self._form_dto(row, image_versions=versions)
+            _record_idempotency(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                request_hash=request_hash,
+                response=response,
+                http_status=200,
+                resource_type="continuation_form",
+                resource_id=form_id,
+                now=now,
+            )
+            return response
 
     def delete_form(
         self,
         *,
+        idempotency_key: str,
         form_id: str,
         base_revision: int,
     ) -> None:
+        base_revision = _positive_integer(base_revision, "baseRevision")
+        now = utcnow()
         with immediate_transaction(self.engine) as connection:
+            scope = f"DELETE:deleteContinuationForm:{form_id}"
+            request_hash, replay = _idempotency_replay(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                payload={"baseRevision": base_revision},
+                now=now,
+            )
+            if replay is not None:
+                return
             changed = connection.execute(
                 delete(continuation_character_forms).where(
                     continuation_character_forms.c.id == form_id,
@@ -680,20 +1062,88 @@ class ContinuationRepository:
             )
             if changed.rowcount != 1:
                 self._raise_form_cas(connection, form_id)
+            _record_idempotency(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                request_hash=request_hash,
+                response={"deleted": True},
+                http_status=200,
+                resource_type="continuation_form",
+                resource_id=form_id,
+                now=now,
+            )
 
     def bind_form_reference(
         self,
         *,
+        idempotency_key: str,
         form_id: str,
         base_revision: int,
         asset_id: str | None,
         thumbnail_asset_id: str | None,
+        content_checksum: str | None = None,
     ) -> dict[str, Any]:
+        base_revision = _positive_integer(base_revision, "baseRevision")
         if (asset_id is None) != (thumbnail_asset_id is None):
             raise ValueError(
                 "reference asset and thumbnail must be set together"
             )
+        uploading = asset_id is not None
+        if uploading:
+            if (
+                not isinstance(content_checksum, str)
+                or len(content_checksum) != 64
+                or any(
+                    character not in "0123456789abcdef"
+                    for character in content_checksum
+                )
+            ):
+                raise ValueError("reference content checksum must be SHA-256")
+        elif content_checksum is not None:
+            raise ValueError("deleted reference cannot include a checksum")
+        now = utcnow()
         with immediate_transaction(self.engine) as connection:
+            scope = (
+                f"POST:uploadContinuationReference:{form_id}"
+                if uploading
+                else f"DELETE:deleteContinuationReference:{form_id}"
+            )
+            request_hash, replay = _idempotency_replay(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                payload={
+                    "baseRevision": base_revision,
+                    **(
+                        {"contentChecksum": content_checksum}
+                        if uploading
+                        else {}
+                    ),
+                },
+                now=now,
+            )
+            if replay is not None:
+                return replay
+            if uploading:
+                if (
+                    not isinstance(asset_id, str)
+                    or not asset_id
+                    or not isinstance(thumbnail_asset_id, str)
+                    or not thumbnail_asset_id
+                ):
+                    raise ValueError(
+                        "reference asset and thumbnail IDs are required"
+                    )
+                existing_assets = set(
+                    connection.execute(
+                        select(assets.c.id).where(
+                            assets.c.id.in_((asset_id, thumbnail_asset_id))
+                        )
+                    ).scalars()
+                )
+                if existing_assets != {asset_id, thumbnail_asset_id}:
+                    raise InsightNotFound("reference asset not found")
             changed = connection.execute(
                 update(continuation_character_forms)
                 .where(
@@ -705,7 +1155,7 @@ class ContinuationRepository:
                     reference_asset_id=asset_id,
                     reference_thumbnail_asset_id=thumbnail_asset_id,
                     revision=base_revision + 1,
-                    updated_at=utcnow(),
+                    updated_at=now,
                 )
             )
             if changed.rowcount != 1:
@@ -716,7 +1166,50 @@ class ContinuationRepository:
                 )
             ).mappings().one()
             versions = self._form_versions(connection, form_id)
-        return self._form_dto(row, image_versions=versions)
+            response = self._form_dto(row, image_versions=versions)
+            _record_idempotency(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                request_hash=request_hash,
+                response=response,
+                http_status=200,
+                resource_type="continuation_form",
+                resource_id=form_id,
+                now=now,
+            )
+            return response
+
+    def replay_form_reference_upload(
+        self,
+        *,
+        idempotency_key: str,
+        form_id: str,
+        base_revision: int,
+        content_checksum: str,
+    ) -> dict[str, Any] | None:
+        base_revision = _positive_integer(base_revision, "baseRevision")
+        if (
+            not isinstance(content_checksum, str)
+            or len(content_checksum) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in content_checksum
+            )
+        ):
+            raise ValueError("reference content checksum must be SHA-256")
+        with self.engine.connect() as connection:
+            _, replay = _idempotency_replay(
+                connection,
+                scope=f"POST:uploadContinuationReference:{form_id}",
+                key=idempotency_key,
+                payload={
+                    "baseRevision": base_revision,
+                    "contentChecksum": content_checksum,
+                },
+                now=utcnow(),
+            )
+            return replay
 
     def list_forms(
         self,
@@ -725,7 +1218,14 @@ class ContinuationRepository:
         cursor: int = 0,
         limit: int = 50,
     ) -> dict[str, Any]:
-        if cursor < 0 or not 1 <= limit <= 200:
+        if (
+            isinstance(cursor, bool)
+            or not isinstance(cursor, int)
+            or cursor < 0
+            or isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or not 1 <= limit <= 200
+        ):
             raise ValueError("invalid continuation form pagination")
         with self.engine.connect() as connection:
             rows = list(
@@ -763,19 +1263,30 @@ class ContinuationRepository:
                         continuation_form_image_versions.c.version.desc(),
                     )
                 ).mappings():
-                    form_versions = versions_by_form.setdefault(
+                    versions_by_form.setdefault(
                         str(version["form_id"]),
                         [],
+                    ).append(version)
+            try:
+                items = [
+                    self._form_dto(
+                        row,
+                        image_versions=versions_by_form.get(
+                            str(row["id"]),
+                            (),
+                        ),
                     )
-                    if len(form_versions) < 5:
-                        form_versions.append(version)
-            items = [
-                self._form_dto(
-                    row,
-                    image_versions=versions_by_form.get(str(row["id"]), ()),
-                )
-                for row in selected_rows
-            ]
+                    for row in selected_rows
+                ]
+            except (
+                json.JSONDecodeError,
+                KeyError,
+                TypeError,
+                ValueError,
+            ) as exc:
+                raise InsightConflict(
+                    "continuation form data is invalid; clear the project"
+                ) from exc
         return {
             "items": items,
             "nextCursor": cursor + limit if has_more else None,
@@ -784,11 +1295,25 @@ class ContinuationRepository:
     def adopt_form_image(
         self,
         *,
+        idempotency_key: str,
         form_id: str,
         version: int,
         base_revision: int,
     ) -> dict[str, Any]:
+        version = _positive_integer(version, "version")
+        base_revision = _positive_integer(base_revision, "baseRevision")
+        now = utcnow()
         with immediate_transaction(self.engine) as connection:
+            scope = f"POST:adoptContinuationFormImage:{form_id}:{version}"
+            request_hash, replay = _idempotency_replay(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                payload={"baseRevision": base_revision},
+                now=now,
+            )
+            if replay is not None:
+                return replay
             target = connection.execute(
                 select(continuation_form_image_versions).where(
                     continuation_form_image_versions.c.form_id == form_id,
@@ -809,7 +1334,7 @@ class ContinuationRepository:
                 .values(
                     adopted_asset_id=target["asset_id"],
                     revision=base_revision + 1,
-                    updated_at=utcnow(),
+                    updated_at=now,
                 )
             )
             if changed.rowcount != 1:
@@ -819,45 +1344,78 @@ class ContinuationRepository:
                 .where(
                     continuation_form_image_versions.c.form_id == form_id
                 )
-                .values(is_adopted=False, updated_at=utcnow())
+                .values(is_adopted=False, updated_at=now)
             )
             connection.execute(
                 update(continuation_form_image_versions)
                 .where(
                     continuation_form_image_versions.c.id == target["id"]
                 )
-                .values(is_adopted=True, updated_at=utcnow())
+                .values(is_adopted=True, updated_at=now)
             )
-        return {
-            "formId": form_id,
-            "version": version,
-            "assetId": str(target["asset_id"]),
-            "revision": base_revision + 1,
-        }
+            response = {
+                "formId": form_id,
+                "version": version,
+                "assetId": str(target["asset_id"]),
+                "revision": base_revision + 1,
+            }
+            _record_idempotency(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                request_hash=request_hash,
+                response=response,
+                http_status=200,
+                resource_type="continuation_form",
+                resource_id=form_id,
+                now=now,
+            )
+            return response
 
-    def clear(self, *, book_id: str) -> None:
+    def clear(self, *, idempotency_key: str, book_id: str) -> None:
+        now = utcnow()
         with immediate_transaction(self.engine) as connection:
+            scope = f"DELETE:clearContinuation:{book_id}"
+            request_hash, replay = _idempotency_replay(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                payload={},
+                now=now,
+            )
+            if replay is not None:
+                return
             project_id = connection.execute(
                 select(continuation_projects.c.id).where(
                     continuation_projects.c.book_id == book_id
                 )
             ).scalar_one_or_none()
-            if project_id is None:
-                return
-            active_job = connection.execute(
-                select(jobs.c.id).where(
-                    jobs.c.continuation_project_id == project_id,
-                    jobs.c.status.in_(NONTERMINAL_JOB_STATUSES),
+            if project_id is not None:
+                active_job = connection.execute(
+                    select(jobs.c.id).where(
+                        jobs.c.continuation_project_id == project_id,
+                        jobs.c.status.in_(NONTERMINAL_JOB_STATUSES),
+                    ).limit(1)
+                ).scalar_one_or_none()
+                if active_job is not None:
+                    raise InsightConflict(
+                        "continuation project is referenced by active work"
+                    )
+                connection.execute(
+                    delete(continuation_projects).where(
+                        continuation_projects.c.id == project_id
+                    )
                 )
-            ).scalar_one_or_none()
-            if active_job is not None:
-                raise InsightConflict(
-                    "continuation project is referenced by active work"
-                )
-            connection.execute(
-                delete(continuation_projects).where(
-                    continuation_projects.c.id == project_id
-                )
+            _record_idempotency(
+                connection,
+                scope=scope,
+                key=idempotency_key,
+                request_hash=request_hash,
+                response={"deleted": True},
+                http_status=200,
+                resource_type="continuation_project",
+                resource_id=(str(project_id) if project_id is not None else None),
+                now=now,
             )
 
     def project_by_book(self, book_id: str) -> Mapping[str, Any]:
@@ -887,41 +1445,42 @@ class ContinuationRepository:
         book_id: str,
         project: Mapping[str, Any],
     ) -> AnalysisInputSnapshot | None:
-        payload = _mapping(_load(project["payload_json"], {}))
-        frozen_inputs = payload.get("analysisInputs")
-        expected_fingerprint = str(
-            payload.get("analysisInputFingerprint", "")
-        )
-        if isinstance(frozen_inputs, list) and expected_fingerprint:
-            try:
-                snapshot = self.derived.snapshot(
-                    book_id=book_id,
-                    frozen_inputs=[
-                        value
-                        for value in frozen_inputs
-                        if isinstance(value, Mapping)
-                    ],
-                )
-            except (
-                InsightConflict,
-                InsightNotFound,
-                KeyError,
-                TypeError,
-                ValueError,
-            ):
-                return None
-            return (
-                snapshot
-                if snapshot.fingerprint == expected_fingerprint
-                else None
-            )
-        run_id = project.get("source_run_id")
-        if not run_id:
-            return None
         try:
-            return self.derived.snapshot_for_run(run_id=str(run_id))
-        except (InsightConflict, InsightNotFound):
+            payload = _required_mapping_json(
+                project["payload_json"],
+                "continuation project",
+            )
+            _public_project_config(payload)
+            frozen_inputs = _validated_analysis_inputs(
+                payload.get("analysisInputs")
+            )
+        except (json.JSONDecodeError, TypeError, ValueError) as exc:
+            raise InsightConflict(
+                "continuation project schema is invalid; clear the project"
+            ) from exc
+        expected_fingerprint = payload.get("analysisInputFingerprint")
+        if not _is_sha256(expected_fingerprint):
+            raise InsightConflict(
+                "continuation project schema is invalid; clear the project"
+            )
+        try:
+            snapshot = self.derived.snapshot(
+                book_id=book_id,
+                frozen_inputs=frozen_inputs,
+            )
+        except (
+            InsightConflict,
+            InsightNotFound,
+            KeyError,
+            TypeError,
+            ValueError,
+        ):
             return None
+        return (
+            snapshot
+            if snapshot.fingerprint == expected_fingerprint
+            else None
+        )
 
     @staticmethod
     def _snapshot_prerequisites(
@@ -1001,6 +1560,19 @@ class ContinuationRepository:
         raise InsightConflict("continuation character revision changed")
 
     @staticmethod
+    def _raise_page_cas(
+        connection: Connection,
+        page_id: str,
+    ) -> None:
+        if connection.execute(
+            select(continuation_pages.c.id).where(
+                continuation_pages.c.id == page_id
+            )
+        ).scalar_one_or_none() is None:
+            raise InsightNotFound("continuation page not found")
+        raise InsightConflict("continuation page revision changed")
+
+    @staticmethod
     def _raise_form_cas(
         connection: Connection,
         form_id: str,
@@ -1027,7 +1599,6 @@ class ContinuationRepository:
                 .order_by(
                     continuation_form_image_versions.c.version.desc()
                 )
-                .limit(5)
             ).mappings()
         )
 
@@ -1037,12 +1608,21 @@ class ContinuationRepository:
         *,
         image_versions: Sequence[Mapping[str, Any]],
     ) -> dict[str, Any]:
+        try:
+            payload = _required_mapping_json(
+                row["payload_json"],
+                "continuation form",
+            )
+        except (json.JSONDecodeError, TypeError, ValueError) as exc:
+            raise InsightConflict(
+                "continuation form data is invalid; clear the project"
+            ) from exc
         return {
             "formId": str(row["id"]),
             "characterId": str(row["character_id"]),
             "name": str(row["name"]),
             "revision": int(row["revision"]),
-            "payload": _load(row["payload_json"], {}),
+            "payload": payload,
             "referenceAssetId": row["reference_asset_id"],
             "referenceAssetUrl": (
                 f"/api/v2/assets/{row['reference_asset_id']}"
@@ -1124,12 +1704,10 @@ class ContinuationRepository:
                     continuation_image_versions.c.version.desc(),
                 )
             ).mappings():
-                page_versions = versions_by_page.setdefault(
+                versions_by_page.setdefault(
                     str(version["continuation_page_id"]),
                     [],
-                )
-                if len(page_versions) < 5:
-                    page_versions.append(version)
+                ).append(version)
         thumbnail_by_reference: dict[str, str] = {}
         if references:
             for form in connection.execute(
@@ -1189,13 +1767,45 @@ class ContinuationRepository:
                     str(pointer["reference_asset_id"]),
                     str(pointer["thumbnail_asset_id"]),
                 )
-        project_payload = _mapping(_load(row["payload_json"], {}))
+        try:
+            project_payload = _required_mapping_json(
+                row["payload_json"],
+                "continuation project",
+            )
+            public_config = _public_project_config(project_payload)
+            _validated_analysis_inputs(project_payload.get("analysisInputs"))
+            if not _is_sha256(
+                project_payload.get("analysisInputFingerprint")
+            ):
+                raise ValueError(
+                    "analysisInputFingerprint must be SHA-256"
+                )
+            page_items = [
+                _page_dto(
+                    page,
+                    image_versions=versions_by_page.get(str(page["id"]), ()),
+                )
+                for page in pages_rows
+            ]
+            character_items = [
+                _character_dto(character)
+                for character in characters
+            ]
+        except (
+            json.JSONDecodeError,
+            KeyError,
+            TypeError,
+            ValueError,
+        ) as exc:
+            raise InsightConflict(
+                "continuation project data is invalid; clear the project"
+            ) from exc
         return {
             "projectId": str(row["id"]),
             "bookId": str(row["book_id"]),
             "sourceRunId": row["source_run_id"],
             "revision": int(row["revision"]),
-            "config": _public_project_config(project_payload),
+            "config": public_config,
             "script": (
                 {
                     "scriptId": str(script["id"]),
@@ -1205,13 +1815,7 @@ class ContinuationRepository:
                 if script
                 else None
             ),
-            "pages": [
-                _page_dto(
-                    page,
-                    image_versions=versions_by_page.get(str(page["id"]), ()),
-                )
-                for page in pages_rows
-            ],
+            "pages": page_items,
             "referenceAssets": [
                 {
                     "assetId": str(asset_id),
@@ -1223,10 +1827,7 @@ class ContinuationRepository:
                 }
                 for asset_id in references
             ],
-            "characters": [
-                _character_dto(character)
-                for character in characters
-            ],
+            "characters": character_items,
         }
 
     @staticmethod
@@ -1307,6 +1908,7 @@ class ContinuationRepository:
         base_revision: int,
         payload: Mapping[str, Any],
     ) -> int:
+        normalized = _validated_page_payload(payload)
         changed = connection.execute(
             update(continuation_pages)
             .where(
@@ -1315,7 +1917,7 @@ class ContinuationRepository:
             )
             .values(
                 revision=base_revision + 1,
-                payload_json=_json(dict(payload)),
+                payload_json=_json(normalized),
             )
         )
         if changed.rowcount != 1:
@@ -1332,12 +1934,106 @@ class ContinuationCommandService:
         self.jobs = JobQueueRepository(engine)
         self.settings = SettingsResolver(engine)
 
+    @staticmethod
+    def _assert_project_snapshot(
+        connection: Connection,
+        *,
+        project_id: str,
+        book_id: str,
+        revision: int,
+    ) -> None:
+        current = connection.execute(
+            select(
+                continuation_projects.c.id,
+                continuation_projects.c.revision,
+            ).where(
+                continuation_projects.c.id == project_id,
+                continuation_projects.c.book_id == book_id,
+            )
+        ).mappings().one_or_none()
+        if current is None or int(current["revision"]) != revision:
+            raise InsightConflict(
+                "continuation project changed while the job was being created"
+            )
+
+    @staticmethod
+    def _assert_script_snapshot(
+        connection: Connection,
+        *,
+        project_id: str,
+        script_id: str | None,
+        revision: int,
+    ) -> None:
+        current = connection.execute(
+            select(
+                continuation_scripts.c.id,
+                continuation_scripts.c.revision,
+            ).where(continuation_scripts.c.project_id == project_id)
+        ).mappings().one_or_none()
+        if script_id is None:
+            unchanged = current is None and revision == 0
+        else:
+            unchanged = (
+                current is not None
+                and str(current["id"]) == script_id
+                and int(current["revision"]) == revision
+            )
+        if not unchanged:
+            raise InsightConflict(
+                "continuation script changed while the job was being created"
+            )
+
+    @staticmethod
+    def _assert_page_snapshots(
+        connection: Connection,
+        *,
+        project_id: str,
+        targets: Sequence[Mapping[str, Any]],
+        ordinals: Sequence[int] | None,
+    ) -> None:
+        statement = select(
+            continuation_pages.c.id,
+            continuation_pages.c.ordinal,
+            continuation_pages.c.revision,
+        ).where(continuation_pages.c.project_id == project_id)
+        if ordinals is not None:
+            statement = statement.where(
+                continuation_pages.c.ordinal.in_(tuple(ordinals))
+            )
+        current = {
+            int(row["ordinal"]): (
+                str(row["id"]),
+                int(row["revision"]),
+            )
+            for row in connection.execute(statement).mappings()
+        }
+        expected = {
+            int(target["ordinal"]): (
+                str(target["pageId"]),
+                int(target["baseRevision"]),
+            )
+            for target in targets
+        }
+        if current != expected:
+            raise InsightConflict(
+                "continuation pages changed while the job was being created"
+            )
+
     def create_script_job(
         self,
         *,
         book_id: str,
         idempotency_key: str,
     ) -> dict[str, object]:
+        idempotency_scope = f"POST:createContinuationJob:{book_id}"
+        idempotency_payload = {"kind": "script"}
+        replay = self.jobs.idempotency_replay(
+            scope=idempotency_scope,
+            key=idempotency_key,
+            payload=idempotency_payload,
+        )
+        if replay is not None:
+            return replay
         project = self.repository.project_by_book(book_id)
         with self.engine.connect() as connection:
             script = connection.execute(
@@ -1345,16 +2041,33 @@ class ContinuationCommandService:
                     continuation_scripts.c.project_id == project["id"]
                 )
             ).mappings().one_or_none()
+        project_id = str(project["id"])
+        project_revision = int(project["revision"])
+        script_id = str(script["id"]) if script else None
+        script_revision = int(script["revision"]) if script else 0
         config = self._config(book_id, project)
         config.update(
             {
                 "continuationAction": "script",
-                "projectId": str(project["id"]),
-                "baseScriptRevision": (
-                    int(script["revision"]) if script else 0
-                ),
+                "projectId": project_id,
+                "baseScriptRevision": script_revision,
             }
         )
+
+        def initialize(connection: Connection, _batch_id: str) -> None:
+            self._assert_project_snapshot(
+                connection,
+                project_id=project_id,
+                book_id=book_id,
+                revision=project_revision,
+            )
+            self._assert_script_snapshot(
+                connection,
+                project_id=project_id,
+                script_id=script_id,
+                revision=script_revision,
+            )
+
         return self.jobs.create_batch(
             kind="continuation",
             display_name="续写 · 生成脚本",
@@ -1367,7 +2080,7 @@ class ContinuationCommandService:
                         if project["source_run_id"]
                         else None
                     ),
-                    continuation_project_id=str(project["id"]),
+                    continuation_project_id=project_id,
                     config=config,
                     items=(
                         JobItemSpec(
@@ -1377,13 +2090,10 @@ class ContinuationCommandService:
                     ),
                 ),
             ),
-            idempotency_scope=f"continuation-script:{project['id']}",
+            idempotency_scope=idempotency_scope,
             idempotency_key=idempotency_key,
-            idempotency_payload={
-                "projectId": str(project["id"]),
-                "projectRevision": int(project["revision"]),
-                "baseScriptRevision": config["baseScriptRevision"],
-            },
+            idempotency_payload=idempotency_payload,
+            transaction_initializer=initialize,
         )
 
     def create_pages_job(
@@ -1393,19 +2103,44 @@ class ContinuationCommandService:
         ordinals: Sequence[int] | None,
         idempotency_key: str,
     ) -> dict[str, object]:
-        project = self.repository.project_by_book(book_id)
-        page_count = int(_load(project["payload_json"], {}).get("pageCount", 15))
-        selected = (
-            sorted(set(int(value) for value in ordinals))
-            if ordinals
-            else list(range(1, page_count + 1))
+        requested_ordinals = _selected_ordinals(ordinals)
+        idempotency_scope = f"POST:createContinuationJob:{book_id}"
+        idempotency_payload = {
+            "kind": "pages",
+            "ordinals": requested_ordinals,
+        }
+        replay = self.jobs.idempotency_replay(
+            scope=idempotency_scope,
+            key=idempotency_key,
+            payload=idempotency_payload,
         )
-        if not selected or selected[0] < 1 or selected[-1] > page_count:
+        if replay is not None:
+            return replay
+        project = self.repository.project_by_book(book_id)
+        try:
+            project_config = _public_project_config(
+                _required_mapping_json(
+                    project["payload_json"],
+                    "continuation project",
+                )
+            )
+        except (json.JSONDecodeError, TypeError, ValueError) as exc:
+            raise InsightConflict(
+                "continuation project snapshot is invalid; clear the project"
+            ) from exc
+        page_count = project_config["pageCount"]
+        selected = requested_ordinals
+        if selected is None:
+            selected = list(range(1, page_count + 1))
+        if selected[-1] > page_count:
             raise ValueError("continuation page ordinal is out of range")
-        with immediate_transaction(self.engine) as connection:
+        config = self._config(book_id, project)
+        project_id = str(project["id"])
+        project_revision = int(project["revision"])
+        with self.engine.connect() as connection:
             script = connection.execute(
                 select(continuation_scripts).where(
-                    continuation_scripts.c.project_id == project["id"]
+                    continuation_scripts.c.project_id == project_id
                 )
             ).mappings().one_or_none()
             if script is None or not str(script["content"]).strip():
@@ -1414,7 +2149,7 @@ class ContinuationCommandService:
                 int(row["ordinal"]): row
                 for row in connection.execute(
                     select(continuation_pages).where(
-                        continuation_pages.c.project_id == project["id"],
+                        continuation_pages.c.project_id == project_id,
                         continuation_pages.c.ordinal.in_(tuple(selected)),
                     )
                 ).mappings()
@@ -1424,15 +2159,6 @@ class ContinuationCommandService:
                 row = existing.get(ordinal)
                 if row is None:
                     page_id = str(uuid.uuid4())
-                    connection.execute(
-                        insert(continuation_pages).values(
-                            id=page_id,
-                            project_id=project["id"],
-                            ordinal=ordinal,
-                            revision=1,
-                            payload_json="{}",
-                        )
-                    )
                     targets.append(
                         {
                             "pageId": page_id,
@@ -1448,15 +2174,67 @@ class ContinuationCommandService:
                             "baseRevision": int(row["revision"]),
                         }
                     )
-        config = self._config(book_id, project)
+        script_id = str(script["id"])
+        script_revision = int(script["revision"])
+        existing_targets = [
+            target
+            for target in targets
+            if int(target["ordinal"]) in existing
+        ]
+        missing_targets = [
+            target
+            for target in targets
+            if int(target["ordinal"]) not in existing
+        ]
         config.update(
             {
                 "continuationAction": "pages",
-                "projectId": str(project["id"]),
+                "projectId": project_id,
                 "script": str(script["content"]),
                 "targets": targets,
             }
         )
+
+        def initialize(connection: Connection, _batch_id: str) -> None:
+            self._assert_project_snapshot(
+                connection,
+                project_id=project_id,
+                book_id=book_id,
+                revision=project_revision,
+            )
+            self._assert_script_snapshot(
+                connection,
+                project_id=project_id,
+                script_id=script_id,
+                revision=script_revision,
+            )
+            self._assert_page_snapshots(
+                connection,
+                project_id=project_id,
+                targets=existing_targets,
+                ordinals=selected,
+            )
+            if missing_targets:
+                connection.execute(
+                    insert(continuation_pages),
+                    [
+                        {
+                            "id": str(target["pageId"]),
+                            "project_id": project_id,
+                            "ordinal": int(target["ordinal"]),
+                            "revision": 1,
+                            "payload_json": _json(_empty_page_payload()),
+                        }
+                        for target in missing_targets
+                    ],
+                )
+            self._assert_page_snapshots(
+                connection,
+                project_id=project_id,
+                targets=targets,
+                ordinals=selected,
+            )
+
         return self.jobs.create_batch(
             kind="continuation",
             display_name="续写 · 页面剧情",
@@ -1469,7 +2247,7 @@ class ContinuationCommandService:
                         if project["source_run_id"]
                         else None
                     ),
-                    continuation_project_id=str(project["id"]),
+                    continuation_project_id=project_id,
                     config=config,
                     items=tuple(
                         JobItemSpec(
@@ -1480,13 +2258,10 @@ class ContinuationCommandService:
                     ),
                 ),
             ),
-            idempotency_scope=f"continuation-pages:{project['id']}",
+            idempotency_scope=idempotency_scope,
             idempotency_key=idempotency_key,
-            idempotency_payload={
-                "projectId": str(project["id"]),
-                "targets": targets,
-                "scriptRevision": int(script["revision"]),
-            },
+            idempotency_payload=idempotency_payload,
+            transaction_initializer=initialize,
         )
 
     def create_images_job(
@@ -1496,13 +2271,39 @@ class ContinuationCommandService:
         ordinals: Sequence[int] | None,
         idempotency_key: str,
     ) -> dict[str, object]:
+        selected = _selected_ordinals(ordinals)
+        idempotency_scope = f"POST:createContinuationJob:{book_id}"
+        idempotency_payload = {
+            "kind": "images",
+            "ordinals": selected,
+        }
+        replay = self.jobs.idempotency_replay(
+            scope=idempotency_scope,
+            key=idempotency_key,
+            payload=idempotency_payload,
+        )
+        if replay is not None:
+            return replay
         project = self.repository.project_by_book(book_id)
+        project_id = str(project["id"])
+        project_revision = int(project["revision"])
+        try:
+            project_config = _public_project_config(
+                _required_mapping_json(
+                    project["payload_json"],
+                    "continuation project",
+                )
+            )
+        except (json.JSONDecodeError, TypeError, ValueError) as exc:
+            raise InsightConflict(
+                "continuation project snapshot is invalid; clear the project"
+            ) from exc
         with self.engine.connect() as connection:
             rows = list(
                 connection.execute(
                     select(continuation_pages)
                     .where(
-                        continuation_pages.c.project_id == project["id"]
+                        continuation_pages.c.project_id == project_id
                     )
                     .order_by(continuation_pages.c.ordinal)
                 ).mappings()
@@ -1515,19 +2316,14 @@ class ContinuationCommandService:
                     )
                     .where(
                         continuation_project_reference_assets.c.project_id
-                        == project["id"]
+                        == project_id
                     )
                     .order_by(
                         continuation_project_reference_assets.c.ordinal
                     )
                 ).scalars()
             ]
-            reference_count = int(
-                _load(project["payload_json"], {}).get(
-                    "styleReferencePages",
-                    3,
-                )
-            )
+            reference_count = project_config["styleReferencePages"]
             if len(initial_reference_ids) < reference_count:
                 fallback_ids = [
                     str(value)
@@ -1552,15 +2348,18 @@ class ContinuationCommandService:
                     ).scalars()
                 ]
                 initial_reference_ids.extend(fallback_ids)
-        selected_set = (
-            set(int(value) for value in ordinals) if ordinals else None
-        )
+        selected_set = set(selected) if selected is not None else None
+        available_ordinals = {int(row["ordinal"]) for row in rows}
+        if selected_set is not None and not selected_set.issubset(available_ordinals):
+            raise ValueError("continuation page ordinal is out of range")
         targets = [
             {
                 "pageId": str(row["id"]),
                 "ordinal": int(row["ordinal"]),
                 "baseRevision": int(row["revision"]),
-                "payload": _load(row["payload_json"], {}),
+                "payload": _validated_page_payload(
+                    _mapping(_load(row["payload_json"]))
+                ),
             }
             for row in rows
             if selected_set is None or int(row["ordinal"]) in selected_set
@@ -1578,7 +2377,7 @@ class ContinuationCommandService:
         config.update(
             {
                 "continuationAction": "images",
-                "projectId": str(project["id"]),
+                "projectId": project_id,
                 "targets": targets,
                 "initialReferenceAssetIds": initial_reference_ids,
             }
@@ -1587,6 +2386,21 @@ class ContinuationCommandService:
             f"style_reference_{index}": asset_id
             for index, asset_id in enumerate(initial_reference_ids, start=1)
         }
+
+        def initialize(connection: Connection, _batch_id: str) -> None:
+            self._assert_project_snapshot(
+                connection,
+                project_id=project_id,
+                book_id=book_id,
+                revision=project_revision,
+            )
+            self._assert_page_snapshots(
+                connection,
+                project_id=project_id,
+                targets=targets,
+                ordinals=(selected if selected is not None else None),
+            )
+
         return self.jobs.create_batch(
             kind="continuation",
             display_name="续写 · 批量生图",
@@ -1599,7 +2413,7 @@ class ContinuationCommandService:
                         if project["source_run_id"]
                         else None
                     ),
-                    continuation_project_id=str(project["id"]),
+                    continuation_project_id=project_id,
                     config=config,
                     items=tuple(
                         JobItemSpec(
@@ -1615,18 +2429,10 @@ class ContinuationCommandService:
                     ),
                 ),
             ),
-            idempotency_scope=f"continuation-images:{project['id']}",
+            idempotency_scope=idempotency_scope,
             idempotency_key=idempotency_key,
-            idempotency_payload={
-                "projectId": str(project["id"]),
-                "targets": [
-                    {
-                        "pageId": target["pageId"],
-                        "revision": target["baseRevision"],
-                    }
-                    for target in targets
-                ],
-            },
+            idempotency_payload=idempotency_payload,
+            transaction_initializer=initialize,
         )
 
     def create_export_job(
@@ -1638,7 +2444,21 @@ class ContinuationCommandService:
     ) -> dict[str, object]:
         if output_format not in {"zip", "pdf"}:
             raise ValueError("format must be zip or pdf")
+        idempotency_scope = f"POST:createContinuationJob:{book_id}"
+        idempotency_payload = {
+            "kind": "export",
+            "format": output_format,
+        }
+        replay = self.jobs.idempotency_replay(
+            scope=idempotency_scope,
+            key=idempotency_key,
+            payload=idempotency_payload,
+        )
+        if replay is not None:
+            return replay
         project = self.repository.project_by_book(book_id)
+        project_id = str(project["id"])
+        project_revision = int(project["revision"])
         with self.engine.connect() as connection:
             images = [
                 {
@@ -1656,7 +2476,7 @@ class ContinuationCommandService:
                         == continuation_pages.c.id,
                     )
                     .where(
-                        continuation_pages.c.project_id == project["id"],
+                        continuation_pages.c.project_id == project_id,
                         continuation_image_versions.c.is_active.is_(True),
                     )
                     .order_by(continuation_pages.c.ordinal)
@@ -1670,11 +2490,46 @@ class ContinuationCommandService:
         config.update(
             {
                 "continuationAction": "export",
-                "projectId": str(project["id"]),
+                "projectId": project_id,
                 "format": output_format,
                 "images": images,
             }
         )
+
+        def initialize(connection: Connection, _batch_id: str) -> None:
+            self._assert_project_snapshot(
+                connection,
+                project_id=project_id,
+                book_id=book_id,
+                revision=project_revision,
+            )
+            current_images = [
+                {
+                    "ordinal": int(ordinal),
+                    "assetId": str(asset_id),
+                }
+                for ordinal, asset_id in connection.execute(
+                    select(
+                        continuation_pages.c.ordinal,
+                        continuation_image_versions.c.asset_id,
+                    )
+                    .join(
+                        continuation_image_versions,
+                        continuation_image_versions.c.continuation_page_id
+                        == continuation_pages.c.id,
+                    )
+                    .where(
+                        continuation_pages.c.project_id == project_id,
+                        continuation_image_versions.c.is_active.is_(True),
+                    )
+                    .order_by(continuation_pages.c.ordinal)
+                )
+            ]
+            if current_images != images:
+                raise InsightConflict(
+                    "continuation images changed while the job was being created"
+                )
+
         return self.jobs.create_batch(
             kind="continuation",
             display_name=f"续写 · 导出 {output_format.upper()}",
@@ -1687,7 +2542,7 @@ class ContinuationCommandService:
                         if project["source_run_id"]
                         else None
                     ),
-                    continuation_project_id=str(project["id"]),
+                    continuation_project_id=project_id,
                     config=config,
                     items=(
                         JobItemSpec(
@@ -1703,16 +2558,10 @@ class ContinuationCommandService:
                     ),
                 ),
             ),
-            idempotency_scope=(
-                f"continuation-export:{project['id']}:{output_format}"
-            ),
+            idempotency_scope=idempotency_scope,
             idempotency_key=idempotency_key,
-            idempotency_payload={
-                "projectId": str(project["id"]),
-                "format": output_format,
-                "projectRevision": int(project["revision"]),
-                "images": images,
-            },
+            idempotency_payload=idempotency_payload,
+            transaction_initializer=initialize,
         )
 
     def create_character_sheet_job(
@@ -1722,11 +2571,28 @@ class ContinuationCommandService:
         form_id: str,
         idempotency_key: str,
     ) -> dict[str, object]:
+        if not isinstance(form_id, str) or not form_id:
+            raise ValueError("formId is required")
+        idempotency_scope = f"POST:createContinuationJob:{book_id}"
+        idempotency_payload = {
+            "kind": "character_sheet",
+            "formId": form_id,
+        }
+        replay = self.jobs.idempotency_replay(
+            scope=idempotency_scope,
+            key=idempotency_key,
+            payload=idempotency_payload,
+        )
+        if replay is not None:
+            return replay
         with self.engine.connect() as connection:
             row = connection.execute(
                 select(
                     continuation_character_forms,
                     continuation_characters.c.name.label("character_name"),
+                    continuation_characters.c.revision.label(
+                        "character_revision"
+                    ),
                     continuation_characters.c.project_id,
                 )
                 .join(
@@ -1747,16 +2613,30 @@ class ContinuationCommandService:
         if row is None:
             raise InsightNotFound("continuation character form not found")
         project = self.repository.project_by_book(book_id)
+        project_id = str(project["id"])
+        project_revision = int(project["revision"])
+        character_id = str(row["character_id"])
+        character_revision = int(row["character_revision"])
+        form_revision = int(row["revision"])
+        try:
+            form_payload = _required_mapping_json(
+                row["payload_json"],
+                "continuation form",
+            )
+        except (json.JSONDecodeError, TypeError, ValueError) as exc:
+            raise InsightConflict(
+                "continuation character form is invalid; delete and recreate it"
+            ) from exc
         config = self._config(book_id, project)
         config.update(
             {
                 "continuationAction": "character_sheet",
-                "projectId": str(project["id"]),
+                "projectId": project_id,
                 "formId": form_id,
-                "baseFormRevision": int(row["revision"]),
+                "baseFormRevision": form_revision,
                 "characterName": str(row["character_name"]),
                 "formName": str(row["name"]),
-                "formPayload": _load(row["payload_json"], {}),
+                "formPayload": form_payload,
                 "referenceAssetId": row["reference_asset_id"],
             }
         )
@@ -1765,6 +2645,43 @@ class ContinuationCommandService:
             if row["reference_asset_id"]
             else None
         )
+
+        def initialize(connection: Connection, _batch_id: str) -> None:
+            self._assert_project_snapshot(
+                connection,
+                project_id=project_id,
+                book_id=book_id,
+                revision=project_revision,
+            )
+            current = connection.execute(
+                select(
+                    continuation_character_forms.c.revision.label(
+                        "form_revision"
+                    ),
+                    continuation_characters.c.id.label("character_id"),
+                    continuation_characters.c.revision.label(
+                        "character_revision"
+                    ),
+                    continuation_characters.c.project_id,
+                )
+                .join(
+                    continuation_characters,
+                    continuation_characters.c.id
+                    == continuation_character_forms.c.character_id,
+                )
+                .where(continuation_character_forms.c.id == form_id)
+            ).mappings().one_or_none()
+            if (
+                current is None
+                or str(current["project_id"]) != project_id
+                or str(current["character_id"]) != character_id
+                or int(current["character_revision"]) != character_revision
+                or int(current["form_revision"]) != form_revision
+            ):
+                raise InsightConflict(
+                    "continuation character form changed while the job was being created"
+                )
+
         return self.jobs.create_batch(
             kind="continuation",
             display_name=(
@@ -1779,7 +2696,7 @@ class ContinuationCommandService:
                         if project["source_run_id"]
                         else None
                     ),
-                    continuation_project_id=str(project["id"]),
+                    continuation_project_id=project_id,
                     config=config,
                     items=(
                         JobItemSpec(
@@ -1792,16 +2709,10 @@ class ContinuationCommandService:
                     ),
                 ),
             ),
-            idempotency_scope=(
-                f"continuation-character-sheet:{form_id}:"
-                f"{int(row['revision'])}"
-            ),
+            idempotency_scope=idempotency_scope,
             idempotency_key=idempotency_key,
-            idempotency_payload={
-                "formId": form_id,
-                "baseRevision": int(row["revision"]),
-                "referenceAssetId": row["reference_asset_id"],
-            },
+            idempotency_payload=idempotency_payload,
+            transaction_initializer=initialize,
         )
 
     def _config(
@@ -1811,20 +2722,36 @@ class ContinuationCommandService:
     ) -> dict[str, Any]:
         config = self.settings.resolve_insight(
             book_id=book_id,
-            command={"scope": "full", "force": False},
+            scope="full",
         )
-        project_payload = _mapping(_load(project["payload_json"], {}))
+        try:
+            project_payload = _required_mapping_json(
+                project["payload_json"],
+                "continuation project",
+            )
+            project_config = _public_project_config(project_payload)
+            analysis_inputs = _validated_analysis_inputs(
+                project_payload.get("analysisInputs")
+            )
+        except (json.JSONDecodeError, TypeError, ValueError) as exc:
+            raise InsightConflict(
+                "continuation project snapshot is invalid; clear the project"
+            ) from exc
+        analysis_fingerprint = project_payload.get(
+            "analysisInputFingerprint"
+        )
+        if not _is_sha256(analysis_fingerprint):
+            raise InsightConflict(
+                "continuation project analysis snapshot is invalid; clear the project"
+            )
         config.update(
             {
                 "bookId": book_id,
                 "sourceRunId": project["source_run_id"],
                 "projectRevision": int(project["revision"]),
-                "projectConfig": _public_project_config(project_payload),
-                "analysisInputs": project_payload.get("analysisInputs", []),
-                "analysisInputFingerprint": project_payload.get(
-                    "analysisInputFingerprint",
-                    "",
-                ),
+                "projectConfig": project_config,
+                "analysisInputs": analysis_inputs,
+                "analysisInputFingerprint": analysis_fingerprint,
             }
         )
         return config
@@ -1896,7 +2823,7 @@ class DefaultContinuationAlgorithms:
         prompt = (
             f"把续写脚本拆成第 {ordinal} 页。输出 JSON："
             '{"storyText":"...","continuityText":"...",'
-            '"dialogueText":"...","characters":[],"characterForms":[],'
+            '"dialogueText":"...","characters":[],'
             '"finalPrompt":"..."}。\n\n'
             f"上一页：{_json(previous or {})}\n\n脚本：{script}"
         )
@@ -1907,15 +2834,7 @@ class DefaultContinuationAlgorithms:
         )
         if not isinstance(result, Mapping):
             raise ValueError("continuation page response is not JSON")
-        return {
-            "storyText": str(result.get("storyText", "")),
-            "continuityText": str(result.get("continuityText", "")),
-            "dialogueText": str(result.get("dialogueText", "")),
-            "characters": list(result.get("characters", [])),
-            "characterForms": list(result.get("characterForms", [])),
-            "finalPrompt": str(result.get("finalPrompt", "")),
-            "status": "ready",
-        }
+        return _validated_generated_page(result)
 
     def generate_image(
         self,
@@ -1927,25 +2846,7 @@ class DefaultContinuationAlgorithms:
         from src.core.manga_insight.clients.image_gen_client import (
             ImageGenClient,
         )
-        from src.core.manga_insight.config_models import ImageGenConfig
-
-        section = (
-            dict(config.get("imageGen"))
-            if isinstance(config.get("imageGen"), Mapping)
-            else {}
-        )
-        payload = {
-            "provider": section.get("provider", ""),
-            "api_key": section.get("api_key", ""),
-            "model": section.get("model_name", ""),
-            "base_url": section.get("custom_base_url"),
-            "credential_version_id": section.get("credential_version_id"),
-            "rpm_limit": int(section.get("rpm_limit", 0)),
-            "transport_retries": int(section.get("transport_retries", 10)),
-            "business_retries": int(section.get("business_retries", 10)),
-            "timeout_seconds": float(section.get("timeout_seconds", 0)),
-        }
-        client = ImageGenClient(ImageGenConfig.from_dict(payload))
+        client = ImageGenClient(frozen_image_gen_config(config))
 
         async def execute() -> bytes:
             try:
@@ -1974,6 +2875,7 @@ class ContinuationWorkerService:
         self.engine = engine
         self.jobs = jobs
         self.storage = AssetStorageService(data_root, engine)
+        self.derived = InsightDerivedRepository(engine)
         self.credentials = SettingsRepository(engine)
         self.algorithms = algorithms or DefaultContinuationAlgorithms()
 
@@ -1982,14 +2884,12 @@ class ContinuationWorkerService:
         fence: AttemptFence,
         step: Mapping[str, Any],
     ) -> Mapping[str, Any]:
-        raw_config = (
-            dict(step["config"])
-            if isinstance(step.get("config"), Mapping)
-            else {}
-        )
+        if not isinstance(step.get("config"), Mapping):
+            raise JobConflict("continuation job configuration is invalid")
+        raw_config = dict(step["config"])
         kind = str(step["stepKind"])
         if kind in {"continuation_generate_script", "continuation_generate_page"}:
-            credential_sections = _chat_credential_sections(raw_config)
+            credential_sections = ("chat",)
         elif kind in {
             "continuation_generate_character_sheet",
             "continuation_generate_image",
@@ -1999,6 +2899,18 @@ class ContinuationWorkerService:
             credential_sections = ()
         else:
             raise JobConflict(f"unsupported continuation step: {kind}")
+        expected_action = {
+            "continuation_generate_script": "script",
+            "continuation_generate_page": "pages",
+            "continuation_generate_character_sheet": "character_sheet",
+            "continuation_generate_image": "images",
+            "continuation_export": "export",
+        }[kind]
+        if raw_config.get("continuationAction") != expected_action:
+            raise JobConflict("continuation job action does not match its step")
+        project_id = raw_config.get("projectId")
+        if not isinstance(project_id, str) or not project_id:
+            raise JobConflict("continuation projectId is invalid")
         config = (
             self._with_credentials(
                 raw_config,
@@ -2008,6 +2920,13 @@ class ContinuationWorkerService:
             else raw_config
         )
         if kind == "continuation_generate_script":
+            base_script_revision = config.get("baseScriptRevision")
+            if (
+                isinstance(base_script_revision, bool)
+                or not isinstance(base_script_revision, int)
+                or base_script_revision < 0
+            ):
+                raise JobConflict("continuation script revision is invalid")
             context = self._script_context(config)
             content = self.algorithms.generate_script(
                 context=context,
@@ -2022,10 +2941,8 @@ class ContinuationWorkerService:
                         "scriptRevision": (
                             ContinuationRepository.insert_script_result(
                                 connection,
-                                project_id=str(config["projectId"]),
-                                base_revision=int(
-                                    config["baseScriptRevision"]
-                                ),
+                                project_id=project_id,
+                                base_revision=base_script_revision,
                                 content=content,
                             )
                         ),
@@ -2033,87 +2950,148 @@ class ContinuationWorkerService:
                 )
 
         elif kind == "continuation_generate_page":
-            targets = config.get("targets", [])
-            target = targets[int(step["itemOrdinal"]) - 1]
-            page_id = str(target["pageId"])
+            target = _continuation_job_target(config, step)
+            script = config.get("script")
+            if not isinstance(script, str) or not script.strip():
+                raise JobConflict("continuation script snapshot is invalid")
+            try:
+                target_ordinal = _positive_integer(
+                    target.get("ordinal"),
+                    "continuation target ordinal",
+                )
+                target_revision = _positive_integer(
+                    target.get("baseRevision"),
+                    "continuation target revision",
+                )
+            except ValueError as exc:
+                raise JobConflict(str(exc)) from exc
+            page_id = target.get("pageId")
+            if not isinstance(page_id, str) or not page_id:
+                raise JobConflict("continuation target pageId is invalid")
             with self.engine.connect() as connection:
                 current = connection.execute(
                     select(continuation_pages).where(
                         continuation_pages.c.id == page_id
                     )
-                ).mappings().one()
-                existing = _load(current["payload_json"], {})
-                previous = connection.execute(
-                    select(continuation_pages.c.payload_json).where(
-                        continuation_pages.c.project_id
-                        == current["project_id"],
-                        continuation_pages.c.ordinal
-                        == int(target["ordinal"]) - 1,
+                ).mappings().one_or_none()
+                if current is not None:
+                    existing = _validated_page_payload(
+                        _mapping(_load(current["payload_json"]))
                     )
-                ).scalar_one_or_none()
-            if (
-                existing.get("status") == "ready"
+                    previous = connection.execute(
+                        select(continuation_pages.c.payload_json).where(
+                            continuation_pages.c.project_id
+                            == current["project_id"],
+                            continuation_pages.c.ordinal
+                            == target_ordinal - 1,
+                        )
+                    ).scalar_one_or_none()
+                else:
+                    existing = None
+                    previous = None
+            if current is None or int(current["revision"]) != target_revision:
+                payload = None
+                skipped = True
+                skip_reason = "page_changed_before_generation"
+            elif (
+                existing is not None
+                and existing.get("status") == "ready"
                 and existing.get("storyText")
                 and not existing.get("staleReason")
             ):
                 payload = existing
                 skipped = True
+                skip_reason = "existing_page_content"
             else:
-                payload = dict(
+                payload = _validated_page_payload(
                     self.algorithms.generate_page(
-                        ordinal=int(target["ordinal"]),
-                        script=str(config["script"]),
+                        ordinal=target_ordinal,
+                        script=script,
                         previous=(
-                            _load(previous, {}) if previous else None
+                            _validated_page_payload(
+                                _mapping(_load(previous))
+                            )
+                            if previous
+                            else None
                         ),
                         config=config,
                     )
                 )
                 skipped = False
+                skip_reason = None
             checkpoint = {}
 
-            def publish(connection: Connection) -> None:
+            def publish(connection: Connection) -> bool:
                 if skipped:
                     checkpoint.update(
                         {
                             "continuationPageId": page_id,
-                            "ordinal": int(target["ordinal"]),
+                            "ordinal": target_ordinal,
                             "skipped": True,
+                            "reason": skip_reason,
                         }
                     )
-                    return
+                    return False
                 current_revision = connection.execute(
                     select(continuation_pages.c.revision).where(
                         continuation_pages.c.id == page_id
                     )
                 ).scalar_one_or_none()
-                if current_revision != int(target["baseRevision"]):
+                if current_revision != target_revision:
                     checkpoint.update(
                         {
                             "continuationPageId": page_id,
-                            "ordinal": int(target["ordinal"]),
+                            "ordinal": target_ordinal,
                             "skipped": True,
-                            "skipReason": "revision_conflict",
+                            "reason": "page_edited_during_generation",
                         }
                     )
-                    return
+                    return False
+                if payload is None:
+                    raise JobConflict(
+                        "continuation page result is missing before publication"
+                    )
                 revision = ContinuationRepository.insert_page_result(
                     connection,
                     page_id=page_id,
-                    base_revision=int(target["baseRevision"]),
+                    base_revision=target_revision,
                     payload=payload,
                 )
                 checkpoint.update(
                     {
                         "continuationPageId": page_id,
-                        "ordinal": int(target["ordinal"]),
+                        "ordinal": target_ordinal,
                         "pageRevision": revision,
                         "skipped": False,
                     }
                 )
+                return True
         elif kind == "continuation_generate_character_sheet":
+            form_id = config.get("formId")
+            character_name = config.get("characterName")
+            form_name = config.get("formName")
+            form_payload = config.get("formPayload")
+            base_form_revision = config.get("baseFormRevision")
+            if (
+                not isinstance(form_id, str)
+                or not form_id
+                or not isinstance(character_name, str)
+                or not character_name
+                or not isinstance(form_name, str)
+                or not form_name
+                or not isinstance(form_payload, Mapping)
+                or isinstance(base_form_revision, bool)
+                or not isinstance(base_form_revision, int)
+                or base_form_revision < 1
+            ):
+                raise JobConflict("continuation character form snapshot is invalid")
             reference_paths: list[Path] = []
             reference_asset_id = config.get("referenceAssetId")
+            if reference_asset_id is not None and (
+                not isinstance(reference_asset_id, str)
+                or not reference_asset_id
+            ):
+                raise JobConflict("character form reference asset is invalid")
             if reference_asset_id:
                 with self.engine.connect() as connection:
                     relative_path = connection.execute(
@@ -2133,9 +3111,9 @@ class ContinuationWorkerService:
             prompt = (
                 "生成同一角色同一形态的正面、侧面、背面三视图角色设定图。"
                 "保持服装、发型、配色和比例一致，使用干净背景。\n"
-                f"角色：{config.get('characterName', '')}\n"
-                f"形态：{config.get('formName', '')}\n"
-                f"设定：{_json(config.get('formPayload', {}))}"
+                f"角色：{character_name}\n"
+                f"形态：{form_name}\n"
+                f"设定：{_json(dict(form_payload))}"
             )
             image_bytes = self.algorithms.generate_image(
                 prompt=prompt,
@@ -2146,17 +3124,15 @@ class ContinuationWorkerService:
             checkpoint = {}
 
             def publish(connection: Connection) -> None:
-                form_id = str(config["formId"])
-                base_revision = int(config["baseFormRevision"])
                 changed = connection.execute(
                     update(continuation_character_forms)
                     .where(
                         continuation_character_forms.c.id == form_id,
                         continuation_character_forms.c.revision
-                        == base_revision,
+                        == base_form_revision,
                     )
                     .values(
-                        revision=base_revision + 1,
+                        revision=base_form_revision + 1,
                         updated_at=utcnow(),
                     )
                 )
@@ -2192,97 +3168,121 @@ class ContinuationWorkerService:
                         updated_at=utcnow(),
                     )
                 )
-                obsolete = list(
-                    connection.execute(
-                        select(continuation_form_image_versions.c.id)
-                        .where(
-                            continuation_form_image_versions.c.form_id
-                            == form_id,
-                            continuation_form_image_versions.c.is_adopted.is_(
-                                False
-                            ),
-                            ~exists(
-                                select(job_asset_inputs.c.asset_id).where(
-                                    job_asset_inputs.c.asset_id
-                                    == continuation_form_image_versions.c.asset_id
-                                )
-                            ),
-                            ~exists(
-                                select(job_artifacts.c.asset_id).where(
-                                    job_artifacts.c.asset_id
-                                    == continuation_form_image_versions.c.asset_id
-                                )
-                            ),
-                            ~exists(
-                                select(
-                                    continuation_project_reference_assets.c.asset_id
-                                ).where(
-                                    continuation_project_reference_assets.c.asset_id
-                                    == continuation_form_image_versions.c.asset_id
-                                )
-                            ),
-                        )
-                        .order_by(
-                            continuation_form_image_versions.c.version.desc()
-                        )
-                        .offset(5)
-                    ).scalars()
-                )
-                if obsolete:
-                    connection.execute(
-                        delete(continuation_form_image_versions).where(
-                            continuation_form_image_versions.c.id.in_(
-                                tuple(obsolete)
-                            )
-                        )
-                    )
                 checkpoint.update(
                     {
                         "formId": form_id,
-                        "formRevision": base_revision + 1,
+                        "formRevision": base_form_revision + 1,
                         "version": version,
                         "assetId": asset.id,
                         "thumbnailAssetId": thumbnail_asset.id,
                     }
                 )
         elif kind == "continuation_generate_image":
-            targets = config.get("targets", [])
-            target = targets[int(step["itemOrdinal"]) - 1]
-            page_id = str(target["pageId"])
-            reference_paths = self._reference_window(
-                project_id=str(config["projectId"]),
-                before_ordinal=int(target["ordinal"]),
-                count=int(
-                    dict(config.get("projectConfig", {})).get(
-                        "styleReferencePages",
-                        3,
-                    )
-                ),
-                initial_asset_ids=[
-                    str(value)
-                    for value in config.get(
-                        "initialReferenceAssetIds",
-                        [],
-                    )
-                ],
-            )
-            image_bytes = self.algorithms.generate_image(
-                prompt=str(target["payload"]["finalPrompt"]),
-                reference_paths=reference_paths,
-                config=config,
-            )
-            asset, thumbnail_asset = self._publish_generated_image(image_bytes)
-            checkpoint = {}
-
-            def publish(connection: Connection) -> None:
+            target = _continuation_job_target(config, step)
+            page_id = target.get("pageId")
+            try:
+                target_ordinal = _positive_integer(
+                    target.get("ordinal"),
+                    "continuation target ordinal",
+                )
+                target_revision = _positive_integer(
+                    target.get("baseRevision"),
+                    "continuation target revision",
+                )
+                target_payload = _validated_page_payload(
+                    _mapping(target.get("payload"))
+                )
+                project_config = _validated_project_config(
+                    _mapping(config.get("projectConfig"))
+                )
+            except (TypeError, ValueError) as exc:
+                raise JobConflict(
+                    "continuation image snapshot is invalid"
+                ) from exc
+            if not isinstance(page_id, str) or not page_id:
+                raise JobConflict("continuation target pageId is invalid")
+            with self.engine.connect() as connection:
                 current_revision = connection.execute(
                     select(continuation_pages.c.revision).where(
                         continuation_pages.c.id == page_id
                     )
                 ).scalar_one_or_none()
-                if current_revision != int(target["baseRevision"]):
+            image_skipped = current_revision != target_revision
+            checkpoint = {}
+            if image_skipped:
+                asset = None
+                thumbnail_asset = None
+            else:
+                initial_reference_ids = config.get("initialReferenceAssetIds")
+                if (
+                    not isinstance(initial_reference_ids, list)
+                    or any(
+                        not isinstance(value, str) or not value
+                        for value in initial_reference_ids
+                    )
+                ):
                     raise JobConflict(
-                        "continuation page prompt changed before image publish"
+                        "continuation initial reference snapshot is invalid"
+                    )
+                reference_asset_ids = self._reference_window_asset_ids(
+                    project_id=project_id,
+                    before_ordinal=target_ordinal,
+                    count=project_config["styleReferencePages"],
+                    initial_asset_ids=initial_reference_ids,
+                )
+                frozen_references = self.jobs.bind_explicit_item_inputs(
+                    fence,
+                    item_id=str(step["itemId"]),
+                    assets_by_role={
+                        f"continuation_reference_{index:03d}": asset_id
+                        for index, asset_id in enumerate(
+                            reference_asset_ids,
+                            start=1,
+                        )
+                    },
+                )
+                reference_paths = [
+                    self.storage.resolve_relative_path(
+                        str(frozen_references[role]["relative_path"])
+                    )
+                    for role in sorted(frozen_references)
+                ]
+                image_bytes = self.algorithms.generate_image(
+                    prompt=target_payload["finalPrompt"],
+                    reference_paths=reference_paths,
+                    config=config,
+                )
+                asset, thumbnail_asset = self._publish_generated_image(
+                    image_bytes
+                )
+
+            def publish(connection: Connection) -> bool:
+                if image_skipped:
+                    checkpoint.update(
+                        {
+                            "continuationPageId": page_id,
+                            "skipped": True,
+                            "reason": "page_prompt_changed_before_generation",
+                        }
+                    )
+                    return False
+                current_revision = connection.execute(
+                    select(continuation_pages.c.revision).where(
+                        continuation_pages.c.id == page_id
+                    )
+                ).scalar_one_or_none()
+                if current_revision != target_revision:
+                    checkpoint.update(
+                        {
+                            "continuationPageId": page_id,
+                            "skipped": True,
+                            "reason": "page_prompt_changed_during_generation",
+                        }
+                    )
+                    return False
+                if asset is None or thumbnail_asset is None:
+                    raise JobConflict(
+                        "continuation image result is missing before publication"
                     )
                 version = int(
                     connection.execute(
@@ -2321,61 +3321,6 @@ class ContinuationWorkerService:
                         updated_at=utcnow(),
                     )
                 )
-                obsolete_ids = list(
-                    connection.execute(
-                        select(continuation_image_versions.c.id)
-                        .where(
-                            continuation_image_versions.c.continuation_page_id
-                            == page_id,
-                            ~exists(
-                                select(job_asset_inputs.c.asset_id).where(
-                                    job_asset_inputs.c.asset_id
-                                    == continuation_image_versions.c.asset_id
-                                )
-                            ),
-                            ~exists(
-                                select(job_artifacts.c.asset_id).where(
-                                    job_artifacts.c.asset_id
-                                    == continuation_image_versions.c.asset_id
-                                )
-                            ),
-                            ~exists(
-                                select(
-                                    continuation_project_reference_assets.c.asset_id
-                                ).where(
-                                    continuation_project_reference_assets.c.asset_id
-                                    == continuation_image_versions.c.asset_id
-                                )
-                            ),
-                            ~exists(
-                                select(
-                                    continuation_character_forms.c.reference_asset_id
-                                ).where(
-                                    (
-                                        continuation_character_forms.c.reference_asset_id
-                                        == continuation_image_versions.c.asset_id
-                                    )
-                                    | (
-                                        continuation_character_forms.c.adopted_asset_id
-                                        == continuation_image_versions.c.asset_id
-                                    )
-                                )
-                            ),
-                        )
-                        .order_by(
-                            continuation_image_versions.c.version.desc()
-                        )
-                        .offset(5)
-                    ).scalars()
-                )
-                if obsolete_ids:
-                    connection.execute(
-                        delete(continuation_image_versions).where(
-                            continuation_image_versions.c.id.in_(
-                                tuple(obsolete_ids)
-                            )
-                        )
-                    )
                 checkpoint.update(
                     {
                         "continuationPageId": page_id,
@@ -2384,14 +3329,42 @@ class ContinuationWorkerService:
                         "thumbnailAssetId": thumbnail_asset.id,
                     }
                 )
+                return True
         elif kind == "continuation_export":
-            output_format = str(config.get("format", "zip"))
+            output_format = config.get("format")
+            raw_images = config.get("images")
+            if output_format not in {"zip", "pdf"}:
+                raise JobConflict("continuation export format is invalid")
+            if not isinstance(raw_images, list) or not raw_images:
+                raise JobConflict("continuation export image snapshot is invalid")
+            images: list[dict[str, Any]] = []
+            for value in raw_images:
+                if not isinstance(value, Mapping) or set(value) != {
+                    "ordinal",
+                    "assetId",
+                }:
+                    raise JobConflict(
+                        "continuation export image snapshot is invalid"
+                    )
+                try:
+                    ordinal = _positive_integer(
+                        value["ordinal"],
+                        "continuation export ordinal",
+                    )
+                except ValueError as exc:
+                    raise JobConflict(str(exc)) from exc
+                asset_id = value["assetId"]
+                if not isinstance(asset_id, str) or not asset_id:
+                    raise JobConflict(
+                        "continuation export assetId is invalid"
+                    )
+                images.append({"ordinal": ordinal, "assetId": asset_id})
+            if len({image["ordinal"] for image in images}) != len(images):
+                raise JobConflict(
+                    "continuation export image ordinals must be unique"
+                )
             output = self._build_export(
-                images=(
-                    config.get("images", [])
-                    if isinstance(config.get("images"), list)
-                    else []
-                ),
+                images=images,
                 output_format=output_format,
             )
             try:
@@ -2434,22 +3407,18 @@ class ContinuationWorkerService:
         )
         return {**checkpoint, "__already_published__": True}
 
-    def _reference_window(
+    def _reference_window_asset_ids(
         self,
         *,
         project_id: str,
         before_ordinal: int,
         count: int,
         initial_asset_ids: Sequence[str],
-    ) -> list[Path]:
+    ) -> list[str]:
         with self.engine.connect() as connection:
             rows = list(
                 connection.execute(
-                    select(assets.c.relative_path)
-                    .join(
-                        continuation_image_versions,
-                        continuation_image_versions.c.asset_id == assets.c.id,
-                    )
+                    select(continuation_image_versions.c.asset_id)
                     .join(
                         continuation_pages,
                         continuation_pages.c.id
@@ -2465,27 +3434,25 @@ class ContinuationWorkerService:
                 ).scalars()
             )
             if len(rows) < count:
-                path_by_id = {
-                    str(asset_id): str(relative_path)
-                    for asset_id, relative_path in connection.execute(
-                        select(
-                            assets.c.id,
-                            assets.c.relative_path,
-                        ).where(
-                            assets.c.id.in_(tuple(initial_asset_ids))
-                        )
-                    )
-                } if initial_asset_ids else {}
+                existing_ids = (
+                    {
+                        str(asset_id)
+                        for asset_id in connection.execute(
+                            select(assets.c.id).where(
+                                assets.c.id.in_(tuple(initial_asset_ids))
+                            )
+                        ).scalars()
+                    }
+                    if initial_asset_ids
+                    else set()
+                )
                 selected = [
-                    path_by_id[asset_id]
+                    asset_id
                     for asset_id in reversed(initial_asset_ids)
-                    if asset_id in path_by_id
+                    if asset_id in existing_ids
                 ][: count - len(rows)]
                 rows.extend(selected)
-        return [
-            self.storage.resolve_relative_path(str(relative_path))
-            for relative_path in reversed(rows)
-        ]
+        return [str(asset_id) for asset_id in reversed(rows)]
 
     def _publish_generated_image(self, payload: bytes):
         image_info = _image_info(payload)
@@ -2574,66 +3541,45 @@ class ContinuationWorkerService:
         return temporary
 
     def _script_context(self, config: Mapping[str, Any]) -> dict[str, Any]:
-        frozen_inputs = config.get("analysisInputs", [])
-        result_ids = [
-            str(value.get("resultId", ""))
-            for value in frozen_inputs
-            if isinstance(value, Mapping)
-        ]
-        fingerprint = str(config.get("analysisInputFingerprint", ""))
-        run_id = config.get("sourceRunId")
+        try:
+            frozen_inputs = _validated_analysis_inputs(
+                config.get("analysisInputs")
+            )
+            project_config = _validated_project_config(
+                _mapping(config.get("projectConfig"))
+            )
+        except (TypeError, ValueError) as exc:
+            raise JobConflict(
+                "continuation analysis snapshot is invalid"
+            ) from exc
+        result_ids = [value["resultId"] for value in frozen_inputs]
+        fingerprint = config.get("analysisInputFingerprint")
+        if (
+            not isinstance(fingerprint, str)
+            or len(fingerprint) != 64
+            or any(character not in "0123456789abcdef" for character in fingerprint)
+        ):
+            raise JobConflict("continuation analysis snapshot is invalid")
+        book_id = config.get("bookId")
+        if not isinstance(book_id, str) or not book_id:
+            raise JobConflict("continuation bookId is invalid")
+        snapshot = self.derived.snapshot(
+            book_id=book_id,
+            frozen_inputs=frozen_inputs,
+        )
+        if (
+            snapshot.fingerprint != fingerprint
+            or list(snapshot.result_ids) != result_ids
+        ):
+            raise JobConflict("continuation analysis snapshot changed")
         with self.engine.connect() as connection:
-            if result_ids:
-                selected = {
-                    str(row["id"]): _load(row["payload_json"], {})
-                    for row in connection.execute(
-                        select(
-                            analysis_page_results.c.id,
-                            analysis_page_results.c.payload_json,
-                        ).where(
-                            analysis_page_results.c.id.in_(tuple(result_ids))
-                        )
-                    ).mappings()
-                }
-                if set(selected) != set(result_ids):
-                    raise JobConflict(
-                        "frozen continuation analysis input is missing"
-                    )
-                pages_payload = [
-                    selected[result_id] for result_id in result_ids
-                ]
-            elif run_id:
-                pages_payload = [
-                    _load(value, {})
-                    for value in connection.execute(
-                        select(analysis_page_results.c.payload_json)
-                        .where(analysis_page_results.c.run_id == str(run_id))
-                        .order_by(
-                            analysis_page_results.c.page_number_snapshot
-                        )
-                    ).scalars()
-                ]
-            else:
-                raise JobConflict("continuation analysis snapshot is missing")
             artifact_conditions = [
-                analysis_artifacts.c.status.in_(
-                    ("ready", "degraded", "stale")
-                )
+                analysis_artifacts.c.status.in_(("ready", "degraded", "stale")),
+                analysis_artifacts.c.book_id == book_id,
+                analysis_artifacts.c.dependency_fingerprint == fingerprint,
             ]
-            if fingerprint:
-                artifact_conditions.extend(
-                    [
-                        analysis_artifacts.c.book_id == str(config["bookId"]),
-                        analysis_artifacts.c.dependency_fingerprint
-                        == fingerprint,
-                    ]
-                )
-            else:
-                artifact_conditions.append(
-                    analysis_artifacts.c.run_id == str(run_id)
-                )
             artifacts = {
-                f"{kind}:{template}": _load(payload, {})
+                f"{kind}:{template}": _mapping(_load(payload))
                 for kind, template, payload in connection.execute(
                     select(
                         analysis_artifacts.c.kind,
@@ -2644,15 +3590,9 @@ class ContinuationWorkerService:
                 )
             }
         return {
-            "direction": dict(config.get("projectConfig", {})).get(
-                "direction",
-                "",
-            ),
-            "pageCount": dict(config.get("projectConfig", {})).get(
-                "pageCount",
-                15,
-            ),
-            "pages": pages_payload[-10:],
+            "direction": project_config["direction"],
+            "pageCount": project_config["pageCount"],
+            "pages": [page["analysis"] for page in snapshot.pages[-10:]],
             "artifacts": artifacts,
         }
 
@@ -2671,11 +3611,6 @@ class ContinuationWorkerService:
             raise JobConflict(
                 "continuation credential version is missing"
             ) from exc
-
-
-def _chat_credential_sections(config: Mapping[str, Any]) -> tuple[str, ...]:
-    chat = config.get("chat")
-    return ("chat",) if isinstance(chat, Mapping) and chat.get("provider") else ("vlm",)
 
 
 def _missing_prerequisites(
@@ -2697,18 +3632,234 @@ def _missing_prerequisites(
 
 
 def _mapping(value: object) -> dict[str, Any]:
-    return dict(value) if isinstance(value, Mapping) else {}
+    if not isinstance(value, Mapping):
+        raise ValueError("continuation JSON value must be an object")
+    return dict(value)
+
+
+def _continuation_job_target(
+    config: Mapping[str, Any],
+    step: Mapping[str, Any],
+) -> dict[str, Any]:
+    targets = config.get("targets")
+    item_ordinal = step.get("itemOrdinal")
+    if (
+        not isinstance(targets, list)
+        or not targets
+        or isinstance(item_ordinal, bool)
+        or not isinstance(item_ordinal, int)
+        or not 1 <= item_ordinal <= len(targets)
+    ):
+        raise JobConflict("continuation job target snapshot is invalid")
+    target = targets[item_ordinal - 1]
+    if not isinstance(target, Mapping):
+        raise JobConflict("continuation job target snapshot is invalid")
+    return dict(target)
+
+
+def _required_mapping_json(value: object, label: str) -> dict[str, Any]:
+    if not isinstance(value, str):
+        raise ValueError(f"{label} payload must be JSON text")
+    loaded = json.loads(value)
+    if not isinstance(loaded, Mapping):
+        raise ValueError(f"{label} payload must be a JSON object")
+    return dict(loaded)
+
+
+def _positive_integer(value: object, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError(f"{name} must be a positive integer")
+    return value
+
+
+def _is_sha256(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _validated_analysis_inputs(value: object) -> list[dict[str, Any]]:
+    required = {
+        "resultId",
+        "pageId",
+        "pageNumber",
+        "currentSourceChecksum",
+    }
+    if not isinstance(value, list) or not value:
+        raise ValueError("analysisInputs must be a non-empty array")
+    normalized: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, Mapping) or set(item) != required:
+            raise ValueError("analysisInputs contains an invalid item")
+        result_id = item["resultId"]
+        page_id = item["pageId"]
+        checksum = item["currentSourceChecksum"]
+        if any(
+            not isinstance(field, str) or not field
+            for field in (result_id, page_id)
+        ) or (
+            not isinstance(checksum, str)
+            or len(checksum) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in checksum
+            )
+        ):
+            raise ValueError("analysisInputs contains an invalid item")
+        normalized.append(
+            {
+                "resultId": result_id,
+                "pageId": page_id,
+                "pageNumber": _positive_integer(
+                    item["pageNumber"],
+                    "analysisInputs.pageNumber",
+                ),
+                "currentSourceChecksum": checksum,
+            }
+        )
+    if any(
+        len({item[field] for item in normalized}) != len(normalized)
+        for field in ("resultId", "pageId", "pageNumber")
+    ):
+        raise ValueError("analysisInputs contains duplicate identities")
+    return normalized
+
+
+def _validated_project_config(config: Mapping[str, Any]) -> dict[str, Any]:
+    required = {"pageCount", "styleReferencePages", "direction"}
+    if set(config) != required:
+        raise ValueError(
+            "continuation config requires exactly pageCount, "
+            "styleReferencePages, and direction"
+        )
+    direction = config["direction"]
+    if not isinstance(direction, str):
+        raise ValueError("direction must be a string")
+    return {
+        "pageCount": _positive_integer(config["pageCount"], "pageCount"),
+        "styleReferencePages": _positive_integer(
+            config["styleReferencePages"],
+            "styleReferencePages",
+        ),
+        "direction": direction,
+    }
 
 
 def _public_project_config(payload: Mapping[str, Any]) -> dict[str, Any]:
+    return _validated_project_config(
+        {
+            key: payload[key]
+            for key in ("pageCount", "styleReferencePages", "direction")
+            if key in payload
+        }
+    )
+
+
+def _selected_ordinals(
+    ordinals: Sequence[int] | None,
+) -> list[int] | None:
+    if ordinals is None:
+        return None
+    values = list(ordinals)
+    if (
+        not values
+        or any(
+            isinstance(value, bool) or not isinstance(value, int)
+            for value in values
+        )
+        or any(value < 1 for value in values)
+        or len(set(values)) != len(values)
+    ):
+        raise ValueError(
+            "ordinals must be a non-empty sequence of unique positive integers"
+        )
+    return sorted(values)
+
+
+def _empty_page_payload() -> dict[str, Any]:
     return {
-        "pageCount": max(1, min(100, int(payload.get("pageCount", 15)))),
-        "styleReferencePages": max(
-            1,
-            min(20, int(payload.get("styleReferencePages", 3))),
-        ),
-        "direction": str(payload.get("direction", "")),
+        "storyText": "",
+        "continuityText": "",
+        "dialogueText": "",
+        "characters": [],
+        "finalPrompt": "",
+        "status": "pending",
     }
+
+
+def _validated_page_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
+    required = {
+        "storyText",
+        "continuityText",
+        "dialogueText",
+        "characters",
+        "finalPrompt",
+        "status",
+    }
+    unknown = set(payload) - required - {"staleReason"}
+    missing = required - set(payload)
+    if unknown or missing:
+        raise ValueError("continuation page payload has invalid fields")
+    text_fields = (
+        "storyText",
+        "continuityText",
+        "dialogueText",
+        "finalPrompt",
+    )
+    if any(not isinstance(payload[key], str) for key in text_fields):
+        raise ValueError("continuation page payload has invalid text fields")
+    characters = payload["characters"]
+    if not isinstance(characters, list) or any(
+        not isinstance(value, str) for value in characters
+    ):
+        raise ValueError("continuation page payload has invalid characters")
+    status = payload["status"]
+    if not isinstance(status, str) or status not in {
+        "pending",
+        "generating",
+        "ready",
+        "stale",
+        "failed",
+    }:
+        raise ValueError("continuation page payload has invalid status")
+    stale_reason = payload.get("staleReason")
+    if stale_reason is not None and (
+        not isinstance(stale_reason, str) or not stale_reason
+    ):
+        raise ValueError("continuation page payload has invalid staleReason")
+    return {
+        **{key: payload[key] for key in text_fields},
+        "characters": list(characters),
+        "status": status,
+        **({"staleReason": stale_reason} if stale_reason is not None else {}),
+    }
+
+
+def _validated_generated_page(result: Mapping[str, Any]) -> dict[str, Any]:
+    text_fields = (
+        "storyText",
+        "continuityText",
+        "dialogueText",
+        "finalPrompt",
+    )
+    if any(not isinstance(result.get(key), str) for key in text_fields):
+        raise ValueError("continuation page response has invalid text fields")
+    if not result["storyText"].strip() or not result["finalPrompt"].strip():
+        raise ValueError(
+            "continuation page response requires storyText and finalPrompt"
+        )
+    characters = result.get("characters")
+    if not isinstance(characters, list) or any(
+        not isinstance(value, str) for value in characters
+    ):
+        raise ValueError("continuation page response has invalid characters")
+    return _validated_page_payload({
+        **{key: result[key] for key in text_fields},
+        "characters": list(characters),
+        "status": "ready",
+    })
 
 
 def _snapshot_inputs(snapshot: AnalysisInputSnapshot) -> list[dict[str, Any]]:
@@ -2728,11 +3879,22 @@ def _page_dto(
     *,
     image_versions: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
+    try:
+        payload = _validated_page_payload(
+            _required_mapping_json(
+                row["payload_json"],
+                "continuation page",
+            )
+        )
+    except (json.JSONDecodeError, TypeError, ValueError) as exc:
+        raise InsightConflict(
+            "continuation page data is invalid; clear the project"
+        ) from exc
     return {
         "continuationPageId": str(row["id"]),
         "ordinal": int(row["ordinal"]),
         "revision": int(row["revision"]),
-        "payload": _load(row["payload_json"], {}),
+        "payload": payload,
         "imageVersions": [
             {
                 "version": int(version["version"]),
@@ -2749,13 +3911,27 @@ def _page_dto(
 
 
 def _character_dto(row: Mapping[str, Any]) -> dict[str, Any]:
+    try:
+        aliases = _load(row["aliases_json"])
+        if not isinstance(aliases, list) or any(
+            not isinstance(value, str) for value in aliases
+        ):
+            raise ValueError("continuation character aliases are invalid")
+        payload = _required_mapping_json(
+            row["payload_json"],
+            "continuation character",
+        )
+    except (json.JSONDecodeError, TypeError, ValueError) as exc:
+        raise InsightConflict(
+            "continuation character data is invalid; clear the project"
+        ) from exc
     return {
         "characterId": str(row["id"]),
         "projectId": str(row["project_id"]),
         "name": str(row["name"]),
-        "aliases": _load(row["aliases_json"], []),
+        "aliases": aliases,
         "enabled": bool(row["enabled"]),
-        "payload": _load(row["payload_json"], {}),
+        "payload": payload,
         "revision": int(row["revision"]),
     }
 
@@ -2767,17 +3943,13 @@ def _normalize_character_identity(
     normalized_name = name.strip()
     if not normalized_name or len(normalized_name) > 500:
         raise ValueError("character name must contain 1-500 characters")
-    normalized_aliases = list(
-        dict.fromkeys(
-            str(value).strip()
-            for value in aliases
-            if str(value).strip()
-        )
-    )
-    if len(normalized_aliases) > 100 or any(
-        len(value) > 500 for value in normalized_aliases
-    ):
-        raise ValueError("character aliases exceed the allowed size")
+    if any(not isinstance(value, str) for value in aliases):
+        raise ValueError("character aliases must be strings")
+    normalized_aliases = [value.strip() for value in aliases]
+    if any(not value for value in normalized_aliases):
+        raise ValueError("character aliases must not be blank")
+    if len(set(normalized_aliases)) != len(normalized_aliases):
+        raise ValueError("character aliases must be unique")
     return normalized_name, normalized_aliases
 
 
@@ -2796,11 +3968,16 @@ def _image_info(payload: bytes) -> dict[str, Any]:
     with Image.open(BytesIO(payload)) as image:
         image_format = str(image.format or "PNG").upper()
         width, height = image.size
-    extension, mime_type = {
+    media_type = {
         "JPEG": ("jpg", "image/jpeg"),
         "WEBP": ("webp", "image/webp"),
         "PNG": ("png", "image/png"),
-    }.get(image_format, ("png", "image/png"))
+    }.get(image_format)
+    if media_type is None:
+        raise ValueError(
+            f"image provider returned unsupported {image_format} data"
+        )
+    extension, mime_type = media_type
     return {
         "extension": extension,
         "mimeType": mime_type,

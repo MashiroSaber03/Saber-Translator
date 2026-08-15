@@ -1,15 +1,10 @@
 import type { OpenAICompatibleOptions } from '@/types/settings'
 
-export type ProviderOpenAICompatibleOptions = {
-  request?: Partial<OpenAICompatibleOptions['request']>
-  execution?: Partial<OpenAICompatibleOptions['execution']>
-}
-
 export interface TranslationProviderConfig {
   apiKey?: string
   modelName?: string
   customBaseUrl?: string
-  openaiOptions?: ProviderOpenAICompatibleOptions
+  openaiOptions?: OpenAICompatibleOptions
   translationMode?: 'batch' | 'single'
 }
 
@@ -18,7 +13,7 @@ export interface HqTranslationProviderConfig {
   modelName?: string
   customBaseUrl?: string
   batchSize?: number
-  openaiOptions?: ProviderOpenAICompatibleOptions
+  openaiOptions?: OpenAICompatibleOptions
   prompt?: string
 }
 
@@ -26,7 +21,7 @@ export interface PluginAgentProviderConfig {
   apiKey?: string
   modelName?: string
   customBaseUrl?: string
-  openaiOptions?: ProviderOpenAICompatibleOptions
+  openaiOptions?: OpenAICompatibleOptions
 }
 
 export interface AiVisionOcrProviderConfig {
@@ -35,7 +30,7 @@ export interface AiVisionOcrProviderConfig {
   customBaseUrl?: string
   prompt?: string
   promptMode?: 'normal' | 'json' | 'paddleocr_vl'
-  openaiOptions?: ProviderOpenAICompatibleOptions
+  openaiOptions?: OpenAICompatibleOptions
   minImageSize?: number
 }
 

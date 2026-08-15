@@ -102,6 +102,8 @@ class DesktopController(QObject):
         )
         self.tasks = TaskApiClient(self)
         self.tray = QSystemTrayIcon(QIcon(str(native_icon_path)), self)
+        self._tray_available = QSystemTrayIcon.isSystemTrayAvailable()
+        self.window.set_close_to_tray_enabled(self._tray_available)
         self._configure_tray()
         self._connect_signals()
         self.app.aboutToQuit.connect(self._prepare_app_exit)
@@ -112,7 +114,8 @@ class DesktopController(QObject):
 
     def show(self) -> None:
         self.window.show()
-        self.tray.show()
+        if self._tray_available:
+            self.tray.show()
         if self.settings.pet_enabled:
             self._set_pet_visible(True)
             QTimer.singleShot(250, self.pet.greet)
@@ -148,6 +151,7 @@ class DesktopController(QObject):
         thread.start()
 
     def stop_backend(self) -> None:
+        self._restart_pending = False
         if self._supervisor is not None:
             self._supervisor.request_stop()
 
@@ -156,7 +160,8 @@ class DesktopController(QObject):
             self.start_backend()
             return
         self._restart_pending = True
-        self.stop_backend()
+        if self._supervisor is not None:
+            self._supervisor.request_stop()
 
     def open_web(self) -> None:
         if self._status.state != LauncherState.RUNNING:
@@ -183,7 +188,11 @@ class DesktopController(QObject):
         self.pet.set_always_on_top(self.settings.pet_always_on_top)
         self.window.settings.apply_pet_settings(self.settings)
         self._set_pet_visible(self.settings.pet_enabled)
-        if restart_required and self._status.state != LauncherState.STOPPED:
+        if restart_required and self._status.state in {
+            LauncherState.STARTING,
+            LauncherState.RUNNING,
+            LauncherState.DEGRADED,
+        }:
             self.window.settings.show_auto_save_status("已自动保存 · 正在重启后端")
             self.restart_backend()
         else:
@@ -217,7 +226,8 @@ class DesktopController(QObject):
             self._finish_quit()
 
     def _configure_tray(self) -> None:
-        menu = QMenu()
+        menu = QMenu(self.window)
+        self._tray_menu = menu
         show_action = menu.addAction("显示控制中心")
         service_action = menu.addAction("启动 / 停止后端")
         open_action = menu.addAction("打开网页")
@@ -324,12 +334,12 @@ class DesktopController(QObject):
             return
         if self.pet.isVisible():
             return
-        self.pet.show()
         self.pet.restore_position(
             self.settings.pet_screen_name,
             self.settings.pet_position_x,
             self.settings.pet_position_y,
         )
+        self.pet.show()
 
     def _set_pet_scale(self, percent: int) -> None:
         self.apply_settings(self.settings.updated(pet_scale_percent=percent))
@@ -421,12 +431,6 @@ def run_desktop(args: object) -> int:
         data_root=data_root,
         console_level=settings.log_level,
     )
-    LOGGER.info(
-        "Saber-Translator 桌面控制中心启动：pid=%s，data_root=%s，日志=%s",
-        os.getpid(),
-        data_root,
-        log_path,
-    )
     _configure_windows_app_identity()
     app = QApplication.instance() or QApplication([])
     app.setApplicationName("Saber-Translator")
@@ -457,6 +461,12 @@ def run_desktop(args: object) -> int:
     bridge.line.connect(controller.window.add_log)
     handler = DesktopLogHandler(bridge)
     logging.getLogger().addHandler(handler)
+    LOGGER.info(
+        "Saber-Translator 桌面控制中心启动：pid=%s，data_root=%s，日志=%s",
+        os.getpid(),
+        data_root,
+        log_path,
+    )
     controller.show()
     try:
         return app.exec()

@@ -75,15 +75,24 @@ const messageSettingsTabStub = defineComponent({
     onMounted(() => emit('update:config', {}))
     return {}
   },
-  template: '<button type="button" class="emit-message" @click="$emit(\'showMessage\', \'连接成功\', \'success\')">emit</button>',
+  template:
+    '<button type="button" class="emit-message" @click="$emit(\'showMessage\', \'连接成功\', \'success\')">emit</button>',
 })
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(res => {
+    resolve = res
+  })
+  return { promise, resolve }
+}
 
 describe('InsightSettingsModal', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     setActivePinia(createPinia())
-    apiMocks.getGlobalConfig.mockReset().mockResolvedValue({ success: true, config: {} })
-    apiMocks.saveGlobalConfig.mockReset().mockResolvedValue(undefined)
+    apiMocks.getGlobalConfig.mockReset().mockResolvedValue(useInsightStore().getConfigForApi())
+    apiMocks.saveGlobalConfig.mockReset().mockImplementation(async config => config)
   })
 
   afterEach(() => {
@@ -208,27 +217,40 @@ describe('InsightSettingsModal', () => {
         plugins: [createPinia()],
         stubs: {
           BaseModal: baseModalStub,
-          VlmSettingsTab: createSettingsTabStub({ provider: 'custom-vlm', apiKey: 'vlm-key', model: 'vlm-model' }),
-          LlmSettingsTab: createSettingsTabStub({ provider: 'custom-llm', apiKey: 'llm-key', model: 'llm-model' }),
+          VlmSettingsTab: createSettingsTabStub({
+            provider: 'custom-vlm',
+            apiKey: 'vlm-key',
+            model: 'vlm-model',
+          }),
+          LlmSettingsTab: createSettingsTabStub({
+            provider: 'custom-llm',
+            apiKey: 'llm-key',
+            model: 'llm-model',
+          }),
           BatchSettingsTab: createSettingsTabStub({ pagesPerBatch: 8, contextBatchCount: 4 }),
-          EmbeddingSettingsTab: createSettingsTabStub({ provider: 'custom-embedding', apiKey: 'embedding-key', model: 'embedding-model' }),
-          RerankerSettingsTab: createSettingsTabStub({ provider: 'custom-reranker', apiKey: 'reranker-key', model: 'reranker-model' }),
+          EmbeddingSettingsTab: createSettingsTabStub({
+            provider: 'custom-embedding',
+            apiKey: 'embedding-key',
+            model: 'embedding-model',
+          }),
+          RerankerSettingsTab: createSettingsTabStub({
+            provider: 'custom-reranker',
+            apiKey: 'reranker-key',
+            model: 'reranker-model',
+          }),
           PromptsSettingsTab: createPromptsTabStub({ qa_response: '回答提示词 draft' }),
-          ImageGenSettingsTab: createSettingsTabStub({ provider: 'newapi', apiKey: 'image-key', model: 'image-model' }),
+          ImageGenSettingsTab: createSettingsTabStub({
+            provider: 'newapi',
+            apiKey: 'image-key',
+            model: 'image-model',
+          }),
         },
       },
     })
 
     await flushPromises()
 
-    for (const label of [
-      'LLM 对话',
-      '批量分析',
-      '向量模型',
-      '重排序',
-      '生图模型',
-      '提示词',
-    ]) {
+    for (const label of ['LLM 对话', '批量分析', '向量模型', '重排序', '生图模型', '提示词']) {
       const tab = wrapper.findAll('[role="tab"]').find(item => item.text().includes(label))
       expect(tab).toBeTruthy()
       await tab!.trigger('click')
@@ -241,17 +263,39 @@ describe('InsightSettingsModal', () => {
     await saveButton!.trigger('click')
     await flushPromises()
 
-    expect(apiMocks.saveGlobalConfig).toHaveBeenCalledWith(expect.objectContaining({
-      vlm: expect.objectContaining({ provider: 'custom-vlm', api_key: 'vlm-key', model: 'vlm-model' }),
-      chat_llm: expect.objectContaining({ provider: 'custom-llm', api_key: 'llm-key', model: 'llm-model' }),
-      embedding: expect.objectContaining({ provider: 'custom-embedding', api_key: 'embedding-key', model: 'embedding-model' }),
-      reranker: expect.objectContaining({ provider: 'custom-reranker', api_key: 'reranker-key', model: 'reranker-model' }),
-      image_gen: expect.objectContaining({ provider: 'newapi', api_key: 'image-key', model: 'image-model' }),
-      analysis: expect.objectContaining({
-        batch: expect.objectContaining({ pages_per_batch: 8, context_batch_count: 4 }),
-      }),
-      prompts: expect.objectContaining({ qa_response: '回答提示词 draft' }),
-    }))
+    expect(apiMocks.saveGlobalConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: expect.objectContaining({
+          vlm: expect.objectContaining({
+            provider: 'custom-vlm',
+            apiKey: 'vlm-key',
+            model: 'vlm-model',
+          }),
+          llm: expect.objectContaining({
+            provider: 'custom-llm',
+            apiKey: 'llm-key',
+            model: 'llm-model',
+          }),
+          embedding: expect.objectContaining({
+            provider: 'custom-embedding',
+            apiKey: 'embedding-key',
+            model: 'embedding-model',
+          }),
+          reranker: expect.objectContaining({
+            provider: 'custom-reranker',
+            apiKey: 'reranker-key',
+            model: 'reranker-model',
+          }),
+          imageGen: expect.objectContaining({
+            provider: 'newapi',
+            apiKey: 'image-key',
+            model: 'image-model',
+          }),
+          batch: expect.objectContaining({ pagesPerBatch: 8, contextBatchCount: 4 }),
+          prompts: expect.objectContaining({ qa_response: '回答提示词 draft' }),
+        }),
+      })
+    )
   })
 
   it('restores the authoritative config and provider cache when saving fails', async () => {
@@ -288,9 +332,13 @@ describe('InsightSettingsModal', () => {
     await saveButton!.trigger('click')
     await flushPromises()
 
-    expect(apiMocks.saveGlobalConfig).toHaveBeenCalledWith(expect.objectContaining({
-      vlm: expect.objectContaining({ provider: 'unsaved-vlm' }),
-    }))
+    expect(apiMocks.saveGlobalConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: expect.objectContaining({
+          vlm: expect.objectContaining({ provider: 'unsaved-vlm' }),
+        }),
+      })
+    )
     expect(insightStore.snapshotConfigState()).toEqual(authoritativeState)
     expect(wrapper.text()).toContain('保存失败')
   })
@@ -365,6 +413,73 @@ describe('InsightSettingsModal', () => {
     wrapper.unmount()
 
     expect(insightStore.snapshotConfigState()).toEqual(authoritativeState)
+  })
+
+  it('ignores an initial config response after the modal owner unmounts', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const insightStore = useInsightStore()
+    const authoritativeState = insightStore.snapshotConfigState()
+    const pendingConfig = deferred<Record<string, unknown>>()
+    apiMocks.getGlobalConfig.mockReturnValueOnce(pendingConfig.promise)
+    const wrapper = mount(InsightSettingsModal, {
+      global: {
+        plugins: [pinia],
+        stubs: {
+          BaseModal: baseModalStub,
+          VlmSettingsTab: createSettingsTabStub(),
+          LlmSettingsTab: createSettingsTabStub(),
+          BatchSettingsTab: createSettingsTabStub(),
+          EmbeddingSettingsTab: createSettingsTabStub(),
+          RerankerSettingsTab: createSettingsTabStub(),
+          PromptsSettingsTab: createPromptsTabStub(),
+          ImageGenSettingsTab: createSettingsTabStub(),
+        },
+      },
+    })
+
+    wrapper.unmount()
+    pendingConfig.resolve({
+      vlm: { provider: 'late-provider', model: 'late-model' },
+    })
+    await flushPromises()
+
+    expect(insightStore.snapshotConfigState()).toEqual(authoritativeState)
+  })
+
+  it('blocks close and duplicate save while the backend save is pending', async () => {
+    const pendingSave = deferred<void>()
+    apiMocks.saveGlobalConfig.mockReturnValueOnce(pendingSave.promise)
+    const wrapper = mount(InsightSettingsModal, {
+      global: {
+        plugins: [createPinia()],
+        stubs: {
+          BaseModal: baseModalStub,
+          VlmSettingsTab: createSettingsTabStub(),
+          LlmSettingsTab: createSettingsTabStub(),
+          BatchSettingsTab: createSettingsTabStub(),
+          EmbeddingSettingsTab: createSettingsTabStub(),
+          RerankerSettingsTab: createSettingsTabStub(),
+          PromptsSettingsTab: createPromptsTabStub(),
+          ImageGenSettingsTab: createSettingsTabStub(),
+        },
+      },
+    })
+    await flushPromises()
+    const saveButton = wrapper.findAll('button').find(button => button.text() === '保存')
+    if (!saveButton) throw new Error('Missing settings save button')
+
+    await saveButton.trigger('click')
+    wrapper.getComponent(baseModalStub).vm.$emit('close')
+    await saveButton.trigger('click')
+
+    expect(apiMocks.saveGlobalConfig).toHaveBeenCalledTimes(1)
+    expect(wrapper.emitted('close')).toBeUndefined()
+
+    wrapper.unmount()
+    pendingSave.resolve()
+    await flushPromises()
+    expect(apiMocks.getGlobalConfig).toHaveBeenCalledTimes(1)
   })
 
   it('does not wire settings tabs through exposed child instance methods', () => {

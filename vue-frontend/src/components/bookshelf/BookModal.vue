@@ -34,6 +34,8 @@ let ownedCoverPreview: string | null = null
 const selectedTags = ref<string[]>([])
 const tagInput = ref('')
 const showTagSuggestions = ref(false)
+const isCreatingTag = ref(false)
+const isSaving = ref(false)
 
 const isEditing = computed(() => !!props.bookId)
 const modalTitle = computed(() => isEditing.value ? '编辑书籍' : '新建书籍')
@@ -47,10 +49,10 @@ const selectedTagItems = computed<ProductChipItem[]>(() => selectedTags.value.ma
   tone: 'primary',
 })))
 const filteredTagSuggestions = computed(() => {
-  if (!tagInput.value) return availableTags.value
   const query = tagInput.value.toLowerCase()
   return availableTags.value.filter(tag =>
-    tag.name.toLowerCase().includes(query) && !selectedTags.value.includes(tag.name)
+    !selectedTags.value.includes(tag.name)
+    && (!query || tag.name.toLowerCase().includes(query))
   )
 })
 
@@ -96,7 +98,7 @@ function addTag(tagName: string) {
 
 async function createAndAddTag() {
   const name = tagInput.value.trim()
-  if (!name) return
+  if (!name || isCreatingTag.value) return
 
   const existing = availableTags.value.find(t => t.name === name)
   if (existing) {
@@ -104,13 +106,14 @@ async function createAndAddTag() {
     return
   }
 
+  isCreatingTag.value = true
   try {
     const newTag = await bookshelfStore.createTag(name)
-    if (newTag) {
-      addTag(newTag.name)
-    }
+    addTag(newTag.name)
   } catch (error) {
-    showToast('创建标签失败', 'error')
+    showToast(error instanceof Error ? error.message : '创建标签失败', 'error')
+  } finally {
+    isCreatingTag.value = false
   }
 }
 
@@ -119,6 +122,7 @@ function removeTag(tagName: string) {
 }
 
 async function saveBook() {
+  if (isSaving.value) return
   if (!title.value.trim()) {
     showToast('请输入书籍名称', 'warning')
     return
@@ -126,34 +130,32 @@ async function saveBook() {
 
   const tagNames = selectedTags.value
 
+  isSaving.value = true
   try {
     if (isEditing.value && props.bookId) {
-      const success = await bookshelfStore.updateBookApi(props.bookId, {
+      await bookshelfStore.updateBookApi(props.bookId, {
         title: title.value.trim(),
         cover: coverFile.value,
         tags: tagNames,
       })
-      if (success) {
-        showToast('书籍更新成功', 'success')
-        emit('saved')
-      } else {
-        showToast('更新失败', 'error')
-      }
+      showToast('书籍更新成功', 'success')
+      emit('saved')
     } else {
-      const book = await bookshelfStore.createBook(
+      await bookshelfStore.createBook(
         title.value.trim(),
         coverFile.value,
         tagNames.length > 0 ? tagNames : undefined
       )
-      if (book) {
-        showToast('书籍创建成功', 'success')
-        emit('saved')
-      } else {
-        showToast('创建失败', 'error')
-      }
+      showToast('书籍创建成功', 'success')
+      emit('saved')
     }
   } catch (error) {
-    showToast(isEditing.value ? '更新失败' : '创建失败', 'error')
+    showToast(
+      error instanceof Error ? error.message : (isEditing.value ? '更新失败' : '创建失败'),
+      'error',
+    )
+  } finally {
+    isSaving.value = false
   }
 }
 </script>
@@ -254,7 +256,7 @@ async function saveBook() {
         variant="dialog"
       >
         <UiButton type="button" variant="secondary" @click="emit('close')">取消</UiButton>
-        <UiButton type="button" variant="primary" @click="saveBook">保存</UiButton>
+        <UiButton type="button" variant="primary" :loading="isSaving" @click="saveBook">保存</UiButton>
       </ProductActionRow>
     </template>
   </BaseModal>

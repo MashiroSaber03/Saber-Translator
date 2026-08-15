@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { BubbleState } from '@/types/bubble'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 const props = defineProps<{
   debugBubbles?: readonly BubbleState[]
@@ -59,6 +59,10 @@ function handleImageLoad(event: Event): void {
     height: image.naturalHeight,
   }
 }
+
+watch(() => props.imageUrl, () => {
+  loadedImageSize.value = { width: 0, height: 0 }
+})
 </script>
 
 <template>
@@ -102,7 +106,8 @@ function handleImageLoad(event: Event): void {
   justify-content: center;
   width: 100%;
   margin: 0 0 20px;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   border: 1px solid var(--color-border-muted);
   border-radius: 8px;
   background-color: var(--color-surface-app);
@@ -112,7 +117,7 @@ function handleImageLoad(event: Event): void {
 
 .result-image-canvas__image-frame {
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
   width: 100%;
   max-width: 100%;
   text-align: center;
@@ -120,7 +125,8 @@ function handleImageLoad(event: Event): void {
 
 .result-image-canvas__image-layer {
   position: relative;
-  max-width: 100%;
+  flex: 0 0 auto;
+  margin-inline: auto;
   transition: width 0.3s ease;
 }
 

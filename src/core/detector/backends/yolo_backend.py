@@ -5,9 +5,9 @@ YSGYolo 后端
 只保留模型推理核心逻辑
 """
 
-import os
-import os.path as osp
 import logging
+import math
+import os
 from typing import List, Tuple, Optional
 
 import cv2
@@ -38,17 +38,6 @@ DEFAULT_LABELS = {
 }
 
 
-def _update_ckpt_list(model_dir: str) -> List[str]:
-    """更新可用模型列表"""
-    ckpt_list = []
-    if not osp.exists(model_dir):
-        return ckpt_list
-    for p in os.listdir(model_dir):
-        if p.startswith('ysgyolo') or p.startswith('ultralyticsyolo'):
-            ckpt_list.append(osp.join(model_dir, p).replace('\\', '/'))
-    return ckpt_list
-
-
 class YoloBackend(BaseTextDetector):
     """
     YSGYolo 检测后端
@@ -64,8 +53,7 @@ class YoloBackend(BaseTextDetector):
                  iou_thresh: float = DEFAULT_IOU_THRESH,
                  detect_size: int = DEFAULT_DETECT_SIZE,
                  mask_dilate_size: int = DEFAULT_MASK_DILATE,
-                 labels: dict = None,
-                 **kwargs):
+                 labels: dict = None):
         """
         初始化 YSGYolo 检测器
         
@@ -78,32 +66,46 @@ class YoloBackend(BaseTextDetector):
             mask_dilate_size: 掩码膨胀大小
             labels: 标签配置
         """
-        self.model_dir = model_dir or resource_path(DEFAULT_MODEL_DIR)
-        self.conf_thresh = conf_thresh
-        self.iou_thresh = iou_thresh
+        self.model_dir = resource_path(DEFAULT_MODEL_DIR) if model_dir is None else model_dir
+        for label, value in (("置信度", conf_thresh), ("IoU", iou_thresh)):
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(float(value))
+                or not 0 <= float(value) <= 1
+            ):
+                raise ValueError(f"YSGYolo {label}阈值必须是 0 到 1 之间的数字")
+        if isinstance(detect_size, bool) or not isinstance(detect_size, int) or detect_size <= 0:
+            raise ValueError("YSGYolo 检测尺寸必须是正整数")
+        if (
+            isinstance(mask_dilate_size, bool)
+            or not isinstance(mask_dilate_size, int)
+            or mask_dilate_size < 0
+        ):
+            raise ValueError("YSGYolo 掩码膨胀尺寸必须是非负整数")
+        if labels is not None and (
+            not isinstance(labels, dict)
+            or any(
+                not isinstance(key, str) or not isinstance(value, bool)
+                for key, value in labels.items()
+            )
+        ):
+            raise TypeError("YSGYolo 标签配置必须是字符串到布尔值的映射")
+        self.conf_thresh = float(conf_thresh)
+        self.iou_thresh = float(iou_thresh)
         self.detect_size = detect_size
         self.mask_dilate_size = mask_dilate_size
-        self.labels = labels or DEFAULT_LABELS.copy()
+        self.labels = DEFAULT_LABELS.copy() if labels is None else labels.copy()
         self.model_path = None
         
-        super().__init__(device=device, **kwargs)
+        super().__init__(device=device)
     
-    def _load_model(self, **kwargs):
+    def _load_model(self):
         """加载 YSGYolo 模型"""
         # 查找模型路径
-        ckpt_list = _update_ckpt_list(self.model_dir)
-        model_path = osp.join(self.model_dir, DEFAULT_MODEL_NAME)
-        
-        if not osp.exists(model_path):
-            df_model_path = model_path
-            for p in ckpt_list:
-                if osp.exists(p):
-                    df_model_path = p
-                    break
-            logger.warning(f'{model_path} 不存在，尝试使用 {df_model_path}')
-            model_path = df_model_path
-        
-        if not osp.exists(model_path):
+        model_path = os.path.join(self.model_dir, DEFAULT_MODEL_NAME)
+
+        if not os.path.exists(model_path):
             raise FileNotFoundError(
                 f"YSGYolo 模型文件未找到: {model_path}\n"
                 f"请从 https://huggingface.co/YSGforMTL/YSGYoloDetector 下载模型"
@@ -129,7 +131,6 @@ class YoloBackend(BaseTextDetector):
         image: np.ndarray,
         conf_thresh: float = None,
         iou_thresh: float = None,
-        **kwargs
     ) -> Tuple[List[TextLine], Optional[np.ndarray]]:
         """
         执行原始检测
@@ -144,8 +145,16 @@ class YoloBackend(BaseTextDetector):
             raise RuntimeError("模型未加载")
         
         im_h, im_w = image.shape[:2]
-        conf_thresh = self.conf_thresh if conf_thresh is None else float(conf_thresh)
-        iou_thresh = self.iou_thresh if iou_thresh is None else float(iou_thresh)
+        conf_thresh = self.conf_thresh if conf_thresh is None else conf_thresh
+        iou_thresh = self.iou_thresh if iou_thresh is None else iou_thresh
+        for label, value in (("置信度", conf_thresh), ("IoU", iou_thresh)):
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(float(value))
+                or not 0 <= value <= 1
+            ):
+                raise ValueError(f"YSGYolo {label}阈值必须是 0 到 1 之间的数字")
         
         # YOLO 推理
         result = self.model.predict(
@@ -155,6 +164,7 @@ class YoloBackend(BaseTextDetector):
             verbose=False,
             conf=conf_thresh,
             iou=iou_thresh,
+            imgsz=self.detect_size,
             agnostic_nms=True
         )[0]
         

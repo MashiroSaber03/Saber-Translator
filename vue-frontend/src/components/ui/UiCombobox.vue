@@ -2,24 +2,24 @@
   <div
     ref="selectRef"
     class="ui-combobox"
-    :class="[
-      `ui-combobox--${variant}`,
-      {
-        'ui-combobox--open': isOpen,
-        'ui-combobox--disabled': disabled,
-        'ui-combobox--fit': fit,
-      }
-    ]"
+    :class="{
+      'ui-combobox--open': isOpen,
+      'ui-combobox--disabled': disabled,
+      'ui-combobox--fit': fit,
+    }"
   >
-    <div
+    <button
+      ref="triggerRef"
       :id="inputId"
       class="ui-combobox-trigger"
+      type="button"
       role="combobox"
-      :tabindex="disabled ? -1 : 0"
+      :disabled="disabled"
       :aria-label="ariaLabel || undefined"
       :aria-expanded="isOpen ? 'true' : 'false'"
       aria-haspopup="listbox"
       :aria-controls="isOpen ? dropdownId : undefined"
+      :aria-activedescendant="activeDescendant"
       :aria-disabled="disabled ? 'true' : undefined"
       @click="toggleDropdown"
       @keydown="handleTriggerKeydown"
@@ -29,7 +29,7 @@
       <span class="ui-combobox-arrow">
         <UiIcon name="chevron-down" size="12" />
       </span>
-    </div>
+    </button>
 
     <Teleport to="body">
       <div
@@ -46,32 +46,48 @@
               v-for="group in groupedOptions"
               :key="group.label"
               class="ui-combobox-group"
+              role="group"
+              :aria-label="group.label"
             >
-              <div class="ui-combobox-group-label">{{ group.label }}</div>
+              <div class="ui-combobox-group-label" aria-hidden="true">{{ group.label }}</div>
               <div
-                v-for="option in group.options"
-                :key="option.value"
+                v-for="entry in group.options"
+                :id="optionId(entry.index)"
+                :key="`${typeof entry.option.value}:${String(entry.option.value)}`"
                 class="ui-combobox-option"
-                :class="{ 'ui-combobox-option--selected': option.value === modelValue }"
+                :class="{
+                  'ui-combobox-option--selected': entry.option.value === modelValue,
+                  'ui-combobox-option--active': entry.index === activeIndex,
+                }"
                 role="option"
-                :aria-selected="option.value === modelValue ? 'true' : 'false'"
-                @click="selectOption(option.value)"
+                :aria-selected="entry.option.value === modelValue ? 'true' : 'false'"
+                :aria-disabled="entry.option.disabled ? 'true' : undefined"
+                @mouseenter="setActiveOption(entry)"
+                @mousedown.prevent
+                @click="selectOption(entry.option)"
               >
-                {{ option.label }}
+                {{ entry.option.label }}
               </div>
             </div>
           </template>
           <template v-else>
             <div
-              v-for="option in flatOptions"
-              :key="option.value"
+              v-for="entry in flatOptions"
+              :id="optionId(entry.index)"
+              :key="`${typeof entry.option.value}:${String(entry.option.value)}`"
               class="ui-combobox-option"
-              :class="{ 'ui-combobox-option--selected': option.value === modelValue }"
+              :class="{
+                'ui-combobox-option--selected': entry.option.value === modelValue,
+                'ui-combobox-option--active': entry.index === activeIndex,
+              }"
               role="option"
-              :aria-selected="option.value === modelValue ? 'true' : 'false'"
-              @click="selectOption(option.value)"
+              :aria-selected="entry.option.value === modelValue ? 'true' : 'false'"
+              :aria-disabled="entry.option.disabled ? 'true' : undefined"
+              @mouseenter="setActiveOption(entry)"
+              @mousedown.prevent
+              @click="selectOption(entry.option)"
             >
-              {{ option.label }}
+              {{ entry.option.label }}
             </div>
           </template>
         </div>
@@ -81,7 +97,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick, useId } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, useId, watch } from 'vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import type { UiSelectGroup, UiSelectOption, UiSelectValue } from '@/components/ui/selectTypes'
 
@@ -94,7 +110,6 @@ const props = withDefaults(defineProps<{
   placeholder?: string
   disabled?: boolean
   title?: string
-  variant?: 'default' | 'compact' | 'workflow'
   fit?: boolean
 }>(), {
   inputId: undefined,
@@ -104,7 +119,6 @@ const props = withDefaults(defineProps<{
   placeholder: '请选择',
   disabled: false,
   title: '',
-  variant: 'default',
   fit: false
 })
 
@@ -113,8 +127,15 @@ const emit = defineEmits<{
   (e: 'change', value: UiSelectValue): void
 }>()
 
+interface IndexedOption {
+  option: UiSelectOption
+  index: number
+}
+
 const isOpen = ref(false)
+const activeIndex = ref(-1)
 const selectRef = ref<HTMLElement | null>(null)
+const triggerRef = ref<HTMLButtonElement | null>(null)
 const dropdownRef = ref<HTMLElement | null>(null)
 const dropdownStyle = ref<Record<string, string>>({})
 const dropdownId = useId()
@@ -124,20 +145,80 @@ const DROPDOWN_GAP = 6
 const MAX_DROPDOWN_HEIGHT = 360
 
 const hasGroups = computed(() => props.groups && props.groups.length > 0)
-const groupedOptions = computed(() => props.groups)
-const flatOptions = computed(() => props.options)
-
 const allOptions = computed(() => {
   if (hasGroups.value) {
     return props.groups.flatMap(g => g.options)
   }
   return props.options
 })
+const flatOptions = computed<IndexedOption[]>(() => allOptions.value.map((option, index) => ({
+  option,
+  index,
+})))
+const groupedOptions = computed(() => {
+  let index = 0
+  return props.groups.map(group => ({
+    label: group.label,
+    options: group.options.map(option => ({ option, index: index++ })),
+  }))
+})
+const enabledOptionIndexes = computed(() => flatOptions.value
+  .filter(entry => !entry.option.disabled)
+  .map(entry => entry.index))
+const activeDescendant = computed(() => (
+  isOpen.value && activeIndex.value >= 0
+    ? optionId(activeIndex.value)
+    : undefined
+))
 
 const displayValue = computed(() => {
   const option = allOptions.value.find(o => o.value === props.modelValue)
   return option ? option.label : props.placeholder
 })
+
+function optionId(index: number): string {
+  return `${dropdownId}-option-${index}`
+}
+
+function resetActiveIndex(preferred: 'selected' | 'first' | 'last' = 'selected'): void {
+  const enabledIndexes = enabledOptionIndexes.value
+  if (enabledIndexes.length === 0) {
+    activeIndex.value = -1
+    return
+  }
+
+  if (preferred === 'first') {
+    activeIndex.value = enabledIndexes[0] ?? -1
+    return
+  }
+  if (preferred === 'last') {
+    activeIndex.value = enabledIndexes.at(-1) ?? -1
+    return
+  }
+
+  const selectedIndex = allOptions.value.findIndex(option => (
+    !option.disabled && option.value === props.modelValue
+  ))
+  activeIndex.value = selectedIndex >= 0 ? selectedIndex : (enabledIndexes[0] ?? -1)
+}
+
+function moveActiveIndex(direction: -1 | 1): void {
+  const enabledIndexes = enabledOptionIndexes.value
+  if (enabledIndexes.length === 0) return
+
+  const currentPosition = enabledIndexes.indexOf(activeIndex.value)
+  if (currentPosition < 0) {
+    activeIndex.value = direction > 0 ? (enabledIndexes[0] ?? -1) : (enabledIndexes.at(-1) ?? -1)
+    return
+  }
+
+  const nextPosition = (currentPosition + direction + enabledIndexes.length) % enabledIndexes.length
+  activeIndex.value = enabledIndexes[nextPosition] ?? -1
+}
+
+function setActiveOption(entry: IndexedOption): void {
+  if (!entry.option.disabled) activeIndex.value = entry.index
+}
 
 function toggleDropdown(): void {
   if (props.disabled) return
@@ -149,10 +230,11 @@ function toggleDropdown(): void {
   }
 }
 
-function openDropdown(): void {
+function openDropdown(preferred: 'selected' | 'first' | 'last' = 'selected'): void {
   if (props.disabled || isOpen.value) return
+  resetActiveIndex(preferred)
   isOpen.value = true
-  nextTick(() => {
+  void nextTick(() => {
     updatePosition()
     requestAnimationFrame(() => updatePosition())
   })
@@ -165,20 +247,45 @@ function closeDropdown(): void {
 function handleTriggerKeydown(event: KeyboardEvent): void {
   if (props.disabled) return
 
-  if (event.key === 'Enter' || event.key === ' ') {
-    event.preventDefault()
-    toggleDropdown()
-    return
-  }
-
-  if (event.key === 'ArrowDown') {
-    event.preventDefault()
-    openDropdown()
-    return
-  }
-
   if (event.key === 'Escape' && isOpen.value) {
     event.preventDefault()
+    closeDropdown()
+    return
+  }
+
+  if (!isOpen.value) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      openDropdown()
+      return
+    }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      openDropdown(event.key === 'ArrowDown' ? 'first' : 'last')
+    }
+    return
+  }
+
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault()
+    moveActiveIndex(event.key === 'ArrowDown' ? 1 : -1)
+    return
+  }
+
+  if (event.key === 'Home' || event.key === 'End') {
+    event.preventDefault()
+    resetActiveIndex(event.key === 'Home' ? 'first' : 'last')
+    return
+  }
+
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault()
+    const option = allOptions.value[activeIndex.value]
+    if (option) selectOption(option)
+    return
+  }
+
+  if (event.key === 'Tab') {
     closeDropdown()
   }
 }
@@ -229,10 +336,12 @@ function updatePosition() {
   }
 }
 
-function selectOption(value: UiSelectValue): void {
-  emit('update:modelValue', value)
-  emit('change', value)
+function selectOption(option: UiSelectOption): void {
+  if (option.disabled) return
+  emit('update:modelValue', option.value)
+  emit('change', option.value)
   closeDropdown()
+  triggerRef.value?.focus()
 }
 
 function handleClickOutside(event: MouseEvent): void {
@@ -264,6 +373,19 @@ onUnmounted(() => {
   window.removeEventListener('scroll', handleScrollOrResize, true)
   window.removeEventListener('resize', handleScrollOrResize)
 })
+
+watch(() => props.disabled, (disabled) => {
+  if (disabled) closeDropdown()
+})
+
+watch([() => props.options, () => props.groups, () => props.modelValue], () => {
+  if (isOpen.value) resetActiveIndex()
+})
+
+watch(activeIndex, (index) => {
+  if (!isOpen.value || index < 0) return
+  void nextTick(() => document.getElementById(optionId(index))?.scrollIntoView?.({ block: 'nearest' }))
+})
 </script>
 
 <style scoped>
@@ -283,33 +405,21 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  width: 100%;
   height: var(--ui-selector-control-min-height);
   padding: var(--ui-selector-control-padding);
   border: 1px solid var(--ui-selector-control-border, var(--color-border-input, ButtonBorder));
   border-radius: var(--ui-selector-control-radius);
   background: var(--ui-selector-control-background, var(--color-surface-base, Canvas));
   color: var(--ui-selector-control-text, var(--color-text-default, CanvasText));
+  appearance: none;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-.ui-combobox--compact {
-  min-width: 70px;
-  flex: 0 0 auto;
-}
-
-.ui-combobox--compact .ui-combobox-trigger {
-  height: 38px;
-  padding: 0 10px;
-}
-
-.ui-combobox--workflow .ui-combobox-trigger {
-  min-height: 42px;
-  border-color: var(--ui-selector-workflow-border);
-  border-radius: 10px;
-}
-
-.ui-combobox-trigger:hover {
+.ui-combobox-trigger:hover:not(:disabled) {
   border-color: var(--ui-selector-control-hover-border);
 }
 
@@ -390,7 +500,8 @@ onUnmounted(() => {
   transition: background 0.15s;
 }
 
-.ui-combobox-option:hover {
+.ui-combobox-option:hover,
+.ui-combobox-option--active {
   background: var(--ui-selector-option-hover-background);
   color: var(--ui-selector-control-text, var(--color-text-default, CanvasText));
 }
@@ -399,6 +510,11 @@ onUnmounted(() => {
   background: var(--ui-selector-option-selected-background);
   color: var(--ui-selector-option-selected-text);
   font-weight: 500;
+}
+
+.ui-combobox-option[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 </style>

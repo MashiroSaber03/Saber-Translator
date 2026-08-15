@@ -1,14 +1,6 @@
-export type InsightTaskStatus =
-  | 'queued'
-  | 'running'
-  | 'pausing'
-  | 'paused'
-  | 'cancelling'
-  | 'interrupted'
-  | 'completed'
-  | 'completed_with_errors'
-  | 'cancelled'
-  | 'failed'
+import type { components } from '@/api/generated/v2'
+
+export type InsightTaskStatus = components['schemas']['JobStatus']
 
 export interface InsightAnalysisSnapshot {
   fullyAnalyzed: boolean

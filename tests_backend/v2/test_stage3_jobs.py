@@ -12,7 +12,7 @@ import uuid
 
 import pytest
 from flask import Flask
-from sqlalchemy import insert, select, update
+from sqlalchemy import event, insert, select, update
 from sqlalchemy.exc import OperationalError as SqlAlchemyOperationalError
 
 from src.backend_v2.content.repository import ContentRepository
@@ -22,6 +22,7 @@ from src.backend_v2.jobs.repository import (
     AttemptFenced,
     InvalidJobTransition,
     JobConflict,
+    JobDataInvalid,
     JobItemSpec,
     JobQueueRepository,
     JobSpec,
@@ -106,6 +107,97 @@ def _create_job(
     return str(result["jobIds"][0])
 
 
+def _stored_progress(status: str) -> str:
+    return json.dumps(
+        {
+            "executionMode": "sequential",
+            "jobStatus": status,
+            "totalItems": 0,
+            "completedItems": 0,
+            "failedItems": 0,
+            "skippedItems": 0,
+            "cancelledItems": 0,
+            "pools": [],
+        },
+        separators=(",", ":"),
+    )
+
+
+def _set_stored_job_status(
+    connection,
+    job_id: str,
+    status: str,
+    **values,
+) -> None:
+    progress = JobQueueRepository._progress_snapshot(
+        connection,
+        job_id,
+        job_status=status,
+    )
+    connection.execute(
+        update(jobs)
+        .where(jobs.c.id == job_id)
+        .values(
+            status=status,
+            latest_progress_json=json.dumps(
+                progress,
+                separators=(",", ":"),
+            ),
+            **values,
+        )
+    )
+
+
+def test_corrupt_queued_job_fails_once_without_blocking_the_queue(
+    job_platform,
+) -> None:
+    engine, repository, _book, _chapter, worker_epoch_id = job_platform
+    invalid_job_id = _create_job(repository)
+    next_job_id = _create_job(repository)
+    with engine.begin() as connection:
+        connection.execute(
+            update(jobs)
+            .where(jobs.c.id == invalid_job_id)
+            .values(config_json="[]")
+        )
+
+    fence = repository.claim_next(worker_epoch_id=worker_epoch_id)
+
+    assert fence is not None
+    assert fence.job_id == next_job_id
+    invalid = repository.get_job(invalid_job_id)
+    assert invalid["status"] == "failed"
+    assert invalid["counts"]["failed"] == 1
+    assert invalid["error"] == {
+        "code": "JOB_DATA_INVALID",
+        "message": "jobs.config_json must contain a JSON object",
+    }
+    failed_events = [
+        event
+        for event in repository.events_after(job_id=invalid_job_id)
+        if event["type"] == "job_failed"
+    ]
+    assert len(failed_events) == 1
+    assert failed_events[0]["payload"]["error"] == invalid["error"]
+
+
+def test_corrupt_job_event_payload_is_rejected(job_platform) -> None:
+    engine, repository, _book, _chapter, _worker_epoch_id = job_platform
+    job_id = _create_job(repository)
+    with engine.begin() as connection:
+        connection.execute(
+            update(job_events)
+            .where(job_events.c.job_id == job_id)
+            .values(payload_json="[]")
+        )
+
+    with pytest.raises(
+        JobDataInvalid,
+        match="job_events.payload_json must contain a JSON object",
+    ):
+        repository.events_after(job_id=job_id)
+
+
 def test_job_detail_does_not_expose_internal_step_asset_checkpoints(
     job_platform,
 ) -> None:
@@ -146,6 +238,48 @@ def test_job_detail_does_not_expose_internal_step_asset_checkpoints(
         ).scalar_one() == asset_id
 
 
+def test_job_detail_loads_all_item_steps_with_a_bounded_query_count(
+    job_platform,
+) -> None:
+    engine, repository, _book, _chapter, _worker_epoch_id = job_platform
+    created = repository.create_batch(
+        kind="export",
+        display_name="detail query count",
+        specs=[
+            JobSpec(
+                kind="export",
+                config={"format": "zip"},
+                items=tuple(
+                    JobItemSpec(page_id=None, step_kinds=("package", "publish"))
+                    for _index in range(25)
+                ),
+            )
+        ],
+    )
+    statements: list[str] = []
+
+    def record_statement(
+        _connection,
+        _cursor,
+        statement,
+        _parameters,
+        _context,
+        _executemany,
+    ) -> None:
+        statements.append(str(statement))
+
+    event.listen(engine, "before_cursor_execute", record_statement)
+    try:
+        detail = repository.get_job(str(created["jobIds"][0]))
+    finally:
+        event.remove(engine, "before_cursor_execute", record_statement)
+
+    assert len(detail["items"]) == 25
+    assert all(len(item["steps"]) == 2 for item in detail["items"])
+    assert statements[0] == "BEGIN"
+    assert len(statements) == 6
+
+
 def test_history_list_limit_counts_batches_not_member_jobs(job_platform) -> None:
     engine, repository, _book, _chapter, _worker_epoch_id = job_platform
     batch_ids: list[str] = []
@@ -165,22 +299,44 @@ def test_history_list_limit_counts_batches_not_member_jobs(job_platform) -> None
         batch_ids.append(str(result["batchId"]))
         now = utcnow()
         with engine.begin() as connection:
-            connection.execute(
-                update(jobs)
-                .where(jobs.c.batch_id == result["batchId"])
-                .values(
-                    status="completed",
+            for job_id in result["jobIds"]:
+                _set_stored_job_status(
+                    connection,
+                    str(job_id),
+                    "completed",
                     queue_rank=None,
                     finished_at=now,
                     updated_at=now,
                 )
-            )
 
     history = repository.list_jobs(scope="history", limit=2)
     returned_batch_ids = {str(row["batchId"]) for row in history["items"]}
 
     assert returned_batch_ids == set(batch_ids[-2:])
     assert len(history["items"]) == 4
+
+
+def test_queue_list_is_not_truncated_by_history_batch_limit(job_platform) -> None:
+    _engine, repository, _book, _chapter, _worker_epoch_id = job_platform
+    result = repository.create_batch(
+        kind="export",
+        display_name="large live queue",
+        specs=[
+            JobSpec(
+                kind="export",
+                config={"index": index},
+                items=(JobItemSpec(page_id=None, step_kinds=("package",)),),
+            )
+            for index in range(205)
+        ],
+    )
+
+    queue = repository.list_jobs(scope="queue", limit=200)
+
+    assert len(queue["items"]) == 205
+    assert [row["jobId"] for row in queue["items"]] == [
+        str(job_id) for job_id in result["jobIds"]
+    ]
 
 
 def test_chapter_write_intent_drains_then_atomically_upgrades_and_releases(
@@ -282,6 +438,74 @@ def test_page_completed_event_identifies_the_published_page(job_platform) -> Non
     completed = [event for event in events if event["type"] == "page_completed"]
     assert len(completed) == 1
     assert completed[0]["payload"]["pageId"] == page_id
+
+
+def test_step_publication_persists_mutated_checkpoint_and_can_skip(
+    job_platform,
+) -> None:
+    engine, repository, _book, _chapter, worker_epoch_id = job_platform
+    published_job_id = _create_job(
+        repository,
+        kind="continuation",
+        steps=("continuation_generate_page",),
+    )
+    fence = repository.claim_next(worker_epoch_id=worker_epoch_id)
+    assert fence is not None
+    step = repository.next_step(fence)
+    assert step is not None
+    checkpoint: dict[str, object] = {}
+
+    def publish(_connection) -> None:
+        checkpoint["publishedRevision"] = 7
+
+    repository.complete_step(
+        fence,
+        step_id=str(step["stepId"]),
+        checkpoint=checkpoint,
+        publisher=publish,
+    )
+    assert repository.finish_if_complete(fence) == "completed"
+    with engine.connect() as connection:
+        stored_checkpoint = connection.execute(
+            select(job_steps.c.checkpoint_json)
+            .join(job_items, job_items.c.id == job_steps.c.job_item_id)
+            .where(job_items.c.job_id == published_job_id)
+        ).scalar_one()
+    assert json.loads(stored_checkpoint) == {"publishedRevision": 7}
+
+    skipped_job_id = _create_job(
+        repository,
+        kind="continuation",
+        steps=("continuation_generate_page",),
+    )
+    fence = repository.claim_next(worker_epoch_id=worker_epoch_id)
+    assert fence is not None
+    step = repository.next_step(fence)
+    assert step is not None
+    skipped_checkpoint: dict[str, object] = {}
+
+    def decline_publication(_connection) -> bool:
+        skipped_checkpoint["reason"] = "target_revision_changed"
+        return False
+
+    repository.complete_step(
+        fence,
+        step_id=str(step["stepId"]),
+        checkpoint=skipped_checkpoint,
+        publisher=decline_publication,
+    )
+    assert repository.finish_if_complete(fence) == "completed"
+    with engine.connect() as connection:
+        item = connection.execute(
+            select(job_items.c.status, job_items.c.result_json).where(
+                job_items.c.job_id == skipped_job_id
+            )
+        ).mappings().one()
+    assert item["status"] == "skipped"
+    assert json.loads(item["result_json"]) == {
+        "reason": "target_revision_changed",
+        "skipped": True,
+    }
 
 
 def test_write_intent_waits_for_preexisting_operation(job_platform) -> None:
@@ -391,6 +615,54 @@ def test_pause_resume_cancel_and_attempt_fencing(job_platform) -> None:
         ).scalar_one_or_none() is None
 
 
+def test_direct_cancel_and_drained_cancel_close_the_entire_job_graph(
+    job_platform,
+) -> None:
+    engine, repository, _book, _chapter, worker_epoch_id = job_platform
+    queued_id = _create_job(repository, steps=("package", "publish"))
+    assert repository.request_cancel(queued_id)["status"] == "cancelled"
+
+    running_id = _create_job(repository, steps=("package", "publish"))
+    fence = repository.claim_next(worker_epoch_id=worker_epoch_id)
+    assert fence is not None and fence.job_id == running_id
+    step = repository.next_step(fence)
+    assert step is not None
+    repository.complete_step(
+        fence,
+        step_id=str(step["stepId"]),
+        checkpoint={"published": True},
+    )
+    assert repository.request_cancel(running_id)["status"] == "cancelling"
+    repository.acknowledge_drain(
+        fence,
+        pool_id="main",
+        worker_slot=0,
+        last_step_id=str(step["stepId"]),
+    )
+    assert repository.finalize_drain(
+        fence,
+        expected_slots={("main", 0)},
+    ) == "cancelled"
+
+    with engine.connect() as connection:
+        for job_id in (queued_id, running_id):
+            assert set(
+                connection.execute(
+                    select(job_items.c.status).where(job_items.c.job_id == job_id)
+                ).scalars()
+            ) == {"cancelled"}
+            assert set(
+                connection.execute(
+                    select(job_steps.c.status)
+                    .join(job_items, job_items.c.id == job_steps.c.job_item_id)
+                    .where(job_items.c.job_id == job_id)
+                ).scalars()
+            ) <= {"completed", "cancelled"}
+            detail = repository.get_job(job_id)
+            assert detail["counts"]["pending"] == 0
+            assert detail["counts"]["running"] == 0
+
+
 def test_bad_attempt_token_cannot_publish_checkpoint(job_platform) -> None:
     _engine, repository, _book, _chapter, worker_epoch_id = job_platform
     _create_job(repository)
@@ -469,6 +741,40 @@ def test_worker_loop_finishes_durable_job_without_browser(job_platform) -> None:
             .where(job_items.c.job_id == job_id)
             .order_by(job_steps.c.ordinal)
         ).scalars().all() == ["completed", "completed"]
+
+
+def test_worker_loop_resolves_unbounded_dynamic_step_kinds(job_platform) -> None:
+    _engine, repository, _book, _chapter, worker_epoch_id = job_platform
+    step_kind = "insight_build_layer_8"
+    job_id = _create_job(repository, steps=(step_kind,))
+    stop = threading.Event()
+    resolved: list[str] = []
+
+    def resolver(kind: str):
+        resolved.append(kind)
+        if kind == step_kind:
+            return lambda _fence, step: {"done": step["stepKind"]}
+        return None
+
+    loop = JobWorkerLoop(
+        repository,
+        worker_epoch_id=worker_epoch_id,
+        handlers={},
+        handler_resolver=resolver,
+        idle_poll_seconds=0.01,
+    )
+    thread = threading.Thread(target=loop.run, args=(stop,), daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline:
+        if repository.get_job(job_id)["status"] == "completed":
+            break
+        time.sleep(0.01)
+    stop.set()
+    thread.join(timeout=2)
+
+    assert repository.get_job(job_id)["status"] == "completed"
+    assert resolved == [step_kind]
 
 
 def test_worker_loop_retries_sqlite_lock_during_queue_claim() -> None:
@@ -605,6 +911,16 @@ def test_job_failures_never_expose_frozen_credentials(job_platform) -> None:
     assert fence is not None
     step = repository.next_step(fence)
     assert step is not None
+    repository.checkpoint_step(
+        fence,
+        step_id=str(step["stepId"]),
+        checkpoint={"providerResponse": f"accepted {canary}"},
+    )
+    repository.append_worker_event(
+        fence,
+        event_type="web_import_agent_log",
+        payload={"message": f"provider accepted {canary}"},
+    )
     repository.fail_step(
         fence,
         step_id=str(step["stepId"]),
@@ -622,6 +938,44 @@ def test_job_failures_never_expose_frozen_credentials(job_platform) -> None:
     )
     assert canary not in exposed
     assert "[REDACTED]" in exposed
+
+
+def test_job_level_failure_closes_active_items_and_steps(job_platform) -> None:
+    engine, repository, _book, _chapter, worker_epoch_id = job_platform
+    job_id = _create_job(repository, steps=("package", "publish"))
+    fence = repository.claim_next(worker_epoch_id=worker_epoch_id)
+    assert fence is not None
+    assert repository.next_step(fence) is not None
+
+    repository.fail_job(fence, code="WORKER_FAILED", message="worker stopped")
+
+    detail = repository.get_job(job_id)
+    assert detail["status"] == "failed"
+    assert detail["counts"]["failed"] == 1
+    assert detail["counts"]["pending"] == 0
+    assert detail["counts"]["running"] == 0
+    with engine.connect() as connection:
+        assert connection.execute(
+            select(job_items.c.status).where(job_items.c.job_id == job_id)
+        ).scalar_one() == "failed"
+        assert connection.execute(
+            select(job_steps.c.status)
+            .join(job_items, job_items.c.id == job_steps.c.job_item_id)
+            .where(job_items.c.job_id == job_id)
+            .order_by(job_steps.c.ordinal)
+        ).scalars().all() == ["failed", "skipped"]
+
+
+def test_empty_allowed_step_kind_set_never_claims_an_unmanaged_step(
+    job_platform,
+) -> None:
+    _engine, repository, _book, _chapter, worker_epoch_id = job_platform
+    job_id = _create_job(repository, steps=("package",))
+    fence = repository.claim_next(worker_epoch_id=worker_epoch_id)
+    assert fence is not None and fence.job_id == job_id
+
+    assert repository.next_step(fence, allowed_kinds=()) is None
+    assert repository.get_job(job_id)["items"][0]["steps"][0]["status"] == "pending"
 
 
 def test_shared_event_broadcaster_replays_and_fans_out(job_platform) -> None:
@@ -693,6 +1047,41 @@ def test_job_snapshot_route_reads_only_requested_current_projections(
         broadcaster.close()
 
 
+def test_job_routes_reject_coerced_numbers_and_unknown_filters(
+    job_platform,
+) -> None:
+    engine, repository, _book, _chapter, _worker_epoch_id = job_platform
+    job_id = _create_job(repository)
+    broadcaster = JobEventBroadcaster(
+        repository,
+        epoch_repository=ProcessEpochRepository(engine),
+    )
+    app = Flask(__name__)
+    app.register_blueprint(
+        create_jobs_blueprint(engine=engine, broadcaster=broadcaster)
+    )
+    client = app.test_client()
+    try:
+        assert client.get("/api/v2/jobs?limit=1.5").status_code == 422
+        assert client.get("/api/v2/jobs?status=typo").status_code == 422
+        assert client.get("/api/v2/jobs?type=typo").status_code == 422
+        assert client.get(
+            f"/api/v2/jobs/{job_id}/events?after=1.5"
+        ).status_code == 422
+        assert client.post(
+            "/api/v2/jobs/reorder",
+            json={"orderedJobIds": [job_id], "baseRevision": True},
+            headers={"Idempotency-Key": "strict-reorder"},
+        ).status_code == 422
+        assert client.post(
+            f"/api/v2/jobs/{job_id}/retry",
+            json={"strategy": {"value": "original"}},
+            headers={"Idempotency-Key": "strict-retry"},
+        ).status_code == 422
+    finally:
+        broadcaster.close()
+
+
 def test_shared_event_poller_recovers_an_expired_worker_without_a_browser(
     job_platform,
 ) -> None:
@@ -719,11 +1108,18 @@ def test_shared_event_poller_recovers_an_expired_worker_without_a_browser(
     broadcaster.start()
     try:
         deadline = time.monotonic() + 2
-        while (
-            epochs.is_active_epoch(role="worker", epoch_id=worker_epoch_id)
-            and time.monotonic() < deadline
-        ):
+        status = "active"
+        while status == "active" and time.monotonic() < deadline:
+            with engine.connect() as connection:
+                status = connection.execute(
+                    select(process_epochs.c.status).where(
+                        process_epochs.c.id == worker_epoch_id
+                    )
+                ).scalar_one()
+            if status != "active":
+                break
             time.sleep(0.01)
+        assert status == "lost"
         assert not epochs.is_active_epoch(
             role="worker",
             epoch_id=worker_epoch_id,
@@ -859,6 +1255,11 @@ def test_failed_item_retry_creates_related_replacement_from_durable_facts(
         connection.execute(
             update(job_items)
             .where(job_items.c.id == source_items[0])
+            .values(status="completed", result_json="{}")
+        )
+        connection.execute(
+            update(job_steps)
+            .where(job_steps.c.job_item_id == source_items[0])
             .values(status="completed")
         )
         connection.execute(
@@ -871,10 +1272,11 @@ def test_failed_item_retry_creates_related_replacement_from_durable_facts(
             .where(job_steps.c.job_item_id == source_items[1])
             .values(status="failed", error_json='{"message":"fixture"}')
         )
-        connection.execute(
-            update(jobs)
-            .where(jobs.c.id == source_id)
-            .values(status="completed_with_errors", queue_rank=None)
+        _set_stored_job_status(
+            connection,
+            source_id,
+            "completed_with_errors",
+            queue_rank=None,
         )
 
     retried = JobRetryService(engine).retry(
@@ -890,6 +1292,48 @@ def test_failed_item_retry_creates_related_replacement_from_durable_facts(
     assert detail["retryOfJobId"] == source_id
     assert detail["retryMode"] == "original"
     assert detail["counts"]["total"] == 1
+
+
+def test_retry_rejects_old_or_malformed_job_snapshots(job_platform) -> None:
+    engine, repository, _book, _chapter, _worker_epoch_id = job_platform
+    source_id = _create_job(repository)
+    with engine.begin() as connection:
+        _set_stored_job_status(
+            connection,
+            source_id,
+            "failed",
+            queue_rank=None,
+            config_schema_version=2,
+        )
+
+    service = JobRetryService(engine)
+    with pytest.raises(
+        JobConflict,
+        match="source job data is invalid: jobs.config_schema_version is invalid",
+    ):
+        service.retry(
+            job_id=source_id,
+            failed_only=False,
+            strategy="original",
+            idempotency_key="old-schema",
+        )
+
+    with engine.begin() as connection:
+        connection.execute(
+            update(jobs)
+            .where(jobs.c.id == source_id)
+            .values(config_schema_version=1, config_json="[]")
+        )
+    with pytest.raises(
+        JobConflict,
+        match="jobs.config_json must contain a JSON object",
+    ):
+        service.retry(
+            job_id=source_id,
+            failed_only=False,
+            strategy="original",
+            idempotency_key="malformed-schema",
+        )
 
 
 def test_batch_prioritize_cancel_and_continue_are_database_owned(
@@ -934,15 +1378,15 @@ def test_batch_prioritize_cancel_and_continue_are_database_owned(
     ] == [*target_ids, str(first["jobIds"][0])]
 
     with engine.begin() as connection:
-        connection.execute(
-            update(jobs)
-            .where(jobs.c.id == target_ids[0])
-            .values(status="paused")
+        _set_stored_job_status(
+            connection,
+            target_ids[0],
+            "paused",
         )
-        connection.execute(
-            update(jobs)
-            .where(jobs.c.id == target_ids[1])
-            .values(status="interrupted")
+        _set_stored_job_status(
+            connection,
+            target_ids[1],
+            "interrupted",
         )
     continued = repository.continue_batch(str(target["batchId"]))
     assert continued["continued"] == 2
@@ -968,10 +1412,11 @@ def test_interrupted_job_is_listed_only_in_history(job_platform) -> None:
     engine, repository, _book, _chapter, _worker_epoch_id = job_platform
     job_id = _create_job(repository)
     with engine.begin() as connection:
-        connection.execute(
-            update(jobs)
-            .where(jobs.c.id == job_id)
-            .values(status="interrupted", queue_rank=None)
+        _set_stored_job_status(
+            connection,
+            job_id,
+            "interrupted",
+            queue_rank=None,
         )
 
     assert all(
@@ -1000,10 +1445,11 @@ def test_clear_history_deletes_retry_children_before_sources_and_protects_live_l
     engine, repository, _book, _chapter, _worker_epoch_id = job_platform
     source_id = _create_job(repository)
     with engine.begin() as connection:
-        connection.execute(
-            update(jobs)
-            .where(jobs.c.id == source_id)
-            .values(status="failed", queue_rank=None)
+        _set_stored_job_status(
+            connection,
+            source_id,
+            "failed",
+            queue_rank=None,
         )
     child = repository.create_batch(
         kind="export",
@@ -1023,10 +1469,11 @@ def test_clear_history_deletes_retry_children_before_sources_and_protects_live_l
     assert repository.get_job(source_id)["status"] == "failed"
 
     with engine.begin() as connection:
-        connection.execute(
-            update(jobs)
-            .where(jobs.c.id == child_id)
-            .values(status="failed", queue_rank=None)
+        _set_stored_job_status(
+            connection,
+            child_id,
+            "failed",
+            queue_rank=None,
         )
     assert repository.clear_history() == 2
     with pytest.raises(LookupError):
@@ -1038,10 +1485,11 @@ def test_clear_history_does_not_reuse_event_cursor(job_platform) -> None:
     job_id = _create_job(repository)
     first_cursor = repository.latest_event_id()
     with engine.begin() as connection:
-        connection.execute(
-            update(jobs)
-            .where(jobs.c.id == job_id)
-            .values(status="completed", queue_rank=None)
+        _set_stored_job_status(
+            connection,
+            job_id,
+            "completed",
+            queue_rank=None,
         )
 
     assert repository.clear_history() == 1
@@ -1059,6 +1507,7 @@ def test_history_retains_latest_200_batches_and_cascades_old_members(
     with engine.begin() as connection:
         interrupted_batch = str(uuid.uuid4())
         interrupted_job = str(uuid.uuid4())
+        interrupted_sibling = str(uuid.uuid4())
         connection.execute(
             insert(job_batches).values(
                 id=interrupted_batch,
@@ -1076,6 +1525,19 @@ def test_history_retains_latest_200_batches_and_cascades_old_members(
                 kind="export",
                 status="interrupted",
                 config_json="{}",
+                latest_progress_json=_stored_progress("interrupted"),
+                created_at=base,
+                updated_at=base,
+            )
+        )
+        connection.execute(
+            insert(jobs).values(
+                id=interrupted_sibling,
+                batch_id=interrupted_batch,
+                kind="export",
+                status="completed",
+                config_json="{}",
+                latest_progress_json=_stored_progress("completed"),
                 created_at=base,
                 updated_at=base,
             )
@@ -1103,6 +1565,7 @@ def test_history_retains_latest_200_batches_and_cascades_old_members(
                     kind="export",
                     status="completed",
                     config_json="{}",
+                    latest_progress_json=_stored_progress("completed"),
                     created_at=created_at,
                     updated_at=created_at,
                 )
@@ -1142,12 +1605,17 @@ def test_history_retains_latest_200_batches_and_cascades_old_members(
         )
     assert interrupted_batch in remaining_batches
     assert interrupted_job in remaining_jobs
+    assert interrupted_sibling in remaining_jobs
     assert set(terminal_batches[:5]).isdisjoint(remaining_batches)
     assert set(terminal_jobs[:5]).isdisjoint(remaining_jobs)
     assert len(set(terminal_batches) & remaining_batches) == 200
     assert len(set(terminal_jobs) & remaining_jobs) == 200
     assert event_job_ids == set(terminal_jobs[5:])
     assert snapshot_job_ids == set(terminal_jobs[5:])
+    visible_history = repository.list_jobs(scope="history", limit=200)["items"]
+    visible_job_ids = {str(item["jobId"]) for item in visible_history}
+    assert {interrupted_job, interrupted_sibling} <= visible_job_ids
+    assert len({str(item["batchId"]) for item in visible_history}) == 201
 
 
 def test_history_clear_preserves_unexpired_download_artifacts(
@@ -1160,10 +1628,11 @@ def test_history_clear_preserves_unexpired_download_artifacts(
         hours=1
     )
     with engine.begin() as connection:
-        connection.execute(
-            update(jobs)
-            .where(jobs.c.id == job_id)
-            .values(status="completed", queue_rank=None)
+        _set_stored_job_status(
+            connection,
+            job_id,
+            "completed",
+            queue_rank=None,
         )
         connection.execute(
             insert(assets).values(
@@ -1566,6 +2035,124 @@ def test_parallel_worker_defers_persistent_sqlite_busy_during_stage_admission(
         thread.join(timeout=2)
 
 
+def test_parallel_worker_does_not_fail_a_step_when_lock_telemetry_is_busy(
+    job_platform,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _engine, repository, _book, chapter, worker_epoch_id = job_platform
+    created = repository.create_batch(
+        kind="translation",
+        display_name="non-authoritative telemetry",
+        specs=[
+            JobSpec(
+                kind="translation",
+                chapter_id=str(chapter["id"]),
+                config={
+                    "executionMode": "parallel",
+                    "deepLearningConcurrency": 1,
+                },
+                items=(
+                    JobItemSpec(page_id=None, step_kinds=("detect",)),
+                    JobItemSpec(page_id=None, step_kinds=("ocr",)),
+                ),
+            )
+        ],
+    )
+    job_id = str(created["jobIds"][0])
+    telemetry_calls = 0
+
+    def always_busy(_fence, *, lock_waiting):
+        nonlocal telemetry_calls
+        assert lock_waiting
+        telemetry_calls += 1
+        raise SqlAlchemyOperationalError(
+            "UPDATE jobs",
+            (),
+            sqlite3.OperationalError("database is locked"),
+        )
+
+    monkeypatch.setattr(repository, "write_pipeline_progress", always_busy)
+
+    def handler(_fence, step):
+        time.sleep(0.05)
+        return {"done": str(step["stepKind"])}
+
+    stop = threading.Event()
+    loop = JobWorkerLoop(
+        repository,
+        worker_epoch_id=worker_epoch_id,
+        handlers={"detect": handler, "ocr": handler},
+        idle_poll_seconds=0.01,
+    )
+    thread = threading.Thread(target=loop.run, args=(stop,), daemon=True)
+    thread.start()
+    try:
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if repository.get_job(job_id)["status"] == "completed":
+                break
+            time.sleep(0.01)
+        assert repository.get_job(job_id)["status"] == "completed"
+        assert telemetry_calls >= 4
+    finally:
+        stop.set()
+        thread.join(timeout=2)
+
+
+def test_worker_rejects_coerced_parallel_and_batch_settings(job_platform) -> None:
+    _engine, repository, _book, chapter, worker_epoch_id = job_platform
+    created = repository.create_batch(
+        kind="translation",
+        display_name="strict worker config",
+        specs=[
+            JobSpec(
+                kind="translation",
+                chapter_id=str(chapter["id"]),
+                config={
+                    "executionMode": "parallel",
+                    "deepLearningConcurrency": 1,
+                },
+                items=(JobItemSpec(page_id=None, step_kinds=("detect",)),),
+            )
+        ],
+    )
+    job_id = str(created["jobIds"][0])
+    stop = threading.Event()
+    loop = JobWorkerLoop(
+        repository,
+        worker_epoch_id=worker_epoch_id,
+        handlers={"detect": lambda _fence, _step: {"done": True}},
+        idle_poll_seconds=0.01,
+    )
+    original_attempt_config = repository.attempt_config
+
+    def invalid_attempt_config(fence):
+        config = dict(original_attempt_config(fence))
+        config["deepLearningConcurrency"] = True
+        return config
+
+    repository.attempt_config = invalid_attempt_config  # type: ignore[method-assign]
+    thread = threading.Thread(target=loop.run, args=(stop,), daemon=True)
+    thread.start()
+    try:
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            if repository.get_job(job_id)["status"] == "failed":
+                break
+            time.sleep(0.01)
+        assert repository.get_job(job_id)["status"] == "failed"
+    finally:
+        stop.set()
+        thread.join(timeout=2)
+
+    with pytest.raises(ValueError, match="batch size must be an integer"):
+        JobWorkerLoop._batch_size(
+            "hq_translate",
+            {"translation": {"batchSize": "2"}},
+            step_ordinal=1,
+        )
+
+
 def test_parallel_worker_enforces_frozen_deep_learning_concurrency(
     job_platform,
 ) -> None:
@@ -1592,10 +2179,12 @@ def test_parallel_worker_enforces_frozen_deep_learning_concurrency(
     state_lock = threading.Lock()
     active_count = 0
     maximum_active = 0
+    model_threads: set[int] = set()
 
     def handler(_fence, step):
         nonlocal active_count, maximum_active
         with state_lock:
+            model_threads.add(threading.get_ident())
             active_count += 1
             maximum_active = max(maximum_active, active_count)
         time.sleep(0.04)
@@ -1621,6 +2210,51 @@ def test_parallel_worker_enforces_frozen_deep_learning_concurrency(
     thread.join(timeout=2)
     assert repository.get_job(job_id)["status"] == "completed"
     assert maximum_active == 1
+    assert len(model_threads) == 1
+
+
+def test_parallel_worker_accepts_positive_concurrency_above_four(
+    job_platform,
+) -> None:
+    _engine, repository, _book, chapter, worker_epoch_id = job_platform
+    created = repository.create_batch(
+        kind="translation",
+        display_name="device-sized deep learning pipeline",
+        specs=[
+            JobSpec(
+                kind="translation",
+                chapter_id=str(chapter["id"]),
+                config={
+                    "executionMode": "parallel",
+                    "deepLearningConcurrency": 8,
+                },
+                items=tuple(
+                    JobItemSpec(page_id=None, step_kinds=("detect",))
+                    for _index in range(8)
+                ),
+            )
+        ],
+    )
+    job_id = str(created["jobIds"][0])
+    stop = threading.Event()
+    loop = JobWorkerLoop(
+        repository,
+        worker_epoch_id=worker_epoch_id,
+        handlers={"detect": lambda _fence, _step: {"done": True}},
+        idle_poll_seconds=0.01,
+    )
+    thread = threading.Thread(target=loop.run, args=(stop,), daemon=True)
+    thread.start()
+    try:
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if repository.get_job(job_id)["status"] == "completed":
+                break
+            time.sleep(0.01)
+        assert repository.get_job(job_id)["status"] == "completed"
+    finally:
+        stop.set()
+        thread.join(timeout=2)
 
 
 def test_parallel_progress_is_backend_owned_and_recovers_pool_lock_waiting(

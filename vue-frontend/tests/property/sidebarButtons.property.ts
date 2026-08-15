@@ -40,7 +40,7 @@ interface GeneratedImage {
 interface SidebarScenario {
   images: GeneratedImage[]
   currentImageIndex?: number
-  isBatchTranslationInProgress?: boolean
+  isTranslationInProgress?: boolean
 }
 
 type SidebarApi = ReturnType<typeof useSettingsSidebar>
@@ -60,7 +60,13 @@ const generatedImageArb = fc.record({ failed: fc.boolean() })
 function createSidebarHarness(scenario: SidebarScenario): SidebarHarness {
   setActivePinia(createPinia())
   getFontListMock.mockResolvedValue([])
-  uploadFontMock.mockResolvedValue({ id: 'font-uploaded', assetUrl: '/api/v2/assets/font' })
+  uploadFontMock.mockResolvedValue({
+    id: 'font-uploaded',
+    kind: 'uploaded',
+    displayName: 'UploadedFont',
+    builtinKey: null,
+    assetUrl: '/api/v2/assets/font',
+  })
   getPreferencesMock.mockResolvedValue({
     success: true,
     preferences: {
@@ -78,7 +84,6 @@ function createSidebarHarness(scenario: SidebarScenario): SidebarHarness {
       sourceAssetUrl: `/api/v2/assets/source-${index + 1}`,
       overrides: {
         translationStatus: status,
-        translationFailed: image.failed,
       },
     }
   }))
@@ -86,7 +91,7 @@ function createSidebarHarness(scenario: SidebarScenario): SidebarHarness {
   if (imageStore.currentImage) {
     imageStore.updateCurrentImage({ bubbleStates: [] })
   }
-  imageStore.setBatchTranslationInProgress(scenario.isBatchTranslationInProgress ?? false)
+  imageStore.setTranslationInProgress(scenario.isTranslationInProgress ?? false)
 
   let sidebar: SidebarApi | null = null
   const emitted: SidebarHarness['emitted'] = []
@@ -132,8 +137,8 @@ describe('settings sidebar workflow properties', () => {
 
   it('disables every workflow when no image is loaded', () => {
     fc.assert(
-      fc.property(fc.constantFrom(...workflowModes), fc.boolean(), (mode, isBatchTranslationInProgress) => {
-        withSidebarHarness({ images: [], isBatchTranslationInProgress }, ({ sidebar, emitted }) => {
+      fc.property(fc.constantFrom(...workflowModes), fc.boolean(), (mode, isTranslationInProgress) => {
+        withSidebarHarness({ images: [], isTranslationInProgress }, ({ sidebar, emitted }) => {
           setWorkflow(sidebar, mode)
 
           expect(sidebar.canRunWorkflow.value).toBe(false)
@@ -145,7 +150,7 @@ describe('settings sidebar workflow properties', () => {
     )
   })
 
-  it('enables image-backed workflows according to the batch lock', () => {
+  it('enables image-backed workflows according to the translation lock', () => {
     const workflowGroups = {
       translation: ['translate-current', 'translate-batch', 'hq-batch', 'proofread-batch'] as const,
       singleImageActions: ['remove-current', 'delete-current'] as const,
@@ -156,21 +161,19 @@ describe('settings sidebar workflow properties', () => {
       fc.property(
         fc.array(generatedImageArb, { minLength: 1, maxLength: 8 }),
         fc.boolean(),
-        (images, isBatchTranslationInProgress) => {
-          withSidebarHarness({ images, isBatchTranslationInProgress }, ({ sidebar }) => {
+        (images, isTranslationInProgress) => {
+          withSidebarHarness({ images, isTranslationInProgress }, ({ sidebar }) => {
             for (const mode of workflowGroups.translation) {
               setWorkflow(sidebar, mode)
-              expect(sidebar.canRunWorkflow.value).toBe(!isBatchTranslationInProgress)
+              expect(sidebar.canRunWorkflow.value).toBe(!isTranslationInProgress)
             }
 
-            for (const mode of workflowGroups.singleImageActions) {
+            for (const mode of [
+              ...workflowGroups.singleImageActions,
+              ...workflowGroups.collectionActions,
+            ]) {
               setWorkflow(sidebar, mode)
-              expect(sidebar.canRunWorkflow.value).toBe(true)
-            }
-
-            for (const mode of workflowGroups.collectionActions) {
-              setWorkflow(sidebar, mode)
-              expect(sidebar.canRunWorkflow.value).toBe(true)
+              expect(sidebar.canRunWorkflow.value).toBe(!isTranslationInProgress)
             }
           })
         },
@@ -214,17 +217,17 @@ describe('settings sidebar workflow properties', () => {
     )
   })
 
-  it('enables failed retry only when a failed image exists and no batch is running', () => {
+  it('enables failed retry only when a failed image exists and no translation is running', () => {
     fc.assert(
       fc.property(
         fc.array(generatedImageArb, { minLength: 1, maxLength: 8 }),
         fc.boolean(),
-        (images, isBatchTranslationInProgress) => {
-          withSidebarHarness({ images, isBatchTranslationInProgress }, ({ sidebar }) => {
+        (images, isTranslationInProgress) => {
+          withSidebarHarness({ images, isTranslationInProgress }, ({ sidebar }) => {
             setWorkflow(sidebar, 'retry-failed')
 
             expect(sidebar.canRunWorkflow.value).toBe(
-              hasFailure(images) && !isBatchTranslationInProgress,
+              hasFailure(images) && !isTranslationInProgress,
             )
           })
         },

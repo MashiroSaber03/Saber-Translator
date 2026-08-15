@@ -86,6 +86,7 @@ describe('settings provider select contracts', () => {
     const store = useSettingsStore()
     store.setProofreadingEnabled(true)
     store.addProofreadingRound({
+      id: '11111111-1111-4111-8111-111111111111',
       name: '第一轮校对',
       provider: 'siliconflow',
       apiKey: '',
@@ -150,6 +151,29 @@ describe('settings provider select contracts', () => {
     expect(fieldByLabel('掩膜膨胀大小')?.props('hint')).toBe('掩膜膨胀像素数')
   })
 
+  it('keeps detection controls bound to the current store draft after it is replaced', async () => {
+    const store = useSettingsStore()
+    const wrapper = mount(DetectionSettings, globalMountOptions(pinia))
+    const replacement = JSON.parse(JSON.stringify(store.settings)) as typeof store.settings
+    replacement.textDetector = 'yolo'
+    replacement.boxExpand.ratio = 17
+    store.settings = replacement
+    await wrapper.vm.$nextTick()
+
+    const detector = wrapper.findAllComponents(UiSelect).find(select => (
+      (select.props('options') || []).some((option: { value: string | number }) => (
+        option.value === 'ctd'
+      ))
+    ))
+    const numbers = wrapper.findAllComponents({ name: 'UiNumberField' })
+
+    expect(detector?.props('modelValue')).toBe('yolo')
+    expect(numbers.some(field => (
+      field.props('inputId') === 'settingsBoxExpandRatio'
+        && field.props('modelValue') === 17
+    ))).toBe(true)
+  })
+
   it('routes HQ translation labels and hints through typed UiField props', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/components/settings/HqTranslationSettings.vue'), 'utf8')
 
@@ -175,10 +199,29 @@ describe('settings provider select contracts', () => {
     ]))
   })
 
+  it('keeps HQ translation controls bound to the current store draft after it is replaced', async () => {
+    const store = useSettingsStore()
+    const wrapper = mount(HqTranslationSettings, globalMountOptions(pinia))
+    const replacement = JSON.parse(JSON.stringify(store.settings)) as typeof store.settings
+    replacement.hqTranslation.modelName = 'replacement-model'
+    replacement.hqTranslation.batchSize = 7
+    replacement.hqTranslation.openaiOptions.execution.rpmLimit = 321
+    store.settings = replacement
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.getComponent(UiModelPicker).props('modelValue')).toBe('replacement-model')
+    const numbers = wrapper.findAllComponents({ name: 'UiNumberField' })
+    expect(numbers.find(field => field.props('inputId') === 'settingsHqBatchSize')?.props('modelValue'))
+      .toBe(7)
+    expect(numbers.find(field => field.props('inputId') === 'settingsHqRpmLimit')?.props('modelValue'))
+      .toBe(321)
+  })
+
   it('routes proofreading round labels and hints through typed UiField props', () => {
     const store = useSettingsStore()
     store.setProofreadingEnabled(true)
     store.addProofreadingRound({
+      id: '11111111-1111-4111-8111-111111111111',
       name: '第一轮校对',
       provider: 'siliconflow',
       apiKey: '',
@@ -207,18 +250,21 @@ describe('settings provider select contracts', () => {
     const fields = wrapper.findAllComponents(UiField)
     const fieldByControlId = (controlId: string) =>
       fields.find(field => field.props('controlId') === controlId)
+    const roundControlId = (field: string) =>
+      `proofreadingRound-11111111-1111-4111-8111-111111111111-${field}`
 
-    expect(fieldByControlId('settingsProofreadingMaxRetries')?.props('label')).toBe('全局重试次数')
-    expect(fieldByControlId('proofreadingRound0Name')?.props('label')).toBe('轮次名称')
-    expect(fieldByControlId('proofreadingRound0Provider')?.props('label')).toBe('服务商')
-    expect(fieldByControlId('proofreadingRound0ApiKey')?.props('label')).toBe('API Key')
-    expect(fieldByControlId('proofreadingRound0BaseUrl')?.props('label')).toBe('Base URL')
-    expect(fieldByControlId('proofreadingRound0ModelName')?.props('label')).toBe('模型名称')
-    expect(fieldByControlId('proofreadingRound0BatchSize')?.props('label')).toBe('批次大小')
-    expect(fieldByControlId('proofreadingRound0RpmLimit')?.props('label')).toBe('RPM限制')
-    expect(fieldByControlId('proofreadingRound0BusinessRetries')?.props('label')).toBe('业务重试')
-    expect(fieldByControlId('proofreadingRound0TransportRetries')?.props('label')).toBe('传输重试')
-    expect(fieldByControlId('proofreadingRound0Prompt')?.props('label')).toBe('校对提示词')
+    expect(fieldByControlId('settingsProofreadingMaxRetries')).toBeUndefined()
+    expect(source).not.toContain('全局重试次数')
+    expect(fieldByControlId(roundControlId('Name'))?.props('label')).toBe('轮次名称')
+    expect(fieldByControlId(roundControlId('Provider'))?.props('label')).toBe('服务商')
+    expect(fieldByControlId(roundControlId('ApiKey'))?.props('label')).toBe('API Key')
+    expect(fieldByControlId(roundControlId('BaseUrl'))?.props('label')).toBe('Base URL')
+    expect(fieldByControlId(roundControlId('ModelName'))?.props('label')).toBe('模型名称')
+    expect(fieldByControlId(roundControlId('BatchSize'))?.props('label')).toBe('批次大小')
+    expect(fieldByControlId(roundControlId('RpmLimit'))?.props('label')).toBe('RPM限制')
+    expect(fieldByControlId(roundControlId('BusinessRetries'))?.props('label')).toBe('业务重试')
+    expect(fieldByControlId(roundControlId('TransportRetries'))?.props('label')).toBe('传输重试')
+    expect(fieldByControlId(roundControlId('Prompt'))?.props('label')).toBe('校对提示词')
 
     expect(fields.map(field => field.props('hint')).filter(Boolean)).toEqual(expect.arrayContaining([
       '翻译完成后自动进行AI校对',
@@ -266,6 +312,26 @@ describe('settings provider select contracts', () => {
     expect(fieldByControlId('settingsRpmAiVisionOcr')?.props('hint')).toBe('0 表示无限制')
     expect(fieldByControlId('settingsAiVisionUseStream')?.props('hint')).toBe('使用流式请求并在终端输出流式日志')
     expect(fieldByControlId('settingsMinImageSize')?.props('hint')).toContain('VLM模型通常要求图片尺寸')
+  })
+
+  it('keeps OCR controls bound to the current store draft after it is replaced', async () => {
+    const store = useSettingsStore()
+    store.setOcrEngine('ai_vision')
+    const wrapper = mount(OcrSettings, globalMountOptions(pinia))
+    const replacement = JSON.parse(JSON.stringify(store.settings)) as typeof store.settings
+    replacement.baiduOcr.apiKey = 'replacement-baidu-key'
+    replacement.aiVisionOcr.modelName = 'replacement-vision-model'
+    replacement.aiVisionOcr.openaiOptions.execution.rpmLimit = 456
+    store.settings = replacement
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.getComponent(UiModelPicker).props('modelValue')).toBe('replacement-vision-model')
+    const passwordFields = wrapper.findAllComponents({ name: 'UiPasswordField' })
+    expect(passwordFields.find(field => field.props('inputId') === 'settingsBaiduApiKey')?.props('modelValue'))
+      .toBe('replacement-baidu-key')
+    const numbers = wrapper.findAllComponents({ name: 'UiNumberField' })
+    expect(numbers.find(field => field.props('inputId') === 'settingsRpmAiVisionOcr')?.props('modelValue'))
+      .toBe(456)
   })
 
   it('passes stable ids and accessible names into searchable combobox fields', () => {
@@ -521,6 +587,7 @@ describe('settings provider select contracts', () => {
     const store = useSettingsStore()
     store.setProofreadingEnabled(true)
     store.addProofreadingRound({
+      id: '11111111-1111-4111-8111-111111111111',
       name: '第一轮校对',
       provider: 'siliconflow',
       apiKey: 'model-key',
@@ -546,7 +613,12 @@ describe('settings provider select contracts', () => {
 
     const wrapper = mount(ProofreadingSettings, globalMountOptions(pinia))
     wrapper.getComponent(UiModelPicker).vm.$emit('fetch')
-    expect(fetchModelsMock).toHaveBeenCalledWith('siliconflow', 'model-key', '', 'proofreading_0')
+    expect(fetchModelsMock).toHaveBeenCalledWith(
+      'siliconflow',
+      'model-key',
+      '',
+      'proofreading_11111111-1111-4111-8111-111111111111',
+    )
 
     const providerSelect = findSelectByOptionValues(wrapper, ['siliconflow', 'deepseek'])
     expect(providerSelect).toBeTruthy()

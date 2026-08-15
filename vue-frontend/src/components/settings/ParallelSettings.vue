@@ -4,34 +4,18 @@ import ProductFormSection from '@/components/product/ProductFormSection.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiNumberField from '@/components/ui/UiNumberField.vue'
 import UiSwitch from '@/components/ui/UiSwitch.vue'
-import { computed } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 
 const settingsStore = useSettingsStore()
 
-const parallelEnabled = computed({
-  get: () => settingsStore.settings.parallel.enabled,
-  set: (value: boolean) => {
-    settingsStore.updateSettings({
-      parallel: {
-        ...settingsStore.settings.parallel,
-        enabled: value
-      }
-    })
-  }
-})
+function updateParallelEnabled(value: boolean): void {
+  settingsStore.updateParallel({ enabled: value })
+}
 
-const lockSize = computed({
-  get: () => settingsStore.settings.parallel.deepLearningLockSize,
-  set: (value: number) => {
-    settingsStore.updateSettings({
-      parallel: {
-        ...settingsStore.settings.parallel,
-        deepLearningLockSize: Math.max(1, Math.min(4, value))
-      }
-    })
-  }
-})
+function updateLockSize(value: number | null): void {
+  if (value === null || !Number.isInteger(value) || value < 1) return
+  settingsStore.updateParallel({ deepLearningLockSize: value })
+}
 </script>
 
 <template>
@@ -46,9 +30,9 @@ const lockSize = computed({
         hint="使用流水线并行处理，可能提升批量翻译速度"
       >
         <UiSwitch
-          :model-value="parallelEnabled"
+          :model-value="settingsStore.settings.parallel.enabled"
           accessibility-label="启用并行模式"
-          @change="parallelEnabled = $event"
+          @change="updateParallelEnabled"
         />
       </UiField>
 
@@ -57,20 +41,20 @@ const lockSize = computed({
         label="深度学习并发数"
         control-id="parallelDeepLearningLockSize"
         hint="控制检测/OCR/颜色/修复的最大并发数（建议1-2）"
-        :class="{ 'parallel-settings__field--disabled': !parallelEnabled }"
+        :class="{ 'parallel-settings__field--disabled': !settingsStore.settings.parallel.enabled }"
       >
         <UiNumberField
-          v-model="lockSize"
+          :model-value="settingsStore.settings.parallel.deepLearningLockSize"
           input-id="parallelDeepLearningLockSize"
           aria-label="深度学习并发数"
           :min="1"
-          :max="4"
           controls
-          :disabled="!parallelEnabled"
+          :disabled="!settingsStore.settings.parallel.enabled"
+          @update:model-value="updateLockSize"
         />
       </UiField>
 
-      <div class="parallel-settings__note" v-if="parallelEnabled">
+      <div class="parallel-settings__note" v-if="settingsStore.settings.parallel.enabled">
         <div class="parallel-settings__note-title">
           <UiIcon name="alert-triangle" />
           <span>注意事项</span>

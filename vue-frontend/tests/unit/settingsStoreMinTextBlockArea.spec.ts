@@ -25,11 +25,20 @@ function settingsDocument(
         domain: 'translation',
         payload: settings as unknown as Record<string, unknown>,
         revision,
-        schemaVersion: 3,
+        schemaVersion: 5,
       },
       {
         domain: 'text_style_defaults',
         payload: settings.textStyle as unknown as Record<string, unknown>,
+        revision,
+        schemaVersion: 1,
+      },
+      {
+        domain: 'workflow_preferences',
+        payload: {
+          rememberWorkflowModeEnabled: false,
+          lastWorkflowMode: 'translate-current',
+        },
         revision,
         schemaVersion: 1,
       },
@@ -51,6 +60,7 @@ describe('settings store min text block area percent', () => {
       bookSettings: [],
       providerSettings: [],
       credentials: [],
+      prompts: [],
     })
   })
 
@@ -82,7 +92,7 @@ describe('settings store min text block area percent', () => {
     expect(payload.settings?.[0]).toMatchObject({
       domain: 'translation',
       baseRevision: 4,
-      schemaVersion: 3,
+      schemaVersion: 5,
     })
     expect(payload.settings?.[0]?.payload.minTextBlockAreaPercent).toBe(2.5)
   })

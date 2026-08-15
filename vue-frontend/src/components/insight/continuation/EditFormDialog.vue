@@ -1,5 +1,5 @@
 <template>
-  <ContinuationDialogShell title="编辑形态" @close="close">
+  <ContinuationDialogShell title="编辑形态" :dismissible="!busy" @close="close">
     <ContinuationDialogForm>
       <ContinuationDialogField
         label="形态名称"
@@ -33,14 +33,14 @@
 
     <template #footer>
       <ContinuationDialogActions>
-        <UiButton variant="secondary" @click="close">取消</UiButton>
+        <UiButton variant="secondary" :disabled="busy" @click="close">取消</UiButton>
         <UiButton
           variant="primary"
-          :disabled="!localFormName.trim() || isSaving"
+          :disabled="!localFormName.trim() || busy"
           @click="save"
         >
-          <UiIcon v-if="!isSaving" name="save" size="15" />
-          <span>{{ isSaving ? '保存中...' : '保存' }}</span>
+          <UiIcon v-if="!busy" name="save" size="15" />
+          <span>{{ busy ? '保存中...' : '保存' }}</span>
         </UiButton>
       </ContinuationDialogActions>
     </template>
@@ -50,7 +50,7 @@
 <script setup lang="ts">
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiInput from '@/components/ui/UiInput.vue'
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
 import type { CharacterForm } from '@/api/continuation'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
@@ -61,6 +61,7 @@ import ContinuationDialogShell from './ContinuationDialogShell.vue'
 
 const props = defineProps<{
   form: CharacterForm
+  busy?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -71,16 +72,7 @@ const emit = defineEmits<{
 const localFormName = ref(props.form.form_name)
 const localDescription = ref(props.form.description)
 const formNameError = ref('')
-const isSaving = ref(false)
-let savingTimer: ReturnType<typeof setTimeout> | null = null
 const close = () => emit('close')
-
-function clearSavingTimer(): void {
-  if (savingTimer) {
-    clearTimeout(savingTimer)
-    savingTimer = null
-  }
-}
 
 watch(() => props.form, (newForm) => {
   localFormName.value = newForm.form_name
@@ -94,17 +86,6 @@ function save() {
     return
   }
   formNameError.value = ''
-  isSaving.value = true
   emit('save', formName, localDescription.value.trim())
-
-  clearSavingTimer()
-  savingTimer = setTimeout(() => {
-    isSaving.value = false
-    savingTimer = null
-  }, 500)
 }
-
-onBeforeUnmount(() => {
-  clearSavingTimer()
-})
 </script>

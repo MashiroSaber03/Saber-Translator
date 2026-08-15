@@ -23,8 +23,12 @@ const emit = defineEmits<{
   change: [value: string]
 }>()
 
-function asString(value: UiSelectValue): string {
-  return String(value)
+function emitModelValue(value: UiSelectValue): void {
+  if (typeof value === 'string') emit('update:modelValue', value)
+}
+
+function emitChange(value: UiSelectValue): void {
+  if (typeof value === 'string') emit('change', value)
 }
 </script>
 
@@ -35,8 +39,8 @@ function asString(value: UiSelectValue): string {
       :model-value="modelValue"
       :options="options"
       :disabled="disabled"
-      @update:model-value="emit('update:modelValue', asString($event))"
-      @change="emit('change', asString($event))"
+      @update:model-value="emitModelValue"
+      @change="emitChange"
     />
   </UiField>
 </template>

@@ -1,4 +1,4 @@
-import { getCurrentInstance, onBeforeUnmount, ref, type Ref } from 'vue'
+import { getCurrentInstance, onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import type { PageContent } from '@/api/continuation'
 import * as continuationApi from '@/api/continuation'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
@@ -44,7 +44,7 @@ export function useImageGeneration(
     initialStyleReferenceTokens?: string[]
   ): Promise<void> {
     const activeBookId = bookId.value
-    if (!activeBookId || pages.length === 0) return
+    if (!activeBookId || pages.length === 0 || isGenerating.value) return
     const id = ++requestId
     const pending = pages.filter(page => !page.image_url)
     if (pending.length === 0) {
@@ -86,6 +86,7 @@ export function useImageGeneration(
       })
       if (!isCurrent(id, activeBookId)) return
       await state.initializeData()
+      if (!isCurrent(id, activeBookId)) return
       state.showMessage(`图片生成完成 (${pending.length} 页)`, 'success')
     } catch (error) {
       if (isCurrent(id, activeBookId)) {
@@ -105,7 +106,7 @@ export function useImageGeneration(
   async function regeneratePageImage(pageNumber: number): Promise<void> {
     const activeBookId = bookId.value
     const page = state.pages.value.find(item => item.page_number === pageNumber)
-    if (!activeBookId || !page) return
+    if (!activeBookId || !page || isGenerating.value) return
     const id = ++requestId
     page.final_prompt = normalizeImagePrompt(page.final_prompt)
     if (!hasUsableStoryContent(page) && !isUsableImagePrompt(page.final_prompt)) {
@@ -126,6 +127,7 @@ export function useImageGeneration(
       })
       if (!isCurrent(id, activeBookId)) return
       await state.initializeData()
+      if (!isCurrent(id, activeBookId)) return
       state.showMessage(`第 ${pageNumber} 页图片已重新生成`, 'success')
     } catch (error) {
       if (isCurrent(id, activeBookId)) {
@@ -141,6 +143,12 @@ export function useImageGeneration(
       }
     }
   }
+
+  watch(bookId, () => {
+    requestId += 1
+    isGenerating.value = false
+    generationProgress.value = 0
+  })
 
   if (getCurrentInstance()) {
     onBeforeUnmount(() => {

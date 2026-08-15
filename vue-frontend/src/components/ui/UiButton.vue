@@ -269,19 +269,19 @@ const buttonClasses = computed(() => {
   padding: 0;
 }
 
-.ui-button--tone-danger:not(:where(.ui-button--bare)) {
+.ui-button--tone-danger:not(:where(.ui-button--bare, .ui-button--primary, .ui-button--danger, .ui-button--inverse)) {
   color: var(--color-status-error, var(--color-text-danger));
 }
 
-.ui-button--tone-success:not(:where(.ui-button--bare)) {
+.ui-button--tone-success:not(:where(.ui-button--bare, .ui-button--primary, .ui-button--danger, .ui-button--inverse)) {
   color: var(--ui-button-status-success-color, var(--color-status-success, var(--ui-button-status-success-text)));
 }
 
-.ui-button--tone-warning:not(:where(.ui-button--bare)) {
+.ui-button--tone-warning:not(:where(.ui-button--bare, .ui-button--primary, .ui-button--danger, .ui-button--inverse)) {
   color: var(--ui-button-status-warning-color, var(--color-status-warning, var(--ui-button-status-warning-text)));
 }
 
-.ui-button--tone-primary:not(:where(.ui-button--bare)) {
+.ui-button--tone-primary:not(:where(.ui-button--bare, .ui-button--primary, .ui-button--danger, .ui-button--inverse)) {
   color: var(--color-action-primary);
 }
 

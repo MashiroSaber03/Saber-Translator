@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-import base64
+import math
 import re
 from typing import Any
 
@@ -33,6 +33,19 @@ PLUGIN_MODES = frozenset(
     {"standard", "hq", "proofread", "remove_text"}
 )
 CONFIG_TYPES = frozenset({"text", "number", "boolean", "select"})
+CONFIG_FIELD_FIELDS = frozenset(
+    {
+        "type",
+        "label",
+        "description",
+        "placeholder",
+        "default",
+        "minimum",
+        "maximum",
+        "options",
+    }
+)
+CONFIG_OPTION_FIELDS = frozenset({"value", "label"})
 MANIFEST_FIELDS = frozenset(
     {
         "schema_version",
@@ -224,6 +237,15 @@ def parse_manifest(raw: Mapping[str, Any]) -> PluginManifest:
         value not in HOOK_STEPS for value in supported_steps
     ):
         raise PluginContractError("supported_steps contains invalid values")
+    if len(set(supported_steps)) != len(supported_steps):
+        raise PluginContractError("supported_steps must be unique")
+    hook_steps = {hook.split("_", 1)[1] for hook in hooks}
+    undeclared_steps = hook_steps - set(supported_steps)
+    if undeclared_steps:
+        raise PluginContractError(
+            "manifest hooks require missing supported_steps: "
+            + ", ".join(sorted(undeclared_steps))
+        )
     supported_modes = _string_tuple(
         raw["supported_modes"],
         "supported_modes",
@@ -232,11 +254,11 @@ def parse_manifest(raw: Mapping[str, Any]) -> PluginManifest:
         value not in PLUGIN_MODES for value in supported_modes
     ):
         raise PluginContractError("supported_modes contains invalid values")
+    if len(set(supported_modes)) != len(supported_modes):
+        raise PluginContractError("supported_modes must be unique")
     priority = raw["priority"]
     if isinstance(priority, bool) or not isinstance(priority, int):
         raise PluginContractError("priority must be an integer")
-    if not -10_000 <= priority <= 10_000:
-        raise PluginContractError("priority is out of range")
     failure_policy = _required_string(
         raw["failure_policy"],
         "failure_policy",
@@ -253,8 +275,6 @@ def parse_manifest(raw: Mapping[str, Any]) -> PluginManifest:
     description = _string(raw["description"], "description")
     if len(author) > 200:
         raise PluginContractError("author is too long")
-    if len(description) > 20_000:
-        raise PluginContractError("description is too long")
     return PluginManifest(
         plugin_id=plugin_id,
         display_name=display_name,
@@ -277,32 +297,187 @@ def normalize_config_schema(
 ) -> dict[str, Any]:
     normalized: dict[str, Any] = {}
     for key, field in raw.items():
-        name = str(key).strip()
-        if not name or len(name) > 100 or not isinstance(field, Mapping):
+        if (
+            not isinstance(key, str)
+            or not key
+            or key != key.strip()
+            or not isinstance(field, Mapping)
+        ):
             raise PluginContractError("config_schema field is invalid")
-        field_type = str(field.get("type", "")).strip()
-        if field_type not in CONFIG_TYPES:
+        name = key
+        fields = set(field)
+        unknown = fields - CONFIG_FIELD_FIELDS
+        if unknown:
+            raise PluginContractError(
+                f"config_schema.{name} contains unsupported fields: "
+                + ", ".join(sorted(str(value) for value in unknown))
+            )
+        if "default" not in field:
+            raise PluginContractError(
+                f"config_schema.{name}.default is required"
+            )
+        field_type = field.get("type")
+        if not isinstance(field_type, str) or field_type not in CONFIG_TYPES:
             raise PluginContractError(
                 f"config_schema.{name}.type is unsupported"
             )
-        item = dict(field)
-        item["type"] = field_type
-        if field_type == "select":
-            options = field.get("options")
-            if not isinstance(options, list) or not options:
+        for metadata_field in ("label", "description", "placeholder"):
+            if metadata_field in field and not isinstance(
+                field[metadata_field], str
+            ):
                 raise PluginContractError(
-                    f"config_schema.{name}.options is required"
+                    f"config_schema.{name}.{metadata_field} must be text"
                 )
-            item["options"] = list(options)
+        item = dict(field)
+        if field_type == "select":
+            item["options"] = _normalize_select_options(
+                field.get("options"),
+                field=name,
+            )
+        elif "options" in field:
+            raise PluginContractError(
+                f"config_schema.{name}.options is only valid for select"
+            )
+        if field_type == "number":
+            minimum = (
+                _finite_number(
+                    field["minimum"],
+                    f"config_schema.{name}.minimum",
+                )
+                if "minimum" in field
+                else None
+            )
+            maximum = (
+                _finite_number(
+                    field["maximum"],
+                    f"config_schema.{name}.maximum",
+                )
+                if "maximum" in field
+                else None
+            )
+            if minimum is not None:
+                item["minimum"] = minimum
+            if maximum is not None:
+                item["maximum"] = maximum
+            if (
+                minimum is not None
+                and maximum is not None
+                and minimum > maximum
+            ):
+                raise PluginContractError(
+                    f"config_schema.{name}.minimum exceeds maximum"
+                )
+        elif "minimum" in field or "maximum" in field:
+            raise PluginContractError(
+                f"config_schema.{name} numeric bounds require number type"
+            )
+        _validate_config_value(
+            item,
+            item["default"],
+            label=f"config_schema.{name}.default",
+        )
         normalized[name] = item
     return normalized
+
+
+def _normalize_select_options(
+    value: object,
+    *,
+    field: str,
+) -> list[dict[str, str | int | float]]:
+    if not isinstance(value, list) or not value:
+        raise PluginContractError(
+            f"config_schema.{field}.options is required"
+        )
+    result: list[dict[str, str | int | float]] = []
+    seen: set[tuple[type[object], object]] = set()
+    for index, option in enumerate(value):
+        if not isinstance(option, Mapping) or set(option) != CONFIG_OPTION_FIELDS:
+            raise PluginContractError(
+                f"config_schema.{field}.options[{index}] fields are invalid"
+            )
+        option_value = option["value"]
+        if (
+            isinstance(option_value, bool)
+            or not isinstance(option_value, (str, int, float))
+            or (
+                isinstance(option_value, float)
+                and not math.isfinite(option_value)
+            )
+        ):
+            raise PluginContractError(
+                f"config_schema.{field}.options[{index}].value is invalid"
+            )
+        label = option["label"]
+        if not isinstance(label, str) or not label:
+            raise PluginContractError(
+                f"config_schema.{field}.options[{index}].label must be text"
+            )
+        identity = (type(option_value), option_value)
+        if identity in seen:
+            raise PluginContractError(
+                f"config_schema.{field}.options values must be unique"
+            )
+        seen.add(identity)
+        result.append({"value": option_value, "label": label})
+    return result
+
+
+def _finite_number(value: object, label: str) -> int | float:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+    ):
+        raise PluginContractError(f"{label} must be a finite number")
+    return value
+
+
+def _validate_config_value(
+    field: Mapping[str, Any],
+    value: object,
+    *,
+    label: str,
+) -> None:
+    field_type = field["type"]
+    if field_type == "text":
+        if not isinstance(value, str):
+            raise PluginContractError(f"{label} must be text")
+        return
+    if field_type == "number":
+        number = _finite_number(value, label)
+        minimum = field.get("minimum")
+        maximum = field.get("maximum")
+        if minimum is not None and number < minimum:
+            raise PluginContractError(f"{label} is below minimum")
+        if maximum is not None and number > maximum:
+            raise PluginContractError(f"{label} exceeds maximum")
+        return
+    if field_type == "boolean":
+        if not isinstance(value, bool):
+            raise PluginContractError(f"{label} must be boolean")
+        return
+    if field_type == "select":
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (str, int, float))
+            or (isinstance(value, float) and not math.isfinite(value))
+        ):
+            raise PluginContractError(f"{label} is not a select value")
+        values = [option["value"] for option in field["options"]]
+        if not any(type(value) is type(option) and value == option for option in values):
+            raise PluginContractError(
+                f"{label} is not one of the allowed options"
+            )
+        return
+    raise PluginContractError(f"{label} has an unsupported field type")
 
 
 def default_config(schema: Mapping[str, Any]) -> dict[str, Any]:
     return {
         str(key): field["default"]
         for key, field in schema.items()
-        if isinstance(field, Mapping) and "default" in field
+        if isinstance(field, Mapping)
     }
 
 
@@ -310,38 +485,18 @@ def validate_config(
     schema: Mapping[str, Any],
     config: Mapping[str, Any],
 ) -> dict[str, Any]:
+    missing = set(schema) - set(config)
     unknown = set(config) - set(schema)
-    if unknown:
+    if missing or unknown:
         raise PluginContractError(
-            "plugin config contains unknown fields: "
-            + ", ".join(sorted(str(value) for value in unknown))
+            "plugin config field mismatch: "
+            f"missing={sorted(str(value) for value in missing)}, "
+            f"unknown={sorted(str(value) for value in unknown)}"
         )
-    result = default_config(schema)
+    result: dict[str, Any] = {}
     for key, value in config.items():
         field = schema[key]
-        field_type = str(field["type"])
-        if field_type == "text":
-            if not isinstance(value, str):
-                raise PluginContractError(f"config.{key} must be text")
-        elif field_type == "number":
-            if isinstance(value, bool) or not isinstance(
-                value, (int, float)
-            ):
-                raise PluginContractError(f"config.{key} must be a number")
-            minimum = field.get("minimum")
-            maximum = field.get("maximum")
-            if minimum is not None and value < minimum:
-                raise PluginContractError(f"config.{key} is below minimum")
-            if maximum is not None and value > maximum:
-                raise PluginContractError(f"config.{key} exceeds maximum")
-        elif field_type == "boolean":
-            if not isinstance(value, bool):
-                raise PluginContractError(f"config.{key} must be boolean")
-        elif field_type == "select":
-            if value not in field["options"]:
-                raise PluginContractError(
-                    f"config.{key} is not one of the allowed options"
-                )
+        _validate_config_value(field, value, label=f"config.{key}")
         result[str(key)] = value
     return result
 
@@ -349,7 +504,7 @@ def validate_config(
 def validate_hook_data(value: object) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise PluginContractError("plugin hook result must be an object")
-    _assert_no_base64(value)
+    _assert_hook_json(value, ancestors=set())
     return dict(value)
 
 
@@ -365,11 +520,14 @@ def validate_atomic_hook_data(
     if phase not in {"before", "after"}:
         raise PluginContractError(f"unsupported plugin hook phase: {phase}")
     data = validate_hook_data(value)
-    unknown = set(data) - ATOMIC_PAYLOAD_FIELDS[(step, phase)]
-    if unknown:
+    allowed = ATOMIC_PAYLOAD_FIELDS[(step, phase)]
+    missing = allowed - set(data)
+    unknown = set(data) - allowed
+    if missing or unknown:
         raise PluginContractError(
-            f"{phase}_{step} returned unsupported fields: "
-            + ", ".join(sorted(str(field) for field in unknown))
+            f"{phase}_{step} field mismatch: "
+            f"missing={sorted(str(field) for field in missing)}, "
+            f"unknown={sorted(str(field) for field in unknown)}"
         )
     _require_text(data, "pageId")
 
@@ -386,8 +544,14 @@ def validate_atomic_hook_data(
             _require_mapping_list(data, "bubbles")
             _require_mapping(data, "ocrConfig")
         else:
-            _require_text_list(data, "originalTexts")
-            _require_list(data, "ocrResults")
+            original_texts = _require_text_list(data, "originalTexts")
+            ocr_results = _require_list(data, "ocrResults")
+            _require_same_length(
+                original_texts,
+                ocr_results,
+                "originalTexts",
+                "ocrResults",
+            )
     elif step == "color":
         if phase == "before":
             _require_text(data, "sourceAssetId")
@@ -395,36 +559,66 @@ def validate_atomic_hook_data(
         else:
             colors = _require_mapping_list(data, "colors")
             for index, color in enumerate(colors):
+                if set(color) != {"fgColor", "bgColor", "confidence"}:
+                    raise PluginContractError(
+                        f"colors[{index}] fields are invalid"
+                    )
                 _require_rgb(color, "fgColor", index=index)
                 _require_rgb(color, "bgColor", index=index)
-                confidence = color.get("confidence", 0)
-                if isinstance(confidence, bool) or not isinstance(
-                    confidence, (int, float)
+                confidence = color["confidence"]
+                if (
+                    isinstance(confidence, bool)
+                    or not isinstance(confidence, (int, float))
+                    or not math.isfinite(confidence)
+                    or not 0 <= confidence <= 1
                 ):
                     raise PluginContractError(
-                        f"colors[{index}].confidence must be a number"
+                        f"colors[{index}].confidence must be from 0 to 1"
                     )
     elif step in {"translate", "ai_translate"}:
-        _require_text_list(data, "originalTexts")
+        original_texts = _require_text_list(data, "originalTexts")
         if phase == "before":
             if "translations" in data:
-                _require_text_list(data, "translations")
+                translations = _require_text_list(data, "translations")
+                _require_same_length(
+                    original_texts,
+                    translations,
+                    "originalTexts",
+                    "translations",
+                )
             if "translationConfig" in data:
                 _require_mapping(data, "translationConfig")
         else:
-            _require_text_list(data, "translations")
+            translations = _require_text_list(data, "translations")
+            _require_same_length(
+                original_texts,
+                translations,
+                "originalTexts",
+                "translations",
+            )
             if "textboxTexts" in data:
-                _require_text_list(data, "textboxTexts")
+                textbox_texts = _require_text_list(data, "textboxTexts")
+                if textbox_texts and len(textbox_texts) != len(original_texts):
+                    raise PluginContractError(
+                        "textboxTexts length must be empty or match originalTexts"
+                    )
     elif step == "inpaint":
         if phase == "before":
             _require_text(data, "sourceAssetId")
             _require_text(data, "inputAssetId")
             _require_optional_text(data, "textMaskAssetId")
             _require_mapping_list(data, "bubbles")
-            _require_text(data, "method")
-            _require_optional_text(data, "fillColor")
+            method = _require_text(data, "method")
+            fill_color = data.get("fillColor")
+            if method == "solid":
+                _require_text(data, "fillColor")
+            elif fill_color is not None:
+                raise PluginContractError(
+                    f"inpaint method {method} does not accept fillColor"
+                )
         else:
             _require_text(data, "cleanAssetId")
+            _require_positive_integer(data, "documentRevision")
     elif step == "render":
         if phase == "before":
             _require_text(data, "inputAssetId")
@@ -432,6 +626,7 @@ def validate_atomic_hook_data(
             _require_mapping(data, "renderConfig")
         else:
             _require_text(data, "translatedAssetId")
+            _require_positive_integer(data, "documentRevision")
     return data
 
 
@@ -489,8 +684,14 @@ def validate_hook_source_contract(
                 f"{hook} must be synchronous"
             )
         if any(
-            isinstance(decorator, ast.Name)
-            and decorator.id in {"staticmethod", "classmethod"}
+            (
+                isinstance(decorator, ast.Name)
+                and decorator.id in {"staticmethod", "classmethod"}
+            )
+            or (
+                isinstance(decorator, ast.Attribute)
+                and decorator.attr in {"staticmethod", "classmethod"}
+            )
             for decorator in callback.decorator_list
         ):
             raise PluginContractError(
@@ -505,7 +706,8 @@ def validate_hook_source_contract(
         if step not in ATOMIC_STEPS:
             continue
         phase = hook.split("_", 1)[0]
-        aliases = {callback.args.args[2].arg}
+        positional = [*callback.args.posonlyargs, *callback.args.args]
+        aliases = {positional[2].arg}
         changed = True
         while changed:
             changed = False
@@ -766,6 +968,28 @@ def _require_text_list(
     return values
 
 
+def _require_same_length(
+    first: Sequence[object],
+    second: Sequence[object],
+    first_name: str,
+    second_name: str,
+) -> None:
+    if len(first) != len(second):
+        raise PluginContractError(
+            f"{second_name} length must match {first_name}"
+        )
+
+
+def _require_positive_integer(
+    data: Mapping[str, Any],
+    field: str,
+) -> int:
+    value = data.get(field)
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise PluginContractError(f"{field} must be a positive integer")
+    return value
+
+
 def _require_rgb(
     data: Mapping[str, Any],
     field: str,
@@ -791,12 +1015,22 @@ def _require_rgb(
         )
 
 
-def _assert_no_base64(value: object, *, depth: int = 0) -> None:
-    if depth > 20:
-        raise PluginContractError("plugin hook data is nested too deeply")
+def _assert_hook_json(
+    value: object,
+    *,
+    ancestors: set[int],
+) -> None:
     if isinstance(value, Mapping):
+        identity = id(value)
+        if identity in ancestors:
+            raise PluginContractError("plugin hook data contains a cycle")
+        ancestors.add(identity)
         for key, child in value.items():
-            lowered = str(key).lower()
+            if not isinstance(key, str):
+                raise PluginContractError(
+                    "plugin hook data object keys must be text"
+                )
+            lowered = key.lower()
             if "base64" in lowered or lowered in {
                 "image_data",
                 "imagebytes",
@@ -805,41 +1039,44 @@ def _assert_no_base64(value: object, *, depth: int = 0) -> None:
                 raise PluginContractError(
                     "plugin hook data must use asset references, not Base64"
                 )
-            _assert_no_base64(child, depth=depth + 1)
-    elif isinstance(value, (list, tuple)):
+            _assert_hook_json(child, ancestors=ancestors)
+        ancestors.remove(identity)
+    elif isinstance(value, list):
+        identity = id(value)
+        if identity in ancestors:
+            raise PluginContractError("plugin hook data contains a cycle")
+        ancestors.add(identity)
         for child in value:
-            _assert_no_base64(child, depth=depth + 1)
+            _assert_hook_json(child, ancestors=ancestors)
+        ancestors.remove(identity)
     elif isinstance(value, bytes):
         raise PluginContractError(
             "plugin hook data must use asset references, not bytes"
         )
-    elif isinstance(value, str) and len(value) > 1024:
-        candidate = value.strip()
+    elif isinstance(value, str):
+        candidate = value.lstrip()
         if candidate.startswith("data:") and ";base64," in candidate[:100]:
             raise PluginContractError(
                 "plugin hook data must use asset references, not Base64"
             )
-        try:
-            if len(candidate) % 4 == 0:
-                base64.b64decode(candidate[:4096], validate=True)
-            else:
-                return
-        except (ValueError, base64.binascii.Error):
-            pass
-        else:
+    elif value is None or isinstance(value, (bool, int)):
+        return
+    elif isinstance(value, float):
+        if not math.isfinite(value):
             raise PluginContractError(
-                "plugin hook data must use asset references, not Base64"
+                "plugin hook data numbers must be finite"
             )
+    else:
+        raise PluginContractError("plugin hook data must be JSON-compatible")
 
 
 def _string_tuple(value: object, field: str) -> tuple[str, ...]:
     if (
-        not isinstance(value, Sequence)
-        or isinstance(value, (str, bytes))
+        not isinstance(value, list)
         or not all(isinstance(item, str) for item in value)
     ):
         raise PluginContractError(f"{field} must be an array")
-    return tuple(item.strip() for item in value)
+    return tuple(value)
 
 
 def _string(value: object, field: str) -> str:

@@ -1,8 +1,5 @@
 import type { Ref } from 'vue'
-import type {
-  WebImportProviderConfigs,
-  WebImportSettings,
-} from '@/types/webImport'
+import type { WebImportProviderConfigs, WebImportSettings } from '@/types/webImport'
 import { DEFAULT_WEB_IMPORT_EXTRACTION_PROMPT } from '@/constants'
 import { normalizeProviderId, providerSupportsCapability } from '@/config/aiProviders'
 import {
@@ -16,7 +13,7 @@ import {
 export function createDefaultWebImportSettings(): WebImportSettings {
   return {
     firecrawl: {
-      apiKey: ''
+      apiKey: '',
     },
     agent: {
       provider: 'openai',
@@ -26,18 +23,18 @@ export function createDefaultWebImportSettings(): WebImportSettings {
       useStream: false,
       forceJsonOutput: true,
       maxRetries: 3,
-      timeout: 120
+      timeout: 120,
     },
     extraction: {
       prompt: DEFAULT_WEB_IMPORT_EXTRACTION_PROMPT,
-      maxIterations: 10
+      maxIterations: 10,
     },
     download: {
       concurrency: 3,
       timeout: 30,
       retries: 3,
       delay: 100,
-      useReferer: true
+      useReferer: true,
     },
     imagePreprocess: {
       enabled: false,
@@ -46,35 +43,39 @@ export function createDefaultWebImportSettings(): WebImportSettings {
         enabled: false,
         quality: 85,
         maxWidth: 0,
-        maxHeight: 0
+        maxHeight: 0,
       },
       formatConvert: {
         enabled: false,
-        targetFormat: 'original'
-      }
+        targetFormat: 'original',
+      },
     },
     advanced: {
       customCookie: '',
       customHeaders: '',
-      bypassProxy: false
+      bypassProxy: false,
     },
     ui: {
       showAgentLogs: true,
-      autoImport: false
-    }
+      autoImport: false,
+    },
   }
 }
 
 export function createDefaultWebImportProviderConfigs(): WebImportProviderConfigs {
   return {
-    agent: {}
+    agent: {},
   }
 }
 
-export function isWebImportAgentProvider(provider: unknown): provider is WebImportSettings['agent']['provider'] {
-  return typeof provider === 'string'
-    && provider === normalizeProviderId(provider)
-    && providerSupportsCapability(provider, 'webImportAgent')
+export function isWebImportAgentProvider(
+  provider: unknown
+): provider is WebImportSettings['agent']['provider'] {
+  return (
+    typeof provider === 'string' &&
+    provider === normalizeProviderId(provider) &&
+    providerSupportsCapability(provider, 'webImportAgent')
+  )
 }
 
 function toWebImportAgentProvider(provider: string): WebImportSettings['agent']['provider'] | null {
@@ -119,6 +120,14 @@ export function useWebImportSettings(
 
   function setAgentForceJsonOutput(forceJsonOutput: boolean): void {
     webImportSettings.value.agent.forceJsonOutput = forceJsonOutput
+  }
+
+  function setAgentMaxRetries(maxRetries: number): void {
+    webImportSettings.value.agent.maxRetries = maxRetries
+  }
+
+  function setAgentTimeout(timeout: number): void {
+    webImportSettings.value.agent.timeout = timeout
   }
 
   function setExtractionPrompt(prompt: string): void {
@@ -236,6 +245,8 @@ export function useWebImportSettings(
     setAgentModelName,
     setAgentUseStream,
     setAgentForceJsonOutput,
+    setAgentMaxRetries,
+    setAgentTimeout,
     saveAgentProviderConfig,
     restoreAgentProviderConfig,
     setExtractionPrompt,

@@ -5,13 +5,12 @@
 """
 
 import logging
-from typing import Tuple, List, Optional, Any
 from dataclasses import dataclass, field
 
 import cv2
 import numpy as np
 
-from src.shared.memory_errors import is_memory_allocation_error
+from src.core.detector.data_types import TextLine
 
 logger = logging.getLogger("ImageRearrange")
 
@@ -23,29 +22,31 @@ REARRANGE_ASPECT_RATIO_THRESHOLD = 3.0
 DEFAULT_TARGET_SIZE = 1536
 
 
-@dataclass
+@dataclass(slots=True)
 class PatchInfo:
     """单个切片的信息"""
-    index: int      # 切片索引
     top: int        # 在原图中的顶部位置
     bottom: int     # 在原图中的底部位置
-    rel_top: float  # 相对顶部位置比例
+    down_scale_ratio: float
+    pad_height: int
+    pad_width: int
 
 
-@dataclass
+@dataclass(slots=True)
 class RearrangeContext:
     """重排上下文，保存切割信息以便后续坐标转换"""
     is_rearranged: bool = False
     original_height: int = 0
     original_width: int = 0
     transpose: bool = False
-    
-    patches_info: List[PatchInfo] = field(default_factory=list)
-    down_scale_ratios: List[float] = field(default_factory=list)
-    pad_sizes: List[Tuple[int, int]] = field(default_factory=list)
+
+    patches_info: list[PatchInfo] = field(default_factory=list)
 
 
-def square_pad_resize(img: np.ndarray, tgt_size: int) -> Tuple[np.ndarray, float, int, int]:
+def square_pad_resize(
+    img: np.ndarray,
+    tgt_size: int,
+) -> tuple[np.ndarray, float, int, int]:
     """
     将图像填充成正方形并缩放到目标尺寸
     
@@ -59,6 +60,15 @@ def square_pad_resize(img: np.ndarray, tgt_size: int) -> Tuple[np.ndarray, float
         pad_h: 高度填充量
         pad_w: 宽度填充量
     """
+    if (
+        not isinstance(img, np.ndarray)
+        or img.ndim != 3
+        or img.shape[2] != 3
+        or img.size == 0
+    ):
+        raise ValueError("长图切片输入必须是非空三通道图像")
+    if isinstance(tgt_size, bool) or not isinstance(tgt_size, int) or tgt_size <= 0:
+        raise ValueError("长图切片目标尺寸必须是正整数")
     h, w = img.shape[:2]
     pad_h, pad_w = 0, 0
 
@@ -94,7 +104,7 @@ def check_needs_rearrange(
     tgt_size: int = DEFAULT_TARGET_SIZE,
     downscale_threshold: float = REARRANGE_DOWNSCALE_RATIO_THRESHOLD,
     aspect_threshold: float = REARRANGE_ASPECT_RATIO_THRESHOLD
-) -> Tuple[bool, bool]:
+) -> tuple[bool, bool]:
     """
     检查图像是否需要重排处理
     
@@ -108,6 +118,26 @@ def check_needs_rearrange(
         needs_rearrange: 是否需要重排
         transpose: 是否需要转置（横向长图）
     """
+    if (
+        not isinstance(img, np.ndarray)
+        or img.ndim != 3
+        or img.shape[2] != 3
+        or img.size == 0
+    ):
+        raise ValueError("长图检测输入必须是非空三通道图像")
+    if isinstance(tgt_size, bool) or not isinstance(tgt_size, int) or tgt_size <= 0:
+        raise ValueError("长图检测目标尺寸必须是正整数")
+    for label, value in (
+        ("缩放", downscale_threshold),
+        ("长宽比", aspect_threshold),
+    ):
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not np.isfinite(float(value))
+            or value <= 0
+        ):
+            raise ValueError(f"长图检测{label}阈值必须是正数")
     h, w = img.shape[:2]
     
     transpose = False
@@ -132,8 +162,7 @@ def check_needs_rearrange(
 def slice_image_for_detection(
     img: np.ndarray,
     tgt_size: int = DEFAULT_TARGET_SIZE,
-    verbose: bool = False
-) -> Tuple[List[np.ndarray], RearrangeContext]:
+) -> tuple[list[np.ndarray], RearrangeContext]:
     """
     将超长图片切割成多个独立切片
     
@@ -173,9 +202,7 @@ def slice_image_for_detection(
     
     patches_info = []
     patches = []
-    down_scale_ratios = []
-    pad_sizes = []
-    
+
     for i in range(num_patches):
         top = int(i * step)
         bottom = min(top + tgt_size, h)
@@ -188,22 +215,23 @@ def slice_image_for_detection(
         patch = img[top:bottom, :, :]
         patch_resized, dsr, pad_h, pad_w = square_pad_resize(patch, tgt_size)
         
-        patches_info.append(PatchInfo(index=i, top=top, bottom=bottom, rel_top=top / h))
+        patches_info.append(
+            PatchInfo(
+                top=top,
+                bottom=bottom,
+                down_scale_ratio=dsr,
+                pad_height=pad_h,
+                pad_width=pad_w,
+            )
+        )
         patches.append(patch_resized)
-        down_scale_ratios.append(dsr)
-        pad_sizes.append((pad_h, pad_w))
         
-        if verbose:
-            logger.info(f"切片 {i}: top={top}, bottom={bottom}, 缩放比={dsr:.4f}")
-    
     context = RearrangeContext(
         is_rearranged=True,
         original_height=original_h,
         original_width=original_w,
         transpose=transpose,
         patches_info=patches_info,
-        down_scale_ratios=down_scale_ratios,
-        pad_sizes=pad_sizes
     )
     
     logger.info(f"图像已切割: {num_patches} 个切片")
@@ -212,10 +240,10 @@ def slice_image_for_detection(
 
 
 def transform_textlines_to_original(
-    textlines: List[Any],
+    textlines: list[TextLine],
     patch_index: int,
     context: RearrangeContext
-) -> List[Any]:
+) -> list[TextLine]:
     """
     将切片中检测到的文本行坐标转换回原图坐标
     
@@ -227,13 +255,20 @@ def transform_textlines_to_original(
     Returns:
         转换后的 TextLine 列表
     """
-    if not context.is_rearranged or patch_index >= len(context.patches_info):
-        return textlines
-    
+    if not context.is_rearranged:
+        return list(textlines)
+    if patch_index < 0 or patch_index >= len(context.patches_info):
+        raise IndexError(f"切片索引越界: {patch_index}")
+
     patch_info = context.patches_info[patch_index]
-    dsr = context.down_scale_ratios[patch_index] if patch_index < len(context.down_scale_ratios) else 1.0
+    dsr = patch_info.down_scale_ratio
+    if dsr <= 0:
+        raise ValueError("长图切片缩放比例必须大于零")
     
-    from src.core.detector.data_types import TextLine
+    if not isinstance(textlines, list) or any(
+        not isinstance(line, TextLine) for line in textlines
+    ):
+        raise TypeError("待还原文本行必须是 TextLine 列表")
     
     transformed = []
     for tl in textlines:
@@ -253,27 +288,23 @@ def transform_textlines_to_original(
         pts[:, 0] = np.clip(pts[:, 0], 0, context.original_width)
         pts[:, 1] = np.clip(pts[:, 1], 0, context.original_height)
         
-        try:
-            new_tl = TextLine(
+        transformed.append(
+            TextLine(
                 pts=pts.astype(np.int32),
                 confidence=tl.confidence,
                 text=tl.text,
                 fg_color=tl.fg_color,
-                bg_color=tl.bg_color
+                bg_color=tl.bg_color,
             )
-            transformed.append(new_tl)
-        except Exception as e:
-            if is_memory_allocation_error(e):
-                raise
-            logger.debug(f"坐标转换失败: {e}")
+        )
     
     return transformed
 
 
 def merge_masks_from_patches(
-    masks: List[np.ndarray],
+    masks: list[np.ndarray | None],
     context: RearrangeContext
-) -> Optional[np.ndarray]:
+) -> np.ndarray | None:
     """
     将多个切片的掩码合并成原图大小的掩码
     
@@ -284,9 +315,15 @@ def merge_masks_from_patches(
     Returns:
         合并后的掩码 (uint8, 0-255)
     """
-    if not masks or not context.is_rearranged:
+    if not context.is_rearranged:
         return None
-    
+    if context.original_width <= 0 or context.original_height <= 0:
+        raise ValueError("长图切片上下文缺少原图尺寸")
+    if len(masks) != len(context.patches_info):
+        raise ValueError("切片掩码数量与切片上下文不一致")
+    if not any(mask is not None for mask in masks):
+        return None
+
     # 创建画布（转置后的空间）
     if context.transpose:
         canvas_h = context.original_width
@@ -299,67 +336,59 @@ def merge_masks_from_patches(
     canvas_count = np.zeros((canvas_h, canvas_w), dtype=np.float32)
     
     for i, mask in enumerate(masks):
-        if i >= len(context.patches_info):
-            break
+        if mask is None:
+            continue
+        if not isinstance(mask, np.ndarray):
+            raise TypeError("切片掩码必须是 numpy 数组")
         
         patch_info = context.patches_info[i]
-        dsr = context.down_scale_ratios[i] if i < len(context.down_scale_ratios) else 1.0
-        pad_h, pad_w = context.pad_sizes[i] if i < len(context.pad_sizes) else (0, 0)
+        dsr = patch_info.down_scale_ratio
+        pad_h = patch_info.pad_height
+        pad_w = patch_info.pad_width
+        if dsr <= 0 or pad_h < 0 or pad_w < 0:
+            raise ValueError("长图切片上下文包含无效尺寸")
         
         # 确保掩码是 2D
-        if mask.ndim == 3:
-            mask = mask.squeeze()
+        if mask.ndim == 3 and 1 in mask.shape:
+            mask = np.squeeze(mask)
+        if mask.ndim != 2:
+            raise ValueError("切片掩码必须是二维数组")
+        if not np.issubdtype(mask.dtype, np.number) or not np.isfinite(mask).all():
+            raise ValueError("切片掩码必须包含有限数字")
+        if np.any(mask < 0) or np.any(mask > 255):
+            raise ValueError("切片掩码像素必须位于 0 到 255")
         
         # 切片在原图中的尺寸
         patch_h = patch_info.bottom - patch_info.top
         patch_w = canvas_w  # 切片宽度等于原图宽度（纵向切割）
+        if patch_info.top < 0 or patch_info.bottom > canvas_h or patch_h <= 0:
+            raise ValueError("长图切片位置超出原图范围")
         
         # 反向缩放掩码
         if dsr < 1.0:
-            # 掩码是 1536x1536，需要还原到填充前的尺寸
-            # 填充前的尺寸：原始切片经过正方形填充后再缩放
-            # 原始切片尺寸: patch_h x patch_w
-            # 填充后的正方形尺寸: max(patch_h, patch_w) 
-            # 但由于后面还有额外填充使其达到 tgt_size，实际填充后尺寸需要从 pad_h/pad_w 反推
-            
-            # 缩放后的掩码尺寸 = 1536x1536 (即 mask.shape)
-            # 缩放前的填充后尺寸 = 1536 / dsr
             padded_size = int(round(mask.shape[0] / dsr))
-            
-            # 上采样到填充后的尺寸
-            mask_upscaled = cv2.resize(mask, (padded_size, padded_size), interpolation=cv2.INTER_LINEAR)
-            
-            # 计算填充前的有效区域尺寸
-            # pad_h 和 pad_w 是添加到右边和下边的填充量
-            # 有效区域 = 填充后尺寸 - 填充量
+            mask_upscaled = cv2.resize(
+                mask,
+                (padded_size, padded_size),
+                interpolation=cv2.INTER_LINEAR,
+            )
             valid_h = padded_size - pad_h
             valid_w = padded_size - pad_w
-            
-            # 确保不越界
             valid_h = max(0, min(valid_h, mask_upscaled.shape[0]))
             valid_w = max(0, min(valid_w, mask_upscaled.shape[1]))
-            
-            if valid_h > 0 and valid_w > 0:
-                # 裁剪掉填充区域（填充在右边和下边）
-                mask_no_pad = mask_upscaled[:valid_h, :valid_w]
-                
-                # 调整到切片在原图中的实际尺寸
-                mask_final = cv2.resize(mask_no_pad, (patch_w, patch_h), interpolation=cv2.INTER_LINEAR)
-            else:
-                mask_final = np.zeros((patch_h, patch_w), dtype=np.float32)
         else:
-            # 无缩放情况，直接调整尺寸
-            # 同样需要去除填充
+            mask_upscaled = mask
             valid_h = mask.shape[0] - pad_h
             valid_w = mask.shape[1] - pad_w
             valid_h = max(0, min(valid_h, mask.shape[0]))
             valid_w = max(0, min(valid_w, mask.shape[1]))
-            
-            if valid_h > 0 and valid_w > 0:
-                mask_no_pad = mask[:valid_h, :valid_w]
-                mask_final = cv2.resize(mask_no_pad, (patch_w, patch_h), interpolation=cv2.INTER_LINEAR)
-            else:
-                mask_final = np.zeros((patch_h, patch_w), dtype=np.float32)
+        if valid_h <= 0 or valid_w <= 0:
+            raise ValueError("切片掩码有效区域为空")
+        mask_final = cv2.resize(
+            mask_upscaled[:valid_h, :valid_w],
+            (patch_w, patch_h),
+            interpolation=cv2.INTER_LINEAR,
+        )
         
         # 放到画布上
         top = patch_info.top
@@ -378,4 +407,4 @@ def merge_masks_from_patches(
     if context.transpose:
         canvas = canvas.T
     
-    return np.clip(canvas * 255, 0, 255).astype(np.uint8)
+    return np.clip(canvas, 0, 255).astype(np.uint8)

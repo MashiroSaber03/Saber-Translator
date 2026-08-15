@@ -127,13 +127,16 @@ const contentId = useId()
   font: inherit;
 }
 
-.product-log-panel__item--info .product-log-panel__message,
+.product-log-panel__item--info .product-log-panel__message {
+  color: var(--color-status-info);
+}
+
 .product-log-panel__item--warning .product-log-panel__message {
   color: var(--color-status-warning);
 }
 
 .product-log-panel__item--success .product-log-panel__message {
-  color: var(--color-action-primary-soft);
+  color: var(--color-status-success);
 }
 
 .product-log-panel__item--accent .product-log-panel__message {

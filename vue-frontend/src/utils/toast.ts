@@ -1,18 +1,15 @@
 import { ref, type Ref } from 'vue'
-import { sanitizeHtml } from './sanitizeHtml'
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning'
 
-export interface Toast {
+interface Toast {
   id: number
-  messageId: string
   message: string
   type: ToastType
-  isHTML: boolean
   timer?: ReturnType<typeof setTimeout>
 }
 
-export interface ToastService {
+interface ToastService {
   toasts: Ref<Toast[]>
   addToast: (message: string, type?: ToastType, duration?: number) => number
   removeToast: (id: number) => void
@@ -21,21 +18,12 @@ export interface ToastService {
   error: (message: string, duration?: number) => number
   info: (message: string, duration?: number) => number
   warning: (message: string, duration?: number) => number
-  showGeneralMessage: (message: string, type?: ToastType, isHTML?: boolean, duration?: number, messageId?: string) => string
-  clearGeneralMessageById: (messageId: string) => void
-  clearAllGeneralMessages: (type?: ToastType | '') => void
 }
 
 const DEFAULT_TOAST_DURATION = 3000
-const DEFAULT_GENERAL_MESSAGE_DURATION = 5000
-const SAFETY_TIMEOUT = 30000
 
 const toasts = ref<Toast[]>([])
 let toastId = 0
-
-function createMessageId(): string {
-  return `msg_${Date.now()}_${Math.floor(Math.random() * 1000)}`
-}
 
 function clearToastTimer(toast: Toast): void {
   if (!toast.timer) return
@@ -67,10 +55,8 @@ const addToast = (
 ): number => {
   const toast: Toast = {
     id: ++toastId,
-    messageId: createMessageId(),
     message,
     type,
-    isHTML: false,
   }
 
   scheduleRemoval(toast, duration)
@@ -94,41 +80,6 @@ const info = (message: string, duration?: number): number => addToast(message, '
 
 const warning = (message: string, duration?: number): number => addToast(message, 'warning', duration)
 
-const showGeneralMessage = (
-  message: string,
-  type: ToastType = 'info',
-  isHTML: boolean = false,
-  duration: number = DEFAULT_GENERAL_MESSAGE_DURATION,
-  messageId: string = '',
-): string => {
-  clearAll()
-
-  const toast: Toast = {
-    id: ++toastId,
-    messageId: messageId || createMessageId(),
-    message: isHTML ? sanitizeHtml(message) : message,
-    type,
-    isHTML,
-  }
-
-  scheduleRemoval(toast, duration > 0 ? duration : SAFETY_TIMEOUT)
-  toasts.value.push(toast)
-  return toast.messageId
-}
-
-const clearGeneralMessageById = (messageId: string): void => {
-  if (!messageId) return
-  removeToastsWhere((toast) => toast.messageId === messageId)
-}
-
-const clearAllGeneralMessages = (type: ToastType | '' = ''): void => {
-  if (type === '') {
-    clearAll()
-    return
-  }
-  removeToastsWhere((toast) => toast.type === type)
-}
-
 export const toastService: ToastService = {
   toasts,
   addToast,
@@ -138,9 +89,6 @@ export const toastService: ToastService = {
   error,
   info,
   warning,
-  showGeneralMessage,
-  clearGeneralMessageById,
-  clearAllGeneralMessages,
 }
 
 export function useToast(): ToastService {
@@ -154,5 +102,3 @@ export function showToast(
 ): number {
   return addToast(message, type, duration)
 }
-
-export { showGeneralMessage, clearGeneralMessageById, clearAllGeneralMessages }

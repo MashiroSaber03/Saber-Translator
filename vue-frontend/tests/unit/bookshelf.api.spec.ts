@@ -94,8 +94,23 @@ describe('bookshelf v2 api contracts', () => {
     )
     expect(result.translationConstraints).toEqual({
       glossary: constraints.payload.glossary,
-      non_translate: constraints.payload.nonTranslate,
+      nonTranslate: constraints.payload.nonTranslate,
     })
+  })
+
+  it('returns the create response without a redundant detail read', async () => {
+    postMock.mockResolvedValue(book)
+    const { createBook } = await import('@/api/bookshelf')
+
+    const created = await createBook('Book')
+
+    expect(postMock).toHaveBeenCalledWith(
+      '/api/v2/books',
+      { title: 'Book', tagIds: [] },
+      commandConfig,
+    )
+    expect(getMock).not.toHaveBeenCalled()
+    expect(created).toMatchObject({ id: book.id, title: 'Book' })
   })
 
   it('saves the structured constraint document through its dedicated CAS resource', async () => {
@@ -103,14 +118,11 @@ describe('bookshelf v2 api contracts', () => {
       ...constraints,
       revision: 3,
     })
-    const { getBookDetail, updateBook } = await import('@/api/bookshelf')
-    await getBookDetail(book.id)
-    await updateBook(book.id, {
-      translationConstraints: {
-        glossary: constraints.payload.glossary,
-        non_translate: constraints.payload.nonTranslate,
-      },
-    })
+    const { updateBookTranslationConstraints } = await import('@/api/bookshelf')
+    const result = await updateBookTranslationConstraints(book.id, {
+      glossary: constraints.payload.glossary,
+      nonTranslate: constraints.payload.nonTranslate,
+    }, 2)
 
     expect(putMock).toHaveBeenCalledWith(
       '/api/v2/books/book%2Fid%20one/translation-constraints',
@@ -123,6 +135,11 @@ describe('bookshelf v2 api contracts', () => {
       },
       commandConfig,
     )
+    expect(getMock).not.toHaveBeenCalled()
+    expect(result).toEqual({
+      constraints: constraints.payload,
+      revision: 3,
+    })
   })
 
   it('updates a book cover through the multipart PUT contract', async () => {
@@ -137,7 +154,7 @@ describe('bookshelf v2 api contracts', () => {
     expect(url).toBe('/api/v2/books/book%2Fid%20one')
     expect(body).toBeInstanceOf(FormData)
     expect((body as FormData).get('title')).toBe('Updated Book')
-    expect((body as FormData).get('tagIds')).toBe('[]')
+    expect((body as FormData).has('tagIds')).toBe(false)
     const uploadedCover = (body as FormData).get('cover')
     expect(uploadedCover).toBeInstanceOf(File)
     expect((uploadedCover as File).name).toBe('cover.png')
@@ -146,15 +163,43 @@ describe('bookshelf v2 api contracts', () => {
     expect(config).toEqual(commandConfig)
     expect(method).toBe('put')
     expect(putMock).not.toHaveBeenCalled()
+    expect(getMock).not.toHaveBeenCalled()
+  })
+
+  it('updates only the requested book fields without reading or overwriting the rest', async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url === '/api/v2/tags') {
+        return Promise.resolve({
+          items: [{ id: 'tag-id', name: 'Fantasy', color: '#4466aa' }],
+        })
+      }
+      return Promise.reject(new Error(`unexpected GET ${url}`))
+    })
+    putMock.mockResolvedValue({
+      id: book.id,
+      title: book.title,
+      chapterOrderRevision: book.chapterOrderRevision,
+      tags: [{ id: 'tag-id', name: 'Fantasy', color: '#4466aa' }],
+    })
+    const { updateBook } = await import('@/api/bookshelf')
+
+    const updated = await updateBook(book.id, { tags: ['Fantasy'] })
+
+    expect(putMock).toHaveBeenCalledWith(
+      '/api/v2/books/book%2Fid%20one',
+      { tagIds: ['tag-id'] },
+      commandConfig,
+    )
+    expect(getMock).toHaveBeenCalledTimes(1)
+    expect(getMock).toHaveBeenCalledWith('/api/v2/tags')
+    expect(updated.tags).toEqual(['Fantasy'])
+    expect(updated).not.toHaveProperty('chapters')
   })
 
   it('uses direct chapter resources and idempotency headers', async () => {
     putMock.mockResolvedValue({
       id: 'chapter/id one',
       title: 'Updated Chapter',
-      ordinal: 1,
-      pageCount: 0,
-      pageOrderRevision: 1,
     })
     const { deleteChapter, updateChapter } = await import('@/api/bookshelf')
 

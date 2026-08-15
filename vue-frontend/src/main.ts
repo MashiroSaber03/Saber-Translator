@@ -9,8 +9,6 @@ import './styles/tokens/semantic.css'
 import './styles/tokens/component.css'
 import './styles/tokens/domain.css'
 import './styles/reset.css'
-import './styles/animations.css'
-import './styles/base.css'
 
 const app = createApp(App)
 

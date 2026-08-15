@@ -37,6 +37,7 @@ def upgrade() -> None:
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.CheckConstraint("scope IN ('full','incremental','chapter','page')", name=op.f('ck_analysis_runs_scope_values')),
+    sa.CheckConstraint('schema_version >= 1', name=op.f('ck_analysis_runs_schema_version_positive')),
     sa.CheckConstraint("status IN ('staging','completed','completed_with_errors','failed','cancelled')", name=op.f('ck_analysis_runs_status_values')),
     sa.CheckConstraint('target_count >= 0 AND success_count >= 0 AND failed_count >= 0', name=op.f('ck_analysis_runs_counts_nonnegative')),
     sa.ForeignKeyConstraint(['book_id'], ['books.id'], name=op.f('fk_analysis_runs_book_id_books'), ondelete='CASCADE'),
@@ -53,6 +54,7 @@ def upgrade() -> None:
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.CheckConstraint('revision >= 1', name=op.f('ck_app_settings_revision_positive')),
+    sa.CheckConstraint('schema_version >= 1', name=op.f('ck_app_settings_schema_version_positive')),
     sa.PrimaryKeyConstraint('domain', name=op.f('pk_app_settings'))
     )
     op.create_table('assets',
@@ -69,6 +71,7 @@ def upgrade() -> None:
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.CheckConstraint("integrity_status IN ('ok', 'missing')", name=op.f('ck_assets_integrity_status_values')),
     sa.CheckConstraint('byte_size >= 0', name=op.f('ck_assets_byte_size_nonnegative')),
+    sa.CheckConstraint('(width IS NULL AND height IS NULL) OR (width >= 1 AND height >= 1)', name=op.f('ck_assets_dimensions_shape')),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_assets')),
     sa.UniqueConstraint('relative_path', name=op.f('uq_assets_relative_path'))
     )
@@ -82,6 +85,7 @@ def upgrade() -> None:
     sa.Column('payload_json', sa.Text(), server_default='{}', nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
+    sa.CheckConstraint('revision >= 1', name=op.f('ck_continuation_projects_revision_positive')),
     sa.ForeignKeyConstraint(['book_id'], ['books.id'], name=op.f('fk_continuation_projects_book_id_books'), ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['source_run_id'], ['analysis_runs.id'], name=op.f('fk_continuation_projects_source_run_id_analysis_runs'), ondelete='RESTRICT'),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_continuation_projects')),
@@ -142,13 +146,14 @@ def upgrade() -> None:
     sa.Column('worker_epoch_id', sa.String(length=36), nullable=True),
     sa.Column('config_json', sa.Text(), nullable=False),
     sa.Column('config_schema_version', sa.Integer(), server_default='1', nullable=False),
-    sa.Column('latest_progress_json', sa.Text(), server_default='{}', nullable=False),
+    sa.Column('latest_progress_json', sa.Text(), nullable=False),
     sa.Column('target_display_json', sa.Text(), server_default='{}', nullable=False),
     sa.Column('started_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('finished_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.CheckConstraint("blocked_reason IS NULL OR blocked_reason IN ('blocked_by_job','draining_immediate_writes')", name=op.f('ck_jobs_blocked_reason_values')),
+    sa.CheckConstraint('config_schema_version >= 1', name=op.f('ck_jobs_config_schema_version_positive')),
     sa.CheckConstraint("kind IN ('translation', 'remove_text', 'detect', 'style_apply', 'text_import', 'container_import', 'web_extract', 'web_import_commit', 'export', 'insight_analysis', 'insight_export', 'vector_rebuild', 'continuation', 'derived_rebuild', 'plugin_agent')", name=op.f('ck_jobs_kind_values')),
     sa.CheckConstraint("retry_mode IS NULL OR retry_mode IN ('current','original')", name=op.f('ck_jobs_retry_mode_values')),
     sa.CheckConstraint("status IN ('queued', 'running', 'pausing', 'paused', 'cancelling', 'cancelled', 'completed', 'completed_with_errors', 'failed', 'interrupted')", name=op.f('ck_jobs_status_values')),
@@ -195,7 +200,7 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('asset_id', name=op.f('pk_object_commit_journal'))
     )
     op.create_table('plugins',
-    sa.Column('id', sa.String(length=36), nullable=False),
+    sa.Column('id', sa.String(length=100), nullable=False),
     sa.Column('name', sa.String(length=200), nullable=False),
     sa.Column('state', sa.String(length=16), server_default='enabled', nullable=False),
     sa.Column('author', sa.String(length=200), server_default=sa.text("''"), nullable=False),
@@ -224,6 +229,7 @@ def upgrade() -> None:
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.CheckConstraint("role IN ('launcher','api','worker')", name=op.f('ck_process_epochs_role_values')),
     sa.CheckConstraint("status IN ('active','lost','closed')", name=op.f('ck_process_epochs_status_values')),
+    sa.CheckConstraint('pid >= 0', name=op.f('ck_process_epochs_pid_nonnegative')),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_process_epochs'))
     )
     op.create_index('ix_process_epochs_role_status', 'process_epochs', ['role', 'status'], unique=False)
@@ -268,6 +274,7 @@ def upgrade() -> None:
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.CheckConstraint('generation >= 1', name=op.f('ck_studio_chat_sessions_generation_positive')),
     sa.CheckConstraint('revision >= 1', name=op.f('ck_studio_chat_sessions_revision_positive')),
+    sa.CheckConstraint('runtime_schema_version >= 1', name=op.f('ck_studio_chat_sessions_runtime_schema_version_positive')),
     sa.CheckConstraint('summary_generation >= 0', name=op.f('ck_studio_chat_sessions_summary_generation_nonnegative')),
     sa.ForeignKeyConstraint(['document_id'], ['studio_documents.id'], name=op.f('fk_studio_chat_sessions_document_id_studio_documents'), ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['summary_through_message_id'], ['studio_messages.id'], name=op.f('fk_studio_chat_sessions_summary_through_message_id_studio_messages'), ondelete='SET NULL'),
@@ -282,7 +289,7 @@ def upgrade() -> None:
     sa.Column('ordinal', sa.Integer(), nullable=False),
     sa.Column('role', sa.String(length=16), nullable=False),
     sa.Column('content', sa.Text(), nullable=False),
-    sa.Column('runtime_log', sa.Text(), server_default=sa.text("''"), nullable=False),
+    sa.Column('runtime_log', sa.Text(), server_default='[]', nullable=False),
     sa.Column('variables_snapshot_json', sa.Text(), server_default='{}', nullable=False),
     sa.Column('generation_meta_json', sa.Text(), server_default='{}', nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
@@ -336,6 +343,7 @@ def upgrade() -> None:
     sa.Column('revision', sa.Integer(), server_default='1', nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
+    sa.CheckConstraint('revision >= 1', name=op.f('ck_continuation_characters_revision_positive')),
     sa.ForeignKeyConstraint(['project_id'], ['continuation_projects.id'], name=op.f('fk_continuation_characters_project_id_continuation_projects'), ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_continuation_characters')),
     sa.UniqueConstraint('project_id', 'name', name=op.f('uq_continuation_characters_project_id'))
@@ -346,6 +354,8 @@ def upgrade() -> None:
     sa.Column('ordinal', sa.Integer(), nullable=False),
     sa.Column('revision', sa.Integer(), server_default='1', nullable=False),
     sa.Column('payload_json', sa.Text(), server_default='{}', nullable=False),
+    sa.CheckConstraint('ordinal >= 1', name=op.f('ck_continuation_pages_ordinal_positive')),
+    sa.CheckConstraint('revision >= 1', name=op.f('ck_continuation_pages_revision_positive')),
     sa.ForeignKeyConstraint(['project_id'], ['continuation_projects.id'], name=op.f('fk_continuation_pages_project_id_continuation_projects'), ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_continuation_pages')),
     sa.UniqueConstraint('project_id', 'ordinal', name=op.f('uq_continuation_pages_project_id'))
@@ -368,6 +378,7 @@ def upgrade() -> None:
     sa.Column('content', sa.Text(), server_default=sa.text("''"), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
+    sa.CheckConstraint('revision >= 1', name=op.f('ck_continuation_scripts_revision_positive')),
     sa.ForeignKeyConstraint(['project_id'], ['continuation_projects.id'], name=op.f('fk_continuation_scripts_project_id_continuation_projects'), ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_continuation_scripts'))
     )
@@ -415,6 +426,7 @@ def upgrade() -> None:
     sa.Column('job_id', sa.String(length=36), nullable=False),
     sa.Column('payload_json', sa.Text(), nullable=False),
     sa.Column('schema_version', sa.Integer(), nullable=False),
+    sa.CheckConstraint('schema_version >= 1', name=op.f('ck_job_config_snapshots_schema_version_positive')),
     sa.ForeignKeyConstraint(['job_id'], ['jobs.id'], name=op.f('fk_job_config_snapshots_job_id_jobs'), ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('job_id', name=op.f('pk_job_config_snapshots'))
     )
@@ -430,6 +442,7 @@ def upgrade() -> None:
     sa.Column('payload_json', sa.Text(), server_default='{}', nullable=False),
     sa.Column('payload_schema_version', sa.Integer(), server_default='1', nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
+    sa.CheckConstraint('payload_schema_version >= 1', name=op.f('ck_job_events_payload_schema_version_positive')),
     sa.ForeignKeyConstraint(['job_id'], ['jobs.id'], name=op.f('fk_job_events_job_id_jobs'), ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_job_events')),
     sqlite_autoincrement=True,
@@ -437,7 +450,7 @@ def upgrade() -> None:
     op.create_index('ix_job_events_job_cursor', 'job_events', ['job_id', 'id'], unique=False)
     op.create_table('plugin_versions',
     sa.Column('id', sa.String(length=36), nullable=False),
-    sa.Column('plugin_id', sa.String(length=36), nullable=False),
+    sa.Column('plugin_id', sa.String(length=100), nullable=False),
     sa.Column('version', sa.String(length=64), nullable=False),
     sa.Column('package_relative_path', sa.Text(), nullable=False),
     sa.Column('checksum', sa.String(length=64), nullable=False),
@@ -446,6 +459,7 @@ def upgrade() -> None:
     sa.Column('manifest_schema_version', sa.Integer(), server_default='3', nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
+    sa.CheckConstraint('manifest_schema_version >= 1', name=op.f('ck_plugin_versions_manifest_schema_version_positive')),
     sa.ForeignKeyConstraint(['plugin_id'], ['plugins.id'], name=op.f('fk_plugin_versions_plugin_id_plugins'), ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_plugin_versions')),
     sa.UniqueConstraint('package_relative_path', name=op.f('uq_plugin_versions_package_relative_path'))
@@ -522,6 +536,8 @@ def upgrade() -> None:
     sa.Column('schema_version', sa.Integer(), server_default='1', nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
+    sa.CheckConstraint('revision >= 1', name=op.f('ck_book_settings_revision_positive')),
+    sa.CheckConstraint('schema_version >= 1', name=op.f('ck_book_settings_schema_version_positive')),
     sa.ForeignKeyConstraint(['book_id'], ['books.id'], name=op.f('fk_book_settings_book_id_books'), ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('book_id', 'domain', name=op.f('pk_book_settings'))
     )
@@ -546,6 +562,8 @@ def upgrade() -> None:
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.CheckConstraint('ordinal >= 1', name=op.f('ck_chapters_ordinal_positive')),
     sa.CheckConstraint('page_order_revision >= 1', name=op.f('ck_chapters_page_order_revision_positive')),
+    sa.CheckConstraint('settings_memory_revision >= 1', name=op.f('ck_chapters_settings_memory_revision_positive')),
+    sa.CheckConstraint('settings_memory_schema_version >= 1', name=op.f('ck_chapters_settings_memory_schema_version_positive')),
     sa.CheckConstraint('write_intent_generation >= 0', name=op.f('ck_chapters_intent_generation_nonnegative')),
     sa.ForeignKeyConstraint(['book_id'], ['books.id'], name=op.f('fk_chapters_book_id_books'), ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_chapters')),
@@ -562,6 +580,7 @@ def upgrade() -> None:
     sa.Column('revision', sa.Integer(), server_default='1', nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
+    sa.CheckConstraint('revision >= 1', name=op.f('ck_continuation_character_forms_revision_positive')),
     sa.ForeignKeyConstraint(['adopted_asset_id'], ['assets.id'], name=op.f('fk_continuation_character_forms_adopted_asset_id_assets'), ondelete='RESTRICT'),
     sa.ForeignKeyConstraint(['character_id'], ['continuation_characters.id'], name=op.f('fk_continuation_character_forms_character_id_continuation_characters'), ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['reference_asset_id'], ['assets.id'], name=op.f('fk_continuation_character_forms_reference_asset_id_assets'), ondelete='RESTRICT'),
@@ -581,6 +600,7 @@ def upgrade() -> None:
     sa.Column('is_active', sa.Boolean(), server_default='0', nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
+    sa.CheckConstraint('version >= 1', name=op.f('ck_continuation_image_versions_version_positive')),
     sa.ForeignKeyConstraint(['asset_id'], ['assets.id'], name=op.f('fk_continuation_image_versions_asset_id_assets'), ondelete='RESTRICT'),
     sa.ForeignKeyConstraint(['continuation_page_id'], ['continuation_pages.id'], name=op.f('fk_continuation_image_versions_continuation_page_id_continuation_pages'), ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['thumbnail_asset_id'], ['assets.id'], name=op.f('fk_continuation_image_versions_thumbnail_asset_id_assets'), ondelete='RESTRICT'),
@@ -589,6 +609,7 @@ def upgrade() -> None:
     )
     op.create_index('ix_continuation_image_versions_asset_id', 'continuation_image_versions', ['asset_id'], unique=False)
     op.create_index('ix_continuation_image_versions_thumbnail_asset_id', 'continuation_image_versions', ['thumbnail_asset_id'], unique=False)
+    op.create_index('uq_continuation_image_versions_active', 'continuation_image_versions', ['continuation_page_id'], unique=True, sqlite_where=sa.text('is_active IS 1'))
     op.create_table('credential_current_versions',
     sa.Column('credential_id', sa.String(length=36), nullable=False),
     sa.Column('credential_version_id', sa.String(length=36), nullable=False),
@@ -643,7 +664,7 @@ def upgrade() -> None:
     )
     op.create_index('ix_notes_book_updated', 'notes', ['book_id', 'updated_at'], unique=False)
     op.create_table('plugin_current_versions',
-    sa.Column('plugin_id', sa.String(length=36), nullable=False),
+    sa.Column('plugin_id', sa.String(length=100), nullable=False),
     sa.Column('plugin_version_id', sa.String(length=36), nullable=False),
     sa.Column('revision', sa.Integer(), server_default='1', nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
@@ -662,6 +683,7 @@ def upgrade() -> None:
     sa.Column('rpm_limit', sa.Integer(), nullable=False),
     sa.Column('revision', sa.Integer(), server_default='1', nullable=False),
     sa.CheckConstraint('request_count >= 0', name=op.f('ck_provider_rate_limits_request_count_nonnegative')),
+    sa.CheckConstraint('revision >= 1', name=op.f('ck_provider_rate_limits_revision_positive')),
     sa.CheckConstraint('rpm_limit >= 1', name=op.f('ck_provider_rate_limits_rpm_limit_positive')),
     sa.ForeignKeyConstraint(['credential_version_id'], ['credential_versions.id'], name=op.f('fk_provider_rate_limits_credential_version_id_credential_versions'), ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('provider', 'credential_version_id', name=op.f('pk_provider_rate_limits'))
@@ -675,6 +697,8 @@ def upgrade() -> None:
     sa.Column('credential_version_id', sa.String(length=36), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
+    sa.CheckConstraint('revision >= 1', name=op.f('ck_provider_settings_revision_positive')),
+    sa.CheckConstraint('schema_version >= 1', name=op.f('ck_provider_settings_schema_version_positive')),
     sa.ForeignKeyConstraint(['credential_version_id'], ['credential_versions.id'], name=op.f('fk_provider_settings_credential_version_id_credential_versions'), ondelete='RESTRICT'),
     sa.PrimaryKeyConstraint('domain', 'provider', name=op.f('pk_provider_settings'))
     )
@@ -705,6 +729,7 @@ def upgrade() -> None:
     sa.CheckConstraint("origin_type IN ('analysis','manual','imported')", name=op.f('ck_studio_documents_origin_type_values')),
     sa.CheckConstraint('chat_index_revision >= 1', name=op.f('ck_studio_documents_chat_index_revision_positive')),
     sa.CheckConstraint('revision >= 1', name=op.f('ck_studio_documents_revision_positive')),
+    sa.CheckConstraint('schema_version >= 1', name=op.f('ck_studio_documents_schema_version_positive')),
     sa.ForeignKeyConstraint(['avatar_asset_id'], ['assets.id'], name=op.f('fk_studio_documents_avatar_asset_id_assets'), ondelete='RESTRICT'),
     sa.ForeignKeyConstraint(['book_id'], ['books.id'], name=op.f('fk_studio_documents_book_id_books'), ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_studio_documents'))
@@ -764,6 +789,7 @@ def upgrade() -> None:
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.CheckConstraint('revision >= 1', name=op.f('ck_translation_constraints_revision_positive')),
+    sa.CheckConstraint('schema_version >= 1', name=op.f('ck_translation_constraints_schema_version_positive')),
     sa.ForeignKeyConstraint(['book_id'], ['books.id'], name=op.f('fk_translation_constraints_book_id_books'), ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('book_id', name=op.f('pk_translation_constraints'))
     )
@@ -780,6 +806,7 @@ def upgrade() -> None:
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.CheckConstraint("status IN ('ready','stale','building','failed','degraded')", name=op.f('ck_vector_generations_status_values')),
+    sa.CheckConstraint('page_count >= 0 AND event_count >= 0', name=op.f('ck_vector_generations_counts_nonnegative')),
     sa.CheckConstraint('generation >= 1', name=op.f('ck_vector_generations_generation_positive')),
     sa.ForeignKeyConstraint(['book_id'], ['books.id'], name=op.f('fk_vector_generations_book_id_books'), ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['run_id'], ['analysis_runs.id'], name=op.f('fk_vector_generations_run_id_analysis_runs'), ondelete='SET NULL'),
@@ -849,6 +876,7 @@ def upgrade() -> None:
     sa.Column('is_adopted', sa.Boolean(), server_default='0', nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
+    sa.CheckConstraint('version >= 1', name=op.f('ck_continuation_form_image_versions_version_positive')),
     sa.ForeignKeyConstraint(['asset_id'], ['assets.id'], name=op.f('fk_continuation_form_image_versions_asset_id_assets'), ondelete='RESTRICT'),
     sa.ForeignKeyConstraint(['form_id'], ['continuation_character_forms.id'], name=op.f('fk_continuation_form_image_versions_form_id_continuation_character_forms'), ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['thumbnail_asset_id'], ['assets.id'], name=op.f('fk_continuation_form_image_versions_thumbnail_asset_id_assets'), ondelete='RESTRICT'),
@@ -857,6 +885,7 @@ def upgrade() -> None:
     )
     op.create_index('ix_continuation_form_image_versions_asset_id', 'continuation_form_image_versions', ['asset_id'], unique=False)
     op.create_index('ix_continuation_form_image_versions_thumbnail_asset_id', 'continuation_form_image_versions', ['thumbnail_asset_id'], unique=False)
+    op.create_index('uq_continuation_form_image_versions_adopted', 'continuation_form_image_versions', ['form_id'], unique=True, sqlite_where=sa.text('is_adopted IS 1'))
     op.create_table('pages',
     sa.Column('id', sa.String(length=36), nullable=False),
     sa.Column('chapter_id', sa.String(length=36), nullable=False),
@@ -874,8 +903,11 @@ def upgrade() -> None:
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.CheckConstraint("render_status IN ('not_rendered','ready','stale','rendering','render_failed','awaiting_repair','repair_failed')", name=op.f('ck_pages_render_status_values')),
+    sa.CheckConstraint("detection_state IN ('unprocessed','processed')", name=op.f('ck_pages_detection_state_values')),
     sa.CheckConstraint('document_revision >= 1', name=op.f('ck_pages_document_revision_positive')),
     sa.CheckConstraint('ordinal >= 1', name=op.f('ck_pages_ordinal_positive')),
+    sa.CheckConstraint('page_style_schema_version >= 1', name=op.f('ck_pages_page_style_schema_version_positive')),
+    sa.CheckConstraint('rendered_revision IS NULL OR rendered_revision >= 1', name=op.f('ck_pages_rendered_revision_positive')),
     sa.CheckConstraint('source_revision >= 1', name=op.f('ck_pages_source_revision_positive')),
     sa.ForeignKeyConstraint(['chapter_id'], ['chapters.id'], name=op.f('fk_pages_chapter_id_chapters'), ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['default_font_id'], ['fonts.id'], name=op.f('fk_pages_default_font_id_fonts'), ondelete='RESTRICT'),
@@ -906,6 +938,7 @@ def upgrade() -> None:
     sa.Column('timeline_version_id', sa.String(length=36), nullable=False),
     sa.Column('ordinal', sa.Integer(), nullable=False),
     sa.Column('payload_json', sa.Text(), nullable=False),
+    sa.CheckConstraint('ordinal >= 1', name=op.f('ck_timeline_events_ordinal_positive')),
     sa.ForeignKeyConstraint(['timeline_version_id'], ['timeline_versions.id'], name=op.f('fk_timeline_events_timeline_version_id_timeline_versions'), ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_timeline_events')),
     sa.UniqueConstraint('timeline_version_id', 'ordinal', name=op.f('uq_timeline_events_timeline_version_id'))
@@ -923,6 +956,8 @@ def upgrade() -> None:
     sa.Column('expires_at', sa.DateTime(timezone=True), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
+    sa.CheckConstraint('config_schema_version >= 1', name=op.f('ck_web_import_drafts_config_schema_version_positive')),
+    sa.CheckConstraint('revision >= 1', name=op.f('ck_web_import_drafts_revision_positive')),
     sa.CheckConstraint("status IN ('extracting','ready','committing','completed','failed','cancelled')", name=op.f('ck_web_import_drafts_status_values')),
     sa.ForeignKeyConstraint(['book_id'], ['books.id'], name=op.f('fk_web_import_drafts_book_id_books'), ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['chapter_id'], ['chapters.id'], name=op.f('fk_web_import_drafts_chapter_id_chapters'), ondelete='SET NULL'),
@@ -937,6 +972,7 @@ def upgrade() -> None:
     sa.Column('page_id_snapshot', sa.String(length=36), nullable=False),
     sa.Column('page_number_snapshot', sa.Integer(), nullable=False),
     sa.CheckConstraint('ordinal >= 1', name=op.f('ck_analysis_layer_result_pages_ordinal_positive')),
+    sa.CheckConstraint('page_number_snapshot >= 1', name=op.f('ck_analysis_layer_result_pages_page_number_positive')),
     sa.ForeignKeyConstraint(['layer_result_id'], ['analysis_layer_results.id'], name=op.f('fk_analysis_layer_result_pages_layer_result_id_analysis_layer_results'), ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['page_id'], ['pages.id'], name=op.f('fk_analysis_layer_result_pages_page_id_pages'), ondelete='SET NULL'),
     sa.PrimaryKeyConstraint('layer_result_id', 'ordinal', name=op.f('pk_analysis_layer_result_pages'))
@@ -955,6 +991,8 @@ def upgrade() -> None:
     sa.Column('status', sa.String(length=16), server_default='staging', nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
+    sa.CheckConstraint('page_number_snapshot >= 1', name=op.f('ck_analysis_page_results_page_number_positive')),
+    sa.CheckConstraint('schema_version >= 1', name=op.f('ck_analysis_page_results_schema_version_positive')),
     sa.CheckConstraint("status IN ('staging','published','stale')", name=op.f('ck_analysis_page_results_status_values')),
     sa.ForeignKeyConstraint(['page_id'], ['pages.id'], name=op.f('fk_analysis_page_results_page_id_pages'), ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['run_id'], ['analysis_runs.id'], name=op.f('fk_analysis_page_results_run_id_analysis_runs'), ondelete='CASCADE'),
@@ -999,6 +1037,7 @@ def upgrade() -> None:
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.CheckConstraint('ordinal >= 1', name=op.f('ck_bubbles_ordinal_positive')),
+    sa.CheckConstraint('payload_schema_version >= 1', name=op.f('ck_bubbles_payload_schema_version_positive')),
     sa.CheckConstraint('updated_revision >= 1', name=op.f('ck_bubbles_updated_revision_positive')),
     sa.ForeignKeyConstraint(['font_id'], ['fonts.id'], name=op.f('fk_bubbles_font_id_fonts'), ondelete='RESTRICT'),
     sa.ForeignKeyConstraint(['page_id'], ['pages.id'], name=op.f('fk_bubbles_page_id_pages'), ondelete='CASCADE'),
@@ -1053,6 +1092,8 @@ def upgrade() -> None:
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.CheckConstraint("status IN ('pending','running','completed','failed')", name=op.f('ck_render_requests_status_values')),
+    sa.CheckConstraint('completed_revision IS NULL OR completed_revision >= 1', name=op.f('ck_render_requests_completed_revision_positive')),
+    sa.CheckConstraint('rendering_revision IS NULL OR rendering_revision >= 1', name=op.f('ck_render_requests_rendering_revision_positive')),
     sa.CheckConstraint('requested_revision >= 1', name=op.f('ck_render_requests_requested_revision_positive')),
     sa.ForeignKeyConstraint(['executor_epoch_id'], ['process_epochs.id'], name=op.f('fk_render_requests_executor_epoch_id_process_epochs'), ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['page_id'], ['pages.id'], name=op.f('fk_render_requests_page_id_pages'), ondelete='CASCADE'),
@@ -1073,6 +1114,7 @@ def upgrade() -> None:
     sa.Column('error_json', sa.Text(), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
+    sa.CheckConstraint('ordinal >= 1', name=op.f('ck_web_import_draft_pages_ordinal_positive')),
     sa.ForeignKeyConstraint(['draft_id'], ['web_import_drafts.id'], name=op.f('fk_web_import_draft_pages_draft_id_web_import_drafts'), ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['thumbnail_asset_id'], ['assets.id'], name=op.f('fk_web_import_draft_pages_thumbnail_asset_id_assets'), ondelete='RESTRICT'),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_web_import_draft_pages')),
@@ -1125,6 +1167,7 @@ def upgrade() -> None:
     sa.Column('error_json', sa.Text(), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
+    sa.CheckConstraint('checkpoint_schema_version >= 1', name=op.f('ck_job_steps_checkpoint_schema_version_positive')),
     sa.CheckConstraint("status IN ('pending','running','completed','failed','skipped','cancelled')", name=op.f('ck_job_steps_status_values')),
     sa.CheckConstraint('ordinal >= 1', name=op.f('ck_job_steps_ordinal_positive')),
     sa.ForeignKeyConstraint(['job_item_id'], ['job_items.id'], name=op.f('fk_job_steps_job_item_id_job_items'), ondelete='CASCADE'),
@@ -1140,6 +1183,8 @@ def upgrade() -> None:
     sa.Column('source_analysis_id', sa.String(length=36), nullable=True),
     sa.Column('excerpt', sa.Text(), server_default=sa.text("''"), nullable=False),
     sa.Column('score', sa.Float(), nullable=True),
+    sa.CheckConstraint('ordinal >= 1', name=op.f('ck_note_citations_ordinal_positive')),
+    sa.CheckConstraint('page_number_snapshot >= 1', name=op.f('ck_note_citations_page_number_positive')),
     sa.ForeignKeyConstraint(['note_id'], ['notes.id'], name=op.f('fk_note_citations_note_id_notes'), ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['page_id'], ['pages.id'], name=op.f('fk_note_citations_page_id_pages'), ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['source_analysis_id'], ['analysis_page_results.id'], name=op.f('fk_note_citations_source_analysis_id_analysis_page_results'), ondelete='SET NULL'),
@@ -1170,10 +1215,13 @@ def upgrade() -> None:
     sa.Column('finished_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
+    sa.CheckConstraint('base_generation IS NULL OR base_generation >= 1', name=op.f('ck_operations_base_generation_positive')),
+    sa.CheckConstraint('base_revision IS NULL OR base_revision >= 1', name=op.f('ck_operations_base_revision_positive')),
     sa.CheckConstraint("((kind IN ('bubble_ocr','bubble_color','bubble_translate') AND studio_document_id IS NULL AND studio_session_id IS NULL AND ((status IN ('pending','running') AND page_id IS NOT NULL AND bubble_id IS NOT NULL) OR status IN ('completed','failed','cancelled'))) OR (kind IN ('page_detect','page_repair') AND bubble_id IS NULL AND studio_document_id IS NULL AND studio_session_id IS NULL AND ((status IN ('pending','running') AND page_id IS NOT NULL) OR status IN ('completed','failed','cancelled'))) OR (kind = 'studio_generate' AND page_id IS NULL AND bubble_id IS NULL AND studio_session_id IS NULL AND ((status IN ('pending','running') AND studio_document_id IS NOT NULL) OR status IN ('completed','failed','cancelled'))) OR (kind IN ('studio_chat','studio_summary') AND page_id IS NULL AND bubble_id IS NULL AND studio_document_id IS NULL AND ((status IN ('pending','running') AND studio_session_id IS NOT NULL) OR status IN ('completed','failed','cancelled'))))", name=op.f('ck_operations_kind_target_shape')),
     sa.CheckConstraint("(kind IN ('bubble_ocr','bubble_color','page_detect') AND executor_role = 'worker') OR (kind IN ('bubble_translate','studio_generate','studio_chat','studio_summary') AND executor_role = 'api') OR (kind = 'page_repair')", name=op.f('ck_operations_kind_executor_shape')),
     sa.CheckConstraint("executor_role IN ('api','worker')", name=op.f('ck_operations_executor_role_values')),
     sa.CheckConstraint("kind IN ('bubble_ocr', 'bubble_color', 'page_detect', 'page_repair', 'bubble_translate', 'studio_generate', 'studio_chat', 'studio_summary')", name=op.f('ck_operations_kind_values')),
+    sa.CheckConstraint('request_schema_version >= 1', name=op.f('ck_operations_request_schema_version_positive')),
     sa.CheckConstraint("status IN ('pending', 'running', 'completed', 'failed', 'cancelled')", name=op.f('ck_operations_status_values')),
     sa.ForeignKeyConstraint(['bubble_id'], ['bubbles.id'], name=op.f('fk_operations_bubble_id_bubbles'), ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['executor_epoch_id'], ['process_epochs.id'], name=op.f('fk_operations_executor_epoch_id_process_epochs'), ondelete='SET NULL'),
@@ -1279,6 +1327,8 @@ def upgrade() -> None:
     sa.Column('producer_render_request_id', sa.String(length=36), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.CheckConstraint("(role = 'thumbnail_source' AND parent_asset_id IS NOT NULL) OR role != 'thumbnail_source'", name=op.f('ck_page_assets_thumbnail_parent_required')),
+    sa.CheckConstraint('input_document_revision IS NULL OR input_document_revision >= 1', name=op.f('ck_page_assets_input_document_revision_positive')),
+    sa.CheckConstraint('input_source_revision IS NULL OR input_source_revision >= 1', name=op.f('ck_page_assets_input_source_revision_positive')),
     sa.CheckConstraint("role IN ('source', 'thumbnail_source', 'clean', 'translated', 'text_mask')", name=op.f('ck_page_assets_role_values')),
     sa.CheckConstraint('(CASE WHEN producer_job_step_id IS NULL THEN 0 ELSE 1 END + CASE WHEN producer_operation_id IS NULL THEN 0 ELSE 1 END + CASE WHEN producer_render_request_id IS NULL THEN 0 ELSE 1 END) <= 1', name=op.f('ck_page_assets_single_producer')),
     sa.ForeignKeyConstraint(['asset_id'], ['assets.id'], name=op.f('fk_page_assets_asset_id_assets'), ondelete='RESTRICT'),
@@ -1369,6 +1419,7 @@ def downgrade() -> None:
     op.drop_table('timeline_characters')
     op.drop_index('ix_pages_default_font_id', table_name='pages')
     op.drop_table('pages')
+    op.drop_index('uq_continuation_form_image_versions_adopted', table_name='continuation_form_image_versions', sqlite_where=sa.text('is_adopted IS 1'))
     op.drop_index('ix_continuation_form_image_versions_thumbnail_asset_id', table_name='continuation_form_image_versions')
     op.drop_index('ix_continuation_form_image_versions_asset_id', table_name='continuation_form_image_versions')
     op.drop_table('continuation_form_image_versions')
@@ -1404,6 +1455,7 @@ def downgrade() -> None:
     op.drop_table('job_font_snapshots')
     op.drop_table('job_credential_snapshots')
     op.drop_table('credential_current_versions')
+    op.drop_index('uq_continuation_image_versions_active', table_name='continuation_image_versions', sqlite_where=sa.text('is_active IS 1'))
     op.drop_index('ix_continuation_image_versions_thumbnail_asset_id', table_name='continuation_image_versions')
     op.drop_index('ix_continuation_image_versions_asset_id', table_name='continuation_image_versions')
     op.drop_table('continuation_image_versions')

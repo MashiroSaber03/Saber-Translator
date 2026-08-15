@@ -2,18 +2,24 @@ import { ref, watch, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import {
   FONT_SIZE_PRESETS,
   FONT_SIZE_MIN,
-  FONT_SIZE_MAX,
   FONT_SIZE_STEP
 } from '@/constants'
-import type { BubbleState, TextDirection, InpaintMethod, TextAlign } from '@/types/bubble'
+import type {
+  BubbleState,
+  ResolvedTextDirection,
+  InpaintMethod,
+  TextAlign,
+} from '@/types/bubble'
 import { listV2Fonts } from '@/api/v2/settings'
 import { createBubbleState } from '@/utils/bubbleFactory'
 import { copyTextToClipboard } from '@/utils/clipboard'
+import { inpaintMethodOptions } from '@/utils/textStyleForm'
 import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
 
 export interface BubbleEditorProps {
   bubble: BubbleState | null
   bubbleIndex: number
+  disabled?: boolean
   isOcrLoading?: boolean
   isTranslateLoading?: boolean
 }
@@ -47,7 +53,7 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
   const localTranslatedText = ref('')
   const localFontSize = ref(TEXT_STYLE_DEFAULTS.fontSize)
   const localFontFamily = ref('')
-  const localTextDirection = ref<TextDirection>('vertical')
+  const localTextDirection = ref<ResolvedTextDirection>('vertical')
   const localTextColor = ref(TEXT_STYLE_DEFAULTS.textColor)
   const localFillColor = ref(TEXT_STYLE_DEFAULTS.fillColor)
   const localStrokeEnabled = ref(TEXT_STYLE_DEFAULTS.strokeEnabled)
@@ -112,12 +118,6 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     return groups
   })
 
-  const inpaintMethodOptions = [
-    { label: '纯色填充', value: 'solid' },
-    { label: 'LAMA修复(漫画)', value: 'lama_mpe' },
-    { label: 'LAMA修复(通用)', value: 'litelama' },
-  ]
-
   function syncFromBubble(bubble: BubbleState | null): void {
     const b = bubble || defaultBubble
     localOriginalText.value = b.originalText
@@ -181,7 +181,7 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     emit('update', { fontFamily: localFontFamily.value })
   }
 
-  function setTextDirection(direction: TextDirection): void {
+  function setTextDirection(direction: ResolvedTextDirection): void {
     localTextDirection.value = direction
     emit('update', { textDirection: direction })
   }
@@ -229,7 +229,6 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
   function handleLineSpacingChange(): void {
     let v = Number(localLineSpacing.value)
     if (!Number.isFinite(v) || v <= 0) v = TEXT_STYLE_DEFAULTS.lineSpacing
-    v = Math.max(0.5, Math.min(3.0, v))
     localLineSpacing.value = v
     emit('update', { lineSpacing: v })
   }
@@ -287,6 +286,7 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
   }
 
   function applyToAll(): void {
+    if (!props.bubble || props.bubbleIndex < 0) return
     emit('applyToAllStyle', {
       fontSize: localFontSize.value,
       fontFamily: localFontFamily.value,
@@ -303,15 +303,17 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
   }
 
   function resetBubbleEdit(): void {
-    // 父级编辑工作区持有进入编辑模式时的气泡快照。
+    if (!props.bubble || props.bubbleIndex < 0) return
     emit('resetCurrent', props.bubbleIndex)
   }
 
   function handleOcrRecognize(): void {
+    if (!props.bubble || props.bubbleIndex < 0) return
     emit('ocrRecognize', props.bubbleIndex)
   }
 
   function handleReTranslate(): void {
+    if (!props.bubble || props.bubbleIndex < 0) return
     emit('reTranslate', props.bubbleIndex)
   }
 
@@ -319,90 +321,61 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     showJpKeyboard.value = !showJpKeyboard.value
   }
 
-  function handleKanaInsert(char: string, target: 'original' | 'translated'): void {
+  type KeyboardTarget = 'original' | 'translated'
+
+  function targetInput(target: KeyboardTarget): TextareaFieldRef | null {
+    return target === 'original' ? originalTextInput.value : translatedTextInput.value
+  }
+
+  function targetText(target: KeyboardTarget): string {
+    return target === 'original' ? localOriginalText.value : localTranslatedText.value
+  }
+
+  function updateTargetText(target: KeyboardTarget, value: string): void {
     if (target === 'original') {
-      const input = originalTextInput.value
-      if (input) {
-        const start = input.selectionStart ?? localOriginalText.value.length
-        const end = input.selectionEnd ?? localOriginalText.value.length
-        const text = localOriginalText.value
-        localOriginalText.value = text.slice(0, start) + char + text.slice(end)
-        nextTick(() => {
-          input.selectionStart = input.selectionEnd = start + char.length
-          input.focus()
-        })
-        emit('update', { originalText: localOriginalText.value })
-      }
+      localOriginalText.value = value
+      emit('update', { originalText: value })
     } else {
-      const input = translatedTextInput.value
-      if (input) {
-        const start = input.selectionStart ?? localTranslatedText.value.length
-        const end = input.selectionEnd ?? localTranslatedText.value.length
-        const text = localTranslatedText.value
-        localTranslatedText.value = text.slice(0, start) + char + text.slice(end)
-        nextTick(() => {
-          input.selectionStart = input.selectionEnd = start + char.length
-          input.focus()
-        })
-        emit('update', { translatedText: localTranslatedText.value })
-      }
+      localTranslatedText.value = value
+      emit('update', { translatedText: value })
     }
   }
 
-  function handleKanaDelete(target: 'original' | 'translated'): void {
-    if (target === 'original') {
-      const input = originalTextInput.value
-      if (input && localOriginalText.value.length > 0) {
-        const start = input.selectionStart ?? localOriginalText.value.length
-        const end = input.selectionEnd ?? localOriginalText.value.length
-        const text = localOriginalText.value
-        let didChange = false
-        if (start === end && start > 0) {
-          localOriginalText.value = text.slice(0, start - 1) + text.slice(end)
-          didChange = true
-          nextTick(() => {
-            input.selectionStart = input.selectionEnd = start - 1
-            input.focus()
-          })
-        } else if (start !== end) {
-          localOriginalText.value = text.slice(0, start) + text.slice(end)
-          didChange = true
-          nextTick(() => {
-            input.selectionStart = input.selectionEnd = start
-            input.focus()
-          })
-        }
-        if (didChange) {
-          emit('update', { originalText: localOriginalText.value })
-        }
-      }
-    } else {
-      const input = translatedTextInput.value
-      if (input && localTranslatedText.value.length > 0) {
-        const start = input.selectionStart ?? localTranslatedText.value.length
-        const end = input.selectionEnd ?? localTranslatedText.value.length
-        const text = localTranslatedText.value
-        let didChange = false
-        if (start === end && start > 0) {
-          localTranslatedText.value = text.slice(0, start - 1) + text.slice(end)
-          didChange = true
-          nextTick(() => {
-            input.selectionStart = input.selectionEnd = start - 1
-            input.focus()
-          })
-        } else if (start !== end) {
-          localTranslatedText.value = text.slice(0, start) + text.slice(end)
-          didChange = true
-          nextTick(() => {
-            input.selectionStart = input.selectionEnd = start
-            input.focus()
-          })
-        }
-        if (didChange) {
-          emit('update', { translatedText: localTranslatedText.value })
-        }
-      }
+  function restoreTargetSelection(input: TextareaFieldRef, position: number): void {
+    nextTick(() => {
+      input.selectionStart = position
+      input.selectionEnd = position
+      input.focus()
+    })
+  }
+
+  function handleKanaInsert(char: string, target: KeyboardTarget): void {
+    const input = targetInput(target)
+    if (!input) return
+    const text = targetText(target)
+    const start = input.selectionStart ?? text.length
+    const end = input.selectionEnd ?? text.length
+    updateTargetText(target, text.slice(0, start) + char + text.slice(end))
+    restoreTargetSelection(input, start + char.length)
+  }
+
+  function handleKanaDelete(target: KeyboardTarget): void {
+    const input = targetInput(target)
+    const text = targetText(target)
+    if (!input || text.length === 0) return
+    const start = input.selectionStart ?? text.length
+    const end = input.selectionEnd ?? text.length
+    if (start !== end) {
+      updateTargetText(target, text.slice(0, start) + text.slice(end))
+      restoreTargetSelection(input, start)
+      return
     }
+    if (start <= 0) return
+    const previousCodePoint = Array.from(text.slice(0, start)).at(-1)
+    if (!previousCodePoint) return
+    const deleteStart = start - previousCodePoint.length
+    updateTargetText(target, text.slice(0, deleteStart) + text.slice(end))
+    restoreTargetSelection(input, deleteStart)
   }
 
   async function loadFontList(): Promise<void> {
@@ -435,7 +408,7 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
   }
 
   onMounted(() => {
-    loadFontList()
+    void loadFontList()
   })
 
   onUnmounted(() => {
@@ -445,7 +418,6 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
   return {
     FONT_SIZE_PRESETS,
     FONT_SIZE_MIN,
-    FONT_SIZE_MAX,
     FONT_SIZE_STEP,
     localOriginalText,
     localTranslatedText,

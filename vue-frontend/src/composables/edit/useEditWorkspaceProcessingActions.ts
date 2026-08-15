@@ -17,6 +17,7 @@ import { useImageStore } from '@/stores/imageStore'
 import type { BubbleState } from '@/types/bubble'
 import type { ImageData } from '@/types/image'
 import { showToast } from '@/utils/toast'
+import { isRequestCanceled } from '@/api/client'
 
 interface UseEditWorkspaceProcessingActionsOptions {
   images: Ref<ImageData[]>
@@ -31,35 +32,17 @@ export function useEditWorkspaceProcessingActions(
 ) {
   const bubbleStore = useBubbleStore()
   const imageStore = useImageStore()
-  const { translateWithCurrentBubbles: translateWithBubbles } = useTranslation()
+  const { translateWithCurrentBubbles: translateWithBubbles } = useTranslation({
+    observeProgress: false,
+  })
 
   const isProcessing = ref(false)
-  const progressText = ref('处理中...')
-  const progressCurrent = ref(0)
-  const progressTotal = ref(0)
   const isTranslateLoading = ref(false)
   const abortController = new AbortController()
-  let completionResetTimer: ReturnType<typeof setTimeout> | null = null
-
-  function clearCompletionResetTimer(): void {
-    if (completionResetTimer) {
-      clearTimeout(completionResetTimer)
-      completionResetTimer = null
-    }
-  }
-
-  function scheduleCompletionReset(): void {
-    clearCompletionResetTimer()
-    completionResetTimer = setTimeout(() => {
-      completionResetTimer = null
-      isProcessing.value = false
-    }, 2000)
-  }
 
   if (getCurrentInstance()) {
     onUnmounted(() => {
       abortController.abort()
-      clearCompletionResetTimer()
       isProcessing.value = false
     })
   }
@@ -85,8 +68,13 @@ export function useEditWorkspaceProcessingActions(
     pageId: string,
     preferredBubbleId?: string,
   ): Promise<void> {
+    const requested = options.currentImage.value
+    if (!requested || requested.id !== pageId || !requested.chapterId) return
     const document = await getPageDocument(pageId, abortController.signal)
     if (options.currentImage.value?.id !== pageId) return
+    if (document.pageId !== pageId || document.chapterId !== requested.chapterId) {
+      throw new Error(`页面 ${pageId} 的后端文档身份不匹配`)
+    }
     const bubbles = registerPageDocument(document)
     imageStore.updateCurrentImage({
       bubbleStates: bubbles,
@@ -132,15 +120,18 @@ export function useEditWorkspaceProcessingActions(
       showToast('缺少气泡原文，无法重新翻译', 'warning')
       return
     }
+    if (isProcessing.value) return
+    isProcessing.value = true
     isTranslateLoading.value = true
     try {
       await executePageOperation('bubble_translate', bubble)
       showToast('重新翻译完成', 'success')
     } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') return
+      if (isRequestCanceled(error)) return
       showToast(error instanceof Error ? error.message : '重新翻译失败', 'error')
     } finally {
       isTranslateLoading.value = false
+      isProcessing.value = false
     }
   }
 
@@ -149,17 +140,24 @@ export function useEditWorkspaceProcessingActions(
       showToast('没有有效的图片用于检测', 'warning')
       return
     }
+    if (isProcessing.value) return
+    isProcessing.value = true
     try {
       showToast('检测任务已提交到后端...', 'info')
       const operation = await executePageOperation('page_detect')
-      const count = Number(operation.result?.bubbleCount ?? 0)
+      const count = operation.result?.bubbleCount
+      if (typeof count !== 'number' || !Number.isInteger(count) || count < 0) {
+        throw new Error('后端检测结果缺少有效的气泡数量')
+      }
       showToast(
         count > 0 ? `自动检测到 ${count} 个文本框` : '未检测到文本框',
         count > 0 ? 'success' : 'info',
       )
     } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') return
+      if (isRequestCanceled(error)) return
       showToast(error instanceof Error ? error.message : '自动检测失败', 'error')
+    } finally {
+      isProcessing.value = false
     }
   }
 
@@ -168,38 +166,32 @@ export function useEditWorkspaceProcessingActions(
       showToast('至少需要两张图片才能执行批量检测', 'warning')
       return
     }
-    const confirmed = await confirmProductAction({
-      title: '批量检测文本框',
-      message: '此操作将对所有图片进行文本框检测，可能会覆盖已有的检测结果。确定继续吗？',
-      confirmText: '加入任务队列',
-      cancelText: '取消',
-      tone: 'danger',
-    })
-    if (!confirmed) return
-
-    const image = await persistCurrentDocument().catch(error => {
-      showToast(error instanceof Error ? error.message : '保存当前页失败', 'error')
-      return null
-    })
-    if (!image?.chapterId) {
-      if (image) showToast('当前章节上下文不存在', 'error')
-      return
-    }
-
+    if (isProcessing.value) return
     isProcessing.value = true
-    clearCompletionResetTimer()
-    progressText.value = '已加入后端任务队列'
-    progressCurrent.value = 0
-    progressTotal.value = options.images.value.length
     try {
+      const confirmed = await confirmProductAction({
+        title: '批量检测文本框',
+        message: '此操作将对所有图片进行文本框检测，可能会覆盖已有的检测结果。确定继续吗？',
+        confirmText: '加入任务队列',
+        cancelText: '取消',
+        tone: 'danger',
+      })
+      if (!confirmed) return
+
+      const image = await persistCurrentDocument()
+      if (!image.chapterId) {
+        showToast('当前章节上下文不存在', 'error')
+        return
+      }
       await createChapterDetectJob(
         image.chapterId,
         options.images.value.map(item => item.id),
       )
       showToast('批量检测已加入任务中心；关闭浏览器也会继续执行', 'success')
-      scheduleCompletionReset()
     } catch (error) {
+      if (isRequestCanceled(error)) return
       showToast(error instanceof Error ? error.message : '批量检测创建失败', 'error')
+    } finally {
       isProcessing.value = false
     }
   }
@@ -213,6 +205,8 @@ export function useEditWorkspaceProcessingActions(
       showToast('没有文本框可用于翻译，请先检测或添加文本框', 'warning')
       return
     }
+    if (isProcessing.value) return
+    isProcessing.value = true
     try {
       await persistCurrentDocument()
       const success = await translateWithBubbles()
@@ -221,18 +215,18 @@ export function useEditWorkspaceProcessingActions(
         options.selectFirstBubbleIfExists()
       }
     } catch (error) {
+      if (isRequestCanceled(error)) return
       showToast(
         `翻译失败: ${error instanceof Error ? error.message : '未知错误'}`,
         'error',
       )
+    } finally {
+      isProcessing.value = false
     }
   }
 
   return {
     isProcessing,
-    progressText,
-    progressCurrent,
-    progressTotal,
     isTranslateLoading,
     handleReTranslateBubble,
     autoDetectBubbles,

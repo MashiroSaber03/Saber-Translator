@@ -5,14 +5,14 @@
         v-if="modelValue"
         ref="overlayRef"
         class="ui-modal__overlay"
-        :class="[uiPlacementClass, uiBackdropClass, uiOverlayLayerClass, uiBackdropEffectClass, overlayClass]"
+        :class="[uiBackdropClass, uiBackdropEffectClass]"
         data-testid="base-dialog-overlay"
         @mousedown.self="handleOverlayMouseDown"
       >
         <div
           ref="dialogRef"
           class="ui-modal__container"
-          :class="[uiSizeClass, uiChromeClass, uiFrameClass, uiMobilePresentationClass, customClass]"
+          :class="[uiSizeClass, uiFrameClass, uiMobilePresentationClass, customClass]"
           :style="dialogStyle"
           role="dialog"
           tabindex="-1"
@@ -46,7 +46,7 @@
 
           <div
             class="ui-modal__body"
-            :class="[uiBodyPaddingClass, uiBodyScrollClass, bodyClass]"
+            :class="[uiBodyPaddingClass, uiBodyScrollClass]"
             data-testid="base-dialog-body"
           >
             <slot></slot>
@@ -55,7 +55,7 @@
           <div
             v-if="$slots.footer"
             class="ui-modal__footer"
-            :class="[uiFooterDividerClass, uiFooterToneClass, footerClass]"
+            :class="[uiFooterDividerClass, uiFooterToneClass]"
             data-testid="base-dialog-footer"
           >
             <slot name="footer"></slot>
@@ -66,48 +66,13 @@
   </Teleport>
 </template>
 
-<script lang="ts">
-let openModalCount = 0
-let previousBodyOverflow: string | null = null
-
-function lockBodyScroll() {
-  if (openModalCount === 0) {
-    previousBodyOverflow = document.body.style.overflow
-  }
-  openModalCount += 1
-  document.body.style.overflow = 'hidden'
-}
-
-function unlockBodyScroll() {
-  if (openModalCount === 0) return
-  openModalCount -= 1
-  if (openModalCount === 0) {
-    document.body.style.overflow = previousBodyOverflow ?? ''
-    previousBodyOverflow = null
-  }
-}
-</script>
-
 <script setup lang="ts">
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
-import { computed, ref, toRef, watch, onMounted, onUnmounted, useId } from 'vue'
+import { computed, ref, toRef, watch, useId } from 'vue'
+import { useBodyScrollLock } from '@/composables/useBodyScrollLock'
 import { useOverlayDismiss } from '@/composables/useOverlayDismiss'
 import { useDialogLifecycle } from '@/composables/useDialogLifecycle'
-
-let hasLockedBodyScroll = false
-
-function ensureBodyScrollLocked() {
-  if (hasLockedBodyScroll) return
-  lockBodyScroll()
-  hasLockedBodyScroll = true
-}
-
-function releaseBodyScrollLock() {
-  if (!hasLockedBodyScroll) return
-  unlockBodyScroll()
-  hasLockedBodyScroll = false
-}
 
 interface Props {
   modelValue?: boolean
@@ -117,9 +82,7 @@ interface Props {
   closeOnOverlay?: boolean
   closeOnEsc?: boolean
   size?: 'small' | 'medium' | 'large' | 'full'
-  placement?: 'center' | 'top-end'
   backdrop?: 'default' | 'strong'
-  overlayLayer?: 'default' | 'popover'
   backdropEffect?: 'none' | 'blur-sm'
   mobilePresentation?: 'default' | 'fullscreen'
   headerVariant?: 'default' | 'brand'
@@ -127,12 +90,8 @@ interface Props {
   dividerVariant?: 'default' | 'none' | 'soft'
   footerTone?: 'default' | 'muted'
   customClass?: string
-  overlayClass?: string
-  bodyClass?: string
-  footerClass?: string
   bodyPadding?: 'default' | 'none' | 'compact' | 'spacious'
   scrollMode?: 'auto' | 'contained' | 'none'
-  chromeVariant?: 'default' | 'compact' | 'plain' | 'inverse'
   width?: string
   height?: string
   minHeight?: string
@@ -144,10 +103,7 @@ interface Props {
   bodyMinHeight?: string
   bodyPaddingValue?: string
   bodyTextAlign?: string
-  footerGap?: string
   footerPadding?: string
-  footerJustify?: string
-  footerWrap?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -158,9 +114,7 @@ const props = withDefaults(defineProps<Props>(), {
   closeOnOverlay: true,
   closeOnEsc: true,
   size: 'medium',
-  placement: 'center',
   backdrop: 'default',
-  overlayLayer: 'default',
   backdropEffect: 'none',
   mobilePresentation: 'default',
   headerVariant: 'default',
@@ -168,12 +122,8 @@ const props = withDefaults(defineProps<Props>(), {
   dividerVariant: 'default',
   footerTone: 'default',
   customClass: '',
-  overlayClass: '',
-  bodyClass: '',
-  footerClass: '',
   bodyPadding: 'default',
   scrollMode: 'auto',
-  chromeVariant: 'default',
   width: '',
   height: '',
   minHeight: '',
@@ -185,10 +135,7 @@ const props = withDefaults(defineProps<Props>(), {
   bodyMinHeight: '',
   bodyPaddingValue: '',
   bodyTextAlign: '',
-  footerGap: '',
   footerPadding: '',
-  footerJustify: '',
-  footerWrap: '',
 })
 
 const emit = defineEmits<{
@@ -204,24 +151,12 @@ const uiSizeClass = computed(() => {
 
 const titleId = useId()
 
-const uiChromeClass = computed(() => {
-  return `ui-modal__container--chrome-${props.chromeVariant}`
-})
-
 const uiFrameClass = computed(() => {
   return `ui-modal__container--frame-${props.frameVariant}`
 })
 
-const uiPlacementClass = computed(() => {
-  return `ui-modal__overlay--placement-${props.placement}`
-})
-
 const uiBackdropClass = computed(() => {
   return `ui-modal__overlay--backdrop-${props.backdrop}`
-})
-
-const uiOverlayLayerClass = computed(() => {
-  return `ui-modal__overlay--layer-${props.overlayLayer}`
 })
 
 const uiBackdropEffectClass = computed(() => {
@@ -258,7 +193,7 @@ const uiBodyScrollClass = computed(() => {
 
 const dialogStyle = computed(() => {
   const usesResponsivePresentation = props.mobilePresentation !== 'default'
-  const responsiveValue = (name: string, value: string) => value ? `var(${name}, ${value})` : ''
+  const responsiveValue = (name: string, value: string) => (value ? `var(${name}, ${value})` : '')
   const layoutEntries: Array<[string, string]> = usesResponsivePresentation
     ? [
         ['width', responsiveValue('--ui-dialog-mobile-width', props.width)],
@@ -284,10 +219,7 @@ const dialogStyle = computed(() => {
     ['--ui-dialog-body-min-height', props.bodyMinHeight],
     ['--ui-dialog-body-padding', props.bodyPaddingValue],
     ['--ui-dialog-body-text-align', props.bodyTextAlign],
-    ['--ui-dialog-actions-gap', props.footerGap],
     ['--ui-dialog-actions-padding', props.footerPadding],
-    ['--ui-dialog-actions-justify', props.footerJustify],
-    ['--ui-dialog-actions-wrap', props.footerWrap],
   ]
 
   return Object.fromEntries(entries.filter(([, value]) => value !== ''))
@@ -309,28 +241,18 @@ useDialogLifecycle({
   closeOnEscape: () => props.closeOnEsc,
 })
 
+useBodyScrollLock(toRef(props, 'modelValue'))
+
 watch(
   () => props.modelValue,
-  (newValue) => {
+  newValue => {
     if (newValue) {
       emit('open')
-      ensureBodyScrollLocked()
     } else {
       resetOverlayDismissState()
-      releaseBodyScrollLock()
     }
   }
 )
-
-onMounted(() => {
-  if (props.modelValue) {
-    ensureBodyScrollLocked()
-  }
-})
-
-onUnmounted(() => {
-  releaseBodyScrollLock()
-})
 </script>
 
 <style scoped>
@@ -342,26 +264,13 @@ onUnmounted(() => {
   height: 100%;
   background-color: var(--base-modal-overlay-background);
   display: flex;
-  z-index: var(--z-overlay);
-}
-
-.ui-modal__overlay--placement-center {
   justify-content: center;
   align-items: center;
-}
-
-.ui-modal__overlay--placement-top-end {
-  justify-content: flex-end;
-  align-items: flex-start;
-  padding: 64px 16px 16px;
+  z-index: var(--z-overlay);
 }
 
 .ui-modal__overlay--backdrop-strong {
   background: var(--color-overlay-backdrop-strong);
-}
-
-.ui-modal__overlay--layer-popover {
-  z-index: var(--z-popover);
 }
 
 .ui-modal__overlay--effect-blur-sm {
@@ -435,7 +344,11 @@ onUnmounted(() => {
 
 .ui-modal__header--brand {
   padding: 20px 25px;
-  background: linear-gradient(135deg, var(--color-action-primary) 0%, var(--color-action-primary-hover) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--color-action-primary) 0%,
+    var(--color-action-primary-hover) 100%
+  );
   color: var(--color-text-inverse);
 }
 
@@ -486,6 +399,7 @@ onUnmounted(() => {
   flex-direction: var(--ui-dialog-body-direction, row);
   min-height: var(--ui-dialog-body-min-height, auto);
   padding: var(--ui-dialog-body-padding, 20px);
+  overflow-x: hidden;
   overflow-y: auto;
   flex: 1;
   background: transparent;
@@ -532,32 +446,6 @@ onUnmounted(() => {
 
 .ui-modal__footer--tone-muted {
   background: var(--color-surface-muted);
-}
-
-.ui-modal__container--chrome-compact .ui-modal__header {
-  padding: 12px 16px;
-}
-
-.ui-modal__container--chrome-compact .ui-modal__footer {
-  padding: 12px 16px;
-}
-
-.ui-modal__container--chrome-plain {
-  box-shadow: none;
-}
-
-.ui-modal__container--chrome-inverse {
-  background: var(--color-overlay-backdrop-solid);
-  border: 1px solid var(--color-overlay-inverse-soft);
-  color: var(--color-text-inverse);
-  box-shadow: 0 18px 48px var(--shadow-medium);
-  backdrop-filter: blur(10px);
-}
-
-.ui-modal__container--chrome-inverse .ui-modal__title {
-  color: var(--color-text-inverse);
-  font-size: 15px;
-  font-weight: 600;
 }
 
 @media (--breakpoint-md-down) {

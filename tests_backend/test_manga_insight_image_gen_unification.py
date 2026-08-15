@@ -1,31 +1,7 @@
-import sys
-import types
 import unittest
 from unittest import mock
 
 import httpx
-
-
-if "yaml" not in sys.modules:
-    yaml_stub = types.ModuleType("yaml")
-    yaml_stub.safe_load = lambda *_args, **_kwargs: {}
-    yaml_stub.safe_dump = lambda *_args, **_kwargs: ""
-    sys.modules["yaml"] = yaml_stub
-
-if "openai" not in sys.modules:
-    openai_stub = types.ModuleType("openai")
-
-    class _OpenAI:
-        def __init__(self, *args, **kwargs):
-            pass
-
-    class _AsyncOpenAI:
-        def __init__(self, *args, **kwargs):
-            pass
-
-    openai_stub.OpenAI = _OpenAI
-    openai_stub.AsyncOpenAI = _AsyncOpenAI
-    sys.modules["openai"] = openai_stub
 
 
 class FakeResponse:
@@ -113,7 +89,7 @@ class MangaInsightImageGenClientTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, b"hello")
         post_mock.assert_awaited_once()
-        self.assertEqual(post_mock.await_args.args[0], "https://gateway.example.com/v1/images/generations")
+        self.assertEqual(post_mock.await_args.args[0], "https://gateway.example.com/images/generations")
         self.assertEqual(post_mock.await_args.kwargs["json"]["model"], "gpt-image-2")
         self.assertEqual(post_mock.await_args.kwargs["json"]["prompt"], "draw something")
         self.assertNotIn("images", post_mock.await_args.kwargs["json"])
@@ -260,7 +236,7 @@ class MangaInsightImageGenClientTests(unittest.IsolatedAsyncioTestCase):
                 provider="newapi",
                 api_key="test-key",
                 model="flux-dev",
-                base_url="https://newapi.example.com",
+                base_url="https://newapi.example.com/v1",
             )
         )
         try:
@@ -283,19 +259,12 @@ class MangaInsightImageGenClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(post_mock.await_args.kwargs["json"]["prompt"], "draw something")
 
     async def test_image_gen_client_requires_model_before_request(self) -> None:
-        from src.core.manga_insight.clients.image_gen_client import ImageGenClient
         from src.core.manga_insight.config_models import ImageGenConfig
 
-        client = ImageGenClient(
+        with self.assertRaisesRegex(ValueError, "model must not be empty"):
             ImageGenConfig(
                 provider="newapi",
                 api_key="test-key",
                 model="",
                 base_url="https://newapi.example.com",
             )
-        )
-        try:
-            with self.assertRaisesRegex(ValueError, "需要设置 model"):
-                await client.generate("draw something")
-        finally:
-            await client.close()

@@ -60,13 +60,18 @@ function stopResize() {
   resizing.value = false
   window.removeEventListener('pointermove', handlePointerMove)
   window.removeEventListener('pointerup', stopResize)
+  window.removeEventListener('pointercancel', stopResize)
+  window.removeEventListener('blur', stopResize)
 }
 
 function startResize(event: PointerEvent) {
+  if (event.button !== 0) return
   event.preventDefault()
   resizing.value = true
   window.addEventListener('pointermove', handlePointerMove)
   window.addEventListener('pointerup', stopResize)
+  window.addEventListener('pointercancel', stopResize)
+  window.addEventListener('blur', stopResize)
 }
 
 function handleResizerKeydown(event: KeyboardEvent) {

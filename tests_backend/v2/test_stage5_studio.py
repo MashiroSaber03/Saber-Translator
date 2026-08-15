@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from io import BytesIO
 import json
 from pathlib import Path
@@ -11,7 +12,7 @@ import uuid
 
 import pytest
 from PIL import Image
-from sqlalchemy import inspect, insert, select
+from sqlalchemy import inspect, insert, select, update
 
 from src.backend_v2.api.app import ApiSettings, create_api_app
 from src.backend_v2.content.repository import ContentLocked, ContentRepository
@@ -28,7 +29,9 @@ from src.backend_v2.storage.schema import (
     analysis_artifacts,
     assets,
     metadata,
+    studio_chat_sessions,
     studio_documents,
+    studio_messages,
     timeline_characters,
     timeline_versions,
 )
@@ -36,17 +39,25 @@ from src.backend_v2.storage.seeding import seed_system_records
 from src.backend_v2.runtime_identity import RuntimeIdentity
 from src.backend_v2.studio.repository import (
     StudioConflict,
+    StudioDataInvalid,
     StudioRepository,
 )
 from src.backend_v2.studio.io import StudioIOService
 from src.backend_v2.studio.media import read_card_png
+from src.backend_v2.studio.model import StudioDocumentInvalid
 from src.backend_v2.studio.service import (
     DefaultStudioAlgorithms,
     StudioOperationService,
+    _normalize_review,
     _provider_config,
     _validate_generated_payload,
 )
 from src.backend_v2.studio.service import _apply_generated_section
+from src.backend_v2.studio.pure import (
+    build_diagnostics_report,
+    create_empty_document,
+    import_document_payload,
+)
 
 
 class FakeStudioAlgorithms:
@@ -61,7 +72,7 @@ class FakeStudioAlgorithms:
     ) -> Mapping[str, Any]:
         if on_chunk:
             on_chunk('{"identity":', '{"identity":')
-            on_chunk("{}", '{"identity":{}}')
+            on_chunk("{}}", '{"identity":{}}')
         if section == "identity":
             return {
                 "identity": {
@@ -109,6 +120,57 @@ class FakeStudioAlgorithms:
 
     def summarize(self, messages, *, config, on_chunk=None):
         return {"summary": f"{len(messages)} messages"}
+
+
+def _portable_message(
+    message_id: str,
+    *,
+    role: str = "user",
+    content: str = "消息",
+    attachments: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    runtime_state = {
+        "event_counts": {
+            "message_received": 0,
+            "message_sent": 0,
+        },
+        "matched_lorebook_ids": [],
+    }
+    return {
+        "messageId": message_id,
+        "role": role,
+        "content": content,
+        "attachments": attachments or [],
+        "runtimeLog": [],
+        "variablesSnapshot": {},
+        "generationMeta": {"runtimeState": runtime_state},
+    }
+
+
+def _portable_session(
+    *,
+    messages: list[dict[str, Any]],
+    title: str = "便携会话",
+    summary_blocks: list[dict[str, Any]] | None = None,
+    summary_through_message_id: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "schema": "saber-studio-chat-v2",
+        "title": title,
+        "greetingSource": {},
+        "variables": {},
+        "summaryBlocks": summary_blocks or [],
+        "summaryThroughMessageId": summary_through_message_id,
+        "summaryGeneration": 0,
+        "runtimeState": {
+            "event_counts": {
+                "message_received": 0,
+                "message_sent": 0,
+            },
+            "matched_lorebook_ids": [],
+        },
+        "messages": messages,
+    }
 
 
 def test_studio_generation_prompt_consumes_analysis_context(
@@ -170,6 +232,7 @@ def test_studio_complete_respects_saved_nonstream_setting(
         captured["has_callback"] = (
             request.runtime_options.on_stream_chunk is not None
         )
+        captured["base_url"] = request.base_url
         return "{}"
 
     monkeypatch.setattr(
@@ -183,8 +246,19 @@ def test_studio_complete_respects_saved_nonstream_setting(
             "chat": {
                 "provider": "test",
                 "model_name": "test-model",
+                "custom_base_url": "",
                 "openai_options": {
-                    "execution": {"use_stream": False},
+                    "request": {
+                        "force_json_output": False,
+                        "temperature": None,
+                        "extra_body": {},
+                    },
+                    "execution": {
+                        "use_stream": False,
+                        "rpm_limit": 0,
+                        "transport_retries": 1,
+                        "business_retries": 0,
+                    },
                 },
             }
         },
@@ -196,6 +270,7 @@ def test_studio_complete_respects_saved_nonstream_setting(
     assert captured == {
         "use_stream": False,
         "has_callback": True,
+        "base_url": None,
     }
 
 
@@ -220,12 +295,54 @@ def test_studio_agent_emits_complete_nonstream_response(
 
     assert list(
         service.agent_chunks(
-            document={"identity": {"name": "测试角色"}},
+            document=create_empty_document("book-1", title="测试角色"),
             messages=[{"role": "user", "content": "请审查"}],
             config={},
             cancelled=threading.Event(),
         )
     ) == ["非流式卡片助手回复"]
+
+
+def test_studio_agent_rejects_empty_or_inconsistent_provider_output(
+    tmp_path: Path,
+) -> None:
+    class EmptyStudioAlgorithms(FakeStudioAlgorithms):
+        def chat(self, **_kwargs) -> str:
+            return "   "
+
+    empty_service = StudioOperationService(
+        engine=create_sqlite_engine(tmp_path / "empty-agent.sqlite3"),
+        algorithms=EmptyStudioAlgorithms(),
+    )
+    with pytest.raises(ValueError, match="response text"):
+        list(
+                empty_service.agent_chunks(
+                    document=create_empty_document("book-1", title="测试角色"),
+                messages=[{"role": "user", "content": "请审查"}],
+                config={},
+                cancelled=threading.Event(),
+            )
+        )
+
+    class InconsistentStudioAlgorithms(FakeStudioAlgorithms):
+        def chat(self, *, on_chunk=None, **_kwargs) -> str:
+            assert on_chunk is not None
+            on_chunk("流式", "流式")
+            return "不同的最终结果"
+
+    inconsistent_service = StudioOperationService(
+        engine=create_sqlite_engine(tmp_path / "inconsistent-agent.sqlite3"),
+        algorithms=InconsistentStudioAlgorithms(),
+    )
+    with pytest.raises(ValueError, match="stream result is inconsistent"):
+        list(
+                inconsistent_service.agent_chunks(
+                    document=create_empty_document("book-1", title="测试角色"),
+                messages=[{"role": "user", "content": "请审查"}],
+                config={},
+                cancelled=threading.Event(),
+            )
+        )
 
 
 def test_full_generation_rejects_partial_top_level_payload() -> None:
@@ -235,6 +352,67 @@ def test_full_generation_rejects_partial_top_level_payload() -> None:
             {"identity": {"name": "Darmil"}},
             section="full",
         )
+
+    for section, generated, field in (
+        ("identity", {"identity": []}, "identity"),
+        ("greetings", {"coreMessages": []}, "coreMessages"),
+        ("lorebook", {"lorebook": []}, "lorebook"),
+        ("regex", {"regexScripts": {}}, "regexScripts"),
+        ("state-tasks", {"stateTasks": {}}, "stateTasks"),
+    ):
+        with pytest.raises(ValueError, match=field):
+            _validate_generated_payload({}, generated, section=section)
+
+
+def test_studio_diagnostics_include_nested_lorebook_entries() -> None:
+    document = create_empty_document("book-1", title="Saber")
+    document["lorebook"]["entries"] = [
+        {
+            "id": "parent",
+            "comment": "父条目",
+            "keys": ["Saber"],
+            "content": "父级内容",
+            "enabled": True,
+            "constant": False,
+            "selective": False,
+            "priority": 100,
+            "position": "before_char",
+            "depth": 4,
+            "children": [
+                {
+                    "id": "child",
+                    "comment": "子条目",
+                    "keys": [],
+                    "content": "子级内容",
+                    "enabled": True,
+                    "constant": False,
+                    "selective": False,
+                    "priority": 100,
+                    "position": "before_char",
+                    "depth": 4,
+                    "children": [],
+                }
+            ],
+        }
+    ]
+    report = build_diagnostics_report(document)
+
+    assert any("lorebook.entries[1].keys" in error for error in report["errors"])
+
+
+def test_studio_review_requires_canonical_scalar_types() -> None:
+    assert _normalize_review({"summary": "  审查完成  "}) == {
+        "summary": "审查完成",
+        "issues": [],
+        "suggestions": [],
+    }
+    for payload in (
+        {"review": {"summary": "旧嵌套结构"}},
+        {"summary": {"unexpected": True}},
+        {"summary": "审查", "issues": [{"unexpected": True}]},
+    ):
+        with pytest.raises(ValueError):
+            _normalize_review(payload)
 
 
 def test_studio_chat_uses_vlm_for_image_attachments(monkeypatch) -> None:
@@ -318,6 +496,51 @@ def test_studio_chat_merges_session_system_messages(monkeypatch) -> None:
     assert captured["messages"][0]["content"] == (
         "角色系统提示\n\n导入会话上下文"
     )
+
+
+def test_studio_chat_rejects_empty_provider_response(monkeypatch) -> None:
+    monkeypatch.setattr(
+        DefaultStudioAlgorithms,
+        "_complete",
+        staticmethod(lambda *_args, **_kwargs: "   "),
+    )
+
+    with pytest.raises(ValueError, match="response text"):
+        DefaultStudioAlgorithms().chat(
+            messages=[{"role": "user", "content": "测试"}],
+            system="",
+            config={},
+        )
+
+
+def test_studio_summary_requires_the_canonical_summary_field(
+    monkeypatch,
+) -> None:
+    algorithm = DefaultStudioAlgorithms()
+    monkeypatch.setattr(algorithm, "_chat_json", lambda *_args, **_kwargs: {})
+
+    with pytest.raises(ValueError, match="summary text"):
+        algorithm.summarize([], config={})
+
+    monkeypatch.setattr(
+        algorithm,
+        "_chat_json",
+        lambda *_args, **_kwargs: {"summary": {"unexpected": True}},
+    )
+    with pytest.raises(ValueError, match="summary text"):
+        algorithm.summarize([], config={})
+
+    monkeypatch.setattr(
+        algorithm,
+        "_chat_json",
+        lambda *_args, **_kwargs: {
+            "summary": "  保留的摘要  ",
+            "obsolete": "不会持久化",
+        },
+    )
+    assert algorithm.summarize([], config={}) == {
+        "summary": "保留的摘要"
+    }
 
 
 @pytest.fixture()
@@ -414,6 +637,174 @@ def test_document_is_canonical_and_revision_cas_is_enforced(
         )
 
 
+def test_current_document_rejects_partial_coerced_and_corrupt_data(
+    studio_platform,
+) -> None:
+    repository = StudioRepository(studio_platform["engine"])
+    created = repository.create_document(
+        book_id=str(studio_platform["book"]["id"]),
+        title="严格文档",
+    )
+
+    missing = deepcopy(created)
+    missing["coreMessages"].pop("system_prompt")
+    unknown = deepcopy(created)
+    unknown["identity"]["legacy_field"] = "旧字段"
+    coerced = deepcopy(created)
+    coerced["status"]["is_favorite"] = "false"
+    for invalid in (missing, unknown, coerced):
+        with pytest.raises(StudioDocumentInvalid):
+            repository.update_document(
+                document_id=str(created["id"]),
+                base_revision=int(created["revision"]),
+                title=str(created["title"]),
+                document=invalid,
+            )
+
+    with studio_platform["engine"].begin() as connection:
+        connection.execute(
+            update(studio_documents)
+            .where(studio_documents.c.id == created["id"])
+            .values(schema_version=1)
+        )
+    with pytest.raises(StudioDocumentInvalid, match="schema version"):
+        repository.get_document(str(created["id"]))
+
+    with studio_platform["engine"].begin() as connection:
+        connection.execute(
+            update(studio_documents)
+            .where(studio_documents.c.id == created["id"])
+            .values(schema_version=2, regex_scripts_json="{}")
+        )
+    with pytest.raises(StudioDocumentInvalid, match="array JSON"):
+        repository.get_document(str(created["id"]))
+
+
+def test_current_session_rejects_corrupt_json_and_missing_state_snapshot(
+    studio_platform,
+) -> None:
+    repository = StudioRepository(studio_platform["engine"])
+    document = repository.create_document(
+        book_id=str(studio_platform["book"]["id"]),
+        title="严格会话",
+    )
+    session = repository.create_session(
+        document_id=str(document["id"]),
+        title="严格会话",
+        base_index_revision=1,
+        greeting="你好",
+        greeting_source={"type": "first_message", "index": 0},
+    )
+    session_id = str(session["sessionId"])
+    message_id = str(session["messages"][0]["messageId"])
+
+    with studio_platform["engine"].begin() as connection:
+        connection.execute(
+            update(studio_chat_sessions)
+            .where(studio_chat_sessions.c.id == session_id)
+            .values(runtime_state_json="[]")
+        )
+    with pytest.raises(StudioDataInvalid, match="must contain a JSON object"):
+        repository.get_session(session_id)
+
+    with studio_platform["engine"].begin() as connection:
+        connection.execute(
+            update(studio_chat_sessions)
+            .where(studio_chat_sessions.c.id == session_id)
+            .values(
+                runtime_state_json=json.dumps(
+                    {
+                        "event_counts": {
+                            "message_received": 0,
+                            "message_sent": 0,
+                        },
+                        "matched_lorebook_ids": [],
+                    }
+                )
+            )
+        )
+        connection.execute(
+            update(studio_messages)
+            .where(studio_messages.c.id == message_id)
+            .values(runtime_log="{}")
+        )
+    with pytest.raises(StudioDataInvalid, match="must contain a JSON array"):
+        repository.get_session(session_id)
+
+    with studio_platform["engine"].begin() as connection:
+        connection.execute(
+            update(studio_messages)
+            .where(studio_messages.c.id == message_id)
+            .values(runtime_log="[]", generation_meta_json="{}")
+        )
+    with studio_platform["engine"].connect() as connection:
+        with pytest.raises(StudioDataInvalid, match="runtimeState"):
+            StudioRepository._chat_state_from_messages(
+                connection,
+                session_id,
+            )
+
+
+def test_external_card_conversion_is_explicit_and_strict() -> None:
+    payload = {
+        "spec": "chara_card_v3",
+        "data": {
+            "name": "外部角色",
+            "extensions": {
+                "fav": True,
+                "regex_scripts": [
+                    {
+                        "script_name": "提示词替换",
+                        "find_regex": "原文",
+                        "replace_string": "替换",
+                        "placement": [1],
+                        "prompt_only": True,
+                    }
+                ],
+                "xiaobaix-tasks": {
+                    "tasks": [
+                        {
+                            "name": "初始化",
+                            "trigger_timing": "initialization",
+                            "interval": 0,
+                            "commands": "/setvar key=ready yes",
+                        }
+                    ]
+                },
+            },
+            "character_book": {
+                "entries": [
+                    {
+                        "uid": 7,
+                        "key": ["外部角色"],
+                        "comment": "设定",
+                        "content": "角色事实",
+                    }
+                ]
+            },
+        },
+    }
+    converted = import_document_payload("book-1", payload)
+    assert converted["regexScripts"][0] == {
+        "id": "regex_0",
+        "scriptName": "提示词替换",
+        "findRegex": "原文",
+        "replaceString": "替换",
+        "placement": [1],
+        "markdownOnly": False,
+        "promptOnly": True,
+        "runOnEdit": True,
+        "disabled": False,
+    }
+    assert converted["stateTasks"][0]["id"] == "task_0"
+    assert converted["lorebook"]["entries"][0]["id"] == "7"
+
+    malformed = deepcopy(payload)
+    malformed["data"]["extensions"]["fav"] = "false"
+    with pytest.raises(ValueError, match="fav must be a boolean"):
+        import_document_payload("book-1", malformed)
+
+
 def test_book_delete_rejects_active_studio_work_then_preserves_terminal_history(
     studio_platform,
 ) -> None:
@@ -490,6 +881,7 @@ def test_generate_operation_freezes_analysis_context(
         analysis_context=context,
         idempotency_key="context-generate",
     )
+    assert accepted["baseGeneration"] is None
     stored = OperationRepository(studio_platform["engine"]).get(
         str(accepted["operationId"])
     )
@@ -510,7 +902,16 @@ def test_generate_rejects_unchanged_document_without_revision_bump(
             analysis_context: Mapping[str, Any] | None = None,
             on_chunk=None,
         ) -> Mapping[str, Any]:
-            return dict(document)
+            return {
+                key: deepcopy(document[key])
+                for key in (
+                    "identity",
+                    "coreMessages",
+                    "lorebook",
+                    "regexScripts",
+                    "stateTasks",
+                )
+            }
 
     repository = StudioRepository(studio_platform["engine"])
     document = repository.create_document(
@@ -847,6 +1248,8 @@ def test_chat_chain_rewrite_restores_runtime_and_variables(
                 "priority": 100,
                 "probability": 100,
                 "prevent_recursion": True,
+                "depth": 4,
+                "children": [],
             }
         ],
     }
@@ -1004,8 +1407,10 @@ def test_chat_input_regex_uses_prompt_text_without_rewriting_user_message(
             "findRegex": "原文",
             "replaceString": "模型文本",
             "placement": [1],
+            "markdownOnly": False,
             "promptOnly": True,
             "runOnEdit": True,
+            "disabled": False,
         }
     ]
     document = repository.update_document(
@@ -1089,14 +1494,12 @@ def test_png_and_session_portable_roundtrip_uses_asset_ids(
         document_id=str(document["id"]),
         base_index_revision=2,
         idempotency_key="session-import-roundtrip",
-        payload={
-            "title": "便携会话",
-            "messages": [
-                {
-                    "messageId": "portable-message-1",
-                    "role": "user",
-                    "content": "看图",
-                    "attachments": [
+        payload=_portable_session(
+            messages=[
+                _portable_message(
+                    "portable-message-1",
+                    content="看图",
+                    attachments=[
                         {
                             "filename": "image.png",
                             "mime_type": "image/png",
@@ -1105,11 +1508,11 @@ def test_png_and_session_portable_roundtrip_uses_asset_ids(
                             ).decode("ascii"),
                         }
                     ],
-                }
+                )
             ],
-            "summaryBlocks": [{"summary": "便携摘要"}],
-            "summaryThroughMessageId": "portable-message-1",
-        },
+            summary_blocks=[{"summary": "便携摘要"}],
+            summary_through_message_id="portable-message-1",
+        ),
     )
     attachment = imported_session["messages"][0]["attachments"][0]
     assert attachment["assetId"]
@@ -1151,22 +1554,28 @@ def test_failed_session_attachment_import_marks_published_assets_for_gc(
             document_id=str(document["id"]),
             base_index_revision=1,
             idempotency_key="failed-attachment-import",
-            payload={
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": "附件",
-                        "attachments": [
+            payload=_portable_session(
+                messages=[
+                    _portable_message(
+                        "failed-attachment-message",
+                        content="附件",
+                        attachments=[
                             {
+                                "filename": "first.png",
+                                "mime_type": "image/png",
                                 "blob_base64": base64.b64encode(
                                     image_buffer.getvalue()
                                 ).decode("ascii")
                             },
-                            {"blob_base64": "not-base64"},
+                            {
+                                "filename": "second.png",
+                                "mime_type": "image/png",
+                                "blob_base64": "not-base64",
+                            },
                         ],
-                    }
-                ]
-            },
+                    )
+                ],
+            ),
         )
 
     with studio_platform["engine"].connect() as connection:
@@ -1375,10 +1784,12 @@ def test_diagnostics_validate_state_tasks_and_replay_without_extra_revision(
     changed = dict(document)
     changed["stateTasks"] = [
         {
+            "id": "invalid-task",
             "name": "",
             "triggerTiming": "unknown",
             "interval": -1,
             "commands": "<<taskjs>>",
+            "disabled": False,
         }
     ]
     document = repository.update_document(
@@ -1581,6 +1992,7 @@ def test_chat_bootstrap_is_atomic_under_concurrency(
             "triggerTiming": "initialization",
             "interval": 0,
             "commands": "/setvar key=bootstrapped yes",
+            "disabled": False,
         }
     ]
     document = repository.update_document(
@@ -1655,12 +2067,13 @@ def test_candidates_expose_timeline_page_counts_without_dialogue_scan(
                 name="Saber",
                 payload_json=json.dumps(
                     {
-                        "name": "Saber",
-                        "aliases": ["阿尔托莉雅"],
-                        "first_page": 2,
-                        "key_moments": [
-                            {"page": 4, "event": "拔剑"},
-                            {"page": 9, "event": "决战"},
+                            "name": "Saber",
+                            "aliases": ["阿尔托莉雅"],
+                            "description": "不列颠的骑士王",
+                            "first_page": 2,
+                            "key_moments": [
+                                {"page": 4, "summary": "拔剑"},
+                                {"page": 9, "summary": "决战"},
                         ],
                         "related_page_numbers": [2, 4, 7, 9],
                         "dialogues": ["不应返回"],
@@ -1669,6 +2082,26 @@ def test_candidates_expose_timeline_page_counts_without_dialogue_scan(
                     ensure_ascii=False,
                 ),
             )
+        )
+        connection.execute(
+            insert(timeline_characters),
+            [
+                {
+                    "id": str(uuid.uuid4()),
+                    "timeline_version_id": timeline_id,
+                    "name": f"角色 {index:03d}",
+                        "payload_json": json.dumps(
+                            {
+                                "name": f"角色 {index:03d}",
+                                "description": f"角色 {index:03d} 的简介",
+                                "first_page": 1,
+                                "key_moments": [],
+                            },
+                        ensure_ascii=False,
+                    ),
+                }
+                for index in range(205)
+            ],
         )
     app = create_api_app(
         ApiSettings(
@@ -1686,13 +2119,56 @@ def test_candidates_expose_timeline_page_counts_without_dialogue_scan(
         f"{studio_platform['book']['id']}/candidates"
     )
     assert response.status_code == 200
-    candidate = response.get_json()["items"][0]
+    items = response.get_json()["items"]
+    assert len(items) == 206
+    candidate = next(
+        item for item in items if item["characterId"] == character_id
+    )
     assert candidate["firstAppearancePage"] == 2
     assert candidate["keyMomentCount"] == 2
     assert candidate["relatedPageCount"] == 4
     assert candidate["relatedPageNumbers"] == [2, 4, 7, 9]
     assert "dialogues" not in candidate
     assert "sample_pages" not in candidate
+
+    client = app.test_client()
+    created_response = client.post(
+        "/api/v2/studio/books/"
+        f"{studio_platform['book']['id']}/documents",
+        json={"candidateId": character_id},
+        headers={"Idempotency-Key": "candidate-document"},
+    )
+    assert created_response.status_code == 201
+    created = created_response.get_json()
+    assert created["origin"] == {
+        "type": "analysis",
+        "source_character": "Saber",
+    }
+    assert created["identity"]["name"] == "Saber"
+    assert created["identity"]["aliases"] == []
+    assert created["identity"]["description"] == ""
+
+    forged_response = client.post(
+        "/api/v2/studio/books/"
+        f"{studio_platform['book']['id']}/documents",
+        json={"candidate": {"name": "伪造角色"}},
+        headers={"Idempotency-Key": "forged-candidate-document"},
+    )
+    assert forged_response.status_code == 422
+    assert "unknown request fields" in forged_response.get_json()["error"][
+        "message"
+    ]
+
+    invalid_title_response = client.post(
+        "/api/v2/studio/books/"
+        f"{studio_platform['book']['id']}/documents",
+        json={"title": 42},
+        headers={"Idempotency-Key": "invalid-title-document"},
+    )
+    assert invalid_title_response.status_code == 422
+    assert invalid_title_response.get_json()["error"]["message"] == (
+        "title must be a string"
+    )
 
 
 def test_studio_http_short_commands_and_operation_event_catchup(
@@ -1724,7 +2200,6 @@ def test_studio_http_short_commands_and_operation_event_catchup(
         json={
             "baseIndexRevision": 1,
             "title": "HTTP chat",
-            "greeting": "你好",
         },
         headers={"Idempotency-Key": "studio-http-session"},
     )
@@ -1735,9 +2210,7 @@ def test_studio_http_short_commands_and_operation_event_catchup(
         "/prompt-preview"
     )
     assert preview.status_code == 200
-    assert preview.get_json()["promptPreview"]["messages"][0][
-        "content"
-    ] == "你好"
+    assert preview.get_json()["promptPreview"]["messages"] == []
 
     repository = StudioRepository(studio_platform["engine"])
     accepted = repository.send_message(
@@ -1766,6 +2239,248 @@ def test_studio_http_short_commands_and_operation_event_catchup(
     assert events.get_json()["items"][-1]["type"] == "operation_completed"
 
 
+def test_studio_routes_reject_invalid_scalar_types_without_500(
+    studio_platform,
+) -> None:
+    app = create_api_app(
+        ApiSettings(
+            data_root=studio_platform["data_root"],
+            identity=RuntimeIdentity(
+                epoch_id="studio-route-validation",
+                epoch_token="test-only",
+                test_mode=True,
+            ),
+            engine=studio_platform["engine"],
+        )
+    )
+    client = app.test_client()
+    book_id = str(studio_platform["book"]["id"])
+    created = client.post(
+        f"/api/v2/studio/books/{book_id}/documents",
+        json={"title": "校验角色"},
+        headers={"Idempotency-Key": "studio-validation-create"},
+    ).get_json()
+
+    invalid_update = client.put(
+        f"/api/v2/studio/documents/{created['id']}",
+        json={
+            "baseRevision": {},
+            "document": created,
+        },
+        headers={"Idempotency-Key": "studio-validation-update"},
+    )
+    assert invalid_update.status_code == 422
+    assert invalid_update.get_json()["error"]["message"] == (
+        "baseRevision must be an integer"
+    )
+
+    invalid_title = client.put(
+        f"/api/v2/studio/documents/{created['id']}",
+        json={
+            "baseRevision": created["revision"],
+            "title": {"unexpected": True},
+            "document": created,
+        },
+        headers={"Idempotency-Key": "studio-validation-title"},
+    )
+    assert invalid_title.status_code == 422
+    assert invalid_title.get_json()["error"]["message"] == (
+        "title must be a string"
+    )
+
+    invalid_session_title = client.post(
+        f"/api/v2/studio/documents/{created['id']}/chat/sessions",
+        json={
+            "baseIndexRevision": 1,
+            "title": {"unexpected": True},
+        },
+        headers={"Idempotency-Key": "studio-validation-session-title"},
+    )
+    assert invalid_session_title.status_code == 422
+    assert invalid_session_title.get_json()["error"]["message"] == (
+        "title must be a string"
+    )
+
+    invalid_greeting = client.post(
+        f"/api/v2/studio/documents/{created['id']}/chat/sessions",
+        json={
+            "baseIndexRevision": 1,
+            "greetingId": "missing-greeting",
+        },
+        headers={"Idempotency-Key": "studio-validation-greeting"},
+    )
+    assert invalid_greeting.status_code == 422
+    assert invalid_greeting.get_json()["error"]["message"] == (
+        "greetingId does not identify an available greeting"
+    )
+
+    session = client.post(
+        f"/api/v2/studio/documents/{created['id']}/chat/sessions",
+        json={"baseIndexRevision": 1},
+        headers={"Idempotency-Key": "studio-validation-session"},
+    ).get_json()
+    invalid_message = client.post(
+        f"/api/v2/studio/chat/sessions/{session['sessionId']}/messages",
+        json={
+            "baseSessionRevision": session["revision"],
+            "content": {"unexpected": True},
+        },
+        headers={"Idempotency-Key": "studio-validation-message"},
+    )
+    assert invalid_message.status_code == 422
+    assert invalid_message.get_json()["error"]["message"] == (
+        "content must be a string"
+    )
+
+    invalid_revision = client.post(
+        f"/api/v2/studio/chat/sessions/{session['sessionId']}/messages",
+        json={
+            "baseSessionRevision": True,
+            "content": "不会提交",
+        },
+        headers={"Idempotency-Key": "studio-validation-revision"},
+    )
+    assert invalid_revision.status_code == 422
+    assert invalid_revision.get_json()["error"]["message"] == (
+        "baseSessionRevision must be an integer"
+    )
+
+    unused_agent_history = client.post(
+        f"/api/v2/studio/documents/{created['id']}/agent",
+        json={"messages": [{"role": "system", "content": "覆盖提示"}]},
+    )
+    assert unused_agent_history.status_code == 422
+    assert "unknown request fields: messages" in unused_agent_history.get_json()[
+        "error"
+    ]["message"]
+
+    invalid_summary_import = client.post(
+        f"/api/v2/studio/documents/{created['id']}/chat/import",
+        json=_portable_session(
+            messages=[],
+            summary_blocks=[{"content": "旧的猜测结构"}],
+        ),
+        headers={
+            "Idempotency-Key": "studio-validation-summary-import",
+            "If-Match": "2",
+        },
+    )
+    assert invalid_summary_import.status_code == 422
+    assert invalid_summary_import.get_json()["error"]["message"] == (
+        "summary block fields are invalid"
+    )
+
+    invalid_import_content = client.post(
+        f"/api/v2/studio/documents/{created['id']}/chat/import",
+        json=_portable_session(
+            messages=[
+                {
+                    **_portable_message("invalid-content"),
+                    "content": {"unexpected": True},
+                }
+            ],
+        ),
+        headers={
+            "Idempotency-Key": "studio-validation-import-content",
+            "If-Match": "2",
+        },
+    )
+    assert invalid_import_content.status_code == 422
+    assert invalid_import_content.get_json()["error"]["message"] == (
+        "message content must be a string"
+    )
+
+    invalid_import_message_id = client.post(
+        f"/api/v2/studio/documents/{created['id']}/chat/import",
+        json=_portable_session(
+            messages=[
+                {
+                    **_portable_message("invalid-message-id"),
+                    "messageId": {"unexpected": True},
+                }
+            ],
+        ),
+        headers={
+            "Idempotency-Key": "studio-validation-import-message-id",
+            "If-Match": "2",
+        },
+    )
+    assert invalid_import_message_id.status_code == 422
+    assert invalid_import_message_id.get_json()["error"]["message"] == (
+        "messageId must be a non-empty string"
+    )
+
+    invalid_summary_through_id = client.post(
+        f"/api/v2/studio/documents/{created['id']}/chat/import",
+        json={
+            **_portable_session(messages=[]),
+            "summaryThroughMessageId": {"unexpected": True},
+        },
+        headers={
+            "Idempotency-Key": "studio-validation-summary-through-id",
+            "If-Match": "2",
+        },
+    )
+    assert invalid_summary_through_id.status_code == 422
+    assert invalid_summary_through_id.get_json()["error"]["message"] == (
+        "summaryThroughMessageId must be a string or null"
+    )
+
+    invalid_summary_pair = client.post(
+        f"/api/v2/studio/documents/{created['id']}/chat/import",
+        json=_portable_session(
+            messages=[],
+            summary_blocks=[{"summary": "缺少锚点"}],
+        ),
+        headers={
+            "Idempotency-Key": "studio-validation-summary-pair",
+            "If-Match": "2",
+        },
+    )
+    assert invalid_summary_pair.status_code == 422
+    assert "must be provided together" in invalid_summary_pair.get_json()[
+        "error"
+    ]["message"]
+
+    duplicate_import_message_ids = client.post(
+        f"/api/v2/studio/documents/{created['id']}/chat/import",
+        json=_portable_session(
+            messages=[
+                _portable_message("same", content="一"),
+                _portable_message("same", role="assistant", content="二"),
+            ],
+        ),
+        headers={
+            "Idempotency-Key": "studio-validation-duplicate-message-ids",
+            "If-Match": "2",
+        },
+    )
+    assert duplicate_import_message_ids.status_code == 422
+    assert duplicate_import_message_ids.get_json()["error"]["message"] == (
+        "messageId values must be unique"
+    )
+
+    invalid_import_runtime_log = client.post(
+        f"/api/v2/studio/documents/{created['id']}/chat/import",
+        json=_portable_session(
+            messages=[
+                {
+                    **_portable_message("invalid-runtime-log"),
+                    "runtimeLog": [1],
+                }
+            ],
+        ),
+        headers={
+            "Idempotency-Key": "studio-validation-runtime-log",
+            "If-Match": "2",
+        },
+    )
+    assert invalid_import_runtime_log.status_code == 422
+    assert invalid_import_runtime_log.get_json()["error"]["message"] == (
+        "message runtimeLog must be an object array"
+    )
+
+
 def test_studio_generate_route_freezes_ready_compressed_context(
     studio_platform,
 ) -> None:
@@ -1786,7 +2501,7 @@ def test_studio_generate_route_freezes_ready_compressed_context(
                 status="ready",
                 revision=2,
                 is_active=True,
-                dependency_fingerprint="compressed-fingerprint",
+                dependency_fingerprint="a" * 64,
                 payload_json=json.dumps(
                     context_payload,
                     ensure_ascii=False,
@@ -1824,7 +2539,7 @@ def test_studio_generate_route_freezes_ready_compressed_context(
     frozen = operation["request"]["analysisContext"]
     assert frozen["artifactId"] == context_id
     assert frozen["revision"] == 2
-    assert frozen["dependencyFingerprint"] == "compressed-fingerprint"
+    assert frozen["dependencyFingerprint"] == "a" * 64
     assert frozen["payload"] == context_payload
 
 

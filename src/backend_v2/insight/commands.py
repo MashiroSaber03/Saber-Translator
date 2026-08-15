@@ -8,8 +8,13 @@ from typing import Any
 import uuid
 
 from sqlalchemy import Engine, select, update
+from sqlalchemy.engine import Connection
 
-from src.backend_v2.insight.repository import InsightRepository
+from src.backend_v2.insight.repository import (
+    ANALYSIS_RUN_SCOPES,
+    InsightConflict,
+    InsightRepository,
+)
 from src.backend_v2.jobs.repository import (
     JobItemSpec,
     JobQueueRepository,
@@ -19,7 +24,6 @@ from src.backend_v2.settings.resolver import SettingsResolver
 from src.backend_v2.storage.schema import (
     analysis_heads,
     analysis_page_results,
-    analysis_runs,
     assets,
     books,
     chapters,
@@ -35,14 +39,12 @@ from src.shared.ai_providers import (
 )
 
 
-ANALYSIS_SCOPES = frozenset({"full", "incremental", "chapter", "page"})
 ALLOWED_COMMAND_KEYS = frozenset(
     {
         "bookId",
         "scope",
         "chapterIds",
         "pageIds",
-        "force",
     }
 )
 
@@ -78,8 +80,8 @@ class InsightAnalysisCommandService:
         idempotency_key: str,
     ) -> dict[str, object]:
         normalized = normalize_analysis_command(command)
-        book_id = str(normalized["bookId"])
-        scope = str(normalized["scope"])
+        book_id = normalized["bookId"]
+        scope = normalized["scope"]
         idempotency_scope = f"insight-analysis:{book_id}"
         replay = self.jobs.idempotency_replay(
             scope=idempotency_scope,
@@ -87,28 +89,18 @@ class InsightAnalysisCommandService:
             payload=normalized,
         )
         if replay is not None:
-            if "runId" not in replay:
-                with self.engine.connect() as connection:
-                    replay["runId"] = str(
-                        connection.execute(
-                            select(analysis_runs.c.id).where(
-                                analysis_runs.c.job_id
-                                == str(replay["jobIds"][0])
-                            )
-                        ).scalar_one()
-                    )
+            _required_string(replay.get("runId"), "Insight replay runId")
             return replay
         book, targets = self._resolve_targets(
             book_id=book_id,
             scope=scope,
             chapter_ids=normalized["chapterIds"],
             page_ids=normalized["pageIds"],
-            force=bool(normalized["force"]),
         )
         run_id = str(uuid.uuid4())
         config = self.settings.resolve_insight(
             book_id=book_id,
-            command=normalized,
+            scope=scope,
         )
         validate_insight_job_requirements(config, scope=scope)
         config["runId"] = run_id
@@ -119,10 +111,20 @@ class InsightAnalysisCommandService:
             target.chapter_id for target in targets
         }
         if scope == "full":
-            layer_steps = tuple(
-                f"insight_build_layer_{int(layer['index'])}"
-                for layer in config["analysis"]["layers"]
-            )
+            layer_steps: list[str] = []
+            for layer in config["analysis"]["layers"]:
+                if not isinstance(layer, Mapping):
+                    raise ValueError("Insight layer must be an object")
+                layer_index = layer.get("index")
+                if (
+                    isinstance(layer_index, bool)
+                    or not isinstance(layer_index, int)
+                    or layer_index < 0
+                ):
+                    raise ValueError(
+                        "Insight layer index must be a non-negative integer"
+                    )
+                layer_steps.append(f"insight_build_layer_{layer_index}")
             final_steps = (
                 "insight_validate_run",
                 *layer_steps,
@@ -160,12 +162,35 @@ class InsightAnalysisCommandService:
                 ),
             ),
             target_display={
-                "book": str(book["title"]),
+                "book": _required_string(book.get("title"), "book title"),
                 "scope": scope,
                 "pageCount": len(targets),
             },
         )
         target_mappings = tuple(target.mapping() for target in targets)
+
+        def assert_targets(connection, _batch_id: str) -> None:
+            try:
+                current_book, current_targets = self._resolve_targets_in_connection(
+                    connection,
+                    book_id=book_id,
+                    scope=scope,
+                    chapter_ids=normalized["chapterIds"],
+                    page_ids=normalized["pageIds"],
+                )
+            except ValueError as exc:
+                raise InsightConflict(
+                    "Insight analysis targets changed before job admission"
+                ) from exc
+            if (
+                _required_string(current_book.get("id"), "book id") != book_id
+                or _required_string(current_book.get("title"), "book title")
+                != _required_string(book.get("title"), "book title")
+                or current_targets != targets
+            ):
+                raise InsightConflict(
+                    "Insight analysis targets changed before job admission"
+                )
 
         def initialize_run(
             connection,
@@ -177,7 +202,7 @@ class InsightAnalysisCommandService:
             InsightRepository.insert_run(
                 connection,
                 run_id=run_id,
-                job_id=str(job_ids[0]),
+                job_id=job_ids[0],
                 book_id=book_id,
                 scope=scope,
                 config=config,
@@ -185,7 +210,7 @@ class InsightAnalysisCommandService:
             )
             connection.execute(
                 update(jobs)
-                .where(jobs.c.id == str(job_ids[0]))
+                .where(jobs.c.id == job_ids[0])
                 .values(analysis_run_id=run_id)
             )
 
@@ -197,6 +222,7 @@ class InsightAnalysisCommandService:
             idempotency_scope=idempotency_scope,
             idempotency_key=idempotency_key,
             idempotency_payload=normalized,
+            transaction_initializer=assert_targets,
             transaction_hook=initialize_run,
         )
         return response
@@ -208,58 +234,79 @@ class InsightAnalysisCommandService:
         scope: str,
         chapter_ids: Sequence[str],
         page_ids: Sequence[str],
-        force: bool,
+    ) -> tuple[Mapping[str, Any], list[FrozenTarget]]:
+        with self.engine.connect() as connection:
+            return self._resolve_targets_in_connection(
+                connection,
+                book_id=book_id,
+                scope=scope,
+                chapter_ids=chapter_ids,
+                page_ids=page_ids,
+            )
+
+    @staticmethod
+    def _resolve_targets_in_connection(
+        connection: Connection,
+        *,
+        book_id: str,
+        scope: str,
+        chapter_ids: Sequence[str],
+        page_ids: Sequence[str],
     ) -> tuple[Mapping[str, Any], list[FrozenTarget]]:
         source_pointer = page_assets.alias("insight_command_source")
         page_head = analysis_heads.alias("insight_command_page_head")
-        with self.engine.connect() as connection:
-            book = connection.execute(
-                select(books.c.id, books.c.title).where(
-                    books.c.id == book_id,
-                    books.c.kind == "library",
-                )
-            ).mappings().one_or_none()
-            if book is None:
-                raise ValueError("book not found")
-            rows = list(
-                connection.execute(
-                    select(
-                        pages.c.id.label("page_id"),
-                        pages.c.chapter_id,
-                        chapters.c.ordinal.label("chapter_ordinal"),
-                        pages.c.ordinal.label("page_ordinal"),
-                        source_pointer.c.asset_id.label("source_asset_id"),
-                        assets.c.checksum.label("source_checksum"),
-                        analysis_page_results.c.source_checksum.label(
-                            "analysis_source_checksum"
-                        ),
-                    )
-                    .join(chapters, chapters.c.id == pages.c.chapter_id)
-                    .join(
-                        source_pointer,
-                        (source_pointer.c.page_id == pages.c.id)
-                        & (source_pointer.c.role == "source"),
-                    )
-                    .join(assets, assets.c.id == source_pointer.c.asset_id)
-                    .join(
-                        page_head,
-                        page_head.c.page_id == pages.c.id,
-                        isouter=True,
-                    )
-                    .join(
-                        analysis_page_results,
-                        analysis_page_results.c.id
-                        == page_head.c.active_result_id,
-                        isouter=True,
-                    )
-                    .where(chapters.c.book_id == book_id)
-                    .order_by(chapters.c.ordinal, pages.c.ordinal)
-                ).mappings()
+        book = connection.execute(
+            select(books.c.id, books.c.title).where(
+                books.c.id == book_id,
+                books.c.kind == "library",
             )
+        ).mappings().one_or_none()
+        if book is None:
+            raise ValueError("book not found")
+        rows = list(
+            connection.execute(
+                select(
+                    pages.c.id.label("page_id"),
+                    pages.c.chapter_id,
+                    chapters.c.ordinal.label("chapter_ordinal"),
+                    pages.c.ordinal.label("page_ordinal"),
+                    source_pointer.c.asset_id.label("source_asset_id"),
+                    assets.c.checksum.label("source_checksum"),
+                    analysis_page_results.c.source_checksum.label(
+                        "analysis_source_checksum"
+                    ),
+                )
+                .join(chapters, chapters.c.id == pages.c.chapter_id)
+                .join(
+                    source_pointer,
+                    (source_pointer.c.page_id == pages.c.id)
+                    & (source_pointer.c.role == "source"),
+                )
+                .join(assets, assets.c.id == source_pointer.c.asset_id)
+                .join(
+                    page_head,
+                    page_head.c.page_id == pages.c.id,
+                    isouter=True,
+                )
+                .join(
+                    analysis_page_results,
+                    analysis_page_results.c.id == page_head.c.active_result_id,
+                    isouter=True,
+                )
+                .where(chapters.c.book_id == book_id)
+                .order_by(chapters.c.ordinal, pages.c.ordinal)
+            ).mappings()
+        )
         if not rows:
             raise ValueError("book has no pages")
-        available_chapters = {str(row["chapter_id"]) for row in rows}
-        available_pages = {str(row["page_id"]) for row in rows}
+        available_chapters = {
+            _required_string(row.get("chapter_id"), "chapter id")
+            for row in rows
+        }
+        available_pages = {
+            _required_string(row.get("page_id"), "page id")
+            for row in rows
+        }
         if not set(chapter_ids).issubset(available_chapters):
             raise ValueError("all chapterIds must belong to the book")
         if not set(page_ids).issubset(available_pages):
@@ -267,15 +314,15 @@ class InsightAnalysisCommandService:
 
         selected: list[Mapping[str, Any]] = []
         for row in rows:
-            page_id = str(row["page_id"])
-            chapter_id = str(row["chapter_id"])
+            page_id = _required_string(row.get("page_id"), "page id")
+            chapter_id = _required_string(row.get("chapter_id"), "chapter id")
             if scope == "full":
                 include = True
             elif scope == "incremental":
-                include = force or (
+                include = (
                     row["analysis_source_checksum"] is None
-                    or str(row["analysis_source_checksum"])
-                    != str(row["source_checksum"])
+                    or row["analysis_source_checksum"]
+                    != row["source_checksum"]
                 )
             elif scope == "chapter":
                 include = chapter_id in chapter_ids
@@ -288,16 +335,27 @@ class InsightAnalysisCommandService:
                 raise ValueError("没有需要增量分析的页面")
             raise ValueError("analysis target is empty")
         page_numbers = {
-            str(row["page_id"]): index
+            _required_string(row.get("page_id"), "page id"): index
             for index, row in enumerate(rows, start=1)
         }
         return book, [
             FrozenTarget(
-                page_id=str(row["page_id"]),
-                chapter_id=str(row["chapter_id"]),
-                source_asset_id=str(row["source_asset_id"]),
-                source_checksum=str(row["source_checksum"]),
-                page_number=page_numbers[str(row["page_id"])],
+                page_id=_required_string(row.get("page_id"), "page id"),
+                chapter_id=_required_string(
+                    row.get("chapter_id"),
+                    "chapter id",
+                ),
+                source_asset_id=_required_string(
+                    row.get("source_asset_id"),
+                    "source asset id",
+                ),
+                source_checksum=_required_sha256(
+                    row.get("source_checksum"),
+                    "source checksum",
+                ),
+                page_number=page_numbers[
+                    _required_string(row.get("page_id"), "page id")
+                ],
             )
             for row in selected
         ]
@@ -309,11 +367,15 @@ def normalize_analysis_command(command: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError(
             f"unknown Insight command fields: {', '.join(sorted(unknown))}"
         )
-    book_id = str(command.get("bookId", "")).strip()
-    if not book_id:
+    book_id = command.get("bookId")
+    if (
+        not isinstance(book_id, str)
+        or not book_id
+        or book_id != book_id.strip()
+    ):
         raise ValueError("bookId is required")
-    scope = str(command.get("scope", "full"))
-    if scope not in ANALYSIS_SCOPES:
+    scope = command.get("scope")
+    if scope not in ANALYSIS_RUN_SCOPES:
         raise ValueError("scope must be full, incremental, chapter, or page")
     chapter_ids = _ids(command, "chapterIds")
     page_ids = _ids(command, "pageIds")
@@ -332,7 +394,6 @@ def normalize_analysis_command(command: Mapping[str, Any]) -> dict[str, Any]:
         "scope": scope,
         "chapterIds": chapter_ids,
         "pageIds": page_ids,
-        "force": bool(command.get("force", False)),
     }
 
 
@@ -344,12 +405,16 @@ def _ids(
     if not isinstance(raw, list):
         raise ValueError(f"{key} must be a string array")
     values = list(raw)
-    if not all(isinstance(value, str) and value.strip() for value in values):
+    if not all(
+        isinstance(value, str)
+        and value
+        and value == value.strip()
+        for value in values
+    ):
         raise ValueError(f"{key} must contain non-empty strings")
-    normalized = [str(value) for value in values]
-    if len(set(normalized)) != len(normalized):
+    if len(set(values)) != len(values):
         raise ValueError(f"{key} must be unique")
-    return normalized
+    return values
 
 
 def _scope_label(scope: str) -> str:
@@ -392,26 +457,61 @@ def _validate_provider_section(
     capability: str,
     label: str,
 ) -> None:
-    section = dict(value) if isinstance(value, Mapping) else {}
-    provider = str(section.get("provider", "")).strip()
-    if not provider:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{label} 配置无效，请重新设置")
+    section = dict(value)
+    provider_value = section.get("provider")
+    if not isinstance(provider_value, str) or not provider_value.strip():
         raise ValueError(f"{label} 未选择服务商，请先在分析设置中完成配置")
+    provider = provider_value.strip()
     manifest = get_provider_manifest(provider)
     if capability not in manifest.capabilities:
         raise ValueError(
             f"{label} 服务商 {manifest.display_name} 不支持当前任务"
         )
-    if manifest.requires_api_key and not section.get("credentialVersionId"):
+    credential_version_id = section.get("credentialVersionId")
+    if credential_version_id is not None and (
+        not isinstance(credential_version_id, str)
+        or not credential_version_id.strip()
+    ):
+        raise ValueError(f"{label} API Key 版本无效，请重新保存设置")
+    if manifest.requires_api_key and (
+        not isinstance(credential_version_id, str)
+        or not credential_version_id.strip()
+    ):
         raise ValueError(
             f"{label} 缺少已保存的 API Key，请先在分析设置中填写并保存"
         )
-    model_name = str(section.get("model_name", "")).strip()
-    if manifest.requires_model and not model_name:
+    model_name = section.get("model_name")
+    if model_name is not None and not isinstance(model_name, str):
+        raise ValueError(f"{label} 模型名称无效，请重新保存设置")
+    if manifest.requires_model and (
+        not isinstance(model_name, str) or not model_name.strip()
+    ):
         raise ValueError(
             f"{label} 缺少模型名称，请先在分析设置中填写并保存"
         )
-    base_url = str(section.get("custom_base_url", "")).strip()
-    if manifest.requires_base_url and not base_url:
+    base_url = section.get("custom_base_url")
+    if base_url is not None and not isinstance(base_url, str):
+        raise ValueError(f"{label} Base URL 无效，请重新保存设置")
+    if manifest.requires_base_url and (
+        not isinstance(base_url, str) or not base_url.strip()
+    ):
         raise ValueError(
             f"{label} 缺少 Base URL，请先在分析设置中填写并保存"
         )
+
+
+def _required_string(value: object, field: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field} must be a non-empty string")
+    return value
+
+
+def _required_sha256(value: object, field: str) -> str:
+    text = _required_string(value, field)
+    if len(text) != 64 or any(
+        character not in "0123456789abcdef" for character in text
+    ):
+        raise ValueError(f"{field} must be a lowercase SHA-256 digest")
+    return text

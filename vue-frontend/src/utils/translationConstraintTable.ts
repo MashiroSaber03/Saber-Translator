@@ -20,9 +20,12 @@ export function importRowsFromJson(
     throw new Error('JSON 内容必须是数组')
   }
 
-  return parsed
-    .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'))
-    .map(item => normalizeImportedRow(item, columns))
+  return parsed.map((item, index) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw new Error(`JSON 第 ${index + 1} 行必须是对象`)
+    }
+    return normalizeImportedRow(item as Record<string, unknown>, columns, index + 1)
+  })
 }
 
 export function exportRowsToXlsxBuffer(
@@ -60,18 +63,24 @@ export function importRowsFromXlsxBuffer(
   const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, {
     defval: '',
   })
-  return rows.map(row => normalizeImportedRow(row, columns))
+  return rows.map((row, index) => normalizeImportedRow(row, columns, index + 2))
 }
 
 export function normalizeImportedRow(
   row: Record<string, unknown>,
   columns: readonly TranslationConstraintColumn[],
+  rowNumber?: number,
 ): TranslationConstraintTableRow {
   const normalized: TranslationConstraintTableRow = {}
   for (const column of columns) {
     const direct = row[column.key]
     const labeled = row[column.label]
-    normalized[column.key] = String(direct ?? labeled ?? '')
+    const value = direct ?? labeled ?? ''
+    if (typeof value !== 'string') {
+      const prefix = rowNumber === undefined ? '' : `第 ${rowNumber} 行`
+      throw new Error(`${prefix}${column.label}必须是文本`)
+    }
+    normalized[column.key] = value
   }
   return normalized
 }

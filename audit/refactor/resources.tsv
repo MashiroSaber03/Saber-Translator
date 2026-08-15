@@ -1,0 +1,131 @@
+status	scope	group	path	bytes	main_relation	result	evidence
+RESOURCE-VERIFIED	CURRENT	frontend-assets	pic/Editor.png	2345360	UNCHANGED	当前资源格式、引用和打包边界已验证	图片/图标解码成功；README、Vue public 或视觉测试引用路径闭合
+RESOURCE-VERIFIED	CURRENT	frontend-assets	pic/after1.png	6604440	UNCHANGED	当前资源格式、引用和打包边界已验证	图片/图标解码成功；README、Vue public 或视觉测试引用路径闭合
+RESOURCE-VERIFIED	CURRENT	frontend-assets	pic/after2.png	7546026	UNCHANGED	当前资源格式、引用和打包边界已验证	图片/图标解码成功；README、Vue public 或视觉测试引用路径闭合
+RESOURCE-VERIFIED	CURRENT	frontend-assets	pic/alipay_qrcode.png	141512	UNCHANGED	当前资源格式、引用和打包边界已验证	图片/图标解码成功；README、Vue public 或视觉测试引用路径闭合
+RESOURCE-VERIFIED	CURRENT	frontend-assets	pic/analysis-display.png	915851	UNCHANGED	当前资源格式、引用和打包边界已验证	图片/图标解码成功；README、Vue public 或视觉测试引用路径闭合
+RESOURCE-VERIFIED	CURRENT	frontend-assets	pic/analysis-overview.png	411928	UNCHANGED	当前资源格式、引用和打包边界已验证	图片/图标解码成功；README、Vue public 或视觉测试引用路径闭合
+RESOURCE-VERIFIED	CURRENT	frontend-assets	pic/before1.png	1134851	UNCHANGED	当前资源格式、引用和打包边界已验证	图片/图标解码成功；README、Vue public 或视觉测试引用路径闭合
+RESOURCE-VERIFIED	CURRENT	frontend-assets	pic/before2.png	1122421	UNCHANGED	当前资源格式、引用和打包边界已验证	图片/图标解码成功；README、Vue public 或视觉测试引用路径闭合
+RESOURCE-VERIFIED	CURRENT	frontend-assets	pic/book-details.png	226150	UNCHANGED	当前资源格式、引用和打包边界已验证	图片/图标解码成功；README、Vue public 或视觉测试引用路径闭合
+RESOURCE-VERIFIED	CURRENT	frontend-assets	pic/bookshelf-display.png	904141	UNCHANGED	当前资源格式、引用和打包边界已验证	图片/图标解码成功；README、Vue public 或视觉测试引用路径闭合
+RESOURCE-VERIFIED	CURRENT	frontend-assets	pic/global-mode.png	277157	UNCHANGED	当前资源格式、引用和打包边界已验证	图片/图标解码成功；README、Vue public 或视觉测试引用路径闭合
+RESOURCE-VERIFIED	CURRENT	frontend-assets	pic/interface.png	1805865	UNCHANGED	当前资源格式、引用和打包边界已验证	图片/图标解码成功；README、Vue public 或视觉测试引用路径闭合
+RESOURCE-VERIFIED	CURRENT	frontend-assets	pic/logo.png	863677	UNCHANGED	当前资源格式、引用和打包边界已验证	图片/图标解码成功；README、Vue public 或视觉测试引用路径闭合
+RESOURCE-VERIFIED	CURRENT	frontend-assets	pic/timeline.png	950585	UNCHANGED	当前资源格式、引用和打包边界已验证	图片/图标解码成功；README、Vue public 或视觉测试引用路径闭合
+RESOURCE-VERIFIED	CURRENT	frontend-assets	pic/wechat_qrcode.png	66603	UNCHANGED	当前资源格式、引用和打包边界已验证	图片/图标解码成功；README、Vue public 或视觉测试引用路径闭合
+RESOURCE-VERIFIED	CURRENT	desktop-assets	src/backend_v2/desktop/assets/app-icon.ico	148815	NEW	当前资源格式、引用和打包边界已验证	PNG/ICO/WEBP 解码、尺寸、alpha/圆角与打包路径通过；桌宠 13 状态 atlas 完整
+RESOURCE-VERIFIED	CURRENT	desktop-assets	src/backend_v2/desktop/assets/app-icon.png	929989	NEW	当前资源格式、引用和打包边界已验证	PNG/ICO/WEBP 解码、尺寸、alpha/圆角与打包路径通过；桌宠 13 状态 atlas 完整
+RESOURCE-VERIFIED	CURRENT	desktop-assets	src/backend_v2/desktop/assets/pet/saber_chan/spritesheet.webp	2043154	NEW	当前资源格式、引用和打包边界已验证	PNG/ICO/WEBP 解码、尺寸、alpha/圆角与打包路径通过；桌宠 13 状态 atlas 完整
+RESOURCE-VERIFIED	CURRENT	backend-resources	src/backend_v2/resources/fonts/ALGER.TTF	76588	NEW	当前资源格式、引用和打包边界已验证	字体文件可解析；与 main 原字体按 SHA-256 一一对应，当前渲染器与 PyInstaller 资源路径核对完成
+RESOURCE-VERIFIED	CURRENT	backend-resources	src/backend_v2/resources/fonts/Arial_Unicode.ttf	23278008	NEW	当前资源格式、引用和打包边界已验证	字体文件可解析；与 main 原字体按 SHA-256 一一对应，当前渲染器与 PyInstaller 资源路径核对完成
+RESOURCE-VERIFIED	CURRENT	backend-resources	src/backend_v2/resources/fonts/ChisugaShotai_Regular0.2.12.1.ttf	25194484	NEW	当前资源格式、引用和打包边界已验证	字体文件可解析；与 main 原字体按 SHA-256 一一对应，当前渲染器与 PyInstaller 资源路径核对完成
+RESOURCE-VERIFIED	CURRENT	backend-resources	src/backend_v2/resources/fonts/NotoSans-Medium.ttf	631052	NEW	当前资源格式、引用和打包边界已验证	字体文件可解析；与 main 原字体按 SHA-256 一一对应，当前渲染器与 PyInstaller 资源路径核对完成
+RESOURCE-VERIFIED	CURRENT	backend-resources	src/backend_v2/resources/fonts/SIMLI.TTF	9223160	NEW	当前资源格式、引用和打包边界已验证	字体文件可解析；与 main 原字体按 SHA-256 一一对应，当前渲染器与 PyInstaller 资源路径核对完成
+RESOURCE-VERIFIED	CURRENT	backend-resources	src/backend_v2/resources/fonts/SIMYOU.TTF	6700204	NEW	当前资源格式、引用和打包边界已验证	字体文件可解析；与 main 原字体按 SHA-256 一一对应，当前渲染器与 PyInstaller 资源路径核对完成
+RESOURCE-VERIFIED	CURRENT	backend-resources	src/backend_v2/resources/fonts/STCAIYUN.TTF	5673836	NEW	当前资源格式、引用和打包边界已验证	字体文件可解析；与 main 原字体按 SHA-256 一一对应，当前渲染器与 PyInstaller 资源路径核对完成
+RESOURCE-VERIFIED	CURRENT	backend-resources	src/backend_v2/resources/fonts/STFANGSO.TTF	11362788	NEW	当前资源格式、引用和打包边界已验证	字体文件可解析；与 main 原字体按 SHA-256 一一对应，当前渲染器与 PyInstaller 资源路径核对完成
+RESOURCE-VERIFIED	CURRENT	backend-resources	src/backend_v2/resources/fonts/STHUPO.TTF	3714568	NEW	当前资源格式、引用和打包边界已验证	字体文件可解析；与 main 原字体按 SHA-256 一一对应，当前渲染器与 PyInstaller 资源路径核对完成
+RESOURCE-VERIFIED	CURRENT	backend-resources	src/backend_v2/resources/fonts/STKAITI.TTF	12736196	NEW	当前资源格式、引用和打包边界已验证	字体文件可解析；与 main 原字体按 SHA-256 一一对应，当前渲染器与 PyInstaller 资源路径核对完成
+RESOURCE-VERIFIED	CURRENT	backend-resources	src/backend_v2/resources/fonts/STLITI.TTF	4111960	NEW	当前资源格式、引用和打包边界已验证	字体文件可解析；与 main 原字体按 SHA-256 一一对应，当前渲染器与 PyInstaller 资源路径核对完成
+RESOURCE-VERIFIED	CURRENT	backend-resources	src/backend_v2/resources/fonts/STSONG.TTF	11697600	NEW	当前资源格式、引用和打包边界已验证	字体文件可解析；与 main 原字体按 SHA-256 一一对应，当前渲染器与 PyInstaller 资源路径核对完成
+RESOURCE-VERIFIED	CURRENT	backend-resources	src/backend_v2/resources/fonts/STXIHEI.TTF	9768704	NEW	当前资源格式、引用和打包边界已验证	字体文件可解析；与 main 原字体按 SHA-256 一一对应，当前渲染器与 PyInstaller 资源路径核对完成
+RESOURCE-VERIFIED	CURRENT	backend-resources	src/backend_v2/resources/fonts/STXINGKA.TTF	4016288	NEW	当前资源格式、引用和打包边界已验证	字体文件可解析；与 main 原字体按 SHA-256 一一对应，当前渲染器与 PyInstaller 资源路径核对完成
+RESOURCE-VERIFIED	CURRENT	backend-resources	src/backend_v2/resources/fonts/STXINWEI.TTF	4051204	NEW	当前资源格式、引用和打包边界已验证	字体文件可解析；与 main 原字体按 SHA-256 一一对应，当前渲染器与 PyInstaller 资源路径核对完成
+RESOURCE-VERIFIED	CURRENT	backend-resources	src/backend_v2/resources/fonts/STZHONGS.TTF	12135284	NEW	当前资源格式、引用和打包边界已验证	字体文件可解析；与 main 原字体按 SHA-256 一一对应，当前渲染器与 PyInstaller 资源路径核对完成
+RESOURCE-VERIFIED	CURRENT	backend-resources	src/backend_v2/resources/fonts/YeZiGongChangTianQingSong-2.ttf	24160392	NEW	当前资源格式、引用和打包边界已验证	字体文件可解析；与 main 原字体按 SHA-256 一一对应，当前渲染器与 PyInstaller 资源路径核对完成
+RESOURCE-VERIFIED	CURRENT	backend-resources	src/backend_v2/resources/fonts/msgothic.ttc	9176636	NEW	当前资源格式、引用和打包边界已验证	字体文件可解析；与 main 原字体按 SHA-256 一一对应，当前渲染器与 PyInstaller 资源路径核对完成
+RESOURCE-VERIFIED	CURRENT	backend-resources	src/backend_v2/resources/fonts/msyh.ttc	19704352	NEW	当前资源格式、引用和打包边界已验证	字体文件可解析；与 main 原字体按 SHA-256 一一对应，当前渲染器与 PyInstaller 资源路径核对完成
+RESOURCE-VERIFIED	CURRENT	backend-resources	src/backend_v2/resources/fonts/msyhbd.ttc	16883552	NEW	当前资源格式、引用和打包边界已验证	字体文件可解析；与 main 原字体按 SHA-256 一一对应，当前渲染器与 PyInstaller 资源路径核对完成
+RESOURCE-VERIFIED	CURRENT	backend-resources	src/backend_v2/resources/fonts/simfang.ttf	10580176	NEW	当前资源格式、引用和打包边界已验证	字体文件可解析；与 main 原字体按 SHA-256 一一对应，当前渲染器与 PyInstaller 资源路径核对完成
+RESOURCE-VERIFIED	CURRENT	backend-resources	src/backend_v2/resources/fonts/simhei.ttf	9755440	NEW	当前资源格式、引用和打包边界已验证	字体文件可解析；与 main 原字体按 SHA-256 一一对应，当前渲染器与 PyInstaller 资源路径核对完成
+RESOURCE-VERIFIED	CURRENT	backend-resources	src/backend_v2/resources/fonts/simkai.ttf	11789376	NEW	当前资源格式、引用和打包边界已验证	字体文件可解析；与 main 原字体按 SHA-256 一一对应，当前渲染器与 PyInstaller 资源路径核对完成
+RESOURCE-VERIFIED	CURRENT	backend-resources	src/backend_v2/resources/fonts/ttf	3145340	NEW	当前资源格式、引用和打包边界已验证	字体文件可解析；与 main 原字体按 SHA-256 一一对应，当前渲染器与 PyInstaller 资源路径核对完成
+RESOURCE-VERIFIED	CURRENT	backend-resources	src/backend_v2/resources/fonts/华康抖抖体W5-B5.TTF	5085020	NEW	当前资源格式、引用和打包边界已验证	字体文件可解析；与 main 原字体按 SHA-256 一一对应，当前渲染器与 PyInstaller 资源路径核对完成
+RESOURCE-VERIFIED	CURRENT	backend-resources	src/backend_v2/resources/fonts/思源黑体SourceHanSansK-Bold.TTF	16944468	NEW	当前资源格式、引用和打包边界已验证	字体文件可解析；与 main 原字体按 SHA-256 一一对应，当前渲染器与 PyInstaller 资源路径核对完成
+RESOURCE-VERIFIED	CURRENT	backend-resources	src/backend_v2/resources/fonts/汉仪正圆-65W.TTF	4851264	NEW	当前资源格式、引用和打包边界已验证	字体文件可解析；与 main 原字体按 SHA-256 一一对应，当前渲染器与 PyInstaller 资源路径核对完成
+RESOURCE-VERIFIED	CURRENT	backend-resources	src/backend_v2/resources/fonts/汉仪瑞意宋_75W.TTF	4882616	NEW	当前资源格式、引用和打包边界已验证	字体文件可解析；与 main 原字体按 SHA-256 一一对应，当前渲染器与 PyInstaller 资源路径核对完成
+RESOURCE-VERIFIED	CURRENT	generated-static-assets	src/backend_v2/static/favicon.ico	67646	NEW	当前资源格式、引用和打包边界已验证	来源资源 SHA-256 对齐；生产静态引用闭包 39 文件完整、0 orphan
+RESOURCE-VERIFIED	CURRENT	generated-static-assets	src/backend_v2/static/vue/favicon.ico	67646	NEW	当前资源格式、引用和打包边界已验证	来源资源 SHA-256 对齐；生产静态引用闭包 39 文件完整、0 orphan
+RESOURCE-VERIFIED	CURRENT	generated-static-assets	src/backend_v2/static/vue/pic/alipay_qrcode.png	141512	NEW	当前资源格式、引用和打包边界已验证	来源资源 SHA-256 对齐；生产静态引用闭包 39 文件完整、0 orphan
+RESOURCE-VERIFIED	CURRENT	generated-static-assets	src/backend_v2/static/vue/pic/logo.png	863677	NEW	当前资源格式、引用和打包边界已验证	来源资源 SHA-256 对齐；生产静态引用闭包 39 文件完整、0 orphan
+RESOURCE-VERIFIED	CURRENT	generated-static-assets	src/backend_v2/static/vue/pic/wechat_qrcode.png	66603	NEW	当前资源格式、引用和打包边界已验证	来源资源 SHA-256 对齐；生产静态引用闭包 39 文件完整、0 orphan
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/public/favicon.ico	67646	UNCHANGED	当前资源格式、引用和打包边界已验证	图片/图标解码成功；README、Vue public 或视觉测试引用路径闭合
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/public/pic/alipay_qrcode.png	141512	UNCHANGED	当前资源格式、引用和打包边界已验证	图片/图标解码成功；README、Vue public 或视觉测试引用路径闭合
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/public/pic/logo.png	863677	UNCHANGED	当前资源格式、引用和打包边界已验证	图片/图标解码成功；README、Vue public 或视觉测试引用路径闭合
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/public/pic/wechat_qrcode.png	66603	UNCHANGED	当前资源格式、引用和打包边界已验证	图片/图标解码成功；README、Vue public 或视觉测试引用路径闭合
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/tests/visual/ui-regression.spec.ts-snapshots/book-detail-delete-confirm-chromium-desktop-win32.png	13249	NEW	当前资源格式、引用和打包边界已验证	Playwright 34/34 对应视觉基线已实际比较通过
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/tests/visual/ui-regression.spec.ts-snapshots/bookshelf-create-book-modal-chromium-desktop-win32.png	20334	NEW	当前资源格式、引用和打包边界已验证	Playwright 34/34 对应视觉基线已实际比较通过
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/tests/visual/ui-regression.spec.ts-snapshots/bookshelf-edit-book-modal-chromium-desktop-win32.png	21695	NEW	当前资源格式、引用和打包边界已验证	Playwright 34/34 对应视觉基线已实际比较通过
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/tests/visual/ui-regression.spec.ts-snapshots/bookshelf-empty-chromium-desktop-win32.png	90303	NEW	当前资源格式、引用和打包边界已验证	Playwright 34/34 对应视觉基线已实际比较通过
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/tests/visual/ui-regression.spec.ts-snapshots/bookshelf-tag-manage-modal-chromium-desktop-win32.png	13076	NEW	当前资源格式、引用和打包边界已验证	Playwright 34/34 对应视觉基线已实际比较通过
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/tests/visual/ui-regression.spec.ts-snapshots/character-studio-editor-preview-chromium-desktop-win32.png	139700	NEW	当前资源格式、引用和打包边界已验证	Playwright 34/34 对应视觉基线已实际比较通过
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/tests/visual/ui-regression.spec.ts-snapshots/character-studio-empty-chromium-desktop-win32.png	105498	NEW	当前资源格式、引用和打包边界已验证	Playwright 34/34 对应视觉基线已实际比较通过
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/tests/visual/ui-regression.spec.ts-snapshots/insight-continuation-add-character-dialog-chromium-desktop-win32.png	18136	NEW	当前资源格式、引用和打包边界已验证	Playwright 34/34 对应视觉基线已实际比较通过
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/tests/visual/ui-regression.spec.ts-snapshots/insight-empty-chromium-desktop-win32.png	33233	NEW	当前资源格式、引用和打包边界已验证	Playwright 34/34 对应视觉基线已实际比较通过
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/tests/visual/ui-regression.spec.ts-snapshots/insight-notes-add-modal-chromium-desktop-win32.png	17904	NEW	当前资源格式、引用和打包边界已验证	Playwright 34/34 对应视觉基线已实际比较通过
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/tests/visual/ui-regression.spec.ts-snapshots/insight-overview-populated-chromium-desktop-win32.png	25305	NEW	当前资源格式、引用和打包边界已验证	Playwright 34/34 对应视觉基线已实际比较通过
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/tests/visual/ui-regression.spec.ts-snapshots/insight-qa-save-note-modal-chromium-desktop-win32.png	22596	NEW	当前资源格式、引用和打包边界已验证	Playwright 34/34 对应视觉基线已实际比较通过
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/tests/visual/ui-regression.spec.ts-snapshots/insight-selected-sidebars-chromium-desktop-win32.png	81169	NEW	当前资源格式、引用和打包边界已验证	Playwright 34/34 对应视觉基线已实际比较通过
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/tests/visual/ui-regression.spec.ts-snapshots/mobile-insight-selected-chromium-desktop-win32.png	36878	NEW	当前资源格式、引用和打包边界已验证	Playwright 34/34 对应视觉基线已实际比较通过
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/tests/visual/ui-regression.spec.ts-snapshots/mobile-translate-loaded-chromium-desktop-win32.png	172352	NEW	当前资源格式、引用和打包边界已验证	Playwright 34/34 对应视觉基线已实际比较通过
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/tests/visual/ui-regression.spec.ts-snapshots/plugin-agent-modal-chromium-desktop-win32.png	60914	NEW	当前资源格式、引用和打包边界已验证	Playwright 34/34 对应视觉基线已实际比较通过
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/tests/visual/ui-regression.spec.ts-snapshots/reader-loaded-chromium-desktop-win32.png	73171	NEW	当前资源格式、引用和打包边界已验证	Playwright 34/34 对应视觉基线已实际比较通过
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/tests/visual/ui-regression.spec.ts-snapshots/reader-settings-panel-chromium-desktop-win32.png	64620	NEW	当前资源格式、引用和打包边界已验证	Playwright 34/34 对应视觉基线已实际比较通过
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/tests/visual/ui-regression.spec.ts-snapshots/settings-tab-detection-chromium-desktop-win32.png	66996	NEW	当前资源格式、引用和打包边界已验证	Playwright 34/34 对应视觉基线已实际比较通过
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/tests/visual/ui-regression.spec.ts-snapshots/settings-tab-hq-chromium-desktop-win32.png	60826	NEW	当前资源格式、引用和打包边界已验证	Playwright 34/34 对应视觉基线已实际比较通过
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/tests/visual/ui-regression.spec.ts-snapshots/settings-tab-more-chromium-desktop-win32.png	67185	NEW	当前资源格式、引用和打包边界已验证	Playwright 34/34 对应视觉基线已实际比较通过
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/tests/visual/ui-regression.spec.ts-snapshots/settings-tab-ocr-chromium-desktop-win32.png	53176	NEW	当前资源格式、引用和打包边界已验证	Playwright 34/34 对应视觉基线已实际比较通过
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/tests/visual/ui-regression.spec.ts-snapshots/settings-tab-plugins-chromium-desktop-win32.png	63732	NEW	当前资源格式、引用和打包边界已验证	Playwright 34/34 对应视觉基线已实际比较通过
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/tests/visual/ui-regression.spec.ts-snapshots/settings-tab-prompt-library-chromium-desktop-win32.png	58080	NEW	当前资源格式、引用和打包边界已验证	Playwright 34/34 对应视觉基线已实际比较通过
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/tests/visual/ui-regression.spec.ts-snapshots/settings-tab-proofreading-chromium-desktop-win32.png	50128	NEW	当前资源格式、引用和打包边界已验证	Playwright 34/34 对应视觉基线已实际比较通过
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/tests/visual/ui-regression.spec.ts-snapshots/settings-tab-text-defaults-chromium-desktop-win32.png	58694	NEW	当前资源格式、引用和打包边界已验证	Playwright 34/34 对应视觉基线已实际比较通过
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/tests/visual/ui-regression.spec.ts-snapshots/settings-tab-translation-chromium-desktop-win32.png	67996	NEW	当前资源格式、引用和打包边界已验证	Playwright 34/34 对应视觉基线已实际比较通过
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/tests/visual/ui-regression.spec.ts-snapshots/translate-edit-workspace-chromium-desktop-win32.png	88791	NEW	当前资源格式、引用和打包边界已验证	Playwright 34/34 对应视觉基线已实际比较通过
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/tests/visual/ui-regression.spec.ts-snapshots/translate-edit-workspace-selected-bubble-chromium-desktop-win32.png	94241	NEW	当前资源格式、引用和打包边界已验证	Playwright 34/34 对应视觉基线已实际比较通过
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/tests/visual/ui-regression.spec.ts-snapshots/translate-empty-chromium-desktop-win32.png	63675	NEW	当前资源格式、引用和打包边界已验证	Playwright 34/34 对应视觉基线已实际比较通过
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/tests/visual/ui-regression.spec.ts-snapshots/translate-loaded-chromium-desktop-win32.png	136907	NEW	当前资源格式、引用和打包边界已验证	Playwright 34/34 对应视觉基线已实际比较通过
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/tests/visual/ui-regression.spec.ts-snapshots/translation-settings-modal-chromium-desktop-win32.png	67996	NEW	当前资源格式、引用和打包边界已验证	Playwright 34/34 对应视觉基线已实际比较通过
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/tests/visual/ui-regression.spec.ts-snapshots/web-import-expanded-settings-chromium-desktop-win32.png	36396	NEW	当前资源格式、引用和打包边界已验证	Playwright 34/34 对应视觉基线已实际比较通过
+RESOURCE-VERIFIED	CURRENT	frontend-assets	vue-frontend/tests/visual/ui-regression.spec.ts-snapshots/web-import-result-logs-chromium-desktop-win32.png	38642	NEW	当前资源格式、引用和打包边界已验证	Playwright 34/34 对应视觉基线已实际比较通过
+DELETE-VERIFIED	MAIN_REMOVED	frontend-assets	vue-frontend/build_error.txt	4954	REMOVED_OR_RENAMED	仅 main 存在的旧资源已确认删除且当前无引用残留	文件不存在；源码、文档、构建产物和打包配置残留搜索为 0
+DELETE-VERIFIED	MAIN_REMOVED	frontend-assets	vue-frontend/build_output.txt	17464	REMOVED_OR_RENAMED	仅 main 存在的旧资源已确认删除且当前无引用残留	文件不存在；源码、文档、构建产物和打包配置残留搜索为 0
+DELETE-VERIFIED	MAIN_REMOVED	frontend-assets	vue-frontend/src/assets/vue.svg	496	REMOVED_OR_RENAMED	仅 main 存在的旧资源已确认删除且当前无引用残留	文件不存在；源码、文档、构建产物和打包配置残留搜索为 0
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	src/app/static/favicon.ico	67646	REMOVED_OR_RENAMED	旧静态资源已移动到当前 public/Backend V2 静态目录	来源与目标 SHA-256 一致；旧路径不存在且当前引用闭合
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	src/app/static/fonts/ALGER.TTF	76588	REMOVED_OR_RENAMED	旧字体资源已移动到 Backend V2 唯一字体目录	目标字体按文件名与 SHA-256 校验一致；旧路径不存在且无引用
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	src/app/static/fonts/Arial_Unicode.ttf	23278008	REMOVED_OR_RENAMED	旧字体资源已移动到 Backend V2 唯一字体目录	目标字体按文件名与 SHA-256 校验一致；旧路径不存在且无引用
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	src/app/static/fonts/ChisugaShotai_Regular0.2.12.1.ttf	25194484	REMOVED_OR_RENAMED	旧字体资源已移动到 Backend V2 唯一字体目录	目标字体按文件名与 SHA-256 校验一致；旧路径不存在且无引用
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	src/app/static/fonts/msgothic.ttc	9176636	REMOVED_OR_RENAMED	旧字体资源已移动到 Backend V2 唯一字体目录	目标字体按文件名与 SHA-256 校验一致；旧路径不存在且无引用
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	src/app/static/fonts/msyh.ttc	19704352	REMOVED_OR_RENAMED	旧字体资源已移动到 Backend V2 唯一字体目录	目标字体按文件名与 SHA-256 校验一致；旧路径不存在且无引用
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	src/app/static/fonts/msyhbd.ttc	16883552	REMOVED_OR_RENAMED	旧字体资源已移动到 Backend V2 唯一字体目录	目标字体按文件名与 SHA-256 校验一致；旧路径不存在且无引用
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	src/app/static/fonts/NotoSans-Medium.ttf	631052	REMOVED_OR_RENAMED	旧字体资源已移动到 Backend V2 唯一字体目录	目标字体按文件名与 SHA-256 校验一致；旧路径不存在且无引用
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	src/app/static/fonts/simfang.ttf	10580176	REMOVED_OR_RENAMED	旧字体资源已移动到 Backend V2 唯一字体目录	目标字体按文件名与 SHA-256 校验一致；旧路径不存在且无引用
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	src/app/static/fonts/simhei.ttf	9755440	REMOVED_OR_RENAMED	旧字体资源已移动到 Backend V2 唯一字体目录	目标字体按文件名与 SHA-256 校验一致；旧路径不存在且无引用
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	src/app/static/fonts/simkai.ttf	11789376	REMOVED_OR_RENAMED	旧字体资源已移动到 Backend V2 唯一字体目录	目标字体按文件名与 SHA-256 校验一致；旧路径不存在且无引用
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	src/app/static/fonts/SIMLI.TTF	9223160	REMOVED_OR_RENAMED	旧字体资源已移动到 Backend V2 唯一字体目录	目标字体按文件名与 SHA-256 校验一致；旧路径不存在且无引用
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	src/app/static/fonts/SIMYOU.TTF	6700204	REMOVED_OR_RENAMED	旧字体资源已移动到 Backend V2 唯一字体目录	目标字体按文件名与 SHA-256 校验一致；旧路径不存在且无引用
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	src/app/static/fonts/STCAIYUN.TTF	5673836	REMOVED_OR_RENAMED	旧字体资源已移动到 Backend V2 唯一字体目录	目标字体按文件名与 SHA-256 校验一致；旧路径不存在且无引用
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	src/app/static/fonts/STFANGSO.TTF	11362788	REMOVED_OR_RENAMED	旧字体资源已移动到 Backend V2 唯一字体目录	目标字体按文件名与 SHA-256 校验一致；旧路径不存在且无引用
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	src/app/static/fonts/STHUPO.TTF	3714568	REMOVED_OR_RENAMED	旧字体资源已移动到 Backend V2 唯一字体目录	目标字体按文件名与 SHA-256 校验一致；旧路径不存在且无引用
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	src/app/static/fonts/STKAITI.TTF	12736196	REMOVED_OR_RENAMED	旧字体资源已移动到 Backend V2 唯一字体目录	目标字体按文件名与 SHA-256 校验一致；旧路径不存在且无引用
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	src/app/static/fonts/STLITI.TTF	4111960	REMOVED_OR_RENAMED	旧字体资源已移动到 Backend V2 唯一字体目录	目标字体按文件名与 SHA-256 校验一致；旧路径不存在且无引用
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	src/app/static/fonts/STSONG.TTF	11697600	REMOVED_OR_RENAMED	旧字体资源已移动到 Backend V2 唯一字体目录	目标字体按文件名与 SHA-256 校验一致；旧路径不存在且无引用
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	src/app/static/fonts/STXIHEI.TTF	9768704	REMOVED_OR_RENAMED	旧字体资源已移动到 Backend V2 唯一字体目录	目标字体按文件名与 SHA-256 校验一致；旧路径不存在且无引用
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	src/app/static/fonts/STXINGKA.TTF	4016288	REMOVED_OR_RENAMED	旧字体资源已移动到 Backend V2 唯一字体目录	目标字体按文件名与 SHA-256 校验一致；旧路径不存在且无引用
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	src/app/static/fonts/STXINWEI.TTF	4051204	REMOVED_OR_RENAMED	旧字体资源已移动到 Backend V2 唯一字体目录	目标字体按文件名与 SHA-256 校验一致；旧路径不存在且无引用
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	src/app/static/fonts/STZHONGS.TTF	12135284	REMOVED_OR_RENAMED	旧字体资源已移动到 Backend V2 唯一字体目录	目标字体按文件名与 SHA-256 校验一致；旧路径不存在且无引用
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	src/app/static/fonts/ttf	3145340	REMOVED_OR_RENAMED	旧字体资源已移动到 Backend V2 唯一字体目录	目标字体按文件名与 SHA-256 校验一致；旧路径不存在且无引用
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	src/app/static/fonts/YeZiGongChangTianQingSong-2.ttf	24160392	REMOVED_OR_RENAMED	旧字体资源已移动到 Backend V2 唯一字体目录	目标字体按文件名与 SHA-256 校验一致；旧路径不存在且无引用
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	src/app/static/fonts/汉仪瑞意宋_75W.TTF	4882616	REMOVED_OR_RENAMED	旧字体资源已移动到 Backend V2 唯一字体目录	目标字体按文件名与 SHA-256 校验一致；旧路径不存在且无引用
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	src/app/static/fonts/汉仪正圆-65W.TTF	4851264	REMOVED_OR_RENAMED	旧字体资源已移动到 Backend V2 唯一字体目录	目标字体按文件名与 SHA-256 校验一致；旧路径不存在且无引用
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	src/app/static/fonts/华康抖抖体W5-B5.TTF	5085020	REMOVED_OR_RENAMED	旧字体资源已移动到 Backend V2 唯一字体目录	目标字体按文件名与 SHA-256 校验一致；旧路径不存在且无引用
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	src/app/static/fonts/思源黑体SourceHanSansK-Bold.TTF	16944468	REMOVED_OR_RENAMED	旧字体资源已移动到 Backend V2 唯一字体目录	目标字体按文件名与 SHA-256 校验一致；旧路径不存在且无引用
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	src/app/static/vue/favicon.ico	67646	REMOVED_OR_RENAMED	旧静态资源已移动到当前 public/Backend V2 静态目录	来源与目标 SHA-256 一致；旧路径不存在且当前引用闭合
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	src/app/static/vue/pic/alipay_qrcode.png	141512	REMOVED_OR_RENAMED	旧静态资源已移动到当前 public/Backend V2 静态目录	来源与目标 SHA-256 一致；旧路径不存在且当前引用闭合
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	src/app/static/vue/pic/github.jpg	7229	REMOVED_OR_RENAMED	仅 main 存在的旧资源已确认删除且当前无引用残留	文件不存在；源码、文档、构建产物和打包配置残留搜索为 0
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	src/app/static/vue/pic/logo.png	863677	REMOVED_OR_RENAMED	旧静态资源已移动到当前 public/Backend V2 静态目录	来源与目标 SHA-256 一致；旧路径不存在且当前引用闭合
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	src/app/static/vue/pic/wechat_qrcode.png	66603	REMOVED_OR_RENAMED	旧静态资源已移动到当前 public/Backend V2 静态目录	来源与目标 SHA-256 一致；旧路径不存在且当前引用闭合
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	src/app/static/vue/vite.svg	1497	REMOVED_OR_RENAMED	仅 main 存在的旧资源已确认删除且当前无引用残留	文件不存在；源码、文档、构建产物和打包配置残留搜索为 0
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	pic/github.jpg	7229	REMOVED_OR_RENAMED	根目录旧 GitHub 图片无当前 README、网页或打包消费者，已删除	Git main 资源大小核对；当前源码、文档、静态构建与 app.spec 残留引用为 0
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	vue-frontend/public/pic/github.jpg	7229	REMOVED_OR_RENAMED	前端模板遗留 GitHub 图片无当前运行消费者，已删除	Git main 资源大小核对；当前 public 与生产静态目录均无该文件和引用
+DELETE-VERIFIED	MAIN_REMOVED	other-resources	vue-frontend/public/vite.svg	1497	REMOVED_OR_RENAMED	Vite 模板占位资源无当前运行消费者，已删除	Git main 资源大小核对；当前 public 与生产静态目录均无该文件和引用

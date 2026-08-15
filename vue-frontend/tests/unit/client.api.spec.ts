@@ -1,6 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import type { AxiosError } from 'axios'
 
 const {
@@ -56,12 +54,6 @@ describe('apiClient error normalization', () => {
     postRequestMock.mockReset()
     putRequestMock.mockReset()
     vi.restoreAllMocks()
-  })
-
-  it('keeps API client error fixtures typed to Axios error contracts', () => {
-    const source = readFileSync(resolve(process.cwd(), 'tests/unit/client.api.spec.ts'), 'utf8')
-
-    expect(source).not.toMatch(/\bas any\b|:\s*any\b|any\[\]/)
   })
 
   it('rejects API failures as real Error instances with backend metadata', async () => {
@@ -120,6 +112,27 @@ describe('apiClient error normalization', () => {
       message: '无法连接后端服务，请稍后重试',
       status: 0,
     })
+  })
+
+  it('preserves request cancellation instead of reporting a network outage', async () => {
+    const { ApiClientError, isRequestCanceled } = await import('@/api/client')
+    const responseErrorHandler = responseUseMock.mock.calls[0]?.[1] as ResponseErrorHandler | undefined
+    if (!responseErrorHandler) throw new Error('response error interceptor was not registered')
+
+    const error = await responseErrorHandler(Object.assign(new Error('canceled'), {
+      code: 'ERR_CANCELED',
+      name: 'CanceledError',
+    }) as AxiosError).catch((value: unknown) => value)
+
+    expect(error).toBeInstanceOf(ApiClientError)
+    expect(error).toMatchObject({
+      code: 'request_canceled',
+      message: '请求已取消',
+      status: 0,
+    })
+    expect(isRequestCanceled(error)).toBe(true)
+    expect(isRequestCanceled(new DOMException('aborted', 'AbortError'))).toBe(true)
+    expect(isRequestCanceled(new Error('普通错误'))).toBe(false)
   })
 
   it('labels the Vite empty text response as a proxy connection failure', async () => {

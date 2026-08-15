@@ -1,9 +1,5 @@
 # Saber Translator Plugin v3
 
-> 最后更新：2026-07-28
-> v3 与旧插件不兼容。旧的 `PluginBase`、浏览器 Pipeline API、Base64
-> payload 和直接放目录热加载方式均已废弃。
-
 Plugin v3 是后端优先架构的一部分。浏览器只管理插件元数据和显示任务进度；
 插件代码只由 Worker 加载。创建任务或 Worker 操作时，后端会冻结当前启用插件
 的不可变版本 ID 和配置，因此浏览器关闭、插件开关变化、配置修改或新版本导入
@@ -88,12 +84,10 @@ data-v2/plugins/{plugin_id}/versions/{plugin_version_id}/
 class Plugin:
     def after_translate(self, context, data):
         result = dict(data)
-        suffix = str(context.config.get("suffix", ""))
-        translations = result.get("translations")
-        if isinstance(translations, list):
-            result["translations"] = [
-                f"{value}{suffix}" for value in translations
-            ]
+        suffix = context.config["suffix"]
+        result["translations"] = [
+            f"{value}{suffix}" for value in result["translations"]
+        ]
         context.logger.info("translation marker applied")
         return result
 ```
@@ -119,7 +113,7 @@ hook(context, data) -> dict
 | `color` | `pageId`, `sourceAssetId`, `bubbles` | `pageId`, `colors`（每项含 `fgColor`、`bgColor`、`confidence`） |
 | `translate` | `pageId`, `originalTexts`, `translationConfig` | `pageId`, `originalTexts`, `translations`, `textboxTexts` |
 | `ai_translate` | `pageId`, `originalTexts`, `translations` | `pageId`, `originalTexts`, `translations` |
-| `inpaint` | `pageId`, `sourceAssetId`, `inputAssetId`, `textMaskAssetId`, `bubbles`, `method`, `fillColor` | `pageId`, `cleanAssetId`, `documentRevision` |
+| `inpaint` | `pageId`, `sourceAssetId`, `inputAssetId`, `textMaskAssetId`, `bubbles`, `method`, `fillColor`（仅 solid 为颜色，其他方法为 null） | `pageId`, `cleanAssetId`, `documentRevision` |
 | `render` | `pageId`, `inputAssetId`, `bubbles`, `renderConfig` | `pageId`, `translatedAssetId`, `documentRevision` |
 
 例如译文替换必须读写 `data["translations"]`，不存在
@@ -159,18 +153,7 @@ hook(context, data) -> dict
 开关、配置 CAS、导入、导出和删除。被任务或操作历史引用的版本不能删除，
 后端返回 `423`，从而保证暂停、恢复和重试仍能加载完全相同的代码。
 
-Plugin Agent 的规划会话是 30 分钟单活内存态；真正的编程执行会创建
+Plugin Agent 的规划会话是 30 分钟有效的内存态；真正的编程执行会创建
 `plugin_agent` 持久任务。Worker 只在
 `temp/jobs/{job_id}/plugin-worktree/` 内使用六个文件工具，校验成功后才发布
 新的不可变版本。浏览器断线不会终止执行，取消操作使用通用任务中心。
-
-## 从旧版迁移
-
-旧版插件需要人工或借助 Plugin Agent 改写：
-
-1. 删除对 `src.plugins.base.PluginBase`、旧 Manager 和 HTTP 路由的依赖。
-2. 把类元数据迁移到根目录 `plugin.json`。
-3. Hook 改为始终返回字典，并改用 v3 `context`。
-4. 删除 Base64 图片、绝对路径和浏览器 Pipeline 协调代码，改用资产 ID。
-5. 打包 ZIP 后通过插件管理页面导入；不要把目录直接复制进受管理存储。
-6. 用后端任务验证模式/步骤过滤、失败策略、配置冻结和重启恢复。

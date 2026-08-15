@@ -1,8 +1,7 @@
 """Immutable factory text-style defaults.
 
-Runtime settings are backend-v2 database facts.  This module only reads the
-bundled factory resource used by algorithm fallbacks before a resolved v2
-document is supplied.
+Runtime settings are backend-v2 database facts. This module only reads the
+bundled factory resource used when creating current settings and page state.
 """
 
 from __future__ import annotations
@@ -10,9 +9,8 @@ from __future__ import annotations
 import copy
 import json
 from functools import lru_cache
-from typing import Any, Dict
-
 from pathlib import Path
+from typing import Any
 
 
 TEXT_STYLE_FACTORY_DEFAULTS_PATH = Path(__file__).with_name(
@@ -36,16 +34,21 @@ _REQUIRED_FIELDS: dict[str, type | tuple[type, ...]] = {
 }
 
 
-def _validate_text_style_defaults(data: Dict[str, Any]) -> Dict[str, Any]:
-    missing = [key for key in _REQUIRED_FIELDS if key not in data]
-    if missing:
+def _validate_text_style_defaults(data: dict[str, Any]) -> dict[str, Any]:
+    missing = set(_REQUIRED_FIELDS) - set(data)
+    unknown = set(data) - set(_REQUIRED_FIELDS)
+    if missing or unknown:
         raise RuntimeError(
-            f"text_style_defaults_factory.json 缺少字段: {', '.join(missing)}"
+            "text_style_defaults_factory.json 字段不匹配: "
+            f"缺少 {sorted(missing)}，多余 {sorted(unknown)}"
         )
 
     for key, expected_type in _REQUIRED_FIELDS.items():
         value = data[key]
-        if not isinstance(value, expected_type):
+        if (
+            isinstance(value, bool)
+            and expected_type in {int, (int, float)}
+        ) or not isinstance(value, expected_type):
             expected_name = (
                 ", ".join(t.__name__ for t in expected_type)
                 if isinstance(expected_type, tuple)
@@ -83,7 +86,7 @@ def _validate_text_style_defaults(data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @lru_cache(maxsize=1)
-def load_text_style_factory_defaults() -> Dict[str, Any]:
+def load_text_style_factory_defaults() -> dict[str, Any]:
     if not TEXT_STYLE_FACTORY_DEFAULTS_PATH.is_file():
         raise RuntimeError("text_style_defaults_factory.json 不存在，请检查安装文件是否完整")
 
@@ -96,5 +99,5 @@ def load_text_style_factory_defaults() -> Dict[str, Any]:
     return _validate_text_style_defaults(data)
 
 
-def get_text_style_factory_defaults() -> Dict[str, Any]:
+def get_text_style_factory_defaults() -> dict[str, Any]:
     return copy.deepcopy(load_text_style_factory_defaults())

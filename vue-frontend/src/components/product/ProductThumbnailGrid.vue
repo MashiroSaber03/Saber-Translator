@@ -107,7 +107,7 @@ function itemAriaLabel(item: ProductThumbnailGridItem): string {
             <UiIcon v-else name="image" size="18" />
           </span>
         </span>
-        <span v-if="item.selectedBadge" class="product-thumbnail-grid__selected-badge">
+        <span v-if="item.selectedBadge !== undefined && item.selectedBadge !== ''" class="product-thumbnail-grid__selected-badge">
           {{ item.selectedBadge }}
         </span>
         <span v-if="item.cornerLabel" class="product-thumbnail-grid__corner-badge">
@@ -145,7 +145,7 @@ function itemAriaLabel(item: ProductThumbnailGridItem): string {
             <UiIcon v-else name="image" size="18" />
           </span>
         </span>
-        <span v-if="item.selectedBadge" class="product-thumbnail-grid__selected-badge">
+        <span v-if="item.selectedBadge !== undefined && item.selectedBadge !== ''" class="product-thumbnail-grid__selected-badge">
           {{ item.selectedBadge }}
         </span>
         <span v-if="item.cornerLabel" class="product-thumbnail-grid__corner-badge">

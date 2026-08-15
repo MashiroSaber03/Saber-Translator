@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
+
+import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -76,3 +79,39 @@ def test_non_looping_task_reaction_holds_its_last_frame() -> None:
     assert pet._frame_index == animation.frame_count - 1
     assert not pet._timer.isActive()
     pet.close()
+
+
+def test_hidden_pet_does_not_keep_animating() -> None:
+    app = _app()
+    pet = PetWindow(
+        PET_ROOT / "pet.json",
+        fallback_logo=PROJECT_ROOT / "pic" / "logo.png",
+    )
+
+    assert not pet._timer.isActive()
+    pet.show()
+    app.processEvents()
+    assert pet._timer.isActive()
+    pet.hide()
+    assert not pet._timer.isActive()
+    pet.close()
+
+
+def test_pet_manifest_rejects_unknown_current_schema_fields(tmp_path: Path) -> None:
+    payload = json.loads((PET_ROOT / "pet.json").read_text(encoding="utf-8"))
+    payload["legacy"] = True
+    manifest_path = tmp_path / "pet.json"
+    manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="current schema"):
+        PetManifest.load(manifest_path)
+
+
+def test_pet_manifest_rejects_boolean_geometry(tmp_path: Path) -> None:
+    payload = json.loads((PET_ROOT / "pet.json").read_text(encoding="utf-8"))
+    payload["cell"]["width"] = True
+    manifest_path = tmp_path / "pet.json"
+    manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="cell geometry"):
+        PetManifest.load(manifest_path)

@@ -8,26 +8,27 @@ YSGYolo 辅助一阶段检测融合逻辑
 
 from __future__ import annotations
 
-import logging
+import math
 from typing import List, Optional, Sequence
 
 from src.shared import constants
-from src.shared.memory_errors import is_memory_allocation_error
-
+from .base import BaseTextDetector
 from .data_types import TextLine
 from .registry import DETECTOR_YOLO, get_detector
 
-logger = logging.getLogger("AuxYoloDetection")
-
 
 def normalize_aux_overlap_threshold(value: Optional[float]) -> float:
-    """将内部 0-1 重叠阈值限制在有效范围。"""
-    try:
-        threshold = float(value)
-    except (TypeError, ValueError):
+    """校验内部 0-1 重叠阈值。"""
+    if value is None:
         return constants.AUX_YOLO_OVERLAP_THRESHOLD
-
-    return max(0.0, min(threshold, 1.0))
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(float(value))
+        or not 0 <= float(value) <= 1
+    ):
+        raise ValueError("辅助 YSGYolo 重叠阈值必须是 0 到 1 之间的数字")
+    return float(value)
 
 
 def _line_coords_key(line: TextLine) -> tuple:
@@ -121,7 +122,11 @@ def merge_aux_yolo_lines(
         if max_overlap_ratio_with_others < normalized_overlap_threshold:
             aux_lines_to_add.append(aux_line)
 
-    merged_lines = [line for idx, line in enumerate(main_lines) if idx not in main_indices_to_remove]
+    merged_lines = [
+        line
+        for idx, line in enumerate(main_lines)
+        if idx not in main_indices_to_remove
+    ]
     merged_lines.extend(aux_lines_to_add)
 
     unique_lines: List[TextLine] = []
@@ -142,8 +147,16 @@ def detect_aux_yolo_lines(
 ) -> List[TextLine]:
     """在 OpenCV BGR 图像上运行辅助 YSGYolo，返回原始 TextLine 列表。"""
     detector = aux_detector or get_detector(DETECTOR_YOLO)
-    conf = constants.AUX_YOLO_CONF_THRESHOLD if conf_threshold is None else float(conf_threshold)
-    textlines, _ = detector._detect_raw(image_cv, conf_thresh=conf)
+    conf = (
+        constants.AUX_YOLO_CONF_THRESHOLD
+        if conf_threshold is None
+        else normalize_aux_overlap_threshold(conf_threshold)
+    )
+    textlines, _ = BaseTextDetector._validate_raw_result(
+        detector._detect_raw(image_cv, conf_thresh=conf),
+        image_cv.shape[1],
+        image_cv.shape[0],
+    )
     return textlines or []
 
 
@@ -162,16 +175,10 @@ def maybe_merge_with_aux_yolo(
     if not enabled or detector_type == DETECTOR_YOLO:
         return list(main_lines)
 
-    try:
-        aux_lines = detect_aux_yolo_lines(
-            image_cv,
-            conf_threshold=conf_threshold,
-            aux_detector=aux_detector,
-        )
-    except Exception as error:
-        if is_memory_allocation_error(error):
-            raise
-        logger.warning(f"辅助 YSGYolo 检测失败，回退主检测结果: {error}")
-        return list(main_lines)
+    aux_lines = detect_aux_yolo_lines(
+        image_cv,
+        conf_threshold=conf_threshold,
+        aux_detector=aux_detector,
+    )
 
     return merge_aux_yolo_lines(main_lines, aux_lines, overlap_threshold=overlap_threshold)

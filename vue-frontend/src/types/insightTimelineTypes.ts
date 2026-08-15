@@ -7,12 +7,8 @@ export interface TimelineGroup {
   id: string
   page_range: TimelinePageRange
   events: string[]
-  summary?: string
-  thumbnail_page?: number
-  plot_arc?: string
-  characters?: string[]
-  clues?: string[]
-  mood?: string
+  summary: string
+  thumbnail_page: number
 }
 
 export interface TimelineStats {
@@ -24,6 +20,7 @@ export interface TimelineStats {
 }
 
 export interface TimelineCharacter {
+  character_id: string
   name: string
   description: string
   first_appearance: number
@@ -37,9 +34,9 @@ export interface TimelineKeyMoment {
 }
 
 export interface TimelineArc {
-  id?: string
+  id: string
   name: string
-  description?: string
+  description: string
   page_range: TimelinePageRange
   mood?: string
   event_ids?: string[]
@@ -56,15 +53,24 @@ export interface PlotThread {
 }
 
 export interface TimelineData {
-  mode?: string
-  groups?: TimelineGroup[]
-  events?: unknown[]
-  stats?: TimelineStats
-  story_summary?: string
-  main_characters?: TimelineCharacter[]
+  timeline_version_id: string
+  mode: 'enhanced' | 'compressed' | 'simple'
+  groups: TimelineGroup[]
+  events: TimelineEvent[]
+  stats: TimelineStats
+  story_summary: string
+  main_characters: TimelineCharacter[]
+  page_thumbnails: Record<number, string>
   plot_arcs?: TimelineArc[]
   plot_threads?: PlotThread[]
-  cached?: boolean
-  next_event_cursor?: number | null
-  next_character_cursor?: string | null
+  next_event_cursor: number | null
+  next_character_cursor: string | null
+}
+
+export interface TimelineEvent {
+  eventId: string
+  summary: string
+  page_ids: string[]
+  page_numbers: number[]
+  importance?: string
 }

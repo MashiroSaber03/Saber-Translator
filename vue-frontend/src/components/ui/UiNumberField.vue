@@ -67,13 +67,21 @@ function commitValue(value: number): void {
   emit('change', nextValue)
 }
 
-function handleInputValue(value: string | number | boolean): void {
+function handleInputValue(value: string | number): void {
   if (props.nullable && value === '') {
     emit('update:modelValue', null)
     emit('change', null)
     return
   }
+  if (value === '') return
   commitValue(Number(value))
+}
+
+function restoreEmptyInput(event: FocusEvent): void {
+  if (props.nullable) return
+  const target = event.target
+  if (!(target instanceof HTMLInputElement) || target.value !== '') return
+  target.value = String(props.modelValue ?? props.min ?? 0)
 }
 
 function stepBy(direction: -1 | 1): void {
@@ -82,7 +90,7 @@ function stepBy(direction: -1 | 1): void {
     commitValue(props.min ?? 0)
     return
   }
-  commitValue(props.modelValue + props.step * direction)
+  commitValue(Number((props.modelValue + props.step * direction).toPrecision(12)))
 }
 </script>
 
@@ -121,6 +129,7 @@ function stepBy(direction: -1 | 1): void {
       :aria-label="ariaLabel"
       :title="title || undefined"
       @update:model-value="handleInputValue"
+      @blur="restoreEmptyInput"
     />
 
     <UiButton

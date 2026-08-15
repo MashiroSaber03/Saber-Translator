@@ -8,6 +8,7 @@ OpenAI 客户端辅助函数
 网络策略细节集中在 src.shared.http_config 中维护。
 """
 import logging
+import math
 from typing import Optional
 
 import httpx
@@ -27,7 +28,11 @@ __all__ = ["create_openai_client", "resolve_openai_api_key"]
 
 
 def resolve_openai_api_key(api_key: Optional[str], base_url: Optional[str] = None) -> str:
-    normalized = (api_key or "").strip()
+    if api_key is not None and not isinstance(api_key, str):
+        raise TypeError("api_key 必须是字符串或 null")
+    if base_url is not None and not isinstance(base_url, str):
+        raise TypeError("base_url 必须是字符串或 null")
+    normalized = api_key.strip() if api_key is not None else ""
     if normalized:
         return normalized
     if is_local_service(base_url):
@@ -36,7 +41,7 @@ def resolve_openai_api_key(api_key: Optional[str], base_url: Optional[str] = Non
 
 
 def create_openai_client(
-    api_key: str,
+    api_key: Optional[str],
     base_url: Optional[str] = None,
     timeout: float = 30.0,
     bypass_proxy: bool = False,
@@ -48,6 +53,18 @@ def create_openai_client(
     - 远程服务保留系统代理，并注入 Chrome UA。
     - 通过 `default_headers` 二次注入，以覆盖 OpenAI SDK 默认的 `User-Agent`。
     """
+    if base_url is not None and (not isinstance(base_url, str) or not base_url.strip()):
+        raise ValueError("base_url 必须是非空字符串或 null")
+    if (
+        isinstance(timeout, bool)
+        or not isinstance(timeout, (int, float))
+        or not math.isfinite(float(timeout))
+        or timeout <= 0
+    ):
+        raise ValueError("timeout 必须是正有限数")
+    if not isinstance(bypass_proxy, bool):
+        raise ValueError("bypass_proxy 必须是布尔值")
+
     resolved_api_key = resolve_openai_api_key(api_key, base_url)
     http_options = build_httpx_kwargs(base_url, timeout)
     if bypass_proxy:
@@ -59,11 +76,12 @@ def create_openai_client(
         base_url=base_url,
         http_client=http_client,
         default_headers=dict(BROWSER_HEADERS),
+        max_retries=0,
     )
 
     if is_local_service(base_url):
-        logger.debug(f"已创建无代理 OpenAI 客户端: {base_url}")
+        logger.debug("已创建无代理 OpenAI 客户端: %s", base_url)
     else:
-        logger.debug(f"已创建 OpenAI 客户端: {base_url or '默认'}")
+        logger.debug("已创建 OpenAI 客户端: %s", base_url or "默认")
 
     return client

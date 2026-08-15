@@ -38,12 +38,16 @@ export function fixedVirtualWindow(
   if (itemCount <= 0 || itemSize <= 0) {
     return { start: 0, end: 0, offset: 0, totalSize: 0 }
   }
-  const visibleStart = Math.floor(Math.max(0, scrollOffset) / itemSize)
+  const overscan = Math.max(0, Math.floor(overscanItems))
+  const visibleStart = Math.min(
+    itemCount - 1,
+    Math.floor(Math.max(0, scrollOffset) / itemSize),
+  )
   const visibleEnd = Math.ceil(
     (Math.max(0, scrollOffset) + Math.max(0, viewportSize)) / itemSize,
   )
-  const start = Math.max(0, visibleStart - overscanItems)
-  const end = Math.min(itemCount, visibleEnd + overscanItems)
+  const start = Math.max(0, visibleStart - overscan)
+  const end = Math.min(itemCount, Math.max(visibleStart + 1, visibleEnd) + overscan)
   return {
     start,
     end,

@@ -1,6 +1,4 @@
 import { describe, expect, it } from 'vitest'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { resolveAnalysisStatus } from '@/utils/insightStatus'
 import type { InsightAnalysisSnapshot } from '@/types/insight'
 
@@ -13,12 +11,6 @@ function createStatusSnapshot(overrides: Partial<InsightAnalysisSnapshot>): Insi
 }
 
 describe('resolveAnalysisStatus', () => {
-  it('keeps Insight status fixtures typed to the current response contract', () => {
-    const source = readFileSync(resolve(process.cwd(), 'tests/unit/insight-status.spec.ts'), 'utf8')
-
-    expect(source).not.toMatch(/\bas any\b|:\s*any\b|any\[\]/)
-  })
-
   it('does not report completion while the book is only partially analyzed', () => {
     const status = resolveAnalysisStatus(createStatusSnapshot({ fullyAnalyzed: false }))
 

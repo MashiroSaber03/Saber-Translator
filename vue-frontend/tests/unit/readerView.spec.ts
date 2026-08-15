@@ -1,9 +1,10 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { defineComponent } from 'vue'
+import { defineComponent, nextTick } from 'vue'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ReaderView from '@/views/ReaderView.vue'
+import type { V2BookDetail, V2PageSummary } from '@/api/v2/content'
 
 const { routerPushMock, getBookMock, listChapterPagesMock, toastErrorMock } = vi.hoisted(() => ({
   routerPushMock: vi.fn(),
@@ -60,35 +61,68 @@ function deferred<T>() {
 
 const ReaderCanvasStub = defineComponent({
   props: {
+    backgroundColor: String,
+    imageGap: Number,
+    imageWidth: Number,
     images: {
       type: Array,
       default: () => [],
     },
   },
-  template: '<div class="reader-canvas-stub">{{ images.map(image => image.sourceUrl).join(",") }}</div>',
+  template:
+    '<div class="reader-canvas-stub">{{ images.map(image => image.sourceUrl).join(",") }}</div>',
 })
 
 const ReaderControlsContractStub = defineComponent({
   inheritAttrs: false,
+  emits: ['settingsChange'],
   template: '<div class="reader-controls-contract-stub" />',
 })
 
-describe('ReaderView', () => {
-  beforeEach(() => {
-    vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
-    routerPushMock.mockReset()
-    toastErrorMock.mockReset()
-    getBookMock.mockReset().mockResolvedValue({
-      id: 'book-1',
-      title: 'Book',
-      chapterOrderRevision: 1,
-      chapters: [{
+function pageSummary(overrides: Partial<V2PageSummary> = {}): V2PageSummary {
+  return {
+    id: 'page-1',
+    chapterId: 'chapter-1',
+    ordinal: 1,
+    logicalSourcePath: '1.png',
+    sourceRevision: 1,
+    documentRevision: 1,
+    renderedRevision: null,
+    renderStatus: 'not_rendered',
+    detectionState: 'unprocessed',
+    sourceUrl: '/source/1',
+    thumbnailSourceUrl: '/thumb/1',
+    cleanUrl: null,
+    translatedUrl: null,
+    width: 800,
+    height: 1200,
+    ...overrides,
+  }
+}
+
+function bookDetail(overrides: Partial<V2BookDetail> = {}): V2BookDetail {
+  return {
+    id: 'book-1',
+    title: 'Book',
+    chapterOrderRevision: 1,
+    chapters: [
+      {
         id: 'chapter-1',
         title: 'Chapter',
         ordinal: 1,
         pageOrderRevision: 1,
-      }],
-    })
+      },
+    ],
+    tags: [],
+    ...overrides,
+  }
+}
+
+describe('ReaderView', () => {
+  beforeEach(() => {
+    routerPushMock.mockReset()
+    toastErrorMock.mockReset()
+    getBookMock.mockReset().mockResolvedValue(bookDetail())
     listChapterPagesMock.mockReset().mockResolvedValue({
       items: [],
       nextCursor: null,
@@ -124,27 +158,22 @@ describe('ReaderView', () => {
   it('shows the persisted translated-page count from chapter metadata', async () => {
     listChapterPagesMock.mockResolvedValueOnce({
       items: [
-        {
-          id: 'page-1',
-          chapterId: 'chapter-1',
-          ordinal: 1,
-          sourceUrl: '/source/1',
-          translatedUrl: '/translated/1',
-        },
-        {
+        pageSummary({ translatedUrl: '/translated/1' }),
+        pageSummary({
           id: 'page-2',
-          chapterId: 'chapter-1',
           ordinal: 2,
+          logicalSourcePath: '2.png',
           sourceUrl: '/source/2',
-          translatedUrl: null,
-        },
-        {
+          thumbnailSourceUrl: '/thumb/2',
+        }),
+        pageSummary({
           id: 'page-3',
-          chapterId: 'chapter-1',
           ordinal: 3,
+          logicalSourcePath: '3.png',
           sourceUrl: '/source/3',
+          thumbnailSourceUrl: '/thumb/3',
           translatedUrl: '/translated/3',
-        },
+        }),
       ],
       nextCursor: null,
       pageOrderRevision: 1,
@@ -167,6 +196,43 @@ describe('ReaderView', () => {
     await flushPromises()
 
     expect(wrapper.get('.reader-header__translated-count').text()).toBe('已翻译 2/3')
+  })
+
+  it('navigates to the adjacent chapter from the current book snapshot', async () => {
+    getBookMock.mockResolvedValueOnce(
+      bookDetail({
+        chapters: [
+          { id: 'chapter-1', title: 'Chapter 1', ordinal: 1, pageOrderRevision: 1 },
+          { id: 'chapter-2', title: 'Chapter 2', ordinal: 2, pageOrderRevision: 1 },
+        ],
+      })
+    )
+    listChapterPagesMock.mockResolvedValueOnce({
+      items: [pageSummary()],
+      nextCursor: null,
+      pageOrderRevision: 1,
+    })
+    const wrapper = mount(ReaderView, {
+      props: {
+        bookId: 'book-1',
+        chapterId: 'chapter-1',
+      },
+      global: {
+        stubs: {
+          AppShell: AppShellStub,
+          ProductPageHeader: ProductPageHeaderStub,
+          ReaderCanvas: ReaderCanvasStub,
+        },
+      },
+    })
+    await flushPromises()
+
+    const nextChapter = wrapper.findAll('button').find(button => button.text().includes('下一章'))
+    expect(nextChapter).toBeTruthy()
+    await nextChapter!.trigger('click')
+
+    expect(routerPushMock).toHaveBeenCalledWith('/reader?book=book-1&chapter=chapter-2')
+    wrapper.unmount()
   })
 
   it('keeps the reader header free of legacy DOM id hooks', () => {
@@ -219,18 +285,14 @@ describe('ReaderView', () => {
     const firstImages = deferred<unknown>()
     const secondBook = deferred<unknown>()
     const secondImages = deferred<unknown>()
-    const book = {
-      id: 'book-1',
-      title: 'Book',
+    const book = bookDetail({
       chapters: [
-        { id: 'chapter-1', title: 'Chapter 1', startPage: 1, endPage: 1 },
-        { id: 'chapter-2', title: 'Chapter 2', startPage: 2, endPage: 2 },
+        { id: 'chapter-1', title: 'Chapter 1', ordinal: 1, pageOrderRevision: 1 },
+        { id: 'chapter-2', title: 'Chapter 2', ordinal: 2, pageOrderRevision: 1 },
       ],
-    }
+    })
 
-    getBookMock
-      .mockReturnValueOnce(firstBook.promise)
-      .mockReturnValueOnce(secondBook.promise)
+    getBookMock.mockReturnValueOnce(firstBook.promise).mockReturnValueOnce(secondBook.promise)
     listChapterPagesMock
       .mockReturnValueOnce(firstImages.promise)
       .mockReturnValueOnce(secondImages.promise)
@@ -254,17 +316,17 @@ describe('ReaderView', () => {
 
     secondBook.resolve(book)
     secondImages.resolve({
-      items: [{
-        id: 'page-2',
-        chapterId: 'chapter-2',
-        ordinal: 1,
-        logicalSourcePath: '2.png',
-        sourceRevision: 1,
-        documentRevision: 1,
-        sourceUrl: 'chapter-2-page',
-        thumbnailSourceUrl: 'chapter-2-thumb',
-        translatedUrl: 'chapter-2-translated',
-      }],
+      items: [
+        pageSummary({
+          id: 'page-2',
+          chapterId: 'chapter-2',
+          ordinal: 1,
+          logicalSourcePath: '2.png',
+          sourceUrl: 'chapter-2-page',
+          thumbnailSourceUrl: 'chapter-2-thumb',
+          translatedUrl: 'chapter-2-translated',
+        }),
+      ],
       nextCursor: null,
       pageOrderRevision: 1,
     })
@@ -274,17 +336,13 @@ describe('ReaderView', () => {
 
     firstBook.resolve(book)
     firstImages.resolve({
-      items: [{
-        id: 'page-1',
-        chapterId: 'chapter-1',
-        ordinal: 1,
-        logicalSourcePath: '1.png',
-        sourceRevision: 1,
-        documentRevision: 1,
-        sourceUrl: 'chapter-1-page',
-        thumbnailSourceUrl: 'chapter-1-thumb',
-        translatedUrl: 'chapter-1-translated',
-      }],
+      items: [
+        pageSummary({
+          sourceUrl: 'chapter-1-page',
+          thumbnailSourceUrl: 'chapter-1-thumb',
+          translatedUrl: 'chapter-1-translated',
+        }),
+      ],
       nextCursor: null,
       pageOrderRevision: 1,
     })
@@ -294,7 +352,19 @@ describe('ReaderView', () => {
     expect(wrapper.text()).not.toContain('chapter-1-page')
   })
 
-  it('does not wire no-op reader settings events back to the page owner', () => {
+  it('rejects a chapter that does not belong to the routed book', async () => {
+    getBookMock.mockResolvedValueOnce(
+      bookDetail({
+        chapters: [
+          {
+            id: 'chapter-other',
+            title: 'Other chapter',
+            ordinal: 1,
+            pageOrderRevision: 1,
+          },
+        ],
+      })
+    )
     const wrapper = mount(ReaderView, {
       props: {
         bookId: 'book-1',
@@ -304,14 +374,137 @@ describe('ReaderView', () => {
         stubs: {
           AppShell: AppShellStub,
           ProductPageHeader: ProductPageHeaderStub,
-          ReaderCanvas: true,
+          ReaderCanvas: ReaderCanvasStub,
+          ReaderControls: true,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(toastErrorMock).toHaveBeenCalledWith('加载失败: 章节不属于当前书籍')
+    expect(wrapper.getComponent(ReaderCanvasStub).props('images')).toEqual([])
+    wrapper.unmount()
+  })
+
+  it('rejects a partial response from the all-pages reader request', async () => {
+    listChapterPagesMock.mockResolvedValueOnce({
+      items: [pageSummary()],
+      nextCursor: 1,
+      pageOrderRevision: 1,
+    })
+    const wrapper = mount(ReaderView, {
+      props: {
+        bookId: 'book-1',
+        chapterId: 'chapter-1',
+      },
+      global: {
+        stubs: {
+          AppShell: AppShellStub,
+          ProductPageHeader: ProductPageHeaderStub,
+          ReaderCanvas: ReaderCanvasStub,
+          ReaderControls: true,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(toastErrorMock).toHaveBeenCalledWith('加载失败: 章节页面列表不完整')
+    expect(wrapper.getComponent(ReaderCanvasStub).props('images')).toEqual([])
+    wrapper.unmount()
+  })
+
+  it('rejects pages that do not belong to the routed chapter', async () => {
+    listChapterPagesMock.mockResolvedValueOnce({
+      items: [pageSummary({ chapterId: 'chapter-other' })],
+      nextCursor: null,
+      pageOrderRevision: 1,
+    })
+    const wrapper = mount(ReaderView, {
+      props: {
+        bookId: 'book-1',
+        chapterId: 'chapter-1',
+      },
+      global: {
+        stubs: {
+          AppShell: AppShellStub,
+          ProductPageHeader: ProductPageHeaderStub,
+          ReaderCanvas: ReaderCanvasStub,
+          ReaderControls: true,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(toastErrorMock).toHaveBeenCalledWith('加载失败: 章节页面归属不一致')
+    expect(wrapper.getComponent(ReaderCanvasStub).props('images')).toEqual([])
+    wrapper.unmount()
+  })
+
+  it('does not redisplay the previous chapter after the next load fails', async () => {
+    listChapterPagesMock.mockResolvedValueOnce({
+      items: [pageSummary({ sourceUrl: 'chapter-1-page' })],
+      nextCursor: null,
+      pageOrderRevision: 1,
+    })
+    const wrapper = mount(ReaderView, {
+      props: {
+        bookId: 'book-1',
+        chapterId: 'chapter-1',
+      },
+      global: {
+        stubs: {
+          AppShell: AppShellStub,
+          ProductPageHeader: ProductPageHeaderStub,
+          ReaderCanvas: ReaderCanvasStub,
+          ReaderControls: true,
+        },
+      },
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('chapter-1-page')
+
+    getBookMock.mockRejectedValueOnce(new Error('next chapter failed'))
+    listChapterPagesMock.mockRejectedValueOnce(new Error('next chapter failed'))
+    await wrapper.setProps({ chapterId: 'chapter-2' })
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('chapter-1-page')
+    expect(toastErrorMock).toHaveBeenCalledWith('加载失败: next chapter failed')
+    wrapper.unmount()
+  })
+
+  it('forwards published reader settings to the virtual canvas', async () => {
+    const wrapper = mount(ReaderView, {
+      props: {
+        bookId: 'book-1',
+        chapterId: 'chapter-1',
+      },
+      global: {
+        stubs: {
+          AppShell: AppShellStub,
+          ProductPageHeader: ProductPageHeaderStub,
+          ReaderCanvas: ReaderCanvasStub,
           ReaderControls: ReaderControlsContractStub,
         },
       },
     })
 
     const controls = wrapper.getComponent(ReaderControlsContractStub)
-    expect(controls.vm.$attrs).not.toHaveProperty('onSettingsChange')
+    controls.vm.$emit('settingsChange', {
+      imageWidth: 72,
+      imageGap: 24,
+      bgColor: '#ffffff',
+    })
+    await nextTick()
+
+    expect(wrapper.getComponent(ReaderCanvasStub).props()).toMatchObject({
+      imageWidth: 72,
+      imageGap: 24,
+      backgroundColor: '#ffffff',
+    })
   })
 
   it('keeps page-count state out of the ReaderControls contract', () => {

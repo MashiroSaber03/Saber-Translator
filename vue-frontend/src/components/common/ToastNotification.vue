@@ -8,8 +8,7 @@
           class="vue-toast-message"
           :class="'vue-toast-' + toast.type"
         >
-          <span v-if="toast.isHTML" v-html="toast.message"></span>
-          <span v-else>{{ toast.message }}</span>
+          <span>{{ toast.message }}</span>
           <UiIconButton
             class="vue-toast-close"
             label="关闭通知"

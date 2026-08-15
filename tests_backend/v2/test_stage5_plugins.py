@@ -10,6 +10,7 @@ import zipfile
 import pytest
 from sqlalchemy import select
 
+import src.backend_v2.plugins.repository as plugin_repository_module
 from src.backend_v2.api.app import ApiSettings, create_api_app
 from src.backend_v2.jobs.repository import (
     JobItemSpec,
@@ -19,8 +20,11 @@ from src.backend_v2.jobs.repository import (
 from src.backend_v2.jobs.worker_loop import JobWorkerLoop
 from src.backend_v2.plugins.contract import (
     PluginContractError,
+    normalize_config_schema,
     parse_manifest,
     validate_atomic_hook_data,
+    validate_config,
+    validate_hook_data,
     validate_hook_source_contract,
 )
 from src.backend_v2.plugins.package import build_archive, parse_archive
@@ -31,14 +35,18 @@ from src.backend_v2.plugins.repository import (
     PluginRegistry,
 )
 from src.backend_v2.plugins.runtime import (
+    PluginAssetAccess,
     PluginHookFailure,
     PluginJobRuntime,
+    _validate_atomic_page,
+    _json_object,
 )
 from src.backend_v2.plugins.snapshots import enabled_plugin_snapshots
 from src.backend_v2.plugins.agent import PluginAgentSessionService
 from src.backend_v2.plugins.agent_worker import (
     PluginAgentWorkerService,
 )
+from src.backend_v2.plugins.agent_tools import PluginAgentWorktreeTools
 from src.backend_v2.operations.repository import OperationRepository
 from src.backend_v2.runtime_identity import RuntimeIdentity
 from src.backend_v2.storage.database import create_sqlite_engine
@@ -60,15 +68,23 @@ from src.backend_v2.storage.schema import (
     jobs as jobs_table,
 )
 from src.backend_v2.storage.seeding import seed_system_records
-from src.core.plugin_agent.controller import PluginAgentController
+from src.core.plugin_agent.controller import (
+    PluginAgentControlRequested,
+    PluginAgentController,
+)
 from src.core.plugin_agent.models import (
     LockedPluginTarget,
     PluginAgentMessage,
     PluginAgentSession,
 )
+from src.core.config_models import BubbleState, validate_bubble_payload
 from src.shared.openai_execution import (
     OpenAICompatibleBusinessRetryableError,
 )
+from src.shared.openai_options import OpenAICompatibleOptions
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _enabled_snapshots(engine):
@@ -208,6 +224,155 @@ def test_plugin_manifest_rejects_unknown_fields_and_type_coercion() -> None:
     with pytest.raises(PluginContractError, match="must be an array"):
         parse_manifest(wrong_type)
 
+    missing_step = _valid_manifest()
+    missing_step["supported_steps"] = ["ocr"]
+    with pytest.raises(PluginContractError, match="missing supported_steps"):
+        parse_manifest(missing_step)
+
+    duplicate_mode = _valid_manifest()
+    duplicate_mode["supported_modes"] = ["standard", "standard"]
+    with pytest.raises(PluginContractError, match="must be unique"):
+        parse_manifest(duplicate_mode)
+
+    unrestricted_metadata = _valid_manifest()
+    unrestricted_metadata["priority"] = 1_000_000
+    unrestricted_metadata["description"] = "x" * 25_000
+    assert parse_manifest(unrestricted_metadata).priority == 1_000_000
+
+
+def test_plugin_manifest_requires_current_complete_config_schema() -> None:
+    with pytest.raises(PluginContractError, match="default is required"):
+        normalize_config_schema({"missing": {"type": "text"}})
+    with pytest.raises(PluginContractError, match="fields are invalid"):
+        normalize_config_schema(
+            {
+                "choice": {
+                    "type": "select",
+                    "default": "one",
+                    "options": ["one"],
+                }
+            }
+        )
+    with pytest.raises(PluginContractError, match="finite number"):
+        normalize_config_schema(
+            {
+                "ratio": {
+                    "type": "number",
+                    "default": float("nan"),
+                }
+            }
+        )
+    with pytest.raises(PluginContractError, match="label must be text"):
+        normalize_config_schema(
+            {
+                "name": {
+                    "type": "text",
+                    "default": "value",
+                    "label": None,
+                }
+            }
+        )
+    with pytest.raises(PluginContractError, match="finite number"):
+        normalize_config_schema(
+            {
+                "ratio": {
+                    "type": "number",
+                    "default": 1,
+                    "minimum": None,
+                }
+            }
+        )
+
+    schema = normalize_config_schema(
+        {
+            "choice": {
+                "type": "select",
+                "default": "one",
+                "options": [
+                    {"value": "one", "label": "One"},
+                    {"value": 2, "label": "Two"},
+                ],
+            }
+        }
+    )
+    assert validate_config(schema, {"choice": 2}) == {"choice": 2}
+    with pytest.raises(PluginContractError, match="field mismatch"):
+        validate_config(schema, {})
+
+
+def test_atomic_plugin_schema_requires_exact_fields_and_shape() -> None:
+    page_id = str(uuid.uuid4())
+    with pytest.raises(PluginContractError, match="translationConfig"):
+        validate_atomic_hook_data(
+            "translate",
+            "before",
+            {"pageId": page_id, "originalTexts": ["先生"]},
+        )
+    with pytest.raises(PluginContractError, match="preserve translations"):
+        _validate_atomic_page(
+            "translate",
+            "after",
+            page_id,
+            {
+                "pageId": page_id,
+                "originalTexts": ["先生"],
+                "translations": ["老师"],
+                "textboxTexts": [],
+            },
+            expected_shape={
+                "originalTexts": 1,
+                "translations": 2,
+                "textboxTexts": 0,
+            },
+        )
+    with pytest.raises(PluginContractError, match="documentRevision"):
+        _validate_atomic_page(
+            "render",
+            "after",
+            page_id,
+            {
+                "pageId": page_id,
+                "translatedAssetId": str(uuid.uuid4()),
+                "documentRevision": 3,
+            },
+            expected_shape={"documentRevision": 2},
+        )
+
+
+def test_hook_json_validation_has_no_base64_heuristic_false_positive() -> None:
+    value = {"message": "A" * 4096}
+    assert validate_hook_data(value) == value
+    with pytest.raises(PluginContractError, match="Base64"):
+        validate_hook_data(
+            {"image": "data:image/png;base64," + "A" * 4096}
+        )
+
+
+def test_plugin_asset_publish_has_no_broken_arbitrary_size_gate(
+    plugin_platform,
+) -> None:
+    data_root, engine = plugin_platform
+    access = PluginAssetAccess(data_root=data_root, engine=engine)
+
+    asset_id = access.publish_bytes(
+        b"plugin output",
+        extension="bin",
+        mime_type="application/octet-stream",
+    )
+
+    with engine.connect() as connection:
+        row = connection.execute(
+            select(assets.c.byte_size).where(assets.c.id == asset_id)
+        ).scalar_one()
+    assert row == len(b"plugin output")
+
+
+def test_plugin_runtime_rejects_corrupt_stored_json() -> None:
+    with pytest.raises(PluginContractError, match="JSON is invalid"):
+        _json_object("{")
+    with pytest.raises(PluginContractError, match="must be an object"):
+        _json_object("[]")
+
 
 def test_plugin_versions_are_immutable_and_config_is_revisioned(
     plugin_platform,
@@ -238,17 +403,20 @@ def test_plugin_versions_are_immutable_and_config_is_revisioned(
     )
     assert first_path.is_dir()
 
-    changed = registry.update_config(
+    changed, replayed = registry.update_config(
         plugin_id="test_v3",
         base_revision=1,
         config={"prefix": "new", "strict": True},
+        idempotency_key="config-v1",
     )
+    assert replayed is False
     assert changed["configRevision"] == 2
     with pytest.raises(PluginConflict, match="config revision"):
         registry.update_config(
             plugin_id="test_v3",
             base_revision=1,
             config={"prefix": "stale", "strict": False},
+            idempotency_key="config-stale",
         )
 
     second = registry.import_archive(
@@ -270,7 +438,7 @@ def test_plugin_versions_are_immutable_and_config_is_revisioned(
     assert parse_archive(exported).manifest.plugin_id == "test_v3"
 
 
-def test_plugin_upgrade_drops_removed_config_fields_and_seeds_new_defaults(
+def test_plugin_upgrade_discards_old_config_and_advances_revision(
     plugin_platform,
 ) -> None:
     data_root, engine = plugin_platform
@@ -284,6 +452,7 @@ def test_plugin_upgrade_drops_removed_config_fields_and_seeds_new_defaults(
         plugin_id="schema_v3",
         base_revision=1,
         config={"prefix": "obsolete", "strict": True},
+        idempotency_key="schema-config-v1",
     )
 
     registry.import_archive(
@@ -305,10 +474,12 @@ def test_plugin_upgrade_drops_removed_config_fields_and_seeds_new_defaults(
         idempotency_key="schema-v2",
     )
 
-    assert registry.get_config("schema_v3")["value"] == {
-        "strict": True,
+    config = registry.get_config("schema_v3")
+    assert config["value"] == {
+        "strict": False,
         "suffix": "!",
     }
+    assert config["configRevision"] == 3
 
 
 def test_runtime_default_snapshot_and_reference_lock(
@@ -353,6 +524,7 @@ def test_runtime_default_snapshot_and_reference_lock(
         registry.delete_plugin(
             plugin_id="test_v3",
             base_revision=1,
+            idempotency_key="delete-locked-test-v3",
         )
     assert (data_root / "plugins" / "test_v3").is_dir()
 
@@ -387,6 +559,89 @@ def test_refresh_detects_tampering_and_safe_archive_rejects_traversal(
         archive.writestr("../plugin.json", "{}")
     with pytest.raises(PluginContractError, match="unsafe path"):
         parse_archive(output.getvalue())
+
+
+def test_plugin_import_cleans_partial_extraction(
+    plugin_platform,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root, engine = plugin_platform
+    registry = PluginRegistry(data_root=data_root, engine=engine)
+
+    def fail_extraction(_archive, destination: Path) -> str:
+        destination.mkdir(parents=True)
+        (destination / "partial.py").write_text("partial", encoding="utf-8")
+        raise OSError("extract failed")
+
+    monkeypatch.setattr(
+        plugin_repository_module,
+        "extract_archive",
+        fail_extraction,
+    )
+
+    with pytest.raises(OSError, match="extract failed"):
+        registry.import_archive(
+            data=_plugin_archive(plugin_id="partial_v3"),
+            base_revision=0,
+            idempotency_key="partial-plugin",
+        )
+
+    assert list((data_root / "temp" / "plugins").iterdir()) == []
+
+
+def test_plugin_refresh_does_not_downgrade_memory_failure(
+    plugin_platform,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root, engine = plugin_platform
+    registry = PluginRegistry(data_root=data_root, engine=engine)
+    registry.import_archive(
+        data=_plugin_archive(plugin_id="refresh_memory_v3"),
+        base_revision=0,
+        idempotency_key="refresh-memory-plugin",
+    )
+    monkeypatch.setattr(
+        plugin_repository_module,
+        "directory_checksum",
+        lambda _root: (_ for _ in ()).throw(MemoryError("refresh allocation failed")),
+    )
+
+    with pytest.raises(MemoryError, match="allocation failed"):
+        registry.refresh()
+
+    plugin = registry.get_plugin("refresh_memory_v3")
+    assert plugin["state"] == "enabled"
+    assert plugin["runtimeEnabled"] is True
+
+
+def test_plugin_delete_does_not_restore_files_after_database_commit(
+    plugin_platform,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root, engine = plugin_platform
+    registry = PluginRegistry(data_root=data_root, engine=engine)
+    registry.import_archive(
+        data=_plugin_archive(plugin_id="delete_cleanup_v3"),
+        base_revision=0,
+        idempotency_key="delete-cleanup-plugin",
+    )
+    monkeypatch.setattr(
+        plugin_repository_module.shutil,
+        "rmtree",
+        lambda _path: (_ for _ in ()).throw(OSError("cleanup failed")),
+    )
+
+    result, replayed = registry.delete_plugin(
+        plugin_id="delete_cleanup_v3",
+        base_revision=1,
+        idempotency_key="delete-cleanup-v1",
+    )
+
+    assert replayed is False
+    assert result["deleted"] is True
+    with pytest.raises(PluginNotFound):
+        registry.get_plugin("delete_cleanup_v3")
+    assert not (data_root / "plugins" / "delete_cleanup_v3").exists()
 
 
 def test_python_runtime_cache_is_not_part_of_immutable_package(
@@ -489,6 +744,17 @@ def test_plugin_management_http_api_is_metadata_only(
     item = listing.get_json()["items"][0]
     assert item["pluginId"] == "http_v3"
     assert item["manifest"]["schema_version"] == 3
+    assert "packageRelativePath" not in item
+    assert "checksum" not in item
+
+    fractional_revision = client.put(
+        "/api/v2/plugins/http_v3/config",
+        json={
+            "baseRevision": 1.5,
+            "config": {"prefix": "invalid", "strict": True},
+        },
+    )
+    assert fractional_revision.status_code == 422
 
     config = client.put(
         "/api/v2/plugins/http_v3/config",
@@ -500,9 +766,61 @@ def test_plugin_management_http_api_is_metadata_only(
     )
     assert config.status_code == 200
     assert config.get_json()["configRevision"] == 2
+    config_replay = client.put(
+        "/api/v2/plugins/http_v3/config",
+        json={
+            "baseRevision": 1,
+            "config": {"prefix": "http", "strict": True},
+        },
+        headers={"Idempotency-Key": "http-plugin-config"},
+    )
+    assert config_replay.status_code == 200
+    assert config_replay.get_json() == config.get_json()
+    assert config_replay.headers["Idempotency-Replayed"] == "true"
+    default_state = client.put(
+        "/api/v2/plugins/http_v3/default-enabled",
+        json={"enabled": False},
+        headers={"Idempotency-Key": "http-plugin-default"},
+    )
+    assert default_state.status_code == 200
+    default_replay = client.put(
+        "/api/v2/plugins/http_v3/default-enabled",
+        json={"enabled": False},
+        headers={"Idempotency-Key": "http-plugin-default"},
+    )
+    assert default_replay.status_code == 200
+    assert default_replay.get_json() == default_state.get_json()
+    assert default_replay.headers["Idempotency-Replayed"] == "true"
+    default_conflict = client.put(
+        "/api/v2/plugins/http_v3/default-enabled",
+        json={"enabled": True},
+        headers={"Idempotency-Key": "http-plugin-default"},
+    )
+    assert default_conflict.status_code == 409
+    assert default_conflict.get_json()["error"]["code"] == (
+        "idempotency_conflict"
+    )
     exported = client.get("/api/v2/plugins/http_v3/export")
     assert exported.status_code == 200
     assert parse_archive(exported.data).manifest.plugin_id == "http_v3"
+    deleted = client.delete(
+        "/api/v2/plugins/http_v3",
+        headers={
+            "If-Match": "1",
+            "Idempotency-Key": "http-plugin-delete",
+        },
+    )
+    assert deleted.status_code == 200
+    delete_replay = client.delete(
+        "/api/v2/plugins/http_v3",
+        headers={
+            "If-Match": "1",
+            "Idempotency-Key": "http-plugin-delete",
+        },
+    )
+    assert delete_replay.status_code == 200
+    assert delete_replay.get_json() == deleted.get_json()
+    assert delete_replay.headers["Idempotency-Replayed"] == "true"
 
 
 def test_api_import_does_not_execute_plugin_and_worker_uses_frozen_snapshot(
@@ -567,6 +885,7 @@ def test_api_import_does_not_execute_plugin_and_worker_uses_frozen_snapshot(
         plugin_id="frozen_v3",
         base_revision=1,
         config={"prefix": "changed", "strict": False},
+        idempotency_key="frozen-config-v1",
     )
     epoch_id = str(uuid.uuid4())
     ProcessEpochRepository(engine).register(
@@ -818,6 +1137,78 @@ def test_continue_plugin_cannot_swallow_memory_failure(plugin_platform) -> None:
         )
 
 
+def test_plugin_load_cannot_swallow_memory_failure(plugin_platform) -> None:
+    data_root, engine = plugin_platform
+    registry = PluginRegistry(data_root=data_root, engine=engine)
+    registry.import_archive(
+        data=_plugin_archive(
+            plugin_id="load_memory_failure_v3",
+            hooks=["before_translate"],
+            failure_policy="continue",
+            source=(
+                "raise MemoryError('plugin import allocation failed')\n"
+                "class Plugin:\n"
+                "    def before_translate(self, context, payload):\n"
+                "        return payload\n"
+            ),
+        ),
+        base_revision=0,
+        idempotency_key="load-memory-failure-v1",
+    )
+    jobs = JobQueueRepository(engine)
+    jobs.create_batch(
+        kind="export",
+        display_name="plugin load memory failure",
+        specs=[
+            JobSpec(
+                kind="export",
+                config={"mode": "standard"},
+                items=(
+                    JobItemSpec(
+                        page_id=None,
+                        step_kinds=("export_package",),
+                    ),
+                ),
+                plugin_snapshots=_enabled_snapshots(engine),
+            )
+        ],
+    )
+    epoch_id = str(uuid.uuid4())
+    ProcessEpochRepository(engine).register(
+        EpochRegistration(
+            role="worker",
+            epoch_id=epoch_id,
+            token="worker-token",
+            pid=1238,
+        )
+    )
+    fence = jobs.claim_next(worker_epoch_id=epoch_id)
+    assert fence is not None
+    runtime = PluginJobRuntime(
+        data_root=data_root,
+        engine=engine,
+        repository=jobs,
+    )
+    page_id = str(uuid.uuid4())
+
+    with pytest.raises(MemoryError, match="import allocation failed"):
+        runtime.run_atomic(
+            fence,
+            phase="before",
+            step="translate",
+            page_id=page_id,
+            data={
+                "pageId": page_id,
+                "originalTexts": ["source"],
+                "translationConfig": {},
+            },
+        )
+
+    plugin = registry.get_plugin("load_memory_failure_v3")
+    assert plugin["state"] == "enabled"
+    assert plugin["runtimeEnabled"] is True
+
+
 def test_worker_plugin_lifecycle_is_job_once_and_pipeline_once_per_page(
     plugin_platform,
 ) -> None:
@@ -1067,11 +1458,151 @@ class _FakeAgentController:
                 ),
             },
         )
-        validation = tools.run_tool("validate_plugin")
+        validation = tools.run_tool("validate_plugin", {})
         return {
             "assistant_message": "生成完成。",
             "validation": validation,
         }
+
+
+class _ControlRequestedAgentController:
+    def execute(self, *_args, **_kwargs):
+        raise PluginAgentControlRequested("control requested")
+
+
+class _BlockingPlanningAgentController:
+    def __init__(self) -> None:
+        self.entered = threading.Event()
+        self.release = threading.Event()
+
+    def plan_turn(self, *_args, **_kwargs):
+        self.entered.set()
+        assert self.release.wait(timeout=5)
+        return {
+            "assistant_message": "规划完成。",
+            "target_proposal": {
+                "plugin_id": "blocking_v3",
+                "display_name": "Blocking v3",
+                "supported_steps": ["translate"],
+                "supported_modes": ["standard"],
+            },
+        }
+
+
+class _BlockingPluginAgentJobs:
+    def __init__(self) -> None:
+        self.entered = threading.Event()
+        self.release = threading.Event()
+
+    def create_batch(self, **_kwargs):
+        self.entered.set()
+        assert self.release.wait(timeout=5)
+        return {"batchId": "batch-1", "jobIds": ["job-1"]}
+
+
+def test_plugin_agent_planning_has_no_single_session_or_message_size_gate(
+    plugin_platform,
+) -> None:
+    data_root, engine = plugin_platform
+    sessions = PluginAgentSessionService(
+        data_root=data_root,
+        engine=engine,
+        controller=_FakeAgentController(),
+        provider_resolver=_FakeAgentProvider(),
+    )
+    first = sessions.create(mode="create", plugin_id=None)
+    second = sessions.create(mode="create", plugin_id=None)
+
+    assert first["session_id"] != second["session_id"]
+    planned = sessions.send_message(
+        session_id=str(first["session_id"]),
+        content="需" * 100_001,
+    )
+    assert planned["run_state"] == "awaiting_target_lock"
+
+
+def test_plugin_agent_session_cannot_be_deleted_during_planning(
+    plugin_platform,
+) -> None:
+    data_root, engine = plugin_platform
+    controller = _BlockingPlanningAgentController()
+    sessions = PluginAgentSessionService(
+        data_root=data_root,
+        engine=engine,
+        controller=controller,
+        provider_resolver=_FakeAgentProvider(),
+    )
+    session_id = sessions.create(mode="create", plugin_id=None)["session_id"]
+    result: list[dict[str, object]] = []
+
+    thread = threading.Thread(
+        target=lambda: result.append(
+            sessions.send_message(session_id=session_id, content="创建插件")
+        )
+    )
+    thread.start()
+    assert controller.entered.wait(timeout=5)
+    with pytest.raises(ValueError, match="planning request"):
+        sessions.delete(session_id)
+    controller.release.set()
+    thread.join(timeout=5)
+
+    assert not thread.is_alive()
+    assert result[0]["run_state"] == "awaiting_target_lock"
+
+
+def test_plugin_agent_session_cannot_be_deleted_while_job_is_queued(
+    plugin_platform,
+) -> None:
+    data_root, engine = plugin_platform
+    sessions = PluginAgentSessionService(
+        data_root=data_root,
+        engine=engine,
+        controller=_FakeAgentController(),
+        provider_resolver=_FakeAgentProvider(),
+    )
+    session_id = sessions.create(mode="create", plugin_id=None)["session_id"]
+    planned = sessions.send_message(session_id=session_id, content="创建插件")
+    sessions.lock_target(
+        session_id=session_id,
+        proposal=planned["pending_target"],
+    )
+    jobs = _BlockingPluginAgentJobs()
+    sessions.jobs = jobs
+    result: list[dict[str, object]] = []
+
+    thread = threading.Thread(
+        target=lambda: result.append(
+            sessions.start(session_id=session_id, idempotency_key="start-blocking")
+        )
+    )
+    thread.start()
+    assert jobs.entered.wait(timeout=5)
+    with pytest.raises(ValueError, match="execution"):
+        sessions.delete(session_id)
+    jobs.release.set()
+    thread.join(timeout=5)
+
+    assert not thread.is_alive()
+    assert result[0]["jobId"] == "job-1"
+    assert result[0]["session"]["run_state"] == "running"
+
+
+def test_plugin_agent_create_session_rejects_non_current_mode_payload(
+    plugin_platform,
+) -> None:
+    data_root, engine = plugin_platform
+    sessions = PluginAgentSessionService(
+        data_root=data_root,
+        engine=engine,
+        controller=_FakeAgentController(),
+        provider_resolver=_FakeAgentProvider(),
+    )
+
+    with pytest.raises(ValueError, match="mode must be"):
+        sessions.create(mode=" CREATE ", plugin_id=None)
+    with pytest.raises(ValueError, match="does not accept"):
+        sessions.create(mode="create", plugin_id="unused_v3")
 
 
 def test_plugin_agent_planning_hands_off_to_durable_worker_job(
@@ -1133,6 +1664,24 @@ def test_plugin_agent_planning_hands_off_to_durable_worker_job(
         )
     )
     queue = JobQueueRepository(engine)
+    first_fence = queue.claim_next(worker_epoch_id=epoch_id)
+    assert first_fence is not None
+    assert queue.request_pause(job_id)["status"] == "pausing"
+    assert sessions.get(session_id)["run_state"] == "pausing"
+    queue.acknowledge_drain(
+        first_fence,
+        pool_id="main",
+        worker_slot=0,
+        last_step_id=None,
+    )
+    assert queue.finalize_drain(
+        first_fence,
+        expected_slots={("main", 0)},
+    ) == "paused"
+    assert sessions.get(session_id)["run_state"] == "paused"
+    assert queue.resume(job_id)["status"] == "queued"
+    assert sessions.get(session_id)["run_state"] == "running"
+
     fence = queue.claim_next(worker_epoch_id=epoch_id)
     assert fence is not None
     step = queue.next_step(fence)
@@ -1173,6 +1722,90 @@ def test_plugin_agent_planning_hands_off_to_durable_worker_job(
         / "temp"
         / "jobs"
         / job_id
+        / "plugin-worktree"
+    ).exists()
+
+
+@pytest.mark.parametrize("status", ["pausing", "cancelling"])
+def test_plugin_agent_control_yields_the_running_step(
+    tmp_path: Path,
+    status: str,
+) -> None:
+    checkpoints: list[tuple[str, dict[str, object]]] = []
+    events: list[tuple[str, dict[str, object]]] = []
+
+    class Jobs:
+        @staticmethod
+        def append_worker_event(
+            _fence,
+            *,
+            event_type: str,
+            payload: dict[str, object],
+        ) -> None:
+            events.append((event_type, payload))
+
+        @staticmethod
+        def control_status(_fence) -> str:
+            return status
+
+        @staticmethod
+        def checkpoint_step(
+            _fence,
+            *,
+            step_id: str,
+            checkpoint: dict[str, object],
+        ) -> str:
+            checkpoints.append((step_id, checkpoint))
+            return status
+
+    data_root = tmp_path / "data-v2"
+    data_root.mkdir()
+    engine = create_sqlite_engine(data_root / "saber.sqlite3")
+    metadata.create_all(engine)
+    worker = PluginAgentWorkerService(
+        data_root=data_root,
+        engine=engine,
+        jobs=Jobs(),
+        controller=_ControlRequestedAgentController(),
+        provider_resolver=_FakeAgentProvider(),
+    )
+    fence = type("Fence", (), {"job_id": "job-1"})()
+    result = worker.handle(
+        fence,
+        {
+            "stepKind": "plugin_agent_execute",
+                "stepId": "plugin-step",
+                "config": {
+                    "executionMode": "sequential",
+                    "sessionId": "a" * 32,
+                "target": {
+                    "mode": "create",
+                    "plugin_id": "agent_v3",
+                    "display_name": "Agent v3",
+                    "supported_steps": ["translate"],
+                        "supported_modes": ["standard"],
+                        "baseRevision": 0,
+                        "pluginVersionId": None,
+                    },
+                "messages": [],
+                "provider": {},
+            },
+        },
+    )
+
+    assert result == {
+        "__already_published__": True,
+        "__control_drained__": True,
+    }
+    assert checkpoints == [("plugin-step", {})]
+    assert [event_type for event_type, _payload in events] == [
+        "plugin_agent_state"
+    ]
+    assert not (
+        data_root
+        / "temp"
+        / "jobs"
+        / "job-1"
         / "plugin-worktree"
     ).exists()
 
@@ -1294,6 +1927,7 @@ def test_modify_agent_job_protects_disabled_target_version(
         registry.delete_plugin(
             plugin_id="disabled_target_v3",
             base_revision=1,
+            idempotency_key="delete-disabled-target-v1",
         )
 
 
@@ -1353,6 +1987,120 @@ def test_plugin_builder_skill_states_the_actual_v3_manifest_contract() -> None:
     assert '`data["translations"]`' in skill
     assert "`originalTexts`, `translations`, `textboxTexts`" in skill
     assert "translated_text" in skill
+
+
+def test_bundled_plugins_match_current_manifests_and_hook_payloads() -> None:
+    plugin_root = PROJECT_ROOT / "plugins"
+    page_id = str(uuid.uuid4())
+    stored_bubble = BubbleState().to_dict()
+    stored_bubble.pop("fontFamily")
+    sample_payloads = {
+        "before_job": {},
+        "after_job": {},
+        "before_pipeline": {},
+        "after_pipeline": {},
+        "before_detect": {
+            "pageId": page_id,
+            "sourceAssetId": str(uuid.uuid4()),
+            "detectorConfig": {"detector_type": "default"},
+        },
+        "after_ocr": {
+            "pageId": page_id,
+            "originalTexts": ["source"],
+            "ocrResults": [{}],
+        },
+        "before_translate": {
+            "pageId": page_id,
+            "originalTexts": ["source"],
+            "translationConfig": {},
+        },
+        "after_translate": {
+            "pageId": page_id,
+            "originalTexts": ["source"],
+            "translations": ["translated"],
+            "textboxTexts": ["translated"],
+        },
+        "after_ai_translate": {
+            "pageId": page_id,
+            "originalTexts": ["source"],
+            "translations": ["translated"],
+        },
+        "after_color": {
+            "pageId": page_id,
+            "colors": [
+                {
+                    "fgColor": [0, 0, 0],
+                    "bgColor": [255, 255, 255],
+                    "confidence": 0.9,
+                }
+            ],
+        },
+        "before_inpaint": {
+            "pageId": page_id,
+            "sourceAssetId": str(uuid.uuid4()),
+            "inputAssetId": str(uuid.uuid4()),
+            "textMaskAssetId": None,
+            "bubbles": [stored_bubble],
+            "method": "solid",
+            "fillColor": "#FFFFFF",
+        },
+        "before_render": {
+            "pageId": page_id,
+            "inputAssetId": str(uuid.uuid4()),
+            "bubbles": [BubbleState().to_dict()],
+            "renderConfig": {},
+        },
+    }
+
+    for directory in sorted(
+        path
+        for path in plugin_root.iterdir()
+        if path.is_dir() and (path / "plugin.json").is_file()
+    ):
+        archive = parse_archive(build_archive(directory))
+        module_name, class_name = archive.manifest.entrypoint.split(":", 1)
+        namespace: dict[str, object] = {}
+        source = (directory / module_name).read_text(encoding="utf-8")
+        validate_hook_source_contract(
+            archive.manifest,
+            source,
+            filename=module_name,
+        )
+        exec(compile(source, module_name, "exec"), namespace)
+        plugin = namespace[class_name]()
+        context = type(
+            "Context",
+            (),
+            {
+                "config": {
+                    name: field["default"]
+                    for name, field in archive.manifest.config_schema.items()
+                },
+                "job_id": "job",
+                "book_id": "book",
+                "chapter_id": "chapter",
+                "mode": "standard",
+                "logger": type(
+                    "Logger",
+                    (),
+                    {"info": staticmethod(lambda *_args, **_kwargs: None)},
+                )(),
+            },
+        )()
+        for hook in archive.manifest.hooks:
+            payload = sample_payloads[hook]
+            output = getattr(plugin, hook)(context, payload)
+            phase, step = hook.split("_", 1)
+            if step in {"job", "pipeline"}:
+                validate_hook_data(output)
+            else:
+                validate_atomic_hook_data(step, phase, output)
+            if hook == "before_inpaint":
+                for bubble in output["bubbles"]:
+                    validate_bubble_payload(bubble, render=False)
+            elif hook == "before_render":
+                for bubble in output["bubbles"]:
+                    validate_bubble_payload(bubble, render=True)
 
 
 def test_atomic_plugin_schema_rejects_silent_invented_fields() -> None:
@@ -1445,6 +2193,21 @@ def test_plugin_agent_source_validation_rejects_wrong_field_container() -> None:
             ),
             filename="plugin.py",
         )
+
+
+def test_plugin_source_validation_supports_positional_only_hook_data() -> None:
+    manifest = parse_manifest(_valid_manifest())
+    validate_hook_source_contract(
+        manifest,
+        (
+            "class Plugin:\n"
+            "    def after_translate(self, context, /, data):\n"
+            "        result = dict(data)\n"
+            "        result['translations'] = list(data['translations'])\n"
+            "        return result\n"
+        ),
+        filename="plugin.py",
+    )
 
 
 def test_plugin_source_validation_rejects_incompatible_constructor() -> None:
@@ -1550,7 +2313,6 @@ def test_plugin_agent_non_object_response_is_business_retryable(
     with pytest.raises(OpenAICompatibleBusinessRetryableError):
         PluginAgentController._parse_agent_envelope(
             content,
-            force_json_output=False,
         )
 
 
@@ -1567,8 +2329,211 @@ def test_plugin_agent_invalid_execution_action_is_business_retryable(
     with pytest.raises(OpenAICompatibleBusinessRetryableError):
         PluginAgentController._parse_agent_envelope(
             content,
-            force_json_output=False,
             require_action=True,
+        )
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        '```json\n{"assistant_message":"ok","target_proposal":null}\n```',
+        '{"assistant_message":"ok","target_proposal":null,"legacy":true}',
+        '{"assistant_message":1,"target_proposal":null}',
+        (
+            '{"assistant_message":"ok","target_proposal":'
+            '{"plugin_id":"demo","display_name":"Demo",'
+            '"supported_steps":[],"supported_modes":[],"extra":true}}'
+        ),
+        (
+            '{"assistant_message":"ok","target_proposal":'
+            '{"plugin_id":"demo","display_name":"Demo",'
+            '"supported_steps":["legacy"],"supported_modes":["standard"]}}'
+        ),
+    ],
+)
+def test_plugin_agent_planning_requires_the_exact_current_envelope(
+    content: str,
+) -> None:
+    with pytest.raises(OpenAICompatibleBusinessRetryableError):
+        PluginAgentController._parse_agent_envelope(content)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        '{"assistant_message":"x","action":{"tool":"unknown","args":{}}}',
+        '{"assistant_message":"x","action":{"tool":"finish"}}',
+        (
+            '{"assistant_message":"x","action":'
+            '{"tool":"finish","args":{},"legacy":true}}'
+        ),
+        '{"assistant_message":"x","action":{"tool":"finish","args":{"legacy":true}}}',
+        '{"assistant_message":"x","action":{"tool":"write_file","args":{"path":1,"content":"x"}}}',
+    ],
+)
+def test_plugin_agent_execution_requires_a_current_tool_action(
+    content: str,
+) -> None:
+    with pytest.raises(OpenAICompatibleBusinessRetryableError):
+        PluginAgentController._parse_agent_envelope(
+            content,
+            require_action=True,
+        )
+
+
+def test_plugin_agent_tool_result_requires_the_current_shape() -> None:
+    with pytest.raises(TypeError, match="结果字段"):
+        PluginAgentController._validate_tool_result(
+            "read_file",
+            {
+                "success": True,
+                "path": "plugin.py",
+                "content": "code",
+                "preview": "code",
+                "legacy": True,
+            },
+        )
+
+
+def test_plugin_agent_tools_require_current_posix_paths(tmp_path: Path) -> None:
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    tools = PluginAgentWorktreeTools(
+        worktree=worktree,
+        skill_markdown="skill",
+        control_requested=lambda: False,
+    )
+
+    for path in ("../outside.py", "/absolute.py", "folder\\legacy.py", " file.py"):
+        with pytest.raises(ValueError):
+            tools.run_tool(
+                "write_file",
+                {"path": path, "content": "value = 1\n"},
+            )
+
+
+def test_plugin_agent_execution_keeps_full_tool_history() -> None:
+    controller = PluginAgentController()
+    session = PluginAgentSession(
+        session_id="history",
+        mode="create",
+        locked_target=LockedPluginTarget(
+            mode="create",
+            plugin_id="history_v3",
+            display_name="History v3",
+            plugin_dir="worktree://history_v3",
+        ),
+    )
+    content = "x" * 2_000
+    system_prompt = controller._build_execution_system_prompt(
+        session,
+        [
+            {
+                "tool": "read_file",
+                "args": {"path": "plugin.py"},
+                "result": {
+                    "success": True,
+                    "path": "plugin.py",
+                    "content": content,
+                    "preview": content[:1_200],
+                },
+            }
+        ],
+        13,
+    )
+
+    assert content in system_prompt
+    assert "当前迭代: 13" in system_prompt
+    assert "/12" not in system_prompt
+
+
+def test_plugin_agent_persists_the_full_tool_result() -> None:
+    content = "x" * 2_000
+    payload = PluginAgentController._build_tool_result_payload(
+        "read_file",
+        {
+            "success": True,
+            "path": "plugin.py",
+            "content": content,
+            "preview": content[:1_200],
+        },
+        "tool-1",
+    )
+
+    assert payload["debug_result"]["content"] == content
+
+
+def test_plugin_agent_stream_callback_observes_job_control() -> None:
+    class Transport:
+        def complete(
+            self,
+            request,
+            *,
+            resolved_invocation=None,
+            before_request=None,
+        ):
+            assert before_request is not None
+            before_request()
+            callback = request.runtime_options.on_stream_chunk
+            assert callback is not None
+            callback("{", "{")
+            raise AssertionError("control callback should stop the stream")
+
+    class Tools:
+        checks = 0
+
+        def is_control_requested(self) -> bool:
+            self.checks += 1
+            return self.checks >= 3
+
+    controller = PluginAgentController(transport=Transport())
+    session = PluginAgentSession(
+        session_id="stream-control",
+        mode="create",
+        locked_target=LockedPluginTarget(
+            mode="create",
+            plugin_id="stream_control",
+            display_name="Stream control",
+            plugin_dir="worktree://stream_control",
+        ),
+        messages=[
+            PluginAgentMessage(
+                id="user-1",
+                role="user",
+                content="create plugin",
+            )
+        ],
+    )
+    config = {
+        "provider": "custom",
+        "api_key": "key",
+        "model_name": "model",
+        "custom_base_url": "https://example.com/v1",
+        "credential_version_id": None,
+        "openai_options": OpenAICompatibleOptions.from_dict(
+            {
+                "request": {
+                    "force_json_output": True,
+                    "temperature": None,
+                    "extra_body": {},
+                },
+                "execution": {
+                    "use_stream": True,
+                    "rpm_limit": 0,
+                    "transport_retries": 0,
+                    "business_retries": 0,
+                },
+            }
+        ),
+    }
+
+    with pytest.raises(PluginAgentControlRequested):
+        controller.execute(
+            session,
+            "skill",
+            config,
+            Tools(),
+            lambda *_args: None,
         )
 
 

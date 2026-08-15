@@ -3,7 +3,7 @@ import { useRoute } from 'vue-router'
 import { useWebImportStore } from '@/stores/webImportStore'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import { jobsApi, type V2JobEvent } from '@/api/v2/jobs'
-import type { AgentLog, WebImportEngine } from '@/types/webImport'
+import type { AgentLog, WebImportEngine, WebImportResolvedEngine } from '@/types/webImport'
 import {
   checkWebImportSupport,
   commitWebImportDraft,
@@ -32,6 +32,8 @@ import type { WebImportSettingsActions } from './web-import/webImportSettingsAct
 export interface WebImportModalCallbacks {
   onCommitAccepted?: (accepted: WebImportDraftAccepted) => void
 }
+
+class WebImportDraftContractError extends Error {}
 
 export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
   const webImportStore = useWebImportStore()
@@ -64,16 +66,25 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
   let readyDraftLoadedId: string | null = null
   let readyDraftSnapshot: Awaited<ReturnType<typeof getWebImportDraft>> | null = null
   let draftSyncGeneration = 0
+  let draftPageLoadRequestId = 0
   let draftSyncTimer: ReturnType<typeof setTimeout> | null = null
+  let draftPollTimer: ReturnType<typeof setTimeout> | null = null
+  let pendingDraftSync: { draftId: string; generation: number } | null = null
+  let draftSyncRunner: Promise<void> | null = null
   let agentLogCursor = 0
   let agentLogJobId: string | null = null
+  const seenAgentLogEventIds = new Set<number>()
+  let firecrawlTestRequestId = 0
+  let agentTestRequestId = 0
   let stopTaskEvents: (() => void) | null = null
   const settingsActions: WebImportSettingsActions = {
     setAgentApiKey: webImportStore.setAgentApiKey,
     setAgentBaseUrl: webImportStore.setAgentBaseUrl,
     setAgentForceJsonOutput: webImportStore.setAgentForceJsonOutput,
+    setAgentMaxRetries: webImportStore.setAgentMaxRetries,
     setAgentModelName: webImportStore.setAgentModelName,
     setAgentProvider: webImportStore.setAgentProvider,
+    setAgentTimeout: webImportStore.setAgentTimeout,
     setAgentUseStream: webImportStore.setAgentUseStream,
     setAutoImport: webImportStore.setAutoImport,
     setBypassProxy: webImportStore.setBypassProxy,
@@ -139,10 +150,8 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
     modelList.value.map(model => ({ label: model, value: model }))
   )
 
-  const currentEngine = computed(() => extractResult.value?.engine || null)
-
   const engineDisplayName = computed(() => {
-    switch (currentEngine.value) {
+    switch (extractResult.value?.engine) {
       case 'gallery-dl':
         return 'Gallery-DL'
       case 'ai-agent':
@@ -158,6 +167,7 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
   })
 
   function resetDraftPaging(): void {
+    draftPageLoadRequestId += 1
     draftPageIdsByNumber.clear()
     selectionOverrides.clear()
     selectAllOverride = null
@@ -168,6 +178,27 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
     readyDraftSnapshot = null
     hasMorePages.value = false
     isLoadingMorePages.value = false
+  }
+
+  function resetAgentLogState(): void {
+    agentLogCursor = 0
+    agentLogJobId = null
+    seenAgentLogEventIds.clear()
+  }
+
+  function clearDraftPoll(): void {
+    if (!draftPollTimer) return
+    clearTimeout(draftPollTimer)
+    draftPollTimer = null
+  }
+
+  function invalidateModalSession(): void {
+    draftSyncGeneration += 1
+    firecrawlTestRequestId += 1
+    agentTestRequestId += 1
+    testingFirecrawl.value = false
+    testingAgent.value = false
+    clearDraftPoll()
   }
 
   let checkSupportTimeout: ReturnType<typeof setTimeout> | null = null
@@ -186,7 +217,7 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
     }
 
     const trimmedUrl = url.trim()
-    if (!trimmedUrl) {
+    if (!trimmedUrl || selectedEngine.value === 'ai-agent') {
       galleryDLAvailable.value = false
       galleryDLSupported.value = false
       checkingSupport.value = false
@@ -226,7 +257,7 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
       })
       if (!confirmed) return
     }
-    draftSyncGeneration += 1
+    invalidateModalSession()
     if (draftSyncTimer) {
       clearTimeout(draftSyncTimer)
       draftSyncTimer = null
@@ -239,14 +270,16 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
     activeDraftRevision.value = 0
     resetDraftPaging()
     activeDraftJobIds.clear()
-    agentLogCursor = 0
-    agentLogJobId = null
+    resetAgentLogState()
   }
 
   async function handleSaveSettings(showSuccessFeedback = true): Promise<boolean> {
     const success = await webImportStore.saveSettings()
     if (showSuccessFeedback) {
-      showToast(success ? '设置已保存' : '设置保存失败，请重试', success ? 'success' : 'error')
+      showToast(
+        success ? '设置已保存' : webImportStore.settingsSaveError || '设置保存失败，请重试',
+        success ? 'success' : 'error'
+      )
     }
     return success
   }
@@ -271,7 +304,7 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
     if (shouldSave) {
       const success = await handleSaveSettings(false)
       if (!success) {
-        showToast('设置保存失败，请重试', 'error')
+        showToast(webImportStore.settingsSaveError || '设置保存失败，请重试', 'error')
       }
       return success
     }
@@ -292,9 +325,11 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
   }
 
   async function handleExtract() {
+    const settingsGeneration = draftSyncGeneration
     if (!(await ensureSettingsReady('开始提取'))) {
       return
     }
+    if (settingsGeneration !== draftSyncGeneration) return
 
     const url = urlInput.value.trim()
     if (!url) {
@@ -311,6 +346,8 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
 
     webImportStore.resetState()
     resetDraftPaging()
+    activeDraftId.value = null
+    const generation = ++draftSyncGeneration
     webImportStore.setUrl(url)
     webImportStore.setStatus('extracting')
 
@@ -319,24 +356,33 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
         bookId: typeof route.query.book === 'string' ? route.query.book : undefined,
         chapterId: typeof route.query.chapter === 'string' ? route.query.chapter : undefined,
       })
+      if (generation !== draftSyncGeneration) return
       const accepted = await createWebImportDraft({
         chapterId: bootstrap.chapter.id,
         sourceUrl: url,
         engine: selectedEngine.value,
       })
+      if (generation !== draftSyncGeneration) return
       activeDraftId.value = accepted.draftId
-      draftSyncGeneration += 1
       activeDraftJobIds.clear()
-      agentLogCursor = 0
-      agentLogJobId = null
+      resetAgentLogState()
       webImportStore.addLog({
         timestamp: new Date().toISOString(),
         type: 'info',
         message: '网页提取任务已进入后端任务中心，可安全关闭页面。',
       })
-      await syncDraft(accepted.draftId, draftSyncGeneration)
+      await syncDraft(accepted.draftId, generation)
     } catch (e) {
-      webImportStore.setError(e instanceof Error ? e.message : '提取失败')
+      if (generation === draftSyncGeneration) {
+        if (e instanceof WebImportDraftContractError) {
+          webImportStore.setError(e.message)
+        } else if (activeDraftId.value) {
+          webImportStore.setStatus('extracting')
+          scheduleDraftPoll(activeDraftId.value, generation)
+        } else {
+          webImportStore.setError(e instanceof Error ? e.message : '提取失败')
+        }
+      }
     }
   }
 
@@ -359,7 +405,7 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
 
   async function collectSelectedDraftPageIds(
     draftId: string,
-    generation: number,
+    generation: number
   ): Promise<string[]> {
     const selectedIds: string[] = []
     let cursor = 0
@@ -370,9 +416,8 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
       }
       for (const candidate of page.items) {
         if (candidate.error) continue
-        const selected = selectionOverrides.get(candidate.id)
-          ?? selectAllOverride
-          ?? candidate.selected
+        const selected =
+          selectionOverrides.get(candidate.id) ?? selectAllOverride ?? candidate.selected
         if (selected) selectedIds.push(candidate.id)
       }
       cursor = page.nextCursor ?? 0
@@ -381,9 +426,11 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
   }
 
   async function handleImport() {
+    const settingsGeneration = draftSyncGeneration
     if (!(await ensureSettingsReady('导入图片'))) {
       return
     }
+    if (settingsGeneration !== draftSyncGeneration) return
 
     if (!extractResult.value?.pages || selectedCount.value === 0) {
       showToast('请选择要导入的图片', 'warning')
@@ -393,35 +440,46 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
     webImportStore.setStatus('downloading')
     webImportStore.updateDownloadProgress(0, selectedCount.value)
 
+    const draftId = activeDraftId.value
+    const generation = draftSyncGeneration
+    let revision = activeDraftRevision.value
     try {
-      if (!activeDraftId.value) throw new Error('网页导入草稿不存在')
+      if (!draftId) throw new Error('网页导入草稿不存在')
       if (selectionDirty) {
-        const selectedIds = await collectSelectedDraftPageIds(
-          activeDraftId.value,
-          draftSyncGeneration,
-        )
-        const selection = await updateWebImportSelection(
-          activeDraftId.value,
-          activeDraftRevision.value,
-          selectedIds,
-        )
-        activeDraftRevision.value = selection.revision
+        const selectedIds = await collectSelectedDraftPageIds(draftId, generation)
+        if (!isCurrentDraft(draftId, generation)) return
+        const selection = await updateWebImportSelection(draftId, revision, selectedIds)
+        if (!isCurrentDraft(draftId, generation)) return
+        revision = selection.revision
+        activeDraftRevision.value = revision
       }
-      const accepted = await commitWebImportDraft(activeDraftId.value, activeDraftRevision.value)
+      const accepted = await commitWebImportDraft(draftId, revision)
       if (!accepted.jobIds.length) {
         throw new Error('后端没有返回网页导入任务')
       }
       callbacks.onCommitAccepted?.(accepted)
-      webImportStore.setStatus('completed')
       showToast('入库任务已进入后端任务中心，可安全关闭页面', 'success')
-      await handleClose()
+      if (isCurrentDraft(draftId, generation)) {
+        webImportStore.setStatus('completed')
+        await handleClose()
+      }
     } catch (e) {
-      webImportStore.setError(e instanceof Error ? e.message : '下载失败')
+      if (isCurrentDraft(draftId ?? '', generation)) {
+        try {
+          await syncDraft(draftId ?? '', generation)
+        } catch {
+          // The original command error is more useful than a follow-up read error.
+        }
+        if (!['downloading', 'completed'].includes(status.value)) {
+          webImportStore.setError(e instanceof Error ? e.message : '下载失败')
+        }
+      }
     }
   }
 
   async function loadAgentLogs(
-    draft: Awaited<ReturnType<typeof getWebImportDraft>>
+    draft: Awaited<ReturnType<typeof getWebImportDraft>>,
+    generation: number
   ): Promise<void> {
     if (draft.requestedEngine !== 'ai-agent' && draft.actualEngine !== 'ai-agent') return
     const extractJob = draft.jobs.find(job => job.kind === 'web_extract')
@@ -429,23 +487,23 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
     if (agentLogJobId !== extractJob.id) {
       agentLogJobId = extractJob.id
       agentLogCursor = 0
+      seenAgentLogEventIds.clear()
     }
+    const jobId = extractJob.id
     try {
-      const response = await jobsApi.events(extractJob.id, {
-        after: agentLogCursor,
-        limit: 200,
-      })
-      for (const event of response.items) {
-        agentLogCursor = Math.max(agentLogCursor, event.eventId)
-        if (event.type !== 'web_import_agent_log') continue
-        const payload = event.payload as unknown as Partial<AgentLog>
-        if (
-          typeof payload.timestamp === 'string' &&
-          typeof payload.type === 'string' &&
-          typeof payload.message === 'string'
-        ) {
-          webImportStore.addLog(payload as AgentLog)
+      let shouldContinue = true
+      while (shouldContinue) {
+        const previousCursor = agentLogCursor
+        const response = await jobsApi.events(jobId, {
+          after: previousCursor,
+          limit: 200,
+        })
+        if (!isCurrentDraft(draft.id, generation) || agentLogJobId !== jobId) return
+        for (const event of response.items) {
+          agentLogCursor = Math.max(agentLogCursor, event.eventId)
+          appendAgentLogEvent(event)
         }
+        shouldContinue = response.items.length === 200 && agentLogCursor > previousCursor
       }
     } catch {
       // Log retrieval must not interrupt the durable import task.
@@ -456,21 +514,28 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
     return generation === draftSyncGeneration && activeDraftId.value === draftId
   }
 
+  function requireResolvedEngine(value: string | null): WebImportResolvedEngine {
+    if (value === 'gallery-dl' || value === 'ai-agent') return value
+    throw new WebImportDraftContractError('网页导入草稿缺少有效的实际提取引擎')
+  }
+
   async function loadNextDraftPageBatch(
     draft: Awaited<ReturnType<typeof getWebImportDraft>>,
     generation: number,
-    reset = false,
+    reset = false
   ): Promise<void> {
+    const resolvedEngine = requireResolvedEngine(draft.actualEngine)
     if (isLoadingMorePages.value) return
     const cursor = reset ? 0 : nextDraftPageCursor
     if (cursor === null) return
+    const requestId = ++draftPageLoadRequestId
     isLoadingMorePages.value = true
     try {
       const response = await listWebImportDraftPages(draft.id, {
         cursor,
         limit: 100,
       })
-      if (!isCurrentDraft(draft.id, generation)) return
+      if (!isCurrentDraft(draft.id, generation) || requestId !== draftPageLoadRequestId) return
       if (reset) {
         draftPageIdsByNumber.clear()
         loadedSuccessfulPageCount = 0
@@ -481,9 +546,8 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
         if (candidate.error) continue
         const pageNumber = ++loadedSuccessfulPageCount
         draftPageIdsByNumber.set(pageNumber, candidate.id)
-        const selected = selectionOverrides.get(candidate.id)
-          ?? selectAllOverride
-          ?? candidate.selected
+        const selected =
+          selectionOverrides.get(candidate.id) ?? selectAllOverride ?? candidate.selected
         if (selected) loadedSelected.push(pageNumber)
         pages.push({
           pageNumber,
@@ -494,16 +558,12 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
       if (reset) {
         webImportStore.setPagedExtractResult(
           {
-            success: true,
-            comicTitle: '',
-            chapterTitle: '',
             pages,
             totalPages,
-            sourceUrl: draft.sourceUrl,
-            engine: draft.actualEngine === 'gallery-dl' ? 'gallery-dl' : 'ai-agent',
+            engine: resolvedEngine,
           },
           loadedSelected,
-          draft.selectedCount,
+          draft.selectedCount
         )
       } else {
         webImportStore.appendExtractResultPages(pages, loadedSelected)
@@ -513,22 +573,31 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
       readyDraftLoadedId = draft.id
       readyDraftSnapshot = draft
     } finally {
-      isLoadingMorePages.value = false
+      if (requestId === draftPageLoadRequestId) {
+        isLoadingMorePages.value = false
+      }
     }
   }
 
   async function loadMoreDraftPages(): Promise<void> {
     const draft = readyDraftSnapshot
     if (!draft || readyDraftLoadedId !== activeDraftId.value) return
-    await loadNextDraftPageBatch(draft, draftSyncGeneration)
+    const generation = draftSyncGeneration
+    try {
+      await loadNextDraftPageBatch(draft, generation)
+    } catch (error) {
+      if (isCurrentDraft(draft.id, generation)) {
+        showToast(error instanceof Error ? error.message : '加载更多图片失败', 'error')
+      }
+    }
   }
 
-  async function syncDraft(draftId: string, generation: number): Promise<void> {
+  async function syncDraftOnce(draftId: string, generation: number): Promise<void> {
     const draft = await getWebImportDraft(draftId)
     if (!isCurrentDraft(draftId, generation)) return
     activeDraftJobIds.clear()
     for (const job of draft.jobs) activeDraftJobIds.add(job.id)
-    await loadAgentLogs(draft)
+    await loadAgentLogs(draft, generation)
     if (!isCurrentDraft(draftId, generation)) return
     activeDraftRevision.value = draft.revision
     webImportStore.updateDownloadProgress(
@@ -536,22 +605,29 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
       Math.max(draft.candidateCount, 1)
     )
     if (draft.status === 'failed') {
+      clearDraftPoll()
       webImportStore.setError('后端网页提取任务失败，请在任务中心查看详情')
       return
     }
     if (draft.status === 'cancelled') {
+      clearDraftPoll()
       webImportStore.setError('后端网页提取任务已取消，可以重新开始提取')
       return
     }
     if (draft.status === 'committing') {
       webImportStore.setStatus('downloading')
+      scheduleDraftPoll(draftId, generation)
       return
     }
     if (draft.status === 'completed') {
+      clearDraftPoll()
       webImportStore.setStatus('completed')
       return
     }
-    if (draft.status !== 'ready') return
+    if (draft.status !== 'ready') {
+      scheduleDraftPoll(draftId, generation)
+      return
+    }
 
     if (readyDraftLoadedId !== draftId) {
       resetDraftPaging()
@@ -561,6 +637,7 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
       readyDraftSnapshot = draft
     }
     if (!draft.autoImport) {
+      clearDraftPoll()
       webImportStore.setStatus('extracted')
       return
     }
@@ -570,20 +647,71 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
       ['completed', 'completed_with_errors', 'failed', 'cancelled'].includes(extractJob.status)
     ) {
       webImportStore.setError('后端自动入库未能启动，请在任务中心查看详情')
+      return
     }
+    scheduleDraftPoll(draftId, generation)
+  }
+
+  function isAgentLogPayload(payload: unknown): payload is AgentLog {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false
+    const candidate = payload as Partial<AgentLog>
+    const validTypes: AgentLog['type'][] = ['info', 'tool_call', 'tool_result', 'thinking', 'error']
+    return (
+      typeof candidate.timestamp === 'string' &&
+      typeof candidate.type === 'string' &&
+      validTypes.some(type => type === candidate.type) &&
+      typeof candidate.message === 'string'
+    )
+  }
+
+  function appendAgentLogEvent(event: V2JobEvent): void {
+    if (
+      event.type !== 'web_import_agent_log' ||
+      seenAgentLogEventIds.has(event.eventId) ||
+      !isAgentLogPayload(event.payload)
+    )
+      return
+    seenAgentLogEventIds.add(event.eventId)
+    webImportStore.addLog(event.payload)
   }
 
   function addAgentLog(event: V2JobEvent): void {
-    if (event.type !== 'web_import_agent_log' || event.eventId <= agentLogCursor) return
-    const payload = event.payload as Partial<AgentLog>
-    if (
-      typeof payload.timestamp !== 'string' ||
-      typeof payload.type !== 'string' ||
-      typeof payload.message !== 'string'
-    )
-      return
-    agentLogCursor = event.eventId
-    webImportStore.addLog(payload as AgentLog)
+    if (event.type !== 'web_import_agent_log') return
+    if (agentLogJobId !== event.jobId) {
+      agentLogJobId = event.jobId
+      agentLogCursor = 0
+      seenAgentLogEventIds.clear()
+    }
+    appendAgentLogEvent(event)
+  }
+
+  async function runQueuedDraftSyncs(): Promise<void> {
+    let latestError: unknown = null
+    while (pendingDraftSync) {
+      const request = pendingDraftSync
+      pendingDraftSync = null
+      try {
+        await syncDraftOnce(request.draftId, request.generation)
+        latestError = null
+      } catch (error) {
+        latestError = error
+      }
+    }
+    if (latestError) throw latestError
+  }
+
+  function syncDraft(draftId: string, generation: number): Promise<void> {
+    pendingDraftSync = { draftId, generation }
+    if (!draftSyncRunner) {
+      draftSyncRunner = (async () => {
+        try {
+          await runQueuedDraftSyncs()
+        } finally {
+          draftSyncRunner = null
+        }
+      })()
+    }
+    return draftSyncRunner
   }
 
   function scheduleDraftSync(): void {
@@ -593,11 +721,29 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
     draftSyncTimer = setTimeout(() => {
       draftSyncTimer = null
       void syncDraft(draftId, generation).catch(error => {
-        if (isCurrentDraft(draftId, generation)) {
-          webImportStore.setError(error instanceof Error ? error.message : '读取网页导入状态失败')
-        }
+        handleDraftSyncFailure(error, draftId, generation)
       })
     }, 100)
+  }
+
+  function scheduleDraftPoll(draftId: string, generation: number): void {
+    if (draftPollTimer || !isVisible.value || !isCurrentDraft(draftId, generation)) return
+    draftPollTimer = setTimeout(() => {
+      draftPollTimer = null
+      void syncDraft(draftId, generation).catch(error => {
+        handleDraftSyncFailure(error, draftId, generation)
+      })
+    }, 1000)
+  }
+
+  function handleDraftSyncFailure(error: unknown, draftId: string, generation: number): void {
+    if (!isCurrentDraft(draftId, generation)) return
+    if (error instanceof WebImportDraftContractError) {
+      clearDraftPoll()
+      webImportStore.setError(error.message)
+      return
+    }
+    scheduleDraftPoll(draftId, generation)
   }
 
   function handleTaskEvent(event: V2JobEvent): void {
@@ -607,20 +753,25 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
   }
 
   async function restoreActiveDraft(): Promise<void> {
+    const generation = ++draftSyncGeneration
     try {
       const bootstrap = await getTranslationBootstrap({
         bookId: typeof route.query.book === 'string' ? route.query.book : undefined,
         chapterId: typeof route.query.chapter === 'string' ? route.query.chapter : undefined,
       })
+      if (generation !== draftSyncGeneration || !isVisible.value) return
       const draft = bootstrap.activeWebImportDraft
       if (!draft) return
       resetDraftPaging()
       activeDraftId.value = draft.id
-      draftSyncGeneration += 1
       activeDraftJobIds.clear()
+      resetAgentLogState()
       webImportStore.setStatus('extracting')
-      await syncDraft(draft.id, draftSyncGeneration)
-    } catch {
+      await syncDraft(draft.id, generation)
+    } catch (error) {
+      if (activeDraftId.value && isCurrentDraft(activeDraftId.value, generation)) {
+        handleDraftSyncFailure(error, activeDraftId.value, generation)
+      }
       // Opening the modal is still useful for starting a new draft.
     }
   }
@@ -636,13 +787,15 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
         focusSourceUrlRequestId.value += 1
       }, 100)
       void restoreActiveDraft()
+    } else {
+      invalidateModalSession()
     }
   })
 
   stopTaskEvents = taskCenterStore.subscribeEvents(handleTaskEvent)
 
-  watch(urlInput, newUrl => {
-    checkUrlSupport(newUrl)
+  watch([urlInput, selectedEngine], ([newUrl]) => {
+    void checkUrlSupport(newUrl)
   })
 
   watch(
@@ -662,18 +815,26 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
       return
     }
 
+    const apiKey = draftSettings.value.firecrawl.apiKey
+    const requestId = ++firecrawlTestRequestId
     testingFirecrawl.value = true
     try {
-      const result = await testFirecrawlConnection(draftSettings.value.firecrawl.apiKey)
+      const result = await testFirecrawlConnection(apiKey)
+      if (requestId !== firecrawlTestRequestId || draftSettings.value.firecrawl.apiKey !== apiKey)
+        return
       if (result.success) {
         showToast('Firecrawl 连接成功', 'success')
       } else {
         showToast(`连接失败: ${result.message || '未知错误'}`, 'error')
       }
     } catch (e) {
-      showToast(`连接失败: ${e instanceof Error ? e.message : '未知错误'}`, 'error')
+      if (requestId === firecrawlTestRequestId && draftSettings.value.firecrawl.apiKey === apiKey) {
+        showToast(`连接失败: ${e instanceof Error ? e.message : '未知错误'}`, 'error')
+      }
     } finally {
-      testingFirecrawl.value = false
+      if (requestId === firecrawlTestRequestId) {
+        testingFirecrawl.value = false
+      }
     }
   }
 
@@ -687,29 +848,48 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
       return
     }
 
+    const request = {
+      provider: draftSettings.value.agent.provider,
+      apiKey: draftSettings.value.agent.apiKey,
+      baseUrl: draftSettings.value.agent.customBaseUrl,
+      modelName: draftSettings.value.agent.modelName,
+    }
+    const requestId = ++agentTestRequestId
+    const isCurrentRequest = () =>
+      requestId === agentTestRequestId &&
+      request.provider === draftSettings.value.agent.provider &&
+      request.apiKey === draftSettings.value.agent.apiKey &&
+      request.baseUrl === draftSettings.value.agent.customBaseUrl &&
+      request.modelName === draftSettings.value.agent.modelName
     testingAgent.value = true
     try {
       const result = await testAgentConnection(
-        draftSettings.value.agent.provider,
-        draftSettings.value.agent.apiKey,
-        draftSettings.value.agent.customBaseUrl,
-        draftSettings.value.agent.modelName
+        request.provider,
+        request.apiKey,
+        request.baseUrl,
+        request.modelName
       )
+      if (!isCurrentRequest()) return
       if (result.success) {
         showToast('AI Agent 连接成功', 'success')
       } else {
         showToast(`连接失败: ${result.message || '未知错误'}`, 'error')
       }
     } catch (e) {
-      showToast(`连接失败: ${e instanceof Error ? e.message : '未知错误'}`, 'error')
+      if (isCurrentRequest()) {
+        showToast(`连接失败: ${e instanceof Error ? e.message : '未知错误'}`, 'error')
+      }
     } finally {
-      testingAgent.value = false
+      if (requestId === agentTestRequestId) {
+        testingAgent.value = false
+      }
     }
   }
 
   const handleFetchModels = modelDiscovery.fetchModels
 
   async function handleResetPrompt() {
+    const generation = draftSyncGeneration
     const confirmed = await confirmProductAction({
       title: '重置提取提示词',
       message: '确定要重置为默认提示词吗？',
@@ -717,12 +897,14 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
       cancelText: '取消',
       tone: 'danger',
     })
-    if (!confirmed) return
+    if (!confirmed || generation !== draftSyncGeneration) return
     webImportStore.resetExtractionPrompt()
   }
 
   onUnmounted(() => {
-    draftSyncGeneration += 1
+    invalidateModalSession()
+    draftPageLoadRequestId += 1
+    pendingDraftSync = null
     stopTaskEvents?.()
     stopTaskEvents = null
     if (draftSyncTimer) {

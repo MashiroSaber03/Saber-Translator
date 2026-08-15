@@ -1,15 +1,5 @@
 import { ref } from 'vue'
-
-export interface QAMessage {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  timestamp: string
-  isLoading?: boolean
-  mode?: string
-  citations?: Array<{ page: number }>
-  saved?: boolean
-}
+import type { QAMessage } from '@/types/insight'
 
 export function useInsightQA() {
   const qaHistory = ref<QAMessage[]>([])

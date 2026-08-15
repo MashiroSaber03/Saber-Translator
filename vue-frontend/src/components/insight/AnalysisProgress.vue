@@ -12,8 +12,8 @@ import UiSpinner from '@/components/ui/UiSpinner.vue'
 
 import { ref, computed, watch } from 'vue'
 import { useInsightStore } from '@/stores/insightStore'
-import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import * as insightApi from '@/api/insight'
+import { NONTERMINAL_JOB_STATUSES } from '@/api/v2/jobs'
 import type { ApiError } from '@/types'
 import { confirmProductAction } from '@/composables/useProductConfirm'
 
@@ -37,14 +37,16 @@ const chapterOptions = computed(() => {
 })
 
 const insightStore = useInsightStore()
-const taskCenterStore = useTaskCenterStore()
 
 const analysisMode = ref<AnalysisScope>('full')
 const incrementalAnalysis = ref(true)
 const selectedChapterId = ref('')
 const inputPageNum = ref<number | null>(null)
 const isStarting = ref(false)
-const errorMessage = ref('')
+const isControlling = ref(false)
+const isExporting = ref(false)
+const feedbackMessage = ref('')
+const feedbackTone = ref<'danger' | 'info'>('danger')
 
 const statusDotClass = computed(() => {
   const status = insightStore.analysisStatus
@@ -74,7 +76,6 @@ const statusLabel = computed(() => {
     case 'completed_with_errors': return '部分完成'
     case 'cancelled': return '已取消'
     case 'failed': return '分析失败'
-    case 'error': return '状态异常'
     default: return insightStore.analyzedPageCount > 0 ? '部分分析' : '未分析'
   }
 })
@@ -91,7 +92,6 @@ const showIdleButtons = computed(() => {
     || insightStore.analysisStatus === 'completed_with_errors'
     || insightStore.analysisStatus === 'cancelled'
     || insightStore.analysisStatus === 'failed'
-    || insightStore.analysisStatus === 'error'
 })
 
 const showRunningButtons = computed(() => {
@@ -105,14 +105,10 @@ const showPausedButtons = computed(() => {
 const showQueuedButtons = computed(() => insightStore.analysisStatus === 'queued')
 const showPausingButtons = computed(() => insightStore.analysisStatus === 'pausing')
 const showInterruptedButtons = computed(() => insightStore.analysisStatus === 'interrupted')
-const showProgress = computed(() => [
-  'queued',
-  'running',
-  'pausing',
-  'paused',
-  'cancelling',
-  'interrupted',
-].includes(insightStore.analysisStatus))
+const showProgress = computed(() => (
+  insightStore.analysisStatus !== 'idle'
+  && NONTERMINAL_JOB_STATUSES.has(insightStore.analysisStatus)
+))
 
 const startButtonText = computed(() => {
   return insightStore.analysisStatus === 'idle' || insightStore.analysisStatus === 'cancelled'
@@ -125,7 +121,7 @@ const showChapterSelect = computed(() => analysisMode.value === 'chapter')
 const showPageInput = computed(() => analysisMode.value === 'page')
 
 const canStartAnalysis = computed(() => {
-  if (isStarting.value) return false
+  if (isStarting.value || isControlling.value) return false
   if (insightStore.isAnalyzing) return false
   if (analysisMode.value === 'chapter' && !selectedChapterId.value) return false
   if (analysisMode.value === 'page' && !inputPageNum.value) return false
@@ -135,7 +131,9 @@ const canStartAnalysis = computed(() => {
 const analysisModeDescription = computed(() => {
   switch (analysisMode.value) {
     case 'full':
-      return '全量重跑整本书（旧结果持续可读）'
+      return incrementalAnalysis.value
+        ? '仅分析尚未完成的页面'
+        : '全量重跑整本书（旧结果持续可读）'
     case 'chapter':
       return '仅分析选中章节的页面'
     case 'page':
@@ -143,24 +141,6 @@ const analysisModeDescription = computed(() => {
     default:
       return ''
   }
-})
-
-const estimatedTime = computed(() => {
-  let pageCount = insightStore.totalPageCount
-  if (analysisMode.value === 'page') pageCount = inputPageNum.value ? 1 : 0
-  if (analysisMode.value === 'chapter') {
-    const chapter = insightStore.chapters.find(value => value.id === selectedChapterId.value)
-    pageCount = chapter ? chapter.endPage - chapter.startPage + 1 : 0
-  }
-  if (pageCount === 0) return ''
-
-  const pagesPerBatch = insightStore.config.batch.pagesPerBatch || 5
-  const batches = Math.ceil(pageCount / pagesPerBatch)
-  const seconds = batches * 10
-
-  if (seconds < 60) return `约 ${seconds} 秒`
-  const minutes = Math.ceil(seconds / 60)
-  return `约 ${minutes} 分钟`
 })
 
 const progressPercent = computed(() => Math.max(0, Math.min(100, insightStore.progressPercent)))
@@ -190,25 +170,43 @@ function getStartErrorMessage(error: unknown): string {
   return '启动分析失败'
 }
 
+function showFeedback(message: string, tone: 'danger' | 'info' = 'danger'): void {
+  feedbackMessage.value = message
+  feedbackTone.value = tone
+}
+
+function commandErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback
+}
+
+function isCurrentBook(bookId: string): boolean {
+  return insightStore.currentBookId === bookId
+}
+
+function isCurrentTask(bookId: string, taskId: string): boolean {
+  return isCurrentBook(bookId) && insightStore.currentTaskId === taskId
+}
+
 async function startAnalysis(): Promise<void> {
-  if (!insightStore.currentBookId) return
+  const bookId = insightStore.currentBookId
+  if (!bookId) return
 
   if (insightStore.isAnalyzing || isStarting.value) {
-    errorMessage.value = '分析正在进行中，请稍候'
+    showFeedback('分析正在进行中，请稍候')
     return
   }
 
   if (analysisMode.value === 'chapter' && !selectedChapterId.value) {
-    errorMessage.value = '请选择要分析的章节'
+    showFeedback('请选择要分析的章节')
     return
   }
   if (analysisMode.value === 'page' && !inputPageNum.value) {
-    errorMessage.value = '请输入要分析的页码'
+    showFeedback('请输入要分析的页码')
     return
   }
 
   isStarting.value = true
-  errorMessage.value = ''
+  feedbackMessage.value = ''
 
   try {
     const options: Parameters<typeof insightApi.startAnalysis>[1] = {}
@@ -223,97 +221,130 @@ async function startAnalysis(): Promise<void> {
       options.mode = incrementalAnalysis.value ? 'incremental' : 'full'
     }
 
-    const submission = await insightApi.startAnalysis(insightStore.currentBookId, options)
-    insightStore.setCurrentTaskId(submission.jobId)
-    insightStore.setAnalysisStatus('queued')
-    await taskCenterStore.refresh()
+    const submission = await insightApi.startAnalysis(bookId, options)
+    if (isCurrentBook(bookId)) {
+      insightStore.setCurrentTaskId(submission.jobId)
+      insightStore.setAnalysisStatus('queued')
+      insightStore.updateProgress(0, 0)
+    }
   } catch (error) {
-    errorMessage.value = getStartErrorMessage(error)
+    if (isCurrentBook(bookId)) showFeedback(getStartErrorMessage(error))
   } finally {
     isStarting.value = false
   }
 }
 
 async function pauseAnalysis(): Promise<void> {
-  if (!insightStore.currentBookId || !insightStore.currentTaskId) return
-  errorMessage.value = ''
+  const bookId = insightStore.currentBookId
+  const taskId = insightStore.currentTaskId
+  if (!bookId || !taskId || isControlling.value) return
+  feedbackMessage.value = ''
+  isControlling.value = true
 
   try {
-    await insightApi.pauseAnalysis(insightStore.currentTaskId)
-    insightStore.setAnalysisStatus('pausing')
-    await taskCenterStore.refresh()
-  } catch {
-    errorMessage.value = '暂停分析失败'
+    await insightApi.pauseAnalysis(taskId)
+    if (isCurrentTask(bookId, taskId)) insightStore.setAnalysisStatus('pausing')
+  } catch (error) {
+    if (isCurrentBook(bookId)) showFeedback(commandErrorMessage(error, '暂停分析失败'))
+  } finally {
+    isControlling.value = false
   }
 }
 
 async function resumeAnalysis(): Promise<void> {
-  if (!insightStore.currentBookId || !insightStore.currentTaskId) return
-  errorMessage.value = ''
+  const bookId = insightStore.currentBookId
+  const taskId = insightStore.currentTaskId
+  if (!bookId || !taskId || isControlling.value) return
+  feedbackMessage.value = ''
+  isControlling.value = true
 
   try {
-    await insightApi.resumeAnalysis(insightStore.currentTaskId)
-    insightStore.setAnalysisStatus('queued')
-    await taskCenterStore.refresh()
-  } catch {
-    errorMessage.value = '继续分析失败'
+    await insightApi.resumeAnalysis(taskId)
+    if (isCurrentTask(bookId, taskId)) insightStore.setAnalysisStatus('queued')
+  } catch (error) {
+    if (isCurrentBook(bookId)) showFeedback(commandErrorMessage(error, '继续分析失败'))
+  } finally {
+    isControlling.value = false
   }
 }
 
 async function continueAnalysis(): Promise<void> {
-  if (!insightStore.currentBookId || !insightStore.currentTaskId) return
-  errorMessage.value = ''
+  const bookId = insightStore.currentBookId
+  const taskId = insightStore.currentTaskId
+  if (!bookId || !taskId || isControlling.value) return
+  feedbackMessage.value = ''
+  isControlling.value = true
 
   try {
-    await insightApi.continueAnalysis(insightStore.currentTaskId)
-    insightStore.setAnalysisStatus('queued')
-    await taskCenterStore.refresh()
-  } catch {
-    errorMessage.value = '继续中断任务失败'
+    await insightApi.continueAnalysis(taskId)
+    if (isCurrentTask(bookId, taskId)) insightStore.setAnalysisStatus('queued')
+  } catch (error) {
+    if (isCurrentBook(bookId)) showFeedback(commandErrorMessage(error, '继续中断任务失败'))
+  } finally {
+    isControlling.value = false
   }
 }
 
 async function cancelAnalysis(): Promise<void> {
-  if (!insightStore.currentBookId || !insightStore.currentTaskId) return
-  const confirmed = await confirmProductAction({
-    title: '取消分析',
-    message: '确定要取消分析吗？',
-    confirmText: '取消分析',
-    cancelText: '继续分析',
-    tone: 'danger',
-  })
-  if (!confirmed) return
-  errorMessage.value = ''
+  const bookId = insightStore.currentBookId
+  const taskId = insightStore.currentTaskId
+  if (!bookId || !taskId || isControlling.value) return
+  feedbackMessage.value = ''
+  isControlling.value = true
 
   try {
-    await insightApi.cancelAnalysis(insightStore.currentTaskId)
-    insightStore.setAnalysisStatus('cancelling')
-    await taskCenterStore.refresh()
-  } catch {
-    errorMessage.value = '取消分析失败'
+    const confirmed = await confirmProductAction({
+      title: '取消分析',
+      message: '确定要取消分析吗？',
+      confirmText: '取消分析',
+      cancelText: '继续分析',
+      tone: 'danger',
+    })
+    if (!confirmed) return
+    if (!isCurrentTask(bookId, taskId)) return
+    await insightApi.cancelAnalysis(taskId)
+    if (isCurrentTask(bookId, taskId)) insightStore.setAnalysisStatus('cancelling')
+  } catch (error) {
+    if (isCurrentBook(bookId)) showFeedback(commandErrorMessage(error, '取消分析失败'))
+  } finally {
+    isControlling.value = false
   }
 }
 
 async function exportAnalysis(): Promise<void> {
-  if (!insightStore.currentBookId) {
-    errorMessage.value = '请先选择书籍'
+  if (isExporting.value) return
+  const bookId = insightStore.currentBookId
+  if (!bookId) {
+    showFeedback('请先选择书籍')
     return
   }
 
+  feedbackMessage.value = ''
+  isExporting.value = true
   try {
-    await insightApi.exportAnalysis(insightStore.currentBookId)
-    errorMessage.value = '导出任务已进入任务中心，完成后可在那里下载'
+    await insightApi.exportAnalysis(bookId)
+    if (isCurrentBook(bookId)) {
+      showFeedback('导出任务已进入任务中心，完成后可在那里下载', 'info')
+    }
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : '导出失败'
+    if (isCurrentBook(bookId)) showFeedback(commandErrorMessage(error, '导出失败'))
+  } finally {
+    isExporting.value = false
   }
 }
 
-function clearError(): void {
-  errorMessage.value = ''
+function clearFeedback(): void {
+  feedbackMessage.value = ''
 }
 
 watch(analysisMode, () => {
-  clearError()
+  clearFeedback()
+})
+
+watch(() => insightStore.currentBookId, () => {
+  selectedChapterId.value = ''
+  inputPageNum.value = null
+  clearFeedback()
 })
 </script>
 
@@ -347,18 +378,18 @@ watch(analysisMode, () => {
     </div>
 
     <ProductStatusBanner
-      v-if="errorMessage"
+      v-if="feedbackMessage"
       class="analysis-progress-panel__error"
-      tone="danger"
-      aria-live="assertive"
+      :tone="feedbackTone"
+      :aria-live="feedbackTone === 'danger' ? 'assertive' : 'polite'"
     >
-      <span>{{ errorMessage }}</span>
+      <span>{{ feedbackMessage }}</span>
       <template #actions>
         <UiButton
           variant="secondary"
           size="xs"
-          aria-label="清除分析错误"
-          @click="clearError"
+          aria-label="清除分析提示"
+          @click="clearFeedback"
         >
           清除
         </UiButton>
@@ -379,6 +410,7 @@ watch(analysisMode, () => {
           :options="analysisModeOptions"
           aria-label="选择分析范围"
           size="sm"
+          :disabled="isStarting || isControlling"
           @change="updateAnalysisMode"
         />
         <UiButton
@@ -410,6 +442,7 @@ watch(analysisMode, () => {
           class="analysis-progress-panel__action-button"
           title="暂停分析"
           aria-label="暂停分析"
+          :disabled="isControlling"
           @click="pauseAnalysis"
         >
           <UiIcon name="pause" size="18" />
@@ -421,6 +454,7 @@ watch(analysisMode, () => {
           class="analysis-progress-panel__action-button"
           title="取消分析"
           aria-label="取消分析"
+          :disabled="isControlling"
           @click="cancelAnalysis"
         >
           <UiIcon name="square" size="18" />
@@ -441,6 +475,7 @@ watch(analysisMode, () => {
           class="analysis-progress-panel__action-button"
           title="取消分析"
           aria-label="取消分析"
+          :disabled="isControlling"
           @click="cancelAnalysis"
         >
           <UiIcon name="square" size="18" />
@@ -461,6 +496,7 @@ watch(analysisMode, () => {
           class="analysis-progress-panel__action-button"
           title="继续分析"
           aria-label="继续分析"
+          :disabled="isControlling"
           @click="resumeAnalysis"
         >
           <UiIcon name="play" size="18" />
@@ -472,6 +508,7 @@ watch(analysisMode, () => {
           class="analysis-progress-panel__action-button"
           title="取消分析"
           aria-label="取消分析"
+          :disabled="isControlling"
           @click="cancelAnalysis"
         >
           <UiIcon name="square" size="18" />
@@ -492,6 +529,7 @@ watch(analysisMode, () => {
           class="analysis-progress-panel__action-button"
           title="从安全点继续中断任务"
           aria-label="继续中断任务"
+          :disabled="isControlling"
           @click="continueAnalysis"
         >
           <UiIcon name="play" size="18" />
@@ -503,6 +541,7 @@ watch(analysisMode, () => {
           class="analysis-progress-panel__action-button"
           title="取消分析"
           aria-label="取消分析"
+          :disabled="isControlling"
           @click="cancelAnalysis"
         >
           <UiIcon name="square" size="18" />
@@ -517,6 +556,7 @@ watch(analysisMode, () => {
       :options="chapterOptions"
       aria-label="选择分析章节"
       size="sm"
+      :disabled="isStarting || isControlling"
       @change="updateSelectedChapter"
     />
 
@@ -528,20 +568,13 @@ watch(analysisMode, () => {
         aria-label="输入页码"
         :min="1"
         :max="insightStore.totalPageCount || undefined"
+        :disabled="isStarting || isControlling"
       />
       <span class="analysis-progress-panel__page-hint">/ {{ insightStore.totalPageCount || '?' }}</span>
     </div>
 
     <div v-if="showIdleButtons && analysisModeDescription" class="analysis-progress-panel__mode-description">
       {{ analysisModeDescription }}
-    </div>
-
-    <div
-      v-if="showIdleButtons && analysisMode === 'full' && estimatedTime"
-      class="analysis-progress-panel__estimated-time"
-    >
-      <UiIcon name="clock" />
-      <span>{{ estimatedTime }}</span>
     </div>
 
     <ProductActionRow
@@ -551,10 +584,12 @@ watch(analysisMode, () => {
       variant="toolbar"
     >
       <UiCheckbox
+        v-if="analysisMode === 'full'"
         class="analysis-progress-panel__incremental-checkbox"
         :model-value="incrementalAnalysis"
         label="增量模式"
         aria-label="增量模式"
+        :disabled="isStarting || isControlling"
         @change="updateIncrementalAnalysis"
       />
       <UiIconButton
@@ -562,7 +597,7 @@ watch(analysisMode, () => {
         variant="soft"
         label="导出分析报告"
         title="导出分析报告"
-        :disabled="insightStore.analyzedPageCount === 0"
+        :disabled="insightStore.analyzedPageCount === 0 || isExporting"
         @click="exportAnalysis"
       >
         <UiIcon name="download" size="14" />
@@ -606,15 +641,6 @@ watch(analysisMode, () => {
   color: var(--insight-text-secondary);
   font-size: 11px;
   font-style: italic;
-}
-
-.analysis-progress-panel__estimated-time {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin-top: 4px;
-  color: var(--insight-text-secondary);
-  font-size: 11px;
 }
 
 .analysis-progress-panel__status-bar {
@@ -714,7 +740,6 @@ watch(analysisMode, () => {
   --ui-number-field-input-width: 100%;
 
   flex: 1;
-  margin-top: 8px;
 }
 
 .analysis-progress-panel__options-row {

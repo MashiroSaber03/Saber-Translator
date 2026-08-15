@@ -38,8 +38,10 @@ function chapterIdFor(images: ImageData[]): string | null {
 }
 
 function progressValue(progress: Record<string, unknown>, field: string): number {
-  const value = Number(progress[field])
-  return Number.isFinite(value) ? value : 0
+  const value = progress[field]
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? value
+    : 0
 }
 
 export function useExportImport() {
@@ -48,6 +50,7 @@ export function useExportImport() {
   const toast = useToast()
 
   const isDownloading = ref(false)
+  const isImporting = ref(false)
   const downloadProgress = ref(0)
   const downloadProgressText = ref('')
   let downloadResetTimer: ReturnType<typeof setTimeout> | null = null
@@ -77,11 +80,16 @@ export function useExportImport() {
   }
 
   async function importText(file: File): Promise<void> {
+    if (isImporting.value) {
+      toast.info('已有文本导入正在处理')
+      return
+    }
     const chapterId = chapterIdFor(imageStore.images)
     if (!chapterId) {
       toast.warning('当前图片不属于同一个后端章节')
       return
     }
+    isImporting.value = true
     try {
       const preview = await previewChapterTextImport(chapterId, file)
       const confirmed = preview.pages.filter(page => (
@@ -100,16 +108,18 @@ export function useExportImport() {
         return
       }
       const accepted = await commitChapterTextImport(chapterId, confirmed)
-      await taskCenterStore.refresh()
+      if (!accepted.jobIds[0]) throw new Error('后端没有返回文本导入任务')
+      void taskCenterStore.refresh().catch(() => undefined)
       const conflictSuffix = preview.conflictedPages > 0
         ? `；跳过 ${preview.conflictedPages} 页冲突`
         : ''
       toast.success(
         `已提交 ${confirmed.length} 页文本导入，可安全关闭页面${conflictSuffix}`,
       )
-      if (!accepted.jobIds[0]) throw new Error('后端没有返回文本导入任务')
     } catch (error) {
       toast.error(`导入失败：${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      isImporting.value = false
     }
   }
 
@@ -184,6 +194,7 @@ export function useExportImport() {
       )
       const jobId = accepted.jobIds[0]
       if (!jobId) throw new Error('后端没有返回导出任务')
+      if (disposed) return
       queuedToastId = toast.info('导出任务已进入后端队列，可安全关闭页面', 0)
       const job = await waitForExport(jobId)
       const artifact = job.artifacts[0]
@@ -205,7 +216,7 @@ export function useExportImport() {
     } finally {
       if (queuedToastId !== null) toast.removeToast(queuedToastId)
       isDownloading.value = false
-      resetDownloadProgressLater()
+      if (!disposed) resetDownloadProgressLater()
     }
   }
 
@@ -226,5 +237,6 @@ export function useExportImport() {
     exportText,
     importText,
     isDownloading,
+    isImporting,
   }
 }

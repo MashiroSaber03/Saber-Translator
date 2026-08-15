@@ -15,8 +15,12 @@ const pageImage = {
   logicalSourcePath: 'page.png',
   sourceRevision: 1,
   documentRevision: 1,
+  renderedRevision: 1,
+  renderStatus: 'ready' as const,
+  detectionState: 'processed' as const,
   sourceUrl: '/api/v2/assets/source',
   thumbnailSourceUrl: '/api/v2/assets/thumb',
+  cleanUrl: null,
   translatedUrl: '/api/v2/assets/translated',
   width: 800,
   height: 1200,
@@ -25,6 +29,7 @@ const pageImage = {
 const VirtualPageStreamStub = defineComponent({
   name: 'VirtualPageStream',
   props: {
+    gap: { type: Number, default: 0 },
     items: { type: Array, default: () => [] },
     overscanScreens: { type: Number, default: 0 },
   },
@@ -52,12 +57,14 @@ describe('ReaderCanvas', () => {
 
     const stream = wrapper.getComponent(VirtualPageStreamStub)
     expect(stream.props('overscanScreens')).toBe(2)
-    expect(stream.props('items')).toEqual([expect.objectContaining({
-      id: 'page-1',
-      url: '/api/v2/assets/translated',
-      width: 800,
-      height: 1200,
-    })])
+    expect(stream.props('items')).toEqual([
+      expect.objectContaining({
+        id: 'page-1',
+        url: '/api/v2/assets/translated',
+        width: 800,
+        height: 1200,
+      }),
+    ])
 
     await wrapper.setProps({ viewMode: 'original' })
     expect(wrapper.getComponent(VirtualPageStreamStub).props('items')).toEqual([
@@ -93,6 +100,29 @@ describe('ReaderCanvas', () => {
     expect(wrapper.getComponent(VirtualPageStreamStub).props('items')).toEqual([
       expect.objectContaining({ badge: undefined }),
     ])
+  })
+
+  it('applies width, gap, and background settings to the actual virtual canvas', () => {
+    const wrapper = mount(ReaderCanvas, {
+      props: {
+        backgroundColor: '#ffffff',
+        imageGap: 24,
+        imageWidth: 75,
+        images: [pageImage],
+        viewMode: 'translated',
+        isLoading: false,
+      },
+      global: {
+        stubs: { VirtualPageStream: VirtualPageStreamStub },
+      },
+    })
+
+    const stream = wrapper.getComponent(VirtualPageStreamStub)
+    expect(stream.props('gap')).toBe(24)
+    expect(stream.attributes('style')).toContain('--reader-image-width: 75%')
+    expect(wrapper.get('.reader-canvas').attributes('style')).toContain(
+      '--reader-page-background: #ffffff'
+    )
   })
 
   it('renders loading feedback through the shared spinner primitive', () => {
@@ -132,7 +162,10 @@ describe('ReaderCanvas', () => {
   })
 
   it('does not keep legacy DOM id hooks for reader canvas states', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/reader/ReaderCanvas.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/reader/ReaderCanvas.vue'),
+      'utf8'
+    )
 
     for (const legacyId of [
       'id="loadingState"',
@@ -145,7 +178,10 @@ describe('ReaderCanvas', () => {
   })
 
   it('maps canvas style owner colors through semantic tokens', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/reader/ReaderCanvas.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/reader/ReaderCanvas.vue'),
+      'utf8'
+    )
     const style = readScopedStyle('src/components/reader/ReaderCanvas.vue')
 
     expect(source).not.toContain('document.querySelectorAll')
@@ -161,7 +197,10 @@ describe('ReaderCanvas', () => {
   })
 
   it('does not keep stale image-loading CSS after the spinner migration', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/reader/ReaderCanvas.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/reader/ReaderCanvas.vue'),
+      'utf8'
+    )
     const style = readScopedStyle('src/components/reader/ReaderCanvas.vue')
 
     expect(source).not.toContain('class="reader-image loading"')
@@ -170,7 +209,10 @@ describe('ReaderCanvas', () => {
   })
 
   it('keeps reader canvas state hooks under the reader-canvas owner', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/reader/ReaderCanvas.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/reader/ReaderCanvas.vue'),
+      'utf8'
+    )
 
     for (const currentHook of [
       'reader-canvas',

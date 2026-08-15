@@ -4,14 +4,12 @@ import type {
   TextAlign,
   TextDirection,
 } from './bubble'
-import type { TranslationWarning } from './translationConstraints'
 
 export type TranslationStatus = 'pending' | 'processing' | 'completed' | 'failed'
 
 export interface ImageSourceFields {
   id: string
   chapterId?: string
-  sourceRevision?: number
   documentRevision?: number
   renderedRevision?: number | null
   fileName: string
@@ -30,9 +28,6 @@ export interface ImageDetectionFields {
 
 export interface ImageWorkflowFields {
   translationStatus: TranslationStatus
-  translationFailed: boolean
-  errorMessage?: string
-  translationWarnings?: TranslationWarning[]
 }
 
 export interface ImageTextStyleFields {
@@ -57,7 +52,6 @@ export interface ImageUiFields {
 }
 
 export interface ImageFolderFields {
-  relativePath?: string
   folderPath?: string
 }
 

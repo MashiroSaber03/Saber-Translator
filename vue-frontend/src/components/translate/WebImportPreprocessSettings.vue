@@ -76,13 +76,15 @@ function applyNumber(action: (value: number) => void, value: number | null): voi
 
       <template v-if="draftSettings.imagePreprocess.compression.enabled">
         <UiFormGrid>
-          <UiField variant="settings" label="质量 (0-100)" control-id="webImportImageQuality">
+          <UiField variant="settings" label="质量 (1-100)" control-id="webImportImageQuality">
             <UiNumberField
               input-id="webImportImageQuality"
               :model-value="draftSettings.imagePreprocess.compression.quality"
               :min="1"
               :max="100"
-              @update:model-value="value => applyNumber(settingsActions.setImageCompressionQuality, value)"
+              @update:model-value="
+                value => applyNumber(settingsActions.setImageCompressionQuality, value)
+              "
             />
           </UiField>
           <UiField variant="settings" label="最大宽度 (0=不限)" control-id="webImportImageMaxWidth">
@@ -93,7 +95,11 @@ function applyNumber(action: (value: number) => void, value: number | null): voi
               @update:model-value="value => applyNumber(settingsActions.setImageMaxWidth, value)"
             />
           </UiField>
-          <UiField variant="settings" label="最大高度 (0=不限)" control-id="webImportImageMaxHeight">
+          <UiField
+            variant="settings"
+            label="最大高度 (0=不限)"
+            control-id="webImportImageMaxHeight"
+          >
             <UiNumberField
               input-id="webImportImageMaxHeight"
               :model-value="draftSettings.imagePreprocess.compression.maxHeight"

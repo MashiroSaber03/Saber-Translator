@@ -4,7 +4,7 @@ SaberYOLO 二阶段防误合并纠错
 
 from __future__ import annotations
 
-import logging
+import math
 from typing import List, Optional, Sequence
 
 import cv2
@@ -13,24 +13,22 @@ from PIL import Image
 from shapely.geometry import Point, Polygon
 
 from src.shared import constants
-from src.shared.memory_errors import is_memory_allocation_error
-
 from .data_types import DetectionResult, TextBlock, TextLine
 from .registry import DETECTOR_SABER_YOLO, detect
 from .smart_sort import sort_blocks_by_reading_order
 from .textline_merge import build_text_block_from_lines
 
-logger = logging.getLogger("SaberYoloRefinement")
-
-
 def _normalize_overlap_threshold(value) -> float:
-    try:
-        threshold = float(value)
-    except (TypeError, ValueError):
+    if value is None:
         return constants.SABER_YOLO_REFINE_OVERLAP_THRESHOLD
-
-    threshold = max(0.0, min(threshold, 1.0))
-    return threshold
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(float(value))
+        or not 0 <= float(value) <= 1
+    ):
+        raise ValueError("SaberYOLO 重叠阈值必须是 0 到 1 之间的数字")
+    return float(value)
 
 
 def _block_polygon(block: TextBlock) -> Polygon:
@@ -47,7 +45,11 @@ def _point_in_block(block: TextBlock, point: Sequence[float]) -> bool:
     return polygon.buffer(1e-6).covers(Point(float(point[0]), float(point[1])))
 
 
-def _reference_overlaps_block(block: TextBlock, reference_block: TextBlock, overlap_threshold: float) -> bool:
+def _reference_overlaps_block(
+    block: TextBlock,
+    reference_block: TextBlock,
+    overlap_threshold: float,
+) -> bool:
     block_polygon = _block_polygon(block)
     reference_polygon = _block_polygon(reference_block)
     if block_polygon.is_empty or reference_polygon.is_empty or reference_polygon.area <= 0:
@@ -63,7 +65,14 @@ def _get_candidate_reference_blocks(
 ) -> List[TextBlock]:
     candidates = []
     for reference_block in reference_blocks:
-        if _point_in_block(block, reference_block.center) or _reference_overlaps_block(block, reference_block, overlap_threshold):
+        if _point_in_block(
+            block,
+            reference_block.center,
+        ) or _reference_overlaps_block(
+            block,
+            reference_block,
+            overlap_threshold,
+        ):
             candidates.append(reference_block)
     return candidates
 
@@ -114,7 +123,11 @@ def _split_block_by_reference_blocks(
     reference_blocks: Sequence[TextBlock],
     overlap_threshold: float,
 ) -> Optional[List[TextBlock]]:
-    candidate_reference_blocks = _get_candidate_reference_blocks(block, reference_blocks, overlap_threshold)
+    candidate_reference_blocks = _get_candidate_reference_blocks(
+        block,
+        reference_blocks,
+        overlap_threshold,
+    )
     if len(candidate_reference_blocks) <= 1:
         return None
 
@@ -167,8 +180,18 @@ def refine_detection_result_with_reference_blocks(
     if not changed:
         return detection_result
 
-    img_cv = cv2.cvtColor(np.array(image.convert('RGB')), cv2.COLOR_RGB2BGR)
-    sorted_blocks = sort_blocks_by_reading_order(refined_blocks, right_to_left=right_to_left, img=img_cv)
+    converted = image.convert('RGB')
+    try:
+        img_np = np.array(converted)
+    finally:
+        if converted is not image:
+            converted.close()
+    img_cv = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+    sorted_blocks = sort_blocks_by_reading_order(
+        refined_blocks,
+        right_to_left=right_to_left,
+        img=img_cv,
+    )
     return DetectionResult(
         blocks=sorted_blocks,
         mask=detection_result.mask,
@@ -199,23 +222,13 @@ def apply_saber_yolo_refinement(
     if not enabled or len(detection_result.blocks) == 0 or len(detection_result.raw_lines) < 2:
         return detection_result
 
-    try:
-        reference_result = detect(
-            image,
-            detector_type=DETECTOR_SABER_YOLO,
-            merge_lines=False,
-            expand_ratio=0,
-            expand_top=0,
-            expand_bottom=0,
-            expand_left=0,
-            expand_right=0,
-            sort_method='none',
-        )
-    except Exception as error:
-        if is_memory_allocation_error(error):
-            raise
-        logger.warning(f"SaberYOLO 二阶段纠错失败，回退原检测结果: {error}")
-        return detection_result
+    reference_result = detect(
+        image,
+        detector_type=DETECTOR_SABER_YOLO,
+        merge_lines=False,
+        sort_method='none',
+        enable_aux_yolo_detection=False,
+    )
 
     if len(reference_result.blocks) < 2:
         return detection_result

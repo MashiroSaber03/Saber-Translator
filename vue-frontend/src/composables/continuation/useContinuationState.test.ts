@@ -13,8 +13,6 @@ const { prepareContinuationMock, getCharactersMock, syncContinuationAnalysisMock
 vi.mock('@/api/continuation', () => ({
   prepareContinuation: prepareContinuationMock,
   getCharacters: getCharactersMock,
-  hasMoreCharacterForms: vi.fn().mockReturnValue(false),
-  loadMoreCharacterForms: vi.fn().mockResolvedValue([]),
   syncContinuationAnalysis: syncContinuationAnalysisMock,
 }))
 
@@ -40,7 +38,7 @@ describe('useContinuationState', () => {
         has_data: false,
       },
     })
-    getCharactersMock.mockResolvedValue([])
+    getCharactersMock.mockResolvedValue({ items: [], nextCursor: null })
     const state = useContinuationState(ref('book-1'))
     await state.initializeData()
 
@@ -80,7 +78,8 @@ describe('useContinuationState', () => {
         has_data: false,
       },
     })
-    getCharactersMock.mockResolvedValue([
+    getCharactersMock.mockResolvedValue({
+      items: [
         {
           name: '主角',
           aliases: [],
@@ -89,7 +88,9 @@ describe('useContinuationState', () => {
           reference_image: '',
           enabled: true,
         },
-      ])
+      ],
+      nextCursor: null,
+    })
     const state = useContinuationState(ref('book-1'))
     state.pageCount.value = 22
     state.styleRefPages.value = 7
@@ -140,7 +141,8 @@ describe('useContinuationState', () => {
     prepareContinuationMock.mockImplementation((id: string) => (
       id === 'book-1' ? firstPrepare.promise : secondPrepare.promise
     ))
-    getCharactersMock.mockImplementation((id: string) => Promise.resolve([
+    getCharactersMock.mockImplementation((id: string) => Promise.resolve({
+      items: [
         {
           name: id === 'book-1' ? '旧书角色' : '新书角色',
           aliases: [],
@@ -149,7 +151,9 @@ describe('useContinuationState', () => {
           reference_image: '',
           enabled: true,
         },
-      ]))
+      ],
+      nextCursor: null,
+    }))
 
     const state = useContinuationState(bookId)
     const firstLoad = state.initializeData()
@@ -185,6 +189,69 @@ describe('useContinuationState', () => {
     expect(state.characters.value.map(character => character.name)).toEqual(['新书角色'])
   })
 
+  it('merges character forms from the next backend cursor page', async () => {
+    prepareContinuationMock.mockResolvedValue({
+      ready: true,
+      message: '续写数据已就绪',
+      saved_data: {
+        script: null,
+        pages: [],
+        config: null,
+        has_data: false,
+      },
+    })
+    getCharactersMock.mockReset()
+    getCharactersMock
+      .mockResolvedValueOnce({
+        items: [{
+          name: '主角',
+          aliases: [],
+          description: '第一页数据',
+          forms: [{
+            form_id: 'form-1',
+            form_name: '常服',
+            description: '',
+            reference_image: '/form-1.png',
+          }],
+          reference_image: '/form-1.png',
+          enabled: true,
+        }],
+        nextCursor: 100,
+      })
+      .mockResolvedValueOnce({
+        items: [{
+          name: '主角',
+          aliases: ['hero'],
+          description: '最新数据',
+          forms: [{
+            form_id: 'form-2',
+            form_name: '战斗服',
+            description: '',
+            reference_image: '/form-2.png',
+          }],
+          reference_image: '/form-2.png',
+          enabled: true,
+        }],
+        nextCursor: null,
+      })
+
+    const state = useContinuationState(ref('book-1'))
+    await state.initializeData()
+    await state.loadMoreCharacterForms()
+
+    expect(getCharactersMock).toHaveBeenNthCalledWith(1, 'book-1')
+    expect(getCharactersMock).toHaveBeenNthCalledWith(2, 'book-1', 100)
+    expect(state.characters.value[0]).toMatchObject({
+      aliases: ['hero'],
+      description: '最新数据',
+      forms: [
+        { form_id: 'form-1' },
+        { form_id: 'form-2' },
+      ],
+    })
+    expect(state.hasMoreCharacterForms.value).toBe(false)
+  })
+
   it('syncs analysis data without clearing existing continuation payloads', async () => {
     prepareContinuationMock.mockResolvedValue({
       ready: true,
@@ -217,7 +284,8 @@ describe('useContinuationState', () => {
         has_data: true,
       },
     })
-    getCharactersMock.mockResolvedValue([
+    getCharactersMock.mockResolvedValue({
+      items: [
         {
           name: '主角',
           aliases: [],
@@ -226,7 +294,9 @@ describe('useContinuationState', () => {
           reference_image: '',
           enabled: true,
         },
-      ])
+      ],
+      nextCursor: null,
+    })
     syncContinuationAnalysisMock.mockResolvedValue({
       ready: true,
       message: '分析数据同步完成',
@@ -301,7 +371,7 @@ describe('useContinuationState', () => {
     }
   })
 
-  it('uses backend-owned v2 asset urls without rebuilding legacy paths', () => {
+  it('uses backend-owned v2 asset URLs directly', () => {
     const state = useContinuationState(ref('book/id one#x'))
     state.characters.value = [{
       name: '主角/形态',
@@ -312,7 +382,41 @@ describe('useContinuationState', () => {
     }]
 
     expect(state.getCharacterImageUrl('主角/形态')).toBe('/api/v2/assets/avatar-1')
-    expect(state.getFormImageUrl('/api/v2/assets/form-1')).toBe('/api/v2/assets/form-1')
-    expect(state.getGeneratedImageUrl('/api/v2/assets/page-1')).toBe('/api/v2/assets/page-1')
+  })
+
+  it('reports analysis sync failures and releases the sync lock', async () => {
+    syncContinuationAnalysisMock.mockClear()
+    syncContinuationAnalysisMock.mockRejectedValueOnce(new Error('database busy'))
+    const state = useContinuationState(ref('book-1'))
+
+    await expect(state.syncAnalysisData('manual')).resolves.toBeUndefined()
+
+    expect(state.errorMessage.value).toBe('同步分析数据失败：database busy')
+    expect(state.messageType.value).toBe('error')
+    expect(state.isSyncingAnalysis.value).toBe(false)
+  })
+
+  it('does not submit duplicate analysis sync commands', async () => {
+    syncContinuationAnalysisMock.mockClear()
+    const pending = deferred<{
+      ready: boolean
+      message: string
+      saved_data: { script: null; pages: []; config: null; has_data: boolean }
+    }>()
+    syncContinuationAnalysisMock.mockReturnValueOnce(pending.promise)
+    getCharactersMock.mockResolvedValue({ items: [], nextCursor: null })
+    const state = useContinuationState(ref('book-1'))
+
+    const first = state.syncAnalysisData('manual')
+    const second = state.syncAnalysisData('manual')
+
+    expect(syncContinuationAnalysisMock).toHaveBeenCalledTimes(1)
+    await expect(second).resolves.toBeUndefined()
+    pending.resolve({
+      ready: true,
+      message: 'done',
+      saved_data: { script: null, pages: [], config: null, has_data: false },
+    })
+    await first
   })
 })

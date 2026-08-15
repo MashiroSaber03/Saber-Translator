@@ -6,17 +6,37 @@ import { useTaskCenterStore } from '@/stores/taskCenterStore'
 
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
+  events: vi.fn(),
   list: vi.fn(),
   snapshot: vi.fn(),
   reorder: vi.fn(),
+  cancel: vi.fn(),
 }))
 
 vi.mock('@/api/v2/jobs', () => ({
+  CURRENT_JOB_STATUSES: new Set(['running', 'pausing', 'paused', 'cancelling']),
+  HISTORY_JOB_STATUSES: new Set([
+    'cancelled',
+    'completed',
+    'completed_with_errors',
+    'failed',
+    'interrupted',
+  ]),
+  NONTERMINAL_JOB_STATUSES: new Set([
+    'queued',
+    'running',
+    'pausing',
+    'paused',
+    'cancelling',
+    'interrupted',
+  ]),
   jobsApi: {
     get: mocks.get,
+    events: mocks.events,
     list: mocks.list,
     snapshot: mocks.snapshot,
     reorder: mocks.reorder,
+    cancel: mocks.cancel,
   },
 }))
 
@@ -101,7 +121,9 @@ describe('taskCenterStore snapshot reconciliation', () => {
     vi.stubGlobal('EventSource', FakeEventSource)
     mocks.list.mockResolvedValue({ items: [], queueRevision: 1 })
     mocks.snapshot.mockResolvedValue({ items: [], queueRevision: 1 })
+    mocks.events.mockResolvedValue({ items: [] })
     mocks.reorder.mockResolvedValue({ queueRevision: 2 })
+    mocks.cancel.mockResolvedValue({ jobId: 'job-1', status: 'cancelling' })
   })
 
   it('refreshes the durable snapshot whenever the drawer opens', async () => {
@@ -123,7 +145,20 @@ describe('taskCenterStore snapshot reconciliation', () => {
     mocks.list.mockClear()
 
     FakeEventSource.latest?.onopen?.()
+    await store.refresh()
+    expect(mocks.list).toHaveBeenCalledTimes(2)
+    expect(store.connected).toBe(true)
+  })
 
+  it('connects the event stream and recovers when the initial snapshot fails', async () => {
+    mocks.list.mockRejectedValueOnce(new Error('temporary snapshot failure'))
+    const store = useTaskCenterStore()
+
+    await expect(store.initialize()).resolves.toBeUndefined()
+    expect(FakeEventSource.latest).not.toBeNull()
+
+    mocks.list.mockClear()
+    FakeEventSource.latest?.onopen?.()
     await vi.waitFor(() => expect(mocks.list).toHaveBeenCalledTimes(2))
     expect(store.connected).toBe(true)
   })
@@ -153,6 +188,7 @@ describe('taskCenterStore snapshot reconciliation', () => {
         type: 'page_completed',
         jobId: 'job-1',
         payload: {},
+        createdAt: null,
       })
     }
     await vi.advanceTimersByTimeAsync(100)
@@ -164,6 +200,7 @@ describe('taskCenterStore snapshot reconciliation', () => {
         type: 'page_completed',
         jobId: 'job-1',
         payload: {},
+        createdAt: null,
       })
     }
     releaseSnapshot?.()
@@ -193,6 +230,7 @@ describe('taskCenterStore snapshot reconciliation', () => {
         type: 'page_completed',
         jobId: `job-${index}`,
         payload: {},
+        createdAt: null,
       })
     }
     await vi.runAllTimersAsync()
@@ -368,6 +406,27 @@ describe('taskCenterStore snapshot reconciliation', () => {
     vi.useRealTimers()
   })
 
+  it('keeps the latest detail selection when requests finish out of order', async () => {
+    let resolveFirst: ((detail: V2JobDetail) => void) | undefined
+    let resolveSecond: ((detail: V2JobDetail) => void) | undefined
+    mocks.get.mockImplementation((jobId: string) => new Promise<V2JobDetail>(resolve => {
+      if (jobId === 'job-1') resolveFirst = resolve
+      else resolveSecond = resolve
+    }))
+    const store = useTaskCenterStore()
+
+    const firstRequest = store.loadDetail('job-1')
+    const secondRequest = store.loadDetail('job-2')
+    resolveSecond?.(makeDetail({ jobId: 'job-2', status: 'running' }))
+    await secondRequest
+    resolveFirst?.(makeDetail({ jobId: 'job-1', status: 'completed' }))
+    await firstRequest
+
+    expect(store.selectedDetailJobId).toBe('job-2')
+    expect(store.selectedDetail?.jobId).toBe('job-2')
+    expect(store.detailLoading).toBe(false)
+  })
+
   it('falls back to one durable refresh when the event cursor has a gap', async () => {
     vi.useFakeTimers()
     const store = useTaskCenterStore()
@@ -393,6 +452,79 @@ describe('taskCenterStore snapshot reconciliation', () => {
 
     expect(mocks.list).toHaveBeenCalledTimes(2)
     expect(mocks.snapshot).toHaveBeenCalledTimes(1)
+    store.disconnect()
+    vi.useRealTimers()
+  })
+
+  it('rejects malformed or mislabeled SSE events and reloads the durable snapshot', async () => {
+    vi.useFakeTimers()
+    const store = useTaskCenterStore()
+    await store.initialize()
+    mocks.list.mockClear()
+    mocks.snapshot.mockClear()
+
+    FakeEventSource.latest?.emit('page_completed', {
+      eventId: 1,
+      jobId: 'job-1',
+      type: 'job_finished',
+      payload: {},
+      createdAt: null,
+    })
+    FakeEventSource.latest?.emit('page_completed', {
+      eventId: 2,
+      jobId: 'job-1',
+      type: 'page_completed',
+      payload: {},
+    })
+    await vi.advanceTimersByTimeAsync(250)
+    await vi.runAllTimersAsync()
+
+    expect(store.latestEvent).toBeNull()
+    expect(mocks.snapshot).not.toHaveBeenCalled()
+    expect(mocks.list).toHaveBeenCalledTimes(2)
+    store.disconnect()
+    vi.useRealTimers()
+  })
+
+  it('never trims recoverable interrupted batches from the local history projection', async () => {
+    vi.useFakeTimers()
+    const interrupted = makeJob({
+      jobId: 'interrupted-old',
+      batchId: 'batch-interrupted',
+      status: 'interrupted',
+    })
+    const terminal = Array.from({ length: 200 }, (_, index) => makeJob({
+      jobId: `completed-${index}`,
+      batchId: `batch-completed-${index}`,
+      status: 'completed',
+    }))
+    mocks.list.mockImplementation(async (scope: 'queue' | 'history') => ({
+      items: scope === 'history' ? [...terminal, interrupted] : [],
+      queueRevision: 1,
+    }))
+    mocks.snapshot.mockResolvedValue({
+      items: [makeJob({
+        jobId: 'completed-new',
+        batchId: 'batch-completed-new',
+        status: 'completed',
+      })],
+      queueRevision: 2,
+    })
+    const store = useTaskCenterStore()
+    await store.initialize()
+
+    FakeEventSource.latest?.emit('job_finished', {
+      eventId: 1,
+      jobId: 'completed-new',
+      type: 'job_finished',
+      payload: {},
+      createdAt: null,
+    })
+    await vi.advanceTimersByTimeAsync(100)
+    await vi.runAllTimersAsync()
+
+    expect(store.history.some(job => job.jobId === 'interrupted-old')).toBe(true)
+    expect(new Set(store.history.map(job => job.batchId)).size).toBe(201)
     store.disconnect()
     vi.useRealTimers()
   })
@@ -499,5 +631,18 @@ describe('taskCenterStore snapshot reconciliation', () => {
     await store.prioritizeQueued('target')
 
     expect(mocks.reorder).toHaveBeenCalledWith(['target', 'first'], 7)
+  })
+
+  it('does not turn an accepted command into a failure when the follow-up snapshot fails', async () => {
+    const store = useTaskCenterStore()
+    await store.initialize()
+    mocks.list.mockRejectedValue(new Error('snapshot unavailable'))
+
+    await expect(store.cancel('job-1')).resolves.toEqual({
+      jobId: 'job-1',
+      status: 'cancelling',
+    })
+
+    expect(mocks.cancel).toHaveBeenCalledWith('job-1')
   })
 })

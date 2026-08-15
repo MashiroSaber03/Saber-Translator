@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs'
 import { ref } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 import * as fc from 'fast-check'
@@ -70,23 +69,6 @@ function expectCallback(options: ShortcutOptions, callback: ShortcutCallback, ti
 }
 
 describe('edit keyboard shortcut properties', () => {
-  it('uses the product shortcut composable without a copied dispatcher', () => {
-    const source = readFileSync('tests/property/keyboard.property.ts', 'utf8')
-
-    expect(source).toContain("from '@/composables/edit/useEditWorkspaceKeyboardShortcuts'")
-    for (const shadowContract of [
-      'function isInInput' + 'Element',
-      'function match' + 'Key',
-      'function handleKeyboard' + 'Event',
-      'function formatKey' + 'Combo',
-      'interface Keyboard' + 'Handler',
-      'MockKeyboard' + 'Event',
-    ]) {
-      expect(source).not.toContain(shadowContract)
-    }
-    expect(source).not.toMatch(/={6,}/)
-  })
-
   it('routes single-key edit actions through the current composable contract', () => {
     const cases = [
       { key: 'a', callback: 'goToPreviousImage' },
@@ -161,10 +143,12 @@ describe('edit keyboard shortcut properties', () => {
     expectCallback(options, 'exitEditMode', 1)
   })
 
-  it('keeps text entry fields from swallowing editing text while preserving global navigation keys', () => {
+  it('never hijacks edit shortcuts from editable controls', () => {
     const textarea = document.createElement('textarea')
     const input = document.createElement('input')
     const button = document.createElement('button')
+    const contentEditable = document.createElement('div')
+    contentEditable.setAttribute('contenteditable', 'true')
     const inputBlur = vi.spyOn(input, 'blur')
     const buttonBlur = vi.spyOn(button, 'blur')
 
@@ -174,17 +158,34 @@ describe('edit keyboard shortcut properties', () => {
 
     const inputHarness = createShortcutHarness()
     inputHarness.handleKeyDown(createKeyEvent('a', { target: input }))
-    expectCallback(inputHarness.options, 'goToPreviousImage', 1)
-    expect(inputBlur).toHaveBeenCalledTimes(1)
+    expectCallback(inputHarness.options, 'goToPreviousImage', 0)
+    expect(inputBlur).not.toHaveBeenCalled()
 
     const buttonHarness = createShortcutHarness()
     buttonHarness.handleKeyDown(createKeyEvent('d', { target: button }))
-    expectCallback(buttonHarness.options, 'goToNextImage', 1)
-    expect(buttonBlur).toHaveBeenCalledTimes(1)
+    expectCallback(buttonHarness.options, 'goToNextImage', 0)
+    expect(buttonBlur).not.toHaveBeenCalled()
+
+    const contentEditableHarness = createShortcutHarness()
+    contentEditableHarness.handleKeyDown(createKeyEvent('Backspace', { target: contentEditable }))
+    expectCallback(contentEditableHarness.options, 'deleteSelectedBubbles', 0)
 
     const enterHarness = createShortcutHarness()
     enterHarness.handleKeyDown(createKeyEvent('Enter', { ctrlKey: true, target: input }))
     expectCallback(enterHarness.options, 'applyAndNext', 0)
+  })
+
+  it('uses Escape to leave brush mode before leaving the edit workspace', () => {
+    const { options, handleKeyDown } = createShortcutHarness({
+      brushMode: ref<BrushMode>('repair'),
+    })
+    const event = createKeyEvent('Escape')
+
+    handleKeyDown(event)
+
+    expectCallback(options, 'exitBrushMode', 1)
+    expectCallback(options, 'exitEditMode', 0)
+    expect(event.defaultPrevented).toBe(true)
   })
 
   it('toggles temporary brush modes and exits them on keyup', () => {

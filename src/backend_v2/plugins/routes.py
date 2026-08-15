@@ -17,6 +17,7 @@ from src.backend_v2.api.request_helpers import (
 from src.backend_v2.plugins.package import MAX_ARCHIVE_BYTES
 from src.backend_v2.plugins.repository import (
     PluginConflict,
+    PluginIdempotencyConflict,
     PluginLocked,
     PluginNotFound,
     PluginRegistry,
@@ -45,8 +46,13 @@ def create_plugins_blueprint(
 
     @blueprint.errorhandler(PluginConflict)
     def conflict(error: PluginConflict):
+        code = (
+            "idempotency_conflict"
+            if isinstance(error, PluginIdempotencyConflict)
+            else "revision_conflict"
+        )
         return _error(
-            "revision_conflict",
+            code,
             str(error),
             409,
             details=error.details,
@@ -76,14 +82,17 @@ def create_plugins_blueprint(
 
     @blueprint.put("/<plugin_id>/default-enabled")
     def default_enabled(plugin_id: str) -> Response:
-        _idempotency_key()
         body = _json_body(allowed_keys={"enabled"})
-        return jsonify(
-            registry.set_default_enabled(
-                plugin_id=plugin_id,
-                enabled=_required_bool(body, "enabled"),
-            )
+        result, replayed = registry.set_default_enabled(
+            plugin_id=plugin_id,
+            enabled=_required_bool(body, "enabled"),
+            idempotency_key=_idempotency_key(),
         )
+        response = jsonify(result)
+        response.headers["Idempotency-Replayed"] = (
+            "true" if replayed else "false"
+        )
+        return response
 
     @blueprint.get("/<plugin_id>/config")
     def get_config(plugin_id: str) -> Response:
@@ -91,21 +100,24 @@ def create_plugins_blueprint(
 
     @blueprint.put("/<plugin_id>/config")
     def update_config(plugin_id: str) -> Response:
-        _idempotency_key()
         body = _json_body(allowed_keys={"baseRevision", "config"})
         config = body.get("config")
         if not isinstance(config, dict):
             raise ValueError("config must be an object")
-        return jsonify(
-            registry.update_config(
-                plugin_id=plugin_id,
-                base_revision=_positive_int(
-                    body.get("baseRevision"),
-                    "baseRevision",
-                ),
-                config=config,
-            )
+        result, replayed = registry.update_config(
+            plugin_id=plugin_id,
+            base_revision=_positive_int(
+                body.get("baseRevision"),
+                "baseRevision",
+            ),
+            config=config,
+            idempotency_key=_idempotency_key(),
         )
+        response = jsonify(result)
+        response.headers["Idempotency-Replayed"] = (
+            "true" if replayed else "false"
+        )
+        return response
 
     @blueprint.post("/import")
     def import_plugin():
@@ -142,16 +154,19 @@ def create_plugins_blueprint(
 
     @blueprint.delete("/<plugin_id>")
     def delete_plugin(plugin_id: str) -> Response:
-        _idempotency_key()
-        return jsonify(
-            registry.delete_plugin(
-                plugin_id=plugin_id,
-                base_revision=_positive_int(
-                    request.headers.get("If-Match"),
-                    "If-Match",
-                ),
-            )
+        result, replayed = registry.delete_plugin(
+            plugin_id=plugin_id,
+            base_revision=_positive_int(
+                request.headers.get("If-Match"),
+                "If-Match",
+            ),
+            idempotency_key=_idempotency_key(),
         )
+        response = jsonify(result)
+        response.headers["Idempotency-Replayed"] = (
+            "true" if replayed else "false"
+        )
+        return response
 
     return blueprint
 
@@ -169,10 +184,14 @@ def _positive_int(
     *,
     allow_zero: bool = False,
 ) -> int:
-    try:
-        normalized = int(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"{field} must be an integer") from exc
+    if isinstance(value, bool):
+        raise ValueError(f"{field} must be an integer")
+    if isinstance(value, int):
+        normalized = value
+    elif isinstance(value, str) and value.strip().isdigit():
+        normalized = int(value.strip())
+    else:
+        raise ValueError(f"{field} must be an integer")
     minimum = 0 if allow_zero else 1
     if normalized < minimum:
         raise ValueError(f"{field} must be at least {minimum}")

@@ -10,9 +10,7 @@ describe('EditWorkspace backend-owned navigation', () => {
 
   it('persists the authoritative page document before ordinary navigation', () => {
     expect(source).toContain('await prepareForNavigation()')
-    expect(source).toContain('const pendingSave = queuePageDocumentSave(')
-    expect(source).toContain('await flushPageDocument(image.id)')
-    expect(source).toContain('await pendingSave')
+    expect(source).toMatch(/await Promise\.all\(\[\s*queuePageDocumentSave\([\s\S]*?flushPageDocument\(image\.id\),\s*\]\)/)
     expect(source).toContain('navigateAfterPersist(() => imageStore.goToNext())')
     expect(source).toContain('navigateAfterPersist(() => imageStore.goToPrevious())')
     expect(source).toContain('navigateAfterPersist(() => imageStore.setCurrentImageIndex(index))')

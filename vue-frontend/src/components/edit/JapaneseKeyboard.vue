@@ -49,27 +49,28 @@
     </div>
 
     <div
-      class="kana-keyboard__tab-content"
-      :class="{ 'kana-keyboard__tab-content--active': activeTab === 'basic' }"
+      v-if="activeTab !== 'special'"
+      class="kana-keyboard__tab-content kana-keyboard__tab-content--active"
     >
-      <table class="kana-keyboard__table">
+      <table
+        class="kana-keyboard__table"
+        :class="{ 'kana-keyboard__table--combo': activeTab === 'combo' }"
+      >
         <thead>
           <tr>
-            <th></th>
-            <th>あ段</th>
-            <th>い段</th>
-            <th>う段</th>
-            <th>え段</th>
-            <th>お段</th>
+            <th scope="col"></th>
+            <th v-for="header in activeTableHeaders" :key="header" scope="col">
+              {{ header }}
+            </th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="row in basicKana" :key="row.label">
-            <td class="kana-keyboard__row-label">{{ row.label }}</td>
-            <td v-for="(kana, idx) in row.chars" :key="idx">
+          <tr v-for="row in activeKanaRows" :key="row.label">
+            <th class="kana-keyboard__row-label" scope="row">{{ row.label }}</th>
+            <td v-for="(kana, idx) in row.chars" :key="kana?.h ?? idx">
               <UiButton
-                variant="toolbar"
                 v-if="kana"
+                variant="toolbar"
                 class="kana-keyboard__key"
                 :class="{ 'kana-keyboard__key--pressed': pressedKey === kana.h }"
                 @click="insertKana(kana)"
@@ -84,76 +85,8 @@
     </div>
 
     <div
-      class="kana-keyboard__tab-content"
-      :class="{ 'kana-keyboard__tab-content--active': activeTab === 'dakuten' }"
-    >
-      <table class="kana-keyboard__table">
-        <thead>
-          <tr>
-            <th></th>
-            <th>あ段</th>
-            <th>い段</th>
-            <th>う段</th>
-            <th>え段</th>
-            <th>お段</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="row in dakutenKana" :key="row.label">
-            <td class="kana-keyboard__row-label">{{ row.label }}</td>
-            <td v-for="(kana, idx) in row.chars" :key="idx">
-              <UiButton
-                variant="toolbar"
-                v-if="kana"
-                class="kana-keyboard__key"
-                :class="{ 'kana-keyboard__key--pressed': pressedKey === kana.h }"
-                @click="insertKana(kana)"
-              >
-                <span class="kana-keyboard__hiragana">{{ kana.h }}</span>
-                <span class="kana-keyboard__katakana">{{ kana.k }}</span>
-              </UiButton>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div
-      class="kana-keyboard__tab-content"
-      :class="{ 'kana-keyboard__tab-content--active': activeTab === 'combo' }"
-    >
-      <table class="kana-keyboard__table kana-keyboard__table--combo">
-        <thead>
-          <tr>
-            <th></th>
-            <th>ゃ</th>
-            <th>ゅ</th>
-            <th>ょ</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="row in comboKana" :key="row.label">
-            <td class="kana-keyboard__row-label">{{ row.label }}</td>
-            <td v-for="(kana, idx) in row.chars" :key="idx">
-              <UiButton
-                variant="toolbar"
-                v-if="kana"
-                class="kana-keyboard__key"
-                :class="{ 'kana-keyboard__key--pressed': pressedKey === kana.h }"
-                @click="insertKana(kana)"
-              >
-                <span class="kana-keyboard__hiragana">{{ kana.h }}</span>
-                <span class="kana-keyboard__katakana">{{ kana.k }}</span>
-              </UiButton>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div
-      class="kana-keyboard__tab-content"
-      :class="{ 'kana-keyboard__tab-content--active': activeTab === 'special' }"
+      v-else
+      class="kana-keyboard__tab-content kana-keyboard__tab-content--active"
     >
       <div class="kana-keyboard__special-grid">
         <UiButton
@@ -180,7 +113,7 @@
 </template>
 
 <script setup lang="ts">
-import { onUnmounted, ref } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import ProductSegmentedTabs from '@/components/product/ProductSegmentedTabs.vue'
 import type { ProductSegmentedTab } from '@/components/product/ProductSegmentedTabs.vue'
 import UiButton from '@/components/ui/UiButton.vue'
@@ -316,6 +249,25 @@ const specialChars: SpecialChar[] = [
   { char: 'ュ', label: '小ユ' },
   { char: 'ョ', label: '小ヨ' }
 ]
+
+const activeKanaRows = computed(() => {
+  if (activeTab.value === 'dakuten') return dakutenKana
+  if (activeTab.value === 'combo') return comboKana
+  return basicKana
+})
+
+const activeTableHeaders = computed(() => (
+  activeTab.value === 'combo'
+    ? ['ゃ', 'ゅ', 'ょ']
+    : ['あ段', 'い段', 'う段', 'え段', 'お段']
+))
+
+watch(
+  () => props.defaultTarget,
+  target => {
+    targetField.value = target
+  },
+)
 
 function close(): void {
   emit('close')

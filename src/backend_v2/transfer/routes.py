@@ -11,6 +11,7 @@ from src.backend_v2.api.request_helpers import (
     error_response as _error,
     json_body as _json_body,
     require_idempotency_key as _require_idempotency_key,
+    required_string as _required_string,
     validate_multipart_fields as _validate_multipart_fields,
 )
 from src.backend_v2.jobs.repository import JobConflict
@@ -54,7 +55,7 @@ def create_transfer_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
             raise ValueError("pageIds must be a string array")
         result = service.create_export(
             chapter_id=chapter_id,
-            export_format=str(body.get("format", "")),
+            export_format=_required_string(body, "format"),
             page_ids=page_ids,
             idempotency_key=_require_idempotency_key(),
         )

@@ -2,7 +2,7 @@
 import UiField from '@/components/ui/UiField.vue'
 import UiNumberField from '@/components/ui/UiNumberField.vue'
 import { ref, computed } from 'vue'
-import { providerRequiresApiKey } from '@/config/aiProviders'
+import { getProviderDefaultModel, providerRequiresApiKey } from '@/config/aiProviders'
 import { useInsightStore } from '@/stores/insightStore'
 import * as insightApi from '@/api/insight'
 import type { StoreEmbeddingConfig } from '@/types/insight'
@@ -10,7 +10,8 @@ import InsightModelProviderSection from './InsightModelProviderSection.vue'
 import InsightSettingsPanel from './InsightSettingsPanel.vue'
 import { useInsightSettingsDraft } from './useInsightSettingsDraft'
 import { useInsightModelFetch } from './useInsightModelFetch'
-import { EMBEDDING_PROVIDER_OPTIONS, EMBEDDING_DEFAULT_MODELS } from './types'
+import { useInsightConnectionTest } from './useInsightConnectionTest'
+import { EMBEDDING_PROVIDER_OPTIONS } from './types'
 
 const emit = defineEmits<{
   (e: 'showMessage', message: string, type: 'success' | 'error'): void
@@ -23,15 +24,13 @@ const props = defineProps<{
 
 const insightStore = useInsightStore()
 
-const isTesting = ref(false)
-
 const provider = ref(insightStore.config.embedding.provider)
 const apiKey = ref(insightStore.config.embedding.apiKey)
 const model = ref(insightStore.config.embedding.model)
 const baseUrl = ref(insightStore.config.embedding.baseUrl ?? '')
 const rpmLimit = ref(insightStore.config.embedding.rpmLimit ?? 0)
-const transportRetries = ref(insightStore.config.embedding.transportRetries ?? 10)
-const businessRetries = ref(insightStore.config.embedding.businessRetries ?? 10)
+const transportRetries = ref(insightStore.config.embedding.transportRetries ?? 1)
+const businessRetries = ref(insightStore.config.embedding.businessRetries ?? 0)
 const timeoutSeconds = ref(insightStore.config.embedding.timeoutSeconds ?? 0)
 
 const showBaseUrl = computed(() => provider.value === 'custom')
@@ -54,6 +53,37 @@ const {
   emitMessage: (message, type) => emit('showMessage', message, type),
 })
 
+const { isTesting, testConnection } = useInsightConnectionTest({
+  sources: [
+    provider,
+    apiKey,
+    model,
+    baseUrl,
+    rpmLimit,
+    transportRetries,
+    businessRetries,
+    timeoutSeconds,
+  ],
+  snapshot: () => ({
+    provider: provider.value,
+    apiKey: apiKey.value,
+    model: model.value,
+    baseUrl: provider.value === 'custom' ? baseUrl.value : '',
+    rpmLimit: rpmLimit.value,
+    transportRetries: transportRetries.value,
+    businessRetries: businessRetries.value,
+    timeoutSeconds: timeoutSeconds.value,
+  }),
+  request: snapshot => insightApi.testEmbeddingConnection({
+    provider: snapshot.provider,
+    api_key: snapshot.apiKey,
+    model: snapshot.model,
+    base_url: snapshot.baseUrl,
+  }),
+  successMessage: 'Embedding 连接成功',
+  emitMessage: (message, type) => emit('showMessage', message, type),
+})
+
 function onProviderChange(): void {
   const newProvider = provider.value
   invalidateModelFetch()
@@ -61,35 +91,8 @@ function onProviderChange(): void {
   applyDraftConfig(insightStore.switchEmbeddingProviderDraft(buildDraftConfig()))
 
   if (!model.value) {
-    const defaultModel = EMBEDDING_DEFAULT_MODELS[newProvider]
+    const defaultModel = getProviderDefaultModel(newProvider, 'embedding')
     if (defaultModel) model.value = defaultModel
-  }
-}
-
-async function testConnection(): Promise<void> {
-  if (isTesting.value) return
-  isTesting.value = true
-
-  try {
-    const response = await insightApi.testEmbeddingConnection({
-      provider: provider.value,
-      api_key: apiKey.value,
-      model: model.value,
-      base_url: baseUrl.value || undefined,
-      rpm_limit: rpmLimit.value,
-      transport_retries: transportRetries.value,
-      business_retries: businessRetries.value,
-      timeout_seconds: timeoutSeconds.value,
-    })
-    emit(
-      'showMessage',
-      response.success ? 'Embedding 连接成功' : '连接失败: ' + (response.message || '未知错误'),
-      response.success ? 'success' : 'error'
-    )
-  } catch {
-    emit('showMessage', '测试失败', 'error')
-  } finally {
-    isTesting.value = false
   }
 }
 
@@ -112,8 +115,8 @@ function applyDraftConfig(config: StoreEmbeddingConfig): void {
   model.value = config.model
   baseUrl.value = config.baseUrl ?? ''
   rpmLimit.value = config.rpmLimit ?? 0
-  transportRetries.value = config.transportRetries ?? 10
-  businessRetries.value = config.businessRetries ?? 10
+  transportRetries.value = config.transportRetries ?? 1
+  businessRetries.value = config.businessRetries ?? 0
   timeoutSeconds.value = config.timeoutSeconds ?? 0
 }
 
@@ -177,35 +180,32 @@ useInsightSettingsDraft<StoreEmbeddingConfig>({
         v-model="rpmLimit"
         input-id="insight-embedding-rpm-limit"
         :min="0"
-        :max="1000"
       />
     </UiField>
 
     <UiField
       variant="settings"
       label="传输重试次数"
-      hint="网络超时、连接错误、429/5xx 的自动重试次数，默认 10"
+      hint="网络超时、连接错误、429/5xx 默认重试 1 次"
       control-id="insight-embedding-transport-retries"
     >
       <UiNumberField
         v-model="transportRetries"
         input-id="insight-embedding-transport-retries"
         :min="0"
-        :max="100"
       />
     </UiField>
 
     <UiField
       variant="settings"
       label="业务重试次数"
-      hint="当接口返回空向量或数量不匹配时的额外重试次数，默认 10"
+      hint="空向量或数量不匹配时默认不额外重试"
       control-id="insight-embedding-business-retries"
     >
       <UiNumberField
         v-model="businessRetries"
         input-id="insight-embedding-business-retries"
         :min="0"
-        :max="100"
       />
     </UiField>
 
@@ -219,7 +219,6 @@ useInsightSettingsDraft<StoreEmbeddingConfig>({
         v-model="timeoutSeconds"
         input-id="insight-embedding-timeout-seconds"
         :min="0"
-        :max="3600"
         :step="1"
       />
     </UiField>

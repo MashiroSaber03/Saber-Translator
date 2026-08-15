@@ -4,8 +4,10 @@ export interface WebImportSettingsActions {
   setAgentApiKey: (value: string) => void
   setAgentBaseUrl: (value: string) => void
   setAgentForceJsonOutput: (value: boolean) => void
+  setAgentMaxRetries: (value: number) => void
   setAgentModelName: (value: string) => void
   setAgentProvider: (value: string) => void
+  setAgentTimeout: (value: number) => void
   setAgentUseStream: (value: boolean) => void
   setAutoImport: (value: boolean) => void
   setBypassProxy: (value: boolean) => void
@@ -26,6 +28,8 @@ export interface WebImportSettingsActions {
   setImageMaxHeight: (value: number) => void
   setImageMaxWidth: (value: number) => void
   setImagePreprocessEnabled: (value: boolean) => void
-  setImageTargetFormat: (value: WebImportSettings['imagePreprocess']['formatConvert']['targetFormat']) => void
+  setImageTargetFormat: (
+    value: WebImportSettings['imagePreprocess']['formatConvert']['targetFormat']
+  ) => void
   setShowAgentLogs: (value: boolean) => void
 }

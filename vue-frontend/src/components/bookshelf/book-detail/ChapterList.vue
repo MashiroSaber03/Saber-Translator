@@ -13,8 +13,10 @@ const props = withDefaults(defineProps<{
   draggedChapterIndex: number | null
   dragOverChapterIndex: number | null
   selectedChapterIds?: Set<string>
+  translationPending?: boolean
 }>(), {
   selectedChapterIds: () => new Set<string>(),
+  translationPending: false,
 })
 
 const emit = defineEmits<{
@@ -37,15 +39,10 @@ const taskCenterStore = useTaskCenterStore()
 const eligibleChapterIds = computed(() => props.chapters.filter(chapter => {
   const pageCount = chapter.imageCount ?? 0
   if (pageCount === 0) return false
-  const liveActive = taskCenterStore.queue.some(job => (
-    job.chapterId === chapter.id
-    && job.kind === 'translation'
-    && ['queued', 'running', 'pausing', 'paused', 'cancelling', 'interrupted'].includes(job.status)
-  ))
-  if (liveActive) return false
-  const summary = chapter.jobStatusSummary || {}
-  return !['queued', 'running', 'pausing', 'paused', 'cancelling', 'interrupted']
-    .some(status => (summary[status as keyof typeof summary] || 0) > 0)
+  return !taskCenterStore.hasActiveTranslation(
+    chapter.id,
+    chapter.jobStatusSummary,
+  )
 }).map(chapter => chapter.id))
 const allSelected = computed(() => (
   eligibleChapterIds.value.length > 0
@@ -65,7 +62,7 @@ function toggleAll() {
           v-if="chapters.length"
           size="sm"
           variant="secondary"
-          :disabled="eligibleChapterIds.length === 0"
+          :disabled="eligibleChapterIds.length === 0 || translationPending"
           @click="toggleAll"
         >
           {{ allSelected ? '清空选择' : '全选可翻译章节' }}
@@ -75,6 +72,7 @@ function toggleAll() {
           size="sm"
           variant="primary"
           :disabled="selectedChapterIds.size === 0"
+          :loading="translationPending"
           @click="$emit('translateSelected')"
         >
           翻译选中章节（{{ selectedChapterIds.size }}）
@@ -135,6 +133,7 @@ function toggleAll() {
 .chapter-list__list {
   max-block-size: 280px;
   padding-right: 4px;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
 }
 

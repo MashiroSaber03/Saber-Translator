@@ -6,7 +6,6 @@ const props = withDefaults(defineProps<{
   leftWidth?: string
   rightWidth?: string
   gap?: string
-  mode?: 'flow' | 'fixed' | 'overlay'
   collapsed?: 'none' | 'left' | 'right' | 'both'
   height?: string
   scrollMode?: 'page' | 'main' | 'panes'
@@ -31,7 +30,6 @@ const props = withDefaults(defineProps<{
   leftWidth: '',
   rightWidth: '',
   gap: '',
-  mode: 'flow',
   collapsed: 'none',
   height: '',
   scrollMode: 'page',
@@ -76,7 +74,6 @@ const layoutStyle = computed(() => ({
     :is="as"
     class="ui-sidebar-layout"
     :class="[
-      `ui-sidebar-layout--${mode}`,
       `ui-sidebar-layout--${collapsed}-collapsed`,
       `ui-sidebar-layout--scroll-${scrollMode}`,
       `ui-sidebar-layout--sidebars-${sidebars}`,

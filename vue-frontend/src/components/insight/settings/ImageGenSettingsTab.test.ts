@@ -166,9 +166,9 @@ describe('ImageGenSettingsTab', () => {
       max: field.props('max'),
       step: field.props('step'),
     }))).toEqual([
-      { inputId: 'insight-imagegen-transport-retries', min: 0, max: 100, step: 1 },
-      { inputId: 'insight-imagegen-business-retries', min: 0, max: 100, step: 1 },
-      { inputId: 'insight-imagegen-timeout-seconds', min: 0, max: 3600, step: 1 },
+      { inputId: 'insight-imagegen-transport-retries', min: 0, step: 1 },
+      { inputId: 'insight-imagegen-business-retries', min: 0, step: 1 },
+      { inputId: 'insight-imagegen-timeout-seconds', min: 0, max: undefined, step: 1 },
     ])
   })
 

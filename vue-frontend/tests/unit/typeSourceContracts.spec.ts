@@ -53,6 +53,9 @@ describe('type source contracts', () => {
 
     expect(source('src/types/apiCore.ts')).toContain('export interface ApiError')
     expect(source('src/types/bookshelf.ts')).toContain('export interface BookData')
+    expect(source('src/types/bookshelf.ts')).toContain(
+      "export type TagData = components['schemas']['Tag']",
+    )
     expect(source('src/types/diagnostics.ts')).toContain(
       "components['schemas']['ModelCatalogResponse']"
     )
@@ -157,10 +160,12 @@ describe('type source contracts', () => {
       'WebImportDownloadSettings',
       'WebImportAdvancedSettings',
       'WebImportUiSettings',
-      'WebImportDownloadProgress',
     ]) {
       expect(webImportTypes).toContain(`export interface ${ownerInterface}`)
     }
+    expect(webImportTypes).toContain('export type WebImportStatus')
+    expect(webImportTypes).not.toContain('export interface WebImportState')
+    expect(webImportTypes).not.toContain('export interface WebImportDownloadProgress')
   })
 
   it('keeps Character Studio types split by owner behind the public Studio barrel', () => {
@@ -406,25 +411,31 @@ describe('type source contracts', () => {
     }
   })
 
-  it('keeps the OCR result type as a compact current contract', () => {
+  it('uses the generated OCR result contract without a handwritten copy', () => {
     const ocrTypes = source('src/types/ocr.ts')
 
     for (const staleNarration of ['/**', 'OCR 结果类型定义', '类型定义']) {
       expect(ocrTypes).not.toContain(staleNarration)
     }
 
-    expect(ocrTypes).toContain('export interface OcrResult')
+    expect(ocrTypes).toContain(
+      "export type OcrResult = components['schemas']['BubbleOcrResult']",
+    )
   })
 
-  it('keeps translation constraint types as compact current contracts', () => {
+  it('uses generated translation constraint contracts without handwritten copies', () => {
     const constraintTypes = source('src/types/translationConstraints.ts')
 
     for (const staleNarration of ['/**', '术语表 / 禁翻表相关类型', '相关类型']) {
       expect(constraintTypes).not.toContain(staleNarration)
     }
 
-    expect(constraintTypes).toContain('export interface GlossaryEntry')
-    expect(constraintTypes).toContain('export interface NonTranslateEntry')
+    expect(constraintTypes).toContain(
+      "export type GlossaryEntry = components['schemas']['TranslationGlossaryEntry']",
+    )
+    expect(constraintTypes).toContain(
+      "export type NonTranslateEntry = components['schemas']['TranslationNonTranslateEntry']",
+    )
   })
 
   it('keeps the frontend environment declarations compact', () => {

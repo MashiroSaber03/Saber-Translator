@@ -65,6 +65,13 @@ def required_integer(
     return value
 
 
+def required_boolean(body: Mapping[str, object], key: str) -> bool:
+    value = body.get(key)
+    if not isinstance(value, bool):
+        raise ValueError(f"{key} must be a boolean")
+    return value
+
+
 def integer_value(
     value: object,
     name: str,

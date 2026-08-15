@@ -24,6 +24,6 @@ export function dismissFirstTimeGuide(storage?: Storage): void {
   try {
     resolveStorage(storage)?.setItem(DISMISS_SETUP_REMINDER_KEY, 'true')
   } catch {
-    // Storage can be unavailable in restricted browser contexts; dismissal still works for this session.
+    // The mounted guide can still close even when persistence is unavailable.
   }
 }

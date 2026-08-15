@@ -2,13 +2,13 @@
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiSpinner from '@/components/ui/UiSpinner.vue'
-import type { ExtractResult, WebImportState } from '@/types/webImport'
+import type { ExtractResult, WebImportStatus } from '@/types/webImport'
 
 defineProps<{
   extractResult: ExtractResult | null
   isProcessing: boolean
   selectedCount: number
-  status: WebImportState['status']
+  status: WebImportStatus
 }>()
 
 defineEmits<{
@@ -19,20 +19,16 @@ defineEmits<{
 
 <template>
   <ProductActionRow variant="dialog" aria-label="网页导入操作">
-    <UiButton
-      variant="secondary"
-      :disabled="status === 'downloading'"
-      @click="$emit('close')"
-    >
+    <UiButton variant="secondary" :disabled="status === 'downloading'" @click="$emit('close')">
       取消
     </UiButton>
     <UiButton
       variant="primary"
       class="web-import-footer-actions__primary"
-      :disabled="!extractResult?.success || selectedCount === 0 || isProcessing"
+      :disabled="!extractResult || selectedCount === 0 || isProcessing"
       @click="$emit('import')"
     >
-      <UiSpinner v-if="status === 'downloading'" label="下载中" :decorative="false" />
+      <UiSpinner v-if="status === 'downloading'" />
       <span v-else aria-hidden="true">📥</span>
       {{ status === 'downloading' ? '下载中...' : '导入' }}
     </UiButton>

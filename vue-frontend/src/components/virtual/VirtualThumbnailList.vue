@@ -8,29 +8,32 @@ import { fixedVirtualWindow } from './virtualWindow'
 const props = withDefaults(defineProps<{
   activeId?: string | number | null
   ariaLabel?: string
-  itemHeight?: number
   items: ProductThumbnailGridItem[]
   overscanItems?: number
 }>(), {
   activeId: null,
   ariaLabel: '漫画页面缩略图',
-  itemHeight: 164,
   overscanItems: 5,
 })
 
-const emit = defineEmits<{
+defineEmits<{
   select: [id: string | number]
-  visibleChange: [ids: Array<string | number>]
 }>()
 
 const containerRef = ref<HTMLElement | null>(null)
 const scrollTop = ref(0)
 const viewportHeight = ref(0)
+const viewportWidth = ref(0)
 let resizeObserver: ResizeObserver | null = null
+const DEFAULT_ITEM_WIDTH = 120
+const GRID_GAP = 6
+const itemHeight = computed(() => (
+  Math.max(1, viewportWidth.value || DEFAULT_ITEM_WIDTH) * 4 / 3 + GRID_GAP
+))
 
 const windowState = computed(() => fixedVirtualWindow(
   props.items.length,
-  props.itemHeight,
+  itemHeight.value,
   scrollTop.value,
   viewportHeight.value,
   props.overscanItems,
@@ -39,8 +42,12 @@ const visibleItems = computed(() => props.items.slice(
   windowState.value.start,
   windowState.value.end,
 ))
+const contentSize = computed(() => Math.max(
+  0,
+  windowState.value.totalSize - (props.items.length > 0 ? GRID_GAP : 0),
+))
 const innerStyle = computed(() => ({
-  height: `${windowState.value.totalSize}px`,
+  height: `${contentSize.value}px`,
 }))
 const windowStyle = computed(() => ({
   transform: `translateY(${windowState.value.offset}px)`,
@@ -51,18 +58,15 @@ function syncViewport(): void {
   if (!container) return
   scrollTop.value = container.scrollTop
   viewportHeight.value = container.clientHeight
-}
-
-function handleSelect(id: string | number): void {
-  emit('select', id)
+  viewportWidth.value = container.clientWidth
 }
 
 function scrollActiveIntoView(): void {
   const index = props.items.findIndex(item => item.id === props.activeId)
   const container = containerRef.value
   if (index < 0 || !container) return
-  const itemTop = index * props.itemHeight
-  const itemBottom = itemTop + props.itemHeight
+  const itemTop = index * itemHeight.value
+  const itemBottom = itemTop + itemHeight.value
   if (itemTop < container.scrollTop) {
     container.scrollTop = itemTop
   } else if (itemBottom > container.scrollTop + container.clientHeight) {
@@ -71,10 +75,8 @@ function scrollActiveIntoView(): void {
   syncViewport()
 }
 
-watch(visibleItems, items => {
-  emit('visibleChange', items.map(item => item.id))
-}, { immediate: true })
-watch(() => props.activeId, () => nextTick(scrollActiveIntoView))
+watch(() => props.activeId, () => void nextTick(scrollActiveIntoView))
+watch(() => props.items.length, () => void nextTick(syncViewport))
 
 onMounted(() => {
   syncViewport()
@@ -105,7 +107,7 @@ onBeforeUnmount(() => {
         :aria-label="ariaLabel"
         :columns="1"
         :items="visibleItems"
-        @select="handleSelect"
+        @select="$emit('select', $event)"
       />
     </div>
   </div>

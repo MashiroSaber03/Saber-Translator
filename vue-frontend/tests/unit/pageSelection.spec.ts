@@ -9,7 +9,7 @@ import {
 
 describe('pageSelection utilities', () => {
   it('normalizes page selections to unique ascending 1-based pages', () => {
-    expect(normalizePageSelection([5, 3, 5, 1, 0, -1, 2.8, Number.NaN])).toEqual([1, 2, 3, 5])
+    expect(normalizePageSelection([5, 3, 5, 1, 0, -1, 2.8, Number.NaN])).toEqual([1, 3, 5])
   })
 
   it('clamps selections by total images', () => {

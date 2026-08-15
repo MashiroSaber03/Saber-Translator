@@ -5,7 +5,7 @@ import UiFormGrid from '@/components/ui/UiFormGrid.vue'
 import UiNumberField from '@/components/ui/UiNumberField.vue'
 import { ref, computed } from 'vue'
 import OpenAIExtraBodyEditor from '@/components/common/OpenAIExtraBodyEditor.vue'
-import { providerRequiresApiKey } from '@/config/aiProviders'
+import { getProviderDefaultModel, providerRequiresApiKey } from '@/config/aiProviders'
 import { useInsightStore } from '@/stores/insightStore'
 import * as insightApi from '@/api/insight'
 import type { StoreVlmConfig } from '@/types/insight'
@@ -13,7 +13,8 @@ import InsightModelProviderSection from './InsightModelProviderSection.vue'
 import InsightSettingsPanel from './InsightSettingsPanel.vue'
 import { useInsightSettingsDraft } from './useInsightSettingsDraft'
 import { useInsightModelFetch } from './useInsightModelFetch'
-import { VLM_PROVIDER_OPTIONS, VLM_DEFAULT_MODELS } from './types'
+import { useInsightConnectionTest } from './useInsightConnectionTest'
+import { VLM_PROVIDER_OPTIONS } from './types'
 
 const emit = defineEmits<{
   (e: 'showMessage', message: string, type: 'success' | 'error'): void
@@ -26,8 +27,6 @@ const props = defineProps<{
 
 const insightStore = useInsightStore()
 
-const isTesting = ref(false)
-
 const provider = ref(insightStore.config.vlm.provider)
 const apiKey = ref(insightStore.config.vlm.apiKey)
 const model = ref(insightStore.config.vlm.model)
@@ -39,7 +38,7 @@ const temperature = ref(insightStore.config.vlm.openaiOptions.request.temperatur
 const forceJsonOutput = ref(insightStore.config.vlm.openaiOptions.request.forceJsonOutput)
 const extraBody = ref(insightStore.config.vlm.openaiOptions.request.extraBody)
 const useStream = ref(insightStore.config.vlm.openaiOptions.execution.useStream)
-const imageMaxSize = ref(insightStore.config.vlm.imageMaxSize ?? 1280)
+const imageMaxSize = ref(insightStore.config.vlm.imageMaxSize ?? 0)
 
 const showBaseUrl = computed(() => provider.value === 'custom')
 const hasStoredCredential = computed(() =>
@@ -59,8 +58,24 @@ const {
   baseUrl,
   model,
   emitMessage: (message, type) => emit('showMessage', message, type),
-  formatFetchError: error =>
-    '获取模型列表失败: ' + (error instanceof Error ? error.message : '网络错误'),
+})
+
+const { isTesting, testConnection } = useInsightConnectionTest({
+  sources: [provider, apiKey, model, baseUrl],
+  snapshot: () => ({
+    provider: provider.value,
+    apiKey: apiKey.value,
+    model: model.value,
+    baseUrl: provider.value === 'custom' ? baseUrl.value : '',
+  }),
+  request: snapshot => insightApi.testVlmConnection({
+    provider: snapshot.provider,
+    api_key: snapshot.apiKey,
+    model: snapshot.model,
+    base_url: snapshot.baseUrl,
+  }),
+  successMessage: 'VLM 连接成功',
+  emitMessage: (message, type) => emit('showMessage', message, type),
 })
 
 function onProviderChange(): void {
@@ -70,39 +85,10 @@ function onProviderChange(): void {
   applyDraftConfig(insightStore.switchVlmProviderDraft(buildDraftConfig()))
 
   if (!model.value) {
-    const defaultModel = VLM_DEFAULT_MODELS[newProvider]
+    const defaultModel = getProviderDefaultModel(newProvider, 'vlm')
     if (defaultModel) {
       model.value = defaultModel
     }
-  }
-}
-
-async function testConnection(): Promise<void> {
-  if (isTesting.value) return
-
-  isTesting.value = true
-
-  try {
-    const response = await insightApi.testVlmConnection({
-      provider: provider.value,
-      api_key: apiKey.value,
-      model: model.value,
-      base_url: baseUrl.value || undefined,
-    })
-
-    if (response.success) {
-      emit('showMessage', 'VLM 连接成功', 'success')
-    } else {
-      emit('showMessage', '连接失败: ' + (response.message || '未知错误'), 'error')
-    }
-  } catch (error) {
-    emit(
-      'showMessage',
-      '测试失败: ' + (error instanceof Error ? error.message : '网络错误'),
-      'error'
-    )
-  } finally {
-    isTesting.value = false
   }
 }
 
@@ -141,7 +127,7 @@ function applyDraftConfig(config: StoreVlmConfig): void {
   forceJsonOutput.value = config.openaiOptions.request.forceJsonOutput
   extraBody.value = config.openaiOptions.request.extraBody
   useStream.value = config.openaiOptions.execution.useStream
-  imageMaxSize.value = config.imageMaxSize ?? 1280
+  imageMaxSize.value = config.imageMaxSize ?? 0
 }
 
 useInsightSettingsDraft<StoreVlmConfig>({
@@ -203,10 +189,10 @@ useInsightSettingsDraft<StoreVlmConfig>({
       <UiField
         variant="settings"
         label="RPM 限制"
-        hint="每分钟最大请求数"
+        hint="每分钟最大请求数，0 表示不限制"
         control-id="insight-vlm-rpm-limit"
       >
-        <UiNumberField v-model="rpmLimit" input-id="insight-vlm-rpm-limit" :min="1" :max="100" />
+        <UiNumberField v-model="rpmLimit" input-id="insight-vlm-rpm-limit" :min="0" />
       </UiField>
       <UiField
         variant="settings"
@@ -218,7 +204,6 @@ useInsightSettingsDraft<StoreVlmConfig>({
           v-model="transportRetries"
           input-id="insight-vlm-transport-retries"
           :min="0"
-          :max="10"
         />
       </UiField>
       <UiField
@@ -231,20 +216,19 @@ useInsightSettingsDraft<StoreVlmConfig>({
           v-model="businessRetries"
           input-id="insight-vlm-business-retries"
           :min="0"
-          :max="10"
         />
       </UiField>
       <UiField
         variant="settings"
         label="温度"
-        hint="0-1，越低越确定"
+        hint="0-2，越低越确定"
         control-id="insight-vlm-temperature"
       >
         <UiNumberField
           v-model="temperature"
           input-id="insight-vlm-temperature"
           :min="0"
-          :max="1"
+          :max="2"
           :step="0.1"
         />
       </UiField>
@@ -276,7 +260,6 @@ useInsightSettingsDraft<StoreVlmConfig>({
         v-model="imageMaxSize"
         input-id="insight-vlm-image-max-size"
         :min="0"
-        :max="4096"
         :step="128"
       />
     </UiField>

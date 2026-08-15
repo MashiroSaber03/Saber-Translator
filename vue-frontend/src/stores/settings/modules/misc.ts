@@ -1,5 +1,6 @@
 import { computed, type Ref } from 'vue'
 import type {
+  ParallelSettings,
   TranslationSettings,
   TranslationSettingsUpdates,
   TextStyleSettings
@@ -22,6 +23,10 @@ export function useMiscSettings(
     settings.value.showDetectionDebug = show
   }
 
+  function updateParallel(updates: Partial<ParallelSettings>): void {
+    Object.assign(settings.value.parallel, updates)
+  }
+
   function setRemoveTextWithOcr(enabled: boolean): void {
     settings.value.removeTextWithOcr = enabled
   }
@@ -38,6 +43,7 @@ export function useMiscSettings(
     textStyle,
     updateSettings,
     updateTextStyle,
+    updateParallel,
     setShowDetectionDebug,
     setRemoveTextWithOcr,
     setEnableVerboseLogs,

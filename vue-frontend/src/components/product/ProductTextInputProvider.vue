@@ -38,6 +38,7 @@ function handleSubmit() {
       <UiInput
         v-model="inputValue"
         type="text"
+        autofocus
         :placeholder="activeInput.placeholder"
         :aria-label="activeInput.placeholder || activeInput.message"
       />

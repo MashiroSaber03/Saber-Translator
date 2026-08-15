@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import * as bookshelfApi from '@/api/bookshelf'
 import type { BookData, ChapterData, TagData } from '@/types/api'
+import { BOOKSHELF_DEFAULT_TAG_COLOR } from '@/constants/bookshelf'
 
 export type BookSortBy = 'title' | 'createdAt' | 'updatedAt'
 export type SortOrder = 'asc' | 'desc'
@@ -25,6 +26,9 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   const selectedBookIds = ref<Set<string>>(new Set())
   const isLoading = ref(false)
   const error = ref<string | null>(null)
+  const tagsError = ref<string | null>(null)
+  let booksRequestVersion = 0
+  let tagsRequestVersion = 0
 
   const currentBook = computed(() => {
     if (!currentBookId.value) return null
@@ -40,6 +44,13 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
 
   function setBooks(bookList: BookData[]): void {
     books.value = bookList
+    const visibleBookIds = new Set(bookList.map(book => book.id))
+    const visibleSelection = new Set(
+      [...selectedBookIds.value].filter(bookId => visibleBookIds.has(bookId)),
+    )
+    if (visibleSelection.size !== selectedBookIds.value.size) {
+      selectedBookIds.value = visibleSelection
+    }
     const detail = currentBookDetail.value
     if (!detail) return
     const summary = bookList.find(book => book.id === detail.id)
@@ -73,6 +84,12 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     if (listBook) update(listBook)
     const detail = currentBookDetail.value
     if (detail?.id === bookId && detail !== listBook) update(detail)
+  }
+
+  function eachVisibleBookProjection(update: (book: BookData) => void): void {
+    for (const book of books.value) update(book)
+    const detail = currentBookDetail.value
+    if (detail && !books.value.includes(detail)) update(detail)
   }
 
   function updateBook(bookId: string, updates: Partial<BookData>): void {
@@ -171,13 +188,13 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
 
   function deleteTag(tagName: string): void {
     const index = tags.value.findIndex(tag => tag.name === tagName)
-    if (index >= 0) {
-      tags.value.splice(index, 1)
-      const selectedIndex = selectedTagNames.value.indexOf(tagName)
-      if (selectedIndex >= 0) {
-        selectedTagNames.value.splice(selectedIndex, 1)
+    if (index >= 0) tags.value.splice(index, 1)
+    selectedTagNames.value = selectedTagNames.value.filter(name => name !== tagName)
+    eachVisibleBookProjection((book) => {
+      if (book.tags?.includes(tagName)) {
+        book.tags = book.tags.filter(name => name !== tagName)
       }
-    }
+    })
   }
 
   function toggleTagFilter(tagName: string): void {
@@ -245,6 +262,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   }
 
   async function loadBooks(): Promise<void> {
+    const requestVersion = ++booksRequestVersion
     setLoading(true)
     setError(null)
     try {
@@ -259,11 +277,18 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
       params.sortBy = sortBy.value
       params.sortOrder = sortOrder.value
 
-      setBooks(await bookshelfApi.getBooks(params))
+      const loadedBooks = await bookshelfApi.getBooks(params)
+      if (requestVersion === booksRequestVersion) {
+        setBooks(loadedBooks)
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : '加载书籍失败')
+      if (requestVersion === booksRequestVersion) {
+        setError(err instanceof Error ? err.message : '加载书籍失败')
+      }
     } finally {
-      setLoading(false)
+      if (requestVersion === booksRequestVersion) {
+        setLoading(false)
+      }
     }
   }
 
@@ -278,10 +303,15 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   }
 
   async function loadTags(): Promise<void> {
+    const requestVersion = ++tagsRequestVersion
+    tagsError.value = null
     try {
-      setTags(await bookshelfApi.getTags())
-    } catch {
-      return
+      const loadedTags = await bookshelfApi.getTags()
+      if (requestVersion === tagsRequestVersion) setTags(loadedTags)
+    } catch (err) {
+      if (requestVersion === tagsRequestVersion) {
+        tagsError.value = err instanceof Error ? err.message : '加载标签失败'
+      }
     }
   }
 
@@ -289,37 +319,28 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     title: string,
     cover?: File,
     tags?: string[],
-  ): Promise<BookData | null> {
-    try {
-      const book = await bookshelfApi.createBook(title, cover, tags)
-      await Promise.all([
-        loadBooks(),
-        tags !== undefined ? loadTags() : Promise.resolve(),
-      ])
-      return book
-    } catch {
-      return null
-    }
+  ): Promise<BookData> {
+    const book = await bookshelfApi.createBook(title, cover, tags)
+    await Promise.all([
+      loadBooks(),
+      tags !== undefined ? loadTags() : Promise.resolve(),
+    ])
+    return book
   }
 
-  async function updateBookApi(bookId: string, data: BookUpdatePayload): Promise<boolean> {
-    try {
-      const book = await bookshelfApi.updateBook(bookId, data)
-      updateBook(bookId, book)
-      await Promise.all([
-        loadBooks(),
-        data.tags !== undefined ? loadTags() : Promise.resolve(),
-      ])
-      return true
-    } catch {
-      return false
-    }
+  async function updateBookApi(bookId: string, data: BookUpdatePayload): Promise<BookData> {
+    const book = await bookshelfApi.updateBook(bookId, data)
+    updateBook(bookId, book)
+    await Promise.all([
+      loadBooks(),
+      data.tags !== undefined ? loadTags() : Promise.resolve(),
+    ])
+    return book
   }
 
-  async function deleteBookApi(bookId: string): Promise<boolean> {
+  async function deleteBookApi(bookId: string): Promise<void> {
     await bookshelfApi.deleteBook(bookId)
     deleteBook(bookId)
-    return true
   }
 
   async function batchDeleteBooksApi(
@@ -340,43 +361,48 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     return result.updated
   }
 
-  async function createTag(name: string, color?: string): Promise<TagData | null> {
-    try {
-      const tag = await bookshelfApi.createTag(name, color)
-      addTag(tag)
-      return tag
-    } catch {
-      return null
-    }
+  async function createTag(
+    name: string,
+    color = BOOKSHELF_DEFAULT_TAG_COLOR,
+  ): Promise<TagData> {
+    const tag = await bookshelfApi.createTag(name, color)
+    addTag(tag)
+    return tag
   }
 
-  async function deleteTagApi(tagName: string): Promise<boolean> {
-    try {
-      await bookshelfApi.deleteTag(tagName)
-      deleteTag(tagName)
-      await loadBooks()
-      return true
-    } catch {
-      return false
-    }
+  async function deleteTagApi(tagName: string): Promise<void> {
+    await bookshelfApi.deleteTag(tagName)
+    deleteTag(tagName)
+    await loadBooks()
   }
 
   async function updateTagApi(
     currentName: string,
     name: string,
     color: string,
-  ): Promise<boolean> {
-    try {
-      await bookshelfApi.updateTag(currentName, name, color)
-      await loadTags()
-      await loadBooks()
-      return true
-    } catch {
-      return false
+  ): Promise<TagData> {
+    const updatedTag = await bookshelfApi.updateTag(currentName, name, color)
+    const tagIndex = tags.value.findIndex(tag => tag.name === currentName)
+    const currentTag = tags.value[tagIndex]
+    if (currentTag) {
+      tags.value[tagIndex] = { ...currentTag, ...updatedTag }
     }
+    selectedTagNames.value = selectedTagNames.value.map(tagName => (
+      tagName === currentName ? updatedTag.name : tagName
+    ))
+    eachVisibleBookProjection((book) => {
+      if (book.tags?.includes(currentName)) {
+        book.tags = book.tags.map(tagName => (
+          tagName === currentName ? updatedTag.name : tagName
+        ))
+      }
+    })
+    await loadTags()
+    await loadBooks()
+    return updatedTag
   }
 
-  async function createChapterApi(bookId: string, title: string): Promise<ChapterData | null> {
+  async function createChapterApi(bookId: string, title: string): Promise<ChapterData> {
     const chapter = await bookshelfApi.createChapter(bookId, title)
     addChapter(bookId, chapter)
     return chapter
@@ -386,29 +412,24 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     bookId: string,
     chapterId: string,
     title: string,
-  ): Promise<boolean> {
-    await bookshelfApi.updateChapter(chapterId, title)
-    updateChapter(bookId, chapterId, { title })
-    return true
+  ): Promise<void> {
+    const chapter = await bookshelfApi.updateChapter(chapterId, title)
+    updateChapter(bookId, chapterId, { title: chapter.title })
   }
 
-  async function deleteChapterApi(bookId: string, chapterId: string): Promise<boolean> {
+  async function deleteChapterApi(bookId: string, chapterId: string): Promise<void> {
     await bookshelfApi.deleteChapter(chapterId)
     deleteChapter(bookId, chapterId)
-    return true
   }
 
-  async function reorderChaptersApi(bookId: string, chapterIds: string[]): Promise<boolean> {
-    try {
-      await bookshelfApi.reorderChapters(bookId, chapterIds)
-      reorderChapters(bookId, chapterIds)
-      return true
-    } catch {
-      return false
-    }
+  async function reorderChaptersApi(bookId: string, chapterIds: string[]): Promise<void> {
+    await bookshelfApi.reorderChapters(bookId, chapterIds)
+    reorderChapters(bookId, chapterIds)
   }
 
   function reset(): void {
+    booksRequestVersion += 1
+    tagsRequestVersion += 1
     books.value = []
     tags.value = []
     searchKeyword.value = ''
@@ -421,6 +442,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     currentBookDetail.value = null
     isLoading.value = false
     error.value = null
+    tagsError.value = null
   }
 
   return {
@@ -434,6 +456,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     selectedBookIds,
     isLoading,
     error,
+    tagsError,
 
     currentBook,
     searchQuery,

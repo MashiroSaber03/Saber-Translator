@@ -107,6 +107,8 @@ function openSettingsAndClose() {
   --ui-button-primary-background: var(--color-action-primary);
   --ui-button-primary-hover-background: var(--color-action-primary-hover);
   --ui-button-primary-shadow: none;
+
+  margin-bottom: 16px;
 }
 
 .guide-message {
@@ -144,10 +146,6 @@ function openSettingsAndClose() {
   color: var(--color-text-supporting);
   margin-bottom: 8px;
   line-height: 1.5;
-}
-
-.guide-actions {
-  margin-bottom: 16px;
 }
 
 .guide-footer {

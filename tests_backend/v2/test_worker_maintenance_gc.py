@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+import json
 from pathlib import Path
 
 import pytest
@@ -27,6 +28,22 @@ from src.backend_v2.storage.schema import (
 )
 from src.backend_v2.timestamps import utcnow
 from src.backend_v2.worker.maintenance import WorkerMaintenance
+
+
+def _stored_job_progress(status: str) -> str:
+    return json.dumps(
+        {
+            "executionMode": "sequential",
+            "jobStatus": status,
+            "totalItems": 0,
+            "completedItems": 0,
+            "failedItems": 0,
+            "skippedItems": 0,
+            "cancelledItems": 0,
+            "pools": [],
+        },
+        separators=(",", ":"),
+    )
 
 
 @pytest.fixture()
@@ -93,6 +110,7 @@ def test_maintenance_prunes_bounded_ttl_records_without_active_work(
                 status="queued",
                 queue_rank=1,
                 config_json="{}",
+                latest_progress_json=_stored_job_progress("queued"),
             )
         )
         connection.execute(
@@ -242,6 +260,7 @@ def test_insight_gc_keeps_only_reachable_runs_and_partial_job_previews(
                 kind="insight_analysis",
                 status="completed",
                 config_json="{}",
+                latest_progress_json=_stored_job_progress("completed"),
                 finished_at=old,
                 created_at=old,
                 updated_at=old,

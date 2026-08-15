@@ -14,38 +14,41 @@ vi.mock('@/api/v2/settings', () => ({
   saveV2SettingsTransaction: mocks.saveSettings,
 }))
 
-function settingsDocument(
-  provider = 'openai',
-  modelName = 'gpt-4o-mini',
-) {
+function settingsDocument(provider = 'openai', modelName = 'gpt-4o-mini') {
   const settings = createDefaultWebImportSettings()
   settings.agent.provider = provider
   settings.agent.modelName = modelName
   return {
-    credentials: [{
-      credentialId: 'credential-1',
-      credentialVersionId: 'credential-version-1',
-      domain: 'web_import_agent',
-      hasKey: true,
-      provider,
-      revision: 1,
-    }],
-    providerSettings: [{
-      credentialVersionId: 'credential-version-1',
-      domain: 'web_import_agent',
-      payload: {
-        customBaseUrl: '',
-        modelName,
+    credentials: [
+      {
+        credentialId: 'credential-1',
+        credentialVersionId: 'credential-version-1',
+        domain: 'web_import_agent',
+        hasKey: true,
+        provider,
+        revision: 1,
       },
-      provider,
-      revision: 1,
-    }],
-    settings: [{
-      domain: 'web_import',
-      payload: settings,
-      revision: 2,
-      schemaVersion: 1,
-    }],
+    ],
+    providerSettings: [
+      {
+        credentialVersionId: 'credential-version-1',
+        domain: 'web_import_agent',
+        payload: {
+          customBaseUrl: '',
+          modelName,
+        },
+        provider,
+        revision: 1,
+      },
+    ],
+    settings: [
+      {
+        domain: 'web_import',
+        payload: settings,
+        revision: 2,
+        schemaVersion: 1,
+      },
+    ],
   }
 }
 
@@ -56,9 +59,25 @@ describe('webImportStore backend settings workflow', () => {
     localStorage.clear()
     mocks.getSettings.mockResolvedValue(settingsDocument())
     mocks.saveSettings.mockResolvedValue({
-      credentials: [],
-      providerSettings: [],
-      settings: [],
+      bookSettings: [],
+      credentials: [
+        {
+          credentialId: 'credential-deepseek',
+          credentialVersionId: 'credential-version-deepseek',
+          domain: 'web_import_agent',
+          hasKey: true,
+          provider: 'deepseek',
+          revision: 1,
+        },
+      ],
+      prompts: [],
+      providerSettings: [
+        { domain: 'web_import_agent', provider: 'openai', revision: 2 },
+        { domain: 'web_import_agent', provider: 'deepseek', revision: 1 },
+        { domain: 'web_import_firecrawl', provider: 'firecrawl', revision: 1 },
+        { domain: 'web_import_http', provider: 'headers', revision: 1 },
+      ],
+      settings: [{ domain: 'web_import', revision: 3 }],
     })
   })
 
@@ -93,12 +112,14 @@ describe('webImportStore backend settings workflow', () => {
     mocks.getSettings.mockResolvedValue({
       credentials: [],
       providerSettings: [],
-      settings: [{
-        domain: 'web_import',
-        payload: {},
-        revision: 1,
-        schemaVersion: 1,
-      }],
+      settings: [
+        {
+          domain: 'web_import',
+          payload: {},
+          revision: 1,
+          schemaVersion: 1,
+        },
+      ],
     })
 
     expect(await store.loadFromBackend()).toBe(false)
@@ -113,33 +134,73 @@ describe('webImportStore backend settings workflow', () => {
     store.setAgentProvider('deepseek')
     store.setAgentModelName('deepseek-chat')
     store.setAgentApiKey('deepseek-key')
-    mocks.getSettings.mockResolvedValue(settingsDocument('deepseek', 'deepseek-chat'))
 
     expect(await store.saveSettings()).toBe(true)
 
-    expect(mocks.saveSettings).toHaveBeenCalledWith(expect.objectContaining({
-      credentialEdits: expect.arrayContaining([
-        expect.objectContaining({
-          domain: 'web_import_agent',
-          provider: 'deepseek',
-          secret: { api_key: 'deepseek-key' },
-        }),
-      ]),
-      providerSettings: expect.arrayContaining([
-        expect.objectContaining({
-          domain: 'web_import_agent',
-          provider: 'deepseek',
-          payload: expect.objectContaining({ modelName: 'deepseek-chat' }),
-        }),
-      ]),
-      settings: [
-        expect.objectContaining({
-          baseRevision: 2,
-          domain: 'web_import',
-        }),
-      ],
-    }))
+    expect(mocks.saveSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        credentialEdits: expect.arrayContaining([
+          expect.objectContaining({
+            domain: 'web_import_agent',
+            provider: 'deepseek',
+            secret: { api_key: 'deepseek-key' },
+          }),
+        ]),
+        providerSettings: expect.arrayContaining([
+          expect.objectContaining({
+            domain: 'web_import_agent',
+            provider: 'deepseek',
+            payload: expect.objectContaining({ modelName: 'deepseek-chat' }),
+          }),
+        ]),
+        settings: [
+          expect.objectContaining({
+            baseRevision: 2,
+            domain: 'web_import',
+          }),
+        ],
+      })
+    )
     expect(store.settings.agent.apiKey).toBe('')
+    expect(store.draftSettings.agent.apiKey).toBe('')
+    expect(store.hasCredential('web_import_agent', 'deepseek')).toBe(true)
+    expect(mocks.getSettings).toHaveBeenCalledTimes(1)
   })
 
+  it('uses the committed transaction revisions without a follow-up settings read', async () => {
+    const store = useWebImportStore()
+    await store.loadFromBackend()
+    store.setAgentProvider('deepseek')
+    store.setAgentModelName('deepseek-chat')
+
+    expect(await store.saveSettings()).toBe(true)
+    store.setDownloadConcurrency(5)
+    expect(await store.saveSettings()).toBe(true)
+
+    const secondPayload = mocks.saveSettings.mock.calls[1]?.[0]
+    expect(secondPayload.settings[0].baseRevision).toBe(3)
+    expect(secondPayload.providerSettings).toContainEqual(
+      expect.objectContaining({
+        domain: 'web_import_agent',
+        provider: 'deepseek',
+        baseRevision: 1,
+      })
+    )
+    expect(mocks.getSettings).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects undocumented or non-string custom header formats before saving', async () => {
+    const store = useWebImportStore()
+    await store.loadFromBackend()
+
+    store.setCustomHeaders('X-Test: value')
+    expect(await store.saveSettings()).toBe(false)
+    expect(store.settingsSaveError).toBe('自定义 Headers 必须是有效的 JSON 对象')
+    expect(mocks.saveSettings).not.toHaveBeenCalled()
+
+    store.setCustomHeaders('{"X-Retry": 3}')
+    expect(await store.saveSettings()).toBe(false)
+    expect(store.settingsSaveError).toBe('自定义 Headers 的名称和值必须是非空字符串')
+    expect(mocks.saveSettings).not.toHaveBeenCalled()
+  })
 })

@@ -1,11 +1,11 @@
-import { getCurrentInstance, onUnmounted, ref, watch } from 'vue'
+import { getCurrentInstance, nextTick, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useBookTranslationConstraintsStore } from '@/stores/bookTranslationConstraintsStore'
 import { useSettingsStore } from '@/stores/settings'
 import { useImageStore } from '@/stores/imageStore'
 import { useBubbleStore } from '@/stores/bubbleStore'
-import { useEditMode } from '@/composables/useEditMode'
 import { showToast } from '@/utils/toast'
+import { isRequestCanceled } from '@/api/client'
 import type { V2Font } from '@/api/v2/settings'
 import {
   getPageDocument,
@@ -17,7 +17,6 @@ import { restoreTranslationFromBootstrap } from '@/composables/useTranslationPip
 import {
   pageSummaryToImage,
 } from '@/adapters/v2ContentAdapter'
-import type { BookTranslationConstraints } from '@/types/bookTranslationConstraints'
 import {
   flushPageDocument,
   isPageDocumentRegistered,
@@ -26,13 +25,37 @@ import {
 } from '@/services/pageDocumentPersistence'
 import { parseCompleteTextStyleSettings } from '@/defaults/textStyleDefaults'
 
+export type TranslationRouteContext =
+  | { kind: 'quick' }
+  | { kind: 'library'; bookId: string; chapterId: string }
+
+export function parseTranslationRouteContext(
+  query: { book?: unknown; chapter?: unknown },
+): TranslationRouteContext | null {
+  if (query.book === undefined && query.chapter === undefined) {
+    return { kind: 'quick' }
+  }
+  if (
+    typeof query.book === 'string'
+    && query.book.length > 0
+    && typeof query.chapter === 'string'
+    && query.chapter.length > 0
+  ) {
+    return {
+      kind: 'library',
+      bookId: query.book,
+      chapterId: query.chapter,
+    }
+  }
+  return null
+}
+
 export function useTranslateInit() {
   const route = useRoute()
   const settingsStore = useSettingsStore()
   const bookTranslationConstraintsStore = useBookTranslationConstraintsStore()
   const imageStore = useImageStore()
   const bubbleStore = useBubbleStore()
-  const editMode = useEditMode()
 
   const isInitializing = ref(false)
   const isInitialized = ref(false)
@@ -43,7 +66,6 @@ export function useTranslateInit() {
   const currentChapterTitle = ref<string | null>(null)
   const isBookshelfMode = ref(false)
   const isSwitchingImage = ref(false)
-  let switchImageFlagTimer: ReturnType<typeof setTimeout> | null = null
   let isOwnerAlive = true
   let bookContextRequestId = 0
   let pageDocumentRequestId = 0
@@ -64,16 +86,27 @@ export function useTranslateInit() {
   } | null = null
   let settingsMemoryWritePromise: Promise<boolean> | null = null
 
-  function clearSwitchImageFlagTimer(): void {
-    if (switchImageFlagTimer) {
-      clearTimeout(switchImageFlagTimer)
-      switchImageFlagTimer = null
+  function clearLoadedChapterContext(): void {
+    pageDocumentRequestId += 1
+    pageDocumentAbortController?.abort()
+    pageDocumentAbortController = null
+    if (settingsMemoryWriteTimer) {
+      clearTimeout(settingsMemoryWriteTimer)
+      settingsMemoryWriteTimer = null
     }
-  }
-
-  function resetSwitchImageFlag(): void {
-    clearSwitchImageFlagTimer()
-    isSwitchingImage.value = false
+    settingsStore.clearChapterWorkState(settingsMemoryChapterId ?? undefined)
+    settingsMemoryChapterId = null
+    settingsMemoryRevision = 0
+    lastSettingsMemoryFingerprint = ''
+    pendingSettingsMemoryWrite = null
+    currentBookId.value = null
+    currentChapterId.value = null
+    currentBookTitle.value = null
+    currentChapterTitle.value = null
+    isBookshelfMode.value = false
+    bookTranslationConstraintsStore.resetBookConstraints()
+    imageStore.clearImages()
+    bubbleStore.clearBubblesLocal()
   }
 
   function markOwnerUnmounted(): void {
@@ -87,7 +120,7 @@ export function useTranslateInit() {
     pageDocumentRequestId += 1
     pageDocumentAbortController?.abort()
     pageDocumentAbortController = null
-    resetSwitchImageFlag()
+    isSwitchingImage.value = false
     settingsStore.clearChapterWorkState(settingsMemoryChapterId ?? undefined)
   }
 
@@ -141,29 +174,36 @@ export function useTranslateInit() {
     return true
   }
 
-  async function initializeApp(): Promise<void> {
+  async function initializeApp(): Promise<boolean> {
     // SPA 场景下重新进入翻译页时，需要重新加载书籍/章节上下文。
     if (isInitializing.value || isInitialized.value) {
-      await initializeBookChapterContext()
-      return
+      return initializeBookChapterContext()
     }
 
     isInitializing.value = true
 
     try {
       settingsStore.initSettings()
-      await initializeBookChapterContext()
-
-      isInitialized.value = true
+      const initialized = await initializeBookChapterContext()
+      isInitialized.value = initialized
+      return initialized
     } finally {
       isInitializing.value = false
     }
   }
 
-  async function initializeBookChapterContext(): Promise<void> {
+  async function initializeBookChapterContext(): Promise<boolean> {
     const requestId = ++bookContextRequestId
-    const bookId = route.query.book as string | undefined
-    const chapterId = route.query.chapter as string | undefined
+    pageDocumentRequestId += 1
+    pageDocumentAbortController?.abort()
+    pageDocumentAbortController = null
+    isSwitchingImage.value = false
+    const routeContext = parseTranslationRouteContext(route.query)
+    if (!routeContext) {
+      clearLoadedChapterContext()
+      showToast('翻译页面地址无效：book 与 chapter 必须同时且各自只提供一个值', 'error')
+      return false
+    }
 
     try {
       if (
@@ -173,10 +213,38 @@ export function useTranslateInit() {
         throw new Error('当前章节工作态设置尚未写入后端')
       }
       const bootstrap = await getTranslationBootstrap({
-        bookId: bookId && chapterId ? bookId : undefined,
-        chapterId: bookId && chapterId ? chapterId : undefined,
+        ...(routeContext.kind === 'library'
+          ? {
+              bookId: routeContext.bookId,
+              chapterId: routeContext.chapterId,
+            }
+          : {}),
       })
-      if (!isOwnerAlive || requestId !== bookContextRequestId) return
+      if (!isOwnerAlive || requestId !== bookContextRequestId) return false
+      if (
+        routeContext.kind === 'library'
+          ? (
+              bootstrap.book.kind !== 'library'
+              || bootstrap.book.id !== routeContext.bookId
+              || bootstrap.chapter.id !== routeContext.chapterId
+            )
+          : bootstrap.book.kind !== 'quick_workspace'
+      ) {
+        throw new Error('后端返回了其他翻译工作区的数据')
+      }
+      if (bootstrap.pages.nextCursor !== null) {
+        throw new Error('后端翻译工作区页面列表不完整')
+      }
+      if (bootstrap.pages.items.some(page => page.chapterId !== bootstrap.chapter.id)) {
+        throw new Error('后端翻译工作区包含其他章节的页面')
+      }
+      const pageIds = new Set(bootstrap.pages.items.map(page => page.id))
+      if (
+        bootstrap.navigation.lastVisitedPageId
+        && !pageIds.has(bootstrap.navigation.lastVisitedPageId)
+      ) {
+        throw new Error('后端最后访问页不属于当前章节')
+      }
 
       if (!settingsStore.hydrateFromBackendDocument(bootstrap.settings)) {
         throw new Error(settingsStore.backendError || '后端设置加载失败')
@@ -222,7 +290,8 @@ export function useTranslateInit() {
       isBookshelfMode.value = bootstrap.book.kind === 'library'
       bookTranslationConstraintsStore.loadBookConstraints(
         bootstrap.book.id,
-        bootstrap.constraints.payload as Partial<BookTranslationConstraints>,
+        bootstrap.constraints.payload,
+        bootstrap.constraints.revision,
       )
       imageStore.setImages(bootstrap.pages.items.map(pageSummaryToImage))
       restoreTranslationFromBootstrap(bootstrap.activeJobs, imageStore)
@@ -232,7 +301,12 @@ export function useTranslateInit() {
         : -1
       const initialIndex = lastVisitedIndex >= 0 ? lastVisitedIndex : 0
       if (imageStore.imageCount > 0) {
-        await switchImage(initialIndex, false)
+        const switched = await switchImage(initialIndex, false)
+        if (!isOwnerAlive || requestId !== bookContextRequestId) return false
+        if (!switched) {
+          clearLoadedChapterContext()
+          return false
+        }
       } else {
         bubbleStore.clearBubblesLocal()
       }
@@ -240,11 +314,13 @@ export function useTranslateInit() {
       if (typeof document !== 'undefined') {
         document.title = `${bootstrap.chapter.title} - ${bootstrap.book.title} - Saber-Translator`
       }
+      return true
     } catch (error) {
-      if (!isOwnerAlive || requestId !== bookContextRequestId) return
-      bookTranslationConstraintsStore.resetBookConstraints()
+      if (!isOwnerAlive || requestId !== bookContextRequestId) return false
+      clearLoadedChapterContext()
       const message = error instanceof Error ? error.message : '未知错误'
       showToast(`加载后端章节数据失败：${message}`, 'error')
+      return false
     }
   }
 
@@ -324,17 +400,18 @@ export function useTranslateInit() {
   async function switchImage(
     index: number,
     persistNavigation: boolean = true,
-  ): Promise<void> {
+  ): Promise<boolean> {
     if (index < 0 || index >= imageStore.imageCount) {
-      return
+      return false
     }
 
-    clearSwitchImageFlagTimer()
+    const target = imageStore.images[index]
+    if (!target) return false
+    pageDocumentAbortController?.abort()
+    const controller = new AbortController()
+    pageDocumentAbortController = controller
+    const pageRequestId = ++pageDocumentRequestId
     isSwitchingImage.value = true
-
-    if (editMode.isActive.value) {
-      editMode.exitEditModeWithoutRender()
-    }
 
     const currentImage = imageStore.currentImage
     if (
@@ -352,48 +429,44 @@ export function useTranslateInit() {
       try {
         await flushPageDocument(currentImage.id)
       } catch (error) {
-        resetSwitchImageFlag()
-        showToast(
-          `当前页写入后端失败：${error instanceof Error ? error.message : '未知错误'}`,
-          'error',
-        )
-        return
+        if (pageRequestId === pageDocumentRequestId) {
+          showToast(
+            `当前页写入后端失败：${error instanceof Error ? error.message : '未知错误'}`,
+            'error',
+          )
+          await nextTick()
+          if (pageRequestId === pageDocumentRequestId) {
+            isSwitchingImage.value = false
+          }
+        }
+        return false
       }
     }
+    if (pageRequestId !== pageDocumentRequestId) return false
 
-    imageStore.setCurrentImageIndex(index)
-    const newImage = imageStore.currentImage
-
-    if (!newImage) {
-      resetSwitchImageFlag()
-      return
-    }
-    if (persistNavigation && currentChapterId.value) {
-      queueLastVisitedPageWrite(currentChapterId.value, newImage.id)
-    }
-
-    bubbleStore.clearBubblesLocal()
-    pageDocumentAbortController?.abort()
-    pageDocumentAbortController = new AbortController()
-    const pageRequestId = ++pageDocumentRequestId
-    const pageId = newImage.id
+    const pageId = target.id
     try {
       const document = await getPageDocument(
         pageId,
-        pageDocumentAbortController.signal,
+        controller.signal,
       )
       if (
         !isOwnerAlive
         || pageRequestId !== pageDocumentRequestId
-        || imageStore.currentImage?.id !== pageId
-      ) return
-      const bubbles = registerPageDocument(document)
+        || imageStore.images[index]?.id !== pageId
+      ) return false
+      if (document.pageId !== pageId || document.chapterId !== target.chapterId) {
+        throw new Error(`页面 ${pageId} 的后端文档身份不匹配`)
+      }
       const pageTextStyle = parseCompleteTextStyleSettings({
         ...document.pageStyleDefaults,
         ...(document.defaultFontId
           ? { fontFamily: document.defaultFontId }
           : {}),
       })
+      const bubbles = registerPageDocument(document)
+      imageStore.setCurrentImageIndex(index)
+      if (imageStore.currentImage?.id !== pageId) return false
       imageStore.updateCurrentImage({
         ...pageTextStyle,
         bubbleStates: bubbles,
@@ -402,17 +475,25 @@ export function useTranslateInit() {
       })
       settingsStore.updateTextStyle(pageTextStyle)
       bubbleStore.setBubbles(bubbles, true)
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') return
-      if (pageRequestId === pageDocumentRequestId) {
-        showToast('加载当前页编辑数据失败', 'error')
+      if (persistNavigation && currentChapterId.value) {
+        queueLastVisitedPageWrite(currentChapterId.value, pageId)
       }
+      return true
+    } catch (error) {
+      if (isRequestCanceled(error)) return false
+      if (pageRequestId === pageDocumentRequestId) {
+        showToast(
+          `加载当前页编辑数据失败：${error instanceof Error ? error.message : '未知错误'}`,
+          'error',
+        )
+      }
+      return false
     } finally {
       if (pageRequestId === pageDocumentRequestId) {
-        switchImageFlagTimer = setTimeout(() => {
-          switchImageFlagTimer = null
+        await nextTick()
+        if (pageRequestId === pageDocumentRequestId) {
           isSwitchingImage.value = false
-        }, 100)
+        }
       }
     }
   }

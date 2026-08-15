@@ -1,29 +1,22 @@
 import asyncio
+from io import BytesIO
 import unittest
 from unittest import mock
-import sys
-import types
+
+from PIL import Image
 
 from src.shared.openai_options import (
     OpenAICompatibleExecutionOptions,
     OpenAICompatibleOptions,
     OpenAICompatibleRequestOptions,
 )
+from src.shared.openai_execution import OpenAICompatibleEmptyContentError
 
-if "openai" not in sys.modules:
-    openai_stub = types.ModuleType("openai")
 
-    class _OpenAI:
-        def __init__(self, *args, **kwargs):
-            pass
-
-    class _AsyncOpenAI:
-        def __init__(self, *args, **kwargs):
-            pass
-
-    openai_stub.OpenAI = _OpenAI
-    openai_stub.AsyncOpenAI = _AsyncOpenAI
-    sys.modules["openai"] = openai_stub
+def _png_bytes() -> bytes:
+    output = BytesIO()
+    Image.new("RGB", (2, 2), "white").save(output, format="PNG")
+    return output.getvalue()
 
 
 class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
@@ -45,6 +38,22 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(parsed, {"answer": "ok"})
 
+    def test_shared_json_parser_rejects_unstructured_prefix_or_suffix(self) -> None:
+        from src.shared.openai_execution import (
+            OpenAICompatibleBusinessRetryableError,
+            parse_json_block_from_text,
+        )
+
+        for response in (
+            '说明：{"answer": "ok"}',
+            '{"answer": "ok"} trailing',
+            '```json\n{"answer": "ok"}',
+        ):
+            with self.subTest(response=response), self.assertRaises(
+                OpenAICompatibleBusinessRetryableError
+            ):
+                parse_json_block_from_text(response)
+
     async def test_chat_client_reads_nested_openai_options_from_config(self) -> None:
         from src.core.manga_insight.config_models import ChatLLMConfig
         from src.core.manga_insight.embedding_client import ChatClient
@@ -55,21 +64,31 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
                 "api_key": "test-key",
                 "model": "chat-model",
                 "base_url": "https://example.com/v1",
+                "credential_version_id": None,
                 "openai_options": {
-                    "request": {"temperature": 0.4},
-                    "execution": {"use_stream": False, "rpm_limit": 9, "business_retries": 2},
+                    "request": {
+                        "force_json_output": False,
+                        "temperature": 0.4,
+                        "extra_body": {},
+                    },
+                    "execution": {
+                        "use_stream": False,
+                        "rpm_limit": 9,
+                        "transport_retries": 1,
+                        "business_retries": 2,
+                    },
                 },
             }
         )
 
         with mock.patch(
             "src.core.manga_insight.embedding_client.AsyncOpenAICompatibleTransport.complete",
-            new=mock.AsyncMock(return_value="统一回答"),
+            new=mock.AsyncMock(return_value='{"answer":"统一回答"}'),
         ) as complete_mock:
             client = ChatClient(config)
-            content = await client.generate("用户问题", system="系统提示")
+            content = await client.generate_json("用户问题", system="系统提示")
 
-        self.assertEqual(content, "统一回答")
+        self.assertEqual(content, {"answer": "统一回答"})
         request = complete_mock.call_args.args[0]
         self.assertEqual(request.openai_options.request.temperature, 0.4)
         self.assertFalse(request.openai_options.execution.use_stream)
@@ -87,21 +106,29 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
                 "api_key": "test-key",
                 "model": "chat-model",
                 "base_url": "https://example.com/v1",
+                "credential_version_id": None,
                 "openai_options": {
                     "request": {
+                        "force_json_output": False,
+                        "temperature": None,
                         "extra_body": {"thinking": {"type": "disabled"}},
                     },
-                    "execution": {"use_stream": False},
+                    "execution": {
+                        "use_stream": False,
+                        "rpm_limit": 0,
+                        "transport_retries": 1,
+                        "business_retries": 0,
+                    },
                 },
             }
         )
 
         with mock.patch(
             "src.core.manga_insight.embedding_client.AsyncOpenAICompatibleTransport.complete",
-            new=mock.AsyncMock(return_value="统一回答"),
+            new=mock.AsyncMock(return_value='{"answer":"统一回答"}'),
         ) as complete_mock:
             client = ChatClient(config)
-            await client.generate("用户问题", system="系统提示")
+            await client.generate_json("用户问题", system="系统提示")
 
         request = complete_mock.call_args.args[0]
         self.assertEqual(
@@ -119,9 +146,19 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
                 "api_key": "test-key",
                 "model": "chat-model",
                 "base_url": "https://example.com/v1",
+                "credential_version_id": None,
                 "openai_options": {
-                    "request": {"temperature": 0.4},
-                    "execution": {"use_stream": False, "business_retries": 1},
+                    "request": {
+                        "force_json_output": False,
+                        "temperature": 0.4,
+                        "extra_body": {},
+                    },
+                    "execution": {
+                        "use_stream": False,
+                        "rpm_limit": 0,
+                        "transport_retries": 1,
+                        "business_retries": 1,
+                    },
                 },
             }
         )
@@ -141,42 +178,6 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(parsed, {"answer": "retry-ok"})
         self.assertEqual(complete_mock.await_count, 2)
-
-    async def test_chat_client_delegates_to_shared_async_transport(self) -> None:
-        from src.core.manga_insight.config_models import ChatLLMConfig
-        from src.core.manga_insight.embedding_client import ChatClient
-
-        config = ChatLLMConfig(
-            provider="custom",
-            api_key="test-key",
-            model="chat-model",
-            base_url="https://example.com/v1",
-            openai_options=OpenAICompatibleOptions(
-                execution=OpenAICompatibleExecutionOptions(use_stream=False),
-            ),
-        )
-
-        with mock.patch(
-            "src.core.manga_insight.embedding_client.AsyncOpenAICompatibleTransport.complete",
-            new=mock.AsyncMock(return_value="统一回答"),
-        ) as complete_mock:
-            client = ChatClient(config)
-            content = await client.generate("用户问题", system="系统提示", temperature=0.4)
-
-        self.assertEqual(content, "统一回答")
-        request = complete_mock.call_args.args[0]
-        self.assertEqual(request.provider, "custom")
-        self.assertEqual(request.model, "chat-model")
-        self.assertEqual(request.base_url, "https://example.com/v1")
-        self.assertEqual(request.temperature, 0.4)
-        self.assertFalse(request.use_stream)
-        self.assertEqual(
-            request.messages,
-            [
-                {"role": "system", "content": "系统提示"},
-                {"role": "user", "content": "用户问题"},
-            ],
-        )
 
     async def test_chat_client_bounds_the_complete_logical_call(self) -> None:
         from src.core.manga_insight.config_models import ChatLLMConfig
@@ -201,7 +202,7 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
                 TimeoutError,
                 "对话模型调用超过总时限（0.01 秒）",
             ):
-                await client.generate("用户问题")
+                await client.generate_json("用户问题")
 
     async def test_embedding_client_delegates_to_shared_async_transport(self) -> None:
         from src.core.manga_insight.config_models import EmbeddingConfig
@@ -229,7 +230,9 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request.base_url, "https://example.com/v1")
         self.assertEqual(request.inputs, ["第一页", "第二页"])
 
-    async def test_embedding_client_uses_configured_transport_retries_and_unlimited_timeout(self) -> None:
+    async def test_embedding_client_uses_configured_retries_and_timeout(
+        self,
+    ) -> None:
         from src.core.manga_insight.config_models import EmbeddingConfig
         from src.core.manga_insight.embedding_client import EmbeddingClient
 
@@ -255,7 +258,7 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
         request = embed_mock.call_args.args[0]
         self.assertIsNone(request.timeout)
 
-    async def test_embedding_client_chunks_large_batches_and_preserves_order(self) -> None:
+    async def test_embedding_client_preserves_the_upstream_batch_and_order(self) -> None:
         from src.core.manga_insight.config_models import EmbeddingConfig
         from src.core.manga_insight.embedding_client import EmbeddingClient
 
@@ -286,7 +289,7 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             [len(request.inputs) for request in requests],
-            [16, 16, 3],
+            [35],
         )
         self.assertEqual(
             embeddings,
@@ -345,7 +348,7 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client._transport.max_retries, 0)
 
     async def test_vlm_client_uses_shared_async_transport_for_multimodal_chat(self) -> None:
-        from src.core.manga_insight.config_models import PromptsConfig, VLMConfig
+        from src.core.manga_insight.config_models import VLMConfig
         from src.core.manga_insight.vlm_client import VLMClient
 
         config = VLMConfig(
@@ -365,12 +368,12 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
 
         with mock.patch(
             "src.core.manga_insight.vlm_client.AsyncOpenAICompatibleTransport.complete",
-            new=mock.AsyncMock(return_value='{"pages": []}'),
+            new=mock.AsyncMock(return_value='{"pages":[{"page_number":1}]}'),
         ) as complete_mock:
-            client = VLMClient(config, PromptsConfig())
-            content = await client._call_vlm([b"fake-image"], "分析这页漫画")
+            client = VLMClient(config)
+            content = await client.analyze_page(_png_bytes(), 1, "分析这页漫画")
 
-        self.assertEqual(content, '{"pages": []}')
+        self.assertEqual(content, {"pages": [{"page_number": 1}]})
         request = complete_mock.call_args.args[0]
         self.assertEqual(request.provider, "custom")
         self.assertEqual(request.model, "vlm-model")
@@ -383,7 +386,7 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request.messages[0]["content"][-1], {"type": "text", "text": "分析这页漫画"})
 
     async def test_vlm_client_preserves_request_extra_body(self) -> None:
-        from src.core.manga_insight.config_models import PromptsConfig, VLMConfig
+        from src.core.manga_insight.config_models import VLMConfig
         from src.core.manga_insight.vlm_client import VLMClient
 
         config = VLMConfig(
@@ -402,10 +405,10 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
 
         with mock.patch(
             "src.core.manga_insight.vlm_client.AsyncOpenAICompatibleTransport.complete",
-            new=mock.AsyncMock(return_value='{"pages": []}'),
+            new=mock.AsyncMock(return_value='{"pages":[{"page_number":1}]}'),
         ) as complete_mock:
-            client = VLMClient(config, PromptsConfig())
-            await client._call_vlm([b"fake-image"], "分析这页漫画")
+            client = VLMClient(config)
+            await client.analyze_page(_png_bytes(), 1, "分析这页漫画")
 
         request = complete_mock.call_args.args[0]
         self.assertEqual(
@@ -414,7 +417,7 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_vlm_client_reads_nested_openai_options_from_config(self) -> None:
-        from src.core.manga_insight.config_models import PromptsConfig, VLMConfig
+        from src.core.manga_insight.config_models import VLMConfig
         from src.core.manga_insight.vlm_client import VLMClient
 
         config = VLMConfig.from_dict(
@@ -423,22 +426,32 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
                 "api_key": "test-key",
                 "model": "vlm-model",
                 "base_url": "https://example.com/v1",
+                "credential_version_id": None,
                 "image_max_size": 0,
                 "openai_options": {
-                    "request": {"force_json_output": True, "temperature": 0.2},
-                    "execution": {"use_stream": False, "rpm_limit": 8, "business_retries": 3},
+                    "request": {
+                        "force_json_output": True,
+                        "temperature": 0.2,
+                        "extra_body": {},
+                    },
+                    "execution": {
+                        "use_stream": False,
+                        "rpm_limit": 8,
+                        "transport_retries": 1,
+                        "business_retries": 3,
+                    },
                 },
             }
         )
 
         with mock.patch(
             "src.core.manga_insight.vlm_client.AsyncOpenAICompatibleTransport.complete",
-            new=mock.AsyncMock(return_value='{"pages": []}'),
+            new=mock.AsyncMock(return_value='{"pages":[{"page_number":1}]}'),
         ) as complete_mock:
-            client = VLMClient(config, PromptsConfig())
-            content = await client._call_vlm([b"fake-image"], "分析这页漫画")
+            client = VLMClient(config)
+            content = await client.analyze_page(_png_bytes(), 1, "分析这页漫画")
 
-        self.assertEqual(content, '{"pages": []}')
+        self.assertEqual(content, {"pages": [{"page_number": 1}]})
         request = complete_mock.call_args.args[0]
         self.assertTrue(request.openai_options.request.force_json_output)
         self.assertEqual(request.openai_options.request.temperature, 0.2)
@@ -447,8 +460,8 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request.openai_options.execution.business_retries, 3)
         self.assertEqual(request.runtime_options.stream_output_label, "漫画分析")
 
-    async def test_vlm_client_retries_non_retryable_transport_failures_at_outer_layer(self) -> None:
-        from src.core.manga_insight.config_models import PromptsConfig, VLMConfig
+    async def test_vlm_client_retries_typed_empty_content_at_business_layer(self) -> None:
+        from src.core.manga_insight.config_models import VLMConfig
         from src.core.manga_insight.vlm_client import VLMClient
 
         config = VLMConfig(
@@ -461,19 +474,24 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
             ),
         )
 
-        complete_mock = mock.AsyncMock(side_effect=[ValueError("empty choices"), '{"pages": []}'])
+        complete_mock = mock.AsyncMock(
+            side_effect=[
+                OpenAICompatibleEmptyContentError("AI 未返回有效内容"),
+                '{"pages":[{"page_number":1}]}',
+            ]
+        )
         with mock.patch(
             "src.core.manga_insight.vlm_client.AsyncOpenAICompatibleTransport.complete",
             new=complete_mock,
         ):
-            client = VLMClient(config, PromptsConfig())
-            content = await client._call_vlm([b"fake-image"], "分析这页漫画")
+            client = VLMClient(config)
+            content = await client.analyze_page(_png_bytes(), 1, "分析这页漫画")
 
-        self.assertEqual(content, '{"pages": []}')
+        self.assertEqual(content, {"pages": [{"page_number": 1}]})
         self.assertEqual(complete_mock.await_count, 2)
 
     async def test_vlm_client_bounds_the_complete_retrying_call_by_wall_clock(self) -> None:
-        from src.core.manga_insight.config_models import PromptsConfig, VLMConfig
+        from src.core.manga_insight.config_models import VLMConfig
         from src.core.manga_insight.vlm_client import VLMClient
 
         config = VLMConfig(
@@ -499,66 +517,16 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
             "src.core.manga_insight.vlm_client.AsyncOpenAICompatibleTransport.complete",
             new=mock.AsyncMock(side_effect=never_finishes),
         ):
-            client = VLMClient(config, PromptsConfig())
+            client = VLMClient(config)
             client._total_timeout = 0.01
             with self.assertRaisesRegex(
                 TimeoutError,
                 "视觉模型调用超过总时限（0.01 秒）",
             ):
-                await client._call_vlm([b"fake-image"], "分析这页漫画")
+                await client.analyze_page(_png_bytes(), 1, "分析这页漫画")
 
-    async def test_vlm_test_connection_does_not_send_default_max_tokens(self) -> None:
+    def test_vlm_single_page_requires_the_requested_page_number(self) -> None:
         from src.core.manga_insight.config_models import VLMConfig
-        from src.core.manga_insight.vlm_client import VLMClient
-
-        config = VLMConfig(
-            provider="custom",
-            api_key="test-key",
-            model="vlm-model",
-            base_url="https://example.com/v1",
-            openai_options=OpenAICompatibleOptions(
-                execution=OpenAICompatibleExecutionOptions(use_stream=False),
-            ),
-        )
-
-        with mock.patch(
-            "src.core.manga_insight.vlm_client.AsyncOpenAICompatibleTransport.complete",
-            new=mock.AsyncMock(return_value="连接成功"),
-        ) as complete_mock:
-            client = VLMClient(config)
-            success = await client.test_connection()
-
-        self.assertTrue(success)
-        request = complete_mock.call_args.args[0]
-        self.assertNotIn("max_tokens", request.runtime_options.request_overrides)
-
-    def test_vlm_parse_batch_analysis_accepts_only_current_shape(self) -> None:
-        from src.core.manga_insight.config_models import PromptsConfig, VLMConfig
-        from src.core.manga_insight.vlm_client import VLMClient
-
-        config = VLMConfig(
-            provider="custom",
-            api_key="test-key",
-            model="vlm-model",
-            base_url="https://example.com/v1",
-            openai_options=OpenAICompatibleOptions(
-                execution=OpenAICompatibleExecutionOptions(use_stream=False),
-            ),
-        )
-        client = VLMClient(config, PromptsConfig())
-
-        result = client._parse_batch_analysis(
-            '{"pages":[{"page_number":1,"page_summary":"第一页"},{"page_number":2,"page_summary":"第二页"}]}',
-            1,
-            2,
-        )
-
-        self.assertEqual(len(result["pages"]), 2)
-        self.assertEqual(result["pages"][0]["page_number"], 1)
-        self.assertNotIn("parse_error", result)
-
-    def test_vlm_single_page_uses_backend_page_number(self) -> None:
-        from src.core.manga_insight.config_models import PromptsConfig, VLMConfig
         from src.core.manga_insight.vlm_client import VLMClient
 
         client = VLMClient(
@@ -567,47 +535,40 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
                 api_key="test-key",
                 model="vlm-model",
                 base_url="https://example.com/v1",
-            ),
-            PromptsConfig(),
+            )
         )
 
-        result = client._parse_batch_analysis(
-            '{"pages":[{"page_number":108,"page_summary":"单页摘要"}]}',
-            14,
+        result = client._parse_page_analysis(
+            '{"pages":[{"page_number":14,"page_summary":"单页摘要"}]}',
             14,
         )
 
         self.assertEqual(result["pages"][0]["page_number"], 14)
-        self.assertNotIn("parse_error", result)
 
-        wrong_batch = client._parse_batch_analysis(
-            '{"pages":[{"page_number":108},{"page_number":109}]}',
-            14,
-            15,
-        )
-        self.assertEqual(wrong_batch, {"pages": [], "parse_error": True})
+        with self.assertRaisesRegex(ValueError, "page_number"):
+            client._parse_page_analysis(
+                '{"pages":[{"page_number":108}]}',
+                14,
+            )
 
-    def test_vlm_parse_batch_analysis_rejects_retired_shapes(self) -> None:
-        from src.core.manga_insight.config_models import PromptsConfig, VLMConfig
+    def test_vlm_page_analysis_rejects_retired_or_batch_shapes(self) -> None:
+        from src.core.manga_insight.config_models import VLMConfig
         from src.core.manga_insight.vlm_client import VLMClient
 
-        config = VLMConfig(
-            provider="custom",
-            api_key="test-key",
-            model="vlm-model",
-            base_url="https://example.com/v1",
-            openai_options=OpenAICompatibleOptions(
-                execution=OpenAICompatibleExecutionOptions(use_stream=False),
-            ),
+        client = VLMClient(
+            VLMConfig(
+                provider="custom",
+                api_key="test-key",
+                model="vlm-model",
+                base_url="https://example.com/v1",
+            )
         )
-        client = VLMClient(config, PromptsConfig())
-
         retired_payloads = (
-            '{"page_analyses":[{"page_number":1},{"page_number":2}]}',
-            '{"pages":[{"page_num":1},{"page_num":2}]}',
-            '[{"page_number":1},{"page_number":2}]',
+            '{"page_analyses":[{"page_number":1}]}',
+            '{"pages":[{"page_num":1}]}',
+            '[{"page_number":1}]',
+            '{"pages":[{"page_number":108},{"page_number":109}]}',
         )
         for payload in retired_payloads:
-            with self.subTest(payload=payload):
-                result = client._parse_batch_analysis(payload, 1, 2)
-                self.assertEqual(result, {"pages": [], "parse_error": True})
+            with self.subTest(payload=payload), self.assertRaises(ValueError):
+                client._parse_page_analysis(payload, 1)

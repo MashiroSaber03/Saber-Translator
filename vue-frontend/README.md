@@ -21,7 +21,7 @@
 在 `vue-frontend/` 目录下执行：
 
 ```bash
-npm install
+npm ci
 npm run dev
 npm run build
 npm test
@@ -101,7 +101,6 @@ npm run typecheck
 推荐先看：
 
 - [后端优先架构方案](../docs/refactor/backend-first-architecture-plan.md)
-- [架构决策记录](../docs/refactor/adr/)
 - [OpenAPI v2](../openapi/v2.yaml)
 
 ---

@@ -3,7 +3,7 @@ import type {
   BubbleCoords,
   BubbleTextline,
   BubbleStateOverrides,
-  TextDirection,
+  ResolvedTextDirection,
 } from '@/types/bubble'
 import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
 
@@ -42,45 +42,41 @@ export const DEFAULT_BUBBLE_STATE: BubbleState = {
 
 type BubbleColorTuple = [number, number, number]
 
-function clonePolygon(polygon?: number[][] | null): number[][] {
-  return Array.isArray(polygon) ? polygon.map(point => [...point]) : []
+function clonePolygon(polygon: number[][]): number[][] {
+  return polygon.map(point => [...point])
 }
 
-function cloneColorTuple(color?: BubbleColorTuple | null): BubbleColorTuple | null {
+function cloneColorTuple(color: BubbleColorTuple | null): BubbleColorTuple | null {
   return color ? ([...color] as BubbleColorTuple) : null
 }
 
-export function cloneBubbleTextlines(textlines?: BubbleTextline[] | null): BubbleTextline[] {
-  if (!textlines || !Array.isArray(textlines)) {
-    return []
-  }
+export function cloneBubbleTextlines(textlines: BubbleTextline[]): BubbleTextline[] {
   return textlines.map(line => ({
     polygon: clonePolygon(line.polygon),
-    direction: line.direction === 'v' ? 'v' : 'h',
-    confidence: Number(line.confidence) || 0,
+    direction: line.direction,
+    confidence: line.confidence,
   }))
 }
 
 export function createBubbleState(overrides?: BubbleStateOverrides): BubbleState {
-  const base = {
+  const state: BubbleState = {
     ...DEFAULT_BUBBLE_STATE,
     ...overrides,
   }
 
   return {
-    ...base,
-    coords: overrides?.coords
-      ? ([...overrides.coords] as BubbleCoords)
-      : ([...DEFAULT_BUBBLE_STATE.coords] as BubbleCoords),
-    polygon: clonePolygon(overrides?.polygon),
-    textlines: cloneBubbleTextlines(overrides?.textlines),
-    position: overrides?.position
-      ? { ...DEFAULT_BUBBLE_STATE.position, ...overrides.position }
-      : { ...DEFAULT_BUBBLE_STATE.position },
+    ...state,
+    coords: [...state.coords] as BubbleCoords,
+    polygon: clonePolygon(state.polygon),
+    textlines: cloneBubbleTextlines(state.textlines),
+    position: { ...state.position },
+    autoFgColor: cloneColorTuple(state.autoFgColor),
+    autoBgColor: cloneColorTuple(state.autoBgColor),
+    ocrResult: state.ocrResult ? { ...state.ocrResult } : null,
   }
 }
 
-export function detectTextDirection(coords: BubbleCoords): TextDirection {
+export function detectTextDirection(coords: BubbleCoords): ResolvedTextDirection {
   const [x1, y1, x2, y2] = coords
   const width = Math.abs(x2 - x1)
   const height = Math.abs(y2 - y1)

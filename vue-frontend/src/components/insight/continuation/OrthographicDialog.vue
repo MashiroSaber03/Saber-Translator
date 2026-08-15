@@ -2,6 +2,7 @@
   <ContinuationDialogShell
     :title="dialogTitle"
     width-variant="wide"
+    :dismissible="!isGenerating"
     @close="close"
   >
     <div class="orthographic-dialog__body">
@@ -11,7 +12,6 @@
           class="orthographic-dialog__dropzone"
           :label="`上传 ${characterName} ${formName} 三视图源图`"
           accept="image/*"
-          multiple
           @select="selectImages"
         >
           <template #default="{ isDragging }">
@@ -23,8 +23,8 @@
                 stroke-width="1.5"
               />
               <p v-if="isDragging" class="orthographic-dialog__upload-placeholder-message">释放以上传图片</p>
-              <p v-else class="orthographic-dialog__upload-placeholder-message">点击选择或拖拽角色图片（1-5张）</p>
-              <p class="orthographic-dialog__upload-hint">可上传多张图片帮助AI理解角色特征</p>
+              <p v-else class="orthographic-dialog__upload-placeholder-message">点击选择或拖拽一张角色参考图</p>
+              <p class="orthographic-dialog__upload-hint">将使用这张参考图生成角色三视图</p>
             </div>
           </template>
         </ProductFileDropzone>
@@ -71,11 +71,11 @@
 
     <template #footer>
       <ContinuationDialogActions>
-        <UiButton variant="secondary" @click="close">取消</UiButton>
+        <UiButton variant="secondary" :disabled="isGenerating" @click="close">取消</UiButton>
         <UiButton
           v-if="!resultImagePath"
           variant="primary"
-          :disabled="sourceImages.length === 0 || isGenerating"
+          :disabled="!sourceImage || isGenerating"
           @click="generate"
         >
           <UiIcon v-if="!isGenerating" name="palette" size="15" />
@@ -117,12 +117,12 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: []
-  generate: [sourceImages: File[]]
+  generate: [sourceImage: File]
   'use-result': [imagePath: string]
 }>()
 
-const sourceImages = ref<File[]>([])
-const sourceImagePreviews = ref<Array<{ url: string }>>([])
+const sourceImage = ref<File | null>(null)
+const sourceImagePreviewUrl = ref<string | null>(null)
 const progressMessage = ref('')
 let progressTimers: Array<ReturnType<typeof setTimeout>> = []
 const close = () => emit('close')
@@ -135,33 +135,28 @@ const resultImageAlt = computed(() => {
   return `${props.characterName}${formSuffix}三视图生成结果`
 })
 const sourceImagePreviewItems = computed<ProductThumbnailGridItem[]>(() => {
-  return sourceImagePreviews.value.map((preview, index) => {
-    const number = index + 1
+  if (!sourceImagePreviewUrl.value) return []
 
-    return {
-      id: preview.url,
-      alt: `源图${number}`,
-      cornerLabel: String(number),
-      interactive: false,
-      label: `源图 ${number}`,
-      src: preview.url,
-    }
-  })
+  return [{
+    id: sourceImagePreviewUrl.value,
+    alt: '角色参考图',
+    interactive: false,
+    label: '角色参考图',
+    src: sourceImagePreviewUrl.value,
+  }]
 })
 
 function revokeSourceImagePreviews(): void {
-  sourceImagePreviews.value.forEach(preview => {
-    window.URL.revokeObjectURL(preview.url)
-  })
-  sourceImagePreviews.value = []
+  if (sourceImagePreviewUrl.value) {
+    window.URL.revokeObjectURL(sourceImagePreviewUrl.value)
+    sourceImagePreviewUrl.value = null
+  }
 }
 
-function setSourceImages(files: File[]): void {
+function setSourceImage(file: File | null): void {
   revokeSourceImagePreviews()
-  sourceImages.value = files
-  sourceImagePreviews.value = files.map(file => ({
-    url: window.URL.createObjectURL(file),
-  }))
+  sourceImage.value = file
+  sourceImagePreviewUrl.value = file ? window.URL.createObjectURL(file) : null
 }
 
 function clearProgressTimers(): void {
@@ -180,22 +175,21 @@ function scheduleProgressMessage(delay: number, message: string): void {
 }
 
 function selectImages(selectedFiles: File[]) {
-  const files = selectedFiles
-    .filter(file => file.type.startsWith('image/'))
-    .slice(0, 5)
-  setSourceImages(files)
+  const file = selectedFiles.find(item => item.type.startsWith('image/')) ?? null
+  setSourceImage(file)
 }
 
 async function generate() {
-  if (sourceImages.value.length === 0) return
+  const file = sourceImage.value
+  if (!file) return
 
-  progressMessage.value = `正在上传 ${sourceImages.value.length} 张图片...`
+  progressMessage.value = '正在上传参考图...'
 
   clearProgressTimers()
   scheduleProgressMessage(500, 'AI 正在分析角色特征...')
   scheduleProgressMessage(2000, '正在生成三视图，请耐心等待...')
 
-  emit('generate', sourceImages.value)
+  emit('generate', file)
 }
 
 function useResult() {

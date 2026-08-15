@@ -1,6 +1,5 @@
 import {
   AI_PROVIDER_MANIFEST,
-  getProviderDefaultModel,
   getProviderOptionsForCapability,
 } from '@/config/aiProviders'
 
@@ -10,23 +9,15 @@ export interface CustomLayer {
   align: boolean
 }
 
-export const API_PROVIDER_OPTIONS = AI_PROVIDER_MANIFEST
-  .filter(entry => entry.capabilities.some(cap => ['vlm', 'chat', 'embedding', 'rerank', 'imageGen'].includes(cap)))
-  .map(entry => ({ value: entry.id, label: entry.label }))
+export const VLM_PROVIDER_OPTIONS = getProviderOptionsForCapability('vlm')
 
-export function getProvidersForCapability(capability: 'vlm' | 'chat' | 'embedding' | 'rerank' | 'imageGen') {
-  return getProviderOptionsForCapability(capability)
-}
+export const LLM_PROVIDER_OPTIONS = getProviderOptionsForCapability('chat')
 
-export const VLM_PROVIDER_OPTIONS = getProvidersForCapability('vlm')
+export const EMBEDDING_PROVIDER_OPTIONS = getProviderOptionsForCapability('embedding')
 
-export const LLM_PROVIDER_OPTIONS = getProvidersForCapability('chat')
+export const RERANKER_PROVIDER_OPTIONS = getProviderOptionsForCapability('rerank')
 
-export const EMBEDDING_PROVIDER_OPTIONS = getProvidersForCapability('embedding')
-
-export const RERANKER_PROVIDER_OPTIONS = getProvidersForCapability('rerank')
-
-export const IMAGE_GEN_PROVIDER_OPTIONS = getProvidersForCapability('imageGen')
+export const IMAGE_GEN_PROVIDER_OPTIONS = getProviderOptionsForCapability('imageGen')
 
 export const ARCHITECTURE_OPTIONS = [
   { value: 'simple', label: '简洁模式 - 批量分析 → 全书总结（短篇）' },
@@ -43,52 +34,8 @@ export const PROMPT_TYPE_OPTIONS = [
   { value: 'qa_response', label: '问答响应提示词' },
 ]
 
-export const PROVIDER_DEFAULT_MODELS: Record<string, {
-  vlm?: string
-  chat?: string
-  embedding?: string
-  reranker?: string
-  imageGen?: string
-}> = Object.fromEntries(
-  API_PROVIDER_OPTIONS.map(option => [
-    option.value,
-    {
-      vlm: getProviderDefaultModel(option.value, 'vlm') || undefined,
-      chat: getProviderDefaultModel(option.value, 'chat') || undefined,
-      embedding: getProviderDefaultModel(option.value, 'embedding') || undefined,
-      reranker: getProviderDefaultModel(option.value, 'reranker') || undefined,
-      imageGen: getProviderDefaultModel(option.value, 'imageGen') || undefined,
-    },
-  ])
-)
-
-export const VLM_DEFAULT_MODELS: Record<string, string> = Object.fromEntries(
-  Object.entries(PROVIDER_DEFAULT_MODELS)
-    .filter(([_, value]) => value.vlm)
-    .map(([key, value]) => [key, value.vlm!])
-)
-
-export const LLM_DEFAULT_MODELS: Record<string, string> = Object.fromEntries(
-  Object.entries(PROVIDER_DEFAULT_MODELS)
-    .filter(([_, value]) => value.chat)
-    .map(([key, value]) => [key, value.chat!])
-)
-
-export const EMBEDDING_DEFAULT_MODELS: Record<string, string> = Object.fromEntries(
-  Object.entries(PROVIDER_DEFAULT_MODELS)
-    .filter(([_, value]) => value.embedding)
-    .map(([key, value]) => [key, value.embedding!])
-)
-
-export const RERANKER_DEFAULT_MODELS: Record<string, string> = Object.fromEntries(
-  Object.entries(PROVIDER_DEFAULT_MODELS)
-    .filter(([_, value]) => value.reranker)
-    .map(([key, value]) => [key, value.reranker!])
-)
-
-export const ARCHITECTURE_PRESETS: Record<string, { name: string; description: string; layers: CustomLayer[] }> = {
+export const ARCHITECTURE_PRESETS: Record<string, { description: string; layers: CustomLayer[] }> = {
   simple: {
-    name: "简洁模式",
     description: "适合100页以内的短篇漫画",
     layers: [
       { name: "批量分析", units: 5, align: false },
@@ -96,7 +43,6 @@ export const ARCHITECTURE_PRESETS: Record<string, { name: string; description: s
     ],
   },
   standard: {
-    name: "标准模式",
     description: "适合大多数漫画，平衡效果与速度",
     layers: [
       { name: "批量分析", units: 5, align: false },
@@ -105,7 +51,6 @@ export const ARCHITECTURE_PRESETS: Record<string, { name: string; description: s
     ],
   },
   chapter_based: {
-    name: "章节模式",
     description: "适合有明确章节划分的漫画，会在章节边界处切分",
     layers: [
       { name: "批量分析", units: 5, align: true },
@@ -114,7 +59,6 @@ export const ARCHITECTURE_PRESETS: Record<string, { name: string; description: s
     ],
   },
   full: {
-    name: "完整模式",
     description: "适合长篇连载，提供最详细的分层总结",
     layers: [
       { name: "批量分析", units: 5, align: false },

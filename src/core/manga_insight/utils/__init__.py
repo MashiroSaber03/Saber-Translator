@@ -1,1 +1,0 @@
-"""Manga Insight utility package."""

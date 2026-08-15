@@ -26,14 +26,19 @@ PySide6-Essentials>=6.8,<7
 # Base tools
 pyyaml
 pillow
+numpy
 opencv-python
 requests
 colorama>=0.4.6,<1
+packaging
 networkx
 shapely
 pyclipper
 pandas
 freetype-py
+fonttools
+img2pdf
+reportlab
 
 # AI/OCR
 openai

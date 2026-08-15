@@ -4,8 +4,9 @@ Default (DBNet ResNet34) 后端
 只保留模型推理核心逻辑，合并和后处理使用统一架构
 """
 
-import os
 import logging
+import math
+import os
 from typing import List, Tuple, Optional
 
 import cv2
@@ -45,8 +46,7 @@ class DefaultBackend(BaseTextDetector):
                  detect_size: int = DEFAULT_DETECT_SIZE,
                  text_threshold: float = DEFAULT_TEXT_THRESHOLD,
                  box_threshold: float = DEFAULT_BOX_THRESHOLD,
-                 unclip_ratio: float = DEFAULT_UNCLIP_RATIO,
-                 **kwargs):
+                 unclip_ratio: float = DEFAULT_UNCLIP_RATIO):
         """
         初始化 Default 检测器
         
@@ -58,16 +58,36 @@ class DefaultBackend(BaseTextDetector):
             box_threshold: 框阈值
             unclip_ratio: 框扩展比例
         """
-        self.model_dir = model_dir or resource_path(DEFAULT_MODEL_DIR)
+        self.model_dir = resource_path(DEFAULT_MODEL_DIR) if model_dir is None else model_dir
+        if isinstance(detect_size, bool) or not isinstance(detect_size, int) or detect_size <= 0:
+            raise ValueError("Default 检测尺寸必须是正整数")
+        for label, value in (
+            ("文本", text_threshold),
+            ("文本框", box_threshold),
+        ):
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(float(value))
+                or not 0 <= float(value) <= 1
+            ):
+                raise ValueError(f"Default {label}阈值必须是 0 到 1 之间的数字")
+        if (
+            isinstance(unclip_ratio, bool)
+            or not isinstance(unclip_ratio, (int, float))
+            or not math.isfinite(float(unclip_ratio))
+            or unclip_ratio <= 0
+        ):
+            raise ValueError("Default 文本框扩展比例必须大于零")
         self.detect_size = detect_size
-        self.text_threshold = text_threshold
-        self.box_threshold = box_threshold
-        self.unclip_ratio = unclip_ratio
+        self.text_threshold = float(text_threshold)
+        self.box_threshold = float(box_threshold)
+        self.unclip_ratio = float(unclip_ratio)
         self.seg_rep = None
         
-        super().__init__(device=device, **kwargs)
+        super().__init__(device=device)
     
-    def _load_model(self, **kwargs):
+    def _load_model(self):
         """加载模型"""
         from src.interfaces.default.DBNet_resnet34 import TextDetection
         from src.interfaces.ctd.utils.db_utils import SegDetectorRepresenter
@@ -83,8 +103,8 @@ class DefaultBackend(BaseTextDetector):
         # 加载模型
         logger.info(f"加载 Default 模型: {model_path}")
         self.model = TextDetection()
-        sd = torch.load(model_path, map_location='cpu')
-        self.model.load_state_dict(sd['model'] if 'model' in sd else sd)
+        state_dict = torch.load(model_path, map_location='cpu', weights_only=True)
+        self.model.load_state_dict(state_dict)
         self.model.eval()
         
         if self.device in ('cuda', 'mps'):
@@ -93,7 +113,6 @@ class DefaultBackend(BaseTextDetector):
         # 初始化后处理器 (复用 CTD 的 SegDetectorRepresenter)
         self.seg_rep = SegDetectorRepresenter(
             thresh=self.text_threshold,
-            box_thresh=self.box_threshold,
             unclip_ratio=self.unclip_ratio
         )
         
@@ -117,16 +136,17 @@ class DefaultBackend(BaseTextDetector):
         # 双边滤波降噪 (与原实现一致)
         image_filtered = cv2.bilateralFilter(image, 17, 80, 80)
         
-        img_resized, ratio, _, pad_w, pad_h = resize_aspect_ratio(
+        img_resized, ratio, pad_w, pad_h = resize_aspect_ratio(
             image_filtered,
             self.detect_size,
-            cv2.INTER_LINEAR,
-            mag_ratio=1
         )
         return img_resized, ratio, pad_w, pad_h
     
     @torch.no_grad()
-    def _detect_raw(self, image: np.ndarray, **kwargs) -> Tuple[List[TextLine], Optional[np.ndarray]]:
+    def _detect_raw(
+        self,
+        image: np.ndarray,
+    ) -> Tuple[List[TextLine], Optional[np.ndarray]]:
         """
         执行原始检测
         
@@ -138,8 +158,6 @@ class DefaultBackend(BaseTextDetector):
                 - 文本行列表 (四边形)
                 - 文本掩码
         """
-        from src.interfaces.default.imgproc import adjustResultCoordinates
-        
         if self.model is None:
             raise RuntimeError("模型未加载")
         
@@ -166,7 +184,7 @@ class DefaultBackend(BaseTextDetector):
         # 注意: CTD 版本的 SegDetectorRepresenter 需要显式传入 height/width 参数
         mask_squeezed = mask[0, 0, :, :]
         boxes, scores = self.seg_rep(
-            None, db,
+            db,
             height=img_resized_h,
             width=img_resized_w
         )
@@ -176,21 +194,22 @@ class DefaultBackend(BaseTextDetector):
         textlines = []
         if boxes.size > 0:
             # 过滤全零框
-            idx = boxes.reshape(boxes.shape[0], -1).sum(axis=1) > 0
+            idx = (
+                (boxes.reshape(boxes.shape[0], -1).sum(axis=1) > 0)
+                & (scores >= self.box_threshold)
+            )
             polys = boxes[idx].astype(np.float64)
             valid_scores = scores[idx]
             
             # 调整坐标到原图尺寸
-            polys = adjustResultCoordinates(polys, ratio_w, ratio_h, ratio_net=1)
+            polys *= (ratio_w, ratio_h)
             polys = polys.astype(np.int32)
             
             # 转换为 TextLine 对象
             for pts, score in zip(polys, valid_scores):
                 if pts.shape[0] == 4:
                     textline = TextLine(pts=pts, confidence=float(score))
-                    # 过滤太小的区域
-                    if textline.area > 16:
-                        textlines.append(textline)
+                    textlines.append(textline)
         
         # 处理掩码 - 缩放到原图尺寸
         # mask 输出是 1/2 分辨率（从 up4 输出，经过 upconv7 上采样后是 H/2）

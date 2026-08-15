@@ -4,7 +4,10 @@ import unittest
 from pathlib import Path
 
 from src.core.config_models import BubbleState
-from src.shared.text_style_defaults import get_text_style_factory_defaults
+from src.shared.text_style_defaults import (
+    _validate_text_style_defaults,
+    get_text_style_factory_defaults,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -30,6 +33,18 @@ class TextStyleFactoryDefaultsTests(unittest.TestCase):
             first["fontSize"],
             get_text_style_factory_defaults()["fontSize"],
         )
+
+    def test_factory_defaults_reject_unknown_fields_and_boolean_numbers(self) -> None:
+        defaults = get_text_style_factory_defaults()
+        with self.assertRaisesRegex(RuntimeError, "多余"):
+            _validate_text_style_defaults({**defaults, "legacyValue": True})
+        for field in ("fontSize", "strokeWidth", "lineSpacing"):
+            broken = {**defaults, field: True}
+            with self.subTest(field=field), self.assertRaisesRegex(
+                RuntimeError,
+                "类型错误",
+            ):
+                _validate_text_style_defaults(broken)
 
 
 class BubbleStateDefaultsTests(unittest.TestCase):

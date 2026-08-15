@@ -22,6 +22,7 @@ from src.backend_v2.jobs.repository import (
     AttemptFence,
     AttemptFenced,
     JobQueueRepository,
+    decode_job_config,
 )
 from src.backend_v2.operations.repository import (
     OperationFence,
@@ -50,6 +51,7 @@ from src.backend_v2.storage.schema import (
     plugin_versions,
     plugins,
 )
+from src.core.config_models import validate_bubble_payload
 from src.shared.memory_errors import is_memory_allocation_error
 
 
@@ -103,18 +105,35 @@ class ReadOnlyPluginRepository:
                     bubbles.c.id,
                     bubbles.c.ordinal,
                     bubbles.c.payload_json,
+                    bubbles.c.payload_schema_version,
+                    bubbles.c.updated_revision,
+                    pages.c.document_revision,
                 )
+                .join(pages, pages.c.id == bubbles.c.page_id)
                 .where(bubbles.c.page_id == page_id)
                 .order_by(bubbles.c.ordinal)
             ).mappings()
-            return [
-                {
-                    "id": str(row["id"]),
-                    "ordinal": int(row["ordinal"]),
-                    "payload": _json_object(row["payload_json"]),
-                }
-                for row in rows
-            ]
+            result: list[dict[str, Any]] = []
+            for row in rows:
+                if row["payload_schema_version"] != 1:
+                    raise RuntimeError(
+                        "bubble payload schema version is not current"
+                    )
+                if row["updated_revision"] != row["document_revision"]:
+                    raise RuntimeError(
+                        "bubble revision does not match page document"
+                    )
+                result.append(
+                    {
+                        "id": str(row["id"]),
+                        "ordinal": int(row["ordinal"]),
+                        "payload": validate_bubble_payload(
+                            _json_object(row["payload_json"]),
+                            render=False,
+                        ),
+                    }
+                )
+            return result
 
 
 class PluginAssetAccess:
@@ -167,8 +186,6 @@ class PluginAssetAccess:
     ) -> str:
         if not isinstance(payload, bytes):
             raise TypeError("plugin asset payload must be bytes")
-        if len(payload) > self.MAX_READ_BYTES:
-            raise ValueError("plugin asset write exceeds 64 MiB")
         return self.storage.publish_bytes(
             payload,
             extension=extension,
@@ -233,16 +250,18 @@ class _PluginLoader:
             engine=engine,
         )
         self._instances: dict[str, tuple[str, object]] = {}
+        self._instance_lock = threading.RLock()
 
     def release_cached_instances(self) -> None:
         """Drop Worker-owned plugin instances at a model-cache safe point."""
-        namespaces = {
-            "saber_plugin_" + version_id.replace("-", "_")
-            for version_id in self._instances
-        }
-        self._instances.clear()
-        for namespace in namespaces:
-            self._purge_namespace(namespace)
+        with self._instance_lock:
+            namespaces = {
+                "saber_plugin_" + version_id.replace("-", "_")
+                for version_id in self._instances
+            }
+            self._instances.clear()
+            for namespace in namespaces:
+                self._purge_namespace(namespace)
 
     def load_job(self, job_id: str) -> list[_LoadedPlugin]:
         with self.engine.connect() as connection:
@@ -365,6 +384,8 @@ class _PluginLoader:
                 manifest=manifest,
             )
         except Exception as exc:
+            if is_memory_allocation_error(exc):
+                raise
             with self.engine.begin() as connection:
                 connection.execute(
                     update(plugins)
@@ -378,6 +399,25 @@ class _PluginLoader:
             return _FailedPluginLoad()
 
     def _load_instance(
+        self,
+        *,
+        version_id: str,
+        relative_path: str,
+        checksum: str,
+        manifest: PluginManifest,
+    ) -> object:
+        # Parallel page workers share one runtime. Module imports mutate
+        # process-global sys.modules and sys.dont_write_bytecode, so loading and
+        # cache release must be serialized across all plugin versions.
+        with self._instance_lock:
+            return self._load_instance_locked(
+                version_id=version_id,
+                relative_path=relative_path,
+                checksum=checksum,
+                manifest=manifest,
+            )
+
+    def _load_instance_locked(
         self,
         *,
         version_id: str,
@@ -525,6 +565,7 @@ class PluginJobRuntime:
             raise PluginContractError(
                 "atomic hook pageId does not match its context"
             )
+        expected_shape = _atomic_shape(data)
         return self._run(
             fence=fence,
             hook=f"{phase}_{step}",
@@ -537,6 +578,7 @@ class PluginJobRuntime:
                 phase,
                 page_id,
                 value,
+                expected_shape=expected_shape,
             ),
         )
 
@@ -673,11 +715,12 @@ class PluginJobRuntime:
                     jobs.c.book_id,
                     jobs.c.chapter_id,
                     jobs.c.config_json,
+                    jobs.c.config_schema_version,
                 ).where(jobs.c.id == job_id)
             ).mappings().one()
         return {
             **dict(row),
-            "config": _json_object(row["config_json"]),
+            "config": decode_job_config(row),
         }
 
 
@@ -712,6 +755,7 @@ class PluginOperationRuntime:
             raise PluginContractError(
                 "atomic hook pageId does not match its context"
             )
+        expected_shape = _atomic_shape(data)
         metadata = self._operation_metadata(fence.operation_id)
         return _execute_hooks(
             plugins=self.loader.load_operation(fence.operation_id),
@@ -741,6 +785,7 @@ class PluginOperationRuntime:
                 phase,
                 page_id,
                 value,
+                expected_shape=expected_shape,
             ),
             emit=lambda event_type, payload: (
                 self.operations.append_event(
@@ -869,11 +914,17 @@ def _execute_hooks(
 
 
 def _json_object(raw: object) -> dict[str, Any]:
+    if isinstance(raw, Mapping):
+        return dict(raw)
+    if not isinstance(raw, str):
+        raise PluginContractError("stored plugin JSON must be an object")
     try:
-        value = json.loads(str(raw)) if raw else {}
-    except (TypeError, ValueError, json.JSONDecodeError):
-        return {}
-    return dict(value) if isinstance(value, Mapping) else {}
+        value = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise PluginContractError("stored plugin JSON is invalid") from exc
+    if not isinstance(value, Mapping):
+        raise PluginContractError("stored plugin JSON must be an object")
+    return dict(value)
 
 
 def _validate_atomic_page(
@@ -881,13 +932,47 @@ def _validate_atomic_page(
     phase: str,
     page_id: str,
     value: object,
+    *,
+    expected_shape: Mapping[str, int],
 ) -> dict[str, Any]:
     result = validate_atomic_hook_data(step, phase, value)
     if result["pageId"] != page_id:
         raise PluginContractError(
             "atomic hook pageId does not match its context"
         )
+    for field, expected in expected_shape.items():
+        current = result.get(field)
+        if field == "documentRevision":
+            if current != expected:
+                raise PluginContractError(
+                    "atomic hook must preserve documentRevision"
+                )
+        elif not isinstance(current, list) or len(current) != expected:
+            raise PluginContractError(
+                f"atomic hook must preserve {field} length"
+            )
     return result
+
+
+def _atomic_shape(data: Mapping[str, Any]) -> dict[str, int]:
+    shape = {
+        field: len(value)
+        for field, value in data.items()
+        if field
+        in {
+            "bubbles",
+            "originalTexts",
+            "ocrResults",
+            "colors",
+            "translations",
+            "textboxTexts",
+        }
+        and isinstance(value, list)
+    }
+    revision = data.get("documentRevision")
+    if isinstance(revision, int) and not isinstance(revision, bool):
+        shape["documentRevision"] = revision
+    return shape
 
 
 def _optional_text(value: object) -> str | None:

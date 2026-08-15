@@ -1,5 +1,5 @@
 <template>
-  <ContinuationDialogShell title="新增形态" @close="close">
+  <ContinuationDialogShell title="新增形态" :dismissible="!busy" @close="close">
     <ContinuationDialogForm>
       <ContinuationDialogField
         label="形态名称"
@@ -33,14 +33,14 @@
 
     <template #footer>
       <ContinuationDialogActions>
-        <UiButton variant="secondary" @click="close">取消</UiButton>
+        <UiButton variant="secondary" :disabled="busy" @click="close">取消</UiButton>
         <UiButton
           variant="primary"
-          :disabled="!formName.trim() || isAdding"
+          :disabled="!formName.trim() || busy"
           @click="add"
         >
-          <UiIcon v-if="!isAdding" name="check" size="15" />
-          <span>{{ isAdding ? '添加中...' : '确认添加' }}</span>
+          <UiIcon v-if="!busy" name="check" size="15" />
+          <span>{{ busy ? '添加中...' : '确认添加' }}</span>
         </UiButton>
       </ContinuationDialogActions>
     </template>
@@ -50,7 +50,7 @@
 <script setup lang="ts">
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 import UiInput from '@/components/ui/UiInput.vue'
-import { onBeforeUnmount, ref } from 'vue'
+import { ref } from 'vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import ContinuationDialogActions from './ContinuationDialogActions.vue'
@@ -63,19 +63,16 @@ const emit = defineEmits<{
   add: [formName: string, description: string]
 }>()
 
+withDefaults(defineProps<{
+  busy?: boolean
+}>(), {
+  busy: false,
+})
+
 const formName = ref('')
 const description = ref('')
 const formNameError = ref('')
-const isAdding = ref(false)
-let loadingTimer: ReturnType<typeof setTimeout> | null = null
 const close = () => emit('close')
-
-function clearLoadingTimer(): void {
-  if (loadingTimer) {
-    clearTimeout(loadingTimer)
-    loadingTimer = null
-  }
-}
 
 function add() {
   const name = formName.value.trim()
@@ -86,17 +83,6 @@ function add() {
   }
   formNameError.value = ''
 
-  isAdding.value = true
   emit('add', name, description.value.trim())
-
-  clearLoadingTimer()
-  loadingTimer = setTimeout(() => {
-    isAdding.value = false
-    loadingTimer = null
-  }, 500)
 }
-
-onBeforeUnmount(() => {
-  clearLoadingTimer()
-})
 </script>

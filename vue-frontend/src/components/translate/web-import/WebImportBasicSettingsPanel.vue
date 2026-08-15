@@ -52,16 +52,18 @@ const storedCredentialHint = '凭据已安全保存在后端；留空表示保�
       variant="settings"
       label="API Key"
       control-id="webImportFirecrawlApiKey"
-      :hint="!draftSettings.firecrawl.apiKey && props.hasFirecrawlCredential
-        ? storedCredentialHint
-        : ''"
+      :hint="
+        !draftSettings.firecrawl.apiKey && props.hasFirecrawlCredential ? storedCredentialHint : ''
+      "
     >
       <UiPasswordField
         input-id="webImportFirecrawlApiKey"
         :model-value="draftSettings.firecrawl.apiKey"
-        :placeholder="!draftSettings.firecrawl.apiKey && props.hasFirecrawlCredential
-          ? '已保存在后端，留空保持不变'
-          : 'fc-xxxxxxxxxxxxxxxx'"
+        :placeholder="
+          !draftSettings.firecrawl.apiKey && props.hasFirecrawlCredential
+            ? '已保存在后端，留空保持不变'
+            : 'fc-xxxxxxxxxxxxxxxx'
+        "
         show-label="显示 Firecrawl API Key"
         hide-label="隐藏 Firecrawl API Key"
         @update:model-value="settingsActions.setFirecrawlApiKey"
@@ -138,11 +140,35 @@ const storedCredentialHint = '凭据已安全保存在后端；留空表示保�
       </UiField>
     </UiFormGrid>
 
+    <UiFormGrid>
+      <UiField variant="settings" label="重试次数" control-id="webImportAgentMaxRetries">
+        <UiNumberField
+          input-id="webImportAgentMaxRetries"
+          :model-value="draftSettings.agent.maxRetries"
+          :min="0"
+          @update:model-value="value => applyNumber(settingsActions.setAgentMaxRetries, value)"
+        />
+      </UiField>
+      <UiField variant="settings" label="超时 (秒)" control-id="webImportAgentTimeout">
+        <UiNumberField
+          input-id="webImportAgentTimeout"
+          :model-value="draftSettings.agent.timeout"
+          :min="1"
+          @update:model-value="value => applyNumber(settingsActions.setAgentTimeout, value)"
+        />
+      </UiField>
+    </UiFormGrid>
+
     <ProductActionRow aria-label="AI Agent 操作" justify="start">
       <UiButton
         variant="secondary"
         block
-        :disabled="testingAgent || (providerRequiresApiKey(draftSettings.agent.provider) && !draftSettings.agent.apiKey && !hasAgentCredential)"
+        :disabled="
+          testingAgent ||
+            (providerRequiresApiKey(draftSettings.agent.provider) &&
+              !draftSettings.agent.apiKey &&
+              !hasAgentCredential)
+        "
         @click="$emit('test-agent')"
       >
         {{ testingAgent ? '测试中...' : '测试 Agent 连接' }}
@@ -172,8 +198,9 @@ const storedCredentialHint = '凭据已安全保存在后端；留空表示保�
         input-id="webImportMaxIterations"
         :model-value="draftSettings.extraction.maxIterations"
         :min="1"
-        :max="20"
-        @update:model-value="value => applyNumber(settingsActions.setExtractionMaxIterations, value)"
+        @update:model-value="
+          value => applyNumber(settingsActions.setExtractionMaxIterations, value)
+        "
       />
     </UiField>
   </ProductFormSection>
@@ -187,7 +214,6 @@ const storedCredentialHint = '凭据已安全保存在后端；留空表示保�
           input-id="webImportDownloadConcurrency"
           :model-value="draftSettings.download.concurrency"
           :min="1"
-          :max="10"
           @update:model-value="value => applyNumber(settingsActions.setDownloadConcurrency, value)"
         />
       </UiField>
@@ -196,8 +222,7 @@ const storedCredentialHint = '凭据已安全保存在后端；留空表示保�
         <UiNumberField
           input-id="webImportDownloadTimeout"
           :model-value="draftSettings.download.timeout"
-          :min="5"
-          :max="120"
+          :min="1"
           @update:model-value="value => applyNumber(settingsActions.setDownloadTimeout, value)"
         />
       </UiField>
@@ -207,7 +232,6 @@ const storedCredentialHint = '凭据已安全保存在后端；留空表示保�
           input-id="webImportDownloadRetries"
           :model-value="draftSettings.download.retries"
           :min="0"
-          :max="5"
           @update:model-value="value => applyNumber(settingsActions.setDownloadRetries, value)"
         />
       </UiField>
@@ -217,7 +241,6 @@ const storedCredentialHint = '凭据已安全保存在后端；留空表示保�
           input-id="webImportDownloadDelay"
           :model-value="draftSettings.download.delay"
           :min="0"
-          :max="2000"
           :step="100"
           @update:model-value="value => applyNumber(settingsActions.setDownloadDelay, value)"
         />

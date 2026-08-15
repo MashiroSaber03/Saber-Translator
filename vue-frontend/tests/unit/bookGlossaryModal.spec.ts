@@ -17,6 +17,7 @@ const { saveBookConstraintsMock, showToastMock } = vi.hoisted(() => ({
 
 vi.mock('@/components/common/BaseModal.vue', () => ({
   default: defineComponent({
+    name: 'BaseModalStub',
     props: ['modelValue'],
     emits: ['update:modelValue', 'close'],
     setup(_props, { slots }) {
@@ -60,12 +61,12 @@ describe('BookGlossaryModal', () => {
         autoExtractPrompt: DEFAULT_AUTO_GLOSSARY_PROMPT,
         entries: [{ source: 'Alice', target: '爱丽丝', note: '', matchMode: 'text' }],
       },
-      non_translate: {
+      nonTranslate: {
         enabled: false,
         entries: [],
       },
-    })
-    store.saveBookConstraints = saveBookConstraintsMock.mockResolvedValue(true)
+    }, 1)
+    store.saveBookConstraints = saveBookConstraintsMock.mockResolvedValue(undefined)
 
     const wrapper = mount(BookGlossaryModal, {
       props: {
@@ -100,11 +101,11 @@ describe('BookGlossaryModal', () => {
         autoExtractPrompt: '自定义提示词',
         entries: [],
       },
-      non_translate: {
+      nonTranslate: {
         enabled: false,
         entries: [],
       },
-    })
+    }, 1)
 
     const wrapper = mount(BookGlossaryModal, {
       props: {
@@ -129,11 +130,11 @@ describe('BookGlossaryModal', () => {
         autoExtractPrompt: DEFAULT_AUTO_GLOSSARY_PROMPT,
         entries: [],
       },
-      non_translate: {
+      nonTranslate: {
         enabled: true,
         entries: [],
       },
-    })
+    }, 1)
 
     const glossaryWrapper = mount(BookGlossaryModal, {
       props: {
@@ -180,5 +181,46 @@ describe('BookGlossaryModal', () => {
       expect(source, file).toContain("import { deepClone } from '@/utils/deepClone'")
       expect(source, file).not.toContain('JSON.parse(JSON.stringify(')
     }
+  })
+
+  it('forwards one close update without mirroring modal state locally', () => {
+    const store = useBookTranslationConstraintsStore()
+    store.loadBookConstraints('book-1', {
+      glossary: {
+        enabled: false,
+        autoExtractEnabled: false,
+        autoExtractPrompt: DEFAULT_AUTO_GLOSSARY_PROMPT,
+        entries: [],
+      },
+      nonTranslate: { enabled: false, entries: [] },
+    }, 1)
+
+    for (const component of [BookGlossaryModal, BookNonTranslateModal]) {
+      const wrapper = mount(component, { props: { modelValue: true } })
+      wrapper.getComponent({ name: 'BaseModalStub' }).vm.$emit('close')
+      expect(wrapper.emitted('update:modelValue')).toEqual([[false]])
+    }
+  })
+
+  it('shows the backend constraint error instead of replacing it with a generic message', async () => {
+    const store = useBookTranslationConstraintsStore()
+    store.loadBookConstraints('book-1', {
+      glossary: {
+        enabled: false,
+        autoExtractEnabled: false,
+        autoExtractPrompt: DEFAULT_AUTO_GLOSSARY_PROMPT,
+        entries: [],
+      },
+      nonTranslate: { enabled: false, entries: [] },
+    }, 1)
+    store.saveBookConstraints = saveBookConstraintsMock.mockRejectedValue(
+      new Error('约束文档已被其他请求更新'),
+    )
+
+    const wrapper = mount(BookGlossaryModal, { props: { modelValue: true } })
+    await wrapper.find('[data-testid="save-book-glossary-button"]').trigger('click')
+
+    expect(showToastMock).toHaveBeenCalledWith('约束文档已被其他请求更新', 'error')
+    expect(wrapper.emitted('saved')).toBeUndefined()
   })
 })

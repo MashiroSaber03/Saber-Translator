@@ -53,10 +53,12 @@ class TaskApiClient(QObject):
         self._running = False
         self._refresh_timer.stop()
         self._refresh_pending = False
-        if self._sse_reply is not None:
-            self._sse_reply.abort()
-            self._sse_reply.deleteLater()
-            self._sse_reply = None
+        reply = self._sse_reply
+        if reply is not None:
+            reply.abort()
+            if self._sse_reply is reply:
+                self._sse_reply = None
+                reply.deleteLater()
         self._sse_buffer = ""
         self._set_connected(False)
 
@@ -71,7 +73,10 @@ class TaskApiClient(QObject):
         self._list_finished = set()
         generation = self._generation
         for scope in ("queue", "history"):
-            request = self._json_request(f"/api/v2/jobs?scope={scope}&limit=200")
+            path = f"/api/v2/jobs?scope={scope}"
+            if scope == "history":
+                path += "&limit=200"
+            request = self._json_request(path)
             reply = self._manager.get(request)
             reply.finished.connect(
                 lambda scope=scope, reply=reply, generation=generation: self._finish_list(
@@ -88,6 +93,8 @@ class TaskApiClient(QObject):
     def command(self, job_id: str, action: str) -> None:
         if action not in {"pause", "resume", "continue", "cancel"}:
             raise ValueError(f"unsupported job action: {action}")
+        if not job_id.strip():
+            raise ValueError("job id is required")
         if not self._running or not self._base_url:
             self.error.emit("任务操作失败：后端尚未连接")
             self.command_finished.emit(job_id, action, False)
@@ -97,11 +104,16 @@ class TaskApiClient(QObject):
             idempotent=True,
         )
         reply = self._manager.post(request, QByteArray(b"{}"))
+        generation = self._generation
         reply.finished.connect(
-            lambda reply=reply, job_id=job_id, action=action: self._finish_command(
+            lambda reply=reply,
+            job_id=job_id,
+            action=action,
+            generation=generation: self._finish_command(
                 reply,
                 job_id,
                 action,
+                generation,
             )
         )
 
@@ -109,6 +121,7 @@ class TaskApiClient(QObject):
         request = QNetworkRequest(QUrl(f"{self._base_url}{path}"))
         request.setRawHeader(b"Accept", b"application/json")
         request.setRawHeader(b"Content-Type", b"application/json")
+        request.setTransferTimeout(15_000)
         if idempotent:
             request.setRawHeader(b"Idempotency-Key", str(uuid.uuid4()).encode("ascii"))
         return request
@@ -143,7 +156,10 @@ class TaskApiClient(QObject):
                 self._refresh_pending = False
                 self.schedule_refresh()
             else:
-                QTimer.singleShot(2000, self.refresh)
+                QTimer.singleShot(
+                    2000,
+                    lambda generation=generation: self._retry_refresh(generation),
+                )
             return
         queue = self._list_results["queue"]
         history = self._list_results["history"]
@@ -177,6 +193,8 @@ class TaskApiClient(QObject):
         reply.finished.connect(lambda reply=reply: self._finish_sse(reply))
 
     def _sse_metadata(self, reply: QNetworkReply) -> None:
+        if reply is not self._sse_reply:
+            return
         status = reply.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute)
         if isinstance(status, int) and status == 200:
             self._reconnect_attempt = 0
@@ -184,6 +202,9 @@ class TaskApiClient(QObject):
 
     def _read_sse(self, reply: QNetworkReply) -> None:
         if reply is not self._sse_reply:
+            return
+        status = reply.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute)
+        if status != 200:
             return
         self._set_connected(True)
         self._sse_buffer += bytes(reply.readAll()).decode("utf-8", errors="replace")
@@ -221,14 +242,30 @@ class TaskApiClient(QObject):
         delays = (1000, 2000, 5000)
         delay = delays[min(self._reconnect_attempt, len(delays) - 1)]
         self._reconnect_attempt += 1
-        QTimer.singleShot(delay, self._connect_sse)
+        generation = self._generation
+        QTimer.singleShot(
+            delay,
+            lambda generation=generation: self._retry_sse(generation),
+        )
+
+    def _retry_refresh(self, generation: int) -> None:
+        if self._running and generation == self._generation:
+            self.refresh()
+
+    def _retry_sse(self, generation: int) -> None:
+        if self._running and generation == self._generation:
+            self._connect_sse()
 
     def _finish_command(
         self,
         reply: QNetworkReply,
         job_id: str,
         action: str,
+        generation: int,
     ) -> None:
+        if generation != self._generation:
+            reply.deleteLater()
+            return
         success = reply.error() == QNetworkReply.NetworkError.NoError
         if not success:
             body = bytes(reply.readAll()).decode("utf-8", errors="replace")
@@ -236,7 +273,9 @@ class TaskApiClient(QObject):
             try:
                 payload = json.loads(body)
                 if isinstance(payload, dict):
-                    message = str(payload.get("message") or payload.get("error") or message)
+                    candidate = payload.get("message") or payload.get("error")
+                    if isinstance(candidate, str) and candidate.strip():
+                        message = candidate
             except json.JSONDecodeError:
                 pass
             self.error.emit(f"任务操作失败：{message}")

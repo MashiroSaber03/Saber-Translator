@@ -1,4 +1,4 @@
-﻿import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { flushPromises, mount } from '@vue/test-utils'
 import { readFileSync } from 'node:fs'
@@ -22,7 +22,7 @@ const replaceMock = vi.fn()
 
 function createDeferred(): { promise: Promise<void>; resolve: () => void } {
   let resolve!: () => void
-  const promise = new Promise<void>((resolvePromise) => {
+  const promise = new Promise<void>(resolvePromise => {
     resolve = resolvePromise
   })
   return { promise, resolve }
@@ -61,7 +61,8 @@ describe('CharacterStudioView workspace shell', () => {
       eyebrow: '缺少上下文',
       iconName: 'alert-triangle',
       title: '未检测到书籍参数',
-      description: '请从漫画分析页进入角色工坊，或在 URL 中携带 `book` 参数。角色工坊需要当前书籍的分析上下文。',
+      description:
+        '请从漫画分析页进入角色工坊，或在 URL 中携带 `book` 参数。角色工坊需要当前书籍的分析上下文。',
     })
     expect(wrapper.text()).toContain('角色工坊需要当前书籍的分析上下文')
     expect(wrapper.text()).not.toContain('仍然依赖')
@@ -81,9 +82,16 @@ describe('CharacterStudioView workspace shell', () => {
       id: 'doc_alpha',
       bookId: 'book-demo',
       origin: { type: 'manual', source_character: null },
-      status: { is_favorite: false, frozen_sections: [], last_validated_at: null },
-      meta: { title: '阿尔法', tags: [], created_at: '2026-05-15T00:00:00', updated_at: '2026-05-15T00:00:00' },
-      avatar: { asset_path: null },
+      status: {
+        is_favorite: false,
+        frozen_sections: [],
+        last_diagnostics: null,
+        last_validated_at: null,
+      },
+      meta: {
+        title: '阿尔法',
+        tags: [],
+      },
       identity: { name: '阿尔法', aliases: [], description: '', personality: '', scenario: '' },
       coreMessages: {
         first_message: '',
@@ -97,9 +105,11 @@ describe('CharacterStudioView workspace shell', () => {
       lorebook: { name: '阿尔法世界书', entries: [] },
       regexScripts: [],
       stateTasks: [],
-      chatPreset: { opening_mode: 'first_message' },
-      grounding: { timeline_mode: '', sample_pages: [], relationships: [], key_moments: [] },
       exportArtifacts: {},
+      revision: 1,
+      avatarUrl: null,
+      createdAt: '2026-05-15T00:00:00',
+      updatedAt: '2026-05-15T00:00:00',
     }
 
     const wrapper = mount(CharacterStudioView, {
@@ -142,7 +152,8 @@ describe('CharacterStudioView workspace shell', () => {
           CharacterStudioSidebar: { template: '<div />' },
           CharacterStudioEditor: {
             emits: ['delete'],
-            template: '<button class="delete-document" @click="$emit(\'delete\')">删除文档</button>',
+            template:
+              '<button class="delete-document" @click="$emit(\'delete\')">删除文档</button>',
           },
           CharacterStudioPreview: { template: '<div />' },
           StudioTopbar: { template: '<div />' },
@@ -179,6 +190,8 @@ describe('CharacterStudioView workspace shell', () => {
     expect(rootStyle?.groups?.body ?? '').toContain('--studio-surface-tint-muted:')
     expect(rootStyle?.groups?.body ?? '').toContain('--studio-shadow-floating:')
     expect(rootStyle?.groups?.body ?? '').not.toMatch(/--ui-button-/)
+    expect(source).toContain('store.currentDocument?.avatarUrl')
+    expect(source).not.toContain('getCharacterStudioAvatarUrl')
   })
 
   it('keeps the split-pane slot height contract aligned with current Studio child owners', () => {
@@ -199,7 +212,6 @@ describe('CharacterStudioView workspace shell', () => {
       'class="studio-page__workspace-error-banner"',
       'class="studio-page__workspace-shell"',
       'class="studio-page__workspace-slot-content"',
-      'class="studio-page__resource-overlay"',
       'class="studio-page__resource-dialog"',
     ]) {
       expect(source).toContain(currentHook)
@@ -217,7 +229,9 @@ describe('CharacterStudioView workspace shell', () => {
       expect(source).not.toContain(legacyHook)
     }
 
-    expect(source).not.toMatch(/\.(?:workspace-root|workspace-shell|workspace-slot-content|workspace-error-banner|resource-overlay|resource-dialog)\b/)
+    expect(source).not.toMatch(
+      /\.(?:workspace-root|workspace-shell|workspace-slot-content|workspace-error-banner|resource-overlay|resource-dialog)\b/
+    )
   })
 
   it('exposes the pane resizer as a keyboard-adjustable separator', async () => {
@@ -311,8 +325,13 @@ describe('CharacterStudioView workspace shell', () => {
       },
     })
 
-    expect(wrapper.find('[data-testid="resource-overlay"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="resource-dialog"]').exists()).toBe(true)
+    const dialog = document.body.querySelector('[data-testid="base-dialog-container"]')
+    expect(dialog?.getAttribute('role')).toBe('dialog')
+    expect(dialog?.getAttribute('aria-modal')).toBe('true')
+    expect(dialog?.textContent).toContain('角色资源')
+    expect(document.body.querySelector('[data-testid="resource-dialog"]')).not.toBeNull()
+    expect(document.body.querySelector('[data-testid="base-dialog-close"]')).not.toBeNull()
+    wrapper.unmount()
   })
 
   it('falls back to the first available document when requested docId cannot be opened', async () => {
@@ -332,11 +351,11 @@ describe('CharacterStudioView workspace shell', () => {
           tags: [],
           is_favorite: false,
           has_avatar: false,
-          sample_pages: [],
         },
       ]
     })
-    studioStore.openDocument = vi.fn()
+    studioStore.openDocument = vi
+      .fn()
       .mockRejectedValueOnce(new Error('文档不存在'))
       .mockResolvedValueOnce(undefined)
 
@@ -359,6 +378,57 @@ describe('CharacterStudioView workspace shell', () => {
 
     expect(studioStore.openDocument).toHaveBeenCalledTimes(2)
     expect(studioStore.openDocument).toHaveBeenNthCalledWith(1, 'missing-doc')
+    expect(studioStore.openDocument).toHaveBeenNthCalledWith(2, 'doc_alpha')
+    expect(replaceMock).toHaveBeenCalledWith({
+      name: 'character-studio',
+      query: { book: 'book-demo', doc: 'doc_alpha' },
+    })
+  })
+
+  it('also falls back when a later route change points to an invalid document', async () => {
+    const studioStore = useCharacterStudioStore()
+    const bookshelfStore = useBookshelfStore()
+
+    bookshelfStore.books = [{ id: 'book-demo', title: '测试书籍' }] as typeof bookshelfStore.books
+    bookshelfStore.loadBooks = vi.fn().mockResolvedValue(undefined)
+    studioStore.loadWorkspace = vi.fn().mockImplementation(async () => {
+      studioStore.documents = [
+        {
+          id: 'doc_alpha',
+          title: '阿尔法',
+          origin: 'manual',
+          source_character: null,
+          updated_at: '2026-05-15T00:00:00',
+          tags: [],
+          is_favorite: false,
+          has_avatar: false,
+        },
+      ]
+    })
+    studioStore.openDocument = vi.fn().mockResolvedValue(undefined)
+
+    const wrapper = mount(CharacterStudioView, {
+      props: { bookId: 'book-demo', docId: 'doc_alpha' },
+      global: {
+        stubs: {
+          CharacterStudioSidebar: { template: '<div class="sidebar-stub">sidebar</div>' },
+          CharacterStudioEditor: { template: '<div class="editor-stub">editor</div>' },
+          CharacterStudioPreview: { template: '<div class="preview-stub">preview</div>' },
+          StudioTopbar: { template: '<div class="topbar-stub">topbar</div>' },
+        },
+      },
+    })
+    await flushPromises()
+    ;(studioStore.openDocument as ReturnType<typeof vi.fn>).mockReset()
+    ;(studioStore.openDocument as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new Error('文档不存在'))
+      .mockResolvedValueOnce(undefined)
+    replaceMock.mockClear()
+
+    await wrapper.setProps({ docId: 'missing-later' })
+    await flushPromises()
+
+    expect(studioStore.openDocument).toHaveBeenNthCalledWith(1, 'missing-later')
     expect(studioStore.openDocument).toHaveBeenNthCalledWith(2, 'doc_alpha')
     expect(replaceMock).toHaveBeenCalledWith({
       name: 'character-studio',
@@ -390,7 +460,6 @@ describe('CharacterStudioView workspace shell', () => {
           tags: [],
           is_favorite: false,
           has_avatar: false,
-          sample_pages: [],
         },
       ]
     })

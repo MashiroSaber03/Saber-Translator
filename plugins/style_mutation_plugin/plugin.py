@@ -3,50 +3,37 @@ from copy import deepcopy
 
 class Plugin:
     def before_detect(self, context, data):
-        result = deepcopy(dict(data))
-        detector = str(
-            context.config.get("force_detector_type", "")
-        ).strip()
+        result = deepcopy(data)
+        detector = context.config["force_detector_type"]
         if detector:
-            result["detectorType"] = detector
+            detector_config = result["detectorConfig"]
+            detector_config["detector_type"] = detector
         return result
 
     def after_color(self, context, data):
-        result = deepcopy(dict(data))
-        if not context.config.get("override_palette", True):
+        result = deepcopy(data)
+        if not context.config["override_palette"]:
             return result
-        text_color = str(
-            context.config.get("override_text_color", "#ff0055")
-        )
-        for color in result.get("colors", []):
-            if isinstance(color, dict):
-                color["textColor"] = text_color
+        text_color = context.config["override_text_color"]
+        for color in result["colors"]:
+            color["fgColor"] = [
+                int(text_color[index:index + 2], 16)
+                for index in (1, 3, 5)
+            ]
         return result
 
     def before_inpaint(self, context, data):
-        result = deepcopy(dict(data))
-        result["fillColor"] = str(
-            context.config.get(
-                "override_fill_color",
-                "#c8ffb0",
-            )
-        )
+        result = deepcopy(data)
+        if result["method"] == "solid":
+            result["fillColor"] = context.config["override_fill_color"]
         return result
 
     def before_render(self, context, data):
-        result = deepcopy(dict(data))
-        text_color = str(
-            context.config.get("override_text_color", "#ff0055")
-        )
-        stroke_color = str(
-            context.config.get("override_stroke_color", "#00aaff")
-        )
-        result["textColor"] = text_color
-        result["strokeEnabled"] = True
-        result["strokeColor"] = stroke_color
-        for bubble in result.get("bubbles", []):
-            if isinstance(bubble, dict):
-                bubble["textColor"] = text_color
-                bubble["strokeEnabled"] = True
-                bubble["strokeColor"] = stroke_color
+        result = deepcopy(data)
+        text_color = context.config["override_text_color"]
+        stroke_color = context.config["override_stroke_color"]
+        for bubble in result["bubbles"]:
+            bubble["textColor"] = text_color
+            bubble["strokeEnabled"] = True
+            bubble["strokeColor"] = stroke_color
         return result

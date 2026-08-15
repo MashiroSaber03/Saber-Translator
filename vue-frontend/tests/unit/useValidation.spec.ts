@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useSettingsStore } from '@/stores/settings'
@@ -16,8 +14,9 @@ describe('useValidation', () => {
     const validation = useValidation()
 
     try {
-      useSettingsStore().updateTranslationService({
-        provider: 'deepseek',
+      const store = useSettingsStore()
+      store.setTranslationProvider('deepseek')
+      store.updateTranslationService({
         apiKey: '',
         modelName: '',
       })
@@ -33,41 +32,29 @@ describe('useValidation', () => {
     }
   })
 
-  it('keeps validation source comments focused on current behavior contracts', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/composables/useValidation.ts'), 'utf8')
-    for (const staleNarration of [
-      '翻译配置验证组合式函数',
-      '// ===' + '=========================================================',
-      '类型定义',
-      '工具函数',
-      'UI 交互函数',
-      '返回',
-      '@param',
-      '@returns',
-      '类型已在上方定义并导出',
-    ]) {
-      expect(source).not.toContain(staleNarration)
-    }
+  it('requires a Base URL for every custom proofreading round', async () => {
+    const { useValidation } = await import('@/composables/useValidation')
+    const settingsStore = useSettingsStore()
+    settingsStore.settings.proofreading.rounds = [{
+      ...settingsStore.settings.hqTranslation,
+      id: '11111111-1111-4111-8111-111111111111',
+      name: '第一轮',
+      provider: 'custom',
+      apiKey: 'secret',
+      modelName: 'custom-model',
+      customBaseUrl: '',
+    }]
 
-    expect(source).not.toContain('@/components/translate/firstTimeGuideState')
+    expect(useValidation().validateBeforeTranslation('proofread')).toBe(false)
   })
 
-  it('keeps validation property provider coverage sourced from the manifest', () => {
-    const source = readFileSync(resolve(process.cwd(), 'tests/property/validation.property.ts'), 'utf8')
+  it('rejects a provider that does not support normal translation', async () => {
+    const { useValidation } = await import('@/composables/useValidation')
+    const settingsStore = useSettingsStore()
+    settingsStore.settings.translation.provider = 'openai' as never
+    settingsStore.settings.translation.apiKey = 'secret'
+    settingsStore.settings.translation.modelName = 'gpt-4o'
 
-    expect(source).toContain("import { AI_PROVIDER_MANIFEST } from '@/config/aiProviders'")
-    expect(source).toContain("capabilities.includes('translation')")
-    expect(source).toContain("capabilities.includes('hqTranslation')")
-
-    for (const staleProviderList of [
-      'providersRequiring' + 'ApiKey',
-      'local' + 'Providers',
-      'all' + 'Providers',
-      'hq' + 'Providers',
-      '生成器' + '定义',
-      '// ===' + '=========================================================',
-    ]) {
-      expect(source).not.toContain(staleProviderList)
-    }
+    expect(useValidation().validateBeforeTranslation('normal')).toBe(false)
   })
 })

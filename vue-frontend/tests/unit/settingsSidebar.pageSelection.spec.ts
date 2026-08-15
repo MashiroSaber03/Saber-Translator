@@ -109,10 +109,8 @@ describe('SettingsSidebar page selection workflow', () => {
   it('opens page selection modal and emits selected pages for batch workflow', async () => {
     const wrapper = mount(SettingsSidebar)
 
-    const workflowModeSelect = wrapper.findAllComponents(UiSelect)
-      .find(select => select.attributes('id') === 'workflowModeSelect')
-    expect(workflowModeSelect).toBeTruthy()
-    workflowModeSelect!.vm.$emit('change', 'translate-batch')
+    const workflowModeSelect = wrapper.getComponent(WorkflowSection).getComponent(UiSelect)
+    workflowModeSelect.vm.$emit('change', 'translate-batch')
 
     const enableSwitch = wrapper.getComponent(UiSwitch)
     expect(enableSwitch.props('accessibilityLabel')).toBe('启用指定翻译页码')
@@ -143,13 +141,13 @@ describe('SettingsSidebar page selection workflow', () => {
     ])
   })
 
-  it('keeps page settings and workflows disabled until the page document is ready', async () => {
+  it('keeps page settings disabled while backend workflows remain available during document loading', async () => {
     const imageStore = useImageStore()
     imageStore.updateCurrentImage({ bubbleStates: null })
     const wrapper = mount(SettingsSidebar)
 
     expect(wrapper.getComponent(TextStyleSection).props('disabled')).toBe(true)
-    expect(wrapper.getComponent(WorkflowSection).props('canRunWorkflow')).toBe(false)
+    expect(wrapper.getComponent(WorkflowSection).props('canRunWorkflow')).toBe(true)
 
     imageStore.updateCurrentImage({ bubbleStates: [] })
     await wrapper.vm.$nextTick()

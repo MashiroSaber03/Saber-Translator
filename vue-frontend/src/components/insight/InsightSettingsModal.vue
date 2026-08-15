@@ -5,20 +5,17 @@ import UiButton from '@/components/ui/UiButton.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductSegmentedTabs from '@/components/product/ProductSegmentedTabs.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
-import {
-  useInsightStore,
-  type InsightConfigStateSnapshot,
-} from '@/stores/insightStore'
+import { useInsightStore, type InsightConfigStateSnapshot } from '@/stores/insightStore'
 import * as insightApi from '@/api/insight'
 import type {
   BatchConfig,
   StoreEmbeddingConfig,
   StoreImageGenConfig,
   StoreLlmConfig,
-  StoreOpenAICompatibleOptions,
   StoreRerankerConfig,
   StoreVlmConfig,
 } from '@/types/insight'
+import { deepClone } from '@/utils/deepClone'
 
 import VlmSettingsTab from './settings/VlmSettingsTab.vue'
 import LlmSettingsTab from './settings/LlmSettingsTab.vue'
@@ -34,7 +31,14 @@ const emit = defineEmits<{
 
 const insightStore = useInsightStore()
 
-type InsightSettingsTabId = 'vlm' | 'llm' | 'batch' | 'embedding' | 'reranker' | 'imagegen' | 'prompts'
+type InsightSettingsTabId =
+  | 'vlm'
+  | 'llm'
+  | 'batch'
+  | 'embedding'
+  | 'reranker'
+  | 'imagegen'
+  | 'prompts'
 
 const activeSettingsTab = ref<InsightSettingsTabId>('vlm')
 const visitedSettingsTabs = ref<Set<InsightSettingsTabId>>(new Set(['vlm']))
@@ -43,51 +47,22 @@ const isLoadingConfig = ref(true)
 const backendConfigReady = ref(false)
 const testMessage = ref('')
 const testMessageType = ref<'success' | 'error' | ''>('')
-const messageTone = computed(() => testMessageType.value === 'error' ? 'danger' : 'success')
+const messageTone = computed(() => (testMessageType.value === 'error' ? 'danger' : 'success'))
 let messageTimer: ReturnType<typeof setTimeout> | null = null
 let closeTimer: ReturnType<typeof setTimeout> | null = null
 let initialConfigState: InsightConfigStateSnapshot | null = null
+let requestSequence = 0
+let isMounted = true
 
 const syncRequestId = ref(0)
 
-function cloneOpenAIOptions(options: StoreOpenAICompatibleOptions): StoreOpenAICompatibleOptions {
-  return {
-    request: {
-      ...options.request,
-      extraBody: options.request.extraBody ? { ...options.request.extraBody } : undefined,
-    },
-    execution: { ...options.execution },
-  }
-}
-
-function cloneVlmConfig(config: StoreVlmConfig): StoreVlmConfig {
-  return {
-    ...config,
-    openaiOptions: cloneOpenAIOptions(config.openaiOptions),
-  }
-}
-
-function cloneLlmConfig(config: StoreLlmConfig): StoreLlmConfig {
-  return {
-    ...config,
-    openaiOptions: cloneOpenAIOptions(config.openaiOptions),
-  }
-}
-
-function cloneBatchConfig(config: BatchConfig): BatchConfig {
-  return {
-    ...config,
-    customLayers: config.customLayers.map(layer => ({ ...layer })),
-  }
-}
-
-const vlmDraft = ref<StoreVlmConfig>(cloneVlmConfig(insightStore.config.vlm))
-const llmDraft = ref<StoreLlmConfig>(cloneLlmConfig(insightStore.config.llm))
-const batchDraft = ref<BatchConfig>(cloneBatchConfig(insightStore.config.batch))
-const embeddingDraft = ref<StoreEmbeddingConfig>({ ...insightStore.config.embedding })
-const rerankerDraft = ref<StoreRerankerConfig>({ ...insightStore.config.reranker })
-const promptsDraft = ref<Record<string, string>>({ ...insightStore.config.prompts })
-const imageGenDraft = ref<StoreImageGenConfig>({ ...insightStore.config.imageGen })
+const vlmDraft = ref<StoreVlmConfig>(deepClone(insightStore.config.vlm))
+const llmDraft = ref<StoreLlmConfig>(deepClone(insightStore.config.llm))
+const batchDraft = ref<BatchConfig>(deepClone(insightStore.config.batch))
+const embeddingDraft = ref<StoreEmbeddingConfig>(deepClone(insightStore.config.embedding))
+const rerankerDraft = ref<StoreRerankerConfig>(deepClone(insightStore.config.reranker))
+const promptsDraft = ref<Record<string, string>>(deepClone(insightStore.config.prompts))
+const imageGenDraft = ref<StoreImageGenConfig>(deepClone(insightStore.config.imageGen))
 
 const settingsTabs = [
   { id: 'vlm', label: 'VLM 多模态', glyph: '🖼️' },
@@ -121,6 +96,8 @@ function updateSettingsTab(tabId: string): void {
 }
 
 function close(): void {
+  if (isSaving.value) return
+  requestSequence += 1
   clearMessageTimer()
   clearCloseTimer()
   if (initialConfigState) {
@@ -135,6 +112,8 @@ function hasVisitedSettingsTab(tab: InsightSettingsTabId): boolean {
 }
 
 function closeAfterCommit(): void {
+  if (!isMounted) return
+  requestSequence += 1
   clearMessageTimer()
   clearCloseTimer()
   initialConfigState = null
@@ -156,6 +135,7 @@ function clearCloseTimer(): void {
 }
 
 function showMessage(message: string, type: 'success' | 'error'): void {
+  if (!isMounted) return
   clearMessageTimer()
   testMessage.value = message
   testMessageType.value = type
@@ -167,13 +147,13 @@ function showMessage(message: string, type: 'success' | 'error'): void {
 }
 
 function refreshDraftsFromStore(): void {
-  vlmDraft.value = cloneVlmConfig(insightStore.config.vlm)
-  llmDraft.value = cloneLlmConfig(insightStore.config.llm)
-  batchDraft.value = cloneBatchConfig(insightStore.config.batch)
-  embeddingDraft.value = { ...insightStore.config.embedding }
-  rerankerDraft.value = { ...insightStore.config.reranker }
-  promptsDraft.value = { ...insightStore.config.prompts }
-  imageGenDraft.value = { ...insightStore.config.imageGen }
+  vlmDraft.value = deepClone(insightStore.config.vlm)
+  llmDraft.value = deepClone(insightStore.config.llm)
+  batchDraft.value = deepClone(insightStore.config.batch)
+  embeddingDraft.value = deepClone(insightStore.config.embedding)
+  rerankerDraft.value = deepClone(insightStore.config.reranker)
+  promptsDraft.value = deepClone(insightStore.config.prompts)
+  imageGenDraft.value = deepClone(insightStore.config.imageGen)
 }
 
 function applyDraftsToStore(): void {
@@ -189,10 +169,11 @@ function applyDraftsToStore(): void {
 async function saveSettings(): Promise<void> {
   if (isSaving.value) return
 
+  const requestId = ++requestSequence
   isSaving.value = true
 
   try {
-    let apiConfig: Record<string, unknown>
+    let apiConfig: ReturnType<typeof insightStore.getConfigForApi>
     try {
       applyDraftsToStore()
       apiConfig = insightStore.getConfigForApi()
@@ -201,12 +182,11 @@ async function saveSettings(): Promise<void> {
         insightStore.restoreConfigState(initialConfigState)
       }
     }
-    await insightApi.saveGlobalConfig(apiConfig as insightApi.AnalysisConfig)
-    backendConfigReady.value = await loadConfig()
-    if (!backendConfigReady.value) {
-      showMessage('设置已保存，但重新读取后端配置失败，请重试打开设置', 'error')
-      return
-    }
+    const savedConfig = await insightApi.saveGlobalConfig(apiConfig)
+    if (!isMounted || requestId !== requestSequence) return
+    insightStore.setConfigFromApi(savedConfig)
+    requestTabsSyncFromStore()
+    backendConfigReady.value = true
     initialConfigState = insightStore.snapshotConfigState()
     showMessage('设置已保存', 'success')
     clearCloseTimer()
@@ -215,19 +195,24 @@ async function saveSettings(): Promise<void> {
       closeAfterCommit()
     }, 500)
   } catch (error) {
-    showMessage('保存失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
+    if (isMounted && requestId === requestSequence) {
+      showMessage('保存失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
+    }
   } finally {
-    isSaving.value = false
+    if (isMounted && requestId === requestSequence) isSaving.value = false
   }
 }
 
-async function loadConfig(): Promise<boolean> {
+async function loadConfig(existingRequestId?: number): Promise<boolean> {
+  const requestId = existingRequestId ?? ++requestSequence
   try {
     const config = await insightApi.getGlobalConfig()
-    insightStore.setConfigFromApi(config as unknown as Record<string, unknown>)
+    if (!isMounted || requestId !== requestSequence) return false
+    insightStore.setConfigFromApi(config)
     requestTabsSyncFromStore()
     return true
   } catch (error) {
+    if (!isMounted || requestId !== requestSequence) return false
     showMessage(error instanceof Error ? error.message : '加载后端配置失败', 'error')
     requestTabsSyncFromStore()
     return false
@@ -241,6 +226,7 @@ function requestTabsSyncFromStore(): void {
 
 onMounted(async () => {
   backendConfigReady.value = await loadConfig()
+  if (!isMounted) return
   if (backendConfigReady.value) {
     initialConfigState = insightStore.snapshotConfigState()
   }
@@ -248,6 +234,8 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  isMounted = false
+  requestSequence += 1
   clearMessageTimer()
   clearCloseTimer()
   if (initialConfigState) {
@@ -269,11 +257,7 @@ onBeforeUnmount(() => {
     </ProductStatusBanner>
 
     <p v-if="isLoadingConfig" class="insight-settings-loading">正在读取后端配置…</p>
-    <fieldset
-      v-else
-      class="insight-settings-fields"
-      :disabled="!backendConfigReady"
-    >
+    <fieldset v-else class="insight-settings-fields" :disabled="!backendConfigReady">
       <ProductSegmentedTabs
         :tabs="settingsTabs"
         :active-tab="activeSettingsTab"
@@ -341,11 +325,8 @@ onBeforeUnmount(() => {
     </fieldset>
 
     <template #footer>
-      <ProductActionRow
-        aria-label="漫画分析设置操作"
-        variant="dialog"
-      >
-        <UiButton variant="secondary" @click="close">取消</UiButton>
+      <ProductActionRow aria-label="漫画分析设置操作" variant="dialog">
+        <UiButton variant="secondary" :disabled="isSaving" @click="close">取消</UiButton>
         <UiButton
           variant="primary"
           :disabled="isSaving || isLoadingConfig || !backendConfigReady"

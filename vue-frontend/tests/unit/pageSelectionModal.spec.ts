@@ -7,6 +7,7 @@ import { resolve } from 'node:path'
 
 vi.mock('@/components/common/BaseModal.vue', () => ({
   default: defineComponent({
+    name: 'BaseModalStub',
     props: ['modelValue', 'title', 'size', 'customClass'],
     emits: ['update:modelValue', 'close'],
     setup(props, { slots }) {
@@ -47,7 +48,6 @@ describe('PageSelectionModal', () => {
     })
     imageStore.updateImageByIndex(2, {
       translationStatus: 'failed',
-      translationFailed: true,
     })
   })
 
@@ -167,14 +167,22 @@ describe('PageSelectionModal', () => {
     expect(browserCardBlocks).toHaveLength(1)
   })
 
+  it('emits one close update for one modal close request', () => {
+    const wrapper = mount(PageSelectionModal, {
+      props: { modelValue: true, selectedPages: [] },
+    })
+
+    wrapper.getComponent({ name: 'BaseModalStub' }).vm.$emit('close')
+
+    expect(wrapper.emitted('update:modelValue')).toEqual([[false]])
+  })
+
   it('uses button semantics for folder navigation controls', async () => {
     const imageStore = useImageStore()
     imageStore.updateImageByIndex(0, {
-      relativePath: 'chapter-a/001.png',
       folderPath: 'chapter-a',
     })
     imageStore.updateImageByIndex(1, {
-      relativePath: 'chapter-a/002.png',
       folderPath: 'chapter-a',
     })
 

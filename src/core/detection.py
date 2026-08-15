@@ -5,6 +5,7 @@
 """
 
 import logging
+import math
 import numpy as np
 from typing import List, Tuple, Dict, Any
 from PIL import Image
@@ -28,10 +29,15 @@ def _filter_small_text_blocks(
     min_text_block_area_percent: float = 0,
 ):
     """按最终文本框面积占原图面积的百分比过滤极小文本框。"""
-    try:
-        threshold = float(min_text_block_area_percent or 0)
-    except (TypeError, ValueError):
-        threshold = 0.0
+    if (
+        isinstance(min_text_block_area_percent, bool)
+        or not isinstance(min_text_block_area_percent, (int, float))
+        or not math.isfinite(float(min_text_block_area_percent))
+    ):
+        raise ValueError("最小文本框面积比例必须是有限数字")
+    threshold = float(min_text_block_area_percent)
+    if threshold < 0:
+        raise ValueError("最小文本框面积比例不能小于零")
 
     if threshold <= 0 or image_width <= 0 or image_height <= 0:
         return list(blocks)
@@ -73,11 +79,6 @@ def _detect_with_optional_saber_refinement(
         detector_type=detector_type,
         merge_lines=merge_lines,
         edge_ratio_threshold=edge_ratio_threshold,
-        expand_ratio=0,
-        expand_top=0,
-        expand_bottom=0,
-        expand_left=0,
-        expand_right=0,
         enable_aux_yolo_detection=enable_aux_yolo_detection,
         aux_yolo_conf_threshold=aux_yolo_conf_threshold,
         aux_yolo_overlap_threshold=aux_yolo_overlap_threshold,
@@ -112,7 +113,16 @@ def expand_coordinates(
     if not coords:
         return coords
     
-    if expand_ratio == 0 and expand_top == 0 and expand_bottom == 0 and expand_left == 0 and expand_right == 0:
+    if all(
+        value == 0
+        for value in (
+            expand_ratio,
+            expand_top,
+            expand_bottom,
+            expand_left,
+            expand_right,
+        )
+    ):
         return coords
     
     expanded = []
@@ -290,7 +300,8 @@ def get_bubble_detection_result_with_auto_directions(
                     direction = line.direction
                     textlines_info.append({
                         'polygon': line_pts,
-                        'direction': direction
+                        'direction': direction,
+                        'confidence': float(line.confidence),
                     })
             
             result['textlines_per_bubble'].append(textlines_info)

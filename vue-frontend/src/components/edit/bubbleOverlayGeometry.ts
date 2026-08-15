@@ -57,6 +57,7 @@ export function buildDrawingRectStyle(rect: BubbleCoords | null): Record<string,
 
   const [x1, y1, x2, y2] = rect
   return {
+    position: 'absolute',
     left: `${Math.min(x1, x2)}px`,
     top: `${Math.min(y1, y2)}px`,
     width: `${Math.abs(x2 - x1)}px`,

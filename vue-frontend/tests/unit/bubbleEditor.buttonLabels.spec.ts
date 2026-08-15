@@ -285,15 +285,6 @@ describe('BubbleEditor button labels', () => {
     expect(source).not.toContain('bubble-editor-apply-all-button')
   })
 
-  it('does not assert shared button primitives through internal class names', () => {
-    const source = readFileSync(resolve(process.cwd(), 'tests/unit/bubbleEditor.buttonLabels.spec.ts'), 'utf8')
-    const buttonClassPrefix = 'ui-' + 'button--'
-    const iconButtonClassPrefix = 'ui-' + 'icon-button--'
-
-    expect(source).not.toContain(buttonClassPrefix)
-    expect(source).not.toContain(iconButtonClassPrefix)
-  })
-
   it('inserts kana at the start of the original text when the caret is at zero', async () => {
     const wrapper = mount(BubbleEditor, {
       props: {
@@ -416,7 +407,7 @@ describe('BubbleEditor button labels', () => {
       expect.objectContaining({ value: 'lama_mpe' }),
       expect.objectContaining({ value: 'litelama' }),
     ]))
-    expect(inpaintSelect.attributes('aria-label')).toBe('背景修复方式')
+    expect(inpaintSelect.get('button').attributes('aria-label')).toBe('背景修复方式')
   })
 
   it('gives icon-only editing toolbar buttons explicit accessible names', () => {

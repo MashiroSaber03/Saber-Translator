@@ -15,11 +15,13 @@ import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
 import ProductHeaderAction from '@/components/product/ProductHeaderAction.vue'
 import ProductHeaderMetaPill from '@/components/product/ProductHeaderMetaPill.vue'
 import ProductPageHeader from '@/components/product/ProductPageHeader.vue'
+import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import ProductThemeToggle from '@/components/product/ProductThemeToggle.vue'
 import AppShell from '@/components/ui/AppShell.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
+import UiSpinner from '@/components/ui/UiSpinner.vue'
 import type { UiSelectValue } from '@/components/ui/selectTypes'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import BaseModal from '@/components/common/BaseModal.vue'
@@ -43,11 +45,14 @@ const showBatchTagsModal = ref(false)
 const batchTagAction = ref<'add' | 'remove'>('add')
 const selectedBatchTagNames = ref(new Set<string>())
 const batchBusy = ref(false)
+let detailRequestVersion = 0
 
 const filteredBooks = computed(() => bookshelfStore.books)
 const allTags = computed(() => bookshelfStore.tags)
 const isEmpty = computed(() => (
   filteredBooks.value.length === 0
+  && !bookshelfStore.isLoading
+  && !bookshelfStore.error
   && !bookshelfStore.searchQuery
   && bookshelfStore.selectedTagNames.length === 0
 ))
@@ -98,6 +103,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  detailRequestVersion += 1
   window.removeEventListener('pageshow', handlePageShow)
 })
 
@@ -117,14 +123,17 @@ function openEditBookModal(bookId: string) {
 }
 
 async function openBookDetail(bookId: string) {
+  const requestVersion = ++detailRequestVersion
   try {
     const book = await getBookDetail(bookId)
+    if (requestVersion !== detailRequestVersion) return
     bookshelfStore.updateBook(bookId, book)
 
     bookshelfStore.setCurrentBook(bookId)
     showDetailModal.value = true
 
   } catch (error) {
+    if (requestVersion !== detailRequestVersion) return
     const errorMsg = error instanceof Error ? error.message : '未知错误'
     showToast(`加载书籍详情失败: ${errorMsg}`, 'error')
   }
@@ -152,7 +161,7 @@ async function translateSelectedBooks() {
   batchBusy.value = true
   try {
     const result = await createTranslationBatch({ bookIds }, { mode: 'standard' })
-    await Promise.all([taskCenterStore.refresh(), bookshelfStore.loadBooks()])
+    await Promise.allSettled([taskCenterStore.refresh(), bookshelfStore.loadBooks()])
     showToast(
       result.skipped.length
         ? `已创建 ${result.jobIds.length} 个任务，跳过 ${result.skipped.length} 个章节`
@@ -317,6 +326,7 @@ async function applyBatchTags() {
       <div class="bookshelf-query-bar">
         <BookSearch
           :tags="allTags"
+          :query="bookshelfStore.searchQuery"
           :selected-tag-names="bookshelfStore.selectedTagNames"
           @search="bookshelfStore.setSearchQuery"
           @filter-tag="bookshelfStore.toggleTagFilter"
@@ -329,6 +339,36 @@ async function applyBatchTags() {
           @change="setSort"
         />
       </div>
+
+      <ProductStatusBanner
+        v-if="bookshelfStore.error"
+        class="bookshelf-load-status"
+        tone="danger"
+        title="书架加载失败"
+        role="alert"
+      >
+        {{ bookshelfStore.error }}
+        <template #actions>
+          <UiButton size="sm" variant="secondary" @click="bookshelfStore.loadBooks()">
+            重试
+          </UiButton>
+        </template>
+      </ProductStatusBanner>
+
+      <ProductStatusBanner
+        v-if="bookshelfStore.tagsError"
+        class="bookshelf-load-status"
+        tone="warning"
+        title="标签加载失败"
+        role="alert"
+      >
+        {{ bookshelfStore.tagsError }}
+        <template #actions>
+          <UiButton size="sm" variant="secondary" @click="bookshelfStore.loadTags()">
+            重试
+          </UiButton>
+        </template>
+      </ProductStatusBanner>
 
       <ProductActionRow
         v-if="bookshelfStore.batchMode"
@@ -371,8 +411,22 @@ async function applyBatchTags() {
       </ProductActionRow>
 
       <div class="bookshelf-main__books">
+        <ProductStatusBanner
+          v-if="bookshelfStore.isLoading && filteredBooks.length === 0"
+          class="bookshelf-loading-state"
+          tone="neutral"
+          title="正在加载书架"
+          role="status"
+          aria-live="polite"
+        >
+          <template #icon>
+            <UiSpinner size="18" />
+          </template>
+          请稍候…
+        </ProductStatusBanner>
+
         <ProductCardGrid
-          v-if="filteredBooks.length > 0"
+          v-else-if="filteredBooks.length > 0"
           aria-label="书籍列表"
           gap="24px"
           min-item-width="160px"
@@ -405,7 +459,7 @@ async function applyBatchTags() {
         </ProductEmptyState>
 
         <ProductEmptyState
-          v-else
+          v-else-if="!bookshelfStore.error"
           class="bookshelf-main__empty-state"
           title="未找到匹配的书籍"
           description="尝试调整搜索条件或标签筛选"
@@ -443,7 +497,7 @@ async function applyBatchTags() {
       <div class="bookshelf-batch-tags">
         <UiCheckbox
           v-for="tag in allTags"
-          :key="tag.id || tag.name"
+          :key="tag.id"
           :model-value="selectedBatchTagNames.has(tag.name)"
           :label="tag.name"
           @change="toggleBatchTag(tag.name, $event)"
@@ -512,6 +566,18 @@ async function applyBatchTags() {
   min-height: 400px;
 }
 
+.bookshelf-load-status {
+  margin: 16px 0;
+}
+
+.bookshelf-loading-state {
+  --product-status-banner-align-items: center;
+  --product-status-banner-justify-content: center;
+  --product-status-banner-min-height: 240px;
+  --product-status-banner-border: 0;
+  --product-status-banner-background: transparent;
+}
+
 .bookshelf-main__empty-state {
   --product-empty-state-min-height: 0;
   --product-empty-state-padding: 80px 20px;
@@ -564,6 +630,14 @@ async function applyBatchTags() {
 @media (--breakpoint-md-down) {
   .bookshelf-query-bar {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (--breakpoint-sm-down) {
+  .bookshelf-toolbar__actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
   }
 }
 </style>

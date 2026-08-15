@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import UiButton from '@/components/ui/UiButton.vue'
@@ -40,20 +40,31 @@ const emit = defineEmits<{
 
 const sessionListOpen = ref(false)
 const sessionDropdownRef = ref<HTMLElement | null>(null)
+const sessionListPanelRef = ref<HTMLElement | null>(null)
+const sessionListTriggerRef = ref<InstanceType<typeof UiButton> | null>(null)
 const importInput = ref<InstanceType<typeof UiFileInput> | null>(null)
 const SESSION_LIST_PANEL_ID = 'studio-session-list-panel'
 
-function toggleSessionList() {
+async function toggleSessionList() {
   sessionListOpen.value = !sessionListOpen.value
+  if (!sessionListOpen.value) return
+  await nextTick()
+  sessionListPanelRef.value
+    ?.querySelector<HTMLElement>('button:not([disabled])')
+    ?.focus()
 }
 
-function closeSessionList() {
+async function closeSessionList(restoreFocus = false) {
   sessionListOpen.value = false
+  if (!restoreFocus) return
+  await nextTick()
+  const trigger = sessionListTriggerRef.value?.$el
+  if (trigger instanceof HTMLElement) trigger.focus()
 }
 
 function chooseSession(sessionId: string) {
   emit('choose-session', sessionId)
-  closeSessionList()
+  void closeSessionList(true)
 }
 
 function pickImport() {
@@ -70,7 +81,7 @@ function handleImportChange(files: File[]) {
 function handleDocumentClick(event: MouseEvent) {
   if (!sessionListOpen.value) return
   if (sessionDropdownRef.value?.contains(event.target as Node)) return
-  sessionListOpen.value = false
+  void closeSessionList()
 }
 
 onMounted(() => {
@@ -85,13 +96,16 @@ onUnmounted(() => {
 <template>
   <div class="session-toolbar" :class="{ 'session-toolbar--empty': !hasDocument }">
     <div class="session-toolbar__triggers">
-      <div ref="sessionDropdownRef" class="session-toolbar__trigger-stack session-toolbar__trigger-stack--wide">
+      <div
+        ref="sessionDropdownRef"
+        class="session-toolbar__trigger-stack session-toolbar__trigger-stack--wide"
+      >
         <UiButton
+          ref="sessionListTriggerRef"
           variant="toolbar"
           data-testid="session-list-trigger"
           class="session-toolbar__trigger session-toolbar__trigger--inline"
-          :disabled="chatMutating || chatStreaming"
-          aria-haspopup="menu"
+          :disabled="!hasSession || chatMutating || chatStreaming"
           :aria-controls="SESSION_LIST_PANEL_ID"
           :aria-expanded="sessionListOpen ? 'true' : 'false'"
           @click="toggleSessionList"
@@ -107,23 +121,25 @@ onUnmounted(() => {
         </UiButton>
         <div
           v-if="sessionListOpen"
+          ref="sessionListPanelRef"
           :id="SESSION_LIST_PANEL_ID"
           class="session-toolbar__session-list"
-          role="menu"
+          role="region"
           aria-label="聊天会话列表"
-          @keydown.escape.stop.prevent="closeSessionList"
+          @keydown.escape.stop.prevent="closeSessionList(true)"
         >
           <UiButton
             variant="toolbar"
             class="session-toolbar__session-item session-toolbar__session-item--current"
             :class="{ 'session-toolbar__session-item--active': currentSessionId }"
-            role="menuitem"
-            aria-current="true"
-            @click="closeSessionList"
+            :aria-current="currentSessionId ? 'true' : undefined"
+            @click="closeSessionList(true)"
           >
             <div class="session-toolbar__session-item-main">
               <strong class="session-toolbar__session-title">{{ currentSessionLabel }}</strong>
-              <p class="session-toolbar__session-excerpt">{{ currentSessionExcerpt || '当前活跃会话' }}</p>
+              <p class="session-toolbar__session-excerpt">
+                {{ currentSessionExcerpt || '当前活跃会话' }}
+              </p>
             </div>
             <div class="session-toolbar__session-item-meta">
               <span>{{ currentSessionMeta }}</span>
@@ -148,12 +164,13 @@ onUnmounted(() => {
             <UiButton
               variant="toolbar"
               class="session-toolbar__session-item"
-              role="menuitem"
               @click="chooseSession(item.session_id)"
             >
               <div class="session-toolbar__session-item-main">
                 <strong class="session-toolbar__session-title">{{ item.title }}</strong>
-                <p class="session-toolbar__session-excerpt">{{ item.last_message_excerpt || '暂无摘要' }}</p>
+                <p class="session-toolbar__session-excerpt">
+                  {{ item.last_message_excerpt || '暂无摘要' }}
+                </p>
               </div>
               <div class="session-toolbar__session-item-meta">
                 <span>{{ item.message_count }} 条</span>
@@ -190,29 +207,60 @@ onUnmounted(() => {
         </UiButton>
       </div>
     </div>
-    <ProductActionRow appearance="accent" class="session-toolbar__actions" aria-label="聊天会话操作" justify="start" variant="toolbar">
-      <UiButton variant="secondary" :disabled="!hasDocument || chatMutating || chatStreaming" size="sm" @click="$emit('new-session')">
+    <ProductActionRow
+      appearance="accent"
+      class="session-toolbar__actions"
+      aria-label="聊天会话操作"
+      justify="start"
+      variant="toolbar"
+    >
+      <UiButton
+        variant="secondary"
+        :disabled="!hasDocument || chatMutating || chatStreaming"
+        size="sm"
+        @click="$emit('new-session')"
+      >
         新对话
       </UiButton>
       <UiButton
         variant="secondary"
         data-testid="prompt-preview-trigger"
-        :disabled="!hasDocument || chatPromptLoading || chatStreaming"
+        :disabled="!hasSession || chatPromptLoading || chatStreaming"
         size="sm"
         @click="$emit('open-prompt-preview')"
       >
         {{ chatPromptLoading ? '加载中...' : '查看提示词' }}
       </UiButton>
-      <UiButton variant="secondary" :disabled="!hasDocument || chatMutating || chatStreaming" size="sm" @click="$emit('open-greeting-picker')">
+      <UiButton
+        variant="secondary"
+        :disabled="!canUseGreeting || chatMutating || chatStreaming"
+        size="sm"
+        @click="$emit('open-greeting-picker')"
+      >
         重选开场白
       </UiButton>
-      <UiButton variant="secondary" :disabled="!hasSession || chatSummarizing || chatStreaming" size="sm" @click="$emit('summarize-session')">
+      <UiButton
+        variant="secondary"
+        :disabled="!hasSession || chatSummarizing || chatStreaming"
+        size="sm"
+        @click="$emit('summarize-session')"
+      >
         {{ chatSummarizing ? '总结中...' : '手动总结' }}
       </UiButton>
-      <UiButton variant="secondary" :disabled="!hasSession || chatExporting || chatStreaming" size="sm" @click="$emit('export-session')">
+      <UiButton
+        variant="secondary"
+        :disabled="!hasSession || chatExporting || chatStreaming"
+        size="sm"
+        @click="$emit('export-session')"
+      >
         {{ chatExporting ? '导出中...' : '导出聊天' }}
       </UiButton>
-      <UiButton variant="secondary" :disabled="chatImporting || chatStreaming" size="sm" @click="pickImport">
+      <UiButton
+        variant="secondary"
+        :disabled="!hasDocument || chatImporting || chatStreaming"
+        size="sm"
+        @click="pickImport"
+      >
         {{ chatImporting ? '导入中...' : '导入聊天' }}
       </UiButton>
     </ProductActionRow>
@@ -257,7 +305,11 @@ onUnmounted(() => {
   padding: 12px 14px;
   border: 1px solid color-mix(in srgb, var(--color-border-default) 70%, transparent);
   border-radius: 16px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--color-surface-card) 96%, transparent), var(--studio-surface-soft));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-surface-card) 96%, transparent),
+    var(--studio-surface-soft)
+  );
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-surface-card) 50%, transparent);
   color: var(--studio-text-strong);
   cursor: pointer;

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onMounted } from 'vue'
+import { computed, watch } from 'vue'
 import ProductBreadcrumbTrail from '@/components/product/ProductBreadcrumbTrail.vue'
 import ProductFolderCard from '@/components/product/ProductFolderCard.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
@@ -12,18 +12,11 @@ import { useFolderTree } from '@/composables/useFolderTree'
 import { useThumbnailSelection } from '@/composables/useThumbnailSelection'
 import type { ImageData } from '@/types/image'
 
-const props = defineProps<{
-  isVisible?: boolean
-}>()
-
 const emit = defineEmits<{
   (e: 'select', index: number): void
 }>()
 
 const imageStore = useImageStore()
-
-const sidebarRef = ref<HTMLElement | null>(null)
-const containerRef = ref<HTMLElement | null>(null)
 
 const images = computed(() => imageStore.images)
 const currentIndex = computed(() => imageStore.currentImageIndex)
@@ -81,32 +74,6 @@ function handleBreadcrumbClick(path: string) {
   navigateTo(path)
 }
 
-function scrollToActiveThumbnail() {
-  nextTick(() => {
-    // Folder mode scrolls the inner folder list; flat mode scrolls the sidebar.
-    const scrollContainer = (useTreeMode.value && containerRef.value)
-      ? containerRef.value
-      : sidebarRef.value
-    const activeThumb = scrollContainer?.querySelector<HTMLElement>(
-      `[data-product-thumbnail-id="${currentIndex.value}"]`
-    )
-
-    if (activeThumb && scrollContainer) {
-      const thumbRect = activeThumb.getBoundingClientRect()
-      const containerRect = scrollContainer.getBoundingClientRect()
-
-      const thumbCenter = thumbRect.top + thumbRect.height / 2
-      const containerCenter = containerRect.top + containerRect.height / 2
-      const scrollOffset = thumbCenter - containerCenter
-
-      scrollContainer.scrollTo({
-        top: scrollContainer.scrollTop + scrollOffset,
-        behavior: 'smooth'
-      })
-    }
-  })
-}
-
 function buildThumbnailItem(image: ImageData, index: number): ProductThumbnailGridItem {
   const statusType = getStatusType(image)
   return {
@@ -129,25 +96,10 @@ function buildThumbnailItem(image: ImageData, index: number): ProductThumbnailGr
   }
 }
 
-watch(currentIndex, () => {
-  scrollToActiveThumbnail()
-})
-
-watch(() => props.isVisible, (newVisible, previousVisible) => {
-  if (newVisible && !previousVisible) {
-    scrollToActiveThumbnail()
-  }
-})
-
-onMounted(() => {
-  if (hasImages.value) {
-    scrollToActiveThumbnail()
-  }
-})
 </script>
 
 <template>
-  <aside ref="sidebarRef" class="thumbnail-sidebar">
+  <aside class="thumbnail-sidebar">
     <div class="thumbnail-sidebar__card">
       <h2 class="thumbnail-sidebar__title">图片概览</h2>
 
@@ -171,7 +123,7 @@ onMounted(() => {
           <span>返回上级</span>
         </UiButton>
 
-        <div ref="containerRef" class="thumbnail-sidebar__folder-content-list">
+        <div class="thumbnail-sidebar__folder-content-list">
           <ProductFolderCard
             v-for="subfolder in currentSubfolders"
             :key="subfolder.path"
@@ -205,7 +157,6 @@ onMounted(() => {
 
       <div
         v-else-if="hasImages"
-        ref="containerRef"
         class="thumbnail-sidebar__list"
       >
         <VirtualThumbnailList

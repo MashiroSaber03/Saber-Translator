@@ -4,16 +4,11 @@ import { useBookTranslationConstraintsStore } from '@/stores/bookTranslationCons
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settings'
 import {
-  listV2Fonts,
   uploadV2Font,
   type V2WorkflowPreferences,
 } from '@/api/v2/settings'
 import { showToast } from '@/utils/toast'
-import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
-import type { TextDirection, InpaintMethod, TextAlign } from '@/types/bubble'
 import {
-  clampLineSpacing,
-  getFontDisplayName,
   inpaintMethodOptions,
   layoutDirectionOptions,
   textAlignOptions,
@@ -33,6 +28,7 @@ import {
   FONT_FILE_FORMATS_LABEL,
   isSupportedFontFileName,
 } from '@/utils/fontFiles'
+import type { TextStyleMutationArgs } from '@/types/settings'
 
 export interface ApplySettingsOptions {
   fontSize: boolean
@@ -52,7 +48,7 @@ export type SettingsSidebarEmit = {
   (e: 'previous'): void
   (e: 'next'): void
   (e: 'applyToAll', options: ApplySettingsOptions): void
-  (e: 'textStyleChanged', settingKey: string, newValue: unknown): void
+  (e: 'textStyleChanged', ...args: TextStyleMutationArgs): void
   (e: 'autoFontSizeChanged', isAutoFontSize: boolean): void
   (e: 'autoTextColorChanged', isAutoTextColor: boolean): void
   (e: 'openGlossary'): void
@@ -113,7 +109,7 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
   )
   const hasValidPageSelection = computed(() => normalizedSelectedPages.value.length > 0)
 
-  const canTranslate = computed(() => hasImages.value && !imageStore.isBatchTranslationInProgress)
+  const canTranslate = computed(() => hasImages.value && !imageStore.isTranslationInProgress)
   const canUseBookConstraints = computed(() => bookTranslationConstraintsStore.isAvailable)
 
   const canGoPrevious = computed(() => imageStore.canGoPrevious)
@@ -121,27 +117,27 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
   const canGoNext = computed(() => imageStore.canGoNext)
 
   const canRunWorkflow = computed(() => {
-    if (!isCurrentPageReady.value) return false
     const mode = selectedWorkflowMode.value
+    const isIdle = !imageStore.isTranslationInProgress
     const selectionInvalid =
       isPageSelectionActiveForCurrentMode.value && !hasValidPageSelection.value
 
     switch (mode) {
       case 'translate-current':
-        return !!currentImage.value && canTranslate.value
+        return !!currentImage.value && isIdle
       case 'translate-batch':
       case 'hq-batch':
       case 'proofread-batch':
         return canTranslate.value && !selectionInvalid
       case 'remove-current':
       case 'delete-current':
-        return !!currentImage.value
+        return !!currentImage.value && isIdle
       case 'remove-batch':
-        return hasImages.value && !selectionInvalid
+        return hasImages.value && isIdle && !selectionInvalid
       case 'clear-all':
-        return hasImages.value
+        return hasImages.value && isIdle
       case 'retry-failed':
-        return hasFailedImages.value && !imageStore.isBatchTranslationInProgress
+        return hasFailedImages.value && isIdle
       default:
         return false
     }
@@ -233,26 +229,22 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
 
   const isDangerousWorkflow = computed(() => selectedWorkflowConfig.value.isDangerous)
 
-  const fontList = ref<string[]>([])
-
   const fontUploadInput = ref<InstanceType<typeof UiFileInput> | null>(null)
+  const isUploadingFont = ref(false)
 
   const fontSelectOptions = computed(() => {
-    const options = fontList.value.map(font => ({
-      label: settingsStore.fontCatalog.find(item => item.id === font)?.displayName
-        ?? getFontDisplayName(font),
-      value: font,
+    const options = settingsStore.fontCatalog.map(font => ({
+      label: font.displayName,
+      value: font.id,
     }))
     options.push({ label: '自定义字体...', value: 'custom-font' })
     return options
   })
 
-  onMounted(async () => {
+  onMounted(() => {
     window.addEventListener('click', handleClickOutside)
 
     applyWorkflowPreferences(settingsStore.workflowPreferences)
-    applyFontCatalog()
-    ensureFontInList(textStyle.value.fontFamily)
   })
 
   onUnmounted(() => {
@@ -274,25 +266,6 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
     applyWorkflowPreferences,
     { deep: true },
   )
-
-  watch(
-    () => settingsStore.fontCatalog,
-    () => {
-      applyFontCatalog()
-      ensureFontInList(textStyle.value.fontFamily)
-    },
-    { deep: true },
-  )
-
-  function ensureFontInList(font: string): void {
-    if (font && !fontList.value.includes(font)) {
-      fontList.value = [font, ...fontList.value]
-    }
-  }
-
-  function applyFontCatalog(): void {
-    fontList.value = settingsStore.fontCatalog.map(font => font.id)
-  }
 
   function applyWorkflowPreferences(preferences: V2WorkflowPreferences): void {
     if (!hasUserChangedRememberWorkflowMode.value) {
@@ -335,7 +308,7 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
   }
 
   function updateFontSize(value: number) {
-    if (Number.isFinite(value)) {
+    if (Number.isInteger(value) && value >= 1) {
       settingsStore.updateTextStyle({ fontSize: value })
       emit('textStyleChanged', 'fontSize', value)
     }
@@ -349,6 +322,10 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
   async function handleFontUpload(files: File[]) {
     const file = files[0]
     if (!file) return
+    if (isUploadingFont.value) {
+      fontUploadInput.value?.clear()
+      return
+    }
 
     if (!isSupportedFontFileName(file.name)) {
       showToast(`请选择 ${FONT_FILE_FORMATS_LABEL} 格式的字体文件`, 'error')
@@ -356,40 +333,42 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
       return
     }
 
+    isUploadingFont.value = true
     try {
-      const response = await uploadV2Font(file)
-      const fonts = await listV2Fonts()
-      settingsStore.hydrateResourceCatalogs(fonts, settingsStore.promptCatalog)
-      settingsStore.updateTextStyle({ fontFamily: response.id })
-      emit('textStyleChanged', 'fontFamily', response.id)
+      const uploadedFont = await uploadV2Font(file)
+      settingsStore.upsertFont(uploadedFont)
+      settingsStore.updateTextStyle({ fontFamily: uploadedFont.id })
+      emit('textStyleChanged', 'fontFamily', uploadedFont.id)
       showToast('字体上传成功', 'success')
     } catch {
       showToast('字体上传失败', 'error')
     } finally {
+      isUploadingFont.value = false
       fontUploadInput.value?.clear()
     }
   }
 
   function handleFontSelectChange(value: string | number) {
-    const strValue = String(value)
-    if (strValue === 'custom-font') {
+    if (typeof value !== 'string') return
+    if (value === 'custom-font') {
       fontUploadInput.value?.click()
       return
     }
-    settingsStore.updateTextStyle({ fontFamily: strValue })
-    emit('textStyleChanged', 'fontFamily', strValue)
+    if (!value) return
+    settingsStore.updateTextStyle({ fontFamily: value })
+    emit('textStyleChanged', 'fontFamily', value)
   }
 
   function handleLayoutDirectionChange(value: string | number) {
-    const strValue = String(value)
-    settingsStore.updateTextStyle({ layoutDirection: strValue as TextDirection })
-    emit('textStyleChanged', 'layoutDirection', strValue)
+    if (value !== 'auto' && value !== 'vertical' && value !== 'horizontal') return
+    settingsStore.updateTextStyle({ layoutDirection: value })
+    emit('textStyleChanged', 'layoutDirection', value)
   }
 
   function handleInpaintMethodChange(value: string | number) {
-    const strValue = String(value)
-    settingsStore.updateTextStyle({ inpaintMethod: strValue as InpaintMethod })
-    emit('textStyleChanged', 'inpaintMethod', strValue)
+    if (value !== 'solid' && value !== 'lama_mpe' && value !== 'litelama') return
+    settingsStore.updateTextStyle({ inpaintMethod: value })
+    emit('textStyleChanged', 'inpaintMethod', value)
   }
 
   function updateTextColor(value: string) {
@@ -398,18 +377,15 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
   }
 
   function updateLineSpacing(nextValue: number) {
-    const value = clampLineSpacing(
-      nextValue,
-      TEXT_STYLE_DEFAULTS.lineSpacing
-    )
-    settingsStore.updateTextStyle({ lineSpacing: value })
-    emit('textStyleChanged', 'lineSpacing', value)
+    if (!Number.isFinite(nextValue) || nextValue <= 0) return
+    settingsStore.updateTextStyle({ lineSpacing: nextValue })
+    emit('textStyleChanged', 'lineSpacing', nextValue)
   }
 
   function updateTextAlign(value: string | number) {
-    const strValue = String(value) as TextAlign
-    settingsStore.updateTextStyle({ textAlign: strValue })
-    emit('textStyleChanged', 'textAlign', strValue)
+    if (value !== 'start' && value !== 'center' && value !== 'end') return
+    settingsStore.updateTextStyle({ textAlign: value })
+    emit('textStyleChanged', 'textAlign', value)
   }
 
   function updateUseAutoTextColor(checked: boolean) {
@@ -428,7 +404,7 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
   }
 
   function updateStrokeWidth(value: number) {
-    if (Number.isFinite(value)) {
+    if (Number.isInteger(value) && value >= 0) {
       settingsStore.updateTextStyle({ strokeWidth: value })
       emit('textStyleChanged', 'strokeWidth', value)
     }
@@ -466,8 +442,8 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
   }
 
   function handleClickOutside(event: MouseEvent) {
-    const target = event.target as HTMLElement
-    if (!target.closest('.apply-options-section')) {
+    const target = event.target
+    if (!(target instanceof Element) || !target.closest('.apply-options-section')) {
       showApplyOptions.value = false
     }
   }
@@ -482,12 +458,11 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
   }
 
   function handleWorkflowModeChange(value: string | number) {
-    const workflowMode = String(value)
-    if (!isWorkflowMode(workflowMode)) return
+    if (!isWorkflowMode(value)) return
 
     hasUserChangedWorkflowMode.value = true
-    selectedWorkflowMode.value = workflowMode
-    void persistWorkflowPreferences(rememberWorkflowModeEnabled.value, workflowMode)
+    selectedWorkflowMode.value = value
+    void persistWorkflowPreferences(rememberWorkflowModeEnabled.value, value)
   }
 
   function handleRememberWorkflowModeChange(checked: boolean) {
@@ -551,7 +526,6 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
     workflowModeTag,
     workflowDescription,
     isDangerousWorkflow,
-    fontList,
     fontUploadInput,
     fontSelectOptions,
     layoutDirectionOptions,

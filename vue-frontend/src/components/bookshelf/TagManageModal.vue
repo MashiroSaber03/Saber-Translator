@@ -15,6 +15,7 @@ import UiFormGrid from '@/components/ui/UiFormGrid.vue'
 import { confirmProductAction } from '@/composables/useProductConfirm'
 import { BOOKSHELF_DEFAULT_TAG_COLOR } from '@/constants/bookshelf'
 import type { ProductChipItem } from '@/components/product/ProductChipList.vue'
+import type { TagData } from '@/types/api'
 
 const emit = defineEmits<{
   close: []
@@ -28,30 +29,30 @@ const newTagColor = ref(BOOKSHELF_DEFAULT_TAG_COLOR)
 const editingTagName = ref<string | null>(null)
 const editTagName = ref('')
 const editTagColor = ref('')
+const pendingAction = ref<'create' | 'edit' | 'delete' | null>(null)
 
 const tags = computed(() => bookshelfStore.tags)
 
-function tagMetadataItems(tag: { name: string; color?: string; bookCount?: number }): ProductChipItem[] {
-  const tagColor = tag.color || 'var(--color-action-brand)'
-
+function tagMetadataItems(tag: TagData): ProductChipItem[] {
   return [
     {
       id: `tag-${tag.name}`,
       label: tag.name,
       tone: 'custom',
-      backgroundColor: tagColor,
-      borderColor: tagColor,
+      backgroundColor: tag.color,
+      borderColor: tag.color,
       textColor: 'var(--color-text-inverse)',
     },
     {
       id: `count-${tag.name}`,
-      label: `${tag.bookCount || 0} 本`,
+      label: `${tag.bookCount ?? 0} 本`,
       tone: 'neutral',
     },
   ]
 }
 
 async function createTag() {
+  if (pendingAction.value) return
   const name = newTagName.value.trim()
   if (!name) {
     showToast('请输入标签名称', 'warning')
@@ -63,24 +64,23 @@ async function createTag() {
     return
   }
 
+  pendingAction.value = 'create'
   try {
-    const tag = await bookshelfStore.createTag(name, newTagColor.value)
-    if (tag) {
-      showToast('标签创建成功', 'success')
-      newTagName.value = ''
-      newTagColor.value = BOOKSHELF_DEFAULT_TAG_COLOR
-    } else {
-      showToast('创建失败', 'error')
-    }
+    await bookshelfStore.createTag(name, newTagColor.value)
+    showToast('标签创建成功', 'success')
+    newTagName.value = ''
+    newTagColor.value = BOOKSHELF_DEFAULT_TAG_COLOR
   } catch (error) {
-    showToast('创建失败', 'error')
+    showToast(error instanceof Error ? error.message : '创建失败', 'error')
+  } finally {
+    pendingAction.value = null
   }
 }
 
-function startEditTag(tag: { name: string; color?: string }) {
+function startEditTag(tag: TagData) {
   editingTagName.value = tag.name
   editTagName.value = tag.name
-  editTagColor.value = tag.color || BOOKSHELF_DEFAULT_TAG_COLOR
+  editTagColor.value = tag.color
 }
 
 function cancelEdit() {
@@ -90,7 +90,7 @@ function cancelEdit() {
 }
 
 async function saveEditTag() {
-  if (!editingTagName.value) return
+  if (!editingTagName.value || pendingAction.value) return
 
   const name = editTagName.value.trim()
   if (!name) {
@@ -105,25 +105,24 @@ async function saveEditTag() {
     return
   }
 
+  pendingAction.value = 'edit'
   try {
-    const success = await bookshelfStore.updateTagApi(
+    await bookshelfStore.updateTagApi(
       originalTagName,
       name,
       editTagColor.value
     )
-
-    if (success) {
-      showToast('标签更新成功', 'success')
-      cancelEdit()
-    } else {
-      showToast('更新失败', 'error')
-    }
-  } catch {
-    showToast('更新失败', 'error')
+    showToast('标签更新成功', 'success')
+    cancelEdit()
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '更新失败', 'error')
+  } finally {
+    pendingAction.value = null
   }
 }
 
 async function deleteTag(tagName: string) {
+  if (pendingAction.value) return
   const confirmed = await confirmProductAction({
     title: '删除标签',
     message: `确定要删除标签“${tagName}”吗？此操作不会删除书籍，但会从相关书籍中移除该标签。`,
@@ -131,17 +130,16 @@ async function deleteTag(tagName: string) {
     cancelText: '取消',
     tone: 'danger',
   })
-  if (!confirmed) return
+  if (!confirmed || pendingAction.value) return
 
+  pendingAction.value = 'delete'
   try {
-    const success = await bookshelfStore.deleteTagApi(tagName)
-    if (success) {
-      showToast('标签已删除', 'success')
-    } else {
-      showToast('删除失败', 'error')
-    }
+    await bookshelfStore.deleteTagApi(tagName)
+    showToast('标签已删除', 'success')
   } catch (error) {
-    showToast('删除失败', 'error')
+    showToast(error instanceof Error ? error.message : '删除失败', 'error')
+  } finally {
+    pendingAction.value = null
   }
 }
 </script>
@@ -188,10 +186,33 @@ async function deleteTag(tagName: string) {
           aria-label="新建标签操作"
           justify="start"
         >
-          <UiButton variant="primary" size="sm" @click="createTag">添加</UiButton>
+          <UiButton
+            variant="primary"
+            size="sm"
+            :loading="pendingAction === 'create'"
+            :disabled="pendingAction !== null"
+            @click="createTag"
+          >
+            添加
+          </UiButton>
         </ProductActionRow>
       </UiFormGrid>
     </div>
+
+    <ProductStatusBanner
+      v-if="bookshelfStore.tagsError"
+      class="tag-manage-modal__load-error"
+      tone="warning"
+      title="标签加载失败"
+      role="alert"
+    >
+      {{ bookshelfStore.tagsError }}
+      <template #actions>
+        <UiButton size="sm" variant="secondary" @click="bookshelfStore.loadTags()">
+          重试
+        </UiButton>
+      </template>
+    </ProductStatusBanner>
 
     <div class="tag-manage-modal__list">
       <ProductStatusBanner
@@ -216,22 +237,26 @@ async function deleteTag(tagName: string) {
             :aria-label="`${tag.name} 标签信息`"
             :items="tagMetadataItems(tag)"
           />
-          <UiButton
-            variant="secondary"
-            size="xs"
-            class="tag-manage-modal__row-edit-action"
-            @click="startEditTag(tag)"
-          >
-            编辑
-          </UiButton>
-          <UiButton
-            variant="danger"
-            size="xs"
-            class="tag-manage-modal__row-delete-action"
-            @click="deleteTag(tag.name)"
-          >
-            删除
-          </UiButton>
+          <div class="tag-manage-modal__row-actions" role="group" :aria-label="`${tag.name} 标签操作`">
+            <UiButton
+              variant="secondary"
+              size="xs"
+              class="tag-manage-modal__row-edit-action"
+              :disabled="pendingAction !== null"
+              @click="startEditTag(tag)"
+            >
+              编辑
+            </UiButton>
+            <UiButton
+              variant="danger"
+              size="xs"
+              class="tag-manage-modal__row-delete-action"
+              :disabled="pendingAction !== null"
+              @click="deleteTag(tag.name)"
+            >
+              删除
+            </UiButton>
+          </div>
         </div>
 
         <div v-if="editingTagName === tag.name" class="tag-manage-modal__edit-mode">
@@ -263,6 +288,8 @@ async function deleteTag(tagName: string) {
               variant="primary"
               size="xs"
               class="tag-manage-modal__edit-save-action"
+              :loading="pendingAction === 'edit'"
+              :disabled="pendingAction !== null"
               @click="saveEditTag"
             >
               保存
@@ -271,6 +298,7 @@ async function deleteTag(tagName: string) {
               variant="secondary"
               size="xs"
               class="tag-manage-modal__edit-cancel-action"
+              :disabled="pendingAction !== null"
               @click="cancelEdit"
             >
               取消
@@ -291,6 +319,10 @@ async function deleteTag(tagName: string) {
 <style scoped>
 .tag-manage-modal__form {
   margin-bottom: 20px;
+}
+
+.tag-manage-modal__load-error {
+  margin-bottom: 16px;
 }
 
 .tag-manage-modal__new-tag-row {
@@ -347,7 +379,6 @@ async function deleteTag(tagName: string) {
 
 .tag-manage-modal__view-mode {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
 }
@@ -362,8 +393,15 @@ async function deleteTag(tagName: string) {
 }
 
 .tag-manage-modal__metadata {
-  flex: 1 1 180px;
+  flex: 1 1 120px;
   min-width: 0;
+}
+
+.tag-manage-modal__row-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 12px;
+  margin-left: auto;
 }
 
 .tag-manage-modal__row-edit-action,

@@ -47,7 +47,7 @@ defineExpose({ click, focus })
     ref="inputRef"
     :id="inputId"
     class="ui-color-input"
-    :class="[`ui-color-input--${props.size}`, { 'ui-color-input--hidden': hidden }]"
+    :class="`ui-color-input--${props.size}`"
     type="color"
     :value="modelValue"
     :disabled="disabled"
@@ -78,14 +78,4 @@ defineExpose({ click, focus })
   cursor: not-allowed;
 }
 
-.ui-color-input--hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  border: 0;
-}
 </style>

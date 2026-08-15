@@ -31,15 +31,16 @@ const endPage = computed(() => props.arc.page_range.end)
     @show-page="$emit('showPage', $event)"
     @toggle="$emit('toggle', arcId)"
   >
-    <template v-if="arc.description" #summary>
+    <template #summary>
       {{ arc.description }}
     </template>
 
-    <div v-if="arc.mood" class="timeline-arc-card__mood">
+    <div v-if="expanded && arc.mood" class="timeline-arc-card__mood">
       <span class="timeline-arc-card__mood-label">
         <UiIcon name="palette" size="13" />
-        氛围：
-      </span>{{ arc.mood }}
+        <span>氛围：</span>
+      </span>
+      <span>{{ arc.mood }}</span>
     </div>
   </TimelineEventCardShell>
 </template>

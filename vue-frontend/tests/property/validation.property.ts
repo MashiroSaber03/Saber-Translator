@@ -84,8 +84,9 @@ describe('validation properties', () => {
       nonEmptyStringArb,
       (provider, apiKey, modelName, customBaseUrl) => {
         setActivePinia(createPinia())
-        useSettingsStore().updateTranslationService({
-          provider,
+        const store = useSettingsStore()
+        store.setTranslationProvider(provider)
+        store.updateTranslationService({
           apiKey,
           modelName,
           customBaseUrl,
@@ -103,8 +104,9 @@ describe('validation properties', () => {
       nonEmptyStringArb,
       (provider, apiKey, modelName) => {
         setActivePinia(createPinia())
-        useSettingsStore().updateTranslationService({
-          provider,
+        const store = useSettingsStore()
+        store.setTranslationProvider(provider)
+        store.updateTranslationService({
           apiKey,
           modelName,
           customBaseUrl: 'https://provider.example/v1',
@@ -119,8 +121,9 @@ describe('validation properties', () => {
       emptyStringArb,
       (provider, customBaseUrl) => {
         setActivePinia(createPinia())
-        useSettingsStore().updateTranslationService({
-          provider,
+        const store = useSettingsStore()
+        store.setTranslationProvider(provider)
+        store.updateTranslationService({
           apiKey: 'key',
           modelName: 'model',
           customBaseUrl,
@@ -139,8 +142,9 @@ describe('validation properties', () => {
       nonEmptyStringArb,
       (provider, apiKey, modelName, customBaseUrl) => {
         setActivePinia(createPinia())
-        useSettingsStore().updateHqTranslation({
-          provider,
+        const store = useSettingsStore()
+        store.setHqProvider(provider)
+        store.updateHqTranslation({
           apiKey,
           modelName,
           customBaseUrl,
@@ -155,8 +159,9 @@ describe('validation properties', () => {
       emptyStringArb,
       (provider, apiKey) => {
         setActivePinia(createPinia())
-        useSettingsStore().updateHqTranslation({
-          provider,
+        const store = useSettingsStore()
+        store.setHqProvider(provider)
+        store.updateHqTranslation({
           apiKey,
           modelName: 'model',
           customBaseUrl: 'https://provider.example/v1',
@@ -169,6 +174,7 @@ describe('validation properties', () => {
 
   it('validates proofreading only through the page-facing workflow entry', () => {
     const validRound: ProofreadingRound = {
+      id: '11111111-1111-4111-8111-111111111111',
       name: '第一轮',
       provider: 'deepseek',
       apiKey: 'key',
@@ -193,22 +199,19 @@ describe('validation properties', () => {
     const store = useSettingsStore()
     const validation = useValidation()
 
-    store.updateTranslationService({
-      provider: 'deepseek', apiKey: '', modelName: 'deepseek-chat',
-    })
+    store.setTranslationProvider('deepseek')
+    store.updateTranslationService({ apiKey: '', modelName: 'deepseek-chat' })
     addStoredCredential(store, 'translation', 'deepseek')
     expect(validation.validateBeforeTranslation('normal')).toBe(true)
 
-    store.updateHqTranslation({
-      provider: 'deepseek', apiKey: '', modelName: 'deepseek-chat',
-    })
+    store.setHqProvider('deepseek')
+    store.updateHqTranslation({ apiKey: '', modelName: 'deepseek-chat' })
     addStoredCredential(store, 'hq', 'deepseek')
     expect(validation.validateBeforeTranslation('hq')).toBe(true)
 
     store.setOcrEngine('ai_vision')
-    store.updateAiVisionOcr({
-      provider: 'gemini', apiKey: '', modelName: 'gemini-2.5-flash',
-    })
+    store.setAiVisionOcrProvider('gemini')
+    store.updateAiVisionOcr({ apiKey: '', modelName: 'gemini-2.5-flash' })
     addStoredCredential(store, 'ai_vision_ocr', 'gemini')
     expect(validation.validateBeforeTranslation('ocr')).toBe(true)
   })
@@ -227,9 +230,10 @@ describe('validation properties', () => {
     expect(validation.validateBeforeTranslation('ocr')).toBe(true)
 
     store.setOcrEngine('ai_vision')
-    store.updateAiVisionOcr({ provider: 'gemini', apiKey: '', modelName: 'model' })
+    store.setAiVisionOcrProvider('gemini')
+    store.updateAiVisionOcr({ apiKey: '', modelName: 'model' })
     expect(validation.validateBeforeTranslation('ocr')).toBe(false)
-    store.updateAiVisionOcr({ provider: 'gemini', apiKey: 'key', modelName: 'model' })
+    store.updateAiVisionOcr({ apiKey: 'key', modelName: 'model' })
     expect(validation.validateBeforeTranslation('ocr')).toBe(true)
   })
 })

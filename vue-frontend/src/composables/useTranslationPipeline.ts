@@ -1,4 +1,4 @@
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, type Ref } from 'vue'
 
 import {
   createChapterRemoveTextJob,
@@ -11,7 +11,11 @@ import {
   type V2TranslationBootstrap,
 } from '@/api/v2/content'
 import type { components } from '@/api/generated/v2'
-import type { V2Job, V2JobStatus } from '@/api/v2/jobs'
+import {
+  NONTERMINAL_JOB_STATUSES,
+  type V2Job,
+  type V2JobStatus,
+} from '@/api/v2/jobs'
 import { pageSummaryToImage } from '@/adapters/v2ContentAdapter'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
@@ -47,6 +51,9 @@ export interface TranslationProgress {
 }
 
 type TranslationCurrentStep = components['schemas']['JobProgressCurrentStep']
+type V2JobProgress = components['schemas']['JobProgress']
+type V2JobProgressPool = components['schemas']['JobProgressPool']
+type V2JobProgressPoolCurrent = components['schemas']['JobProgressPoolCurrent']
 
 export interface TranslationPoolProgress {
   kind: string
@@ -54,50 +61,62 @@ export interface TranslationPoolProgress {
   completed: number
   failed: number
   skipped: number
+  cancelled: number
   waiting: number
   processing: number
   lockWaiting: boolean
   current: components['schemas']['JobProgressPoolCurrent'][]
 }
 
-interface TranslateResult {
-  success: boolean
-  completed: number
-  failed: number
-  errors: string[]
+interface TranslationSessionState {
+  activeJobId: Ref<string | null>
+  lastHandledEventId: number
+  progress: Ref<TranslationProgress>
 }
 
-const progress = ref<TranslationProgress>({
-  current: 0,
-  total: 0,
-  completed: 0,
-  failed: 0,
-  isInProgress: false,
-  label: '',
-  percentage: 0,
-  executionMode: 'sequential',
-  pools: [],
-})
-const activeJobId = ref<string | null>(null)
-const activePageIds = ref<string[]>([])
-let lastHandledEventId = 0
+const translationSessions = new WeakMap<
+  ReturnType<typeof useImageStore>,
+  TranslationSessionState
+>()
+
+function initialProgress(): TranslationProgress {
+  return {
+    current: 0,
+    total: 0,
+    completed: 0,
+    failed: 0,
+    isInProgress: false,
+    label: '',
+    percentage: 0,
+    executionMode: 'sequential',
+    pools: [],
+  }
+}
+
+function translationSession(
+  imageStore: ReturnType<typeof useImageStore>,
+): TranslationSessionState {
+  const existing = translationSessions.get(imageStore)
+  if (existing) return existing
+  const created: TranslationSessionState = {
+    activeJobId: ref(null),
+    lastHandledEventId: 0,
+    progress: ref(initialProgress()),
+  }
+  translationSessions.set(imageStore, created)
+  return created
+}
 
 function range(start: number, end: number): number[] {
   return Array.from({ length: Math.max(0, end - start) }, (_, index) => start + index)
 }
 
-function numberField(value: unknown): number {
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : 0
-}
-
-const ACTIVE_JOB_STATUSES = new Set<V2JobStatus>([
-  'queued',
-  'running',
-  'pausing',
-  'paused',
-  'cancelling',
-  'interrupted',
+const JOB_STATUSES = new Set<V2JobStatus>([
+  ...NONTERMINAL_JOB_STATUSES,
+  'cancelled',
+  'completed',
+  'completed_with_errors',
+  'failed',
 ])
 
 const CHAPTER_CONTENT_JOB_KINDS = new Set<V2Job['kind']>([
@@ -126,69 +145,143 @@ function jobStatusLabel(status: V2JobStatus | undefined): string {
   }
 }
 
-function normalizePools(value: unknown): TranslationPoolProgress[] {
-  if (!Array.isArray(value)) return []
-  return value.flatMap((raw) => {
-    if (!raw || typeof raw !== 'object') return []
-    const pool = raw as Record<string, unknown>
-    const kind = typeof pool.kind === 'string' ? pool.kind : ''
-    if (!kind) return []
-    return [{
-      kind,
-      total: numberField(pool.total),
-      completed: numberField(pool.completed),
-      failed: numberField(pool.failed),
-      skipped: numberField(pool.skipped),
-      waiting: numberField(pool.waiting),
-      processing: numberField(pool.processing),
-      lockWaiting: Boolean(pool.lockWaiting),
-      current: Array.isArray(pool.current)
-        ? pool.current as components['schemas']['JobProgressPoolCurrent'][]
-        : [],
-    }]
-  })
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+}
+
+function nonNegativeInteger(value: unknown): value is number {
+  return Number.isInteger(value) && Number(value) >= 0
+}
+
+function positiveInteger(value: unknown): value is number {
+  return Number.isInteger(value) && Number(value) >= 1
+}
+
+function progressPoolCurrent(value: unknown): V2JobProgressPoolCurrent | null {
+  const current = recordValue(value)
+  if (
+    !current
+    || typeof current.itemId !== 'string'
+    || (current.pageId !== null && typeof current.pageId !== 'string')
+    || !positiveInteger(current.itemOrdinal)
+    || typeof current.stepId !== 'string'
+    || !positiveInteger(current.stepOrdinal)
+  ) return null
+  return {
+    itemId: current.itemId,
+    pageId: current.pageId,
+    itemOrdinal: current.itemOrdinal,
+    stepId: current.stepId,
+    stepOrdinal: current.stepOrdinal,
+  }
+}
+
+function progressPool(value: unknown): V2JobProgressPool | null {
+  const pool = recordValue(value)
+  if (
+    !pool
+    || typeof pool.kind !== 'string'
+    || !pool.kind
+    || !nonNegativeInteger(pool.total)
+    || !nonNegativeInteger(pool.completed)
+    || !nonNegativeInteger(pool.failed)
+    || !nonNegativeInteger(pool.skipped)
+    || !nonNegativeInteger(pool.cancelled)
+    || !nonNegativeInteger(pool.waiting)
+    || !nonNegativeInteger(pool.processing)
+    || typeof pool.lockWaiting !== 'boolean'
+    || !Array.isArray(pool.current)
+  ) return null
+  const current = pool.current.map(progressPoolCurrent)
+  if (current.some(item => item === null)) return null
+  return {
+    kind: pool.kind,
+    total: pool.total,
+    completed: pool.completed,
+    failed: pool.failed,
+    skipped: pool.skipped,
+    cancelled: pool.cancelled,
+    waiting: pool.waiting,
+    processing: pool.processing,
+    lockWaiting: pool.lockWaiting,
+    current: current as V2JobProgressPoolCurrent[],
+  }
+}
+
+function progressCurrentStep(value: unknown): TranslationCurrentStep | null {
+  const current = recordValue(value)
+  const shared = progressPoolCurrent(value)
+  if (!current || !shared || typeof current.kind !== 'string' || !current.kind) return null
+  return { kind: current.kind, ...shared }
+}
+
+function parseJobProgress(value: unknown): V2JobProgress | null {
+  const snapshot = recordValue(value)
+  if (
+    !snapshot
+    || (snapshot.executionMode !== 'sequential' && snapshot.executionMode !== 'parallel')
+    || typeof snapshot.jobStatus !== 'string'
+    || !JOB_STATUSES.has(snapshot.jobStatus as V2JobStatus)
+    || !nonNegativeInteger(snapshot.totalItems)
+    || !nonNegativeInteger(snapshot.completedItems)
+    || !nonNegativeInteger(snapshot.failedItems)
+    || !nonNegativeInteger(snapshot.skippedItems)
+    || !nonNegativeInteger(snapshot.cancelledItems)
+    || !Array.isArray(snapshot.pools)
+  ) return null
+  const pools = snapshot.pools.map(progressPool)
+  if (pools.some(pool => pool === null)) return null
+  const currentStep = snapshot.currentStep === undefined
+    ? undefined
+    : progressCurrentStep(snapshot.currentStep)
+  if (snapshot.currentStep !== undefined && !currentStep) return null
+  return {
+    executionMode: snapshot.executionMode,
+    jobStatus: snapshot.jobStatus as V2JobStatus,
+    totalItems: snapshot.totalItems,
+    completedItems: snapshot.completedItems,
+    failedItems: snapshot.failedItems,
+    skippedItems: snapshot.skippedItems,
+    cancelledItems: snapshot.cancelledItems,
+    pools: pools as V2JobProgressPool[],
+    ...(currentStep ? { currentStep } : {}),
+  }
 }
 
 function applyProgressSnapshot(
-  snapshot: Record<string, unknown>,
+  progress: Ref<TranslationProgress>,
+  snapshot: V2JobProgress,
   label?: string,
   metadata: {
     queuePosition?: number | null
     status?: V2JobStatus
   } = {},
 ): void {
-  const total = numberField(snapshot.totalItems)
-  const completed = numberField(snapshot.completedItems)
-  const failed = numberField(snapshot.failedItems)
-  const skipped = numberField(snapshot.skippedItems)
-  const cancelled = numberField(snapshot.cancelledItems)
+  const total = snapshot.totalItems
+  const completed = snapshot.completedItems
+  const failed = snapshot.failedItems
+  const skipped = snapshot.skippedItems
+  const cancelled = snapshot.cancelledItems
   const current = completed + failed + skipped + cancelled
-  const snapshotStatus = typeof snapshot.jobStatus === 'string'
-    ? snapshot.jobStatus as V2JobStatus
-    : undefined
-  const status = metadata.status ?? snapshotStatus
-  const executionMode = snapshot.executionMode === 'parallel'
-    ? 'parallel'
-    : 'sequential'
-  const currentStep = (
-    snapshot.currentStep
-    && typeof snapshot.currentStep === 'object'
-  )
-    ? snapshot.currentStep as TranslationCurrentStep
-    : undefined
+  const status = metadata.status ?? snapshot.jobStatus
   progress.value = {
     current,
     total,
     completed,
     failed,
-    isInProgress: status ? ACTIVE_JOB_STATUSES.has(status) : true,
+    isInProgress: status ? NONTERMINAL_JOB_STATUSES.has(status) : true,
     label: label ?? jobStatusLabel(status),
     percentage: total > 0 ? current / total * 100 : 0,
-    executionMode,
+    executionMode: snapshot.executionMode,
     status,
     queuePosition: metadata.queuePosition,
-    currentStep,
-    pools: normalizePools(snapshot.pools),
+    currentStep: snapshot.currentStep,
+    pools: snapshot.pools.map(pool => ({
+      ...pool,
+      current: pool.current.map(currentItem => ({ ...currentItem })),
+    })),
   }
 }
 
@@ -212,7 +305,7 @@ function activeTranslationJob(
   return jobs
     .filter(job => (
       (job.kind === 'translation' || job.kind === 'remove_text')
-      && ACTIVE_JOB_STATUSES.has(job.status)
+      && NONTERMINAL_JOB_STATUSES.has(job.status)
     ))
     .sort((left, right) => (
       priority[left.status] - priority[right.status]
@@ -225,32 +318,22 @@ export function restoreTranslationFromBootstrap(
   jobs: TranslationBootstrapJob[],
   imageStore: ReturnType<typeof useImageStore>,
 ): void {
+  const { activeJobId, progress } = translationSession(imageStore)
   const job = activeTranslationJob(jobs)
   if (!job) {
     activeJobId.value = null
-    activePageIds.value = []
-    imageStore.setBatchTranslationInProgress(false)
-    progress.value = {
-      current: 0,
-      total: 0,
-      completed: 0,
-      failed: 0,
-      isInProgress: false,
-      label: '',
-      percentage: 0,
-      executionMode: 'sequential',
-      pools: [],
-    }
+    imageStore.setTranslationInProgress(false)
+    progress.value = initialProgress()
     return
   }
   activeJobId.value = job.id
-  activePageIds.value = job.pages.map(page => page.pageId)
   applyProgressSnapshot(
+    progress,
     job.progress,
     jobStatusLabel(job.status),
     { queuePosition: job.queueRank, status: job.status },
   )
-  imageStore.setBatchTranslationInProgress(job.pages.length > 1)
+  imageStore.setTranslationInProgress(true)
   const pageStates = new Map(job.pages.map(page => [page.pageId, page.status]))
   imageStore.images.forEach((image, index) => {
     const status = pageStates.get(image.id)
@@ -268,9 +351,13 @@ async function refreshOpenPageDocument(
   bubbleStore: ReturnType<typeof useBubbleStore>,
   settingsStore: ReturnType<typeof useSettingsStore>,
 ): Promise<void> {
-  if (imageStore.currentImage?.id !== pageId) return
+  const requested = imageStore.currentImage
+  if (requested?.id !== pageId) return
   const document = await getPageDocument(pageId)
   if (imageStore.currentImage?.id !== pageId) return
+  if (document.pageId !== pageId || document.chapterId !== requested.chapterId) {
+    throw new Error(`页面 ${pageId} 的后端文档身份不匹配`)
+  }
   const bubbles = registerPageDocument(document)
   const pageTextStyle = parseCompleteTextStyleSettings({
     ...document.pageStyleDefaults,
@@ -295,8 +382,12 @@ async function refreshCompletedPage(
   bubbleStore: ReturnType<typeof useBubbleStore>,
   settingsStore: ReturnType<typeof useSettingsStore>,
 ): Promise<void> {
-  if (!imageStore.images.some(image => image.id === pageId)) return
+  const requested = imageStore.images.find(image => image.id === pageId)
+  if (!requested) return
   const summary = await getPageSummary(pageId)
+  if (summary.id !== pageId || summary.chapterId !== requested.chapterId) {
+    throw new Error(`页面 ${pageId} 的后端摘要身份不匹配`)
+  }
   const pageIndex = imageStore.images.findIndex(image => image.id === pageId)
   const existing = imageStore.images[pageIndex]
   if (pageIndex < 0 || !existing) return
@@ -304,7 +395,6 @@ async function refreshCompletedPage(
   imageStore.updateImageByIndex(pageIndex, {
     ...mapped,
     bubbleStates: existing.bubbleStates,
-    errorMessage: mapped.translationFailed ? existing.errorMessage : undefined,
   })
   await refreshOpenPageDocument(pageId, imageStore, bubbleStore, settingsStore)
 }
@@ -316,9 +406,19 @@ async function refreshCurrentChapter(
 ): Promise<void> {
   const chapterId = imageStore.currentImage?.chapterId || imageStore.images[0]?.chapterId
   if (!chapterId) return
-  const currentPageId = imageStore.currentImage?.id
-  if (currentPageId) await flushPageDocument(currentPageId)
+  const pageIdBeforeRequest = imageStore.currentImage?.id
+  if (pageIdBeforeRequest) await flushPageDocument(pageIdBeforeRequest)
   const result = await listChapterPages(chapterId, { all: true })
+  if (result.nextCursor !== null) {
+    throw new Error(`章节 ${chapterId} 的全量页面响应不完整`)
+  }
+  if (result.items.some(page => page.chapterId !== chapterId)) {
+    throw new Error(`章节 ${chapterId} 的页面响应包含其他章节数据`)
+  }
+  const activeChapterId = imageStore.currentImage?.chapterId
+    ?? imageStore.images[0]?.chapterId
+  if (activeChapterId !== chapterId) return
+  const selectedPageId = imageStore.currentImage?.id
   const existingImages = new Map(imageStore.images.map(image => [image.id, image]))
   imageStore.setImages(result.items.map((summary) => {
     const mapped = pageSummaryToImage(summary)
@@ -328,13 +428,13 @@ async function refreshCurrentChapter(
       ...existing,
       ...mapped,
       bubbleStates: existing.bubbleStates,
-      errorMessage: mapped.translationFailed ? existing.errorMessage : undefined,
     }
   }))
-  if (currentPageId) {
-    const currentIndex = imageStore.images.findIndex(image => image.id === currentPageId)
+  if (selectedPageId) {
+    const currentIndex = imageStore.images.findIndex(image => image.id === selectedPageId)
     if (currentIndex >= 0) imageStore.setCurrentImageIndex(currentIndex)
   }
+  const currentPageId = imageStore.currentImage?.id
   if (!currentPageId) return
   await refreshOpenPageDocument(
     currentPageId,
@@ -346,6 +446,7 @@ async function refreshCurrentChapter(
 
 export interface TranslationPipelineOptions {
   beforeCreateJob?: () => Promise<boolean>
+  observeProgress?: boolean
 }
 
 export function useTranslation(options: TranslationPipelineOptions = {}) {
@@ -354,22 +455,24 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
   const settingsStore = useSettingsStore()
   const taskCenterStore = useTaskCenterStore()
   const toast = useToast()
+  const session = translationSession(imageStore)
+  const { activeJobId, progress } = session
 
   const progressPercent = computed(() => progress.value.percentage || 0)
 
-  watch(
+  if (options.observeProgress !== false) watch(
     () => taskCenterStore.latestEvent,
     event => {
-      if (!event || event.eventId <= lastHandledEventId) return
-      lastHandledEventId = event.eventId
-      const eventProgress = event.payload.progress
+      if (!event || event.eventId <= session.lastHandledEventId) return
+      session.lastHandledEventId = event.eventId
+      const eventProgress = parseJobProgress(event.payload.progress)
       if (
         event.jobId === activeJobId.value
         && eventProgress
-        && typeof eventProgress === 'object'
       ) {
         applyProgressSnapshot(
-          eventProgress as Record<string, unknown>,
+          progress,
+          eventProgress,
           event.type === 'page_completed' ? '后端正在处理后续页面' : '后端正在处理',
         )
       }
@@ -402,29 +505,33 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
         && CHAPTER_CONTENT_JOB_KINDS.has(eventJob.kind),
       )
       if (trackedJobFinished || openChapterChanged) {
-        void refreshCurrentChapter(imageStore, bubbleStore, settingsStore).catch((error) => {
-          toast.error(
-            `刷新后端翻译结果失败：${error instanceof Error ? error.message : '未知错误'}`,
-          )
-        })
+        void refreshCurrentChapter(imageStore, bubbleStore, settingsStore)
+          .catch((error) => {
+            toast.error(
+              `刷新后端翻译结果失败：${error instanceof Error ? error.message : '未知错误'}`,
+            )
+          })
+          .finally(() => {
+            if (trackedJobFinished) imageStore.setTranslationInProgress(false)
+          })
       }
       if (!trackedJobFinished) return
 
-      const succeeded = event.type === 'job_finished'
+      const terminalStatus: V2JobStatus = eventJob?.status
+        ?? (event.type === 'job_finished'
+          ? 'completed'
+          : event.type === 'job_cancelled' ? 'cancelled' : 'failed')
       progress.value = {
         ...progress.value,
-        current: progress.value.total,
         isInProgress: false,
-        label: succeeded ? '后端任务已完成' : '后端任务未完成',
-        percentage: succeeded ? 100 : progress.value.percentage,
+        label: jobStatusLabel(terminalStatus),
+        status: terminalStatus,
       }
-      imageStore.setBatchTranslationInProgress(false)
       activeJobId.value = null
-      activePageIds.value = []
     },
   )
 
-  watch(
+  if (options.observeProgress !== false) watch(
     () => [taskCenterStore.queue, taskCenterStore.history] as const,
     ([queue, history]) => {
       const jobId = activeJobId.value
@@ -432,19 +539,20 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
       const job = [...queue, ...history].find(item => item.jobId === jobId)
       if (!job) return
       applyProgressSnapshot(
+        progress,
         job.progress,
         jobStatusLabel(job.status),
         { queuePosition: job.queueRank, status: job.status },
       )
-      if (ACTIVE_JOB_STATUSES.has(job.status)) return
-      imageStore.setBatchTranslationInProgress(false)
+      if (NONTERMINAL_JOB_STATUSES.has(job.status)) return
       activeJobId.value = null
-      activePageIds.value = []
-      void refreshCurrentChapter(imageStore, bubbleStore, settingsStore).catch((error) => {
-        toast.error(
-          `刷新后端翻译结果失败：${error instanceof Error ? error.message : '未知错误'}`,
-        )
-      })
+      void refreshCurrentChapter(imageStore, bubbleStore, settingsStore)
+        .catch((error) => {
+          toast.error(
+            `刷新后端翻译结果失败：${error instanceof Error ? error.message : '未知错误'}`,
+          )
+        })
+        .finally(() => imageStore.setTranslationInProgress(false))
     },
     { deep: true },
   )
@@ -471,24 +579,29 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
     pageIndexes: number[],
     mode: TranslationMode,
     pageOptions: { reuseExistingBubbles?: boolean } = {},
-  ): Promise<TranslateResult> {
+  ): Promise<boolean> {
     const uniqueIndexes = [...new Set(pageIndexes)]
     if (uniqueIndexes.length === 0) {
       toast.error('没有指定要处理的页面')
-      return { success: false, completed: 0, failed: 0, errors: ['没有指定页面'] }
+      return false
     }
     const pages = uniqueIndexes.map(index => imageStore.images[index])
     if (pages.some(page => !page)) {
       toast.error('指定页码无效')
-      return { success: false, completed: 0, failed: 0, errors: ['指定页码无效'] }
+      return false
     }
     const chapterId = pages[0]?.chapterId
     if (!chapterId || pages.some(page => page?.chapterId !== chapterId)) {
       toast.error('当前页面尚未写入后端章节')
-      return { success: false, completed: 0, failed: 0, errors: ['页面不属于同一后端章节'] }
+      return false
+    }
+    if (imageStore.isTranslationInProgress) {
+      toast.info('已有翻译任务正在创建或执行')
+      return false
     }
 
     const pageIds = pages.map(page => page!.id)
+    imageStore.setTranslationInProgress(true)
     try {
       const styleSourcePageId = imageStore.currentImage?.id
       if (!styleSourcePageId) {
@@ -531,7 +644,6 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
       const jobId = batch.jobIds[0]
       if (!jobId) throw new Error('后端没有返回任务')
       activeJobId.value = jobId
-      activePageIds.value = pageIds
       progress.value = {
         current: 0,
         total: pageIds.length,
@@ -540,55 +652,47 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
         isInProgress: true,
         label: '任务已进入后端队列',
         percentage: 0,
-        executionMode: settingsStore.settings.parallel.enabled ? 'parallel' : 'sequential',
+        executionMode,
         status: 'queued',
         pools: [],
       }
-      imageStore.setBatchTranslationInProgress(pageIds.length > 1)
       for (const pageId of pageIds) {
         const index = imageStore.images.findIndex(image => image.id === pageId)
         if (index >= 0) imageStore.setTranslationStatus(index, 'processing')
       }
-      await taskCenterStore.refresh()
+      void taskCenterStore.refresh().catch(() => undefined)
       toast.success('任务已加入后端任务中心，可安全关闭页面')
-      return { success: true, completed: 0, failed: 0, errors: [] }
+      return true
     } catch (error) {
       const message = error instanceof Error ? error.message : '创建后端任务失败'
+      imageStore.setTranslationInProgress(false)
       toast.error(message)
-      return { success: false, completed: 0, failed: 0, errors: [message] }
+      return false
     }
   }
 
   async function translateCurrentImage(): Promise<boolean> {
-    return (await translatePages([imageStore.currentImageIndex], 'standard')).success
+    return translatePages([imageStore.currentImageIndex], 'standard')
   }
 
   async function translateAllImages(): Promise<boolean> {
-    return (
-      await translatePages(range(0, imageStore.images.length), 'standard')
-    ).success
+    return translatePages(range(0, imageStore.images.length), 'standard')
   }
 
   async function translateSelectedImages(selection: PageSelection): Promise<boolean> {
-    return (
-      await translatePages(pageSelectionToPageIndexes(selection.pages), 'standard')
-    ).success
+    return translatePages(pageSelectionToPageIndexes(selection.pages), 'standard')
   }
 
   async function removeTextOnly(): Promise<boolean> {
-    return (await translatePages([imageStore.currentImageIndex], 'removeText')).success
+    return translatePages([imageStore.currentImageIndex], 'removeText')
   }
 
   async function removeAllTexts(): Promise<boolean> {
-    return (
-      await translatePages(range(0, imageStore.images.length), 'removeText')
-    ).success
+    return translatePages(range(0, imageStore.images.length), 'removeText')
   }
 
   async function removeTextSelection(selection: PageSelection): Promise<boolean> {
-    return (
-      await translatePages(pageSelectionToPageIndexes(selection.pages), 'removeText')
-    ).success
+    return translatePages(pageSelectionToPageIndexes(selection.pages), 'removeText')
   }
 
   async function retryFailedImages(): Promise<boolean> {
@@ -597,24 +701,32 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
       toast.error('当前页面尚未写入后端章节')
       return false
     }
+    if (imageStore.isTranslationInProgress) {
+      toast.info('已有翻译任务正在创建或执行')
+      return false
+    }
+    imageStore.setTranslationInProgress(true)
     try {
       await prepareJobCreation(imageStore.images.map(image => image.id))
+      const executionMode = settingsStore.settings.parallel.enabled
+        ? 'parallel'
+        : 'sequential'
       const accepted = await taskCenterStore.retryLatestFailed(
         chapterId,
         ['translation'],
         'current',
       )
       if (!accepted) {
+        imageStore.setTranslationInProgress(false)
         toast.info('后端没有找到当前章节可重试的部分失败翻译任务')
         return true
       }
       const jobId = accepted.jobIds[0]
       if (!jobId) throw new Error('后端没有返回重试任务')
       const durableFailedPages = imageStore.images
-        .filter(image => image.translationFailed)
+        .filter(image => image.translationStatus === 'failed')
         .map(image => image.id)
       activeJobId.value = jobId
-      activePageIds.value = durableFailedPages
       progress.value = {
         current: 0,
         total: durableFailedPages.length,
@@ -623,14 +735,15 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
         isInProgress: true,
         label: '失败项重试已进入后端队列',
         percentage: 0,
-        executionMode: settingsStore.settings.parallel.enabled ? 'parallel' : 'sequential',
+        executionMode,
         status: 'queued',
         pools: [],
       }
-      imageStore.setBatchTranslationInProgress(durableFailedPages.length > 1)
+      void taskCenterStore.refresh().catch(() => undefined)
       toast.success('失败项已按当前设置加入后端任务中心')
       return true
     } catch (error) {
+      imageStore.setTranslationInProgress(false)
       toast.error(error instanceof Error ? error.message : '创建失败项重试任务失败')
       return false
     }
@@ -640,14 +753,14 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
     const indexes = selection
       ? pageSelectionToPageIndexes(selection.pages)
       : range(0, imageStore.images.length)
-    return (await translatePages(indexes, 'hq')).success
+    return translatePages(indexes, 'hq')
   }
 
   async function executeProofreading(selection?: PageSelection): Promise<boolean> {
     const indexes = selection
       ? pageSelectionToPageIndexes(selection.pages)
       : range(0, imageStore.images.length)
-    return (await translatePages(indexes, 'proofread')).success
+    return translatePages(indexes, 'proofread')
   }
 
   async function translateWithCurrentBubbles(): Promise<boolean> {
@@ -655,13 +768,11 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
       toast.error('当前图片没有气泡框，请先检测或手动添加')
       return false
     }
-    return (
-      await translatePages(
-        [imageStore.currentImageIndex],
-        'standard',
-        { reuseExistingBubbles: true },
-      )
-    ).success
+    return translatePages(
+      [imageStore.currentImageIndex],
+      'standard',
+      { reuseExistingBubbles: true },
+    )
   }
 
   return {

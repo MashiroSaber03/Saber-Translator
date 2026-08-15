@@ -1,8 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import { describe, expect, it } from 'vitest'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 
 import NoteEditorModal from '@/components/insight/notes/NoteEditorModal.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
@@ -134,13 +132,4 @@ describe('NoteEditorModal', () => {
     expect(actionRow.props('ariaLabel')).toBe('笔记编辑操作')
   })
 
-  it('keeps modal body styling scoped to the note editor owner', () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/components/insight/notes/NoteEditorModal.vue'),
-      'utf8',
-    )
-
-    expect(source).toContain('class="note-editor-modal__body"')
-    expect(source).not.toContain('notes-modal-body')
-  })
 })

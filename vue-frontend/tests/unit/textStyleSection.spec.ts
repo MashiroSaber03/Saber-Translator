@@ -1,6 +1,4 @@
 import { mount } from '@vue/test-utils'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import TextStyleSection from '@/components/translate/settings-sidebar/TextStyleSection.vue'
@@ -93,20 +91,14 @@ describe('TextStyleSection', () => {
     expect(wrapper.emitted('updateLineSpacing')?.[0]).toEqual([1.4])
     expect(wrapper.emitted('updateStrokeWidth')?.[0]).toEqual([3])
     expect(wrapper.find('.compact-number-input').exists()).toBe(false)
+    expect(numberFields.map(field => field.props('max'))).toEqual([
+      undefined,
+      undefined,
+      undefined,
+    ])
   })
 
   it('routes text-style labels and hints through typed settings fields', () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/components/translate/settings-sidebar/TextStyleSection.vue'),
-      'utf8'
-    )
-
-    expect(source).not.toMatch(/<label\b/)
-    expect(source).not.toContain('ui-form-hint')
-    expect(source).not.toContain('.settings-sidebar__field > label')
-    expect(source).not.toContain('id="solidColorOptions"')
-    expect(source).not.toContain('id="strokeOptions"')
-
     const wrapper = mount(TextStyleSection, {
       props: {
         applyOptions,
@@ -189,75 +181,4 @@ describe('TextStyleSection', () => {
     })
   })
 
-  it('maps section owner colors through semantic tokens', () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/components/translate/settings-sidebar/TextStyleSection.vue'),
-      'utf8'
-    )
-
-    expect(source).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(/)
-  })
-
-  it('uses the shared color input primitive instead of local color input skins', () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/components/translate/settings-sidebar/TextStyleSection.vue'),
-      'utf8'
-    )
-
-    expect(source).toContain("import UiColorInput from '@/components/ui/UiColorInput.vue'")
-    expect(source).not.toContain('type="color"')
-    expect(source).not.toContain('class="color-input')
-    expect(source).not.toMatch(/\.color-input\b/)
-  })
-
-  it('keeps text-style section layout hooks under the section owner', () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/components/translate/settings-sidebar/TextStyleSection.vue'),
-      'utf8'
-    )
-
-    for (const oldClass of [
-      'settings-panel',
-      'text-settings-panel',
-      'settings-form',
-      'text-settings-form',
-      'setting-group',
-      'setting-group-typography',
-      'setting-group-color',
-      'setting-group-stroke',
-      'group-title-row',
-      'group-title',
-      'group-note',
-      'color-field-row',
-      'settings-toggle',
-      'auto-fontsize-toggle',
-      'auto-color-toggle',
-      'stroke-toggle',
-      'inline-color-group',
-      'inline-hint',
-      'stroke-options',
-      'stroke-grid',
-      'settings-sidebar__field',
-    ]) {
-      expect(source).not.toMatch(new RegExp(`class="[^"]*\\b${oldClass}\\b`))
-      expect(source).not.toMatch(new RegExp(`\\.${oldClass}\\b`))
-    }
-
-    for (const ownerClass of [
-      'text-style-section',
-      'text-style-section__form',
-      'text-style-section__group',
-      'text-style-section__group--typography',
-      'text-style-section__group--color',
-      'text-style-section__group--stroke',
-      'text-style-section__group-title-row',
-      'text-style-section__field',
-      'text-style-section__color-field-row',
-      'text-style-section__toggle',
-      'text-style-section__inline-hint',
-      'text-style-section__stroke-grid',
-    ]) {
-      expect(source).toContain(ownerClass)
-    }
-  })
 })

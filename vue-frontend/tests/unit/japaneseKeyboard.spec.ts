@@ -83,7 +83,7 @@ describe('JapaneseKeyboard', () => {
     expect(targetField.props('layout')).toBe('inline')
 
     const targetSelect = wrapper.getComponent(UiSelect)
-    expect(targetSelect.attributes('id')).toBe('kanaTargetField')
+    expect(targetSelect.get('button').attributes('id')).toBe('kanaTargetField')
     expect(targetSelect.props('modelValue')).toBe('translated')
     expect(targetSelect.props('options')).toEqual([
       { label: '原文', value: 'original' },
@@ -124,6 +124,24 @@ describe('JapaneseKeyboard', () => {
     expect(source).not.toContain('class="kana-tab"')
   })
 
+  it('renders only the selected category content', async () => {
+    const wrapper = mount(JapaneseKeyboard, {
+      props: { visible: true },
+    })
+    const categoryTabs = wrapper.findAllComponents(ProductSegmentedTabs)[0]!
+
+    expect(wrapper.findAll('.kana-keyboard__tab-content')).toHaveLength(1)
+    expect(wrapper.text()).toContain('あ行')
+    expect(wrapper.text()).not.toContain('が行')
+
+    categoryTabs.vm.$emit('select', 'dakuten')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.findAll('.kana-keyboard__tab-content')).toHaveLength(1)
+    expect(wrapper.text()).toContain('が行')
+    expect(wrapper.text()).not.toContain('あ行')
+  })
+
   it('keeps keyboard DOM hooks under the kana keyboard owner contract', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/edit/JapaneseKeyboard.vue'),
@@ -136,7 +154,7 @@ describe('JapaneseKeyboard', () => {
     expect(source).toContain('class="kana-keyboard__options"')
     expect(source).toContain('class="kana-keyboard__mode-select"')
     expect(source).toContain('class="kana-keyboard__target-select"')
-    expect(source).toContain('class="kana-keyboard__tab-content"')
+    expect(source).toContain('class="kana-keyboard__tab-content kana-keyboard__tab-content--active"')
     expect(source).toContain('kana-keyboard__tab-content--active')
     expect(source).toContain('class="kana-keyboard__table"')
     expect(source).toContain('kana-keyboard__table--combo')

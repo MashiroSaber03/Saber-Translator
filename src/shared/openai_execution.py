@@ -7,12 +7,17 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import re
 import time
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Callable, Generic, Optional, TypeVar
 
-from src.shared.ai_providers import get_provider_manifest, normalize_provider_id
+from src.shared.ai_providers import (
+    get_provider_manifest,
+    normalize_provider_id,
+    provider_supports_capability,
+)
 from src.shared.openai_options import (
     OpenAICompatibleOptions,
     clone_openai_compatible_options,
@@ -38,29 +43,35 @@ class OpenAICompatibleRuntimeOptions:
     timeout: Optional[float] = None
     print_stream_output: bool = False
     stream_output_label: Optional[str] = None
-    request_overrides: dict[str, Any] = field(default_factory=dict)
     on_stream_chunk: Optional[Callable[[str, str], None]] = field(default=None, repr=False, compare=False)
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "timeout": self.timeout,
-            "print_stream_output": self.print_stream_output,
-            "stream_output_label": self.stream_output_label,
-            "request_overrides": dict(self.request_overrides),
-        }
-
-    @classmethod
-    def from_dict(cls, data: Optional[dict[str, Any]]) -> "OpenAICompatibleRuntimeOptions":
-        data = data or {}
-        return cls(
-            timeout=float(data["timeout"]) if data.get("timeout") is not None else None,
-            print_stream_output=bool(data.get("print_stream_output", False)),
-            stream_output_label=data.get("stream_output_label"),
-            request_overrides=dict(data.get("request_overrides") or {}),
-        )
+    def __post_init__(self) -> None:
+        if self.timeout is not None:
+            if (
+                isinstance(self.timeout, bool)
+                or not isinstance(self.timeout, (int, float))
+                or not math.isfinite(float(self.timeout))
+                or self.timeout <= 0
+            ):
+                raise ValueError("AI 请求超时必须是正有限数")
+            self.timeout = float(self.timeout)
+        if not isinstance(self.print_stream_output, bool):
+            raise ValueError("print_stream_output 必须是布尔值")
+        if self.stream_output_label is not None and not isinstance(
+            self.stream_output_label,
+            str,
+        ):
+            raise ValueError("stream_output_label 必须是字符串或 null")
+        if self.on_stream_chunk is not None and not callable(self.on_stream_chunk):
+            raise ValueError("on_stream_chunk 必须可调用")
 
     def timeout_or(self, default: float) -> float:
-        return float(self.timeout) if self.timeout is not None else float(default)
+        if isinstance(default, bool) or not isinstance(default, (int, float)):
+            raise ValueError("默认 AI 请求超时必须是正数")
+        resolved = self.timeout if self.timeout is not None else float(default)
+        if not math.isfinite(resolved) or resolved <= 0:
+            raise ValueError("默认 AI 请求超时必须是正有限数")
+        return resolved
 
 
 @dataclass
@@ -86,6 +97,10 @@ class OpenAICompatibleBusinessRetryableError(RuntimeError):
     pass
 
 
+class OpenAICompatibleEmptyContentError(OpenAICompatibleBusinessRetryableError):
+    pass
+
+
 class OpenAICompatibleBusinessRetriesExhaustedError(RuntimeError):
     def __init__(
         self,
@@ -104,14 +119,12 @@ def build_openai_compatible_runtime_options(
     timeout: Optional[float] = None,
     print_stream_output: bool = False,
     stream_output_label: Optional[str] = None,
-    request_overrides: Optional[dict[str, Any]] = None,
     on_stream_chunk: Optional[Callable[[str, str], None]] = None,
 ) -> OpenAICompatibleRuntimeOptions:
     return OpenAICompatibleRuntimeOptions(
         timeout=timeout,
         print_stream_output=print_stream_output,
         stream_output_label=stream_output_label,
-        request_overrides=dict(request_overrides or {}),
         on_stream_chunk=on_stream_chunk,
     )
 
@@ -119,11 +132,12 @@ def build_openai_compatible_runtime_options(
 def clone_openai_compatible_runtime_options(
     options: OpenAICompatibleRuntimeOptions,
 ) -> OpenAICompatibleRuntimeOptions:
+    if not isinstance(options, OpenAICompatibleRuntimeOptions):
+        raise TypeError("options 必须是 OpenAICompatibleRuntimeOptions")
     return OpenAICompatibleRuntimeOptions(
         timeout=options.timeout,
         print_stream_output=options.print_stream_output,
         stream_output_label=options.stream_output_label,
-        request_overrides=dict(options.request_overrides),
         on_stream_chunk=options.on_stream_chunk,
     )
 
@@ -133,12 +147,15 @@ def resolve_openai_compatible_invocation(
     capability: str,
     options: OpenAICompatibleOptions,
     runtime_options: Optional[OpenAICompatibleRuntimeOptions] = None,
-    *,
-    logger_instance: Optional[logging.Logger] = None,
 ) -> ResolvedOpenAICompatibleInvocation:
     canonical_provider = normalize_provider_id(provider)
     manifest = get_provider_manifest(canonical_provider)
-    effective_logger = logger_instance or logger
+    if not isinstance(capability, str) or not capability:
+        raise ValueError("AI 能力必须是非空字符串")
+    if not provider_supports_capability(canonical_provider, capability):
+        raise ValueError(f"{manifest.display_name}不支持 {capability}")
+    if not isinstance(options, OpenAICompatibleOptions):
+        raise TypeError("options 必须是 OpenAICompatibleOptions")
 
     effective_options = clone_openai_compatible_options(options)
     runtime = clone_openai_compatible_runtime_options(
@@ -146,13 +163,10 @@ def resolve_openai_compatible_invocation(
     )
 
     if effective_options.execution.use_stream and not manifest.supports_stream:
-        effective_logger.info("%s 不支持流式调用，自动回退为非流式模式", manifest.display_name)
-        effective_options.execution.use_stream = False
-        runtime.print_stream_output = False
+        raise ValueError(f"{manifest.display_name}不支持流式调用")
 
     if effective_options.request.force_json_output and not manifest.supports_json_response:
-        effective_logger.info("%s 不支持强制 JSON 输出，自动关闭 JSON 模式", manifest.display_name)
-        effective_options.request.force_json_output = False
+        raise ValueError(f"{manifest.display_name}不支持强制 JSON 输出")
 
     return ResolvedOpenAICompatibleInvocation(
         provider=canonical_provider,
@@ -167,18 +181,25 @@ def resolve_openai_compatible_invocation(
 
 
 def strip_markdown_code_fences(text: str) -> str:
+    if not isinstance(text, str):
+        raise TypeError("text 必须是字符串")
     cleaned = text.strip()
-    if cleaned.startswith("```json"):
-        cleaned = cleaned[7:].strip()
-    if cleaned.startswith("```"):
-        cleaned = cleaned[3:].strip()
-    if cleaned.endswith("```"):
-        cleaned = cleaned[:-3].strip()
+    fenced = re.fullmatch(
+        r"```(?:json)?\s*([\s\S]*?)\s*```",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    if fenced:
+        return fenced.group(1).strip()
+    if cleaned.startswith("```") or cleaned.endswith("```"):
+        raise OpenAICompatibleBusinessRetryableError("JSON 代码块围栏不完整")
     return cleaned
 
 
 def strip_reasoning_tags(text: str) -> str:
-    cleaned = text or ""
+    if not isinstance(text, str):
+        raise TypeError("text 必须是字符串")
+    cleaned = text
     patterns = [
         r"<think>.*?</think>",
         r"<thinking>.*?</thinking>",
@@ -194,17 +215,9 @@ def strip_reasoning_tags(text: str) -> str:
 
 def extract_json_block_from_text(text: str) -> str:
     cleaned = strip_markdown_code_fences(strip_reasoning_tags(text))
-    if cleaned.startswith("{") or cleaned.startswith("["):
-        candidate = cleaned
-    else:
-        start_index = -1
-        for index, character in enumerate(cleaned):
-            if character in "{[":
-                start_index = index
-                break
-        if start_index < 0:
-            raise OpenAICompatibleBusinessRetryableError("返回内容中未找到有效的 JSON 块")
-        candidate = cleaned[start_index:]
+    if not (cleaned.startswith("{") or cleaned.startswith("[")):
+        raise OpenAICompatibleBusinessRetryableError("返回内容必须是 JSON 对象或数组")
+    candidate = cleaned
 
     open_char = candidate[0]
     close_char = "}" if open_char == "{" else "]" if open_char == "[" else ""
@@ -218,7 +231,7 @@ def extract_json_block_from_text(text: str) -> str:
         if escaping:
             escaping = False
             continue
-        if character == "\\":
+        if character == "\\" and in_string:
             escaping = True
             continue
         if character == '"':
@@ -231,6 +244,10 @@ def extract_json_block_from_text(text: str) -> str:
         elif character == close_char:
             depth -= 1
             if depth == 0:
+                if candidate[index + 1 :].strip():
+                    raise OpenAICompatibleBusinessRetryableError(
+                        "JSON 块后包含额外内容"
+                    )
                 return candidate[: index + 1]
 
     raise OpenAICompatibleBusinessRetryableError("返回内容中未找到完整的 JSON 块")
@@ -242,11 +259,6 @@ def parse_json_block_from_text(text: str) -> Any:
         return json.loads(json_block)
     except json.JSONDecodeError as exc:
         raise OpenAICompatibleBusinessRetryableError(f"JSON 解析失败: {exc}") from exc
-
-
-def _is_empty_content_error(error: BaseException) -> bool:
-    message = str(error or "").lower()
-    return "未返回有效内容" in message or "empty choices" in message
 
 
 class OpenAICompatibleSyncExecutor:
@@ -265,14 +277,16 @@ class OpenAICompatibleSyncExecutor:
         runtime_options: Optional[OpenAICompatibleRuntimeOptions] = None,
         parser: Optional[Callable[[str], T]] = None,
         logger_instance: Optional[logging.Logger] = None,
+        before_request: Optional[Callable[[], None]] = None,
     ) -> OpenAICompatibleExecutionResult[T | str]:
+        if before_request is not None and not callable(before_request):
+            raise TypeError("before_request 必须可调用")
         effective_logger = logger_instance or logger
         invocation = resolve_openai_compatible_invocation(
             request.provider,
             capability,
             request.openai_options,
             runtime_options or request.runtime_options,
-            logger_instance=effective_logger,
         )
 
         last_raw_content: Optional[str] = None
@@ -280,7 +294,11 @@ class OpenAICompatibleSyncExecutor:
         total_attempts = invocation.effective_options.execution.business_retries + 1
         for attempt in range(total_attempts):
             try:
-                raw_content = self._complete(request, invocation)
+                raw_content = self._complete(
+                    request,
+                    invocation,
+                    before_request=before_request,
+                )
                 last_raw_content = raw_content
                 parsed: T | str = parser(raw_content) if parser else raw_content
                 return OpenAICompatibleExecutionResult(
@@ -290,16 +308,6 @@ class OpenAICompatibleSyncExecutor:
                 )
             except OpenAICompatibleBusinessRetryableError as error:
                 if is_memory_allocation_error(error):
-                    raise
-                last_error = error
-                if attempt >= total_attempts - 1:
-                    break
-                self._log_business_retry(effective_logger, invocation, attempt, total_attempts, error)
-                time.sleep(1)
-            except Exception as error:
-                if is_memory_allocation_error(error):
-                    raise
-                if not _is_empty_content_error(error):
                     raise
                 last_error = error
                 if attempt >= total_attempts - 1:
@@ -317,6 +325,8 @@ class OpenAICompatibleSyncExecutor:
         self,
         request: "UnifiedChatRequest | UnifiedVisionRequest",
         invocation: ResolvedOpenAICompatibleInvocation,
+        *,
+        before_request: Optional[Callable[[], None]] = None,
     ) -> str:
         prepared_request = replace(
             request,
@@ -324,14 +334,18 @@ class OpenAICompatibleSyncExecutor:
             openai_options=clone_openai_compatible_options(invocation.effective_options),
             runtime_options=clone_openai_compatible_runtime_options(invocation.runtime_options),
         )
-        if prepared_request.__class__.__name__ == "UnifiedVisionRequest":
+        from src.shared.ai_transport import UnifiedVisionRequest
+
+        if isinstance(prepared_request, UnifiedVisionRequest):
             return self.transport.complete_vision(
                 prepared_request,
                 resolved_invocation=invocation,
+                before_request=before_request,
             )
         return self.transport.complete(
             prepared_request,
             resolved_invocation=invocation,
+            before_request=before_request,
         )
 
     @staticmethod
@@ -375,7 +389,6 @@ class OpenAICompatibleAsyncExecutor:
             capability,
             request.openai_options,
             runtime_options or request.runtime_options,
-            logger_instance=effective_logger,
         )
         last_raw_content: Optional[str] = None
         last_error: Optional[BaseException] = None
@@ -392,22 +405,6 @@ class OpenAICompatibleAsyncExecutor:
                 )
             except OpenAICompatibleBusinessRetryableError as error:
                 if is_memory_allocation_error(error):
-                    raise
-                last_error = error
-                if attempt >= total_attempts - 1:
-                    break
-                OpenAICompatibleSyncExecutor._log_business_retry(
-                    effective_logger,
-                    invocation,
-                    attempt,
-                    total_attempts,
-                    error,
-                )
-                await asyncio.sleep(1)
-            except Exception as error:
-                if is_memory_allocation_error(error):
-                    raise
-                if not _is_empty_content_error(error):
                     raise
                 last_error = error
                 if attempt >= total_attempts - 1:
@@ -438,7 +435,9 @@ class OpenAICompatibleAsyncExecutor:
             openai_options=clone_openai_compatible_options(invocation.effective_options),
             runtime_options=clone_openai_compatible_runtime_options(invocation.runtime_options),
         )
-        if prepared_request.__class__.__name__ == "UnifiedVisionRequest":
+        from src.shared.ai_transport import UnifiedVisionRequest
+
+        if isinstance(prepared_request, UnifiedVisionRequest):
             return await self.transport.complete_vision(
                 prepared_request,
                 resolved_invocation=invocation,

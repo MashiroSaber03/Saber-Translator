@@ -9,17 +9,19 @@ import UiButton from '@/components/ui/UiButton.vue'
 import type { TagData } from '@/types'
 
 const tags: TagData[] = [
-  { name: 'Action', color: '#4466aa' },
-  { name: 'Drama', color: '#aa6644' },
+  { id: 'tag-action', name: 'Action', color: '#4466aa' },
+  { id: 'tag-drama', name: 'Drama', color: '#aa6644' },
 ]
 
 function mountSearch(options: {
   listeners?: { onSearch?: (query: string) => void }
+  query?: string
   selectedTagNames?: string[]
 } = {}) {
   return mount(BookSearch, {
     props: {
       tags,
+      query: options.query ?? '',
       selectedTagNames: options.selectedTagNames ?? [],
     },
     attrs: options.listeners,
@@ -62,6 +64,20 @@ describe('BookSearch', () => {
     vi.advanceTimersByTime(300)
 
     expect(onSearch).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the input synchronized with the active store query', async () => {
+    const wrapper = mountSearch({ query: 'persisted query' })
+
+    expect((wrapper.get('input').element as HTMLInputElement).value).toBe('persisted query')
+
+    await wrapper.get('input').setValue('pending query')
+    expect(vi.getTimerCount()).toBe(1)
+
+    await wrapper.setProps({ query: 'restored query' })
+
+    expect((wrapper.get('input').element as HTMLInputElement).value).toBe('restored query')
+    expect(vi.getTimerCount()).toBe(0)
   })
 
   it('renders tag filters through the shared product chip contract', async () => {
@@ -113,13 +129,6 @@ describe('BookSearch', () => {
 
     expect(wrapper.emitted('search')?.at(-1)).toEqual([''])
     expect(wrapper.find('.clear-search-btn').exists()).toBe(false)
-  })
-
-  it('does not assert shared button primitives through internal class names', () => {
-    const source = readFileSync(resolve(process.cwd(), 'tests/unit/bookSearch.spec.ts'), 'utf8')
-    const buttonClassPrefix = 'ui-' + 'button--'
-
-    expect(source).not.toContain(buttonClassPrefix)
   })
 
   it('uses the product search toolbar shell instead of a local filter card', () => {

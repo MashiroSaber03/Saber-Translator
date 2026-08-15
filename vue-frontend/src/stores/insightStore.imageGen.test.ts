@@ -2,12 +2,10 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { useInsightStore } from './insightStore'
-import type { ProviderConfigsCache } from './insight/useInsightConfigManager'
 import {
   normalizeInsightImageGenConfig,
   normalizeInsightRerankerConfig,
 } from './insight/insightConfigDefaults'
-import { applyInsightProviderSettingsFromApi } from './insight/insightProviderSettingsHydration'
 
 describe('useInsightStore imageGen config', () => {
   beforeEach(() => {
@@ -94,28 +92,20 @@ describe('useInsightStore imageGen config', () => {
     expect(store.config.imageGen.baseUrl).toBe('')
   })
 
-  it('preserves explicit zero business_retries when mapping imageGen API payloads', () => {
+  it('preserves explicit zero business retries in settings snapshots', () => {
     const store = useInsightStore()
+    const snapshot = store.getConfigForApi()
+    snapshot.config.imageGen = {
+      provider: 'gpt2api',
+      apiKey: 'image-key',
+      model: 'gpt-image-2',
+      baseUrl: 'https://image.example.com/v1',
+      transportRetries: 10,
+      businessRetries: 0,
+      timeoutSeconds: 0,
+    }
 
-    store.setConfigFromApi({
-      image_gen: {
-        provider: 'gpt2api',
-        api_key: 'image-key',
-        model: 'gpt-image-2',
-        base_url: 'https://image.example.com/v1',
-        business_retries: 0,
-      },
-      provider_settings: {
-        imageGenProvider: {
-          gpt2api: {
-            api_key: 'image-key',
-            model: 'gpt-image-2',
-            base_url: 'https://image.example.com/v1',
-            business_retries: 0,
-          },
-        },
-      },
-    })
+    store.setConfigFromApi(snapshot)
 
     expect(store.config.imageGen.businessRetries).toBe(0)
   })
@@ -124,9 +114,8 @@ describe('useInsightStore imageGen config', () => {
     expect(normalizeInsightRerankerConfig()).toMatchObject({
       provider: 'jina',
       model: 'jina-reranker-v2-base-multilingual',
-      topK: 5,
-      transportRetries: 10,
-      businessRetries: 10,
+      transportRetries: 1,
+      businessRetries: 0,
       timeoutSeconds: 0,
     })
 
@@ -134,60 +123,86 @@ describe('useInsightStore imageGen config', () => {
       provider: 'newapi',
       model: '',
       baseUrl: '',
-      transportRetries: 10,
-      businessRetries: 10,
+      transportRetries: 1,
+      businessRetries: 0,
       timeoutSeconds: 0,
     })
   })
 
-  it('hydrates provider settings through the insight provider settings helper', () => {
-    const providerConfigs: ProviderConfigsCache = {
-      vlm: {},
-      llm: {},
-      embedding: {},
-      reranker: {},
-      imageGen: {},
-    }
-
-    expect(applyInsightProviderSettingsFromApi(providerConfigs, {
-      vlmProvider: {
+  it('round-trips current provider drafts without a second transport shape', () => {
+    const store = useInsightStore()
+    const snapshot = store.getConfigForApi()
+    snapshot.providerDrafts = {
+      vlm: {
         gemini: {
-          api_key: 'vlm-key',
+          apiKey: 'vlm-key',
           model: 'gemini-2.0-flash',
-          base_url: '',
-          openai_options: {
-            request: { force_json_output: true, temperature: 0.2 },
+          baseUrl: '',
+          openaiOptions: {
+            request: { forceJsonOutput: true, temperature: 0.2 },
             execution: {
-              use_stream: false,
-              rpm_limit: 11,
-              transport_retries: 2,
-              business_retries: 3,
+              useStream: false,
+              rpmLimit: 11,
+              transportRetries: 2,
+              businessRetries: 3,
             },
           },
-          image_max_size: 1024,
+          imageMaxSize: 1024,
         },
       },
-      rerankerProvider: {
+      llm: {},
+      embedding: {},
+      reranker: {
         jina: {
-          api_key: 'reranker-key',
+          apiKey: 'reranker-key',
           model: 'jina-reranker-v2-base-multilingual',
-          top_k: 0,
+          baseUrl: '',
+          transportRetries: 10,
+          businessRetries: 10,
+          timeoutSeconds: 0,
         },
       },
-      imageGenProvider: {
+      imageGen: {
         gpt2api: {
-          api_key: 'image-key',
+          apiKey: 'image-key',
           model: 'gpt-image-2',
-          business_retries: 0,
+          baseUrl: '',
+          transportRetries: 10,
+          businessRetries: 0,
+          timeoutSeconds: 0,
         },
       },
-    })).toBe(true)
+    }
+    store.setConfigFromApi(snapshot)
+    const restored = store.getConfigForApi().providerDrafts
 
-    expect(providerConfigs.vlm.gemini?.openaiOptions?.request.forceJsonOutput).toBe(true)
-    expect(providerConfigs.vlm.gemini?.openaiOptions?.execution.rpmLimit).toBe(11)
-    expect(providerConfigs.vlm.gemini?.imageMaxSize).toBe(1024)
-    expect(providerConfigs.reranker.jina?.topK).toBe(0)
-    expect(providerConfigs.imageGen.gpt2api?.businessRetries).toBe(0)
+    expect(restored.vlm.gemini?.openaiOptions.request.forceJsonOutput).toBe(true)
+    expect(restored.vlm.gemini?.openaiOptions.execution.rpmLimit).toBe(11)
+    expect(restored.vlm.gemini?.imageMaxSize).toBe(1024)
+    expect(restored.reranker.jina?.transportRetries).toBe(10)
+    expect(restored.imageGen.gpt2api?.businessRetries).toBe(0)
+  })
+
+  it('preserves an explicitly empty cached base URL when switching back to a provider', () => {
+    const store = useInsightStore()
+    store.updateImageGenConfig({
+      ...store.config.imageGen,
+      baseUrl: '',
+    })
+
+    store.switchImageGenProviderDraft({ ...store.config.imageGen, provider: 'newapi' })
+    store.switchImageGenProviderDraft({ ...store.config.imageGen, provider: 'gpt2api' })
+
+    expect(store.config.imageGen.baseUrl).toBe('')
+  })
+
+  it('does not retain references owned by an applied settings snapshot', () => {
+    const store = useInsightStore()
+    const snapshot = store.getConfigForApi()
+
+    store.setConfigFromApi(snapshot)
+    snapshot.config.imageGen.model = 'mutated-after-apply'
+
+    expect(store.config.imageGen.model).not.toBe('mutated-after-apply')
   })
 })
-

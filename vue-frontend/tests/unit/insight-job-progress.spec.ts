@@ -21,6 +21,7 @@ function progress(): V2Job['progress'] {
         completed: 0,
         failed: 0,
         skipped: 0,
+        cancelled: 0,
         waiting: 0,
         processing: 1,
         lockWaiting: false,
@@ -32,6 +33,7 @@ function progress(): V2Job['progress'] {
         completed: 0,
         failed: 0,
         skipped: 0,
+        cancelled: 0,
         waiting: 1,
         processing: 0,
         lockWaiting: false,
@@ -41,9 +43,9 @@ function progress(): V2Job['progress'] {
     currentStep: {
       itemId: 'item-1',
       pageId: 'page-1',
-      itemOrdinal: 0,
+      itemOrdinal: 1,
       stepId: 'step-1',
-      stepOrdinal: 0,
+      stepOrdinal: 1,
       kind: 'insight_analyze_page',
     },
   }
@@ -66,6 +68,19 @@ describe('projectInsightPageProgress', () => {
     pagePool.completed = 1
 
     expect(projectInsightPageProgress(value).current).toBe(1)
+  })
+
+  it('does not hide an impossible backend pool total by clamping it', () => {
+    const value = progress()
+    const pagePool = value.pools[0]
+    if (!pagePool) throw new Error('missing page pool')
+    pagePool.completed = 2
+
+    expect(projectInsightPageProgress(value)).toEqual({
+      current: 2,
+      total: 1,
+      currentStepKind: 'insight_analyze_page',
+    })
   })
 
   it('closes finished progress even when the terminal event precedes the refreshed job snapshot', () => {

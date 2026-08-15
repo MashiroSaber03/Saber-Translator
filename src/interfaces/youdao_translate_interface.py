@@ -1,20 +1,32 @@
-import requests
 import hashlib
+import math
 import time
 import uuid
-import logging
 
-logger = logging.getLogger(__name__)
+import requests
+
 
 class YoudaoTranslateInterface:
     """有道翻译API接口"""
-    
-    def __init__(self, app_key="", app_secret=""):
+
+    API_URL = "https://openapi.youdao.com/api"
+
+    def __init__(self, app_key: str, app_secret: str):
+        if not isinstance(app_key, str) or not app_key.strip():
+            raise ValueError("有道翻译API未配置AppKey")
+        if not isinstance(app_secret, str) or not app_secret.strip():
+            raise ValueError("有道翻译API未配置AppSecret")
         self.app_key = app_key
         self.app_secret = app_secret
-        self.api_url = "https://openapi.youdao.com/api"
-        
-    def translate(self, text, from_lang="auto", to_lang="zh-CHS"):
+
+    def translate(
+        self,
+        text: str,
+        from_lang: str = "auto",
+        to_lang: str = "zh-CHS",
+        *,
+        timeout: float = 30.0,
+    ) -> str:
         """
         调用有道翻译API进行翻译
         
@@ -26,59 +38,65 @@ class YoudaoTranslateInterface:
         返回:
             翻译结果文本
         """
-        if not self.app_key or not self.app_secret:
-            raise ValueError("有道翻译API密钥未设置")
-            
-        try:
-            # 准备请求参数
-            salt = str(uuid.uuid1())
-            curtime = str(int(time.time()))
-            
-            # 计算input参数
-            input_text = self._truncate(text)
-            
-            # 计算签名
-            sign_str = self.app_key + input_text + salt + curtime + self.app_secret
-            sign = hashlib.sha256(sign_str.encode('utf-8')).hexdigest()
-            
-            # 构建请求参数
-            params = {
-                'q': text,
-                'from': from_lang,
-                'to': to_lang,
-                'appKey': self.app_key,
-                'salt': salt,
-                'sign': sign,
-                'signType': 'v3',
-                'curtime': curtime
-            }
-            
-            # 发送请求
-            response = requests.post(self.api_url, params=params)
-            result = response.json()
-            
-            # 处理结果
-            if 'translation' in result and result['translation']:
-                return result['translation'][0]
-            else:
-                error_code = result.get('errorCode', 'unknown')
-                raise RuntimeError(f"有道翻译API返回错误，错误码: {error_code}")
-                
-        except Exception as e:
-            logger.error(f"有道翻译API调用异常: {str(e)}", exc_info=True)
-            raise
-    
-    def _truncate(self, q):
+        if not isinstance(text, str) or not text:
+            raise ValueError("有道翻译文本必须是非空字符串")
+        if not isinstance(from_lang, str) or not from_lang:
+            raise ValueError("有道翻译源语言必须是非空字符串")
+        if not isinstance(to_lang, str) or not to_lang:
+            raise ValueError("有道翻译目标语言必须是非空字符串")
+        if (
+            isinstance(timeout, bool)
+            or not isinstance(timeout, (int, float))
+            or not math.isfinite(float(timeout))
+            or timeout <= 0
+        ):
+            raise ValueError("有道翻译请求超时必须大于零")
+
+        salt = str(uuid.uuid4())
+        curtime = str(int(time.time()))
+        input_text = self._truncate(text)
+        sign_str = self.app_key + input_text + salt + curtime + self.app_secret
+        sign = hashlib.sha256(sign_str.encode("utf-8")).hexdigest()
+        form = {
+            "q": text,
+            "from": from_lang,
+            "to": to_lang,
+            "appKey": self.app_key,
+            "salt": salt,
+            "sign": sign,
+            "signType": "v3",
+            "curtime": curtime,
+        }
+        response = requests.post(
+            self.API_URL,
+            data=form,
+            timeout=float(timeout),
+        )
+        response.raise_for_status()
+        result = response.json()
+        if not isinstance(result, dict):
+            raise RuntimeError("有道翻译API返回值必须是对象")
+        error_code = result.get("errorCode")
+        if error_code != "0":
+            raise RuntimeError(f"有道翻译API返回错误，错误码: {error_code}")
+        translated = result.get("translation")
+        if (
+            not isinstance(translated, list)
+            or not translated
+            or not isinstance(translated[0], str)
+            or not translated[0].strip()
+        ):
+            raise RuntimeError("有道翻译API未返回有效翻译结果")
+        return translated[0].strip()
+
+    @staticmethod
+    def _truncate(q: str) -> str:
         """
         按照有道API要求截取输入字符
         input = q前10个字符 + q长度 + q后10个字符（当q长度大于20）
         或 input = q字符串（当q长度小于等于20）
         """
-        if q is None:
-            return None
-            
         size = len(q)
         if size <= 20:
             return q
-        else:
-            return q[:10] + str(size) + q[-10:]
+        return q[:10] + str(size) + q[-10:]

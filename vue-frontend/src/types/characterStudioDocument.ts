@@ -1,5 +1,32 @@
 import type { ExportDiagnostic } from './characterStudioApi'
 
+export type CharacterStudioSection =
+  | 'identity'
+  | 'greetings'
+  | 'lorebook'
+  | 'regex'
+  | 'state-tasks'
+
+export type CharacterStudioGenerationSection =
+  | CharacterStudioSection
+  | 'translate'
+  | 'full'
+  | 'review'
+
+export const CHARACTER_STUDIO_LOREBOOK_REQUIRED_FIELDS = [
+  'id',
+  'comment',
+  'keys',
+  'content',
+  'enabled',
+  'constant',
+  'selective',
+  'priority',
+  'position',
+  'depth',
+  'children',
+] as const
+
 export interface LorebookEntryNode {
   id: string
   comment: string
@@ -49,19 +76,17 @@ export interface CharacterStudioDocument {
   bookId: string
   origin: {
     type: 'analysis' | 'manual' | 'imported'
-    source_character?: string | null
+    source_character: string | null
   }
   status: {
     is_favorite: boolean
-    frozen_sections: string[]
-    last_diagnostics?: ExportDiagnostic | null
-    last_validated_at?: string | null
+    frozen_sections: CharacterStudioSection[]
+    last_diagnostics: ExportDiagnostic | null
+    last_validated_at: string | null
   }
   meta: {
     title: string
     tags: string[]
-    created_at: string
-    updated_at: string
   }
   identity: {
     name: string
@@ -86,8 +111,8 @@ export interface CharacterStudioDocument {
   regexScripts: RegexScript[]
   stateTasks: StateTask[]
   exportArtifacts: Record<string, unknown>
-  revision?: number
-  avatarUrl?: string | null
-  createdAt?: string | null
-  updatedAt?: string | null
+  revision: number
+  avatarUrl: string | null
+  createdAt: string
+  updatedAt: string
 }

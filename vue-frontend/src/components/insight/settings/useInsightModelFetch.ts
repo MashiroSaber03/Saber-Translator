@@ -13,11 +13,12 @@ type ModelFetchOptions = {
   baseUrl: Ref<string>
   model: Ref<string>
   requiresApiKey?: (provider: string) => boolean
-  formatFetchError?: (error: unknown) => string
   emitMessage: (message: string, type: MessageType) => void
 }
 
-const DEFAULT_FETCH_ERROR = '获取模型列表失败'
+function defaultFetchError(error: unknown): string {
+  return '获取模型列表失败: ' + (error instanceof Error ? error.message : '网络错误')
+}
 
 export function useInsightModelFetch(options: ModelFetchOptions) {
   const modelSelectVisible = ref(false)
@@ -43,7 +44,7 @@ export function useInsightModelFetch(options: ModelFetchOptions) {
     validationTone: 'error',
     emptyTone: 'error',
     providerLabel: provider => provider,
-    errorMessage: error => options.formatFetchError?.(error) ?? DEFAULT_FETCH_ERROR,
+    errorMessage: defaultFetchError,
   })
   const { isFetchingModels } = discovery
 

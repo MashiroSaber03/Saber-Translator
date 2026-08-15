@@ -18,6 +18,7 @@ from src.backend_v2.storage.defaults import (
     DEFAULT_WEB_IMPORT_SETTINGS,
     DEFAULT_WORKFLOW_PREFERENCES,
     FACTORY_PROMPTS,
+    TRANSLATION_SETTINGS_SCHEMA_VERSION,
     default_translation_settings,
 )
 from src.backend_v2.storage.schema import (
@@ -82,17 +83,13 @@ def seed_system_records(engine: Engine) -> None:
 
         default_domains = {
             "translation": default_translation_settings(),
-            "detection": {},
-            "ocr": {},
-            "inpainting": {},
-            "rendering": {},
             "workflow_preferences": DEFAULT_WORKFLOW_PREFERENCES,
             "text_style_defaults": DEFAULT_TEXT_STYLE,
             "insight": DEFAULT_INSIGHT_SETTINGS,
             "web_import": DEFAULT_WEB_IMPORT_SETTINGS,
         }
         default_schema_versions = {
-            "translation": 3,
+            "translation": TRANSLATION_SETTINGS_SCHEMA_VERSION,
         }
         existing_domains = set(
             connection.execute(select(app_settings.c.domain)).scalars()

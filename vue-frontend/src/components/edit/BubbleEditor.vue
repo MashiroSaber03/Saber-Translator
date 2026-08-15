@@ -1,5 +1,10 @@
 <template>
-  <div class="bubble-editor">
+  <fieldset
+    v-if="bubble"
+    class="bubble-editor"
+    :disabled="disabled"
+    :aria-busy="disabled ? 'true' : undefined"
+  >
     <div class="bubble-editor__text-panel bubble-editor__text-panel--original">
       <div class="bubble-editor__text-panel-header">
         <span class="bubble-editor__text-panel-title">漫画原文</span>
@@ -108,7 +113,6 @@
               class="bubble-editor__number-field bubble-editor__number-field--font"
               variant="editor"
               :min="FONT_SIZE_MIN"
-              :max="FONT_SIZE_MAX"
               :step="FONT_SIZE_STEP"
               controls
               controls-placement="after"
@@ -181,8 +185,8 @@
             />
 
             <div
+              v-if="localInpaintMethod === 'solid'"
               class="bubble-editor__toolbar-color-picker bubble-editor__toolbar-solid-color-options"
-              :class="{ 'bubble-editor__toolbar-solid-color-options--hidden': localInpaintMethod !== 'solid' }"
             >
               <UiIconButton variant="soft" size="sm" class="bubble-editor__toolbar-action bubble-editor__toolbar-color-action" label="背景填充颜色" title="背景填充颜色" @click="triggerFillColorPicker">
                 <UiIcon name="square" size="16" />
@@ -216,8 +220,8 @@
             </UiIconButton>
 
             <div
+              v-if="localStrokeEnabled"
               class="bubble-editor__toolbar-color-picker bubble-editor__toolbar-stroke-options"
-              :class="{ 'bubble-editor__toolbar-stroke-options--hidden': !localStrokeEnabled }"
               title="描边颜色"
             >
               <UiIconButton variant="soft" size="sm" class="bubble-editor__toolbar-action bubble-editor__toolbar-color-action" label="描边颜色" title="描边颜色" @click="triggerStrokeColorPicker">
@@ -235,8 +239,8 @@
             </div>
 
             <div
+              v-if="localStrokeEnabled"
               class="bubble-editor__toolbar-stroke-width bubble-editor__toolbar-stroke-options"
-              :class="{ 'bubble-editor__toolbar-stroke-options--hidden': !localStrokeEnabled }"
               title="描边宽度"
             >
               <UiNumberField
@@ -244,7 +248,6 @@
                 class="bubble-editor__number-field bubble-editor__number-field--compact"
                 variant="editor"
                 :min="0"
-                :max="10"
                 aria-label="描边宽度"
                 @change="handleStrokeWidthChange"
               />
@@ -265,11 +268,10 @@
               v-model="localLineSpacing"
               class="bubble-editor__number-field bubble-editor__number-field--compact"
               variant="editor"
-              :min="0.5"
-              :max="3"
+              :min="0.1"
               :step="0.1"
               aria-label="行间距"
-              title="行间距倍数（0.5 - 3.0）"
+              title="行间距倍数（必须大于 0）"
               @change="handleLineSpacingChange"
             />
           </UiField>
@@ -374,7 +376,7 @@
             :key="preset"
             class="bubble-editor__font-size-preset"
             :class="{ 'bubble-editor__font-size-preset--active': localFontSize === preset }"
-            :aria-pressed="String(localFontSize === preset)"
+            :aria-pressed="localFontSize === preset"
             @click="setFontSize(preset)"
           >
             {{ preset }}
@@ -404,6 +406,10 @@
         </UiButton>
       </div>
     </div>
+  </fieldset>
+  <div v-else class="bubble-editor bubble-editor--empty">
+    <UiIcon name="mouse-pointer" size="24" aria-hidden="true" />
+    <span>请选择一个气泡进行编辑</span>
   </div>
 </template>
 
@@ -428,7 +434,6 @@ const emit = defineEmits<BubbleEditorEmit>()
 const {
   FONT_SIZE_PRESETS,
   FONT_SIZE_MIN,
-  FONT_SIZE_MAX,
   FONT_SIZE_STEP,
   localOriginalText,
   localTranslatedText,
@@ -531,6 +536,20 @@ const {
   overflow: auto;
   min-height: 0;
   background: var(--color-surface-card);
+  min-width: 0;
+  margin: 0;
+  border: 0;
+}
+
+.bubble-editor:disabled {
+  cursor: wait;
+}
+
+.bubble-editor--empty {
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+  font-size: 13px;
 }
 
 .bubble-editor__text-panel {
@@ -728,31 +747,10 @@ const {
   border: 1px solid var(--bubble-editor-color-swatch-border);
 }
 
-.bubble-editor__toolbar-stroke-options {
-  transition: opacity 0.2s;
-}
-
-.bubble-editor__toolbar-stroke-options--hidden {
-  opacity: 0.4;
-  pointer-events: none;
-}
-
 .bubble-editor__toolbar-inpaint-group {
   display: flex;
   align-items: center;
   gap: 6px;
-}
-
-.bubble-editor__toolbar-solid-color-options {
-  transition:
-    opacity 0.2s,
-    visibility 0.2s;
-}
-
-.bubble-editor__toolbar-solid-color-options--hidden {
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
 }
 
 .bubble-editor__toolbar-stroke-width {

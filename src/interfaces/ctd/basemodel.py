@@ -2,85 +2,81 @@ import cv2
 import torch
 import torch.nn as nn
 
-from .utils.yolov5_utils import fuse_conv_and_bn
+from .yolov5.common import C3
 from .yolov5.yolo import load_yolov5_ckpt
-from .yolov5.common import C3, Conv
 
-TEXTDET_MASK = 0
-TEXTDET_DET = 1
-TEXTDET_INFERENCE = 2
 
-class double_conv_up_c3(nn.Module):
-    def __init__(self, in_ch, mid_ch, out_ch, act=True):
-        super(double_conv_up_c3, self).__init__()
+class DoubleConvUpC3(nn.Module):
+    def __init__(self, in_channels, mid_channels, out_channels):
+        super().__init__()
         self.conv = nn.Sequential(
-        C3(in_ch+mid_ch, mid_ch, act=act),
-        nn.ConvTranspose2d(mid_ch, out_ch, kernel_size=4, stride = 2, padding=1, bias=False),
-        nn.BatchNorm2d(out_ch),
-        nn.ReLU(inplace=True),
+            C3(in_channels + mid_channels, mid_channels, act="leaky"),
+            nn.ConvTranspose2d(
+                mid_channels,
+                out_channels,
+                kernel_size=4,
+                stride=2,
+                padding=1,
+                bias=False,
+            ),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
         )
 
-    def forward(self, x):
-        return self.conv(x)
+    def forward(self, value):
+        return self.conv(value)
 
-class double_conv_c3(nn.Module):
-    def __init__(self, in_ch, out_ch, stride=1, act=True):
-        super(double_conv_c3, self).__init__()
-        if stride > 1:
-            self.down = nn.AvgPool2d(2,stride=2) if stride > 1 else None
-        self.conv = C3(in_ch, out_ch, act=act)
 
-    def forward(self, x):
-        if self.down is not None:
-            x = self.down(x)
-        x = self.conv(x)
-        return x
+class DoubleConvC3(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.down = nn.AvgPool2d(2, stride=2)
+        self.conv = C3(in_channels, out_channels, act="leaky")
+
+    def forward(self, value):
+        return self.conv(self.down(value))
+
 
 class UnetHead(nn.Module):
-    def __init__(self, act=True) -> None:
-
-        super(UnetHead, self).__init__()
-        self.down_conv1 = double_conv_c3(512, 512, 2, act=act)
-        self.upconv0 = double_conv_up_c3(0, 512, 256, act=act)
-        self.upconv2 = double_conv_up_c3(256, 512, 256, act=act)
-        self.upconv3 = double_conv_up_c3(0, 512, 256, act=act)
-        self.upconv4 = double_conv_up_c3(128, 256, 128, act=act)
-        self.upconv5 = double_conv_up_c3(64, 128, 64, act=act)
+    def __init__(self) -> None:
+        super().__init__()
+        self.down_conv1 = DoubleConvC3(512, 512)
+        self.upconv0 = DoubleConvUpC3(0, 512, 256)
+        self.upconv2 = DoubleConvUpC3(256, 512, 256)
+        self.upconv3 = DoubleConvUpC3(0, 512, 256)
+        self.upconv4 = DoubleConvUpC3(128, 256, 128)
+        self.upconv5 = DoubleConvUpC3(64, 128, 64)
         self.upconv6 = nn.Sequential(
-            nn.ConvTranspose2d(64, 1, kernel_size=4, stride = 2, padding=1, bias=False),
-            nn.Sigmoid()
+            nn.ConvTranspose2d(
+                64,
+                1,
+                kernel_size=4,
+                stride=2,
+                padding=1,
+                bias=False,
+            ),
+            nn.Sigmoid(),
         )
 
-    def forward(self, f160, f80, f40, f20, f3, forward_mode=TEXTDET_MASK):
-        # input: 640@3
-        d10 = self.down_conv1(f3) # 512@10
-        u20 = self.upconv0(d10)  # 256@10
-        u40 = self.upconv2(torch.cat([f20, u20], dim = 1)) # 256@40
-
-        if forward_mode == TEXTDET_DET:
-            return f80, f40, u40
-        else:
-            u80 = self.upconv3(torch.cat([f40, u40], dim = 1)) # 256@80
-            u160 = self.upconv4(torch.cat([f80, u80], dim = 1)) # 128@160
-            u320 = self.upconv5(torch.cat([f160, u160], dim = 1)) # 64@320
-            mask = self.upconv6(u320)
-            if forward_mode == TEXTDET_MASK:
-                return mask
-            else:
-                return mask, [f80, f40, u40]
+    def forward(self, f160, f80, f40, f20, f3):
+        d10 = self.down_conv1(f3)
+        u20 = self.upconv0(d10)
+        u40 = self.upconv2(torch.cat([f20, u20], dim=1))
+        u80 = self.upconv3(torch.cat([f40, u40], dim=1))
+        u160 = self.upconv4(torch.cat([f80, u80], dim=1))
+        u320 = self.upconv5(torch.cat([f160, u160], dim=1))
+        return self.upconv6(u320), (f80, f40, u40)
 
 
 class DBHead(nn.Module):
-    def __init__(self, in_channels, k = 50, shrink_with_sigmoid=True, act=True):
+    def __init__(self, in_channels):
         super().__init__()
-        self.k = k
-        self.shrink_with_sigmoid = shrink_with_sigmoid
-        self.upconv3 = double_conv_up_c3(0, 512, 256, act=act)
-        self.upconv4 = double_conv_up_c3(128, 256, 128, act=act)
+        self.upconv3 = DoubleConvUpC3(0, 512, 256)
+        self.upconv4 = DoubleConvUpC3(128, 256, 128)
         self.conv = nn.Sequential(
             nn.Conv2d(128, in_channels, 1),
             nn.BatchNorm2d(in_channels),
-            nn.ReLU(inplace=True)
+            nn.ReLU(inplace=True),
         )
         self.binarize = nn.Sequential(
             nn.Conv2d(in_channels, in_channels // 4, 3, padding=1),
@@ -89,107 +85,84 @@ class DBHead(nn.Module):
             nn.ConvTranspose2d(in_channels // 4, in_channels // 4, 2, 2),
             nn.BatchNorm2d(in_channels // 4),
             nn.ReLU(inplace=True),
-            nn.ConvTranspose2d(in_channels // 4, 1, 2, 2)
-            )
-        self.thresh = self._init_thresh(in_channels)
-
-    def forward(self, f80, f40, u40, shrink_with_sigmoid=True, step_eval=False):
-        shrink_with_sigmoid = self.shrink_with_sigmoid
-        u80 = self.upconv3(torch.cat([f40, u40], dim = 1)) # 256@80
-        x = self.upconv4(torch.cat([f80, u80], dim = 1)) # 128@160
-        x = self.conv(x)
-        threshold_maps = self.thresh(x)
-        x = self.binarize(x)
-        shrink_maps = torch.sigmoid(x)
-
-        if self.training:
-            binary_maps = self.step_function(shrink_maps, threshold_maps)
-            if shrink_with_sigmoid:
-                return torch.cat((shrink_maps, threshold_maps, binary_maps), dim=1)
-            else:
-                return torch.cat((shrink_maps, threshold_maps, binary_maps, x), dim=1)
-        else:
-            if step_eval:
-                return self.step_function(shrink_maps, threshold_maps)
-            else:
-                return torch.cat((shrink_maps, threshold_maps), dim=1)
-
-
-    def _init_thresh(self, inner_channels, serial=False, smooth=False, bias=False):
-        in_channels = inner_channels
-        if serial:
-            in_channels += 1
+            nn.ConvTranspose2d(in_channels // 4, 1, 2, 2),
+        )
         self.thresh = nn.Sequential(
-            nn.Conv2d(in_channels, inner_channels // 4, 3, padding=1, bias=bias),
-            nn.BatchNorm2d(inner_channels // 4),
+            nn.Conv2d(
+                in_channels,
+                in_channels // 4,
+                3,
+                padding=1,
+                bias=False,
+            ),
+            nn.BatchNorm2d(in_channels // 4),
             nn.ReLU(inplace=True),
-            self._init_upsample(inner_channels // 4, inner_channels // 4, smooth=smooth, bias=bias),
-            nn.BatchNorm2d(inner_channels // 4),
+            nn.ConvTranspose2d(in_channels // 4, in_channels // 4, 2, 2),
+            nn.BatchNorm2d(in_channels // 4),
             nn.ReLU(inplace=True),
-            self._init_upsample(inner_channels // 4, 1, smooth=smooth, bias=bias),
-            nn.Sigmoid())
-        return self.thresh
+            nn.ConvTranspose2d(in_channels // 4, 1, 2, 2),
+            nn.Sigmoid(),
+        )
 
-    def _init_upsample(self, in_channels, out_channels, smooth=False, bias=False):
-        if smooth:
-            inter_out_channels = out_channels
-            if out_channels == 1:
-                inter_out_channels = in_channels
-            module_list = [
-                nn.Upsample(scale_factor=2, mode='nearest'),
-                nn.Conv2d(in_channels, inter_out_channels, 3, 1, 1, bias=bias)]
-            if out_channels == 1:
-                module_list.append(nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1, padding=1, bias=True))
-            return nn.Sequential(module_list)
-        else:
-            return nn.ConvTranspose2d(in_channels, out_channels, 2, 2)
+    def forward(self, f80, f40, u40):
+        u80 = self.upconv3(torch.cat([f40, u40], dim=1))
+        value = self.upconv4(torch.cat([f80, u80], dim=1))
+        value = self.conv(value)
+        threshold_maps = self.thresh(value)
+        shrink_maps = torch.sigmoid(self.binarize(value))
+        return torch.cat((shrink_maps, threshold_maps), dim=1)
 
-    def step_function(self, x, y):
-        return torch.reciprocal(1 + torch.exp(-self.k * (x - y)))
-
-def get_base_det_models(model_path, device='cpu', half=False, act='leaky'):
-    textdetector_dict = torch.load(model_path, map_location=device)
-    blk_det = load_yolov5_ckpt(textdetector_dict['blk_det'], map_location=device)
-    text_seg = UnetHead(act=act)
-    text_seg.load_state_dict(textdetector_dict['text_seg'])
-    text_det = DBHead(64, act=act)
-    text_det.load_state_dict(textdetector_dict['text_det'])
-    if half:
-        return blk_det.eval().half(), text_seg.eval().half(), text_det.eval().half()
-    return blk_det.eval().to(device), text_seg.eval().to(device), text_det.eval().to(device)
 
 class TextDetBase(nn.Module):
-    def __init__(self, model_path, device='cpu', half=False, fuse=False, act='leaky'):
-        super(TextDetBase, self).__init__()
-        self.blk_det, self.text_seg, self.text_det = get_base_det_models(model_path, device, half, act=act)
-        if fuse:
-            self.fuse()
+    def __init__(self, model_path, device="cpu", half=False):
+        super().__init__()
+        checkpoint = torch.load(
+            model_path,
+            map_location=device,
+            weights_only=True,
+        )
+        if not isinstance(checkpoint, dict) or set(checkpoint) != {
+            "blk_det",
+            "text_seg",
+            "text_det",
+        }:
+            raise ValueError("CTD checkpoint fields are invalid")
+        self.blk_det = load_yolov5_ckpt(
+            checkpoint["blk_det"],
+            map_location=device,
+        )
+        self.text_seg = UnetHead()
+        self.text_seg.load_state_dict(checkpoint["text_seg"], strict=True)
+        self.text_det = DBHead(64)
+        self.text_det.load_state_dict(checkpoint["text_det"], strict=True)
+        if half:
+            self.blk_det.half()
+            self.text_seg.half()
+            self.text_det.half()
+        else:
+            self.blk_det.to(device)
+            self.text_seg.to(device)
+            self.text_det.to(device)
+        self.eval()
 
-    def fuse(self):
-        def _fuse(model):
-            for m in model.modules():
-                if isinstance(m, (Conv)) and hasattr(m, 'bn'):
-                    m.conv = fuse_conv_and_bn(m.conv, m.bn)  # update conv
-                    delattr(m, 'bn')  # remove batchnorm
-                    m.forward = m.forward_fuse  # update forward
-            return model
-        self.text_seg = _fuse(self.text_seg)
-        self.text_det = _fuse(self.text_det)
+    def forward(self, value):
+        blocks, features = self.blk_det(value, detect=True)
+        mask, text_features = self.text_seg(*features)
+        lines = self.text_det(*text_features)
+        return blocks[0], mask, lines
 
-    def forward(self, features):
-        blks, features = self.blk_det(features, detect=True)
-        mask, features = self.text_seg(*features, forward_mode=TEXTDET_INFERENCE)
-        lines = self.text_det(*features, step_eval=False)
-        return blks[0], mask, lines
 
 class TextDetBaseDNN:
     def __init__(self, input_size, model_path):
         self.input_size = input_size
         self.model = cv2.dnn.readNetFromONNX(model_path)
-        self.uoln = self.model.getUnconnectedOutLayersNames()
+        self.output_names = self.model.getUnconnectedOutLayersNames()
 
-    def __call__(self, im_in):
-        blob = cv2.dnn.blobFromImage(im_in, scalefactor=1 / 255.0, size=(self.input_size, self.input_size))
+    def __call__(self, value):
+        blob = cv2.dnn.blobFromImage(
+            value,
+            scalefactor=1 / 255.0,
+            size=(self.input_size, self.input_size),
+        )
         self.model.setInput(blob)
-        blks, mask, lines_map  = self.model.forward(self.uoln)
-        return blks, mask, lines_map
+        return self.model.forward(self.output_names)

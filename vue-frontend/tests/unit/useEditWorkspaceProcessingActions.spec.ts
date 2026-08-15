@@ -145,4 +145,44 @@ describe('useEditWorkspaceProcessingActions', () => {
       'success',
     )
   })
+
+  it('rejects an operation reload that belongs to another chapter', async () => {
+    mocks.getPageDocument.mockResolvedValueOnce({
+      bubbles: [],
+      chapterId: 'other-chapter',
+      defaultFontId: null,
+      documentRevision: 4,
+      pageId: 'page-1',
+      pageStyleDefaults: {},
+      pageStyleSchemaVersion: 1,
+      renderStatus: 'not_rendered',
+    })
+    const { actions } = createActions()
+
+    await actions.handleReTranslateBubble(0)
+
+    expect(mocks.registerPageDocument).not.toHaveBeenCalled()
+    expect(mocks.toast).toHaveBeenCalledWith(
+      '页面 page-1 的后端文档身份不匹配',
+      'error',
+    )
+    expect(mocks.toast).not.toHaveBeenCalledWith('重新翻译完成', 'success')
+  })
+
+  it('does not coerce a malformed detection result into an empty success', async () => {
+    mocks.runPageOperation.mockResolvedValueOnce({
+      id: 'operation-1',
+      result: { bubbleCount: '0' },
+      status: 'completed',
+    })
+    const { actions } = createActions()
+
+    await actions.autoDetectBubbles()
+
+    expect(mocks.toast).toHaveBeenCalledWith(
+      '后端检测结果缺少有效的气泡数量',
+      'error',
+    )
+    expect(mocks.toast).not.toHaveBeenCalledWith('未检测到文本框', 'info')
+  })
 })

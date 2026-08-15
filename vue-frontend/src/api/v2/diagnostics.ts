@@ -90,7 +90,6 @@ export function testBaiduTranslateConnection(
   appKey: string
 ): Promise<V2ConnectionTestResult> {
   return runV2ConnectionTest('baidu_translate', {
-    provider: 'baidu_translate',
     ...secretOrDomain('translation', { app_id: appId, app_key: appKey }),
   })
 }
@@ -100,7 +99,6 @@ export function testYoudaoTranslateConnection(
   appSecret: string
 ): Promise<V2ConnectionTestResult> {
   return runV2ConnectionTest('youdao_translate', {
-    provider: 'youdao_translate',
     ...secretOrDomain('translation', { app_key: appKey, app_secret: appSecret }),
   })
 }
