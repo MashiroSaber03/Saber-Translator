@@ -22,9 +22,9 @@ from src.backend_v2.content.translation_constraints import (
 )
 from src.backend_v2.content.page_style import (
     PAGE_STYLE_SCHEMA_VERSION,
-    resolve_new_page_style,
     rgb_to_hex,
     validate_page_style,
+    validate_text_style_defaults,
 )
 from src.backend_v2.insight.repository import (
     mark_book_insight_derived_stale,
@@ -1572,6 +1572,7 @@ class ContentRepository:
         *,
         chapter_id: str,
         requested_logical_path: str,
+        text_style: dict[str, object],
         source: AssetRecord,
         thumbnail: AssetRecord,
         idempotency_scope: str,
@@ -1633,7 +1634,10 @@ class ContentRepository:
                 + 1
             )
             page_id = str(uuid.uuid4())
-            default_font_id, style_defaults = resolve_new_page_style(connection)
+            default_font_id, style_defaults = validate_text_style_defaults(
+                connection,
+                text_style,
+            )
             connection.execute(
                 insert(pages).values(
                     id=page_id,

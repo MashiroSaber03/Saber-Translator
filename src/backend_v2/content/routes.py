@@ -527,7 +527,7 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
     def import_page(chapter_id: str):
         idempotency_key = _require_idempotency_key()
         _validate_multipart_fields(
-            allowed_form_keys={"logicalPath"},
+            allowed_form_keys={"logicalPath", "textStyle"},
             allowed_file_keys={"file"},
         )
         upload = request.files.get("file")
@@ -536,9 +536,19 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
         logical_path = str(request.form.get("logicalPath", "")).strip()
         if not logical_path:
             raise ValueError("multipart field 'logicalPath' is required")
+        raw_text_style = request.form.get("textStyle", "")
+        try:
+            text_style = json.loads(raw_text_style)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                "multipart field 'textStyle' must be a JSON object"
+            ) from exc
+        if not isinstance(text_style, dict):
+            raise ValueError("multipart field 'textStyle' must be a JSON object")
         result, replayed = importer.import_page(
             chapter_id=chapter_id,
             logical_path=logical_path,
+            text_style=text_style,
             upload=upload.stream,
             idempotency_key=idempotency_key,
         )

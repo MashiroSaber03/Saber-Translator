@@ -7399,6 +7399,8 @@ export interface operations {
                     /** Format: binary */
                     file: string;
                     logicalPath: string;
+                    /** @description JSON-encoded complete text style to materialize on the new page. */
+                    textStyle: string;
                 };
             };
         };

@@ -61,6 +61,7 @@ class ImageImportService:
         *,
         chapter_id: str,
         logical_path: str,
+        text_style: dict[str, object],
         upload: BinaryIO,
         idempotency_key: str,
     ) -> tuple[dict[str, object], bool]:
@@ -80,6 +81,7 @@ class ImageImportService:
                 "logicalPath": logical_path.replace("\\", "/"),
                 "checksum": checksum,
                 "byteSize": byte_size,
+                "textStyle": text_style,
             }
             request_hash = hashlib.sha256(
                 json.dumps(
@@ -104,6 +106,7 @@ class ImageImportService:
             return self.repository.append_page(
                 chapter_id=chapter_id,
                 requested_logical_path=logical_path,
+                text_style=text_style,
                 source=source_asset,
                 thumbnail=thumbnail_asset,
                 idempotency_scope=scope,

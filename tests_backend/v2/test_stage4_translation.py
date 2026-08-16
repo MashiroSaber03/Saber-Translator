@@ -30,7 +30,11 @@ from src.backend_v2.storage.platform_repositories import (
 )
 from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.storage.database import create_sqlite_engine
-from src.backend_v2.storage.defaults import DEFAULT_FONT_ID, default_translation_settings
+from src.backend_v2.storage.defaults import (
+    DEFAULT_FONT_ID,
+    DEFAULT_TEXT_STYLE,
+    default_translation_settings,
+)
 from src.backend_v2.storage.epochs import EpochRegistration, ProcessEpochRepository
 from src.backend_v2.storage.schema import (
     app_settings,
@@ -665,6 +669,7 @@ def translation_platform(tmp_path: Path):
     imported, _ = importer.import_page(
         chapter_id=str(chapter["id"]),
         logical_path="page.png",
+        text_style=dict(DEFAULT_TEXT_STYLE),
         upload=BytesIO(payload.getvalue()),
         idempotency_key="page",
     )
@@ -2483,6 +2488,7 @@ def test_multi_chapter_batch_creates_eligible_jobs_and_reports_skips(
     importer.import_page(
         chapter_id=str(eligible["id"]),
         logical_path="eligible.png",
+        text_style=dict(DEFAULT_TEXT_STYLE),
         upload=BytesIO(payload.getvalue()),
         idempotency_key="eligible-page",
     )
@@ -2551,6 +2557,7 @@ def test_book_batch_resolves_chapters_in_requested_book_order(
     importer.import_page(
         chapter_id=str(second_chapter["id"]),
         logical_path="second.png",
+        text_style=dict(DEFAULT_TEXT_STYLE),
         upload=BytesIO(payload.getvalue()),
         idempotency_key="second-book-page",
     )
@@ -3070,6 +3077,7 @@ def _import_extra_page(
     imported, _ = importer.import_page(
         chapter_id=target_chapter_id,
         logical_path=name,
+        text_style=dict(DEFAULT_TEXT_STYLE),
         upload=BytesIO(payload.getvalue()),
         idempotency_key=f"import-{name}",
     )

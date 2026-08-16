@@ -34,6 +34,7 @@ from src.backend_v2.storage.database import (
     immediate_transaction,
 )
 from src.backend_v2.storage.epochs import EpochRegistration, ProcessEpochRepository
+from src.backend_v2.storage.defaults import DEFAULT_TEXT_STYLE
 from src.backend_v2.storage.schema import (
     app_settings,
     assets,
@@ -124,6 +125,7 @@ def operation_platform(tmp_path: Path):
     imported, _ = importer.import_page(
         chapter_id=str(chapter["id"]),
         logical_path="1.png",
+        text_style=dict(DEFAULT_TEXT_STYLE),
         upload=BytesIO(image_bytes.getvalue()),
         idempotency_key="page-1",
     )

@@ -1886,10 +1886,14 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [file, logicalPath]
+              required: [file, logicalPath, textStyle]
               properties:
                 file: {type: string, format: binary}
                 logicalPath: {type: string, minLength: 1}
+                textStyle:
+                  type: string
+                  minLength: 1
+                  description: JSON-encoded complete text style to materialize on the new page.
       responses:
         "201":
           description: Source, thumbnail and page were durably published.

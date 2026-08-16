@@ -455,6 +455,7 @@ async function handleQuickWorkspacePromoted() {
           <div class="translate-upload-card__actions">
             <ImageUpload
               :chapter-id="currentChapterId || null"
+              :text-style="settingsStore.settings.textStyle"
               @upload-complete="handleUploadComplete"
             />
           </div>

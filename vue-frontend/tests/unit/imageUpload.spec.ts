@@ -13,7 +13,22 @@ import type {
   SequentialImportOptions,
   SequentialImportSummary,
 } from '@/api/v2/content'
+import { getTextStyleDefaults } from '@/defaults/textStyleDefaults'
 import { useWebImportStore } from '@/stores/webImportStore'
+
+const textStyle = {
+  ...getTextStyleDefaults(),
+  fontSize: 37,
+}
+
+function mountImageUpload(chapterId = 'chapter-1') {
+  return mount(ImageUpload, {
+    props: {
+      chapterId,
+      textStyle,
+    },
+  })
+}
 
 const mocks = vi.hoisted(() => ({
   createContainerImportJob: vi.fn(),
@@ -51,7 +66,7 @@ describe('ImageUpload', () => {
   it('uses product upload primitives for files, folders, and web import', async () => {
     const webImportStore = useWebImportStore()
     const openModal = vi.spyOn(webImportStore, 'openModal')
-    const wrapper = mount(ImageUpload, { props: { chapterId: 'chapter-1' } })
+    const wrapper = mountImageUpload()
 
     expect(wrapper.getComponent(ProductFileDropzone).props()).toMatchObject({
       inputId: 'imageUpload',
@@ -66,7 +81,7 @@ describe('ImageUpload', () => {
   })
 
   it('uploads ordinary images directly into the backend chapter', async () => {
-    const wrapper = mount(ImageUpload, { props: { chapterId: 'chapter-1' } })
+    const wrapper = mountImageUpload()
     const file = new File(['image'], '001.png', { type: 'image/png' })
 
     wrapper.getComponent(ProductFileDropzone).vm.$emit('select', [file])
@@ -75,6 +90,7 @@ describe('ImageUpload', () => {
     expect(mocks.importImagesSequentially).toHaveBeenCalledWith(
       'chapter-1',
       [file],
+      textStyle,
       expect.objectContaining({ onProgress: expect.any(Function) }),
     )
     expect(wrapper.emitted('uploadComplete')).toEqual([[1]])
@@ -88,12 +104,12 @@ describe('ImageUpload', () => {
         resolveImport = resolve
       }),
     )
-    const wrapper = mount(ImageUpload, { props: { chapterId: 'chapter-1' } })
+    const wrapper = mountImageUpload()
     const file = new File(['image'], '001.png', { type: 'image/png' })
 
     wrapper.getComponent(ProductFileDropzone).vm.$emit('select', [file])
     await vi.waitFor(() => expect(mocks.importImagesSequentially).toHaveBeenCalled())
-    const options = mocks.importImagesSequentially.mock.calls[0]?.[2] as SequentialImportOptions
+    const options = mocks.importImagesSequentially.mock.calls[0]?.[3] as SequentialImportOptions
     options.onProgress?.({
       completed: 8,
       currentPath: '008.png',
@@ -112,7 +128,7 @@ describe('ImageUpload', () => {
   })
 
   it('submits PDF and comic archives as durable backend jobs', async () => {
-    const wrapper = mount(ImageUpload, { props: { chapterId: 'chapter-1' } })
+    const wrapper = mountImageUpload()
     const file = new File(['pdf'], 'chapter.pdf', { type: 'application/pdf' })
 
     wrapper.getComponent(ProductFileDropzone).vm.$emit('select', [file])
@@ -128,7 +144,7 @@ describe('ImageUpload', () => {
 
   it('renders backend upload errors through the product status banner', async () => {
     mocks.importImagesSequentially.mockRejectedValueOnce(new Error('backend rejected'))
-    const wrapper = mount(ImageUpload, { props: { chapterId: 'chapter-1' } })
+    const wrapper = mountImageUpload()
 
     wrapper.getComponent(ProductFileDropzone).vm.$emit(
       'select',
@@ -156,10 +172,16 @@ describe('ImageUpload', () => {
       failures: [],
       results: [{ pageId: 'page-2' }],
     })
-    const wrapper = mount(ImageUpload, { props: { chapterId: 'chapter-1' } })
+    const wrapper = mountImageUpload()
 
     wrapper.getComponent(ProductFileDropzone).vm.$emit('select', [good, bad])
     await flushPromises()
+    await wrapper.setProps({
+      textStyle: {
+        ...textStyle,
+        fontSize: 99,
+      },
+    })
 
     expect(wrapper.emitted('uploadComplete')).toEqual([[1]])
     expect(wrapper.text()).toContain('仅重试失败项')
@@ -171,6 +193,7 @@ describe('ImageUpload', () => {
     expect(mocks.retryFailedImageImports).toHaveBeenCalledWith(
       'chapter-1',
       [failed],
+      textStyle,
       expect.objectContaining({
         onProgress: expect.any(Function),
         onRetry: expect.any(Function),
@@ -184,7 +207,7 @@ describe('ImageUpload', () => {
     mocks.importImagesSequentially.mockReturnValueOnce(new Promise(resolve => {
       resolveImport = resolve
     }))
-    const wrapper = mount(ImageUpload, { props: { chapterId: 'chapter-1' } })
+    const wrapper = mountImageUpload()
     const first = new File(['first'], '001.png', { type: 'image/png' })
     const second = new File(['second'], '002.png', { type: 'image/png' })
 
@@ -203,7 +226,7 @@ describe('ImageUpload', () => {
     mocks.importImagesSequentially.mockReturnValueOnce(new Promise(resolve => {
       resolveImport = resolve
     }))
-    const wrapper = mount(ImageUpload, { props: { chapterId: 'chapter-1' } })
+    const wrapper = mountImageUpload()
     const file = new File(['image'], '001.png', { type: 'image/png' })
 
     wrapper.getComponent(ProductFileDropzone).vm.$emit('select', [file])
@@ -215,6 +238,7 @@ describe('ImageUpload', () => {
     expect(mocks.importImagesSequentially).toHaveBeenCalledWith(
       'chapter-1',
       [file],
+      textStyle,
       expect.any(Object),
     )
     expect(wrapper.emitted('uploadComplete')).toBeUndefined()

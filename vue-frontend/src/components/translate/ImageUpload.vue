@@ -19,9 +19,11 @@ import {
   type SequentialImportOptions,
   type SequentialImportSummary,
 } from '@/api/v2/content'
+import type { TextStyleSettings } from '@/types/settings'
 
 const props = defineProps<{
   chapterId: string | null
+  textStyle: TextStyleSettings
 }>()
 const emit = defineEmits<{
   (e: 'uploadComplete', count: number): void
@@ -35,6 +37,7 @@ const currentFileName = ref('')
 const showProgress = ref(false)
 const failedImports = ref<SequentialImportFailure[]>([])
 const failedChapterId = ref<string | null>(null)
+const failedTextStyle = ref<TextStyleSettings | null>(null)
 const CONTAINER_SUFFIXES = new Set(['.pdf', '.zip', '.cbz', '.mobi', '.azw', '.azw3'])
 const IMAGE_SUFFIXES = new Set(['.bmp', '.gif', '.jpeg', '.jpg', '.png', '.tif', '.tiff', '.webp'])
 
@@ -91,18 +94,26 @@ function imageImportOptions(chapterId: string): SequentialImportOptions {
 async function importImageFiles(
   chapterId: string,
   files: File[],
+  textStyle: TextStyleSettings,
 ): Promise<SequentialImportSummary> {
   if (files.length === 0) return { failures: [], results: [] }
-  return importImagesSequentially(chapterId, files, imageImportOptions(chapterId))
+  return importImagesSequentially(
+    chapterId,
+    files,
+    textStyle,
+    imageImportOptions(chapterId),
+  )
 }
 
 function applyImageImportSummary(
   chapterId: string,
   summary: SequentialImportSummary,
+  textStyle: TextStyleSettings,
 ): void {
   if (props.chapterId !== chapterId) return
   failedImports.value = summary.failures
   failedChapterId.value = summary.failures.length > 0 ? chapterId : null
+  failedTextStyle.value = summary.failures.length > 0 ? textStyle : null
   if (summary.results.length > 0) {
     showToast(`已写入后端 ${summary.results.length} 张图片`, 'success')
     emit('uploadComplete', summary.results.length)
@@ -133,9 +144,11 @@ async function processFiles(files: File[]) {
   errorMessage.value = ''
   failedImports.value = []
   failedChapterId.value = null
+  failedTextStyle.value = null
   showProgress.value = true
   uploadProgress.value = 0
   try {
+    const textStyle = { ...props.textStyle }
     const images = files.filter(isImageFile)
     const containers = files.filter(file => CONTAINER_SUFFIXES.has(fileSuffix(file)))
     const unsupported = files.filter(
@@ -145,8 +158,8 @@ async function processFiles(files: File[]) {
       showToast(`不支持的文件类型: ${file.name}`, 'warning')
     }
 
-    const imageSummary = await importImageFiles(chapterId, images)
-    applyImageImportSummary(chapterId, imageSummary)
+    const imageSummary = await importImageFiles(chapterId, images, textStyle)
+    applyImageImportSummary(chapterId, imageSummary, textStyle)
     for (const [index, file] of containers.entries()) {
       if (props.chapterId === chapterId) {
         currentFileName.value = `上传到后端任务：${file.name}`
@@ -181,8 +194,10 @@ async function retryFailedImages() {
     !chapterId
     || failedChapterId.value !== chapterId
     || failedImports.value.length === 0
+    || !failedTextStyle.value
     || isLoading.value
   ) return
+  const textStyle = failedTextStyle.value
   isLoading.value = true
   errorMessage.value = ''
   showProgress.value = true
@@ -191,9 +206,10 @@ async function retryFailedImages() {
     const summary = await retryFailedImageImports(
       chapterId,
       failedImports.value,
+      textStyle,
       imageImportOptions(chapterId),
     )
-    applyImageImportSummary(chapterId, summary)
+    applyImageImportSummary(chapterId, summary, textStyle)
   } catch (error) {
     if (props.chapterId !== chapterId) return
     const errMsg = error instanceof Error ? error.message : '重试图片失败，请稍后再试'
@@ -210,6 +226,7 @@ function clearError() {
   errorMessage.value = ''
   failedImports.value = []
   failedChapterId.value = null
+  failedTextStyle.value = null
 }
 
 watch(() => props.chapterId, () => {

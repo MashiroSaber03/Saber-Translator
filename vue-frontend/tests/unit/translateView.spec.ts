@@ -5,6 +5,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { defineComponent, nextTick } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import TranslateView from '@/views/TranslateView.vue'
+import ImageUpload from '@/components/translate/ImageUpload.vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useImageStore } from '@/stores/imageStore'
 import UiIcon from '@/components/ui/UiIcon.vue'
@@ -243,6 +244,17 @@ describe('TranslateView', () => {
     await nextTick()
 
     expect(translateActionOptions.value!.isEditMode.value).toBe(false)
+  })
+
+  it('passes the current sidebar style to imports before the first page exists', async () => {
+    const wrapper = mountTranslateView()
+    const settingsStore = useSettingsStore()
+    settingsStore.updateTextStyle({ fontSize: 37 })
+    await nextTick()
+
+    expect(wrapper.getComponent(ImageUpload).props('textStyle')).toEqual(
+      settingsStore.settings.textStyle,
+    )
   })
 
   it('keeps header actions free of DOM id hooks', () => {

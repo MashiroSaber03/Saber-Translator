@@ -34,7 +34,7 @@ from src.backend_v2.storage.builtin_fonts import (
     resolve_bundled_font_path,
 )
 from src.backend_v2.storage.database import create_sqlite_engine
-from src.backend_v2.storage.defaults import DEFAULT_FONT_ID
+from src.backend_v2.storage.defaults import DEFAULT_FONT_ID, DEFAULT_TEXT_STYLE
 from src.backend_v2.storage.schema import (
     app_settings,
     assets,
@@ -168,10 +168,16 @@ def _import(
     payload: bytes,
     logical_path: str,
     key: str,
+    text_style: dict[str, object] | None = None,
 ):
     return importer.import_page(
         chapter_id=chapter_id,
         logical_path=logical_path,
+        text_style=(
+            dict(DEFAULT_TEXT_STYLE)
+            if text_style is None
+            else text_style
+        ),
         upload=BytesIO(payload),
         idempotency_key=key,
     )
@@ -639,7 +645,7 @@ def test_page_import_publishes_source_and_webp_thumbnail_without_base64(
         assert decoded.size == (320, 213)
 
 
-def test_page_import_api_needs_only_a_stable_idempotency_key_and_replays(
+def test_page_import_api_materializes_the_submitted_style_and_replays(
     content_platform,
 ) -> None:
     data_root, engine, repository, _storage, _importer, _book, chapter = content_platform
@@ -657,12 +663,17 @@ def test_page_import_api_needs_only_a_stable_idempotency_key_and_replays(
     client = app.test_client()
     chapter_id = str(chapter["id"])
     payload = _image_bytes((48, 72))
+    text_style = {
+        **DEFAULT_TEXT_STYLE,
+        "fontSize": 37,
+    }
 
     first = client.post(
         f"/api/v2/chapters/{chapter_id}/pages",
         data={
             "file": (BytesIO(payload), "api.png"),
             "logicalPath": "api.png",
+            "textStyle": json.dumps(text_style),
         },
         headers={"Idempotency-Key": "api-page-stable-key"},
     )
@@ -671,6 +682,7 @@ def test_page_import_api_needs_only_a_stable_idempotency_key_and_replays(
         data={
             "file": (BytesIO(payload), "api.png"),
             "logicalPath": "api.png",
+            "textStyle": json.dumps(text_style),
         },
         headers={"Idempotency-Key": "api-page-stable-key"},
     )
@@ -680,9 +692,47 @@ def test_page_import_api_needs_only_a_stable_idempotency_key_and_replays(
     assert replay.headers["Idempotency-Replayed"] == "true"
     assert replay.get_json() == first.get_json()
     assert len(repository.list_pages(chapter_id=chapter_id, all_pages=True)["items"]) == 1
+    page_id = first.get_json()["page"]["id"]
+    document = client.get(f"/api/v2/pages/{page_id}/document").get_json()
+    assert document["defaultFontId"] == text_style["fontFamily"]
+    assert document["pageStyleDefaults"] == {
+        key: value for key, value in text_style.items() if key != "fontFamily"
+    }
 
 
-def test_page_import_materializes_the_saved_default_font_as_a_foreign_key(
+def test_page_import_api_requires_a_complete_text_style(content_platform) -> None:
+    data_root, engine, repository, _storage, _importer, _book, chapter = content_platform
+    app = create_api_app(
+        ApiSettings(
+            data_root=data_root,
+            identity=RuntimeIdentity(
+                epoch_id="test-page-style-api",
+                epoch_token="test-only",
+                test_mode=True,
+            ),
+            engine=engine,
+        )
+    )
+    response = app.test_client().post(
+        f"/api/v2/chapters/{chapter['id']}/pages",
+        data={
+            "file": (BytesIO(_image_bytes((48, 72))), "api.png"),
+            "logicalPath": "api.png",
+        },
+        headers={"Idempotency-Key": "api-page-missing-style"},
+    )
+
+    assert response.status_code == 422
+    assert response.get_json()["error"]["message"] == (
+        "multipart field 'textStyle' must be a JSON object"
+    )
+    assert repository.list_pages(
+        chapter_id=str(chapter["id"]),
+        all_pages=True,
+    )["items"] == []
+
+
+def test_page_import_materializes_the_submitted_font_as_a_foreign_key(
     content_platform,
 ) -> None:
     _root, engine, repository, _storage, importer, _book, chapter = content_platform
@@ -706,11 +756,6 @@ def test_page_import_materializes_the_saved_default_font_as_a_foreign_key(
         style["fontFamily"] = font_id
         style["layoutDirection"] = "horizontal"
         style["inpaintMethod"] = "litelama"
-        connection.execute(
-            update(app_settings)
-            .where(app_settings.c.domain == "text_style_defaults")
-            .values(payload_json=json.dumps(style))
-        )
 
     result, _replayed = _import(
         repository,
@@ -719,6 +764,7 @@ def test_page_import_materializes_the_saved_default_font_as_a_foreign_key(
         payload=_image_bytes((64, 96)),
         logical_path="font-default.png",
         key="font-default-import",
+        text_style=style,
     )
     page_id = str(result["page"]["id"])
 
@@ -812,14 +858,26 @@ def test_import_is_idempotent_and_duplicate_names_are_server_deduplicated(
     replay, replayed = importer.import_page(
         chapter_id=chapter_id,
         logical_path="page.png",
+        text_style=dict(DEFAULT_TEXT_STYLE),
         upload=BytesIO(payload),
         idempotency_key="same",
     )
     assert replayed and replay == first
+    changed_style = dict(DEFAULT_TEXT_STYLE)
+    changed_style["fontSize"] = int(changed_style["fontSize"]) + 1
     with pytest.raises(IdempotencyConflict):
         importer.import_page(
             chapter_id=chapter_id,
             logical_path="page.png",
+            text_style=changed_style,
+            upload=BytesIO(payload),
+            idempotency_key="same",
+        )
+    with pytest.raises(IdempotencyConflict):
+        importer.import_page(
+            chapter_id=chapter_id,
+            logical_path="page.png",
+            text_style=dict(DEFAULT_TEXT_STYLE),
             upload=BytesIO(_image_bytes((31, 40))),
             idempotency_key="same",
         )
@@ -1058,6 +1116,7 @@ def test_page_import_and_chapter_order_cas_enforce_backend_ownership(
         importer.import_page(
             chapter_id=chapter_id,
             logical_path="blocked.png",
+            text_style=dict(DEFAULT_TEXT_STYLE),
             upload=BytesIO(_image_bytes((20, 20))),
             idempotency_key="blocked-page",
         )

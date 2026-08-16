@@ -1,6 +1,7 @@
 import { apiClient, ApiClientError } from '@/api/client'
 import type { components } from '@/api/generated/v2'
 import { assertBackendActionAllowed } from '@/services/backendAccessGate'
+import type { TextStyleSettings } from '@/types/settings'
 
 export type V2BookDetail = components['schemas']['BookDetail']
 export type V2Chapter = components['schemas']['Chapter']
@@ -155,11 +156,16 @@ export async function getTranslationBootstrap(
 async function importChapterPage(
   chapterId: string,
   entry: BrowserImportFile,
-  options: { idempotencyKey: string; signal?: AbortSignal },
+  options: {
+    idempotencyKey: string
+    signal?: AbortSignal
+    textStyleJson: string
+  },
 ): Promise<V2PageImportResult> {
   const body = new FormData()
   body.append('file', entry.file, entry.file.name)
   body.append('logicalPath', entry.logicalPath)
+  body.append('textStyle', options.textStyleJson)
   return apiClient.upload<V2PageImportResult>(
     `${API_ROOT}/chapters/${encodeURIComponent(chapterId)}/pages`,
     body,
@@ -206,11 +212,13 @@ function waitForUploadRetry(delayMs: number, signal?: AbortSignal): Promise<void
 async function importPendingImagesSequentially(
   chapterId: string,
   pending: PendingImageImport[],
+  textStyle: TextStyleSettings,
   options: SequentialImportOptions,
 ): Promise<SequentialImportSummary> {
   const results: V2PageImportResult[] = []
   const failures: SequentialImportFailure[] = []
   const maxAttempts = UPLOAD_RETRY_DELAYS_MS.length + 1
+  const textStyleJson = JSON.stringify(textStyle)
 
   for (const item of pending) {
     options.signal?.throwIfAborted()
@@ -222,6 +230,7 @@ async function importPendingImagesSequentially(
         result = await importChapterPage(chapterId, item.entry, {
           idempotencyKey: item.idempotencyKey,
           signal: options.signal,
+          textStyleJson,
         })
         break
       } catch (error) {
@@ -264,23 +273,26 @@ async function importPendingImagesSequentially(
 export async function importImagesSequentially(
   chapterId: string,
   files: FileList | File[],
+  textStyle: TextStyleSettings,
   options: SequentialImportOptions = {},
 ): Promise<SequentialImportSummary> {
   const pending = browserImportFiles(files).map(entry => ({
     entry,
     idempotencyKey: newIdempotencyKey(),
   }))
-  return importPendingImagesSequentially(chapterId, pending, options)
+  return importPendingImagesSequentially(chapterId, pending, textStyle, options)
 }
 
 export async function retryFailedImageImports(
   chapterId: string,
   failures: SequentialImportFailure[],
+  textStyle: TextStyleSettings,
   options: SequentialImportOptions = {},
 ): Promise<SequentialImportSummary> {
   return importPendingImagesSequentially(
     chapterId,
     failures.map(({ entry, idempotencyKey }) => ({ entry, idempotencyKey })),
+    textStyle,
     options,
   )
 }

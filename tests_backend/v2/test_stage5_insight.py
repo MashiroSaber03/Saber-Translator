@@ -67,6 +67,7 @@ from src.backend_v2.jobs.retry import JobRetryService
 from src.backend_v2.settings.resolver import SettingsResolver
 from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.storage.database import create_sqlite_engine
+from src.backend_v2.storage.defaults import DEFAULT_TEXT_STYLE
 from src.backend_v2.storage.epochs import (
     EpochRegistration,
     ProcessEpochRepository,
@@ -458,6 +459,7 @@ def insight_platform(tmp_path: Path):
         imported, _ = importer.import_page(
             chapter_id=str(chapter["id"]),
             logical_path=f"page-{index}.png",
+            text_style=dict(DEFAULT_TEXT_STYLE),
             upload=BytesIO(payload.getvalue()),
             idempotency_key=f"page-{index}",
         )
@@ -1546,6 +1548,7 @@ def test_derived_rebuild_requires_new_pages_to_be_analyzed(
     ).import_page(
         chapter_id=str(platform["chapter"]["id"]),
         logical_path="new-page.png",
+        text_style=dict(DEFAULT_TEXT_STYLE),
         upload=BytesIO(payload.getvalue()),
         idempotency_key="new-page-derived-import",
     )

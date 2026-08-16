@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { V2PageImportResult } from '@/api/v2/content'
+import { getTextStyleDefaults } from '@/defaults/textStyleDefaults'
+
+const textStyle = {
+  ...getTextStyleDefaults(),
+  fontSize: 37,
+}
 
 const mocks = vi.hoisted(() => ({
   upload: vi.fn(),
@@ -73,6 +79,7 @@ describe('ordinary image upload API', () => {
     const promise = importImagesSequentially(
       '00000000-0000-0000-0000-000000000002',
       [new File(['image'], '001.png', { type: 'image/png' })],
+      textStyle,
     )
     await vi.advanceTimersByTimeAsync(250)
     const summary = await promise
@@ -81,7 +88,11 @@ describe('ordinary image upload API', () => {
     expect(mocks.upload).toHaveBeenCalledTimes(2)
     const firstConfig = mocks.upload.mock.calls[0]?.[2]
     const secondConfig = mocks.upload.mock.calls[1]?.[2]
+    const firstBody = mocks.upload.mock.calls[0]?.[1] as FormData
+    const secondBody = mocks.upload.mock.calls[1]?.[1] as FormData
     expect(firstConfig.headers['Idempotency-Key']).toBe(secondConfig.headers['Idempotency-Key'])
+    expect(JSON.parse(String(firstBody.get('textStyle')))).toEqual(textStyle)
+    expect(secondBody.get('textStyle')).toBe(firstBody.get('textStyle'))
   })
 
   it('keeps importing after one image has a non-retryable validation failure', async () => {
@@ -101,6 +112,7 @@ describe('ordinary image upload API', () => {
         new File(['bad'], '001.png', { type: 'image/png' }),
         new File(['good'], '002.png', { type: 'image/png' }),
       ],
+      textStyle,
     )
 
     expect(mocks.upload).toHaveBeenCalledTimes(2)
@@ -123,6 +135,7 @@ describe('ordinary image upload API', () => {
     const first = await importImagesSequentially(
       '00000000-0000-0000-0000-000000000002',
       [new File(['image'], '001.png', { type: 'image/png' })],
+      textStyle,
     )
     const originalKey = mocks.upload.mock.calls[0]?.[2].headers['Idempotency-Key']
     mocks.upload.mockResolvedValueOnce(pageImportResult('page-3'))
@@ -130,6 +143,7 @@ describe('ordinary image upload API', () => {
     const retried = await retryFailedImageImports(
       '00000000-0000-0000-0000-000000000002',
       first.failures,
+      textStyle,
     )
 
     expect(retried.failures).toEqual([])
