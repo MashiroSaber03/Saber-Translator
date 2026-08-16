@@ -62,6 +62,20 @@ class PromptFactoryDefaultsTests(unittest.TestCase):
             get_prompt_factory_defaults()["singleNormal"],
         )
 
+    def test_hq_prompts_describe_language_quality_not_wire_protocol(self) -> None:
+        for prompt in (DEFAULT_HQ_TRANSLATE_PROMPT, DEFAULT_PROOFREADING_PROMPT):
+            with self.subTest(prompt=prompt):
+                for protocol_term in (
+                    "JSON",
+                    "json",
+                    "imageIndex",
+                    "bubbleIndex",
+                    "pageId",
+                    "bubbleId",
+                    "translatedText",
+                ):
+                    self.assertNotIn(protocol_term, prompt)
+
 
 if __name__ == "__main__":
     unittest.main()

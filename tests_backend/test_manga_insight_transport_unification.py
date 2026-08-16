@@ -38,16 +38,31 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(parsed, {"answer": "ok"})
 
-    def test_shared_json_parser_rejects_unstructured_prefix_or_suffix(self) -> None:
+    def test_shared_json_parser_accepts_unambiguous_surrounding_text(self) -> None:
+        from src.shared.openai_execution import parse_json_block_from_text
+
+        for response in (
+            '说明：{"answer": "ok"}',
+            '{"answer": "ok"} 以上',
+            '结果如下：\n```json\n{"answer": "ok"}\n```',
+            '结果如下：\n```json\n{"answer": "ok"}\n```\n完成',
+        ):
+            with self.subTest(response=response):
+                self.assertEqual(
+                    parse_json_block_from_text(response),
+                    {"answer": "ok"},
+                )
+
+    def test_shared_json_parser_rejects_incomplete_or_ambiguous_output(self) -> None:
         from src.shared.openai_execution import (
             OpenAICompatibleBusinessRetryableError,
             parse_json_block_from_text,
         )
 
         for response in (
-            '说明：{"answer": "ok"}',
-            '{"answer": "ok"} trailing',
             '```json\n{"answer": "ok"}',
+            '{"answer": "ok"}\n{"second": true}',
+            '{"answer": "ok",}',
         ):
             with self.subTest(response=response), self.assertRaises(
                 OpenAICompatibleBusinessRetryableError

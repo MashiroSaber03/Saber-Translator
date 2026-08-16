@@ -212,15 +212,16 @@
 
           <UiField
             variant="settings"
-            label="校对提示词"
+            label="校对偏好"
             :control-id="roundFieldId(round.id, 'Prompt')"
+            hint="只描述校对目标与语言风格，输出格式由后端管理"
           >
             <UiTextarea
               :id="roundFieldId(round.id, 'Prompt')"
               :model-value="round.prompt"
               variant="panel"
               rows="4"
-              placeholder="校对提示词"
+              placeholder="请输入校对目标与语言风格要求"
               @update:model-value="updateRoundString(index, 'prompt', $event)"
             />
             <SavedPromptsPicker

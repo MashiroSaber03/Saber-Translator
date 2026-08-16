@@ -191,7 +191,7 @@ def strip_markdown_code_fences(text: str) -> str:
     )
     if fenced:
         return fenced.group(1).strip()
-    if cleaned.startswith("```") or cleaned.endswith("```"):
+    if cleaned.count("```") % 2:
         raise OpenAICompatibleBusinessRetryableError("JSON 代码块围栏不完整")
     return cleaned
 
@@ -215,9 +215,19 @@ def strip_reasoning_tags(text: str) -> str:
 
 def extract_json_block_from_text(text: str) -> str:
     cleaned = strip_markdown_code_fences(strip_reasoning_tags(text))
-    if not (cleaned.startswith("{") or cleaned.startswith("[")):
-        raise OpenAICompatibleBusinessRetryableError("返回内容必须是 JSON 对象或数组")
-    candidate = cleaned
+    start = next(
+        (
+            index
+            for index, character in enumerate(cleaned)
+            if character in {"{", "["}
+        ),
+        None,
+    )
+    if start is None:
+        raise OpenAICompatibleBusinessRetryableError(
+            "返回内容中未找到 JSON 对象或数组"
+        )
+    candidate = cleaned[start:]
 
     open_char = candidate[0]
     close_char = "}" if open_char == "{" else "]" if open_char == "[" else ""
@@ -244,9 +254,10 @@ def extract_json_block_from_text(text: str) -> str:
         elif character == close_char:
             depth -= 1
             if depth == 0:
-                if candidate[index + 1 :].strip():
+                surrounding = cleaned[:start] + candidate[index + 1 :]
+                if "{" in surrounding or "[" in surrounding:
                     raise OpenAICompatibleBusinessRetryableError(
-                        "JSON 块后包含额外内容"
+                        "返回内容包含多个或不明确的 JSON 块"
                     )
                 return candidate[: index + 1]
 

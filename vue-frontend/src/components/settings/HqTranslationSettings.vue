@@ -158,14 +158,19 @@
     </ProductFormSection>
 
     <ProductFormSection>
-      <template #title>高质量翻译提示词</template>
-      <UiField variant="settings" label="高质量翻译提示词" control-id="settingsHqPrompt">
+      <template #title>高质量翻译偏好</template>
+      <UiField
+        variant="settings"
+        label="翻译偏好"
+        control-id="settingsHqPrompt"
+        hint="只描述译文风格与质量要求，输出格式由后端管理"
+      >
         <UiTextarea
           id="settingsHqPrompt"
           :model-value="hqSettings.prompt"
           variant="panel"
           rows="6"
-          placeholder="高质量翻译提示词"
+          placeholder="请输入译文风格与质量要求"
           @update:model-value="updateHqString('prompt', $event)"
         />
         <SavedPromptsPicker prompt-type="hq_translate" @select="handleHqPromptSelect" />

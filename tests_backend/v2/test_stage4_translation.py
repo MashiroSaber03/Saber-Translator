@@ -4,6 +4,7 @@ from io import BytesIO
 import json
 from pathlib import Path
 import threading
+from types import SimpleNamespace
 from typing import Any, Mapping
 import uuid
 import zipfile
@@ -3424,7 +3425,21 @@ def test_hq_and_multiround_proofreading_use_durable_stable_id_batches(
     "payload",
     [
         {},
+        [],
+        [{"imageIndex": 0, "bubbles": []}],
+        {"images": [{"imageIndex": 0, "bubbles": []}]},
+        {"pageId": "page-1", "bubbles": []},
         {"pages": []},
+        {
+            "pages": [
+                {
+                    "pageId": "page-1",
+                    "bubbles": [
+                        {"bubbleId": "bubble-1", "translated": "旧格式译文"}
+                    ],
+                }
+            ]
+        },
         {
             "pages": [
                 {"pageId": "page-1", "bubbles": []},
@@ -3469,6 +3484,120 @@ def test_hq_stable_id_contract_rejects_invalid_model_results(payload) -> None:
     ]
     with pytest.raises(ValueError):
         _validate_stable_batch_result(payload, expected_pages=expected)
+
+
+def test_hq_transport_uses_batch_local_ids_and_restores_database_ids(
+    monkeypatch,
+) -> None:
+    captured: dict[str, Any] = {}
+    raw_response = (
+        "处理完成：\n"
+        '{"pages":['
+        '{"pageId":"p1","bubbles":['
+        '{"bubbleId":"b1","translatedText":"第一页"}]},'
+        '{"pageId":"p2","bubbles":['
+        '{"bubbleId":"b1","translatedText":"第二页"}]}'
+        "]}\n以上"
+    )
+
+    def execute(_executor, request, *, parser, **_kwargs):
+        captured["request"] = request
+        return SimpleNamespace(
+            raw_content=raw_response,
+            parsed=parser(raw_response),
+        )
+
+    monkeypatch.setattr(
+        "src.shared.openai_execution.OpenAICompatibleSyncExecutor.execute",
+        execute,
+    )
+    pages = [
+        {
+            "pageId": "database-page-1",
+            "bubbles": [
+                {
+                    "bubbleId": "database-bubble-1",
+                    "originalText": "一ページ",
+                    "translatedText": "",
+                    "textDirection": "vertical",
+                }
+            ],
+        },
+        {
+            "pageId": "database-page-2",
+            "bubbles": [
+                {
+                    "bubbleId": "database-bubble-2",
+                    "originalText": "二ページ",
+                    "translatedText": "",
+                    "textDirection": "horizontal",
+                }
+            ],
+        },
+    ]
+    images = [
+        Image.new("RGB", (2, 2), "white"),
+        Image.new("RGB", (2, 2), "white"),
+    ]
+    try:
+        result = CoreTranslationAlgorithms().translate_batch(
+            pages,
+            images,
+            {
+                "target_language": "zh",
+                "prompt_content": "保持角色口吻；请返回 imageIndex JSON 数组。",
+                "provider": "custom",
+                "model_name": "test-model",
+                "custom_base_url": "",
+                "enable_debug_logs": False,
+                "openai_options": {
+                    "request": {
+                        "force_json_output": True,
+                        "temperature": None,
+                        "extra_body": {},
+                    },
+                    "execution": {
+                        "use_stream": False,
+                        "rpm_limit": 0,
+                        "transport_retries": 1,
+                        "business_retries": 1,
+                    },
+                },
+            },
+            mode="hq_translate",
+        )
+    finally:
+        for image in images:
+            image.close()
+
+    assert result["pages"] == {
+        "database-page-1": {"database-bubble-1": "第一页"},
+        "database-page-2": {"database-bubble-2": "第二页"},
+    }
+    request = captured["request"]
+    assert [message["role"] for message in request.messages] == ["system", "user"]
+    assert "唯一输出协议" in request.messages[0]["content"]
+    assert "imageIndex" not in request.messages[0]["content"]
+    user_content = request.messages[1]["content"]
+    assert [item["type"] for item in user_content] == [
+        "text",
+        "text",
+        "image_url",
+        "text",
+        "image_url",
+        "text",
+    ]
+    assert "imageIndex" in user_content[0]["text"]
+    assert json.loads(user_content[1]["text"])["pageId"] == "p1"
+    assert json.loads(user_content[3]["text"])["pageId"] == "p2"
+    serialized_messages = json.dumps(request.messages, ensure_ascii=False)
+    for database_id in (
+        "database-page-1",
+        "database-page-2",
+        "database-bubble-1",
+        "database-bubble-2",
+    ):
+        assert database_id not in serialized_messages
 
 
 def test_proofreading_skips_pages_without_existing_translation(

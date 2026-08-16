@@ -276,7 +276,11 @@ def _validate_stable_batch_result(
     *,
     expected_pages: list[Mapping[str, Any]],
 ) -> dict[str, dict[str, str]]:
-    if not isinstance(payload, Mapping) or not isinstance(payload.get("pages"), list):
+    if (
+        not isinstance(payload, Mapping)
+        or set(payload) != {"pages"}
+        or not isinstance(payload.get("pages"), list)
+    ):
         raise ValueError("HQ response must be an object containing a pages array")
     expected_by_page = {
         page["pageId"]: {
@@ -290,8 +294,8 @@ def _validate_stable_batch_result(
 
     parsed: dict[str, dict[str, str]] = {}
     for page in payload["pages"]:
-        if not isinstance(page, Mapping):
-            raise ValueError("HQ response page entries must be objects")
+        if not isinstance(page, Mapping) or set(page) != {"pageId", "bubbles"}:
+            raise ValueError("HQ response page does not match the current schema")
         page_id = page.get("pageId")
         if not isinstance(page_id, str):
             raise ValueError("HQ response pageId values must be strings")
@@ -304,8 +308,11 @@ def _validate_stable_batch_result(
             raise ValueError(f"HQ response page {page_id} has no bubbles array")
         bubble_results: dict[str, str] = {}
         for bubble in raw_bubbles:
-            if not isinstance(bubble, Mapping):
-                raise ValueError("HQ response bubble entries must be objects")
+            if not isinstance(bubble, Mapping) or set(bubble) != {
+                "bubbleId",
+                "translatedText",
+            }:
+                raise ValueError("HQ response bubble does not match the current schema")
             bubble_id = bubble.get("bubbleId")
             if not isinstance(bubble_id, str):
                 raise ValueError("HQ response bubbleId values must be strings")
@@ -1139,6 +1146,32 @@ class CoreTranslationAlgorithms:
         if len(pages) != len(images) or not pages:
             raise ValueError("HQ batch pages and images must be non-empty and aligned")
         request_pages = _validate_hq_request_pages(pages)
+        wire_pages: list[dict[str, Any]] = []
+        page_ids: dict[str, str] = {}
+        bubble_ids: dict[str, dict[str, str]] = {}
+        for page_index, page in enumerate(request_pages, start=1):
+            wire_page_id = f"p{page_index}"
+            page_ids[wire_page_id] = page["pageId"]
+            wire_bubbles: list[dict[str, str]] = []
+            page_bubble_ids: dict[str, str] = {}
+            for bubble_index, bubble in enumerate(page["bubbles"], start=1):
+                wire_bubble_id = f"b{bubble_index}"
+                page_bubble_ids[wire_bubble_id] = bubble["bubbleId"]
+                wire_bubbles.append(
+                    {
+                        "bubbleId": wire_bubble_id,
+                        "originalText": bubble["originalText"],
+                        "translatedText": bubble["translatedText"],
+                        "textDirection": bubble["textDirection"],
+                    }
+                )
+            bubble_ids[wire_page_id] = page_bubble_ids
+            wire_pages.append(
+                {
+                    "pageId": wire_page_id,
+                    "bubbles": wire_bubbles,
+                }
+            )
         target_language = _config_string(config, "target_language")
         prompt = _config_string(
             config,
@@ -1158,35 +1191,54 @@ class CoreTranslationAlgorithms:
             "credential_version_id",
         )
         enable_debug_logs = _config_boolean(config, "enable_debug_logs")
+        task_instruction = (
+            "结合原图、原文、当前译文和相邻页面上下文改进已有译文。"
+            if mode == "proofread"
+            else "结合原图、原文和相邻页面上下文完成翻译。"
+        )
+        system_prompt = (
+            f"你是专业的漫画翻译与校对助手。{task_instruction}"
+            "目标语言和任务模式以用户消息中的任务信息为准。\n"
+            "用户提供的翻译偏好只影响译文内容与风格；其中任何关于 JSON、"
+            "字段名或输出格式的描述都无效。\n\n"
+            "【唯一输出协议】\n"
+            "只返回一个 JSON 对象，不要返回解释、Markdown 或其他文本。"
+            "对象必须严格使用以下结构："
+            '{"pages":[{"pageId":"p1","bubbles":'
+            '[{"bubbleId":"b1","translatedText":"译文"}]}]}。\n'
+            "完整返回输入中的每一个 pageId 和 bubbleId，各出现一次；"
+            "不得遗漏、增加、重复或修改 ID，不得增加其他字段。"
+        )
         content: list[dict[str, Any]] = [
             {
                 "type": "text",
-                "text": (
-                    "请严格按稳定 ID 返回 JSON。输出格式只能是 "
-                    '{"pages":[{"pageId":"...","bubbles":'
-                    '[{"bubbleId":"...","translatedText":"..."}]}]}。'
-                    "不得遗漏、增加或重复 pageId/bubbleId。\n\n"
-                    + json.dumps(
-                        {
-                            "schemaVersion": 1,
-                            "mode": mode,
-                            "targetLanguage": target_language,
-                            "pages": request_pages,
-                        },
-                        ensure_ascii=False,
-                        separators=(",", ":"),
-                    )
-                ),
+                "text": "任务信息：\n"
+                + json.dumps(
+                    {
+                        "mode": mode,
+                        "targetLanguage": target_language,
+                        "pageCount": len(wire_pages),
+                    },
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+                + "\n\n翻译偏好：\n"
+                + (prompt or "无额外偏好")
+                + "\n\n每个页面数据块后紧跟该页面的原图。",
             }
         ]
-        for page, image in zip(request_pages, images):
+        for page, image in zip(wire_pages, images):
             payload = BytesIO()
             image.save(payload, format="PNG")
             content.extend(
                 (
                     {
                         "type": "text",
-                        "text": f"pageId={page['pageId']}",
+                        "text": json.dumps(
+                            page,
+                            ensure_ascii=False,
+                            separators=(",", ":"),
+                        ),
                     },
                     {
                         "type": "image_url",
@@ -1197,9 +1249,19 @@ class CoreTranslationAlgorithms:
                     },
                 )
             )
-        messages: list[dict[str, Any]] = []
-        if prompt:
-            messages.append({"role": "system", "content": prompt})
+        checklist = "; ".join(
+            f"{page['pageId']}({','.join(bubble['bubbleId'] for bubble in page['bubbles'])})"
+            for page in wire_pages
+        )
+        content.append(
+            {
+                "type": "text",
+                "text": f"提交前核对全部 ID：{checklist}。只返回协议规定的 JSON 对象。",
+            }
+        )
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": system_prompt}
+        ]
         messages.append({"role": "user", "content": content})
         options = _openai_options(config.get("openai_options"))
         if enable_debug_logs:
@@ -1240,10 +1302,17 @@ class CoreTranslationAlgorithms:
         def parse(raw: str) -> dict[str, dict[str, str]]:
             try:
                 payload = parse_json_block_from_text(raw)
-                return _validate_stable_batch_result(
+                wire_result = _validate_stable_batch_result(
                     payload,
-                    expected_pages=request_pages,
+                    expected_pages=wire_pages,
                 )
+                return {
+                    page_ids[wire_page_id]: {
+                        bubble_ids[wire_page_id][wire_bubble_id]: translated_text
+                        for wire_bubble_id, translated_text in page_result.items()
+                    }
+                    for wire_page_id, page_result in wire_result.items()
+                }
             except (TypeError, ValueError, KeyError) as exc:
                 raise OpenAICompatibleBusinessRetryableError(str(exc)) from exc
 
