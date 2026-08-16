@@ -88,5 +88,8 @@ CLAUDE.md
 .windsurfchatopen/
 .windsurfrules
 
+# --- 本地审阅产物 ---
+/audit/refactor/
+
 # --- Git worktrees ---
 .worktrees/
