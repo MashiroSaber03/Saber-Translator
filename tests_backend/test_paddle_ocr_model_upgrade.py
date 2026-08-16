@@ -33,14 +33,22 @@ def test_ppocrv6_parses_rapidocr_v3_output_and_passes_bgr() -> None:
     handler = PaddleOCRHandlerONNX()
     handler.initialized = True
     handler.ocr = mock.Mock(
-        return_value=SimpleNamespace(
-            txts=("第一行", "第二行"),
-            scores=(0.9, 0.7),
+        side_effect=(
+            SimpleNamespace(txts=("第一行",), scores=(0.9,)),
+            SimpleNamespace(txts=("第二行",), scores=(0.7,)),
         )
     )
-    image = Image.new("RGB", (4, 4), (255, 0, 0))
+    image = Image.new("RGB", (8, 8), (255, 0, 0))
+    textlines = [[
+        {"polygon": [[1, 1], [3, 1], [3, 3], [1, 3]], "direction": "h"},
+        {"polygon": [[4, 4], [6, 4], [6, 6], [4, 6]], "direction": "h"},
+    ]]
     try:
-        results = handler.recognize_text_with_details(image, [(0, 0, 4, 4)])
+        results = handler.recognize_text_with_details(
+            image,
+            [(0, 0, 8, 8)],
+            textlines,
+        )
     finally:
         image.close()
 
@@ -49,10 +57,69 @@ def test_ppocrv6_parses_rapidocr_v3_output_and_passes_bgr() -> None:
     assert results[0].confidence == pytest.approx(0.8)
     assert results[0].confidence_supported is True
 
-    model_input = handler.ocr.call_args.args[0]
-    assert model_input.flags["C_CONTIGUOUS"]
-    assert model_input[0, 0].tolist() == [0, 0, 255]
-    assert handler.ocr.call_args.kwargs == {"use_cls": False}
+    assert handler.ocr.call_count == 2
+    for call in handler.ocr.call_args_list:
+        model_input = call.args[0]
+        assert model_input.flags["C_CONTIGUOUS"]
+        assert model_input.shape == (4, 4, 3)
+        assert model_input[0, 0].tolist() == [0, 0, 255]
+        assert call.kwargs == {
+            "use_det": False,
+            "use_cls": False,
+            "use_rec": True,
+        }
+
+
+def test_ppocrv6_requires_current_textlines() -> None:
+    handler = PaddleOCRHandlerONNX()
+    handler.initialized = True
+    handler.ocr = mock.Mock()
+    image = Image.new("RGB", (8, 8), "white")
+    try:
+        with pytest.raises(ValueError, match="文本行必须是数组"):
+            handler.recognize_text_with_details(image, [(0, 0, 8, 8)], None)
+        with pytest.raises(ValueError, match="缺少当前文本行"):
+            handler.recognize_text_with_details(image, [(0, 0, 8, 8)], [[]])
+    finally:
+        image.close()
+
+    handler.ocr.assert_not_called()
+
+
+def test_core_passes_detected_textlines_to_ppocrv6(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.core import ocr as core_ocr
+    from src.core.ocr_types import create_ocr_result
+
+    handler = mock.Mock()
+    handler.initialize.return_value = True
+    handler.recognize_text_with_details.return_value = [
+        create_ocr_result("原文", "paddle_ocr")
+    ]
+    monkeypatch.setattr(core_ocr, "get_paddle_ocr_handler", lambda: handler)
+    image = Image.new("RGB", (8, 8), "white")
+    textlines = [[
+        {"polygon": [[1, 1], [7, 1], [7, 7], [1, 7]], "direction": "h"}
+    ]]
+    try:
+        results = core_ocr.recognize_ocr_results_in_bubbles(
+            image,
+            [(0, 0, 8, 8)],
+            ocr_engine="paddle_ocr",
+            textlines_per_bubble=textlines,
+        )
+    finally:
+        image.close()
+
+    assert [result.text for result in results] == ["原文"]
+    handler.recognize_text_with_details.assert_called_once_with(
+        image,
+        [(0, 0, 8, 8)],
+        textlines,
+        primary_engine="paddle_ocr",
+        fallback_used=False,
+    )
 
 
 def test_ppocrv6_uses_one_fixed_multilingual_model_set() -> None:

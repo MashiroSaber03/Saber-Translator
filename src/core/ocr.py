@@ -138,6 +138,7 @@ def _recognize_with_baidu_ocr_results(
 def _recognize_with_paddle_ocr_results(
     image_pil,
     bubble_coords,
+    textlines_per_bubble,
     *,
     primary_engine='paddle_ocr',
     fallback_used=False,
@@ -150,6 +151,7 @@ def _recognize_with_paddle_ocr_results(
         return paddle_ocr.recognize_text_with_details(
             image_pil,
             bubble_coords,
+            textlines_per_bubble,
             primary_engine=primary_engine,
             fallback_used=fallback_used,
         )
@@ -407,6 +409,7 @@ def _recognize_with_engine(
         return _recognize_with_paddle_ocr_results(
             image_pil,
             bubble_coords,
+            textlines_per_bubble,
             primary_engine=effective_primary_engine,
             fallback_used=fallback_used,
         )

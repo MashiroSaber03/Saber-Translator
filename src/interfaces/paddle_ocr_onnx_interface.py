@@ -131,10 +131,15 @@ class PaddleOCRHandlerONNX:
         self,
         image: Image.Image,
         bubble_coords: List[Tuple[int, int, int, int]],
+        textlines_per_bubble: List[List[dict]],
     ) -> List[str]:
         return [
             result.text
-            for result in self.recognize_text_with_details(image, bubble_coords)
+            for result in self.recognize_text_with_details(
+                image,
+                bubble_coords,
+                textlines_per_bubble,
+            )
         ]
 
     @staticmethod
@@ -164,10 +169,48 @@ class PaddleOCRHandlerONNX:
             normalized_scores.append(float(score))
         return normalized_texts, normalized_scores
 
+    @staticmethod
+    def _expand_textline_polygon(
+        polygon: object,
+        *,
+        image_width: int,
+        image_height: int,
+    ) -> np.ndarray:
+        """Add one source pixel around an ordered text-line quadrilateral."""
+
+        try:
+            points = np.asarray(polygon, dtype=np.float32)
+        except (TypeError, ValueError) as error:
+            raise ValueError("文本行多边形必须由数字坐标组成") from error
+        if points.shape != (4, 2) or not np.isfinite(points).all():
+            raise ValueError("文本行多边形必须包含四个有效坐标点")
+
+        horizontal = (points[1] - points[0] + points[2] - points[3]) / 2
+        vertical = (points[3] - points[0] + points[2] - points[1]) / 2
+        horizontal_length = float(np.linalg.norm(horizontal))
+        vertical_length = float(np.linalg.norm(vertical))
+        if horizontal_length <= 0 or vertical_length <= 0:
+            raise ValueError("文本行多边形面积无效")
+
+        horizontal /= horizontal_length
+        vertical /= vertical_length
+        points = points + np.stack(
+            (
+                -horizontal - vertical,
+                horizontal - vertical,
+                horizontal + vertical,
+                -horizontal + vertical,
+            )
+        )
+        points[:, 0] = np.clip(points[:, 0], 0, image_width - 1)
+        points[:, 1] = np.clip(points[:, 1], 0, image_height - 1)
+        return np.ascontiguousarray(points, dtype=np.float32)
+
     def recognize_text_with_details(
         self,
         image: Image.Image,
         bubble_coords: List[Tuple[int, int, int, int]],
+        textlines_per_bubble: List[List[dict]],
         primary_engine: str = "paddle_ocr",
         fallback_used: bool = False,
     ) -> List[OcrResult]:
@@ -175,8 +218,14 @@ class PaddleOCRHandlerONNX:
             raise RuntimeError("Paddle OCR 未初始化")
         if not bubble_coords:
             return []
+        if not isinstance(textlines_per_bubble, list):
+            raise ValueError("Paddle OCR 文本行必须是数组")
+        if len(textlines_per_bubble) != len(bubble_coords):
+            raise ValueError("Paddle OCR 文本行分组数量与气泡数量不匹配")
 
         try:
+            from rapidocr.utils.process_img import get_rotate_crop_image
+
             rgb = image_to_rgb_array(image)
             # RapidOCR treats a three-channel numpy array as BGR.  Convert
             # explicitly so coloured pages are not inferred with swapped
@@ -187,16 +236,42 @@ class PaddleOCRHandlerONNX:
             raise
 
         recognized_results: List[OcrResult] = []
-        for index, (x1, y1, x2, y2) in enumerate(bubble_coords):
+        image_height, image_width = image_bgr.shape[:2]
+        for index, textlines in enumerate(textlines_per_bubble):
             try:
-                bubble_image = image_bgr[y1:y2, x1:x2]
-                if bubble_image.size == 0:
-                    raise ValueError(f"气泡 {index} 图像区域无效")
+                if not isinstance(textlines, list) or not textlines:
+                    raise ValueError(f"气泡 {index} 缺少当前文本行")
 
                 started = time.perf_counter()
-                output = self.ocr(bubble_image, use_cls=False)
+                texts: List[str] = []
+                scores: List[float] = []
+                for line_index, textline in enumerate(textlines):
+                    if not isinstance(textline, dict):
+                        raise ValueError(
+                            f"气泡 {index} 的文本行 {line_index} 必须是对象"
+                        )
+                    points = self._expand_textline_polygon(
+                        textline.get("polygon"),
+                        image_width=image_width,
+                        image_height=image_height,
+                    )
+                    line_image = np.ascontiguousarray(
+                        get_rotate_crop_image(image_bgr, points)
+                    )
+                    if line_image.size == 0:
+                        raise ValueError(
+                            f"气泡 {index} 的文本行 {line_index} 图像区域无效"
+                        )
+                    output = self.ocr(
+                        line_image,
+                        use_det=False,
+                        use_cls=False,
+                        use_rec=True,
+                    )
+                    line_texts, line_scores = self._extract_output_lines(output)
+                    texts.extend(line_texts)
+                    scores.extend(line_scores)
                 elapsed = time.perf_counter() - started
-                texts, scores = self._extract_output_lines(output)
 
                 text = " ".join(texts)
                 confidence = float(np.mean(scores)) if scores else 0.0
@@ -214,7 +289,7 @@ class PaddleOCRHandlerONNX:
                     "气泡 %d/%d OCR 完成，文本行=%d，耗时=%.2fs",
                     index + 1,
                     len(bubble_coords),
-                    len(texts),
+                    len(textlines),
                     elapsed,
                 )
             except Exception as error:

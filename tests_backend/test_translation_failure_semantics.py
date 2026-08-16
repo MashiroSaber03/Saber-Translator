@@ -45,6 +45,10 @@ def test_paddle_ocr_strict_mode_propagates_per_bubble_failure() -> None:
             handler.recognize_text_with_details(
                 image,
                 [(0, 0, 16, 16)],
+                [[{
+                    "polygon": [[1, 1], [15, 1], [15, 15], [1, 15]],
+                    "direction": "h",
+                }]],
             )
     finally:
         image.close()
