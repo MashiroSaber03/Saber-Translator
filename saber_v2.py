@@ -1,4 +1,4 @@
-"""Backend-first v2 role dispatcher.
+"""Backend-first v2 role dispatcher. 
 
 This module must stay dependency-light.  Role-specific imports happen only after
 ``multiprocessing.freeze_support()`` and argument parsing so the API process
