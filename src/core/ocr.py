@@ -20,6 +20,11 @@ from src.shared.openai_options import (
     create_openai_compatible_options,
 )
 from src.shared.image_helpers import image_to_rgb_array
+from src.shared.paddleocr_vl import (
+    PADDLEOCR_VL_DEFAULT_LANGUAGE,
+    PADDLEOCR_VL_LANGUAGE_NAMES,
+    build_paddleocr_vl_prompt,
+)
 from src.core.ocr_types import OcrResult, create_ocr_result
 from src.core.ocr_hybrid_manga_48 import is_supported_manga_48_hybrid, recognize_manga_48_hybrid
 
@@ -42,15 +47,21 @@ def _validate_ocr_inputs(
     image_pil: Image.Image,
     bubble_coords: object,
     *,
-    source_language: object,
     ocr_engine: object,
+    paddleocr_vl_source_language: object,
 ) -> list[tuple[int, int, int, int]]:
     if not isinstance(image_pil, Image.Image) or image_pil.width <= 0 or image_pil.height <= 0:
         raise ValueError("OCR 图像无效")
-    if not isinstance(source_language, str) or not source_language:
-        raise ValueError("OCR 源语言必须是非空字符串")
     if ocr_engine not in _OCR_ENGINES:
         raise ValueError(f"未知的 OCR 引擎: {ocr_engine}")
+    if (
+        ocr_engine == constants.OCR_ENGINE_PADDLEOCR_VL
+        and (
+            not isinstance(paddleocr_vl_source_language, str)
+            or paddleocr_vl_source_language not in PADDLEOCR_VL_LANGUAGE_NAMES
+        )
+    ):
+        raise ValueError("PaddleOCR-VL 源语言无效")
     if not isinstance(bubble_coords, list):
         raise ValueError("OCR 气泡坐标必须是数组")
 
@@ -127,14 +138,13 @@ def _recognize_with_baidu_ocr_results(
 def _recognize_with_paddle_ocr_results(
     image_pil,
     bubble_coords,
-    source_language='japanese',
     *,
     primary_engine='paddle_ocr',
     fallback_used=False,
 ) -> List[OcrResult]:
     paddle_ocr = get_paddle_ocr_handler()
-    if not paddle_ocr or not paddle_ocr.initialize(source_language):
-        raise RuntimeError(f"PaddleOCR 初始化失败 ({source_language})")
+    if not paddle_ocr or not paddle_ocr.initialize():
+        raise RuntimeError("PaddleOCR 初始化失败")
 
     try:
         return paddle_ocr.recognize_text_with_details(
@@ -206,7 +216,7 @@ def _recognize_with_48px_ocr_results(
 def _recognize_with_paddleocr_vl_results(
     image_pil,
     bubble_coords,
-    source_language='japanese',
+    paddleocr_vl_source_language,
     *,
     primary_engine=constants.OCR_ENGINE_PADDLEOCR_VL,
     fallback_used=False,
@@ -214,14 +224,22 @@ def _recognize_with_paddleocr_vl_results(
     from src.interfaces.paddleocr_vl_interface import get_paddleocr_vl_handler
 
     ocr_handler = get_paddleocr_vl_handler()
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    if torch.cuda.is_available():
+        device = 'cuda'
+    elif (
+        hasattr(torch.backends, 'mps')
+        and torch.backends.mps.is_available()
+    ):
+        device = 'mps'
+    else:
+        device = 'cpu'
     if not ocr_handler.initialize(device):
         raise RuntimeError("PaddleOCR-VL 初始化失败")
 
     texts = ocr_handler.recognize_text(
         image_pil,
         bubble_coords,
-        source_language,
+        paddleocr_vl_source_language,
     )
     return [
         create_ocr_result(
@@ -237,7 +255,6 @@ def _recognize_with_paddleocr_vl_results(
 def _recognize_with_ai_vision_results(
     image_pil,
     bubble_coords,
-    source_language='japanese',
     ai_vision_provider=None,
     ai_vision_api_key=None,
     ai_vision_model_name=None,
@@ -290,30 +307,9 @@ def _recognize_with_ai_vision_results(
         if use_json_format_for_ai_vision or ai_vision_prompt_mode == 'json':
             current_prompt = constants.DEFAULT_AI_VISION_OCR_JSON_PROMPT
         elif ai_vision_prompt_mode == 'paddleocr_vl':
-            language_name_map = {
-                'japanese': '日语',
-                'chinese': '简体中文',
-                'chinese_cht': '繁体中文',
-                'korean': '韩语',
-                'english': '英语',
-                'en': '英语',
-                'french': '法语',
-                'german': '德语',
-                'spanish': '西班牙语',
-                'italian': '意大利语',
-                'portuguese': '葡萄牙语',
-                'russian': '俄语',
-                'arabic': '阿拉伯语',
-                'thai': '泰语',
-                'greek': '希腊语',
-            }
-            try:
-                lang_name = language_name_map[source_language]
-            except KeyError as exc:
-                raise ValueError(
-                    f"OCR模型提示词不支持源语言: {source_language}"
-                ) from exc
-            current_prompt = f"对图中的{lang_name}进行OCR:"
+            current_prompt = build_paddleocr_vl_prompt(
+                PADDLEOCR_VL_DEFAULT_LANGUAGE
+            )
         else:
             current_prompt = constants.DEFAULT_AI_VISION_OCR_PROMPT
     elif use_json_format_for_ai_vision and '"extracted_text"' not in current_prompt:
@@ -378,8 +374,8 @@ def _recognize_with_ai_vision_results(
 def _recognize_with_engine(
     image_pil,
     bubble_coords,
-    source_language='japanese',
     ocr_engine='paddle_ocr',
+    paddleocr_vl_source_language=None,
     baidu_api_key=None,
     baidu_secret_key=None,
     baidu_version="standard",
@@ -411,7 +407,6 @@ def _recognize_with_engine(
         return _recognize_with_paddle_ocr_results(
             image_pil,
             bubble_coords,
-            source_language=source_language,
             primary_engine=effective_primary_engine,
             fallback_used=fallback_used,
         )
@@ -438,7 +433,7 @@ def _recognize_with_engine(
         return _recognize_with_paddleocr_vl_results(
             image_pil,
             bubble_coords,
-            source_language=source_language,
+            paddleocr_vl_source_language,
             primary_engine=effective_primary_engine,
             fallback_used=fallback_used,
         )
@@ -446,7 +441,6 @@ def _recognize_with_engine(
         return _recognize_with_ai_vision_results(
             image_pil,
             bubble_coords,
-            source_language=source_language,
             ai_vision_provider=ai_vision_provider,
             ai_vision_api_key=ai_vision_api_key,
             ai_vision_model_name=ai_vision_model_name,
@@ -466,8 +460,8 @@ def _recognize_with_engine(
 def recognize_ocr_results_in_bubbles(
     image_pil,
     bubble_coords,
-    source_language='japanese',
     ocr_engine='paddle_ocr',
+    paddleocr_vl_source_language=None,
     baidu_api_key=None,
     baidu_secret_key=None,
     baidu_version="standard",
@@ -489,8 +483,8 @@ def recognize_ocr_results_in_bubbles(
     bubble_coords = _validate_ocr_inputs(
         image_pil,
         bubble_coords,
-        source_language=source_language,
         ocr_engine=ocr_engine,
+        paddleocr_vl_source_language=paddleocr_vl_source_language,
     )
     if not bubble_coords:
         logger.info("没有气泡坐标，跳过 OCR。")
@@ -524,8 +518,8 @@ def recognize_ocr_results_in_bubbles(
     return _recognize_with_engine(
         image_pil,
         bubble_coords,
-        source_language=source_language,
         ocr_engine=ocr_engine,
+        paddleocr_vl_source_language=paddleocr_vl_source_language,
         baidu_api_key=baidu_api_key,
         baidu_secret_key=baidu_secret_key,
         baidu_version=baidu_version,

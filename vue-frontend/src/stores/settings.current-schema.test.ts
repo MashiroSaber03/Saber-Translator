@@ -54,7 +54,7 @@ describe('useSettingsStore backend-first loading', () => {
         {
           domain: 'translation',
           revision: 1,
-          schemaVersion: 5,
+          schemaVersion: 6,
           payload: {
             ...settings,
             textStyle: {
@@ -86,7 +86,7 @@ describe('useSettingsStore backend-first loading', () => {
         {
           domain: 'translation',
           revision: 1,
-          schemaVersion: 5,
+          schemaVersion: 6,
           payload: settings,
         },
         {
@@ -122,7 +122,7 @@ describe('useSettingsStore backend-first loading', () => {
         {
           domain: 'translation',
           revision: 4,
-          schemaVersion: 5,
+          schemaVersion: 6,
           payload: settings,
         },
         {
@@ -180,7 +180,7 @@ describe('useSettingsStore backend-first loading', () => {
         {
           domain: 'translation',
           revision: 1,
-          schemaVersion: 5,
+          schemaVersion: 6,
           payload: initialSettings,
         },
         {
@@ -250,7 +250,7 @@ describe('useSettingsStore backend-first loading', () => {
           {
             domain: 'translation',
             revision: 1,
-            schemaVersion: 5,
+            schemaVersion: 6,
             payload: initialSettings,
           },
           {
@@ -305,7 +305,7 @@ describe('useSettingsStore backend-first loading', () => {
         {
           domain: 'translation',
           revision: 1,
-          schemaVersion: 5,
+          schemaVersion: 6,
           payload: settings,
         },
         {
@@ -356,7 +356,7 @@ describe('useSettingsStore backend-first loading', () => {
         {
           domain: 'translation',
           revision: 1,
-          schemaVersion: 5,
+          schemaVersion: 6,
           payload: settings,
         },
         {
@@ -411,7 +411,7 @@ describe('useSettingsStore backend-first loading', () => {
         {
           domain: 'translation',
           revision: 1,
-          schemaVersion: 5,
+          schemaVersion: 6,
           payload: settings,
         },
         {

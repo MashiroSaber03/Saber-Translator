@@ -86,7 +86,6 @@ export interface TranslationSettings {
   settingsSchemaVersion: number
   textStyle: TextStyleSettings
   ocrEngine: OcrEngine
-  sourceLanguage: string
   textDetector: TextDetector
   minTextBlockAreaPercent: number
   enableAuxYoloDetection: boolean

@@ -8,7 +8,6 @@ same isolated API and Worker lifecycle used by the terminal Launcher role.
 
 import os
 import shutil
-from importlib.util import find_spec
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules, collect_all, copy_metadata
 
 block_cipher = None
@@ -61,7 +60,7 @@ critical_packages = [
     'huggingface_hub',
     'safetensors',
     'sentencepiece',         # PaddleOCR-VL tokenizer 必需
-    'rapidocr_onnxruntime',  # PaddleOCR ONNX 版本
+    'rapidocr',              # PP-OCRv6 ONNX 版本
     'onnxruntime',           # ONNX 推理引擎 (GPU/CPU 模块名相同)
     'ultralytics',           # YOLO 检测器
     'chromadb',              # 向量数据库 (manga_insight)
@@ -77,19 +76,6 @@ for pkg in critical_packages:
     hiddenimports += pkg_hiddenimports
     print(f"[SPEC] collect_all({pkg}): OK")
 
-# accelerate 只由 GPU 版的 transformers device_map 使用。CPU 依赖集不安装
-# 它，因此仅在当前构建环境实际存在时收集。
-optional_packages = ['accelerate']
-installed_optional_packages = [
-    pkg for pkg in optional_packages if find_spec(pkg) is not None
-]
-for pkg in installed_optional_packages:
-    pkg_datas, pkg_binaries, pkg_hiddenimports = collect_all(pkg)
-    datas += pkg_datas
-    binaries += pkg_binaries
-    hiddenimports += pkg_hiddenimports
-    print(f"[SPEC] collect_all({pkg}): OK (optional)")
-
 # 其他库的数据文件
 for pkg in ['unidic_lite', 'fugashi', 'litelama']:
     datas += collect_data_files(pkg)
@@ -102,8 +88,9 @@ metadata_packages = [
     'huggingface_hub',
     'safetensors',
     'manga_ocr',
+    'rapidocr',
     'sentencepiece',
-] + installed_optional_packages
+]
 for pkg in metadata_packages:
     datas += copy_metadata(pkg)
 
@@ -165,7 +152,7 @@ hiddenimports += [
     'src.interfaces.ocr_48px', 'src.interfaces.ocr_48px.core',
     'src.interfaces.ocr_48px.interface', 'src.interfaces.ocr_48px.xpos',
     
-    # interfaces.paddleocr_vl (PaddleOCR-VL 日漫专用 OCR)
+    # interfaces.paddleocr_vl (PaddleOCR-VL 1.6 多语言视觉 OCR)
     'src.interfaces.paddleocr_vl_interface',
     
     # core.color_extractor (颜色提取模块)
@@ -191,7 +178,7 @@ hiddenimports += [
     'torchvision', 'torchvision.transforms', 'torchvision.models', 'torchvision.ops',
     
     # RapidOCR (PaddleOCR ONNX 版本)
-    'rapidocr_onnxruntime', 'onnxruntime',
+    'rapidocr', 'onnxruntime',
     
     # MangaOCR
     'manga_ocr', 'manga_ocr.ocr',
@@ -206,7 +193,7 @@ hiddenimports += [
     'shapely', 'pyclipper', 'networkx', 'multiprocessing', 'concurrent.futures',
     'freetype',  # 字体回退支持 (rendering.py)
     
-    # PaddleOCR-VL tokenizer 依赖；GPU 构建的 accelerate 由上方按环境收集
+    # PaddleOCR-VL tokenizer 依赖
     'sentencepiece',
     
     # manga_insight 依赖

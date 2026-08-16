@@ -79,7 +79,6 @@ _CLIENT_BUBBLE_MUTATION_FIELDS = (
 _CHAPTER_WORK_STATE_KEYS = frozenset(
     {
         "ocrEngine",
-        "sourceLanguage",
         "textDetector",
         "minTextBlockAreaPercent",
         "enableAuxYoloDetection",

@@ -491,9 +491,9 @@ def test_translation_bootstrap_includes_backend_owned_runtime_configuration(
         "workflow_preferences",
     } <= settings_by_domain.keys()
     translation = settings_by_domain["translation"]
-    assert translation["schemaVersion"] == 5
+    assert translation["schemaVersion"] == 6
     assert translation["revision"] == 1
-    assert translation["payload"]["settingsSchemaVersion"] == 5
+    assert translation["payload"]["settingsSchemaVersion"] == 6
     assert translation["payload"]["translation"]["provider"]
     assert "textStyle" not in translation["payload"]
     assert translation["payload"]["pluginAgent"]["provider"]
@@ -529,7 +529,7 @@ def test_chapter_settings_memory_is_cas_scoped_and_rejects_style_or_secrets(
     )
     chapter_id = str(chapter["id"])
     payload = {
-        "sourceLanguage": "english",
+        "ocrEngine": "paddle_ocr",
         "targetLanguage": "zh",
         "parallel": {"enabled": True, "deepLearningLockSize": 2},
         "translation": {
@@ -558,7 +558,7 @@ def test_chapter_settings_memory_is_cas_scoped_and_rejects_style_or_secrets(
         repository.update_chapter_settings_memory(
             chapter_id=chapter_id,
             base_revision=1,
-            payload={"sourceLanguage": "korean"},
+            payload={"ocrEngine": "paddleocr_vl"},
         )
     with pytest.raises(ValueError, match="unsupported fields"):
         repository.update_chapter_settings_memory(

@@ -25,6 +25,7 @@ from src.shared.ai_providers import (
     get_provider_manifest,
     provider_supports_capability,
 )
+from src.shared.paddleocr_vl import PADDLEOCR_VL_LANGUAGE_NAMES
 
 
 APP_SETTING_DOMAINS = frozenset(
@@ -410,6 +411,12 @@ def _validate_translation(payload: dict[str, Any], schema_version: int) -> None:
         "RUS",
     }:
         raise ValueError("translation.baiduOcr.sourceLanguage is invalid")
+    paddleocr_vl_source_language = payload["paddleOcrVl"]["sourceLanguage"]
+    if (
+        not isinstance(paddleocr_vl_source_language, str)
+        or paddleocr_vl_source_language not in PADDLEOCR_VL_LANGUAGE_NAMES
+    ):
+        raise ValueError("translation.paddleOcrVl.sourceLanguage is invalid")
     hybrid = payload["hybridOcr"]
     if hybrid["secondaryEngine"] not in {"manga_ocr", "48px_ocr"}:
         raise ValueError("translation.hybridOcr.secondaryEngine is invalid")

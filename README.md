@@ -54,7 +54,7 @@ Saber-Translator 提供了一站式的漫画翻译与管理解决方案，集成
 <tr>
 <td><b>📝 OCR 识别</b></td>
 <td>多引擎多语言文字识别</td>
-<td>MangaOCR (日语) / PaddleOCR (多语言) / 百度OCR / AI视觉OCR</td>
+<td>MangaOCR (日语) / PP-OCRv6 Medium / PaddleOCR-VL 1.6 / 百度OCR / AI视觉OCR</td>
 </tr>
 <tr>
 <td><b>🌐 AI 翻译</b></td>
@@ -334,6 +334,13 @@ Worker 进程（翻译、分析、导入、导出、插件、模型）
 ### 源码开发
 
 ```powershell
+# 安装依赖（CPU 或 GPU 二选一）
+.\venv\Scripts\python.exe -m pip install -r requirements-cpu.txt
+
+# 将随发行版单独提供的 OCR 模型包解压到项目根目录
+# models/paddle_ocr_onnx_v6：det.onnx、rec.onnx、ppocrv6_dict.txt
+# models/paddleocr_vl_1_6：PaddleOCR-VL-1.6 的完整 Transformers 模型文件
+
 # 桌面控制中心（项目根目录，默认入口）
 .\venv\Scripts\python.exe saber_v2.py
 

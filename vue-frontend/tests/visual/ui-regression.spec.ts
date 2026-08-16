@@ -364,10 +364,9 @@ function fixtureOpenAiOptions(useStream: boolean, rpmLimit = 0) {
 
 function createFixtureSettings() {
   return {
-    settingsSchemaVersion: 5,
+    settingsSchemaVersion: 6,
     textStyle: { ...fixtureTextStyle },
     ocrEngine: 'manga_ocr',
-    sourceLanguage: 'japanese',
     textDetector: 'default',
     minTextBlockAreaPercent: 0.05,
     enableAuxYoloDetection: false,
@@ -463,7 +462,7 @@ function fixtureSettingsDocument() {
         domain: 'translation',
         payload: settings,
         revision: 1,
-        schemaVersion: 5,
+        schemaVersion: 6,
       },
       {
         domain: 'text_style_defaults',

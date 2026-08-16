@@ -1,387 +1,255 @@
-"""
-PaddleOCR-VL 接口实现
+"""PaddleOCR-VL-1.6 bubble OCR using the native Transformers 5 model."""
 
-基于 PaddleOCR-VL-For-Manga 的漫画文字识别模型
-模型来源: https://huggingface.co/jzhang533/PaddleOCR-VL-For-Manga
+from __future__ import annotations
 
-特性：
-1. 基于 VLM (视觉语言模型) 的 OCR，针对日语漫画进行了微调
-2. 在 Manga109-s 数据集上达到 70% 全句准确率 (原版 27%)
-3. 使用 transformers 库加载，支持 GPU 加速
-"""
-
-import os
-import sys
 import logging
+import os
 from typing import List, Tuple
-from PIL import Image
+
 import numpy as np
-
 import torch
+from PIL import Image
 
-from src.shared.path_helpers import resource_path
 from src.shared import constants
 from src.shared.memory_errors import is_memory_allocation_error
+from src.shared.paddleocr_vl import (
+    PADDLEOCR_VL_LANGUAGE_NAMES,
+    build_paddleocr_vl_prompt,
+)
+from src.shared.path_helpers import resource_path
 
 logger = logging.getLogger("PaddleOCR_VL")
 
-# 源语言映射：前端语言代码 -> 显示名称（用于构建 OCR 提示词）
-PADDLEOCR_VL_LANG_MAP = {
-    # 东亚语言
-    'japanese': '日语',
-    'chinese': '简体中文',
-    'chinese_cht': '繁体中文',
-    'korean': '韩语',
-    
-    # 拉丁语系
-    'english': '英语',
-    'french': '法语',
-    'german': '德语',
-    'spanish': '西班牙语',
-    'italian': '意大利语',
-    'portuguese': '葡萄牙语',
-    'dutch': '荷兰语',
-    'polish': '波兰语',
-    
-    # 东南亚语言
-    'thai': '泰语',
-    'vietnamese': '越南语',
-    'indonesian': '印尼语',
-    'malay': '马来语',
-    
-    # 其他语系
-    'russian': '俄语',
-    'arabic': '阿拉伯语',
-    'hindi': '印地语',
-    'turkish': '土耳其语',
-    'greek': '希腊语',
-    'hebrew': '希伯来语',
-    
-}
+PADDLEOCR_VL_MAX_NEW_TOKENS = 512
 
-
+_REQUIRED_MODEL_FILES = (
+    "config.json",
+    "generation_config.json",
+    "model.safetensors",
+    "preprocessor_config.json",
+    "processor_config.json",
+    "added_tokens.json",
+    "special_tokens_map.json",
+    "tokenizer.json",
+    "tokenizer.model",
+    "tokenizer_config.json",
+    "chat_template.jinja",
+)
 
 
 class PaddleOCRVLHandler:
-    """PaddleOCR-VL 处理器
-    
-    基于视觉语言模型的漫画 OCR，专门针对日语漫画进行了微调。
-    
-    工作原理：
-    - 使用 transformers 加载 VLM 模型
-    - 对每个文本区域进行图像-文本对话式识别
-    """
-    
-    def __init__(self):
+    """Process-local native PaddleOCR-VL-1.6 handler."""
+
+    def __init__(self) -> None:
+        self.model = None
+        self.processor = None
+        self.device: str | None = None
+        self.torch_dtype: torch.dtype | None = None
+        self.initialized = False
+
+    def _get_model_path(self) -> str:
+        model_path = resource_path(constants.PADDLEOCR_VL_MODEL_DIR)
+        missing = [
+            filename
+            for filename in _REQUIRED_MODEL_FILES
+            if not os.path.isfile(os.path.join(model_path, filename))
+        ]
+        if missing:
+            raise FileNotFoundError(
+                f"{constants.PADDLEOCR_VL_VERSION} 模型包不完整，缺少: "
+                f"{', '.join(missing)}。请将单独发布的模型包完整解压到 "
+                f"{model_path}"
+            )
+        return model_path
+
+    @staticmethod
+    def _resolve_device_and_dtype(requested_device: str) -> Tuple[str, torch.dtype]:
+        if requested_device == "cuda" and torch.cuda.is_available():
+            dtype = (
+                torch.bfloat16
+                if torch.cuda.is_bf16_supported()
+                else torch.float16
+            )
+            return "cuda", dtype
+        if requested_device == "mps" and torch.backends.mps.is_available():
+            return "mps", torch.float16
+        return "cpu", torch.float32
+
+    def _release_loaded_model(self) -> None:
+        loaded_device = self.device
         self.model = None
         self.processor = None
         self.device = None
-        self.use_gpu = False
+        self.torch_dtype = None
         self.initialized = False
-    
-    def _get_model_path(self) -> str:
-        """获取模型路径"""
-        local_path = resource_path(constants.PADDLEOCR_VL_MODEL_DIR)
-        if os.path.exists(local_path) and os.path.exists(os.path.join(local_path, "config.json")):
-            return local_path
-        # 本地不存在时使用 HuggingFace 模型
-        return constants.PADDLEOCR_VL_HF_MODEL
-    
-    def initialize(self, device: str = 'cpu', force_reinitialize: bool = False) -> bool:
-        """
-        初始化 PaddleOCR-VL
-        
-        Args:
-            device: 设备类型 ('cpu', 'cuda', 'mps')
-            force_reinitialize: 是否强制重新初始化
-        
-        Returns:
-            bool: 初始化是否成功
-        """
-        if self.initialized and not force_reinitialize:
+        if loaded_device == "cuda" and torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        elif loaded_device == "mps":
+            torch.mps.empty_cache()
+
+    def initialize(self, device: str = "cpu") -> bool:
+        if self.initialized:
             return True
-        
-        # 如果强制重新初始化，先清理旧模型
-        if force_reinitialize and self.initialized:
-            logger.info("强制重新初始化 PaddleOCR-VL...")
-            if self.model is not None:
-                del self.model
-                self.model = None
-            if self.processor is not None:
-                del self.processor
-                self.processor = None
-            self.initialized = False
-            torch.cuda.empty_cache() if torch.cuda.is_available() else None
-        
+
         try:
-            from transformers import AutoProcessor, AutoModel
-            
+            from transformers import AutoModelForImageTextToText, AutoProcessor
+
             model_path = self._get_model_path()
-            use_relative_path = False
-            original_cwd = None
-            
-            # 判断是本地路径还是 HuggingFace 路径
-            is_local = model_path != constants.PADDLEOCR_VL_HF_MODEL
-            
-            if is_local:
-                logger.info(f"使用本地模型: {model_path}")
-                # Windows 中文路径兼容：sentencepiece 无法处理非 ASCII 路径
-                if sys.platform == 'win32':
-                    try:
-                        model_path.encode('ascii')
-                    except UnicodeEncodeError:
-                        use_relative_path = True
-                        logger.info("检测到中文路径，使用相对路径加载模式")
-            else:
-                logger.info(f"使用 HuggingFace 模型: {model_path}")
-            
-            # 设置设备
-            if device == 'cuda' and torch.cuda.is_available():
-                self.device = 'cuda'
-                self.use_gpu = True
-                torch_dtype = torch.bfloat16  # 使用 bfloat16 节省显存
-                logger.info(f"检测到 GPU: {torch.cuda.get_device_name(0)}")
-            elif device == 'mps' and hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-                self.device = 'mps'
-                self.use_gpu = True
-                torch_dtype = torch.float16
-            else:
-                self.device = 'cpu'
-                self.use_gpu = False
-                torch_dtype = torch.float32
-            
-            logger.info(f"加载 PaddleOCR-VL 模型到 {self.device}...")
-            
-            try:
-                # 如果需要使用相对路径，切换工作目录
-                if use_relative_path:
-                    original_cwd = os.getcwd()
-                    os.chdir(model_path)
-                    load_path = "."
-                else:
-                    load_path = model_path
-                
-                # 加载处理器
-                self.processor = AutoProcessor.from_pretrained(
-                    load_path,
-                    trust_remote_code=True,
-                    local_files_only=use_relative_path,
-                    use_fast=False
-                )
-                
-                # 加载模型 - 使用 AutoModel
-                self.model = AutoModel.from_pretrained(
-                    load_path,
-                    trust_remote_code=True,
-                    torch_dtype=torch_dtype,
-                    device_map=self.device if self.device != 'cpu' else None,
-                    local_files_only=use_relative_path
-                )
-                
-            finally:
-                # 恢复原工作目录
-                if original_cwd is not None:
-                    os.chdir(original_cwd)
-            
-            if self.device == 'cpu':
-                self.model = self.model.to(self.device)
-            
-            self.model.eval()
-            logger.info("✅ PaddleOCR-VL 模型加载完成")
-            
+            self.device, self.torch_dtype = self._resolve_device_and_dtype(device)
+
+            self.processor = AutoProcessor.from_pretrained(
+                model_path,
+                local_files_only=True,
+            )
+            self.model = AutoModelForImageTextToText.from_pretrained(
+                model_path,
+                local_files_only=True,
+                dtype=self.torch_dtype,
+            )
+            self.model = self.model.to(self.device).eval()
             self.initialized = True
+            logger.info(
+                "%s 原生模型已加载到 %s，精度=%s",
+                constants.PADDLEOCR_VL_VERSION,
+                self.device,
+                self.torch_dtype,
+            )
             return True
-            
-        except ImportError as e:
-            logger.error("❌ transformers 未安装或版本过低")
-            logger.error("   请执行: pip install transformers>=4.40.0")
-            logger.error(f"   错误: {e}")
+        except ImportError as error:
+            logger.error("PaddleOCR-VL 原生 Transformers 运行时不可用: %s", error)
+            self._release_loaded_model()
             return False
-        except Exception as e:
-            logger.error(f"❌ PaddleOCR-VL 初始化失败: {e}", exc_info=True)
-            self.initialized = False
-            if is_memory_allocation_error(e):
+        except Exception as error:
+            logger.error("PaddleOCR-VL 初始化失败: %s", error, exc_info=True)
+            self._release_loaded_model()
+            if is_memory_allocation_error(error):
                 raise
             return False
-    
 
-    def _recognize_single(self, img: np.ndarray, source_language: str = 'japanese') -> str:
-        """
-        识别单个图像区域的文本
-        
-        Args:
-            img: numpy 数组格式的图像 (RGB)
-            source_language: 源语言代码
-        
-        Returns:
-            识别的文本
-        """
+    def _recognize_single(
+        self,
+        image: np.ndarray | Image.Image,
+        source_language: str,
+    ) -> str:
+        if not self.initialized or self.model is None or self.processor is None:
+            raise RuntimeError("PaddleOCR-VL 未初始化")
+
+        prompt = build_paddleocr_vl_prompt(source_language)
+
         owns_image = False
-        if isinstance(img, np.ndarray):
-            pil_img = Image.fromarray(img)
+        if isinstance(image, np.ndarray):
+            pil_image = Image.fromarray(image)
             owns_image = True
         else:
-            pil_img = img
+            pil_image = image
 
-        if pil_img.mode != 'RGB':
-            converted = pil_img.convert('RGB')
+        if pil_image.mode != "RGB":
+            converted = pil_image.convert("RGB")
             if owns_image:
-                pil_img.close()
-            pil_img = converted
+                pil_image.close()
+            pil_image = converted
             owns_image = True
 
         try:
-            lang_name = PADDLEOCR_VL_LANG_MAP.get(source_language, '日语')
-            ocr_prompt = f"对图中的{lang_name}进行OCR:"
             messages = [
                 {
                     "role": "user",
                     "content": [
-                        {"type": "image", "image": pil_img},
-                        {"type": "text", "text": ocr_prompt},
+                        {"type": "image", "image": pil_image},
+                        {"type": "text", "text": prompt},
                     ],
                 }
             ]
-
-            # 使用 transformers 标准推理方式
-            # 第一步：使用 apply_chat_template 生成 text (tokenize=False)
-            text = self.processor.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
-            )
-            
-            # 第二步：使用 processor 生成 inputs (添加 padding=True)
-            inputs = self.processor(
-                text=[text],
-                images=[pil_img],
+            inputs = self.processor.apply_chat_template(
+                messages,
+                add_generation_prompt=True,
+                tokenize=True,
+                return_dict=True,
                 return_tensors="pt",
-                padding=True
-            )
-            
-            # 移动到设备
-            inputs = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v 
-                      for k, v in inputs.items()}
-            
-            # 生成文本
-            with torch.no_grad():
+            ).to(self.device)
+
+            with torch.inference_mode():
                 generated_ids = self.model.generate(
                     **inputs,
-                    max_new_tokens=256,
-                    do_sample=False
+                    max_new_tokens=PADDLEOCR_VL_MAX_NEW_TOKENS,
+                    do_sample=False,
+                    use_cache=True,
                 )
-            
-            # 裁剪只保留新生成的 tokens
-            input_len = inputs["input_ids"].shape[1]
-            generated_ids_trimmed = generated_ids[:, input_len:]
-            
-            # 解码
-            output_text = self.processor.batch_decode(
-                generated_ids_trimmed,
+
+            input_length = inputs["input_ids"].shape[-1]
+            output_text = self.processor.decode(
+                generated_ids[0][input_length:],
                 skip_special_tokens=True,
-                clean_up_tokenization_spaces=False
-            )[0]
-            
+                clean_up_tokenization_spaces=False,
+            )
             return output_text.strip()
-        except Exception as e:
-            logger.error(f"OCR 识别出错: {type(e).__name__}: {e}")
-            logger.error(f"图像尺寸: {pil_img.size}, 模式: {pil_img.mode}")
+        except Exception as error:
+            logger.error(
+                "PaddleOCR-VL 识别失败 (%s, image=%s): %s",
+                type(error).__name__,
+                pil_image.size,
+                error,
+            )
             raise
         finally:
             if owns_image:
-                pil_img.close()
-    
+                pil_image.close()
+
     def recognize_text(
-        self, 
-        image: Image.Image, 
+        self,
+        image: Image.Image,
         bubble_coords: List[Tuple[int, int, int, int]],
-        source_language: str = 'japanese',
+        source_language: str,
     ) -> List[str]:
-        """
-        识别文本
-        
-        Args:
-            image: PIL Image
-            bubble_coords: 气泡坐标列表 [(x1, y1, x2, y2), ...]
-            source_language: 源语言代码
-        
-        Returns:
-            ['text1', 'text2', ...] - 每个气泡的识别结果
-        """
         if not self.initialized or self.model is None:
             raise RuntimeError("PaddleOCR-VL 未初始化")
-        
         if not bubble_coords:
             return []
-        
-        lang_name = PADDLEOCR_VL_LANG_MAP.get(source_language, '日语')
-        logger.info(f"使用 PaddleOCR-VL 识别 {len(bubble_coords)} 个气泡，源语言: {lang_name}")
-        
-        converted = image.convert('RGB')
+
+        build_paddleocr_vl_prompt(source_language)
+        logger.info(
+            "使用 %s 识别 %d 个气泡，源语言=%s",
+            constants.PADDLEOCR_VL_VERSION,
+            len(bubble_coords),
+            PADDLEOCR_VL_LANGUAGE_NAMES[source_language],
+        )
+
+        converted = image.convert("RGB")
         try:
-            img_np = np.array(converted)
+            image_array = np.array(converted)
         finally:
-            if converted is not image:
-                converted.close()
+            converted.close()
 
-        try:
-            results = []
-            
-            for i, (x1, y1, x2, y2) in enumerate(bubble_coords):
-                try:
-                    # 裁剪气泡区域
-                    bubble = img_np[y1:y2, x1:x2]
-                    
-                    if bubble.shape[0] == 0 or bubble.shape[1] == 0:
-                        raise ValueError(f"气泡 {i} 图像区域无效")
-                    
-                    logger.info(f"处理气泡 {i+1}/{len(bubble_coords)}，尺寸: {bubble.shape[1]}x{bubble.shape[0]}")
-                    
-                    # 识别文本
-                    text = self._recognize_single(bubble, source_language)
-                    results.append(text)
-                    
-                    if text:
-                        logger.info(f"气泡 {i} 识别文本: '{text}'")
-                    else:
-                        logger.info(f"气泡 {i} 未识别出文本")
-                    
-                except Exception as e:
-                    logger.error(f"气泡 {i} 识别失败: {e}")
-                    raise
-            
-            # 清理 GPU 显存
-            if self.use_gpu:
-                torch.cuda.empty_cache()
-            
-            logger.info(f"✅ 识别完成，成功 {sum(1 for t in results if t)} / {len(bubble_coords)}")
-            return results
-            
-        except Exception as e:
-            logger.error(f"PaddleOCR-VL 识别失败: {e}", exc_info=True)
-            raise
+        results: List[str] = []
+        for index, (x1, y1, x2, y2) in enumerate(bubble_coords):
+            bubble = image_array[y1:y2, x1:x2]
+            if bubble.size == 0:
+                raise ValueError(f"气泡 {index} 图像区域无效")
+            text = self._recognize_single(bubble, source_language)
+            results.append(text)
+            logger.info(
+                "气泡 %d/%d %s 识别完成",
+                index + 1,
+                len(bubble_coords),
+                constants.PADDLEOCR_VL_VERSION,
+            )
+        return results
 
 
-# 单例模式
-_paddleocr_vl_handler = None
+_paddleocr_vl_handler: PaddleOCRVLHandler | None = None
 
 
 def get_paddleocr_vl_handler() -> PaddleOCRVLHandler:
-    """获取 PaddleOCR-VL 处理器单例"""
     global _paddleocr_vl_handler
     if _paddleocr_vl_handler is None:
         _paddleocr_vl_handler = PaddleOCRVLHandler()
     return _paddleocr_vl_handler
 
 
-def reset_paddleocr_vl_handler():
-    """重置 PaddleOCR-VL 处理器单例，下次调用会重新初始化"""
+def reset_paddleocr_vl_handler() -> None:
     global _paddleocr_vl_handler
-    if _paddleocr_vl_handler is not None:
-        # 尝试清理显存
-        if _paddleocr_vl_handler.model is not None:
-            del _paddleocr_vl_handler.model
-        if _paddleocr_vl_handler.processor is not None:
-            del _paddleocr_vl_handler.processor
-        if _paddleocr_vl_handler.use_gpu:
-            torch.cuda.empty_cache()
+    handler = _paddleocr_vl_handler
     _paddleocr_vl_handler = None
+    if handler is not None:
+        handler._release_loaded_model()
     logger.info("PaddleOCR-VL 处理器已重置")

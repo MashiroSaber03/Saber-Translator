@@ -8,8 +8,32 @@ export interface BaiduOcrSettings {
   sourceLanguage: string
 }
 
+export type PaddleOcrVlLanguage =
+  | 'japanese'
+  | 'chinese'
+  | 'chinese_cht'
+  | 'korean'
+  | 'english'
+  | 'french'
+  | 'german'
+  | 'spanish'
+  | 'italian'
+  | 'portuguese'
+  | 'dutch'
+  | 'polish'
+  | 'thai'
+  | 'vietnamese'
+  | 'indonesian'
+  | 'malay'
+  | 'russian'
+  | 'arabic'
+  | 'hindi'
+  | 'turkish'
+  | 'greek'
+  | 'hebrew'
+
 export interface PaddleOcrVlSettings {
-  sourceLanguage: string
+  sourceLanguage: PaddleOcrVlLanguage
 }
 
 export interface AiVisionOcrSettings {

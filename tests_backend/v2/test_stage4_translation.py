@@ -91,7 +91,6 @@ def _page_style(**overrides: object) -> dict[str, object]:
 def _frozen_ai_vision_ocr_config() -> dict[str, object]:
     return {
         "ocr_engine": "ai_vision",
-        "source_language": "japanese",
         "enable_hybrid_ocr": False,
         "secondary_ocr_engine": "48px_ocr",
         "hybrid_ocr_threshold": 0.2,
@@ -163,6 +162,57 @@ def test_core_translation_ocr_materializes_frozen_openai_options(
     assert result == {"texts": [], "results": []}
     assert isinstance(captured["ai_vision_openai_options"], OpenAICompatibleOptions)
     assert captured["ai_vision_prompt_mode"] == "paddleocr_vl"
+
+
+def test_paddleocr_vl_language_survives_resolver_and_worker_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.core import ocr
+
+    settings = default_translation_settings()
+    settings["ocrEngine"] = "paddleocr_vl"
+    settings["paddleOcrVl"]["sourceLanguage"] = "korean"
+    frozen = SettingsResolver._ocr_section(settings, {})
+
+    assert frozen == {
+        "ocr_engine": "paddleocr_vl",
+        "paddleocr_vl_source_language": "korean",
+        "enable_hybrid_ocr": False,
+        "secondary_ocr_engine": "48px_ocr",
+        "hybrid_ocr_threshold": 0.2,
+    }
+
+    captured: dict[str, object] = {}
+
+    def recognize(_image, _coords, **kwargs):
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(ocr, "recognize_ocr_results_in_bubbles", recognize)
+    image = Image.new("RGB", (16, 16), "white")
+    try:
+        result = CoreTranslationAlgorithms().ocr(image, [], frozen)
+    finally:
+        image.close()
+
+    assert result == {"texts": [], "results": []}
+    assert captured["paddleocr_vl_source_language"] == "korean"
+
+
+def test_core_translation_rejects_unknown_paddleocr_vl_language() -> None:
+    config = {
+        "ocr_engine": "paddleocr_vl",
+        "paddleocr_vl_source_language": "unsupported",
+        "enable_hybrid_ocr": False,
+        "secondary_ocr_engine": "48px_ocr",
+        "hybrid_ocr_threshold": 0.2,
+    }
+    image = Image.new("RGB", (16, 16), "white")
+    try:
+        with pytest.raises(ValueError, match="source language"):
+            CoreTranslationAlgorithms().ocr(image, [], config)
+    finally:
+        image.close()
 
 
 def test_redetection_equal_iou_keeps_first_persisted_bubble() -> None:
@@ -2653,7 +2703,7 @@ def test_translation_job_rejects_missing_backend_credential_before_admission(
                 domain="translation",
                 payload=payload,
                 base_revision=1,
-                schema_version=5,
+                schema_version=6,
             ),
         ),
         providers=(
@@ -2760,7 +2810,7 @@ def test_failed_item_retry_refreezes_current_backend_settings(
                 domain="translation",
                 payload=settings_payload,
                 base_revision=1,
-                schema_version=5,
+                schema_version=6,
             ),
         ),
         credentials_edits=(
@@ -2846,7 +2896,7 @@ def test_translation_job_resolves_backend_settings_and_reuses_manual_bubbles(
                 domain="translation",
                 payload=payload,
                 base_revision=1,
-                schema_version=5,
+                schema_version=6,
             ),
         ),
         credentials_edits=(
@@ -2950,7 +3000,7 @@ def test_translation_resolver_uses_provider_specific_hq_and_ocr_parameters(
                 domain="translation",
                 payload=payload,
                 base_revision=1,
-                schema_version=5,
+                schema_version=6,
             ),
         ),
         credentials_edits=(
@@ -3122,7 +3172,7 @@ def _configure_hq_and_proofreading(platform: Mapping[str, Any]) -> None:
                 domain="translation",
                 payload=payload,
                 base_revision=1,
-                schema_version=5,
+                schema_version=6,
             ),
         ),
         credentials_edits=tuple(

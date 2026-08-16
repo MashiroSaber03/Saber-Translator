@@ -30,7 +30,7 @@ import {
 import { createDefaultOpenAiOptions } from '@/utils/openaiOptions'
 import { deepClone } from '@/utils/deepClone'
 
-export const TRANSLATION_SETTINGS_SCHEMA_VERSION = 5
+export const TRANSLATION_SETTINGS_SCHEMA_VERSION = 6
 
 export function createDefaultTextStyle(): TextStyleSettings {
   return getTextStyleDefaults()
@@ -152,7 +152,6 @@ export function createDefaultSettings(): TranslationSettings {
     settingsSchemaVersion: TRANSLATION_SETTINGS_SCHEMA_VERSION,
     textStyle: createDefaultTextStyle(),
     ocrEngine: 'manga_ocr',
-    sourceLanguage: 'japanese',
     textDetector: 'default',
     minTextBlockAreaPercent: 0.05,
     enableAuxYoloDetection: false,

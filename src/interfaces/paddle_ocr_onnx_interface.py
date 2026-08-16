@@ -1,222 +1,168 @@
-"""
-PaddleOCR ONNX 接口实现
-使用 RapidOCR + ONNX 模型，替代原生 PaddlePaddle
+"""PP-OCRv6 ONNX integration backed by RapidOCR 3.x.
 
-特性：
-1. 使用 PP-OCRv5 ONNX 模型（高精度）
-2. 无需安装 PaddlePaddle，打包更简单
-3. 模型存放在 models/paddle_ocr_onnx/ 目录
-4. 支持多语种识别
-
-工作流程：
-1. det 模型检测气泡内的文本行（细粒度）
-2. rec 模型识别单行（48×W 输入）
+The desktop app ships the official PP-OCRv6 ``medium`` detection and
+recognition ONNX models.  PaddlePaddle itself is not required at runtime.
 """
 
-import os
-import numpy as np
+from __future__ import annotations
+
 import logging
-from PIL import Image
-from typing import List, Tuple
+import os
 import time
+from numbers import Real
+from typing import List, Tuple
 
-from src.shared.path_helpers import resource_path
+import numpy as np
+from PIL import Image
+
+from src.core.ocr_types import OcrResult, create_ocr_result
+from src.shared import constants
 from src.shared.image_helpers import image_to_rgb_array
 from src.shared.memory_errors import is_memory_allocation_error
-from src.core.ocr_types import OcrResult, create_ocr_result
-
-# 设置环境变量
-os.environ["OMP_NUM_THREADS"] = "1"
+from src.shared.path_helpers import resource_path
 
 logger = logging.getLogger("PaddleOCR_ONNX")
 
 
 class PaddleOCRHandlerONNX:
-    """PaddleOCR ONNX 处理器 - 使用 RapidOCR
-    
-    工作原理：
-    - RapidOCR 内部会先用 det 模型检测图片中的所有文本行
-    - 对每个检测到的文本行裁剪并 resize 到 48×W
-    - 用 rec 模型识别每行
-    - 返回多行识别结果
-    """
-    
-    # PP-OCRv5 语言到模型目录的映射
-    LANG_TO_MODEL_DIR = {
-        # 中日文 - 使用 chinese 模型 (PP-OCRv5 的 chinese 模型支持中日文)
-        "japanese": "chinese",
-        "chinese": "chinese",
-        "ch": "chinese",
-        "chinese_cht": "chinese",
-        
-        # 英文
-        "en": "english",
-        "english": "english",
-        
-        # 韩语
-        "korean": "korean",
-        
-        # 拉丁语系 (法/德/西/意/葡等32种语言)
-        "french": "latin",
-        "german": "latin",
-        "spanish": "latin",
-        "italian": "latin",
-        "portuguese": "latin",
-        "latin": "latin",
-        
-        # 斯拉夫语系 (俄语、乌克兰语、保加利亚语、白俄罗斯语)
-        "russian": "eslav",
-        "eslav": "eslav",
-        "cyrillic": "eslav",
-        
-        # 以下语言需单独下载: python download_paddle_onnx_models.py thai greek
-        # "thai": "thai",
-        # "th": "thai",
-        # "greek": "greek",
-        # "el": "greek",
-    }
-    
-    def __init__(self):
-        """初始化 PaddleOCR ONNX 处理器"""
-        # 模型目录
-        self.model_base_dir = resource_path(os.path.join("models", "paddle_ocr_onnx"))
-        logger.debug(f"PaddleOCR ONNX 模型目录: {self.model_base_dir}")
-        
+    """Bubble-level PP-OCRv6 Medium handler using ONNX Runtime."""
+
+    MODEL_VERSION = constants.PADDLE_OCR_VERSION
+    MODEL_TIER = constants.PADDLE_OCR_MODEL_TIER
+
+    def __init__(self) -> None:
+        self.model_base_dir = resource_path(constants.PADDLE_OCR_MODEL_DIR)
         self.ocr = None
-        self.current_lang = None
-        self.current_model_dir = None
         self.initialized = False
-    
-    def _get_model_paths(self, lang: str) -> Tuple[str, str, str]:
-        """
-        获取模型文件路径
-        
-        Args:
-            lang: 语言代码
-        
-        Returns:
-            Tuple[det_path, rec_path, dict_path]
-        """
-        # 检测模型 - 所有语言共用 v5 检测模型
-        det_path = os.path.join(self.model_base_dir, "detection", "v5", "det.onnx")
-        
-        # 识别模型 - 根据语言选择
-        model_dir = self.LANG_TO_MODEL_DIR.get(lang)
-        if model_dir is None:
-            raise ValueError(f"PaddleOCR ONNX 不支持源语言: {lang}")
-        rec_path = os.path.join(self.model_base_dir, "languages", model_dir, "rec.onnx")
-        dict_path = os.path.join(self.model_base_dir, "languages", model_dir, "dict.txt")
-        
-        return det_path, rec_path, dict_path
-    
-    def _check_models_exist(self, det_path: str, rec_path: str, dict_path: str) -> Tuple[bool, List[str]]:
-        """
-        检查模型文件是否存在
-        
-        Returns:
-            Tuple[是否全部存在, 缺失文件列表]
-        """
-        missing = []
-        if not os.path.exists(det_path):
+
+    def _get_model_paths(self) -> Tuple[str, str, str]:
+        return (
+            os.path.join(self.model_base_dir, "det.onnx"),
+            os.path.join(self.model_base_dir, "rec.onnx"),
+            os.path.join(self.model_base_dir, "ppocrv6_dict.txt"),
+        )
+
+    @staticmethod
+    def _check_models_exist(
+        det_path: str,
+        rec_path: str,
+        dict_path: str,
+    ) -> Tuple[bool, List[str]]:
+        missing: List[str] = []
+        if not os.path.isfile(det_path):
             missing.append(f"检测模型: {det_path}")
-        if not os.path.exists(rec_path):
+        if not os.path.isfile(rec_path):
             missing.append(f"识别模型: {rec_path}")
-        if not os.path.exists(dict_path):
-            missing.append(f"字典文件: {dict_path}")
-        
-        return len(missing) == 0, missing
-    
-    def initialize(self, lang: str = "ch") -> bool:
-        """
-        初始化 PaddleOCR ONNX
-        
-        Args:
-            lang: 语言代码（如 "japanese", "korean", "french" 等）
-        
-        Returns:
-            bool: 初始化是否成功
-        """
+        if not os.path.isfile(dict_path):
+            missing.append(f"识别字典: {dict_path}")
+        return not missing, missing
+
+    def initialize(self) -> bool:
         try:
-            from rapidocr_onnxruntime import RapidOCR
-            
-            # 获取模型路径
-            det_path, rec_path, dict_path = self._get_model_paths(lang)
-            model_dir = self.LANG_TO_MODEL_DIR[lang]
-            
-            logger.debug(f"初始化 PaddleOCR ONNX: 语言={lang}, 模型={model_dir}")
-            
-            # 检查模型是否存在
-            exists, missing = self._check_models_exist(det_path, rec_path, dict_path)
-            if not exists:
-                logger.error("❌ 缺少模型文件:")
-                for m in missing:
-                    logger.error(f"   - {m}")
-                logger.error("请运行: python download_paddle_onnx_models.py")
-                return False
-            
-            # 如果语言相同且已初始化，直接返回
-            if self.initialized and self.current_lang == lang and self.ocr is not None:
-                logger.debug("复用已初始化的 OCR 实例")
+            if self.initialized and self.ocr is not None:
                 return True
-            
-            # 初始化 RapidOCR
-            # det 模型会检测气泡内的文本行，rec 模型识别每行
-            self.ocr = RapidOCR(
-                det_model_path=det_path,
-                rec_model_path=rec_path,
-                rec_keys_path=dict_path,
-                # 禁用方向分类器（漫画气泡一般不需要）
-                use_angle_cls=False,
+
+            det_path, rec_path, dict_path = self._get_model_paths()
+
+            exists, missing = self._check_models_exist(
+                det_path,
+                rec_path,
+                dict_path,
             )
-            
-            self.current_lang = lang
-            self.current_model_dir = model_dir
+            if not exists:
+                for item in missing:
+                    logger.error("缺少 %s", item)
+                logger.error(
+                    "请将单独发布的 %s %s 模型包完整解压到 %s",
+                    self.MODEL_VERSION,
+                    self.MODEL_TIER,
+                    self.model_base_dir,
+                )
+                return False
+
+            from rapidocr import (
+                EngineType,
+                LangDet,
+                LangRec,
+                ModelType,
+                OCRVersion,
+                RapidOCR,
+            )
+
+            logger.info(
+                "初始化 %s %s ONNX 模型",
+                self.MODEL_VERSION,
+                self.MODEL_TIER,
+            )
+            self.ocr = RapidOCR(
+                params={
+                    "Global.use_cls": False,
+                    "EngineConfig.onnxruntime.intra_op_num_threads": 1,
+                    "EngineConfig.onnxruntime.inter_op_num_threads": 1,
+                    "Det.engine_type": EngineType.ONNXRUNTIME,
+                    "Det.lang_type": LangDet.CH,
+                    "Det.model_type": ModelType.MEDIUM,
+                    "Det.ocr_version": OCRVersion.PPOCRV6,
+                    "Det.model_path": det_path,
+                    "Rec.engine_type": EngineType.ONNXRUNTIME,
+                    "Rec.lang_type": LangRec.CH,
+                    "Rec.model_type": ModelType.MEDIUM,
+                    "Rec.ocr_version": OCRVersion.PPOCRV6,
+                    "Rec.model_path": rec_path,
+                    "Rec.rec_keys_path": dict_path,
+                }
+            )
             self.initialized = True
-            
-            logger.info(f"PaddleOCR ONNX 已初始化 ({model_dir})")
-            
+            logger.info("%s %s 已初始化", self.MODEL_VERSION, self.MODEL_TIER)
             return True
-            
-        except ImportError as e:
-            logger.error("❌ rapidocr-onnxruntime 未安装")
-            logger.error("   请执行: pip install rapidocr-onnxruntime")
-            logger.error(f"   错误: {e}")
+        except ImportError as error:
+            logger.error("rapidocr 3.x 或 onnxruntime 未安装: %s", error)
+            logger.error("请执行: pip install rapidocr==3.9.2 onnxruntime")
             return False
-        except Exception as e:
-            logger.error(f"❌ PaddleOCR ONNX 初始化失败: {e}", exc_info=True)
+        except Exception as error:
+            logger.error("Paddle OCR 初始化失败: %s", error, exc_info=True)
+            self.ocr = None
             self.initialized = False
-            if is_memory_allocation_error(e):
+            if is_memory_allocation_error(error):
                 raise
             return False
-    
+
     def recognize_text(
         self,
         image: Image.Image,
         bubble_coords: List[Tuple[int, int, int, int]],
     ) -> List[str]:
-        """
-        使用 PaddleOCR ONNX 识别文本
-        
-        工作流程：
-        1. 裁剪每个气泡区域
-        2. RapidOCR 内部用 det 模型检测气泡内的所有文本行
-        3. 对每行用 rec 模型识别（输入 resize 到 48×W）
-        4. 合并多行文本返回
-        
-        Args:
-            image: PIL Image 对象
-            bubble_coords: 气泡坐标列表 [(x1, y1, x2, y2), ...]
-        
-        Returns:
-            List[str]: 识别的文本列表，与 bubble_coords 一一对应
-        """
         return [
             result.text
-            for result in self.recognize_text_with_details(
-                image,
-                bubble_coords,
-            )
+            for result in self.recognize_text_with_details(image, bubble_coords)
         ]
+
+    @staticmethod
+    def _extract_output_lines(output: object) -> Tuple[List[str], List[float]]:
+        """Normalize RapidOCR 3.x output and reject malformed partial data."""
+
+        texts_raw = getattr(output, "txts", None)
+        scores_raw = getattr(output, "scores", None)
+        if texts_raw is None:
+            return [], []
+        if scores_raw is None:
+            raise RuntimeError("RapidOCR 返回文本但缺少置信度")
+
+        texts = list(texts_raw)
+        scores = list(scores_raw)
+        if len(texts) != len(scores):
+            raise RuntimeError("RapidOCR 文本行与置信度数量不一致")
+
+        normalized_texts: List[str] = []
+        normalized_scores: List[float] = []
+        for text, score in zip(texts, scores):
+            if not isinstance(text, str):
+                raise RuntimeError("RapidOCR 文本必须是字符串")
+            if isinstance(score, bool) or not isinstance(score, Real):
+                raise RuntimeError("RapidOCR 置信度必须是数字")
+            normalized_texts.append(text)
+            normalized_scores.append(float(score))
+        return normalized_texts, normalized_scores
 
     def recognize_text_with_details(
         self,
@@ -226,119 +172,66 @@ class PaddleOCRHandlerONNX:
         fallback_used: bool = False,
     ) -> List[OcrResult]:
         if not self.initialized or self.ocr is None:
-            raise RuntimeError("PaddleOCR ONNX 未初始化")
-
+            raise RuntimeError("Paddle OCR 未初始化")
         if not bubble_coords:
-            logger.info("没有气泡坐标，跳过 OCR")
             return []
 
         try:
-            if isinstance(image, Image.Image):
-                img_np = image_to_rgb_array(image)
-            else:
-                img_np = image
-        except Exception as e:
-            logger.error(f"图像转换失败: {e}", exc_info=True)
+            rgb = image_to_rgb_array(image)
+            # RapidOCR treats a three-channel numpy array as BGR.  Convert
+            # explicitly so coloured pages are not inferred with swapped
+            # red/blue channels.
+            image_bgr = np.ascontiguousarray(rgb[:, :, ::-1])
+        except Exception as error:
+            logger.error("图像转换失败: %s", error, exc_info=True)
             raise
 
         recognized_results: List[OcrResult] = []
-
-        for i, (x1, y1, x2, y2) in enumerate(bubble_coords):
+        for index, (x1, y1, x2, y2) in enumerate(bubble_coords):
             try:
-                logger.debug(
-                    "处理气泡 %d/%d，坐标: (%s, %s, %s, %s)",
-                    i + 1,
+                bubble_image = image_bgr[y1:y2, x1:x2]
+                if bubble_image.size == 0:
+                    raise ValueError(f"气泡 {index} 图像区域无效")
+
+                started = time.perf_counter()
+                output = self.ocr(bubble_image, use_cls=False)
+                elapsed = time.perf_counter() - started
+                texts, scores = self._extract_output_lines(output)
+
+                text = " ".join(texts)
+                confidence = float(np.mean(scores)) if scores else 0.0
+                recognized_results.append(
+                    create_ocr_result(
+                        text,
+                        "paddle_ocr",
+                        confidence=confidence,
+                        confidence_supported=True,
+                        primary_engine=primary_engine,
+                        fallback_used=fallback_used,
+                    )
+                )
+                logger.info(
+                    "气泡 %d/%d OCR 完成，文本行=%d，耗时=%.2fs",
+                    index + 1,
                     len(bubble_coords),
-                    x1,
-                    y1,
-                    x2,
-                    y2,
+                    len(texts),
+                    elapsed,
                 )
-
-                bubble_img = img_np[y1:y2, x1:x2]
-                if bubble_img.size == 0 or bubble_img.shape[0] == 0 or bubble_img.shape[1] == 0:
-                    raise ValueError(f"气泡 {i} 图像区域无效")
-
-                logger.debug(
-                    "气泡 %d 图像尺寸: %dx%d",
-                    i,
-                    bubble_img.shape[1],
-                    bubble_img.shape[0],
-                )
-
-                start_time = time.time()
-                result, _elapsed_info = self.ocr(bubble_img)
-                elapsed = time.time() - start_time
-
-                if result and len(result) > 0:
-                    texts = []
-                    scores = []
-                    for line in result:
-                        if not isinstance(line, (list, tuple)) or len(line) < 3:
-                            raise RuntimeError("RapidOCR 返回了无效文本行")
-                        text_content = line[1]
-                        score = line[2]
-                        if not isinstance(text_content, str):
-                            raise RuntimeError("RapidOCR 文本必须是字符串")
-                        if isinstance(score, bool) or not isinstance(
-                            score,
-                            (int, float),
-                        ):
-                            raise RuntimeError("RapidOCR 置信度必须是数字")
-                        texts.append(text_content)
-                        scores.append(float(score))
-
-                    text = " ".join(texts)
-                    confidence = float(np.mean(scores)) if scores else 0.0
-                    recognized_results.append(
-                        create_ocr_result(
-                            text,
-                            "paddle_ocr",
-                            confidence=confidence,
-                            confidence_supported=True,
-                            primary_engine=primary_engine,
-                            fallback_used=fallback_used,
-                        )
-                    )
-
-                    logger.info(f"气泡 {i} 识别文本: '{text}' (耗时: {elapsed:.2f}s)")
-                    if scores:
-                        logger.debug(f"气泡 {i} 平均置信度: {confidence:.4f}")
-                else:
-                    recognized_results.append(
-                        create_ocr_result(
-                            "",
-                            "paddle_ocr",
-                            confidence=0.0,
-                            confidence_supported=True,
-                            primary_engine=primary_engine,
-                            fallback_used=fallback_used,
-                        )
-                    )
-                    logger.info(f"气泡 {i} 未识别出文本")
-
-            except Exception as e:
-                logger.error(f"气泡 {i} 识别失败: {e}", exc_info=True)
+            except Exception as error:
+                logger.error("气泡 %d 识别失败: %s", index, error, exc_info=True)
                 raise
 
-        logger.info(
-            "识别完成，成功识别 %d / %d 个气泡",
-            sum(1 for result in recognized_results if result.text),
-            len(bubble_coords),
-        )
-
         if len(recognized_results) != len(bubble_coords):
-            raise RuntimeError("PaddleOCR 结果数量与气泡数量不一致")
-
+            raise RuntimeError("Paddle OCR 结果数量与气泡数量不一致")
         return recognized_results
 
 
-# 单例模式
-_paddle_ocr_onnx_handler = None
+_paddle_ocr_onnx_handler: PaddleOCRHandlerONNX | None = None
 
 
 def get_paddle_ocr_handler() -> PaddleOCRHandlerONNX:
-    """获取 PaddleOCR ONNX 处理器单例"""
+    """Return the process-local lazy PP-OCRv6 handler."""
+
     global _paddle_ocr_onnx_handler
     if _paddle_ocr_onnx_handler is None:
         _paddle_ocr_onnx_handler = PaddleOCRHandlerONNX()
@@ -347,12 +240,11 @@ def get_paddle_ocr_handler() -> PaddleOCRHandlerONNX:
 
 def reset_paddle_ocr_handler() -> None:
     """Release RapidOCR/ONNX sessions and reset the lazy singleton."""
+
     global _paddle_ocr_onnx_handler
     handler = _paddle_ocr_onnx_handler
     _paddle_ocr_onnx_handler = None
     if handler is None:
         return
     handler.ocr = None
-    handler.current_lang = None
-    handler.current_model_dir = None
     handler.initialized = False

@@ -65,7 +65,7 @@ function bootstrap(
           domain: 'translation',
           payload: createDefaultSettings() as unknown as Record<string, unknown>,
           revision: 1,
-          schemaVersion: 5,
+          schemaVersion: 6,
         },
         {
           domain: 'text_style_defaults',
@@ -492,23 +492,22 @@ describe('useTranslateInit', () => {
     routeState.query = { book: 'book-1', chapter: 'chapter-1' }
     const payload = bootstrap('book-1', 'chapter-1')
     payload.chapter.settingsMemory = {
-      sourceLanguage: 'english',
-      targetLanguage: 'zh',
+      targetLanguage: 'en',
     }
     mocks.getTranslationBootstrap.mockResolvedValue(payload)
 
     await useTranslateInit().initializeApp()
     const settingsStore = useSettingsStore()
-    expect(settingsStore.settings.sourceLanguage).toBe('english')
+    expect(settingsStore.settings.targetLanguage).toBe('en')
     expect(settingsStore.chapterWorkStatePayload()).not.toHaveProperty('textStyle')
 
-    settingsStore.settings.sourceLanguage = 'korean'
+    settingsStore.settings.targetLanguage = 'ja'
     await vi.waitFor(() => {
       expect(mocks.updateChapterSettingsMemory).toHaveBeenCalled()
     })
     expect(mocks.updateChapterSettingsMemory).toHaveBeenLastCalledWith(
       'chapter-1',
-      expect.objectContaining({ sourceLanguage: 'korean' }),
+      expect.objectContaining({ targetLanguage: 'ja' }),
       1,
     )
     const savedPayload = mocks.updateChapterSettingsMemory.mock.calls.at(-1)?.[1]
@@ -521,12 +520,12 @@ describe('useTranslateInit', () => {
     await state.initializeApp()
     const settingsStore = useSettingsStore()
     mocks.updateChapterSettingsMemory.mockClear()
-    settingsStore.settings.sourceLanguage = 'korean'
+    settingsStore.settings.targetLanguage = 'ja'
 
     expect(await state.flushChapterWorkState()).toBe(true)
     expect(mocks.updateChapterSettingsMemory).toHaveBeenLastCalledWith(
       'quick-chapter',
-      expect.objectContaining({ sourceLanguage: 'korean' }),
+      expect.objectContaining({ targetLanguage: 'ja' }),
       expect.any(Number),
     )
   })
@@ -535,7 +534,7 @@ describe('useTranslateInit', () => {
     const state = useTranslateInit()
     await state.initializeApp()
     const settingsStore = useSettingsStore()
-    const originalLanguage = settingsStore.settings.sourceLanguage
+    const originalTargetLanguage = settingsStore.settings.targetLanguage
     let resolveFirst!: () => void
     mocks.updateChapterSettingsMemory.mockReset()
     mocks.updateChapterSettingsMemory
@@ -560,13 +559,13 @@ describe('useTranslateInit', () => {
         revision: baseRevision + 1,
       }))
 
-    settingsStore.settings.sourceLanguage = 'korean'
+    settingsStore.settings.targetLanguage = 'ja'
     const firstFlush = state.flushChapterWorkState()
     await vi.waitFor(() => {
       expect(mocks.updateChapterSettingsMemory).toHaveBeenCalledTimes(1)
     })
 
-    settingsStore.settings.sourceLanguage = originalLanguage
+    settingsStore.settings.targetLanguage = originalTargetLanguage
     const finalFlush = state.flushChapterWorkState()
     resolveFirst()
 
@@ -575,7 +574,7 @@ describe('useTranslateInit', () => {
     expect(mocks.updateChapterSettingsMemory).toHaveBeenCalledTimes(2)
     expect(mocks.updateChapterSettingsMemory).toHaveBeenLastCalledWith(
       'quick-chapter',
-      expect.objectContaining({ sourceLanguage: originalLanguage }),
+      expect.objectContaining({ targetLanguage: originalTargetLanguage }),
       2,
     )
   })

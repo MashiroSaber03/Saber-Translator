@@ -1006,20 +1006,18 @@ class SettingsResolver:
         provider_rows: Mapping[tuple[str, str], Mapping[str, Any]],
     ) -> dict[str, Any]:
         engine = effective["ocrEngine"]
-        paddle = dict(effective["paddleOcrVl"])
         hybrid = dict(effective["hybridOcr"])
         result: dict[str, Any] = {
             "ocr_engine": engine,
-            "source_language": (
-                paddle["sourceLanguage"]
-                if engine == "paddleocr_vl"
-                else effective["sourceLanguage"]
-            ),
             "enable_hybrid_ocr": hybrid["enabled"],
             "secondary_ocr_engine": hybrid["secondaryEngine"],
             "hybrid_ocr_threshold": hybrid["confidenceThreshold"],
         }
-        if engine == "baidu_ocr":
+        if engine == "paddleocr_vl":
+            result["paddleocr_vl_source_language"] = effective[
+                "paddleOcrVl"
+            ]["sourceLanguage"]
+        elif engine == "baidu_ocr":
             selected = dict(effective["baiduOcr"])
             row = provider_rows.get(("ocr", "baidu"), {})
             payload = _deep_merge(selected, dict(row["payload"]) if row else {})

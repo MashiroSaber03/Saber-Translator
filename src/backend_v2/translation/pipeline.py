@@ -51,6 +51,7 @@ from src.backend_v2.storage.schema import (
 )
 from src.core.config_models import validate_bubble_payload
 from src.core.ocr_types import OcrResult
+from src.shared.paddleocr_vl import PADDLEOCR_VL_LANGUAGE_NAMES
 
 
 LOGGER = logging.getLogger("saber.worker.translation")
@@ -862,7 +863,6 @@ class CoreTranslationAlgorithms:
         coords = [payload["coords"] for payload in bubble_payloads]
         textlines = [payload["textlines"] for payload in bubble_payloads]
         base_fields = {
-            "source_language",
             "ocr_engine",
             "enable_hybrid_ocr",
             "secondary_ocr_engine",
@@ -879,7 +879,9 @@ class CoreTranslationAlgorithms:
         }:
             raise ValueError("OCR engine is invalid")
         expected_fields = set(base_fields)
-        if engine == "baidu_ocr":
+        if engine == "paddleocr_vl":
+            expected_fields.add("paddleocr_vl_source_language")
+        elif engine == "baidu_ocr":
             expected_fields.update(
                 {
                     "baidu_api_key",
@@ -911,8 +913,13 @@ class CoreTranslationAlgorithms:
             expected_fields.update(present_credential_fields)
         if set(config) != expected_fields:
             raise ValueError("OCR configuration fields are invalid")
-        if not isinstance(config["source_language"], str) or not config["source_language"]:
-            raise ValueError("OCR source language is invalid")
+        if engine == "paddleocr_vl":
+            source_language = config["paddleocr_vl_source_language"]
+            if (
+                not isinstance(source_language, str)
+                or source_language not in PADDLEOCR_VL_LANGUAGE_NAMES
+            ):
+                raise ValueError("PaddleOCR-VL source language is invalid")
         if not isinstance(config["enable_hybrid_ocr"], bool):
             raise ValueError("hybrid OCR flag must be boolean")
         if (

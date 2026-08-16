@@ -25,7 +25,6 @@ describe('settingsStore routine logging', () => {
     store.setEnableSaberYoloRefine(true)
     store.setSaberYoloRefineOverlapThreshold(60)
     store.setOcrEngine('manga_ocr')
-    store.setSourceLanguage('japanese')
     store.setAiVisionOcrPromptMode('json')
     store.setTranslatePromptMode(false)
     store.saveTranslationProviderConfig('custom')

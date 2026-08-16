@@ -1,4 +1,5 @@
 import promptDefaults from '../../../src/shared/prompt_defaults_factory.json'
+import type { PaddleOcrVlLanguage } from '@/types/settings'
 
 export const DEFAULT_AI_VISION_OCR_PROMPT = promptDefaults.aiVisionOcrNormal
 export const DEFAULT_SINGLE_BUBBLE_PROMPT = promptDefaults.singleNormal
@@ -7,9 +8,9 @@ export const DEFAULT_TRANSLATE_PROMPT = promptDefaults.batchNormal
 export const DEFAULT_TRANSLATE_JSON_PROMPT = promptDefaults.batchJson
 export const DEFAULT_AI_VISION_OCR_JSON_PROMPT = promptDefaults.aiVisionOcrJson
 
-export const getPaddleOcrVlPrompt = (langName: string = '日语') => `对图中的${langName}进行OCR:`
+export const PADDLEOCR_VL_DEFAULT_LANGUAGE: PaddleOcrVlLanguage = 'japanese'
 
-export const PADDLEOCR_VL_LANG_MAP: Record<string, string> = {
+export const PADDLEOCR_VL_LANG_MAP = {
   japanese: '日语',
   chinese: '简体中文',
   chinese_cht: '繁体中文',
@@ -32,17 +33,27 @@ export const PADDLEOCR_VL_LANG_MAP: Record<string, string> = {
   turkish: '土耳其语',
   greek: '希腊语',
   hebrew: '希伯来语',
+} as const satisfies Record<PaddleOcrVlLanguage, string>
+
+export function isPaddleOcrVlLanguage(value: unknown): value is PaddleOcrVlLanguage {
+  return typeof value === 'string' && Object.hasOwn(PADDLEOCR_VL_LANG_MAP, value)
+}
+
+export function getPaddleOcrVlPrompt(
+  sourceLanguage: PaddleOcrVlLanguage = PADDLEOCR_VL_DEFAULT_LANGUAGE,
+): string {
+  return `对图中的${PADDLEOCR_VL_LANG_MAP[sourceLanguage]}进行OCR:`
 }
 
 export function inferPaddleOcrVlPromptLanguage(
   prompt: string,
-  fallback = 'japanese',
-): string {
+  fallback: PaddleOcrVlLanguage = PADDLEOCR_VL_DEFAULT_LANGUAGE,
+): PaddleOcrVlLanguage {
   const normalizedPrompt = prompt.trim()
-  const matched = Object.entries(PADDLEOCR_VL_LANG_MAP).find(
-    ([, languageName]) => normalizedPrompt === getPaddleOcrVlPrompt(languageName),
+  const matched = (Object.keys(PADDLEOCR_VL_LANG_MAP) as PaddleOcrVlLanguage[]).find(
+    language => normalizedPrompt === getPaddleOcrVlPrompt(language),
   )
-  return matched?.[0] ?? fallback
+  return matched ?? fallback
 }
 
 export const DEFAULT_HQ_TRANSLATE_PROMPT = promptDefaults.hqTranslation

@@ -15,6 +15,7 @@ export type {
   AiVisionOcrSettings,
   BaiduOcrSettings,
   HybridOcrSettings,
+  PaddleOcrVlLanguage,
   PaddleOcrVlSettings,
 } from './ocrSettings'
 export type {

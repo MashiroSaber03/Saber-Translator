@@ -154,10 +154,14 @@ MODEL_48PX_DIR = 'models/ocr_48px'
 MODEL_48PX_CHECKPOINT = 'ocr_ar_48px.ckpt'
 MODEL_48PX_DICT = 'alphabet-all-v7.txt'
 
-# --- PaddleOCR-VL 相关 ---
+# --- Paddle OCR / PaddleOCR-VL 相关 ---
+PADDLE_OCR_VERSION = 'PP-OCRv6'
+PADDLE_OCR_MODEL_TIER = 'medium'
+PADDLE_OCR_MODEL_DIR = 'models/paddle_ocr_onnx_v6'
+
 OCR_ENGINE_PADDLEOCR_VL = 'paddleocr_vl'
-PADDLEOCR_VL_MODEL_DIR = 'models/paddleocr_vl'
-PADDLEOCR_VL_HF_MODEL = 'jzhang533/PaddleOCR-VL-For-Manga'
+PADDLEOCR_VL_VERSION = 'PaddleOCR-VL-1.6'
+PADDLEOCR_VL_MODEL_DIR = 'models/paddleocr_vl_1_6'
 
 # CTD 配置
 # 边缘距离比例阈值：当一个文本行与多个邻居连接时，如果到某个邻居的距离

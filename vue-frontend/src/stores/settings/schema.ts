@@ -18,6 +18,7 @@ import {
   createDefaultSettings,
 } from './defaults'
 import { isProofreadingRoundId } from './proofreadingIdentity'
+import { isPaddleOcrVlLanguage } from '@/constants'
 
 type PlainRecord = Record<string, unknown>
 type AiVisionPromptMode = TranslationSettings['aiVisionOcr']['promptMode']
@@ -276,6 +277,7 @@ export function parseCurrentSettings(value: unknown): TranslationSettings | null
     'GER',
     'RUS',
   ].includes(sanitized.baiduOcr.sourceLanguage)) return null
+  if (!isPaddleOcrVlLanguage(sanitized.paddleOcrVl.sourceLanguage)) return null
   if (!['manga_ocr', '48px_ocr'].includes(sanitized.hybridOcr.secondaryEngine)) return null
   if (
     sanitized.hybridOcr.enabled

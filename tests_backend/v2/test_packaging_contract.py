@@ -34,7 +34,8 @@ def test_production_spec_uses_only_the_backend_first_entrypoint() -> None:
     assert "'src', 'backend_v2', 'resources'" in spec
     assert "'src', 'shared', 'prompt_defaults_factory.json'" in spec
     assert "datas.append((pic_path, 'pic'))" not in spec
-    assert "optional_packages = ['accelerate']" in spec
+    assert "'rapidocr'" in spec
+    assert "accelerate" not in spec
     assert "required packaging dependency is missing" in spec
     assert "shutil.ignore_patterns('__pycache__', '*.pyc', '*.pyo')" in spec
     assert "'plugin.json'" in spec

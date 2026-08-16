@@ -15,7 +15,7 @@ from src.shared.constants import (
 
 
 DEFAULT_FONT_ID = "00000000-0000-0000-0000-000000000010"
-TRANSLATION_SETTINGS_SCHEMA_VERSION = 5
+TRANSLATION_SETTINGS_SCHEMA_VERSION = 6
 
 DEFAULT_TEXT_STYLE: dict[str, object] = {
     "fontSize": 26,
@@ -159,7 +159,6 @@ def default_translation_settings() -> dict[str, object]:
     return {
         "settingsSchemaVersion": TRANSLATION_SETTINGS_SCHEMA_VERSION,
         "ocrEngine": "manga_ocr",
-        "sourceLanguage": "japanese",
         "textDetector": "default",
         "minTextBlockAreaPercent": 0.05,
         "enableAuxYoloDetection": False,

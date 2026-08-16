@@ -16,6 +16,19 @@ describe('settings chapter work state', () => {
     expect(store.hydrateChapterWorkState('chapter-1', {})).toBe(true)
   })
 
+  it('round-trips the PaddleOCR-VL prompt language in chapter work state', () => {
+    const store = useSettingsStore()
+    store.updatePaddleOcrVl({ sourceLanguage: 'thai' })
+
+    expect(store.chapterWorkStatePayload()).toMatchObject({
+      paddleOcrVl: { sourceLanguage: 'thai' },
+    })
+    expect(store.hydrateChapterWorkState('chapter-1', {
+      paddleOcrVl: { sourceLanguage: 'korean' },
+    })).toBe(true)
+    expect(store.settings.paddleOcrVl.sourceLanguage).toBe('korean')
+  })
+
   it('accepts an empty override with current HQ and proofreading settings', () => {
     const store = useSettingsStore()
     const normalized = createDefaultSettings()

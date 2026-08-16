@@ -14,6 +14,7 @@ import {
   DEFAULT_TRANSLATE_JSON_PROMPT,
   DEFAULT_TRANSLATE_PROMPT,
   DEFAULT_WEB_IMPORT_EXTRACTION_PROMPT,
+  getPaddleOcrVlPrompt,
 } from '@/constants'
 import type { TranslationMode } from '@/types/settings'
 
@@ -130,7 +131,7 @@ describe('prompt mode properties', () => {
     )
   })
 
-  it('selects the matching AI vision OCR prompt mode and keeps paddle OCR prompts custom', () => {
+  it('selects the matching AI vision OCR prompt and uses the selected PaddleOCR-VL language', () => {
     fc.assert(
       fc.property(fc.boolean(), fc.string({ minLength: 1, maxLength: 200 }), (forceJsonOutput, customPrompt) => {
         installMemoryStorage()
@@ -145,11 +146,15 @@ describe('prompt mode properties', () => {
         )
 
         store.updateAiVisionOcr({ prompt: customPrompt })
+        store.updatePaddleOcrVl({ sourceLanguage: 'korean' })
         store.setAiVisionOcrPromptMode('paddleocr_vl')
 
         expect(store.settings.aiVisionOcr.promptMode).toBe('paddleocr_vl')
         expect(store.settings.aiVisionOcr.openaiOptions.request.forceJsonOutput).toBe(false)
-        expect(store.settings.aiVisionOcr.prompt).toBe(customPrompt)
+        expect(store.settings.aiVisionOcr.prompt).toBe(getPaddleOcrVlPrompt('korean'))
+
+        store.updatePaddleOcrVl({ sourceLanguage: 'chinese_cht' })
+        expect(store.settings.aiVisionOcr.prompt).toBe(getPaddleOcrVlPrompt('chinese_cht'))
       }),
     )
   })

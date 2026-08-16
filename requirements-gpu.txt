@@ -43,10 +43,10 @@ reportlab
 # AI/OCR
 openai
 manga-ocr
-rapidocr-onnxruntime
+rapidocr==3.9.2  # PP-OCRv6 ONNX runtime wrapper
+onnxruntime>=1.20,<2
 sentencepiece  # for PaddleOCR-VL
-transformers==4.55.0  # PaddleOCR-VL compatibility
-accelerate  # required for GPU device_map in transformers
+transformers==5.15.0  # native PaddleOCR-VL-1.6 runtime
 
 # Deep Learning (torch/torchvision not included, install GPU version separately)
 # torch        # Please use the command above to install GPU version

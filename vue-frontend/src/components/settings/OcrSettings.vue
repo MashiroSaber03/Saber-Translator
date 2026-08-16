@@ -10,21 +10,6 @@
           @change="handleOcrEngineChange"
         />
       </UiField>
-      <UiField
-        v-show="settings.ocrEngine === 'paddle_ocr'"
-        variant="settings"
-        label="源语言"
-        control-id="settingsSourceLanguage"
-        hint="PaddleOCR 会根据源语言加载对应的识别模型"
-      >
-        <UiCombobox
-          input-id="settingsSourceLanguage"
-          aria-label="源语言"
-          :model-value="settings.sourceLanguage"
-          :groups="sourceLanguageGroups"
-          @change="handleSourceLanguageSelect"
-        />
-      </UiField>
     </ProductFormSection>
     <ProductFormSection>
       <template #title>混合OCR设置</template>
@@ -69,12 +54,12 @@
       </UiFormGrid>
     </ProductFormSection>
     <ProductFormSection v-show="settings.ocrEngine === 'paddleocr_vl'">
-      <template #title>PaddleOCR-VL 设置</template>
+      <template #title>PaddleOCR-VL 1.6 设置</template>
       <UiField
         variant="settings"
         label="源语言"
         control-id="settingsPaddleOcrVlSourceLanguage"
-        hint="选择图像中的源语言，用于优化 OCR 识别效果"
+        hint="根据所选语言生成 PaddleOCR-VL 识别提示词"
       >
         <UiCombobox
           input-id="settingsPaddleOcrVlSourceLanguage"
@@ -222,14 +207,15 @@
           variant="settings"
           label="源语言"
           control-id="settingsAiVisionPaddleOcrVlSourceLanguage"
+          hint="切换后会按所选语言重新生成 OCR 模型提示词"
         >
           <UiCombobox
             class="ocr-settings__prompt-language-combobox"
             input-id="settingsAiVisionPaddleOcrVlSourceLanguage"
             aria-label="AI 视觉 OCR 专用模型源语言"
-            :model-value="paddleOcrVlSourceLang"
+            :model-value="settings.paddleOcrVl.sourceLanguage"
             :groups="paddleOcrVlSourceLanguageGroups"
-            @change="handlePaddleOcrVlLangChange"
+            @change="handlePaddleOcrVlSourceLanguageChange"
           />
         </UiField>
       </UiField>
@@ -343,9 +329,8 @@ import {
 } from '@/api/v2/diagnostics'
 import { useToast } from '@/utils/toast'
 import {
-  getPaddleOcrVlPrompt,
   inferPaddleOcrVlPromptLanguage,
-  PADDLEOCR_VL_LANG_MAP,
+  isPaddleOcrVlLanguage,
 } from '@/constants'
 import type { OcrEngine } from '@/types/settings'
 import UiCombobox from '@/components/ui/UiCombobox.vue'
@@ -362,7 +347,6 @@ import {
   baiduVersionOptions,
   paddleOcrVlSourceLanguageGroups,
   promptModeOptions,
-  sourceLanguageGroups,
 } from './ocrSettingsOptions'
 import {
   useAiModelDiscovery,
@@ -430,9 +414,6 @@ function handleOcrEngineChange(value: UiSelectValue) {
     settingsStore.setOcrEngine(value)
   }
 }
-function handleSourceLanguageSelect(value: UiSelectValue) {
-  if (typeof value === 'string') settingsStore.setSourceLanguage(value)
-}
 function handleHybridOcrEnabledChange(value: boolean) {
   settingsStore.updateHybridOcr({ enabled: value })
 }
@@ -445,7 +426,8 @@ function handleHybridThresholdChange(value: number | null) {
   settingsStore.updateHybridOcr({ confidenceThreshold: value })
 }
 function handlePaddleOcrVlSourceLanguageChange(value: UiSelectValue) {
-  if (typeof value === 'string') settingsStore.updatePaddleOcrVl({ sourceLanguage: value })
+  if (!isPaddleOcrVlLanguage(value)) return
+  settingsStore.updatePaddleOcrVl({ sourceLanguage: value })
 }
 function updateBaiduString(field: 'apiKey' | 'secretKey', value: string): void {
   settingsStore.updateBaiduOcr({ [field]: value })
@@ -486,10 +468,6 @@ function handleAiVisionProviderChange(providerValue: UiSelectValue) {
   if (!providerSupportsCapability(newProvider, 'visionOcr')) return
   aiVisionModelDiscovery.invalidate()
   settingsStore.setAiVisionOcrProvider(newProvider)
-  paddleOcrVlSourceLang.value = inferPaddleOcrVlPromptLanguage(
-    settingsStore.settings.aiVisionOcr.prompt,
-    paddleOcrVlSourceLang.value
-  )
 }
 const currentPromptMode = computed(() => {
   return settingsStore.settings.aiVisionOcr.promptMode
@@ -507,22 +485,6 @@ function getPromptModeHint(): string {
 function handlePromptModeChange(mode: UiSelectValue) {
   if (mode !== 'normal' && mode !== 'json' && mode !== 'paddleocr_vl') return
   settingsStore.setAiVisionOcrPromptMode(mode)
-  if (mode === 'paddleocr_vl') {
-    const langName = PADDLEOCR_VL_LANG_MAP[paddleOcrVlSourceLang.value]
-    if (!langName) return
-    settingsStore.updateAiVisionOcr({ prompt: getPaddleOcrVlPrompt(langName) })
-  }
-}
-const paddleOcrVlSourceLang = ref(
-  inferPaddleOcrVlPromptLanguage(settingsStore.settings.aiVisionOcr.prompt),
-)
-function handlePaddleOcrVlLangChange(langCode: UiSelectValue) {
-  if (typeof langCode !== 'string') return
-  const langName = PADDLEOCR_VL_LANG_MAP[langCode]
-  if (!langName) return
-  paddleOcrVlSourceLang.value = langCode
-  const newPrompt = getPaddleOcrVlPrompt(langName)
-  settingsStore.updateAiVisionOcr({ prompt: newPrompt })
 }
 async function testBaiduOcr() {
   const apiKey = settings.value.baiduOcr.apiKey?.trim()
@@ -598,10 +560,11 @@ const fetchAiVisionModels = aiVisionModelDiscovery.fetchModels
 function handleAiVisionPromptSelect(content: string, name: string) {
   settingsStore.updateAiVisionOcr({ prompt: content })
   if (currentPromptMode.value === 'paddleocr_vl') {
-    paddleOcrVlSourceLang.value = inferPaddleOcrVlPromptLanguage(
-      content,
-      paddleOcrVlSourceLang.value
-    )
+    const currentLanguage = settings.value.paddleOcrVl.sourceLanguage
+    const inferredLanguage = inferPaddleOcrVlPromptLanguage(content, currentLanguage)
+    if (inferredLanguage !== currentLanguage) {
+      settingsStore.updatePaddleOcrVl({ sourceLanguage: inferredLanguage })
+    }
   }
   toast.success(`已应用提示词: ${name}`)
 }
@@ -618,11 +581,12 @@ function handleAiVisionPromptSelect(content: string, name: string) {
   margin-top: 10px;
   padding: 10px 12px;
   background: var(--color-surface-subtle);
-  border-radius: 6px;
   border: 1px solid var(--color-border-muted);
+  border-radius: 6px;
 }
 
 .ocr-settings__prompt-language-combobox {
   min-width: 150px;
 }
+
 </style>

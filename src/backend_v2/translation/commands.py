@@ -36,6 +36,7 @@ from src.shared.ai_providers import (
     VISION_OCR_CAPABILITY,
     get_provider_manifest,
 )
+from src.shared.paddleocr_vl import PADDLEOCR_VL_LANGUAGE_NAMES
 
 
 ALLOWED_MODES = frozenset({"standard", "hq", "proofread", "remove_text"})
@@ -785,13 +786,14 @@ def _validate_ocr_section(value: object) -> None:
         raise ValueError("OCR 引擎无效")
     base_fields = {
         "ocr_engine",
-        "source_language",
         "enable_hybrid_ocr",
         "secondary_ocr_engine",
         "hybrid_ocr_threshold",
     }
     expected_fields = set(base_fields)
-    if engine == "baidu_ocr":
+    if engine == "paddleocr_vl":
+        expected_fields.add("paddleocr_vl_source_language")
+    elif engine == "baidu_ocr":
         expected_fields.update(
             {"baidu_version", "baidu_ocr_language", "credentialVersionId"}
         )
@@ -811,8 +813,13 @@ def _validate_ocr_section(value: object) -> None:
             expected_fields.add("credentialVersionId")
     if set(section) != expected_fields:
         raise ValueError("OCR 配置字段无效")
-    if not isinstance(section["source_language"], str) or not section["source_language"]:
-        raise ValueError("OCR 源语言无效")
+    if engine == "paddleocr_vl":
+        source_language = section["paddleocr_vl_source_language"]
+        if (
+            not isinstance(source_language, str)
+            or source_language not in PADDLEOCR_VL_LANGUAGE_NAMES
+        ):
+            raise ValueError("PaddleOCR-VL 源语言无效")
     if not isinstance(section["enable_hybrid_ocr"], bool):
         raise ValueError("混合 OCR 开关必须是布尔值")
     if (

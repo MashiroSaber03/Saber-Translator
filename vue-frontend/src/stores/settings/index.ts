@@ -56,7 +56,6 @@ const CACHE_BY_PROVIDER_DOMAIN = Object.fromEntries(
 
 const CHAPTER_WORK_STATE_KEYS = [
   'ocrEngine',
-  'sourceLanguage',
   'textDetector',
   'minTextBlockAreaPercent',
   'enableAuxYoloDetection',
@@ -839,9 +838,7 @@ export const useSettingsStore = defineStore('settings', () => {
     effectiveTheme,
 
     ocrEngine: ocrModule.ocrEngine,
-    sourceLanguage: ocrModule.sourceLanguage,
     setOcrEngine: ocrModule.setOcrEngine,
-    setSourceLanguage: ocrModule.setSourceLanguage,
     updateBaiduOcr: ocrModule.updateBaiduOcr,
     updatePaddleOcrVl: ocrModule.updatePaddleOcrVl,
     updateAiVisionOcr: ocrModule.updateAiVisionOcr,

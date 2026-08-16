@@ -644,7 +644,7 @@ class ProviderRegistryContractTests(unittest.TestCase):
     def test_ai_vision_json_mode_does_not_override_custom_prompt(self) -> None:
         from src.core.ocr import recognize_ocr_results_in_bubbles
 
-        custom_prompt = "对图中的日语进行OCR:"
+        custom_prompt = "保留用户自定义 OCR 提示词"
         with mock.patch(
             "src.core.ocr.call_ai_vision_ocr_service",
             return_value='{"extracted_text":"测试"}',
@@ -653,7 +653,6 @@ class ProviderRegistryContractTests(unittest.TestCase):
                 Image.new("RGB", (16, 16), color="white"),
                 [(0, 0, 16, 16)],
                 ocr_engine="ai_vision",
-                source_language="japanese",
                 ai_vision_provider="custom",
                 ai_vision_api_key="vision-key",
                 ai_vision_model_name="vision-model",
@@ -678,7 +677,6 @@ class ProviderRegistryContractTests(unittest.TestCase):
                 Image.new("RGB", (16, 16), color="white"),
                 [(0, 0, 16, 16)],
                 ocr_engine="ai_vision",
-                source_language="japanese",
                 ai_vision_provider="custom",
                 ai_vision_api_key="vision-key",
                 ai_vision_model_name="vision-model",
@@ -692,6 +690,31 @@ class ProviderRegistryContractTests(unittest.TestCase):
 
         prompt = vision_mock.call_args.kwargs["prompt"]
         self.assertIn('"extracted_text"', prompt)
+
+    def test_ai_vision_empty_paddle_prompt_uses_language_aware_default(self) -> None:
+        from src.core.ocr import recognize_ocr_results_in_bubbles
+        from src.shared.paddleocr_vl import build_paddleocr_vl_prompt
+
+        with mock.patch(
+            "src.core.ocr.call_ai_vision_ocr_service",
+            return_value="测试",
+        ) as vision_mock:
+            recognize_ocr_results_in_bubbles(
+                Image.new("RGB", (16, 16), color="white"),
+                [(0, 0, 16, 16)],
+                ocr_engine="ai_vision",
+                ai_vision_provider="custom",
+                ai_vision_api_key="vision-key",
+                ai_vision_model_name="vision-model",
+                ai_vision_ocr_prompt="",
+                ai_vision_prompt_mode="paddleocr_vl",
+                custom_ai_vision_base_url="https://example.com/v1",
+            )
+
+        self.assertEqual(
+            vision_mock.call_args.kwargs["prompt"],
+            build_paddleocr_vl_prompt("japanese"),
+        )
 
     def test_ai_vision_retries_empty_results_when_max_retries_configured(self) -> None:
         from src.interfaces.vision_interface import call_ai_vision_ocr_service
@@ -876,16 +899,17 @@ class ProviderRegistryContractTests(unittest.TestCase):
 
     def test_ai_vision_service_accepts_current_paddleocr_vl_prompt_mode(self) -> None:
         from src.interfaces.vision_interface import call_ai_vision_ocr_service
+        from src.shared.paddleocr_vl import build_paddleocr_vl_prompt
 
         with mock.patch(
             "src.interfaces.vision_interface._transport.complete_vision",
             return_value="测试",
-        ):
+        ), Image.new("RGB", (12, 12), color="white") as image:
             content = call_ai_vision_ocr_service(
-                Image.new("RGB", (12, 12), color="white"),
+                image,
                 provider="ollama",
                 model_name="vision-model",
-                prompt="对图中的日语进行OCR:",
+                prompt=build_paddleocr_vl_prompt("japanese"),
                 prompt_mode="paddleocr_vl",
             )
 

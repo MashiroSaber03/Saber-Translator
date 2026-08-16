@@ -82,6 +82,7 @@ def test_paddleocr_vl_strict_mode_propagates_per_bubble_failure() -> None:
             handler.recognize_text(
                 image,
                 [(0, 0, 16, 16)],
+                "japanese",
             )
     finally:
         image.close()

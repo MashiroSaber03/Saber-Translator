@@ -11,7 +11,9 @@ import type {
 import type { ProviderConfigsCache, AiVisionOcrProviderConfig } from '../types'
 import {
   DEFAULT_AI_VISION_OCR_PROMPT,
-  DEFAULT_AI_VISION_OCR_JSON_PROMPT
+  DEFAULT_AI_VISION_OCR_JSON_PROMPT,
+  getPaddleOcrVlPrompt,
+  inferPaddleOcrVlPromptLanguage,
 } from '@/constants'
 import { applyHybridOcrRules } from '@/utils/hybridOcr'
 import {
@@ -36,7 +38,6 @@ export function useOcrSettings(
   type AiVisionOcrUiUpdates = Partial<Omit<AiVisionOcrSettings, 'provider'>>
     & OpenAiOptionsPatch
   const ocrEngine = computed(() => settings.value.ocrEngine)
-  const sourceLanguage = computed(() => settings.value.sourceLanguage)
   const defaultAiVisionOcr = createDefaultSettings().aiVisionOcr
 
   function setOcrEngine(engine: OcrEngine): void {
@@ -45,16 +46,21 @@ export function useOcrSettings(
     settings.value.hybridOcr = normalized.hybrid
   }
 
-  function setSourceLanguage(language: string): void {
-    settings.value.sourceLanguage = language
-  }
-
   function updateBaiduOcr(updates: Partial<BaiduOcrSettings>): void {
     Object.assign(settings.value.baiduOcr, updates)
   }
 
   function updatePaddleOcrVl(updates: Partial<PaddleOcrVlSettings>): void {
+    const previousLanguage = settings.value.paddleOcrVl.sourceLanguage
     Object.assign(settings.value.paddleOcrVl, updates)
+    if (
+      settings.value.paddleOcrVl.sourceLanguage !== previousLanguage
+      && settings.value.aiVisionOcr.promptMode === 'paddleocr_vl'
+    ) {
+      settings.value.aiVisionOcr.prompt = getPaddleOcrVlPrompt(
+        settings.value.paddleOcrVl.sourceLanguage,
+      )
+    }
   }
 
   function updateAiVisionOcr(updates: AiVisionOcrUiUpdates): void {
@@ -92,6 +98,13 @@ export function useOcrSettings(
 
     restoreAiVisionOcrProviderConfig(provider)
 
+    if (settings.value.aiVisionOcr.promptMode === 'paddleocr_vl') {
+      settings.value.paddleOcrVl.sourceLanguage = inferPaddleOcrVlPromptLanguage(
+        settings.value.aiVisionOcr.prompt,
+        settings.value.paddleOcrVl.sourceLanguage,
+      )
+    }
+
   }
 
   function setAiVisionOcrPromptMode(mode: AiVisionOcrSettings['promptMode']): void {
@@ -102,6 +115,10 @@ export function useOcrSettings(
       settings.value.aiVisionOcr.prompt = DEFAULT_AI_VISION_OCR_JSON_PROMPT
     } else if (mode === 'normal') {
       settings.value.aiVisionOcr.prompt = DEFAULT_AI_VISION_OCR_PROMPT
+    } else {
+      settings.value.aiVisionOcr.prompt = getPaddleOcrVlPrompt(
+        settings.value.paddleOcrVl.sourceLanguage,
+      )
     }
 
   }
@@ -147,9 +164,7 @@ export function useOcrSettings(
 
   return {
     ocrEngine,
-    sourceLanguage,
     setOcrEngine,
-    setSourceLanguage,
     updateBaiduOcr,
     updatePaddleOcrVl,
     updateAiVisionOcr,

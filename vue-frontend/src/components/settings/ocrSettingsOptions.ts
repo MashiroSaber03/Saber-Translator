@@ -2,8 +2,8 @@ import { getProviderOptionsForCapability } from '@/config/aiProviders'
 
 export const allOcrEngineOptions = [
   { label: 'MangaOCR (日语专用)', value: 'manga_ocr' },
-  { label: 'PaddleOCR (多语言)', value: 'paddle_ocr' },
-  { label: 'PaddleOCR-VL', value: 'paddleocr_vl' },
+  { label: 'PaddleOCR PP-OCRv6 Medium (多语言)', value: 'paddle_ocr' },
+  { label: 'PaddleOCR-VL 1.6', value: 'paddleocr_vl' },
   { label: '百度OCR', value: 'baidu_ocr' },
   { label: '48px OCR', value: '48px_ocr' },
   { label: 'AI视觉OCR', value: 'ai_vision' }
@@ -76,33 +76,4 @@ export const promptModeOptions = [
   { label: '普通提示词', value: 'normal' },
   { label: 'JSON提示词', value: 'json' },
   { label: 'OCR模型提示词', value: 'paddleocr_vl' }
-]
-
-export const sourceLanguageGroups = [
-  {
-    label: '常用语言',
-    options: [
-      { label: '日语', value: 'japanese' },
-      { label: '英语', value: 'en' },
-      { label: '简体中文', value: 'chinese' },
-      { label: '繁体中文', value: 'chinese_cht' },
-      { label: '韩语', value: 'korean' }
-    ]
-  },
-  {
-    label: '拉丁语系',
-    options: [
-      { label: '法语', value: 'french' },
-      { label: '德语', value: 'german' },
-      { label: '西班牙语', value: 'spanish' },
-      { label: '意大利语', value: 'italian' },
-      { label: '葡萄牙语', value: 'portuguese' }
-    ]
-  },
-  {
-    label: '其他语系',
-    options: [
-      { label: '俄语', value: 'russian' }
-    ]
-  }
 ]

@@ -232,8 +232,6 @@ def test_model_release_includes_loaded_paddle_onnx_sessions(monkeypatch) -> None
 
     handler = paddle_ocr_onnx_interface.PaddleOCRHandlerONNX()
     handler.ocr = object()
-    handler.current_lang = "japanese"
-    handler.current_model_dir = "chinese"
     handler.initialized = True
     monkeypatch.setattr(
         paddle_ocr_onnx_interface,
@@ -246,8 +244,6 @@ def test_model_release_includes_loaded_paddle_onnx_sessions(monkeypatch) -> None
     assert "paddle_ocr" in result["released"]
     assert paddle_ocr_onnx_interface._paddle_ocr_onnx_handler is None
     assert handler.ocr is None
-    assert handler.current_lang is None
-    assert handler.current_model_dir is None
     assert handler.initialized is False
 
 

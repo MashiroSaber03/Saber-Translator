@@ -292,13 +292,13 @@ describe('settings provider select contracts', () => {
       fields.find(field => field.props('controlId') === controlId)
 
     expect(fieldByControlId('settingsOcrEngine')?.props('label')).toBe('OCR引擎')
-    expect(fieldByControlId('settingsSourceLanguage')?.props('label')).toBe('源语言')
-    expect(fieldByControlId('settingsSourceLanguage')?.props('hint')).toContain('识别')
+    expect(fieldByControlId('settingsSourceLanguage')).toBeUndefined()
     expect(fieldByControlId('settingsHybridOcrEnabled')?.props('label')).toBe('启用混合OCR')
     expect(fieldByControlId('settingsHybridOcrEnabled')?.props('hint')).toContain('textline')
     expect(fieldByControlId('settingsHybridSecondaryOcr')?.props('label')).toBe('备用OCR')
     expect(fieldByControlId('settingsHybridThreshold')?.props('label')).toBe('混合阈值')
-    expect(fieldByControlId('settingsPaddleOcrVlSourceLanguage')?.props('hint')).toBe('选择图像中的源语言，用于优化 OCR 识别效果')
+    expect(fieldByControlId('settingsPaddleOcrVlSourceLanguage')?.props('hint'))
+      .toContain('生成 PaddleOCR-VL 识别提示词')
     expect(fieldByControlId('settingsBaiduApiKey')?.props('label')).toBe('API Key')
     expect(fieldByControlId('settingsBaiduSecretKey')?.props('label')).toBe('Secret Key')
     expect(fieldByControlId('settingsBaiduVersion')?.props('label')).toBe('识别版本')
@@ -309,6 +309,8 @@ describe('settings provider select contracts', () => {
     expect(fieldByControlId('settingsAiVisionModelName')?.props('label')).toBe('模型名称')
     expect(fieldByControlId('settingsAiVisionOcrPrompt')?.props('label')).toBe('OCR提示词')
     expect(fieldByControlId('settingsAiVisionPaddleOcrVlSourceLanguage')?.props('label')).toBe('源语言')
+    expect(fieldByControlId('settingsAiVisionPaddleOcrVlSourceLanguage')?.props('hint'))
+      .toContain('重新生成 OCR 模型提示词')
     expect(fieldByControlId('settingsRpmAiVisionOcr')?.props('hint')).toBe('0 表示无限制')
     expect(fieldByControlId('settingsAiVisionUseStream')?.props('hint')).toBe('使用流式请求并在终端输出流式日志')
     expect(fieldByControlId('settingsMinImageSize')?.props('hint')).toContain('VLM模型通常要求图片尺寸')
@@ -469,11 +471,12 @@ describe('settings provider select contracts', () => {
     expect(ocrSettings).not.toMatch(/<UiButton variant="secondary" block @click="testAiVisionOcr"/)
   })
 
-  it('routes OCR source language updates through the settings store action', () => {
+  it('removes the obsolete PP-OCR language control but routes PaddleOCR-VL through the store', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/components/settings/OcrSettings.vue'), 'utf8')
 
-    expect(source).toContain('settingsStore.setSourceLanguage')
-    expect(source).not.toContain('settings.value.sourceLanguage =')
+    expect(source).not.toContain('setSourceLanguage')
+    expect(source).not.toContain('settingsSourceLanguage')
+    expect(source).toContain('settingsStore.updatePaddleOcrVl')
   })
 
   it('uses primary model-fetch emphasis in settings pages without changing embedded model pickers', () => {
