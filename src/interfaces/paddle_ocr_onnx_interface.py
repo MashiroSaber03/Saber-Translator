@@ -29,6 +29,7 @@ class PaddleOCRHandlerONNX:
 
     MODEL_VERSION = constants.PADDLE_OCR_VERSION
     MODEL_TIER = constants.PADDLE_OCR_MODEL_TIER
+    CUDA_EXECUTION_PROVIDER = "CUDAExecutionProvider"
 
     def __init__(self) -> None:
         self.model_base_dir = resource_path(constants.PADDLE_OCR_MODEL_DIR)
@@ -56,6 +57,29 @@ class PaddleOCRHandlerONNX:
         if not os.path.isfile(dict_path):
             missing.append(f"识别字典: {dict_path}")
         return not missing, missing
+
+    @classmethod
+    def _cuda_execution_provider_available(cls) -> bool:
+        import onnxruntime as ort
+
+        if cls.CUDA_EXECUTION_PROVIDER not in ort.get_available_providers():
+            return False
+
+        import torch
+
+        if not torch.cuda.is_available():
+            return False
+
+        preload_dlls = getattr(ort, "preload_dlls", None)
+        if callable(preload_dlls):
+            try:
+                preload_dlls()
+            except Exception as error:
+                if is_memory_allocation_error(error):
+                    raise
+                logger.warning("CUDA 运行库预加载失败，PP-OCRv6 将使用 CPU: %s", error)
+                return False
+        return True
 
     def initialize(self) -> bool:
         try:
@@ -88,17 +112,20 @@ class PaddleOCRHandlerONNX:
                 OCRVersion,
                 RapidOCR,
             )
+            use_cuda = self._cuda_execution_provider_available()
 
             logger.info(
-                "初始化 %s %s ONNX 模型",
+                "初始化 %s %s ONNX 模型 (%s)",
                 self.MODEL_VERSION,
                 self.MODEL_TIER,
+                "CUDA" if use_cuda else "CPU",
             )
             self.ocr = RapidOCR(
                 params={
                     "Global.use_cls": False,
                     "EngineConfig.onnxruntime.intra_op_num_threads": 1,
                     "EngineConfig.onnxruntime.inter_op_num_threads": 1,
+                    "EngineConfig.onnxruntime.use_cuda": use_cuda,
                     "Det.engine_type": EngineType.ONNXRUNTIME,
                     "Det.lang_type": LangDet.CH,
                     "Det.model_type": ModelType.MEDIUM,
@@ -117,7 +144,7 @@ class PaddleOCRHandlerONNX:
             return True
         except ImportError as error:
             logger.error("rapidocr 3.x 或 onnxruntime 未安装: %s", error)
-            logger.error("请执行: pip install rapidocr==3.9.2 onnxruntime")
+            logger.error("请安装 requirements-cpu.txt 或 requirements-gpu.txt 中的依赖")
             return False
         except Exception as error:
             logger.error("Paddle OCR 初始化失败: %s", error, exc_info=True)

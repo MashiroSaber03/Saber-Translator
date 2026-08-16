@@ -9,8 +9,11 @@
 #    pip uninstall -y torch torchvision
 # 3. Then install GPU version of PyTorch separately:
 #    pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cu130
-# 4. Verify:
-#    python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())"
+# 4. Reinstall the GPU runtime last. Some dependencies also declare the CPU
+#    package because both distributions expose the same onnxruntime module:
+#    pip install --force-reinstall --no-deps "onnxruntime-gpu>=1.27,<2"
+# 5. Verify:
+#    python -c "import torch, onnxruntime as ort; ort.preload_dlls(); print(torch.cuda.is_available(), ort.get_available_providers())"
 # ============================================
 
 # Flask related
@@ -44,7 +47,7 @@ reportlab
 openai
 manga-ocr
 rapidocr==3.9.2  # PP-OCRv6 ONNX runtime wrapper
-onnxruntime>=1.20,<2
+onnxruntime-gpu>=1.27,<2  # CUDA 13 ONNX runtime; also includes CPU fallback
 sentencepiece  # for PaddleOCR-VL
 transformers==5.15.0  # native PaddleOCR-VL-1.6 runtime
 

@@ -185,6 +185,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r ${{ matrix.requirements }}
           pip install torch==2.11.0 torchvision==0.26.0 --index-url https://download.pytorch.org/whl/cu130
+          pip install --force-reinstall --no-deps "onnxruntime-gpu>=1.27,<2"
 
       # --------------------------------------------------
       # 7. 构建并校验 v2 Web 前端

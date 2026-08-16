@@ -133,7 +133,21 @@ def test_ppocrv6_uses_one_fixed_multilingual_model_set() -> None:
     assert dict_path == os.path.join("model-root", "ppocrv6_dict.txt")
 
 
-def test_ppocrv6_scopes_thread_limits_to_onnx_runtime(tmp_path, monkeypatch) -> None:
+@pytest.mark.parametrize(
+    ("providers", "torch_cuda_available", "expected_use_cuda"),
+    [
+        (["CUDAExecutionProvider", "CPUExecutionProvider"], True, True),
+        (["CUDAExecutionProvider", "CPUExecutionProvider"], False, False),
+        (["CPUExecutionProvider"], True, False),
+    ],
+)
+def test_ppocrv6_auto_selects_cuda_and_scopes_thread_limits(
+    tmp_path,
+    monkeypatch,
+    providers,
+    torch_cuda_available,
+    expected_use_cuda,
+) -> None:
     for filename in ("det.onnx", "rec.onnx", "ppocrv6_dict.txt"):
         (tmp_path / filename).write_bytes(b"fixture")
 
@@ -146,7 +160,19 @@ def test_ppocrv6_scopes_thread_limits_to_onnx_runtime(tmp_path, monkeypatch) -> 
         OCRVersion=SimpleNamespace(PPOCRV6="PP-OCRv6"),
         RapidOCR=rapidocr_factory,
     )
+    preload_dlls = mock.Mock()
+    fake_onnxruntime = SimpleNamespace(
+        preload_dlls=preload_dlls,
+        get_available_providers=mock.Mock(return_value=providers),
+    )
+    fake_torch = SimpleNamespace(
+        cuda=SimpleNamespace(
+            is_available=mock.Mock(return_value=torch_cuda_available),
+        )
+    )
     monkeypatch.setitem(sys.modules, "rapidocr", fake_rapidocr)
+    monkeypatch.setitem(sys.modules, "onnxruntime", fake_onnxruntime)
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
     handler = PaddleOCRHandlerONNX()
     handler.model_base_dir = str(tmp_path)
 
@@ -155,6 +181,11 @@ def test_ppocrv6_scopes_thread_limits_to_onnx_runtime(tmp_path, monkeypatch) -> 
     params = rapidocr_factory.call_args.kwargs["params"]
     assert params["EngineConfig.onnxruntime.intra_op_num_threads"] == 1
     assert params["EngineConfig.onnxruntime.inter_op_num_threads"] == 1
+    assert params["EngineConfig.onnxruntime.use_cuda"] is expected_use_cuda
+    if expected_use_cuda:
+        preload_dlls.assert_called_once_with()
+    else:
+        preload_dlls.assert_not_called()
 
 
 class _FakeInputs(dict):
