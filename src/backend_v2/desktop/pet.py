@@ -281,7 +281,6 @@ class PetWindow(QWidget):
 
     def paintEvent(self, _event: Any) -> None:
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         frame = self._current_frame()
         painter.drawImage(self.rect(), frame)
 
@@ -420,7 +419,7 @@ class PetWindow(QWidget):
         rendered = source.scaled(
             self.size(),
             Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
+            Qt.TransformationMode.FastTransformation,
         )
         self._frame_cache[key] = rendered
         return rendered

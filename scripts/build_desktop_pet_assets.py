@@ -10,15 +10,14 @@ from typing import Any
 
 import cv2
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFont
 
 
 CELL_WIDTH = 192
 CELL_HEIGHT = 208
 COLUMNS = 8
-KEY_COLOR = np.array([0, 255, 0], dtype=np.float32)
-TRANSPARENT_THRESHOLD = 30.0
-OPAQUE_THRESHOLD = 105.0
+GREEN_MINIMUM = 64
+GREEN_DOMINANCE = 12
 SUBJECT_ALPHA_THRESHOLD = 180
 GENERATED_STATES = (
     "idle",
@@ -37,41 +36,26 @@ GENERATED_STATES = (
 EXPECTED_STATES = (*GENERATED_STATES, "drag_left")
 
 
-def _smoothstep(values: np.ndarray) -> np.ndarray:
-    values = np.clip(values, 0.0, 1.0)
-    return values * values * (3.0 - 2.0 * values)
-
-
 def remove_chroma(image: Image.Image) -> Image.Image:
-    """Remove the generated flat green background with a soft, despilled matte."""
+    """Remove the green key while preserving hard pixel-art edges."""
 
     rgba = np.asarray(image.convert("RGBA"), dtype=np.uint8).copy()
-    rgb = rgba[:, :, :3].astype(np.float32)
-    distance = np.max(np.abs(rgb - KEY_COLOR), axis=2)
-    non_green = np.maximum(rgb[:, :, 0], rgb[:, :, 2])
-    dominance = rgb[:, :, 1] - non_green
-    key_like = (distance <= 32.0) | (dominance >= 16.0)
-
-    ratio = (distance - TRANSPARENT_THRESHOLD) / (
-        OPAQUE_THRESHOLD - TRANSPARENT_THRESHOLD
+    rgb = rgba[:, :, :3].astype(np.int16)
+    strongest_non_green = np.maximum(rgb[:, :, 0], rgb[:, :, 2])
+    green_dominance = rgb[:, :, 1] - strongest_non_green
+    key_like = (rgb[:, :, 1] >= GREEN_MINIMUM) & (
+        green_dominance >= GREEN_DOMINANCE
     )
-    distance_alpha = 255.0 * _smoothstep(ratio)
-    denominator = np.maximum(1.0, 255.0 - non_green)
-    dominance_alpha = 255.0 * (1.0 - np.clip(dominance / denominator, 0.0, 1.0))
-    matte = np.where(key_like, np.minimum(distance_alpha, dominance_alpha), 255.0)
-    matte *= rgba[:, :, 3].astype(np.float32) / 255.0
-    matte[matte <= 8.0] = 0.0
 
-    partial = key_like & (matte < 252.0) & (matte > 0.0)
-    green_cap = np.maximum(rgb[:, :, 0], rgb[:, :, 2]) - 1.0
-    rgb[:, :, 1] = np.where(partial, np.minimum(rgb[:, :, 1], green_cap), rgb[:, :, 1])
-    rgba[:, :, :3] = np.clip(rgb, 0.0, 255.0).astype(np.uint8)
-    rgba[:, :, 3] = np.clip(matte, 0.0, 255.0).astype(np.uint8)
-
-    output = Image.fromarray(rgba, mode="RGBA")
-    alpha = output.getchannel("A").filter(ImageFilter.GaussianBlur(radius=0.65))
-    output.putalpha(alpha)
-    return output
+    rgba[key_like] = 0
+    foreground = ~key_like
+    rgba[:, :, 1] = np.where(
+        foreground & (rgb[:, :, 1] > strongest_non_green),
+        strongest_non_green,
+        rgb[:, :, 1],
+    ).astype(np.uint8)
+    rgba[:, :, 3] = np.where(rgba[:, :, 3] > 0, 255, 0).astype(np.uint8)
+    return Image.fromarray(rgba, mode="RGBA")
 
 
 def _extract_subjects(strip: Image.Image) -> list[Image.Image]:
@@ -146,7 +130,7 @@ def _normalize_row(frames: list[Image.Image]) -> list[Image.Image]:
                 max(1, round(sprite.width * scale)),
                 max(1, round(sprite.height * scale)),
             ),
-            Image.Resampling.LANCZOS,
+            Image.Resampling.NEAREST,
         )
         cell = Image.new("RGBA", (CELL_WIDTH, CELL_HEIGHT), (0, 0, 0, 0))
         left = (CELL_WIDTH - sprite.width) // 2
@@ -234,7 +218,7 @@ def _write_contact_sheet(
         draw.rectangle((0, y, sheet.width, y + label_height - 1), fill="#3f3038")
         draw.text((7, y + 5), str(row["state"]), fill="#ffffff", font=font)
         for column, frame in enumerate(frames[str(row["state"])]):
-            preview = frame.resize((cell_width, cell_height), Image.Resampling.LANCZOS)
+            preview = frame.resize((cell_width, cell_height), Image.Resampling.NEAREST)
             background = _checker((cell_width, cell_height))
             background.paste(preview, (0, 0), preview)
             x = column * cell_width
