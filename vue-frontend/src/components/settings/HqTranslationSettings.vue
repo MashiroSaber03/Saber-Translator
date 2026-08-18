@@ -76,7 +76,6 @@
             input-id="settingsHqBatchSize"
             :model-value="hqSettings.batchSize"
             :min="1"
-            :max="10"
             :step="1"
             @update:model-value="updateHqNumber('batchSize', $event)"
           />

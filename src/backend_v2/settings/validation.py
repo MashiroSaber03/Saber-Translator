@@ -368,7 +368,7 @@ def _validate_proofreading_rounds(payload: Mapping[str, object]) -> None:
             if not isinstance(round_config[key], str):
                 raise ValueError(f"{path}.{key} must be a string")
         _validate_openai_options(round_config["openaiOptions"], f"{path}.openaiOptions")
-        _integer(round_config["batchSize"], f"{path}.batchSize", minimum=1, maximum=10)
+        _integer(round_config["batchSize"], f"{path}.batchSize", minimum=1)
 
 
 def _validate_translation(payload: dict[str, Any], schema_version: int) -> None:
@@ -504,7 +504,6 @@ def _validate_translation(payload: dict[str, Any], schema_version: int) -> None:
         payload["hqTranslation"]["batchSize"],
         "translation.hqTranslation.batchSize",
         minimum=1,
-        maximum=10,
     )
 
 
@@ -833,7 +832,6 @@ def validate_provider_setting_payload(
                 value,
                 f"provider_settings.{domain}.{key}",
                 minimum=1,
-                maximum=10,
             )
         elif key == "rpmLimit":
             _integer(

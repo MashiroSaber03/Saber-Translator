@@ -1754,7 +1754,7 @@ PDF/MOBI/AZW/AZW3/CBZ：
 ```
 
 - Worker 从资产存储读取图片，只在当前 batch 内持有原图。
-- batch size 保留 1–10 设置。
+- batch size 保留正整数设置，不设固定上限；界面继续提示推荐值，单批资源占用由用户选择的页数决定。
 - 请求和响应使用稳定 `page_id/bubble_id`，不再使用数组索引。
 - JSON 无法解析、页面缺失、重复 ID、未知 ID、气泡数不一致均视为失败。
 - 禁止使用请求输入或原始模型文本作为“成功结果”降级。
@@ -1765,6 +1765,7 @@ PDF/MOBI/AZW/AZW3/CBZ：
 
 - 只选择存在可校对译文的页面；无译文页标记 `skipped`。
 - 每一轮独立使用自己的 provider、model、URL、batch size、RPM、重试、JSON、流式、extra body 和 prompt。
+- 每轮 batch size 只要求为正整数，不设固定上限。
 - 不再只使用第一轮 batch size。
 - 每轮结束写入独立检查点、输入版本和输出版本。
 - 某轮失败的页面不进入后续轮次，其他页面继续。

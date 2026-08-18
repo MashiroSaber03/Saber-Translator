@@ -51,7 +51,7 @@ def _font_resource_root() -> Path:
     return Path(resource_path(_FONT_RESOURCE_DIRECTORY)).resolve()
 
 
-def _default_font_file_name() -> str:
+def _preferred_default_font_file_name() -> str:
     return Path(constants.DEFAULT_FONT_FAMILY.replace("\\", "/")).name
 
 
@@ -71,7 +71,6 @@ def discover_bundled_fonts() -> tuple[BundledFont, ...]:
     if not root.is_dir():
         raise RuntimeError(f"bundled font directory is missing: {root}")
 
-    default_file_name = _default_font_file_name()
     font_paths = sorted(
         (
             path
@@ -80,12 +79,18 @@ def discover_bundled_fonts() -> tuple[BundledFont, ...]:
         ),
         key=lambda path: path.name.casefold(),
     )
-    if not any(path.name.casefold() == default_file_name.casefold() for path in font_paths):
-        raise RuntimeError(f"bundled default font is missing: {default_file_name}")
+    if not font_paths:
+        raise RuntimeError(f"bundled font directory is empty: {root}")
+
+    preferred_name = _preferred_default_font_file_name().casefold()
+    default_path = next(
+        (path for path in font_paths if path.name.casefold() == preferred_name),
+        font_paths[0],
+    )
 
     catalog: list[BundledFont] = []
     for path in font_paths:
-        is_default = path.name.casefold() == default_file_name.casefold()
+        is_default = path == default_path
         builtin_key = "default" if is_default else f"{_RESOURCE_KEY_PREFIX}{path.name}"
         font_id = (
             DEFAULT_FONT_ID

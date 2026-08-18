@@ -1187,7 +1187,11 @@ class JobWorkerLoop:
         if isinstance(value, bool) or not isinstance(value, int):
             raise ValueError("batch size must be an integer")
         parsed = value
-        maximum = 32 if step_kind == "web_extract_page" else 10
-        if not 1 <= parsed <= maximum:
+        maximum: int | None = None
+        if step_kind == "web_extract_page":
+            maximum = 32
+        if parsed < 1 or (maximum is not None and parsed > maximum):
+            if maximum is None:
+                raise ValueError("batch size must be at least 1")
             raise ValueError(f"batch size must be between 1 and {maximum}")
         return parsed

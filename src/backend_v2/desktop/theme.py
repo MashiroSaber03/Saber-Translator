@@ -147,7 +147,6 @@ QPlainTextEdit {
     border: 1px solid #353236;
     border-radius: 10px;
     padding: 12px;
-    font-family: "Cascadia Mono", "Consolas";
     font-size: 11px;
     selection-background-color: #8E4561;
 }

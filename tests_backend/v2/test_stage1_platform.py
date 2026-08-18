@@ -16,6 +16,7 @@ from fontTools.ttLib import TTCollection, TTFont
 from sqlalchemy import event, insert, select, text, update
 
 from src.backend_v2.storage.assets import AssetStorageService
+from src.backend_v2.storage import builtin_fonts
 from src.backend_v2.storage.builtin_fonts import discover_bundled_fonts
 from src.backend_v2.storage.consistency import ConsistencyChecker
 from src.backend_v2.storage.database import (
@@ -185,6 +186,31 @@ def test_launcher_initialization_seeds_one_persistent_quick_workspace(
         assert listed_fonts[0]["displayName"] == "思源黑体"
     finally:
         engine.dispose()
+
+
+def test_bundled_font_catalog_uses_an_available_font_when_preferred_is_absent(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    font_root = tmp_path / "fonts"
+    font_root.mkdir()
+    fallback = font_root / "CustomDefault.ttf"
+    fallback.write_bytes(b"custom-font")
+    (font_root / "OtherFont.otf").write_bytes(b"other-font")
+    monkeypatch.setattr(builtin_fonts, "_font_resource_root", lambda: font_root)
+    discover_bundled_fonts.cache_clear()
+
+    try:
+        catalog = discover_bundled_fonts()
+        default_font = next(font for font in catalog if font.builtin_key == "default")
+
+        assert default_font.file_name == fallback.name
+        assert builtin_fonts.resolve_bundled_font_path("default") == str(fallback.resolve())
+        data_root = tmp_path / "data-v2"
+        data_root.mkdir()
+        assert initialize_database(data_root).created is True
+    finally:
+        discover_bundled_fonts.cache_clear()
 
 
 def test_storage_initialization_rejects_conflicting_builtin_font_metadata(
@@ -422,14 +448,20 @@ def test_provider_settings_reject_fields_owned_by_other_domains() -> None:
         )
 
 
-def test_provider_settings_use_the_same_batch_bound_as_translation_settings() -> None:
-    with pytest.raises(ValueError, match="integer from 1 to 10"):
-        validate_provider_setting_payload(
-            "hq",
-            "custom",
-            {"batchSize": 11},
-            schema_version=1,
-        )
+def test_ai_batch_provider_settings_have_no_fixed_upper_bound() -> None:
+    assert validate_provider_setting_payload(
+        "hq",
+        "custom",
+        {"batchSize": 128},
+        schema_version=1,
+    ) == {"batchSize": 128}
+
+    assert validate_provider_setting_payload(
+        "proofreading_11111111-1111-4111-8111-111111111111",
+        "custom",
+        {"batchSize": 256},
+        schema_version=1,
+    ) == {"batchSize": 256}
 
 
 def test_credentials_require_the_current_domain_provider_identity() -> None:
@@ -556,6 +588,24 @@ def test_parallel_deep_learning_concurrency_has_no_arbitrary_upper_gate() -> Non
     validated = validate_setting_payload("translation", payload, schema_version=6)
 
     assert validated["parallel"]["deepLearningLockSize"] == 8
+
+
+def test_ai_translation_batch_sizes_have_no_fixed_upper_bound() -> None:
+    payload = default_translation_settings()
+    payload["hqTranslation"]["batchSize"] = 128
+    payload["proofreading"]["rounds"] = [
+        {
+            **payload["hqTranslation"],
+            "id": "11111111-1111-4111-8111-111111111111",
+            "name": "第1轮",
+            "batchSize": 256,
+        }
+    ]
+
+    validated = validate_setting_payload("translation", payload, schema_version=6)
+
+    assert validated["hqTranslation"]["batchSize"] == 128
+    assert validated["proofreading"]["rounds"][0]["batchSize"] == 256
 
 
 def test_translation_settings_require_unique_proofreading_round_ids() -> None:

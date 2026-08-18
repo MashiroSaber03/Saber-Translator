@@ -1137,9 +1137,16 @@ describe('UI primitives architecture contracts', () => {
       },
     })
     const hiddenInput = hiddenWrapper.get('input[type="color"]')
-    expect(hiddenInput.attributes('hidden')).toBeDefined()
+    expect(hiddenInput.attributes('hidden')).toBeUndefined()
+    expect(hiddenInput.attributes('tabindex')).toBe('-1')
     expect(hiddenInput.classes()).toContain('ui-color-input--md')
-    expect(hiddenInput.classes()).not.toContain('ui-color-input--hidden')
+    expect(hiddenInput.classes()).toContain('ui-color-input--hidden')
+    const colorInputSource = readFileSync(
+      resolve(process.cwd(), 'src/components/ui/UiColorInput.vue'),
+      'utf8',
+    )
+    expect(colorInputSource).toContain('left: 50%;')
+    expect(colorInputSource).toContain('bottom: 0;')
 
     const clickSpy = vi.spyOn(hiddenInput.element, 'click').mockImplementation(() => undefined)
     ;(hiddenWrapper.vm as unknown as { click: () => void }).click()

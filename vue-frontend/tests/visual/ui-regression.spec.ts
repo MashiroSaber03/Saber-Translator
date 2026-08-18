@@ -1990,6 +1990,21 @@ test('translate edit workspace selected bubble keeps editor panel contract', asy
   expect(await page.locator('.bubble-overlay__resize-handle').count()).toBeGreaterThanOrEqual(8)
   await expect(page.locator('.bubble-editor__textarea--translated')).toBeVisible()
   await expect(page.locator('.bubble-editor')).toBeVisible()
+  const colorPicker = page.locator('.bubble-editor__toolbar-color-picker').first()
+  const colorInput = colorPicker.locator('input[type="color"]')
+  const colorPickerBounds = await colorPicker.boundingBox()
+  const colorInputBounds = await colorInput.boundingBox()
+  expect(await colorInput.getAttribute('hidden')).toBeNull()
+  expect(colorInputBounds).not.toBeNull()
+  expect(colorPickerBounds).not.toBeNull()
+  expect(colorInputBounds!.x).toBeGreaterThanOrEqual(colorPickerBounds!.x)
+  expect(colorInputBounds!.x).toBeLessThanOrEqual(
+    colorPickerBounds!.x + colorPickerBounds!.width,
+  )
+  expect(colorInputBounds!.y).toBeGreaterThanOrEqual(colorPickerBounds!.y)
+  expect(colorInputBounds!.y).toBeLessThanOrEqual(
+    colorPickerBounds!.y + colorPickerBounds!.height,
+  )
   const workspaceBackground = await workspace.evaluate(
     element => getComputedStyle(element).backgroundColor
   )
@@ -1999,6 +2014,35 @@ test('translate edit workspace selected bubble keeps editor panel contract', asy
     fullPage: true,
     animations: 'disabled',
   })
+})
+
+test('drawing a bubble persists integer image coordinates', async ({ page }) => {
+  await page.goto('/translate?book=demo-book&chapter=demo-chapter')
+  await expect(page.getByTestId('translation-result-display')).toBeVisible()
+  await page.getByRole('button', { name: '切换编辑模式' }).click()
+  await expect(page.locator('.edit-workspace')).toBeVisible()
+  await page.getByRole('button', { name: '添加' }).click()
+
+  const wrapper = page
+    .locator('.edit-image-comparison__image-panel--translated .edit-image-comparison__canvas-wrapper')
+  const bounds = await wrapper.boundingBox()
+  expect(bounds).not.toBeNull()
+  const patchRequest = page.waitForRequest(request => (
+    request.method() === 'PATCH'
+    && /\/api\/v2\/pages\/demo-page-1\/document$/.test(new URL(request.url()).pathname)
+  ))
+
+  await page.mouse.move(bounds!.x + 40.25, bounds!.y + 40.25)
+  await page.mouse.down()
+  await page.mouse.move(bounds!.x + 160.75, bounds!.y + 180.75)
+  await page.mouse.up()
+
+  const payload = (await patchRequest).postDataJSON() as {
+    mutations: Array<{ op: string; fields?: { coords?: number[] } }>
+  }
+  const coords = payload.mutations.find(mutation => mutation.op === 'create')?.fields?.coords
+  expect(coords).toHaveLength(4)
+  expect(coords?.every(Number.isInteger)).toBe(true)
 })
 
 test('translation settings modal keeps its form styling contract', async ({ page }) => {

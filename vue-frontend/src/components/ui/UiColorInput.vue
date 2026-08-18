@@ -47,11 +47,11 @@ defineExpose({ click, focus })
     ref="inputRef"
     :id="inputId"
     class="ui-color-input"
-    :class="`ui-color-input--${props.size}`"
+    :class="[`ui-color-input--${props.size}`, { 'ui-color-input--hidden': hidden }]"
     type="color"
     :value="modelValue"
     :disabled="disabled"
-    :hidden="hidden"
+    :tabindex="hidden ? -1 : undefined"
     :aria-label="ariaLabel"
     :title="title"
     @input="handleInput"
@@ -76,6 +76,18 @@ defineExpose({ click, focus })
 .ui-color-input:disabled {
   opacity: var(--ui-colorpicker-disabled-opacity, 0.5);
   cursor: not-allowed;
+}
+
+.ui-color-input--hidden {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
 }
 
 </style>

@@ -136,7 +136,6 @@
                 :input-id="roundFieldId(round.id, 'BatchSize')"
                 :model-value="round.batchSize"
                 :min="1"
-                :max="10"
                 :step="1"
                 @update:model-value="updateRoundNumber(index, 'batchSize', $event)"
               />

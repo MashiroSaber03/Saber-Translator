@@ -56,9 +56,11 @@ function parseNumber(value: unknown): number | null {
 function parseInteger(
   value: unknown,
   minimum: number,
-  maximum: number,
+  maximum?: number,
 ): number | null {
-  return Number.isInteger(value) && Number(value) >= minimum && Number(value) <= maximum
+  return Number.isInteger(value)
+    && Number(value) >= minimum
+    && (maximum === undefined || Number(value) <= maximum)
     ? Number(value)
     : null
 }
@@ -214,7 +216,7 @@ function sanitizeProofreadingRounds(value: unknown): TranslationSettings['proofr
     const modelName = parseString(round.modelName)
     const customBaseUrl = parseString(round.customBaseUrl)
     const prompt = parseString(round.prompt)
-    const batchSize = parseInteger(round.batchSize, 1, 10)
+    const batchSize = parseInteger(round.batchSize, 1)
     const openaiOptions = parseCurrentOpenAiOptions(
       round.openaiOptions,
     )
@@ -298,7 +300,7 @@ export function parseCurrentSettings(value: unknown): TranslationSettings | null
   if (!isFiniteRange(sanitized.preciseMask.boxExpandRatio, 0, 100)) return null
   if (!isIntegerRange(sanitized.aiVisionOcr.minImageSize, 0)) return null
   if (!isIntegerRange(sanitized.parallel.deepLearningLockSize, 1)) return null
-  if (!isIntegerRange(sanitized.hqTranslation.batchSize, 1, 10)) return null
+  if (!isIntegerRange(sanitized.hqTranslation.batchSize, 1)) return null
   const rounds = sanitizeProofreadingRounds((value.proofreading as PlainRecord).rounds)
   if (!rounds) return null
   sanitized.proofreading.rounds = rounds

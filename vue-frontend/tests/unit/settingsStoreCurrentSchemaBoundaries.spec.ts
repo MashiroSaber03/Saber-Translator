@@ -149,6 +149,20 @@ describe('settings store current schema boundaries', () => {
     expect(parseCurrentSettings(fractionalBatch)).toBeNull()
   })
 
+  it('accepts positive HQ and proofreading batch sizes without fixed upper bounds', () => {
+    const settings = createDefaultSettings()
+    settings.hqTranslation.batchSize = 128
+    settings.proofreading.rounds = [{
+      ...settings.hqTranslation,
+      id: '11111111-1111-4111-8111-111111111111',
+      name: '第1轮',
+      batchSize: 256,
+    }]
+
+    expect(parseCurrentSettings(settings)?.hqTranslation.batchSize).toBe(128)
+    expect(parseCurrentSettings(settings)?.proofreading.rounds[0]?.batchSize).toBe(256)
+  })
+
   it('rejects duplicate proofreading round identities', () => {
     const settings = createDefaultSettings()
     const id = '11111111-1111-4111-8111-111111111111'

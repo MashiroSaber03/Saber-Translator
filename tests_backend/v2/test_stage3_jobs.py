@@ -2152,6 +2152,18 @@ def test_worker_rejects_coerced_parallel_and_batch_settings(job_platform) -> Non
             step_ordinal=1,
         )
 
+    assert JobWorkerLoop._batch_size(
+        "hq_translate",
+        {"translation": {"batchSize": 128}},
+        step_ordinal=1,
+    ) == 128
+
+    assert JobWorkerLoop._batch_size(
+        "proofread",
+        {"proofreadingRounds": [{"batchSize": 256}]},
+        step_ordinal=1,
+    ) == 256
+
 
 def test_parallel_worker_enforces_frozen_deep_learning_concurrency(
     job_platform,

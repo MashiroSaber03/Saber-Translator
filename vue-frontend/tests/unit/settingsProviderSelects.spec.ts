@@ -197,6 +197,11 @@ describe('settings provider select contracts', () => {
       '使用 response_format: json_object',
       '使用流式API调用',
     ]))
+
+    const batchSize = wrapper.findAllComponents({ name: 'UiNumberField' })
+      .find(field => field.props('inputId') === 'settingsHqBatchSize')
+    expect(batchSize?.props('min')).toBe(1)
+    expect(batchSize?.props('max')).toBeUndefined()
   })
 
   it('keeps HQ translation controls bound to the current store draft after it is replaced', async () => {
@@ -264,13 +269,18 @@ describe('settings provider select contracts', () => {
     expect(fieldByControlId(roundControlId('RpmLimit'))?.props('label')).toBe('RPM限制')
     expect(fieldByControlId(roundControlId('BusinessRetries'))?.props('label')).toBe('业务重试')
     expect(fieldByControlId(roundControlId('TransportRetries'))?.props('label')).toBe('传输重试')
-    expect(fieldByControlId(roundControlId('Prompt'))?.props('label')).toBe('校对提示词')
+    expect(fieldByControlId(roundControlId('Prompt'))?.props('label')).toBe('校对偏好')
 
     expect(fields.map(field => field.props('hint')).filter(Boolean)).toEqual(expect.arrayContaining([
       '翻译完成后自动进行AI校对',
       '使用 response_format: json_object',
       '使用流式API调用，避免超时',
     ]))
+
+    const batchSize = wrapper.findAllComponents({ name: 'UiNumberField' })
+      .find(field => field.props('inputId') === roundControlId('BatchSize'))
+    expect(batchSize?.props('min')).toBe(1)
+    expect(batchSize?.props('max')).toBeUndefined()
   })
 
   it('routes OCR setting labels and hints through typed UiField props', () => {

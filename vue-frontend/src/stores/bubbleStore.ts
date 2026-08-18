@@ -73,7 +73,8 @@ export const useBubbleStore = defineStore('bubble', () => {
   }
 
   function addBubble(coords: BubbleCoords, overrides?: Partial<BubbleState>): BubbleState {
-    const autoDirection = detectTextDirection(coords)
+    const integerCoords = coords.map(value => Math.round(value)) as BubbleCoords
+    const autoDirection = detectTextDirection(integerCoords)
 
     const settingsStore = useSettingsStore()
     const textStyle = settingsStore.settings.textStyle
@@ -87,7 +88,6 @@ export const useBubbleStore = defineStore('bubble', () => {
           : 'vertical' as const
 
     const newBubble = createBubbleState({
-      coords,
       translatedText: '',
       autoTextDirection: autoDirection,
       fontSize: textStyle.fontSize,
@@ -103,7 +103,8 @@ export const useBubbleStore = defineStore('bubble', () => {
       textAlign: textStyle.textAlign,
       rotationAngle: 0,
       position: { x: 0, y: 0 },
-      ...overrides
+      ...overrides,
+      coords: integerCoords,
     })
     bubbles.value.push(newBubble)
     syncToCurrentImage()

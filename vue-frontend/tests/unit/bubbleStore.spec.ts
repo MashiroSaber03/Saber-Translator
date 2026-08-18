@@ -80,6 +80,14 @@ describe('bubbleStore', () => {
     expect(external[0]?.translatedText).toBe('backend snapshot')
   })
 
+  it('stores newly drawn bubble coordinates as backend-safe integers', () => {
+    const bubbleStore = useBubbleStore()
+
+    const bubble = bubbleStore.addBubble([10.4, 20.6, 110.7, 220.2])
+
+    expect(bubble.coords).toEqual([10, 21, 111, 220])
+  })
+
   it('does not write routine console logs for normal bubble state transitions', () => {
     const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {})
     const imageStore = useImageStore()

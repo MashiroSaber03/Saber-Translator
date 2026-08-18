@@ -16,6 +16,7 @@ from src.backend_v2.desktop.entrypoint import DesktopController
 from src.backend_v2.launcher.entrypoint import LauncherState, LauncherStatus
 from src.backend_v2.desktop.settings import DesktopSettings, DesktopSettingsStore
 from src.backend_v2.desktop.task_client import TaskApiClient
+from src.backend_v2.desktop.theme import WINDOW_STYLESHEET
 from src.backend_v2.desktop.window import (
     DesktopWindow,
     LogPage,
@@ -433,6 +434,13 @@ def test_log_view_and_backing_buffer_share_the_same_bound() -> None:
 
     assert len(page._lines) == 5000
     assert page.output.document().blockCount() == 5000
+
+
+def test_log_view_inherits_the_bundled_application_font() -> None:
+    log_style = WINDOW_STYLESHEET.split("QPlainTextEdit {", 1)[1].split("}", 1)[0]
+
+    assert "font-family" not in log_style
+    assert "Fixedsys" not in WINDOW_STYLESHEET
 
 
 def test_window_close_requests_quit_when_system_tray_is_unavailable(tmp_path: Path) -> None:
