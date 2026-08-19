@@ -114,7 +114,8 @@ const demoBubbleState = {
   strokeColor: '#ffffff',
   strokeWidth: 3,
   lineSpacing: 1.2,
-  textAlign: 'center',
+  inlineAlign: 'center',
+  blockAlign: 'center',
   inpaintMethod: 'solid',
   autoFgColor: null,
   autoBgColor: null,
@@ -347,7 +348,8 @@ const fixtureTextStyle = {
   strokeColor: '#FFFFFF',
   strokeWidth: 3,
   lineSpacing: 1,
-  textAlign: 'start',
+  inlineAlign: 'start',
+  blockAlign: 'start',
 }
 
 function fixtureOpenAiOptions(useStream: boolean, rpmLimit = 0) {
@@ -468,7 +470,7 @@ function fixtureSettingsDocument() {
         domain: 'text_style_defaults',
         payload: settings.textStyle,
         revision: 1,
-        schemaVersion: 1,
+        schemaVersion: 2,
       },
       {
         domain: 'workflow_preferences',
@@ -753,7 +755,7 @@ async function mockApi(route: Route, options: VisualFixtureOptions = {}) {
       documentRevision: 1,
       defaultFontId: 'font-source-han',
       pageStyleDefaults: fixtureTextStyle,
-      pageStyleSchemaVersion: 1,
+      pageStyleSchemaVersion: 2,
       renderStatus: 'not_rendered',
       bubbles: bubble,
     }

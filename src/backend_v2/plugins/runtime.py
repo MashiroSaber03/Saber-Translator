@@ -51,7 +51,10 @@ from src.backend_v2.storage.schema import (
     plugin_versions,
     plugins,
 )
-from src.core.config_models import validate_bubble_payload
+from src.core.config_models import (
+    BUBBLE_PAYLOAD_SCHEMA_VERSION,
+    validate_bubble_payload,
+)
 from src.shared.memory_errors import is_memory_allocation_error
 
 
@@ -115,7 +118,7 @@ class ReadOnlyPluginRepository:
             ).mappings()
             result: list[dict[str, Any]] = []
             for row in rows:
-                if row["payload_schema_version"] != 1:
+                if row["payload_schema_version"] != BUBBLE_PAYLOAD_SCHEMA_VERSION:
                     raise RuntimeError(
                         "bubble payload schema version is not current"
                     )

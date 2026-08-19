@@ -37,7 +37,8 @@ function makeBubble(): BubbleState {
     strokeColor: '#FFFFFF',
     strokeWidth: 3,
     lineSpacing: 1.2,
-    textAlign: 'center',
+    inlineAlign: 'center',
+    blockAlign: 'end',
     inpaintMethod: 'solid',
     textlines: [],
     ocrResult: null,
@@ -210,7 +211,8 @@ describe('BubbleEditor button labels', () => {
           strokeWidth: 3,
           inpaintMethod: 'solid',
           lineSpacing: 1.2,
-          textAlign: 'center',
+          inlineAlign: 'center',
+          blockAlign: 'end',
         }),
       ]])
     } finally {
@@ -488,8 +490,11 @@ describe('BubbleEditor button labels', () => {
       '文字描边',
       '描边颜色',
       '顶部对齐',
-      '居中对齐',
+      '行内居中',
       '底部对齐',
+      '文本块靠右',
+      '文本块居中',
+      '文本块靠左',
       '逆时针旋转',
       '顺时针旋转',
       '重置旋转',
@@ -533,7 +538,36 @@ describe('BubbleEditor button labels', () => {
     expect(wrapper.get('button[title="竖向排版"]').attributes('aria-pressed')).toBe('true')
     expect(wrapper.get('button[title="横向排版"]').attributes('aria-pressed')).toBe('false')
     expect(wrapper.get('button[title="文字描边"]').attributes('aria-pressed')).toBe('true')
-    expect(wrapper.get('button[title="居中对齐"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.get('button[title="行内居中"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.get('button[title="文本块靠左"]').attributes('aria-pressed')).toBe('true')
+  })
+
+  it('updates the two alignment axes independently on the selected bubble', async () => {
+    const wrapper = mount(BubbleEditor, {
+      props: {
+        bubble: makeBubble(),
+        bubbleIndex: 0,
+      },
+      global: {
+        stubs: {
+          UiCombobox: {
+            template: '<div class="ui-combobox-stub"></div>',
+            props: ['modelValue'],
+          },
+          JapaneseKeyboard: {
+            template: '<div class="jp-keyboard-stub"></div>',
+          },
+        },
+      },
+    })
+
+    await wrapper.get('button[title="顶部对齐"]').trigger('click')
+    await wrapper.get('button[title="文本块居中"]').trigger('click')
+
+    expect(wrapper.emitted('update')).toEqual([
+      [{ inlineAlign: 'start' }],
+      [{ blockAlign: 'center' }],
+    ])
   })
 
   it('exposes pressed state for the selected font-size preset', () => {

@@ -39,7 +39,8 @@ const baseBubble: BubbleState = {
   strokeColor: '#ffffff',
   strokeWidth: 0,
   lineSpacing: 1.2,
-  textAlign: 'center',
+  inlineAlign: 'center',
+  blockAlign: 'end',
   inpaintMethod: 'solid',
   autoFgColor: null,
   autoBgColor: null,
@@ -181,7 +182,8 @@ describe('EditImageComparison event forwarding', () => {
       strokeWidth: 2,
       inpaintMethod: 'solid',
       lineSpacing: 1.4,
-      textAlign: 'center',
+      inlineAlign: 'center',
+      blockAlign: 'end',
     }
 
     wrapper.getComponent({ name: 'BubbleEditor' }).vm.$emit('applyToAllStyle', payload)

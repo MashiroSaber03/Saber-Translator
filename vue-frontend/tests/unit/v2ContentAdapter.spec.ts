@@ -23,7 +23,8 @@ function bubblePayload(
     strokeColor: '#ffffff',
     strokeWidth: 0,
     lineSpacing: 1.2,
-    textAlign: 'center',
+    inlineAlign: 'center',
+    blockAlign: 'end',
     inpaintMethod: 'solid',
     autoFgColor: null,
     autoBgColor: null,
@@ -75,7 +76,7 @@ function documentWithFont(options: {
     documentRevision: 1,
     pageId: 'page-1',
     pageStyleDefaults: {},
-    pageStyleSchemaVersion: 1,
+    pageStyleSchemaVersion: 2,
     renderStatus: 'not_rendered',
   }
 }

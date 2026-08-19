@@ -31,6 +31,7 @@ import { createDefaultOpenAiOptions } from '@/utils/openaiOptions'
 import { deepClone } from '@/utils/deepClone'
 
 export const TRANSLATION_SETTINGS_SCHEMA_VERSION = 6
+export const TEXT_STYLE_DEFAULTS_SCHEMA_VERSION = 2
 
 export function createDefaultTextStyle(): TextStyleSettings {
   return getTextStyleDefaults()

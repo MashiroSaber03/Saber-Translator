@@ -41,6 +41,7 @@ def _render_vertical_top_y(char: str, font_path: str, font_size: int = 48, start
         font,
         x=100,
         y=start_y,
+        max_width=100,
         max_height=100,
         font_family_path=font_path,
     )
@@ -76,6 +77,7 @@ def _render_vertical_bbox(text: str, font_path: str, font_size: int = 48, start_
         font,
         x=180,
         y=start_y,
+        max_width=180,
         max_height=180,
         font_family_path=font_path,
     )

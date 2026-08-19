@@ -49,7 +49,10 @@ from src.backend_v2.storage.schema import (
     pages,
     translation_constraints,
 )
-from src.core.config_models import validate_bubble_payload
+from src.core.config_models import (
+    BUBBLE_PAYLOAD_SCHEMA_VERSION,
+    validate_bubble_payload,
+)
 from src.core.ocr_types import OcrResult
 from src.shared.paddleocr_vl import PADDLEOCR_VL_LANGUAGE_NAMES
 
@@ -1552,9 +1555,7 @@ class TranslationPipelineService:
                     "originalText",
                     label="persisted original text",
                 )
-                text_direction = payload.get("textDirection")
-                if text_direction not in {"vertical", "horizontal"}:
-                    raise JobConflict("persisted text direction is invalid")
+                text_direction = payload["textDirection"]
                 bubble_payloads.append(
                     {
                         "bubbleId": bubble_id,
@@ -1986,7 +1987,7 @@ class TranslationPipelineService:
                             "ordinal": index,
                             "font_id": task_font_id,
                             "payload_json": _json(payload),
-                            "payload_schema_version": 1,
+                            "payload_schema_version": BUBBLE_PAYLOAD_SCHEMA_VERSION,
                             "updated_revision": new_revision,
                         }
                         for index, payload in enumerate(payloads, start=1)
@@ -3144,7 +3145,7 @@ class TranslationPipelineService:
             )
             parsed_bubbles: list[dict[str, Any]] = []
             for row in rows:
-                if row.payload_schema_version != 1:
+                if row.payload_schema_version != BUBBLE_PAYLOAD_SCHEMA_VERSION:
                     raise JobConflict("bubble payload schema version is not current")
                 if row.updated_revision != page["document_revision"]:
                     raise JobConflict("bubble revision does not match page document")
@@ -3577,7 +3578,8 @@ class TranslationPipelineService:
             "strokeColor": validated_style["strokeColor"],
             "strokeWidth": validated_style["strokeWidth"],
             "lineSpacing": validated_style["lineSpacing"],
-            "textAlign": validated_style["textAlign"],
+            "inlineAlign": validated_style["inlineAlign"],
+            "blockAlign": validated_style["blockAlign"],
             "inpaintMethod": validated_style["inpaintMethod"],
             "autoFgColor": None,
             "autoBgColor": None,

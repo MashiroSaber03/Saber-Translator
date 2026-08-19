@@ -10,6 +10,7 @@ from typing import Any, Mapping
 from sqlalchemy import select
 from sqlalchemy.engine import Connection
 
+from src.backend_v2.storage.defaults import TEXT_STYLE_DEFAULTS_SCHEMA_VERSION
 from src.backend_v2.storage.schema import app_settings, fonts
 
 
@@ -26,10 +27,11 @@ PAGE_STYLE_FIELDS = frozenset(
         "strokeColor",
         "strokeWidth",
         "lineSpacing",
-        "textAlign",
+        "inlineAlign",
+        "blockAlign",
     }
 )
-PAGE_STYLE_SCHEMA_VERSION = 1
+PAGE_STYLE_SCHEMA_VERSION = 2
 TEXT_STYLE_DEFAULT_FIELDS = PAGE_STYLE_FIELDS | {"fontFamily"}
 _COLOR_PATTERN = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
@@ -152,12 +154,13 @@ def validate_page_style(
             field="lineSpacing",
             exclusive_minimum=0,
         )
-    if "textAlign" in result:
-        result["textAlign"] = _choice(
-            result["textAlign"],
-            field="textAlign",
-            choices=frozenset({"start", "center", "end"}),
-        )
+    for field in ("inlineAlign", "blockAlign"):
+        if field in result:
+            result[field] = _choice(
+                result[field],
+                field=field,
+                choices=frozenset({"start", "center", "end"}),
+            )
     return result
 
 
@@ -191,12 +194,17 @@ def validate_text_style_defaults(
 def resolve_new_page_style(
     connection: Connection,
 ) -> tuple[str, dict[str, object]]:
-    raw = connection.execute(
-        select(app_settings.c.payload_json).where(
+    setting = connection.execute(
+        select(
+            app_settings.c.payload_json,
+            app_settings.c.schema_version,
+        ).where(
             app_settings.c.domain == "text_style_defaults"
         )
-    ).scalar_one_or_none()
-    if raw is None:
+    ).mappings().one_or_none()
+    if setting is None:
         raise ValueError("text_style_defaults setting is missing")
-    payload: Any = json.loads(raw)
+    if setting["schema_version"] != TEXT_STYLE_DEFAULTS_SCHEMA_VERSION:
+        raise ValueError("text_style_defaults schema version is not current")
+    payload: Any = json.loads(setting["payload_json"])
     return validate_text_style_defaults(connection, payload)

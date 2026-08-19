@@ -8,6 +8,7 @@ import re
 from typing import Any, Mapping
 
 from src.backend_v2.storage.defaults import (
+    TEXT_STYLE_DEFAULTS_SCHEMA_VERSION,
     TRANSLATION_SETTINGS_SCHEMA_VERSION,
     default_translation_settings,
 )
@@ -28,19 +29,14 @@ from src.shared.ai_providers import (
 from src.shared.paddleocr_vl import PADDLEOCR_VL_LANGUAGE_NAMES
 
 
-APP_SETTING_DOMAINS = frozenset(
-    {
-        "translation",
-        "text_style_defaults",
-        "workflow_preferences",
-        "web_import",
-        "insight",
-    }
-)
 APP_SETTING_SCHEMA_VERSIONS = {
-    domain: (TRANSLATION_SETTINGS_SCHEMA_VERSION if domain == "translation" else 1)
-    for domain in APP_SETTING_DOMAINS
+    "translation": TRANSLATION_SETTINGS_SCHEMA_VERSION,
+    "text_style_defaults": TEXT_STYLE_DEFAULTS_SCHEMA_VERSION,
+    "workflow_preferences": 1,
+    "web_import": 1,
+    "insight": 1,
 }
+APP_SETTING_DOMAINS = frozenset(APP_SETTING_SCHEMA_VERSIONS)
 PROVIDER_SETTING_SCHEMA_VERSION = 1
 BOOK_SETTING_SCHEMA_VERSION = 1
 PROVIDER_CAPABILITIES = {

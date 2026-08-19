@@ -1,7 +1,7 @@
 import type {
   BubbleState,
   InpaintMethod,
-  TextAlign,
+  LogicalAlign,
   TextDirection,
 } from './bubble'
 
@@ -41,9 +41,10 @@ export interface ImageTextStyleFields {
   strokeEnabled: boolean
   strokeColor: string
   strokeWidth: number
-  lineSpacing?: number
-  textAlign?: TextAlign
-  useAutoTextColor?: boolean
+  lineSpacing: number
+  inlineAlign: LogicalAlign
+  blockAlign: LogicalAlign
+  useAutoTextColor: boolean
 }
 
 export interface ImageUiFields {

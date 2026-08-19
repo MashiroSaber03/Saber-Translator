@@ -71,7 +71,8 @@ class BubbleStateDefaultsTests(unittest.TestCase):
         self.assertEqual(state.stroke_color, defaults["strokeColor"])
         self.assertEqual(state.stroke_width, defaults["strokeWidth"])
         self.assertEqual(state.line_spacing, defaults["lineSpacing"])
-        self.assertEqual(state.text_align, defaults["textAlign"])
+        self.assertEqual(state.inline_align, defaults["inlineAlign"])
+        self.assertEqual(state.block_align, defaults["blockAlign"])
 
 
 if __name__ == "__main__":

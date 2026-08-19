@@ -40,7 +40,8 @@ const {
   fontSelectOptions,
   layoutDirectionOptions,
   inpaintMethodOptions,
-  textAlignOptions,
+  inlineAlignOptions,
+  blockAlignOptions,
   createPageSelectionSummary,
   updateFontSize,
   updateAutoFontSize,
@@ -50,7 +51,8 @@ const {
   handleInpaintMethodChange,
   updateTextColor,
   updateLineSpacing,
-  updateTextAlign,
+  updateInlineAlign,
+  updateBlockAlign,
   updateUseAutoTextColor,
   updateStrokeEnabled,
   updateStrokeColor,
@@ -89,14 +91,16 @@ function updateApplyOption(key: keyof ApplySettingsOptions, value: boolean): voi
         :inpaint-method-options="inpaintMethodOptions"
         :layout-direction-options="layoutDirectionOptions"
         :show-apply-options="showApplyOptions"
-        :text-align-options="textAlignOptions"
+        :inline-align-options="inlineAlignOptions"
+        :block-align-options="blockAlignOptions"
         :text-style="textStyle"
         @apply="handleApplyToAll"
         @font-select-change="handleFontSelectChange"
         @inpaint-method-change="handleInpaintMethodChange"
         @layout-direction-change="handleLayoutDirectionChange"
         @select-all="toggleSelectAll"
-        @text-align-change="updateTextAlign"
+        @inline-align-change="updateInlineAlign"
+        @block-align-change="updateBlockAlign"
         @toggle-apply-options="toggleApplyOptions"
         @update-apply-option="updateApplyOption"
         @update-auto-font-size="updateAutoFontSize"

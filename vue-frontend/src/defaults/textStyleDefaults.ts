@@ -19,7 +19,8 @@ type ImageTextStyleFields = Pick<
   | 'strokeColor'
   | 'strokeWidth'
   | 'lineSpacing'
-  | 'textAlign'
+  | 'inlineAlign'
+  | 'blockAlign'
   | 'useAutoTextColor'
 >
 
@@ -37,7 +38,8 @@ const TEXT_STYLE_FIELDS = [
   'inpaintMethod',
   'useAutoTextColor',
   'lineSpacing',
-  'textAlign',
+  'inlineAlign',
+  'blockAlign',
 ] as const satisfies readonly (keyof TextStyleSettings)[]
 const COLOR_PATTERN = /^#[0-9A-Fa-f]{6}$/
 
@@ -52,7 +54,7 @@ function expectTextDirection(value: unknown, fieldName: string): TextStyleSettin
   return failInvalidConfig(`${fieldName} must be one of auto/vertical/horizontal`)
 }
 
-function expectTextAlign(value: unknown, fieldName: string): TextStyleSettings['textAlign'] {
+function expectLogicalAlign(value: unknown, fieldName: string): TextStyleSettings['inlineAlign'] {
   if (value === 'start' || value === 'center' || value === 'end') {
     return value
   }
@@ -135,7 +137,8 @@ function buildTextStyleFields(
     inpaintMethod: readTextStyleField(fields, 'inpaintMethod', expectInpaintMethod, base),
     useAutoTextColor: readTextStyleField(fields, 'useAutoTextColor', expectBoolean, base),
     lineSpacing: readTextStyleField(fields, 'lineSpacing', expectPositiveFloat, base),
-    textAlign: readTextStyleField(fields, 'textAlign', expectTextAlign, base)
+    inlineAlign: readTextStyleField(fields, 'inlineAlign', expectLogicalAlign, base),
+    blockAlign: readTextStyleField(fields, 'blockAlign', expectLogicalAlign, base)
   }
 }
 

@@ -4778,7 +4778,8 @@ components:
         - strokeColor
         - strokeWidth
         - lineSpacing
-        - textAlign
+        - inlineAlign
+        - blockAlign
         - inpaintMethod
         - autoFgColor
         - autoBgColor
@@ -4812,7 +4813,8 @@ components:
         strokeColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
         strokeWidth: {type: integer, minimum: 0}
         lineSpacing: {type: number, exclusiveMinimum: 0}
-        textAlign: {type: string, enum: [start, center, end]}
+        inlineAlign: {type: string, enum: [start, center, end]}
+        blockAlign: {type: string, enum: [start, center, end]}
         inpaintMethod: {type: string, enum: [solid, lama_mpe, litelama]}
         autoFgColor:
           oneOf:
@@ -4860,7 +4862,8 @@ components:
         strokeColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
         strokeWidth: {type: integer, minimum: 0}
         lineSpacing: {type: number, exclusiveMinimum: 0}
-        textAlign: {type: string, enum: [start, center, end]}
+        inlineAlign: {type: string, enum: [start, center, end]}
+        blockAlign: {type: string, enum: [start, center, end]}
         inpaintMethod: {type: string, enum: [solid, lama_mpe, litelama]}
         autoFgColor:
           oneOf:
@@ -4901,7 +4904,8 @@ components:
         - strokeColor
         - strokeWidth
         - lineSpacing
-        - textAlign
+        - inlineAlign
+        - blockAlign
         - inpaintMethod
         - autoFgColor
         - autoBgColor
@@ -4934,7 +4938,8 @@ components:
         strokeColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
         strokeWidth: {type: integer, minimum: 0}
         lineSpacing: {type: number, exclusiveMinimum: 0}
-        textAlign: {type: string, enum: [start, center, end]}
+        inlineAlign: {type: string, enum: [start, center, end]}
+        blockAlign: {type: string, enum: [start, center, end]}
         inpaintMethod: {type: string, enum: [solid, lama_mpe, litelama]}
         autoFgColor:
           oneOf:
@@ -5056,7 +5061,8 @@ components:
         - strokeColor
         - strokeWidth
         - lineSpacing
-        - textAlign
+        - inlineAlign
+        - blockAlign
     PageStyleDefaultsPatch:
       type: object
       additionalProperties: false
@@ -5073,7 +5079,8 @@ components:
         strokeColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
         strokeWidth: {type: integer, minimum: 0}
         lineSpacing: {type: number, exclusiveMinimum: 0}
-        textAlign: {type: string, enum: [start, center, end]}
+        inlineAlign: {type: string, enum: [start, center, end]}
+        blockAlign: {type: string, enum: [start, center, end]}
     BubbleDocument:
       type: object
       additionalProperties: false
@@ -5139,12 +5146,13 @@ components:
             - strokeColor
             - strokeWidth
             - lineSpacing
-            - textAlign
+            - inlineAlign
+            - blockAlign
           allOf:
             - $ref: "#/components/schemas/PageStyleDefaultsPatch"
         pageStyleSchemaVersion:
           type: integer
-          minimum: 1
+          const: 2
         bubbles:
           type: array
           items:

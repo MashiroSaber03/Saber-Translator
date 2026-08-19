@@ -20,7 +20,7 @@ interface BubbleStyleState {
 export function buildBubbleOverlayStyle(state: BubbleStyleState): Record<string, string> {
   const { bubble, index } = state
   let x1: number, y1: number, x2: number, y2: number
-  let rotation = bubble.rotationAngle || 0
+  let rotation = bubble.rotationAngle
 
   if (state.isDragging && state.draggingIndex === index) {
     const [bx1, by1, bx2, by2] = bubble.coords

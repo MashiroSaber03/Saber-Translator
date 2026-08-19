@@ -31,7 +31,10 @@ from src.backend_v2.storage.schema import (
     page_assets,
     pages,
 )
-from src.core.config_models import validate_bubble_payload
+from src.core.config_models import (
+    BUBBLE_PAYLOAD_SCHEMA_VERSION,
+    validate_bubble_payload,
+)
 
 
 STYLE_FIELDS = frozenset(
@@ -40,7 +43,8 @@ STYLE_FIELDS = frozenset(
         "fontFamily",
         "layoutDirection",
         "lineSpacing",
-        "textAlign",
+        "inlineAlign",
+        "blockAlign",
         "textColor",
         "fillColor",
         "strokeEnabled",
@@ -123,7 +127,7 @@ def _load_current_bubble_payload(
     document_revision: int,
     label: str,
 ) -> dict[str, Any]:
-    if row["payload_schema_version"] != 1:
+    if row["payload_schema_version"] != BUBBLE_PAYLOAD_SCHEMA_VERSION:
         raise RuntimeError(f"{label} payload schema version is not current")
     if row["updated_revision"] != document_revision:
         raise RuntimeError(f"{label} revision does not match page document")
@@ -498,9 +502,19 @@ class AuxiliaryTranslationCommands:
                         "imported bubble IDs must be unique per page"
                     )
                 seen_bubbles.add(bubble_id)
-                for field in TEXT_IMPORT_FIELDS:
-                    if not isinstance(imported_bubble[field], str):
-                        raise ValueError(f"{field} must be a string")
+                try:
+                    validate_bubble_payload(
+                        {
+                            payload_key: imported_bubble[imported_key]
+                            for imported_key, payload_key in TEXT_IMPORT_FIELDS.items()
+                        },
+                        render=False,
+                        partial=True,
+                    )
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(
+                        "imported bubble text fields are invalid"
+                    ) from exc
         with self.engine.connect() as connection:
             chapter = connection.execute(
                 select(chapters.c.book_id).where(chapters.c.id == chapter_id)
@@ -709,9 +723,16 @@ class AuxiliaryTranslationCommands:
                     or not isinstance(fields, Mapping)
                     or not fields
                     or not set(fields).issubset(TEXT_IMPORT_FIELDS.values())
-                    or not all(isinstance(value, str) for value in fields.values())
                 ):
                     raise ValueError("text change bubbleId/fields are invalid")
+                try:
+                    normalized_fields = validate_bubble_payload(
+                        fields,
+                        render=False,
+                        partial=True,
+                    )
+                except (TypeError, ValueError) as exc:
+                    raise ValueError("text change fields are invalid") from exc
                 differences = change["differences"]
                 if not isinstance(differences, Mapping) or set(
                     differences
@@ -726,7 +747,7 @@ class AuxiliaryTranslationCommands:
                         raise ValueError("text change difference is invalid")
                 seen_bubbles.add(bubble_id)
                 normalized_changes.append(
-                    {"bubbleId": bubble_id, "fields": dict(fields)}
+                    {"bubbleId": bubble_id, "fields": normalized_fields}
                 )
             normalized.append(
                 {
@@ -799,7 +820,7 @@ class AuxiliaryTranslationCommands:
                         f"page {page_id} contains a missing or moved bubble"
                     )
                 if (
-                    bubble["payload_schema_version"] != 1
+                    bubble["payload_schema_version"] != BUBBLE_PAYLOAD_SCHEMA_VERSION
                     or bubble["updated_revision"]
                     != current["document_revision"]
                 ):
@@ -1021,14 +1042,7 @@ class StyleApplyWorkerService:
                 value = frozen.get(field)
                 if field == "layoutDirection":
                     if value == "auto":
-                        direction = updated.get(
-                            "autoTextDirection",
-                            "vertical",
-                        )
-                        if direction not in {"vertical", "horizontal"}:
-                            raise RuntimeError(
-                                "bubble automatic text direction is invalid"
-                            )
+                        direction = updated["autoTextDirection"]
                     else:
                         direction = value
                     updated["textDirection"] = direction
@@ -1327,7 +1341,6 @@ class TextImportWorkerService:
                 or not isinstance(fields, Mapping)
                 or not fields
                 or not set(fields).issubset(TEXT_IMPORT_FIELDS.values())
-                or not all(isinstance(value, str) for value in fields.values())
             ):
                 raise RuntimeError("text import change snapshot is invalid")
             seen_bubbles.add(bubble_id)
@@ -1338,6 +1351,12 @@ class TextImportWorkerService:
                 )
             payload = dict(bubble_payloads[bubble_id])
             payload.update(dict(fields))
+            try:
+                payload = validate_bubble_payload(payload, render=False)
+            except (TypeError, ValueError) as exc:
+                raise RuntimeError(
+                    "text import bubble payload is invalid"
+                ) from exc
             changed_fields.update(fields)
             updates.append((bubble_id, payload))
         render_changed = bool(

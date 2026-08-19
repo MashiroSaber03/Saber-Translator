@@ -35,7 +35,8 @@ function createImage(id: string, fileName: string, folderPath = ''): ImageData {
     fillColor: '#ffffff',
     layoutDirection: 'horizontal',
     lineSpacing: 1,
-    textAlign: 'center',
+    inlineAlign: 'center',
+    blockAlign: 'center',
     autoFontSize: false,
     useAutoTextColor: false,
   } as ImageData

@@ -30,7 +30,8 @@ _REQUIRED_FIELDS: dict[str, type | tuple[type, ...]] = {
     "strokeColor": str,
     "strokeWidth": int,
     "lineSpacing": (int, float),
-    "textAlign": str,
+    "inlineAlign": str,
+    "blockAlign": str,
 }
 
 
@@ -69,10 +70,12 @@ def _validate_text_style_defaults(data: dict[str, Any]) -> dict[str, Any]:
             "text_style_defaults_factory.json 的 inpaintMethod 必须是 "
             "solid/lama_mpe/litelama"
         )
-    if data["textAlign"] not in {"start", "center", "end"}:
-        raise RuntimeError(
-            "text_style_defaults_factory.json 的 textAlign 必须是 start/center/end"
-        )
+    for field in ("inlineAlign", "blockAlign"):
+        if data[field] not in {"start", "center", "end"}:
+            raise RuntimeError(
+                f"text_style_defaults_factory.json 的 {field} 必须是 "
+                "start/center/end"
+            )
     if data["fontSize"] <= 0:
         raise RuntimeError("text_style_defaults_factory.json 的 fontSize 必须大于 0")
     if data["strokeWidth"] < 0:

@@ -882,8 +882,8 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
 
   watch(selectedBubble, (bubble) => {
     if (bubble) {
-      currentInpaintMethod.value = bubble.inpaintMethod || 'solid'
-      currentFillColor.value = bubble.fillColor || TEXT_STYLE_DEFAULTS.fillColor
+      currentInpaintMethod.value = bubble.inpaintMethod
+      currentFillColor.value = bubble.fillColor
     }
   }, { immediate: true })
 

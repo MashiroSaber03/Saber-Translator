@@ -18,6 +18,7 @@ from src.backend_v2.storage.defaults import (
     DEFAULT_WEB_IMPORT_SETTINGS,
     DEFAULT_WORKFLOW_PREFERENCES,
     FACTORY_PROMPTS,
+    TEXT_STYLE_DEFAULTS_SCHEMA_VERSION,
     TRANSLATION_SETTINGS_SCHEMA_VERSION,
     default_translation_settings,
 )
@@ -90,6 +91,7 @@ def seed_system_records(engine: Engine) -> None:
         }
         default_schema_versions = {
             "translation": TRANSLATION_SETTINGS_SCHEMA_VERSION,
+            "text_style_defaults": TEXT_STYLE_DEFAULTS_SCHEMA_VERSION,
         }
         existing_domains = set(
             connection.execute(select(app_settings.c.domain)).scalars()

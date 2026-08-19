@@ -77,12 +77,20 @@
             @change="handleLayoutDirectionChange"
           />
         </UiField>
-        <UiField variant="settings" label="对齐方式" control-id="textDefaultsTextAlign">
+        <UiField variant="settings" label="行内对齐" control-id="textDefaultsInlineAlign">
           <UiSelect
-            id="textDefaultsTextAlign"
-            :model-value="draftDefaults.textAlign"
-            :options="textAlignOptions"
-            @change="handleTextAlignChange"
+            id="textDefaultsInlineAlign"
+            :model-value="draftDefaults.inlineAlign"
+            :options="inlineAlignOptions"
+            @change="handleInlineAlignChange"
+          />
+        </UiField>
+        <UiField variant="settings" label="文本块对齐" control-id="textDefaultsBlockAlign">
+          <UiSelect
+            id="textDefaultsBlockAlign"
+            :model-value="draftDefaults.blockAlign"
+            :options="blockAlignOptions"
+            @change="handleBlockAlignChange"
           />
         </UiField>
       </UiFormGrid>
@@ -223,9 +231,10 @@ import {
 } from '@/utils/fontFiles'
 import UiCombobox from '@/components/ui/UiCombobox.vue'
 import {
+  blockAlignOptions,
+  inlineAlignOptions,
   inpaintMethodOptions,
   layoutDirectionOptions,
-  textAlignOptions,
 } from '@/utils/textStyleForm'
 
 const toast = useToast()
@@ -284,9 +293,14 @@ function handleLayoutDirectionChange(value: string | number): void {
   updateDraft({ layoutDirection: value })
 }
 
-function handleTextAlignChange(value: string | number): void {
+function handleInlineAlignChange(value: string | number): void {
   if (value !== 'start' && value !== 'center' && value !== 'end') return
-  updateDraft({ textAlign: value })
+  updateDraft({ inlineAlign: value })
+}
+
+function handleBlockAlignChange(value: string | number): void {
+  if (value !== 'start' && value !== 'center' && value !== 'end') return
+  updateDraft({ blockAlign: value })
 }
 
 function handleInpaintMethodChange(value: string | number): void {

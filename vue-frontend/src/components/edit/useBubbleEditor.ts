@@ -8,7 +8,7 @@ import type {
   BubbleState,
   ResolvedTextDirection,
   InpaintMethod,
-  TextAlign,
+  LogicalAlign,
 } from '@/types/bubble'
 import { listV2Fonts } from '@/api/v2/settings'
 import { createBubbleState } from '@/utils/bubbleFactory'
@@ -64,7 +64,8 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
   const localPositionX = ref(0)
   const localPositionY = ref(0)
   const localLineSpacing = ref(TEXT_STYLE_DEFAULTS.lineSpacing)
-  const localTextAlign = ref<TextAlign>(TEXT_STYLE_DEFAULTS.textAlign)
+  const localInlineAlign = ref<LogicalAlign>(TEXT_STYLE_DEFAULTS.inlineAlign)
+  const localBlockAlign = ref<LogicalAlign>(TEXT_STYLE_DEFAULTS.blockAlign)
 
   const originalTextInput = ref<TextareaFieldRef | null>(null)
   const translatedTextInput = ref<TextareaFieldRef | null>(null)
@@ -132,10 +133,11 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     localStrokeWidth.value = b.strokeWidth
     localRotationAngle.value = b.rotationAngle
     localInpaintMethod.value = b.inpaintMethod
-    localPositionX.value = b.position?.x || 0
-    localPositionY.value = b.position?.y || 0
-    localLineSpacing.value = b.lineSpacing ?? TEXT_STYLE_DEFAULTS.lineSpacing
-    localTextAlign.value = b.textAlign ?? TEXT_STYLE_DEFAULTS.textAlign
+    localPositionX.value = b.position.x
+    localPositionY.value = b.position.y
+    localLineSpacing.value = b.lineSpacing
+    localInlineAlign.value = b.inlineAlign
+    localBlockAlign.value = b.blockAlign
   }
 
   watch(
@@ -233,9 +235,14 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     emit('update', { lineSpacing: v })
   }
 
-  function setTextAlign(align: TextAlign): void {
-    localTextAlign.value = align
-    emit('update', { textAlign: align })
+  function setInlineAlign(align: LogicalAlign): void {
+    localInlineAlign.value = align
+    emit('update', { inlineAlign: align })
+  }
+
+  function setBlockAlign(align: LogicalAlign): void {
+    localBlockAlign.value = align
+    emit('update', { blockAlign: align })
   }
 
   function handleRotationChange(): void {
@@ -298,7 +305,8 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
       strokeWidth: localStrokeWidth.value,
       inpaintMethod: localInpaintMethod.value,
       lineSpacing: localLineSpacing.value,
-      textAlign: localTextAlign.value,
+      inlineAlign: localInlineAlign.value,
+      blockAlign: localBlockAlign.value,
     })
   }
 
@@ -434,7 +442,8 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     localPositionX,
     localPositionY,
     localLineSpacing,
-    localTextAlign,
+    localInlineAlign,
+    localBlockAlign,
     originalTextInput,
     translatedTextInput,
     textColorInput,
@@ -464,7 +473,8 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     handleStrokeWidthChange,
     handleInpaintMethodChange,
     handleLineSpacingChange,
-    setTextAlign,
+    setInlineAlign,
+    setBlockAlign,
     handleRotationChange,
     rotateLeft,
     rotateRight,

@@ -53,7 +53,8 @@ const bubbleStateArbitrary: fc.Arbitrary<BubbleState> = fc.record({
   strokeColor: colorArbitrary,
   strokeWidth: fc.integer({ min: 1, max: 10 }),
   lineSpacing: fc.double({ min: 0.5, max: 3.0, noNaN: true }),
-  textAlign: fc.constantFrom('start', 'center', 'end') as fc.Arbitrary<'start' | 'center' | 'end'>,
+  inlineAlign: fc.constantFrom('start', 'center', 'end') as fc.Arbitrary<'start' | 'center' | 'end'>,
+  blockAlign: fc.constantFrom('start', 'center', 'end') as fc.Arbitrary<'start' | 'center' | 'end'>,
   inpaintMethod: inpaintMethodArbitrary,
   textlines: fc.constant([]),
 })

@@ -137,7 +137,7 @@ describe('useBrush', () => {
       documentRevision: 4,
       pageId: 'page-1',
       pageStyleDefaults: {},
-      pageStyleSchemaVersion: 1,
+      pageStyleSchemaVersion: 2,
       renderStatus: 'ready',
     })
     mocks.registerPageDocument.mockReturnValue([])
@@ -278,7 +278,7 @@ describe('useBrush', () => {
       documentRevision: 4,
       pageId: 'page-1',
       pageStyleDefaults: {},
-      pageStyleSchemaVersion: 1,
+      pageStyleSchemaVersion: 2,
       renderStatus: 'ready',
     })
     const { brush, onBrushComplete } = mountBrush()

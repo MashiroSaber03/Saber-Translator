@@ -25,7 +25,8 @@ export interface ApplySettingsOptions {
   strokeColor: boolean
   strokeWidth: boolean
   lineSpacing: boolean
-  textAlign: boolean
+  inlineAlign: boolean
+  blockAlign: boolean
 }
 
 const RENDERED_STYLE_FIELDS = new Set<TextStyleMutationField>([
@@ -37,7 +38,8 @@ const RENDERED_STYLE_FIELDS = new Set<TextStyleMutationField>([
   'strokeColor',
   'strokeWidth',
   'lineSpacing',
-  'textAlign',
+  'inlineAlign',
+  'blockAlign',
 ])
 const RENDER_STATUS_POLL_MS = 500
 const RENDER_STATUS_TIMEOUT_MS = 30_000
@@ -64,21 +66,21 @@ export function useTextStyleSync() {
 
   function syncImageToSidebar(image: typeof imageStore.currentImage) {
     if (!image) return
-    const current = settingsStore.settings.textStyle
     settingsStore.updateTextStyle({
-      autoFontSize: image.autoFontSize ?? current.autoFontSize,
-      fillColor: image.fillColor ?? current.fillColor,
-      fontFamily: image.fontFamily ?? current.fontFamily,
-      fontSize: image.fontSize ?? current.fontSize,
-      inpaintMethod: image.inpaintMethod ?? current.inpaintMethod,
-      layoutDirection: image.layoutDirection ?? current.layoutDirection,
-      lineSpacing: image.lineSpacing ?? current.lineSpacing,
-      strokeColor: image.strokeColor ?? current.strokeColor,
-      strokeEnabled: image.strokeEnabled ?? current.strokeEnabled,
-      strokeWidth: image.strokeWidth ?? current.strokeWidth,
-      textAlign: image.textAlign ?? current.textAlign,
-      textColor: image.textColor ?? current.textColor,
-      useAutoTextColor: image.useAutoTextColor ?? current.useAutoTextColor,
+      autoFontSize: image.autoFontSize,
+      fillColor: image.fillColor,
+      fontFamily: image.fontFamily,
+      fontSize: image.fontSize,
+      inpaintMethod: image.inpaintMethod,
+      layoutDirection: image.layoutDirection,
+      lineSpacing: image.lineSpacing,
+      strokeColor: image.strokeColor,
+      strokeEnabled: image.strokeEnabled,
+      strokeWidth: image.strokeWidth,
+      inlineAlign: image.inlineAlign,
+      blockAlign: image.blockAlign,
+      textColor: image.textColor,
+      useAutoTextColor: image.useAutoTextColor,
     })
   }
 
@@ -95,7 +97,8 @@ export function useTextStyleSync() {
       strokeColor: style.strokeColor,
       strokeEnabled: style.strokeEnabled,
       strokeWidth: style.strokeWidth,
-      textAlign: style.textAlign,
+      inlineAlign: style.inlineAlign,
+      blockAlign: style.blockAlign,
       textColor: style.textColor,
       useAutoTextColor: style.useAutoTextColor,
     })

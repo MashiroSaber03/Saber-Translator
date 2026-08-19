@@ -8,11 +8,18 @@ from collections.abc import Mapping
 from sqlalchemy import select
 from sqlalchemy.engine import Connection
 
-from src.backend_v2.content.page_style import rgb_to_hex, validate_page_style
+from src.backend_v2.content.page_style import (
+    PAGE_STYLE_SCHEMA_VERSION,
+    rgb_to_hex,
+    validate_page_style,
+)
 from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.storage.builtin_fonts import resolve_bundled_font_path
 from src.backend_v2.storage.schema import assets, bubbles, fonts, pages
-from src.core.config_models import validate_bubble_payload
+from src.core.config_models import (
+    BUBBLE_PAYLOAD_SCHEMA_VERSION,
+    validate_bubble_payload,
+)
 
 
 def resolve_font_path(
@@ -59,14 +66,18 @@ def materialize_render_payloads(
         select(
             pages.c.default_font_id,
             pages.c.page_style_defaults_json,
+            pages.c.page_style_schema_version,
         ).where(pages.c.id == page_id)
     ).mappings().one()
+    if page["page_style_schema_version"] != PAGE_STYLE_SCHEMA_VERSION:
+        raise ValueError("page style schema version is not current")
     rows = list(
         connection.execute(
             select(
                 bubbles.c.id,
                 bubbles.c.font_id,
                 bubbles.c.payload_json,
+                bubbles.c.payload_schema_version,
             )
             .where(bubbles.c.page_id == page_id)
             .order_by(bubbles.c.ordinal)
@@ -82,6 +93,8 @@ def materialize_render_payloads(
     )
     result = []
     for row in rows:
+        if row["payload_schema_version"] != BUBBLE_PAYLOAD_SCHEMA_VERSION:
+            raise ValueError("bubble payload schema version is not current")
         persisted = validate_bubble_payload(
             json.loads(row["payload_json"]),
             render=False,

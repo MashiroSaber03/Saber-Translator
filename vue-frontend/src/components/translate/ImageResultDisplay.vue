@@ -84,10 +84,10 @@ const detectedTexts = computed<DetectedTextItem[]>(() => {
   if (!currentImage.value) return []
 
   return (currentImage.value.bubbleStates ?? []).map(state => ({
-    original: state.originalText || '',
+    original: state.originalText,
     translated: useTextboxPrompt.value
-      ? state.textboxText || state.translatedText || ''
-      : state.translatedText || '',
+      ? state.textboxText || state.translatedText
+      : state.translatedText,
   }))
 })
 

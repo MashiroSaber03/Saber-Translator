@@ -10,7 +10,10 @@ from typing import Any
 from sqlalchemy import Engine, func, select, update
 from sqlalchemy.engine import Connection
 
-from src.backend_v2.content.page_style import validate_page_style
+from src.backend_v2.content.page_style import (
+    PAGE_STYLE_SCHEMA_VERSION,
+    validate_page_style,
+)
 from src.backend_v2.jobs.repository import (
     JobConflict,
     JobItemSpec,
@@ -385,6 +388,7 @@ class TranslationJobCommandService:
                     pages.c.document_revision,
                     pages.c.default_font_id,
                     pages.c.page_style_defaults_json,
+                    pages.c.page_style_schema_version,
                 ).where(
                     pages.c.id == str(source_page_id),
                     pages.c.chapter_id == chapter_id,
@@ -392,6 +396,8 @@ class TranslationJobCommandService:
             ).mappings().one_or_none()
         if source is None:
             raise ValueError("style source page does not belong to the chapter")
+        if source["page_style_schema_version"] != PAGE_STYLE_SCHEMA_VERSION:
+            raise ValueError("style source page schema version is not current")
         if int(source["document_revision"]) != int(source_revision):
             raise ValueError("style source page document revision changed")
         return {
@@ -453,6 +459,7 @@ class TranslationJobCommandService:
                     pages.c.document_revision,
                     pages.c.default_font_id,
                     pages.c.page_style_defaults_json,
+                    pages.c.page_style_schema_version,
                 ).where(
                     pages.c.id == source_page_id,
                     pages.c.chapter_id == spec.chapter_id,
@@ -460,6 +467,8 @@ class TranslationJobCommandService:
             ).mappings().one_or_none()
             if source is None:
                 raise ValueError("style source page does not belong to the chapter")
+            if source["page_style_schema_version"] != PAGE_STYLE_SCHEMA_VERSION:
+                raise ValueError("style source page schema version is not current")
             source_defaults = validate_page_style(
                 json.loads(source["page_style_defaults_json"]),
                 partial=False,
@@ -485,6 +494,7 @@ class TranslationJobCommandService:
                         pages.c.render_status,
                         pages.c.default_font_id,
                         pages.c.page_style_defaults_json,
+                        pages.c.page_style_schema_version,
                     ).where(
                         pages.c.chapter_id == spec.chapter_id,
                         pages.c.id.in_(target_page_ids),
@@ -497,6 +507,8 @@ class TranslationJobCommandService:
 
             for page_id in target_page_ids:
                 target = targets[page_id]
+                if target["page_style_schema_version"] != PAGE_STYLE_SCHEMA_VERSION:
+                    raise ValueError("style target page schema version is not current")
                 current_defaults = validate_page_style(
                     json.loads(target["page_style_defaults_json"]),
                     partial=False,

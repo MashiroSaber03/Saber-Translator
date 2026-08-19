@@ -21,7 +21,10 @@ from src.backend_v2.content.image_import import (
     ImageImportService,
     ImportSafetyLimits,
 )
-from src.backend_v2.content.page_style import resolve_new_page_style
+from src.backend_v2.content.page_style import (
+    PAGE_STYLE_SCHEMA_VERSION,
+    resolve_new_page_style,
+)
 from src.backend_v2.content.repository import (
     ContentRepository,
     deduplicate_logical_path,
@@ -252,6 +255,7 @@ class TransferWorkerService:
                     logical_source_path=logical_path,
                     default_font_id=default_font_id,
                     page_style_defaults_json=canonical_json(style_defaults),
+                    page_style_schema_version=PAGE_STYLE_SCHEMA_VERSION,
                     created_at=now,
                     updated_at=now,
                 )

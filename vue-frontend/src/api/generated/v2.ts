@@ -2981,7 +2981,9 @@ export interface components {
             strokeWidth: number;
             lineSpacing: number;
             /** @enum {string} */
-            textAlign: "start" | "center" | "end";
+            inlineAlign: "start" | "center" | "end";
+            /** @enum {string} */
+            blockAlign: "start" | "center" | "end";
             /** @enum {string} */
             inpaintMethod: "solid" | "lama_mpe" | "litelama";
             autoFgColor: components["schemas"]["BubbleRgb"] | null;
@@ -3011,7 +3013,9 @@ export interface components {
             strokeWidth?: number;
             lineSpacing?: number;
             /** @enum {string} */
-            textAlign?: "start" | "center" | "end";
+            inlineAlign?: "start" | "center" | "end";
+            /** @enum {string} */
+            blockAlign?: "start" | "center" | "end";
             /** @enum {string} */
             inpaintMethod?: "solid" | "lama_mpe" | "litelama";
             autoFgColor?: components["schemas"]["BubbleRgb"] | null;
@@ -3042,7 +3046,9 @@ export interface components {
             strokeWidth: number;
             lineSpacing: number;
             /** @enum {string} */
-            textAlign: "start" | "center" | "end";
+            inlineAlign: "start" | "center" | "end";
+            /** @enum {string} */
+            blockAlign: "start" | "center" | "end";
             /** @enum {string} */
             inpaintMethod: "solid" | "lama_mpe" | "litelama";
             autoFgColor: components["schemas"]["BubbleRgb"] | null;
@@ -3093,7 +3099,7 @@ export interface components {
             propagateStyleFields?: components["schemas"]["PageStyleField"][];
         };
         /** @enum {string} */
-        PageStyleField: "fontSize" | "fontFamily" | "layoutDirection" | "textColor" | "fillColor" | "strokeEnabled" | "strokeColor" | "strokeWidth" | "lineSpacing" | "textAlign";
+        PageStyleField: "fontSize" | "fontFamily" | "layoutDirection" | "textColor" | "fillColor" | "strokeEnabled" | "strokeColor" | "strokeWidth" | "lineSpacing" | "inlineAlign" | "blockAlign";
         PageStyleDefaultsPatch: {
             fontSize?: number;
             autoFontSize?: boolean;
@@ -3109,7 +3115,9 @@ export interface components {
             strokeWidth?: number;
             lineSpacing?: number;
             /** @enum {string} */
-            textAlign?: "start" | "center" | "end";
+            inlineAlign?: "start" | "center" | "end";
+            /** @enum {string} */
+            blockAlign?: "start" | "center" | "end";
         };
         BubbleDocument: {
             bubbleId: components["schemas"]["Uuid"];
@@ -3124,8 +3132,9 @@ export interface components {
             /** @enum {string} */
             renderStatus: "not_rendered" | "ready" | "stale" | "rendering" | "render_failed" | "awaiting_repair" | "repair_failed";
             defaultFontId: components["schemas"]["Uuid"] | null;
-            pageStyleDefaults: WithRequired<components["schemas"]["PageStyleDefaultsPatch"], "fontSize" | "autoFontSize" | "layoutDirection" | "textColor" | "fillColor" | "inpaintMethod" | "useAutoTextColor" | "strokeEnabled" | "strokeColor" | "strokeWidth" | "lineSpacing" | "textAlign">;
-            pageStyleSchemaVersion: number;
+            pageStyleDefaults: WithRequired<components["schemas"]["PageStyleDefaultsPatch"], "fontSize" | "autoFontSize" | "layoutDirection" | "textColor" | "fillColor" | "inpaintMethod" | "useAutoTextColor" | "strokeEnabled" | "strokeColor" | "strokeWidth" | "lineSpacing" | "inlineAlign" | "blockAlign">;
+            /** @constant */
+            pageStyleSchemaVersion: 2;
             bubbles: components["schemas"]["BubbleDocument"][];
         };
         PageDocumentMutationResponse: {

@@ -33,7 +33,7 @@ function settingsDocument(
         domain: 'text_style_defaults',
         payload: settings.textStyle as unknown as Record<string, unknown>,
         revision,
-        schemaVersion: 1,
+        schemaVersion: 2,
       },
       {
         domain: 'workflow_preferences',

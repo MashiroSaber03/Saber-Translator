@@ -1,4 +1,4 @@
-import type { InpaintMethod, TextAlign, TextDirection } from './bubble'
+import type { InpaintMethod, LogicalAlign, TextDirection } from './bubble'
 
 export interface TextStyleSettings {
   fontSize: number
@@ -13,7 +13,8 @@ export interface TextStyleSettings {
   inpaintMethod: InpaintMethod
   useAutoTextColor: boolean
   lineSpacing: number
-  textAlign: TextAlign
+  inlineAlign: LogicalAlign
+  blockAlign: LogicalAlign
 }
 
 export type TextStyleMutationField = Exclude<

@@ -108,7 +108,7 @@ describe('useTranslationPipeline', () => {
       documentRevision: 2,
       defaultFontId: fontFamily,
       pageStyleDefaults,
-      pageStyleSchemaVersion: 1,
+      pageStyleSchemaVersion: 2,
       renderStatus: 'not_rendered',
       bubbles: [],
     })
@@ -409,7 +409,7 @@ describe('useTranslationPipeline', () => {
         textColor: '#123456',
         useAutoTextColor: false,
       },
-      pageStyleSchemaVersion: 1,
+      pageStyleSchemaVersion: 2,
       renderStatus: 'ready',
       bubbles: [{
         bubbleId: 'bubble-1',
@@ -433,7 +433,8 @@ describe('useTranslationPipeline', () => {
           strokeColor: '#ffffff',
           strokeWidth: 0,
           lineSpacing: 1.2,
-          textAlign: 'center',
+          inlineAlign: 'center',
+          blockAlign: 'center',
           inpaintMethod: 'solid',
           autoFgColor: null,
           autoBgColor: null,
@@ -542,7 +543,7 @@ describe('useTranslationPipeline', () => {
         documentRevision: 2,
         defaultFontId: fontFamily,
         pageStyleDefaults,
-        pageStyleSchemaVersion: 1,
+        pageStyleSchemaVersion: 2,
         renderStatus: 'ready',
         bubbles: [],
       }

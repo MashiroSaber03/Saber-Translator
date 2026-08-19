@@ -66,6 +66,7 @@ from src.backend_v2.storage.schema import (
 )
 from src.backend_v2.storage.seeding import QUICK_WORKSPACE_BOOK_ID
 from src.core.config_models import (
+    BUBBLE_PAYLOAD_SCHEMA_VERSION,
     STORED_BUBBLE_FIELDS,
     validate_bubble_payload,
 )
@@ -136,7 +137,8 @@ _CHAPTER_MEMORY_FORBIDDEN_KEYS = frozenset(
         "strokecolor",
         "strokewidth",
         "linespacing",
-        "textalign",
+        "inlinealign",
+        "blockalign",
     }
 )
 
@@ -1645,6 +1647,7 @@ class ContentRepository:
                     logical_source_path=final_logical_path,
                     default_font_id=default_font_id,
                     page_style_defaults_json=_json(style_defaults),
+                    page_style_schema_version=PAGE_STYLE_SCHEMA_VERSION,
                 )
             )
             connection.execute(
@@ -1843,7 +1846,8 @@ class ContentRepository:
                 "strokeColor",
                 "strokeWidth",
                 "lineSpacing",
-                "textAlign",
+                "inlineAlign",
+                "blockAlign",
             }
         )
         unknown_propagation = set(propagation) - allowed_propagation
@@ -1866,7 +1870,8 @@ class ContentRepository:
             "strokeColor": "strokeColor",
             "strokeWidth": "strokeWidth",
             "lineSpacing": "lineSpacing",
-            "textAlign": "textAlign",
+            "inlineAlign": "inlineAlign",
+            "blockAlign": "blockAlign",
         }
         propagated_targets = {
             propagated_bubble_fields[field] for field in propagation
@@ -2024,11 +2029,17 @@ class ContentRepository:
                         bubbles.c.ordinal,
                         bubbles.c.font_id,
                         bubbles.c.payload_json,
+                        bubbles.c.payload_schema_version,
                     )
                     .where(bubbles.c.page_id == page_id)
                     .order_by(bubbles.c.ordinal)
                 ).mappings()
             )
+            if any(
+                row["payload_schema_version"] != BUBBLE_PAYLOAD_SCHEMA_VERSION
+                for row in existing_rows
+            ):
+                raise ValueError("bubble payload schema version is not current")
             documents: dict[str, dict[str, object]] = {
                 str(row["id"]): {
                     "bubbleId": str(row["id"]),
@@ -2178,7 +2189,8 @@ class ContentRepository:
                     "strokeColor",
                     "strokeWidth",
                     "lineSpacing",
-                    "textAlign",
+                    "inlineAlign",
+                    "blockAlign",
                     "fontSize",
                 )
                 for document in documents.values():
@@ -2199,7 +2211,7 @@ class ContentRepository:
                                 if value == "auto"
                                 else value
                             )
-                            if payload.get("textDirection") != direction:
+                            if payload["textDirection"] != direction:
                                 renderable_change = True
                             payload["textDirection"] = direction
                         elif field in {"textColor", "fillColor"}:
@@ -2255,12 +2267,12 @@ class ContentRepository:
                                         payload["textDirection"],
                                         font_path,
                                     )
-                                    if payload.get("fontSize") != calculated:
+                                    if payload["fontSize"] != calculated:
                                         renderable_change = True
                                     payload["fontSize"] = calculated
                             else:
                                 value = current_style["fontSize"]
-                                if payload.get("fontSize") != value:
+                                if payload["fontSize"] != value:
                                     renderable_change = True
                                 payload["fontSize"] = value
                         else:
@@ -2308,6 +2320,7 @@ class ContentRepository:
                         insert(bubbles).values(
                             id=bubble_id,
                             page_id=page_id,
+                            payload_schema_version=BUBBLE_PAYLOAD_SCHEMA_VERSION,
                             **values,
                         )
                     )
@@ -2427,6 +2440,7 @@ class ContentRepository:
                     bubbles.c.ordinal,
                     bubbles.c.font_id,
                     bubbles.c.payload_json,
+                    bubbles.c.payload_schema_version,
                     bubbles.c.updated_revision,
                 )
                 .where(bubbles.c.page_id == page_id)
@@ -2435,6 +2449,8 @@ class ContentRepository:
         )
         bubble_documents: list[dict[str, object]] = []
         for row in bubble_rows:
+            if row["payload_schema_version"] != BUBBLE_PAYLOAD_SCHEMA_VERSION:
+                raise ValueError("bubble payload schema version is not current")
             payload = validate_bubble_payload(
                 json.loads(row["payload_json"]),
                 render=False,
@@ -2465,7 +2481,7 @@ class ContentRepository:
         after: dict[str, object],
     ) -> bool:
         return any(
-            before.get(field) != after.get(field)
+            before[field] != after[field]
             for field in (
                 "translatedText",
                 "coords",
@@ -2478,7 +2494,8 @@ class ContentRepository:
                 "strokeColor",
                 "strokeWidth",
                 "lineSpacing",
-                "textAlign",
+                "inlineAlign",
+                "blockAlign",
             )
         )
 

@@ -9,9 +9,10 @@ import {
 } from '@/api/v2/settings'
 import { showToast } from '@/utils/toast'
 import {
+  blockAlignOptions,
+  inlineAlignOptions,
   inpaintMethodOptions,
   layoutDirectionOptions,
-  textAlignOptions,
 } from '@/utils/textStyleForm'
 import {
   DEFAULT_WORKFLOW_MODE,
@@ -40,7 +41,8 @@ export interface ApplySettingsOptions {
   strokeColor: boolean
   strokeWidth: boolean
   lineSpacing: boolean
-  textAlign: boolean
+  inlineAlign: boolean
+  blockAlign: boolean
 }
 
 export type SettingsSidebarEmit = {
@@ -72,7 +74,8 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
     strokeColor: true,
     strokeWidth: true,
     lineSpacing: true,
-    textAlign: true,
+    inlineAlign: true,
+    blockAlign: true,
   })
 
   const isPageSelectionEnabled = ref(false)
@@ -382,10 +385,16 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
     emit('textStyleChanged', 'lineSpacing', nextValue)
   }
 
-  function updateTextAlign(value: string | number) {
+  function updateInlineAlign(value: string | number) {
     if (value !== 'start' && value !== 'center' && value !== 'end') return
-    settingsStore.updateTextStyle({ textAlign: value })
-    emit('textStyleChanged', 'textAlign', value)
+    settingsStore.updateTextStyle({ inlineAlign: value })
+    emit('textStyleChanged', 'inlineAlign', value)
+  }
+
+  function updateBlockAlign(value: string | number) {
+    if (value !== 'start' && value !== 'center' && value !== 'end') return
+    settingsStore.updateTextStyle({ blockAlign: value })
+    emit('textStyleChanged', 'blockAlign', value)
   }
 
   function updateUseAutoTextColor(checked: boolean) {
@@ -432,7 +441,8 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
       strokeColor: newValue,
       strokeWidth: newValue,
       lineSpacing: newValue,
-      textAlign: newValue,
+      inlineAlign: newValue,
+      blockAlign: newValue,
     }
   }
 
@@ -530,7 +540,8 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
     fontSelectOptions,
     layoutDirectionOptions,
     inpaintMethodOptions,
-    textAlignOptions,
+    inlineAlignOptions,
+    blockAlignOptions,
     createPageSelectionSummary,
     updateFontSize,
     updateAutoFontSize,
@@ -540,7 +551,8 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
     handleInpaintMethodChange,
     updateTextColor,
     updateLineSpacing,
-    updateTextAlign,
+    updateInlineAlign,
+    updateBlockAlign,
     updateUseAutoTextColor,
     updateStrokeEnabled,
     updateStrokeColor,

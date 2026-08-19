@@ -33,7 +33,8 @@ function bubblePayload(overrides: Record<string, unknown> = {}): Record<string, 
     strokeColor: '#ffffff',
     strokeWidth: 0,
     lineSpacing: 1.2,
-    textAlign: 'center',
+    inlineAlign: 'center',
+    blockAlign: 'end',
     inpaintMethod: 'solid',
     autoFgColor: null,
     autoBgColor: null,
@@ -62,7 +63,7 @@ describe('page document persistence coordinator', () => {
       documentRevision,
       pageId: 'page-1',
       pageStyleDefaults: {},
-      pageStyleSchemaVersion: 1,
+      pageStyleSchemaVersion: 2,
       renderStatus: 'not_rendered' as const,
     }
   }
@@ -131,7 +132,7 @@ describe('page document persistence coordinator', () => {
       documentRevision: 1,
       pageId: 'page-1',
       pageStyleDefaults: {},
-      pageStyleSchemaVersion: 1,
+      pageStyleSchemaVersion: 2,
       renderStatus: 'not_rendered',
     })
     const bubble = createBubbleState({

@@ -118,7 +118,8 @@ describe('imageStore', () => {
             expect(store.currentImage?.strokeColor).toBe(TEXT_STYLE_DEFAULTS.strokeColor)
             expect(store.currentImage?.strokeWidth).toBe(TEXT_STYLE_DEFAULTS.strokeWidth)
             expect(store.currentImage?.lineSpacing).toBe(TEXT_STYLE_DEFAULTS.lineSpacing)
-            expect(store.currentImage?.textAlign).toBe(TEXT_STYLE_DEFAULTS.textAlign)
+            expect(store.currentImage?.inlineAlign).toBe(TEXT_STYLE_DEFAULTS.inlineAlign)
+            expect(store.currentImage?.blockAlign).toBe(TEXT_STYLE_DEFAULTS.blockAlign)
             expect(store.currentImage?.useAutoTextColor).toBe(TEXT_STYLE_DEFAULTS.useAutoTextColor)
         })
 

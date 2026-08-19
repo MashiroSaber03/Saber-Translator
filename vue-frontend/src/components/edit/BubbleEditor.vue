@@ -278,42 +278,83 @@
 
           <div class="bubble-editor__toolbar-divider bubble-editor__toolbar-divider--vertical"></div>
 
-          <div class="bubble-editor__toolbar-icon-group" aria-label="对齐方式" title="横排=水平对齐，竖排=列内字符对齐">
+          <div class="bubble-editor__toolbar-icon-group" aria-label="行内对齐" title="横排控制每行左右位置，竖排控制每列上下位置">
             <UiIconButton
               variant="soft"
               size="sm"
               class="bubble-editor__toolbar-action"
-              :active="localTextAlign === 'start'"
-              :pressed="localTextAlign === 'start'"
+              :active="localInlineAlign === 'start'"
+              :pressed="localInlineAlign === 'start'"
               :label="localTextDirection === 'vertical' ? '顶部对齐' : '左对齐'"
               :title="localTextDirection === 'vertical' ? '顶部对齐' : '左对齐'"
-              @click="setTextAlign('start')"
+              @click="setInlineAlign('start')"
             >
-              <UiIcon name="align-left" size="16" />
+              <UiIcon :name="localTextDirection === 'vertical' ? 'align-vertical-start' : 'align-left'" size="16" />
             </UiIconButton>
             <UiIconButton
               variant="soft"
               size="sm"
               class="bubble-editor__toolbar-action"
-              :active="localTextAlign === 'center'"
-              :pressed="localTextAlign === 'center'"
-              label="居中对齐"
-              title="居中对齐"
-              @click="setTextAlign('center')"
+              :active="localInlineAlign === 'center'"
+              :pressed="localInlineAlign === 'center'"
+              label="行内居中"
+              title="行内居中"
+              @click="setInlineAlign('center')"
             >
-              <UiIcon name="align-center" size="16" />
+              <UiIcon :name="localTextDirection === 'vertical' ? 'align-vertical-center' : 'align-center'" size="16" />
             </UiIconButton>
             <UiIconButton
               variant="soft"
               size="sm"
               class="bubble-editor__toolbar-action"
-              :active="localTextAlign === 'end'"
-              :pressed="localTextAlign === 'end'"
+              :active="localInlineAlign === 'end'"
+              :pressed="localInlineAlign === 'end'"
               :label="localTextDirection === 'vertical' ? '底部对齐' : '右对齐'"
               :title="localTextDirection === 'vertical' ? '底部对齐' : '右对齐'"
-              @click="setTextAlign('end')"
+              @click="setInlineAlign('end')"
             >
-              <UiIcon name="align-right" size="16" />
+              <UiIcon :name="localTextDirection === 'vertical' ? 'align-vertical-end' : 'align-right'" size="16" />
+            </UiIconButton>
+          </div>
+
+          <div class="bubble-editor__toolbar-divider bubble-editor__toolbar-divider--vertical"></div>
+
+          <div class="bubble-editor__toolbar-icon-group" aria-label="文本块对齐" title="控制整个文本块在气泡内的位置">
+            <UiIconButton
+              variant="soft"
+              size="sm"
+              class="bubble-editor__toolbar-action"
+              :active="localBlockAlign === 'start'"
+              :pressed="localBlockAlign === 'start'"
+              :label="localTextDirection === 'vertical' ? '文本块靠右' : '文本块靠上'"
+              :title="localTextDirection === 'vertical' ? '文本块靠右' : '文本块靠上'"
+              @click="setBlockAlign('start')"
+            >
+              <UiIcon :name="localTextDirection === 'vertical' ? 'align-horizontal-end' : 'align-vertical-start'" size="16" />
+            </UiIconButton>
+            <UiIconButton
+              variant="soft"
+              size="sm"
+              class="bubble-editor__toolbar-action"
+              :active="localBlockAlign === 'center'"
+              :pressed="localBlockAlign === 'center'"
+              label="文本块居中"
+              title="文本块居中"
+              @click="setBlockAlign('center')"
+            >
+              <UiIcon :name="localTextDirection === 'vertical' ? 'align-horizontal-center' : 'align-vertical-center'" size="16" />
+            </UiIconButton>
+            <UiIconButton
+              variant="soft"
+              size="sm"
+              class="bubble-editor__toolbar-action"
+              :active="localBlockAlign === 'end'"
+              :pressed="localBlockAlign === 'end'"
+              :label="localTextDirection === 'vertical' ? '文本块靠左' : '文本块靠下'"
+              :title="localTextDirection === 'vertical' ? '文本块靠左' : '文本块靠下'"
+              @click="setBlockAlign('end')"
+            >
+              <UiIcon :name="localTextDirection === 'vertical' ? 'align-horizontal-start' : 'align-vertical-end'" size="16" />
             </UiIconButton>
           </div>
         </div>
@@ -448,7 +489,8 @@ const {
   localRotationAngle,
   localInpaintMethod,
   localLineSpacing,
-  localTextAlign,
+  localInlineAlign,
+  localBlockAlign,
   originalTextInput,
   translatedTextInput,
   textColorInput,
@@ -478,7 +520,8 @@ const {
   handleStrokeWidthChange,
   handleInpaintMethodChange,
   handleLineSpacingChange,
-  setTextAlign,
+  setInlineAlign,
+  setBlockAlign,
   handleRotationChange,
   rotateLeft,
   rotateRight,

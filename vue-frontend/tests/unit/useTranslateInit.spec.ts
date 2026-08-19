@@ -71,7 +71,7 @@ function bootstrap(
           domain: 'text_style_defaults',
           payload: createDefaultSettings().textStyle as unknown as Record<string, unknown>,
           revision: 1,
-          schemaVersion: 1,
+          schemaVersion: 2,
         },
         {
           domain: 'workflow_preferences',
@@ -131,7 +131,7 @@ describe('useTranslateInit', () => {
       documentRevision: 1,
       pageId,
       pageStyleDefaults,
-      pageStyleSchemaVersion: 1,
+      pageStyleSchemaVersion: 2,
       renderStatus: 'not_rendered',
     }))
     mocks.updateLastVisitedPage.mockImplementation(
@@ -191,7 +191,7 @@ describe('useTranslateInit', () => {
         textColor: '#123456',
         useAutoTextColor: true,
       },
-      pageStyleSchemaVersion: 1,
+      pageStyleSchemaVersion: 2,
       renderStatus: 'not_rendered',
     })
     await initialization
@@ -421,7 +421,7 @@ describe('useTranslateInit', () => {
       documentRevision: 1,
       pageId: 'page-2',
       pageStyleDefaults: createDefaultSettings().textStyle,
-      pageStyleSchemaVersion: 1,
+      pageStyleSchemaVersion: 2,
       renderStatus: 'not_rendered',
     })
     await expect(staleSwitch).resolves.toBe(false)

@@ -58,8 +58,6 @@ class AuthoritativeRenderService:
                 select(
                     pages.c.source_revision,
                     pages.c.document_revision,
-                    pages.c.default_font_id,
-                    pages.c.page_style_defaults_json,
                 ).where(pages.c.id == fence.page_id)
             ).mappings().one_or_none()
             if page is None or page["document_revision"] != fence.rendering_revision:

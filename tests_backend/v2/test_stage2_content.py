@@ -11,7 +11,7 @@ from sqlalchemy import insert, select, update
 
 from src.backend_v2.api.app import ApiSettings, create_api_app
 from src.backend_v2.content.image_import import ImageImportService, ImportSafetyLimits
-from src.backend_v2.content.page_style import rgb_to_hex
+from src.backend_v2.content.page_style import resolve_new_page_style, rgb_to_hex
 from src.backend_v2.content.repository import (
     ContentConflict,
     ContentLocked,
@@ -34,10 +34,15 @@ from src.backend_v2.storage.builtin_fonts import (
     resolve_bundled_font_path,
 )
 from src.backend_v2.storage.database import create_sqlite_engine
-from src.backend_v2.storage.defaults import DEFAULT_FONT_ID, DEFAULT_TEXT_STYLE
+from src.backend_v2.storage.defaults import (
+    DEFAULT_FONT_ID,
+    DEFAULT_TEXT_STYLE,
+    TEXT_STYLE_DEFAULTS_SCHEMA_VERSION,
+)
 from src.backend_v2.storage.schema import (
     app_settings,
     assets,
+    bubbles,
     chapter_write_locks,
     chapters,
     fonts,
@@ -50,7 +55,7 @@ from src.backend_v2.storage.schema import (
 )
 from src.backend_v2.storage.seeding import seed_system_records
 from src.backend_v2.storage.seeding import QUICK_WORKSPACE_BOOK_ID
-from src.core.config_models import BubbleState
+from src.core.config_models import BUBBLE_PAYLOAD_SCHEMA_VERSION, BubbleState
 
 
 def _stored_job_progress(status: str = "queued") -> str:
@@ -494,6 +499,7 @@ def test_translation_bootstrap_includes_backend_owned_runtime_configuration(
     assert translation["schemaVersion"] == 6
     assert translation["revision"] == 1
     assert translation["payload"]["settingsSchemaVersion"] == 6
+    assert settings_by_domain["text_style_defaults"]["schemaVersion"] == 2
     assert translation["payload"]["translation"]["provider"]
     assert "textStyle" not in translation["payload"]
     assert translation["payload"]["pluginAgent"]["provider"]
@@ -519,6 +525,25 @@ def test_translation_bootstrap_includes_backend_owned_runtime_configuration(
         "textbox",
     }
     assert all(item["isFactoryDefault"] for item in payload["prompts"])
+
+
+def test_new_page_style_rejects_an_old_setting_schema(content_platform) -> None:
+    _root, engine, _repository, _storage, _importer, _book, _chapter = (
+        content_platform
+    )
+    with engine.begin() as connection:
+        connection.execute(
+            update(app_settings)
+            .where(app_settings.c.domain == "text_style_defaults")
+            .values(schema_version=TEXT_STYLE_DEFAULTS_SCHEMA_VERSION - 1)
+        )
+
+    with engine.connect() as connection:
+        with pytest.raises(
+            ValueError,
+            match="text_style_defaults schema version is not current",
+        ):
+            resolve_new_page_style(connection)
 
 
 def test_chapter_settings_memory_is_cas_scoped_and_rejects_style_or_secrets(
@@ -577,6 +602,13 @@ def test_chapter_settings_memory_is_cas_scoped_and_rejects_style_or_secrets(
                 }
             },
         )
+    for field in ("inlineAlign", "blockAlign"):
+        with pytest.raises(ValueError, match=field):
+            repository.update_chapter_settings_memory(
+                chapter_id=chapter_id,
+                base_revision=2,
+                payload={"translation": {field: "start"}},
+            )
     with pytest.raises(ValueError, match="translation.textDetector is invalid"):
         repository.update_chapter_settings_memory(
             chapter_id=chapter_id,
@@ -1423,11 +1455,52 @@ def test_page_document_allows_propagating_current_style_without_a_style_patch(
         page_id=str(imported["page"]["id"]),
         base_revision=created["document"]["documentRevision"],
         mutations=[],
-        propagate_style_fields=["textAlign"],
+        propagate_style_fields=["inlineAlign", "blockAlign"],
         idempotency_key="propagate-current-style-command",
     )
 
-    assert result["document"]["bubbles"][0]["payload"]["textAlign"] == "start"
+    payload = result["document"]["bubbles"][0]["payload"]
+    assert payload["inlineAlign"] == "start"
+    assert payload["blockAlign"] == "start"
+
+
+def test_page_document_rejects_noncurrent_bubble_payload_schema(
+    content_platform,
+) -> None:
+    _root, engine, repository, _storage, importer, _book, chapter = content_platform
+    imported, _ = _import(
+        repository,
+        importer,
+        chapter_id=str(chapter["id"]),
+        payload=_image_bytes((50, 50)),
+        logical_path="bubble-schema.png",
+        key="bubble-schema-page",
+    )
+    page_id = str(imported["page"]["id"])
+    created, _ = repository.mutate_page_document(
+        page_id=page_id,
+        base_revision=1,
+        mutations=[{
+            "op": "create",
+            "clientMutationId": "bubble-schema-create",
+            "fields": _bubble_fields(),
+        }],
+        idempotency_key="bubble-schema-create-command",
+    )
+    bubble_id = created["mutationResults"][0]["bubbleId"]
+
+    with engine.begin() as connection:
+        assert connection.execute(
+            select(bubbles.c.payload_schema_version).where(bubbles.c.id == bubble_id)
+        ).scalar_one() == BUBBLE_PAYLOAD_SCHEMA_VERSION
+        connection.execute(
+            update(bubbles)
+            .where(bubbles.c.id == bubble_id)
+            .values(payload_schema_version=BUBBLE_PAYLOAD_SCHEMA_VERSION - 1)
+        )
+
+    with pytest.raises(ValueError, match="bubble payload schema version"):
+        repository.get_page_document(page_id)
 
 
 def test_content_rejects_noncurrent_embedded_schemas_without_migrating(
@@ -1458,7 +1531,7 @@ def test_content_rejects_noncurrent_embedded_schemas_without_migrating(
         connection.execute(
             update(pages)
             .where(pages.c.id == page_id)
-            .values(page_style_schema_version=2)
+            .values(page_style_schema_version=1)
         )
 
     with pytest.raises(ValueError, match="translation constraints schema"):
@@ -1929,6 +2002,33 @@ def test_document_mutation_materializes_auto_style_before_render_projection(
     assert manual_payload["fillColor"] == "#ABCDEF"
     assert manual_payload["autoFgColor"] == [1, 2, 3]
     assert manual_payload["autoBgColor"] == [10, 11, 12]
+
+
+def test_render_projection_rejects_noncurrent_page_style_schema(
+    content_platform,
+) -> None:
+    _root, engine, repository, storage, importer, _book, chapter = (
+        content_platform
+    )
+    imported, _ = _import(
+        repository,
+        importer,
+        chapter_id=str(chapter["id"]),
+        payload=_image_bytes((40, 40)),
+        logical_path="render-schema.png",
+        key="render-schema",
+    )
+    page_id = str(imported["page"]["id"])
+    with engine.begin() as connection:
+        connection.execute(
+            update(pages)
+            .where(pages.c.id == page_id)
+            .values(page_style_schema_version=1)
+        )
+
+    with engine.connect() as connection:
+        with pytest.raises(ValueError, match="page style schema version"):
+            materialize_render_payloads(connection, storage, page_id)
 
 
 def test_quick_workspace_promote_moves_relations_without_moving_assets(

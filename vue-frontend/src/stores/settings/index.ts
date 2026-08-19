@@ -24,6 +24,7 @@ import {
 
 import type { ProviderConfigsCache } from './types'
 import {
+  TEXT_STYLE_DEFAULTS_SCHEMA_VERSION,
   TRANSLATION_SETTINGS_SCHEMA_VERSION,
   createDefaultSettings,
 } from './defaults'
@@ -328,6 +329,9 @@ export const useSettingsStore = defineStore('settings', () => {
     }
     if (!textStyleDefaultsEntry) {
       throw new Error('后端文字样式默认设置缺失')
+    }
+    if (textStyleDefaultsEntry.schemaVersion !== TEXT_STYLE_DEFAULTS_SCHEMA_VERSION) {
+      throw new Error('后端文字样式默认设置版本无效')
     }
     if (!workflowPreferencesEntry) {
       throw new Error('后端工作流偏好设置缺失')
@@ -716,7 +720,7 @@ export const useSettingsStore = defineStore('settings', () => {
           domain: 'text_style_defaults',
           payload: deepClone(textStyleDefaults.value) as unknown as Record<string, unknown>,
           baseRevision: textStyleDefaultsRevision,
-          schemaVersion: 1,
+          schemaVersion: TEXT_STYLE_DEFAULTS_SCHEMA_VERSION,
         },
       ],
       providerSettings,

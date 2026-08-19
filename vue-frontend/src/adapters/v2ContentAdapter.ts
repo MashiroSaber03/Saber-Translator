@@ -4,9 +4,9 @@ import type {
   BubbleState,
   BubbleTextline,
   InpaintMethod,
+  LogicalAlign,
   PolygonCoords,
   ResolvedTextDirection,
-  TextAlign,
 } from '@/types/bubble'
 import type { OcrResult } from '@/types/ocr'
 import type { ImageDataLoadInput, TranslationStatus } from '@/types/image'
@@ -28,7 +28,8 @@ const BUBBLE_PAYLOAD_KEYS = [
   'strokeColor',
   'strokeWidth',
   'lineSpacing',
-  'textAlign',
+  'inlineAlign',
+  'blockAlign',
   'inpaintMethod',
   'autoFgColor',
   'autoBgColor',
@@ -243,10 +244,15 @@ function currentBubblePayload(value: unknown, label: string): PersistedBubbleSta
     strokeColor,
     strokeWidth,
     lineSpacing,
-    textAlign: enumValue<TextAlign>(
-      payload.textAlign,
+    inlineAlign: enumValue<LogicalAlign>(
+      payload.inlineAlign,
       ['start', 'center', 'end'],
-      `${label}.textAlign`,
+      `${label}.inlineAlign`,
+    ),
+    blockAlign: enumValue<LogicalAlign>(
+      payload.blockAlign,
+      ['start', 'center', 'end'],
+      `${label}.blockAlign`,
     ),
     inpaintMethod: enumValue<InpaintMethod>(
       payload.inpaintMethod,

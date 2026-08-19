@@ -319,8 +319,8 @@ function handleRotateStart(index: number, event: MouseEvent): void {
   const dx = event.clientX - rotateCenterX.value
   const dy = event.clientY - rotateCenterY.value
   rotateStartAngle.value = Math.atan2(dy, dx) * 180 / Math.PI
-  rotateInitialAngle.value = bubble.rotationAngle || 0
-  rotateCurrentAngle.value = bubble.rotationAngle || 0
+  rotateInitialAngle.value = bubble.rotationAngle
+  rotateCurrentAngle.value = bubble.rotationAngle
   document.addEventListener('mousemove', handleMouseMove)
   document.addEventListener('mouseup', handleMouseUp)
 }

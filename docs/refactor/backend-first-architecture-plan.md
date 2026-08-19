@@ -1511,15 +1511,15 @@ Context 至少包含：
 - `document_revision`、`rendered_revision`、`render_status`。
 - `detection_state`、`default_font_id`、`page_style_defaults` 和 `page_warnings` JSON；字体外键不埋入 style JSON。
 
-`page_style_defaults` 使用固定 schema，不接受任意扩展键：`fontSize`、`autoFontSize`、`layoutDirection=auto|vertical|horizontal`、`textColor`、`useAutoTextColor`、`fillColor`、`strokeEnabled`、`strokeColor`、`strokeWidth`、`lineSpacing`、`textAlign=start|center|end`、`inpaintMethod=solid|lama_mpe|litelama`。字体只保存在 `pages.default_font_id`。所有数值范围、颜色格式和枚举由 OpenAPI 与后端领域校验共同固定；当前数据库基线直接创建完整对象，已有对象缺字段或版本不匹配时拒绝启动，不依赖前端 fallback、读时修复或旧数据转换。
+`page_style_defaults` 使用固定 schema v2，不接受任意扩展键：`fontSize`、`autoFontSize`、`layoutDirection=auto|vertical|horizontal`、`textColor`、`useAutoTextColor`、`fillColor`、`strokeEnabled`、`strokeColor`、`strokeWidth`、`lineSpacing`、`inlineAlign=start|center|end`、`blockAlign=start|center|end`、`inpaintMethod=solid|lama_mpe|litelama`。`inlineAlign` 控制文字沿行内轴的位置（横排左/中/右，竖排顶/中/底），`blockAlign` 控制整个文本块沿块轴的位置（横排顶/中/底，竖排右/中/左）；两个字段同时属于每个 bubble 的完整独立状态。字体只保存在 `pages.default_font_id`。所有数值范围、颜色格式和枚举由 OpenAPI 与后端领域校验共同固定；当前数据库基线直接创建完整对象，已有对象缺字段或版本不匹配时拒绝启动，不依赖前端 fallback、读时修复或旧数据转换。
 
-`bubbles` 每泡一行：`bubble_id`、`page_id`、`ordinal`、`font_id`、`payload_json`、`updated_revision`。`font_id` 是可约束、可索引的独立外键；`payload_json` 保存其余 BubbleState 字段：
+`bubbles` 每泡一行：`bubble_id`、`page_id`、`ordinal`、`font_id`、`payload_json`、`payload_schema_version=2`、`updated_revision`。`font_id` 是可约束、可索引的独立外键；`payload_json` 保存其余 BubbleState 字段：
 
 - 矩形、polygon、旋转角度、位置和顺序。
 - 检测来源、文字行和自动排版方向。
 - OCR 文本、引擎、置信度和错误；混合 OCR 保存主引擎与回退标记（primaryEngine/fallbackUsed）。
 - 原文、译文、文本框译文。
-- 字号、方向、颜色、填充、描边、行距和对齐；字体由同一行的 `font_id` 提供，聚合 DTO 时恢复为 BubbleState 字段。
+- 字号、方向、颜色、填充、描边、行距、`inlineAlign` 和 `blockAlign`；字体由同一行的 `font_id` 提供，聚合 DTO 时恢复为 BubbleState 字段。
 - **每泡修复参数（inpaintMethod：solid/LaMA/LiteLaMA，以及 fillColor）**——每个气泡记忆自己的修复方式和纯色填充颜色；`fillColor` 只供 solid 使用。它们只有在显式创建 `page_repair` 或任务修复步骤时才改变 clean，不由纯文字渲染器消费。
 - **自动提取的前景色/背景色（autoFgColor/autoBgColor）**——颜色提取结果写入文档本体，供渲染与编辑器直接读取，不能只存在任务检查点里。
 - bubble-level 警告与错误。
@@ -1620,11 +1620,11 @@ GET    /api/v2/operations/{operation_id}
 }
 ```
 
-`default_font_id`、`page_style_defaults_patch` 和 `propagate_style_fields` 均可省略；省略表示不修改。`propagate_style_fields` 是后端领域命令，不是让浏览器枚举 N 个 bubble mutation：闭集固定为 `fontSize|fontFamily|layoutDirection|textColor|fillColor|strokeEnabled|strokeColor|strokeWidth|lineSpacing|textAlign`，后端根据本次页默认补丁、当前 bubbles 及其已保存自动备份，按 §16.3.11 一次性派生所有泡级修改。这里“允许传播”不等于“必然触发文字渲染”：`fillColor` 可以传播到每泡作为下一次 repair 参数，但单独修改它不改变现有 clean/translated。若显式 bubble mutation 与传播命令在同一请求中修改同一 bubble 的同一字段，返回 422；前端应先 flush 编辑器 mutation，再提交侧栏命令，禁止依赖未声明的覆盖顺序。只修改 `inpaintMethod` 时 `propagate_style_fields` 为空。
+`default_font_id`、`page_style_defaults_patch` 和 `propagate_style_fields` 均可省略；省略表示不修改。`propagate_style_fields` 是后端领域命令，不是让浏览器枚举 N 个 bubble mutation：闭集固定为 `fontSize|fontFamily|layoutDirection|textColor|fillColor|strokeEnabled|strokeColor|strokeWidth|lineSpacing|inlineAlign|blockAlign`，后端根据本次页默认补丁、当前 bubbles 及其已保存自动备份，按 §16.3.11 一次性派生所有泡级修改。这里“允许传播”不等于“必然触发文字渲染”：`fillColor` 可以传播到每泡作为下一次 repair 参数，但单独修改它不改变现有 clean/translated。若显式 bubble mutation 与传播命令在同一请求中修改同一 bubble 的同一字段，返回 422；前端应先 flush 编辑器 mutation，再提交侧栏命令，禁止依赖未声明的覆盖顺序。只修改 `inpaintMethod` 时 `propagate_style_fields` 为空。
 
 `create` mutation 只能携带客户端操作关联 ID，不得携带或预生成 `bubble_id`；稳定 `bubble_id` 必须由后端在提交事务中生成。成功响应固定为聚合 `document` 与按请求顺序返回的 `mutation_results`，每项包含 `op`、原样返回的客户端操作关联 ID 和最终稳定 `bubble_id`。同一 `Idempotency-Key` 重放必须返回完全相同的 document 与映射，客户端据此把尚未保存的 UI 气泡关联到后端事实 ID。
 
-后端先针对同一 `base_revision` 读取并校验文档、在 API 进程中完成自动字号等轻量纯 CPU 派生，再在一个 `BEGIN IMMEDIATE` 事务中复查 revision/章节锁、验证全部 bubble 归属和 mutation 合法性，按 §5.3 ordinal 算法完成重排，仅把 `document_revision` 增加一次。文字 render_request 的字段闭集固定为：`translatedText`、`coords`、`position`、`rotationAngle`、`font_id/fontSize`、`textDirection`、`textColor`、`strokeEnabled/strokeColor/strokeWidth`、`lineSpacing/textAlign`，以及会改变有效译文绘制集合/覆盖顺序的 bubble create/delete/reorder。`originalText/textboxText/ocrResult/textlines/polygon/autoTextDirection/autoFgColor/autoBgColor/colorConfidence/fillColor/inpaintMethod` 本身不是文字层字段；其中 polygon、fillColor、inpaintMethod 只在显式 repair/detect 等操作中作为输入。只有本次提交改变了上述文字层字段，并且提交前已有 current translated 资产或提交后的文档含非空 `translatedText` 时，才 upsert 一次该新 revision 的 `render_request`；纯页默认修改、无可绘制译文页和只改修复参数/元数据不创建无意义渲染。
+后端先针对同一 `base_revision` 读取并校验文档、在 API 进程中完成自动字号等轻量纯 CPU 派生，再在一个 `BEGIN IMMEDIATE` 事务中复查 revision/章节锁、验证全部 bubble 归属和 mutation 合法性，按 §5.3 ordinal 算法完成重排，仅把 `document_revision` 增加一次。文字 render_request 的字段闭集固定为：`translatedText`、`coords`、`position`、`rotationAngle`、`font_id/fontSize`、`textDirection`、`textColor`、`strokeEnabled/strokeColor/strokeWidth`、`lineSpacing/inlineAlign/blockAlign`，以及会改变有效译文绘制集合/覆盖顺序的 bubble create/delete/reorder。`originalText/textboxText/ocrResult/textlines/polygon/autoTextDirection/autoFgColor/autoBgColor/colorConfidence/fillColor/inpaintMethod` 本身不是文字层字段；其中 polygon、fillColor、inpaintMethod 只在显式 repair/detect 等操作中作为输入。只有本次提交改变了上述文字层字段，并且提交前已有 current translated 资产或提交后的文档含非空 `translatedText` 时，才 upsert 一次该新 revision 的 `render_request`；纯页默认修改、无可绘制译文页和只改修复参数/元数据不创建无意义渲染。
 
 非渲染字段提交不能把现有译图误标为 stale：若当前没有 pending/running render_request 且 translated 已处于 ready，同一事务把 `pages.rendered_revision` 作为“该资产已验证兼容到的文档 revision”推进到新 revision，资产 producer/input lineage 保持原值；若同页已有 pending/running render_request，则只把 requested_revision 推进到新 revision，让既有 fencing 链最终发布与最新 document_revision 一致的结果。任一 mutation/传播字段无效则整批不提交；响应返回新 revision、每个 `client_mutation_id` 对应的稳定 bubble_id、聚合 document DTO 和 `render_status`。
 
@@ -1829,7 +1829,7 @@ PDF/MOBI/AZW/AZW3/CBZ：
 | 文字颜色 | `textColor + useAutoTextColor` | 按下述自动颜色规则更新 `bubble.textColor` | 有可渲染内容时是 |
 | 填充颜色 | `fillColor + useAutoTextColor` | 按下述自动颜色规则更新 `bubble.fillColor`，作为下一次 solid 修复参数 | 否；不改变现有 clean，只有显式 `page_repair` 才产生画面变化 |
 | 描边开关/颜色/宽度 | `strokeEnabled/strokeColor/strokeWidth` | 对应字段覆盖全部已有 bubbles | 有可渲染内容时是 |
-| 行距/对齐 | `lineSpacing/textAlign` | 对应字段覆盖全部已有 bubbles | 有可渲染内容时是 |
+| 行距/双轴对齐 | `lineSpacing/inlineAlign/blockAlign` | 对应字段覆盖全部已有 bubbles | 有可渲染内容时是 |
 | 修复方式 | `inpaintMethod` | **不覆盖**已有 `bubble.inpaintMethod`；每泡修复方式只由编辑器或修复操作改变 | 不新建请求、也不重新生成 clean；同页已有请求时仅按 §16.2.4 推进其 revision |
 
 `fillColor/inpaintMethod` 的边界必须保持：左侧栏的 fillColor 可传播到已有 bubbles，但只更新修复参数；inpaintMethod 只设置当前页以后新建 bubble、下一次检测/翻译/消字所用的默认修复方式，不覆盖已有每泡选择。二者的设置 PATCH 都不直接生成 clean；实际修复必须显式创建统一 `page_repair`。编辑器保存每泡具体 fillColor/inpaintMethod，随后点击单泡修复时只提交 bubble_id，后端在同一 revision 读取这两个值并生成 mask。上传字体只负责创建不可变 asset 与 `fonts` 行；上传后若 UI 自动选中新字体，必须继续执行与普通“选择字体”完全相同的当前页 document 命令，不能只改浏览器下拉框。
@@ -1855,7 +1855,7 @@ PDF/MOBI/AZW/AZW3/CBZ：
 应用到全部：
 
 - 创建 `style_apply` job 前先 flush 当前页 document PATCH；随后 `POST .../style-apply-jobs` 固定接收 `{source_page_id, source_document_revision, selected_fields}` 并要求 `Idempotency-Key`。后端在创建事务中验证来源页属于本章且 revision 匹配，直接从来源页事实读取并冻结对应字段值、自动模式标志、稳定 font_id，以及当时当前章节的有序 page_id 全集；浏览器不得重新提交一份可能过时的 style values。后续导入页面不加入，空选择返回 422，成功返回 `202 {job_id, status:"queued"}`。
-- 十项字段固定为 `fontSize`、`fontFamily`、`layoutDirection`、`lineSpacing`、`textAlign`、`textColor`、`fillColor`、`strokeEnabled`、`strokeColor`、`strokeWidth`，与现有 UI 一致；`inpaintMethod` 不在其中。
+- 十一项字段固定为 `fontSize`、`fontFamily`、`layoutDirection`、`lineSpacing`、`inlineAlign`、`blockAlign`、`textColor`、`fillColor`、`strokeEnabled`、`strokeColor`、`strokeWidth`，与现有 UI 一致；`inpaintMethod` 不在其中。
 - 选择 `fontSize` 时同时应用 `autoFontSize`：来源为固定字号时，把来源 `fontSize` 写入目标页默认和全部 bubbles；来源为自动时，把目标页设为自动并重新计算每泡具体字号，但保留各目标页原有 `fontSize` 作为以后关闭自动时的手动回退值。
 - 选择 `layoutDirection` 时按本节自动方向规则应用；选择 `fontFamily` 时冻结和写入稳定 font_id。
 - 选择 `textColor` 或 `fillColor` 任一项时同时应用来源页的 `useAutoTextColor` 模式，但只修改用户勾选的实际颜色字段，未勾选字段保持目标页/泡原值。来源为手动模式时，把来源页对应手动颜色写入目标默认和 bubbles；来源为自动模式时消费每个目标 bubble 自己的自动颜色备份，备份缺失按当前有效值回退，并保留目标页原有手动颜色默认值供以后关闭自动后继续编辑。无论手动还是自动，应用 fillColor 都只改变以后 repair 使用的参数，不发起隐式颜色或 repair operation。
@@ -2132,7 +2132,7 @@ ZIP、CBZ、PDF：
 #### 16.5.5 左侧栏文字设置
 
 - 新页面从全局 `text_style_defaults` 初始化完整 page defaults；修改全局默认不改变既有页面。切页/hydrate 只回读该页样式，不产生 document/settings_memory PATCH。
-- 十项普通字段逐项验证：有 bubbles 时页默认与对应泡级字段在一个 CAS 中同时更新，document_revision 只增加一次；无 bubbles 时只改默认。font/fontSize/layoutDirection/textColor/stroke/lineSpacing/textAlign 按 §16.2.4 的资格触发文字 render_request；fillColor 只更新 repair 参数，不重做 clean/translated；`inpaintMethod` 只改页默认、不覆盖每泡值，也不创建 render_request。
+- 十一项普通字段逐项验证：有 bubbles 时页默认与对应泡级字段在一个 CAS 中同时更新，document_revision 只增加一次；无 bubbles 时只改默认。font/fontSize/layoutDirection/textColor/stroke/lineSpacing/inlineAlign/blockAlign 按 §16.2.4 的资格触发文字 render_request；fillColor 只更新 repair 参数，不重做 clean/translated；`inpaintMethod` 只改页默认、不覆盖每泡值，也不创建 render_request。
 - standard/HQ 在自动颜色关闭时仍保存 `autoFgColor/autoBgColor`，检测始终保存 `autoTextDirection`；刷新、重启和任务继续后这些备份与物化值完全恢复。普通编辑/重渲染 preserve 已存字号和颜色，不重新计算/提取。
 - 自动字号开启会在后端计算并持久化具体 bubble fontSize，关闭会用页固定字号覆盖；自动方向在 auto/固定/auto 往返后可从每泡备份恢复；自动颜色开启从每泡备份物化，缺失时保留当前有效值，关闭会把当前页明确保存的手动 `textColor/fillColor` 重新传播到已有 bubbles，但不维护额外历史颜色栈，也不隐式创建颜色或 page_repair operations。autoBgColor 物化为 fillColor 后必须等用户显式修复才改变 clean。
 - 左侧栏与编辑器使用同一串行 CAS coordinator：编辑器存在待提交 delta 时先 flush；快速连续输入不并发 PATCH，切页/失焦/受控离开 flush。两窗口旧 revision 返回 409 且不覆盖新事实。

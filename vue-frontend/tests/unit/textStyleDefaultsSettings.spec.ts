@@ -24,7 +24,8 @@ const initialDefaults = {
   strokeColor: '#FFFFFF',
   strokeWidth: 3,
   lineSpacing: 1,
-  textAlign: 'start',
+  inlineAlign: 'start',
+  blockAlign: 'start',
 }
 
 const factoryDefaults = getTextStyleDefaults()
@@ -77,7 +78,7 @@ describe('TextStyleDefaultsSettings', () => {
           domain: 'text_style_defaults',
           payload: initialDefaults,
           revision: 1,
-          schemaVersion: 1,
+          schemaVersion: 2,
         },
         {
           domain: 'workflow_preferences',
@@ -196,7 +197,8 @@ describe('TextStyleDefaultsSettings', () => {
     const selects = wrapper.findAllComponents(UiSelect)
     selects[0]!.vm.$emit('change', 1)
     selects[1]!.vm.$emit('change', 'middle')
-    selects[2]!.vm.$emit('change', 'legacy')
+    selects[2]!.vm.$emit('change', 'middle')
+    selects[3]!.vm.$emit('change', 'legacy')
 
     const numberFields = wrapper.findAllComponents(UiNumberField)
     const field = (inputId: string) => numberFields.find(item => item.props('inputId') === inputId)!
@@ -263,7 +265,8 @@ describe('TextStyleDefaultsSettings', () => {
     expect(fieldByControlId('textDefaultsAutoFontSize')?.props('label')).toBe('自动计算初始字号')
     expect(fieldByControlId('textDefaultsFontFamily')?.props('label')).toBe('文本字体')
     expect(fieldByControlId('textDefaultsLayoutDirection')?.props('label')).toBe('排版方向')
-    expect(fieldByControlId('textDefaultsTextAlign')?.props('label')).toBe('对齐方式')
+    expect(fieldByControlId('textDefaultsInlineAlign')?.props('label')).toBe('行内对齐')
+    expect(fieldByControlId('textDefaultsBlockAlign')?.props('label')).toBe('文本块对齐')
     expect(fieldByControlId('textDefaultsLineSpacing')?.props('hint')).toBe('行间距倍数，必须大于 0。')
     expect(fieldByControlId('textDefaultsUseAutoTextColor')?.props('label')).toBe('自动识别文字颜色')
     expect(fieldByControlId('textDefaultsTextColor')?.props('label')).toBe('文字颜色')

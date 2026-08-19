@@ -97,7 +97,8 @@ describe('useTextStyleSync page defaults', () => {
     ['strokeColor', '#654321'],
     ['strokeWidth', 5],
     ['lineSpacing', 1.6],
-    ['textAlign', 'center'],
+    ['inlineAlign', 'center'],
+    ['blockAlign', 'end'],
   ])('persists and propagates the %s page style through the backend command', async (
     settingKey,
     value,
@@ -201,7 +202,8 @@ describe('useTextStyleSync page defaults', () => {
       strokeColor: false,
       strokeEnabled: false,
       strokeWidth: false,
-      textAlign: false,
+      inlineAlign: false,
+      blockAlign: false,
       textColor: true,
     })
 

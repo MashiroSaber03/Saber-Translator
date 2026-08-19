@@ -362,7 +362,7 @@ pages = Table(
     Column("detection_state", String(32), nullable=False, server_default="unprocessed"),
     Column("default_font_id", String(UUID_LENGTH), ForeignKey("fonts.id", ondelete="RESTRICT")),
     Column("page_style_defaults_json", Text, nullable=False, server_default="{}"),
-    Column("page_style_schema_version", Integer, nullable=False, server_default="1"),
+    Column("page_style_schema_version", Integer, nullable=False, server_default="2"),
     Column("warnings_json", Text, nullable=False, server_default="[]"),
     *_timestamps(),
     UniqueConstraint(
@@ -425,7 +425,7 @@ bubbles = Table(
     Column("ordinal", Integer, nullable=False),
     Column("font_id", String(UUID_LENGTH), ForeignKey("fonts.id", ondelete="RESTRICT")),
     Column("payload_json", Text, nullable=False),
-    Column("payload_schema_version", Integer, nullable=False, server_default="1"),
+    Column("payload_schema_version", Integer, nullable=False, server_default="2"),
     Column("updated_revision", Integer, nullable=False),
     *_timestamps(),
     UniqueConstraint("page_id", "ordinal"),

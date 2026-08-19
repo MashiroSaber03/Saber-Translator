@@ -16,6 +16,7 @@ from src.shared.constants import (
 
 DEFAULT_FONT_ID = "00000000-0000-0000-0000-000000000010"
 TRANSLATION_SETTINGS_SCHEMA_VERSION = 6
+TEXT_STYLE_DEFAULTS_SCHEMA_VERSION = 2
 
 DEFAULT_TEXT_STYLE: dict[str, object] = {
     "fontSize": 26,
@@ -30,7 +31,8 @@ DEFAULT_TEXT_STYLE: dict[str, object] = {
     "strokeColor": "#FFFFFF",
     "strokeWidth": 3,
     "lineSpacing": 1.0,
-    "textAlign": "start",
+    "inlineAlign": "start",
+    "blockAlign": "start",
 }
 
 DEFAULT_WORKFLOW_PREFERENCES: dict[str, object] = {

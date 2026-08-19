@@ -25,6 +25,7 @@ from src.backend_v2.storage.database import (
 )
 from src.backend_v2.storage.defaults import (
     DEFAULT_INSIGHT_SETTINGS,
+    DEFAULT_TEXT_STYLE,
     default_translation_settings,
 )
 from src.backend_v2.storage.epochs import (
@@ -130,9 +131,9 @@ def test_launcher_initialization_seeds_one_persistent_quick_workspace(
     data_root = tmp_path / "data-v2"
     (data_root / "runtime").mkdir(parents=True)
     first = initialize_database(data_root)
-    assert first.schema_revision == "v2_foundation_20260810"
+    assert first.schema_revision == "v2_foundation_20260819"
     assert first.created is True
-    assert schema_smoke_test(first.database_path) == "v2_foundation_20260810"
+    assert schema_smoke_test(first.database_path) == "v2_foundation_20260819"
 
     engine = create_sqlite_engine(first.database_path)
     with engine.connect() as connection:
@@ -234,7 +235,7 @@ def test_storage_initialization_rejects_conflicting_builtin_font_metadata(
 
 @pytest.mark.parametrize(
     "retired_revision",
-    [None, "0017", "v2_foundation_20260801"],
+    [None, "0017", "v2_foundation_20260810"],
 )
 def test_storage_initialization_rejects_nonformal_database_without_rewriting_it(
     tmp_path: Path,
@@ -633,6 +634,15 @@ def test_translation_settings_drop_the_unused_global_proofreading_retry() -> Non
 
     with pytest.raises(ValueError, match="schema version must be 6"):
         validate_setting_payload("translation", payload, schema_version=5)
+
+
+def test_text_style_defaults_reject_the_legacy_schema_version() -> None:
+    with pytest.raises(ValueError, match="schema version must be 2"):
+        validate_setting_payload(
+            "text_style_defaults",
+            DEFAULT_TEXT_STYLE,
+            schema_version=1,
+        )
 
 
 def test_removing_middle_proofreading_round_prunes_only_current_provider_setting(

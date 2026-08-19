@@ -29,7 +29,8 @@ export const DEFAULT_BUBBLE_STATE: BubbleState = {
   strokeWidth: TEXT_STYLE_DEFAULTS.strokeWidth,
 
   lineSpacing: TEXT_STYLE_DEFAULTS.lineSpacing,
-  textAlign: TEXT_STYLE_DEFAULTS.textAlign,
+  inlineAlign: TEXT_STYLE_DEFAULTS.inlineAlign,
+  blockAlign: TEXT_STYLE_DEFAULTS.blockAlign,
 
   inpaintMethod: TEXT_STYLE_DEFAULTS.inpaintMethod,
 

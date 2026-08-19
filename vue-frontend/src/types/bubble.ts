@@ -14,7 +14,7 @@ export type TextDirection = 'vertical' | 'horizontal' | 'auto'
 
 export type ResolvedTextDirection = Exclude<TextDirection, 'auto'>
 
-export type TextAlign = 'start' | 'center' | 'end'
+export type LogicalAlign = 'start' | 'center' | 'end'
 
 export type InpaintMethod = 'solid' | 'lama_mpe' | 'litelama'
 
@@ -49,7 +49,8 @@ export interface BubbleState {
   strokeWidth: number
 
   lineSpacing: number
-  textAlign: TextAlign
+  inlineAlign: LogicalAlign
+  blockAlign: LogicalAlign
 
   inpaintMethod: InpaintMethod
 

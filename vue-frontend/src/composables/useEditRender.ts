@@ -78,7 +78,7 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
       }
       if (
         status.renderStatus === 'not_rendered'
-        && !bubbles.value.some(bubble => bubble.translatedText?.trim())
+        && !bubbles.value.some(bubble => bubble.translatedText.trim())
       ) {
         return status.translatedUrl ?? null
       }

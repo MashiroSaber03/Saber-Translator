@@ -4,10 +4,16 @@ export const layoutDirectionOptions = [
   { label: '横向排版', value: 'horizontal' },
 ]
 
-export const textAlignOptions = [
-  { label: '起始 (左/顶)', value: 'start' },
+export const inlineAlignOptions = [
+  { label: '起始（左 / 顶）', value: 'start' },
   { label: '居中', value: 'center' },
-  { label: '末尾 (右/底)', value: 'end' },
+  { label: '末尾（右 / 底）', value: 'end' },
+]
+
+export const blockAlignOptions = [
+  { label: '起始（顶 / 右）', value: 'start' },
+  { label: '居中', value: 'center' },
+  { label: '末尾（底 / 左）', value: 'end' },
 ]
 
 export const inpaintMethodOptions = [

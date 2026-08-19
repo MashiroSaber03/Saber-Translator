@@ -45,7 +45,10 @@ from src.backend_v2.translation.pipeline import (
     _validate_detection_result,
     _validate_ocr_results,
 )
-from src.core.config_models import validate_bubble_payload
+from src.core.config_models import (
+    BUBBLE_PAYLOAD_SCHEMA_VERSION,
+    validate_bubble_payload,
+)
 
 
 class InteractivePageOperationService:
@@ -216,10 +219,7 @@ class InteractivePageOperationService:
         )
         index = self._bubble_index(rows, bubble_id)
         payload = dict(rows[index]["payload"])
-        original_value = payload.get("originalText")
-        if not isinstance(original_value, str):
-            raise ValueError("bubble original text is invalid")
-        original_text = original_value.strip()
+        original_text = payload["originalText"].strip()
         if not original_text:
             raise ValueError("bubble has no original text")
         config = self._with_credential(self._payload(operation))
@@ -384,12 +384,12 @@ class InteractivePageOperationService:
             partial=False,
         )
         uses_auto_color = bool(style_defaults["useAutoTextColor"])
-        old_text_color = payload.get("textColor")
+        old_text_color = payload["textColor"]
         if uses_auto_color and color.get("fg_color") is not None:
             payload["textColor"] = rgb_to_hex(color["fg_color"])
         if uses_auto_color and color.get("bg_color") is not None:
             payload["fillColor"] = rgb_to_hex(color["bg_color"])
-        changes_render = payload.get("textColor") != old_text_color
+        changes_render = payload["textColor"] != old_text_color
         new_revision = int(page["document_revision"]) + 1
         has_drawable_text = any(
             _payload_text(
@@ -596,7 +596,7 @@ class InteractivePageOperationService:
                             "ordinal": index,
                             "font_id": page["default_font_id"],
                             "payload_json": canonical_json(payload),
-                            "payload_schema_version": 1,
+                            "payload_schema_version": BUBBLE_PAYLOAD_SCHEMA_VERSION,
                             "updated_revision": new_revision,
                         }
                         for index, payload in enumerate(payloads, start=1)
@@ -676,7 +676,7 @@ class InteractivePageOperationService:
                 .where(bubbles.c.page_id == page_id)
                 .order_by(bubbles.c.ordinal)
             ).mappings():
-                if row["payload_schema_version"] != 1:
+                if row["payload_schema_version"] != BUBBLE_PAYLOAD_SCHEMA_VERSION:
                     raise RuntimeError(
                         "bubble payload schema version is not current"
                     )

@@ -7,7 +7,12 @@ import UiNumberField from '@/components/ui/UiNumberField.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import type { ApplySettingsOptions } from '@/components/translate/useSettingsSidebar'
 import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
-import { inpaintMethodOptions, layoutDirectionOptions, textAlignOptions } from '@/utils/textStyleForm'
+import {
+  blockAlignOptions,
+  inlineAlignOptions,
+  inpaintMethodOptions,
+  layoutDirectionOptions,
+} from '@/utils/textStyleForm'
 
 const applyOptions: ApplySettingsOptions = {
   fontSize: true,
@@ -19,7 +24,8 @@ const applyOptions: ApplySettingsOptions = {
   strokeColor: true,
   strokeWidth: true,
   lineSpacing: true,
-  textAlign: true,
+  inlineAlign: true,
+  blockAlign: true,
 }
 
 describe('TextStyleSection', () => {
@@ -32,30 +38,35 @@ describe('TextStyleSection', () => {
         inpaintMethodOptions,
         layoutDirectionOptions,
         showApplyOptions: false,
-        textAlignOptions,
+        inlineAlignOptions,
+        blockAlignOptions,
         textStyle: {
           ...TEXT_STYLE_DEFAULTS,
           layoutDirection: 'vertical',
-          textAlign: 'center',
+          inlineAlign: 'center',
+          blockAlign: 'end',
           inpaintMethod: 'solid',
         },
       },
     })
 
     const selects = wrapper.findAllComponents(UiSelect)
-    expect(selects).toHaveLength(3)
+    expect(selects).toHaveLength(4)
     expect(selects.map(select => select.props('modelValue'))).toEqual([
       'vertical',
       'center',
+      'end',
       'solid',
     ])
 
     selects[0]!.vm.$emit('change', 'horizontal')
     selects[1]!.vm.$emit('change', 'end')
-    selects[2]!.vm.$emit('change', 'litelama')
+    selects[2]!.vm.$emit('change', 'center')
+    selects[3]!.vm.$emit('change', 'litelama')
 
     expect(wrapper.emitted('layoutDirectionChange')?.[0]).toEqual(['horizontal'])
-    expect(wrapper.emitted('textAlignChange')?.[0]).toEqual(['end'])
+    expect(wrapper.emitted('inlineAlignChange')?.[0]).toEqual(['end'])
+    expect(wrapper.emitted('blockAlignChange')?.[0]).toEqual(['center'])
     expect(wrapper.emitted('inpaintMethodChange')?.[0]).toEqual(['litelama'])
   })
 
@@ -68,7 +79,8 @@ describe('TextStyleSection', () => {
         inpaintMethodOptions,
         layoutDirectionOptions,
         showApplyOptions: false,
-        textAlignOptions,
+        inlineAlignOptions,
+        blockAlignOptions,
         textStyle: {
           ...TEXT_STYLE_DEFAULTS,
           strokeEnabled: true,
@@ -107,7 +119,8 @@ describe('TextStyleSection', () => {
         inpaintMethodOptions,
         layoutDirectionOptions,
         showApplyOptions: false,
-        textAlignOptions,
+        inlineAlignOptions,
+        blockAlignOptions,
         textStyle: {
           ...TEXT_STYLE_DEFAULTS,
           useAutoTextColor: true,
@@ -149,8 +162,13 @@ describe('TextStyleSection', () => {
       hint: '',
       variant: 'settings',
     })
-    expect(fieldContracts.get('对齐方式')).toEqual({
-      controlId: 'textAlign',
+    expect(fieldContracts.get('行内对齐')).toEqual({
+      controlId: 'inlineAlign',
+      hint: '',
+      variant: 'settings',
+    })
+    expect(fieldContracts.get('文本块对齐')).toEqual({
+      controlId: 'blockAlign',
       hint: '',
       variant: 'settings',
     })

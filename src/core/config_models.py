@@ -12,6 +12,7 @@ from src.core.ocr_types import OcrResult
 from src.shared import constants
 
 
+BUBBLE_PAYLOAD_SCHEMA_VERSION = 2
 STORED_BUBBLE_FIELDS = frozenset(
     {
         "originalText",
@@ -30,7 +31,8 @@ STORED_BUBBLE_FIELDS = frozenset(
         "strokeColor",
         "strokeWidth",
         "lineSpacing",
-        "textAlign",
+        "inlineAlign",
+        "blockAlign",
         "inpaintMethod",
         "autoFgColor",
         "autoBgColor",
@@ -304,12 +306,13 @@ def validate_bubble_payload(
         if line_spacing <= 0:
             raise ValueError("lineSpacing must be greater than zero")
         result["lineSpacing"] = float(line_spacing)
-    if "textAlign" in result:
-        result["textAlign"] = _choice(
-            result["textAlign"],
-            field_name="textAlign",
-            choices=frozenset({"center", "end", "start"}),
-        )
+    for name in ("inlineAlign", "blockAlign"):
+        if name in result:
+            result[name] = _choice(
+                result[name],
+                field_name=name,
+                choices=frozenset({"center", "end", "start"}),
+            )
     if "inpaintMethod" in result:
         result["inpaintMethod"] = _choice(
             result["inpaintMethod"],
@@ -352,7 +355,8 @@ class BubbleState:
     stroke_color: str = constants.DEFAULT_STROKE_COLOR
     stroke_width: int = constants.DEFAULT_STROKE_WIDTH
     line_spacing: float = constants.DEFAULT_LINE_SPACING
-    text_align: str = constants.DEFAULT_TEXT_ALIGN
+    inline_align: str = constants.DEFAULT_INLINE_ALIGN
+    block_align: str = constants.DEFAULT_BLOCK_ALIGN
     inpaint_method: str = constants.DEFAULT_INPAINT_METHOD
     auto_fg_color: tuple[int, int, int] | None = None
     auto_bg_color: tuple[int, int, int] | None = None
@@ -379,7 +383,8 @@ class BubbleState:
             "strokeColor": self.stroke_color,
             "strokeWidth": self.stroke_width,
             "lineSpacing": self.line_spacing,
-            "textAlign": self.text_align,
+            "inlineAlign": self.inline_align,
+            "blockAlign": self.block_align,
             "inpaintMethod": self.inpaint_method,
             "autoFgColor": list(self.auto_fg_color) if self.auto_fg_color else None,
             "autoBgColor": list(self.auto_bg_color) if self.auto_bg_color else None,
@@ -409,7 +414,8 @@ class BubbleState:
             stroke_color=payload["strokeColor"],
             stroke_width=payload["strokeWidth"],
             line_spacing=payload["lineSpacing"],
-            text_align=payload["textAlign"],
+            inline_align=payload["inlineAlign"],
+            block_align=payload["blockAlign"],
             inpaint_method=payload["inpaintMethod"],
             auto_fg_color=(
                 tuple(payload["autoFgColor"])

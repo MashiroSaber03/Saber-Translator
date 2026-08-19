@@ -78,6 +78,34 @@ describe('useSettingsStore backend-first loading', () => {
     expect(store.settings.textStyle).toEqual(createDefaultSettings().textStyle)
   })
 
+  it('rejects legacy text-style defaults instead of adapting them in the browser', async () => {
+    const settings = createDefaultSettings()
+    settingsApiMocks.getV2Settings.mockResolvedValue({
+      settings: [
+        {
+          domain: 'translation',
+          revision: 1,
+          schemaVersion: 6,
+          payload: settings,
+        },
+        {
+          domain: 'text_style_defaults',
+          revision: 1,
+          schemaVersion: 1,
+          payload: settings.textStyle,
+        },
+        workflowPreferencesEntry(),
+      ],
+      bookSettings: [],
+      providerSettings: [],
+      credentials: [],
+    })
+
+    const store = useSettingsStore()
+    expect(await store.loadFromBackend()).toBe(false)
+    expect(store.backendError).toContain('文字样式默认设置版本无效')
+  })
+
   it('rejects a partial text-style defaults fact instead of filling missing fields in the browser', async () => {
     const settings = createDefaultSettings()
     const { useAutoTextColor: _missing, ...partialTextStyle } = settings.textStyle
@@ -92,7 +120,7 @@ describe('useSettingsStore backend-first loading', () => {
         {
           domain: 'text_style_defaults',
           revision: 1,
-          schemaVersion: 1,
+          schemaVersion: 2,
           payload: partialTextStyle,
         },
         workflowPreferencesEntry(),
@@ -128,7 +156,7 @@ describe('useSettingsStore backend-first loading', () => {
         {
           domain: 'text_style_defaults',
           revision: 1,
-          schemaVersion: 1,
+          schemaVersion: 2,
           payload: settings.textStyle,
         },
         workflowPreferencesEntry(),
@@ -186,7 +214,7 @@ describe('useSettingsStore backend-first loading', () => {
         {
           domain: 'text_style_defaults',
           revision: 1,
-          schemaVersion: 1,
+          schemaVersion: 2,
           payload: initialSettings.textStyle,
         },
         workflowPreferencesEntry(),
@@ -256,7 +284,7 @@ describe('useSettingsStore backend-first loading', () => {
           {
             domain: 'text_style_defaults',
             revision: 1,
-            schemaVersion: 1,
+            schemaVersion: 2,
             payload: initialSettings.textStyle,
           },
           workflowPreferencesEntry(),
@@ -311,7 +339,7 @@ describe('useSettingsStore backend-first loading', () => {
         {
           domain: 'text_style_defaults',
           revision: 2,
-          schemaVersion: 1,
+          schemaVersion: 2,
           payload: globalTextDefaults,
         },
         workflowPreferencesEntry(),
@@ -337,7 +365,8 @@ describe('useSettingsStore backend-first loading', () => {
       strokeColor: '#405060',
       strokeEnabled: false,
       strokeWidth: 5,
-      textAlign: 'end' as const,
+      inlineAlign: 'end' as const,
+      blockAlign: 'center' as const,
       textColor: '#708090',
       useAutoTextColor: false,
     }
@@ -362,7 +391,7 @@ describe('useSettingsStore backend-first loading', () => {
         {
           domain: 'text_style_defaults',
           revision: 1,
-          schemaVersion: 1,
+          schemaVersion: 2,
           payload: settings.textStyle,
         },
         workflowPreferencesEntry(),
@@ -417,7 +446,7 @@ describe('useSettingsStore backend-first loading', () => {
         {
           domain: 'text_style_defaults',
           revision: 1,
-          schemaVersion: 1,
+          schemaVersion: 2,
           payload: settings.textStyle,
         },
         workflowPreferencesEntry(),

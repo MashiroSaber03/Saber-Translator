@@ -20,7 +20,8 @@ withDefaults(defineProps<{
   inpaintMethodOptions: UiSelectOption[]
   layoutDirectionOptions: UiSelectOption[]
   showApplyOptions: boolean
-  textAlignOptions: UiSelectOption[]
+  inlineAlignOptions: UiSelectOption[]
+  blockAlignOptions: UiSelectOption[]
   textStyle: TextStyleSettings
 }>(), {
   disabled: false,
@@ -32,7 +33,8 @@ defineEmits<{
   (event: 'inpaintMethodChange', value: UiSelectValue): void
   (event: 'layoutDirectionChange', value: UiSelectValue): void
   (event: 'selectAll'): void
-  (event: 'textAlignChange', value: UiSelectValue): void
+  (event: 'inlineAlignChange', value: UiSelectValue): void
+  (event: 'blockAlignChange', value: UiSelectValue): void
   (event: 'toggleApplyOptions'): void
   (event: 'updateApplyOption', key: keyof ApplySettingsOptions, value: boolean): void
   (event: 'updateAutoFontSize', value: boolean): void
@@ -137,15 +139,30 @@ const isTextStyleExpanded = ref(true)
         <UiField
           class="text-style-section__field"
           variant="settings"
-          label="对齐方式"
-          control-id="textAlign"
+          label="行内对齐"
+          control-id="inlineAlign"
         >
           <UiSelect
-            id="textAlign"
-            :model-value="textStyle.textAlign"
-            :options="textAlignOptions"
+            id="inlineAlign"
+            :model-value="textStyle.inlineAlign"
+            :options="inlineAlignOptions"
             :disabled="disabled"
-            @change="$emit('textAlignChange', $event)"
+            @change="$emit('inlineAlignChange', $event)"
+          />
+        </UiField>
+
+        <UiField
+          class="text-style-section__field"
+          variant="settings"
+          label="文本块对齐"
+          control-id="blockAlign"
+        >
+          <UiSelect
+            id="blockAlign"
+            :model-value="textStyle.blockAlign"
+            :options="blockAlignOptions"
+            :disabled="disabled"
+            @change="$emit('blockAlignChange', $event)"
           />
         </UiField>
       </section>

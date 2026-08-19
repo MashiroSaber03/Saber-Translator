@@ -43,7 +43,8 @@ describe('textStyleDefaults factory fallback', () => {
       strokeColor: '#778899',
       strokeWidth: 3,
       lineSpacing: 1.25,
-      textAlign: 'center' as const,
+      inlineAlign: 'center' as const,
+      blockAlign: 'end' as const,
       useAutoTextColor: true,
     }
 

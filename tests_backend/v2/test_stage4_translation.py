@@ -1362,7 +1362,8 @@ def test_translation_uses_current_page_layout_and_inpainting_defaults(
         "strokeColor": "#AABBCC",
         "strokeWidth": 7,
         "lineSpacing": 1.4,
-        "textAlign": "end",
+        "inlineAlign": "end",
+        "blockAlign": "center",
     }
     with platform["engine"].begin() as connection:
         connection.execute(
@@ -1400,7 +1401,8 @@ def test_translation_uses_current_page_layout_and_inpainting_defaults(
     assert payload["strokeColor"] == "#AABBCC"
     assert payload["strokeWidth"] == 7
     assert payload["lineSpacing"] == 1.4
-    assert payload["textAlign"] == "end"
+    assert payload["inlineAlign"] == "end"
+    assert payload["blockAlign"] == "center"
     assert payload["inpaintMethod"] == "litelama"
     assert algorithms.render_payloads[0][0]["textColor"] == "#000000"
     assert algorithms.render_payloads[0][0]["fillColor"] == "#123456"
@@ -1410,7 +1412,8 @@ def test_translation_uses_current_page_layout_and_inpainting_defaults(
     assert algorithms.render_payloads[0][0]["strokeColor"] == "#AABBCC"
     assert algorithms.render_payloads[0][0]["strokeWidth"] == 7
     assert algorithms.render_payloads[0][0]["lineSpacing"] == 1.4
-    assert algorithms.render_payloads[0][0]["textAlign"] == "end"
+    assert algorithms.render_payloads[0][0]["inlineAlign"] == "end"
+    assert algorithms.render_payloads[0][0]["blockAlign"] == "center"
     assert algorithms.repair_configs == [
         {
             "disable_resize": False,
@@ -1460,6 +1463,73 @@ def test_translation_rejects_a_stale_style_source_revision(
         JobQueueRepository(platform["engine"]).list_jobs(limit=10)["items"]
         == []
     )
+
+
+def test_translation_rejects_noncurrent_style_source_schema(
+    translation_platform,
+) -> None:
+    platform = translation_platform
+    with platform["engine"].begin() as connection:
+        revision = int(
+            connection.execute(
+                select(pages.c.document_revision).where(
+                    pages.c.id == platform["page_id"]
+                )
+            ).scalar_one()
+        )
+        connection.execute(
+            update(pages)
+            .where(pages.c.id == platform["page_id"])
+            .values(page_style_schema_version=1)
+        )
+
+    with pytest.raises(ValueError, match="style source page schema version"):
+        TranslationJobCommandService(platform["engine"]).create_chapter_job(
+            chapter_id=str(platform["chapter"]["id"]),
+            config={
+                "mode": "standard",
+                "styleSourcePageId": platform["page_id"],
+                "styleSourceDocumentRevision": revision,
+            },
+            page_ids=[platform["page_id"]],
+            idempotency_key="noncurrent-task-style-source",
+        )
+
+    assert JobQueueRepository(platform["engine"]).list_jobs(limit=10)["items"] == []
+
+
+def test_translation_rejects_noncurrent_style_target_schema(
+    translation_platform,
+) -> None:
+    platform = translation_platform
+    target_page_id = _import_extra_page(platform, "noncurrent-style-target.png")
+    with platform["engine"].begin() as connection:
+        source_revision = int(
+            connection.execute(
+                select(pages.c.document_revision).where(
+                    pages.c.id == platform["page_id"]
+                )
+            ).scalar_one()
+        )
+        connection.execute(
+            update(pages)
+            .where(pages.c.id == target_page_id)
+            .values(page_style_schema_version=1)
+        )
+
+    with pytest.raises(ValueError, match="style target page schema version"):
+        TranslationJobCommandService(platform["engine"]).create_chapter_job(
+            chapter_id=str(platform["chapter"]["id"]),
+            config={
+                "mode": "standard",
+                "styleSourcePageId": platform["page_id"],
+                "styleSourceDocumentRevision": source_revision,
+            },
+            page_ids=[target_page_id],
+            idempotency_key="noncurrent-task-style-target",
+        )
+
+    assert JobQueueRepository(platform["engine"]).list_jobs(limit=10)["items"] == []
 
 
 def test_translation_style_source_idempotency_replays_after_later_edits(
@@ -1704,7 +1774,8 @@ def test_translation_freezes_one_source_page_style_for_every_target_page(
                 "strokeColor": "#708090",
                 "strokeWidth": 5,
                 "lineSpacing": 1.6,
-                "textAlign": "end",
+                "inlineAlign": "end",
+                "blockAlign": "center",
             }
         )
         connection.execute(
@@ -2254,6 +2325,49 @@ def test_text_import_rejects_noncurrent_document_shape(
         commands.preview_text_import(
             chapter_id=str(platform["chapter"]["id"]),
             document=exported,
+        )
+
+
+def test_text_import_rejects_invalid_text_direction(
+    translation_platform,
+) -> None:
+    platform = translation_platform
+    payload = BubbleState().to_dict()
+    payload.pop("fontFamily")
+    payload.pop("autoTextDirection")
+    ContentRepository(platform["engine"]).mutate_page_document(
+        page_id=platform["page_id"],
+        base_revision=1,
+        mutations=[
+            {
+                "op": "create",
+                "clientMutationId": "invalid-text-direction-source",
+                "fields": payload,
+            }
+        ],
+        idempotency_key="invalid-text-direction-source",
+    )
+    commands = AuxiliaryTranslationCommands(platform["engine"])
+    exported = commands.export_text(str(platform["chapter"]["id"]))
+    exported["pages"][0]["bubbles"][0]["text_direction"] = "diagonal"
+
+    with pytest.raises(ValueError, match="text fields are invalid"):
+        commands.preview_text_import(
+            chapter_id=str(platform["chapter"]["id"]),
+            document=exported,
+        )
+
+    exported["pages"][0]["bubbles"][0]["text_direction"] = "horizontal"
+    preview = commands.preview_text_import(
+        chapter_id=str(platform["chapter"]["id"]),
+        document=exported,
+    )
+    preview["pages"][0]["changes"][0]["fields"]["textDirection"] = "diagonal"
+    with pytest.raises(ValueError, match="text change fields are invalid"):
+        commands.create_text_import_job(
+            chapter_id=str(platform["chapter"]["id"]),
+            confirmed_pages=preview["pages"],
+            idempotency_key="invalid-text-direction-import",
         )
 
 

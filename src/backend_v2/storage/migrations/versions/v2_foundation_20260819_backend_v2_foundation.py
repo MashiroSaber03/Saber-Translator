@@ -1,8 +1,8 @@
 """backend_v2_foundation
 
-Revision ID: v2_foundation_20260810
+Revision ID: v2_foundation_20260819
 Revises: 
-Create Date: 2026-08-10 00:00:00.000000
+Create Date: 2026-08-19 00:00:00.000000
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'v2_foundation_20260810'
+revision: str = 'v2_foundation_20260819'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -898,7 +898,7 @@ def upgrade() -> None:
     sa.Column('detection_state', sa.String(length=32), server_default='unprocessed', nullable=False),
     sa.Column('default_font_id', sa.String(length=36), nullable=True),
     sa.Column('page_style_defaults_json', sa.Text(), server_default='{}', nullable=False),
-    sa.Column('page_style_schema_version', sa.Integer(), server_default='1', nullable=False),
+    sa.Column('page_style_schema_version', sa.Integer(), server_default='2', nullable=False),
     sa.Column('warnings_json', sa.Text(), server_default='[]', nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
@@ -1032,7 +1032,7 @@ def upgrade() -> None:
     sa.Column('ordinal', sa.Integer(), nullable=False),
     sa.Column('font_id', sa.String(length=36), nullable=True),
     sa.Column('payload_json', sa.Text(), nullable=False),
-    sa.Column('payload_schema_version', sa.Integer(), server_default='1', nullable=False),
+    sa.Column('payload_schema_version', sa.Integer(), server_default='2', nullable=False),
     sa.Column('updated_revision', sa.Integer(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),

@@ -162,12 +162,13 @@ describe('useTextStyleSync backend ownership', () => {
       strokeColor: false,
       strokeEnabled: false,
       strokeWidth: false,
-      textAlign: true,
+      inlineAlign: true,
+      blockAlign: false,
       textColor: false,
     })
 
     expect(createStyleJobMock).toHaveBeenCalledWith('chapter-1', {
-      selectedFields: ['fontSize', 'textAlign'],
+      selectedFields: ['fontSize', 'inlineAlign'],
       sourceDocumentRevision: 4,
       sourcePageId: image.id,
     })
@@ -197,7 +198,8 @@ describe('useTextStyleSync backend ownership', () => {
       strokeColor: false,
       strokeEnabled: false,
       strokeWidth: false,
-      textAlign: false,
+      inlineAlign: false,
+      blockAlign: false,
       textColor: false,
     })
 
@@ -230,7 +232,7 @@ describe('useTextStyleSync backend ownership', () => {
       documentRevision: 8,
       pageId: imageStore.currentImage?.id,
       pageStyleDefaults: { ...pageStyleDefaults, fontSize: 19 },
-      pageStyleSchemaVersion: 1,
+      pageStyleSchemaVersion: 2,
       renderStatus: 'ready',
     })
     registerPageDocumentMock.mockReturnValue([authoritativeBubble])
