@@ -46,7 +46,6 @@ from src.backend_v2.storage.schema import (
     book_tags,
     books,
     bubbles,
-    chapter_write_intents,
     chapter_write_locks,
     chapter_navigation_state,
     chapters,
@@ -66,7 +65,6 @@ from src.backend_v2.storage.schema import (
 )
 from src.backend_v2.storage.seeding import QUICK_WORKSPACE_BOOK_ID
 from src.core.config_models import (
-    BUBBLE_PAYLOAD_SCHEMA_VERSION,
     STORED_BUBBLE_FIELDS,
     validate_bubble_payload,
 )
@@ -419,7 +417,6 @@ class ContentRepository:
                 insert(translation_constraints).values(
                     book_id=book_id,
                     payload_json=_json(empty_translation_constraints()),
-                    schema_version=TRANSLATION_CONSTRAINTS_SCHEMA_VERSION,
                 )
             )
             if tag_ids is not None:
@@ -799,12 +796,10 @@ class ContentRepository:
             ).mappings().one_or_none()
         if row is None:
             raise ContentNotFound("translation constraints not found")
-        if row["schema_version"] != TRANSLATION_CONSTRAINTS_SCHEMA_VERSION:
-            raise ValueError("translation constraints schema version is not current")
         return {
             "bookId": book_id,
             "revision": row["revision"],
-            "schemaVersion": row["schema_version"],
+            "schemaVersion": TRANSLATION_CONSTRAINTS_SCHEMA_VERSION,
             "payload": validate_translation_constraints(
                 json.loads(row["payload_json"])
             ),
@@ -824,12 +819,9 @@ class ContentRepository:
                 .where(
                     translation_constraints.c.book_id == book_id,
                     translation_constraints.c.revision == base_revision,
-                    translation_constraints.c.schema_version
-                    == TRANSLATION_CONSTRAINTS_SCHEMA_VERSION,
                 )
                 .values(
                     payload_json=_json(normalized),
-                    schema_version=TRANSLATION_CONSTRAINTS_SCHEMA_VERSION,
                     revision=base_revision + 1,
                     updated_at=_utcnow(),
                 )
@@ -840,15 +832,6 @@ class ContentRepository:
                 ).scalar_one_or_none()
                 if exists_book is None:
                     raise ContentNotFound("book not found")
-                schema_version = connection.execute(
-                    select(translation_constraints.c.schema_version).where(
-                        translation_constraints.c.book_id == book_id
-                    )
-                ).scalar_one_or_none()
-                if schema_version != TRANSLATION_CONSTRAINTS_SCHEMA_VERSION:
-                    raise ValueError(
-                        "translation constraints schema version is not current"
-                    )
                 raise ContentConflict("translation constraints revision changed")
         return {
             "bookId": book_id,
@@ -893,7 +876,6 @@ class ContentRepository:
                     chapters.c.title.label("chapter_title"),
                     chapters.c.page_order_revision,
                     chapters.c.settings_memory_json,
-                    chapters.c.settings_memory_schema_version,
                     chapters.c.settings_memory_revision,
                 )
                 .join(chapters, chapters.c.book_id == books.c.id)
@@ -915,7 +897,6 @@ class ContentRepository:
             constraints = connection.execute(
                 select(
                     translation_constraints.c.payload_json,
-                    translation_constraints.c.schema_version,
                     translation_constraints.c.revision,
                 ).where(translation_constraints.c.book_id == book_id)
             ).mappings().one_or_none()
@@ -1000,13 +981,6 @@ class ContentRepository:
             ).mappings().one_or_none()
         if constraints is None:
             raise ContentNotFound("translation constraints not found")
-        if (
-            row["settings_memory_schema_version"]
-            != CHAPTER_SETTINGS_MEMORY_SCHEMA_VERSION
-        ):
-            raise ValueError("chapter settings memory schema version is not current")
-        if constraints["schema_version"] != TRANSLATION_CONSTRAINTS_SCHEMA_VERSION:
-            raise ValueError("translation constraints schema version is not current")
         settings_memory = json.loads(row["settings_memory_json"])
         if not isinstance(settings_memory, dict):
             raise ValueError("chapter settings memory must be an object")
@@ -1025,9 +999,7 @@ class ContentRepository:
                 "title": row["chapter_title"],
                 "pageOrderRevision": row["page_order_revision"],
                 "settingsMemory": settings_memory,
-                "settingsMemorySchemaVersion": row[
-                    "settings_memory_schema_version"
-                ],
+                "settingsMemorySchemaVersion": CHAPTER_SETTINGS_MEMORY_SCHEMA_VERSION,
                 "settingsMemoryRevision": row["settings_memory_revision"],
             },
             "pages": self.list_pages(
@@ -1044,7 +1016,7 @@ class ContentRepository:
             },
             "constraints": {
                 "payload": constraint_payload,
-                "schemaVersion": constraints["schema_version"],
+                "schemaVersion": TRANSLATION_CONSTRAINTS_SCHEMA_VERSION,
                 "revision": constraints["revision"],
             },
             "activeJobs": [
@@ -1084,8 +1056,6 @@ class ContentRepository:
                 .where(
                     chapters.c.id == chapter_id,
                     chapters.c.settings_memory_revision == base_revision,
-                    chapters.c.settings_memory_schema_version
-                    == CHAPTER_SETTINGS_MEMORY_SCHEMA_VERSION,
                 )
                 .values(
                     settings_memory_json=_json(payload),
@@ -1098,15 +1068,6 @@ class ContentRepository:
                     select(chapters.c.id).where(chapters.c.id == chapter_id)
                 ).scalar_one_or_none() is None:
                     raise ContentNotFound("chapter not found")
-                schema_version = connection.execute(
-                    select(chapters.c.settings_memory_schema_version).where(
-                        chapters.c.id == chapter_id
-                    )
-                ).scalar_one()
-                if schema_version != CHAPTER_SETTINGS_MEMORY_SCHEMA_VERSION:
-                    raise ValueError(
-                        "chapter settings memory schema version is not current"
-                    )
                 raise ContentConflict("chapter settings memory revision changed")
         return {
             "chapterId": chapter_id,
@@ -1654,7 +1615,6 @@ class ContentRepository:
                     logical_source_path=final_logical_path,
                     default_font_id=default_font_id,
                     page_style_defaults_json=_json(style_defaults),
-                    page_style_schema_version=PAGE_STYLE_SCHEMA_VERSION,
                 )
             )
             connection.execute(
@@ -1748,17 +1708,12 @@ class ContentRepository:
 
     @staticmethod
     def _assert_chapter_writable(connection: object, chapter_id: str) -> None:
-        intent = connection.execute(  # type: ignore[attr-defined]
-            select(chapter_write_intents.c.chapter_id).where(
-                chapter_write_intents.c.chapter_id == chapter_id
-            )
-        ).scalar_one_or_none()
         lock = connection.execute(  # type: ignore[attr-defined]
             select(chapter_write_locks.c.chapter_id).where(
                 chapter_write_locks.c.chapter_id == chapter_id
             )
         ).scalar_one_or_none()
-        if intent is not None or lock is not None:
+        if lock is not None:
             raise ContentLocked("chapter is reserved by backend work")
 
     def list_pages(
@@ -2012,13 +1967,10 @@ class ContentRepository:
                     pages.c.render_status,
                     pages.c.default_font_id,
                     pages.c.page_style_defaults_json,
-                    pages.c.page_style_schema_version,
                 ).where(pages.c.id == page_id)
             ).mappings().one_or_none()
             if page is None:
                 raise ContentNotFound("page not found")
-            if page["page_style_schema_version"] != PAGE_STYLE_SCHEMA_VERSION:
-                raise ValueError("page style schema version is not current")
             if page["document_revision"] != base_revision:
                 raise ContentConflict("page document revision changed")
             self._assert_chapter_writable(connection, str(page["chapter_id"]))
@@ -2036,17 +1988,11 @@ class ContentRepository:
                         bubbles.c.ordinal,
                         bubbles.c.font_id,
                         bubbles.c.payload_json,
-                        bubbles.c.payload_schema_version,
                     )
                     .where(bubbles.c.page_id == page_id)
                     .order_by(bubbles.c.ordinal)
                 ).mappings()
             )
-            if any(
-                row["payload_schema_version"] != BUBBLE_PAYLOAD_SCHEMA_VERSION
-                for row in existing_rows
-            ):
-                raise ValueError("bubble payload schema version is not current")
             documents: dict[str, dict[str, object]] = {
                 str(row["id"]): {
                     "bubbleId": str(row["id"]),
@@ -2327,7 +2273,6 @@ class ContentRepository:
                         insert(bubbles).values(
                             id=bubble_id,
                             page_id=page_id,
-                            payload_schema_version=BUBBLE_PAYLOAD_SCHEMA_VERSION,
                             **values,
                         )
                     )
@@ -2429,13 +2374,10 @@ class ContentRepository:
                 pages.c.render_status,
                 pages.c.default_font_id,
                 pages.c.page_style_defaults_json,
-                pages.c.page_style_schema_version,
             ).where(pages.c.id == page_id)
         ).mappings().one_or_none()
         if page is None:
             raise ContentNotFound("page not found")
-        if page["page_style_schema_version"] != PAGE_STYLE_SCHEMA_VERSION:
-            raise ValueError("page style schema version is not current")
         page_style = validate_page_style(
             json.loads(page["page_style_defaults_json"]),
             partial=False,
@@ -2447,7 +2389,6 @@ class ContentRepository:
                     bubbles.c.ordinal,
                     bubbles.c.font_id,
                     bubbles.c.payload_json,
-                    bubbles.c.payload_schema_version,
                     bubbles.c.updated_revision,
                 )
                 .where(bubbles.c.page_id == page_id)
@@ -2456,8 +2397,6 @@ class ContentRepository:
         )
         bubble_documents: list[dict[str, object]] = []
         for row in bubble_rows:
-            if row["payload_schema_version"] != BUBBLE_PAYLOAD_SCHEMA_VERSION:
-                raise ValueError("bubble payload schema version is not current")
             payload = validate_bubble_payload(
                 json.loads(row["payload_json"]),
                 render=False,
@@ -2478,7 +2417,7 @@ class ContentRepository:
             "renderStatus": page["render_status"],
             "defaultFontId": page["default_font_id"],
             "pageStyleDefaults": page_style,
-            "pageStyleSchemaVersion": page["page_style_schema_version"],
+            "pageStyleSchemaVersion": PAGE_STYLE_SCHEMA_VERSION,
             "bubbles": bubble_documents,
         }
 
@@ -2599,7 +2538,6 @@ class ContentRepository:
                 insert(translation_constraints).values(
                     book_id=book,
                     payload_json=_json(empty_translation_constraints()),
-                    schema_version=TRANSLATION_CONSTRAINTS_SCHEMA_VERSION,
                 )
             )
             connection.execute(
@@ -2678,20 +2616,12 @@ class ContentRepository:
                 source_constraints = connection.execute(
                     select(
                         translation_constraints.c.payload_json,
-                        translation_constraints.c.schema_version,
                     ).where(
                         translation_constraints.c.book_id == quick_book_id
                     )
                 ).mappings().one_or_none()
                 if source_constraints is None:
                     raise ContentNotFound("translation constraints not found")
-                if (
-                    source_constraints["schema_version"]
-                    != TRANSLATION_CONSTRAINTS_SCHEMA_VERSION
-                ):
-                    raise ValueError(
-                        "translation constraints schema version is not current"
-                    )
                 source_constraint_payload = validate_translation_constraints(
                     json.loads(source_constraints["payload_json"])
                 )
@@ -2699,18 +2629,14 @@ class ContentRepository:
                     insert(translation_constraints).values(
                         book_id=destination_book_id,
                         payload_json=_json(source_constraint_payload),
-                        schema_version=TRANSLATION_CONSTRAINTS_SCHEMA_VERSION,
                     )
                 )
             else:
                 assert normalized_target_book_id is not None
                 destination_book_id = normalized_target_book_id
                 destination = connection.execute(
-                    select(
-                        books.c.kind,
-                        translation_constraints.c.schema_version,
-                    )
-                    .outerjoin(
+                    select(books.c.kind)
+                    .join(
                         translation_constraints,
                         translation_constraints.c.book_id == books.c.id,
                     )
@@ -2718,13 +2644,6 @@ class ContentRepository:
                 ).mappings().one_or_none()
                 if destination is None or destination["kind"] != "library":
                     raise ContentNotFound("target library book not found")
-                if (
-                    destination["schema_version"]
-                    != TRANSLATION_CONSTRAINTS_SCHEMA_VERSION
-                ):
-                    raise ValueError(
-                        "translation constraints schema version is not current"
-                    )
                 duplicate_chapter = connection.execute(
                     select(chapters.c.id).where(
                         chapters.c.book_id == destination_book_id,
@@ -2770,7 +2689,6 @@ class ContentRepository:
                 insert(translation_constraints).values(
                     book_id=quick_book_id,
                     payload_json=_json(empty_translation_constraints()),
-                    schema_version=TRANSLATION_CONSTRAINTS_SCHEMA_VERSION,
                 )
             )
             new_quick_chapter_id = str(uuid.uuid4())

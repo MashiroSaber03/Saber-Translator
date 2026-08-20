@@ -6,7 +6,6 @@ from io import BytesIO
 import gc
 import json
 from pathlib import Path
-import sqlite3
 import sys
 import threading
 from typing import Any, Mapping
@@ -49,8 +48,6 @@ from src.backend_v2.insight.qa import (
     InsightQAWorkerService,
     QAConflict,
     QAFenced,
-    TransientFence,
-    TransientHeartbeat,
     TransientRequestRepository,
     citations_for,
     validate_retrieval_candidates,
@@ -2063,13 +2060,7 @@ def test_vector_cancel_keeps_partial_generation_without_switching_active(
     result = service.handle(fence, step)
 
     assert result["__control_drained__"]
-    queue.acknowledge_drain(
-        fence,
-        pool_id="main",
-        worker_slot=0,
-        last_step_id=str(step["stepId"]),
-    )
-    assert queue.finalize_drain(fence, expected_slots={("main", 0)}) == "cancelled"
+    assert queue.finalize_control(fence) == "cancelled"
     detail = queue.get_job(job_id)
     checkpoint = detail["items"][0]["steps"][0]["checkpoint"]
     assert checkpoint["pageCount"] == 2
@@ -2126,13 +2117,7 @@ def test_vector_pause_resumes_from_checkpoint_and_switches_only_on_completion(
         vector_store=pausing_store,
     )
     assert service.handle(fence, step)["__control_drained__"]
-    queue.acknowledge_drain(
-        fence,
-        pool_id="main",
-        worker_slot=0,
-        last_step_id=str(step["stepId"]),
-    )
-    assert queue.finalize_drain(fence, expected_slots={("main", 0)}) == "paused"
+    assert queue.finalize_control(fence) == "paused"
 
     queue.resume(job_id)
     resumed_fence = queue.claim_next(worker_epoch_id=platform["epoch_id"])
@@ -4204,90 +4189,6 @@ def test_insight_export_admission_rejects_a_raced_analysis_head(
         ).scalar_one_or_none() is None
 
 
-def test_transient_heartbeat_exception_cannot_silently_lose_its_lease() -> None:
-    class FailingRepository:
-        lease_seconds = 3
-
-        def renew(self, _fence):
-            raise RuntimeError("database unavailable")
-
-    heartbeat = TransientHeartbeat(
-        FailingRepository(),  # type: ignore[arg-type]
-        TransientFence(
-            request_id="00000000-0000-0000-0000-000000000001",
-            attempt_id="00000000-0000-0000-0000-000000000002",
-            lease_token="lease",
-            worker_epoch_id="00000000-0000-0000-0000-000000000003",
-        ),
-        interval_seconds=0.01,
-    )
-
-    with heartbeat:
-        assert heartbeat.fenced.wait(1)
-
-
-def test_transient_heartbeat_retries_one_sqlite_lock_without_fencing() -> None:
-    class BusyThenRenewRepository:
-        lease_seconds = 3
-
-        def __init__(self) -> None:
-            self.calls = 0
-            self.renewed = threading.Event()
-
-        def renew(self, _fence):
-            self.calls += 1
-            if self.calls == 1:
-                raise sqlite3.OperationalError("database is locked")
-            self.renewed.set()
-            return True
-
-    repository = BusyThenRenewRepository()
-    heartbeat = TransientHeartbeat(
-        repository,  # type: ignore[arg-type]
-        TransientFence(
-            request_id="00000000-0000-0000-0000-000000000001",
-            attempt_id="00000000-0000-0000-0000-000000000002",
-            lease_token="lease",
-            worker_epoch_id="00000000-0000-0000-0000-000000000003",
-        ),
-        interval_seconds=0.01,
-    )
-
-    with heartbeat:
-        assert repository.renewed.wait(1)
-        assert repository.calls >= 2
-        assert not heartbeat.fenced.is_set()
-
-
-def test_transient_heartbeat_fences_after_finite_sqlite_lock_retries() -> None:
-    class BusyRepository:
-        lease_seconds = 3
-
-        def __init__(self) -> None:
-            self.calls = 0
-
-        def renew(self, _fence):
-            self.calls += 1
-            raise sqlite3.OperationalError("database is locked")
-
-    repository = BusyRepository()
-    heartbeat = TransientHeartbeat(
-        repository,  # type: ignore[arg-type]
-        TransientFence(
-            request_id="00000000-0000-0000-0000-000000000001",
-            attempt_id="00000000-0000-0000-0000-000000000002",
-            lease_token="lease",
-            worker_epoch_id="00000000-0000-0000-0000-000000000003",
-        ),
-        interval_seconds=0.01,
-    )
-
-    with heartbeat:
-        assert heartbeat.fenced.wait(1)
-
-    assert repository.calls == 2
-
-
 def _transient_qa_payload(book_id: str) -> dict[str, object]:
     return {
         "bookId": book_id,
@@ -4302,36 +4203,6 @@ def _transient_qa_payload(book_id: str) -> dict[str, object]:
         "dependencyFingerprint": "fingerprint",
         "config": {},
     }
-
-
-def test_transient_request_reclaims_expired_worker_attempt(
-    insight_platform,
-) -> None:
-    platform = insight_platform
-    repository = TransientRequestRepository(platform["engine"])
-    request_id, connection_token = repository.create_vector_query(
-        book_id=str(platform["book"]["id"]),
-        request_payload=_transient_qa_payload(str(platform["book"]["id"])),
-    )
-    first = repository.claim_next(worker_epoch_id=platform["epoch_id"])
-    assert first is not None
-    with platform["engine"].begin() as connection:
-        connection.execute(
-            update(transient_requests)
-            .where(transient_requests.c.id == request_id)
-            .values(lease_expires_at=utcnow() - timedelta(seconds=1))
-        )
-
-    second = repository.claim_next(worker_epoch_id=platform["epoch_id"])
-
-    assert second is not None
-    assert second.request_id == request_id
-    assert second.attempt_id != first.attempt_id
-    assert second.lease_token != first.lease_token
-    repository.close(
-        request_id=request_id,
-        connection_token=connection_token,
-    )
 
 
 def test_transient_request_connection_touch_prevents_stale_pruning(

@@ -25,8 +25,8 @@ import httpx
 
 from src.shared.ai_providers import (
     IMAGE_GEN_CAPABILITY,
-    get_provider_manifest,
     normalize_provider_id,
+    provider_requires_api_key,
     provider_requires_model,
     provider_supports_capability,
     resolve_provider_base_url_for_capability,
@@ -103,7 +103,7 @@ class ImageGenClient:
             raise ValueError(f"服务商 '{self.config.provider}' 不支持 image_gen 能力")
         if not self.base_url:
             raise ValueError(f"{self.config.provider} 生图服务商需要设置 base_url")
-        if get_provider_manifest(provider).requires_api_key and not self.api_key.strip():
+        if provider_requires_api_key(provider, self.base_url) and not self.api_key.strip():
             raise ValueError(f"{self.config.provider} 生图服务商需要设置 api_key")
         if provider_requires_model(provider) and not self.config.model.strip():
             raise ValueError(f"{self.config.provider} 生图服务商需要设置 model")

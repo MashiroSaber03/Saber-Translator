@@ -10,6 +10,7 @@ import sqlite3
 import subprocess
 import sys
 
+import httpx
 import pytest
 from flask import Flask
 from fontTools.ttLib import TTCollection, TTFont
@@ -35,6 +36,7 @@ from src.backend_v2.storage.epochs import (
     utcnow,
 )
 from src.backend_v2.storage.lifecycle import (
+    SCHEMA_REVISION,
     UnsupportedDataRoot,
     initialize_database,
     schema_smoke_test,
@@ -54,10 +56,8 @@ from src.backend_v2.storage.platform_repositories import (
 from src.backend_v2.storage.schema import (
     app_settings,
     assets,
-    api_executor_leases,
     books,
     bubbles,
-    chapter_write_intents,
     chapter_write_locks,
     chapters,
     credential_versions,
@@ -75,7 +75,6 @@ from src.backend_v2.storage.schema import (
     pages,
     process_epochs,
     render_requests,
-    worker_leases,
 )
 from src.backend_v2.storage.seeding import (
     QUICK_WORKSPACE_BOOK_ID,
@@ -91,7 +90,10 @@ from src.backend_v2.settings.validation import (
     validate_provider_setting_payload,
     validate_setting_payload,
 )
-from src.backend_v2.settings.diagnostics import ProviderDiagnostics
+from src.backend_v2.settings.diagnostics import (
+    ProviderDiagnosticUnavailable,
+    ProviderDiagnostics,
+)
 from src.backend_v2.settings.routes import create_settings_blueprint
 from src.backend_v2.worker.maintenance import WorkerMaintenance
 from src.shared import constants as shared_constants
@@ -131,9 +133,9 @@ def test_launcher_initialization_seeds_one_persistent_quick_workspace(
     data_root = tmp_path / "data-v2"
     (data_root / "runtime").mkdir(parents=True)
     first = initialize_database(data_root)
-    assert first.schema_revision == "v2_foundation_20260819"
+    assert first.schema_revision == SCHEMA_REVISION
     assert first.created is True
-    assert schema_smoke_test(first.database_path) == "v2_foundation_20260819"
+    assert schema_smoke_test(first.database_path) == SCHEMA_REVISION
 
     engine = create_sqlite_engine(first.database_path)
     with engine.connect() as connection:
@@ -249,10 +251,11 @@ def test_storage_initialization_rejects_nonformal_database_without_rewriting_it(
         connection.execute("INSERT INTO sentinel VALUES ('untouched')")
         if retired_revision is not None:
             connection.execute(
-                "CREATE TABLE alembic_version(version_num VARCHAR(32) NOT NULL)"
+                "CREATE TABLE schema_metadata("
+                "singleton_id INTEGER PRIMARY KEY, revision VARCHAR(64) NOT NULL)"
             )
             connection.execute(
-                "INSERT INTO alembic_version VALUES (?)",
+                "INSERT INTO schema_metadata VALUES (1, ?)",
                 (retired_revision,),
             )
 
@@ -967,7 +970,6 @@ def test_worker_recovery_is_idempotent_and_preserves_chapter_lock(platform) -> N
     repository = ProcessEpochRepository(engine)
     registration = EpochRegistration("worker-epoch", "worker-token", "worker", 123)
     repository.register(registration)
-    now = utcnow()
     with engine.begin() as connection:
         connection.execute(
             insert(books).values(id="book", kind="library", title="Book")
@@ -990,34 +992,18 @@ def test_worker_recovery_is_idempotent_and_preserves_chapter_lock(platform) -> N
                 latest_progress_json=_stored_job_progress("running"),
                 worker_epoch_id=registration.epoch_id,
                 attempt_id="attempt",
-                lease_token="attempt-token",
-                lease_expires_at=now + timedelta(minutes=1),
             )
         )
         connection.execute(
             insert(chapter_write_locks).values(
                 chapter_id="chapter",
                 job_id="job",
-                lock_generation=1,
-                owner_attempt_id="attempt",
-                lease_token="attempt-token",
-            )
-        )
-        connection.execute(
-            insert(chapter_write_intents).values(
-                chapter_id="chapter",
-                job_id="job",
-                intent_set_id="intent-set",
-                intent_generation=1,
-                worker_epoch_id=registration.epoch_id,
-                lease_token="worker-token",
-                lease_expires_at=now + timedelta(minutes=1),
             )
         )
 
     first = repository.reconcile_dead_worker(registration.epoch_id)
     second = repository.reconcile_dead_worker(registration.epoch_id)
-    assert first.changed and first.jobs_interrupted == 1 and first.intents_removed == 1
+    assert first.changed and first.jobs_interrupted == 1
     assert not second.changed
     with engine.connect() as connection:
         job = connection.execute(
@@ -1058,7 +1044,6 @@ def test_worker_recovery_resolves_drain_transition_states(
         456,
     )
     repository.register(registration)
-    now = utcnow()
     with engine.begin() as connection:
         connection.execute(
             insert(books).values(id="book", kind="library", title="Book")
@@ -1081,8 +1066,6 @@ def test_worker_recovery_resolves_drain_transition_states(
                 latest_progress_json=_stored_job_progress(initial_status),
                 worker_epoch_id=registration.epoch_id,
                 attempt_id="attempt",
-                lease_token="attempt-token",
-                lease_expires_at=now + timedelta(minutes=1),
             )
         )
         connection.execute(
@@ -1101,16 +1084,12 @@ def test_worker_recovery_resolves_drain_transition_states(
                 kind="detect",
                 status="running",
                 attempt_id="attempt",
-                checkpoint_schema_version=1,
             )
         )
         connection.execute(
             insert(chapter_write_locks).values(
                 chapter_id="chapter",
                 job_id="job",
-                lock_generation=1,
-                owner_attempt_id="attempt",
-                lease_token="attempt-token",
             )
         )
 
@@ -1162,7 +1141,6 @@ def test_worker_recovery_requeues_operation_with_a_durable_event(platform) -> No
         654,
     )
     repository.register(registration)
-    now = utcnow()
     with engine.begin() as connection:
         connection.execute(
             insert(books).values(id="book", kind="library", title="Book")
@@ -1191,8 +1169,6 @@ def test_worker_recovery_requeues_operation_with_a_durable_event(platform) -> No
                 request_json="{}",
                 executor_epoch_id=registration.epoch_id,
                 attempt_id="attempt",
-                lease_token="lease",
-                lease_expires_at=now + timedelta(minutes=1),
             )
         )
 
@@ -1220,7 +1196,6 @@ def test_api_recovery_fails_remote_work_and_requeues_safe_render(platform) -> No
     repository = ProcessEpochRepository(engine)
     registration = EpochRegistration("api-epoch", "api-token", "api", 321)
     repository.register(registration)
-    now = utcnow()
     with engine.begin() as connection:
         connection.execute(
             insert(books).values(id="book", kind="library", title="Book")
@@ -1268,8 +1243,6 @@ def test_api_recovery_fails_remote_work_and_requeues_safe_render(platform) -> No
                 request_json="{}",
                 executor_epoch_id=registration.epoch_id,
                 attempt_id="attempt",
-                lease_token="lease",
-                lease_expires_at=now + timedelta(minutes=1),
             )
         )
         connection.execute(
@@ -1281,8 +1254,6 @@ def test_api_recovery_fails_remote_work_and_requeues_safe_render(platform) -> No
                 status="running",
                 executor_epoch_id=registration.epoch_id,
                 attempt_id="render-attempt",
-                lease_token="render-lease",
-                lease_expires_at=now + timedelta(minutes=1),
             )
         )
         connection.execute(
@@ -1296,8 +1267,6 @@ def test_api_recovery_fails_remote_work_and_requeues_safe_render(platform) -> No
                 request_json="{}",
                 executor_epoch_id=registration.epoch_id,
                 attempt_id="safe-attempt",
-                lease_token="safe-lease",
-                lease_expires_at=now + timedelta(minutes=1),
             )
         )
 
@@ -1367,11 +1336,6 @@ def test_expired_or_replaced_epoch_cannot_be_renewed(platform) -> None:
             .where(process_epochs.c.id == "worker")
             .values(lease_expires_at=expired_at)
         )
-        connection.execute(
-            update(worker_leases)
-            .where(worker_leases.c.worker_epoch_id == "worker")
-            .values(lease_expires_at=expired_at)
-        )
     assert not repository.is_active_epoch(role="worker", epoch_id="worker")
     assert not repository.renew(role="worker", epoch_id="worker", token="secret")
     with engine.begin() as connection:
@@ -1405,23 +1369,11 @@ def test_launcher_epoch_tokens_are_never_persisted_in_plaintext(platform) -> Non
                 )
             )
         }
-        worker_token = connection.execute(
-            select(worker_leases.c.token_hash).where(
-                worker_leases.c.worker_epoch_id == "worker-secret-epoch"
-            )
-        ).scalar_one()
-        api_token = connection.execute(
-            select(api_executor_leases.c.token_hash).where(
-                api_executor_leases.c.api_epoch_id == "api-secret-epoch"
-            )
-        ).scalar_one()
 
     assert epoch_tokens == {
         "worker-secret-epoch": hash_epoch_token("worker-secret"),
         "api-secret-epoch": hash_epoch_token("api-secret"),
     }
-    assert worker_token == hash_epoch_token("worker-secret")
-    assert api_token == hash_epoch_token("api-secret")
     assert repository.renew(
         role="worker",
         epoch_id="worker-secret-epoch",
@@ -2597,6 +2549,54 @@ def test_provider_diagnostics_allow_uncredentialed_local_ai_vision(
 
     assert result == {"success": True, "message": "连接成功：Saber OCR test 123"}
     assert captured == {"catalog_api_key": "", "vision_api_key": ""}
+
+
+def test_model_catalog_reports_provider_transport_failure(
+    platform,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root, engine = platform
+    diagnostics = ProviderDiagnostics(SettingsRepository(engine))
+    body = {
+        "provider": "custom",
+        "domain": "translation",
+        "baseUrl": "http://127.0.0.1:65530/v1",
+    }
+
+    def connection_refused(_request):
+        raise httpx.ConnectError("本地化的连接失败消息")
+
+    monkeypatch.setattr(diagnostics.chat, "list_models", connection_refused)
+    with pytest.raises(ProviderDiagnosticUnavailable, match="无法连接到服务"):
+        diagnostics.model_catalog(body)
+
+    def allocation_failed(_request):
+        raise MemoryError("catalog allocation failed")
+
+    monkeypatch.setattr(diagnostics.chat, "list_models", allocation_failed)
+    with pytest.raises(MemoryError, match="allocation failed"):
+        diagnostics.model_catalog(body)
+
+    def provider_unavailable(_self, _body):
+        raise ProviderDiagnosticUnavailable("无法连接到服务")
+
+    monkeypatch.setattr(
+        ProviderDiagnostics,
+        "model_catalog",
+        provider_unavailable,
+    )
+    app = Flask("settings-model-catalog-provider-unavailable-test")
+    app.register_blueprint(
+        create_settings_blueprint(data_root=data_root, engine=engine)
+    )
+    response = app.test_client().post("/api/v2/model-catalog", json=body)
+    assert response.status_code == 502
+    assert response.get_json() == {
+        "error": {
+            "code": "provider_unavailable",
+            "message": "无法连接到服务",
+        }
+    }
 
 
 def test_provider_diagnostics_enforce_capabilities_and_fatal_memory_errors(

@@ -665,16 +665,7 @@ def test_current_document_rejects_partial_coerced_and_corrupt_data(
         connection.execute(
             update(studio_documents)
             .where(studio_documents.c.id == created["id"])
-            .values(schema_version=1)
-        )
-    with pytest.raises(StudioDocumentInvalid, match="schema version"):
-        repository.get_document(str(created["id"]))
-
-    with studio_platform["engine"].begin() as connection:
-        connection.execute(
-            update(studio_documents)
-            .where(studio_documents.c.id == created["id"])
-            .values(schema_version=2, regex_scripts_json="{}")
+            .values(regex_scripts_json="{}")
         )
     with pytest.raises(StudioDocumentInvalid, match="array JSON"):
         repository.get_document(str(created["id"]))

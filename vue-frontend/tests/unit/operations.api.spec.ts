@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { accessGateMock, getMock, postMock, uploadMock } = vi.hoisted(() => ({
-  accessGateMock: vi.fn(),
+const { getMock, postMock, uploadMock } = vi.hoisted(() => ({
   getMock: vi.fn(),
   postMock: vi.fn(),
   uploadMock: vi.fn(),
@@ -13,10 +12,6 @@ vi.mock('@/api/client', () => ({
     post: postMock,
     upload: uploadMock,
   },
-}))
-
-vi.mock('@/services/backendAccessGate', () => ({
-  assertBackendActionAllowed: accessGateMock,
 }))
 
 vi.mock('@/api/v2/content', () => ({
@@ -88,7 +83,6 @@ describe('v2 operation API', () => {
     getMock.mockReset()
     postMock.mockReset()
     uploadMock.mockReset()
-    accessGateMock.mockReset()
   })
 
   afterEach(() => {
@@ -127,7 +121,6 @@ describe('v2 operation API', () => {
       { kind: 'page_detect', baseRevision: 1 },
       { headers: { 'Idempotency-Key': 'idempotency-key' } },
     )
-    expect(accessGateMock).toHaveBeenCalledTimes(2)
   })
 
   it('rejects extra accepted fields and operation identity mismatches', async () => {
@@ -156,19 +149,6 @@ describe('v2 operation API', () => {
 
     getMock.mockResolvedValue(operation({ operationId: 'operation-2' }))
     await expect(getOperation('operation-1')).rejects.toThrow('后端操作身份不匹配')
-  })
-
-  it('does not submit a repair when backend actions are unavailable', async () => {
-    accessGateMock.mockImplementationOnce(() => {
-      throw new Error('后端设置尚未就绪')
-    })
-
-    await expect(createMaskRepair('page-1', new Blob(['mask']), {
-      baseRevision: 1,
-      method: 'restore_source',
-    })).rejects.toThrow('后端设置尚未就绪')
-
-    expect(uploadMock).not.toHaveBeenCalled()
   })
 
   it('submits fill color only for solid repair', async () => {

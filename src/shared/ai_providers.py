@@ -342,8 +342,10 @@ def resolve_provider_base_url_for_capability(
     custom_base_url: Optional[str] = None,
 ) -> Optional[str]:
     manifest = get_provider_manifest(provider)
+    if custom_base_url and custom_base_url.strip():
+        return custom_base_url.strip()
     if manifest.id == "custom":
-        return custom_base_url or None
+        return None
     return manifest.capability_base_urls.get(capability) or manifest.default_base_url
 
 

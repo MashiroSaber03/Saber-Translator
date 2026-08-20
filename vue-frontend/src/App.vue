@@ -60,9 +60,9 @@ onBeforeUnmount(() => {
       class="backend-restricted-banner"
       tone="danger"
       role="alert"
-      title="设置受限模式"
+      title="设置加载失败"
     >
-      设置加载失败，当前为受限模式：{{ settingsStore.backendError }}
+      部分需要全局设置的功能暂不可用：{{ settingsStore.backendError }}
       <template #actions>
         <UiButton variant="secondary" size="sm" @click="settingsStore.loadFromBackend()">
           重试

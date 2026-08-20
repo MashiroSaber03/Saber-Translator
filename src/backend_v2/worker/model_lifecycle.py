@@ -10,8 +10,7 @@ import time
 from typing import Any
 import uuid
 
-from sqlalchemy import Engine, exists, insert, select, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import Engine, exists, select, update
 
 from src.backend_v2.serialization import canonical_json as _json
 from src.backend_v2.timestamps import utcnow
@@ -23,7 +22,6 @@ from src.backend_v2.storage.schema import (
     operations,
     process_epochs,
     transient_requests,
-    worker_commands,
 )
 
 LOGGER = logging.getLogger("saber.worker.models")
@@ -50,7 +48,7 @@ def _log_list(value: object) -> str:
 
 
 class WorkerModelControlRepository:
-    """Persist and fence commands sent from API to the isolated Worker."""
+    """Send the one supported process control through the Worker epoch row."""
 
     def __init__(self, engine: Engine) -> None:
         self.engine = engine
@@ -63,70 +61,51 @@ class WorkerModelControlRepository:
                     "local model inference is running; try again after the "
                     "current model step finishes"
                 )
-            active = connection.execute(
-                select(worker_commands)
-                .where(
-                    worker_commands.c.kind == "release_models",
-                    worker_commands.c.status.in_(("pending", "running")),
+            worker = connection.execute(
+                select(
+                    process_epochs.c.id,
+                    process_epochs.c.model_release_request_id,
+                    process_epochs.c.model_release_handled_id,
                 )
-                .order_by(worker_commands.c.created_at)
+                .where(
+                    process_epochs.c.role == "worker",
+                    process_epochs.c.status == "active",
+                    process_epochs.c.lease_expires_at > now,
+                )
+                .order_by(process_epochs.c.created_at.desc())
                 .limit(1)
             ).mappings().one_or_none()
-            if active is not None:
-                return self._dto(active)
+            if worker is None:
+                raise WorkerCommandFenced("no active Worker is available")
+            active_request = worker["model_release_request_id"]
+            if (
+                active_request is not None
+                and active_request != worker["model_release_handled_id"]
+            ):
+                return {
+                    "commandId": str(active_request),
+                    "kind": "release_models",
+                    "status": "pending",
+                }
             command_id = str(uuid.uuid4())
-            try:
-                connection.execute(
-                    insert(worker_commands).values(
-                        id=command_id,
-                        kind="release_models",
-                        status="pending",
-                        created_at=now,
-                        updated_at=now,
-                    )
+            connection.execute(
+                update(process_epochs)
+                .where(
+                    process_epochs.c.id == worker["id"],
+                    process_epochs.c.status == "active",
                 )
-            except IntegrityError:
-                active = connection.execute(
-                    select(worker_commands)
-                    .where(
-                        worker_commands.c.kind == "release_models",
-                        worker_commands.c.status.in_(("pending", "running")),
-                    )
-                    .limit(1)
-                ).mappings().one()
-                return self._dto(active)
+                .values(
+                    model_release_request_id=command_id,
+                    model_release_result_json=None,
+                    model_release_error_json=None,
+                    updated_at=now,
+                )
+            )
         return {
             "commandId": command_id,
             "kind": "release_models",
             "status": "pending",
         }
-
-    def recover_for_worker(self, *, worker_epoch_id: str) -> None:
-        now = utcnow()
-        with immediate_transaction(self.engine) as connection:
-            self._assert_worker_epoch(
-                connection,
-                worker_epoch_id=worker_epoch_id,
-            )
-            connection.execute(
-                update(worker_commands)
-                .where(
-                    worker_commands.c.status == "running",
-                    (
-                        worker_commands.c.worker_epoch_id.is_(None)
-                        | (
-                            worker_commands.c.worker_epoch_id
-                            != worker_epoch_id
-                        )
-                    ),
-                )
-                .values(
-                    status="pending",
-                    worker_epoch_id=None,
-                    started_at=None,
-                    updated_at=now,
-                )
-            )
 
     def claim_release(
         self,
@@ -134,55 +113,29 @@ class WorkerModelControlRepository:
         worker_epoch_id: str,
     ) -> dict[str, object] | None:
         now = utcnow()
-        with immediate_transaction(self.engine) as connection:
-            self._assert_worker_epoch(
-                connection,
-                worker_epoch_id=worker_epoch_id,
-            )
+        with self.engine.connect() as connection:
             row = connection.execute(
-                select(worker_commands)
-                .where(
-                    worker_commands.c.kind == "release_models",
-                    (
-                        worker_commands.c.status == "pending"
-                    )
-                    | (
-                        (worker_commands.c.status == "running")
-                        & (
-                            worker_commands.c.worker_epoch_id
-                            == worker_epoch_id
-                        )
-                    ),
+                select(
+                    process_epochs.c.model_release_request_id,
+                    process_epochs.c.model_release_handled_id,
                 )
-                .order_by(worker_commands.c.created_at)
-                .limit(1)
+                .where(
+                    process_epochs.c.id == worker_epoch_id,
+                    process_epochs.c.role == "worker",
+                    process_epochs.c.status == "active",
+                    process_epochs.c.lease_expires_at > now,
+                )
             ).mappings().one_or_none()
-            if row is None:
-                return None
-            if row["status"] == "running":
-                return {
-                    "commandId": str(row["id"]),
-                    "kind": str(row["kind"]),
-                    "status": "running",
-                }
-            changed = connection.execute(
-                update(worker_commands)
-                .where(
-                    worker_commands.c.id == row["id"],
-                    worker_commands.c.status == "pending",
-                )
-                .values(
-                    status="running",
-                    worker_epoch_id=worker_epoch_id,
-                    started_at=now,
-                    updated_at=now,
-                )
-            )
-            if changed.rowcount != 1:
+            if (
+                row is None
+                or row["model_release_request_id"] is None
+                or row["model_release_request_id"]
+                == row["model_release_handled_id"]
+            ):
                 return None
             return {
-                "commandId": str(row["id"]),
-                "kind": str(row["kind"]),
+                "commandId": str(row["model_release_request_id"]),
+                "kind": "release_models",
                 "status": "running",
             }
 
@@ -196,7 +149,6 @@ class WorkerModelControlRepository:
         self._finish(
             command_id=command_id,
             worker_epoch_id=worker_epoch_id,
-            status="completed",
             values={"result_json": _json(dict(result)), "error_json": None},
         )
 
@@ -210,7 +162,6 @@ class WorkerModelControlRepository:
         self._finish(
             command_id=command_id,
             worker_epoch_id=worker_epoch_id,
-            status="failed",
             values={
                 "result_json": None,
                 "error_json": _json(
@@ -245,6 +196,10 @@ class WorkerModelControlRepository:
                     )
                 ).scalar()
             )
+
+    def model_inference_busy(self) -> bool:
+        with self.engine.connect() as connection:
+            return self._model_inference_active(connection)
 
     @staticmethod
     def _model_inference_active(connection: Any) -> bool:
@@ -281,54 +236,32 @@ class WorkerModelControlRepository:
         *,
         command_id: str,
         worker_epoch_id: str,
-        status: str,
         values: Mapping[str, object],
     ) -> None:
         now = utcnow()
         with immediate_transaction(self.engine) as connection:
+            release_result = values.get("result_json")
+            release_error = values.get("error_json")
             changed = connection.execute(
-                update(worker_commands)
+                update(process_epochs)
                 .where(
-                    worker_commands.c.id == command_id,
-                    worker_commands.c.status == "running",
-                    worker_commands.c.worker_epoch_id == worker_epoch_id,
+                    process_epochs.c.id == worker_epoch_id,
+                    process_epochs.c.role == "worker",
+                    process_epochs.c.status == "active",
+                    process_epochs.c.lease_expires_at > now,
+                    process_epochs.c.model_release_request_id == command_id,
                 )
                 .values(
-                    status=status,
-                    finished_at=now,
+                    model_release_handled_id=command_id,
+                    model_release_result_json=release_result,
+                    model_release_error_json=release_error,
                     updated_at=now,
-                    **dict(values),
                 )
             )
             if changed.rowcount != 1:
                 raise WorkerCommandFenced(
                     "Worker model command is no longer owned by this epoch"
                 )
-
-    @staticmethod
-    def _assert_worker_epoch(
-        connection: Any,
-        *,
-        worker_epoch_id: str,
-    ) -> None:
-        active = connection.execute(
-            select(process_epochs.c.id).where(
-                process_epochs.c.id == worker_epoch_id,
-                process_epochs.c.role == "worker",
-                process_epochs.c.status == "active",
-                process_epochs.c.lease_expires_at > utcnow(),
-            )
-        ).scalar_one_or_none()
-        if active is None:
-            raise WorkerCommandFenced("Worker epoch is inactive or expired")
-
-    @staticmethod
-    def _dto(row: Mapping[str, Any]) -> dict[str, object]:
-        return {
-            "commandId": str(row["id"]),
-            "kind": str(row["kind"]),
-            "status": str(row["status"]),
-        }
 
 
 class WorkerModelLifecycle:
@@ -350,15 +283,14 @@ class WorkerModelLifecycle:
         self.monotonic = monotonic
         self.last_activity = monotonic()
         self.released_since_activity = False
-        self.repository.recover_for_worker(
-            worker_epoch_id=worker_epoch_id
-        )
 
     def note_activity(self) -> None:
         self.last_activity = self.monotonic()
         self.released_since_activity = False
 
     def run_pending_release(self) -> bool:
+        if self.repository.model_inference_busy():
+            return False
         command = self.repository.claim_release(
             worker_epoch_id=self.worker_epoch_id
         )
@@ -378,9 +310,8 @@ class WorkerModelLifecycle:
                 message=str(exc),
             )
         else:
-            # Persistence errors are not model-release errors.  Let SQLite BUSY
-            # reach the scheduler retry boundary; claim_release() can resume a
-            # running command owned by this same Worker epoch.
+            # A transient SQLite lock leaves the request pending, so the next
+            # scheduler pass can safely repeat this idempotent cache release.
             self.repository.complete(
                 command_id=command_id,
                 worker_epoch_id=self.worker_epoch_id,

@@ -9,20 +9,18 @@ import json
 import secrets
 from typing import Literal
 
-from sqlalchemy import Engine, delete, exists, insert, select, update
+from sqlalchemy import Engine, exists, insert, select, update
 
 from src.backend_v2.jobs.repository import JobQueueRepository
 from src.backend_v2.timestamps import utcnow
 from src.backend_v2.storage.database import immediate_transaction
 from src.backend_v2.storage.schema import (
-    api_executor_leases,
-    chapter_write_intents,
     operation_events,
     operations,
     pages,
     process_epochs,
     render_requests,
-    worker_leases,
+    transient_requests,
 )
 
 
@@ -55,7 +53,7 @@ class ReconcileResult:
     operations_failed: int = 0
     operations_requeued: int = 0
     renders_requeued: int = 0
-    intents_removed: int = 0
+    transient_requests_requeued: int = 0
     changed: bool = False
 
 
@@ -87,24 +85,6 @@ class ProcessEpochRepository:
                     lease_expires_at=expires_at,
                 )
             )
-            if registration.role == "api":
-                connection.execute(
-                    insert(api_executor_leases).values(
-                        api_epoch_id=registration.epoch_id,
-                        token_hash=hash_epoch_token(registration.token),
-                        heartbeat_at=now,
-                        lease_expires_at=expires_at,
-                    )
-                )
-            elif registration.role == "worker":
-                connection.execute(
-                    insert(worker_leases).values(
-                        worker_epoch_id=registration.epoch_id,
-                        token_hash=hash_epoch_token(registration.token),
-                        heartbeat_at=now,
-                        lease_expires_at=expires_at,
-                    )
-                )
 
     def validate(
         self,
@@ -155,43 +135,23 @@ class ProcessEpochRepository:
         now = utcnow()
         expires_at = now + timedelta(seconds=self.lease_seconds)
         token_hash = hash_epoch_token(token)
-        lease_table = api_executor_leases if role == "api" else worker_leases
-        epoch_column = (
-            lease_table.c.api_epoch_id
-            if role == "api"
-            else lease_table.c.worker_epoch_id
-        )
-        try:
-            with self.engine.begin() as connection:
-                epoch_result = connection.execute(
-                    update(process_epochs)
-                    .where(
-                        process_epochs.c.id == epoch_id,
-                        process_epochs.c.role == role,
-                        process_epochs.c.status == "active",
-                        process_epochs.c.token_hash == token_hash,
-                        process_epochs.c.lease_expires_at > now,
-                    )
-                    .values(
-                        heartbeat_at=now,
-                        lease_expires_at=expires_at,
-                        updated_at=now,
-                    )
+        with self.engine.begin() as connection:
+            changed = connection.execute(
+                update(process_epochs)
+                .where(
+                    process_epochs.c.id == epoch_id,
+                    process_epochs.c.role == role,
+                    process_epochs.c.status == "active",
+                    process_epochs.c.token_hash == token_hash,
+                    process_epochs.c.lease_expires_at > now,
                 )
-                lease_result = connection.execute(
-                    update(lease_table)
-                    .where(
-                        epoch_column == epoch_id,
-                        lease_table.c.token_hash == token_hash,
-                        lease_table.c.lease_expires_at > now,
-                    )
-                    .values(heartbeat_at=now, lease_expires_at=expires_at)
+                .values(
+                    heartbeat_at=now,
+                    lease_expires_at=expires_at,
+                    updated_at=now,
                 )
-                if epoch_result.rowcount != 1 or lease_result.rowcount != 1:
-                    raise _RenewalLost
-        except _RenewalLost:
-            return False
-        return True
+            ).rowcount
+        return changed == 1
 
     def active_epochs(self, role: Literal["api", "worker"]) -> list[str]:
         with self.engine.connect() as connection:
@@ -247,15 +207,10 @@ class ProcessEpochRepository:
                 str(value)
                 for value in connection.execute(
                     select(process_epochs.c.id)
-                    .join(
-                        worker_leases,
-                        worker_leases.c.worker_epoch_id == process_epochs.c.id,
-                    )
                     .where(
                         process_epochs.c.role == "worker",
                         process_epochs.c.status == "active",
                         process_epochs.c.lease_expires_at <= now,
-                        worker_leases.c.lease_expires_at <= now,
                     )
                 ).scalars()
             ]
@@ -279,15 +234,6 @@ class ProcessEpochRepository:
             if closed.rowcount != 1:
                 return ReconcileResult(epoch_id=epoch_id, role="worker")
 
-            intent_count = len(
-                list(
-                    connection.execute(
-                        select(chapter_write_intents.c.chapter_id).where(
-                            chapter_write_intents.c.worker_epoch_id == epoch_id
-                        )
-                    ).scalars()
-                )
-            )
             interrupted, cancelled = JobQueueRepository(
                 self.engine
             ).reconcile_lost_worker_jobs(
@@ -316,8 +262,6 @@ class ProcessEpochRepository:
                     status="pending",
                     executor_epoch_id=None,
                     attempt_id=None,
-                    lease_token=None,
-                    lease_expires_at=None,
                     started_at=None,
                     error_json=None,
                     updated_at=now,
@@ -335,23 +279,27 @@ class ProcessEpochRepository:
                         created_at=now,
                     )
                 )
-            connection.execute(
-                delete(chapter_write_intents).where(
-                    chapter_write_intents.c.worker_epoch_id == epoch_id
+            transient_requeued = connection.execute(
+                update(transient_requests)
+                .where(
+                    transient_requests.c.worker_epoch_id == epoch_id,
+                    transient_requests.c.status == "running",
+                    transient_requests.c.connection_open.is_(True),
                 )
-            )
-            connection.execute(
-                delete(worker_leases).where(
-                    worker_leases.c.worker_epoch_id == epoch_id
+                .values(
+                    status="pending",
+                    worker_epoch_id=None,
+                    attempt_id=None,
+                    updated_at=now,
                 )
-            )
+            ).rowcount
         return ReconcileResult(
             epoch_id=epoch_id,
             role="worker",
             jobs_interrupted=interrupted,
             jobs_cancelled=cancelled,
             operations_requeued=requeued,
-            intents_removed=intent_count,
+            transient_requests_requeued=transient_requeued,
             changed=True,
         )
 
@@ -416,8 +364,6 @@ class ProcessEpochRepository:
                     ),
                     executor_epoch_id=None,
                     attempt_id=None,
-                    lease_token=None,
-                    lease_expires_at=None,
                     finished_at=now,
                     updated_at=now,
                 )
@@ -446,8 +392,6 @@ class ProcessEpochRepository:
                     status="pending",
                     executor_epoch_id=None,
                     attempt_id=None,
-                    lease_token=None,
-                    lease_expires_at=None,
                     started_at=None,
                     error_json=None,
                     updated_at=now,
@@ -484,8 +428,6 @@ class ProcessEpochRepository:
                     status="pending",
                     executor_epoch_id=None,
                     attempt_id=None,
-                    lease_token=None,
-                    lease_expires_at=None,
                     rendering_revision=None,
                     error_json=None,
                     updated_at=now,
@@ -500,11 +442,6 @@ class ProcessEpochRepository:
                     )
                     .values(render_status="stale", updated_at=now)
                 )
-            connection.execute(
-                delete(api_executor_leases).where(
-                    api_executor_leases.c.api_epoch_id == epoch_id
-                )
-            )
         return ReconcileResult(
             epoch_id=epoch_id,
             role="api",
@@ -527,20 +464,4 @@ class ProcessEpochRepository:
                 )
                 .values(status="closed", updated_at=now)
             ).rowcount
-            if registration.role == "api":
-                connection.execute(
-                    delete(api_executor_leases).where(
-                        api_executor_leases.c.api_epoch_id == registration.epoch_id
-                    )
-                )
-            elif registration.role == "worker":
-                connection.execute(
-                    delete(worker_leases).where(
-                        worker_leases.c.worker_epoch_id == registration.epoch_id
-                    )
-                )
         return changed == 1
-
-
-class _RenewalLost(RuntimeError):
-    pass

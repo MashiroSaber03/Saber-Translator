@@ -162,8 +162,6 @@ describe('insight v2 api', () => {
       expect(postMock).toHaveBeenNthCalledWith(
         index + 2,
         `/api/v2/jobs/job-1/${command}`,
-        undefined,
-        { headers: { 'Idempotency-Key': expect.any(String) } }
       )
     }
   })

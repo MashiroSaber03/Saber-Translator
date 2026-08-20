@@ -14,11 +14,7 @@ from src.backend_v2.jobs.repository import (
     AttemptFenced,
     JobQueueRepository,
 )
-from src.backend_v2.storage.database import (
-    SQLITE_HEARTBEAT_BUSY_RETRY_DELAY_SECONDS,
-    SQLITE_HEARTBEAT_BUSY_RETRY_LIMIT,
-    is_sqlite_busy_error,
-)
+from src.backend_v2.storage.database import is_sqlite_busy_error
 
 
 StepHandler = Callable[[AttemptFence, Mapping[str, Any]], Mapping[str, Any]]
@@ -45,79 +41,6 @@ def _step_log_fields(step: Mapping[str, Any]) -> tuple[str, str, str]:
         _short(step.get("stepId", "-")),
         _short(step.get("pageId") or step.get("jobItemId") or "-"),
     )
-
-
-class AttemptHeartbeat:
-    """Renew a job attempt independently from potentially long model calls."""
-
-    def __init__(
-        self,
-        repository: JobQueueRepository,
-        fence: AttemptFence,
-        *,
-        interval_seconds: float = 2.0,
-    ) -> None:
-        self.repository = repository
-        self.fence = fence
-        self.interval_seconds = interval_seconds
-        self.fenced = threading.Event()
-        self._stop = threading.Event()
-        self._thread = threading.Thread(
-            target=self._run,
-            name=f"job-heartbeat-{fence.job_id[:8]}",
-            daemon=True,
-        )
-
-    def start(self) -> None:
-        self._thread.start()
-
-    def stop(self) -> None:
-        self._stop.set()
-        self._thread.join(timeout=max(2.0, self.interval_seconds * 2))
-
-    def _run(self) -> None:
-        while not self._stop.wait(self.interval_seconds):
-            busy_failures = 0
-            while True:
-                try:
-                    renewed = self.repository.renew_attempt(self.fence)
-                except Exception as exc:
-                    if (
-                        is_sqlite_busy_error(exc)
-                        and busy_failures < SQLITE_HEARTBEAT_BUSY_RETRY_LIMIT
-                    ):
-                        busy_failures += 1
-                        LOGGER.warning(
-                            "任务 attempt 心跳遇到 SQLite 写锁竞争，将有限重试："
-                            "job=%s attempt=%s retry=%s/%s",
-                            _short(self.fence.job_id),
-                            _short(self.fence.attempt_id),
-                            busy_failures,
-                            SQLITE_HEARTBEAT_BUSY_RETRY_LIMIT,
-                        )
-                        if self._stop.wait(
-                            SQLITE_HEARTBEAT_BUSY_RETRY_DELAY_SECONDS
-                        ):
-                            return
-                        continue
-                    LOGGER.exception(
-                        "任务 attempt 心跳执行失败，立即放弃本次 attempt："
-                        "job=%s attempt=%s",
-                        _short(self.fence.job_id),
-                        _short(self.fence.attempt_id),
-                    )
-                    self.fenced.set()
-                    return
-                break
-            if renewed is None:
-                LOGGER.warning(
-                    "任务租约失效：job=%s attempt=%s",
-                    _short(self.fence.job_id),
-                    _short(self.fence.attempt_id),
-                )
-                self.fenced.set()
-                return
-            self.fence = renewed
 
 
 class JobWorkerLoop:
@@ -184,8 +107,6 @@ class JobWorkerLoop:
         stop_event: threading.Event,
     ) -> None:
         started_at = time.monotonic()
-        heartbeat = AttemptHeartbeat(self.repository, fence)
-        heartbeat.start()
         try:
             config = self.repository.attempt_config(fence)
             if self.plugin_runtime is not None:
@@ -205,9 +126,9 @@ class JobWorkerLoop:
                 execution_mode,
             )
             if execution_mode == "parallel":
-                self._run_parallel_attempt(heartbeat, stop_event, config)
+                self._run_parallel_attempt(fence, stop_event, config)
             else:
-                self._run_sequential_attempt(heartbeat, stop_event)
+                self._run_sequential_attempt(fence, stop_event)
         except AttemptFenced:
             LOGGER.warning(
                 "任务执行被 fencing 中断：job=%s attempt=%s",
@@ -221,26 +142,23 @@ class JobWorkerLoop:
                 _short(fence.job_id),
                 _short(fence.attempt_id),
             )
-            if not heartbeat.fenced.is_set():
-                try:
-                    self.repository.fail_job(
-                        heartbeat.fence,
-                        code="JOB_LIFECYCLE_FAILED",
-                        message=str(exc),
-                    )
-                except AttemptFenced:
-                    pass
+            try:
+                self.repository.fail_job(
+                    fence,
+                    code="JOB_LIFECYCLE_FAILED",
+                    message=str(exc),
+                )
+            except AttemptFenced:
+                pass
         finally:
-            heartbeat.stop()
             if self.plugin_runtime is not None:
                 self.plugin_runtime.release_job_state(fence.job_id)
             self._note_activity()
             LOGGER.info(
-                "任务轮次结束：job=%s attempt=%s duration=%.2fs fenced=%s",
+                "任务轮次结束：job=%s attempt=%s duration=%.2fs",
                 _short(fence.job_id),
                 _short(fence.attempt_id),
                 time.monotonic() - started_at,
-                heartbeat.fenced.is_set(),
             )
 
     def _note_activity(self) -> None:
@@ -259,13 +177,12 @@ class JobWorkerLoop:
 
     def _run_sequential_attempt(
         self,
-        heartbeat: AttemptHeartbeat,
+        fence: AttemptFence,
         stop_event: threading.Event,
     ) -> None:
         last_step_id: str | None = None
         try:
-            while not stop_event.is_set() and not heartbeat.fenced.is_set():
-                fence = heartbeat.fence
+            while not stop_event.is_set():
                 status = self.repository.control_status(fence)
                 if status in {"pausing", "cancelling"}:
                     LOGGER.info(
@@ -274,16 +191,7 @@ class JobWorkerLoop:
                         status,
                         _short(last_step_id or "-"),
                     )
-                    self.repository.acknowledge_drain(
-                        fence,
-                        pool_id="main",
-                        worker_slot=0,
-                        last_step_id=last_step_id,
-                    )
-                    self.repository.finalize_drain(
-                        fence,
-                        expected_slots={("main", 0)},
-                    )
+                    self.repository.finalize_control(fence)
                     return
                 if self.safe_point is not None and self.safe_point():
                     continue
@@ -309,7 +217,7 @@ class JobWorkerLoop:
                         continue
                     last_step_id = str(batch[-1]["stepId"])
                     self._execute_batch(
-                        heartbeat,
+                        fence,
                         batch_handler,
                         batch,
                     )
@@ -389,11 +297,11 @@ class JobWorkerLoop:
                     step_id,
                     page_id,
                 )
-                if not self._before_pipeline(heartbeat.fence, step):
+                if not self._before_pipeline(fence, step):
                     continue
                 try:
                     checkpoint = handler(
-                        heartbeat.fence,
+                        fence,
                         step,
                     )
                     if not isinstance(checkpoint, Mapping):
@@ -407,16 +315,14 @@ class JobWorkerLoop:
                         page_id,
                         time.monotonic() - step_started_at,
                     )
-                    if heartbeat.fenced.is_set():
-                        return
                     self._after_pipeline(
-                        heartbeat.fence,
+                        fence,
                         item_id=str(step["itemId"]),
                         page_id=step.get("pageId"),
                         status="failed",
                     )
                     self.repository.fail_step(
-                        heartbeat.fence,
+                        fence,
                         step_id=last_step_id,
                         code="STEP_FAILED",
                         message=str(exc),
@@ -432,30 +338,28 @@ class JobWorkerLoop:
                         page_id,
                         time.monotonic() - step_started_at,
                     )
-                    if heartbeat.fenced.is_set():
-                        return
                     if not checkpoint.get("__already_published__"):
                         self.repository.complete_step(
-                            heartbeat.fence,
+                            fence,
                             step_id=last_step_id,
                             checkpoint=checkpoint,
                         )
-                    self._after_completed_step(heartbeat.fence, step)
+                    self._after_completed_step(fence, step)
         except AttemptFenced:
             return
 
     def _run_parallel_attempt(
         self,
-        heartbeat: AttemptHeartbeat,
+        fence: AttemptFence,
         stop_event: threading.Event,
         config: Mapping[str, Any],
     ) -> None:
         """Admit SQLite work centrally while stage handlers overlap."""
 
-        pool_kinds = self.repository.step_kinds(heartbeat.fence)
+        pool_kinds = self.repository.step_kinds(fence)
         if not pool_kinds:
             self.repository.fail_job(
-                heartbeat.fence,
+                fence,
                 code="NO_STEP_HANDLERS",
                 message="parallel job has no registered step handlers",
             )
@@ -481,7 +385,7 @@ class JobWorkerLoop:
         LOGGER.info(
             "并行流水线启动：job=%s pools=%s deep_learning_concurrency=%s "
             "lead_window=%s",
-            _short(heartbeat.fence.job_id),
+            _short(fence.job_id),
             ",".join(pool_kinds),
             deep_learning_concurrency,
             PARALLEL_PIPELINE_LEAD_WINDOW if has_terminal_save else "disabled",
@@ -501,7 +405,7 @@ class JobWorkerLoop:
             while True:
                 try:
                     self.repository.write_pipeline_progress(
-                        heartbeat.fence,
+                        fence,
                         lock_waiting=snapshot,
                     )
                     break
@@ -514,7 +418,7 @@ class JobWorkerLoop:
                         LOGGER.warning(
                             "深度学习并发锁遥测持续遇到 SQLite 写锁竞争，"
                             "跳过本次遥测：job=%s pool=%s waiting=%s",
-                            _short(heartbeat.fence.job_id),
+                            _short(fence.job_id),
                             pool_kind,
                             waiting,
                         )
@@ -528,7 +432,7 @@ class JobWorkerLoop:
                     LOGGER.warning(
                         "深度学习并发锁遥测遇到 SQLite 写锁竞争，将有限重试："
                         "job=%s pool=%s attempt=%s/%s",
-                        _short(heartbeat.fence.job_id),
+                        _short(fence.job_id),
                         pool_kind,
                         busy_failures,
                         PIPELINE_BUSY_RETRY_LIMIT,
@@ -537,7 +441,7 @@ class JobWorkerLoop:
                         break
             LOGGER.info(
                 "深度学习并发锁状态：job=%s pool=%s waiting=%s",
-                _short(heartbeat.fence.job_id),
+                _short(fence.job_id),
                 pool_kind,
                 waiting,
             )
@@ -552,12 +456,12 @@ class JobWorkerLoop:
             if handler is None:
                 LOGGER.error(
                     "并行步骤无处理器：job=%s kind=%s step=%s",
-                    _short(heartbeat.fence.job_id),
+                    _short(fence.job_id),
                     step["stepKind"],
                     _short(step["stepId"]),
                 )
                 self.repository.fail_step(
-                    heartbeat.fence,
+                    fence,
                     step_id=str(step["stepId"]),
                     code="UNSUPPORTED_STEP_KIND",
                     message=f"no Worker handler for {step['stepKind']}",
@@ -568,7 +472,7 @@ class JobWorkerLoop:
             step_started_at = time.monotonic()
             LOGGER.info(
                 "步骤开始：job=%s kind=%s step=%s page=%s pool=%s",
-                _short(heartbeat.fence.job_id),
+                _short(fence.job_id),
                 step_kind,
                 step_id,
                 page_id,
@@ -576,33 +480,31 @@ class JobWorkerLoop:
             )
             if model_waiting:
                 set_lock_waiting(pool_kind, False)
-            if not self._before_pipeline(heartbeat.fence, step):
+            if not self._before_pipeline(fence, step):
                 return
             try:
-                checkpoint = handler(heartbeat.fence, step)
+                checkpoint = handler(fence, step)
                 if not isinstance(checkpoint, Mapping):
                     raise TypeError("step handler must return an object")
             except Exception as exc:
                 LOGGER.exception(
                     "步骤失败：job=%s kind=%s step=%s page=%s "
                     "pool=%s duration=%.2fs",
-                    _short(heartbeat.fence.job_id),
+                    _short(fence.job_id),
                     step_kind,
                     step_id,
                     page_id,
                     pool_kind,
                     time.monotonic() - step_started_at,
                 )
-                if heartbeat.fenced.is_set():
-                    return
                 self._after_pipeline(
-                    heartbeat.fence,
+                    fence,
                     item_id=str(step["itemId"]),
                     page_id=step.get("pageId"),
                     status="failed",
                 )
                 self.repository.fail_step(
-                    heartbeat.fence,
+                    fence,
                     step_id=str(step["stepId"]),
                     code="STEP_FAILED",
                     message=str(exc),
@@ -615,22 +517,20 @@ class JobWorkerLoop:
             LOGGER.info(
                 "步骤完成：job=%s kind=%s step=%s page=%s "
                 "pool=%s duration=%.2fs",
-                _short(heartbeat.fence.job_id),
+                _short(fence.job_id),
                 step_kind,
                 step_id,
                 page_id,
                 pool_kind,
                 time.monotonic() - step_started_at,
             )
-            if heartbeat.fenced.is_set():
-                return
             if not checkpoint.get("__already_published__"):
                 self.repository.complete_step(
-                    heartbeat.fence,
+                    fence,
                     step_id=str(step["stepId"]),
                     checkpoint=checkpoint,
                 )
-            self._after_completed_step(heartbeat.fence, step)
+            self._after_completed_step(fence, step)
 
         def execute_claimed(
             pool_kind: str,
@@ -640,7 +540,7 @@ class JobWorkerLoop:
         ) -> None:
             if steps:
                 self._execute_batch(
-                    heartbeat,
+                    fence,
                     self.batch_handlers[pool_kind],
                     steps,
                 )
@@ -661,7 +561,6 @@ class JobWorkerLoop:
             busy_failures = 0
             while (
                 not stop_event.is_set()
-                and not heartbeat.fenced.is_set()
                 and not admission_closed.is_set()
             ):
                 try:
@@ -674,7 +573,7 @@ class JobWorkerLoop:
                             LOGGER.warning(
                                 "并行阶段领取持续遇到 SQLite 写锁竞争，本轮延后："
                                 "job=%s pool=%s retries=%s",
-                                _short(heartbeat.fence.job_id),
+                                _short(fence.job_id),
                                 pool_kind,
                                 busy_failures,
                             )
@@ -688,7 +587,7 @@ class JobWorkerLoop:
                         LOGGER.warning(
                             "并行阶段领取遇到 SQLite 写锁竞争，将重试："
                             "job=%s pool=%s attempt=%s/%s delay=%.2fs",
-                            _short(heartbeat.fence.job_id),
+                            _short(fence.job_id),
                             pool_kind,
                             busy_failures,
                             PIPELINE_BUSY_RETRY_LIMIT,
@@ -705,7 +604,7 @@ class JobWorkerLoop:
         ) -> None:
             LOGGER.exception(
                 "并行流水线执行失败：job=%s pool=%s",
-                _short(heartbeat.fence.job_id),
+                _short(fence.job_id),
                 pool_kind,
                 exc_info=exc,
             )
@@ -726,10 +625,7 @@ class JobWorkerLoop:
             ) as executor,
         ):
             active_futures: dict[Future[None], str] = {}
-            while (
-                not stop_event.is_set()
-                and not heartbeat.fenced.is_set()
-            ):
+            while not stop_event.is_set():
                 finished = [
                     future for future in active_futures if future.done()
                 ]
@@ -745,13 +641,13 @@ class JobWorkerLoop:
                     break
 
                 try:
-                    status = self.repository.control_status(heartbeat.fence)
+                    status = self.repository.control_status(fence)
                     if status in {"pausing", "cancelling"}:
                         admission_closed.set()
                         break
                     if not active_futures:
                         pending, running = self.repository.active_step_counts(
-                            heartbeat.fence
+                            fence
                         )
                         if pending == 0 and running == 0:
                             break
@@ -773,7 +669,7 @@ class JobWorkerLoop:
                     )
                     if should_admit:
                         max_item_ordinal = (
-                            self.repository.terminal_item_count(heartbeat.fence)
+                            self.repository.terminal_item_count(fence)
                             + PARALLEL_PIPELINE_LEAD_WINDOW
                             if has_terminal_save
                             else None
@@ -794,7 +690,7 @@ class JobWorkerLoop:
                         )
                         ready_batch_ordinals = (
                             self.repository.ready_step_ordinals(
-                                heartbeat.fence,
+                                fence,
                                 step_kinds=batch_pool_kinds,
                                 **ordinal_limit,
                             )
@@ -806,7 +702,7 @@ class JobWorkerLoop:
                                 pool_kind,
                                 lambda pool_kind=pool_kind, step_ordinal=step_ordinal: (
                                     self.repository.next_step_batch(
-                                        heartbeat.fence,
+                                        fence,
                                         step_kind=pool_kind,
                                         limit=self._batch_size(
                                             pool_kind,
@@ -846,7 +742,7 @@ class JobWorkerLoop:
                                 lambda allowed_kinds=allowed_kinds: (
                                     [],
                                     self.repository.next_step(
-                                        heartbeat.fence,
+                                        fence,
                                         allowed_kinds=allowed_kinds,
                                         **ordinal_limit,
                                     ),
@@ -909,44 +805,33 @@ class JobWorkerLoop:
                 except Exception as exc:
                     record_worker_error(pool_kind, exc)
 
-        if heartbeat.fenced.is_set() or stop_event.is_set():
+        if stop_event.is_set():
             return
         if worker_errors:
             LOGGER.error(
                 "并行流水线失败：job=%s error=%s",
-                _short(heartbeat.fence.job_id),
+                _short(fence.job_id),
                 worker_errors[0],
             )
             self.repository.fail_job(
-                heartbeat.fence,
+                fence,
                 code="PIPELINE_POOL_FAILED",
                 message=str(worker_errors[0]),
             )
             return
-        status = self.repository.control_status(heartbeat.fence)
+        status = self.repository.control_status(fence)
         if status in {"pausing", "cancelling"}:
             LOGGER.info(
                 "并行任务进入安全排空：job=%s status=%s",
-                _short(heartbeat.fence.job_id),
+                _short(fence.job_id),
                 status,
             )
-            expected = {(kind, 0) for kind in pool_kinds}
-            for kind, slot in expected:
-                self.repository.acknowledge_drain(
-                    heartbeat.fence,
-                    pool_id=kind,
-                    worker_slot=slot,
-                    last_step_id=None,
-                )
-            self.repository.finalize_drain(
-                heartbeat.fence,
-                expected_slots=expected,
-            )
+            self.repository.finalize_control(fence)
             return
-        final_status = self._finish_job(heartbeat.fence)
+        final_status = self._finish_job(fence)
         LOGGER.info(
             "并行任务全部步骤处理结束：job=%s status=%s",
-            _short(heartbeat.fence.job_id),
+            _short(fence.job_id),
             final_status or "running",
         )
 
@@ -1051,14 +936,14 @@ class JobWorkerLoop:
 
     def _execute_batch(
         self,
-        heartbeat: AttemptHeartbeat,
+        fence: AttemptFence,
         handler: BatchStepHandler,
         steps: Sequence[Mapping[str, Any]],
     ) -> None:
         active_steps = [
             step
             for step in steps
-            if self._before_pipeline(heartbeat.fence, step)
+            if self._before_pipeline(fence, step)
         ]
         if not active_steps:
             return
@@ -1069,27 +954,25 @@ class JobWorkerLoop:
         started_at = time.monotonic()
         LOGGER.info(
             "批处理开始：job=%s kind=%s count=%s steps=%s",
-            _short(heartbeat.fence.job_id),
+            _short(fence.job_id),
             step_kind,
             len(active_steps),
             step_ids,
         )
         try:
-            checkpoint = handler(heartbeat.fence, active_steps)
+            checkpoint = handler(fence, active_steps)
             if not isinstance(checkpoint, Mapping):
                 raise TypeError("batch handler must return an object")
         except Exception as exc:
             LOGGER.exception(
                 "批处理失败：job=%s kind=%s count=%s duration=%.2fs",
-                _short(heartbeat.fence.job_id),
+                _short(fence.job_id),
                 step_kind,
                 len(active_steps),
                 time.monotonic() - started_at,
             )
-            if heartbeat.fenced.is_set():
-                return
             statuses = self.repository.item_statuses(
-                heartbeat.fence,
+                fence,
                 tuple(str(step["itemId"]) for step in active_steps),
             )
             for step in active_steps:
@@ -1097,21 +980,21 @@ class JobWorkerLoop:
                 status = statuses.get(item_id, "running")
                 if status in {"completed", "failed", "skipped", "cancelled"}:
                     self._after_pipeline(
-                        heartbeat.fence,
+                        fence,
                         item_id=item_id,
                         page_id=step.get("pageId"),
                         status=status,
                     )
                     continue
                 self._after_pipeline(
-                    heartbeat.fence,
+                    fence,
                     item_id=item_id,
                     page_id=step.get("pageId"),
                     status="failed",
                 )
                 try:
                     self.repository.fail_step(
-                        heartbeat.fence,
+                        fence,
                         step_id=str(step["stepId"]),
                         code="BATCH_STEP_FAILED",
                         message=str(exc),
@@ -1121,7 +1004,7 @@ class JobWorkerLoop:
             return
         LOGGER.info(
             "批处理完成：job=%s kind=%s count=%s duration=%.2fs",
-            _short(heartbeat.fence.job_id),
+            _short(fence.job_id),
             step_kind,
             len(active_steps),
             time.monotonic() - started_at,
@@ -1135,12 +1018,12 @@ class JobWorkerLoop:
                     else checkpoint
                 )
                 self.repository.complete_step(
-                    heartbeat.fence,
+                    fence,
                     step_id=str(step["stepId"]),
                     checkpoint=value if isinstance(value, Mapping) else {},
                 )
         statuses = self.repository.item_statuses(
-            heartbeat.fence,
+            fence,
             tuple(str(step["itemId"]) for step in active_steps),
         )
         for step in active_steps:
@@ -1148,7 +1031,7 @@ class JobWorkerLoop:
             status = statuses.get(item_id)
             if status in {"completed", "failed", "skipped", "cancelled"}:
                 self._after_pipeline(
-                    heartbeat.fence,
+                    fence,
                     item_id=item_id,
                     page_id=step.get("pageId"),
                     status=status,

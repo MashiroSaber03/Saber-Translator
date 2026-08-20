@@ -15,6 +15,7 @@ from src.shared.ai_providers import (
     TRANSLATION_CAPABILITY,
     get_provider_manifest,
     normalize_provider_id,
+    provider_requires_api_key,
     provider_supports_capability,
 )
 from src.shared.ai_transport import (
@@ -227,7 +228,7 @@ def translate_single_text(
     )
 
     if manifest.kind in {"openai_compatible", "local"}:
-        if manifest.requires_api_key and not api_key:
+        if provider_requires_api_key(canonical_provider, custom_base_url) and not api_key:
             raise ValueError(f"{manifest.display_name}需要 API Key")
         if manifest.requires_model and not model_name:
             raise ValueError(f"{manifest.display_name}需要模型名称")
@@ -552,7 +553,7 @@ def _translate_batch_with_llm(
         raise ValueError(f"{manifest.display_name}不支持翻译")
     if manifest.kind not in {"openai_compatible", "local"}:
         raise ValueError(f"不支持批量翻译的服务商: {canonical_provider}")
-    if manifest.requires_api_key and not api_key:
+    if provider_requires_api_key(canonical_provider, custom_base_url) and not api_key:
         raise ValueError(f"{manifest.display_name}需要 API Key")
     if manifest.requires_model and not model_name:
         raise ValueError(f"{manifest.display_name}需要模型名称")

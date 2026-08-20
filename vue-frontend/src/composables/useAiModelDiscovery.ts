@@ -3,7 +3,7 @@ import { getCurrentScope, onScopeDispose, ref } from 'vue'
 import { fetchModels as fetchV2Models } from '@/api/v2/diagnostics'
 import {
   getProviderDisplayName,
-  providerRequiresApiKey,
+  providerRequiresApiKeyForBaseUrl,
   providerRequiresBaseUrl,
   providerSupportsCapability,
 } from '@/config/aiProviders'
@@ -24,7 +24,7 @@ export interface AiModelDiscoveryOptions {
   notify: (message: string, tone: AiModelDiscoveryMessageTone) => void
   fetcher?: (provider: string, apiKey: string, baseUrl?: string) => Promise<FetchModelsResponse>
   supportsProvider?: (provider: string) => boolean
-  requiresApiKey?: (provider: string) => boolean
+  requiresApiKey?: (provider: string, baseUrl: string) => boolean
   requiresBaseUrl?: (provider: string) => boolean
   providerLabel?: (provider: string) => string
   validationTone?: AiModelDiscoveryMessageTone
@@ -65,7 +65,7 @@ export function useAiModelDiscovery(options: AiModelDiscoveryOptions) {
   const fetcher = options.fetcher ?? fetchV2Models
   const supportsProvider = options.supportsProvider
     ?? ((provider: string) => providerSupportsCapability(provider, 'modelFetch'))
-  const requiresApiKey = options.requiresApiKey ?? providerRequiresApiKey
+  const requiresApiKey = options.requiresApiKey ?? providerRequiresApiKeyForBaseUrl
   const requiresBaseUrl = options.requiresBaseUrl ?? providerRequiresBaseUrl
   const providerLabel = options.providerLabel ?? getProviderDisplayName
   const validationTone = options.validationTone ?? 'warning'
@@ -88,7 +88,7 @@ export function useAiModelDiscovery(options: AiModelDiscoveryOptions) {
   async function fetchModels(): Promise<ModelInfoItem[] | null> {
     const snapshot = snapshotSource(options.source())
     if (
-      requiresApiKey(snapshot.provider)
+      requiresApiKey(snapshot.provider, snapshot.baseUrl)
       && !snapshot.apiKey
       && !snapshot.hasStoredCredential
     ) {

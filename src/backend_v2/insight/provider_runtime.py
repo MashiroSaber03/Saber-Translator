@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from typing import Any, TYPE_CHECKING
 
 from src.backend_v2.insight.repository import InsightConflict
-from src.shared.ai_providers import get_provider_manifest
+from src.shared.ai_providers import get_provider_manifest, provider_requires_api_key
 
 if TYPE_CHECKING:
     from src.core.manga_insight.config_models import (
@@ -53,7 +53,7 @@ def _credential_values(
     if not isinstance(provider, str) or not provider.strip():
         raise InsightConflict(f"frozen Insight {name} provider is invalid")
     try:
-        manifest = get_provider_manifest(provider)
+        get_provider_manifest(provider)
     except (TypeError, ValueError) as exc:
         raise InsightConflict(
             f"frozen Insight {name} provider is invalid"
@@ -62,7 +62,10 @@ def _credential_values(
     api_key = section.get("api_key", "")
     if not isinstance(api_key, str):
         raise InsightConflict(f"frozen Insight {name} api_key must be a string")
-    if manifest.requires_api_key and not api_key.strip():
+    base_url = section.get("custom_base_url")
+    if base_url is not None and not isinstance(base_url, str):
+        raise InsightConflict(f"frozen Insight {name} base URL is invalid")
+    if provider_requires_api_key(provider, base_url) and not api_key.strip():
         raise InsightConflict(f"frozen Insight {name} credential is missing")
 
     credential_version_id = section.get("credential_version_id")

@@ -31,14 +31,14 @@
       class="settings-modal__restricted"
       tone="danger"
       role="alert"
-      title="设置受限模式"
+      title="设置加载失败"
     >
       {{ settingsStore.backendError || '正在读取后端设置。加载成功前只能查看出厂默认值，不能保存或调用 Provider。' }}
     </ProductStatusBanner>
 
     <fieldset
       class="settings-modal__fieldset"
-      :disabled="!settingsStore.isBackendReady"
+      :disabled="!settingsStore.isBackendReady || isSaving"
     >
       <ProductSegmentedTabs
         :tabs="tabs"
@@ -75,7 +75,7 @@
         </div>
 
         <div v-if="hasVisitedTab('plugins')" v-show="activeTab === 'plugins'" class="settings-modal__tab-pane">
-          <PluginManager @settings-saved="handlePluginAgentSettingsSaved" />
+          <PluginManager />
         </div>
 
         <div v-if="hasVisitedTab('text-defaults')" v-show="activeTab === 'text-defaults'" class="settings-modal__tab-pane">
@@ -91,31 +91,21 @@
 
     <template #footer>
       <ProductActionRow
-        aria-label="应用设置操作"
+        aria-label="设置状态"
         variant="dialog"
       >
-        <UiButton variant="secondary" :disabled="isSaving" @click="handleClose">取消</UiButton>
-        <UiButton
-          variant="primary"
-          :disabled="isSaving || !contentReady || !settingsStore.isBackendReady"
-          @click="handleSave"
-        >
-          {{ isSaving ? '保存中…' : '保存设置' }}
-        </UiButton>
+        <span class="settings-modal__save-status">
+          {{ isSaving ? '正在保存…' : '修改后自动保存' }}
+        </span>
+        <UiButton variant="primary" :disabled="isSaving" @click="handleClose">完成</UiButton>
       </ProductActionRow>
     </template>
   </BaseModal>
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
-import type { ProviderConfigsCache } from '@/stores/settings'
-import type {
-  TextStyleSettings,
-  TranslationSettings as TranslationSettingsModel,
-} from '@/types/settings'
-import { deepClone } from '@/utils/deepClone'
 import BaseModal from '@/components/common/BaseModal.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
@@ -132,10 +122,6 @@ import MoreSettings from './MoreSettings.vue'
 import TextStyleDefaultsSettings from './TextStyleDefaultsSettings.vue'
 import { showToast } from '@/utils/toast'
 
-interface SettingsModalSavePayload {
-  textDefaultsChanged: boolean
-}
-
 const props = defineProps<{
   modelValue: boolean
   initialTab?: string
@@ -143,7 +129,6 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
-  (e: 'save', payload: SettingsModalSavePayload): void
 }>()
 
 const settingsStore = useSettingsStore()
@@ -164,11 +149,11 @@ const activeTab = ref<SettingsTabId>('ocr')
 const visitedTabs = ref<Set<SettingsTabId>>(new Set(['ocr']))
 const contentReady = ref(false)
 const isSaving = ref(false)
-let settingsSnapshot: TranslationSettingsModel | null = null
-let textStyleDefaultsSnapshot: TextStyleSettings | null = null
-let providerSnapshot: ProviderConfigsCache | null = null
-let closeAfterSave = false
 let openRequestId = 0
+let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
+let savePromise: Promise<boolean> | null = null
+let applyingPersistence = false
+let hasUnsavedChanges = false
 
 const tabs = [
   { id: 'ocr', label: 'OCR识别' },
@@ -197,12 +182,6 @@ function hasVisitedTab(tabId: SettingsTabId): boolean {
   return visitedTabs.value.has(tabId)
 }
 
-function handlePluginAgentSettingsSaved(): void {
-  if (!settingsSnapshot || !providerSnapshot) return
-  settingsSnapshot.pluginAgent = deepClone(settingsStore.settings.pluginAgent)
-  providerSnapshot.pluginAgent = deepClone(settingsStore.providerConfigs.pluginAgent)
-}
-
 watch(
   () => props.modelValue,
   (newVal) => {
@@ -213,10 +192,24 @@ watch(
       }
       void handleOpen()
     } else {
-      closeModal(false)
+      void persistChanges().finally(() => closeModal(false))
     }
   },
   { immediate: true },
+)
+
+watch(
+  () => [
+    settingsStore.settings,
+    settingsStore.textStyleDefaults,
+    settingsStore.providerConfigs,
+  ],
+  () => {
+    if (!isOpen.value || !contentReady.value || applyingPersistence) return
+    hasUnsavedChanges = true
+    scheduleAutoSave()
+  },
+  { deep: true },
 )
 
 async function handleOpen() {
@@ -229,9 +222,7 @@ async function handleOpen() {
   visitedTabs.value = new Set([openingTab])
   await settingsStore.loadFromBackend()
   if (requestId !== openRequestId || !isOpen.value) return
-  settingsSnapshot = deepClone(settingsStore.settings)
-  textStyleDefaultsSnapshot = deepClone(settingsStore.textStyleDefaults)
-  providerSnapshot = deepClone(settingsStore.providerConfigs)
+  hasUnsavedChanges = false
   contentReady.value = true
   if (props.initialTab && isSettingsTabId(props.initialTab)) {
     setActiveTab(props.initialTab)
@@ -240,70 +231,66 @@ async function handleOpen() {
 
 function closeModal(notifyParent: boolean) {
   openRequestId += 1
-  if (
-    !closeAfterSave
-    && settingsSnapshot
-    && textStyleDefaultsSnapshot
-    && providerSnapshot
-  ) {
-    settingsStore.settings = deepClone(settingsSnapshot)
-    settingsStore.textStyleDefaults = deepClone(textStyleDefaultsSnapshot)
-    settingsStore.providerConfigs = deepClone(providerSnapshot)
-  }
-  closeAfterSave = false
-  settingsSnapshot = null
-  textStyleDefaultsSnapshot = null
-  providerSnapshot = null
   contentReady.value = false
   visitedTabs.value = new Set(['ocr'])
   isOpen.value = false
+  hasUnsavedChanges = false
   if (notifyParent) emit('update:modelValue', false)
 }
 
-function handleClose(): void {
-  if (isSaving.value) return
+async function handleClose(): Promise<void> {
+  if (!(await persistChanges())) return
   closeModal(true)
 }
 
 onBeforeUnmount(() => {
   openRequestId += 1
-  if (
-    !closeAfterSave
-    && settingsSnapshot
-    && textStyleDefaultsSnapshot
-    && providerSnapshot
-  ) {
-    settingsStore.settings = deepClone(settingsSnapshot)
-    settingsStore.textStyleDefaults = deepClone(textStyleDefaultsSnapshot)
-    settingsStore.providerConfigs = deepClone(providerSnapshot)
-  }
-  settingsSnapshot = null
-  textStyleDefaultsSnapshot = null
-  providerSnapshot = null
+  if (autoSaveTimer !== null) clearTimeout(autoSaveTimer)
+  void persistChanges()
   contentReady.value = false
 })
 
-async function handleSave() {
-  if (isSaving.value) return
-  const textDefaultsChanged = Boolean(
-    textStyleDefaultsSnapshot
-    && JSON.stringify(textStyleDefaultsSnapshot)
-      !== JSON.stringify(settingsStore.textStyleDefaults),
-  )
+function scheduleAutoSave(): void {
+  if (autoSaveTimer !== null) clearTimeout(autoSaveTimer)
+  autoSaveTimer = setTimeout(() => {
+    autoSaveTimer = null
+    void persistChanges()
+  }, 450)
+}
 
+async function persistChanges(): Promise<boolean> {
+  if (autoSaveTimer !== null) {
+    clearTimeout(autoSaveTimer)
+    autoSaveTimer = null
+  }
+  if (savePromise) return savePromise
+  if (!contentReady.value || !hasUnsavedChanges) return true
+
+  hasUnsavedChanges = false
   isSaving.value = true
-  try {
-    const saved = await settingsStore.saveToBackend()
-    if (!saved) {
-      showToast(settingsStore.backendError || '设置保存失败', 'error')
-      return
+  applyingPersistence = true
+  savePromise = (async () => {
+    try {
+      const saved = await settingsStore.saveToBackend()
+      await nextTick()
+      if (!saved) {
+        hasUnsavedChanges = true
+        showToast(settingsStore.backendError || '设置自动保存失败', 'error')
+      }
+      return saved
+    } catch (error) {
+      hasUnsavedChanges = true
+      showToast(error instanceof Error ? error.message : '设置自动保存失败', 'error')
+      return false
+    } finally {
+      applyingPersistence = false
+      isSaving.value = false
     }
-
-    emit('save', { textDefaultsChanged })
-    closeAfterSave = true
-    closeModal(true)
+  })()
+  try {
+    return await savePromise
   } finally {
-    isSaving.value = false
+    savePromise = null
   }
 }
 </script>
@@ -322,6 +309,12 @@ async function handleSave() {
 
 .settings-modal__restricted {
   margin: 14px 15px 0;
+}
+
+.settings-modal__save-status {
+  margin-right: auto;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
 }
 
 .settings-modal__loading {

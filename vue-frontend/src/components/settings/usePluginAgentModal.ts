@@ -27,7 +27,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import type { V2JobEvent } from '@/api/v2/jobs'
 import type { PluginAgentProvider } from '@/types/settings'
-import { providerRequiresApiKey, providerRequiresBaseUrl } from '@/config/aiProviders'
+import { providerRequiresApiKeyForBaseUrl, providerRequiresBaseUrl } from '@/config/aiProviders'
 import { sanitizeHtml } from '@/utils/sanitizeHtml'
 import { useToast } from '@/utils/toast'
 import {
@@ -122,7 +122,7 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
     fetcher: (provider, apiKey, baseUrl) =>
       fetchV2Models(provider, apiKey, baseUrl, 'plugin_agent'),
     notify: notifyModelDiscovery,
-    requiresApiKey: provider => providerRequiresApiKey(provider),
+    requiresApiKey: providerRequiresApiKeyForBaseUrl,
     emptyBaseUrl: '',
     errorMessage: error => (error instanceof Error ? error.message : '获取模型失败'),
   })
@@ -736,7 +736,11 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
     const apiKey = agentSettings.value.apiKey.trim()
     const modelName = agentSettings.value.modelName.trim()
     const baseUrl = agentSettings.value.customBaseUrl.trim()
-    if (providerRequiresApiKey(provider) && !apiKey && !hasStoredAgentCredential.value) {
+    if (
+      providerRequiresApiKeyForBaseUrl(provider, baseUrl)
+      && !apiKey
+      && !hasStoredAgentCredential.value
+    ) {
       toast.warning('请先填写 API Key')
       return
     }

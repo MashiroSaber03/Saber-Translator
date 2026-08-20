@@ -19,7 +19,7 @@ import time
 from typing import Any, Protocol
 import uuid
 
-from sqlalchemy import Engine, and_, delete, insert, or_, select, update
+from sqlalchemy import Engine, and_, delete, exists, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from src.backend_v2.serialization import canonical_json as _json
@@ -53,6 +53,7 @@ from src.backend_v2.storage.schema import (
     analysis_layer_result_pages,
     analysis_layer_results,
     credential_versions,
+    process_epochs,
     transient_requests,
     vector_generations,
 )
@@ -135,7 +136,6 @@ class QAFenced(RuntimeError):
 class TransientFence:
     request_id: str
     attempt_id: str
-    lease_token: str
     worker_epoch_id: str
 
 
@@ -300,21 +300,8 @@ def validate_retrieval_candidates(
 class TransientRequestRepository:
     """Small CAS state machine for non-durable connection work."""
 
-    def __init__(
-        self,
-        engine: Engine,
-        *,
-        lease_seconds: float = 120.0,
-    ) -> None:
+    def __init__(self, engine: Engine) -> None:
         self.engine = engine
-        if (
-            isinstance(lease_seconds, bool)
-            or not isinstance(lease_seconds, (int, float))
-            or not math.isfinite(lease_seconds)
-            or lease_seconds <= 0
-        ):
-            raise ValueError("lease_seconds must be a positive finite number")
-        self.lease_seconds = lease_seconds
 
     def create_vector_query(
         self,
@@ -351,21 +338,12 @@ class TransientRequestRepository:
     def claim_next(self, *, worker_epoch_id: str) -> TransientFence | None:
         now = utcnow()
         attempt_id = str(uuid.uuid4())
-        lease_token = secrets.token_urlsafe(32)
-        claimable = or_(
-            transient_requests.c.status == "pending",
-            and_(
-                transient_requests.c.status == "running",
-                transient_requests.c.lease_expires_at.is_not(None),
-                transient_requests.c.lease_expires_at <= now,
-            ),
-        )
         with immediate_transaction(self.engine) as connection:
             request_id = connection.execute(
                 select(transient_requests.c.id)
                 .where(
                     transient_requests.c.kind == "vector_query",
-                    claimable,
+                    transient_requests.c.status == "pending",
                     transient_requests.c.connection_open.is_(True),
                 )
                 .order_by(transient_requests.c.created_at)
@@ -377,16 +355,13 @@ class TransientRequestRepository:
                 update(transient_requests)
                 .where(
                     transient_requests.c.id == request_id,
-                    claimable,
+                    transient_requests.c.status == "pending",
                     transient_requests.c.connection_open.is_(True),
                 )
                 .values(
                     status="running",
                     worker_epoch_id=worker_epoch_id,
                     attempt_id=attempt_id,
-                    lease_token=lease_token,
-                    lease_expires_at=now
-                    + timedelta(seconds=self.lease_seconds),
                     updated_at=now,
                 )
             )
@@ -395,7 +370,6 @@ class TransientRequestRepository:
         return TransientFence(
             request_id=_required_string(request_id, "QA request id"),
             attempt_id=attempt_id,
-            lease_token=lease_token,
             worker_epoch_id=worker_epoch_id,
         )
 
@@ -407,8 +381,7 @@ class TransientRequestRepository:
                     transient_requests.c.connection_open,
                     transient_requests.c.status,
                     transient_requests.c.attempt_id,
-                    transient_requests.c.lease_token,
-                    transient_requests.c.lease_expires_at,
+                    transient_requests.c.worker_epoch_id,
                 ).where(transient_requests.c.id == fence.request_id)
             ).mappings().one_or_none()
         if (
@@ -416,35 +389,11 @@ class TransientRequestRepository:
             or row["connection_open"] is not True
             or row["status"] != "running"
             or row["attempt_id"] != fence.attempt_id
-            or row["lease_token"] != fence.lease_token
-            or row["lease_expires_at"] is None
-            or row["lease_expires_at"] <= utcnow()
+            or row["worker_epoch_id"] != fence.worker_epoch_id
+            or not self._worker_is_active(fence.worker_epoch_id)
         ):
-            raise QAFenced("transient vector query lost its lease")
+            raise QAFenced("transient vector query is no longer current")
         return _json_object(row["request_json"], "QA request")
-
-    def renew(self, fence: TransientFence) -> bool:
-        now = utcnow()
-        with self.engine.begin() as connection:
-            changed = connection.execute(
-                update(transient_requests)
-                .where(
-                    transient_requests.c.id == fence.request_id,
-                    transient_requests.c.status == "running",
-                    transient_requests.c.connection_open.is_(True),
-                    transient_requests.c.worker_epoch_id
-                    == fence.worker_epoch_id,
-                    transient_requests.c.attempt_id == fence.attempt_id,
-                    transient_requests.c.lease_token == fence.lease_token,
-                    transient_requests.c.lease_expires_at > now,
-                )
-                .values(
-                    lease_expires_at=now
-                    + timedelta(seconds=self.lease_seconds),
-                    updated_at=now,
-                )
-            )
-        return changed.rowcount == 1
 
     def complete(
         self,
@@ -464,12 +413,11 @@ class TransientRequestRepository:
             )
             changed = connection.execute(
                 update(transient_requests)
-                .where(*self._fence_predicates(fence, now=now))
+                .where(*self._fence_predicates(fence))
                 .values(
                     status="completed",
                     result_json=_json(safe_result),
                     completed_at=now,
-                    lease_expires_at=None,
                     updated_at=now,
                 )
             )
@@ -489,7 +437,7 @@ class TransientRequestRepository:
             )
             changed = connection.execute(
                 update(transient_requests)
-                .where(*self._fence_predicates(fence, now=now))
+                .where(*self._fence_predicates(fence))
                 .values(
                     status="failed",
                     result_json=_json(
@@ -501,7 +449,6 @@ class TransientRequestRepository:
                         }
                     ),
                     completed_at=now,
-                    lease_expires_at=None,
                     updated_at=now,
                 )
             )
@@ -678,7 +625,6 @@ class TransientRequestRepository:
                     status="cancelled",
                     connection_open=False,
                     completed_at=utcnow(),
-                    lease_expires_at=None,
                     updated_at=utcnow(),
                 )
             )
@@ -702,8 +648,6 @@ class TransientRequestRepository:
     @staticmethod
     def _fence_predicates(
         fence: TransientFence,
-        *,
-        now,
     ) -> tuple[Any, ...]:
         return (
             transient_requests.c.id == fence.request_id,
@@ -711,77 +655,29 @@ class TransientRequestRepository:
             transient_requests.c.connection_open.is_(True),
             transient_requests.c.worker_epoch_id == fence.worker_epoch_id,
             transient_requests.c.attempt_id == fence.attempt_id,
-            transient_requests.c.lease_token == fence.lease_token,
-            transient_requests.c.lease_expires_at > now,
+            exists().where(
+                process_epochs.c.id == fence.worker_epoch_id,
+                process_epochs.c.role == "worker",
+                process_epochs.c.status == "active",
+                process_epochs.c.lease_expires_at > utcnow(),
+            ),
         )
 
-
-class TransientHeartbeat:
-    def __init__(
-        self,
-        repository: TransientRequestRepository,
-        fence: TransientFence,
-        *,
-        interval_seconds: float | None = None,
-    ) -> None:
-        self.repository = repository
-        self.fence = fence
-        self.interval_seconds = (
-            max(1.0, repository.lease_seconds / 3)
-            if interval_seconds is None
-            else max(0.001, interval_seconds)
-        )
-        self.fenced = threading.Event()
-        self._stop = threading.Event()
-        self._thread = threading.Thread(
-            target=self._run,
-            name=f"qa-heartbeat-{fence.request_id[:8]}",
-            daemon=True,
-        )
-
-    def __enter__(self) -> "TransientHeartbeat":
-        self._thread.start()
-        return self
-
-    def __exit__(self, *_args: object) -> None:
-        self._stop.set()
-        self._thread.join(timeout=4)
-
-    def _run(self) -> None:
-        while not self._stop.wait(self.interval_seconds):
-            busy_failures = 0
-            while True:
-                try:
-                    renewed = self.repository.renew(self.fence)
-                except Exception as exc:
-                    if (
-                        is_sqlite_busy_error(exc)
-                        and busy_failures < SQLITE_HEARTBEAT_BUSY_RETRY_LIMIT
-                    ):
-                        busy_failures += 1
-                        LOGGER.warning(
-                            "Insight transient 心跳遇到 SQLite 写锁竞争，将重试："
-                            "request=%s retry=%s/%s",
-                            self.fence.request_id[:8],
-                            busy_failures,
-                            SQLITE_HEARTBEAT_BUSY_RETRY_LIMIT,
+    def _worker_is_active(self, worker_epoch_id: str) -> bool:
+        now = utcnow()
+        with self.engine.connect() as connection:
+            return bool(
+                connection.execute(
+                    select(
+                        exists().where(
+                            process_epochs.c.id == worker_epoch_id,
+                            process_epochs.c.role == "worker",
+                            process_epochs.c.status == "active",
+                            process_epochs.c.lease_expires_at > now,
                         )
-                        if self._stop.wait(
-                            SQLITE_HEARTBEAT_BUSY_RETRY_DELAY_SECONDS
-                        ):
-                            return
-                        continue
-                    LOGGER.exception(
-                        "Insight transient 心跳执行失败，立即放弃本次请求："
-                        "request=%s",
-                        self.fence.request_id[:8],
                     )
-                    self.fenced.set()
-                    return
-                break
-            if not renewed:
-                self.fenced.set()
-                return
+                ).scalar()
+            )
 
 
 class QARetrievalAlgorithms(Protocol):
@@ -842,35 +738,32 @@ class InsightQAWorkerService:
             return False
         started_at = time.monotonic()
         LOGGER.info("Insight QA 检索开始：request=%s", fence.request_id[:8])
-        with TransientHeartbeat(self.repository, fence) as heartbeat:
+        try:
+            request_payload = self.repository.request(fence)
+            result = self._retrieve(request_payload)
+            self.repository.complete(fence, result=result)
+        except QAFenced:
+            LOGGER.warning(
+                "Insight QA 检索已不再属于当前 Worker：request=%s",
+                fence.request_id[:8],
+            )
+            return True
+        except Exception as exc:
+            LOGGER.exception(
+                "Insight QA 检索失败：request=%s duration=%.2fs",
+                fence.request_id[:8],
+                time.monotonic() - started_at,
+            )
             try:
-                request_payload = self.repository.request(fence)
-                result = self._retrieve(request_payload)
-                if heartbeat.fenced.is_set():
-                    raise QAFenced("transient vector query lost its lease")
-                self.repository.complete(fence, result=result)
+                self.repository.fail(fence, message=str(exc))
             except QAFenced:
-                LOGGER.warning(
-                    "Insight QA 检索被 fencing 中断：request=%s",
-                    fence.request_id[:8],
-                )
-                return True
-            except Exception as exc:
-                LOGGER.exception(
-                    "Insight QA 检索失败：request=%s duration=%.2fs",
-                    fence.request_id[:8],
-                    time.monotonic() - started_at,
-                )
-                try:
-                    self.repository.fail(fence, message=str(exc))
-                except QAFenced:
-                    pass
-            else:
-                LOGGER.info(
-                    "Insight QA 检索完成：request=%s duration=%.2fs",
-                    fence.request_id[:8],
-                    time.monotonic() - started_at,
-                )
+                pass
+        else:
+            LOGGER.info(
+                "Insight QA 检索完成：request=%s duration=%.2fs",
+                fence.request_id[:8],
+                time.monotonic() - started_at,
+            )
         return True
 
     def _retrieve(self, request_payload: Mapping[str, Any]) -> dict[str, Any]:

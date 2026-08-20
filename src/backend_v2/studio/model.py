@@ -99,10 +99,6 @@ def to_storage(document: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
 
 
 def from_storage(row: Mapping[str, Any]) -> dict[str, Any]:
-    if row["schema_version"] != 2:
-        raise StudioDocumentInvalid(
-            "stored Studio document schema version is invalid"
-        )
     title = row["title"]
     if not isinstance(title, str) or not title:
         raise StudioDocumentInvalid("stored Studio document title is invalid")

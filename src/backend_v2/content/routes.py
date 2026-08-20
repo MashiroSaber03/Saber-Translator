@@ -121,7 +121,6 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
 
     @blueprint.post("/books")
     def create_book() -> tuple[Response, int]:
-        _require_idempotency_key()
         body = _book_body(update=False)
         tag_ids = body.get("tagIds", [])
         if not isinstance(tag_ids, list) or not all(
@@ -143,7 +142,6 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
 
     @blueprint.put("/books/<book_id>")
     def update_book(book_id: str) -> Response:
-        _require_idempotency_key()
         body = _book_body(update=True)
         title = body.get("title")
         if title is not None and not isinstance(title, str):
@@ -174,13 +172,11 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
 
     @blueprint.delete("/books/<book_id>")
     def delete_book(book_id: str) -> Response:
-        _require_idempotency_key()
         repository.delete_book(book_id)
         return jsonify({"deleted": True})
 
     @blueprint.post("/books/batch-delete")
     def batch_delete_books() -> Response:
-        _require_idempotency_key()
         body = _json_body(allowed_keys={"bookIds"})
         book_ids = body.get("bookIds")
         if not isinstance(book_ids, list) or not all(
@@ -192,7 +188,6 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
 
     @blueprint.post("/books/batch-tags")
     def batch_tags() -> Response:
-        _require_idempotency_key()
         body = _json_body(allowed_keys={"bookIds", "tagIds", "action"})
         book_ids = body.get("bookIds")
         tag_ids = body.get("tagIds")
@@ -216,7 +211,6 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
 
     @blueprint.post("/books/<book_id>/chapters")
     def create_chapter(book_id: str) -> tuple[Response, int]:
-        _require_idempotency_key()
         body = _json_body(allowed_keys={"title"})
         created = repository.create_chapter(
             book_id=book_id,
@@ -226,7 +220,6 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
 
     @blueprint.put("/chapters/<chapter_id>")
     def update_chapter(chapter_id: str) -> Response:
-        _require_idempotency_key()
         body = _json_body(allowed_keys={"title"})
         return jsonify(
             repository.update_chapter(
@@ -237,13 +230,11 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
 
     @blueprint.delete("/chapters/<chapter_id>")
     def delete_chapter(chapter_id: str) -> Response:
-        _require_idempotency_key()
         repository.delete_chapter(chapter_id)
         return jsonify({"deleted": True})
 
     @blueprint.put("/books/<book_id>/chapters/order")
     def reorder_chapters(book_id: str) -> Response:
-        _require_idempotency_key()
         body = _json_body(allowed_keys={"orderedIds", "baseRevision"})
         ordered_ids = body.get("orderedIds")
         if not isinstance(ordered_ids, list) or not all(
@@ -285,7 +276,6 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
 
     @blueprint.delete("/chapters/<chapter_id>/pages")
     def clear_chapter_pages(chapter_id: str) -> Response:
-        _require_idempotency_key()
         deleted_count = repository.clear_chapter_pages(chapter_id)
         return jsonify({"deletedCount": deleted_count})
 
@@ -295,7 +285,6 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
 
     @blueprint.put("/chapters/<chapter_id>/pages/order")
     def reorder_pages(chapter_id: str) -> Response:
-        _require_idempotency_key()
         body = _json_body(allowed_keys={"orderedIds", "baseRevision"})
         ordered_ids = body.get("orderedIds")
         if not isinstance(ordered_ids, list) or not all(
@@ -315,7 +304,6 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
 
     @blueprint.delete("/pages/<page_id>")
     def delete_page(page_id: str) -> Response:
-        _require_idempotency_key()
         repository.delete_page(page_id)
         return jsonify({"deleted": True})
 
@@ -364,7 +352,6 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
 
     @blueprint.patch("/chapters/<chapter_id>/settings-memory")
     def update_chapter_settings_memory(chapter_id: str) -> Response:
-        _require_idempotency_key()
         body = _json_body(allowed_keys={"payload", "baseRevision"})
         payload = body.get("payload")
         if not isinstance(payload, dict):
@@ -383,7 +370,6 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
 
     @blueprint.patch("/chapters/<chapter_id>/last-visited-page")
     def update_last_visited_page(chapter_id: str) -> Response:
-        _require_idempotency_key()
         body = _json_body(allowed_keys={"pageId"})
         return jsonify(
             repository.update_last_visited_page(
@@ -398,7 +384,6 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
 
     @blueprint.put("/books/<book_id>/translation-constraints")
     def update_translation_constraints(book_id: str) -> Response:
-        _require_idempotency_key()
         body = _json_body(allowed_keys={"payload", "baseRevision"})
         payload = body.get("payload")
         if not isinstance(payload, dict):
@@ -589,7 +574,6 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
 
     @blueprint.post("/quick-workspace/reset")
     def reset_quick_workspace() -> Response:
-        _require_idempotency_key()
         return jsonify(repository.reset_quick_workspace())
 
     @blueprint.get("/translation/bootstrap")
@@ -614,7 +598,6 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
 
     @blueprint.post("/quick-workspace/promote")
     def promote_quick_workspace() -> Response:
-        _require_idempotency_key()
         body = _json_body(
             allowed_keys={"mode", "chapterTitle", "title", "bookId"}
         )
@@ -646,7 +629,6 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
 
     @blueprint.post("/tags")
     def create_tag() -> tuple[Response, int]:
-        _require_idempotency_key()
         body = _json_body(allowed_keys={"name", "color"})
         return (
             jsonify(
@@ -660,7 +642,6 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
 
     @blueprint.put("/tags/<tag_id>")
     def update_tag(tag_id: str) -> Response:
-        _require_idempotency_key()
         body = _json_body(allowed_keys={"name", "color"})
         return jsonify(
             repository.update_tag(
@@ -672,7 +653,6 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
 
     @blueprint.delete("/tags/<tag_id>")
     def delete_tag(tag_id: str) -> Response:
-        _require_idempotency_key()
         repository.delete_tag(tag_id)
         return jsonify({"deleted": True})
 

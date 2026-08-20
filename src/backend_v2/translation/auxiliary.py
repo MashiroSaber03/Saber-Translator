@@ -10,7 +10,6 @@ from sqlalchemy.engine import Connection
 
 from src.backend_v2.serialization import canonical_json
 from src.backend_v2.content.page_style import (
-    PAGE_STYLE_SCHEMA_VERSION,
     rgb_to_hex,
     validate_page_style,
 )
@@ -31,10 +30,7 @@ from src.backend_v2.storage.schema import (
     page_assets,
     pages,
 )
-from src.core.config_models import (
-    BUBBLE_PAYLOAD_SCHEMA_VERSION,
-    validate_bubble_payload,
-)
+from src.core.config_models import validate_bubble_payload
 
 
 STYLE_FIELDS = frozenset(
@@ -127,8 +123,6 @@ def _load_current_bubble_payload(
     document_revision: int,
     label: str,
 ) -> dict[str, Any]:
-    if row["payload_schema_version"] != BUBBLE_PAYLOAD_SCHEMA_VERSION:
-        raise RuntimeError(f"{label} payload schema version is not current")
     if row["updated_revision"] != document_revision:
         raise RuntimeError(f"{label} revision does not match page document")
     try:
@@ -264,7 +258,6 @@ class AuxiliaryTranslationCommands:
                     pages.c.document_revision,
                     pages.c.default_font_id,
                     pages.c.page_style_defaults_json,
-                    pages.c.page_style_schema_version,
                 ).where(
                     pages.c.id == source_page_id,
                     pages.c.chapter_id == chapter_id,
@@ -274,8 +267,6 @@ class AuxiliaryTranslationCommands:
             raise ValueError("source page does not belong to the chapter")
         if source["document_revision"] != source_document_revision:
             raise ValueError("source page document revision changed")
-        if source["page_style_schema_version"] != PAGE_STYLE_SCHEMA_VERSION:
-            raise ValueError("source page style schema version is not current")
         defaults = validate_page_style(
             json.loads(source["page_style_defaults_json"]),
             partial=False,
@@ -359,7 +350,6 @@ class AuxiliaryTranslationCommands:
                         pages.c.id,
                         pages.c.ordinal,
                         pages.c.document_revision,
-                        pages.c.page_style_schema_version,
                         assets.c.checksum,
                     )
                     .join(
@@ -389,13 +379,6 @@ class AuxiliaryTranslationCommands:
                 )
             exported_pages: list[dict[str, object]] = []
             for page in page_rows:
-                if (
-                    page["page_style_schema_version"]
-                    != PAGE_STYLE_SCHEMA_VERSION
-                ):
-                    raise RuntimeError(
-                        "page style schema version is not current"
-                    )
                 exported_pages.append(
                     {
                         "page_id": page["id"],
@@ -529,7 +512,6 @@ class AuxiliaryTranslationCommands:
                     select(
                         pages.c.id,
                         pages.c.document_revision,
-                        pages.c.page_style_schema_version,
                         assets.c.checksum,
                         page_assets.c.asset_id,
                     )
@@ -564,13 +546,6 @@ class AuxiliaryTranslationCommands:
             if current is None:
                 issues.append("missing_page")
             else:
-                if (
-                    current["page_style_schema_version"]
-                    != PAGE_STYLE_SCHEMA_VERSION
-                ):
-                    raise RuntimeError(
-                        "page style schema version is not current"
-                    )
                 if imported.get("source_checksum") != current["checksum"]:
                     issues.append("checksum_conflict")
                 if (
@@ -766,7 +741,6 @@ class AuxiliaryTranslationCommands:
                     select(
                         pages.c.id,
                         pages.c.document_revision,
-                        pages.c.page_style_schema_version,
                         page_assets.c.asset_id,
                         assets.c.checksum,
                     )
@@ -789,7 +763,6 @@ class AuxiliaryTranslationCommands:
                     select(
                         bubbles.c.id,
                         bubbles.c.page_id,
-                        bubbles.c.payload_schema_version,
                         bubbles.c.updated_revision,
                     ).where(
                         bubbles.c.page_id.in_(
@@ -805,8 +778,6 @@ class AuxiliaryTranslationCommands:
                 current is None
                 or int(current["document_revision"])
                 != int(item["baseDocumentRevision"])
-                or current["page_style_schema_version"]
-                != PAGE_STYLE_SCHEMA_VERSION
                 or str(current["asset_id"]) != item["sourceAssetId"]
                 or str(current["checksum"]) != item["sourceChecksum"]
             ):
@@ -819,11 +790,7 @@ class AuxiliaryTranslationCommands:
                     raise ValueError(
                         f"page {page_id} contains a missing or moved bubble"
                     )
-                if (
-                    bubble["payload_schema_version"] != BUBBLE_PAYLOAD_SCHEMA_VERSION
-                    or bubble["updated_revision"]
-                    != current["document_revision"]
-                ):
+                if bubble["updated_revision"] != current["document_revision"]:
                     raise ValueError(
                         f"page {page_id} bubble document is not current"
                     )
@@ -963,10 +930,6 @@ class StyleApplyWorkerService:
             ).mappings().one_or_none()
             if page is None:
                 raise RuntimeError("style target page was deleted")
-            if page["page_style_schema_version"] != PAGE_STYLE_SCHEMA_VERSION:
-                raise RuntimeError(
-                    "style target page schema version is not current"
-                )
             bubble_rows = list(
                 connection.execute(
                     select(bubbles)
@@ -1108,7 +1071,6 @@ class StyleApplyWorkerService:
                 select(chapter_write_locks.c.job_id).where(
                     chapter_write_locks.c.chapter_id == page["chapter_id"],
                     chapter_write_locks.c.job_id == fence.job_id,
-                    chapter_write_locks.c.owner_attempt_id == fence.attempt_id,
                 )
             ).scalar_one_or_none() is None:
                 raise RuntimeError("style job lost its chapter lock")
@@ -1276,7 +1238,6 @@ class TextImportWorkerService:
                 select(
                     pages.c.chapter_id,
                     pages.c.document_revision,
-                    pages.c.page_style_schema_version,
                     pages.c.rendered_revision,
                     pages.c.render_status,
                     page_assets.c.asset_id,
@@ -1309,8 +1270,6 @@ class TextImportWorkerService:
             raise RuntimeError("text import page was deleted")
         if (
             page["document_revision"] != base_revision
-            or page["page_style_schema_version"]
-            != PAGE_STYLE_SCHEMA_VERSION
             or page["asset_id"] != entry["sourceAssetId"]
             or page["checksum"] != entry["sourceChecksum"]
         ):
@@ -1380,8 +1339,6 @@ class TextImportWorkerService:
                 select(chapter_write_locks.c.job_id).where(
                     chapter_write_locks.c.chapter_id == page["chapter_id"],
                     chapter_write_locks.c.job_id == fence.job_id,
-                    chapter_write_locks.c.owner_attempt_id
-                    == fence.attempt_id,
                 )
             ).scalar_one_or_none() is None:
                 raise RuntimeError("text import lost its chapter lock")

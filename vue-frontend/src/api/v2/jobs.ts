@@ -34,7 +34,7 @@ export const CURRENT_JOB_STATUSES: ReadonlySet<V2JobStatus> = new Set([
   'cancelling',
 ])
 
-function commandHeaders(): Record<string, string> {
+function replayHeaders(): Record<string, string> {
   return { 'Idempotency-Key': crypto.randomUUID() }
 }
 
@@ -82,32 +82,24 @@ export const jobsApi = {
   pause(jobId: string): Promise<V2Job> {
     return apiClient.post(
       `/api/v2/jobs/${encodeURIComponent(jobId)}/pause`,
-      undefined,
-      { headers: commandHeaders() },
     )
   },
 
   resume(jobId: string): Promise<V2Job> {
     return apiClient.post(
       `/api/v2/jobs/${encodeURIComponent(jobId)}/resume`,
-      undefined,
-      { headers: commandHeaders() },
     )
   },
 
   continue(jobId: string): Promise<V2Job> {
     return apiClient.post(
       `/api/v2/jobs/${encodeURIComponent(jobId)}/continue`,
-      undefined,
-      { headers: commandHeaders() },
     )
   },
 
   cancel(jobId: string): Promise<V2Job> {
     return apiClient.post(
       `/api/v2/jobs/${encodeURIComponent(jobId)}/cancel`,
-      undefined,
-      { headers: commandHeaders() },
     )
   },
 
@@ -115,7 +107,7 @@ export const jobsApi = {
     return apiClient.post(
       `/api/v2/jobs/${encodeURIComponent(jobId)}/retry`,
       { strategy },
-      { headers: commandHeaders() },
+      { headers: replayHeaders() },
     )
   },
 
@@ -126,7 +118,7 @@ export const jobsApi = {
     return apiClient.post(
       `/api/v2/jobs/${encodeURIComponent(jobId)}/retry-failed`,
       { strategy },
-      { headers: commandHeaders() },
+      { headers: replayHeaders() },
     )
   },
 
@@ -134,31 +126,20 @@ export const jobsApi = {
     return apiClient.post(
       '/api/v2/jobs/reorder',
       { orderedJobIds, baseRevision },
-      { headers: commandHeaders() },
     )
   },
 
   cancelQueued(): Promise<{ cancelled: number }> {
-    return apiClient.post(
-      '/api/v2/jobs/cancel-queued',
-      undefined,
-      { headers: commandHeaders() },
-    )
+    return apiClient.post('/api/v2/jobs/cancel-queued')
   },
 
   clearHistory(): Promise<{ removed: number }> {
-    return apiClient.post(
-      '/api/v2/jobs/history/clear',
-      undefined,
-      { headers: commandHeaders() },
-    )
+    return apiClient.post('/api/v2/jobs/history/clear')
   },
 
   cancelBatch(batchId: string): Promise<{ cancelled: number }> {
     return apiClient.post(
       `/api/v2/job-batches/${encodeURIComponent(batchId)}/cancel`,
-      undefined,
-      { headers: commandHeaders() },
     )
   },
 
@@ -169,15 +150,12 @@ export const jobsApi = {
     return apiClient.post(
       `/api/v2/job-batches/${encodeURIComponent(batchId)}/prioritize`,
       { baseRevision },
-      { headers: commandHeaders() },
     )
   },
 
   continueBatch(batchId: string): Promise<components['schemas']['BatchContinueResult']> {
     return apiClient.post(
       `/api/v2/job-batches/${encodeURIComponent(batchId)}/continue`,
-      undefined,
-      { headers: commandHeaders() },
     )
   },
 }

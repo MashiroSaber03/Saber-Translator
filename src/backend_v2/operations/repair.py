@@ -27,10 +27,7 @@ from src.backend_v2.storage.schema import (
     page_assets,
     pages,
 )
-from src.core.config_models import (
-    BUBBLE_PAYLOAD_SCHEMA_VERSION,
-    validate_bubble_payload,
-)
+from src.core.config_models import validate_bubble_payload
 
 
 class PageRepairService:
@@ -64,7 +61,6 @@ class PageRepairService:
                     assets.c.width,
                     assets.c.height,
                     bubbles.c.payload_json,
-                    bubbles.c.payload_schema_version,
                     bubbles.c.updated_revision,
                 )
                 .join(bubbles, bubbles.c.page_id == pages.c.id)
@@ -81,8 +77,6 @@ class PageRepairService:
             ).mappings().one_or_none()
         if row is None:
             raise ValueError("page or bubble not found")
-        if row["payload_schema_version"] != BUBBLE_PAYLOAD_SCHEMA_VERSION:
-            raise ValueError("bubble payload schema version is not current")
         if row["updated_revision"] != row["document_revision"]:
             raise ValueError("bubble revision does not match page document")
         payload = validate_bubble_payload(
@@ -287,16 +281,11 @@ class PageRepairService:
             for row in connection.execute(
                 select(
                     bubbles.c.payload_json,
-                    bubbles.c.payload_schema_version,
                     bubbles.c.updated_revision,
                 )
                 .where(bubbles.c.page_id == page_id)
                 .order_by(bubbles.c.ordinal)
             ).mappings():
-                if row["payload_schema_version"] != BUBBLE_PAYLOAD_SCHEMA_VERSION:
-                    raise RuntimeError(
-                        "bubble payload schema version is not current"
-                    )
                 if row["updated_revision"] != revision:
                     raise RuntimeError(
                         "bubble revision does not match page document"

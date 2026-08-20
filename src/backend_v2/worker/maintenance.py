@@ -326,7 +326,6 @@ class WorkerMaintenance:
                     select(
                         jobs.c.status,
                         jobs.c.config_json,
-                        jobs.c.config_schema_version,
                         jobs.c.finished_at,
                         jobs.c.updated_at,
                     ).where(jobs.c.kind == "container_import")

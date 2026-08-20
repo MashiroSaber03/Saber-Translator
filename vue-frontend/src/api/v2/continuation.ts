@@ -1,6 +1,5 @@
 import { apiClient } from '@/api/client'
 import type { components } from '@/api/generated/v2'
-import { assertBackendActionAllowed } from '@/services/backendAccessGate'
 import { newIdempotencyKey } from './content'
 
 const ROOT = '/api/v2/insight'
@@ -226,7 +225,6 @@ export function createV2ContinuationJob(
     ordinals?: number[]
   },
 ): Promise<V2ContinuationAccepted> {
-  assertBackendActionAllowed()
   return apiClient.post(
     `${ROOT}/books/${encodeURIComponent(bookId)}/continuation/jobs`,
     command,

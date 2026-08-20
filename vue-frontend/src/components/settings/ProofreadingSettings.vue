@@ -257,6 +257,7 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 import {
   getProviderOptionsForCapability,
   providerRequiresApiKey,
+  providerRequiresApiKeyForBaseUrl,
   providerRequiresBaseUrl,
 } from '@/config/aiProviders'
 import { useSettingsStore } from '@/stores/settings'
@@ -412,7 +413,7 @@ async function testRoundConnection(round: ProofreadingRound) {
   const baseUrl = round.customBaseUrl?.trim()
 
   if (
-    providerRequiresApiKey(provider) &&
+    providerRequiresApiKeyForBaseUrl(provider, baseUrl) &&
     !apiKey &&
     !settingsStore.hasCredential(proofreadingProviderDomain(round.id), provider)
   ) {

@@ -2,7 +2,6 @@ import { getCurrentInstance, onUnmounted, ref } from 'vue'
 import {
   getProviderDisplayName,
   normalizeProviderId,
-  providerRequiresApiKey,
   providerRequiresApiKeyForBaseUrl,
   providerRequiresBaseUrl,
   providerRequiresModel,
@@ -150,7 +149,7 @@ export function useValidation() {
       }
     }
 
-    if (providerRequiresApiKey(provider)) {
+    if (providerRequiresApiKeyForBaseUrl(provider, customBaseUrl)) {
       if (!hasUsableApiKey(apiKey, 'translation', provider)) {
         missingItems.push(`${getProviderDisplayName(provider)} 的 API Key`)
       }
@@ -194,7 +193,7 @@ export function useValidation() {
     }
 
     if (
-      providerRequiresApiKey(provider)
+      providerRequiresApiKeyForBaseUrl(provider, customBaseUrl)
       && !hasUsableApiKey(apiKey, 'hq', provider)
     ) {
       missingItems.push('高质量翻译的 API Key')
@@ -247,7 +246,7 @@ export function useValidation() {
       }
 
       if (
-        providerRequiresApiKey(round.provider)
+        providerRequiresApiKeyForBaseUrl(round.provider, round.customBaseUrl)
         && !hasUsableApiKey(
           round.apiKey,
           proofreadingProviderDomain(round.id),

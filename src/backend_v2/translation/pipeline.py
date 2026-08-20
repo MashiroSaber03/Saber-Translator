@@ -22,7 +22,6 @@ from sqlalchemy.engine import Connection
 from src.backend_v2.serialization import canonical_json as _json
 from src.backend_v2.timestamps import utcnow
 from src.backend_v2.content.page_style import (
-    PAGE_STYLE_SCHEMA_VERSION,
     rgb_to_hex,
     validate_page_style,
 )
@@ -49,10 +48,7 @@ from src.backend_v2.storage.schema import (
     pages,
     translation_constraints,
 )
-from src.core.config_models import (
-    BUBBLE_PAYLOAD_SCHEMA_VERSION,
-    validate_bubble_payload,
-)
+from src.core.config_models import validate_bubble_payload
 from src.core.ocr_types import OcrResult
 from src.shared.paddleocr_vl import PADDLEOCR_VL_LANGUAGE_NAMES
 
@@ -1987,7 +1983,6 @@ class TranslationPipelineService:
                             "ordinal": index,
                             "font_id": task_font_id,
                             "payload_json": _json(payload),
-                            "payload_schema_version": BUBBLE_PAYLOAD_SCHEMA_VERSION,
                             "updated_revision": new_revision,
                         }
                         for index, payload in enumerate(payloads, start=1)
@@ -3129,14 +3124,11 @@ class TranslationPipelineService:
             ).mappings().one_or_none()
             if page is None:
                 raise JobConflict("job target page no longer exists")
-            if page["page_style_schema_version"] != PAGE_STYLE_SCHEMA_VERSION:
-                raise JobConflict("page style schema version is not current")
             rows = list(
                 connection.execute(
                     select(
                         bubbles.c.id,
                         bubbles.c.payload_json,
-                        bubbles.c.payload_schema_version,
                         bubbles.c.updated_revision,
                     )
                     .where(bubbles.c.page_id == page_id)
@@ -3145,8 +3137,6 @@ class TranslationPipelineService:
             )
             parsed_bubbles: list[dict[str, Any]] = []
             for row in rows:
-                if row.payload_schema_version != BUBBLE_PAYLOAD_SCHEMA_VERSION:
-                    raise JobConflict("bubble payload schema version is not current")
                 if row.updated_revision != page["document_revision"]:
                     raise JobConflict("bubble revision does not match page document")
                 try:
@@ -3358,7 +3348,6 @@ class TranslationPipelineService:
                 connection.execute(
                     select(
                         job_steps.c.checkpoint_json,
-                        job_steps.c.checkpoint_schema_version,
                     )
                     .join(
                         job_items,
@@ -3374,10 +3363,6 @@ class TranslationPipelineService:
                 ).mappings()
             )
         for row in checkpoints:
-            if row["checkpoint_schema_version"] != 1:
-                raise JobConflict(
-                    "automatic term checkpoint schema version is invalid"
-                )
             checkpoint_json = row["checkpoint_json"]
             if not isinstance(checkpoint_json, str):
                 raise JobConflict("automatic term checkpoint is invalid")

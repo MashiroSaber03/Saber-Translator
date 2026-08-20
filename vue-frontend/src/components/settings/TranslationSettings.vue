@@ -267,7 +267,7 @@ import {
   getProviderOptionsForCapability,
   isLocalProviderId,
   normalizeProviderId,
-  providerRequiresApiKey,
+  providerRequiresApiKeyForBaseUrl,
   providerRequiresBaseUrl,
   providerSupportsCapability,
 } from '@/config/aiProviders'
@@ -346,7 +346,7 @@ const remoteModelDiscovery = useAiModelDiscovery({
   notify: notifyModelDiscovery,
   supportsProvider: provider =>
     providerSupportsCapability(provider, 'modelFetch') && !isLocalProviderId(provider),
-  requiresApiKey: provider => !isLocalProviderId(provider),
+  requiresApiKey: providerRequiresApiKeyForBaseUrl,
   emptyBaseUrl: '',
 })
 const isFetchingModels = computed(
@@ -524,7 +524,7 @@ async function testCloudConnection() {
   const modelName = translationSettings.value.modelName?.trim()
   const baseUrl = translationSettings.value.customBaseUrl?.trim()
   if (
-    providerRequiresApiKey(provider) &&
+    providerRequiresApiKeyForBaseUrl(provider, baseUrl) &&
     !apiKey &&
     !settingsStore.hasCredential('translation', provider)
   ) {

@@ -1,7 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { flushPromises, mount } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductSegmentedTabs from '@/components/product/ProductSegmentedTabs.vue'
@@ -24,20 +24,27 @@ const {
     textStyleDefaults: {
       fontSize: 16,
     },
+    providerConfigs: {},
   },
 }))
 
-vi.mock('@/stores/settings', () => ({
-  useSettingsStore: () => ({
+vi.mock('@/stores/settings', async () => {
+  const { reactive } = await import('vue')
+  settingsStoreState.settings = reactive(settingsStoreState.settings)
+  settingsStoreState.textStyleDefaults = reactive(settingsStoreState.textStyleDefaults)
+  settingsStoreState.providerConfigs = reactive(settingsStoreState.providerConfigs)
+  return {
+    useSettingsStore: () => ({
     backendError: null,
     isBackendReady: true,
     settings: settingsStoreState.settings,
     textStyleDefaults: settingsStoreState.textStyleDefaults,
-    providerConfigs: {},
+    providerConfigs: settingsStoreState.providerConfigs,
     loadFromBackend: loadFromBackendMock,
     saveToBackend: saveToBackendMock,
-  }),
-}))
+    }),
+  }
+})
 
 vi.mock('@/utils/toast', () => ({
   showToast: vi.fn(),
@@ -108,6 +115,8 @@ vi.mock('@/components/settings/TextStyleDefaultsSettings.vue', () => ({
 
 import SettingsModal from '@/components/settings/SettingsModal.vue'
 
+enableAutoUnmount(afterEach)
+
 describe('SettingsModal', () => {
   beforeEach(() => {
     loadFromBackendMock.mockReset()
@@ -119,32 +128,32 @@ describe('SettingsModal', () => {
     settingsStoreState.textStyleDefaults.fontSize = 16
   })
 
-  it('saves the shared settings draft once and reports text-default changes', async () => {
-    const wrapper = mount(SettingsModal, {
-      props: {
-        modelValue: true,
-      },
-    })
-    await flushPromises()
-    settingsStoreState.textStyleDefaults.fontSize = 18
-
-    const saveButton = wrapper.findAll('button').find(button => button.text().includes('保存设置'))
-    expect(saveButton).toBeTruthy()
-
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+  it('automatically saves a settings change without a save button', async () => {
+    vi.useFakeTimers()
     try {
-      await saveButton!.trigger('click')
+      const wrapper = mount(SettingsModal, {
+        props: {
+          modelValue: true,
+        },
+      })
       await flushPromises()
-      expect(logSpy).not.toHaveBeenCalled()
-    } finally {
-      logSpy.mockRestore()
-    }
+      settingsStoreState.textStyleDefaults.fontSize = 18
+      await wrapper.vm.$nextTick()
 
-    expect(saveToBackendMock).toHaveBeenCalledTimes(1)
-    expect(wrapper.emitted('save')?.[0]?.[0]).toEqual({ textDefaultsChanged: true })
+      expect(wrapper.findAll('button').some(button => button.text().includes('保存设置'))).toBe(false)
+      expect(wrapper.text()).toContain('修改后自动保存')
+
+      await vi.advanceTimersByTimeAsync(450)
+      await flushPromises()
+
+      expect(saveToBackendMock).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('keeps every close path disabled while the save transaction is pending', async () => {
+    vi.useFakeTimers()
     let resolveSave!: (value: boolean) => void
     saveToBackendMock.mockReturnValueOnce(new Promise<boolean>((resolve) => {
       resolveSave = resolve
@@ -153,27 +162,52 @@ describe('SettingsModal', () => {
       props: { modelValue: true },
     })
     await flushPromises()
-
-    const buttons = wrapper.findAll('button')
-    const saveButton = buttons.find(button => button.text().includes('保存设置'))
-    const cancelButton = buttons.find(button => button.text() === '取消')
-    expect(saveButton).toBeTruthy()
-    expect(cancelButton).toBeTruthy()
-
-    await saveButton!.trigger('click')
+    settingsStoreState.settings.textStyle.fontSize = 18
+    await wrapper.vm.$nextTick()
+    await vi.advanceTimersByTimeAsync(450)
     await wrapper.vm.$nextTick()
 
-    expect(cancelButton!.attributes('disabled')).toBeDefined()
+    const buttons = wrapper.findAll('button')
+    const doneButton = buttons.find(button => button.text() === '完成')
+    expect(doneButton).toBeTruthy()
+
+    expect(saveToBackendMock).toHaveBeenCalledOnce()
+    expect(doneButton!.attributes('disabled')).toBeDefined()
     const modal = wrapper.get('[data-close-on-overlay]')
     expect(modal.attributes('data-show-close-button')).toBe('false')
     expect(modal.attributes('data-close-on-overlay')).toBe('false')
     expect(modal.attributes('data-close-on-esc')).toBe('false')
-    await cancelButton!.trigger('click')
+    await doneButton!.trigger('click')
     expect(wrapper.emitted('update:modelValue')).toBeUndefined()
 
     resolveSave(true)
     await flushPromises()
+    await doneButton!.trigger('click')
+    await flushPromises()
     expect(wrapper.emitted('update:modelValue')).toEqual([[false]])
+    vi.useRealTimers()
+  })
+
+  it('leaves the modal usable when automatic persistence rejects unexpectedly', async () => {
+    vi.useFakeTimers()
+    try {
+      saveToBackendMock.mockRejectedValueOnce(new Error('写入失败'))
+      const wrapper = mount(SettingsModal, {
+        props: { modelValue: true },
+      })
+      await flushPromises()
+
+      settingsStoreState.settings.textStyle.fontSize = 19
+      await wrapper.vm.$nextTick()
+      await vi.advanceTimersByTimeAsync(450)
+      await flushPromises()
+
+      const doneButton = wrapper.findAll('button').find(button => button.text() === '完成')
+      expect(doneButton?.attributes('disabled')).toBeUndefined()
+      expect(wrapper.text()).toContain('修改后自动保存')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('does not render glossary and non-translate tabs', () => {
@@ -279,12 +313,14 @@ describe('SettingsModal', () => {
     expect(textDefaultsSource).not.toContain('defineExpose')
   })
 
-  it('preserves independently saved plugin Agent settings in the cancel snapshot', () => {
+  it('does not keep the old save and cancel snapshot machinery', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/components/settings/SettingsModal.vue'), 'utf8')
 
-    expect(source).toContain('@settings-saved="handlePluginAgentSettingsSaved"')
-    expect(source).toContain('settingsSnapshot.pluginAgent = deepClone(settingsStore.settings.pluginAgent)')
-    expect(source).toContain('providerSnapshot.pluginAgent = deepClone(settingsStore.providerConfigs.pluginAgent)')
+    expect(source).toContain('scheduleAutoSave()')
+    expect(source).toContain('hasUnsavedChanges')
+    expect(source).not.toContain('settingsSnapshot')
+    expect(source).not.toContain('providerSnapshot')
+    expect(source).not.toContain('保存设置')
   })
 
   it('mounts setting forms only after the latest backend load completes', async () => {
@@ -314,8 +350,8 @@ describe('SettingsModal', () => {
   it('disables all settings writes while backend settings are unavailable', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/components/settings/SettingsModal.vue'), 'utf8')
 
-    expect(source).toContain('title="设置受限模式"')
-    expect(source).toContain(':disabled="!settingsStore.isBackendReady"')
+    expect(source).toContain('title="设置加载失败"')
+    expect(source).toContain(':disabled="!settingsStore.isBackendReady || isSaving"')
     expect(source).toContain('{{ settingsStore.backendError')
   })
 
@@ -328,6 +364,6 @@ describe('SettingsModal', () => {
 
     const actionRow = wrapper.getComponent(ProductActionRow)
     expect(actionRow.props('variant')).toBe('dialog')
-    expect(actionRow.props('ariaLabel')).toBe('应用设置操作')
+    expect(actionRow.props('ariaLabel')).toBe('设置状态')
   })
 })

@@ -32,20 +32,17 @@ from src.backend_v2.jobs.retry import JobRetryService
 from src.backend_v2.jobs.routes import create_jobs_blueprint
 from src.backend_v2.jobs.worker_loop import (
     PARALLEL_PIPELINE_LEAD_WINDOW,
-    AttemptHeartbeat,
     JobWorkerLoop,
 )
 from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.epochs import EpochRegistration, ProcessEpochRepository
 from src.backend_v2.storage.schema import (
     assets,
-    chapter_write_intents,
     chapter_write_locks,
     credentials,
     credential_versions,
     job_artifacts,
     job_batches,
-    job_config_snapshots,
     job_events,
     job_items,
     job_step_asset_outputs,
@@ -54,7 +51,6 @@ from src.backend_v2.storage.schema import (
     metadata,
     operations,
     process_epochs,
-    worker_leases,
 )
 from src.backend_v2.storage.seeding import seed_system_records
 
@@ -77,7 +73,7 @@ def job_platform(tmp_path: Path):
             pid=123,
         )
     )
-    repository = JobQueueRepository(engine, attempt_lease_seconds=10)
+    repository = JobQueueRepository(engine)
     try:
         yield engine, repository, book, chapter, worker_epoch_id
     finally:
@@ -339,7 +335,7 @@ def test_queue_list_is_not_truncated_by_history_batch_limit(job_platform) -> Non
     ]
 
 
-def test_chapter_write_intent_drains_then_atomically_upgrades_and_releases(
+def test_chapter_write_lock_is_acquired_atomically_and_released(
     job_platform,
 ) -> None:
     engine, repository, _book, chapter, worker_epoch_id = job_platform
@@ -350,33 +346,15 @@ def test_chapter_write_intent_drains_then_atomically_upgrades_and_releases(
         steps=("detect", "ocr"),
     )
 
-    # First pass establishes the admission barrier while the job remains queued.
-    assert repository.claim_next(worker_epoch_id=worker_epoch_id) is None
-    with engine.connect() as connection:
-        intent = connection.execute(
-            select(chapter_write_intents).where(
-                chapter_write_intents.c.job_id == job_id
-            )
-        ).mappings().one()
-        assert intent["chapter_id"] == chapter["id"]
-        assert connection.execute(
-            select(jobs.c.status).where(jobs.c.id == job_id)
-        ).scalar_one() == "queued"
-
     fence = repository.claim_next(worker_epoch_id=worker_epoch_id)
     assert fence is not None
     with engine.connect() as connection:
-        assert connection.execute(
-            select(chapter_write_intents.c.job_id).where(
-                chapter_write_intents.c.job_id == job_id
-            )
-        ).scalar_one_or_none() is None
         lock = connection.execute(
             select(chapter_write_locks).where(
                 chapter_write_locks.c.job_id == job_id
             )
         ).mappings().one()
-        assert lock["owner_attempt_id"] == fence.attempt_id
+        assert lock["chapter_id"] == chapter["id"]
 
     while (step := repository.next_step(fence)) is not None:
         repository.complete_step(
@@ -423,7 +401,6 @@ def test_page_completed_event_identifies_the_published_page(job_platform) -> Non
     )
     job_id = str(batch["jobIds"][0])
 
-    assert repository.claim_next(worker_epoch_id=worker_epoch_id) is None
     fence = repository.claim_next(worker_epoch_id=worker_epoch_id)
     assert fence is not None
     step = repository.next_step(fence)
@@ -557,21 +534,12 @@ def test_pause_resume_cancel_and_attempt_fencing(job_platform) -> None:
         kind="translation",
         chapter_id=str(chapter["id"]),
     )
-    assert repository.claim_next(worker_epoch_id=worker_epoch_id) is None
     fence = repository.claim_next(worker_epoch_id=worker_epoch_id)
     assert fence is not None
 
     assert repository.request_pause(job_id)["status"] == "pausing"
     assert repository.request_pause(job_id)["status"] == "pausing"
-    repository.acknowledge_drain(
-        fence,
-        pool_id="main",
-        worker_slot=0,
-        last_step_id=None,
-    )
-    assert repository.finalize_drain(
-        fence, expected_slots={("main", 0)}
-    ) == "paused"
+    assert repository.finalize_control(fence) == "paused"
     with engine.connect() as connection:
         assert connection.execute(
             select(chapter_write_locks.c.job_id).where(
@@ -596,15 +564,7 @@ def test_pause_resume_cancel_and_attempt_fencing(job_platform) -> None:
     assert resumed is not None
     assert resumed.attempt_id != fence.attempt_id
     assert repository.request_cancel(job_id)["status"] == "cancelling"
-    repository.acknowledge_drain(
-        resumed,
-        pool_id="main",
-        worker_slot=0,
-        last_step_id=None,
-    )
-    assert repository.finalize_drain(
-        resumed, expected_slots={("main", 0)}
-    ) == "cancelled"
+    assert repository.finalize_control(resumed) == "cancelled"
     with pytest.raises(AttemptFenced):
         repository.control_status(resumed)
     with engine.connect() as connection:
@@ -624,7 +584,6 @@ def test_interrupted_translation_can_be_cancelled_before_book_deletion(
         kind="translation",
         chapter_id=str(chapter["id"]),
     )
-    assert repository.claim_next(worker_epoch_id=worker_epoch_id) is None
     assert repository.claim_next(worker_epoch_id=worker_epoch_id) is not None
 
     recovery = ProcessEpochRepository(engine).reconcile_dead_worker(
@@ -660,16 +619,7 @@ def test_direct_cancel_and_drained_cancel_close_the_entire_job_graph(
         checkpoint={"published": True},
     )
     assert repository.request_cancel(running_id)["status"] == "cancelling"
-    repository.acknowledge_drain(
-        fence,
-        pool_id="main",
-        worker_slot=0,
-        last_step_id=str(step["stepId"]),
-    )
-    assert repository.finalize_drain(
-        fence,
-        expected_slots={("main", 0)},
-    ) == "cancelled"
+    assert repository.finalize_control(fence) == "cancelled"
 
     with engine.connect() as connection:
         for job_id in (queued_id, running_id):
@@ -690,7 +640,7 @@ def test_direct_cancel_and_drained_cancel_close_the_entire_job_graph(
             assert detail["counts"]["running"] == 0
 
 
-def test_bad_attempt_token_cannot_publish_checkpoint(job_platform) -> None:
+def test_bad_attempt_id_cannot_publish_checkpoint(job_platform) -> None:
     _engine, repository, _book, _chapter, worker_epoch_id = job_platform
     _create_job(repository)
     fence = repository.claim_next(worker_epoch_id=worker_epoch_id)
@@ -699,10 +649,8 @@ def test_bad_attempt_token_cannot_publish_checkpoint(job_platform) -> None:
     assert step is not None
     forged = AttemptFence(
         job_id=fence.job_id,
-        attempt_id=fence.attempt_id,
-        lease_token="forged",
+        attempt_id=str(uuid.uuid4()),
         worker_epoch_id=fence.worker_epoch_id,
-        lease_expires_at=fence.lease_expires_at,
     )
     with pytest.raises(AttemptFenced):
         repository.complete_step(
@@ -712,14 +660,13 @@ def test_bad_attempt_token_cannot_publish_checkpoint(job_platform) -> None:
         )
 
 
-def test_zero_row_attempt_renewal_fences_all_late_writes(job_platform) -> None:
+def test_lost_worker_epoch_fences_all_late_writes(job_platform) -> None:
     engine, repository, _book, _chapter, worker_epoch_id = job_platform
     job_id = _create_job(repository)
     fence = repository.claim_next(worker_epoch_id=worker_epoch_id)
     assert fence is not None
     step = repository.next_step(fence)
     assert step is not None
-    assert repository.renew_attempt(fence) is not None
     with engine.begin() as connection:
         from src.backend_v2.storage.schema import process_epochs
 
@@ -728,7 +675,6 @@ def test_zero_row_attempt_renewal_fences_all_late_writes(job_platform) -> None:
             .where(process_epochs.c.id == worker_epoch_id)
             .values(status="lost")
         )
-    assert repository.renew_attempt(fence) is None
     with pytest.raises(AttemptFenced):
         repository.complete_step(
             fence,
@@ -1120,11 +1066,6 @@ def test_shared_event_poller_recovers_an_expired_worker_without_a_browser(
             .where(process_epochs.c.id == worker_epoch_id)
             .values(lease_expires_at=expired_at)
         )
-        connection.execute(
-            update(worker_leases)
-            .where(worker_leases.c.worker_epoch_id == worker_epoch_id)
-            .values(lease_expires_at=expired_at)
-        )
 
     epochs = ProcessEpochRepository(engine)
     broadcaster = JobEventBroadcaster(
@@ -1153,103 +1094,6 @@ def test_shared_event_poller_recovers_an_expired_worker_without_a_browser(
         )
     finally:
         broadcaster.close()
-
-
-def test_job_attempt_heartbeat_exception_cannot_silently_lose_its_lease() -> None:
-    class FailingRepository:
-        def renew_attempt(self, _fence):
-            raise RuntimeError("database unavailable")
-
-    heartbeat = AttemptHeartbeat(
-        FailingRepository(),  # type: ignore[arg-type]
-        AttemptFence(
-            job_id="00000000-0000-0000-0000-000000000001",
-            attempt_id="00000000-0000-0000-0000-000000000002",
-            lease_token="lease",
-            worker_epoch_id="00000000-0000-0000-0000-000000000003",
-            lease_expires_at=utcnow() + timedelta(seconds=10),
-        ),
-        interval_seconds=0.01,
-    )
-
-    heartbeat.start()
-    try:
-        assert heartbeat.fenced.wait(1)
-    finally:
-        heartbeat.stop()
-
-
-def test_job_attempt_heartbeat_retries_sqlite_busy_without_fencing() -> None:
-    class BusyThenRenewRepository:
-        def __init__(self) -> None:
-            self.calls = 0
-
-        def renew_attempt(self, fence):
-            self.calls += 1
-            if self.calls == 1:
-                raise SqlAlchemyOperationalError(
-                    "UPDATE jobs",
-                    (),
-                    sqlite3.OperationalError("database is locked"),
-                )
-            return fence
-
-    repository = BusyThenRenewRepository()
-    heartbeat = AttemptHeartbeat(
-        repository,  # type: ignore[arg-type]
-        AttemptFence(
-            job_id="00000000-0000-0000-0000-000000000001",
-            attempt_id="00000000-0000-0000-0000-000000000002",
-            lease_token="lease",
-            worker_epoch_id="00000000-0000-0000-0000-000000000003",
-            lease_expires_at=utcnow() + timedelta(seconds=10),
-        ),
-        interval_seconds=0.01,
-    )
-
-    heartbeat.start()
-    try:
-        deadline = time.monotonic() + 1
-        while repository.calls < 2 and time.monotonic() < deadline:
-            time.sleep(0.01)
-        assert repository.calls >= 2
-        assert not heartbeat.fenced.is_set()
-    finally:
-        heartbeat.stop()
-
-
-def test_job_attempt_heartbeat_fences_after_finite_sqlite_busy_retries() -> None:
-    class AlwaysBusyRepository:
-        def __init__(self) -> None:
-            self.calls = 0
-
-        def renew_attempt(self, _fence):
-            self.calls += 1
-            raise SqlAlchemyOperationalError(
-                "UPDATE jobs",
-                (),
-                sqlite3.OperationalError("database is locked"),
-            )
-
-    repository = AlwaysBusyRepository()
-    heartbeat = AttemptHeartbeat(
-        repository,  # type: ignore[arg-type]
-        AttemptFence(
-            job_id="00000000-0000-0000-0000-000000000001",
-            attempt_id="00000000-0000-0000-0000-000000000002",
-            lease_token="lease",
-            worker_epoch_id="00000000-0000-0000-0000-000000000003",
-            lease_expires_at=utcnow() + timedelta(seconds=10),
-        ),
-        interval_seconds=0.01,
-    )
-
-    heartbeat.start()
-    try:
-        assert heartbeat.fenced.wait(1)
-        assert repository.calls == 2
-    finally:
-        heartbeat.stop()
 
 
 def test_failed_item_retry_creates_related_replacement_from_durable_facts(
@@ -1321,7 +1165,7 @@ def test_failed_item_retry_creates_related_replacement_from_durable_facts(
     assert detail["counts"]["total"] == 1
 
 
-def test_retry_rejects_old_or_malformed_job_snapshots(job_platform) -> None:
+def test_retry_rejects_malformed_job_snapshot(job_platform) -> None:
     engine, repository, _book, _chapter, _worker_epoch_id = job_platform
     source_id = _create_job(repository)
     with engine.begin() as connection:
@@ -1330,27 +1174,13 @@ def test_retry_rejects_old_or_malformed_job_snapshots(job_platform) -> None:
             source_id,
             "failed",
             queue_rank=None,
-            config_schema_version=2,
         )
-
-    service = JobRetryService(engine)
-    with pytest.raises(
-        JobConflict,
-        match="source job data is invalid: jobs.config_schema_version is invalid",
-    ):
-        service.retry(
-            job_id=source_id,
-            failed_only=False,
-            strategy="original",
-            idempotency_key="old-schema",
-        )
-
-    with engine.begin() as connection:
         connection.execute(
             update(jobs)
             .where(jobs.c.id == source_id)
-            .values(config_schema_version=1, config_json="[]")
+            .values(config_json="[]")
         )
+    service = JobRetryService(engine)
     with pytest.raises(
         JobConflict,
         match="jobs.config_json must contain a JSON object",
@@ -1598,13 +1428,6 @@ def test_history_retains_latest_200_batches_and_cascades_old_members(
                 )
             )
             connection.execute(
-                insert(job_config_snapshots).values(
-                    job_id=job_id,
-                    payload_json="{}",
-                    schema_version=1,
-                )
-            )
-            connection.execute(
                 insert(job_events).values(
                     id=index + 1,
                     job_id=job_id,
@@ -1625,11 +1448,6 @@ def test_history_retains_latest_200_batches_and_cascades_old_members(
         event_job_ids = set(
             connection.execute(select(job_events.c.job_id)).scalars()
         )
-        snapshot_job_ids = set(
-            connection.execute(
-                select(job_config_snapshots.c.job_id)
-            ).scalars()
-        )
     assert interrupted_batch in remaining_batches
     assert interrupted_job in remaining_jobs
     assert interrupted_sibling in remaining_jobs
@@ -1638,7 +1456,6 @@ def test_history_retains_latest_200_batches_and_cascades_old_members(
     assert len(set(terminal_batches) & remaining_batches) == 200
     assert len(set(terminal_jobs) & remaining_jobs) == 200
     assert event_job_ids == set(terminal_jobs[5:])
-    assert snapshot_job_ids == set(terminal_jobs[5:])
     visible_history = repository.list_jobs(scope="history", limit=200)["items"]
     visible_job_ids = {str(item["jobId"]) for item in visible_history}
     assert {interrupted_job, interrupted_sibling} <= visible_job_ids

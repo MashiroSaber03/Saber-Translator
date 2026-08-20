@@ -106,10 +106,9 @@ describe('QAPanel Markdown rendering', () => {
     const composer = wrapper.getComponent(ProductComposer)
     await composer.get('textarea').setValue('流式回答测试')
     await composer.get('button').trigger('click')
-    await new Promise(resolve => setTimeout(resolve, 25))
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('正在流式返回的片段')
+    await vi.waitFor(() => {
+      expect(wrapper.text()).toContain('正在流式返回的片段')
+    })
     expect(store.isStreaming).toBe(true)
 
     finalResponse.resolve({

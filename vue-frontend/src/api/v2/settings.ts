@@ -1,6 +1,5 @@
 import { apiClient } from '@/api/client'
 import type { components } from '@/api/generated/v2'
-import { assertBackendActionAllowed } from '@/services/backendAccessGate'
 import { newIdempotencyKey } from './content'
 
 export type V2CredentialEdit = components['schemas']['CredentialEdit']
@@ -36,7 +35,6 @@ export function getV2Settings(
 export function saveV2SettingsTransaction(
   payload: V2SettingsTransaction,
 ): Promise<V2SettingsTransactionResult> {
-  assertBackendActionAllowed()
   return apiClient.put<V2SettingsTransactionResult>(
     '/api/v2/settings/transactions',
     payload,
@@ -50,7 +48,6 @@ export async function listV2Fonts(): Promise<V2Font[]> {
 }
 
 export function uploadV2Font(file: File): Promise<V2Font> {
-  assertBackendActionAllowed()
   const form = new FormData()
   form.append('file', file)
   form.append('displayName', file.name.replace(/\.[^.]+$/, ''))
@@ -74,7 +71,6 @@ export function createV2Prompt(
   name: string,
   content: string,
 ): Promise<V2Prompt> {
-  assertBackendActionAllowed()
   return apiClient.post<V2Prompt>(
     '/api/v2/prompts',
     { type, name, content },
@@ -83,7 +79,6 @@ export function createV2Prompt(
 }
 
 export function updateV2Prompt(prompt: V2Prompt): Promise<V2Prompt> {
-  assertBackendActionAllowed()
   return apiClient.put<V2Prompt>(
     `/api/v2/prompts/${encodeURIComponent(prompt.id)}`,
     {
@@ -96,7 +91,6 @@ export function updateV2Prompt(prompt: V2Prompt): Promise<V2Prompt> {
 }
 
 export function deleteV2Prompt(promptId: string): Promise<{ deleted: boolean }> {
-  assertBackendActionAllowed()
   return apiClient.delete<{ deleted: boolean }>(
     `/api/v2/prompts/${encodeURIComponent(promptId)}`,
     { headers: { 'Idempotency-Key': newIdempotencyKey() } },
@@ -104,7 +98,6 @@ export function deleteV2Prompt(promptId: string): Promise<{ deleted: boolean }> 
 }
 
 export function resetV2Prompt(prompt: V2Prompt): Promise<V2Prompt> {
-  assertBackendActionAllowed()
   return apiClient.post<V2Prompt>(
     `/api/v2/prompts/${encodeURIComponent(prompt.id)}/reset`,
     { baseRevision: prompt.revision },
@@ -115,7 +108,6 @@ export function resetV2Prompt(prompt: V2Prompt): Promise<V2Prompt> {
 export function fetchV2ModelCatalog(
   request: V2DiagnosticRequest,
 ): Promise<V2ModelCatalogResponse> {
-  assertBackendActionAllowed()
   return apiClient.post('/api/v2/model-catalog', request)
 }
 
@@ -123,7 +115,6 @@ export function runV2ConnectionTest(
   kind: string,
   request: V2DiagnosticRequest = {},
 ): Promise<V2ConnectionTestResult> {
-  assertBackendActionAllowed()
   return apiClient.post(
     `/api/v2/connection-tests/${encodeURIComponent(kind)}`,
     request,
@@ -134,7 +125,6 @@ export function updateV2WorkflowPreferences(
   payload: V2WorkflowPreferences,
   baseRevision: number,
 ): Promise<V2SettingEntry> {
-  assertBackendActionAllowed()
   return apiClient.patch<V2SettingEntry>(
     '/api/v2/settings/workflow-preferences',
     { payload, baseRevision },
@@ -143,7 +133,6 @@ export function updateV2WorkflowPreferences(
 }
 
 export function cleanV2TempFiles(): Promise<{ recovered: number }> {
-  assertBackendActionAllowed()
   return apiClient.post<{ recovered: number }>(
     '/api/v2/maintenance/clean-temp',
     undefined,

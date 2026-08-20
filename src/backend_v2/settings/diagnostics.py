@@ -102,6 +102,10 @@ class DiagnosticRequestError(ValueError):
     """The diagnostic request or selected provider configuration is invalid."""
 
 
+class ProviderDiagnosticUnavailable(RuntimeError):
+    """The selected external provider could not complete a diagnostic request."""
+
+
 class ProviderDiagnostics:
     """Runs short, connection-bound checks without persisting their results."""
 
@@ -136,13 +140,18 @@ class ProviderDiagnostics:
             raise DiagnosticRequestError("API key is required")
         if manifest.requires_base_url and not base_url:
             raise DiagnosticRequestError("baseUrl is required")
-        models = self.chat.list_models(
-            ProviderModelListRequest(
-                provider=provider,
-                api_key=api_key,
-                base_url=base_url,
+        try:
+            models = self.chat.list_models(
+                ProviderModelListRequest(
+                    provider=provider,
+                    api_key=api_key,
+                    base_url=base_url,
+                )
             )
-        )
+        except Exception as exc:
+            if is_memory_allocation_error(exc):
+                raise
+            raise ProviderDiagnosticUnavailable(self._friendly_error(exc)) from exc
         return {"models": models}
 
     def connection_test(
@@ -222,9 +231,9 @@ class ProviderDiagnostics:
         secret = self._secret(body, provider=provider)
         manifest = get_provider_manifest(provider)
         api_key = self._api_key(secret)
-        if manifest.requires_api_key and not api_key:
-            raise DiagnosticRequestError("API key is required")
         base_url = self._optional_string(body, "baseUrl")
+        if provider_requires_api_key(provider, base_url) and not api_key:
+            raise DiagnosticRequestError("API key is required")
         if manifest.requires_base_url and not base_url:
             raise DiagnosticRequestError("baseUrl is required")
         model = self._optional_string(body, "model")
@@ -307,7 +316,7 @@ class ProviderDiagnostics:
         manifest = get_provider_manifest(provider)
         api_key = self._api_key(secret)
         base_url = self._optional_string(body, "baseUrl")
-        if manifest.requires_api_key and not api_key:
+        if provider_requires_api_key(provider, base_url) and not api_key:
             raise DiagnosticRequestError("API key is required")
         if manifest.requires_base_url and not base_url:
             raise DiagnosticRequestError("baseUrl is required")
@@ -335,7 +344,7 @@ class ProviderDiagnostics:
         manifest = get_provider_manifest(provider)
         api_key = self._api_key(secret)
         base_url = self._optional_string(body, "baseUrl")
-        if manifest.requires_api_key and not api_key:
+        if provider_requires_api_key(provider, base_url) and not api_key:
             raise DiagnosticRequestError("API key is required")
         if manifest.requires_base_url and not base_url:
             raise DiagnosticRequestError("baseUrl is required")
@@ -677,6 +686,10 @@ class ProviderDiagnostics:
 
     @staticmethod
     def _friendly_error(error: Exception) -> str:
+        if isinstance(error, httpx.TimeoutException):
+            return "连接超时，请检查网络"
+        if isinstance(error, httpx.ConnectError):
+            return "无法连接到服务"
         message = redact_sensitive_text(error)
         lowered = message.lower()
         if "429" in lowered or "rate limit" in lowered or "too many requests" in lowered:

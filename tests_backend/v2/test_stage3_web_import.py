@@ -34,7 +34,6 @@ from src.backend_v2.storage.epochs import (
     ProcessEpochRepository,
 )
 from src.backend_v2.storage.schema import (
-    job_config_snapshots,
     job_credential_snapshots,
     jobs,
     metadata,
@@ -184,7 +183,7 @@ def test_web_import_page_config_does_not_rescan_the_complete_entry_list() -> Non
     assert resolved["entries"] is entries
 
 
-def test_web_import_draft_rejects_noncurrent_config_schema(tmp_path: Path) -> None:
+def test_web_import_draft_rejects_malformed_config(tmp_path: Path) -> None:
     data_root = tmp_path / "data-v2"
     data_root.mkdir()
     engine = create_sqlite_engine(data_root / "saber.sqlite3")
@@ -205,10 +204,10 @@ def test_web_import_draft_rejects_noncurrent_config_schema(tmp_path: Path) -> No
         connection.execute(
             update(web_import_drafts)
             .where(web_import_drafts.c.id == draft_id)
-            .values(config_schema_version=2)
+            .values(config_json="[]")
         )
 
-    with pytest.raises(WebImportDataInvalid, match="schema version"):
+    with pytest.raises(WebImportDataInvalid, match="must be an object"):
         service.get_draft(draft_id)
     engine.dispose()
 
@@ -467,9 +466,7 @@ def test_web_import_ai_agent_config_is_resolved_and_frozen_server_side(
     job_id = str(accepted["jobIds"][0])
     with engine.connect() as connection:
         config_json = connection.execute(
-            select(job_config_snapshots.c.payload_json).where(
-                job_config_snapshots.c.job_id == job_id
-            )
+            select(jobs.c.config_json).where(jobs.c.id == job_id)
         ).scalar_one()
         credential_count = len(
             connection.execute(

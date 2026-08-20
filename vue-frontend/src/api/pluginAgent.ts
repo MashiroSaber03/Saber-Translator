@@ -3,7 +3,6 @@ import { getProviderOptionsForCapability } from '@/config/aiProviders'
 import { getPlugins, type PluginData } from './plugin'
 import { jobsApi, type V2JobEvent } from './v2/jobs'
 import { newIdempotencyKey } from './v2/content'
-import { assertBackendActionAllowed } from '@/services/backendAccessGate'
 import type { components } from '@/api/generated/v2'
 
 export type PluginAgentMode = components['schemas']['PluginAgentSession']['mode']
@@ -192,7 +191,6 @@ export async function sendPluginAgentMessage(
     content: string
   }
 ): Promise<PluginAgentSession> {
-  assertBackendActionAllowed()
   const result = await apiClient.post<PluginAgentSessionEnvelope>(
     pluginAgentSessionEndpoint(sessionId, '/messages'),
     { content: payload.content }
@@ -212,7 +210,6 @@ export async function lockPluginAgentTarget(
 }
 
 export async function startPluginAgentExecution(sessionId: string): Promise<PluginAgentSession> {
-  assertBackendActionAllowed()
   const result = await apiClient.post<PluginAgentStartResult>(
     pluginAgentSessionEndpoint(sessionId, '/start'),
     {},

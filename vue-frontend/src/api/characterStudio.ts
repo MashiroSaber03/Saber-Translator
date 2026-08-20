@@ -1,7 +1,6 @@
 import { downloadBlob, readApiErrorMessage } from './download'
 import { readSseStream } from './sse'
 import { waitForOperation } from '@/api/v2/operations'
-import { assertBackendActionAllowed } from '@/services/backendAccessGate'
 import {
   activateV2StudioSession,
   abortV2StudioSession,
@@ -736,7 +735,6 @@ export async function validateCharacterStudioDocument(
 }
 
 export async function runCharacterStudioAgent(docId: string, message: string): Promise<string> {
-  assertBackendActionAllowed()
   const response = await fetch(v2StudioAgentUrl(docId), {
     method: 'POST',
     headers: {

@@ -155,42 +155,4 @@ describe('apiClient error normalization', () => {
     })
   })
 
-  it('keeps unrelated mutations open while task APIs enforce the settings gate', async () => {
-    const { apiClient } = await import('@/api/client')
-    const { createChapterTranslationJob } = await import('@/api/v2/translation')
-    const {
-      BackendAccessRestrictedError,
-      setBackendAccessRestricted,
-    } = await import('@/services/backendAccessGate')
-    getRequestMock.mockResolvedValue({ data: { ok: true } })
-    postRequestMock.mockResolvedValue({ data: { ok: true } })
-    putRequestMock.mockResolvedValue({ data: { ok: true } })
-    patchRequestMock.mockResolvedValue({ data: { ok: true } })
-    deleteRequestMock.mockResolvedValue({ data: { ok: true } })
-    setBackendAccessRestricted(true, '设置加载失败')
-
-    try {
-      await expect(apiClient.get('/api/v2/books')).resolves.toEqual({ ok: true })
-      await expect(apiClient.post('/api/v2/books', {})).resolves.toEqual({ ok: true })
-      await expect(apiClient.put('/api/v2/books/one', {})).resolves.toEqual({ ok: true })
-      await expect(apiClient.patch('/api/v2/pages/one/document', {})).resolves.toEqual({ ok: true })
-      await expect(apiClient.delete('/api/v2/books/one')).resolves.toEqual({ ok: true })
-      await expect(apiClient.upload('/api/v2/pages', new FormData())).resolves.toEqual({ ok: true })
-      await expect(
-        apiClient.upload('/api/v2/books/one', new FormData(), undefined, 'put'),
-      ).resolves.toEqual({ ok: true })
-      await expect(
-        createChapterTranslationJob('chapter', [], { mode: 'standard' }),
-      ).rejects.toBeInstanceOf(BackendAccessRestrictedError)
-
-      expect(getRequestMock).toHaveBeenCalledTimes(1)
-      expect(postRequestMock).toHaveBeenCalledTimes(2)
-      expect(putRequestMock).toHaveBeenCalledTimes(2)
-      expect(putRequestMock.mock.calls[1]?.[2]).toBeUndefined()
-      expect(patchRequestMock).toHaveBeenCalledTimes(1)
-      expect(deleteRequestMock).toHaveBeenCalledTimes(1)
-    } finally {
-      setBackendAccessRestricted(false)
-    }
-  })
 })

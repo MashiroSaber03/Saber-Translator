@@ -1,6 +1,5 @@
 import { apiClient } from '@/api/client'
 import type { components } from '@/api/generated/v2'
-import { assertBackendActionAllowed } from '@/services/backendAccessGate'
 import { newIdempotencyKey } from './content'
 
 const ROOT = '/api/v2/insight'
@@ -70,7 +69,6 @@ export function createInsightAnalysisJob(command: {
   pageIds?: string[]
   scope: 'chapter' | 'full' | 'incremental' | 'page'
 }): Promise<V2InsightAnalysisJobAccepted> {
-  assertBackendActionAllowed()
   return apiClient.post(`${ROOT}/analysis-jobs`, command, {
     headers: { 'Idempotency-Key': newIdempotencyKey() },
   })
@@ -89,7 +87,6 @@ export function listInsightOverviewTemplates(bookId: string): Promise<V2InsightO
 }
 
 export function rebuildInsightOverview(bookId: string, template: string): Promise<V2AcceptedJob> {
-  assertBackendActionAllowed()
   return apiClient.post(
     `${ROOT}/artifacts/overviews/${encodeURIComponent(template)}`,
     { bookId },
@@ -118,7 +115,6 @@ export function getInsightTimeline(
 }
 
 export function rebuildInsightTimeline(bookId: string): Promise<V2AcceptedJob> {
-  assertBackendActionAllowed()
   return apiClient.post(
     `${ROOT}/timeline`,
     { bookId },
@@ -134,7 +130,6 @@ export function getInsightQaStatus(
 }
 
 export function rebuildInsightCompressedContext(bookId: string): Promise<V2AcceptedJob> {
-  assertBackendActionAllowed()
   return apiClient.post(
     `${ROOT}/books/${encodeURIComponent(bookId)}/compressed-context/rebuild`,
     {},
@@ -143,7 +138,6 @@ export function rebuildInsightCompressedContext(bookId: string): Promise<V2Accep
 }
 
 export function rebuildInsightVectors(bookId: string): Promise<V2AcceptedJob> {
-  assertBackendActionAllowed()
   return apiClient.post(
     `${ROOT}/books/${encodeURIComponent(bookId)}/vector-rebuild`,
     {},
@@ -195,7 +189,6 @@ export function deleteInsightNote(
 }
 
 export function createInsightExport(bookId: string): Promise<V2AcceptedJob> {
-  assertBackendActionAllowed()
   return apiClient.post(
     `${ROOT}/books/${encodeURIComponent(bookId)}/exports`,
     {},

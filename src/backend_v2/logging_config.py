@@ -18,7 +18,6 @@ LOG_LEVEL_ENV: Final = "SABER_V2_LOG_LEVEL"
 _HANDLER_MARKER: Final = "_saber_v2_handler"
 _NOISY_LOGGERS: Final = {
     "PIL": logging.WARNING,
-    "alembic": logging.WARNING,
     "charset_normalizer": logging.WARNING,
     "filelock": logging.WARNING,
     "httpcore": logging.WARNING,

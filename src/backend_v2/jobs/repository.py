@@ -10,8 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import json
 import hashlib
-import secrets
-from typing import Any, Callable, Iterable, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 import uuid
 
 from sqlalchemy import (
@@ -52,18 +51,14 @@ from src.backend_v2.storage.schema import (
     JOB_KINDS,
     JOB_STATUSES,
     NONTERMINAL_JOB_STATUSES,
-    chapter_write_intents,
     chapter_write_locks,
-    chapters,
     credential_versions,
     idempotency_records,
     assets,
     job_asset_inputs,
     job_artifacts,
     job_batches,
-    job_config_snapshots,
     job_credential_snapshots,
-    job_drain_acks,
     job_events,
     job_items,
     job_font_snapshots,
@@ -76,7 +71,6 @@ from src.backend_v2.storage.schema import (
     process_epochs,
     queue_state,
     render_requests,
-    worker_leases,
     analysis_runs,
     analysis_run_targets,
     web_import_drafts,
@@ -190,9 +184,7 @@ class JobSpec:
 class AttemptFence:
     job_id: str
     attempt_id: str
-    lease_token: str
     worker_epoch_id: str
-    lease_expires_at: datetime
 
 
 def _load_required_object(value: object, field: str) -> dict[str, Any]:
@@ -217,8 +209,6 @@ def _load_optional_object(
 
 
 def decode_job_config(row: Mapping[str, Any]) -> dict[str, Any]:
-    if row["config_schema_version"] != 1:
-        raise JobDataInvalid("jobs.config_schema_version is invalid")
     config = _load_required_object(row["config_json"], "jobs.config_json")
     execution_mode = config.get("executionMode", "sequential")
     if execution_mode not in {"sequential", "parallel"}:
@@ -239,10 +229,6 @@ def decode_job_config(row: Mapping[str, Any]) -> dict[str, Any]:
 def _step_checkpoint(
     row: Mapping[str, Any],
 ) -> dict[str, Any] | None:
-    if row["checkpoint_schema_version"] != 1:
-        raise JobDataInvalid(
-            "job_steps.checkpoint_schema_version is invalid"
-        )
     return _load_optional_object(
         row["checkpoint_json"],
         "job_steps.checkpoint_json",
@@ -606,11 +592,8 @@ def _job_secret_values(connection: Connection, job_id: str) -> tuple[str, ...]:
 class JobQueueRepository:
     """Own all queue ordering, transition, checkpoint, and lock transactions."""
 
-    def __init__(self, engine: Engine, *, attempt_lease_seconds: int = 30) -> None:
-        if attempt_lease_seconds < 3:
-            raise ValueError("attempt_lease_seconds must be at least 3")
+    def __init__(self, engine: Engine) -> None:
         self.engine = engine
-        self.attempt_lease_seconds = attempt_lease_seconds
 
     def idempotency_replay(
         self,
@@ -749,7 +732,6 @@ class JobQueueRepository:
                             ),
                             web_import_draft_id=spec.web_import_draft_id,
                             config_json=_json(dict(spec.config)),
-                            config_schema_version=1,
                             latest_progress_json=_json(
                                 {
                                     "executionMode": spec.config.get(
@@ -768,13 +750,6 @@ class JobQueueRepository:
                             target_display_json=_json(dict(spec.target_display or {})),
                             created_at=now,
                             updated_at=now,
-                        )
-                    )
-                    connection.execute(
-                        insert(job_config_snapshots).values(
-                            job_id=job_id,
-                            payload_json=_json(dict(spec.config)),
-                            schema_version=1,
                         )
                     )
                     credential_refs = {
@@ -846,7 +821,6 @@ class JobQueueRepository:
                                     "ordinal": step_ordinal,
                                     "kind": step_kind,
                                     "status": "pending",
-                                    "checkpoint_schema_version": 1,
                                     "created_at": now,
                                     "updated_at": now,
                                 }
@@ -1032,12 +1006,9 @@ class JobQueueRepository:
                 connection.execute(
                     select(
                         exists().where(
-                            worker_leases.c.worker_epoch_id
-                            == process_epochs.c.id,
                             process_epochs.c.role == "worker",
                             process_epochs.c.status == "active",
                             process_epochs.c.lease_expires_at > now,
-                            worker_leases.c.lease_expires_at > now,
                         )
                     )
                 ).scalar()
@@ -1319,9 +1290,6 @@ class JobQueueRepository:
                     select(jobs.c.id)
                     .where(
                         jobs.c.status == "queued",
-                        ~jobs.c.id.in_(
-                            select(chapter_write_intents.c.job_id)
-                        ),
                         ~jobs.c.id.in_(select(chapter_write_locks.c.job_id)),
                     )
                     .order_by(jobs.c.queue_rank)
@@ -1362,7 +1330,6 @@ class JobQueueRepository:
                     select(jobs.c.id)
                     .where(
                         jobs.c.status == "queued",
-                        ~jobs.c.id.in_(select(chapter_write_intents.c.job_id)),
                         ~jobs.c.id.in_(select(chapter_write_locks.c.job_id)),
                     )
                     .order_by(jobs.c.queue_rank, jobs.c.created_at)
@@ -1482,8 +1449,6 @@ class JobQueueRepository:
                 values = {
                     "status": "queued",
                     "attempt_id": None,
-                    "lease_token": None,
-                    "lease_expires_at": None,
                     "worker_epoch_id": None,
                     "updated_at": now,
                 }
@@ -1744,10 +1709,9 @@ class JobQueueRepository:
         )
 
     def claim_next(self, *, worker_epoch_id: str) -> AttemptFence | None:
-        """Claim the next executable job or advance its write-intent barrier."""
+        """Claim the next executable job."""
 
         now = utcnow()
-        expires = now + timedelta(seconds=self.attempt_lease_seconds)
         # A paused or active job deliberately owns the single execution slot.
         # Observe that common no-op case without taking SQLite's writer lock.
         with self.engine.connect() as connection:
@@ -1791,9 +1755,7 @@ class JobQueueRepository:
                     reservation = self._advance_write_reservation(
                         connection,
                         candidate=candidate,
-                        worker_epoch_id=worker_epoch_id,
                         now=now,
-                        expires=expires,
                     )
                     if reservation == "draining":
                         return None
@@ -1804,54 +1766,9 @@ class JobQueueRepository:
                     candidate=candidate,
                     worker_epoch_id=worker_epoch_id,
                     now=now,
-                    expires=expires,
                 )
                 return fence
         return None
-
-    def renew_attempt(self, fence: AttemptFence) -> AttemptFence | None:
-        now = utcnow()
-        expires = now + timedelta(seconds=self.attempt_lease_seconds)
-        with self.engine.begin() as connection:
-            result = connection.execute(
-                update(jobs)
-                .where(
-                    jobs.c.id == fence.job_id,
-                    jobs.c.attempt_id == fence.attempt_id,
-                    jobs.c.lease_token == fence.lease_token,
-                    jobs.c.worker_epoch_id == fence.worker_epoch_id,
-                    jobs.c.lease_expires_at > now,
-                    jobs.c.status.in_(("running", "pausing", "cancelling")),
-                    exists(
-                        select(process_epochs.c.id).where(
-                            process_epochs.c.id == fence.worker_epoch_id,
-                            process_epochs.c.role == "worker",
-                            process_epochs.c.status == "active",
-                            process_epochs.c.lease_expires_at > now,
-                        )
-                    ),
-                )
-                .values(lease_expires_at=expires, updated_at=now)
-            )
-            if result.rowcount != 1:
-                return None
-            connection.execute(
-                update(chapter_write_intents)
-                .where(
-                    chapter_write_intents.c.job_id == fence.job_id,
-                    chapter_write_intents.c.worker_epoch_id
-                    == fence.worker_epoch_id,
-                    chapter_write_intents.c.lease_token == fence.lease_token,
-                )
-                .values(lease_expires_at=expires)
-            )
-        return AttemptFence(
-            job_id=fence.job_id,
-            attempt_id=fence.attempt_id,
-            lease_token=fence.lease_token,
-            worker_epoch_id=fence.worker_epoch_id,
-            lease_expires_at=expires,
-        )
 
     def control_status(self, fence: AttemptFence) -> str:
         with self.engine.connect() as connection:
@@ -1859,7 +1776,6 @@ class JobQueueRepository:
                 select(jobs.c.status).where(
                     jobs.c.id == fence.job_id,
                     jobs.c.attempt_id == fence.attempt_id,
-                    jobs.c.lease_token == fence.lease_token,
                     jobs.c.worker_epoch_id == fence.worker_epoch_id,
                 )
             ).scalar_one_or_none()
@@ -2067,7 +1983,6 @@ class JobQueueRepository:
             row = connection.execute(
                 select(
                     jobs.c.config_json,
-                    jobs.c.config_schema_version,
                 ).where(jobs.c.id == fence.job_id)
             ).mappings().one()
         return decode_job_config(row)
@@ -2189,7 +2104,6 @@ class JobQueueRepository:
                     .where(
                         jobs.c.id == fence.job_id,
                         jobs.c.attempt_id == fence.attempt_id,
-                        jobs.c.lease_token == fence.lease_token,
                     )
                     .values(config_json=_json(dict(job_config)), updated_at=now)
                 )
@@ -2434,13 +2348,11 @@ class JobQueueRepository:
                     job_steps.c.kind.label("step_kind"),
                     job_steps.c.ordinal.label("step_ordinal"),
                     job_steps.c.checkpoint_json,
-                    job_steps.c.checkpoint_schema_version,
                     job_items.c.id.label("item_id"),
                     job_items.c.ordinal.label("item_ordinal"),
                     job_items.c.page_id,
                     jobs.c.kind.label("job_kind"),
                     jobs.c.config_json,
-                    jobs.c.config_schema_version,
                     ~exists(
                         select(first_boundary_step.c.id).where(
                             first_boundary_step.c.job_item_id
@@ -2497,7 +2409,6 @@ class JobQueueRepository:
                 .where(
                     jobs.c.id == fence.job_id,
                     jobs.c.attempt_id == fence.attempt_id,
-                    jobs.c.lease_token == fence.lease_token,
                 )
                 .values(latest_progress_json=_json(snapshot), updated_at=now)
             )
@@ -2589,7 +2500,6 @@ class JobQueueRepository:
                         job_items.c.page_id,
                         jobs.c.kind.label("job_kind"),
                         jobs.c.config_json,
-                        jobs.c.config_schema_version,
                         ~exists(
                             select(first_boundary_step.c.id).where(
                                 first_boundary_step.c.job_item_id
@@ -2700,7 +2610,6 @@ class JobQueueRepository:
                 .where(
                     jobs.c.id == fence.job_id,
                     jobs.c.attempt_id == fence.attempt_id,
-                    jobs.c.lease_token == fence.lease_token,
                 )
                 .values(latest_progress_json=_json(snapshot), updated_at=now)
             )
@@ -2871,7 +2780,6 @@ class JobQueueRepository:
                 .where(
                     jobs.c.id == fence.job_id,
                     jobs.c.attempt_id == fence.attempt_id,
-                    jobs.c.lease_token == fence.lease_token,
                     jobs.c.status == job_status,
                 )
                 .values(latest_progress_json=_json(snapshot), updated_at=now)
@@ -2984,7 +2892,6 @@ class JobQueueRepository:
                 .where(
                     jobs.c.id == fence.job_id,
                     jobs.c.attempt_id == fence.attempt_id,
-                    jobs.c.lease_token == fence.lease_token,
                     jobs.c.status == job_status,
                 )
                 .values(latest_progress_json=_json(snapshot), updated_at=now)
@@ -3070,7 +2977,6 @@ class JobQueueRepository:
                 .where(
                     jobs.c.id == fence.job_id,
                     jobs.c.attempt_id == fence.attempt_id,
-                    jobs.c.lease_token == fence.lease_token,
                     jobs.c.status == job_status,
                 )
                 .values(latest_progress_json=_json(snapshot), updated_at=now)
@@ -3123,14 +3029,11 @@ class JobQueueRepository:
                 .where(
                     jobs.c.id == fence.job_id,
                     jobs.c.attempt_id == fence.attempt_id,
-                    jobs.c.lease_token == fence.lease_token,
                 )
                 .values(
                     status=final,
                     queue_rank=None,
                     attempt_id=None,
-                    lease_token=None,
-                    lease_expires_at=None,
                     worker_epoch_id=None,
                     finished_at=now,
                     latest_progress_json=_json(final_progress),
@@ -3252,8 +3155,6 @@ class JobQueueRepository:
             values: dict[str, object] = {
                 "status": final_status,
                 "attempt_id": None,
-                "lease_token": None,
-                "lease_expires_at": None,
                 "worker_epoch_id": None,
                 "latest_progress_json": _json(progress),
                 "updated_at": now,
@@ -3330,9 +3231,7 @@ class JobQueueRepository:
                 .where(
                     jobs.c.id == fence.job_id,
                     jobs.c.attempt_id == fence.attempt_id,
-                    jobs.c.lease_token == fence.lease_token,
                     jobs.c.worker_epoch_id == fence.worker_epoch_id,
-                    jobs.c.lease_expires_at > now,
                     jobs.c.status.in_(("running", "pausing", "cancelling")),
                 )
                 .values(latest_progress_json=_json(snapshot), updated_at=now)
@@ -3348,55 +3247,9 @@ class JobQueueRepository:
             )
             return snapshot
 
-    def acknowledge_drain(
-        self,
-        fence: AttemptFence,
-        *,
-        pool_id: str,
-        worker_slot: int,
-        last_step_id: str | None,
-    ) -> None:
-        if worker_slot < 0:
-            raise ValueError("worker_slot must be nonnegative")
-        now = utcnow()
-        with immediate_transaction(self.engine) as connection:
-            status = self._assert_attempt(
-                connection,
-                fence,
-                now,
-                allowed_statuses=("pausing", "cancelling"),
-            )
-            connection.execute(
-                insert(job_drain_acks)
-                .values(
-                    job_id=fence.job_id,
-                    attempt_id=fence.attempt_id,
-                    pool_id=pool_id,
-                    worker_slot=worker_slot,
-                    last_step_id=last_step_id,
-                    created_at=now,
-                )
-                .prefix_with("OR REPLACE")
-            )
-            self._append_event(
-                connection,
-                job_id=fence.job_id,
-                event_type="drain_acknowledged",
-                payload={
-                    "status": status,
-                    "poolId": pool_id,
-                    "workerSlot": worker_slot,
-                },
-                now=now,
-            )
+    def finalize_control(self, fence: AttemptFence) -> str:
+        """Finish a pause or cancellation after the Worker reaches a safe point."""
 
-    def finalize_drain(
-        self,
-        fence: AttemptFence,
-        *,
-        expected_slots: Iterable[tuple[str, int]],
-    ) -> str:
-        expected = set(expected_slots)
         now = utcnow()
         with immediate_transaction(self.engine) as connection:
             status = self._assert_attempt(
@@ -3416,25 +3269,12 @@ class JobQueueRepository:
                     )
                 ).scalar_one()
             )
-            actual = set(
-                connection.execute(
-                    select(
-                        job_drain_acks.c.pool_id,
-                        job_drain_acks.c.worker_slot,
-                    ).where(
-                        job_drain_acks.c.job_id == fence.job_id,
-                        job_drain_acks.c.attempt_id == fence.attempt_id,
-                    )
-                ).tuples()
-            )
-            if active or actual != expected:
-                raise JobConflict("job has not reached a fully acknowledged safe point")
+            if active:
+                raise JobConflict("job still has a running step")
             final = "paused" if status == "pausing" else "cancelled"
             values: dict[str, object] = {
                 "status": final,
                 "attempt_id": None,
-                "lease_token": None,
-                "lease_expires_at": None,
                 "worker_epoch_id": None,
                 "updated_at": now,
             }
@@ -3459,7 +3299,6 @@ class JobQueueRepository:
                 .where(
                     jobs.c.id == fence.job_id,
                     jobs.c.attempt_id == fence.attempt_id,
-                    jobs.c.lease_token == fence.lease_token,
                 )
                 .values(**values)
             )
@@ -3513,14 +3352,11 @@ class JobQueueRepository:
                 .where(
                     jobs.c.id == fence.job_id,
                     jobs.c.attempt_id == fence.attempt_id,
-                    jobs.c.lease_token == fence.lease_token,
                 )
                 .values(
                     status="failed",
                     queue_rank=None,
                     attempt_id=None,
-                    lease_token=None,
-                    lease_expires_at=None,
                     worker_epoch_id=None,
                     finished_at=now,
                     latest_progress_json=_json(failed_progress),
@@ -3644,7 +3480,6 @@ class JobQueueRepository:
                     .where(
                         jobs.c.id == fence.job_id,
                         jobs.c.attempt_id == fence.attempt_id,
-                        jobs.c.lease_token == fence.lease_token,
                         jobs.c.status == job_status,
                     )
                     .values(latest_progress_json=_json(snapshot), updated_at=now)
@@ -3773,7 +3608,6 @@ class JobQueueRepository:
                 .where(
                     jobs.c.id == fence.job_id,
                     jobs.c.attempt_id == fence.attempt_id,
-                    jobs.c.lease_token == fence.lease_token,
                     jobs.c.status == job_status,
                 )
                 .values(latest_progress_json=_json(snapshot), updated_at=now)
@@ -3827,8 +3661,6 @@ class JobQueueRepository:
             if new_status in {JobStatus.CANCELLED, JobStatus.QUEUED}:
                 values.update(
                     attempt_id=None,
-                    lease_token=None,
-                    lease_expires_at=None,
                     worker_epoch_id=None,
                 )
             if new_status is JobStatus.CANCELLED:
@@ -3958,9 +3790,7 @@ class JobQueueRepository:
         connection: Any,
         *,
         candidate: Mapping[str, Any],
-        worker_epoch_id: str,
         now: datetime,
-        expires: datetime,
     ) -> str:
         job_id = str(candidate["id"])
         chapter_ids = self._target_chapter_ids(connection, candidate)
@@ -3995,140 +3825,32 @@ class JobQueueRepository:
             )
             return "blocked"
 
-        own_intents = list(
-            connection.execute(
-                select(chapter_write_intents).where(
-                    chapter_write_intents.c.job_id == job_id
-                )
-            ).mappings()
-        )
-        if own_intents:
-            if {str(row["chapter_id"]) for row in own_intents} != set(chapter_ids):
-                raise JobConflict("job owns an incomplete write-intent set")
-            if {
-                str(row["worker_epoch_id"]) for row in own_intents
-            } != {worker_epoch_id}:
-                raise JobConflict("job write-intent set belongs to another Worker epoch")
-            if len({str(row["intent_set_id"]) for row in own_intents}) != 1:
-                raise JobConflict("job owns an inconsistent write-intent set")
-            connection.execute(
-                update(chapter_write_intents)
-                .where(
-                    chapter_write_intents.c.job_id == job_id,
-                    chapter_write_intents.c.worker_epoch_id == worker_epoch_id,
-                )
-                .values(lease_expires_at=expires)
-            )
-            if self._old_write_chains_active(connection, chapter_ids):
-                return "draining"
-            attempt_id = str(uuid.uuid4())
-            lease_token = secrets.token_urlsafe(32)
-            for intent in own_intents:
-                connection.execute(
-                    insert(chapter_write_locks).values(
-                        chapter_id=intent["chapter_id"],
-                        job_id=job_id,
-                        lock_generation=intent["intent_generation"],
-                        owner_attempt_id=attempt_id,
-                        lease_token=lease_token,
-                        created_at=now,
-                    )
-                )
-            connection.execute(
-                delete(chapter_write_intents).where(
-                    chapter_write_intents.c.job_id == job_id
-                )
-            )
-            connection.execute(
-                update(jobs)
-                .where(jobs.c.id == job_id, jobs.c.status == "queued")
-                .values(
-                    attempt_id=attempt_id,
-                    lease_token=lease_token,
-                    lease_expires_at=expires,
-                    worker_epoch_id=worker_epoch_id,
-                    blocked_reason=None,
-                    blocked_by_job_id=None,
-                    updated_at=now,
-                )
-            )
-            self._append_event(
-                connection,
-                job_id=job_id,
-                event_type="chapter_write_lock_acquired",
-                payload={"chapterIds": chapter_ids},
-                now=now,
-            )
-            return "ready_preclaimed"
-
-        foreign_intent = connection.execute(
-            select(chapter_write_intents.c.job_id)
-            .where(
-                chapter_write_intents.c.chapter_id.in_(chapter_ids),
-                chapter_write_intents.c.job_id != job_id,
-            )
-            .limit(1)
-        ).scalar_one_or_none()
-        if foreign_intent is not None:
+        if self._old_write_chains_active(connection, chapter_ids):
             self._set_blocked(
                 connection,
                 job_id=job_id,
-                reason="blocked_by_job",
-                blocked_job_id=str(foreign_intent),
+                reason="draining_immediate_writes",
+                blocked_job_id=None,
                 now=now,
             )
-            return "blocked"
+            return "draining"
 
-        intent_set_id = str(uuid.uuid4())
-        lease_token = secrets.token_urlsafe(32)
         for chapter_id in chapter_ids:
             connection.execute(
-                update(chapters)
-                .where(chapters.c.id == chapter_id)
-                .values(
-                    write_intent_generation=chapters.c.write_intent_generation + 1,
-                    updated_at=now,
-                )
-            )
-            generation = int(
-                connection.execute(
-                    select(chapters.c.write_intent_generation).where(
-                        chapters.c.id == chapter_id
-                    )
-                ).scalar_one()
-            )
-            connection.execute(
-                insert(chapter_write_intents).values(
+                insert(chapter_write_locks).values(
                     chapter_id=chapter_id,
                     job_id=job_id,
-                    intent_set_id=intent_set_id,
-                    intent_generation=generation,
-                    worker_epoch_id=worker_epoch_id,
-                    lease_token=lease_token,
-                    lease_expires_at=expires,
                     created_at=now,
                 )
             )
-        connection.execute(
-            update(jobs)
-            .where(jobs.c.id == job_id, jobs.c.status == "queued")
-            .values(
-                blocked_reason="draining_immediate_writes",
-                blocked_by_job_id=None,
-                worker_epoch_id=worker_epoch_id,
-                lease_token=lease_token,
-                lease_expires_at=expires,
-                updated_at=now,
-            )
-        )
         self._append_event(
             connection,
             job_id=job_id,
-            event_type="chapter_write_intent_created",
-            payload={"chapterIds": chapter_ids, "intentSetId": intent_set_id},
+            event_type="chapter_write_lock_acquired",
+            payload={"chapterIds": chapter_ids},
             now=now,
         )
-        return "draining"
+        return "ready"
 
     def _fail_invalid_queued_job(
         self,
@@ -4159,7 +3881,6 @@ class JobQueueRepository:
             .where(jobs.c.id == job_id, jobs.c.status == "queued")
             .values(
                 config_json=_json(config),
-                config_schema_version=1,
                 target_display_json=_json(target),
                 updated_at=now,
             )
@@ -4183,8 +3904,6 @@ class JobQueueRepository:
                 status="failed",
                 queue_rank=None,
                 attempt_id=None,
-                lease_token=None,
-                lease_expires_at=None,
                 worker_epoch_id=None,
                 latest_progress_json=_json(progress),
                 finished_at=now,
@@ -4217,11 +3936,9 @@ class JobQueueRepository:
         candidate: Mapping[str, Any],
         worker_epoch_id: str,
         now: datetime,
-        expires: datetime,
     ) -> AttemptFence:
         job_id = str(candidate["id"])
         attempt_id = candidate.get("attempt_id") or str(uuid.uuid4())
-        lease_token = candidate.get("lease_token") or secrets.token_urlsafe(32)
         progress = decode_job_progress(candidate)
         progress["jobStatus"] = "running"
         result = connection.execute(
@@ -4230,8 +3947,6 @@ class JobQueueRepository:
             .values(
                 status="running",
                 attempt_id=attempt_id,
-                lease_token=lease_token,
-                lease_expires_at=expires,
                 worker_epoch_id=worker_epoch_id,
                 blocked_reason=None,
                 blocked_by_job_id=None,
@@ -4242,11 +3957,6 @@ class JobQueueRepository:
         )
         if result.rowcount != 1:
             raise JobConflict("job claim lost a queue race")
-        connection.execute(
-            update(chapter_write_locks)
-            .where(chapter_write_locks.c.job_id == job_id)
-            .values(owner_attempt_id=attempt_id, lease_token=lease_token)
-        )
         self._append_event(
             connection,
             job_id=job_id,
@@ -4258,9 +3968,7 @@ class JobQueueRepository:
         return AttemptFence(
             job_id=job_id,
             attempt_id=str(attempt_id),
-            lease_token=str(lease_token),
             worker_epoch_id=worker_epoch_id,
-            lease_expires_at=expires,
         )
 
     @staticmethod
@@ -4358,9 +4066,7 @@ class JobQueueRepository:
             select(jobs.c.status).where(
                 jobs.c.id == fence.job_id,
                 jobs.c.attempt_id == fence.attempt_id,
-                jobs.c.lease_token == fence.lease_token,
                 jobs.c.worker_epoch_id == fence.worker_epoch_id,
-                jobs.c.lease_expires_at > now,
                 jobs.c.status.in_(allowed_statuses),
                 exists(
                     select(process_epochs.c.id).where(
@@ -4378,11 +4084,6 @@ class JobQueueRepository:
 
     @staticmethod
     def _release_write_reservations(connection: Any, job_id: str) -> None:
-        connection.execute(
-            delete(chapter_write_intents).where(
-                chapter_write_intents.c.job_id == job_id
-            )
-        )
         connection.execute(
             delete(chapter_write_locks).where(chapter_write_locks.c.job_id == job_id)
         )
@@ -4717,7 +4418,6 @@ class JobQueueRepository:
             select(
                 jobs.c.status,
                 jobs.c.config_json,
-                jobs.c.config_schema_version,
                 jobs.c.latest_progress_json,
             ).where(jobs.c.id == job_id)
         ).mappings().one()
@@ -4977,10 +4677,6 @@ class JobQueueRepository:
     def _event_dto(
         row: Mapping[str, Any],
     ) -> dict[str, object]:
-        if row["payload_schema_version"] != 1:
-            raise JobDataInvalid(
-                "job_events.payload_schema_version is invalid"
-            )
         return {
             "eventId": int(row["id"]),
             "jobId": row["job_id"],
@@ -5034,7 +4730,6 @@ class JobQueueRepository:
                 job_id=job_id,
                 event_type=event_type,
                 payload_json=_json(redact_sensitive_value(dict(payload))),
-                payload_schema_version=1,
                 created_at=now,
             )
         )

@@ -25,7 +25,6 @@ import TaskStatusBadge from '@/components/task-center/TaskStatusBadge.vue'
 import type { BookData, TagData } from '@/types/api'
 import * as bookshelfApi from '@/api/bookshelf'
 import { ApiClientError } from '@/api/client'
-import type { V2Job } from '@/api/v2/jobs'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import { setTestBooks } from '../helpers/bookshelfFixtures'
@@ -569,7 +568,7 @@ describe('bookshelf detail child components', () => {
     expect(wrapper.getComponent(ChapterListStub).props('selectedChapterIds').size).toBe(0)
   })
 
-  it('cancels an interrupted blocker and retries a confirmed book deletion', async () => {
+  it('opens the task center when a book deletion is locked', async () => {
     const store = useBookshelfStore()
     setTestBooks(store, [book])
     store.setCurrentBook(book.id)
@@ -582,32 +581,9 @@ describe('bookshelf detail child components', () => {
         operationIds: [],
       },
     })
-    const deleteSpy = vi.spyOn(store, 'deleteBookApi')
-      .mockRejectedValueOnce(locked)
-      .mockResolvedValueOnce(undefined)
-    const cancelledJob = {
-      jobId: 'job-interrupted',
-      batchId: null,
-      kind: 'translation',
-      retryOfJobId: null,
-      retryMode: null,
-      status: 'cancelled',
-      queueRank: null,
-      progress: {
-        executionMode: 'sequential',
-        jobStatus: 'cancelled',
-        totalItems: 1,
-        completedItems: 0,
-        failedItems: 0,
-        skippedItems: 0,
-        cancelledItems: 1,
-        pools: [],
-      },
-      target: {},
-      createdAt: '2026-01-01T00:00:00Z',
-    } satisfies V2Job
+    const deleteSpy = vi.spyOn(store, 'deleteBookApi').mockRejectedValueOnce(locked)
     const taskStore = useTaskCenterStore()
-    const cancelSpy = vi.spyOn(taskStore, 'cancel').mockResolvedValue(cancelledJob)
+    const openSpy = vi.spyOn(taskStore, 'open')
     const wrapper = mount(BookDetailModal, {
       global: {
         stubs: {
@@ -629,10 +605,13 @@ describe('bookshelf detail child components', () => {
     await confirmDeleteButton.trigger('click')
     await flushPromises()
 
-    expect(cancelSpy).toHaveBeenCalledOnce()
-    expect(cancelSpy).toHaveBeenCalledWith('job-interrupted')
-    expect(deleteSpy).toHaveBeenCalledTimes(2)
-    expect(wrapper.emitted('close')).toHaveLength(1)
+    expect(deleteSpy).toHaveBeenCalledOnce()
+    expect(openSpy).toHaveBeenCalledWith({
+      jobId: 'job-interrupted',
+      bookId: book.id,
+      chapterId: undefined,
+    })
+    expect(wrapper.emitted('close')).toBeUndefined()
   })
 
   it('keeps bookshelf wire aliases out of detail child UI owners', () => {

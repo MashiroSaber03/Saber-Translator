@@ -340,7 +340,6 @@ class SettingsResolver:
                 select(
                     translation_constraints.c.payload_json,
                     translation_constraints.c.revision,
-                    translation_constraints.c.schema_version,
                 ).where(
                     translation_constraints.c.book_id == chapter_row["book_id"]
                 )
@@ -486,9 +485,6 @@ class SettingsResolver:
             "translationConstraints": constraints,
             "translationConstraintRevision": (
                 int(constraint_row["revision"])
-            ),
-            "translationConstraintSchemaVersion": (
-                int(constraint_row["schema_version"])
             ),
             "skipCompleted": command["skipCompleted"],
             "reuseExistingBubbles": command["reuseExistingBubbles"],

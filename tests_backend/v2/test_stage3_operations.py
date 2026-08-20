@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 from io import BytesIO
-from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
-import sqlite3
-import threading
 import uuid
 import zipfile
 
@@ -15,7 +12,7 @@ from sqlalchemy import insert, select, update
 
 from src.backend_v2.content.image_import import ImageImportService
 from src.backend_v2.content.repository import ContentConflict, ContentRepository
-from src.backend_v2.operations.executor import _LeaseHeartbeat, WorkerOperationRunner
+from src.backend_v2.operations.executor import WorkerOperationRunner
 from src.backend_v2.operations.repository import (
     OperationConflict,
     OperationDataInvalid,
@@ -39,7 +36,7 @@ from src.backend_v2.storage.schema import (
     app_settings,
     assets,
     bubbles,
-    chapter_write_intents,
+    chapter_write_locks,
     credentials,
     credential_versions,
     metadata,
@@ -254,101 +251,6 @@ def test_corrupt_pending_operation_is_failed_once_instead_of_repolled(
         repository.events_after(operation_id)
 
 
-def test_expired_local_operation_is_reclaimed_with_a_new_attempt(
-    operation_platform,
-) -> None:
-    platform = operation_platform
-    repository = OperationRepository(
-        platform["engine"],
-        attempt_lease_seconds=3,
-    )
-    accepted, _ = repository.create_page_operation(
-        page_id=platform["page_id"],
-        kind="bubble_ocr",
-        base_revision=1,
-        bubble_id=platform["bubble_id"],
-        payload={},
-        idempotency_key="expired-local-operation",
-    )
-    first = repository.claim_next(
-        executor_role="worker",
-        executor_epoch_id=platform["worker_epoch_id"],
-        allowed_kinds=("bubble_ocr",),
-    )
-    assert first is not None
-    first_fence, _ = first
-    with platform["engine"].begin() as connection:
-        connection.execute(
-            update(operations)
-            .where(operations.c.id == accepted["operationId"])
-            .values(
-                lease_expires_at=datetime.now(timezone.utc).replace(tzinfo=None)
-                - timedelta(seconds=1)
-            )
-        )
-
-    second = repository.claim_next(
-        executor_role="worker",
-        executor_epoch_id=platform["worker_epoch_id"],
-        allowed_kinds=("bubble_ocr",),
-    )
-
-    assert second is not None
-    second_fence, _ = second
-    assert second_fence.attempt_id != first_fence.attempt_id
-    assert "operation_requeued" in {
-        event["type"]
-        for event in repository.events_after(str(accepted["operationId"]))
-    }
-    with pytest.raises(OperationFenced):
-        repository.complete(first_fence, result={})
-
-
-def test_expired_remote_operation_fails_without_replaying_provider_call(
-    operation_platform,
-) -> None:
-    platform = operation_platform
-    repository = OperationRepository(
-        platform["engine"],
-        attempt_lease_seconds=3,
-    )
-    accepted, _ = repository.create_page_operation(
-        page_id=platform["page_id"],
-        kind="bubble_translate",
-        base_revision=1,
-        bubble_id=platform["bubble_id"],
-        payload={},
-        idempotency_key="expired-remote-operation",
-    )
-    claimed = repository.claim_next(
-        executor_role="api",
-        executor_epoch_id=platform["api_epoch_id"],
-        allowed_kinds=("bubble_translate",),
-    )
-    assert claimed is not None
-    fence, _ = claimed
-    with platform["engine"].begin() as connection:
-        connection.execute(
-            update(operations)
-            .where(operations.c.id == accepted["operationId"])
-            .values(
-                lease_expires_at=datetime.now(timezone.utc).replace(tzinfo=None)
-                - timedelta(seconds=1)
-            )
-        )
-
-    assert repository.claim_next(
-        executor_role="api",
-        executor_epoch_id=platform["api_epoch_id"],
-        allowed_kinds=("bubble_translate",),
-    ) is None
-    failed = repository.get(str(accepted["operationId"]))
-    assert failed["status"] == "failed"
-    assert failed["error"]["code"] == "OPERATION_LEASE_EXPIRED"
-    with pytest.raises(OperationFenced):
-        repository.complete(fence, result={})
-
-
 def test_page_operation_is_idempotent_fenced_and_persistent(
     operation_platform,
 ) -> None:
@@ -384,11 +286,9 @@ def test_page_operation_is_idempotent_fenced_and_persistent(
     assert operation["inputs"].keys() == {"source"}
     forged = OperationFence(
         operation_id=fence.operation_id,
-        attempt_id=fence.attempt_id,
-        lease_token="forged",
+        attempt_id=str(uuid.uuid4()),
         executor_epoch_id=fence.executor_epoch_id,
         executor_role=fence.executor_role,
-        lease_expires_at=fence.lease_expires_at,
     )
     with pytest.raises(OperationFenced):
         repository.complete(forged, result={"text": "forbidden"})
@@ -556,46 +456,6 @@ def test_worker_operation_runner_delegates_claimed_operation_to_handler(
     assert stored["result"] == {"operationId": accepted["operationId"]}
 
 
-def test_operation_heartbeat_retries_one_sqlite_lock_without_fencing() -> None:
-    calls = 0
-    renewed = threading.Event()
-
-    def renew() -> object:
-        nonlocal calls
-        calls += 1
-        if calls == 1:
-            raise sqlite3.OperationalError("database is locked")
-        renewed.set()
-        return object()
-
-    heartbeat = _LeaseHeartbeat(renew, interval_seconds=0.01)
-    heartbeat.start()
-    try:
-        assert renewed.wait(1)
-        assert calls >= 2
-        assert not heartbeat.fenced.is_set()
-    finally:
-        heartbeat.stop()
-
-
-def test_operation_heartbeat_fences_after_finite_sqlite_lock_retries() -> None:
-    calls = 0
-
-    def renew() -> object:
-        nonlocal calls
-        calls += 1
-        raise sqlite3.OperationalError("database is locked")
-
-    heartbeat = _LeaseHeartbeat(renew, interval_seconds=0.01)
-    heartbeat.start()
-    try:
-        assert heartbeat.fenced.wait(1)
-    finally:
-        heartbeat.stop()
-
-    assert calls == 2
-
-
 def test_worker_ocr_plugin_mutates_domain_result_before_publish(
     operation_platform,
 ) -> None:
@@ -699,7 +559,7 @@ def test_worker_ocr_plugin_mutates_domain_result_before_publish(
     assert payload["originalText"] == "こんにちは【hook】"
 
 
-def test_zero_row_operation_renewal_fences_all_late_writes(
+def test_lost_executor_epoch_fences_all_late_operation_writes(
     operation_platform,
 ) -> None:
     platform = operation_platform
@@ -719,20 +579,18 @@ def test_zero_row_operation_renewal_fences_all_late_writes(
     )
     assert claimed is not None
     fence, _operation = claimed
-    assert repository.renew(fence) is not None
     with platform["engine"].begin() as connection:
         connection.execute(
             update(process_epochs)
             .where(process_epochs.c.id == platform["worker_epoch_id"])
             .values(status="lost")
         )
-    assert repository.renew(fence) is None
     with pytest.raises(OperationFenced):
         repository.complete(fence, result={"late": True})
     assert repository.get(str(accepted["operationId"]))["status"] == "running"
 
 
-def test_operation_creation_obeys_revision_and_write_intent(
+def test_operation_creation_obeys_revision_and_chapter_write_lock(
     operation_platform,
 ) -> None:
     platform = operation_platform
@@ -762,20 +620,12 @@ def test_operation_creation_obeys_revision_and_write_intent(
             )
         )
         connection.execute(
-            insert(chapter_write_intents).values(
+            insert(chapter_write_locks).values(
                 chapter_id=platform["chapter"]["id"],
                 job_id=job_id,
-                intent_set_id=str(uuid.uuid4()),
-                intent_generation=1,
-                worker_epoch_id=platform["worker_epoch_id"],
-                lease_token="intent",
-                lease_expires_at=(
-                    datetime.now(timezone.utc).replace(tzinfo=None)
-                    + timedelta(minutes=1)
-                ),
             )
         )
-    with pytest.raises(OperationLocked, match="chapter_write_pending"):
+    with pytest.raises(OperationLocked, match="chapter_locked"):
         repository.create_page_operation(
             page_id=platform["page_id"],
             kind="page_detect",
@@ -1218,41 +1068,6 @@ def test_old_render_failure_preserves_the_newer_coalesced_request(
     second = repository.claim_next(api_epoch_id=platform["api_epoch_id"])
     assert second is not None
     assert second.rendering_revision == 2
-
-
-def test_expired_render_attempt_is_reclaimed_and_old_fence_is_rejected(
-    operation_platform,
-) -> None:
-    platform = operation_platform
-    repository = RenderRequestRepository(
-        platform["engine"],
-        attempt_lease_seconds=3,
-    )
-    with immediate_transaction(platform["engine"]) as connection:
-        request_id = repository.upsert(
-            connection,
-            page_id=platform["page_id"],
-            requested_revision=1,
-        )
-    first = repository.claim_next(api_epoch_id=platform["api_epoch_id"])
-    assert first is not None
-    with platform["engine"].begin() as connection:
-        connection.execute(
-            update(render_requests)
-            .where(render_requests.c.id == request_id)
-            .values(
-                lease_expires_at=datetime.now(timezone.utc).replace(tzinfo=None)
-                - timedelta(seconds=1)
-            )
-        )
-
-    second = repository.claim_next(api_epoch_id=platform["api_epoch_id"])
-
-    assert second is not None
-    assert second.attempt_id != first.attempt_id
-    assert second.rendering_revision == 1
-    with pytest.raises(OperationFenced):
-        repository.complete(first, publisher=lambda _connection: None)
 
 
 def test_page_repair_advances_revision_replays_without_new_mask_and_renders(

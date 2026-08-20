@@ -8,7 +8,6 @@ from datetime import datetime, timedelta
 import hashlib
 import json
 import re
-import secrets
 from typing import Any
 import uuid
 
@@ -27,7 +26,6 @@ from src.backend_v2.storage.database import immediate_transaction
 from src.backend_v2.plugins.snapshots import enabled_plugin_snapshots
 from src.backend_v2.storage.schema import (
     bubbles,
-    chapter_write_intents,
     chapter_write_locks,
     credential_versions,
     idempotency_records,
@@ -49,9 +47,6 @@ PUBLIC_PAGE_OPERATION_KINDS = frozenset(
 WORKER_OPERATION_KINDS = frozenset(
     {"bubble_ocr", "bubble_color", "page_detect"}
 )
-RETRYABLE_EXPIRED_OPERATION_KINDS = WORKER_OPERATION_KINDS | {
-    "page_repair"
-}
 _REPAIR_COLOR_PATTERN = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 
@@ -79,10 +74,8 @@ class OperationDataInvalid(RuntimeError):
 class OperationFence:
     operation_id: str
     attempt_id: str
-    lease_token: str
     executor_epoch_id: str
     executor_role: str
-    lease_expires_at: datetime
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,9 +84,7 @@ class RenderFence:
     page_id: str
     rendering_revision: int
     attempt_id: str
-    lease_token: str
     api_epoch_id: str
-    lease_expires_at: datetime
 
 
 def _load_required_object(value: object, field: str) -> dict[str, Any]:
@@ -139,11 +130,8 @@ def _operation_secret_values(
 
 
 class OperationRepository:
-    def __init__(self, engine: Engine, *, attempt_lease_seconds: int = 30) -> None:
-        if attempt_lease_seconds < 3:
-            raise ValueError("attempt_lease_seconds must be at least 3")
+    def __init__(self, engine: Engine) -> None:
         self.engine = engine
-        self.attempt_lease_seconds = attempt_lease_seconds
 
     def create_page_operation(
         self,
@@ -235,7 +223,6 @@ class OperationRepository:
                         bubble_id=bubble_id,
                         base_revision=base_revision,
                         request_json=_json(request_payload),
-                        request_schema_version=1,
                         created_at=now,
                         updated_at=now,
                     )
@@ -390,7 +377,6 @@ class OperationRepository:
                         page_id=page_id,
                         base_revision=repair_revision,
                         request_json=_json(payload),
-                        request_schema_version=1,
                         created_at=now,
                         updated_at=now,
                     )
@@ -650,35 +636,15 @@ class OperationRepository:
                 .order_by(operations.c.created_at)
                 .limit(1)
             ).scalar_one_or_none()
-            expired_id = connection.execute(
-                select(operations.c.id)
-                .where(
-                    operations.c.executor_role == executor_role,
-                    operations.c.executor_epoch_id == executor_epoch_id,
-                    operations.c.status == "running",
-                    operations.c.kind.in_(tuple(allowed_kinds)),
-                    operations.c.lease_expires_at <= now,
-                )
-                .order_by(operations.c.lease_expires_at)
-                .limit(1)
-            ).scalar_one_or_none()
-        if pending_id is None and expired_id is None:
+        if pending_id is None:
             return None
 
         now = utcnow()
-        expires = now + timedelta(seconds=self.attempt_lease_seconds)
         with immediate_transaction(self.engine) as connection:
             self._assert_epoch(
                 connection,
                 role=executor_role,
                 epoch_id=executor_epoch_id,
-                now=now,
-            )
-            self._recover_one_expired_attempt(
-                connection,
-                executor_role=executor_role,
-                executor_epoch_id=executor_epoch_id,
-                allowed_kinds=allowed_kinds,
                 now=now,
             )
             row = connection.execute(
@@ -714,7 +680,6 @@ class OperationRepository:
                     .values(
                         status="failed",
                         request_json=_json(preserved_request),
-                        request_schema_version=1,
                         result_json=None,
                         error_json=_json(error),
                         finished_at=now,
@@ -733,7 +698,6 @@ class OperationRepository:
                 )
                 return None
             attempt_id = str(uuid.uuid4())
-            lease_token = secrets.token_urlsafe(32)
             changed = connection.execute(
                 update(operations)
                 .where(
@@ -744,8 +708,6 @@ class OperationRepository:
                     status="running",
                     executor_epoch_id=executor_epoch_id,
                     attempt_id=attempt_id,
-                    lease_token=lease_token,
-                    lease_expires_at=expires,
                     started_at=now,
                     updated_at=now,
                 )
@@ -776,10 +738,8 @@ class OperationRepository:
                 OperationFence(
                     operation_id=str(row["id"]),
                     attempt_id=attempt_id,
-                    lease_token=lease_token,
                     executor_epoch_id=executor_epoch_id,
                     executor_role=executor_role,
-                    lease_expires_at=expires,
                 ),
                 dto,
             )
@@ -814,129 +774,6 @@ class OperationRepository:
         ):
             raise ValueError("fillColor must be a #RRGGBB color")
         return base_revision, method, fill_color
-
-    @staticmethod
-    def _recover_one_expired_attempt(
-        connection: Connection,
-        *,
-        executor_role: str,
-        executor_epoch_id: str,
-        allowed_kinds: Sequence[str],
-        now: datetime,
-    ) -> None:
-        row = connection.execute(
-            select(operations.c.id, operations.c.kind)
-            .where(
-                operations.c.executor_role == executor_role,
-                operations.c.executor_epoch_id == executor_epoch_id,
-                operations.c.status == "running",
-                operations.c.kind.in_(tuple(allowed_kinds)),
-                operations.c.lease_expires_at <= now,
-            )
-            .order_by(operations.c.lease_expires_at)
-            .limit(1)
-        ).mappings().one_or_none()
-        if row is None:
-            return
-        operation_id = str(row["id"])
-        kind = str(row["kind"])
-        if kind in RETRYABLE_EXPIRED_OPERATION_KINDS:
-            connection.execute(
-                update(operations)
-                .where(
-                    operations.c.id == operation_id,
-                    operations.c.status == "running",
-                    operations.c.executor_epoch_id == executor_epoch_id,
-                    operations.c.lease_expires_at <= now,
-                )
-                .values(
-                    status="pending",
-                    executor_epoch_id=None,
-                    attempt_id=None,
-                    lease_token=None,
-                    lease_expires_at=None,
-                    started_at=None,
-                    error_json=None,
-                    updated_at=now,
-                )
-            )
-            connection.execute(
-                insert(operation_events).values(
-                    operation_id=operation_id,
-                    type="operation_requeued",
-                    payload_json=_json({"reason": "ATTEMPT_LEASE_EXPIRED"}),
-                    created_at=now,
-                )
-            )
-            return
-
-        error = {
-            "code": "OPERATION_LEASE_EXPIRED",
-            "message": "operation attempt lease expired before publication",
-        }
-        connection.execute(
-            update(operations)
-            .where(
-                operations.c.id == operation_id,
-                operations.c.status == "running",
-                operations.c.executor_epoch_id == executor_epoch_id,
-                operations.c.lease_expires_at <= now,
-            )
-            .values(
-                status="failed",
-                error_json=_json(error),
-                executor_epoch_id=None,
-                attempt_id=None,
-                lease_token=None,
-                lease_expires_at=None,
-                finished_at=now,
-                updated_at=now,
-            )
-        )
-        connection.execute(
-            insert(operation_events).values(
-                operation_id=operation_id,
-                type="operation_failed",
-                payload_json=_json({"status": "failed", "error": error}),
-                created_at=now,
-            )
-        )
-
-    def renew(self, fence: OperationFence) -> OperationFence | None:
-        now = utcnow()
-        expires = now + timedelta(seconds=self.attempt_lease_seconds)
-        with self.engine.begin() as connection:
-            changed = connection.execute(
-                update(operations)
-                .where(
-                    operations.c.id == fence.operation_id,
-                    operations.c.status == "running",
-                    operations.c.attempt_id == fence.attempt_id,
-                    operations.c.lease_token == fence.lease_token,
-                    operations.c.executor_epoch_id == fence.executor_epoch_id,
-                    operations.c.executor_role == fence.executor_role,
-                    operations.c.lease_expires_at > now,
-                    exists(
-                        select(process_epochs.c.id).where(
-                            process_epochs.c.id == fence.executor_epoch_id,
-                            process_epochs.c.role == fence.executor_role,
-                            process_epochs.c.status == "active",
-                            process_epochs.c.lease_expires_at > now,
-                        )
-                    ),
-                )
-                .values(lease_expires_at=expires, updated_at=now)
-            )
-        if changed.rowcount != 1:
-            return None
-        return OperationFence(
-            operation_id=fence.operation_id,
-            attempt_id=fence.attempt_id,
-            lease_token=fence.lease_token,
-            executor_epoch_id=fence.executor_epoch_id,
-            executor_role=fence.executor_role,
-            lease_expires_at=expires,
-        )
 
     def complete(
         self,
@@ -1018,7 +855,6 @@ class OperationRepository:
                     operations.c.id == fence.operation_id,
                     operations.c.status == "running",
                     operations.c.attempt_id == fence.attempt_id,
-                    operations.c.lease_token == fence.lease_token,
                     operations.c.executor_epoch_id == fence.executor_epoch_id,
                 )
                 .values(
@@ -1035,8 +871,6 @@ class OperationRepository:
                     ),
                     executor_epoch_id=None,
                     attempt_id=None,
-                    lease_token=None,
-                    lease_expires_at=None,
                     finished_at=now,
                     updated_at=now,
                 )
@@ -1070,18 +904,11 @@ class OperationRepository:
         connection: Connection,
         chapter_id: str,
     ) -> None:
-        intent = connection.execute(
-            select(chapter_write_intents.c.chapter_id).where(
-                chapter_write_intents.c.chapter_id == chapter_id
-            )
-        ).scalar_one_or_none()
         lock = connection.execute(
             select(chapter_write_locks.c.chapter_id).where(
                 chapter_write_locks.c.chapter_id == chapter_id
             )
         ).scalar_one_or_none()
-        if intent is not None:
-            raise OperationLocked("chapter_write_pending")
         if lock is not None:
             raise OperationLocked("chapter_locked")
 
@@ -1155,10 +982,8 @@ class OperationRepository:
                 operations.c.id == fence.operation_id,
                 operations.c.status == "running",
                 operations.c.attempt_id == fence.attempt_id,
-                operations.c.lease_token == fence.lease_token,
                 operations.c.executor_epoch_id == fence.executor_epoch_id,
                 operations.c.executor_role == fence.executor_role,
-                operations.c.lease_expires_at > now,
                 exists(
                     select(process_epochs.c.id).where(
                         process_epochs.c.id == fence.executor_epoch_id,
@@ -1217,10 +1042,6 @@ class OperationRepository:
 
     @staticmethod
     def _dto(row: Mapping[str, Any]) -> dict[str, object]:
-        if row["request_schema_version"] != 1:
-            raise OperationDataInvalid(
-                "operations.request_schema_version is invalid"
-            )
         request = _load_required_object(
             row["request_json"],
             "operations.request_json",
@@ -1267,11 +1088,8 @@ class OperationRepository:
 
 
 class RenderRequestRepository:
-    def __init__(self, engine: Engine, *, attempt_lease_seconds: int = 30) -> None:
-        if attempt_lease_seconds < 3:
-            raise ValueError("attempt_lease_seconds must be at least 3")
+    def __init__(self, engine: Engine) -> None:
         self.engine = engine
-        self.attempt_lease_seconds = attempt_lease_seconds
 
     def upsert(
         self,
@@ -1359,29 +1177,13 @@ class RenderRequestRepository:
                 )
                 .limit(1)
             ).scalar_one_or_none()
-            has_expired = connection.execute(
-                select(render_requests.c.id)
-                .where(
-                    render_requests.c.status == "running",
-                    render_requests.c.executor_epoch_id == api_epoch_id,
-                    render_requests.c.lease_expires_at <= now,
-                )
-                .order_by(render_requests.c.lease_expires_at)
-                .limit(1)
-            ).scalar_one_or_none()
-        if has_pending is None and has_expired is None:
+        if has_pending is None:
             return None
 
         now = utcnow()
-        expires = now + timedelta(seconds=self.attempt_lease_seconds)
         with immediate_transaction(self.engine) as connection:
             OperationRepository._assert_epoch(
                 connection, role="api", epoch_id=api_epoch_id, now=now
-            )
-            self._requeue_one_expired_attempt(
-                connection,
-                api_epoch_id=api_epoch_id,
-                now=now,
             )
             row = connection.execute(
                 select(render_requests)
@@ -1398,7 +1200,6 @@ class RenderRequestRepository:
             if row is None:
                 return None
             attempt_id = str(uuid.uuid4())
-            lease_token = secrets.token_urlsafe(32)
             changed = connection.execute(
                 update(render_requests)
                 .where(
@@ -1410,8 +1211,6 @@ class RenderRequestRepository:
                     rendering_revision=row["requested_revision"],
                     executor_epoch_id=api_epoch_id,
                     attempt_id=attempt_id,
-                    lease_token=lease_token,
-                    lease_expires_at=expires,
                     updated_at=now,
                 )
             )
@@ -1430,100 +1229,8 @@ class RenderRequestRepository:
                 page_id=str(row["page_id"]),
                 rendering_revision=int(row["requested_revision"]),
                 attempt_id=attempt_id,
-                lease_token=lease_token,
                 api_epoch_id=api_epoch_id,
-                lease_expires_at=expires,
             )
-
-    @staticmethod
-    def _requeue_one_expired_attempt(
-        connection: Connection,
-        *,
-        api_epoch_id: str,
-        now: datetime,
-    ) -> None:
-        row = connection.execute(
-            select(
-                render_requests.c.id,
-                render_requests.c.page_id,
-                render_requests.c.requested_revision,
-            )
-            .where(
-                render_requests.c.status == "running",
-                render_requests.c.executor_epoch_id == api_epoch_id,
-                render_requests.c.lease_expires_at <= now,
-            )
-            .order_by(render_requests.c.lease_expires_at)
-            .limit(1)
-        ).mappings().one_or_none()
-        if row is None:
-            return
-        connection.execute(
-            update(render_requests)
-            .where(
-                render_requests.c.id == row["id"],
-                render_requests.c.status == "running",
-                render_requests.c.executor_epoch_id == api_epoch_id,
-                render_requests.c.lease_expires_at <= now,
-            )
-            .values(
-                status="pending",
-                rendering_revision=None,
-                executor_epoch_id=None,
-                attempt_id=None,
-                lease_token=None,
-                lease_expires_at=None,
-                error_json=None,
-                updated_at=now,
-            )
-        )
-        connection.execute(
-            update(pages)
-            .where(
-                pages.c.id == row["page_id"],
-                pages.c.document_revision == row["requested_revision"],
-                pages.c.render_status == "rendering",
-            )
-            .values(render_status="stale", updated_at=now)
-        )
-
-    def renew(self, fence: RenderFence) -> RenderFence | None:
-        now = utcnow()
-        expires = now + timedelta(seconds=self.attempt_lease_seconds)
-        with self.engine.begin() as connection:
-            changed = connection.execute(
-                update(render_requests)
-                .where(
-                    render_requests.c.id == fence.render_request_id,
-                    render_requests.c.status == "running",
-                    render_requests.c.rendering_revision
-                    == fence.rendering_revision,
-                    render_requests.c.attempt_id == fence.attempt_id,
-                    render_requests.c.lease_token == fence.lease_token,
-                    render_requests.c.executor_epoch_id == fence.api_epoch_id,
-                    render_requests.c.lease_expires_at > now,
-                    exists(
-                        select(process_epochs.c.id).where(
-                            process_epochs.c.id == fence.api_epoch_id,
-                            process_epochs.c.role == "api",
-                            process_epochs.c.status == "active",
-                            process_epochs.c.lease_expires_at > now,
-                        )
-                    ),
-                )
-                .values(lease_expires_at=expires, updated_at=now)
-            )
-        if changed.rowcount != 1:
-            return None
-        return RenderFence(
-            render_request_id=fence.render_request_id,
-            page_id=fence.page_id,
-            rendering_revision=fence.rendering_revision,
-            attempt_id=fence.attempt_id,
-            lease_token=fence.lease_token,
-            api_epoch_id=fence.api_epoch_id,
-            lease_expires_at=expires,
-        )
 
     def complete(
         self,
@@ -1542,9 +1249,7 @@ class RenderRequestRepository:
                     render_requests.c.rendering_revision
                     == fence.rendering_revision,
                     render_requests.c.attempt_id == fence.attempt_id,
-                    render_requests.c.lease_token == fence.lease_token,
                     render_requests.c.executor_epoch_id == fence.api_epoch_id,
-                    render_requests.c.lease_expires_at > now,
                     exists(
                         select(process_epochs.c.id).where(
                             process_epochs.c.id == fence.api_epoch_id,
@@ -1574,8 +1279,6 @@ class RenderRequestRepository:
                         rendering_revision=None,
                         executor_epoch_id=None,
                         attempt_id=None,
-                        lease_token=None,
-                        lease_expires_at=None,
                         updated_at=now,
                     )
                 )
@@ -1598,8 +1301,6 @@ class RenderRequestRepository:
                     completed_revision=fence.rendering_revision,
                     executor_epoch_id=None,
                     attempt_id=None,
-                    lease_token=None,
-                    lease_expires_at=None,
                     updated_at=now,
                 )
             )
@@ -1627,9 +1328,7 @@ class RenderRequestRepository:
                     render_requests.c.rendering_revision
                     == fence.rendering_revision,
                     render_requests.c.attempt_id == fence.attempt_id,
-                    render_requests.c.lease_token == fence.lease_token,
                     render_requests.c.executor_epoch_id == fence.api_epoch_id,
-                    render_requests.c.lease_expires_at > now,
                     exists(
                         select(process_epochs.c.id).where(
                             process_epochs.c.id == fence.api_epoch_id,
@@ -1659,8 +1358,6 @@ class RenderRequestRepository:
                         rendering_revision=None,
                         executor_epoch_id=None,
                         attempt_id=None,
-                        lease_token=None,
-                        lease_expires_at=None,
                         error_json=None,
                         updated_at=now,
                     )
@@ -1684,7 +1381,6 @@ class RenderRequestRepository:
                     render_requests.c.rendering_revision
                     == fence.rendering_revision,
                     render_requests.c.attempt_id == fence.attempt_id,
-                    render_requests.c.lease_token == fence.lease_token,
                     render_requests.c.executor_epoch_id == fence.api_epoch_id,
                 )
                 .values(
@@ -1696,8 +1392,6 @@ class RenderRequestRepository:
                     ),
                     executor_epoch_id=None,
                     attempt_id=None,
-                    lease_token=None,
-                    lease_expires_at=None,
                     updated_at=now,
                 )
             )

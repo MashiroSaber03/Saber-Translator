@@ -11,6 +11,7 @@ from src.shared.ai_providers import (
     PLUGIN_AGENT_CAPABILITY,
     get_provider_manifest,
     normalize_provider_id,
+    provider_requires_api_key,
     provider_supports_capability,
 )
 from src.shared.ai_transport import OpenAICompatibleChatTransport, UnifiedChatRequest
@@ -289,7 +290,7 @@ class PluginAgentController:
             raise ValueError(f"不支持的插件 Agent 服务商: {provider}")
 
         manifest = get_provider_manifest(provider)
-        if manifest.requires_api_key and not api_key:
+        if provider_requires_api_key(provider, custom_base_url) and not api_key:
             raise ValueError(f"{manifest.display_name} 需要 API Key")
         if manifest.requires_model and not model_name:
             raise ValueError(f"{manifest.display_name} 需要模型名称")

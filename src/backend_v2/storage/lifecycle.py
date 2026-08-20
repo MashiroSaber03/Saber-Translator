@@ -6,22 +6,18 @@ from dataclasses import dataclass
 from pathlib import Path
 import sqlite3
 
-from alembic import command
-from alembic.config import Config
-from alembic.script import ScriptDirectory
-from sqlalchemy import text
+from sqlalchemy import insert, select, text
 
-from src.backend_v2.paths import project_root
 from src.backend_v2.storage.database import (
     create_sqlite_engine,
     database_path_for,
-    sqlite_url,
 )
-from src.backend_v2.storage.schema import metadata
+from src.backend_v2.storage.schema import metadata, schema_metadata
 from src.backend_v2.storage.seeding import seed_system_records
 
 
-REQUIRED_TABLES = frozenset(metadata.tables) | {"alembic_version"}
+SCHEMA_REVISION = "backend_v2_20260820"
+REQUIRED_TABLES = frozenset(metadata.tables)
 
 
 class UnsupportedDataRoot(RuntimeError):
@@ -35,27 +31,17 @@ class StorageInitializationResult:
     created: bool
 
 
-def _alembic_config(database_path: Path) -> Config:
-    config = Config()
-    config.set_main_option(
-        "script_location",
-        str(project_root() / "src" / "backend_v2" / "storage" / "migrations"),
-    )
-    config.set_main_option("sqlalchemy.url", sqlite_url(database_path))
-    return config
-
-
 def _database_revision(database_path: Path) -> str | None:
     try:
         with sqlite3.connect(database_path) as connection:
             has_version_table = connection.execute(
                 "SELECT 1 FROM sqlite_master "
-                "WHERE type = 'table' AND name = 'alembic_version'"
+                "WHERE type = 'table' AND name = 'schema_metadata'"
             ).fetchone()
             if has_version_table is None:
                 return None
             rows = connection.execute(
-                "SELECT version_num FROM alembic_version"
+                "SELECT revision FROM schema_metadata WHERE singleton_id = 1"
             ).fetchall()
     except sqlite3.DatabaseError as exc:
         raise UnsupportedDataRoot(
@@ -64,14 +50,6 @@ def _database_revision(database_path: Path) -> str | None:
     if len(rows) != 1 or not isinstance(rows[0][0], str):
         return None
     return rows[0][0]
-
-
-def _formal_head(config: Config) -> str:
-    scripts = ScriptDirectory.from_config(config)
-    head = scripts.get_current_head()
-    if head is None:
-        raise RuntimeError("formal v2 schema has no Alembic head")
-    return head
 
 
 def schema_smoke_test(database_path: Path) -> str:
@@ -99,7 +77,9 @@ def schema_smoke_test(database_path: Path) -> str:
                     f"missing={sorted(missing)}, unexpected={sorted(unexpected)}"
                 )
             revision = connection.execute(
-                text("SELECT version_num FROM alembic_version")
+                select(schema_metadata.c.revision).where(
+                    schema_metadata.c.singleton_id == 1
+                )
             ).scalar_one()
             return str(revision)
     finally:
@@ -115,21 +95,31 @@ def initialize_database(data_root: Path) -> StorageInitializationResult:
 
     database_path = database_path_for(data_root)
     created = not database_path.exists() or database_path.stat().st_size == 0
-    config = _alembic_config(database_path)
-    head = _formal_head(config)
     current_revision = None if created else _database_revision(database_path)
-    if not created and current_revision != head:
+    if not created and current_revision != SCHEMA_REVISION:
         raise UnsupportedDataRoot(
             "data-v2 不属于当前正式存储架构；旧数据不会被读取或迁移，"
             "请清空 data-v2 后重新启动"
         )
 
     if created:
-        command.upgrade(config, "head")
+        engine = create_sqlite_engine(database_path)
+        try:
+            metadata.create_all(engine)
+            with engine.begin() as connection:
+                connection.execute(
+                    insert(schema_metadata).values(
+                        singleton_id=1,
+                        revision=SCHEMA_REVISION,
+                    )
+                )
+        finally:
+            engine.dispose()
     revision = schema_smoke_test(database_path)
-    if revision != head:
+    if revision != SCHEMA_REVISION:
         raise RuntimeError(
-            f"database revision {revision!r} does not match formal head {head!r}"
+            f"database revision {revision!r} does not match "
+            f"current revision {SCHEMA_REVISION!r}"
         )
     engine = create_sqlite_engine(database_path)
     try:

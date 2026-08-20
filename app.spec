@@ -35,10 +35,6 @@ datas.append((os.path.join(PROJECT_ROOT, 'src', 'shared', 'prompt_defaults_facto
 datas.append((os.path.join(PROJECT_ROOT, 'src', 'shared', 'ai_provider_manifest.json'), os.path.join('src', 'shared')))
 datas.append((os.path.join(PROJECT_ROOT, 'src', 'backend_v2', 'plugins', 'plugin_builder_skill.md'), os.path.join('src', 'backend_v2', 'plugins')))
 datas.append((os.path.join(PROJECT_ROOT, 'openapi', 'v2.yaml'), 'openapi'))
-datas.append((
-    os.path.join(PROJECT_ROOT, 'src', 'backend_v2', 'storage', 'migrations'),
-    os.path.join('src', 'backend_v2', 'storage', 'migrations'),
-))
 
 # 2. 用户设置、提示词和凭据只存在于 v2 data root 的数据库中，
 # 不把任何运行时配置或密钥打进应用包。
@@ -109,7 +105,7 @@ hiddenimports += [
     'src.backend_v2.desktop.theme', 'src.backend_v2.desktop.window',
     'PySide6', 'PySide6.QtCore', 'PySide6.QtGui', 'PySide6.QtNetwork',
     'PySide6.QtWidgets',
-    'sqlalchemy', 'alembic', 'waitress',
+    'sqlalchemy', 'waitress',
 
     # Flask 相关
     'flask', 'werkzeug', 'werkzeug.serving', 'jinja2', 'itsdangerous', 'click',

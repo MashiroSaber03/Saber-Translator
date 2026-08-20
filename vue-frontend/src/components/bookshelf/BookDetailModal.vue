@@ -41,7 +41,6 @@ const isReordering = ref(false)
 const currentBook = computed(() => bookshelfStore.currentBook)
 const chapters = computed(() => currentBook.value?.chapters || [])
 const allTags = computed(() => bookshelfStore.tags)
-const IMMEDIATE_DELETE_CANCEL_STATUSES = new Set(['queued', 'paused', 'interrupted'])
 
 interface DeleteRequest {
   bookId: string
@@ -77,43 +76,17 @@ function deleteCurrentBook() {
   showDeleteConfirm.value = true
 }
 
-function lockJobIds(error: unknown, immediateOnly = false): string[] {
-  if (!(error instanceof ApiClientError)) return []
+function lockedJobId(error: ApiClientError): string | undefined {
   const details = error.details
-  if (!details || typeof details !== 'object' || Array.isArray(details)) return []
-  const operations = 'operationIds' in details ? details.operationIds : undefined
+  if (!details || typeof details !== 'object' || Array.isArray(details)) return undefined
   const jobs = 'jobs' in details ? details.jobs : undefined
-  if (!Array.isArray(jobs) || !Array.isArray(operations)) return []
-  if (immediateOnly && operations.length > 0) return []
-
-  const jobIds: string[] = []
+  if (!Array.isArray(jobs)) return undefined
   for (const value of jobs) {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return []
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue
     const jobId = 'jobId' in value ? value.jobId : undefined
-    const status = 'status' in value ? value.status : undefined
-    if (
-      typeof jobId !== 'string'
-      || !jobId
-      || typeof status !== 'string'
-      || (immediateOnly && !IMMEDIATE_DELETE_CANCEL_STATUSES.has(status))
-    ) return []
-    jobIds.push(jobId)
+    if (typeof jobId === 'string' && jobId) return jobId
   }
-  return [...new Set(jobIds)]
-}
-
-async function tryCancelDeleteBlockers(error: unknown): Promise<boolean> {
-  const jobIds = lockJobIds(error, true)
-  if (jobIds.length === 0) return false
-  try {
-    for (const jobId of jobIds) {
-      const job = await taskCenterStore.cancel(jobId)
-      if (job.status !== 'cancelled') return false
-    }
-    return true
-  } catch {
-    return false
-  }
+  return undefined
 }
 
 async function executeDelete(request: DeleteRequest): Promise<void> {
@@ -138,18 +111,7 @@ async function confirmDelete() {
 
   isDeleting.value = true
   try {
-    try {
-      await executeDelete(request)
-    } catch (error) {
-      if (
-        !(error instanceof ApiClientError)
-        || error.status !== 423
-        || !(await tryCancelDeleteBlockers(error))
-      ) {
-        throw error
-      }
-      await executeDelete(request)
-    }
+    await executeDelete(request)
 
     if (!request.chapterId) {
       showToast('书籍已删除', 'success')
@@ -164,7 +126,7 @@ async function confirmDelete() {
     if (error instanceof ApiClientError && error.status === 423) {
       showToast('仍有正在执行的任务或导入，请先在任务中心处理', 'warning')
       taskCenterStore.open({
-        jobId: lockJobIds(error)[0],
+        jobId: lockedJobId(error),
         bookId: request.bookId,
         chapterId: request.chapterId,
       })

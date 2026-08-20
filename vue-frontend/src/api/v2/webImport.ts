@@ -1,6 +1,5 @@
 import { apiClient } from '@/api/client'
 import type { components } from '@/api/generated/v2'
-import { assertBackendActionAllowed } from '@/services/backendAccessGate'
 import { newIdempotencyKey } from './content'
 import { runV2ConnectionTest, type V2ConnectionTestResult } from './settings'
 
@@ -21,7 +20,6 @@ export function checkWebImportSupport(sourceUrl: string): Promise<WebImportSuppo
 export function createWebImportDraft(
   command: WebImportDraftCreateCommand
 ): Promise<WebImportDraftAccepted> {
-  assertBackendActionAllowed()
   return apiClient.post(`${ROOT}/drafts`, command, {
     headers: { 'Idempotency-Key': newIdempotencyKey() },
   })
@@ -47,7 +45,6 @@ export function updateWebImportSelection(
   baseRevision: number,
   selectedPageIds: string[]
 ): Promise<WebImportSelection> {
-  assertBackendActionAllowed()
   const command: WebImportSelectionCommand = { baseRevision, selectedPageIds }
   return apiClient.put(`${ROOT}/drafts/${encodeURIComponent(draftId)}/selection`, command, {
     headers: { 'Idempotency-Key': newIdempotencyKey() },
@@ -58,7 +55,6 @@ export function commitWebImportDraft(
   draftId: string,
   baseRevision: number
 ): Promise<WebImportDraftAccepted> {
-  assertBackendActionAllowed()
   return apiClient.post(
     `${ROOT}/drafts/${encodeURIComponent(draftId)}/commit`,
     { baseRevision },

@@ -12,7 +12,6 @@ from sqlalchemy import Engine, delete, insert, select, update
 from sqlalchemy.engine import Connection
 
 from src.backend_v2.content.page_style import (
-    PAGE_STYLE_SCHEMA_VERSION,
     rgb_to_hex,
     validate_page_style,
 )
@@ -45,10 +44,7 @@ from src.backend_v2.translation.pipeline import (
     _validate_detection_result,
     _validate_ocr_results,
 )
-from src.core.config_models import (
-    BUBBLE_PAYLOAD_SCHEMA_VERSION,
-    validate_bubble_payload,
-)
+from src.core.config_models import validate_bubble_payload
 
 
 class InteractivePageOperationService:
@@ -596,7 +592,6 @@ class InteractivePageOperationService:
                             "ordinal": index,
                             "font_id": page["default_font_id"],
                             "payload_json": canonical_json(payload),
-                            "payload_schema_version": BUBBLE_PAYLOAD_SCHEMA_VERSION,
                             "updated_revision": new_revision,
                         }
                         for index, payload in enumerate(payloads, start=1)
@@ -668,18 +663,12 @@ class InteractivePageOperationService:
                 raise RuntimeError("operation target page no longer exists")
             if page["document_revision"] != expected_revision:
                 raise RuntimeError("page revision changed")
-            if page["page_style_schema_version"] != PAGE_STYLE_SCHEMA_VERSION:
-                raise RuntimeError("page style schema version is not current")
             rows = []
             for row in connection.execute(
                 select(bubbles)
                 .where(bubbles.c.page_id == page_id)
                 .order_by(bubbles.c.ordinal)
             ).mappings():
-                if row["payload_schema_version"] != BUBBLE_PAYLOAD_SCHEMA_VERSION:
-                    raise RuntimeError(
-                        "bubble payload schema version is not current"
-                    )
                 if row["updated_revision"] != page["document_revision"]:
                     raise RuntimeError(
                         "bubble revision does not match page document"

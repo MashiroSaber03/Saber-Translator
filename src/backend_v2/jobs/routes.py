@@ -191,22 +191,18 @@ def create_jobs_blueprint(
 
     @blueprint.post("/jobs/<job_id>/pause")
     def pause_job(job_id: str) -> Response:
-        _require_idempotency_key()
         return jsonify(repository.request_pause(job_id))
 
     @blueprint.post("/jobs/<job_id>/resume")
     def resume_job(job_id: str) -> Response:
-        _require_idempotency_key()
         return jsonify(repository.resume(job_id))
 
     @blueprint.post("/jobs/<job_id>/continue")
     def continue_job(job_id: str) -> Response:
-        _require_idempotency_key()
         return jsonify(repository.continue_interrupted(job_id))
 
     @blueprint.post("/jobs/<job_id>/cancel")
     def cancel_job(job_id: str) -> Response:
-        _require_idempotency_key()
         return jsonify(repository.request_cancel(job_id))
 
     @blueprint.post("/jobs/<job_id>/retry")
@@ -245,7 +241,6 @@ def create_jobs_blueprint(
 
     @blueprint.post("/jobs/reorder")
     def reorder_jobs() -> Response:
-        _require_idempotency_key()
         body = _json_body(allowed_keys={"orderedJobIds", "baseRevision"})
         ordered = body.get("orderedJobIds")
         if not isinstance(ordered, list) or not ordered or not all(
@@ -264,12 +259,10 @@ def create_jobs_blueprint(
 
     @blueprint.post("/jobs/cancel-queued")
     def cancel_queued() -> Response:
-        _require_idempotency_key()
         return jsonify({"cancelled": repository.cancel_all_queued()})
 
     @blueprint.post("/jobs/history/clear")
     def clear_history() -> Response:
-        _require_idempotency_key()
         return jsonify({"removed": repository.clear_history()})
 
     @blueprint.get("/job-batches/<batch_id>")
@@ -278,12 +271,10 @@ def create_jobs_blueprint(
 
     @blueprint.post("/job-batches/<batch_id>/cancel")
     def cancel_batch(batch_id: str) -> Response:
-        _require_idempotency_key()
         return jsonify({"cancelled": repository.cancel_batch_queued(batch_id)})
 
     @blueprint.post("/job-batches/<batch_id>/prioritize")
     def prioritize_batch(batch_id: str) -> Response:
-        _require_idempotency_key()
         body = _json_body(allowed_keys={"baseRevision"})
         return jsonify(
             {
@@ -300,7 +291,6 @@ def create_jobs_blueprint(
 
     @blueprint.post("/job-batches/<batch_id>/continue")
     def continue_batch(batch_id: str) -> Response:
-        _require_idempotency_key()
         return jsonify(repository.continue_batch(batch_id))
 
     return blueprint

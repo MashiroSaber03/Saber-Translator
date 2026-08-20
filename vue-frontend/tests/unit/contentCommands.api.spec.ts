@@ -62,10 +62,6 @@ describe('content command API', () => {
     await expect(resetQuickWorkspace()).resolves.toBe(context)
 
     expect(mocks.post).toHaveBeenCalledOnce()
-    expect(mocks.post).toHaveBeenCalledWith(
-      '/api/v2/quick-workspace/reset',
-      undefined,
-      { headers: { 'Idempotency-Key': expect.any(String) } },
-    )
+    expect(mocks.post).toHaveBeenCalledWith('/api/v2/quick-workspace/reset')
   })
 })

@@ -1680,16 +1680,7 @@ def test_plugin_agent_planning_hands_off_to_durable_worker_job(
     assert first_fence is not None
     assert queue.request_pause(job_id)["status"] == "pausing"
     assert sessions.get(session_id)["run_state"] == "pausing"
-    queue.acknowledge_drain(
-        first_fence,
-        pool_id="main",
-        worker_slot=0,
-        last_step_id=None,
-    )
-    assert queue.finalize_drain(
-        first_fence,
-        expected_slots={("main", 0)},
-    ) == "paused"
+    assert queue.finalize_control(first_fence) == "paused"
     assert sessions.get(session_id)["run_state"] == "paused"
     assert queue.resume(job_id)["status"] == "queued"
     assert sessions.get(session_id)["run_state"] == "running"

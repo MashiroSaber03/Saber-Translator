@@ -244,15 +244,17 @@ describe('bookshelfStore', () => {
     expect(store.isLoading).toBe(false)
   })
 
-  it('accepts an ambiguous delete response when the backend confirms the book is gone', async () => {
+  it('keeps local state when a book deletion response is ambiguous', async () => {
     const store = useBookshelfStore()
-    setTestBooks(store, [{ id: 'book-deleted', title: 'Deleted' }])
+    const book: BookData = { id: 'book-deleted', title: 'Deleted' }
+    setTestBooks(store, [book])
     vi.spyOn(bookshelfApi, 'deleteBook').mockRejectedValue(apiError(0, 'connection reset'))
-    vi.spyOn(bookshelfApi, 'getBookDetail').mockRejectedValue(apiError(404, 'not found'))
+    const getBookDetail = vi.spyOn(bookshelfApi, 'getBookDetail')
 
-    await expect(store.deleteBookApi('book-deleted')).resolves.toBeUndefined()
+    await expect(store.deleteBookApi('book-deleted')).rejects.toThrow('connection reset')
 
-    expect(store.books).toEqual([])
+    expect(getBookDetail).not.toHaveBeenCalled()
+    expect(store.books).toEqual([book])
   })
 
   it('does not hide a book when the backend confirms deletion was rejected', async () => {
@@ -268,7 +270,7 @@ describe('bookshelfStore', () => {
     expect(store.books).toEqual([book])
   })
 
-  it('reconciles an ambiguous chapter delete without a hard refresh', async () => {
+  it('keeps local state when a chapter deletion response is ambiguous', async () => {
     const store = useBookshelfStore()
     setTestBooks(store, [{
       id: 'book-1',
@@ -277,17 +279,13 @@ describe('bookshelfStore', () => {
       chapterCount: 1,
     }])
     vi.spyOn(bookshelfApi, 'deleteChapter').mockRejectedValue(apiError(0, 'connection reset'))
-    vi.spyOn(bookshelfApi, 'getBookDetail').mockResolvedValue({
-      id: 'book-1',
-      title: 'Book',
-      chapters: [],
-      chapterCount: 0,
-    })
+    const getBookDetail = vi.spyOn(bookshelfApi, 'getBookDetail')
 
-    await expect(store.deleteChapterApi('book-1', 'chapter-1')).resolves.toBeUndefined()
+    await expect(store.deleteChapterApi('book-1', 'chapter-1')).rejects.toThrow('connection reset')
 
-    expect(store.books[0]?.chapters).toEqual([])
-    expect(store.books[0]?.chapterCount).toBe(0)
+    expect(getBookDetail).not.toHaveBeenCalled()
+    expect(store.books[0]?.chapters).toHaveLength(1)
+    expect(store.books[0]?.chapterCount).toBe(1)
   })
 
   it('reports tag load failures without letting an older request overwrite newer tags', async () => {

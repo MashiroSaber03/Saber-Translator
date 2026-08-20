@@ -20,6 +20,7 @@ from src.shared.ai_providers import (
     WEB_IMPORT_AGENT_CAPABILITY,
     get_provider_manifest,
     normalize_provider_id,
+    provider_requires_api_key,
     provider_supports_capability,
     resolve_provider_base_url_for_capability,
 )
@@ -129,7 +130,7 @@ class MangaScraperAgent:
         if not provider_supports_capability(self.provider, WEB_IMPORT_AGENT_CAPABILITY):
             raise ValueError(f"不支持的 AI Agent 服务商: {self.provider}")
         manifest = get_provider_manifest(self.provider)
-        if manifest.requires_api_key and not self.api_key.strip():
+        if provider_requires_api_key(self.provider, self.base_url) and not self.api_key.strip():
             raise ValueError(f"{manifest.display_name} 需要 API Key")
         if manifest.requires_base_url and not self.base_url.strip():
             raise ValueError(f"{manifest.display_name} 需要 Base URL")

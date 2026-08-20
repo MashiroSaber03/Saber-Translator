@@ -49,7 +49,6 @@ const {
   apiKey,
   baseUrl,
   model,
-  requiresApiKey: () => true,
   emitMessage: (message, type) => emit('showMessage', message, type),
 })
 

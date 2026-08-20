@@ -255,6 +255,7 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/ModelCatalogResponse"}
+        "502": {$ref: "#/components/responses/ProviderUnavailable"}
         "422": {$ref: "#/components/responses/ValidationError"}
   /connection-tests/{kind}:
     post:
@@ -575,7 +576,6 @@ paths:
       operationId: pauseRunningJob
       parameters:
         - $ref: "#/components/parameters/JobId"
-        - $ref: "#/components/parameters/IdempotencyKey"
       responses:
         "200":
           description: Pause intent accepted or replayed.
@@ -590,7 +590,6 @@ paths:
       operationId: resumePausedJob
       parameters:
         - $ref: "#/components/parameters/JobId"
-        - $ref: "#/components/parameters/IdempotencyKey"
       responses:
         "200":
           description: A paused job was returned to queued.
@@ -606,7 +605,6 @@ paths:
       operationId: cancelJob
       parameters:
         - $ref: "#/components/parameters/JobId"
-        - $ref: "#/components/parameters/IdempotencyKey"
       responses:
         "200":
           description: Cancel intent accepted or the queued job cancelled.
@@ -659,8 +657,6 @@ paths:
     post:
       tags: [jobs]
       operationId: reorderJobs
-      parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -683,8 +679,6 @@ paths:
     post:
       tags: [jobs]
       operationId: cancelQueuedJobs
-      parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
       responses:
         "200":
           description: All currently queued jobs were atomically cancelled.
@@ -695,8 +689,6 @@ paths:
     post:
       tags: [jobs]
       operationId: clearJobHistory
-      parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
       responses:
         "200":
           description: Terminal history removed; interrupted jobs are retained.
@@ -723,7 +715,6 @@ paths:
       operationId: cancelQueuedJobBatchMembers
       parameters:
         - $ref: "#/components/parameters/BatchId"
-        - $ref: "#/components/parameters/IdempotencyKey"
       responses:
         "200":
           description: All queued members of the batch were atomically cancelled.
@@ -737,7 +728,6 @@ paths:
       operationId: prioritizeQueuedJobBatchMembers
       parameters:
         - $ref: "#/components/parameters/BatchId"
-        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -758,7 +748,6 @@ paths:
       operationId: continueJobBatchMembers
       parameters:
         - $ref: "#/components/parameters/BatchId"
-        - $ref: "#/components/parameters/IdempotencyKey"
       responses:
         "200":
           description: Paused and interrupted members returned to queued in batch order.
@@ -773,7 +762,6 @@ paths:
       operationId: continueInterruptedJob
       parameters:
         - $ref: "#/components/parameters/JobId"
-        - $ref: "#/components/parameters/IdempotencyKey"
       responses:
         "200":
           description: An interrupted job was returned to queued.
@@ -1346,8 +1334,6 @@ paths:
     post:
       tags: [content]
       operationId: createBook
-      parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -1368,8 +1354,6 @@ paths:
     post:
       tags: [content]
       operationId: batchDeleteBooks
-      parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -1388,8 +1372,6 @@ paths:
     post:
       tags: [content]
       operationId: batchUpdateBookTags
-      parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -1419,8 +1401,6 @@ paths:
     put:
       tags: [content]
       operationId: updateBook
-      parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -1440,8 +1420,6 @@ paths:
     delete:
       tags: [content]
       operationId: deleteBook
-      parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
       responses:
         "200":
           description: Book deleted.
@@ -1467,8 +1445,6 @@ paths:
     put:
       tags: [content]
       operationId: updateBookTranslationConstraints
-      parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -1501,8 +1477,6 @@ paths:
     post:
       tags: [content]
       operationId: createChapter
-      parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -1526,7 +1500,6 @@ paths:
       operationId: reorderChapters
       parameters:
         - $ref: "#/components/parameters/BookId"
-        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -1560,8 +1533,6 @@ paths:
     put:
       tags: [content]
       operationId: updateChapter
-      parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -1579,8 +1550,6 @@ paths:
     delete:
       tags: [content]
       operationId: deleteChapter
-      parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
       responses:
         "200":
           description: Chapter deleted.
@@ -1596,7 +1565,6 @@ paths:
       operationId: reorderChapterPages
       parameters:
         - $ref: "#/components/parameters/ChapterId"
-        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -1617,7 +1585,6 @@ paths:
       operationId: updateChapterSettingsMemory
       parameters:
         - $ref: "#/components/parameters/ChapterId"
-        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -1637,7 +1604,6 @@ paths:
       operationId: updateChapterLastVisitedPage
       parameters:
         - $ref: "#/components/parameters/ChapterId"
-        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -1908,8 +1874,6 @@ paths:
     delete:
       tags: [content]
       operationId: clearChapterPages
-      parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
       responses:
         "200":
           description: All chapter pages were deleted atomically.
@@ -1941,8 +1905,6 @@ paths:
     delete:
       tags: [content]
       operationId: deletePage
-      parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
       responses:
         "200":
           description: Page deleted.
@@ -2127,8 +2089,6 @@ paths:
     post:
       tags: [content]
       operationId: resetQuickWorkspace
-      parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
       responses:
         "200":
           description: A new empty quick chapter was created.
@@ -2141,8 +2101,6 @@ paths:
     post:
       tags: [content]
       operationId: promoteQuickWorkspace
-      parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -2186,8 +2144,6 @@ paths:
     post:
       tags: [content]
       operationId: createTag
-      parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -2210,8 +2166,6 @@ paths:
     put:
       tags: [content]
       operationId: updateTag
-      parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -2229,8 +2183,6 @@ paths:
     delete:
       tags: [content]
       operationId: deleteTag
-      parameters:
-        - $ref: "#/components/parameters/IdempotencyKey"
       responses:
         "200":
           description: Tag deleted.
@@ -3646,6 +3598,12 @@ components:
             $ref: "#/components/schemas/ErrorEnvelope"
     ValidationError:
       description: Input failed the closed business schema.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    ProviderUnavailable:
+      description: The selected external provider could not complete the diagnostic request.
       content:
         application/json:
           schema:

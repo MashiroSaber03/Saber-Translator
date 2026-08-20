@@ -239,7 +239,6 @@ class StudioRepository:
                     avatar_asset_id=avatar_asset_id,
                     revision=1,
                     **storage_values,
-                    schema_version=2,
                     created_at=now,
                     updated_at=now,
                 )
@@ -593,7 +592,6 @@ class StudioRepository:
                 summary_blocks_json="[]",
                 summary_generation=0,
                 runtime_state_json=_json(initial_runtime),
-                runtime_schema_version=1,
                 created_at=now,
                 updated_at=now,
             )
@@ -825,7 +823,6 @@ class StudioRepository:
                     summary_blocks_json=_json(summary_blocks),
                     summary_generation=summary_generation,
                     runtime_state_json=_json(dict(runtime_state)),
-                    runtime_schema_version=1,
                     created_at=now,
                     updated_at=now,
                 )
@@ -1412,8 +1409,6 @@ class StudioRepository:
                     status="cancelled",
                     executor_epoch_id=None,
                     attempt_id=None,
-                    lease_token=None,
-                    lease_expires_at=None,
                     finished_at=now,
                     updated_at=now,
                 )
@@ -2142,7 +2137,6 @@ class StudioRepository:
                 base_revision=base_revision,
                 base_generation=base_generation,
                 request_json=_json(dict(request_payload)),
-                request_schema_version=1,
                 created_at=now,
                 updated_at=now,
             )

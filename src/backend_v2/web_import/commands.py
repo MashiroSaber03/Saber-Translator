@@ -390,8 +390,6 @@ def validate_web_commit_config(value: object) -> dict[str, Any]:
 
 
 def decode_web_import_draft_config(row: Mapping[str, Any]) -> dict[str, Any]:
-    if row["config_schema_version"] != 1:
-        raise WebImportDataInvalid("web import draft schema version is invalid")
     try:
         value = json.loads(row["config_json"])
     except (TypeError, json.JSONDecodeError) as exc:

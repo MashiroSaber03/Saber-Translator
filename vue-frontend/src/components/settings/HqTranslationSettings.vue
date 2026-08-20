@@ -199,6 +199,7 @@ import {
   getProviderDisplayName,
   getProviderOptionsForCapability,
   providerRequiresApiKey,
+  providerRequiresApiKeyForBaseUrl,
   providerRequiresBaseUrl,
 } from '@/config/aiProviders'
 import { fetchModels as fetchV2Models, testAiTranslateConnection } from '@/api/v2/diagnostics'
@@ -285,7 +286,11 @@ async function testConnection() {
   const modelName = hqSettings.value.modelName?.trim()
   const baseUrl = hqSettings.value.customBaseUrl?.trim()
 
-  if (providerRequiresApiKey(provider) && !apiKey && !settingsStore.hasCredential('hq', provider)) {
+  if (
+    providerRequiresApiKeyForBaseUrl(provider, baseUrl)
+    && !apiKey
+    && !settingsStore.hasCredential('hq', provider)
+  ) {
     toast.warning('请先填写 API Key')
     return
   }

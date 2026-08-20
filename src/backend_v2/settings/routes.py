@@ -23,6 +23,7 @@ from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.storage.builtin_fonts import SUPPORTED_FONT_SUFFIXES
 from src.backend_v2.settings.diagnostics import (
     CONNECTION_TEST_KINDS,
+    ProviderDiagnosticUnavailable,
     ProviderDiagnostics,
 )
 from src.backend_v2.storage.platform_repositories import (
@@ -64,6 +65,11 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
     def conflict(error: RevisionConflict):
         LOGGER.warning("设置保存发生版本冲突：%s", error)
         return _error("revision_conflict", str(error), 409)
+
+    @blueprint.errorhandler(ProviderDiagnosticUnavailable)
+    def provider_unavailable(error: ProviderDiagnosticUnavailable):
+        LOGGER.warning("服务商诊断失败：%s", error)
+        return _error("provider_unavailable", str(error), 502)
 
     @blueprint.errorhandler(LookupError)
     def not_found(error: LookupError):

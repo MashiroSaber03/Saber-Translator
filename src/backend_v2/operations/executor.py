@@ -16,11 +16,7 @@ from src.backend_v2.operations.repository import (
     RenderFence,
     RenderRequestRepository,
 )
-from src.backend_v2.storage.database import (
-    SQLITE_HEARTBEAT_BUSY_RETRY_DELAY_SECONDS,
-    SQLITE_HEARTBEAT_BUSY_RETRY_LIMIT,
-    is_sqlite_busy_error,
-)
+from src.backend_v2.storage.database import is_sqlite_busy_error
 
 
 OperationHandler = Callable[
@@ -33,61 +29,6 @@ LOGGER = logging.getLogger("saber.operations")
 
 def _short(value: object) -> str:
     return str(value)[:8]
-
-
-class _LeaseHeartbeat:
-    def __init__(
-        self,
-        renew: Callable[[], object | None],
-        *,
-        interval_seconds: float = 2,
-    ) -> None:
-        self.renew = renew
-        self.interval_seconds = interval_seconds
-        self.stop_event = threading.Event()
-        self.fenced = threading.Event()
-        self.thread = threading.Thread(
-            target=self._run,
-            name="operation-attempt-heartbeat",
-            daemon=True,
-        )
-
-    def start(self) -> None:
-        self.thread.start()
-
-    def stop(self) -> None:
-        self.stop_event.set()
-        self.thread.join(timeout=max(2.0, self.interval_seconds * 2))
-
-    def _run(self) -> None:
-        busy_failures = 0
-        while not self.stop_event.wait(self.interval_seconds):
-            try:
-                renewed = self.renew()
-            except Exception as exc:
-                if (
-                    is_sqlite_busy_error(exc)
-                    and busy_failures < SQLITE_HEARTBEAT_BUSY_RETRY_LIMIT
-                ):
-                    busy_failures += 1
-                    LOGGER.warning(
-                        "operation/render attempt 心跳遇到 SQLite 写锁竞争，"
-                        "将重试（%s/%s）",
-                        busy_failures,
-                        SQLITE_HEARTBEAT_BUSY_RETRY_LIMIT,
-                    )
-                    if self.stop_event.wait(
-                        SQLITE_HEARTBEAT_BUSY_RETRY_DELAY_SECONDS
-                    ):
-                        return
-                    continue
-                LOGGER.exception("operation/render attempt 心跳执行失败，放弃本次发布")
-                self.fenced.set()
-                return
-            busy_failures = 0
-            if renewed is None:
-                self.fenced.set()
-                return
 
 
 class DurableOperationExecutor:
@@ -176,8 +117,6 @@ class DurableOperationExecutor:
             _short(fence.operation_id),
             kind,
         )
-        heartbeat = _LeaseHeartbeat(lambda: self.repository.renew(fence))
-        heartbeat.start()
         try:
             handler = self.handlers[str(operation["kind"])]
             result = handler(fence, operation)
@@ -188,10 +127,7 @@ class DurableOperationExecutor:
                 raise RuntimeError(
                     "operation publication marker must be boolean"
                 )
-            if (
-                not heartbeat.fenced.is_set()
-                and not already_published
-            ):
+            if not already_published:
                 self.repository.complete(fence, result=result)
         except OperationFenced:
             LOGGER.warning(
@@ -206,25 +142,22 @@ class DurableOperationExecutor:
                 kind,
                 time.monotonic() - started_at,
             )
-            if not heartbeat.fenced.is_set():
-                try:
-                    self.repository.fail(
-                        fence,
-                        code="OPERATION_FAILED",
-                        message=str(exc),
-                    )
-                except OperationFenced:
-                    pass
+            try:
+                self.repository.fail(
+                    fence,
+                    code="OPERATION_FAILED",
+                    message=str(exc),
+                )
+            except OperationFenced:
+                pass
         finally:
-            heartbeat.stop()
             self._admission.release()
-        if not heartbeat.fenced.is_set():
-            LOGGER.info(
-                "操作结束：operation=%s kind=%s duration=%.2fs",
-                _short(fence.operation_id),
-                kind,
-                time.monotonic() - started_at,
-            )
+        LOGGER.info(
+            "操作结束：operation=%s kind=%s duration=%.2fs",
+            _short(fence.operation_id),
+            kind,
+            time.monotonic() - started_at,
+        )
 
 
 class WorkerOperationRunner:
@@ -257,8 +190,6 @@ class WorkerOperationRunner:
             _short(fence.operation_id),
             kind,
         )
-        heartbeat = _LeaseHeartbeat(lambda: self.repository.renew(fence))
-        heartbeat.start()
         try:
             result = self.handlers[str(operation["kind"])](
                 fence,
@@ -271,10 +202,7 @@ class WorkerOperationRunner:
                 raise RuntimeError(
                     "operation publication marker must be boolean"
                 )
-            if (
-                not heartbeat.fenced.is_set()
-                and not already_published
-            ):
+            if not already_published:
                 self.repository.complete(fence, result=result)
         except OperationFenced:
             LOGGER.warning(
@@ -289,24 +217,20 @@ class WorkerOperationRunner:
                 kind,
                 time.monotonic() - started_at,
             )
-            if not heartbeat.fenced.is_set():
-                try:
-                    self.repository.fail(
-                        fence,
-                        code="OPERATION_FAILED",
-                        message=str(exc),
-                    )
-                except OperationFenced:
-                    pass
-        finally:
-            heartbeat.stop()
-        if not heartbeat.fenced.is_set():
-            LOGGER.info(
-                "Worker 操作结束：operation=%s kind=%s duration=%.2fs",
-                _short(fence.operation_id),
-                kind,
-                time.monotonic() - started_at,
-            )
+            try:
+                self.repository.fail(
+                    fence,
+                    code="OPERATION_FAILED",
+                    message=str(exc),
+                )
+            except OperationFenced:
+                pass
+        LOGGER.info(
+            "Worker 操作结束：operation=%s kind=%s duration=%.2fs",
+            _short(fence.operation_id),
+            kind,
+            time.monotonic() - started_at,
+        )
         return True
 
 
@@ -367,12 +291,9 @@ class DurableRenderExecutor:
                 _short(fence.page_id),
                 fence.rendering_revision,
             )
-            heartbeat = _LeaseHeartbeat(lambda: self.repository.renew(fence))
-            heartbeat.start()
             try:
                 publisher = self.handler(fence)
-                if not heartbeat.fenced.is_set():
-                    self.repository.complete(fence, publisher=publisher)
+                self.repository.complete(fence, publisher=publisher)
             except OperationFenced:
                 LOGGER.warning(
                     "渲染被 fencing 中断：request=%s page=%s",
@@ -386,21 +307,17 @@ class DurableRenderExecutor:
                     _short(fence.page_id),
                     time.monotonic() - started_at,
                 )
-                if not heartbeat.fenced.is_set():
-                    try:
-                        self.repository.fail(
-                            fence,
-                            code="RENDER_FAILED",
-                            message=str(exc),
-                        )
-                    except OperationFenced:
-                        pass
-            finally:
-                heartbeat.stop()
-            if not heartbeat.fenced.is_set():
-                LOGGER.debug(
-                    "渲染结束：request=%s page=%s duration=%.2fs",
-                    _short(fence.render_request_id),
-                    _short(fence.page_id),
-                    time.monotonic() - started_at,
-                )
+                try:
+                    self.repository.fail(
+                        fence,
+                        code="RENDER_FAILED",
+                        message=str(exc),
+                    )
+                except OperationFenced:
+                    pass
+            LOGGER.debug(
+                "渲染结束：request=%s page=%s duration=%.2fs",
+                _short(fence.render_request_id),
+                _short(fence.page_id),
+                time.monotonic() - started_at,
+            )

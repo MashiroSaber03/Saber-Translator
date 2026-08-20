@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import * as bookshelfApi from '@/api/bookshelf'
-import { ApiClientError } from '@/api/client'
 import type { BookData, ChapterData, TagData } from '@/types/api'
 import { BOOKSHELF_DEFAULT_TAG_COLOR } from '@/constants/bookshelf'
 
@@ -255,31 +254,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     isLoading.value = false
   }
 
-  async function bookNoLongerExists(bookId: string): Promise<boolean> {
-    try {
-      await bookshelfApi.getBookDetail(bookId)
-      return false
-    } catch (error) {
-      return error instanceof ApiClientError && error.status === 404
-    }
-  }
-
-  async function chapterNoLongerExists(
-    bookId: string,
-    chapterId: string,
-  ): Promise<'book' | 'chapter' | false> {
-    try {
-      const book = await bookshelfApi.getBookDetail(bookId)
-      return book.chapters?.some(chapter => chapter.id === chapterId)
-        ? false
-        : 'chapter'
-    } catch (error) {
-      return error instanceof ApiClientError && error.status === 404
-        ? 'book'
-        : false
-    }
-  }
-
   function setCurrentBook(bookId: string | null): void {
     currentBookId.value = bookId
     currentBookDetail.value = bookId
@@ -372,15 +346,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   }
 
   async function deleteBookApi(bookId: string): Promise<void> {
-    try {
-      await bookshelfApi.deleteBook(bookId)
-    } catch (error) {
-      const status = error instanceof ApiClientError ? error.status : 0
-      if (
-        status !== 404
-        && !(status !== 423 && await bookNoLongerExists(bookId))
-      ) throw error
-    }
+    await bookshelfApi.deleteBook(bookId)
     invalidateBookReads()
     deleteBook(bookId)
   }
@@ -461,19 +427,9 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   }
 
   async function deleteChapterApi(bookId: string, chapterId: string): Promise<void> {
-    let deletedTarget: 'book' | 'chapter' = 'chapter'
-    try {
-      await bookshelfApi.deleteChapter(chapterId)
-    } catch (error) {
-      const status = error instanceof ApiClientError ? error.status : 0
-      if (status === 423) throw error
-      const reconciledTarget = await chapterNoLongerExists(bookId, chapterId)
-      if (!reconciledTarget) throw error
-      deletedTarget = reconciledTarget
-    }
+    await bookshelfApi.deleteChapter(chapterId)
     invalidateBookReads()
-    if (deletedTarget === 'book') deleteBook(bookId)
-    else deleteChapter(bookId, chapterId)
+    deleteChapter(bookId, chapterId)
   }
 
   async function reorderChaptersApi(bookId: string, chapterIds: string[]): Promise<void> {

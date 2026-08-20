@@ -77,9 +77,7 @@ export function providerRequiresApiKeyForBaseUrl(
 ): boolean {
   const manifest = getProviderManifest(provider)
   if (!manifest?.requiresApiKey) return false
-  const resolvedBaseUrl = manifest.id === 'custom'
-    ? customBaseUrl
-    : getProviderBaseUrl(manifest.id)
+  const resolvedBaseUrl = customBaseUrl?.trim() || getProviderBaseUrl(manifest.id)
   return !isLocalAiServiceUrl(resolvedBaseUrl)
 }
 

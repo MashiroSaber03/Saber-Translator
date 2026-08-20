@@ -1,6 +1,5 @@
 import { apiClient } from '@/api/client'
 import type { components } from '@/api/generated/v2'
-import { assertBackendActionAllowed } from '@/services/backendAccessGate'
 import { newIdempotencyKey } from './content'
 import { parseOperationAccepted } from './operations'
 
@@ -72,7 +71,6 @@ export async function generateV2StudioDocument(
   baseRevision: number,
   section: V2StudioGenerateCommand['section'],
 ): Promise<V2StudioOperationAccepted> {
-  assertBackendActionAllowed()
   return parseOperationAccepted(await apiClient.post<unknown>(
     `${ROOT}/documents/${encodeURIComponent(documentId)}/generate`,
     { baseRevision, section },
@@ -140,7 +138,6 @@ export async function sendV2StudioMessage(
   sessionId: string,
   command: V2StudioMessageCommand,
 ): Promise<V2StudioOperationAccepted> {
-  assertBackendActionAllowed()
   return parseOperationAccepted(await apiClient.post<unknown>(
     `${ROOT}/chat/sessions/${encodeURIComponent(sessionId)}/messages`,
     command,
@@ -169,7 +166,6 @@ export async function editV2StudioMessage(
   baseSessionRevision: number,
   content: V2StudioMessageEditCommand['content'],
 ): Promise<V2StudioOperationAccepted> {
-  assertBackendActionAllowed()
   return parseOperationAccepted(await apiClient.put<unknown>(
     `${ROOT}/chat/messages/${encodeURIComponent(messageId)}`,
     { baseSessionRevision, content },
@@ -181,7 +177,6 @@ export async function regenerateV2StudioMessage(
   messageId: string,
   baseSessionRevision: number,
 ): Promise<V2StudioOperationAccepted> {
-  assertBackendActionAllowed()
   return parseOperationAccepted(await apiClient.post<unknown>(
     `${ROOT}/chat/messages/${encodeURIComponent(messageId)}/regenerate`,
     { baseSessionRevision },
@@ -206,7 +201,6 @@ export async function summarizeV2StudioSession(
   sessionId: string,
   baseSessionRevision: number,
 ): Promise<V2StudioOperationAccepted> {
-  assertBackendActionAllowed()
   return parseOperationAccepted(await apiClient.post<unknown>(
     `${ROOT}/chat/sessions/${encodeURIComponent(sessionId)}/summarize`,
     { baseSessionRevision },

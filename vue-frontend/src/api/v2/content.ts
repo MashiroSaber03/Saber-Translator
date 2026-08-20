@@ -1,6 +1,5 @@
 import { apiClient, ApiClientError } from '@/api/client'
 import type { components } from '@/api/generated/v2'
-import { assertBackendActionAllowed } from '@/services/backendAccessGate'
 import type { TextStyleSettings } from '@/types/settings'
 
 export type V2BookDetail = components['schemas']['BookDetail']
@@ -301,7 +300,6 @@ export async function createContainerImportJob(
   chapterId: string,
   file: File,
 ): Promise<V2ContainerImportAccepted> {
-  assertBackendActionAllowed()
   const body = new FormData()
   body.append('file', file, file.name)
   return apiClient.upload<V2ContainerImportAccepted>(
@@ -312,16 +310,12 @@ export async function createContainerImportJob(
 }
 
 export async function deletePage(pageId: string): Promise<void> {
-  await apiClient.delete(
-    `${API_ROOT}/pages/${encodeURIComponent(pageId)}`,
-    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
-  )
+  await apiClient.delete(`${API_ROOT}/pages/${encodeURIComponent(pageId)}`)
 }
 
 export async function clearChapterPages(chapterId: string): Promise<number> {
   const result = await apiClient.delete<{ deletedCount: number }>(
     `${API_ROOT}/chapters/${encodeURIComponent(chapterId)}/pages`,
-    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
   return result.deletedCount
 }
@@ -329,8 +323,6 @@ export async function clearChapterPages(chapterId: string): Promise<number> {
 export async function resetQuickWorkspace(): Promise<V2QuickWorkspaceContext> {
   return apiClient.post<V2QuickWorkspaceContext>(
     `${API_ROOT}/quick-workspace/reset`,
-    undefined,
-    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
 }
 
@@ -346,7 +338,6 @@ export function promoteQuickWorkspace(
   return apiClient.post<QuickWorkspacePromotion>(
     `${API_ROOT}/quick-workspace/promote`,
     command,
-    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
 }
 
@@ -357,7 +348,6 @@ export function updateLastVisitedPage(
   return apiClient.patch<V2ChapterNavigation>(
     `${API_ROOT}/chapters/${encodeURIComponent(chapterId)}/last-visited-page`,
     { pageId },
-    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
 }
 
@@ -369,7 +359,6 @@ export function updateChapterSettingsMemory(
   return apiClient.patch<V2ChapterSettingsMemory>(
     `${API_ROOT}/chapters/${encodeURIComponent(chapterId)}/settings-memory`,
     { payload, baseRevision },
-    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
 }
 

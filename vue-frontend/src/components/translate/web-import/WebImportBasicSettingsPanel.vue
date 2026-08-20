@@ -13,6 +13,7 @@ import UiTextarea from '@/components/ui/UiTextarea.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import type { UiSelectOption } from '@/components/ui/selectTypes'
 import type { WebImportSettings } from '@/types/webImport'
+import { providerRequiresApiKeyForBaseUrl } from '@/config/aiProviders'
 import type { WebImportSettingsActions } from './webImportSettingsActions'
 
 const props = defineProps<{
@@ -166,7 +167,10 @@ const storedCredentialHint = '凭据已安全保存在后端；留空表示保�
         block
         :disabled="
           testingAgent ||
-            (providerRequiresApiKey(draftSettings.agent.provider) &&
+            (providerRequiresApiKeyForBaseUrl(
+              draftSettings.agent.provider,
+              draftSettings.agent.customBaseUrl,
+            ) &&
               !draftSettings.agent.apiKey &&
               !hasAgentCredential)
         "

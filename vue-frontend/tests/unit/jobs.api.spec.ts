@@ -40,15 +40,25 @@ describe('jobs v2 api contracts', () => {
 
       expect(postMock).toHaveBeenCalledWith(
         `/api/v2/jobs/job%2Fid%20one/${command}`,
-        undefined,
-        {
-          headers: {
-            'Idempotency-Key': '00000000-0000-4000-8000-000000000001',
-          },
-        },
       )
     },
   )
+
+  it('keeps a replay key for retry commands that can create a new attempt', async () => {
+    postMock.mockResolvedValue({ jobId: 'retry-1' })
+
+    await jobsApi.retry('job/id one')
+
+    expect(postMock).toHaveBeenCalledWith(
+      '/api/v2/jobs/job%2Fid%20one/retry',
+      { strategy: 'current' },
+      {
+        headers: {
+          'Idempotency-Key': '00000000-0000-4000-8000-000000000001',
+        },
+      },
+    )
+  })
 
   it('deduplicates snapshot identities while preserving their order', async () => {
     getMock.mockResolvedValue({ items: [] })

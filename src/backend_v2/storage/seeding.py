@@ -9,7 +9,6 @@ from sqlalchemy import Engine, case, insert, select, update
 from src.backend_v2.serialization import canonical_json
 from src.backend_v2.storage.builtin_fonts import discover_bundled_fonts
 from src.backend_v2.content.translation_constraints import (
-    TRANSLATION_CONSTRAINTS_SCHEMA_VERSION,
     empty_translation_constraints,
 )
 from src.backend_v2.storage.defaults import (
@@ -78,7 +77,6 @@ def seed_system_records(engine: Engine) -> None:
                 insert(translation_constraints).values(
                     book_id=quick_book_id,
                     payload_json=canonical_json(empty_translation_constraints()),
-                    schema_version=TRANSLATION_CONSTRAINTS_SCHEMA_VERSION,
                 )
             )
 

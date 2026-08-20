@@ -21,10 +21,7 @@ from src.backend_v2.content.image_import import (
     ImageImportService,
     ImportSafetyLimits,
 )
-from src.backend_v2.content.page_style import (
-    PAGE_STYLE_SCHEMA_VERSION,
-    resolve_new_page_style,
-)
+from src.backend_v2.content.page_style import resolve_new_page_style
 from src.backend_v2.content.repository import (
     ContentRepository,
     deduplicate_logical_path,
@@ -176,7 +173,6 @@ class TransferWorkerService:
                         ordinal=1,
                         kind="container_import_page",
                         status="pending",
-                        checkpoint_schema_version=1,
                         created_at=now,
                         updated_at=now,
                     )
@@ -233,7 +229,6 @@ class TransferWorkerService:
                 select(chapter_write_locks.c.job_id).where(
                     chapter_write_locks.c.chapter_id == chapter_id,
                     chapter_write_locks.c.job_id == fence.job_id,
-                    chapter_write_locks.c.owner_attempt_id == fence.attempt_id,
                 )
             ).scalar_one_or_none() is None:
                 raise RuntimeError("container import lost its chapter write lock")
@@ -255,7 +250,6 @@ class TransferWorkerService:
                     logical_source_path=logical_path,
                     default_font_id=default_font_id,
                     page_style_defaults_json=canonical_json(style_defaults),
-                    page_style_schema_version=PAGE_STYLE_SCHEMA_VERSION,
                     created_at=now,
                     updated_at=now,
                 )

@@ -36,6 +36,7 @@ from src.shared.ai_providers import (
     EMBEDDING_CAPABILITY,
     VLM_CAPABILITY,
     get_provider_manifest,
+    provider_requires_api_key,
 )
 
 
@@ -469,13 +470,16 @@ def _validate_provider_section(
         raise ValueError(
             f"{label} 服务商 {manifest.display_name} 不支持当前任务"
         )
+    base_url = section.get("custom_base_url")
+    if base_url is not None and not isinstance(base_url, str):
+        raise ValueError(f"{label} Base URL 无效，请重新保存设置")
     credential_version_id = section.get("credentialVersionId")
     if credential_version_id is not None and (
         not isinstance(credential_version_id, str)
         or not credential_version_id.strip()
     ):
         raise ValueError(f"{label} API Key 版本无效，请重新保存设置")
-    if manifest.requires_api_key and (
+    if provider_requires_api_key(provider, base_url) and (
         not isinstance(credential_version_id, str)
         or not credential_version_id.strip()
     ):
@@ -491,9 +495,6 @@ def _validate_provider_section(
         raise ValueError(
             f"{label} 缺少模型名称，请先在分析设置中填写并保存"
         )
-    base_url = section.get("custom_base_url")
-    if base_url is not None and not isinstance(base_url, str):
-        raise ValueError(f"{label} Base URL 无效，请重新保存设置")
     if manifest.requires_base_url and (
         not isinstance(base_url, str) or not base_url.strip()
     ):

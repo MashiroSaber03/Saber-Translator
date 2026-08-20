@@ -2,7 +2,6 @@ import { apiClient } from '@/api/client'
 import { readApiErrorMessage } from '@/api/download'
 import { readSseStream } from '@/api/sse'
 import type { components } from '@/api/generated/v2'
-import { assertBackendActionAllowed } from '@/services/backendAccessGate'
 import { newIdempotencyKey } from './content'
 
 export type OperationStatus = components['schemas']['OperationStatus']
@@ -293,7 +292,6 @@ export async function createPageOperation(
   pageId: string,
   command: PageOperationCommand
 ): Promise<V2OperationAccepted> {
-  assertBackendActionAllowed()
   return parseOperationAccepted(await apiClient.post<unknown>(
     `/api/v2/pages/${encodeURIComponent(pageId)}/operations`,
     command,
@@ -375,7 +373,6 @@ async function createBubbleRepair(
   bubbleId: string,
   baseRevision: number
 ): Promise<V2OperationAccepted> {
-  assertBackendActionAllowed()
   const body = new FormData()
   body.append('target', 'bubble')
   body.append('bubble_id', bubbleId)
@@ -409,7 +406,6 @@ export async function createMaskRepair(
     method: 'lama_mpe' | 'litelama' | 'restore_source'
   },
 ): Promise<V2OperationAccepted> {
-  assertBackendActionAllowed()
   const body = new FormData()
   body.append('target', 'mask')
   body.append('base_revision', String(command.baseRevision))

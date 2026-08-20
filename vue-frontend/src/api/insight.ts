@@ -55,7 +55,6 @@ import {
   type V2InsightPageDetail,
   type V2InsightPageSummary,
 } from '@/api/v2/insight'
-import { assertBackendActionAllowed } from '@/services/backendAccessGate'
 import { deepClone } from '@/utils/deepClone'
 import { getProviderDefaultModel } from '@/config/aiProviders'
 import {
@@ -861,7 +860,6 @@ export async function sendChat(
   question: string,
   options: SendChatOptions
 ): Promise<ChatResult> {
-  assertBackendActionAllowed()
   const preciseOptions =
     options.mode === 'precise'
       ? {

@@ -270,14 +270,6 @@ function openSettings() {
   showSettingsModal.value = true
 }
 
-function handleSettingsSave(payload?: { textDefaultsChanged?: boolean }) {
-  if (payload?.textDefaultsChanged) {
-    showToast('默认值已保存，仅用于之后导入或新建的页面', 'success')
-    return
-  }
-  showToast('设置已保存', 'success')
-}
-
 function openSponsor() {
   showSponsorModal.value = true
 }
@@ -490,7 +482,6 @@ async function handleQuickWorkspacePromoted() {
 
     <SettingsModal
       v-model="showSettingsModal"
-      @save="handleSettingsSave"
     />
 
     <BookGlossaryModal v-model="showBookGlossaryModal" />

@@ -20,6 +20,7 @@ import { WEB_IMPORT_AGENT_PROVIDERS } from '@/constants'
 import {
   normalizeProviderId,
   providerRequiresApiKey,
+  providerRequiresApiKeyForBaseUrl,
   providerSupportsCapability,
 } from '@/config/aiProviders'
 import { showToast } from '@/utils/toast'
@@ -840,7 +841,10 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
 
   async function handleTestAgent() {
     if (
-      providerRequiresApiKey(draftSettings.value.agent.provider) &&
+      providerRequiresApiKeyForBaseUrl(
+        draftSettings.value.agent.provider,
+        draftSettings.value.agent.customBaseUrl,
+      ) &&
       !draftSettings.value.agent.apiKey &&
       !hasAgentCredential.value
     ) {

@@ -19,7 +19,6 @@ from src.backend_v2.content.repository import (
     IdempotencyConflict,
 )
 from src.backend_v2.content.translation_constraints import (
-    TRANSLATION_CONSTRAINTS_SCHEMA_VERSION,
     empty_translation_constraints,
     validate_translation_constraints,
 )
@@ -55,7 +54,7 @@ from src.backend_v2.storage.schema import (
 )
 from src.backend_v2.storage.seeding import seed_system_records
 from src.backend_v2.storage.seeding import QUICK_WORKSPACE_BOOK_ID
-from src.core.config_models import BUBBLE_PAYLOAD_SCHEMA_VERSION, BubbleState
+from src.core.config_models import BubbleState
 
 
 def _stored_job_progress(status: str = "queued") -> str:
@@ -1154,7 +1153,6 @@ def test_page_import_and_chapter_order_cas_enforce_backend_ownership(
             insert(chapter_write_locks).values(
                 chapter_id=chapter_id,
                 job_id="lock-job",
-                lock_generation=1,
             )
         )
     with pytest.raises(ContentLocked):
@@ -1477,7 +1475,7 @@ def test_page_document_allows_propagating_current_style_without_a_style_patch(
     assert payload["blockAlign"] == "start"
 
 
-def test_page_document_rejects_noncurrent_bubble_payload_schema(
+def test_page_document_rejects_malformed_bubble_payload(
     content_platform,
 ) -> None:
     _root, engine, repository, _storage, importer, _book, chapter = content_platform
@@ -1503,20 +1501,17 @@ def test_page_document_rejects_noncurrent_bubble_payload_schema(
     bubble_id = created["mutationResults"][0]["bubbleId"]
 
     with engine.begin() as connection:
-        assert connection.execute(
-            select(bubbles.c.payload_schema_version).where(bubbles.c.id == bubble_id)
-        ).scalar_one() == BUBBLE_PAYLOAD_SCHEMA_VERSION
         connection.execute(
             update(bubbles)
             .where(bubbles.c.id == bubble_id)
-            .values(payload_schema_version=BUBBLE_PAYLOAD_SCHEMA_VERSION - 1)
+            .values(payload_json="{}")
         )
 
-    with pytest.raises(ValueError, match="bubble payload schema version"):
+    with pytest.raises(ValueError, match="bubble payload is missing fields"):
         repository.get_page_document(page_id)
 
 
-def test_content_rejects_noncurrent_embedded_schemas_without_migrating(
+def test_content_rejects_malformed_embedded_documents(
     content_platform,
 ) -> None:
     _root, engine, repository, _storage, importer, book, chapter = content_platform
@@ -1534,47 +1529,33 @@ def test_content_rejects_noncurrent_embedded_schemas_without_migrating(
         connection.execute(
             update(translation_constraints)
             .where(translation_constraints.c.book_id == book["id"])
-            .values(schema_version=1)
+            .values(payload_json="[]")
         )
         connection.execute(
             update(chapters)
             .where(chapters.c.id == chapter["id"])
-            .values(settings_memory_schema_version=2)
+            .values(settings_memory_json="[]")
         )
         connection.execute(
             update(pages)
             .where(pages.c.id == page_id)
-            .values(page_style_schema_version=1)
+            .values(page_style_defaults_json="[]")
         )
 
-    with pytest.raises(ValueError, match="translation constraints schema"):
+    with pytest.raises(ValueError, match="translation constraints must be an object"):
         repository.get_constraints(str(book["id"]))
-    with pytest.raises(ValueError, match="translation constraints schema"):
-        repository.update_constraints(
-            book_id=str(book["id"]),
-            base_revision=1,
-            payload=empty_translation_constraints(),
-        )
-    with pytest.raises(ValueError, match="chapter settings memory schema"):
-        repository.update_chapter_settings_memory(
-            chapter_id=str(chapter["id"]),
-            base_revision=1,
-            payload={},
-        )
-    with pytest.raises(ValueError, match="page style schema"):
+    repository.update_constraints(
+        book_id=str(book["id"]),
+        base_revision=1,
+        payload=empty_translation_constraints(),
+    )
+    repository.update_chapter_settings_memory(
+        chapter_id=str(chapter["id"]),
+        base_revision=1,
+        payload={},
+    )
+    with pytest.raises(ValueError, match="page text style must be an object"):
         repository.get_page_document(page_id)
-
-    with engine.connect() as connection:
-        assert connection.execute(
-            select(translation_constraints.c.schema_version).where(
-                translation_constraints.c.book_id == book["id"]
-            )
-        ).scalar_one() == 1
-        assert connection.execute(
-            select(chapters.c.settings_memory_schema_version).where(
-                chapters.c.id == chapter["id"]
-            )
-        ).scalar_one() == 2
 
 
 def test_page_document_route_persists_editor_mutations_and_optional_font(
@@ -2017,7 +1998,7 @@ def test_document_mutation_materializes_auto_style_before_render_projection(
     assert manual_payload["autoBgColor"] == [10, 11, 12]
 
 
-def test_render_projection_rejects_noncurrent_page_style_schema(
+def test_render_projection_rejects_malformed_page_style(
     content_platform,
 ) -> None:
     _root, engine, repository, storage, importer, _book, chapter = (
@@ -2036,11 +2017,11 @@ def test_render_projection_rejects_noncurrent_page_style_schema(
         connection.execute(
             update(pages)
             .where(pages.c.id == page_id)
-            .values(page_style_schema_version=1)
+            .values(page_style_defaults_json="[]")
         )
 
     with engine.connect() as connection:
-        with pytest.raises(ValueError, match="page style schema version"):
+        with pytest.raises(ValueError, match="page text style must be an object"):
             materialize_render_payloads(connection, storage, page_id)
 
 
@@ -2200,10 +2181,10 @@ def test_content_tag_filters_and_batch_updates_reject_duplicate_ids(
         )
 
 
-def test_quick_workspace_promote_rejects_noncurrent_constraint_schema(
+def test_quick_workspace_promote_rejects_malformed_constraints(
     content_platform,
 ) -> None:
-    _root, engine, repository, _storage, _importer, book, _chapter = (
+    _root, engine, repository, _storage, _importer, _book, _chapter = (
         content_platform
     )
     with engine.begin() as connection:
@@ -2212,33 +2193,15 @@ def test_quick_workspace_promote_rejects_noncurrent_constraint_schema(
             .where(
                 translation_constraints.c.book_id == QUICK_WORKSPACE_BOOK_ID
             )
-            .values(
-                schema_version=TRANSLATION_CONSTRAINTS_SCHEMA_VERSION + 1
-            )
+            .values(payload_json="[]")
         )
 
-    with pytest.raises(ValueError, match="schema version is not current"):
+    with pytest.raises(ValueError, match="translation constraints must be an object"):
         repository.promote_quick_workspace(
             chapter_title="Current only",
             new_book_title="No migration",
         )
     assert repository.list_books(search="No migration") == []
-
-    with engine.begin() as connection:
-        connection.execute(
-            update(translation_constraints)
-            .where(translation_constraints.c.book_id == book["id"])
-            .values(
-                schema_version=TRANSLATION_CONSTRAINTS_SCHEMA_VERSION + 1
-            )
-        )
-
-    with pytest.raises(ValueError, match="schema version is not current"):
-        repository.promote_quick_workspace(
-            chapter_title="Current only",
-            target_book_id=str(book["id"]),
-        )
-
 
 @pytest.mark.parametrize("blocker", ("job", "operation"))
 def test_quick_workspace_reset_and_promote_reject_every_active_work_kind(

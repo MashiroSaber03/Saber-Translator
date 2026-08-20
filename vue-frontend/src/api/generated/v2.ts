@@ -4652,6 +4652,15 @@ export interface components {
                 "application/json": components["schemas"]["ErrorEnvelope"];
             };
         };
+        /** @description The selected external provider could not complete the diagnostic request. */
+        ProviderUnavailable: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorEnvelope"];
+            };
+        };
         /** @description The resource does not exist or is no longer visible. */
         NotFound: {
             headers: {
@@ -5042,6 +5051,7 @@ export interface operations {
                 };
             };
             422: components["responses"]["ValidationError"];
+            502: components["responses"]["ProviderUnavailable"];
         };
     };
     runConnectionTest: {
@@ -5418,10 +5428,7 @@ export interface operations {
     pauseRunningJob: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
+            header?: never;
             path: {
                 job_id: components["parameters"]["JobId"];
             };
@@ -5444,10 +5451,7 @@ export interface operations {
     resumePausedJob: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
+            header?: never;
             path: {
                 job_id: components["parameters"]["JobId"];
             };
@@ -5470,10 +5474,7 @@ export interface operations {
     cancelJob: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
+            header?: never;
             path: {
                 job_id: components["parameters"]["JobId"];
             };
@@ -5560,10 +5561,7 @@ export interface operations {
     reorderJobs: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -5590,10 +5588,7 @@ export interface operations {
     cancelQueuedJobs: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -5613,10 +5608,7 @@ export interface operations {
     clearJobHistory: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -5659,10 +5651,7 @@ export interface operations {
     cancelQueuedJobBatchMembers: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
+            header?: never;
             path: {
                 batch_id: components["parameters"]["BatchId"];
             };
@@ -5685,10 +5674,7 @@ export interface operations {
     prioritizeQueuedJobBatchMembers: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
+            header?: never;
             path: {
                 batch_id: components["parameters"]["BatchId"];
             };
@@ -5717,10 +5703,7 @@ export interface operations {
     continueJobBatchMembers: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
+            header?: never;
             path: {
                 batch_id: components["parameters"]["BatchId"];
             };
@@ -5744,10 +5727,7 @@ export interface operations {
     continueInterruptedJob: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
+            header?: never;
             path: {
                 job_id: components["parameters"]["JobId"];
             };
@@ -6592,10 +6572,7 @@ export interface operations {
     createBook: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -6621,10 +6598,7 @@ export interface operations {
     batchDeleteBooks: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -6651,10 +6625,7 @@ export interface operations {
     batchUpdateBookTags: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -6703,10 +6674,7 @@ export interface operations {
     updateBook: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
+            header?: never;
             path: {
                 book_id: components["parameters"]["BookId"];
             };
@@ -6736,10 +6704,7 @@ export interface operations {
     deleteBook: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
+            header?: never;
             path: {
                 book_id: components["parameters"]["BookId"];
             };
@@ -6787,10 +6752,7 @@ export interface operations {
     updateBookTranslationConstraints: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
+            header?: never;
             path: {
                 book_id: components["parameters"]["BookId"];
             };
@@ -6842,10 +6804,7 @@ export interface operations {
     createChapter: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
+            header?: never;
             path: {
                 book_id: components["parameters"]["BookId"];
             };
@@ -6873,10 +6832,7 @@ export interface operations {
     reorderChapters: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
+            header?: never;
             path: {
                 book_id: components["parameters"]["BookId"];
             };
@@ -6908,10 +6864,7 @@ export interface operations {
     updateChapter: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
+            header?: never;
             path: {
                 chapter_id: components["parameters"]["ChapterId"];
             };
@@ -6940,10 +6893,7 @@ export interface operations {
     deleteChapter: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
+            header?: never;
             path: {
                 chapter_id: components["parameters"]["ChapterId"];
             };
@@ -6968,10 +6918,7 @@ export interface operations {
     reorderChapterPages: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
+            header?: never;
             path: {
                 chapter_id: components["parameters"]["ChapterId"];
             };
@@ -7000,10 +6947,7 @@ export interface operations {
     updateChapterSettingsMemory: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
+            header?: never;
             path: {
                 chapter_id: components["parameters"]["ChapterId"];
             };
@@ -7031,10 +6975,7 @@ export interface operations {
     updateChapterLastVisitedPage: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
+            header?: never;
             path: {
                 chapter_id: components["parameters"]["ChapterId"];
             };
@@ -7430,10 +7371,7 @@ export interface operations {
     clearChapterPages: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
+            header?: never;
             path: {
                 chapter_id: components["parameters"]["ChapterId"];
             };
@@ -7482,10 +7420,7 @@ export interface operations {
     deletePage: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
+            header?: never;
             path: {
                 page_id: components["parameters"]["PageId"];
             };
@@ -7773,10 +7708,7 @@ export interface operations {
     resetQuickWorkspace: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -7797,10 +7729,7 @@ export interface operations {
     promoteQuickWorkspace: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -7857,10 +7786,7 @@ export interface operations {
     createTag: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -7886,10 +7812,7 @@ export interface operations {
     updateTag: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
+            header?: never;
             path: {
                 tag_id: components["schemas"]["Uuid"];
             };
@@ -7918,10 +7841,7 @@ export interface operations {
     deleteTag: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Stable key for this normalized command and target scope. */
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
+            header?: never;
             path: {
                 tag_id: components["schemas"]["Uuid"];
             };

@@ -27,10 +27,7 @@ from src.backend_v2.content.image_import import (
     ImageImportService,
     ImportSafetyLimits,
 )
-from src.backend_v2.content.page_style import (
-    PAGE_STYLE_SCHEMA_VERSION,
-    resolve_new_page_style,
-)
+from src.backend_v2.content.page_style import resolve_new_page_style
 from src.backend_v2.content.repository import (
     ContentRepository,
     deduplicate_logical_path,
@@ -259,7 +256,6 @@ class WebImportWorkerService:
                         "ordinal": 1,
                         "kind": step_kind,
                         "status": "pending",
-                        "checkpoint_schema_version": 1,
                         "created_at": now,
                         "updated_at": now,
                     }
@@ -528,8 +524,6 @@ class WebImportWorkerService:
                 select(chapter_write_locks.c.job_id).where(
                     chapter_write_locks.c.chapter_id == chapter_id,
                     chapter_write_locks.c.job_id == fence.job_id,
-                    chapter_write_locks.c.owner_attempt_id
-                    == fence.attempt_id,
                 )
             ).scalar_one_or_none() is None:
                 raise RuntimeError("web import commit lost its chapter lock")
@@ -559,7 +553,6 @@ class WebImportWorkerService:
                     logical_source_path=logical_path,
                     default_font_id=default_font_id,
                     page_style_defaults_json=_json(style_defaults),
-                    page_style_schema_version=PAGE_STYLE_SCHEMA_VERSION,
                     created_at=now,
                     updated_at=now,
                 )
@@ -667,7 +660,6 @@ class WebImportWorkerService:
                 select(chapter_write_locks.c.job_id).where(
                     chapter_write_locks.c.chapter_id == chapter_id,
                     chapter_write_locks.c.job_id == fence.job_id,
-                    chapter_write_locks.c.owner_attempt_id == fence.attempt_id,
                 )
             ).scalar_one_or_none() is None:
                 raise RuntimeError("web import commit lost its chapter lock")
@@ -691,7 +683,7 @@ class WebImportWorkerService:
                 .where(
                     jobs.c.id == fence.job_id,
                     jobs.c.attempt_id == fence.attempt_id,
-                    jobs.c.lease_token == fence.lease_token,
+                    jobs.c.worker_epoch_id == fence.worker_epoch_id,
                     jobs.c.status.in_(("running", "pausing", "cancelling")),
                 )
                 .values(config_json=_json(frozen), updated_at=now)
@@ -1152,7 +1144,7 @@ class WebImportWorkerService:
             select(jobs.c.id).where(
                 jobs.c.id == fence.job_id,
                 jobs.c.attempt_id == fence.attempt_id,
-                jobs.c.lease_token == fence.lease_token,
+                jobs.c.worker_epoch_id == fence.worker_epoch_id,
                 jobs.c.status.in_(("running", "pausing", "cancelling")),
             )
         ).scalar_one_or_none() is not None

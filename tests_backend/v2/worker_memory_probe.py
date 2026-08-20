@@ -50,7 +50,7 @@ def main() -> int:
             pid=psutil.Process().pid,
         )
     )
-    repository = JobQueueRepository(engine, attempt_lease_seconds=120)
+    repository = JobQueueRepository(engine)
     created = repository.create_batch(
         kind="export",
         display_name=f"{item_count}-item memory probe",

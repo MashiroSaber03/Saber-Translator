@@ -18,10 +18,6 @@ vi.mock('@/api/client', () => ({
   },
 }))
 
-vi.mock('@/api/v2/content', () => ({
-  newIdempotencyKey: () => 'bookshelf-idempotency-key',
-}))
-
 const book = {
   id: 'book/id one',
   title: 'Book',
@@ -58,12 +54,6 @@ const constraints = {
         },
       ],
     },
-  },
-}
-
-const commandConfig = {
-  headers: {
-    'Idempotency-Key': 'bookshelf-idempotency-key',
   },
 }
 
@@ -107,7 +97,6 @@ describe('bookshelf v2 api contracts', () => {
     expect(postMock).toHaveBeenCalledWith(
       '/api/v2/books',
       { title: 'Book', tagIds: [] },
-      commandConfig,
     )
     expect(getMock).not.toHaveBeenCalled()
     expect(created).toMatchObject({ id: book.id, title: 'Book' })
@@ -133,7 +122,6 @@ describe('bookshelf v2 api contracts', () => {
           nonTranslate: constraints.payload.nonTranslate,
         },
       },
-      commandConfig,
     )
     expect(getMock).not.toHaveBeenCalled()
     expect(result).toEqual({
@@ -160,7 +148,7 @@ describe('bookshelf v2 api contracts', () => {
     expect((uploadedCover as File).name).toBe('cover.png')
     expect((uploadedCover as File).type).toBe('image/png')
     expect((uploadedCover as File).size).toBe(cover.size)
-    expect(config).toEqual(commandConfig)
+    expect(config).toBeUndefined()
     expect(method).toBe('put')
     expect(putMock).not.toHaveBeenCalled()
     expect(getMock).not.toHaveBeenCalled()
@@ -188,7 +176,6 @@ describe('bookshelf v2 api contracts', () => {
     expect(putMock).toHaveBeenCalledWith(
       '/api/v2/books/book%2Fid%20one',
       { tagIds: ['tag-id'] },
-      commandConfig,
     )
     expect(getMock).toHaveBeenCalledTimes(1)
     expect(getMock).toHaveBeenCalledWith('/api/v2/tags')
@@ -196,7 +183,7 @@ describe('bookshelf v2 api contracts', () => {
     expect(updated).not.toHaveProperty('chapters')
   })
 
-  it('uses direct chapter resources and idempotency headers', async () => {
+  it('uses direct chapter resources', async () => {
     putMock.mockResolvedValue({
       id: 'chapter/id one',
       title: 'Updated Chapter',
@@ -209,12 +196,8 @@ describe('bookshelf v2 api contracts', () => {
     expect(putMock).toHaveBeenCalledWith(
       '/api/v2/chapters/chapter%2Fid%20one',
       { title: 'Updated Chapter' },
-      commandConfig,
     )
-    expect(deleteMock).toHaveBeenCalledWith(
-      '/api/v2/chapters/chapter%2Fid%20one',
-      commandConfig,
-    )
+    expect(deleteMock).toHaveBeenCalledWith('/api/v2/chapters/chapter%2Fid%20one')
   })
 
   it('reorders chapters with the authoritative book revision', async () => {
@@ -230,7 +213,6 @@ describe('bookshelf v2 api contracts', () => {
         baseRevision: 3,
         orderedIds: ['chapter/id one', 'chapter two'],
       },
-      commandConfig,
     )
   })
 })

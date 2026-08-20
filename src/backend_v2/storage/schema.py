@@ -42,6 +42,15 @@ UUID_LENGTH = 36
 HASH_LENGTH = 64
 PLUGIN_ID_LENGTH = 100
 
+
+schema_metadata = Table(
+    "schema_metadata",
+    metadata,
+    Column("singleton_id", Integer, primary_key=True, server_default="1"),
+    Column("revision", String(64), nullable=False),
+    CheckConstraint("singleton_id = 1", name="single_row"),
+)
+
 JOB_STATUSES = (
     "queued",
     "running",
@@ -329,19 +338,12 @@ chapters = Table(
     Column("ordinal", Integer, nullable=False),
     Column("title", String(500), nullable=False),
     Column("page_order_revision", Integer, nullable=False, server_default="1"),
-    Column("write_intent_generation", Integer, nullable=False, server_default="0"),
     Column("settings_memory_json", Text, nullable=False, server_default="{}"),
-    Column("settings_memory_schema_version", Integer, nullable=False, server_default="1"),
     Column("settings_memory_revision", Integer, nullable=False, server_default="1"),
     *_timestamps(),
     UniqueConstraint("book_id", "ordinal"),
     CheckConstraint("ordinal >= 1", name="ordinal_positive"),
     CheckConstraint("page_order_revision >= 1", name="page_order_revision_positive"),
-    CheckConstraint("write_intent_generation >= 0", name="intent_generation_nonnegative"),
-    CheckConstraint(
-        "settings_memory_schema_version >= 1",
-        name="settings_memory_schema_version_positive",
-    ),
     CheckConstraint(
         "settings_memory_revision >= 1",
         name="settings_memory_revision_positive",
@@ -362,7 +364,6 @@ pages = Table(
     Column("detection_state", String(32), nullable=False, server_default="unprocessed"),
     Column("default_font_id", String(UUID_LENGTH), ForeignKey("fonts.id", ondelete="RESTRICT")),
     Column("page_style_defaults_json", Text, nullable=False, server_default="{}"),
-    Column("page_style_schema_version", Integer, nullable=False, server_default="2"),
     Column("warnings_json", Text, nullable=False, server_default="[]"),
     *_timestamps(),
     UniqueConstraint(
@@ -381,10 +382,6 @@ pages = Table(
     CheckConstraint(
         "rendered_revision IS NULL OR rendered_revision >= 1",
         name="rendered_revision_positive",
-    ),
-    CheckConstraint(
-        "page_style_schema_version >= 1",
-        name="page_style_schema_version_positive",
     ),
     CheckConstraint(
         "detection_state IN ('unprocessed','processed')",
@@ -425,16 +422,11 @@ bubbles = Table(
     Column("ordinal", Integer, nullable=False),
     Column("font_id", String(UUID_LENGTH), ForeignKey("fonts.id", ondelete="RESTRICT")),
     Column("payload_json", Text, nullable=False),
-    Column("payload_schema_version", Integer, nullable=False, server_default="2"),
     Column("updated_revision", Integer, nullable=False),
     *_timestamps(),
     UniqueConstraint("page_id", "ordinal"),
     CheckConstraint("ordinal >= 1", name="ordinal_positive"),
     CheckConstraint("updated_revision >= 1", name="updated_revision_positive"),
-    CheckConstraint(
-        "payload_schema_version >= 1",
-        name="payload_schema_version_positive",
-    ),
 )
 
 tags = Table(
@@ -459,10 +451,8 @@ translation_constraints = Table(
     Column("book_id", String(UUID_LENGTH), ForeignKey("books.id", ondelete="CASCADE"), primary_key=True),
     Column("revision", Integer, nullable=False, server_default="1"),
     Column("payload_json", Text, nullable=False, server_default="{}"),
-    Column("schema_version", Integer, nullable=False, server_default="1"),
     *_timestamps(),
     CheckConstraint("revision >= 1", name="revision_positive"),
-    CheckConstraint("schema_version >= 1", name="schema_version_positive"),
 )
 
 app_settings = Table(
@@ -532,7 +522,6 @@ web_import_drafts = Table(
     Column("status", String(24), nullable=False),
     Column("revision", Integer, nullable=False, server_default="1"),
     Column("config_json", Text, nullable=False),
-    Column("config_schema_version", Integer, nullable=False, server_default="1"),
     Column("temp_relative_path", Text, nullable=False),
     Column("expires_at", DateTime(timezone=True), nullable=False),
     *_timestamps(),
@@ -541,10 +530,6 @@ web_import_drafts = Table(
         name="status_values",
     ),
     CheckConstraint("revision >= 1", name="revision_positive"),
-    CheckConstraint(
-        "config_schema_version >= 1",
-        name="config_schema_version_positive",
-    ),
 )
 
 web_import_draft_pages = Table(
@@ -614,15 +599,12 @@ jobs = Table(
     Column("blocked_reason", String(64)),
     Column("blocked_by_job_id", String(UUID_LENGTH), ForeignKey("jobs.id", ondelete="SET NULL")),
     Column("attempt_id", String(UUID_LENGTH)),
-    Column("lease_token", String(200)),
-    Column("lease_expires_at", DateTime(timezone=True)),
     Column(
         "worker_epoch_id",
         String(UUID_LENGTH),
         ForeignKey("process_epochs.id", ondelete="SET NULL"),
     ),
     Column("config_json", Text, nullable=False),
-    Column("config_schema_version", Integer, nullable=False, server_default="1"),
     Column("latest_progress_json", Text, nullable=False),
     Column("target_display_json", Text, nullable=False, server_default="{}"),
     Column("started_at", DateTime(timezone=True)),
@@ -644,10 +626,6 @@ jobs = Table(
         "blocked_reason IS NULL OR blocked_reason IN ("
         "'blocked_by_job','draining_immediate_writes')",
         name="blocked_reason_values",
-    ),
-    CheckConstraint(
-        "config_schema_version >= 1",
-        name="config_schema_version_positive",
     ),
 )
 
@@ -724,7 +702,6 @@ job_steps = Table(
     Column("attempt_id", String(UUID_LENGTH)),
     Column("input_fingerprint", String(HASH_LENGTH)),
     Column("checkpoint_json", Text),
-    Column("checkpoint_schema_version", Integer, nullable=False, server_default="1"),
     Column("error_json", Text),
     *_timestamps(),
     UniqueConstraint("job_item_id", "ordinal"),
@@ -733,22 +710,6 @@ job_steps = Table(
         "status IN ('pending','running','completed','failed','skipped','cancelled')",
         name="status_values",
     ),
-    CheckConstraint(
-        "checkpoint_schema_version >= 1",
-        name="checkpoint_schema_version_positive",
-    ),
-)
-
-job_drain_acks = Table(
-    "job_drain_acks",
-    metadata,
-    Column("job_id", String(UUID_LENGTH), ForeignKey("jobs.id", ondelete="CASCADE"), primary_key=True),
-    Column("attempt_id", String(UUID_LENGTH), primary_key=True),
-    Column("pool_id", String(64), primary_key=True),
-    Column("worker_slot", Integer, primary_key=True),
-    Column("last_step_id", String(UUID_LENGTH), ForeignKey("job_steps.id", ondelete="SET NULL")),
-    Column("created_at", DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP")),
-    CheckConstraint("worker_slot >= 0", name="worker_slot_nonnegative"),
 )
 
 job_events = Table(
@@ -763,12 +724,7 @@ job_events = Table(
     Column("job_id", String(UUID_LENGTH), ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False),
     Column("event_type", String(64), nullable=False),
     Column("payload_json", Text, nullable=False, server_default="{}"),
-    Column("payload_schema_version", Integer, nullable=False, server_default="1"),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP")),
-    CheckConstraint(
-        "payload_schema_version >= 1",
-        name="payload_schema_version_positive",
-    ),
     sqlite_autoincrement=True,
 )
 Index("ix_job_events_job_cursor", job_events.c.job_id, job_events.c.id)
@@ -777,15 +733,6 @@ Index(
     job_items.c.job_id,
     job_items.c.status,
     job_items.c.ordinal,
-)
-
-job_config_snapshots = Table(
-    "job_config_snapshots",
-    metadata,
-    Column("job_id", String(UUID_LENGTH), ForeignKey("jobs.id", ondelete="CASCADE"), primary_key=True),
-    Column("payload_json", Text, nullable=False),
-    Column("schema_version", Integer, nullable=False),
-    CheckConstraint("schema_version >= 1", name="schema_version_positive"),
 )
 
 job_credential_snapshots = Table(
@@ -864,6 +811,10 @@ process_epochs = Table(
     Column("heartbeat_at", DateTime(timezone=True), nullable=False),
     Column("lease_expires_at", DateTime(timezone=True), nullable=False),
     Column("recovery_completed_at", DateTime(timezone=True)),
+    Column("model_release_request_id", String(UUID_LENGTH)),
+    Column("model_release_handled_id", String(UUID_LENGTH)),
+    Column("model_release_result_json", Text),
+    Column("model_release_error_json", Text),
     *_timestamps(),
     CheckConstraint("role IN ('launcher','api','worker')", name="role_values"),
     CheckConstraint("status IN ('active','lost','closed')", name="status_values"),
@@ -871,97 +822,12 @@ process_epochs = Table(
 )
 Index("ix_process_epochs_role_status", process_epochs.c.role, process_epochs.c.status)
 
-worker_leases = Table(
-    "worker_leases",
-    metadata,
-    Column("worker_epoch_id", String(UUID_LENGTH), ForeignKey("process_epochs.id", ondelete="CASCADE"), primary_key=True),
-    Column("token_hash", String(HASH_LENGTH), nullable=False),
-    Column("heartbeat_at", DateTime(timezone=True), nullable=False),
-    Column("lease_expires_at", DateTime(timezone=True), nullable=False),
-)
-
-worker_commands = Table(
-    "worker_commands",
-    metadata,
-    Column("id", String(UUID_LENGTH), primary_key=True),
-    Column("kind", String(64), nullable=False),
-    Column("status", String(16), nullable=False, server_default="pending"),
-    Column(
-        "worker_epoch_id",
-        String(UUID_LENGTH),
-        ForeignKey("process_epochs.id", ondelete="SET NULL"),
-    ),
-    Column("result_json", Text),
-    Column("error_json", Text),
-    Column("started_at", DateTime(timezone=True)),
-    Column("finished_at", DateTime(timezone=True)),
-    *_timestamps(),
-    CheckConstraint("kind IN ('release_models')", name="kind_values"),
-    CheckConstraint(
-        "status IN ('pending','running','completed','failed')",
-        name="status_values",
-    ),
-)
-Index(
-    "uq_worker_commands_one_active_kind",
-    worker_commands.c.kind,
-    unique=True,
-    sqlite_where=worker_commands.c.status.in_(("pending", "running")),
-)
-Index(
-    "ix_worker_commands_claim",
-    worker_commands.c.status,
-    worker_commands.c.created_at,
-)
-
-api_executor_leases = Table(
-    "api_executor_leases",
-    metadata,
-    Column("api_epoch_id", String(UUID_LENGTH), ForeignKey("process_epochs.id", ondelete="CASCADE"), primary_key=True),
-    Column("token_hash", String(HASH_LENGTH), nullable=False),
-    Column("heartbeat_at", DateTime(timezone=True), nullable=False),
-    Column("lease_expires_at", DateTime(timezone=True), nullable=False),
-)
-
-chapter_write_intents = Table(
-    "chapter_write_intents",
-    metadata,
-    Column("chapter_id", String(UUID_LENGTH), ForeignKey("chapters.id", ondelete="CASCADE"), primary_key=True),
-    Column("job_id", String(UUID_LENGTH), ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False),
-    Column("intent_set_id", String(UUID_LENGTH), nullable=False),
-    Column("intent_generation", Integer, nullable=False),
-    Column(
-        "worker_epoch_id",
-        String(UUID_LENGTH),
-        ForeignKey("process_epochs.id", ondelete="CASCADE"),
-        nullable=False,
-    ),
-    Column("lease_token", String(200), nullable=False),
-    Column("lease_expires_at", DateTime(timezone=True), nullable=False),
-    Column("created_at", DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP")),
-    CheckConstraint("intent_generation >= 1", name="generation_positive"),
-)
-Index(
-    "ix_chapter_write_intents_job_set",
-    chapter_write_intents.c.job_id,
-    chapter_write_intents.c.intent_set_id,
-)
-Index(
-    "ix_chapter_write_intents_epoch_expiry",
-    chapter_write_intents.c.worker_epoch_id,
-    chapter_write_intents.c.lease_expires_at,
-)
-
 chapter_write_locks = Table(
     "chapter_write_locks",
     metadata,
     Column("chapter_id", String(UUID_LENGTH), ForeignKey("chapters.id", ondelete="CASCADE"), primary_key=True),
     Column("job_id", String(UUID_LENGTH), ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False),
-    Column("lock_generation", Integer, nullable=False),
-    Column("owner_attempt_id", String(UUID_LENGTH)),
-    Column("lease_token", String(200)),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP")),
-    CheckConstraint("lock_generation >= 1", name="generation_positive"),
 )
 Index("ix_chapter_write_locks_job", chapter_write_locks.c.job_id)
 
@@ -996,7 +862,6 @@ studio_documents = Table(
     Column("last_review_json", Text),
     Column("last_diagnostics_json", Text),
     Column("last_validated_at", DateTime(timezone=True)),
-    Column("schema_version", Integer, nullable=False, server_default="2"),
     *_timestamps(),
     CheckConstraint("revision >= 1", name="revision_positive"),
     CheckConstraint(
@@ -1007,7 +872,6 @@ studio_documents = Table(
         "origin_type IN ('analysis','manual','imported')",
         name="origin_type_values",
     ),
-    CheckConstraint("schema_version >= 1", name="schema_version_positive"),
 )
 
 studio_chat_sessions = Table(
@@ -1029,16 +893,11 @@ studio_chat_sessions = Table(
     Column("summary_through_message_id", String(UUID_LENGTH)),
     Column("summary_generation", Integer, nullable=False, server_default="0"),
     Column("runtime_state_json", Text, nullable=False, server_default="{}"),
-    Column("runtime_schema_version", Integer, nullable=False, server_default="1"),
     Column("archived_at", DateTime(timezone=True)),
     *_timestamps(),
     CheckConstraint("revision >= 1", name="revision_positive"),
     CheckConstraint("generation >= 1", name="generation_positive"),
     CheckConstraint("summary_generation >= 0", name="summary_generation_nonnegative"),
-    CheckConstraint(
-        "runtime_schema_version >= 1",
-        name="runtime_schema_version_positive",
-    ),
 )
 Index(
     "uq_studio_chat_sessions_one_active",
@@ -1766,13 +1625,10 @@ operations = Table(
     Column("base_revision", Integer),
     Column("base_generation", Integer),
     Column("request_json", Text, nullable=False),
-    Column("request_schema_version", Integer, nullable=False, server_default="1"),
     Column("result_json", Text),
     Column("error_json", Text),
     Column("executor_epoch_id", String(UUID_LENGTH), ForeignKey("process_epochs.id", ondelete="SET NULL")),
     Column("attempt_id", String(UUID_LENGTH)),
-    Column("lease_token", String(200)),
-    Column("lease_expires_at", DateTime(timezone=True)),
     Column("started_at", DateTime(timezone=True)),
     Column("finished_at", DateTime(timezone=True)),
     *_timestamps(),
@@ -1817,10 +1673,6 @@ operations = Table(
     CheckConstraint(
         "base_generation IS NULL OR base_generation >= 1",
         name="base_generation_positive",
-    ),
-    CheckConstraint(
-        "request_schema_version >= 1",
-        name="request_schema_version_positive",
     ),
 )
 Index(
@@ -1974,8 +1826,6 @@ transient_requests = Table(
     Column("result_json", Text),
     Column("worker_epoch_id", String(UUID_LENGTH), ForeignKey("process_epochs.id", ondelete="SET NULL")),
     Column("attempt_id", String(UUID_LENGTH)),
-    Column("lease_token", String(200)),
-    Column("lease_expires_at", DateTime(timezone=True)),
     Column("completed_at", DateTime(timezone=True)),
     Column("consumed_at", DateTime(timezone=True)),
     *_timestamps(),
@@ -2010,8 +1860,6 @@ render_requests = Table(
     Column("status", String(16), nullable=False, server_default="pending"),
     Column("executor_epoch_id", String(UUID_LENGTH), ForeignKey("process_epochs.id", ondelete="SET NULL")),
     Column("attempt_id", String(UUID_LENGTH)),
-    Column("lease_token", String(200)),
-    Column("lease_expires_at", DateTime(timezone=True)),
     Column("error_json", Text),
     *_timestamps(),
     CheckConstraint("requested_revision >= 1", name="requested_revision_positive"),
@@ -2139,12 +1987,10 @@ _FOREIGN_KEY_LOOKUP_INDEXES = (
     ("ix_jobs_blocked_by_job_id", jobs.c.blocked_by_job_id),
     ("ix_jobs_worker_epoch_id", jobs.c.worker_epoch_id),
     ("ix_job_items_page_id", job_items.c.page_id),
-    ("ix_job_drain_acks_last_step_id", job_drain_acks.c.last_step_id),
     ("ix_job_asset_inputs_asset_id", job_asset_inputs.c.asset_id),
     ("ix_job_asset_inputs_job_item_id", job_asset_inputs.c.job_item_id),
     ("ix_job_step_asset_outputs_asset_id", job_step_asset_outputs.c.asset_id),
     ("ix_job_artifacts_asset_id", job_artifacts.c.asset_id),
-    ("ix_worker_commands_worker_epoch_id", worker_commands.c.worker_epoch_id),
     ("ix_studio_documents_book_id", studio_documents.c.book_id),
     ("ix_studio_documents_avatar_asset_id", studio_documents.c.avatar_asset_id),
     ("ix_studio_chat_sessions_summary_message", studio_chat_sessions.c.summary_through_message_id),

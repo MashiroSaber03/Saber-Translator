@@ -3,17 +3,17 @@ from __future__ import annotations
 from datetime import datetime
 import json
 from pathlib import Path
-import os
-import subprocess
-import sys
 
 import pytest
-from alembic.config import Config
-from alembic.script import ScriptDirectory
 from sqlalchemy import CheckConstraint, UniqueConstraint, insert, inspect, text
 from sqlalchemy.exc import IntegrityError
 
 from src.backend_v2.storage.database import create_sqlite_engine
+from src.backend_v2.storage.lifecycle import (
+    SCHEMA_REVISION,
+    initialize_database,
+    schema_smoke_test,
+)
 from src.backend_v2.storage.schema import (
     assets,
     books,
@@ -27,11 +27,6 @@ from src.backend_v2.storage.schema import (
     pages,
     web_import_drafts,
 )
-
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-FOUNDATION_REVISION = "v2_foundation_20260819"
-
 
 def _stored_job_progress(status: str) -> str:
     return json.dumps(
@@ -78,12 +73,10 @@ def test_schema_contains_backend_first_ownership_tables(engine) -> None:
         "job_steps",
         "operations",
         "process_epochs",
-        "worker_leases",
-        "api_executor_leases",
-        "chapter_write_intents",
         "chapter_write_locks",
         "object_commit_journal",
         "idempotency_records",
+        "schema_metadata",
     }
     with engine.connect() as connection:
         actual = {
@@ -705,48 +698,24 @@ def test_continuation_current_image_flags_are_unique(engine) -> None:
             )
 
 
-def test_formal_migration_tree_contains_only_the_v2_foundation() -> None:
-    config = Config(str(PROJECT_ROOT / "alembic.ini"))
-    scripts = ScriptDirectory.from_config(config)
-    revisions = list(scripts.walk_revisions())
-
-    assert scripts.get_current_head() == FOUNDATION_REVISION
-    assert [(revision.revision, revision.down_revision) for revision in revisions] == [
-        (FOUNDATION_REVISION, None)
-    ]
-
-
-def test_v2_foundation_builds_the_exact_schema_and_downgrades_cleanly(
+def test_current_foundation_builds_the_exact_schema(
     tmp_path: Path,
 ) -> None:
-    database_path = tmp_path / "migration.sqlite3"
-    environment = os.environ.copy()
-    environment["SABER_V2_DATABASE_URL"] = (
-        f"sqlite+pysqlite:///{database_path.resolve().as_posix()}"
-    )
-    command = [
-        sys.executable,
-        "-m",
-        "alembic",
-        "-c",
-        str(PROJECT_ROOT / "alembic.ini"),
-    ]
-    subprocess.run(
-        [*command, "upgrade", "head"],
-        cwd=PROJECT_ROOT,
-        env=environment,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
+    data_root = tmp_path / "data-v2"
+    data_root.mkdir()
+    initialized = initialize_database(data_root)
+    database_path = initialized.database_path
+
+    assert initialized.created is True
+    assert initialized.schema_revision == SCHEMA_REVISION
+    assert schema_smoke_test(database_path) == SCHEMA_REVISION
 
     engine = create_sqlite_engine(database_path)
     with engine.connect() as connection:
         assert connection.execute(text("PRAGMA foreign_key_check")).all() == []
         assert connection.execute(
-            text("SELECT version_num FROM alembic_version")
-        ).scalar_one() == FOUNDATION_REVISION
+            text("SELECT revision FROM schema_metadata WHERE singleton_id = 1")
+        ).scalar_one() == SCHEMA_REVISION
         actual_tables = {
             str(row[0])
             for row in connection.execute(
@@ -754,7 +723,7 @@ def test_v2_foundation_builds_the_exact_schema_and_downgrades_cleanly(
             )
             if not str(row[0]).startswith("sqlite_")
         }
-        assert actual_tables == set(metadata.tables) | {"alembic_version"}
+        assert actual_tables == set(metadata.tables)
         inspector = inspect(connection)
         for table in metadata.tables.values():
             expected_checks = {
@@ -775,35 +744,3 @@ def test_v2_foundation_builds_the_exact_schema_and_downgrades_cleanly(
         ).scalar_one()
         assert "WHERE status IN" in index_sql
     engine.dispose()
-
-    subprocess.run(
-        [*command, "check"],
-        cwd=PROJECT_ROOT,
-        env=environment,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-
-    subprocess.run(
-        [*command, "downgrade", "base"],
-        cwd=PROJECT_ROOT,
-        env=environment,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-
-    engine = create_sqlite_engine(database_path)
-    with engine.connect() as connection:
-        remaining_tables = {
-            str(row[0])
-            for row in connection.execute(
-                text("SELECT name FROM sqlite_master WHERE type='table'")
-            )
-            if not str(row[0]).startswith("sqlite_")
-        }
-    engine.dispose()
-    assert remaining_tables == {"alembic_version"}

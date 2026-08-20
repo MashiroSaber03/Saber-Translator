@@ -23,7 +23,7 @@ from src.backend_v2.storage.schema import (
     metadata,
     operations,
     pages,
-    worker_commands,
+    process_epochs,
 )
 from src.backend_v2.storage.seeding import seed_system_records
 from src.backend_v2.worker.model_lifecycle import (
@@ -93,13 +93,12 @@ def test_manual_model_release_is_durable_and_worker_fenced(
     assert released == ["plugins"]
     with engine.connect() as connection:
         command = connection.execute(
-            select(worker_commands).where(
-                worker_commands.c.id == accepted["commandId"]
+            select(process_epochs).where(
+                process_epochs.c.id == worker_epoch_id
             )
         ).mappings().one()
-    assert command["status"] == "completed"
-    assert command["worker_epoch_id"] == worker_epoch_id
-    assert '"releasedCount":1' in str(command["result_json"])
+    assert command["model_release_handled_id"] == accepted["commandId"]
+    assert '"releasedCount":1' in str(command["model_release_result_json"])
 
 
 def test_manual_release_retries_same_epoch_after_busy_completion(
@@ -139,21 +138,21 @@ def test_manual_release_retries_same_epoch_after_busy_completion(
     with pytest.raises(sqlite3.OperationalError, match="locked"):
         lifecycle.run_pending_release()
     with engine.connect() as connection:
-        status_after_busy = connection.execute(
-            select(worker_commands.c.status).where(
-                worker_commands.c.id == accepted["commandId"]
+        handled_after_busy = connection.execute(
+            select(process_epochs.c.model_release_handled_id).where(
+                process_epochs.c.id == worker_epoch_id
             )
-        ).scalar_one()
-    assert status_after_busy == "running"
+        ).scalar_one_or_none()
+    assert handled_after_busy is None
 
     assert lifecycle.run_pending_release() is True
     with engine.connect() as connection:
-        final_status = connection.execute(
-            select(worker_commands.c.status).where(
-                worker_commands.c.id == accepted["commandId"]
+        handled_id = connection.execute(
+            select(process_epochs.c.model_release_handled_id).where(
+                process_epochs.c.id == worker_epoch_id
             )
         ).scalar_one()
-    assert final_status == "completed"
+    assert handled_id == accepted["commandId"]
     assert release_calls == 2
     assert completion_calls == 2
 
@@ -175,7 +174,6 @@ def test_release_endpoint_returns_409_during_local_model_inference(
                 request_json="{}",
                 executor_epoch_id=worker_epoch_id,
                 attempt_id=str(uuid.uuid4()),
-                lease_token="lease",
             )
         )
     app = Flask("model-control-test")

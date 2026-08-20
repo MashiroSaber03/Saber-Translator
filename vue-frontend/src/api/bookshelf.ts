@@ -1,5 +1,4 @@
 import { apiClient } from './client'
-import { newIdempotencyKey } from './v2/content'
 import type { components } from '@/api/generated/v2'
 import type { BookData, ChapterData, TagData } from '@/types'
 import type { BookTranslationConstraints } from '@/types/bookTranslationConstraints'
@@ -25,14 +24,6 @@ export interface GetBooksParams {
 }
 
 export type BookBatchDeleteResult = components['schemas']['BookBatchDeleteResult']
-
-function idempotencyConfig() {
-  return {
-    headers: {
-      'Idempotency-Key': newIdempotencyKey(),
-    },
-  }
-}
 
 function bookPath(bookId: string, suffix = ''): string {
   return `${BOOKS_ENDPOINT}/${encodeURIComponent(bookId)}${suffix}`
@@ -124,7 +115,6 @@ export async function updateBookTranslationConstraints(
       baseRevision,
       payload: constraints,
     },
-    idempotencyConfig(),
   )
   return {
     constraints: document.payload,
@@ -188,12 +178,10 @@ export async function createBook(
     ? await apiClient.upload<V2Book>(
         BOOKS_ENDPOINT,
         createBookFormData(title, tagIds, cover),
-        idempotencyConfig(),
       )
     : await apiClient.post<V2Book>(
         BOOKS_ENDPOINT,
         { title, tagIds },
-        idempotencyConfig(),
       )
   return toBook(created)
 }
@@ -211,7 +199,7 @@ export async function updateBook(
     ? await apiClient.upload<V2Book & { chapters?: V2Chapter[] }>(
         bookPath(bookId),
         updateBookFormData({ title: data.title, cover: data.cover }, tagIds),
-        idempotencyConfig(),
+        undefined,
         'put',
       )
     : await apiClient.put<V2Book & { chapters?: V2Chapter[] }>(
@@ -220,13 +208,12 @@ export async function updateBook(
           ...(data.title !== undefined ? { title: data.title } : {}),
           ...(tagIds !== undefined ? { tagIds } : {}),
         },
-        idempotencyConfig(),
       )
   return toBook(updated)
 }
 
 export async function deleteBook(bookId: string): Promise<void> {
-  await apiClient.delete(bookPath(bookId), idempotencyConfig())
+  await apiClient.delete(bookPath(bookId))
   chapterOrderRevisions.delete(bookId)
 }
 
@@ -234,7 +221,6 @@ export function batchDeleteBooks(bookIds: string[]): Promise<BookBatchDeleteResu
   return apiClient.post<BookBatchDeleteResult>(
     `${BOOKS_ENDPOINT}/batch-delete`,
     { bookIds },
-    idempotencyConfig(),
   )
 }
 
@@ -247,7 +233,6 @@ export async function batchUpdateBookTags(
   return apiClient.post(
     `${BOOKS_ENDPOINT}/batch-tags`,
     { bookIds, tagIds, action },
-    idempotencyConfig(),
   )
 }
 
@@ -258,7 +243,6 @@ export async function createChapter(
   const chapter = await apiClient.post<V2Chapter>(
     bookPath(bookId, '/chapters'),
     { title },
-    idempotencyConfig(),
   )
   return toChapter(chapter)
 }
@@ -270,14 +254,13 @@ export async function updateChapter(
   return apiClient.put<V2ChapterTitleResult>(
     chapterPath(chapterId),
     { title },
-    idempotencyConfig(),
   )
 }
 
 export async function deleteChapter(
   chapterId: string,
 ): Promise<void> {
-  await apiClient.delete(chapterPath(chapterId), idempotencyConfig())
+  await apiClient.delete(chapterPath(chapterId))
 }
 
 export async function reorderChapters(
@@ -295,7 +278,6 @@ export async function reorderChapters(
       baseRevision,
       orderedIds: chapterIds,
     },
-    idempotencyConfig(),
   )
   chapterOrderRevisions.set(bookId, result.chapterOrderRevision)
 }
@@ -312,7 +294,6 @@ export async function createTag(
   const tag = await apiClient.post<V2Tag>(
     TAGS_ENDPOINT,
     { name, color },
-    idempotencyConfig(),
   )
   return rememberTag(tag)
 }
@@ -327,7 +308,6 @@ export async function deleteTag(tagName: string): Promise<void> {
   const tagId = requireTagId(tagName)
   await apiClient.delete(
     `${TAGS_ENDPOINT}/${encodeURIComponent(tagId)}`,
-    idempotencyConfig(),
   )
   tagIdsByName.delete(tagName)
 }
@@ -341,7 +321,6 @@ export async function updateTag(
   const tag = await apiClient.put<V2Tag>(
     `${TAGS_ENDPOINT}/${encodeURIComponent(tagId)}`,
     { name, color },
-    idempotencyConfig(),
   )
   tagIdsByName.delete(currentName)
   return rememberTag(tag)

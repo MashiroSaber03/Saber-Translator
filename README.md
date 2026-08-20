@@ -412,7 +412,7 @@ npm run dev
 
 ## 🛠️ 技术栈 (Tech Stack)
 
-*   **后端:** Python 3.12, Flask, Waitress, SQLAlchemy/Alembic, SQLite, PyTorch, MangaOCR/RapidOCR, Pillow, OpenCV, `openai`, LiteLAMA/LAMA-MPE, PyMuPDF.
+*   **后端:** Python 3.12, Flask, Waitress, SQLAlchemy, SQLite, PyTorch, MangaOCR/RapidOCR, Pillow, OpenCV, `openai`, LiteLAMA/LAMA-MPE, PyMuPDF.
 *   **前端:** **Vue 3**, **Vite**, **TypeScript**, **Pinia**, Axios；只承担交互、展示和媒体窗口加载。
 *   **文本检测:** Default (DBNet ResNet34), CTD (Comic Text Detector), YSGYolo.
 *   **图像修复:** LAMA-MPE, LiteLAMA.

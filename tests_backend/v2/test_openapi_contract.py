@@ -18,6 +18,40 @@ SPEC_PATH = PROJECT_ROOT / "openapi" / "v2.yaml"
 GENERATED_TYPES = PROJECT_ROOT / "vue-frontend" / "src" / "api" / "generated" / "v2.ts"
 V2_API_DIRECTORY = PROJECT_ROOT / "vue-frontend" / "src" / "api" / "v2"
 HTTP_METHODS = frozenset({"get", "post", "put", "patch", "delete"})
+UNKEYED_STATE_COMMANDS = frozenset(
+    {
+        "batchDeleteBooks",
+        "batchUpdateBookTags",
+        "cancelJob",
+        "cancelQueuedJobBatchMembers",
+        "cancelQueuedJobs",
+        "clearChapterPages",
+        "clearJobHistory",
+        "continueInterruptedJob",
+        "continueJobBatchMembers",
+        "createBook",
+        "createChapter",
+        "createTag",
+        "deleteBook",
+        "deleteChapter",
+        "deletePage",
+        "deleteTag",
+        "pauseRunningJob",
+        "prioritizeQueuedJobBatchMembers",
+        "promoteQuickWorkspace",
+        "reorderChapterPages",
+        "reorderChapters",
+        "reorderJobs",
+        "resetQuickWorkspace",
+        "resumePausedJob",
+        "updateBook",
+        "updateBookTranslationConstraints",
+        "updateChapter",
+        "updateChapterLastVisitedPage",
+        "updateChapterSettingsMemory",
+        "updateTag",
+    }
+)
 
 
 def _document() -> dict[str, Any]:
@@ -212,20 +246,26 @@ def test_required_backend_first_commands_are_explicit() -> None:
     }
 
 
-def test_mutating_commands_use_idempotency_keys() -> None:
+def test_idempotency_keys_are_reserved_for_replayable_commands() -> None:
     document = _document()
+    found_unkeyed_state_commands: set[str] = set()
     for path, path_item in document["paths"].items():
         for method in ("post", "put", "patch", "delete"):
             operation = path_item.get(method)
             if operation is None:
                 continue
-            if operation.get("x-command-mode") == "transient":
-                continue
             parameters = [*path_item.get("parameters", []), *operation.get("parameters", [])]
             refs = {parameter.get("$ref") for parameter in parameters}
-            assert (
-                "#/components/parameters/IdempotencyKey" in refs
-            ), f"{method.upper()} {path} has no Idempotency-Key"
+            has_key = "#/components/parameters/IdempotencyKey" in refs
+            operation_id = operation["operationId"]
+            if operation.get("x-command-mode") == "transient":
+                assert not has_key, f"{operation_id} is transient but requires Idempotency-Key"
+            elif operation_id in UNKEYED_STATE_COMMANDS:
+                found_unkeyed_state_commands.add(operation_id)
+                assert not has_key, f"{operation_id} is a simple state command"
+            else:
+                assert has_key, f"{method.upper()} {path} has no Idempotency-Key"
+    assert found_unkeyed_state_commands == UNKEYED_STATE_COMMANDS
 
 
 def test_typescript_client_is_generated_from_the_contract() -> None:

@@ -41,7 +41,6 @@ from src.backend_v2.storage.schema import (
     app_settings,
     assets,
     bubbles,
-    job_config_snapshots,
     job_credential_snapshots,
     job_items,
     job_step_asset_outputs,
@@ -817,7 +816,6 @@ def test_translation_job_executes_all_steps_and_publishes_each_page(
         jobs=repository,
         algorithms=DeterministicFakeProvider(),
     )
-    assert repository.claim_next(worker_epoch_id=platform["epoch_id"]) is None
     fence = repository.claim_next(worker_epoch_id=platform["epoch_id"])
     assert fence is not None
     while (step := repository.next_step(fence)) is not None:
@@ -1467,7 +1465,7 @@ def test_translation_rejects_a_stale_style_source_revision(
     )
 
 
-def test_translation_rejects_noncurrent_style_source_schema(
+def test_translation_rejects_malformed_style_source(
     translation_platform,
 ) -> None:
     platform = translation_platform
@@ -1482,10 +1480,10 @@ def test_translation_rejects_noncurrent_style_source_schema(
         connection.execute(
             update(pages)
             .where(pages.c.id == platform["page_id"])
-            .values(page_style_schema_version=1)
+            .values(page_style_defaults_json="{}")
         )
 
-    with pytest.raises(ValueError, match="style source page schema version"):
+    with pytest.raises(ValueError, match="page text style is missing fields"):
         TranslationJobCommandService(platform["engine"]).create_chapter_job(
             chapter_id=str(platform["chapter"]["id"]),
             config={
@@ -1500,7 +1498,7 @@ def test_translation_rejects_noncurrent_style_source_schema(
     assert JobQueueRepository(platform["engine"]).list_jobs(limit=10)["items"] == []
 
 
-def test_translation_rejects_noncurrent_style_target_schema(
+def test_translation_rejects_malformed_style_target(
     translation_platform,
 ) -> None:
     platform = translation_platform
@@ -1516,10 +1514,10 @@ def test_translation_rejects_noncurrent_style_target_schema(
         connection.execute(
             update(pages)
             .where(pages.c.id == target_page_id)
-            .values(page_style_schema_version=1)
+            .values(page_style_defaults_json="{}")
         )
 
-    with pytest.raises(ValueError, match="style target page schema version"):
+    with pytest.raises(ValueError, match="page text style is missing fields"):
         TranslationJobCommandService(platform["engine"]).create_chapter_job(
             chapter_id=str(platform["chapter"]["id"]),
             config={
@@ -2527,9 +2525,7 @@ def test_translation_constraints_are_frozen_extracted_and_consumed(
     with platform["engine"].connect() as connection:
         frozen = json.loads(
             connection.execute(
-                select(job_config_snapshots.c.payload_json).where(
-                    job_config_snapshots.c.job_id == job_id
-                )
+                select(jobs.c.config_json).where(jobs.c.id == job_id)
             ).scalar_one()
         )
         auto_checkpoint = json.loads(
@@ -2975,9 +2971,7 @@ def test_failed_item_retry_refreezes_current_backend_settings(
     with platform["engine"].connect() as connection:
         frozen = json.loads(
             connection.execute(
-                select(job_config_snapshots.c.payload_json).where(
-                    job_config_snapshots.c.job_id == replacement_id
-                )
+                select(jobs.c.config_json).where(jobs.c.id == replacement_id)
             ).scalar_one()
         )
     detail = JobQueueRepository(platform["engine"]).get_job(replacement_id)
@@ -3065,9 +3059,7 @@ def test_translation_job_resolves_backend_settings_and_reuses_manual_bubbles(
     with platform["engine"].connect() as connection:
         frozen = json.loads(
             connection.execute(
-                select(job_config_snapshots.c.payload_json).where(
-                    job_config_snapshots.c.job_id == job_id
-                )
+                select(jobs.c.config_json).where(jobs.c.id == job_id)
             ).scalar_one()
         )
         steps = list(
