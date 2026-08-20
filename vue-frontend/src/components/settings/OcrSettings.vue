@@ -149,7 +149,7 @@
           :show-api-key="providerRequiresApiKey(settings.aiVisionOcr.provider)"
           :show-base-url="false"
           :include-base-url="false"
-          api-key-placeholder="请输入API Key"
+          :api-key-placeholder="aiVisionApiKeyRequired ? '请输入API Key' : '本地无鉴权服务可留空'"
           :has-stored-credential="
             settingsStore.hasCredential('ai_vision_ocr', settings.aiVisionOcr.provider)
           "
@@ -318,6 +318,7 @@ import { ref, computed } from 'vue'
 import {
   normalizeProviderId,
   providerRequiresApiKey,
+  providerRequiresApiKeyForBaseUrl,
   providerRequiresBaseUrl,
   providerSupportsCapability,
 } from '@/config/aiProviders'
@@ -365,6 +366,10 @@ const baiduStoredCredentialPlaceholder = computed(() =>
   baiduStoredCredentialHint.value ? '已保存在后端，留空保持不变' : ''
 )
 const isTesting = ref(false)
+const aiVisionApiKeyRequired = computed(() => providerRequiresApiKeyForBaseUrl(
+  settings.value.aiVisionOcr.provider,
+  settings.value.aiVisionOcr.customBaseUrl,
+))
 function notifyModelDiscovery(message: string, tone: AiModelDiscoveryMessageTone): void {
   toast[tone](message)
 }
@@ -379,7 +384,13 @@ const aiVisionModelDiscovery = useAiModelDiscovery({
     ),
   }),
   fetcher: (provider, apiKey, baseUrl) => fetchV2Models(provider, apiKey, baseUrl, 'ai_vision_ocr'),
+  requiresApiKey: provider => providerRequiresApiKeyForBaseUrl(
+    provider,
+    settingsStore.settings.aiVisionOcr.customBaseUrl,
+  ),
   notify: notifyModelDiscovery,
+  emptyMessage: () => '服务未返回模型列表，也可以直接填写模型名称',
+  errorMessage: error => `${error instanceof Error ? error.message : '获取模型列表失败'}；也可以直接填写模型名称`,
   emptyBaseUrl: '',
 })
 const { isFetchingModels } = aiVisionModelDiscovery
@@ -519,7 +530,7 @@ async function testAiVisionOcr() {
   const modelName = settings.value.aiVisionOcr.modelName?.trim()
   const customBaseUrl = settings.value.aiVisionOcr.customBaseUrl?.trim()
   if (
-    providerRequiresApiKey(provider)
+    providerRequiresApiKeyForBaseUrl(provider, customBaseUrl)
     && !apiKey
     && !settingsStore.hasCredential('ai_vision_ocr', provider)
   ) {

@@ -113,6 +113,15 @@ describe('web import provider settings', () => {
       providerConfigs,
     })).toBeNull()
 
+    const fractionalTimeouts = createDefaultWebImportSettings()
+    fractionalTimeouts.agent.timeout = 120.5
+    fractionalTimeouts.download.timeout = 30.25
+    expect(parseWebImportSettingsPayload({
+      webImportSettingsSchemaVersion: WEB_IMPORT_SETTINGS_SCHEMA_VERSION,
+      settings: fractionalTimeouts,
+      providerConfigs,
+    })).not.toBeNull()
+
     const largeDimensions = createDefaultWebImportSettings()
     largeDimensions.imagePreprocess.compression.maxWidth = 1_000_000
     largeDimensions.imagePreprocess.compression.maxHeight = 1_000_000

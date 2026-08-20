@@ -88,7 +88,12 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
 
     @blueprint.errorhandler(ContentLocked)
     def locked(error: ContentLocked):
-        return _error("chapter_locked", str(error), 423)
+        return _error(
+            "chapter_locked",
+            str(error),
+            423,
+            details=error.details,
+        )
 
     @blueprint.errorhandler(UnsupportedImage)
     def unsupported_image(error: UnsupportedImage):

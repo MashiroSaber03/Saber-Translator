@@ -174,6 +174,29 @@ describe('settings provider select contracts', () => {
     ))).toBe(true)
   })
 
+  it('keeps continuous detection fields on decimal input steps', () => {
+    const wrapper = mount(DetectionSettings, globalMountOptions(pinia))
+    const numberFields = wrapper.findAllComponents({ name: 'UiNumberField' })
+    const fieldsById = new Map(numberFields.map(field => [field.props('inputId'), field]))
+    const expectedSteps = new Map<string, number>([
+      ['settingsMinTextBlockAreaPercent', 0.01],
+      ['settingsAuxYoloConfThreshold', 0.05],
+      ['settingsAuxYoloOverlapThreshold', 0.05],
+      ['settingsSaberYoloRefineOverlapThreshold', 0.1],
+      ['settingsBoxExpandRatio', 0.1],
+      ['settingsBoxExpandTop', 0.1],
+      ['settingsBoxExpandBottom', 0.1],
+      ['settingsBoxExpandLeft', 0.1],
+      ['settingsBoxExpandRight', 0.1],
+      ['settingsMaskBoxExpandRatio', 0.1],
+    ])
+
+    for (const [inputId, step] of expectedSteps) {
+      expect(fieldsById.get(inputId)?.props('step')).toBe(step)
+    }
+    expect(fieldsById.get('settingsMaskDilateSize')?.props('step')).toBe(1)
+  })
+
   it('routes HQ translation labels and hints through typed UiField props', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/components/settings/HqTranslationSettings.vue'), 'utf8')
 

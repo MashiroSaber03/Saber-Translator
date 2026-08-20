@@ -38,6 +38,7 @@ from src.shared.ai_providers import (
     TRANSLATION_CAPABILITY,
     VISION_OCR_CAPABILITY,
     get_provider_manifest,
+    provider_requires_api_key,
 )
 from src.shared.paddleocr_vl import PADDLEOCR_VL_LANGUAGE_NAMES
 
@@ -762,10 +763,6 @@ def _validate_ai_provider_section(
         or not credential_version_id.strip()
     ):
         raise ValueError(f"{label}凭据版本必须是非空字符串")
-    if manifest.requires_api_key and credential_version_id is None:
-        raise ValueError(
-            f"{label}缺少已保存的 API Key，请先在设置中填写并保存"
-        )
     model_value = section.get("model_name", "")
     if not isinstance(model_value, str):
         raise ValueError(f"{label}模型名称必须是字符串")
@@ -778,6 +775,10 @@ def _validate_ai_provider_section(
     base_url = base_url_value.strip()
     if manifest.requires_base_url and not base_url:
         raise ValueError(f"{label}缺少 Base URL，请先在设置中填写并保存")
+    if provider_requires_api_key(provider, base_url) and credential_version_id is None:
+        raise ValueError(
+            f"{label}缺少已保存的 API Key，请先在设置中填写并保存"
+        )
 
 
 def _validate_ocr_section(value: object) -> None:

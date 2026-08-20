@@ -602,6 +602,7 @@ describe('PluginManager', () => {
     expect(numberField.props('nullable')).toBe(false)
     expect(numberField.props('min')).toBe(0)
     expect(numberField.props('max')).toBe(10)
+    expect(numberField.props('step')).toBe(0.1)
 
     numberField.vm.$emit('update:modelValue', 0)
     await flushPromises()

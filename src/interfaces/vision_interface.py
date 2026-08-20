@@ -12,6 +12,7 @@ from src.shared.ai_providers import (
     VISION_OCR_CAPABILITY,
     get_provider_manifest,
     normalize_provider_id,
+    provider_requires_api_key,
     provider_supports_capability,
     resolve_provider_base_url,
 )
@@ -80,7 +81,7 @@ def call_ai_vision_ocr_service(image_pil, provider='siliconflow', api_key=None, 
         manifest = get_provider_manifest(provider_lower)
         if not provider_supports_capability(provider_lower, VISION_OCR_CAPABILITY):
             raise ValueError(f"不支持的AI视觉OCR服务提供商: {provider}")
-        if manifest.requires_api_key and not api_key:
+        if provider_requires_api_key(provider_lower, custom_base_url) and not api_key:
             raise ValueError(f"未提供 {provider} 的API密钥")
         if manifest.requires_model and not model_name:
             raise ValueError(f"未提供 {provider} 的模型名称")

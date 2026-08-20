@@ -152,7 +152,14 @@ class ContentConflict(RuntimeError):
 
 
 class ContentLocked(RuntimeError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        details: dict[str, object] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.details = details
 
 
 class IdempotencyConflict(ContentConflict):
@@ -2798,48 +2805,65 @@ class ContentRepository:
         session_document = studio_documents.alias(
             "content_guard_session_document"
         )
-        active_job = connection.execute(  # type: ignore[attr-defined]
-            select(jobs.c.id).where(
-                jobs.c.status.in_(NONTERMINAL_JOB_STATUSES),
-                or_(
-                    jobs.c.book_id == book_id,
-                    jobs.c.chapter_id.in_(chapter_ids) if chapter_ids else False,
-                ),
-            ).limit(1)
-        ).scalar_one_or_none()
-        active_operation = connection.execute(  # type: ignore[attr-defined]
-            select(operations.c.id)
-            .join(pages, pages.c.id == operations.c.page_id, isouter=True)
-            .join(
-                studio_documents,
-                studio_documents.c.id == operations.c.studio_document_id,
-                isouter=True,
-            )
-            .join(
-                studio_chat_sessions,
-                studio_chat_sessions.c.id == operations.c.studio_session_id,
-                isouter=True,
-            )
-            .join(
-                session_document,
-                session_document.c.id == studio_chat_sessions.c.document_id,
-                isouter=True,
-            )
-            .where(
-                operations.c.status.in_(ACTIVE_OPERATION_STATUSES),
-                or_(
-                    (
-                        pages.c.chapter_id.in_(chapter_ids)
-                        if chapter_ids
-                        else False
+        active_jobs = list(
+            connection.execute(  # type: ignore[attr-defined]
+                select(jobs.c.id, jobs.c.status).where(
+                    jobs.c.status.in_(NONTERMINAL_JOB_STATUSES),
+                    or_(
+                        jobs.c.book_id == book_id,
+                        jobs.c.chapter_id.in_(chapter_ids) if chapter_ids else False,
                     ),
-                    studio_documents.c.book_id == book_id,
-                    session_document.c.book_id == book_id,
-                ),
-            ).limit(1)
-        ).scalar_one_or_none()
-        if active_job or active_operation:
-            raise ContentLocked("quick workspace is still referenced by active work")
+                )
+            ).mappings()
+        )
+        active_operation_ids = [
+            str(value)
+            for value in connection.execute(  # type: ignore[attr-defined]
+                select(operations.c.id)
+                .join(pages, pages.c.id == operations.c.page_id, isouter=True)
+                .join(
+                    studio_documents,
+                    studio_documents.c.id == operations.c.studio_document_id,
+                    isouter=True,
+                )
+                .join(
+                    studio_chat_sessions,
+                    studio_chat_sessions.c.id == operations.c.studio_session_id,
+                    isouter=True,
+                )
+                .join(
+                    session_document,
+                    session_document.c.id == studio_chat_sessions.c.document_id,
+                    isouter=True,
+                )
+                .where(
+                    operations.c.status.in_(ACTIVE_OPERATION_STATUSES),
+                    or_(
+                        (
+                            pages.c.chapter_id.in_(chapter_ids)
+                            if chapter_ids
+                            else False
+                        ),
+                        studio_documents.c.book_id == book_id,
+                        session_document.c.book_id == book_id,
+                    ),
+                )
+            ).scalars()
+        ]
+        if active_jobs or active_operation_ids:
+            raise ContentLocked(
+                "content is still referenced by active work",
+                details={
+                    "jobs": [
+                        {
+                            "jobId": str(row["id"]),
+                            "status": str(row["status"]),
+                        }
+                        for row in active_jobs
+                    ],
+                    "operationIds": active_operation_ids,
+                },
+            )
 
     @staticmethod
     def _replace_book_tags(

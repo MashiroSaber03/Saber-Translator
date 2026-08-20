@@ -299,6 +299,18 @@ def test_plugin_manifest_requires_current_complete_config_schema() -> None:
     with pytest.raises(PluginContractError, match="field mismatch"):
         validate_config(schema, {})
 
+    numeric_schema = normalize_config_schema(
+        {
+            "ratio": {
+                "type": "number",
+                "default": 1.25,
+                "minimum": 0.5,
+                "maximum": 2.5,
+            }
+        }
+    )
+    assert validate_config(numeric_schema, {"ratio": 1.75}) == {"ratio": 1.75}
+
 
 def test_atomic_plugin_schema_requires_exact_fields_and_shape() -> None:
     page_id = str(uuid.uuid4())

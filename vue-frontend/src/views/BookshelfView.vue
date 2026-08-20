@@ -122,6 +122,11 @@ function openEditBookModal(bookId: string) {
   showBookModal.value = true
 }
 
+function closeBookDetail() {
+  detailRequestVersion += 1
+  showDetailModal.value = false
+}
+
 async function openBookDetail(bookId: string) {
   const requestVersion = ++detailRequestVersion
   try {
@@ -478,7 +483,7 @@ async function applyBatchTags() {
 
     <BookDetailModal
       v-if="showDetailModal"
-      @close="showDetailModal = false"
+      @close="closeBookDetail"
       @edit="openEditBookModal"
     />
 

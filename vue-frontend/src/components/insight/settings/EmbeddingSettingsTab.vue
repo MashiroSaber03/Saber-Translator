@@ -219,7 +219,7 @@ useInsightSettingsDraft<StoreEmbeddingConfig>({
         v-model="timeoutSeconds"
         input-id="insight-embedding-timeout-seconds"
         :min="0"
-        :step="1"
+        :step="0.1"
       />
     </UiField>
   </InsightSettingsPanel>

@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 import hashlib
 import json
+import math
 from pathlib import Path
 import shutil
 from typing import Any, Mapping, Sequence
@@ -89,6 +90,24 @@ def _web_integer(
     return selected
 
 
+def _web_number(
+    value: Mapping[str, Any],
+    name: str,
+    field: str,
+    *,
+    minimum: float,
+) -> float:
+    selected = value.get(name)
+    if (
+        isinstance(selected, bool)
+        or not isinstance(selected, (int, float))
+        or not math.isfinite(selected)
+        or selected < minimum
+    ):
+        raise WebImportDataInvalid(f"{field}.{name} is invalid")
+    return float(selected)
+
+
 def _web_boolean(value: Mapping[str, Any], name: str, field: str) -> bool:
     selected = value.get(name)
     if not isinstance(selected, bool):
@@ -136,7 +155,7 @@ def validate_web_import_options(value: object) -> dict[str, Any]:
     if not required.issubset(options) or set(options) - required - optional:
         raise WebImportDataInvalid("web import options fields are invalid")
     _web_integer(options, "concurrency", "web import options", minimum=1)
-    _web_integer(options, "timeout", "web import options", minimum=1)
+    _web_number(options, "timeout", "web import options", minimum=1)
     _web_integer(options, "retries", "web import options", minimum=0)
     _web_integer(options, "delay", "web import options", minimum=0)
     referer = options["referer"]
@@ -171,7 +190,7 @@ def validate_web_import_options(value: object) -> dict[str, Any]:
         "web import options.agent",
         minimum=0,
     )
-    _web_integer(
+    _web_number(
         agent,
         "timeout",
         "web import options.agent",

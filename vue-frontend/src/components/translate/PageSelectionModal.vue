@@ -8,7 +8,9 @@ import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import type { ProductThumbnailGridItem } from '@/components/product/ProductThumbnailGrid.vue'
 import VirtualThumbnailGrid from '@/components/virtual/VirtualThumbnailGrid.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiField from '@/components/ui/UiField.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
+import UiInput from '@/components/ui/UiInput.vue'
 import { computed, ref, watch } from 'vue'
 
 import BaseModal from '@/components/common/BaseModal.vue'
@@ -16,7 +18,12 @@ import { useFolderTree } from '@/composables/useFolderTree'
 import { useThumbnailSelection } from '@/composables/useThumbnailSelection'
 import { useImageStore } from '@/stores/imageStore'
 import type { ImageData } from '@/types/image'
-import { clampPageSelection, createPageSelectionSummary, normalizePageSelection } from '@/utils/pageSelection'
+import {
+  clampPageSelection,
+  createPageSelectionSummary,
+  normalizePageSelection,
+  parsePageSelectionText,
+} from '@/utils/pageSelection'
 
 const props = defineProps<{
   modelValue: boolean
@@ -58,12 +65,16 @@ const {
 } = useThumbnailSelection(images)
 
 const draftSelectedPages = ref<number[]>([])
+const pageSelectionText = ref('')
+const pageSelectionInputError = ref('')
 
 watch(
   () => props.modelValue,
   (isOpen) => {
     if (isOpen) {
       draftSelectedPages.value = clampPageSelection(props.selectedPages, totalImages.value)
+      pageSelectionText.value = ''
+      pageSelectionInputError.value = ''
       resetToRoot()
     }
   },
@@ -122,6 +133,19 @@ function clearSelection(): void {
 
 function replaceSelection(pages: number[]): void {
   draftSelectedPages.value = clampPageSelection(pages, totalImages.value)
+}
+
+function updatePageSelectionText(value: string | number): void {
+  pageSelectionText.value = String(value)
+  pageSelectionInputError.value = ''
+}
+
+function applyPageSelectionText(): void {
+  const result = parsePageSelectionText(pageSelectionText.value, totalImages.value)
+  pageSelectionInputError.value = result.error
+  if (!result.error) {
+    draftSelectedPages.value = result.pages
+  }
 }
 
 function handleThumbnailClick(index: number): void {
@@ -195,6 +219,36 @@ function buildThumbnailItem(image: ImageData, index: number): ProductThumbnailGr
           />
         </template>
       </ProductStatusBanner>
+
+      <div class="page-selection-input-card">
+        <UiField
+          variant="dialog"
+          label="直接输入页码"
+          control-id="page-selection-input"
+          hint="支持单页和范围，例如：1,3,5-10"
+          :error="pageSelectionInputError"
+        >
+          <div class="page-selection-input-row">
+            <UiInput
+              id="page-selection-input"
+              :model-value="pageSelectionText"
+              :error="pageSelectionInputError"
+              type="text"
+              placeholder="例如：1,3,5-10"
+              @update:model-value="updatePageSelectionText"
+              @keydown.enter.prevent="applyPageSelectionText"
+            />
+            <UiButton
+              variant="primary"
+              type="button"
+              data-testid="apply-page-selection-input"
+              @click="applyPageSelectionText"
+            >
+              应用
+            </UiButton>
+          </div>
+        </UiField>
+      </div>
 
       <ProductActionRow
         class="page-selection-shortcuts"
@@ -331,6 +385,19 @@ function buildThumbnailItem(image: ImageData, index: number): ProductThumbnailGr
   box-shadow: 0 8px 20px var(--page-selection-modal-shadow-raised);
 }
 
+.page-selection-input-card {
+  padding: 12px;
+  border: 1px solid var(--page-selection-modal-border-subtle);
+  border-radius: 14px;
+  background: var(--color-surface-muted);
+}
+
+.page-selection-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
 .page-selection-shortcuts {
   padding: 12px;
   border: 1px solid var(--page-selection-modal-border-subtle);
@@ -392,6 +459,12 @@ function buildThumbnailItem(image: ImageData, index: number): ProductThumbnailGr
     --product-thumbnail-grid-min-size: 120px;
 
     grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  }
+}
+
+@media (--breakpoint-sm-down) {
+  .page-selection-input-row {
+    grid-template-columns: 1fr;
   }
 }
 </style>

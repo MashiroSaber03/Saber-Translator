@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const { settingsStoreMock, taskCenterStoreMock } = vi.hoisted(() => ({
   settingsStoreMock: {
     backendError: '',
+    isBackendReady: true,
     initSettings: vi.fn(),
     loadFromBackend: vi.fn(),
   },
@@ -41,8 +42,34 @@ function createTestRouter() {
 describe('App reader immersion', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    settingsStoreMock.backendError = ''
+    settingsStoreMock.isBackendReady = true
     settingsStoreMock.loadFromBackend.mockResolvedValue(undefined)
     taskCenterStoreMock.initialize.mockResolvedValue(undefined)
+  })
+
+  it('does not label a recoverable save error as restricted mode', async () => {
+    settingsStoreMock.backendError = 'translation.boxExpand.ratio must be a number'
+    settingsStoreMock.isBackendReady = true
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+    const wrapper = mount(App, {
+      global: {
+        plugins: [router],
+        stubs: {
+          ProductConfirmProvider: true,
+          ProductTextInputProvider: true,
+          TaskCenterDrawer: true,
+          TaskCenterLauncher: true,
+          ToastNotification: true,
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('.backend-restricted-banner').exists()).toBe(false)
+    wrapper.unmount()
   })
 
   it('does not mount or initialize the task center on the reader route', async () => {

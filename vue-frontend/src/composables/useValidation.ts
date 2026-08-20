@@ -3,6 +3,7 @@ import {
   getProviderDisplayName,
   normalizeProviderId,
   providerRequiresApiKey,
+  providerRequiresApiKeyForBaseUrl,
   providerRequiresBaseUrl,
   providerRequiresModel,
   providerSupportsCapability,
@@ -82,7 +83,10 @@ export function useValidation() {
         }
         if (
           aiVisionOcr?.provider &&
-          providerRequiresApiKey(normalizeProviderId(aiVisionOcr.provider)) &&
+          providerRequiresApiKeyForBaseUrl(
+            normalizeProviderId(aiVisionOcr.provider),
+            aiVisionOcr.customBaseUrl,
+          ) &&
           !hasUsableApiKey(
             aiVisionOcr?.apiKey,
             'ai_vision_ocr',

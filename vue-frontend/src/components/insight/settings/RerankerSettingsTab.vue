@@ -201,7 +201,7 @@ useInsightSettingsDraft<StoreRerankerConfig>({
         v-model="timeoutSeconds"
         input-id="reranker-timeout-seconds"
         :min="0"
-        :step="1"
+        :step="0.1"
       />
     </UiField>
   </InsightSettingsPanel>

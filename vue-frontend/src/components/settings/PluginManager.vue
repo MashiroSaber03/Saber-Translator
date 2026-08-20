@@ -185,6 +185,7 @@
                 :model-value="getNumberConfigValue(key)"
                 :min="field.minimum"
                 :max="field.maximum"
+                :step="0.1"
                 @update:model-value="value => setConfigValue(key, value)"
               />
             </template>

@@ -57,4 +57,18 @@ describe('useValidation', () => {
 
     expect(useValidation().validateBeforeTranslation('normal')).toBe(false)
   })
+
+  it('allows a local custom AI vision OCR service without an API key', async () => {
+    const { useValidation } = await import('@/composables/useValidation')
+    const settingsStore = useSettingsStore()
+    settingsStore.setOcrEngine('ai_vision')
+    settingsStore.setAiVisionOcrProvider('custom')
+    settingsStore.updateAiVisionOcr({
+      apiKey: '',
+      modelName: 'local-vision-model',
+      customBaseUrl: 'http://127.0.0.1:8000/v1',
+    })
+
+    expect(useValidation().validateBeforeTranslation('ocr')).toBe(true)
+  })
 })

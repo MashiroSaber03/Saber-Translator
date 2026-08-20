@@ -135,7 +135,7 @@ const settingsFetchCases: SettingsFetchCase[] = [
       { inputId: 'insight-embedding-rpm-limit', min: 0 },
       { inputId: 'insight-embedding-transport-retries', min: 0 },
       { inputId: 'insight-embedding-business-retries', min: 0 },
-      { inputId: 'insight-embedding-timeout-seconds', min: 0, step: 1 },
+      { inputId: 'insight-embedding-timeout-seconds', min: 0, step: 0.1 },
     ],
     configureStore: (store) => {
       store.updateEmbeddingConfig({
@@ -160,7 +160,7 @@ const settingsFetchCases: SettingsFetchCase[] = [
     expectedNumberFields: [
       { inputId: 'reranker-transport-retries', min: 0 },
       { inputId: 'reranker-business-retries', min: 0 },
-      { inputId: 'reranker-timeout-seconds', min: 0, step: 1 },
+      { inputId: 'reranker-timeout-seconds', min: 0, step: 0.1 },
     ],
     configureStore: (store) => {
       store.updateRerankerConfig({

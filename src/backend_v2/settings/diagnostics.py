@@ -32,6 +32,7 @@ from src.shared.ai_providers import (
     WEB_IMPORT_AGENT_CAPABILITY,
     get_provider_manifest,
     normalize_provider_id,
+    provider_requires_api_key,
     provider_supports_capability,
 )
 from src.backend_v2.settings.validation import is_proofreading_provider_domain
@@ -130,9 +131,9 @@ class ProviderDiagnostics:
                 else "api_key"
             ),
         )
-        if manifest.requires_api_key and not api_key:
-            raise DiagnosticRequestError("API key is required")
         base_url = self._optional_string(body, "baseUrl")
+        if provider_requires_api_key(provider, base_url) and not api_key:
+            raise DiagnosticRequestError("API key is required")
         if manifest.requires_base_url and not base_url:
             raise DiagnosticRequestError("baseUrl is required")
         models = self.chat.list_models(
@@ -274,7 +275,7 @@ class ProviderDiagnostics:
         manifest = get_provider_manifest(provider)
         model = self._required_string(body, "model")
         base_url = self._optional_string(body, "baseUrl")
-        if manifest.requires_api_key and not api_key:
+        if provider_requires_api_key(provider, base_url) and not api_key:
             raise DiagnosticRequestError("API key is required")
         if manifest.requires_base_url and not base_url:
             raise DiagnosticRequestError("baseUrl is required")
@@ -561,10 +562,18 @@ class ProviderDiagnostics:
             return dict(raw)
         domain = self._optional_string(body, "domain")
         if domain:
-            return self.settings.resolve_provider_secret(
-                domain=domain,
-                provider=provider,
-            )
+            try:
+                return self.settings.resolve_provider_secret(
+                    domain=domain,
+                    provider=provider,
+                )
+            except LookupError:
+                if not provider_requires_api_key(
+                    provider,
+                    self._optional_string(body, "baseUrl"),
+                ):
+                    return {}
+                raise
         return {}
 
     @staticmethod

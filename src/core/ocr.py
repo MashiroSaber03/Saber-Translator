@@ -13,6 +13,7 @@ from src.interfaces.vision_interface import call_ai_vision_ocr_service
 from src.shared.ai_providers import (
     get_provider_manifest,
     normalize_provider_id,
+    provider_requires_api_key,
 )
 from src.shared.openai_options import (
     DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
@@ -283,7 +284,10 @@ def _recognize_with_ai_vision_results(
     if not ai_vision_provider:
         raise ValueError("AI视觉OCR配置不完整")
     manifest = get_provider_manifest(ai_vision_provider)
-    if manifest.requires_api_key and not ai_vision_api_key:
+    if (
+        provider_requires_api_key(ai_vision_provider, custom_ai_vision_base_url)
+        and not ai_vision_api_key
+    ):
         raise ValueError("AI视觉OCR需要提供API Key")
     if manifest.requires_model and not ai_vision_model_name:
         raise ValueError("AI视觉OCR需要提供模型名称")

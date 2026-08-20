@@ -24,12 +24,13 @@ from src.shared.ai_providers import (
     VISION_OCR_CAPABILITY,
     get_provider_manifest,
     normalize_provider_id,
+    provider_requires_api_key,
     provider_supports_capability,
     resolve_provider_base_url,
     resolve_provider_base_url_for_capability,
     resolve_provider_endpoint_for_capability,
 )
-from src.shared.http_config import build_httpx_kwargs
+from src.shared.http_config import build_httpx_kwargs, is_local_service
 from src.shared.openai_execution import (
     OpenAICompatibleEmptyContentError,
     OpenAICompatibleRuntimeOptions,
@@ -38,7 +39,6 @@ from src.shared.openai_execution import (
     clone_openai_compatible_runtime_options,
     resolve_openai_compatible_invocation,
 )
-from src.shared.openai_helpers import resolve_openai_api_key
 from src.shared.openai_options import (
     OpenAICompatibleOptions,
     clone_openai_compatible_options,
@@ -462,9 +462,13 @@ def _resolve_capability_base_url(
     return resolve_provider_base_url_for_capability(provider, capability, base_url)
 
 
-def _require_provider_api_key(provider: str, api_key: Optional[str]) -> None:
+def _require_provider_api_key(
+    provider: str,
+    api_key: Optional[str],
+    base_url: Optional[str],
+) -> None:
     manifest = get_provider_manifest(provider)
-    if manifest.requires_api_key and (
+    if provider_requires_api_key(provider, base_url) and (
         not isinstance(api_key, str) or not api_key.strip()
     ):
         raise ValueError(f"{manifest.display_name}需要 API Key")
@@ -491,14 +495,13 @@ def _calculate_backoff(
 
 def _build_auth_headers(
     api_key: Optional[str],
-    base_url: Optional[str],
     *,
     include_content_type: bool = True,
 ) -> Dict[str, str]:
     headers: Dict[str, str] = {}
-    resolved_api_key = resolve_openai_api_key(api_key, base_url)
-    if resolved_api_key:
-        headers["Authorization"] = f"Bearer {resolved_api_key}"
+    normalized_api_key = api_key.strip() if isinstance(api_key, str) else ""
+    if normalized_api_key:
+        headers["Authorization"] = f"Bearer {normalized_api_key}"
     if include_content_type:
         headers["Content-Type"] = "application/json"
     return headers
@@ -531,8 +534,8 @@ class OpenAICompatibleChatTransport:
         before_request: Optional[Callable[[], None]] = None,
     ) -> str:
         invocation = _resolve_chat_invocation(request, resolved_invocation)
-        _require_provider_api_key(invocation.provider, request.api_key)
         base_url = resolve_provider_base_url(invocation.provider, request.base_url)
+        _require_provider_api_key(invocation.provider, request.api_key, base_url)
         limiter = SharedRPMLimiter(
             invocation.effective_options.execution.rpm_limit,
             provider=invocation.provider,
@@ -631,20 +634,27 @@ class OpenAICompatibleChatTransport:
         provider = normalize_provider_id(request.provider)
         if not provider_supports_capability(provider, MODEL_FETCH_CAPABILITY):
             raise ValueError(f"{request.provider} 不支持模型列表")
-        _require_provider_api_key(provider, request.api_key)
+        base_url = resolve_provider_base_url(request.provider, request.base_url)
+        _require_provider_api_key(provider, request.api_key, base_url)
         if provider == "gemini":
             return self._list_gemini_models(request)
 
-        base_url = resolve_provider_base_url(request.provider, request.base_url)
         if not base_url:
             raise ValueError("该服务商需要提供 Base URL")
         models_url = _build_models_url(base_url)
 
         with httpx.Client(**build_httpx_kwargs(base_url, request.timeout)) as client:
-            response = client.get(
-                models_url,
-                headers=_build_auth_headers(request.api_key, base_url, include_content_type=False),
+            headers = _build_auth_headers(
+                request.api_key,
+                include_content_type=False,
             )
+            response = client.get(models_url, headers=headers)
+            if (
+                getattr(response, "status_code", None) in {401, 403}
+                and is_local_service(base_url)
+                and "Authorization" in headers
+            ):
+                response = client.get(models_url, headers={})
             response.raise_for_status()
             data = response.json()
         if not isinstance(data, dict) or not isinstance(data.get("data"), list):
@@ -686,7 +696,7 @@ class OpenAICompatibleChatTransport:
                     response = client.request(
                         method=method,
                         url=url,
-                        headers=_build_auth_headers(api_key, base_url),
+                        headers=_build_auth_headers(api_key),
                         json=body,
                     )
 
@@ -755,7 +765,7 @@ class OpenAICompatibleChatTransport:
                     with client.stream(
                         "POST",
                         url,
-                        headers=_build_auth_headers(request.api_key, base_url),
+                        headers=_build_auth_headers(request.api_key),
                         json=body,
                     ) as response:
                         if response.status_code in RETRYABLE_STATUS_CODES and attempt < max_retries:
@@ -872,8 +882,8 @@ class AsyncOpenAICompatibleTransport:
         before_request: Optional[Callable[[], Awaitable[None]]] = None,
     ) -> str:
         invocation = _resolve_chat_invocation(request, resolved_invocation)
-        _require_provider_api_key(invocation.provider, request.api_key)
         base_url = resolve_provider_base_url(invocation.provider, request.base_url)
+        _require_provider_api_key(invocation.provider, request.api_key, base_url)
         limiter = SharedRPMLimiter(
             invocation.effective_options.execution.rpm_limit,
             provider=invocation.provider,
@@ -947,12 +957,12 @@ class AsyncOpenAICompatibleTransport:
     async def embed(self, request: UnifiedEmbeddingRequest) -> List[List[float]]:
         if not provider_supports_capability(request.provider, EMBEDDING_CAPABILITY):
             raise ValueError(f"{request.provider} 不支持嵌入向量")
-        _require_provider_api_key(request.provider, request.api_key)
         base_url = _resolve_capability_base_url(
             request.provider,
             request.base_url,
             EMBEDDING_CAPABILITY,
         )
+        _require_provider_api_key(request.provider, request.api_key, base_url)
         if not base_url:
             raise ValueError("缺少 Base URL")
         url = f"{base_url.rstrip('/')}/embeddings"
@@ -976,12 +986,12 @@ class AsyncOpenAICompatibleTransport:
     async def rerank(self, request: UnifiedRerankRequest) -> Dict[str, Any]:
         if not provider_supports_capability(request.provider, RERANK_CAPABILITY):
             raise ValueError(f"{request.provider} 不支持重排")
-        _require_provider_api_key(request.provider, request.api_key)
         base_url = _resolve_capability_base_url(
             request.provider,
             request.base_url,
             RERANK_CAPABILITY,
         )
+        _require_provider_api_key(request.provider, request.api_key, base_url)
         if not base_url:
             raise ValueError("缺少 Base URL")
         endpoint = request.endpoint or resolve_provider_endpoint_for_capability(
@@ -1030,7 +1040,7 @@ class AsyncOpenAICompatibleTransport:
                         response = await client.request(
                             method=method,
                             url=url,
-                            headers=_build_auth_headers(api_key, base_url),
+                            headers=_build_auth_headers(api_key),
                             json=body,
                         )
                 except TimeoutError as exc:
@@ -1117,7 +1127,7 @@ class AsyncOpenAICompatibleTransport:
                         async with client.stream(
                             "POST",
                             url,
-                            headers=_build_auth_headers(request.api_key, base_url),
+                            headers=_build_auth_headers(request.api_key),
                             json=body,
                         ) as response:
                             if (

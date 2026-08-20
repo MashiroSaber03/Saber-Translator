@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
+import { ApiClientError } from '@/api/client'
 import { getBookDetail } from '@/api/bookshelf'
 import { showToast } from '@/utils/toast'
 import BaseModal from '@/components/common/BaseModal.vue'
@@ -40,6 +41,12 @@ const isReordering = ref(false)
 const currentBook = computed(() => bookshelfStore.currentBook)
 const chapters = computed(() => currentBook.value?.chapters || [])
 const allTags = computed(() => bookshelfStore.tags)
+const IMMEDIATE_DELETE_CANCEL_STATUSES = new Set(['queued', 'paused', 'interrupted'])
+
+interface DeleteRequest {
+  bookId: string
+  chapterId?: string
+}
 
 function formatDate(dateStr?: string): string {
   if (!dateStr) return '-'
@@ -70,33 +77,96 @@ function deleteCurrentBook() {
   showDeleteConfirm.value = true
 }
 
+function lockJobIds(error: unknown, immediateOnly = false): string[] {
+  if (!(error instanceof ApiClientError)) return []
+  const details = error.details
+  if (!details || typeof details !== 'object' || Array.isArray(details)) return []
+  const operations = 'operationIds' in details ? details.operationIds : undefined
+  const jobs = 'jobs' in details ? details.jobs : undefined
+  if (!Array.isArray(jobs) || !Array.isArray(operations)) return []
+  if (immediateOnly && operations.length > 0) return []
+
+  const jobIds: string[] = []
+  for (const value of jobs) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return []
+    const jobId = 'jobId' in value ? value.jobId : undefined
+    const status = 'status' in value ? value.status : undefined
+    if (
+      typeof jobId !== 'string'
+      || !jobId
+      || typeof status !== 'string'
+      || (immediateOnly && !IMMEDIATE_DELETE_CANCEL_STATUSES.has(status))
+    ) return []
+    jobIds.push(jobId)
+  }
+  return [...new Set(jobIds)]
+}
+
+async function tryCancelDeleteBlockers(error: unknown): Promise<boolean> {
+  const jobIds = lockJobIds(error, true)
+  if (jobIds.length === 0) return false
+  try {
+    for (const jobId of jobIds) {
+      const job = await taskCenterStore.cancel(jobId)
+      if (job.status !== 'cancelled') return false
+    }
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function executeDelete(request: DeleteRequest): Promise<void> {
+  if (request.chapterId) {
+    await bookshelfStore.deleteChapterApi(request.bookId, request.chapterId)
+  } else {
+    await bookshelfStore.deleteBookApi(request.bookId)
+  }
+}
+
 async function confirmDelete() {
   if (isDeleting.value) return
+  const bookId = currentBook.value?.id
+  if (!bookId) return
+  const request: DeleteRequest = {
+    bookId,
+    chapterId: deleteTarget.value === 'chapter'
+      ? deleteChapterId.value || undefined
+      : undefined,
+  }
+  if (deleteTarget.value === 'chapter' && !request.chapterId) return
+
   isDeleting.value = true
   try {
-    if (deleteTarget.value === 'book' && currentBook.value) {
-      await bookshelfStore.deleteBookApi(currentBook.value.id)
+    try {
+      await executeDelete(request)
+    } catch (error) {
+      if (
+        !(error instanceof ApiClientError)
+        || error.status !== 423
+        || !(await tryCancelDeleteBlockers(error))
+      ) {
+        throw error
+      }
+      await executeDelete(request)
+    }
+
+    if (!request.chapterId) {
       showToast('书籍已删除', 'success')
       emit('close')
-    } else if (deleteTarget.value === 'chapter' && deleteChapterId.value && currentBook.value) {
-      const deletedChapterId = deleteChapterId.value
-      await bookshelfStore.deleteChapterApi(currentBook.value.id, deletedChapterId)
+    } else {
       const nextSelection = new Set(selectedChapterIds.value)
-      nextSelection.delete(deletedChapterId)
+      nextSelection.delete(request.chapterId)
       selectedChapterIds.value = nextSelection
       showToast('章节已删除', 'success')
     }
   } catch (error) {
-    if (
-      error
-      && typeof error === 'object'
-      && 'status' in error
-      && error.status === 423
-    ) {
-      showToast('存在进行中的任务或导入，请先在任务中心处理', 'warning')
+    if (error instanceof ApiClientError && error.status === 423) {
+      showToast('仍有正在执行的任务或导入，请先在任务中心处理', 'warning')
       taskCenterStore.open({
-        bookId: currentBook.value?.id,
-        chapterId: deleteChapterId.value || undefined,
+        jobId: lockJobIds(error)[0],
+        bookId: request.bookId,
+        chapterId: request.chapterId,
       })
     } else {
       showToast(error instanceof Error ? error.message : '删除失败', 'error')
@@ -181,12 +251,7 @@ async function saveChapter() {
       showChapterModal.value = false
     }
   } catch (error) {
-    const status = (
-      error
-      && typeof error === 'object'
-      && 'status' in error
-    ) ? Number(error.status) : 0
-    if (status === 423) {
+    if (error instanceof ApiClientError && error.status === 423) {
       showToast('本章存在进行中的任务，请先在任务中心取消或等待任务结束', 'warning')
       taskCenterStore.open({
         bookId: currentBook.value.id,

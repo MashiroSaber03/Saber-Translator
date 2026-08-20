@@ -167,6 +167,37 @@ describe('PageSelectionModal', () => {
     expect(browserCardBlocks).toHaveLength(1)
   })
 
+  it('replaces draft selection from directly entered pages and ranges', async () => {
+    const wrapper = mount(PageSelectionModal, {
+      props: {
+        modelValue: true,
+        selectedPages: [2],
+      },
+    })
+
+    await wrapper.get('#page-selection-input').setValue('1,3-4')
+    await wrapper.get('[data-testid="apply-page-selection-input"]').trigger('click')
+    await wrapper.get('[data-testid="confirm-page-selection-button"]').trigger('click')
+
+    expect(wrapper.emitted('confirm')?.[0]).toEqual([[1, 3, 4]])
+  })
+
+  it('keeps the previous draft selection when direct page input is invalid', async () => {
+    const wrapper = mount(PageSelectionModal, {
+      props: {
+        modelValue: true,
+        selectedPages: [2],
+      },
+    })
+
+    await wrapper.get('#page-selection-input').setValue('1,5')
+    await wrapper.get('[data-testid="apply-page-selection-input"]').trigger('click')
+
+    expect(wrapper.text()).toContain('页码 5 超出当前总页数 4')
+    await wrapper.get('[data-testid="confirm-page-selection-button"]').trigger('click')
+    expect(wrapper.emitted('confirm')?.[0]).toEqual([[2]])
+  })
+
   it('emits one close update for one modal close request', () => {
     const wrapper = mount(PageSelectionModal, {
       props: { modelValue: true, selectedPages: [] },

@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import * as bookshelfApi from '@/api/bookshelf'
+import { ApiClientError } from '@/api/client'
 import type { BookData, ChapterData, TagData } from '@/types/api'
 import { BOOKSHELF_DEFAULT_TAG_COLOR } from '@/constants/bookshelf'
 
@@ -28,6 +29,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   const error = ref<string | null>(null)
   const tagsError = ref<string | null>(null)
   let booksRequestVersion = 0
+  let bookDetailRequestVersion = 0
   let tagsRequestVersion = 0
 
   const currentBook = computed(() => {
@@ -98,15 +100,13 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
 
   function deleteBook(bookId: string): void {
     const index = books.value.findIndex(book => book.id === bookId)
-    if (index >= 0) {
-      books.value.splice(index, 1)
-      if (currentBookId.value === bookId) {
-        currentBookId.value = null
-        currentBookDetail.value = null
-      }
-      if (selectedBookIds.value.delete(bookId)) {
-        selectedBookIds.value = new Set(selectedBookIds.value)
-      }
+    if (index >= 0) books.value.splice(index, 1)
+    if (currentBookId.value === bookId) {
+      currentBookId.value = null
+      currentBookDetail.value = null
+    }
+    if (selectedBookIds.value.delete(bookId)) {
+      selectedBookIds.value = new Set(selectedBookIds.value)
     }
   }
 
@@ -249,6 +249,37 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     error.value = message
   }
 
+  function invalidateBookReads(): void {
+    booksRequestVersion += 1
+    bookDetailRequestVersion += 1
+    isLoading.value = false
+  }
+
+  async function bookNoLongerExists(bookId: string): Promise<boolean> {
+    try {
+      await bookshelfApi.getBookDetail(bookId)
+      return false
+    } catch (error) {
+      return error instanceof ApiClientError && error.status === 404
+    }
+  }
+
+  async function chapterNoLongerExists(
+    bookId: string,
+    chapterId: string,
+  ): Promise<'book' | 'chapter' | false> {
+    try {
+      const book = await bookshelfApi.getBookDetail(bookId)
+      return book.chapters?.some(chapter => chapter.id === chapterId)
+        ? false
+        : 'chapter'
+    } catch (error) {
+      return error instanceof ApiClientError && error.status === 404
+        ? 'book'
+        : false
+    }
+  }
+
   function setCurrentBook(bookId: string | null): void {
     currentBookId.value = bookId
     currentBookDetail.value = bookId
@@ -293,8 +324,10 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   }
 
   async function loadBookDetail(bookId: string): Promise<BookData | null> {
+    const requestVersion = ++bookDetailRequestVersion
     try {
       const book = await bookshelfApi.getBookDetail(bookId)
+      if (requestVersion !== bookDetailRequestVersion) return null
       upsertBook(book)
       return book
     } catch {
@@ -339,7 +372,16 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   }
 
   async function deleteBookApi(bookId: string): Promise<void> {
-    await bookshelfApi.deleteBook(bookId)
+    try {
+      await bookshelfApi.deleteBook(bookId)
+    } catch (error) {
+      const status = error instanceof ApiClientError ? error.status : 0
+      if (
+        status !== 404
+        && !(status !== 423 && await bookNoLongerExists(bookId))
+      ) throw error
+    }
+    invalidateBookReads()
     deleteBook(bookId)
   }
 
@@ -347,6 +389,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     bookIds: string[],
   ): Promise<bookshelfApi.BookBatchDeleteResult> {
     const result = await bookshelfApi.batchDeleteBooks(bookIds)
+    invalidateBookReads()
     deleteBooks(result.deleted)
     return result
   }
@@ -418,8 +461,19 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   }
 
   async function deleteChapterApi(bookId: string, chapterId: string): Promise<void> {
-    await bookshelfApi.deleteChapter(chapterId)
-    deleteChapter(bookId, chapterId)
+    let deletedTarget: 'book' | 'chapter' = 'chapter'
+    try {
+      await bookshelfApi.deleteChapter(chapterId)
+    } catch (error) {
+      const status = error instanceof ApiClientError ? error.status : 0
+      if (status === 423) throw error
+      const reconciledTarget = await chapterNoLongerExists(bookId, chapterId)
+      if (!reconciledTarget) throw error
+      deletedTarget = reconciledTarget
+    }
+    invalidateBookReads()
+    if (deletedTarget === 'book') deleteBook(bookId)
+    else deleteChapter(bookId, chapterId)
   }
 
   async function reorderChaptersApi(bookId: string, chapterIds: string[]): Promise<void> {
@@ -429,6 +483,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
 
   function reset(): void {
     booksRequestVersion += 1
+    bookDetailRequestVersion += 1
     tagsRequestVersion += 1
     books.value = []
     tags.value = []

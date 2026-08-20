@@ -200,15 +200,15 @@ function parseCurrentWebImportSettings(value: unknown): WebImportSettings | null
     parsed.imagePreprocess.compression.maxHeight,
   ]
   const positiveIntegers = [
-    parsed.agent.timeout,
     parsed.extraction.maxIterations,
     parsed.download.concurrency,
-    parsed.download.timeout,
   ]
+  const positiveTimeouts = [parsed.agent.timeout, parsed.download.timeout]
   const quality = parsed.imagePreprocess.compression.quality
   if (
     nonnegativeIntegers.some(value => !Number.isInteger(value) || value < 0)
     || positiveIntegers.some(value => !Number.isInteger(value) || value < 1)
+    || positiveTimeouts.some(value => value < 1)
     || !Number.isInteger(quality)
     || quality < 1
     || quality > 100

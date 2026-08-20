@@ -118,7 +118,7 @@ useInsightSettingsDraft<StoreImageGenConfig>({
     </UiField>
 
     <UiField variant="settings" label="单次请求超时（秒）" hint="0 表示不限制；大于 0 时作为单次生图 HTTP 请求超时" control-id="insight-imagegen-timeout-seconds">
-      <UiNumberField v-model="timeoutSeconds" input-id="insight-imagegen-timeout-seconds" :min="0" :step="1" />
+      <UiNumberField v-model="timeoutSeconds" input-id="insight-imagegen-timeout-seconds" :min="0" :step="0.1" />
     </UiField>
   </InsightSettingsPanel>
 </template>

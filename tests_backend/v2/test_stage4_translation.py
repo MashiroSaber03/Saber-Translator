@@ -57,6 +57,7 @@ from src.backend_v2.storage.seeding import seed_system_records
 from src.backend_v2.settings.resolver import SettingsResolver
 from src.backend_v2.translation.commands import (
     TranslationJobCommandService,
+    _validate_ai_provider_section,
     normalize_translation_command,
     step_kinds_for_mode,
 )
@@ -77,6 +78,7 @@ from tests_backend.fake_provider import (
     DeterministicFakeProvider,
     registered_deterministic_fake_provider,
 )
+from src.shared.ai_providers import VISION_OCR_CAPABILITY
 from src.core.config_models import BubbleState
 from src.shared.text_style_defaults import get_text_style_factory_defaults
 
@@ -2843,6 +2845,18 @@ def test_translation_job_rejects_missing_backend_credential_before_admission(
         )
 
     assert JobQueueRepository(platform["engine"]).list_jobs(limit=10)["items"] == []
+
+
+def test_local_ai_vision_section_does_not_require_a_saved_api_key() -> None:
+    _validate_ai_provider_section(
+        {
+            "provider": "custom",
+            "model_name": "local-vision",
+            "custom_base_url": "http://127.0.0.1:8000/v1",
+        },
+        capability=VISION_OCR_CAPABILITY,
+        label="AI 视觉 OCR",
+    )
 
 
 def test_failed_item_retry_refreezes_current_backend_settings(

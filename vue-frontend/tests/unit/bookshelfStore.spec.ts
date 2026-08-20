@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as bookshelfApi from '@/api/bookshelf'
+import { ApiClientError } from '@/api/client'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
 import type { BookData, TagData } from '@/types/api'
 import { setTestBooks, setTestTags } from '../helpers/bookshelfFixtures'
@@ -15,6 +16,10 @@ function deferred<T>() {
     reject = rejectPromise
   })
   return { promise, reject, resolve }
+}
+
+function apiError(status: number, message = 'request failed') {
+  return new ApiClientError({ code: 'test_error', message, status })
 }
 
 describe('bookshelfStore', () => {
@@ -217,6 +222,72 @@ describe('bookshelfStore', () => {
 
     second.resolve([])
     await vi.waitFor(() => expect(store.isLoading).toBe(false))
+  })
+
+  it('does not restore a book from a list request started before deletion', async () => {
+    const store = useBookshelfStore()
+    const book: BookData = { id: 'book-delete', title: 'Delete Me' }
+    setTestBooks(store, [book])
+    store.setCurrentBook(book.id)
+    const staleList = deferred<BookData[]>()
+    vi.spyOn(bookshelfApi, 'getBooks').mockReturnValue(staleList.promise)
+    vi.spyOn(bookshelfApi, 'deleteBook').mockResolvedValue(undefined)
+
+    const loading = store.loadBooks()
+    await store.deleteBookApi(book.id)
+    staleList.resolve([book])
+    await loading
+
+    expect(store.books).toEqual([])
+    expect(store.currentBookId).toBeNull()
+    expect(store.currentBook).toBeNull()
+    expect(store.isLoading).toBe(false)
+  })
+
+  it('accepts an ambiguous delete response when the backend confirms the book is gone', async () => {
+    const store = useBookshelfStore()
+    setTestBooks(store, [{ id: 'book-deleted', title: 'Deleted' }])
+    vi.spyOn(bookshelfApi, 'deleteBook').mockRejectedValue(apiError(0, 'connection reset'))
+    vi.spyOn(bookshelfApi, 'getBookDetail').mockRejectedValue(apiError(404, 'not found'))
+
+    await expect(store.deleteBookApi('book-deleted')).resolves.toBeUndefined()
+
+    expect(store.books).toEqual([])
+  })
+
+  it('does not hide a book when the backend confirms deletion was rejected', async () => {
+    const store = useBookshelfStore()
+    const book: BookData = { id: 'book-locked', title: 'Locked' }
+    setTestBooks(store, [book])
+    vi.spyOn(bookshelfApi, 'deleteBook').mockRejectedValue(apiError(423, 'locked'))
+    const getBookDetail = vi.spyOn(bookshelfApi, 'getBookDetail')
+
+    await expect(store.deleteBookApi(book.id)).rejects.toThrow('locked')
+
+    expect(getBookDetail).not.toHaveBeenCalled()
+    expect(store.books).toEqual([book])
+  })
+
+  it('reconciles an ambiguous chapter delete without a hard refresh', async () => {
+    const store = useBookshelfStore()
+    setTestBooks(store, [{
+      id: 'book-1',
+      title: 'Book',
+      chapters: [{ id: 'chapter-1', title: 'Chapter', order: 0, imageCount: 1 }],
+      chapterCount: 1,
+    }])
+    vi.spyOn(bookshelfApi, 'deleteChapter').mockRejectedValue(apiError(0, 'connection reset'))
+    vi.spyOn(bookshelfApi, 'getBookDetail').mockResolvedValue({
+      id: 'book-1',
+      title: 'Book',
+      chapters: [],
+      chapterCount: 0,
+    })
+
+    await expect(store.deleteChapterApi('book-1', 'chapter-1')).resolves.toBeUndefined()
+
+    expect(store.books[0]?.chapters).toEqual([])
+    expect(store.books[0]?.chapterCount).toBe(0)
   })
 
   it('reports tag load failures without letting an older request overwrite newer tags', async () => {

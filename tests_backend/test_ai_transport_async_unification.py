@@ -233,7 +233,7 @@ class AsyncTransportContractTests(unittest.IsolatedAsyncioTestCase):
             },
         )
 
-    async def test_async_chat_transport_uses_placeholder_authorization_for_local_provider_without_api_key(self) -> None:
+    async def test_async_chat_transport_omits_authorization_for_local_provider_without_api_key(self) -> None:
         from src.shared.ai_transport import AsyncOpenAICompatibleTransport, UnifiedChatRequest
 
         class FakeResponse:
@@ -270,7 +270,7 @@ class AsyncTransportContractTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(content, "本地成功")
         self.assertEqual(fake_client.request_calls[0]["url"], "http://localhost:11434/v1/chat/completions")
-        self.assertEqual(fake_client.request_calls[0]["headers"]["Authorization"], "Bearer ollama")
+        self.assertNotIn("Authorization", fake_client.request_calls[0]["headers"])
 
     async def test_async_embedding_rejects_missing_indices_or_nonfinite_vectors(self) -> None:
         from src.shared.ai_transport import AsyncOpenAICompatibleTransport, UnifiedEmbeddingRequest

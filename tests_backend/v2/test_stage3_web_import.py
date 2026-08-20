@@ -383,11 +383,11 @@ def test_web_import_ai_agent_config_is_resolved_and_frozen_server_side(
                         "useStream": False,
                         "forceJsonOutput": True,
                         "maxRetries": 101,
-                        "timeout": 3_601,
+                        "timeout": 3_601.5,
                     },
                     "download": {
                         "concurrency": 33,
-                        "timeout": 3_601,
+                        "timeout": 3_601.5,
                         "retries": 101,
                         "delay": 60_001,
                         "useReferer": True,
@@ -482,6 +482,7 @@ def test_web_import_ai_agent_config_is_resolved_and_frozen_server_side(
     assert "firecrawl-secret" not in config_json
     assert '"model_name":"agent-model"' in config_json
     assert '"concurrency":33' in config_json
+    assert config_json.count('"timeout":3601.5') == 2
     assert '"maxIterations":101' in config_json
     assert '"maxWidth":100001' in config_json
     assert '"autoImport":false' in config_json

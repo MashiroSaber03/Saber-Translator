@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, FrozenSet, Mapping, Optional, Tuple
 
+from src.shared.http_config import is_local_service
+
 
 TRANSLATION_CAPABILITY = "translation"
 HQ_TRANSLATION_CAPABILITY = "hq_translation"
@@ -316,6 +318,15 @@ def provider_supports_capability(provider: Optional[str], capability: str) -> bo
 
 def provider_requires_model(provider: Optional[str]) -> bool:
     return get_provider_manifest(provider).requires_model
+
+
+def provider_requires_api_key(
+    provider: Optional[str],
+    custom_base_url: Optional[str] = None,
+) -> bool:
+    manifest = get_provider_manifest(provider)
+    resolved_base_url = resolve_provider_base_url(provider, custom_base_url)
+    return manifest.requires_api_key and not is_local_service(resolved_base_url)
 
 
 def resolve_provider_base_url(

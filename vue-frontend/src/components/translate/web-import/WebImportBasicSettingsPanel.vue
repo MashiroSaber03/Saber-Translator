@@ -154,6 +154,7 @@ const storedCredentialHint = '凭据已安全保存在后端；留空表示保�
           input-id="webImportAgentTimeout"
           :model-value="draftSettings.agent.timeout"
           :min="1"
+          :step="0.1"
           @update:model-value="value => applyNumber(settingsActions.setAgentTimeout, value)"
         />
       </UiField>
@@ -223,6 +224,7 @@ const storedCredentialHint = '凭据已安全保存在后端；留空表示保�
           input-id="webImportDownloadTimeout"
           :model-value="draftSettings.download.timeout"
           :min="1"
+          :step="0.1"
           @update:model-value="value => applyNumber(settingsActions.setDownloadTimeout, value)"
         />
       </UiField>

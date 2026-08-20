@@ -249,6 +249,53 @@ class OpenAICompatibleOptionsContractTests(unittest.TestCase):
         self.assertEqual(fake_client.url, "https://example.com/openai/models")
         self.assertEqual([item["id"] for item in models], ["model-a", "model-b"])
 
+    def test_local_model_listing_retries_without_an_invalid_authorization_header(self) -> None:
+        from src.shared.ai_transport import ProviderModelListRequest
+
+        class FakeResponse:
+            def __init__(self, status_code, payload=None):
+                self.status_code = status_code
+                self.payload = payload
+
+            def raise_for_status(self):
+                if self.status_code >= 400:
+                    raise AssertionError("the authenticated local response should be retried")
+
+            def json(self):
+                return self.payload
+
+        class FakeClient:
+            def __init__(self):
+                self.headers = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def get(self, _url, *, headers):
+                self.headers.append(headers)
+                if len(self.headers) == 1:
+                    return FakeResponse(401)
+                return FakeResponse(200, {"data": [{"id": "local-vision"}]})
+
+        fake_client = FakeClient()
+        with mock.patch("src.shared.ai_transport.httpx.Client", return_value=fake_client):
+            models = OpenAICompatibleChatTransport().list_models(
+                ProviderModelListRequest(
+                    provider="custom",
+                    api_key="arbitrary-local-key",
+                    base_url="http://127.0.0.1:8000/v1",
+                )
+            )
+
+        self.assertEqual(models, [{"id": "local-vision", "name": "local-vision"}])
+        self.assertEqual(
+            fake_client.headers,
+            [{"Authorization": "Bearer arbitrary-local-key"}, {}],
+        )
+
     def test_model_listing_rejects_unsupported_provider_before_network(self) -> None:
         from src.shared.ai_transport import ProviderModelListRequest
 
@@ -636,10 +683,38 @@ class ProviderRegistryContractTests(unittest.TestCase):
         self.assertTrue(provider_supports_capability("ollama", "web_import_agent"))
 
     def test_ai_vision_provider_list_matches_supported_backend_capabilities(self) -> None:
-        from src.shared.ai_providers import provider_supports_capability
+        from src.shared.ai_providers import (
+            provider_requires_api_key,
+            provider_supports_capability,
+        )
 
         self.assertFalse(provider_supports_capability("deepseek", "vision_ocr"))
         self.assertTrue(provider_supports_capability("custom", "vision_ocr"))
+        self.assertFalse(
+            provider_requires_api_key("custom", "http://localhost:8000/v1")
+        )
+        self.assertTrue(
+            provider_requires_api_key("custom", "https://example.com/v1")
+        )
+
+    def test_ai_vision_local_custom_service_accepts_an_empty_api_key(self) -> None:
+        from src.interfaces.vision_interface import call_ai_vision_ocr_service
+
+        with mock.patch(
+            "src.interfaces.vision_interface._transport.complete_vision",
+            return_value="测试",
+        ) as complete_mock, Image.new("RGB", (12, 12), color="white") as image:
+            content = call_ai_vision_ocr_service(
+                image,
+                provider="custom",
+                api_key="",
+                model_name="local-vision",
+                prompt="识别图片里的文本",
+                custom_base_url="http://localhost:8000/v1",
+            )
+
+        self.assertEqual(content, "测试")
+        self.assertEqual(complete_mock.call_args.args[0].api_key, "")
 
     def test_ai_vision_json_mode_does_not_override_custom_prompt(self) -> None:
         from src.core.ocr import recognize_ocr_results_in_bubbles

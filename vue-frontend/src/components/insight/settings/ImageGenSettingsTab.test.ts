@@ -168,7 +168,7 @@ describe('ImageGenSettingsTab', () => {
     }))).toEqual([
       { inputId: 'insight-imagegen-transport-retries', min: 0, step: 1 },
       { inputId: 'insight-imagegen-business-retries', min: 0, step: 1 },
-      { inputId: 'insight-imagegen-timeout-seconds', min: 0, max: undefined, step: 1 },
+      { inputId: 'insight-imagegen-timeout-seconds', min: 0, max: undefined, step: 0.1 },
     ])
   })
 

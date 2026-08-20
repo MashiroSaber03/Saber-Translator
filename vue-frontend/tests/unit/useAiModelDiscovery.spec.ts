@@ -61,6 +61,26 @@ describe('useAiModelDiscovery', () => {
     expect(notify).toHaveBeenCalledWith('获取到 2 个模型', 'success')
   })
 
+  it('supports a local custom endpoint whose API key is optional', async () => {
+    const fetcher = vi.fn().mockResolvedValue({
+      models: [{ id: 'local-model', name: 'Local Model' }],
+    } satisfies FetchModelsResponse)
+    const discovery = useAiModelDiscovery({
+      source: () => ({
+        provider: 'custom',
+        apiKey: '',
+        baseUrl: 'http://localhost:8000/v1',
+      }),
+      fetcher,
+      notify: vi.fn(),
+      requiresApiKey: () => false,
+    })
+
+    await discovery.fetchModels()
+
+    expect(fetcher).toHaveBeenCalledWith('custom', '', 'http://localhost:8000/v1')
+  })
+
   it('allows model discovery through a credential already stored by the backend', async () => {
     const fetcher = vi.fn().mockResolvedValue({
       models: [{ id: 'stored-model', name: 'Stored Model' }],

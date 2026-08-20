@@ -51,7 +51,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <OverlayLayer v-if="settingsStore.backendError" level="mobile-overlay" passthrough>
+  <OverlayLayer
+    v-if="!settingsStore.isBackendReady && settingsStore.backendError"
+    level="mobile-overlay"
+    passthrough
+  >
     <ProductStatusBanner
       class="backend-restricted-banner"
       tone="danger"

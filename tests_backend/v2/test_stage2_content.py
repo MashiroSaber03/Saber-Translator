@@ -1007,6 +1007,19 @@ def test_clear_chapter_pages_is_one_guarded_atomic_backend_command(
         headers={"Idempotency-Key": "clear-pages-blocked"},
     )
     assert blocked.status_code == 423
+    assert blocked.get_json()["error"] == {
+        "code": "chapter_locked",
+        "message": "content is still referenced by active work",
+        "details": {
+            "jobs": [
+                {
+                    "jobId": "clear-pages-blocker",
+                    "status": "queued",
+                }
+            ],
+            "operationIds": [],
+        },
+    }
     assert len(repository.list_pages(chapter_id=chapter_id, all_pages=True)["items"]) == 2
 
     with engine.begin() as connection:

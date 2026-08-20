@@ -4,6 +4,7 @@ import {
   AI_PROVIDER_MANIFEST,
   getProviderOptionsForCapability,
   getProviderDefaultModel,
+  providerRequiresApiKeyForBaseUrl,
   providerSupportsRpmLimit,
   normalizeProviderId,
   providerRequiresBaseUrl,
@@ -23,6 +24,12 @@ describe('translation page AI provider manifest', () => {
     expect(providerSupportsCapability('custom', 'hqTranslation')).toBe(true)
     expect(providerSupportsCapability('custom', 'visionOcr')).toBe(true)
     expect(providerRequiresBaseUrl('custom')).toBe(true)
+  })
+
+  it('only makes the API key optional for loopback custom services', () => {
+    expect(providerRequiresApiKeyForBaseUrl('custom', 'http://localhost:8000/v1')).toBe(false)
+    expect(providerRequiresApiKeyForBaseUrl('custom', 'http://127.0.0.1:8000/v1')).toBe(false)
+    expect(providerRequiresApiKeyForBaseUrl('custom', 'https://example.com/v1')).toBe(true)
   })
 
   it('does not expose deepseek in AI vision OCR options', () => {

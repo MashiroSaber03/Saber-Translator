@@ -15,7 +15,7 @@ from flask import Flask
 from sqlalchemy import event, insert, select, update
 from sqlalchemy.exc import OperationalError as SqlAlchemyOperationalError
 
-from src.backend_v2.content.repository import ContentRepository
+from src.backend_v2.content.repository import ContentLocked, ContentRepository
 from src.backend_v2.jobs.events import JobEventBroadcaster
 from src.backend_v2.jobs.repository import (
     AttemptFence,
@@ -613,6 +613,33 @@ def test_pause_resume_cancel_and_attempt_fencing(job_platform) -> None:
                 chapter_write_locks.c.job_id == job_id
             )
         ).scalar_one_or_none() is None
+
+
+def test_interrupted_translation_can_be_cancelled_before_book_deletion(
+    job_platform,
+) -> None:
+    engine, repository, book, chapter, worker_epoch_id = job_platform
+    job_id = _create_job(
+        repository,
+        kind="translation",
+        chapter_id=str(chapter["id"]),
+    )
+    assert repository.claim_next(worker_epoch_id=worker_epoch_id) is None
+    assert repository.claim_next(worker_epoch_id=worker_epoch_id) is not None
+
+    recovery = ProcessEpochRepository(engine).reconcile_dead_worker(
+        worker_epoch_id
+    )
+    assert recovery.jobs_interrupted == 1
+
+    content = ContentRepository(engine)
+    with pytest.raises(ContentLocked):
+        content.delete_book(str(book["id"]))
+
+    assert repository.request_cancel(job_id)["status"] == "cancelled"
+    content.delete_book(str(book["id"]))
+
+    assert content.list_books() == []
 
 
 def test_direct_cancel_and_drained_cancel_close_the_entire_job_graph(

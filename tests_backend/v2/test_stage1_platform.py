@@ -418,6 +418,14 @@ def test_web_import_settings_have_no_arbitrary_numeric_upper_gates() -> None:
     assert validate_setting_payload("web_import", payload, schema_version=1) == payload
 
 
+def test_web_import_timeouts_accept_fractional_seconds() -> None:
+    payload = _current_web_import_settings()
+    payload["agent"]["timeout"] = 120.5
+    payload["download"]["timeout"] = 30.25
+
+    assert validate_setting_payload("web_import", payload, schema_version=1) == payload
+
+
 def test_web_import_provider_setting_accepts_only_current_fields() -> None:
     valid = {
         "modelName": "agent-model",
@@ -519,6 +527,22 @@ def test_provider_numeric_settings_reject_invalid_values(
         )
 
 
+def test_provider_timeouts_accept_fractional_seconds() -> None:
+    for domain, provider in (
+        ("insight_embedding", "openai"),
+        ("insight_reranker", "qwen"),
+        ("insight_image_gen", "gpt2api"),
+    ):
+        payload = _current_insight_provider_payload(domain)
+        payload["timeoutSeconds"] = 12.5
+        assert validate_provider_setting_payload(
+            domain,
+            provider,
+            payload,
+            schema_version=1,
+        ) == payload
+
+
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [
@@ -541,6 +565,29 @@ def test_translation_detection_thresholds_use_one_current_unit(
 
     with pytest.raises(ValueError, match=message):
         validate_setting_payload("translation", payload, schema_version=6)
+
+
+def test_translation_detection_percentages_accept_decimal_values() -> None:
+    payload = default_translation_settings()
+    payload["minTextBlockAreaPercent"] = 0.125
+    payload["auxYoloConfThreshold"] = 0.45
+    payload["auxYoloOverlapThreshold"] = 0.15
+    payload["saberYoloRefineOverlapThreshold"] = 47.5
+    payload["hybridOcr"]["confidenceThreshold"] = 0.35
+    payload["boxExpand"] = {
+        "ratio": 7.5,
+        "top": 1.25,
+        "bottom": 2.5,
+        "left": 3.75,
+        "right": 4.5,
+    }
+    payload["preciseMask"]["boxExpandRatio"] = 12.5
+
+    assert validate_setting_payload(
+        "translation",
+        payload,
+        schema_version=6,
+    ) == payload
 
 
 def test_translation_settings_validate_paddleocr_vl_prompt_language() -> None:
@@ -2514,6 +2561,42 @@ def test_v2_provider_diagnostics_resolve_backend_credentials_and_routes(
         json={},
     )
     assert unsupported.status_code == 422
+
+
+def test_provider_diagnostics_allow_uncredentialed_local_ai_vision(
+    platform,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _data_root, engine = platform
+    diagnostics = ProviderDiagnostics(SettingsRepository(engine))
+    captured: dict[str, object] = {}
+
+    def list_models(request):
+        captured["catalog_api_key"] = request.api_key
+        return [{"id": "local-vision", "name": "local-vision"}]
+
+    def complete_vision(request):
+        captured["vision_api_key"] = request.api_key
+        return "Saber OCR test 123"
+
+    monkeypatch.setattr(diagnostics.chat, "list_models", list_models)
+    monkeypatch.setattr(diagnostics.chat, "complete_vision", complete_vision)
+    body = {
+        "provider": "custom",
+        "domain": "ai_vision_ocr",
+        "baseUrl": "http://localhost:8000/v1",
+    }
+
+    assert diagnostics.model_catalog(body) == {
+        "models": [{"id": "local-vision", "name": "local-vision"}],
+    }
+    result = diagnostics.connection_test(
+        "ai_vision_ocr",
+        {**body, "model": "local-vision", "prompt": "Read the text."},
+    )
+
+    assert result == {"success": True, "message": "连接成功：Saber OCR test 123"}
+    assert captured == {"catalog_api_key": "", "vision_api_key": ""}
 
 
 def test_provider_diagnostics_enforce_capabilities_and_fatal_memory_errors(

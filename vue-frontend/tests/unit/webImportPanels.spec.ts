@@ -361,6 +361,18 @@ describe('WebImport panels', () => {
     }
   })
 
+  it('uses decimal steps for timeout fields that accept fractional seconds', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/translate/web-import/WebImportBasicSettingsPanel.vue'),
+      'utf8'
+    )
+
+    for (const inputId of ['webImportAgentTimeout', 'webImportDownloadTimeout']) {
+      const field = source.match(new RegExp(`input-id="${inputId}"[\\s\\S]*?/>`))?.[0]
+      expect(field).toContain(':step="0.1"')
+    }
+  })
+
   it('keeps settings tab scrolling owned by the settings panel instead of the modal shell', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/translate/web-import/WebImportSettingsPanel.vue'),

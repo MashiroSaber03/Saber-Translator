@@ -604,16 +604,21 @@ def _validate_web_import(payload: dict[str, Any]) -> None:
         raise ValueError("web_import targetFormat is invalid")
     for path, value, minimum in (
         ("agent.maxRetries", agent["maxRetries"], 0),
-        ("agent.timeout", agent["timeout"], 1),
         ("extraction.maxIterations", payload["extraction"]["maxIterations"], 1),
         ("download.concurrency", payload["download"]["concurrency"], 1),
-        ("download.timeout", payload["download"]["timeout"], 1),
         ("download.retries", payload["download"]["retries"], 0),
         ("download.delay", payload["download"]["delay"], 0),
         ("compression.maxWidth", compression["maxWidth"], 0),
         ("compression.maxHeight", compression["maxHeight"], 0),
     ):
         _integer(value, f"web_import.{path}", minimum=minimum)
+    for path, value in (
+        ("agent.timeout", agent["timeout"]),
+        ("download.timeout", payload["download"]["timeout"]),
+    ):
+        timeout = _finite_number(value, f"web_import.{path}")
+        if timeout < 1:
+            raise ValueError(f"web_import.{path} must be at least 1")
     _integer(
         compression["quality"],
         "web_import.compression.quality",

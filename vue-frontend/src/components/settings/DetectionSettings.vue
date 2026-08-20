@@ -80,7 +80,7 @@
           :model-value="settings.saberYoloRefineOverlapThreshold"
           :min="0"
           :max="100"
-          :step="1"
+          :step="0.1"
           @change="updateNumber(settingsStore.setSaberYoloRefineOverlapThreshold, $event)"
         />
       </UiField>
@@ -99,24 +99,24 @@
           :model-value="settings.boxExpand.ratio"
           :min="0"
           :max="50"
-          :step="1"
+          :step="0.1"
           @change="updateBoxExpand('ratio', $event)"
         />
       </UiField>
       <UiFormGrid>
         <UiField variant="settings" label="上方扩展 (%)" control-id="settingsBoxExpandTop">
-          <UiNumberField input-id="settingsBoxExpandTop" :model-value="settings.boxExpand.top" :min="0" :max="50" :step="1" @change="updateBoxExpand('top', $event)" />
+          <UiNumberField input-id="settingsBoxExpandTop" :model-value="settings.boxExpand.top" :min="0" :max="50" :step="0.1" @change="updateBoxExpand('top', $event)" />
         </UiField>
         <UiField variant="settings" label="下方扩展 (%)" control-id="settingsBoxExpandBottom">
-          <UiNumberField input-id="settingsBoxExpandBottom" :model-value="settings.boxExpand.bottom" :min="0" :max="50" :step="1" @change="updateBoxExpand('bottom', $event)" />
+          <UiNumberField input-id="settingsBoxExpandBottom" :model-value="settings.boxExpand.bottom" :min="0" :max="50" :step="0.1" @change="updateBoxExpand('bottom', $event)" />
         </UiField>
       </UiFormGrid>
       <UiFormGrid>
         <UiField variant="settings" label="左侧扩展 (%)" control-id="settingsBoxExpandLeft">
-          <UiNumberField input-id="settingsBoxExpandLeft" :model-value="settings.boxExpand.left" :min="0" :max="50" :step="1" @change="updateBoxExpand('left', $event)" />
+          <UiNumberField input-id="settingsBoxExpandLeft" :model-value="settings.boxExpand.left" :min="0" :max="50" :step="0.1" @change="updateBoxExpand('left', $event)" />
         </UiField>
         <UiField variant="settings" label="右侧扩展 (%)" control-id="settingsBoxExpandRight">
-          <UiNumberField input-id="settingsBoxExpandRight" :model-value="settings.boxExpand.right" :min="0" :max="50" :step="1" @change="updateBoxExpand('right', $event)" />
+          <UiNumberField input-id="settingsBoxExpandRight" :model-value="settings.boxExpand.right" :min="0" :max="50" :step="0.1" @change="updateBoxExpand('right', $event)" />
         </UiField>
       </UiFormGrid>
     </ProductFormSection>
@@ -143,7 +143,7 @@
             :model-value="settings.preciseMask.boxExpandRatio"
             :min="0"
             :max="100"
-            :step="1"
+            :step="0.1"
             @change="updatePreciseMask('boxExpandRatio', $event)"
           />
         </UiField>
