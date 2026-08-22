@@ -64,6 +64,7 @@ JOB_STATUSES = (
     "interrupted",
 )
 CURRENT_JOB_STATUSES = ("running", "pausing", "paused", "cancelling")
+EXECUTING_JOB_STATUSES = ("running", "pausing", "cancelling")
 NONTERMINAL_JOB_STATUSES = (
     "queued",
     "running",
@@ -143,7 +144,13 @@ DEFAULT_PUBLIC_USER_POLICY_JSON = (
     '"ocr_48px":true,"paddle_ocr":true,"paddleocr_vl":true,'
     '"saber_yolo":true},"settings":{"lamaDisableResize":{'
     '"editable":false,"value":false},"parallel":{'
-    '"allowed":false,"maxDeepLearningConcurrency":1}}}'
+    '"allowed":false}}}'
+)
+DEFAULT_SCHEDULING_POLICY_JSON = (
+    '{"apiOperationConcurrency":2,"interactiveBurst":1,'
+    '"maxDeepLearningConcurrency":1,"minAvailableMemoryMiB":2048,'
+    '"modelIdleSeconds":180,"pageQuantum":1,'
+    '"queueDiscipline":"owner_round_robin"}'
 )
 LOCAL_OWNER_ID = "00000000-0000-0000-0000-000000000010"
 
@@ -255,6 +262,12 @@ platform_config = Table(
         Text,
         nullable=False,
         server_default=DEFAULT_PUBLIC_USER_POLICY_JSON,
+    ),
+    Column(
+        "scheduler_policy_json",
+        Text,
+        nullable=False,
+        server_default=DEFAULT_SCHEDULING_POLICY_JSON,
     ),
     *_timestamps(),
     CheckConstraint("singleton_id = 1", name="single_row"),
@@ -813,7 +826,7 @@ Index(
     "uq_jobs_one_current",
     (literal(1) + jobs.c.id.is_(None).cast(Integer)),
     unique=True,
-    sqlite_where=jobs.c.status.in_(CURRENT_JOB_STATUSES),
+    sqlite_where=jobs.c.status.in_(EXECUTING_JOB_STATUSES),
 )
 Index(
     "uq_jobs_one_nonterminal_translation_per_chapter",

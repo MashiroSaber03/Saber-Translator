@@ -1,10 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import {
-  getCapabilities,
-  type PublicUserPolicy,
-  type RuntimeCapabilities,
-} from '@/api/v2/auth'
+import { getCapabilities, type PublicUserPolicy, type RuntimeCapabilities } from '@/api/v2/auth'
 import { configureLocalProviderVisibility } from '@/config/aiProviders'
 
 const LOCAL_CAPABILITIES: RuntimeCapabilities = {
@@ -34,9 +30,10 @@ const LOCAL_CAPABILITIES: RuntimeCapabilities = {
     },
     settings: {
       lamaDisableResize: { editable: true, value: false },
-      parallel: { allowed: true, maxDeepLearningConcurrency: 1 },
+      parallel: { allowed: true },
     },
   },
+  scheduling: { maxDeepLearningConcurrency: 1 },
   features: { plugins: true, webImport: true, localProviders: true },
 }
 
@@ -48,12 +45,14 @@ export const useRuntimeStore = defineStore('runtime', () => {
     if (capabilities.value) return capabilities.value
     if (loading) return loading
     loading = getCapabilities()
-      .then((value) => {
+      .then(value => {
         configureLocalProviderVisibility(value.features.localProviders)
         capabilities.value = value
         return value
       })
-      .finally(() => { loading = null })
+      .finally(() => {
+        loading = null
+      })
     return loading
   }
 
@@ -78,11 +77,20 @@ export const useRuntimeStore = defineStore('runtime', () => {
     }
   }
 
+  function setMaxDeepLearningConcurrency(value: number): void {
+    if (!capabilities.value) return
+    capabilities.value = {
+      ...capabilities.value,
+      scheduling: { maxDeepLearningConcurrency: value },
+    }
+  }
+
   return {
     capabilities,
     load,
     assumeLocalForTests,
     setRegistrationRequiresInvite,
     setPublicUserPolicy,
+    setMaxDeepLearningConcurrency,
   }
 })

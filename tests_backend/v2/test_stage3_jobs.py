@@ -35,6 +35,7 @@ from src.backend_v2.jobs.worker_loop import (
     PARALLEL_PIPELINE_LEAD_WINDOW,
     JobWorkerLoop,
 )
+from src.backend_v2.scheduling_policy import DEFAULT_SCHEDULING_POLICY
 from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.epochs import EpochRegistration, ProcessEpochRepository
 from src.backend_v2.storage.schema import (
@@ -778,6 +779,240 @@ def test_parallel_worker_runs_each_job_in_its_claimed_owner_scope(
 
     assert statuses == {job_id: "completed" for job_id in expected}
     assert seen == expected
+
+
+def test_paused_job_releases_compute_slot_and_resume_joins_queue_tail(
+    job_platform,
+) -> None:
+    _engine, repository, _book, _chapter, worker_epoch_id = job_platform
+    first_id = _create_job(repository, kind="export")
+    first_fence = repository.claim_next(worker_epoch_id=worker_epoch_id)
+    assert first_fence is not None
+    repository.request_pause(first_id)
+    assert repository.finalize_control(first_fence) == "paused"
+
+    second_id = _create_job(repository, kind="export")
+    repository.resume(first_id)
+    second_fence = repository.claim_next(worker_epoch_id=worker_epoch_id)
+
+    assert second_fence is not None
+    assert second_fence.job_id == second_id
+    assert repository.get_job(first_id)["status"] == "queued"
+
+
+def test_owner_round_robin_switches_only_after_each_completed_page_slice(
+    job_platform,
+) -> None:
+    _engine, repository, _book, _chapter, worker_epoch_id = job_platform
+    owner_ids = (str(uuid.uuid4()), str(uuid.uuid4()))
+    job_ids: list[str] = []
+    for owner_id in owner_ids:
+        with owner_scope(owner_id):
+            created = repository.create_batch(
+                kind="export",
+                display_name="fair parallel pages",
+                specs=[
+                    JobSpec(
+                        kind="export",
+                        config={
+                            "executionMode": "parallel",
+                            "deepLearningConcurrency": 4,
+                        },
+                        items=tuple(
+                            JobItemSpec(
+                                page_id=None,
+                                step_kinds=("detect", "save"),
+                            )
+                            for _index in range(2)
+                        ),
+                    )
+                ],
+            )
+        job_ids.append(str(created["jobIds"][0]))
+
+    completed_page_owners: list[str] = []
+    active_steps = 0
+    maximum_active_steps = 0
+    state_lock = threading.Lock()
+
+    def handler(fence: AttemptFence, step):
+        nonlocal active_steps, maximum_active_steps
+        with state_lock:
+            active_steps += 1
+            maximum_active_steps = max(maximum_active_steps, active_steps)
+        time.sleep(0.01)
+        with state_lock:
+            active_steps -= 1
+            if step["stepKind"] == "save":
+                completed_page_owners.append(fence.owner_user_id)
+        return {"done": str(step["stepKind"])}
+
+    policy = dict(DEFAULT_SCHEDULING_POLICY)
+    policy["pageQuantum"] = 1
+    policy["maxDeepLearningConcurrency"] = 1
+    stop = threading.Event()
+    loop = JobWorkerLoop(
+        repository,
+        worker_epoch_id=worker_epoch_id,
+        handlers={"detect": handler, "save": handler},
+        scheduling_policy=lambda: policy,
+        admission_check=lambda: True,
+        idle_poll_seconds=0.01,
+    )
+    thread = threading.Thread(target=loop.run, args=(stop,), daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        if all(repository.get_job(job_id)["status"] == "completed" for job_id in job_ids):
+            break
+        time.sleep(0.01)
+    stop.set()
+    thread.join(timeout=2)
+
+    assert [repository.get_job(job_id)["status"] for job_id in job_ids] == [
+        "completed",
+        "completed",
+    ]
+    assert completed_page_owners == [
+        owner_ids[0],
+        owner_ids[1],
+        owner_ids[0],
+        owner_ids[1],
+    ]
+    assert maximum_active_steps == 1
+
+
+def test_owner_round_robin_rotates_multiple_short_jobs_per_owner(
+    job_platform,
+) -> None:
+    _engine, repository, _book, _chapter, worker_epoch_id = job_platform
+    owner_ids = (str(uuid.uuid4()), str(uuid.uuid4()))
+    job_ids: list[str] = []
+    for owner_id in owner_ids:
+        with owner_scope(owner_id):
+            for index in range(2):
+                job_ids.append(
+                    _create_job(
+                        repository,
+                        kind="export",
+                        steps=(f"short_{index}",),
+                    )
+                )
+
+    seen: list[str] = []
+    stop = threading.Event()
+    loop = JobWorkerLoop(
+        repository,
+        worker_epoch_id=worker_epoch_id,
+        handlers={
+            "short_0": lambda fence, _step: seen.append(fence.owner_user_id) or {},
+            "short_1": lambda fence, _step: seen.append(fence.owner_user_id) or {},
+        },
+        scheduling_policy=lambda: DEFAULT_SCHEDULING_POLICY,
+        admission_check=lambda: True,
+        idle_poll_seconds=0.01,
+    )
+    thread = threading.Thread(target=loop.run, args=(stop,), daemon=True)
+    thread.start()
+    try:
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            if all(repository.get_job(job_id)["status"] == "completed" for job_id in job_ids):
+                break
+            time.sleep(0.01)
+        assert [repository.get_job(job_id)["status"] for job_id in job_ids] == [
+            "completed",
+            "completed",
+            "completed",
+            "completed",
+        ]
+        assert seen == [owner_ids[0], owner_ids[1], owner_ids[0], owner_ids[1]]
+    finally:
+        stop.set()
+        thread.join(timeout=2)
+
+
+def test_scheduler_waits_for_memory_admission_without_failing_the_job(
+    job_platform,
+) -> None:
+    _engine, repository, _book, _chapter, worker_epoch_id = job_platform
+    job_id = _create_job(repository, kind="export", steps=("one",))
+    admitted = threading.Event()
+    stop = threading.Event()
+    loop = JobWorkerLoop(
+        repository,
+        worker_epoch_id=worker_epoch_id,
+        handlers={"one": lambda _fence, _step: {"done": True}},
+        scheduling_policy=lambda: DEFAULT_SCHEDULING_POLICY,
+        admission_check=admitted.is_set,
+        idle_poll_seconds=0.01,
+    )
+    thread = threading.Thread(target=loop.run, args=(stop,), daemon=True)
+    thread.start()
+    try:
+        time.sleep(0.08)
+        assert repository.get_job(job_id)["status"] == "queued"
+        admitted.set()
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            if repository.get_job(job_id)["status"] == "completed":
+                break
+            time.sleep(0.01)
+        assert repository.get_job(job_id)["status"] == "completed"
+    finally:
+        stop.set()
+        thread.join(timeout=2)
+
+
+def test_interactive_work_is_bounded_between_page_slices(job_platform) -> None:
+    _engine, repository, _book, _chapter, worker_epoch_id = job_platform
+    created = repository.create_batch(
+        kind="export",
+        display_name="interactive burst",
+        specs=[
+            JobSpec(
+                kind="export",
+                config={"executionMode": "sequential"},
+                items=tuple(
+                    JobItemSpec(page_id=None, step_kinds=("one",))
+                    for _index in range(2)
+                ),
+            )
+        ],
+    )
+    job_id = str(created["jobIds"][0])
+    immediate_calls = 0
+
+    def safe_point() -> bool:
+        nonlocal immediate_calls
+        if immediate_calls:
+            return False
+        immediate_calls += 1
+        return True
+
+    stop = threading.Event()
+    loop = JobWorkerLoop(
+        repository,
+        worker_epoch_id=worker_epoch_id,
+        handlers={"one": lambda _fence, _step: {"done": True}},
+        safe_point=safe_point,
+        scheduling_policy=lambda: DEFAULT_SCHEDULING_POLICY,
+        admission_check=lambda: True,
+        idle_poll_seconds=0.01,
+    )
+    thread = threading.Thread(target=loop.run, args=(stop,), daemon=True)
+    thread.start()
+    try:
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            if repository.get_job(job_id)["status"] == "completed":
+                break
+            time.sleep(0.01)
+        assert repository.get_job(job_id)["status"] == "completed"
+        assert immediate_calls == 1
+    finally:
+        stop.set()
+        thread.join(timeout=2)
 
 
 def test_worker_loop_resolves_unbounded_dynamic_step_kinds(job_platform) -> None:

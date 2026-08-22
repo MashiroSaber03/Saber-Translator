@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
   createAdminInvite,
   createUserRecoveryCode,
   getAssetQuota,
   getPublicUserPolicy,
   getRegistrationPolicy,
+  getSchedulingPolicy,
   listAdminInvites,
   listAdminUsers,
   revokeAdminInvite,
@@ -13,11 +14,15 @@ import {
   setAssetQuota,
   setPublicUserPolicy,
   setRegistrationPolicy,
+  setSchedulingPolicy,
   type AdminInvite,
   type AdminUser,
   type PublicFeatureKey,
   type PublicModelKey,
   type PublicUserPolicy,
+  type QueueDiscipline,
+  type SchedulingOverview,
+  type SchedulingPolicy,
 } from '@/api/v2/auth'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import UiButton from '@/components/ui/UiButton.vue'
@@ -40,6 +45,7 @@ interface AdminPageData {
   assetQuotaGiB: number | null
   registrationRequiresInvite: boolean
   publicUserPolicy: PublicUserPolicy
+  scheduling: SchedulingOverview
 }
 
 const runtime = useRuntimeStore()
@@ -67,15 +73,22 @@ const registrationRequiresInvite = computed({
   },
 })
 const publicUserPolicy = computed(() => adminData.value?.publicUserPolicy ?? null)
+const scheduling = computed(() => adminData.value?.scheduling ?? null)
 const controlsDisabled = computed(() => busy.value || loading.value)
 
 const userStatusOptions: Array<UiSelectOption & { value: UserStatusFilter }> = [
   { label: '全部状态', value: 'all' },
   { label: '处理中', value: 'active' },
   { label: '排队中', value: 'queued' },
+  { label: '已暂停', value: 'paused' },
   { label: '待恢复', value: 'interrupted' },
   { label: '空闲', value: 'idle' },
   { label: '已禁用', value: 'disabled' },
+]
+
+const queueDisciplineOptions: Array<UiSelectOption & { value: QueueDiscipline }> = [
+  { label: '按用户轮转', value: 'owner_round_robin' },
+  { label: '先进先出', value: 'fifo' },
 ]
 
 const filteredUsers = computed(() => {
@@ -140,22 +153,26 @@ async function reload(): Promise<void> {
   loading.value = true
   error.value = ''
   try {
-    const [userRows, inviteRows, quota, registrationPolicy, userPolicy] = await Promise.all([
-      listAdminUsers(),
-      listAdminInvites(),
-      getAssetQuota(),
-      getRegistrationPolicy(),
-      getPublicUserPolicy(),
-    ])
+    const [userRows, inviteRows, quota, registrationPolicy, userPolicy, scheduler] =
+      await Promise.all([
+        listAdminUsers(),
+        listAdminInvites(),
+        getAssetQuota(),
+        getRegistrationPolicy(),
+        getPublicUserPolicy(),
+        getSchedulingPolicy(),
+      ])
     adminData.value = {
       users: userRows,
       invites: inviteRows,
       assetQuotaGiB: quota.assetQuotaBytes / GIB,
       registrationRequiresInvite: registrationPolicy.registrationRequiresInvite,
       publicUserPolicy: deepClone(userPolicy),
+      scheduling: deepClone(scheduler),
     }
     runtime.setRegistrationRequiresInvite(registrationPolicy.registrationRequiresInvite)
     runtime.setPublicUserPolicy(deepClone(userPolicy))
+    runtime.setMaxDeepLearningConcurrency(scheduler.policy.maxDeepLearningConcurrency)
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : '管理数据加载失败'
   } finally {
@@ -185,6 +202,7 @@ function quotaBytes(value: number | null): number {
 async function saveAssetQuota(): Promise<void> {
   await run(async () => {
     await setAssetQuota(quotaBytes(assetQuotaGiB.value))
+    oneTimeMessage.value = '每用户资产额度已保存。'
   })
 }
 
@@ -197,6 +215,7 @@ function taskStatusLabel(status: AdminUser['taskStatus']): string {
   return {
     active: '处理中',
     queued: '排队中',
+    paused: '已暂停',
     interrupted: '待恢复',
     idle: '空闲',
   }[status]
@@ -207,17 +226,19 @@ function taskDetail(user: AdminUser): string {
   if (user.currentTaskKind) details.push(jobKindLabel(user.currentTaskKind))
   if (user.currentTaskStartedAt) details.push(`${formatDateTime(user.currentTaskStartedAt)} 开始`)
   if (user.queuedTaskCount > 0) details.push(`${user.queuedTaskCount} 个排队`)
+  if (user.pausedTaskCount > 0) details.push(`${user.pausedTaskCount} 个暂停`)
   if (user.interruptedTaskCount > 0) details.push(`${user.interruptedTaskCount} 个待恢复`)
   return details.join(' · ') || '暂无进行中的任务'
 }
 
 function userDisplayPriority(user: AdminUser): number {
-  if (user.status === 'disabled') return 4
+  if (user.status === 'disabled') return 5
   return {
     active: 0,
     queued: 1,
-    interrupted: 2,
-    idle: 3,
+    paused: 2,
+    interrupted: 3,
+    idle: 4,
   }[user.taskStatus]
 }
 
@@ -244,11 +265,6 @@ function updateModel(key: PublicModelKey, value: boolean): void {
   if (publicUserPolicy.value) publicUserPolicy.value.models[key] = value
 }
 
-function updateMaxDeepLearningConcurrency(value: number | null): void {
-  if (!publicUserPolicy.value || value === null || !Number.isInteger(value) || value < 1) return
-  publicUserPolicy.value.settings.parallel.maxDeepLearningConcurrency = value
-}
-
 async function savePublicUserPolicy(): Promise<void> {
   if (!publicUserPolicy.value) return
   await run(async () => {
@@ -256,6 +272,47 @@ async function savePublicUserPolicy(): Promise<void> {
     runtime.setPublicUserPolicy(result)
     oneTimeMessage.value = '普通用户的功能与性能设置已保存。'
   })
+}
+
+type NumericSchedulingKey = Exclude<keyof SchedulingPolicy, 'queueDiscipline'>
+
+function updateQueueDiscipline(value: UiSelectValue): void {
+  if (!scheduling.value) return
+  const option = queueDisciplineOptions.find(candidate => candidate.value === value)
+  if (option) scheduling.value.policy.queueDiscipline = option.value
+}
+
+function updateSchedulingNumber(key: NumericSchedulingKey, value: number | null): void {
+  if (!scheduling.value || value === null || !Number.isInteger(value)) return
+  scheduling.value.policy[key] = value
+}
+
+function schedulerWaitingLabel(reason: SchedulingOverview['status']['waitingReason']): string {
+  if (reason === null) return '正常调度'
+  return {
+    worker_offline: 'Worker 离线',
+    low_memory: '可用内存不足',
+    queue_blocked: '任务等待写入锁',
+  }[reason]
+}
+
+async function saveScheduler(): Promise<void> {
+  if (!scheduling.value) return
+  await run(async () => {
+    const result = await setSchedulingPolicy(scheduling.value!.policy)
+    runtime.setMaxDeepLearningConcurrency(result.policy.maxDeepLearningConcurrency)
+    oneTimeMessage.value = '调度设置已保存，最迟约 2 秒对新调度片段生效。'
+  })
+}
+
+async function refreshSchedulerStatus(): Promise<void> {
+  if (!adminData.value || busy.value || loading.value) return
+  try {
+    const latest = await getSchedulingPolicy()
+    if (adminData.value) adminData.value.scheduling.status = latest.status
+  } catch {
+    // Keep the last good snapshot; explicit refresh still reports errors.
+  }
 }
 
 async function createInvite(): Promise<void> {
@@ -279,7 +336,14 @@ async function toggleUserStatus(user: AdminUser): Promise<void> {
   })
 }
 
-onMounted(reload)
+let schedulerRefreshTimer: number | undefined
+onMounted(() => {
+  void reload()
+  schedulerRefreshTimer = window.setInterval(refreshSchedulerStatus, 5000)
+})
+onBeforeUnmount(() => {
+  if (schedulerRefreshTimer !== undefined) window.clearInterval(schedulerRefreshTimer)
+})
 </script>
 
 <template>
@@ -366,6 +430,188 @@ onMounted(reload)
           </div>
         </section>
 
+        <section v-if="scheduling" class="admin-card admin-card--block scheduler-card">
+          <div class="section-heading">
+            <div>
+              <p class="section-kicker">任务调度</p>
+              <h2>负载与公平性</h2>
+              <p>全局只有一个持久任务占用计算槽；参数在页面片段边界生效。</p>
+            </div>
+            <UiButton
+              variant="primary"
+              size="sm"
+              :disabled="controlsDisabled"
+              @click="saveScheduler"
+            >
+              保存调度设置
+            </UiButton>
+          </div>
+
+          <div class="scheduler-status-grid" aria-label="调度器状态">
+            <div>
+              <span>Worker</span>
+              <strong>{{ scheduling.status.workerOnline ? '在线' : '离线' }}</strong>
+            </div>
+            <div>
+              <span>当前状态</span>
+              <strong>{{ schedulerWaitingLabel(scheduling.status.waitingReason) }}</strong>
+            </div>
+            <div>
+              <span>队列</span>
+              <strong>
+                {{ scheduling.status.queuedJobCount }} 个任务 ·
+                {{ scheduling.status.queuedUserCount }} 位用户
+              </strong>
+            </div>
+            <div>
+              <span>可用内存</span>
+              <strong>
+                {{ scheduling.status.availableMemoryMiB }} /
+                {{ scheduling.status.totalMemoryMiB }} MiB
+              </strong>
+            </div>
+          </div>
+          <p v-if="scheduling.status.currentTask" class="scheduler-current-task">
+            正在处理 {{ scheduling.status.currentTask.ownerUsername }} 的
+            {{ jobKindLabel(scheduling.status.currentTask.kind) }}任务；另有
+            {{ scheduling.status.pausedJobCount }} 个暂停任务。
+          </p>
+          <p v-else class="scheduler-current-task">
+            当前没有执行中的持久任务；另有 {{ scheduling.status.pausedJobCount }} 个暂停任务。
+          </p>
+
+          <div class="scheduler-grid">
+            <div class="scheduler-field">
+              <div>
+                <strong>队列规则</strong>
+                <span>多人公网优先按用户轮转；先进先出会让一个任务完整跑完。</span>
+              </div>
+              <UiSelect
+                class="scheduler-select"
+                :model-value="scheduling.policy.queueDiscipline"
+                :options="queueDisciplineOptions"
+                size="sm"
+                aria-label="队列规则"
+                :disabled="controlsDisabled"
+                @update:model-value="updateQueueDiscipline"
+              />
+            </div>
+            <div class="scheduler-field">
+              <div>
+                <strong>每轮页数</strong>
+                <span>完成这些页面并排空并行步骤后，再切换到下一位用户。</span>
+              </div>
+              <UiNumberField
+                class="policy-number-input"
+                :model-value="scheduling.policy.pageQuantum"
+                :min="1"
+                :max="20"
+                :step="1"
+                size="sm"
+                aria-label="每轮页数"
+                :disabled="controlsDisabled"
+                @update:model-value="updateSchedulingNumber('pageQuantum', $event)"
+              />
+            </div>
+            <div class="scheduler-field">
+              <div>
+                <strong>交互操作插队数</strong>
+                <span>每个页面片段后最多处理的编辑操作；0 表示长任务运行时不插队。</span>
+              </div>
+              <UiNumberField
+                class="policy-number-input"
+                :model-value="scheduling.policy.interactiveBurst"
+                :min="0"
+                :max="3"
+                :step="1"
+                size="sm"
+                aria-label="交互操作插队数"
+                :disabled="controlsDisabled"
+                @update:model-value="updateSchedulingNumber('interactiveBurst', $event)"
+              />
+            </div>
+            <div class="scheduler-field">
+              <div>
+                <strong>深度学习并发</strong>
+                <span>检测、OCR、颜色与修复共用的全局上限，对管理员同样生效。</span>
+              </div>
+              <UiNumberField
+                class="policy-number-input"
+                :model-value="scheduling.policy.maxDeepLearningConcurrency"
+                :min="1"
+                :max="8"
+                :step="1"
+                size="sm"
+                aria-label="深度学习并发"
+                :disabled="controlsDisabled"
+                @update:model-value="updateSchedulingNumber('maxDeepLearningConcurrency', $event)"
+              />
+            </div>
+            <div class="scheduler-field">
+              <div>
+                <strong>轻量操作并发</strong>
+                <span>翻译气泡、角色工坊等 API 后台操作的并发上限。</span>
+              </div>
+              <UiNumberField
+                class="policy-number-input"
+                :model-value="scheduling.policy.apiOperationConcurrency"
+                :min="1"
+                :max="8"
+                :step="1"
+                size="sm"
+                aria-label="轻量操作并发"
+                :disabled="controlsDisabled"
+                @update:model-value="updateSchedulingNumber('apiOperationConcurrency', $event)"
+              />
+            </div>
+            <div class="scheduler-field">
+              <div>
+                <strong>模型空闲释放</strong>
+                <span>Worker 空闲多久后卸载模型缓存，单位为秒。</span>
+              </div>
+              <UiNumberField
+                class="policy-number-input"
+                :model-value="scheduling.policy.modelIdleSeconds"
+                :min="60"
+                :max="3600"
+                :step="30"
+                size="sm"
+                aria-label="模型空闲释放秒数"
+                :disabled="controlsDisabled"
+                @update:model-value="updateSchedulingNumber('modelIdleSeconds', $event)"
+              />
+            </div>
+            <div class="scheduler-field">
+              <div>
+                <strong>最低可用内存</strong>
+                <span>低于此值时释放模型并暂停领取新片段；0 表示关闭保护。</span>
+              </div>
+              <UiNumberField
+                class="policy-number-input"
+                :model-value="scheduling.policy.minAvailableMemoryMiB"
+                :min="0"
+                :step="512"
+                size="sm"
+                aria-label="最低可用内存 MiB"
+                :disabled="controlsDisabled"
+                @update:model-value="updateSchedulingNumber('minAvailableMemoryMiB', $event)"
+              />
+            </div>
+          </div>
+          <p class="scheduler-recommendation">
+            当前机器建议：按用户轮转、每轮 1 页、插队 1 次、深度学习 1、轻量操作 2、 180
+            秒释放模型、保留 2048 MiB 可用内存。
+          </p>
+          <p
+            v-if="
+              publicUserPolicy?.settings.parallel.allowed && scheduling.policy.pageQuantum === 1
+            "
+            class="scheduler-warning"
+          >
+            普通用户已可使用并行模式。每轮 1 页最公平，但跨页流水线收益较小；需要吞吐时可改为 2 页。
+          </p>
+        </section>
+
         <section v-if="publicUserPolicy" class="admin-card admin-card--block policy-card">
           <div class="section-heading">
             <div>
@@ -429,7 +675,7 @@ onMounted(reload)
           <div class="policy-section">
             <div class="policy-section__heading">
               <h3>可修改设置与并行</h3>
-              <p>并行上限统一作用于检测、OCR、颜色处理和修复步骤。</p>
+              <p>这里只控制普通用户能否开启并行；并发上限由全局调度设置统一管理。</p>
             </div>
             <div class="policy-grid policy-grid--settings">
               <div class="policy-row">
@@ -465,22 +711,6 @@ onMounted(reload)
                   v-model="publicUserPolicy.settings.parallel.allowed"
                   accessibility-label="允许普通用户使用并行模式"
                   :disabled="controlsDisabled"
-                />
-              </div>
-              <div class="policy-row policy-row--number">
-                <div>
-                  <strong>深度学习并发上限</strong>
-                  <span>普通用户可设置的最大并发数。</span>
-                </div>
-                <UiNumberField
-                  class="policy-number-input"
-                  :model-value="publicUserPolicy.settings.parallel.maxDeepLearningConcurrency"
-                  :min="1"
-                  :step="1"
-                  size="sm"
-                  aria-label="普通用户深度学习并发上限"
-                  :disabled="controlsDisabled || !publicUserPolicy.settings.parallel.allowed"
-                  @update:model-value="updateMaxDeepLearningConcurrency"
                 />
               </div>
             </div>
@@ -551,6 +781,10 @@ onMounted(reload)
                 <div class="user-stat">
                   <strong>{{ user.queuedTaskCount }}</strong>
                   <span>排队</span>
+                </div>
+                <div class="user-stat">
+                  <strong>{{ user.pausedTaskCount }}</strong>
+                  <span>暂停</span>
                 </div>
                 <div class="user-stat">
                   <strong>{{ user.interruptedTaskCount }}</strong>
@@ -682,6 +916,9 @@ onMounted(reload)
   --admin-status-interrupted-surface: #fff7ed;
   --admin-status-interrupted-text: #9a3412;
   --admin-status-interrupted-dot: #f97316;
+  --admin-warning-border: #fde68a;
+  --admin-warning-surface: #fffbeb;
+  --admin-warning-text: #92400e;
   --ui-button-primary-background: #18181b;
   --ui-button-primary-color: #fff;
   --ui-button-primary-shadow: none;
@@ -881,6 +1118,120 @@ h2 {
   --ui-number-field-input-width: 116px;
 }
 
+.scheduler-card {
+  padding-bottom: 20px;
+}
+
+.scheduler-status-grid,
+.scheduler-grid {
+  display: grid;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--admin-border);
+  border-radius: 10px;
+  background: var(--admin-border);
+}
+
+.scheduler-status-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 20px;
+}
+
+.scheduler-status-grid > div {
+  min-width: 0;
+  padding: 14px 16px;
+  background: var(--admin-surface-subtle);
+}
+
+.scheduler-status-grid span,
+.scheduler-status-grid strong {
+  display: block;
+}
+
+.scheduler-status-grid span {
+  color: var(--admin-text-muted);
+  font-size: 0.72rem;
+}
+
+.scheduler-status-grid strong {
+  margin-top: 5px;
+  overflow: hidden;
+  color: var(--admin-text-default);
+  font-size: 0.86rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scheduler-current-task {
+  padding: 12px 2px 18px;
+  border-bottom: 1px solid var(--admin-divider);
+  font-size: 0.8rem;
+}
+
+.scheduler-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 18px;
+}
+
+.scheduler-field {
+  display: flex;
+  min-width: 0;
+  min-height: 82px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 14px 16px;
+  background: var(--admin-surface);
+}
+
+.scheduler-field > div {
+  min-width: 0;
+}
+
+.scheduler-field strong,
+.scheduler-field span {
+  display: block;
+}
+
+.scheduler-field strong {
+  color: var(--admin-text-default);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.scheduler-field span {
+  margin-top: 4px;
+  color: var(--admin-text-muted);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.scheduler-select {
+  flex: 0 0 150px;
+  width: 150px;
+}
+
+.scheduler-recommendation,
+.scheduler-warning {
+  padding: 11px 13px;
+  border-radius: 8px;
+  font-size: 0.78rem;
+}
+
+.admin-card .scheduler-recommendation {
+  margin-top: 14px;
+  background: var(--admin-surface-muted);
+}
+
+.admin-card .scheduler-warning {
+  margin-top: 8px;
+  border: 1px solid var(--admin-warning-border);
+  background: var(--admin-warning-surface);
+  color: var(--admin-warning-text);
+}
+
 .policy-card {
   padding-bottom: 8px;
 }
@@ -1063,7 +1414,8 @@ h2 {
 
 .user-card__stats {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  row-gap: 10px;
   margin: 14px 0 12px;
   padding: 11px 0;
   border-top: 1px solid var(--admin-divider-soft);
@@ -1077,7 +1429,7 @@ h2 {
   text-align: center;
 }
 
-.user-stat:first-child {
+.user-stat:nth-child(3n + 1) {
   border-left: 0;
 }
 
@@ -1221,6 +1573,15 @@ h2 {
   background: var(--admin-status-queued-dot);
 }
 
+.status-pill--task-paused {
+  background: var(--admin-surface-muted);
+  color: var(--admin-text-secondary);
+}
+
+.status-pill--task-paused .status-dot {
+  background: var(--admin-text-muted);
+}
+
 .status-pill--task-interrupted {
   background: var(--admin-status-interrupted-surface);
   color: var(--admin-status-interrupted-text);
@@ -1339,7 +1700,9 @@ h2 {
 
   .policy-grid--features,
   .policy-grid--settings,
-  .policy-grid--models {
+  .policy-grid--models,
+  .scheduler-grid,
+  .scheduler-status-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -1385,8 +1748,19 @@ h2 {
 
   .policy-grid--features,
   .policy-grid--settings,
-  .policy-grid--models {
+  .policy-grid--models,
+  .scheduler-grid,
+  .scheduler-status-grid {
     grid-template-columns: 1fr;
+  }
+
+  .scheduler-field {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .scheduler-select {
+    width: 100%;
   }
 
   .user-toolbar {

@@ -201,11 +201,19 @@ def run_worker(args: object) -> int:
             from src.backend_v2.storage.platform_repositories import (
                 ProviderRateLimiter,
             )
+            from src.backend_v2.scheduling_policy import (
+                SchedulingPolicyCache,
+                SchedulingPolicyRepository,
+                available_memory_mib,
+            )
             from src.shared.openai_rate_limits import (
                 configure_provider_rate_limit_store,
             )
 
             configure_provider_rate_limit_store(ProviderRateLimiter(engine))
+            scheduling_policy = SchedulingPolicyCache(
+                SchedulingPolicyRepository(engine)
+            )
             job_repository = JobQueueRepository(engine)
             plugin_job_runtime = PluginJobRuntime(
                 data_root=data_root,
@@ -372,6 +380,9 @@ def run_worker(args: object) -> int:
             model_lifecycle = WorkerModelLifecycle(
                 WorkerModelControlRepository(engine),
                 worker_epoch_id=identity.epoch_id,
+                idle_timeout_provider=lambda: float(
+                    scheduling_policy.load()["modelIdleSeconds"]
+                ),
                 release_callbacks=(
                     plugin_job_runtime.release_cached_instances,
                     plugin_operation_runtime.release_cached_instances,
@@ -388,12 +399,28 @@ def run_worker(args: object) -> int:
             )
             LOGGER.info("Worker 调度循环已就绪，开始从 SQLite 队列领取任务")
 
+            def memory_admitted() -> bool:
+                threshold = int(
+                    scheduling_policy.load()["minAvailableMemoryMiB"]
+                )
+                if threshold == 0 or available_memory_mib() >= threshold:
+                    return True
+                try:
+                    model_lifecycle.release_for_memory_pressure()
+                except Exception as exc:
+                    if not is_sqlite_busy_error(exc):
+                        raise
+                    return False
+                return available_memory_mib() >= threshold
+
             def run_immediate_work() -> bool:
                 try:
                     if maintenance.run_if_due():
                         return True
                     if model_lifecycle.run_pending_release():
                         return True
+                    if not memory_admitted():
+                        return False
                     if operation_runner.run_one() or qa_runner.run_one():
                         model_lifecycle.note_activity()
                         return True
@@ -420,6 +447,8 @@ def run_worker(args: object) -> int:
                     insight_derived,
                 ),
                 safe_point=run_immediate_work,
+                scheduling_policy=scheduling_policy.load,
+                admission_check=memory_admitted,
                 on_activity=model_lifecycle.note_activity,
                 plugin_runtime=plugin_job_runtime,
             ).run(stop_event)

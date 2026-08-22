@@ -55,9 +55,6 @@ const routeContentReady = computed(
 const bootstrapError = computed(() => {
   if (!routerReady.value || !applicationRoute.value) return ''
   if (!runtimeStore.capabilities) return '无法读取运行配置，请确认后端服务可以访问。'
-  if (runtimeStore.capabilities.requiresAuth && !authStore.authenticated) {
-    return '登录状态已失效，请重新登录。'
-  }
   if (!settingsLoading.value && !settingsStore.isBackendReady && settingsStore.backendError) {
     return `应用设置加载失败：${settingsStore.backendError}`
   }

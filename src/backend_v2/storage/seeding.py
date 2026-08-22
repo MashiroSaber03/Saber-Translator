@@ -24,6 +24,7 @@ from src.backend_v2.storage.defaults import (
 from src.backend_v2.storage.schema import (
     DEFAULT_ASSET_QUOTA_BYTES,
     DEFAULT_PUBLIC_USER_POLICY_JSON,
+    DEFAULT_SCHEDULING_POLICY_JSON,
     app_settings,
     books,
     chapters,
@@ -65,6 +66,7 @@ def seed_system_records(engine: Engine) -> None:
                     registration_requires_invite=True,
                     asset_quota_bytes=DEFAULT_ASSET_QUOTA_BYTES,
                     public_user_policy_json=DEFAULT_PUBLIC_USER_POLICY_JSON,
+                    scheduler_policy_json=DEFAULT_SCHEDULING_POLICY_JSON,
                 )
             )
 

@@ -43,15 +43,21 @@ class DurableOperationExecutor:
         executor_epoch_id: str,
         handlers: Mapping[str, OperationHandler],
         max_workers: int,
+        concurrency_limit: Callable[[], int] | None = None,
         poll_seconds: float = 0.25,
     ) -> None:
+        if max_workers < 1:
+            raise ValueError("operation executor size must be positive")
         self.repository = repository
         self.executor_role = executor_role
         self.executor_epoch_id = executor_epoch_id
         self.handlers = dict(handlers)
         self.poll_seconds = poll_seconds
+        self.max_workers = max_workers
+        self.concurrency_limit = concurrency_limit
         self._stop = threading.Event()
-        self._admission = threading.Semaphore(max_workers)
+        self._admission_lock = threading.Lock()
+        self._active = 0
         self._pool = ThreadPoolExecutor(
             max_workers=max_workers,
             thread_name_prefix=f"{executor_role}-operation",
@@ -74,7 +80,16 @@ class DurableOperationExecutor:
 
     def _run(self) -> None:
         while not self._stop.wait(self.poll_seconds):
-            if not self._admission.acquire(blocking=False):
+            try:
+                reserved = self._reserve_slot()
+            except Exception:
+                LOGGER.exception(
+                    "%s operation 调度器读取并发上限失败，将继续轮询",
+                    self.executor_role,
+                )
+                self._stop.wait(max(1.0, self.poll_seconds))
+                continue
+            if not reserved:
                 continue
             try:
                 claimed = self.repository.claim_next(
@@ -83,11 +98,11 @@ class DurableOperationExecutor:
                     allowed_kinds=tuple(self.handlers),
                 )
             except OperationFenced:
-                self._admission.release()
+                self._release_slot()
                 self._stop.set()
                 return
             except Exception as exc:
-                self._admission.release()
+                self._release_slot()
                 if is_sqlite_busy_error(exc):
                     LOGGER.warning(
                         "%s operation 调度器遇到 SQLite 写锁竞争，将继续轮询",
@@ -101,9 +116,26 @@ class DurableOperationExecutor:
                 self._stop.wait(max(1.0, self.poll_seconds))
                 continue
             if claimed is None:
-                self._admission.release()
+                self._release_slot()
                 continue
             self._pool.submit(self._execute, *claimed)
+
+    def _reserve_slot(self) -> bool:
+        limit = self.max_workers
+        if self.concurrency_limit is not None:
+            value = self.concurrency_limit()
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise RuntimeError("operation concurrency limit must be positive")
+            limit = min(limit, value)
+        with self._admission_lock:
+            if self._active >= limit:
+                return False
+            self._active += 1
+            return True
+
+    def _release_slot(self) -> None:
+        with self._admission_lock:
+            self._active -= 1
 
     def _execute(
         self,
@@ -153,7 +185,7 @@ class DurableOperationExecutor:
             except OperationFenced:
                 pass
         finally:
-            self._admission.release()
+            self._release_slot()
         LOGGER.info(
             "操作结束：operation=%s kind=%s duration=%.2fs",
             _short(fence.operation_id),

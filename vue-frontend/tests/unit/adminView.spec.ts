@@ -5,7 +5,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import AdminView from '@/views/AdminView.vue'
-import type { AdminUser, PublicUserPolicy } from '@/api/v2/auth'
+import type { AdminUser, PublicUserPolicy, SchedulingOverview } from '@/api/v2/auth'
 
 const authMocks = vi.hoisted(() => ({
   listAdminUsers: vi.fn(),
@@ -13,6 +13,7 @@ const authMocks = vi.hoisted(() => ({
   getAssetQuota: vi.fn(),
   getRegistrationPolicy: vi.fn(),
   getPublicUserPolicy: vi.fn(),
+  getSchedulingPolicy: vi.fn(),
   createAdminInvite: vi.fn(),
   createUserRecoveryCode: vi.fn(),
   revokeAdminInvite: vi.fn(),
@@ -20,6 +21,7 @@ const authMocks = vi.hoisted(() => ({
   setAssetQuota: vi.fn(),
   setRegistrationPolicy: vi.fn(),
   setPublicUserPolicy: vi.fn(),
+  setSchedulingPolicy: vi.fn(),
 }))
 
 vi.mock('@/api/v2/auth', () => authMocks)
@@ -49,7 +51,29 @@ const publicUserPolicy: PublicUserPolicy = {
   },
   settings: {
     lamaDisableResize: { editable: true, value: false },
-    parallel: { allowed: false, maxDeepLearningConcurrency: 1 },
+    parallel: { allowed: false },
+  },
+}
+
+const scheduling: SchedulingOverview = {
+  policy: {
+    queueDiscipline: 'owner_round_robin',
+    pageQuantum: 1,
+    interactiveBurst: 1,
+    maxDeepLearningConcurrency: 1,
+    apiOperationConcurrency: 2,
+    modelIdleSeconds: 180,
+    minAvailableMemoryMiB: 2048,
+  },
+  status: {
+    workerOnline: true,
+    currentTask: null,
+    queuedJobCount: 0,
+    queuedUserCount: 0,
+    pausedJobCount: 0,
+    availableMemoryMiB: 4096,
+    totalMemoryMiB: 16384,
+    waitingReason: null,
   },
 }
 
@@ -69,6 +93,7 @@ function adminUser(
     taskStatus,
     activeTaskCount: taskStatus === 'active' ? 1 : 0,
     queuedTaskCount: taskStatus === 'queued' ? 1 : 0,
+    pausedTaskCount: taskStatus === 'paused' ? 1 : 0,
     interruptedTaskCount: taskStatus === 'interrupted' ? 1 : 0,
     completedTaskCount: 3,
     issueTaskCount: 0,
@@ -87,10 +112,13 @@ describe('AdminView user task overview', () => {
     authMocks.getAssetQuota.mockResolvedValue({ assetQuotaBytes: 2 * 1024 ** 3 })
     authMocks.getRegistrationPolicy.mockResolvedValue({ registrationRequiresInvite: false })
     authMocks.getPublicUserPolicy.mockResolvedValue(structuredClone(publicUserPolicy))
+    authMocks.getSchedulingPolicy.mockResolvedValue(structuredClone(scheduling))
   })
 
   it('defines the retained task activity returned for each administrator user row', () => {
-    expect(apiSource).toContain("taskStatus: 'active' | 'queued' | 'interrupted' | 'idle'")
+    expect(apiSource).toContain(
+      "taskStatus: 'active' | 'queued' | 'paused' | 'interrupted' | 'idle'"
+    )
     expect(apiSource).toContain('completedTaskCount: number')
     expect(apiSource).toContain('issueTaskCount: number')
     expect(apiSource).toContain('currentTaskKind: string | null')
@@ -137,11 +165,14 @@ describe('AdminView user task overview', () => {
     expect(visibleNames()).toEqual(['queued-user'])
 
     await wrapper.get('[aria-label="搜索用户名"]').setValue('')
-    wrapper.getComponent(UiSelect).vm.$emit('update:modelValue', 'interrupted')
+    const statusSelect = wrapper
+      .findAllComponents(UiSelect)
+      .find(component => component.props('modelValue') === 'all')!
+    statusSelect.vm.$emit('update:modelValue', 'interrupted')
     await wrapper.vm.$nextTick()
     expect(visibleNames()).toEqual(['interrupted-user'])
 
-    wrapper.getComponent(UiSelect).vm.$emit('update:modelValue', 'disabled')
+    statusSelect.vm.$emit('update:modelValue', 'disabled')
     await wrapper.vm.$nextTick()
     expect(visibleNames()).toEqual(['disabled-user'])
     expect(authMocks.listAdminUsers).toHaveBeenCalledTimes(1)
@@ -183,6 +214,30 @@ describe('AdminView user task overview', () => {
     wrapper.unmount()
   })
 
+  it('confirms a successful asset quota save', async () => {
+    authMocks.setAssetQuota.mockResolvedValue({ assetQuotaBytes: 2 * 1024 ** 3 })
+
+    const wrapper = mount(AdminView, {
+      global: {
+        stubs: {
+          RouterLink: { template: '<a><slot /></a>' },
+        },
+      },
+    })
+    await flushPromises()
+
+    await wrapper.get('[aria-label="每用户资产额度 GB"]').setValue('2')
+    await wrapper
+      .findAll('button')
+      .find(button => button.text() === '保存额度')!
+      .trigger('click')
+    await flushPromises()
+
+    expect(authMocks.setAssetQuota).toHaveBeenCalledWith(2 * 1024 ** 3)
+    expect(wrapper.text()).toContain('每用户资产额度已保存。')
+    wrapper.unmount()
+  })
+
   it('keeps server-backed controls unmounted when initial admin loading fails', async () => {
     authMocks.getAssetQuota.mockRejectedValueOnce(new Error('额度接口不可用'))
 
@@ -212,7 +267,9 @@ describe('AdminView user task overview', () => {
     expect(viewSource).toContain('页面与模式')
     expect(viewSource).toContain('本地模型')
     expect(viewSource).toContain('允许修改“禁用自动缩放”')
-    expect(viewSource).toContain('深度学习并发上限')
+    expect(viewSource).toContain('负载与公平性')
+    expect(viewSource).toContain('深度学习并发')
+    expect(viewSource).toContain('只有一个持久任务占用计算槽')
     expect(viewSource).toContain('只限制普通用户；管理员和本地模式不受影响')
     expect(viewSource).not.toContain('用户组')
     expect(viewSource).not.toContain('权限模板')

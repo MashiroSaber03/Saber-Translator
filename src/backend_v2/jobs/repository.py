@@ -51,6 +51,7 @@ from src.backend_v2.storage.schema import (
     ACTIVE_OPERATION_STATUSES,
     ACTIVE_RENDER_REQUEST_STATUSES,
     CURRENT_JOB_STATUSES,
+    EXECUTING_JOB_STATUSES,
     JOB_KINDS,
     JOB_STATUSES,
     NONTERMINAL_JOB_STATUSES,
@@ -1625,6 +1626,7 @@ class JobQueueRepository:
             )
             if not rows:
                 raise JobConflict("job batch has no paused or interrupted members")
+            next_queue_rank = self._next_queue_rank(connection)
             for row in rows:
                 event = (
                     JobEvent.RESUME
@@ -1635,8 +1637,10 @@ class JobQueueRepository:
                     "status": "queued",
                     "attempt_id": None,
                     "worker_epoch_id": None,
+                    "queue_rank": next_queue_rank,
                     "updated_at": now,
                 }
+                next_queue_rank += 1
                 progress = decode_job_progress(row)
                 progress["jobStatus"] = "queued"
                 values["latest_progress_json"] = _json(progress)
@@ -1894,17 +1898,26 @@ class JobQueueRepository:
             now=now,
         )
 
-    def claim_next(self, *, worker_epoch_id: str) -> AttemptFence | None:
+    def claim_next(
+        self,
+        *,
+        worker_epoch_id: str,
+        queue_discipline: str = "fifo",
+    ) -> AttemptFence | None:
         """Claim the next executable job."""
 
+        if queue_discipline not in {"fifo", "owner_round_robin"}:
+            raise ValueError("unsupported queue discipline")
+
         now = utcnow()
-        # A paused or active job deliberately owns the single execution slot.
+        # Paused jobs keep their checkpoints and write reservations, but do not
+        # occupy the single compute slot.
         # Observe that common no-op case without taking SQLite's writer lock.
         with self.engine.connect() as connection:
             self._assert_worker_epoch(connection, worker_epoch_id, now)
             current = connection.execute(
                 select(jobs.c.id)
-                .where(jobs.c.status.in_(CURRENT_JOB_STATUSES))
+                .where(jobs.c.status.in_(EXECUTING_JOB_STATUSES))
                 .limit(1)
             ).scalar_one_or_none()
             if current is not None:
@@ -1913,7 +1926,7 @@ class JobQueueRepository:
             self._assert_worker_epoch(connection, worker_epoch_id, now)
             current = connection.execute(
                 select(jobs.c.id)
-                .where(jobs.c.status.in_(CURRENT_JOB_STATUSES))
+                .where(jobs.c.status.in_(EXECUTING_JOB_STATUSES))
                 .limit(1)
             ).scalar_one_or_none()
             if current is not None:
@@ -1953,8 +1966,93 @@ class JobQueueRepository:
                     worker_epoch_id=worker_epoch_id,
                     now=now,
                 )
+                if queue_discipline == "owner_round_robin":
+                    self._rotate_claimed_owner_to_tail(
+                        connection,
+                        owner_user_id=fence.owner_user_id,
+                        now=now,
+                    )
                 return fence
         return None
+
+    def has_queued_competitor(self, *, owner_user_id: str) -> bool:
+        """Return whether another owner has ready durable work."""
+
+        with self.engine.connect() as connection:
+            return connection.execute(
+                select(jobs.c.id)
+                .where(
+                    jobs.c.status == "queued",
+                    jobs.c.owner_user_id != owner_user_id,
+                    jobs.c.blocked_reason.is_(None),
+                )
+                .limit(1)
+            ).scalar_one_or_none() is not None
+
+    def yield_attempt(
+        self,
+        fence: AttemptFence,
+        *,
+        reason: str,
+    ) -> None:
+        """Checkpoint a drained attempt and put it at the global queue tail."""
+
+        if reason not in {"fairness", "memory_pressure"}:
+            raise ValueError("unsupported scheduling yield reason")
+        now = utcnow()
+        with immediate_transaction(self.engine) as connection:
+            self._assert_attempt(connection, fence, now, allowed_statuses=("running",))
+            running_steps = int(
+                connection.execute(
+                    select(func.count())
+                    .select_from(job_steps)
+                    .join(job_items, job_items.c.id == job_steps.c.job_item_id)
+                    .where(
+                        job_items.c.job_id == fence.job_id,
+                        job_steps.c.status == "running",
+                    )
+                ).scalar_one()
+            )
+            if running_steps:
+                raise JobConflict("cannot yield a job with running steps")
+            queue_rank = self._next_queue_rank(connection)
+            progress = self._progress_snapshot(
+                connection,
+                fence.job_id,
+                job_status="queued",
+            )
+            changed = connection.execute(
+                update(jobs)
+                .where(
+                    jobs.c.id == fence.job_id,
+                    jobs.c.attempt_id == fence.attempt_id,
+                    jobs.c.worker_epoch_id == fence.worker_epoch_id,
+                    jobs.c.status == "running",
+                )
+                .values(
+                    status="queued",
+                    queue_rank=queue_rank,
+                    attempt_id=None,
+                    worker_epoch_id=None,
+                    latest_progress_json=_json(progress),
+                    updated_at=now,
+                )
+            )
+            if changed.rowcount != 1:
+                raise AttemptFenced("job attempt lost execution rights")
+            self._append_event(
+                connection,
+                job_id=fence.job_id,
+                event_type="job_yielded",
+                payload={
+                    "reason": reason,
+                    "queueRank": queue_rank,
+                    "progress": progress,
+                },
+                now=now,
+            )
+            self._bump_queue_revision(connection, now)
+            self._refresh_batch_summary(connection, fence.job_id, now)
 
     def control_status(self, fence: AttemptFence) -> str:
         with self.engine.connect() as connection:
@@ -3849,6 +3947,8 @@ class JobQueueRepository:
                     attempt_id=None,
                     worker_epoch_id=None,
                 )
+            if new_status is JobStatus.QUEUED:
+                values["queue_rank"] = self._next_queue_rank(connection)
             if new_status is JobStatus.CANCELLED:
                 values.update(queue_rank=None, finished_at=now)
                 self._cancel_unfinished_graph(connection, job_id, now)
@@ -4381,6 +4481,60 @@ class JobQueueRepository:
             now=now,
         )
         self._refresh_batch_summary(connection, job_id, now)
+
+    @staticmethod
+    def _next_queue_rank(connection: Any) -> int:
+        return int(
+            connection.execute(
+                select(func.coalesce(func.max(jobs.c.queue_rank), 0))
+            ).scalar_one()
+        ) + 1
+
+    def _rotate_claimed_owner_to_tail(
+        self,
+        connection: Connection,
+        *,
+        owner_user_id: str,
+        now: datetime,
+    ) -> None:
+        same_owner = [
+            str(job_id)
+            for job_id in connection.execute(
+                select(jobs.c.id)
+                .where(
+                    jobs.c.status == "queued",
+                    jobs.c.owner_user_id == owner_user_id,
+                )
+                .order_by(jobs.c.queue_rank, jobs.c.created_at)
+            ).scalars()
+        ]
+        if not same_owner:
+            return
+        other_owner_exists = connection.execute(
+            select(jobs.c.id)
+            .where(
+                jobs.c.status == "queued",
+                jobs.c.owner_user_id != owner_user_id,
+            )
+            .limit(1)
+        ).scalar_one_or_none()
+        if other_owner_exists is None:
+            return
+        first_tail_rank = self._next_queue_rank(connection)
+        for offset, job_id in enumerate(same_owner):
+            queue_rank = first_tail_rank + offset
+            connection.execute(
+                update(jobs)
+                .where(jobs.c.id == job_id, jobs.c.status == "queued")
+                .values(queue_rank=queue_rank, updated_at=now)
+            )
+            self._append_event(
+                connection,
+                job_id=job_id,
+                event_type="job_reordered",
+                payload={"queueRank": queue_rank, "source": "owner_round_robin"},
+                now=now,
+            )
 
     def _reorder_ordinary(
         self,

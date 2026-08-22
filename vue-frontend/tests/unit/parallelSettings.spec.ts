@@ -38,23 +38,26 @@ describe('ParallelSettings', () => {
     const wrapper = mount(ParallelSettings)
     const numberField = wrapper.getComponent(UiNumberField)
 
-    expect(numberField.props('modelValue')).toBe(2)
+    expect(numberField.props('modelValue')).toBe(1)
     expect(numberField.props('min')).toBe(1)
-    expect(numberField.props('max')).toBeUndefined()
+    expect(numberField.props('max')).toBe(1)
     expect(numberField.props('controls')).toBe(true)
 
     numberField.vm.$emit('update:modelValue', 8)
-    expect(store.settings.parallel.deepLearningLockSize).toBe(8)
+    expect(store.settings.parallel.deepLearningLockSize).toBe(1)
 
     numberField.vm.$emit('update:modelValue', 0)
-    expect(store.settings.parallel.deepLearningLockSize).toBe(8)
+    expect(store.settings.parallel.deepLearningLockSize).toBe(1)
 
     expect(wrapper.find('.number-input').exists()).toBe(false)
     expect(wrapper.find('.number-control').exists()).toBe(false)
   })
 
   it('maps warning note colors to semantic status tokens', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/settings/ParallelSettings.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/settings/ParallelSettings.vue'),
+      'utf8'
+    )
 
     expect(source).not.toContain('rgba(255, 193, 7')
     expect(source).not.toContain('#ffc107')
@@ -62,9 +65,13 @@ describe('ParallelSettings', () => {
   })
 
   it('keeps the warning note under the ParallelSettings owner hooks', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/settings/ParallelSettings.vue'), 'utf8')
-    const classTokens = [...source.matchAll(/class="([^"]+)"/g)]
-      .flatMap(match => match[1]!.split(/\s+/).filter(Boolean))
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/settings/ParallelSettings.vue'),
+      'utf8'
+    )
+    const classTokens = [...source.matchAll(/class="([^"]+)"/g)].flatMap(match =>
+      match[1]!.split(/\s+/).filter(Boolean)
+    )
 
     expect(classTokens).toContain('parallel-settings__note')
     expect(classTokens).toContain('parallel-settings__note-title')
@@ -77,7 +84,10 @@ describe('ParallelSettings', () => {
   })
 
   it('routes settings row labels and hints through typed UiField props', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/settings/ParallelSettings.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/settings/ParallelSettings.vue'),
+      'utf8'
+    )
 
     expect(source).not.toMatch(/<label\b/)
     expect(source).not.toContain('class="ui-form-hint"')

@@ -14,13 +14,14 @@ import ProductCardGrid from '@/components/product/ProductCardGrid.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 
-const { getBooksMock, getTagsMock, getBookDetailMock, getServerInfoMock, routerPushMock } = vi.hoisted(() => ({
-  getBooksMock: vi.fn(),
-  getTagsMock: vi.fn(),
-  getBookDetailMock: vi.fn(),
-  getServerInfoMock: vi.fn(),
-  routerPushMock: vi.fn(),
-}))
+const { getBooksMock, getTagsMock, getBookDetailMock, getServerInfoMock, routerPushMock } =
+  vi.hoisted(() => ({
+    getBooksMock: vi.fn(),
+    getTagsMock: vi.fn(),
+    getBookDetailMock: vi.fn(),
+    getServerInfoMock: vi.fn(),
+    routerPushMock: vi.fn(),
+  }))
 
 vi.mock('vue-router', () => ({
   useRoute: () => ({ query: {} }),
@@ -39,7 +40,7 @@ vi.mock('@/api/bookshelf', () => ({
 
 function deferred<T>() {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>((resolvePromise) => {
+  const promise = new Promise<T>(resolvePromise => {
     resolve = resolvePromise
   })
   return { promise, resolve }
@@ -117,9 +118,10 @@ function mountView(profile: 'local' | 'public' = 'local') {
         },
         settings: {
           lamaDisableResize: { editable: false, value: false },
-          parallel: { allowed: false, maxDeepLearningConcurrency: 1 },
+          parallel: { allowed: false },
         },
       },
+      scheduling: { maxDeepLearningConcurrency: 1 },
       features: { plugins: false, webImport: false, localProviders: false },
     }
   }
@@ -185,7 +187,9 @@ describe('BookshelfView', () => {
     expect(themeToggle.attributes('aria-label')).toBe('切换深色模式')
     await themeToggle.trigger('click')
     expect(settingsStore.theme).toBe('dark')
-    expect(wrapper.get('.bookshelf-header__tutorial-link').attributes('rel')).toBe('noopener noreferrer')
+    expect(wrapper.get('.bookshelf-header__tutorial-link').attributes('rel')).toBe(
+      'noopener noreferrer'
+    )
     const githubLink = wrapper.get('.bookshelf-header__github-link')
     expect(githubLink.attributes('rel')).toBe('noopener noreferrer')
     expect(githubLink.getComponent(UiIcon).props('name')).toBe('github')
@@ -211,7 +215,9 @@ describe('BookshelfView', () => {
   it('routes header metadata through the shared product meta pill', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/views/BookshelfView.vue'), 'utf8')
 
-    expect(source).toContain("import ProductHeaderMetaPill from '@/components/product/ProductHeaderMetaPill.vue'")
+    expect(source).toContain(
+      "import ProductHeaderMetaPill from '@/components/product/ProductHeaderMetaPill.vue'"
+    )
     expect(source).toContain('<ProductHeaderMetaPill')
     expect(source).not.toContain('bookshelf-header__lan-access')
     expect(source).not.toContain('bookshelf-header__lan-icon')
@@ -220,8 +226,11 @@ describe('BookshelfView', () => {
   it('renders create-book actions with the shared plus icon', () => {
     const wrapper = mountView()
 
-    const createButtons = wrapper.findAll('button')
-      .filter(button => button.text().includes('新建书籍') || button.text().includes('新建第一本书'))
+    const createButtons = wrapper
+      .findAll('button')
+      .filter(
+        button => button.text().includes('新建书籍') || button.text().includes('新建第一本书')
+      )
 
     expect(createButtons).toHaveLength(2)
     for (const button of createButtons) {
@@ -294,7 +303,8 @@ describe('BookshelfView', () => {
     store.loadTags = vi.fn().mockResolvedValue(undefined)
     await nextTick()
 
-    const status = wrapper.findAllComponents(ProductStatusBanner)
+    const status = wrapper
+      .findAllComponents(ProductStatusBanner)
       .find(banner => banner.props('title') === '标签加载失败')!
     expect(status.props()).toMatchObject({
       role: 'alert',
@@ -309,7 +319,9 @@ describe('BookshelfView', () => {
   it('delegates repeated book-card layout to the product card grid', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/views/BookshelfView.vue'), 'utf8')
 
-    expect(source).toContain("import ProductCardGrid from '@/components/product/ProductCardGrid.vue'")
+    expect(source).toContain(
+      "import ProductCardGrid from '@/components/product/ProductCardGrid.vue'"
+    )
     expect(source).toContain('<ProductCardGrid')
     expect(source).not.toContain('class="books-grid"')
     expect(source).not.toContain('grid-template-columns: repeat(auto-fill, minmax(160px, 1fr))')
@@ -324,7 +336,8 @@ describe('BookshelfView', () => {
     store.toggleBookSelection('empty-book')
     await nextTick()
 
-    const translateButton = wrapper.findAll('button')
+    const translateButton = wrapper
+      .findAll('button')
       .find(button => button.text().includes('翻译全部章节'))
     expect(translateButton?.attributes('disabled')).toBeDefined()
 
@@ -340,9 +353,7 @@ describe('BookshelfView', () => {
     ])
     const first = deferred<{ id: string; title: string; chapters: [] }>()
     const second = deferred<{ id: string; title: string; chapters: [] }>()
-    getBookDetailMock
-      .mockReturnValueOnce(first.promise)
-      .mockReturnValueOnce(second.promise)
+    getBookDetailMock.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
     const wrapper = mountView()
     await flushPromises()
 

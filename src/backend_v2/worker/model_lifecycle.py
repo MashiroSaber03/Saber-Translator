@@ -273,12 +273,14 @@ class WorkerModelLifecycle:
         *,
         worker_epoch_id: str,
         idle_timeout_seconds: float = 600,
+        idle_timeout_provider: Callable[[], float] | None = None,
         release_callbacks: Sequence[Callable[[], object]] = (),
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self.repository = repository
         self.worker_epoch_id = worker_epoch_id
         self.idle_timeout_seconds = max(0.0, idle_timeout_seconds)
+        self.idle_timeout_provider = idle_timeout_provider
         self.release_callbacks = tuple(release_callbacks)
         self.monotonic = monotonic
         self.last_activity = monotonic()
@@ -331,7 +333,7 @@ class WorkerModelLifecycle:
             return False
         if (
             self.monotonic() - self.last_activity
-            < self.idle_timeout_seconds
+            < self._idle_timeout_seconds()
         ):
             return False
         if self.repository.runtime_busy():
@@ -346,6 +348,24 @@ class WorkerModelLifecycle:
         )
         self.released_since_activity = True
         return True
+
+    def release_for_memory_pressure(self) -> bool:
+        """Release caches once at a safe boundary before delaying new work."""
+
+        if self.released_since_activity or self.repository.model_inference_busy():
+            return False
+        unload_loaded_models(release_callbacks=self.release_callbacks)
+        LOGGER.warning("可用内存低于调度阈值，已释放本地模型与运行时缓存")
+        self.released_since_activity = True
+        return True
+
+    def _idle_timeout_seconds(self) -> float:
+        if self.idle_timeout_provider is None:
+            return self.idle_timeout_seconds
+        value = self.idle_timeout_provider()
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise RuntimeError("model idle timeout must be numeric")
+        return max(0.0, float(value))
 
 
 def unload_loaded_models(

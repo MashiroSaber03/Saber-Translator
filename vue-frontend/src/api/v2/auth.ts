@@ -24,9 +24,43 @@ export interface PublicUserPolicy {
     }
     parallel: {
       allowed: boolean
-      maxDeepLearningConcurrency: number
     }
   }
+}
+
+export type QueueDiscipline = 'owner_round_robin' | 'fifo'
+
+export interface SchedulingPolicy {
+  queueDiscipline: QueueDiscipline
+  pageQuantum: number
+  interactiveBurst: number
+  maxDeepLearningConcurrency: number
+  apiOperationConcurrency: number
+  modelIdleSeconds: number
+  minAvailableMemoryMiB: number
+}
+
+export interface SchedulingStatus {
+  workerOnline: boolean
+  currentTask: {
+    jobId: string
+    kind: string
+    status: string
+    ownerUserId: string
+    ownerUsername: string
+    startedAt: string | null
+  } | null
+  queuedJobCount: number
+  queuedUserCount: number
+  pausedJobCount: number
+  availableMemoryMiB: number
+  totalMemoryMiB: number
+  waitingReason: 'worker_offline' | 'low_memory' | 'queue_blocked' | null
+}
+
+export interface SchedulingOverview {
+  policy: SchedulingPolicy
+  status: SchedulingStatus
 }
 
 export interface RuntimeCapabilities {
@@ -35,6 +69,9 @@ export interface RuntimeCapabilities {
   browserCredentials: boolean
   registrationRequiresInvite: boolean
   publicUserPolicy: PublicUserPolicy
+  scheduling: {
+    maxDeepLearningConcurrency: number
+  }
   features: {
     plugins: boolean
     webImport: boolean
@@ -61,9 +98,10 @@ export interface AdminUser extends AuthUser {
   assetUsageBytes: number
   assetQuotaBytes: number
   createdAt: string
-  taskStatus: 'active' | 'queued' | 'interrupted' | 'idle'
+  taskStatus: 'active' | 'queued' | 'paused' | 'interrupted' | 'idle'
   activeTaskCount: number
   queuedTaskCount: number
+  pausedTaskCount: number
   interruptedTaskCount: number
   completedTaskCount: number
   issueTaskCount: number
@@ -96,7 +134,7 @@ export function login(username: string, password: string): Promise<AuthSession> 
 export function register(
   username: string,
   password: string,
-  inviteCode?: string,
+  inviteCode?: string
 ): Promise<AuthSession> {
   return apiClient.post('/api/v2/auth/register', {
     username,
@@ -108,7 +146,7 @@ export function register(
 export function recoverPassword(
   username: string,
   recoveryCode: string,
-  newPassword: string,
+  newPassword: string
 ): Promise<{ status: string }> {
   return apiClient.post('/api/v2/auth/recover', { username, recoveryCode, newPassword })
 }
@@ -119,7 +157,7 @@ export function logout(): Promise<{ status: string }> {
 
 export function changePassword(
   currentPassword: string,
-  newPassword: string,
+  newPassword: string
 ): Promise<{ status: string }> {
   return apiClient.post('/api/v2/auth/change-password', { currentPassword, newPassword })
 }
@@ -142,7 +180,7 @@ export function revokeAdminInvite(inviteId: string): Promise<{ status: string }>
 
 export function setAdminUserStatus(
   userId: string,
-  status: 'active' | 'disabled',
+  status: 'active' | 'disabled'
 ): Promise<{ status: string }> {
   return apiClient.patch(`/api/v2/admin/users/${encodeURIComponent(userId)}/status`, { status })
 }
@@ -151,9 +189,7 @@ export function getAssetQuota(): Promise<{ assetQuotaBytes: number }> {
   return apiClient.get('/api/v2/admin/asset-quota')
 }
 
-export function setAssetQuota(
-  assetQuotaBytes: number,
-): Promise<{ assetQuotaBytes: number }> {
+export function setAssetQuota(assetQuotaBytes: number): Promise<{ assetQuotaBytes: number }> {
   return apiClient.patch('/api/v2/admin/asset-quota', { assetQuotaBytes })
 }
 
@@ -162,7 +198,7 @@ export function getRegistrationPolicy(): Promise<{ registrationRequiresInvite: b
 }
 
 export function setRegistrationPolicy(
-  registrationRequiresInvite: boolean,
+  registrationRequiresInvite: boolean
 ): Promise<{ registrationRequiresInvite: boolean }> {
   return apiClient.patch('/api/v2/admin/registration-policy', {
     registrationRequiresInvite,
@@ -175,6 +211,14 @@ export function getPublicUserPolicy(): Promise<PublicUserPolicy> {
 
 export function setPublicUserPolicy(policy: PublicUserPolicy): Promise<PublicUserPolicy> {
   return apiClient.patch('/api/v2/admin/public-user-policy', policy)
+}
+
+export function getSchedulingPolicy(): Promise<SchedulingOverview> {
+  return apiClient.get('/api/v2/admin/scheduling-policy')
+}
+
+export function setSchedulingPolicy(policy: SchedulingPolicy): Promise<SchedulingOverview> {
+  return apiClient.patch('/api/v2/admin/scheduling-policy', policy)
 }
 
 export function createUserRecoveryCode(userId: string): Promise<{ recoveryCode: string }> {

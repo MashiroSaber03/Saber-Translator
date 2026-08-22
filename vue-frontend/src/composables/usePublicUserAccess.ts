@@ -21,7 +21,7 @@ export function usePublicUserAccess() {
 
   function modelOptions(
     options: UiSelectOption[],
-    modelByValue: Partial<Record<string, PublicModelKey>>,
+    modelByValue: Partial<Record<string, PublicModelKey>>
   ): UiSelectOption[] {
     return options.map(option => {
       const model = modelByValue[String(option.value)]
@@ -35,8 +35,10 @@ export function usePublicUserAccess() {
   }
 
   function lamaDisableResizeEditable(): boolean {
-    return !restricted()
-      || runtime.capabilities?.publicUserPolicy.settings.lamaDisableResize.editable !== false
+    return (
+      !restricted() ||
+      runtime.capabilities?.publicUserPolicy.settings.lamaDisableResize.editable !== false
+    )
   }
 
   function lamaDisableResizeValue(): boolean {
@@ -44,13 +46,13 @@ export function usePublicUserAccess() {
   }
 
   function parallelAllowed(): boolean {
-    return !restricted()
-      || runtime.capabilities?.publicUserPolicy.settings.parallel.allowed !== false
+    return (
+      !restricted() || runtime.capabilities?.publicUserPolicy.settings.parallel.allowed !== false
+    )
   }
 
   function maxDeepLearningConcurrency(): number | null {
-    if (!restricted()) return null
-    return runtime.capabilities?.publicUserPolicy.settings.parallel.maxDeepLearningConcurrency ?? 1
+    return runtime.capabilities?.scheduling.maxDeepLearningConcurrency ?? 1
   }
 
   return {

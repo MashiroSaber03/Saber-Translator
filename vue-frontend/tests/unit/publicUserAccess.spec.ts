@@ -29,7 +29,7 @@ function policy(): PublicUserPolicy {
     },
     settings: {
       lamaDisableResize: { editable: false, value: true },
-      parallel: { allowed: false, maxDeepLearningConcurrency: 2 },
+      parallel: { allowed: false },
     },
   }
 }
@@ -41,6 +41,7 @@ function capabilities(profile: 'local' | 'public' = 'public'): RuntimeCapabiliti
     browserCredentials: profile === 'public',
     registrationRequiresInvite: true,
     publicUserPolicy: policy(),
+    scheduling: { maxDeepLearningConcurrency: 2 },
     features: {
       plugins: profile === 'local',
       webImport: profile === 'local',
@@ -66,17 +67,20 @@ describe('ordinary public-user policy projection', () => {
     expect(access.lamaDisableResizeValue()).toBe(true)
     expect(access.parallelAllowed()).toBe(false)
     expect(access.maxDeepLearningConcurrency()).toBe(2)
-    expect(access.modelOptions(
-      [{ label: 'PaddleOCR-VL', value: 'paddleocr_vl' }],
-      { paddleocr_vl: 'paddleocr_vl' },
-    )).toEqual([{
-      label: 'PaddleOCR-VL（管理员已关闭）',
-      value: 'paddleocr_vl',
-      disabled: true,
-    }])
+    expect(
+      access.modelOptions([{ label: 'PaddleOCR-VL', value: 'paddleocr_vl' }], {
+        paddleocr_vl: 'paddleocr_vl',
+      })
+    ).toEqual([
+      {
+        label: 'PaddleOCR-VL（管理员已关闭）',
+        value: 'paddleocr_vl',
+        disabled: true,
+      },
+    ])
   })
 
-  it('does not apply the ordinary-user policy to administrators or local mode', () => {
+  it('does not apply ordinary-user permissions to admins, but keeps the global concurrency cap', () => {
     const auth = useAuthStore()
     const runtime = useRuntimeStore()
     const access = usePublicUserAccess()
@@ -85,7 +89,7 @@ describe('ordinary public-user policy projection', () => {
     expect(access.featureAllowed('translation')).toBe(true)
     expect(access.modelAllowed('detector_default')).toBe(true)
     expect(access.parallelAllowed()).toBe(true)
-    expect(access.maxDeepLearningConcurrency()).toBeNull()
+    expect(access.maxDeepLearningConcurrency()).toBe(2)
 
     auth.user = { id: 'user-1', username: 'alice', role: 'user' }
     runtime.capabilities = capabilities('local')

@@ -24,6 +24,7 @@ from src.backend_v2.auth.repository import AuthError, AuthRepository
 from src.backend_v2.auth.rate_limit import AuthRateLimited, FailedAuthLimiter
 from src.backend_v2.public_policy import PublicUserPolicyRepository
 from src.backend_v2.runtime_profile import RuntimeProfile
+from src.backend_v2.scheduling_policy import POLICY_KEYS, SchedulingPolicyRepository
 from src.backend_v2.settings.validation import validate_credential_secret
 
 
@@ -31,6 +32,7 @@ def create_auth_blueprint(*, engine: Engine, profile: RuntimeProfile) -> Bluepri
     blueprint = Blueprint("auth_v2", __name__, url_prefix="/api/v2")
     repository = AuthRepository(engine)
     public_policy = PublicUserPolicyRepository(engine)
+    scheduling_policy = SchedulingPolicyRepository(engine)
     limiter = FailedAuthLimiter()
 
     @blueprint.errorhandler(AuthError)
@@ -306,6 +308,21 @@ def create_auth_blueprint(*, engine: Engine, profile: RuntimeProfile) -> Bluepri
         except ValueError as error:
             raise AuthError("invalid_public_user_policy", str(error)) from error
         return jsonify(saved)
+
+    @blueprint.get("/admin/scheduling-policy")
+    def get_scheduling_policy() -> Response:
+        require_admin()
+        return jsonify(scheduling_policy.overview())
+
+    @blueprint.patch("/admin/scheduling-policy")
+    def update_scheduling_policy() -> Response:
+        require_admin()
+        body = json_body(allowed_keys=POLICY_KEYS)
+        try:
+            scheduling_policy.save(body)
+        except ValueError as error:
+            raise AuthError("invalid_scheduling_policy", str(error)) from error
+        return jsonify(scheduling_policy.overview())
 
     @blueprint.get("/admin/invites")
     def list_invites() -> Response:

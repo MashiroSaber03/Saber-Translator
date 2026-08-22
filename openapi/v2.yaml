@@ -273,6 +273,31 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/PublicUserPolicy"}
+  /admin/scheduling-policy:
+    get:
+      tags: [admin]
+      operationId: getSchedulingPolicy
+      responses:
+        "200":
+          description: Current scheduling policy and live queue snapshot.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SchedulingOverview"}
+    patch:
+      tags: [admin]
+      operationId: setSchedulingPolicy
+      x-command-mode: transient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SchedulingPolicy"}
+      responses:
+        "200":
+          description: Updated scheduling policy and live queue snapshot.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SchedulingOverview"}
   /admin/invites:
     get:
       tags: [admin]
@@ -3914,13 +3939,19 @@ components:
     RuntimeCapabilities:
       type: object
       additionalProperties: false
-      required: [profile, requiresAuth, browserCredentials, registrationRequiresInvite, publicUserPolicy, features]
+      required: [profile, requiresAuth, browserCredentials, registrationRequiresInvite, publicUserPolicy, scheduling, features]
       properties:
         profile: {type: string, enum: [local, public]}
         requiresAuth: {type: boolean}
         browserCredentials: {type: boolean}
         registrationRequiresInvite: {type: boolean}
         publicUserPolicy: {$ref: "#/components/schemas/PublicUserPolicy"}
+        scheduling:
+          type: object
+          additionalProperties: false
+          required: [maxDeepLearningConcurrency]
+          properties:
+            maxDeepLearningConcurrency: {type: integer, minimum: 1, maximum: 8}
         features:
           type: object
           additionalProperties: false
@@ -4076,10 +4107,75 @@ components:
             parallel:
               type: object
               additionalProperties: false
-              required: [allowed, maxDeepLearningConcurrency]
+              required: [allowed]
               properties:
                 allowed: {type: boolean}
-                maxDeepLearningConcurrency: {type: integer, minimum: 1}
+    SchedulingPolicy:
+      type: object
+      additionalProperties: false
+      required:
+        - queueDiscipline
+        - pageQuantum
+        - interactiveBurst
+        - maxDeepLearningConcurrency
+        - apiOperationConcurrency
+        - modelIdleSeconds
+        - minAvailableMemoryMiB
+      properties:
+        queueDiscipline: {type: string, enum: [owner_round_robin, fifo]}
+        pageQuantum: {type: integer, minimum: 1, maximum: 20}
+        interactiveBurst: {type: integer, minimum: 0, maximum: 3}
+        maxDeepLearningConcurrency: {type: integer, minimum: 1, maximum: 8}
+        apiOperationConcurrency: {type: integer, minimum: 1, maximum: 8}
+        modelIdleSeconds: {type: integer, minimum: 60, maximum: 3600}
+        minAvailableMemoryMiB:
+          oneOf:
+            - {type: integer, const: 0}
+            - {type: integer, minimum: 512, maximum: 1048576}
+    SchedulingCurrentTask:
+      type: object
+      additionalProperties: false
+      required: [jobId, kind, status, ownerUserId, ownerUsername, startedAt]
+      properties:
+        jobId: {$ref: "#/components/schemas/Uuid"}
+        kind: {$ref: "#/components/schemas/JobKind"}
+        status: {type: string, enum: [running, pausing, cancelling]}
+        ownerUserId: {$ref: "#/components/schemas/Uuid"}
+        ownerUsername: {type: string}
+        startedAt: {type: [string, "null"], format: date-time}
+    SchedulingStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - workerOnline
+        - currentTask
+        - queuedJobCount
+        - queuedUserCount
+        - pausedJobCount
+        - availableMemoryMiB
+        - totalMemoryMiB
+        - waitingReason
+      properties:
+        workerOnline: {type: boolean}
+        currentTask:
+          oneOf:
+            - {$ref: "#/components/schemas/SchedulingCurrentTask"}
+            - {type: "null"}
+        queuedJobCount: {type: integer, minimum: 0}
+        queuedUserCount: {type: integer, minimum: 0}
+        pausedJobCount: {type: integer, minimum: 0}
+        availableMemoryMiB: {type: integer, minimum: 0}
+        totalMemoryMiB: {type: integer, minimum: 0}
+        waitingReason:
+          type: [string, "null"]
+          enum: [worker_offline, low_memory, queue_blocked, null]
+    SchedulingOverview:
+      type: object
+      additionalProperties: false
+      required: [policy, status]
+      properties:
+        policy: {$ref: "#/components/schemas/SchedulingPolicy"}
+        status: {$ref: "#/components/schemas/SchedulingStatus"}
     AdminStatusCommand:
       type: object
       additionalProperties: false
@@ -4100,6 +4196,7 @@ components:
         - taskStatus
         - activeTaskCount
         - queuedTaskCount
+        - pausedTaskCount
         - interruptedTaskCount
         - completedTaskCount
         - issueTaskCount
@@ -4114,9 +4211,10 @@ components:
         assetUsageBytes: {type: integer, minimum: 0}
         assetQuotaBytes: {type: integer, minimum: 1}
         createdAt: {type: string, format: date-time}
-        taskStatus: {type: string, enum: [active, queued, interrupted, idle]}
+        taskStatus: {type: string, enum: [active, queued, paused, interrupted, idle]}
         activeTaskCount: {type: integer, minimum: 0}
         queuedTaskCount: {type: integer, minimum: 0}
+        pausedTaskCount: {type: integer, minimum: 0}
         interruptedTaskCount: {type: integer, minimum: 0}
         completedTaskCount:
           type: integer

@@ -214,6 +214,31 @@ describe('App reader immersion', () => {
     wrapper.unmount()
   })
 
+  it('treats an unauthenticated protected route as a redirect transition', async () => {
+    runtimeStoreMock.capabilities = { requiresAuth: true }
+    const router = createTestRouter()
+    await router.push('/')
+    await router.isReady()
+    const wrapper = mount(App, {
+      global: {
+        plugins: [router],
+        stubs: {
+          ProductConfirmProvider: true,
+          ProductTextInputProvider: true,
+          TaskCenterDrawer: true,
+          TaskCenterLauncher: true,
+          ToastNotification: true,
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('正在准备应用')
+    expect(wrapper.text()).not.toContain('应用暂时无法启动')
+    expect(wrapper.text()).not.toContain('登录状态已失效')
+    wrapper.unmount()
+  })
+
   it('does not mount or initialize the task center on the reader route', async () => {
     const router = createTestRouter()
     await router.push('/reader')

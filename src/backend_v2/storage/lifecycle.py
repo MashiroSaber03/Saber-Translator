@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 import sqlite3
 
@@ -13,15 +14,16 @@ from src.backend_v2.storage.database import (
     database_path_for,
 )
 from src.backend_v2.storage.schema import (
-    DEFAULT_PUBLIC_USER_POLICY_JSON,
+    DEFAULT_SCHEDULING_POLICY_JSON,
     metadata,
     schema_metadata,
 )
+from src.backend_v2.serialization import canonical_json
 from src.backend_v2.storage.seeding import seed_system_records
 
 
-SCHEMA_REVISION = "public_user_policy_direct_20260822_r1"
-DIRECT_UPGRADE_REVISION = "public_profiles_direct_20260820_r3"
+SCHEMA_REVISION = "public_scheduler_direct_20260822_r2"
+DIRECT_UPGRADE_REVISION = "public_user_policy_direct_20260822_r1"
 REQUIRED_TABLES = frozenset(metadata.tables)
 
 
@@ -93,22 +95,46 @@ def schema_smoke_test(database_path: Path) -> str:
 
 
 def _upgrade_previous_public_schema(database_path: Path) -> None:
-    """Add the one policy column introduced after the live public release."""
+    """Add scheduling policy and release paused jobs from the compute slot."""
 
-    quoted_default = DEFAULT_PUBLIC_USER_POLICY_JSON.replace("'", "''")
+    quoted_default = DEFAULT_SCHEDULING_POLICY_JSON.replace("'", "''")
     with sqlite3.connect(database_path) as connection:
         columns = {
             str(row[1])
             for row in connection.execute("PRAGMA table_info(platform_config)")
         }
-        if "public_user_policy_json" in columns:
+        if "public_user_policy_json" not in columns or "scheduler_policy_json" in columns:
             raise UnsupportedDataRoot(
                 "旧公开版数据库的策略字段状态异常，未自动改写"
             )
         connection.execute(
             "ALTER TABLE platform_config ADD COLUMN "
-            "public_user_policy_json TEXT NOT NULL "
+            "scheduler_policy_json TEXT NOT NULL "
             f"DEFAULT '{quoted_default}'"
+        )
+        rows = connection.execute(
+            "SELECT singleton_id, public_user_policy_json FROM platform_config"
+        ).fetchall()
+        for singleton_id, payload in rows:
+            try:
+                policy = json.loads(str(payload))
+                parallel = policy["settings"]["parallel"]
+                if not isinstance(parallel, dict):
+                    raise TypeError
+                parallel.pop("maxDeepLearningConcurrency", None)
+            except (json.JSONDecodeError, KeyError, TypeError) as exc:
+                raise UnsupportedDataRoot(
+                    "旧公开版数据库的普通用户策略无效，未自动改写"
+                ) from exc
+            connection.execute(
+                "UPDATE platform_config SET public_user_policy_json = ? "
+                "WHERE singleton_id = ?",
+                (canonical_json(policy), singleton_id),
+            )
+        connection.execute("DROP INDEX uq_jobs_one_current")
+        connection.execute(
+            "CREATE UNIQUE INDEX uq_jobs_one_current ON jobs ((1)) "
+            "WHERE status IN ('running','pausing','cancelling')"
         )
         updated = connection.execute(
             "UPDATE schema_metadata SET revision = ? "
@@ -122,8 +148,8 @@ def _upgrade_previous_public_schema(database_path: Path) -> None:
 def initialize_database(data_root: Path) -> StorageInitializationResult:
     """Create the formal schema or validate an exact-current database.
 
-    The immediately preceding public schema is upgraded by adding its sole new
-    column. Every other non-current database remains unsupported.
+    The immediately preceding public schema receives the small additive
+    scheduling upgrade. Every other non-current database remains unsupported.
     """
 
     data_root.mkdir(parents=True, exist_ok=True)

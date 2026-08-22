@@ -27,6 +27,7 @@ DEEP_LEARNING_STEP_KINDS = frozenset({"detect", "ocr", "color", "repair"})
 PIPELINE_BUSY_RETRY_LIMIT = 3
 PIPELINE_BUSY_RETRY_BASE_SECONDS = 0.05
 PARALLEL_PIPELINE_LEAD_WINDOW = 50
+MAX_DEEP_LEARNING_THREADS = 8
 MIN_SCHEDULER_POLL_SECONDS = 0.1
 MAX_SCHEDULER_POLL_SECONDS = 0.5
 LOGGER = logging.getLogger("saber.worker.jobs")
@@ -45,7 +46,7 @@ def _step_log_fields(step: Mapping[str, Any]) -> tuple[str, str, str]:
 
 
 class JobWorkerLoop:
-    """Single global FIFO scheduler with persisted step checkpoints."""
+    """Single compute-slot scheduler with persisted step checkpoints."""
 
     def __init__(
         self,
@@ -57,6 +58,8 @@ class JobWorkerLoop:
         handler_resolver: Callable[[str], StepHandler | None] | None = None,
         plugin_runtime: Any | None = None,
         safe_point: Callable[[], bool] | None = None,
+        scheduling_policy: Callable[[], Mapping[str, Any]] | None = None,
+        admission_check: Callable[[], bool] | None = None,
         on_activity: Callable[[], None] | None = None,
         idle_poll_seconds: float = 0.25,
     ) -> None:
@@ -69,6 +72,8 @@ class JobWorkerLoop:
             raise ValueError("every batch handler requires a matching step handler")
         self.plugin_runtime = plugin_runtime
         self.safe_point = safe_point
+        self.scheduling_policy = scheduling_policy
+        self.admission_check = admission_check
         self.on_activity = on_activity
         if idle_poll_seconds <= 0:
             raise ValueError("idle poll interval must be positive")
@@ -77,11 +82,39 @@ class JobWorkerLoop:
     def run(self, stop_event: threading.Event) -> None:
         LOGGER.info("持久任务调度器开始运行")
         while not stop_event.is_set():
-            if self.safe_point is not None and self.safe_point():
+            if (
+                self.scheduling_policy is None
+                and self.safe_point is not None
+                and self.safe_point()
+            ):
                 continue
             try:
+                policy = self._policy()
+                admitted = (
+                    self.admission_check is None or self.admission_check()
+                )
+            except Exception as exc:
+                if not is_sqlite_busy_error(exc):
+                    raise
+                LOGGER.warning(
+                    "持久任务调度器读取调度条件时遇到 SQLite 写锁竞争"
+                )
+                stop_event.wait(self.idle_poll_seconds)
+                continue
+            if not admitted:
+                if self.safe_point is not None and self.safe_point():
+                    continue
+                stop_event.wait(self.idle_poll_seconds)
+                continue
+            try:
+                claim_options = (
+                    {"queue_discipline": str(policy["queueDiscipline"])}
+                    if policy is not None
+                    else {}
+                )
                 fence = self.repository.claim_next(
-                    worker_epoch_id=self.worker_epoch_id
+                    worker_epoch_id=self.worker_epoch_id,
+                    **claim_options,
                 )
             except AttemptFenced:
                 LOGGER.error("Worker epoch 已失效，停止领取任务")
@@ -96,6 +129,8 @@ class JobWorkerLoop:
                 stop_event.wait(self.idle_poll_seconds)
                 continue
             if fence is None:
+                if self.safe_point is not None and self.safe_point():
+                    continue
                 stop_event.wait(self.idle_poll_seconds)
                 continue
             self._note_activity()
@@ -167,6 +202,56 @@ class JobWorkerLoop:
         if self.on_activity is not None:
             self.on_activity()
 
+    def _policy(self) -> Mapping[str, Any] | None:
+        if self.scheduling_policy is None:
+            return None
+        value = self.scheduling_policy()
+        if not isinstance(value, Mapping):
+            raise RuntimeError("scheduling policy provider must return an object")
+        return value
+
+    def _run_interactive_burst(self) -> None:
+        policy = self._policy()
+        if policy is None or self.safe_point is None:
+            return
+        limit = int(policy["interactiveBurst"])
+        for _index in range(limit):
+            if not self.safe_point():
+                break
+
+    def _slice_boundary(
+        self,
+        fence: AttemptFence,
+        *,
+        terminal_count: int,
+    ) -> tuple[bool, int]:
+        """Serve bounded interactive work and decide whether to yield."""
+
+        self._run_interactive_burst()
+        status = self.repository.control_status(fence)
+        if status in {"pausing", "cancelling"}:
+            self.repository.finalize_control(fence)
+            return True, terminal_count
+        if self.admission_check is not None and not self.admission_check():
+            self.repository.yield_attempt(fence, reason="memory_pressure")
+            return True, terminal_count
+        policy = self._policy()
+        if (
+            policy is not None
+            and policy["queueDiscipline"] == "owner_round_robin"
+            and self.repository.has_queued_competitor(
+                owner_user_id=fence.owner_user_id
+            )
+        ):
+            self.repository.yield_attempt(fence, reason="fairness")
+            return True, terminal_count
+        quantum = (
+            int(policy["pageQuantum"])
+            if policy is not None
+            else PARALLEL_PIPELINE_LEAD_WINDOW
+        )
+        return False, terminal_count + quantum
+
     def _resolve_attempt_handlers(self, fence: AttemptFence) -> None:
         if self.handler_resolver is None:
             return
@@ -183,6 +268,29 @@ class JobWorkerLoop:
         stop_event: threading.Event,
     ) -> None:
         last_step_id: str | None = None
+        policy = self._policy()
+        slice_target = (
+            self.repository.terminal_item_count(fence) + int(policy["pageQuantum"])
+            if policy is not None
+            else None
+        )
+
+        def finish_slice_if_needed() -> bool:
+            nonlocal slice_target
+            if slice_target is None:
+                return False
+            terminal_count = self.repository.terminal_item_count(fence)
+            if terminal_count < slice_target:
+                return False
+            pending, running = self.repository.active_step_counts(fence)
+            if pending == 0 and running == 0:
+                return False
+            should_stop, slice_target = self._slice_boundary(
+                fence,
+                terminal_count=terminal_count,
+            )
+            return should_stop
+
         try:
             while not stop_event.is_set():
                 status = self.repository.control_status(fence)
@@ -195,14 +303,24 @@ class JobWorkerLoop:
                     )
                     self.repository.finalize_control(fence)
                     return
-                if self.safe_point is not None and self.safe_point():
+                if (
+                    self.scheduling_policy is None
+                    and self.safe_point is not None
+                    and self.safe_point()
+                ):
                     continue
                 handled_batch = False
                 config = self.repository.attempt_config(fence)
+                ordinal_limit = (
+                    {"max_item_ordinal": slice_target}
+                    if slice_target is not None
+                    else {}
+                )
                 for batch_kind, batch_handler in self.batch_handlers.items():
                     step_ordinal = self.repository.ready_step_ordinal(
                         fence,
                         step_kind=batch_kind,
+                        **ordinal_limit,
                     )
                     if step_ordinal is None:
                         continue
@@ -214,6 +332,7 @@ class JobWorkerLoop:
                             config,
                             step_ordinal=step_ordinal,
                         ),
+                        **ordinal_limit,
                     )
                     if not batch:
                         continue
@@ -226,6 +345,8 @@ class JobWorkerLoop:
                     handled_batch = True
                     break
                 if handled_batch:
+                    if finish_slice_if_needed():
+                        return
                     continue
                 ordinary_kinds = tuple(
                     kind
@@ -235,6 +356,7 @@ class JobWorkerLoop:
                 step = self.repository.next_step(
                     fence,
                     allowed_kinds=ordinary_kinds,
+                    **ordinal_limit,
                 )
                 if step is None:
                     pending, running = self.repository.active_step_counts(fence)
@@ -300,6 +422,8 @@ class JobWorkerLoop:
                     page_id,
                 )
                 if not self._before_pipeline(fence, step):
+                    if finish_slice_if_needed():
+                        return
                     continue
                 try:
                     with owner_scope(fence.owner_user_id):
@@ -348,6 +472,8 @@ class JobWorkerLoop:
                             checkpoint=checkpoint,
                         )
                     self._after_completed_step(fence, step)
+                if finish_slice_if_needed():
+                    return
         except AttemptFenced:
             return
 
@@ -377,6 +503,18 @@ class JobWorkerLoop:
             set(pool_kinds).intersection(DEEP_LEARNING_STEP_KINDS)
         )
         has_terminal_save = "save" in pool_kinds
+        policy = self._policy()
+        slice_target = (
+            self.repository.terminal_item_count(fence)
+            + (
+                int(policy["pageQuantum"])
+                if policy is not None
+                else PARALLEL_PIPELINE_LEAD_WINDOW
+            )
+            if has_terminal_save
+            else None
+        )
+        attempt_released = False
         deep_learning_concurrency = 1
         if has_deep_learning_pool:
             value = config.get("deepLearningConcurrency")
@@ -385,13 +523,29 @@ class JobWorkerLoop:
             deep_learning_concurrency = value
         if deep_learning_concurrency < 1:
             raise ValueError("deepLearningConcurrency must be a positive integer")
+
+        def current_deep_learning_limit() -> int:
+            current_policy = self._policy()
+            if current_policy is None:
+                return deep_learning_concurrency
+            return min(
+                deep_learning_concurrency,
+                int(current_policy["maxDeepLearningConcurrency"]),
+            )
+
         LOGGER.info(
             "并行流水线启动：job=%s pools=%s deep_learning_concurrency=%s "
             "lead_window=%s",
             _short(fence.job_id),
             ",".join(pool_kinds),
-            deep_learning_concurrency,
-            PARALLEL_PIPELINE_LEAD_WINDOW if has_terminal_save else "disabled",
+            current_deep_learning_limit(),
+            (
+                int(policy["pageQuantum"])
+                if policy is not None and has_terminal_save
+                else PARALLEL_PIPELINE_LEAD_WINDOW
+                if has_terminal_save
+                else "disabled"
+            ),
         )
         lock_waiting_states = {
             kind: False
@@ -399,6 +553,8 @@ class JobWorkerLoop:
             if kind in DEEP_LEARNING_STEP_KINDS
         }
         lock_waiting_state_lock = threading.Lock()
+        model_gate = threading.Condition()
+        active_model_calls = 0
 
         def set_lock_waiting(pool_kind: str, waiting: bool) -> None:
             with lock_waiting_state_lock:
@@ -449,11 +605,30 @@ class JobWorkerLoop:
                 waiting,
             )
 
+        def acquire_model_slot(pool_kind: str) -> None:
+            nonlocal active_model_calls
+            waiting_recorded = False
+            while True:
+                with model_gate:
+                    if active_model_calls < current_deep_learning_limit():
+                        active_model_calls += 1
+                        break
+                    model_gate.wait(timeout=pipeline_wait_seconds)
+                if not waiting_recorded:
+                    set_lock_waiting(pool_kind, True)
+                    waiting_recorded = True
+            if waiting_recorded:
+                set_lock_waiting(pool_kind, False)
+
+        def release_model_slot() -> None:
+            nonlocal active_model_calls
+            with model_gate:
+                active_model_calls -= 1
+                model_gate.notify_all()
+
         def execute_step(
             pool_kind: str,
             step: Mapping[str, Any],
-            *,
-            model_waiting: bool = False,
         ) -> None:
             handler = self.handlers.get(str(step["stepKind"]))
             if handler is None:
@@ -481,8 +656,6 @@ class JobWorkerLoop:
                 page_id,
                 pool_kind,
             )
-            if model_waiting:
-                set_lock_waiting(pool_kind, False)
             if not self._before_pipeline(fence, step):
                 return
             try:
@@ -549,11 +722,16 @@ class JobWorkerLoop:
                     steps,
                 )
             elif step is not None:
-                execute_step(
-                    pool_kind,
-                    step,
-                    model_waiting=model_waiting,
-                )
+                if pool_kind in DEEP_LEARNING_STEP_KINDS:
+                    acquire_model_slot(pool_kind)
+                    try:
+                        if model_waiting:
+                            set_lock_waiting(pool_kind, False)
+                        execute_step(pool_kind, step)
+                    finally:
+                        release_model_slot()
+                else:
+                    execute_step(pool_kind, step)
 
         def claim_with_retry(
             pool_kind: str,
@@ -620,7 +798,10 @@ class JobWorkerLoop:
         # across every pipeline thread during long jobs.
         with (
             ThreadPoolExecutor(
-                max_workers=deep_learning_concurrency,
+                max_workers=min(
+                    MAX_DEEP_LEARNING_THREADS,
+                    deep_learning_concurrency,
+                ),
                 thread_name_prefix="job-model",
             ) as deep_learning_executor,
             ThreadPoolExecutor(
@@ -662,7 +843,31 @@ class JobWorkerLoop:
                     record_worker_error("admission", exc)
                     break
 
-                if not active_futures and self.safe_point is not None:
+                if (
+                    not active_futures
+                    and slice_target is not None
+                    and self.repository.terminal_item_count(fence) >= slice_target
+                ):
+                    terminal_count = self.repository.terminal_item_count(fence)
+                    if self.scheduling_policy is not None:
+                        should_stop, slice_target = self._slice_boundary(
+                            fence,
+                            terminal_count=terminal_count,
+                        )
+                        if should_stop:
+                            attempt_released = True
+                            admission_closed.set()
+                            break
+                    else:
+                        slice_target = (
+                            terminal_count + PARALLEL_PIPELINE_LEAD_WINDOW
+                        )
+
+                if (
+                    self.scheduling_policy is None
+                    and not active_futures
+                    and self.safe_point is not None
+                ):
                     if self.safe_point():
                         continue
 
@@ -672,12 +877,7 @@ class JobWorkerLoop:
                         or not active_futures
                     )
                     if should_admit:
-                        max_item_ordinal = (
-                            self.repository.terminal_item_count(fence)
-                            + PARALLEL_PIPELINE_LEAD_WINDOW
-                            if has_terminal_save
-                            else None
-                        )
+                        max_item_ordinal = slice_target
                         ordinal_limit = (
                             {"max_item_ordinal": max_item_ordinal}
                             if max_item_ordinal is not None
@@ -759,8 +959,8 @@ class JobWorkerLoop:
                                 raise RuntimeError(
                                     "claimed step does not belong to an idle pool"
                                 )
-                            model_waiting = False
                             target_executor = executor
+                            model_waiting = False
                             if pool_kind in DEEP_LEARNING_STEP_KINDS:
                                 active_model_steps = sum(
                                     1
@@ -768,7 +968,8 @@ class JobWorkerLoop:
                                     if active_kind in DEEP_LEARNING_STEP_KINDS
                                 )
                                 model_waiting = (
-                                    active_model_steps >= deep_learning_concurrency
+                                    active_model_steps
+                                    >= current_deep_learning_limit()
                                 )
                                 if model_waiting:
                                     set_lock_waiting(pool_kind, True)
@@ -810,6 +1011,8 @@ class JobWorkerLoop:
                     record_worker_error(pool_kind, exc)
 
         if stop_event.is_set():
+            return
+        if attempt_released:
             return
         if worker_errors:
             LOGGER.error(

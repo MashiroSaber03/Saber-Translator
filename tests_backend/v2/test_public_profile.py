@@ -25,6 +25,7 @@ from src.backend_v2.auth.repository import AuthRepository
 from src.backend_v2.runtime_identity import RuntimeIdentity
 from src.backend_v2.public_policy import DEFAULT_PUBLIC_USER_POLICY
 from src.backend_v2.runtime_profile import resolve_runtime_profile
+from src.backend_v2.scheduling_policy import DEFAULT_SCHEDULING_POLICY
 from src.backend_v2.storage.builtin_fonts import discover_bundled_fonts
 from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.defaults import DEFAULT_TEXT_STYLE
@@ -120,6 +121,11 @@ def test_public_capabilities_host_filter_and_security_headers(public_platform) -
         "browserCredentials": True,
         "registrationRequiresInvite": True,
         "publicUserPolicy": DEFAULT_PUBLIC_USER_POLICY,
+        "scheduling": {
+            "maxDeepLearningConcurrency": DEFAULT_SCHEDULING_POLICY[
+                "maxDeepLearningConcurrency"
+            ]
+        },
         "features": {
             "plugins": False,
             "webImport": False,
@@ -143,6 +149,63 @@ def test_public_capabilities_host_filter_and_security_headers(public_platform) -
         headers={"CF-Connecting-IP": "203.0.113.10"},
     )
     assert external_health.get_json() == {"status": "ok"}
+
+
+def test_admin_can_update_the_single_global_scheduling_policy(public_platform) -> None:
+    app = public_platform["app"]
+    admin_client, admin_csrf = _login(app, "admin", ADMIN_PASSWORD)
+    alice_client, alice_csrf = _login(app, "alice", ALICE_PASSWORD)
+
+    overview = admin_client.get(
+        "/api/v2/admin/scheduling-policy",
+        base_url=PUBLIC_BASE,
+    )
+    assert overview.status_code == 200
+    assert overview.get_json()["policy"] == DEFAULT_SCHEDULING_POLICY
+    assert set(overview.get_json()["status"]) == {
+        "workerOnline",
+        "currentTask",
+        "queuedJobCount",
+        "queuedUserCount",
+        "pausedJobCount",
+        "availableMemoryMiB",
+        "totalMemoryMiB",
+        "waitingReason",
+    }
+
+    changed = dict(DEFAULT_SCHEDULING_POLICY)
+    changed["pageQuantum"] = 2
+    changed["apiOperationConcurrency"] = 3
+    updated = admin_client.patch(
+        "/api/v2/admin/scheduling-policy",
+        base_url=PUBLIC_BASE,
+        headers={"X-CSRF-Token": admin_csrf},
+        json=changed,
+    )
+    assert updated.status_code == 200
+    assert updated.get_json()["policy"] == changed
+    assert app.test_client().get(
+        "/api/v2/system/capabilities",
+        base_url=PUBLIC_BASE,
+    ).get_json()["scheduling"] == {"maxDeepLearningConcurrency": 1}
+
+    denied = alice_client.patch(
+        "/api/v2/admin/scheduling-policy",
+        base_url=PUBLIC_BASE,
+        headers={"X-CSRF-Token": alice_csrf},
+        json=changed,
+    )
+    assert denied.status_code == 403
+
+    invalid = dict(changed)
+    invalid["pageQuantum"] = 0
+    rejected = admin_client.patch(
+        "/api/v2/admin/scheduling-policy",
+        base_url=PUBLIC_BASE,
+        headers={"X-CSRF-Token": admin_csrf},
+        json=invalid,
+    )
+    assert rejected.status_code == 422
 
 
 def test_public_authentication_csrf_admin_gate_and_owner_isolation(
@@ -260,6 +323,13 @@ def test_admin_user_list_includes_retained_task_activity(public_platform) -> Non
                     "status": "interrupted",
                     "updated_at": now - timedelta(minutes=3),
                 },
+                {
+                    **base_job,
+                    "id": "10000000-0000-0000-0000-000000000009",
+                    "status": "paused",
+                    "queue_rank": 3,
+                    "updated_at": now - timedelta(minutes=7),
+                },
             ],
         )
 
@@ -274,6 +344,7 @@ def test_admin_user_list_includes_retained_task_activity(public_platform) -> Non
     assert alice["taskStatus"] == "active"
     assert alice["activeTaskCount"] == 1
     assert alice["queuedTaskCount"] == 1
+    assert alice["pausedTaskCount"] == 1
     assert alice["interruptedTaskCount"] == 1
     assert alice["completedTaskCount"] == 1
     assert alice["issueTaskCount"] == 2
@@ -285,6 +356,7 @@ def test_admin_user_list_includes_retained_task_activity(public_platform) -> Non
     assert bob["taskStatus"] == "queued"
     assert bob["activeTaskCount"] == 0
     assert bob["queuedTaskCount"] == 1
+    assert bob["pausedTaskCount"] == 0
     assert bob["interruptedTaskCount"] == 1
     assert bob["completedTaskCount"] == 0
     assert bob["issueTaskCount"] == 0
@@ -670,7 +742,6 @@ def test_public_policy_forces_locked_settings_on_read_and_write(
     }
     policy["settings"]["parallel"] = {
         "allowed": False,
-        "maxDeepLearningConcurrency": 2,
     }
     assert admin_client.patch(
         "/api/v2/admin/public-user-policy",
@@ -687,7 +758,6 @@ def test_public_policy_forces_locked_settings_on_read_and_write(
     translation = document["settings"][0]
     assert translation["payload"]["lamaDisableResize"] is True
     assert translation["payload"]["parallel"]["enabled"] is False
-    assert translation["payload"]["parallel"]["deepLearningLockSize"] <= 2
 
     submitted = deepcopy(translation["payload"])
     submitted["lamaDisableResize"] = False
@@ -724,7 +794,7 @@ def test_public_policy_forces_locked_settings_on_read_and_write(
     saved_translation = saved_document["settings"][0]["payload"]
     assert saved_translation["lamaDisableResize"] is True
     assert saved_translation["parallel"]["enabled"] is False
-    assert saved_translation["parallel"]["deepLearningLockSize"] == 2
+    assert saved_translation["parallel"]["deepLearningLockSize"] == 9
 
 
 def test_disabled_local_model_is_rejected_before_job_creation(

@@ -62,10 +62,12 @@ def _load_openapi_document() -> dict[str, Any]:
 def _create_v2_blueprint(settings: ApiSettings) -> Blueprint:
     from src.backend_v2.auth.repository import AuthRepository
     from src.backend_v2.public_policy import PublicUserPolicyRepository
+    from src.backend_v2.scheduling_policy import SchedulingPolicyRepository
 
     blueprint = Blueprint("api_v2", __name__, url_prefix="/api/v2")
     auth_repository = AuthRepository(settings.engine)
     public_policy = PublicUserPolicyRepository(settings.engine)
+    scheduling_policy = SchedulingPolicyRepository(settings.engine)
 
     @blueprint.get("/health")
     def health() -> Response:
@@ -106,6 +108,11 @@ def _create_v2_blueprint(settings: ApiSettings) -> Blueprint:
                     auth_repository.registration_requires_invite()
                 ),
                 "publicUserPolicy": public_policy.load(),
+                "scheduling": {
+                    "maxDeepLearningConcurrency": scheduling_policy.load()[
+                        "maxDeepLearningConcurrency"
+                    ],
+                },
                 "features": {
                     "plugins": settings.profile.allow_plugins,
                     "webImport": settings.profile.allow_web_import,
@@ -336,6 +343,10 @@ def create_api_app(settings: ApiSettings) -> Flask:
     from src.backend_v2.api.system_routes import create_system_blueprint
     from src.backend_v2.storage.epochs import ProcessEpochRepository
     from src.backend_v2.storage.platform_repositories import ProviderRateLimiter
+    from src.backend_v2.scheduling_policy import (
+        SchedulingPolicyCache,
+        SchedulingPolicyRepository,
+    )
     from src.shared.openai_rate_limits import configure_provider_rate_limit_store
 
     engine = settings.engine
@@ -373,6 +384,7 @@ def create_api_app(settings: ApiSettings) -> Flask:
         data_root=settings.data_root,
         repository=StudioRepository(engine),
     )
+    scheduling_policy = SchedulingPolicyCache(SchedulingPolicyRepository(engine))
     cpu_operation_executor = DurableOperationExecutor(
         repair_service.repository,
         executor_role="api",
@@ -384,7 +396,10 @@ def create_api_app(settings: ApiSettings) -> Flask:
             "studio_chat": studio_operations.handle,
             "studio_summary": studio_operations.handle,
         },
-        max_workers=4,
+        max_workers=8,
+        concurrency_limit=lambda: int(
+            scheduling_policy.load()["apiOperationConcurrency"]
+        ),
     )
     app.extensions["saber_v2_runtime"] = ApiRuntimeServices(
         job_events=broadcaster,

@@ -42,7 +42,7 @@ DEFAULT_PUBLIC_USER_POLICY: dict[str, Any] = {
     "models": {key: True for key in MODEL_LABELS},
     "settings": {
         "lamaDisableResize": {"editable": False, "value": False},
-        "parallel": {"allowed": False, "maxDeepLearningConcurrency": 1},
+        "parallel": {"allowed": False},
     },
 }
 
@@ -117,11 +117,8 @@ def validate_public_user_policy(value: object) -> dict[str, Any]:
     parallel = _exact_object(
         settings["parallel"],
         label="并行模式策略",
-        keys={"allowed", "maxDeepLearningConcurrency"},
+        keys={"allowed"},
     )
-    maximum = parallel["maxDeepLearningConcurrency"]
-    if isinstance(maximum, bool) or not isinstance(maximum, int) or maximum < 1:
-        raise ValueError("最大深度学习并发数必须是正整数")
     return {
         "features": {
             key: _boolean(features[key], f"features.{key}")
@@ -147,7 +144,6 @@ def validate_public_user_policy(value: object) -> dict[str, Any]:
                     parallel["allowed"],
                     "settings.parallel.allowed",
                 ),
-                "maxDeepLearningConcurrency": maximum,
             },
         },
     }
@@ -227,12 +223,6 @@ class PublicUserPolicyAccess:
         parallel = dict(result.get("parallel", {}))
         if not settings["parallel"]["allowed"]:
             parallel["enabled"] = False
-        concurrency = parallel.get("deepLearningLockSize", 1)
-        if isinstance(concurrency, int) and not isinstance(concurrency, bool):
-            parallel["deepLearningLockSize"] = min(
-                concurrency,
-                settings["parallel"]["maxDeepLearningConcurrency"],
-            )
         result["parallel"] = parallel
         return result
 
@@ -271,12 +261,6 @@ class PublicUserPolicyAccess:
         parallel = policy["settings"]["parallel"]
         if not parallel["allowed"]:
             result["executionMode"] = "sequential"
-        concurrency = result.get("deepLearningConcurrency")
-        if isinstance(concurrency, int) and not isinstance(concurrency, bool):
-            result["deepLearningConcurrency"] = min(
-                concurrency,
-                parallel["maxDeepLearningConcurrency"],
-            )
         inpainting = result.get("inpainting")
         if isinstance(inpainting, Mapping):
             normalized_inpainting = dict(inpainting)

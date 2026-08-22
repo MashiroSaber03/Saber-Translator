@@ -231,6 +231,22 @@ export interface paths {
         patch: operations["setPublicUserPolicy"];
         trace?: never;
     };
+    "/admin/scheduling-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getSchedulingPolicy"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["setSchedulingPolicy"];
+        trace?: never;
+    };
     "/admin/invites": {
         parameters: {
             query?: never;
@@ -2695,6 +2711,9 @@ export interface components {
             browserCredentials: boolean;
             registrationRequiresInvite: boolean;
             publicUserPolicy: components["schemas"]["PublicUserPolicy"];
+            scheduling: {
+                maxDeepLearningConcurrency: number;
+            };
             features: {
                 plugins: boolean;
                 webImport: boolean;
@@ -2782,9 +2801,43 @@ export interface components {
                 };
                 parallel: {
                     allowed: boolean;
-                    maxDeepLearningConcurrency: number;
                 };
             };
+        };
+        SchedulingPolicy: {
+            /** @enum {string} */
+            queueDiscipline: "owner_round_robin" | "fifo";
+            pageQuantum: number;
+            interactiveBurst: number;
+            maxDeepLearningConcurrency: number;
+            apiOperationConcurrency: number;
+            modelIdleSeconds: number;
+            minAvailableMemoryMiB: 0 | number;
+        };
+        SchedulingCurrentTask: {
+            jobId: components["schemas"]["Uuid"];
+            kind: components["schemas"]["JobKind"];
+            /** @enum {string} */
+            status: "running" | "pausing" | "cancelling";
+            ownerUserId: components["schemas"]["Uuid"];
+            ownerUsername: string;
+            /** Format: date-time */
+            startedAt: string | null;
+        };
+        SchedulingStatus: {
+            workerOnline: boolean;
+            currentTask: components["schemas"]["SchedulingCurrentTask"] | null;
+            queuedJobCount: number;
+            queuedUserCount: number;
+            pausedJobCount: number;
+            availableMemoryMiB: number;
+            totalMemoryMiB: number;
+            /** @enum {string|null} */
+            waitingReason: "worker_offline" | "low_memory" | "queue_blocked" | null;
+        };
+        SchedulingOverview: {
+            policy: components["schemas"]["SchedulingPolicy"];
+            status: components["schemas"]["SchedulingStatus"];
         };
         AdminStatusCommand: {
             /** @enum {string} */
@@ -2802,9 +2855,10 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
             /** @enum {string} */
-            taskStatus: "active" | "queued" | "interrupted" | "idle";
+            taskStatus: "active" | "queued" | "paused" | "interrupted" | "idle";
             activeTaskCount: number;
             queuedTaskCount: number;
+            pausedTaskCount: number;
             interruptedTaskCount: number;
             /** @description Completed jobs still present in retained task history. */
             completedTaskCount: number;
@@ -5517,6 +5571,50 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PublicUserPolicy"];
+                };
+            };
+        };
+    };
+    getSchedulingPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current scheduling policy and live queue snapshot. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SchedulingOverview"];
+                };
+            };
+        };
+    };
+    setSchedulingPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SchedulingPolicy"];
+            };
+        };
+        responses: {
+            /** @description Updated scheduling policy and live queue snapshot. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SchedulingOverview"];
                 };
             };
         };

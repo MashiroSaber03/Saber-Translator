@@ -18,6 +18,7 @@ from sqlalchemy import Engine, and_, case, delete, func, insert, select, update
 from src.backend_v2.storage.database import immediate_transaction
 from src.backend_v2.storage.schema import (
     CURRENT_JOB_STATUSES,
+    EXECUTING_JOB_STATUSES,
     DEFAULT_ASSET_QUOTA_BYTES,
     assets,
     invite_codes,
@@ -451,11 +452,14 @@ class AuthRepository:
             select(
                 jobs.c.owner_user_id.label("owner_user_id"),
                 func.sum(
-                    case((jobs.c.status.in_(CURRENT_JOB_STATUSES), 1), else_=0)
+                    case((jobs.c.status.in_(EXECUTING_JOB_STATUSES), 1), else_=0)
                 ).label("active_count"),
                 func.sum(case((jobs.c.status == "queued", 1), else_=0)).label(
                     "queued_count"
                 ),
+                func.sum(
+                    case((jobs.c.status == "paused", 1), else_=0)
+                ).label("paused_count"),
                 func.sum(
                     case((jobs.c.status == "interrupted", 1), else_=0)
                 ).label("interrupted_count"),
@@ -502,6 +506,7 @@ class AuthRepository:
                     func.coalesce(asset_usage.c.usage, 0).label("usage"),
                     func.coalesce(job_stats.c.active_count, 0).label("active_count"),
                     func.coalesce(job_stats.c.queued_count, 0).label("queued_count"),
+                    func.coalesce(job_stats.c.paused_count, 0).label("paused_count"),
                     func.coalesce(job_stats.c.interrupted_count, 0).label(
                         "interrupted_count"
                     ),
@@ -539,12 +544,15 @@ class AuthRepository:
                         if int(row["active_count"]) > 0
                         else "queued"
                         if int(row["queued_count"]) > 0
+                        else "paused"
+                        if int(row["paused_count"]) > 0
                         else "interrupted"
                         if int(row["interrupted_count"]) > 0
                         else "idle"
                     ),
                     "activeTaskCount": int(row["active_count"]),
                     "queuedTaskCount": int(row["queued_count"]),
+                    "pausedTaskCount": int(row["paused_count"]),
                     "interruptedTaskCount": int(row["interrupted_count"]),
                     "completedTaskCount": int(row["completed_count"]),
                     "issueTaskCount": int(row["issue_count"]),
