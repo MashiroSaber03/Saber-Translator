@@ -2712,7 +2712,7 @@ export interface components {
             registrationRequiresInvite: boolean;
             publicUserPolicy: components["schemas"]["PublicUserPolicy"];
             scheduling: {
-                maxDeepLearningConcurrency: number;
+                maxDeepLearningConcurrency: number | null;
             };
             features: {
                 plugins: boolean;

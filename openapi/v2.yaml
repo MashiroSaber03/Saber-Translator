@@ -3951,7 +3951,10 @@ components:
           additionalProperties: false
           required: [maxDeepLearningConcurrency]
           properties:
-            maxDeepLearningConcurrency: {type: integer, minimum: 1, maximum: 8}
+            maxDeepLearningConcurrency:
+              type: [integer, "null"]
+              minimum: 1
+              maximum: 8
         features:
           type: object
           additionalProperties: false

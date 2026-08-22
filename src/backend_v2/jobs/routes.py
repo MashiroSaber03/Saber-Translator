@@ -9,7 +9,7 @@ from typing import Iterator
 from flask import Blueprint, Response, jsonify, redirect, request, stream_with_context
 from sqlalchemy import Engine
 
-from src.backend_v2.auth.context import current_user_id
+from src.backend_v2.auth.ownership import effective_owner_id
 from src.backend_v2.api.request_helpers import (
     error_response as _error,
     integer_value as _integer_value,
@@ -100,7 +100,7 @@ def create_jobs_blueprint(
             "event cursor",
             minimum=0,
         )
-        owner_user_id = current_user_id()
+        owner_user_id = effective_owner_id()
         subscription = broadcaster.subscribe(owner_user_id=owner_user_id)
 
         @stream_with_context

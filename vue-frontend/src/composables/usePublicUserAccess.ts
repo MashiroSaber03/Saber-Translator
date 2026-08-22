@@ -52,7 +52,8 @@ export function usePublicUserAccess() {
   }
 
   function maxDeepLearningConcurrency(): number | null {
-    return runtime.capabilities?.scheduling.maxDeepLearningConcurrency ?? 1
+    if (runtime.capabilities?.profile !== 'public') return null
+    return runtime.capabilities.scheduling.maxDeepLearningConcurrency
   }
 
   return {

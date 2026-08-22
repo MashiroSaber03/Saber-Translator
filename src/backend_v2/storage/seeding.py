@@ -37,26 +37,30 @@ from src.backend_v2.storage.schema import (
     users,
 )
 from src.backend_v2.auth.constants import LOCAL_USER_ID, LOCAL_USERNAME
+from src.backend_v2.runtime_profile import PROFILE_NAMES
 
 
 QUICK_WORKSPACE_BOOK_ID = "00000000-0000-0000-0000-000000000001"
 QUICK_WORKSPACE_CHAPTER_ID = "00000000-0000-0000-0000-000000000002"
 
 
-def seed_system_records(engine: Engine) -> None:
+def seed_system_records(engine: Engine, *, profile_name: str = "local") -> None:
+    if profile_name not in PROFILE_NAMES:
+        raise ValueError(f"unsupported runtime profile: {profile_name!r}")
     with engine.begin() as connection:
-        if connection.execute(
-            select(users.c.id).where(users.c.id == LOCAL_USER_ID)
-        ).scalar_one_or_none() is None:
-            connection.execute(
-                insert(users).values(
-                    id=LOCAL_USER_ID,
-                    username=LOCAL_USERNAME,
-                    password_hash=None,
-                    role="admin",
-                    status="active",
+        if profile_name == "local":
+            if connection.execute(
+                select(users.c.id).where(users.c.id == LOCAL_USER_ID)
+            ).scalar_one_or_none() is None:
+                connection.execute(
+                    insert(users).values(
+                        id=LOCAL_USER_ID,
+                        username=LOCAL_USERNAME,
+                        password_hash=None,
+                        role="admin",
+                        status="active",
+                    )
                 )
-            )
         if connection.execute(
             select(platform_config.c.singleton_id)
         ).scalar_one_or_none() is None:
@@ -70,24 +74,24 @@ def seed_system_records(engine: Engine) -> None:
                 )
             )
 
-        seed_user_records_in_connection(connection, LOCAL_USER_ID)
+        if profile_name == "local":
+            seed_user_records_in_connection(connection, LOCAL_USER_ID)
 
-        # Runtime enablement is a process-lifetime override.  The Launcher is
-        # the sole initialization/seeding owner, so reset it once before API and
-        # Worker are spawned; an API child restart must not rewrite this state.
-        connection.execute(
-            update(plugins).values(
-                runtime_enabled=plugins.c.default_enabled,
-                state=case(
-                    (plugins.c.state == "error", "error"),
-                    (
-                        plugins.c.default_enabled.is_(True),
-                        "enabled",
+            # Runtime enablement exists only in the local profile.  Reset it
+            # once before the local API and Worker are spawned.
+            connection.execute(
+                update(plugins).values(
+                    runtime_enabled=plugins.c.default_enabled,
+                    state=case(
+                        (plugins.c.state == "error", "error"),
+                        (
+                            plugins.c.default_enabled.is_(True),
+                            "enabled",
+                        ),
+                        else_="disabled",
                     ),
-                    else_="disabled",
-                ),
+                )
             )
-        )
 
         _seed_shared_records(connection)
 

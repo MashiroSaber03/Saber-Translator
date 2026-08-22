@@ -5,6 +5,7 @@ from copy import deepcopy
 from io import BytesIO
 import json
 from pathlib import Path
+import socket
 import sqlite3
 import subprocess
 import sys
@@ -21,20 +22,29 @@ from src.backend_v2.auth.credential_broker import (
     CredentialLeaseClient,
     CredentialLeaseUnavailable,
 )
+from src.backend_v2.auth.constants import LOCAL_USER_ID
 from src.backend_v2.auth.repository import AuthRepository
 from src.backend_v2.runtime_identity import RuntimeIdentity
 from src.backend_v2.public_policy import DEFAULT_PUBLIC_USER_POLICY
-from src.backend_v2.runtime_profile import resolve_runtime_profile
+from src.backend_v2.runtime_profile import (
+    PROFILE_ENV,
+    PUBLIC_HOST_ENV,
+    resolve_public_host,
+    resolve_runtime_profile,
+    validate_profile_bind_host,
+)
 from src.backend_v2.scheduling_policy import DEFAULT_SCHEDULING_POLICY
 from src.backend_v2.storage.builtin_fonts import discover_bundled_fonts
 from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.defaults import DEFAULT_TEXT_STYLE
 from src.backend_v2.storage.lifecycle import initialize_database
-from src.backend_v2.storage.schema import assets, credentials, jobs
+from src.backend_v2.storage.schema import assets, credentials, jobs, users
 from src.backend_v2.timestamps import utcnow
+from src.shared.http_config import build_httpx_kwargs
 
 
-PUBLIC_BASE = "https://saber.mashirosaber.work"
+PUBLIC_HOST = "public.example.test"
+PUBLIC_BASE = f"https://{PUBLIC_HOST}"
 ADMIN_PASSWORD = "AdminPassword123!"
 ALICE_PASSWORD = "AlicePassword123!"
 BOB_PASSWORD = "BobPassword123!"
@@ -45,7 +55,7 @@ DEFAULT_QUOTA = 2 * 1024**3
 def public_platform(tmp_path: Path):
     data_root = tmp_path / "public-data"
     data_root.mkdir()
-    initialized = initialize_database(data_root)
+    initialized = initialize_database(data_root, profile_name="public")
     engine = create_sqlite_engine(initialized.database_path)
     repository = AuthRepository(engine)
     admin = repository.create_admin("admin", ADMIN_PASSWORD)
@@ -75,6 +85,7 @@ def public_platform(tmp_path: Path):
             host="127.0.0.1",
             port=5100,
             profile=resolve_runtime_profile("public"),
+            public_host=PUBLIC_HOST,
         )
     )
     try:
@@ -108,6 +119,88 @@ def _png_bytes() -> bytes:
     return output.getvalue()
 
 
+def test_public_profile_requires_external_host_configuration_and_loopback_binding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    public = resolve_runtime_profile("public")
+    local = resolve_runtime_profile("local")
+    monkeypatch.delenv(PUBLIC_HOST_ENV, raising=False)
+
+    with pytest.raises(ValueError, match=PUBLIC_HOST_ENV):
+        resolve_public_host(public)
+    assert resolve_public_host(public, "Public.Example.Test.") == "public.example.test"
+    assert resolve_public_host(local) is None
+    assert validate_profile_bind_host(local, "0.0.0.0") == "0.0.0.0"
+    with pytest.raises(ValueError, match="loopback"):
+        validate_profile_bind_host(public, "0.0.0.0")
+
+
+def test_public_outbound_guard_is_isolated_from_local_network_behavior(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(PROFILE_ENV, "local")
+    assert build_httpx_kwargs("http://127.0.0.1:8000/v1", 5)["trust_env"] is False
+
+    monkeypatch.setenv(PROFILE_ENV, "public")
+    monkeypatch.setattr(
+        socket,
+        "getaddrinfo",
+        lambda *_args, **_kwargs: [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 443))
+        ],
+    )
+    with pytest.raises(ValueError, match="禁止访问内网"):
+        build_httpx_kwargs("https://private.example.test/v1", 5)
+
+    monkeypatch.setattr(
+        socket,
+        "getaddrinfo",
+        lambda *_args, **_kwargs: [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("1.1.1.1", 443))
+        ],
+    )
+    assert build_httpx_kwargs("https://provider.example.test/v1", 5)[
+        "trust_env"
+    ] is True
+
+
+def test_local_profile_does_not_mount_public_account_or_scheduler_controls(
+    tmp_path: Path,
+) -> None:
+    data_root = tmp_path / "local-data"
+    initialized = initialize_database(data_root, profile_name="local")
+    engine = create_sqlite_engine(initialized.database_path)
+    app = create_api_app(
+        ApiSettings(
+            data_root=data_root,
+            identity=RuntimeIdentity(
+                epoch_id="local-profile-test",
+                epoch_token="local-profile-token",
+                test_mode=True,
+            ),
+            engine=engine,
+            profile=resolve_runtime_profile("local"),
+        )
+    )
+    try:
+        client = app.test_client()
+        capabilities = client.get("/api/v2/system/capabilities")
+        assert capabilities.status_code == 200
+        assert capabilities.get_json()["registrationRequiresInvite"] is False
+        assert capabilities.get_json()["scheduling"] == {
+            "maxDeepLearningConcurrency": None
+        }
+        assert client.get("/api/v2/auth/me").status_code == 404
+        assert client.get("/api/v2/admin/scheduling-policy").status_code == 404
+
+        cpu_executor = app.extensions["saber_v2_runtime"].executors[0]
+        assert cpu_executor.max_workers == 4
+        assert cpu_executor.concurrency_limit is None
+    finally:
+        app.extensions["saber_v2_runtime"].close()
+        engine.dispose()
+
+
 def test_public_capabilities_host_filter_and_security_headers(public_platform) -> None:
     app = public_platform["app"]
     client = app.test_client()
@@ -136,6 +229,13 @@ def test_public_capabilities_host_filter_and_security_headers(public_platform) -
     assert response.headers["Strict-Transport-Security"].startswith("max-age=")
     assert response.headers["X-Content-Type-Options"] == "nosniff"
     assert response.headers["Cache-Control"] == "no-store"
+    cpu_executor = app.extensions["saber_v2_runtime"].executors[0]
+    assert cpu_executor.max_workers == 8
+    assert cpu_executor.concurrency_limit is not None
+    with public_platform["engine"].connect() as connection:
+        assert connection.execute(
+            select(users.c.id).where(users.c.id == LOCAL_USER_ID)
+        ).scalar_one_or_none() is None
 
     invalid_host = client.get(
         "/api/v2/system/capabilities",
@@ -146,7 +246,7 @@ def test_public_capabilities_host_filter_and_security_headers(public_platform) -
     external_health = client.get(
         "/api/v2/health",
         base_url=PUBLIC_BASE,
-        headers={"CF-Connecting-IP": "203.0.113.10"},
+        headers={"X-Forwarded-For": "203.0.113.10"},
     )
     assert external_health.get_json() == {"status": "ok"}
 
@@ -1036,7 +1136,7 @@ def test_public_backup_helper_creates_a_verified_snapshot(tmp_path: Path) -> Non
     data_root = tmp_path / "live"
     backup_root = tmp_path / "backup"
     data_root.mkdir()
-    initialize_database(data_root)
+    initialize_database(data_root, profile_name="public")
 
     subprocess.run(
         [

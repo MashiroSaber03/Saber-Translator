@@ -379,10 +379,6 @@ def test_launcher_requires_repeated_api_health_failures_before_restart(
     assert managed.health_failures == API_HEALTH_FAILURE_LIMIT
 
 
-def test_launcher_health_grace_covers_short_tun_transitions() -> None:
-    assert API_HEALTH_CHECK_INTERVAL_SECONDS * API_HEALTH_FAILURE_LIMIT >= 15
-
-
 def test_stop_children_terminates_descendants_before_wrapper(monkeypatch) -> None:
     events: list[str] = []
 

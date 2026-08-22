@@ -1,4 +1,4 @@
-"""One-time command used by the local deployment script to create an admin."""
+"""One-time command used by a public deployment to create its first admin."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ def main() -> int:
     parser.add_argument("--username", default="admin")
     args = parser.parse_args()
     data_root = Path(args.data_dir).expanduser().resolve()
-    initialize_database(data_root)
+    initialize_database(data_root, profile_name="public")
     password = os.environ.pop(ADMIN_PASSWORD_ENV, None) or getpass.getpass(
         "Administrator password: "
     )

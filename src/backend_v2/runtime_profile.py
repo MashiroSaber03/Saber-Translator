@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
+import re
 
 
 PROFILE_ENV = "SABER_V2_PROFILE"
+PUBLIC_HOST_ENV = "SABER_V2_PUBLIC_HOST"
 PROFILE_NAMES = ("local", "public")
+_PUBLIC_HOST = re.compile(r"^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,7 +22,6 @@ class RuntimeProfile:
     allow_plugins: bool
     allow_web_import: bool
     allow_local_providers: bool
-    public_host: str | None = None
 
 _PROFILES = {
     "local": RuntimeProfile(
@@ -39,7 +41,6 @@ _PROFILES = {
         allow_plugins=False,
         allow_web_import=False,
         allow_local_providers=False,
-        public_host="saber.mashirosaber.work",
     ),
 }
 
@@ -50,3 +51,33 @@ def resolve_runtime_profile(value: str | None = None) -> RuntimeProfile:
         return _PROFILES[normalized]
     except KeyError as exc:
         raise ValueError(f"unsupported runtime profile: {normalized!r}") from exc
+
+
+def resolve_public_host(
+    profile: RuntimeProfile,
+    value: str | None = None,
+) -> str | None:
+    """Resolve the deployment-owned hostname required by the public profile."""
+
+    if profile.name != "public":
+        return None
+    normalized = (value or os.environ.get(PUBLIC_HOST_ENV, "")).strip().lower()
+    normalized = normalized.rstrip(".")
+    if not normalized:
+        raise ValueError(f"{PUBLIC_HOST_ENV} is required for the public profile")
+    if not _PUBLIC_HOST.fullmatch(normalized) or ".." in normalized:
+        raise ValueError(f"{PUBLIC_HOST_ENV} must contain one hostname without a scheme or port")
+    return normalized
+
+
+def validate_profile_bind_host(profile: RuntimeProfile, host: str) -> str:
+    """Keep the public origin private to the deployment machine."""
+
+    normalized = host.strip().lower()
+    if profile.name == "public" and normalized not in {
+        "127.0.0.1",
+        "localhost",
+        "::1",
+    }:
+        raise ValueError("the public profile must bind to a loopback host")
+    return host

@@ -45,7 +45,8 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def dispatch(argv: Sequence[str] | None = None) -> int:
-    args = _parser().parse_args(argv)
+    parser = _parser()
+    args = parser.parse_args(argv)
 
     if args.role == "api":
         from src.backend_v2.api.entrypoint import run_api
@@ -58,6 +59,8 @@ def dispatch(argv: Sequence[str] | None = None) -> int:
         return run_worker(args)
 
     if args.role == "desktop":
+        if args.profile != "local":
+            parser.error("the desktop role only supports the local profile")
         from src.backend_v2.desktop.entrypoint import run_desktop
 
         return run_desktop(args)

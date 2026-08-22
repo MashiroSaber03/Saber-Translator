@@ -41,7 +41,13 @@ from src.backend_v2.runtime_identity import (
     WORKER_EPOCH_ID_ENV,
     WORKER_EPOCH_TOKEN_ENV,
 )
-from src.backend_v2.runtime_profile import PROFILE_ENV, resolve_runtime_profile
+from src.backend_v2.runtime_profile import (
+    PROFILE_ENV,
+    PUBLIC_HOST_ENV,
+    resolve_public_host,
+    resolve_runtime_profile,
+    validate_profile_bind_host,
+)
 from src.backend_v2.launcher.windows_job import ChildProcessJob
 from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.storage.database import (
@@ -59,10 +65,7 @@ from src.backend_v2.storage.single_instance import DataRootLock
 
 MAX_CONSECUTIVE_RESTARTS = 3
 API_HEALTH_CHECK_INTERVAL_SECONDS = 1.0
-# Windows can briefly interrupt even loopback probes while rebuilding a TUN
-# adapter.  Keep the existing supervisor, but do not recycle a healthy process
-# for a short network transition.
-API_HEALTH_FAILURE_LIMIT = 15
+API_HEALTH_FAILURE_LIMIT = 3
 RESTART_STABILITY_SECONDS = 30.0
 PREVIOUS_CHILD_EXIT_TIMEOUT_SECONDS = 5.0
 TORCH_CUDNN_V8_API_LRU_CACHE_LIMIT_ENV = "TORCH_CUDNN_V8_API_LRU_CACHE_LIMIT"
@@ -771,7 +774,10 @@ class LauncherSupervisor:
             _raise_if_stop_requested(self._stop_event)
             with DataRootLock(config.data_root):
                 LOGGER.info("已取得数据目录单实例锁")
-                storage = initialize_database(config.data_root)
+                storage = initialize_database(
+                    config.data_root,
+                    profile_name=config.profile,
+                )
                 LOGGER.info(
                     "数据库初始化与完整性检查完成：revision=%s，新建=%s",
                     storage.schema_revision,
@@ -991,11 +997,18 @@ class LauncherSupervisor:
 
 
 def run_launcher(args: object) -> int:
-    data_root = ensure_data_root(resolve_data_root(args.data_dir))
+    profile = resolve_runtime_profile(getattr(args, "profile", "local"))
+    explicit_data_root = getattr(args, "data_dir", None)
+    if profile.name == "public" and not explicit_data_root:
+        raise ValueError("public profile requires an explicit --data-dir")
+    public_host = resolve_public_host(profile)
+    validate_profile_bind_host(profile, args.host)
+    if public_host is not None:
+        os.environ[PUBLIC_HOST_ENV] = public_host
+    os.environ[PROFILE_ENV] = profile.name
+    data_root = ensure_data_root(resolve_data_root(explicit_data_root))
     host = args.host
     port = args.port
-    profile = resolve_runtime_profile(getattr(args, "profile", "local"))
-    os.environ[PROFILE_ENV] = profile.name
 
     if args.probe:
         print(

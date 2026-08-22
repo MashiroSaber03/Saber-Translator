@@ -95,5 +95,6 @@ describe('ordinary public-user policy projection', () => {
     runtime.capabilities = capabilities('local')
     expect(access.featureAllowed('translation')).toBe(true)
     expect(access.modelAllowed('detector_default')).toBe(true)
+    expect(access.maxDeepLearningConcurrency()).toBeNull()
   })
 })

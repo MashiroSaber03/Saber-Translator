@@ -184,14 +184,19 @@ class PublicUserPolicyAccess:
     """Apply the stored policy only to ordinary public-profile requests."""
 
     def __init__(self, engine: Engine, profile: RuntimeProfile) -> None:
-        self.engine = engine
         self.profile = profile
-        self.repository = PublicUserPolicyRepository(engine)
+        self.repository = (
+            PublicUserPolicyRepository(engine)
+            if profile.name == "public"
+            else None
+        )
 
     def restricted(self) -> bool:
         return self.profile.name == "public" and current_user_role() != "admin"
 
     def policy(self) -> dict[str, Any]:
+        if self.repository is None:
+            raise RuntimeError("public policy is unavailable in the local profile")
         return self.repository.load()
 
     def require_feature(self, feature: str) -> None:

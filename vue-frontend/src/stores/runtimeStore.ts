@@ -7,7 +7,7 @@ const LOCAL_CAPABILITIES: RuntimeCapabilities = {
   profile: 'local',
   requiresAuth: false,
   browserCredentials: false,
-  registrationRequiresInvite: true,
+  registrationRequiresInvite: false,
   publicUserPolicy: {
     features: {
       translation: true,
@@ -33,7 +33,7 @@ const LOCAL_CAPABILITIES: RuntimeCapabilities = {
       parallel: { allowed: true },
     },
   },
-  scheduling: { maxDeepLearningConcurrency: 1 },
+  scheduling: { maxDeepLearningConcurrency: null },
   features: { plugins: true, webImport: true, localProviders: true },
 }
 

@@ -39,9 +39,3 @@ def owner_scope(owner_user_id: str) -> Iterator[None]:
         yield
     finally:
         _worker_owner_id.reset(token)
-
-
-def owned(table):
-    """Build the owner predicate for a root table."""
-
-    return table.c.owner_user_id == effective_owner_id()

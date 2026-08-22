@@ -8,6 +8,7 @@ import yaml
 
 from src.backend_v2.api.app import ApiSettings, create_api_app
 from src.backend_v2.runtime_identity import RuntimeIdentity
+from src.backend_v2.runtime_profile import resolve_runtime_profile
 from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.schema import metadata
 from src.backend_v2.storage.seeding import seed_system_records
@@ -76,30 +77,40 @@ def _normalize_runtime_path(path: str) -> str:
 
 
 def test_openapi_operations_match_the_runtime_route_set(tmp_path: Path) -> None:
-    data_root = tmp_path / "data-v2"
-    data_root.mkdir()
-    engine = create_sqlite_engine(data_root / "saber.sqlite3")
-    metadata.create_all(engine)
-    seed_system_records(engine)
-    app = create_api_app(
-        ApiSettings(
-            data_root=data_root,
-            identity=RuntimeIdentity(
-                epoch_id="openapi-contract",
-                epoch_token="test-token",
-                test_mode=True,
-            ),
-            engine=engine,
-        )
-    )
+    runtime_operations: set[tuple[str, str]] = set()
+    runtimes = []
     try:
-        runtime_operations = {
-            (method.lower(), _normalize_runtime_path(rule.rule))
-            for rule in app.url_map.iter_rules()
-            if rule.rule.startswith("/api/v2/")
-            and rule.rule != "/api/v2/openapi.json"
-            for method in rule.methods - {"HEAD", "OPTIONS"}
-        }
+        for profile_name in ("local", "public"):
+            data_root = tmp_path / f"{profile_name}-data"
+            data_root.mkdir()
+            engine = create_sqlite_engine(data_root / "saber.sqlite3")
+            metadata.create_all(engine)
+            seed_system_records(engine, profile_name=profile_name)
+            app = create_api_app(
+                ApiSettings(
+                    data_root=data_root,
+                    identity=RuntimeIdentity(
+                        epoch_id=f"openapi-contract-{profile_name}",
+                        epoch_token="test-token",
+                        test_mode=True,
+                    ),
+                    engine=engine,
+                    host=("127.0.0.1" if profile_name == "public" else "0.0.0.0"),
+                    profile=resolve_runtime_profile(profile_name),
+                    public_host=(
+                        "public.example.test" if profile_name == "public" else None
+                    ),
+                )
+            )
+            runtimes.append((app, engine))
+            runtime_operations.update(
+                (method.lower(), _normalize_runtime_path(rule.rule))
+                for rule in app.url_map.iter_rules()
+                if rule.rule.startswith("/api/v2/")
+                and rule.rule != "/api/v2/openapi.json"
+                for method in rule.methods - {"HEAD", "OPTIONS"}
+            )
+
         document = _document()
         contract_operations = {
             (method, path)
@@ -109,8 +120,9 @@ def test_openapi_operations_match_the_runtime_route_set(tmp_path: Path) -> None:
         }
         assert contract_operations == runtime_operations
     finally:
-        app.extensions["saber_v2_runtime"].close()
-        engine.dispose()
+        for app, engine in runtimes:
+            app.extensions["saber_v2_runtime"].close()
+            engine.dispose()
 
 
 def test_lan_writes_are_not_restricted_by_origin_without_wildcard_cors(

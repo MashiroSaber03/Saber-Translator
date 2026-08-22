@@ -108,7 +108,10 @@ class JobWorkerLoop:
                 continue
             try:
                 claim_options = (
-                    {"queue_discipline": str(policy["queueDiscipline"])}
+                    {
+                        "queue_discipline": str(policy["queueDiscipline"]),
+                        "allow_paused_bypass": True,
+                    }
                     if policy is not None
                     else {}
                 )
@@ -798,9 +801,13 @@ class JobWorkerLoop:
         # across every pipeline thread during long jobs.
         with (
             ThreadPoolExecutor(
-                max_workers=min(
-                    MAX_DEEP_LEARNING_THREADS,
-                    deep_learning_concurrency,
+                max_workers=(
+                    deep_learning_concurrency
+                    if self.scheduling_policy is None
+                    else min(
+                        MAX_DEEP_LEARNING_THREADS,
+                        deep_learning_concurrency,
+                    )
                 ),
                 thread_name_prefix="job-model",
             ) as deep_learning_executor,

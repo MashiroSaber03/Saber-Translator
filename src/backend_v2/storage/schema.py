@@ -27,6 +27,8 @@ from sqlalchemy import (
     text,
 )
 
+from src.backend_v2.auth.constants import LOCAL_USER_ID
+
 
 NAMING_CONVENTION = {
     "ix": "ix_%(table_name)s_%(column_0_name)s",
@@ -48,7 +50,12 @@ schema_metadata = Table(
     metadata,
     Column("singleton_id", Integer, primary_key=True, server_default="1"),
     Column("revision", String(64), nullable=False),
+    Column("runtime_profile", String(16), nullable=False),
     CheckConstraint("singleton_id = 1", name="single_row"),
+    CheckConstraint(
+        "runtime_profile IN ('local','public')",
+        name="runtime_profile_values",
+    ),
 )
 
 JOB_STATUSES = (
@@ -152,7 +159,6 @@ DEFAULT_SCHEDULING_POLICY_JSON = (
     '"modelIdleSeconds":180,"pageQuantum":1,'
     '"queueDiscipline":"owner_round_robin"}'
 )
-LOCAL_OWNER_ID = "00000000-0000-0000-0000-000000000010"
 
 
 def _sql_values(values: tuple[str, ...]) -> str:
@@ -283,7 +289,7 @@ assets = Table(
         "owner_user_id",
         String(UUID_LENGTH),
         nullable=False,
-        server_default=LOCAL_OWNER_ID,
+        server_default=LOCAL_USER_ID,
     ),
     Column("relative_path", Text, nullable=False, unique=True),
     Column("mime_type", String(127), nullable=False),
@@ -316,7 +322,7 @@ credentials = Table(
         "owner_user_id",
         String(UUID_LENGTH),
         nullable=False,
-        server_default=LOCAL_OWNER_ID,
+        server_default=LOCAL_USER_ID,
     ),
     Column("domain", String(64), nullable=False),
     Column("provider", String(64), nullable=False),
@@ -434,7 +440,7 @@ fonts = Table(
         "owner_user_id",
         String(UUID_LENGTH),
         nullable=False,
-        server_default=LOCAL_OWNER_ID,
+        server_default=LOCAL_USER_ID,
     ),
     Column("kind", String(16), nullable=False),
     Column("display_name", String(200), nullable=False),
@@ -463,7 +469,7 @@ books = Table(
         "owner_user_id",
         String(UUID_LENGTH),
         nullable=False,
-        server_default=LOCAL_OWNER_ID,
+        server_default=LOCAL_USER_ID,
     ),
     Column("kind", String(24), nullable=False, server_default="library"),
     Column("title", String(500), nullable=False),
@@ -588,7 +594,7 @@ tags = Table(
         "owner_user_id",
         String(UUID_LENGTH),
         nullable=False,
-        server_default=LOCAL_OWNER_ID,
+        server_default=LOCAL_USER_ID,
     ),
     Column("name", String(200), nullable=False),
     Column("color", String(16), nullable=False),
@@ -621,7 +627,7 @@ app_settings = Table(
         String(UUID_LENGTH),
         primary_key=True,
         nullable=False,
-        server_default=LOCAL_OWNER_ID,
+        server_default=LOCAL_USER_ID,
     ),
     Column("domain", String(64), primary_key=True),
     Column("revision", Integer, nullable=False, server_default="1"),
@@ -653,7 +659,7 @@ provider_settings = Table(
         String(UUID_LENGTH),
         primary_key=True,
         nullable=False,
-        server_default=LOCAL_OWNER_ID,
+        server_default=LOCAL_USER_ID,
     ),
     Column("domain", String(64), primary_key=True),
     Column("provider", String(64), primary_key=True),
@@ -678,7 +684,7 @@ prompts = Table(
         "owner_user_id",
         String(UUID_LENGTH),
         nullable=False,
-        server_default=LOCAL_OWNER_ID,
+        server_default=LOCAL_USER_ID,
     ),
     Column("type", String(32), nullable=False),
     Column("name", String(200), nullable=False),
@@ -740,7 +746,7 @@ job_batches = Table(
         "owner_user_id",
         String(UUID_LENGTH),
         nullable=False,
-        server_default=LOCAL_OWNER_ID,
+        server_default=LOCAL_USER_ID,
     ),
     Column("kind", String(64), nullable=False),
     Column("display_name", String(500), nullable=False),
@@ -756,7 +762,7 @@ jobs = Table(
         "owner_user_id",
         String(UUID_LENGTH),
         nullable=False,
-        server_default=LOCAL_OWNER_ID,
+        server_default=LOCAL_USER_ID,
     ),
     Column("batch_id", String(UUID_LENGTH), ForeignKey("job_batches.id", ondelete="SET NULL")),
     Column("kind", String(64), nullable=False),
@@ -1029,7 +1035,7 @@ studio_documents = Table(
         "owner_user_id",
         String(UUID_LENGTH),
         nullable=False,
-        server_default=LOCAL_OWNER_ID,
+        server_default=LOCAL_USER_ID,
     ),
     Column("book_id", String(UUID_LENGTH), ForeignKey("books.id", ondelete="CASCADE"), nullable=False),
     Column("origin_type", String(32), nullable=False),
@@ -1166,7 +1172,7 @@ analysis_runs = Table(
         "owner_user_id",
         String(UUID_LENGTH),
         nullable=False,
-        server_default=LOCAL_OWNER_ID,
+        server_default=LOCAL_USER_ID,
     ),
     Column(
         "book_id",
@@ -1561,7 +1567,7 @@ notes = Table(
         "owner_user_id",
         String(UUID_LENGTH),
         nullable=False,
-        server_default=LOCAL_OWNER_ID,
+        server_default=LOCAL_USER_ID,
     ),
     Column(
         "book_id",
@@ -1620,7 +1626,7 @@ continuation_projects = Table(
         "owner_user_id",
         String(UUID_LENGTH),
         nullable=False,
-        server_default=LOCAL_OWNER_ID,
+        server_default=LOCAL_USER_ID,
     ),
     Column(
         "book_id",
@@ -1825,7 +1831,7 @@ operations = Table(
         "owner_user_id",
         String(UUID_LENGTH),
         nullable=False,
-        server_default=LOCAL_OWNER_ID,
+        server_default=LOCAL_USER_ID,
     ),
     Column("kind", String(64), nullable=False),
     Column("executor_role", String(16), nullable=False),
@@ -2037,7 +2043,7 @@ transient_requests = Table(
         "owner_user_id",
         String(UUID_LENGTH),
         nullable=False,
-        server_default=LOCAL_OWNER_ID,
+        server_default=LOCAL_USER_ID,
     ),
     Column("kind", String(64), nullable=False),
     Column(
@@ -2083,7 +2089,7 @@ render_requests = Table(
         "owner_user_id",
         String(UUID_LENGTH),
         nullable=False,
-        server_default=LOCAL_OWNER_ID,
+        server_default=LOCAL_USER_ID,
     ),
     Column("page_id", String(UUID_LENGTH), ForeignKey("pages.id", ondelete="CASCADE"), nullable=False, unique=True),
     Column("requested_revision", Integer, nullable=False),
@@ -2190,7 +2196,7 @@ idempotency_records = Table(
         String(UUID_LENGTH),
         primary_key=True,
         nullable=False,
-        server_default=LOCAL_OWNER_ID,
+        server_default=LOCAL_USER_ID,
     ),
     Column("scope", String(500), primary_key=True),
     Column("key", String(200), primary_key=True),

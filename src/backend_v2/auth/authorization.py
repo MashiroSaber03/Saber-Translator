@@ -142,7 +142,7 @@ def install_route_ownership(
     """Return a uniform 404 when a public user addresses another user's resource."""
 
     if not profile.requires_auth:
-        return
+        raise ValueError("route ownership middleware requires the public profile")
 
     @app.before_request
     def authorize_route_identifiers() -> tuple[Response, int] | None:

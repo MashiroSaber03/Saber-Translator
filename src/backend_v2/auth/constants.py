@@ -1,4 +1,4 @@
-"""Stable identities used by the local compatibility profile."""
+"""Stable identities used by the isolated local profile."""
 
 LOCAL_USER_ID = "00000000-0000-0000-0000-000000000010"
 LOCAL_USERNAME = "local"

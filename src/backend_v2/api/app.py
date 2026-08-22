@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from copy import deepcopy
 import json
 import logging
 from pathlib import Path
 import socket
 import time
 from typing import Any, Callable
+from urllib.parse import urlsplit
 
 from flask import Blueprint, Flask, Response, g, jsonify, request
 from sqlalchemy import Engine
@@ -17,7 +19,11 @@ import yaml
 from src.backend_v2.import_guard import assert_api_import_boundary
 from src.backend_v2.paths import data_root_fingerprint, project_root
 from src.backend_v2.runtime_identity import RuntimeIdentity
-from src.backend_v2.runtime_profile import RuntimeProfile, resolve_runtime_profile
+from src.backend_v2.runtime_profile import (
+    RuntimeProfile,
+    resolve_runtime_profile,
+    validate_profile_bind_host,
+)
 
 
 LOGGER = logging.getLogger("saber.api.http")
@@ -32,6 +38,7 @@ class ApiSettings:
     host: str = "0.0.0.0"
     port: int = 5000
     profile: RuntimeProfile = resolve_runtime_profile("local")
+    public_host: str | None = None
 
 
 @dataclass(slots=True)
@@ -60,14 +67,31 @@ def _load_openapi_document() -> dict[str, Any]:
 
 
 def _create_v2_blueprint(settings: ApiSettings) -> Blueprint:
-    from src.backend_v2.auth.repository import AuthRepository
-    from src.backend_v2.public_policy import PublicUserPolicyRepository
+    from src.backend_v2.public_policy import (
+        DEFAULT_PUBLIC_USER_POLICY,
+        PublicUserPolicyRepository,
+    )
     from src.backend_v2.scheduling_policy import SchedulingPolicyRepository
 
     blueprint = Blueprint("api_v2", __name__, url_prefix="/api/v2")
-    auth_repository = AuthRepository(settings.engine)
-    public_policy = PublicUserPolicyRepository(settings.engine)
-    scheduling_policy = SchedulingPolicyRepository(settings.engine)
+    if settings.profile.requires_auth:
+        from src.backend_v2.auth.repository import AuthRepository
+
+        auth_repository = AuthRepository(settings.engine)
+        public_policy = PublicUserPolicyRepository(settings.engine)
+        scheduling_policy = SchedulingPolicyRepository(settings.engine)
+        registration_requires_invite = auth_repository.registration_requires_invite
+        load_public_policy = public_policy.load
+        load_scheduling_limit = lambda: scheduling_policy.load()[
+            "maxDeepLearningConcurrency"
+        ]
+    else:
+        local_policy = deepcopy(DEFAULT_PUBLIC_USER_POLICY)
+        local_policy["settings"]["lamaDisableResize"]["editable"] = True
+        local_policy["settings"]["parallel"]["allowed"] = True
+        registration_requires_invite = lambda: False
+        load_public_policy = lambda: deepcopy(local_policy)
+        load_scheduling_limit = lambda: None
 
     @blueprint.get("/health")
     def health() -> Response:
@@ -76,7 +100,7 @@ def _create_v2_blueprint(settings: ApiSettings) -> Blueprint:
             "status": "ok" if healthy else "fenced",
         }
         if settings.profile.name != "public" or not request.headers.get(
-            "CF-Connecting-IP"
+            "X-Forwarded-For"
         ):
             payload.update(
                 {
@@ -105,13 +129,11 @@ def _create_v2_blueprint(settings: ApiSettings) -> Blueprint:
                 "requiresAuth": settings.profile.requires_auth,
                 "browserCredentials": settings.profile.browser_credentials,
                 "registrationRequiresInvite": (
-                    auth_repository.registration_requires_invite()
+                    registration_requires_invite()
                 ),
-                "publicUserPolicy": public_policy.load(),
+                "publicUserPolicy": load_public_policy(),
                 "scheduling": {
-                    "maxDeepLearningConcurrency": scheduling_policy.load()[
-                        "maxDeepLearningConcurrency"
-                    ],
+                    "maxDeepLearningConcurrency": load_scheduling_limit(),
                 },
                 "features": {
                     "plugins": settings.profile.allow_plugins,
@@ -207,7 +229,6 @@ def create_api_app(settings: ApiSettings) -> Flask:
         SABER_V2_DATA_ROOT=str(settings.data_root),
         SABER_V2_API_EPOCH_ID=settings.identity.epoch_id,
         SABER_V2_PROFILE=settings.profile.name,
-        MAX_CONTENT_LENGTH=90 * 1024 * 1024 if settings.profile.name == "public" else None,
     )
     from src.backend_v2.public_policy import PublicPolicyDenied
     from src.backend_v2.storage.assets import AssetQuotaExceeded
@@ -232,17 +253,6 @@ def create_api_app(settings: ApiSettings) -> Flask:
             }
         ), 413
 
-    @app.errorhandler(413)
-    def request_too_large(_error):
-        return jsonify(
-            {
-                "error": {
-                    "code": "request_too_large",
-                    "message": "上传内容过大，单次请求最多 90MB",
-                }
-            }
-        ), 413
-
     @app.errorhandler(PermissionError)
     def permission_denied(error: PermissionError):
         return jsonify(
@@ -250,15 +260,19 @@ def create_api_app(settings: ApiSettings) -> Flask:
         ), 403
 
     if settings.profile.name == "public":
+        validate_profile_bind_host(settings.profile, settings.host)
+        if settings.public_host is None:
+            raise ValueError("public_host is required for the public profile")
         allowed_hosts = {
             "127.0.0.1",
             "localhost",
-            settings.profile.public_host,
+            "::1",
+            settings.public_host,
         }
 
         @app.before_request
         def validate_public_host():
-            host = request.host.partition(":")[0].lower().rstrip(".")
+            host = (urlsplit(request.host_url).hostname or "").lower().rstrip(".")
             if host not in allowed_hosts:
                 return jsonify(
                     {"error": {"code": "invalid_host", "message": "invalid host"}}
@@ -291,25 +305,29 @@ def create_api_app(settings: ApiSettings) -> Flask:
             return response
 
     _install_request_logging(app)
-    from src.backend_v2.auth.http import install_authentication
-    from src.backend_v2.auth.authorization import install_route_ownership
-    from src.backend_v2.auth.repository import AuthRepository
-    from src.backend_v2.auth.routes import create_auth_blueprint
+    if settings.profile.requires_auth:
+        from src.backend_v2.auth.authorization import install_route_ownership
+        from src.backend_v2.auth.http import install_authentication
+        from src.backend_v2.auth.repository import AuthRepository
 
-    install_authentication(
-        app,
-        repository=AuthRepository(settings.engine),
-        profile=settings.profile,
-    )
-    install_route_ownership(
-        app,
-        engine=settings.engine,
-        profile=settings.profile,
-    )
+        auth_repository = AuthRepository(settings.engine)
+        install_authentication(
+            app,
+            repository=auth_repository,
+            profile=settings.profile,
+        )
+        install_route_ownership(
+            app,
+            engine=settings.engine,
+            profile=settings.profile,
+        )
     app.register_blueprint(_create_v2_blueprint(settings))
-    app.register_blueprint(
-        create_auth_blueprint(engine=settings.engine, profile=settings.profile)
-    )
+    if settings.profile.requires_auth:
+        from src.backend_v2.auth.routes import create_auth_blueprint
+
+        app.register_blueprint(
+            create_auth_blueprint(engine=settings.engine, profile=settings.profile)
+        )
     from src.backend_v2.content.routes import create_content_blueprint
     from src.backend_v2.jobs.events import JobEventBroadcaster
     from src.backend_v2.jobs.repository import JobQueueRepository
@@ -384,7 +402,11 @@ def create_api_app(settings: ApiSettings) -> Flask:
         data_root=settings.data_root,
         repository=StudioRepository(engine),
     )
-    scheduling_policy = SchedulingPolicyCache(SchedulingPolicyRepository(engine))
+    scheduling_policy = (
+        SchedulingPolicyCache(SchedulingPolicyRepository(engine))
+        if settings.profile.name == "public"
+        else None
+    )
     cpu_operation_executor = DurableOperationExecutor(
         repair_service.repository,
         executor_role="api",
@@ -396,9 +418,11 @@ def create_api_app(settings: ApiSettings) -> Flask:
             "studio_chat": studio_operations.handle,
             "studio_summary": studio_operations.handle,
         },
-        max_workers=8,
-        concurrency_limit=lambda: int(
-            scheduling_policy.load()["apiOperationConcurrency"]
+        max_workers=8 if scheduling_policy is not None else 4,
+        concurrency_limit=(
+            (lambda: int(scheduling_policy.load()["apiOperationConcurrency"]))
+            if scheduling_policy is not None
+            else None
         ),
     )
     app.extensions["saber_v2_runtime"] = ApiRuntimeServices(

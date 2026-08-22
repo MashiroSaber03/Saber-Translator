@@ -1903,6 +1903,7 @@ class JobQueueRepository:
         *,
         worker_epoch_id: str,
         queue_discipline: str = "fifo",
+        allow_paused_bypass: bool = False,
     ) -> AttemptFence | None:
         """Claim the next executable job."""
 
@@ -1910,14 +1911,17 @@ class JobQueueRepository:
             raise ValueError("unsupported queue discipline")
 
         now = utcnow()
-        # Paused jobs keep their checkpoints and write reservations, but do not
-        # occupy the single compute slot.
+        slot_statuses = (
+            EXECUTING_JOB_STATUSES
+            if allow_paused_bypass
+            else CURRENT_JOB_STATUSES
+        )
         # Observe that common no-op case without taking SQLite's writer lock.
         with self.engine.connect() as connection:
             self._assert_worker_epoch(connection, worker_epoch_id, now)
             current = connection.execute(
                 select(jobs.c.id)
-                .where(jobs.c.status.in_(EXECUTING_JOB_STATUSES))
+                .where(jobs.c.status.in_(slot_statuses))
                 .limit(1)
             ).scalar_one_or_none()
             if current is not None:
@@ -1926,7 +1930,7 @@ class JobQueueRepository:
             self._assert_worker_epoch(connection, worker_epoch_id, now)
             current = connection.execute(
                 select(jobs.c.id)
-                .where(jobs.c.status.in_(EXECUTING_JOB_STATUSES))
+                .where(jobs.c.status.in_(slot_statuses))
                 .limit(1)
             ).scalar_one_or_none()
             if current is not None:

@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import hashlib
-
 from flask import Flask, Response, g, jsonify, request
 
-from src.backend_v2.auth.constants import LOCAL_USER_ID, LOCAL_USERNAME, SESSION_COOKIE_NAME
+from src.backend_v2.auth.constants import SESSION_COOKIE_NAME
 from src.backend_v2.auth.repository import AuthRepository, SessionIdentity
 from src.backend_v2.runtime_profile import RuntimeProfile
 
@@ -33,20 +31,12 @@ def install_authentication(
     repository: AuthRepository,
     profile: RuntimeProfile,
 ) -> None:
+    if not profile.requires_auth:
+        raise ValueError("authentication middleware requires the public profile")
+
     @app.before_request
     def authenticate_request():
         if not request.path.startswith("/api/v2"):
-            return None
-
-        if not profile.requires_auth:
-            local_hash = hashlib.sha256(b"local-session").hexdigest()
-            g.saber_identity = SessionIdentity(
-                user_id=LOCAL_USER_ID,
-                username=LOCAL_USERNAME,
-                role="admin",
-                session_token_hash=local_hash,
-                csrf_token_hash=local_hash,
-            )
             return None
 
         token = request.cookies.get(SESSION_COOKIE_NAME, "")

@@ -70,7 +70,7 @@ export interface RuntimeCapabilities {
   registrationRequiresInvite: boolean
   publicUserPolicy: PublicUserPolicy
   scheduling: {
-    maxDeepLearningConcurrency: number
+    maxDeepLearningConcurrency: number | null
   }
   features: {
     plugins: boolean

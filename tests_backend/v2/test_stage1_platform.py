@@ -36,7 +36,6 @@ from src.backend_v2.storage.epochs import (
     utcnow,
 )
 from src.backend_v2.storage.lifecycle import (
-    DIRECT_UPGRADE_REVISION,
     SCHEMA_REVISION,
     UnsupportedDataRoot,
     initialize_database,
@@ -269,63 +268,19 @@ def test_storage_initialization_rejects_nonformal_database_without_rewriting_it(
         ]
 
 
-def test_storage_initialization_upgrades_the_previous_public_schema(
+def test_storage_data_root_cannot_be_reused_by_the_other_profile(
     tmp_path: Path,
 ) -> None:
     data_root = tmp_path / "data-v2"
     data_root.mkdir()
-    initialized = initialize_database(data_root)
+    initialized = initialize_database(data_root, profile_name="public")
 
-    with sqlite3.connect(initialized.database_path) as connection:
-        payload = json.loads(
-            connection.execute(
-                "SELECT public_user_policy_json FROM platform_config "
-                "WHERE singleton_id = 1"
-            ).fetchone()[0]
-        )
-        payload["settings"]["parallel"]["maxDeepLearningConcurrency"] = 3
-        connection.execute(
-            "UPDATE platform_config SET public_user_policy_json = ?, "
-            "asset_quota_bytes = 123456789 WHERE singleton_id = 1",
-            (json.dumps(payload, separators=(",", ":")),),
-        )
-        connection.execute(
-            "ALTER TABLE platform_config DROP COLUMN scheduler_policy_json"
-        )
-        connection.execute("DROP INDEX uq_jobs_one_current")
-        connection.execute(
-            "CREATE UNIQUE INDEX uq_jobs_one_current ON jobs ((1)) "
-            "WHERE status IN ('running','pausing','paused','cancelling')"
-        )
-        connection.execute(
-            "UPDATE schema_metadata SET revision = ? WHERE singleton_id = 1",
-            (DIRECT_UPGRADE_REVISION,),
-        )
+    with pytest.raises(UnsupportedDataRoot, match="属于 public 模式"):
+        initialize_database(data_root, profile_name="local")
 
-    upgraded = initialize_database(data_root)
-
-    assert upgraded.created is False
-    assert upgraded.schema_revision == SCHEMA_REVISION
-    with sqlite3.connect(upgraded.database_path) as connection:
-        columns = {
-            str(row[1])
-            for row in connection.execute("PRAGMA table_info(platform_config)")
-        }
-        policy_row = connection.execute(
-            "SELECT public_user_policy_json, scheduler_policy_json, "
-            "asset_quota_bytes FROM platform_config "
-            "WHERE singleton_id = 1"
-        ).fetchone()
-        index_sql = connection.execute(
-            "SELECT sql FROM sqlite_master WHERE type = 'index' "
-            "AND name = 'uq_jobs_one_current'"
-        ).fetchone()[0]
-    assert "scheduler_policy_json" in columns
-    assert policy_row is not None
-    assert "maxDeepLearningConcurrency" not in json.loads(policy_row[0])["settings"]["parallel"]
-    assert json.loads(policy_row[1])["pageQuantum"] == 1
-    assert policy_row[2] == 123456789
-    assert "paused" not in index_sql
+    reopened = initialize_database(data_root, profile_name="public")
+    assert reopened.database_path == initialized.database_path
+    assert reopened.created is False
 
 
 def test_storage_initialization_rejects_extra_nonformal_tables(

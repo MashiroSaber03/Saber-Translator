@@ -29,6 +29,8 @@ from src.backend_v2.settings.validation import validate_credential_secret
 
 
 def create_auth_blueprint(*, engine: Engine, profile: RuntimeProfile) -> Blueprint:
+    if not profile.requires_auth:
+        raise ValueError("authentication routes require the public profile")
     blueprint = Blueprint("auth_v2", __name__, url_prefix="/api/v2")
     repository = AuthRepository(engine)
     public_policy = PublicUserPolicyRepository(engine)
@@ -67,7 +69,7 @@ def create_auth_blueprint(*, engine: Engine, profile: RuntimeProfile) -> Bluepri
 
     def client_ip() -> str:
         remote = request.remote_addr or "unknown"
-        forwarded = request.headers.get("CF-Connecting-IP", "").strip()
+        forwarded = request.headers.get("X-Forwarded-For", "").rsplit(",", 1)[-1].strip()
         if remote in {"127.0.0.1", "::1"} and forwarded:
             try:
                 return str(ipaddress.ip_address(forwarded))
@@ -101,7 +103,7 @@ def create_auth_blueprint(*, engine: Engine, profile: RuntimeProfile) -> Bluepri
             SESSION_COOKIE_NAME,
             token,
             max_age=7 * 24 * 60 * 60,
-            secure=profile.name == "public",
+            secure=True,
             httponly=True,
             samesite="Lax",
             path="/",
@@ -110,7 +112,7 @@ def create_auth_blueprint(*, engine: Engine, profile: RuntimeProfile) -> Bluepri
             CSRF_COOKIE_NAME,
             csrf,
             max_age=7 * 24 * 60 * 60,
-            secure=profile.name == "public",
+            secure=True,
             httponly=False,
             samesite="Lax",
             path="/",
@@ -123,8 +125,7 @@ def create_auth_blueprint(*, engine: Engine, profile: RuntimeProfile) -> Bluepri
         username = required_string(body, "username")
         key = attempt_key(username)
         ip = client_ip()
-        if profile.requires_auth:
-            limiter.check(route="register", client_ip=ip, username=key)
+        limiter.check(route="register", client_ip=ip, username=key)
         try:
             invite_code = body.get("inviteCode")
             if invite_code is not None and not isinstance(invite_code, str):
@@ -135,8 +136,7 @@ def create_auth_blueprint(*, engine: Engine, profile: RuntimeProfile) -> Bluepri
                 invite_code=invite_code,
             )
         except AuthError:
-            if profile.requires_auth:
-                limiter.record_failure(route="register", client_ip=ip, username=key)
+            limiter.record_failure(route="register", client_ip=ip, username=key)
             raise
         limiter.clear_user(route="register", client_ip=ip, username=key)
         return session_response(user, recovery_codes=recovery)
@@ -147,16 +147,14 @@ def create_auth_blueprint(*, engine: Engine, profile: RuntimeProfile) -> Bluepri
         username = required_string(body, "username")
         key = attempt_key(username)
         ip = client_ip()
-        if profile.requires_auth:
-            limiter.check(route="login", client_ip=ip, username=key)
+        limiter.check(route="login", client_ip=ip, username=key)
         try:
             user = repository.verify_password(
                 username,
                 required_string(body, "password"),
             )
         except AuthError:
-            if profile.requires_auth:
-                limiter.record_failure(route="login", client_ip=ip, username=key)
+            limiter.record_failure(route="login", client_ip=ip, username=key)
             raise
         limiter.clear_user(route="login", client_ip=ip, username=key)
         return session_response(user)
@@ -191,8 +189,7 @@ def create_auth_blueprint(*, engine: Engine, profile: RuntimeProfile) -> Bluepri
         username = required_string(body, "username")
         key = attempt_key(username)
         ip = client_ip()
-        if profile.requires_auth:
-            limiter.check(route="recover", client_ip=ip, username=key)
+        limiter.check(route="recover", client_ip=ip, username=key)
         try:
             repository.recover(
                 username,
@@ -200,8 +197,7 @@ def create_auth_blueprint(*, engine: Engine, profile: RuntimeProfile) -> Bluepri
                 required_string(body, "newPassword"),
             )
         except AuthError:
-            if profile.requires_auth:
-                limiter.record_failure(route="recover", client_ip=ip, username=key)
+            limiter.record_failure(route="recover", client_ip=ip, username=key)
             raise
         limiter.clear_user(route="recover", client_ip=ip, username=key)
         return jsonify({"status": "ok"})

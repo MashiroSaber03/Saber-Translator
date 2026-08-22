@@ -63,6 +63,8 @@ def _write_ready_marker(data_root: Path, identity: RuntimeIdentity) -> None:
 
 def run_worker(args: object) -> int:
     profile = resolve_runtime_profile(getattr(args, "profile", "local"))
+    if profile.name == "public" and not getattr(args, "data_dir", None):
+        raise ValueError("--data-dir is required for the public profile")
     os.environ[PROFILE_ENV] = profile.name
     data_root = ensure_data_root(resolve_data_root(args.data_dir))
     if not args.probe:
@@ -211,8 +213,10 @@ def run_worker(args: object) -> int:
             )
 
             configure_provider_rate_limit_store(ProviderRateLimiter(engine))
-            scheduling_policy = SchedulingPolicyCache(
-                SchedulingPolicyRepository(engine)
+            scheduling_policy = (
+                SchedulingPolicyCache(SchedulingPolicyRepository(engine))
+                if profile.name == "public"
+                else None
             )
             job_repository = JobQueueRepository(engine)
             plugin_job_runtime = PluginJobRuntime(
@@ -380,8 +384,10 @@ def run_worker(args: object) -> int:
             model_lifecycle = WorkerModelLifecycle(
                 WorkerModelControlRepository(engine),
                 worker_epoch_id=identity.epoch_id,
-                idle_timeout_provider=lambda: float(
-                    scheduling_policy.load()["modelIdleSeconds"]
+                idle_timeout_provider=(
+                    (lambda: float(scheduling_policy.load()["modelIdleSeconds"]))
+                    if scheduling_policy is not None
+                    else None
                 ),
                 release_callbacks=(
                     plugin_job_runtime.release_cached_instances,
@@ -400,6 +406,8 @@ def run_worker(args: object) -> int:
             LOGGER.info("Worker 调度循环已就绪，开始从 SQLite 队列领取任务")
 
             def memory_admitted() -> bool:
+                if scheduling_policy is None:
+                    return True
                 threshold = int(
                     scheduling_policy.load()["minAvailableMemoryMiB"]
                 )
@@ -447,8 +455,14 @@ def run_worker(args: object) -> int:
                     insight_derived,
                 ),
                 safe_point=run_immediate_work,
-                scheduling_policy=scheduling_policy.load,
-                admission_check=memory_admitted,
+                scheduling_policy=(
+                    scheduling_policy.load
+                    if scheduling_policy is not None
+                    else None
+                ),
+                admission_check=(
+                    memory_admitted if scheduling_policy is not None else None
+                ),
                 on_activity=model_lifecycle.note_activity,
                 plugin_runtime=plugin_job_runtime,
             ).run(stop_event)
