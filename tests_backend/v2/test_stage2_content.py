@@ -27,7 +27,8 @@ from src.backend_v2.rendering.fonts import (
     materialize_render_payloads,
     resolve_font_path,
 )
-from src.backend_v2.storage.assets import AssetStorageService
+from src.backend_v2.runtime_profile import PROFILE_ENV
+from src.backend_v2.storage.assets import AssetQuotaExceeded, AssetStorageService
 from src.backend_v2.storage.builtin_fonts import (
     discover_bundled_fonts,
     resolve_bundled_font_path,
@@ -50,6 +51,7 @@ from src.backend_v2.storage.schema import (
     operations,
     page_assets,
     pages,
+    platform_config,
     translation_constraints,
 )
 from src.backend_v2.storage.seeding import seed_system_records
@@ -125,6 +127,62 @@ def test_large_image_policy_has_no_byte_or_pixel_dimension_gate() -> None:
     assert not hasattr(limits, "max_archive_entries")
     assert not hasattr(limits, "max_container_pages")
     assert not hasattr(limits, "max_html_bytes")
+
+
+def test_public_image_upload_stops_at_the_current_asset_budget(
+    content_platform,
+    monkeypatch,
+) -> None:
+    data_root, engine, repository, storage, _importer, _book, _chapter = (
+        content_platform
+    )
+    with engine.begin() as connection:
+        connection.execute(
+            update(platform_config)
+            .where(platform_config.c.singleton_id == 1)
+            .values(asset_quota_bytes=128)
+        )
+    monkeypatch.setenv(PROFILE_ENV, "public")
+    importer = ImageImportService(
+        data_root=data_root,
+        repository=repository,
+        storage=storage,
+        limits=ImportSafetyLimits(stream_chunk_bytes=256),
+    )
+    source = BytesIO(b"x" * 1024)
+
+    with pytest.raises(AssetQuotaExceeded):
+        importer.publish_standalone_image(source)
+
+    assert source.tell() == 256
+    assert not list((data_root / "temp" / "imports").glob("*.upload"))
+
+
+def test_local_image_upload_ignores_the_public_asset_budget(
+    content_platform,
+    monkeypatch,
+) -> None:
+    data_root, engine, repository, storage, _importer, _book, _chapter = (
+        content_platform
+    )
+    with engine.begin() as connection:
+        connection.execute(
+            update(platform_config)
+            .where(platform_config.c.singleton_id == 1)
+            .values(asset_quota_bytes=1)
+        )
+    monkeypatch.setenv(PROFILE_ENV, "local")
+    importer = ImageImportService(
+        data_root=data_root,
+        repository=repository,
+        storage=storage,
+        limits=ImportSafetyLimits(stream_chunk_bytes=64),
+    )
+    payload = _image_bytes((20, 20))
+    source, thumbnail = importer.publish_standalone_image(BytesIO(payload))
+
+    assert source.byte_size == len(payload)
+    assert thumbnail.byte_size > 1
 
 
 @pytest.mark.parametrize(

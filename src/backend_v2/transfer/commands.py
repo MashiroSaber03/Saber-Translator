@@ -15,6 +15,7 @@ from src.backend_v2.jobs.repository import (
     JobQueueRepository,
     JobSpec,
 )
+from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.storage.schema import (
     books,
     chapters,
@@ -180,6 +181,7 @@ class TransferCommandService:
         self.engine = engine
         self.jobs = JobQueueRepository(engine)
         self.limits = limits
+        self.storage = AssetStorageService(self.data_root, engine)
 
     def create_container_import(
         self,
@@ -203,15 +205,19 @@ class TransferCommandService:
         target.parent.mkdir(parents=True, exist_ok=True)
         digest = hashlib.sha256()
         byte_size = 0
+        upload_budget = self.storage.upload_budget()
         try:
             with target.open("xb") as output:
                 while True:
                     chunk = upload.read(self.limits.stream_chunk_bytes)
                     if not chunk:
                         break
-                    byte_size += len(chunk)
+                    incoming_bytes = byte_size + len(chunk)
+                    if upload_budget is not None:
+                        upload_budget.check(incoming_bytes)
                     digest.update(chunk)
                     output.write(chunk)
+                    byte_size = incoming_bytes
             if byte_size == 0:
                 raise ValueError("container is empty")
             _validate_container_signature(target, suffix)

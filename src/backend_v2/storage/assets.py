@@ -42,6 +42,22 @@ class AssetQuotaExceeded(RuntimeError):
         self.incoming_bytes = incoming_bytes
 
 
+@dataclass(frozen=True, slots=True)
+class AssetQuotaBudget:
+    """One user's current persistent-asset allowance for an incoming stream."""
+
+    used_bytes: int
+    quota_bytes: int
+
+    def check(self, incoming_bytes: int) -> None:
+        if self.used_bytes + incoming_bytes > self.quota_bytes:
+            raise AssetQuotaExceeded(
+                used_bytes=self.used_bytes,
+                quota_bytes=self.quota_bytes,
+                incoming_bytes=incoming_bytes,
+            )
+
+
 def _quota_is_enforced() -> bool:
     if has_request_context():
         return str(current_app.config.get("SABER_V2_PROFILE", "local")) == "public"
@@ -139,6 +155,22 @@ class AssetStorageService:
             height=int(row["height"]) if row["height"] is not None else None,
         )
 
+    def upload_budget(
+        self,
+        owner_user_id: str | None = None,
+    ) -> AssetQuotaBudget | None:
+        """Return the public-profile quota snapshot used while receiving an asset."""
+
+        if not _quota_is_enforced():
+            return None
+        owner = owner_user_id or effective_owner_id()
+        with self.engine.connect() as connection:
+            quota_bytes, used_bytes = self._quota_state(connection, owner)
+        return AssetQuotaBudget(
+            used_bytes=used_bytes,
+            quota_bytes=quota_bytes,
+        )
+
     def publish_stream(
         self,
         source: BinaryIO,
@@ -165,15 +197,7 @@ class AssetStorageService:
             raise ValueError("asset dimensions must be positive")
 
         owner_user_id = effective_owner_id()
-        quota_enforced = _quota_is_enforced()
-        initial_quota_bytes: int | None = None
-        initial_used_bytes = 0
-        if quota_enforced:
-            with self.engine.connect() as connection:
-                initial_quota_bytes, initial_used_bytes = self._quota_state(
-                    connection,
-                    owner_user_id,
-                )
+        upload_budget = self.upload_budget(owner_user_id)
 
         asset_id = str(uuid.uuid4())
         relative_path = f"objects/{asset_id[:2]}/{asset_id}.{canonical_extension}"
@@ -192,16 +216,8 @@ class AssetStorageService:
                     if not chunk:
                         break
                     incoming_bytes = byte_size + len(chunk)
-                    if (
-                        initial_quota_bytes is not None
-                        and initial_used_bytes + incoming_bytes
-                        > initial_quota_bytes
-                    ):
-                        raise AssetQuotaExceeded(
-                            used_bytes=initial_used_bytes,
-                            quota_bytes=initial_quota_bytes,
-                            incoming_bytes=incoming_bytes,
-                        )
+                    if upload_budget is not None:
+                        upload_budget.check(incoming_bytes)
                     output.write(chunk)
                     digest.update(chunk)
                     byte_size = incoming_bytes
@@ -249,7 +265,7 @@ class AssetStorageService:
 
         try:
             with immediate_transaction(self.engine) as connection:
-                if quota_enforced:
+                if upload_budget is not None:
                     quota_bytes, used_bytes = self._quota_state(
                         connection,
                         owner_user_id,

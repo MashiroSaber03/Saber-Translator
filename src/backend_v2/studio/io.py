@@ -118,7 +118,8 @@ class StudioIOService:
         filename: str,
         idempotency_key: str,
     ) -> dict[str, Any]:
-        payload = self._read_all(upload)
+        suffix = Path(filename or "").suffix.lower()
+        payload = self._read_all(upload, asset_backed=suffix != ".json")
         request_identity = {
             "bookId": book_id,
             "filename": filename,
@@ -132,7 +133,6 @@ class StudioIOService:
         )
         if replay is not None:
             return replay
-        suffix = Path(filename or "").suffix.lower()
         if suffix == ".json":
             decoded = json.loads(payload.decode("utf-8-sig"))
             if not isinstance(decoded, dict):
@@ -332,12 +332,16 @@ class StudioIOService:
                 .values(gc_marked_at=utcnow())
             )
 
-    def _read_all(self, upload: BinaryIO) -> bytes:
+    def _read_all(self, upload: BinaryIO, *, asset_backed: bool = False) -> bytes:
         output = bytearray()
+        upload_budget = self.storage.upload_budget() if asset_backed else None
         while True:
             chunk = upload.read(self.limits.stream_chunk_bytes)
             if not chunk:
                 break
+            incoming_bytes = len(output) + len(chunk)
+            if upload_budget is not None:
+                upload_budget.check(incoming_bytes)
             output.extend(chunk)
         if not output:
             raise ValueError("uploaded file is empty")
@@ -346,14 +350,18 @@ class StudioIOService:
     def _spool_image(self, upload: BinaryIO, destination: Path) -> tuple[str, int]:
         digest = hashlib.sha256()
         byte_size = 0
+        upload_budget = self.storage.upload_budget()
         with destination.open("xb") as output:
             while True:
                 chunk = upload.read(self.limits.stream_chunk_bytes)
                 if not chunk:
                     break
-                byte_size += len(chunk)
+                incoming_bytes = byte_size + len(chunk)
+                if upload_budget is not None:
+                    upload_budget.check(incoming_bytes)
                 digest.update(chunk)
                 output.write(chunk)
+                byte_size = incoming_bytes
         if byte_size == 0:
             raise ValueError("uploaded file is empty")
         return digest.hexdigest(), byte_size

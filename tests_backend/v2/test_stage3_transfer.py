@@ -7,12 +7,13 @@ import zipfile
 
 from PIL import Image
 import pytest
-from sqlalchemy import insert, select
+from sqlalchemy import insert, select, update
 
 from src.backend_v2.content.image_import import ImportSafetyLimits
 from src.backend_v2.content.repository import ContentRepository
 from src.backend_v2.jobs.repository import JobQueueRepository
-from src.backend_v2.storage.assets import AssetStorageService
+from src.backend_v2.runtime_profile import PROFILE_ENV
+from src.backend_v2.storage.assets import AssetQuotaExceeded, AssetStorageService
 from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.epochs import (
     EpochRegistration,
@@ -23,6 +24,7 @@ from src.backend_v2.storage.schema import (
     metadata,
     page_assets,
     pages,
+    platform_config,
 )
 from src.backend_v2.storage.seeding import seed_system_records
 from src.backend_v2.transfer.commands import TransferCommandService
@@ -77,6 +79,47 @@ def test_public_archive_scan_enforces_configured_entry_cap(tmp_path: Path) -> No
 
     with pytest.raises(ValueError, match="too many members"):
         worker._scan_zip(archive_path)
+
+
+def test_public_container_upload_stops_at_the_current_asset_budget(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    data_root = tmp_path / "data-v2"
+    data_root.mkdir()
+    engine = create_sqlite_engine(data_root / "saber.sqlite3")
+    metadata.create_all(engine)
+    seed_system_records(engine, profile_name="public")
+    content = ContentRepository(engine)
+    book = content.create_book(title="Book")
+    chapter = content.create_chapter(book_id=str(book["id"]), title="Chapter")
+    with engine.begin() as connection:
+        connection.execute(
+            update(platform_config)
+            .where(platform_config.c.singleton_id == 1)
+            .values(asset_quota_bytes=128)
+        )
+    monkeypatch.setenv(PROFILE_ENV, "public")
+    source = BytesIO(b"x" * 1024)
+    commands = TransferCommandService(
+        data_root=data_root,
+        engine=engine,
+        limits=ImportSafetyLimits(stream_chunk_bytes=256),
+    )
+
+    try:
+        with pytest.raises(AssetQuotaExceeded):
+            commands.create_container_import(
+                chapter_id=str(chapter["id"]),
+                upload=source,
+                filename="pages.cbz",
+                idempotency_key="container-over-quota",
+            )
+
+        assert source.tell() == 256
+        assert not list((data_root / "temp" / "container-import").glob("*.cbz"))
+    finally:
+        engine.dispose()
 
 
 def _run_job(

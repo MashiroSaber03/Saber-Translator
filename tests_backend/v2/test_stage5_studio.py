@@ -15,11 +15,15 @@ from PIL import Image
 from sqlalchemy import inspect, insert, select, update
 
 from src.backend_v2.api.app import ApiSettings, create_api_app
+from src.backend_v2.content.image_import import ImportSafetyLimits
 from src.backend_v2.content.repository import ContentLocked, ContentRepository
 from src.backend_v2.operations.repository import (
     OperationFenced,
     OperationRepository,
 )
+from src.backend_v2.runtime_identity import RuntimeIdentity
+from src.backend_v2.runtime_profile import PROFILE_ENV
+from src.backend_v2.storage.assets import AssetQuotaExceeded
 from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.epochs import (
     EpochRegistration,
@@ -29,6 +33,7 @@ from src.backend_v2.storage.schema import (
     analysis_artifacts,
     assets,
     metadata,
+    platform_config,
     studio_chat_sessions,
     studio_documents,
     studio_messages,
@@ -36,7 +41,6 @@ from src.backend_v2.storage.schema import (
     timeline_versions,
 )
 from src.backend_v2.storage.seeding import seed_system_records
-from src.backend_v2.runtime_identity import RuntimeIdentity
 from src.backend_v2.studio.repository import (
     StudioConflict,
     StudioDataInvalid,
@@ -1517,6 +1521,47 @@ def test_png_and_session_portable_roundtrip_uses_asset_ids(
     )
     assert exported["schema"] == "saber-studio-chat-v2"
     assert exported["messages"][0]["attachments"][0]["blob_base64"]
+
+
+@pytest.mark.parametrize("operation", ["asset", "document"])
+def test_public_studio_image_ingress_stops_at_the_current_asset_budget(
+    studio_platform,
+    monkeypatch,
+    operation: str,
+) -> None:
+    with studio_platform["engine"].begin() as connection:
+        connection.execute(
+            update(platform_config)
+            .where(platform_config.c.singleton_id == 1)
+            .values(asset_quota_bytes=128)
+        )
+    monkeypatch.setenv(PROFILE_ENV, "public")
+    io_service = StudioIOService(
+        data_root=studio_platform["data_root"],
+        engine=studio_platform["engine"],
+        repository=StudioRepository(studio_platform["engine"]),
+        limits=ImportSafetyLimits(stream_chunk_bytes=256),
+    )
+    source = BytesIO(b"x" * 1024)
+
+    with pytest.raises(AssetQuotaExceeded):
+        if operation == "asset":
+            io_service.publish_image(
+                source,
+                idempotency_key="studio-asset-over-quota",
+            )
+        else:
+            io_service.import_document(
+                book_id=str(studio_platform["book"]["id"]),
+                upload=source,
+                filename="studio-card.png",
+                idempotency_key="studio-document-over-quota",
+            )
+
+    assert source.tell() == 256
+    assert not list(
+        (studio_platform["data_root"] / "temp" / "imports").glob("*.upload")
+    )
 
 
 def test_failed_session_attachment_import_marks_published_assets_for_gc(

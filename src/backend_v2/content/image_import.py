@@ -333,14 +333,18 @@ class ImageImportService:
     def _copy_upload(self, upload: BinaryIO, destination: Path) -> tuple[str, int]:
         digest = hashlib.sha256()
         byte_size = 0
+        upload_budget = self.storage.upload_budget()
         with destination.open("xb") as output:
             while True:
                 chunk = upload.read(self.limits.stream_chunk_bytes)
                 if not chunk:
                     break
-                byte_size += len(chunk)
+                incoming_bytes = byte_size + len(chunk)
+                if upload_budget is not None:
+                    upload_budget.check(incoming_bytes)
                 digest.update(chunk)
                 output.write(chunk)
+                byte_size = incoming_bytes
         if byte_size == 0:
             raise ValueError("uploaded image is empty")
         return digest.hexdigest(), byte_size
