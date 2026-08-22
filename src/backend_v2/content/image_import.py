@@ -39,8 +39,14 @@ Image.MAX_IMAGE_PIXELS = (
 class ImportSafetyLimits:
     max_compression_ratio: float = 1000.0
     stream_chunk_bytes: int = 1024 * 1024
-    max_container_entries: int = 10_000
-    max_archive_uncompressed_bytes: int = 2 * 1024 * 1024 * 1024
+    max_container_entries: int | None = None
+    max_archive_uncompressed_bytes: int | None = None
+
+
+PUBLIC_IMPORT_SAFETY_LIMITS = ImportSafetyLimits(
+    max_container_entries=10_000,
+    max_archive_uncompressed_bytes=2 * 1024 * 1024 * 1024,
+)
 
 
 class UnsupportedImage(ValueError):

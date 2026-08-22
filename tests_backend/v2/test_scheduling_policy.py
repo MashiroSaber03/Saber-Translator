@@ -57,6 +57,7 @@ def test_api_operation_executor_applies_a_changed_limit_to_new_operations() -> N
                     attempt_id=f"attempt-{operation_id}",
                     executor_epoch_id="api",
                     executor_role="api",
+                    owner_user_id="test-owner",
                 ),
                 {"kind": "light"},
             )

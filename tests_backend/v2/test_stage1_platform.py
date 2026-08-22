@@ -16,7 +16,8 @@ from flask import Flask
 from fontTools.ttLib import TTCollection, TTFont
 from sqlalchemy import event, insert, select, text, update
 
-from src.backend_v2.storage.assets import AssetStorageService
+from src.backend_v2.runtime_profile import PROFILE_ENV, resolve_runtime_profile
+from src.backend_v2.storage.assets import AssetQuotaExceeded, AssetStorageService
 from src.backend_v2.storage import builtin_fonts
 from src.backend_v2.storage.builtin_fonts import discover_bundled_fonts
 from src.backend_v2.storage.consistency import ConsistencyChecker
@@ -73,9 +74,13 @@ from src.backend_v2.storage.schema import (
     operation_events,
     operations,
     pages,
+    platform_config,
     process_epochs,
     render_requests,
 )
+
+
+LOCAL_PROFILE = resolve_runtime_profile("local")
 from src.backend_v2.storage.seeding import (
     QUICK_WORKSPACE_BOOK_ID,
     QUICK_WORKSPACE_CHAPTER_ID,
@@ -1455,6 +1460,37 @@ def test_asset_publication_failure_windows_are_recoverable(
         )
 
 
+def test_public_asset_quota_stops_stream_before_spooling_the_full_upload(
+    platform,
+    monkeypatch,
+) -> None:
+    data_root, engine = platform
+    seed_system_records(engine, profile_name="public")
+    with engine.begin() as connection:
+        connection.execute(
+            update(platform_config)
+            .where(platform_config.c.singleton_id == 1)
+            .values(asset_quota_bytes=1024)
+        )
+    monkeypatch.setenv(PROFILE_ENV, "public")
+    storage = AssetStorageService(data_root, engine)
+    source = BytesIO(b"x" * (3 * 1024 * 1024))
+
+    with pytest.raises(AssetQuotaExceeded) as raised:
+        storage.publish_stream(
+            source,
+            extension="bin",
+            mime_type="application/octet-stream",
+        )
+
+    assert raised.value.quota_bytes == 1024
+    assert source.tell() == 1024 * 1024
+    assert not list((data_root / "temp" / "staging").glob("*.part"))
+    with engine.connect() as connection:
+        assert connection.execute(select(assets.c.id)).all() == []
+        assert connection.execute(select(object_commit_journal.c.asset_id)).all() == []
+
+
 @pytest.mark.parametrize(
     ("width", "height", "message"),
     [
@@ -1952,7 +1988,7 @@ def test_settings_http_rejects_unknown_transaction_fields(platform) -> None:
     data_root, engine = platform
     app = Flask("settings-strict-contract-test")
     app.register_blueprint(
-        create_settings_blueprint(data_root=data_root, engine=engine)
+        create_settings_blueprint(data_root=data_root, engine=engine, profile=LOCAL_PROFILE)
     )
     client = app.test_client()
 
@@ -2072,7 +2108,7 @@ def test_clean_temporary_assets_replays_without_running_twice(
     monkeypatch.setattr(AssetStorageService, "recover_journal", recover_once)
     app = Flask("settings-maintenance-idempotency-test")
     app.register_blueprint(
-        create_settings_blueprint(data_root=data_root, engine=engine)
+        create_settings_blueprint(data_root=data_root, engine=engine, profile=LOCAL_PROFILE)
     )
     client = app.test_client()
 
@@ -2162,7 +2198,7 @@ def test_prompt_http_update_is_strict_and_returns_the_complete_resource(
     )
     app = Flask("settings-prompt-contract-test")
     app.register_blueprint(
-        create_settings_blueprint(data_root=data_root, engine=engine)
+        create_settings_blueprint(data_root=data_root, engine=engine, profile=LOCAL_PROFILE)
     )
     client = app.test_client()
     prompt_url = f'/api/v2/prompts/{prompt["id"]}'
@@ -2225,7 +2261,7 @@ def test_prompt_http_create_replays_without_creating_a_duplicate(platform) -> No
     data_root, engine = platform
     app = Flask("settings-prompt-create-idempotency-test")
     app.register_blueprint(
-        create_settings_blueprint(data_root=data_root, engine=engine)
+        create_settings_blueprint(data_root=data_root, engine=engine, profile=LOCAL_PROFILE)
     )
     client = app.test_client()
     payload = {
@@ -2302,7 +2338,7 @@ def test_settings_http_transaction_updates_prompts_idempotently(platform) -> Non
     )
     app = Flask("settings-prompt-transaction-test")
     app.register_blueprint(
-        create_settings_blueprint(data_root=data_root, engine=engine)
+        create_settings_blueprint(data_root=data_root, engine=engine, profile=LOCAL_PROFILE)
     )
     client = app.test_client()
     payload = {
@@ -2354,7 +2390,7 @@ def test_settings_http_accepts_true_type_collections(platform) -> None:
 
     app = Flask("settings-font-collection-test")
     app.register_blueprint(
-        create_settings_blueprint(data_root=data_root, engine=engine)
+        create_settings_blueprint(data_root=data_root, engine=engine, profile=LOCAL_PROFILE)
     )
     client = app.test_client()
     response = client.post(
@@ -2507,7 +2543,7 @@ def test_v2_provider_diagnostics_resolve_backend_credentials_and_routes(
     )
     app = Flask("settings-diagnostics-test")
     app.register_blueprint(
-        create_settings_blueprint(data_root=data_root, engine=engine)
+        create_settings_blueprint(data_root=data_root, engine=engine, profile=LOCAL_PROFILE)
     )
     client = app.test_client()
 
@@ -2602,7 +2638,7 @@ def test_model_catalog_reports_provider_transport_failure(
     )
     app = Flask("settings-model-catalog-provider-unavailable-test")
     app.register_blueprint(
-        create_settings_blueprint(data_root=data_root, engine=engine)
+        create_settings_blueprint(data_root=data_root, engine=engine, profile=LOCAL_PROFILE)
     )
     response = app.test_client().post("/api/v2/model-catalog", json=body)
     assert response.status_code == 502
@@ -2706,7 +2742,7 @@ def test_settings_http_transaction_persists_secret_without_returning_it(
     data_root, engine = platform
     app = Flask("settings-credential-persistence-test")
     app.register_blueprint(
-        create_settings_blueprint(data_root=data_root, engine=engine)
+        create_settings_blueprint(data_root=data_root, engine=engine, profile=LOCAL_PROFILE)
     )
     client = app.test_client()
     secret = "sk-must-never-return-to-browser"
@@ -2767,7 +2803,7 @@ def test_settings_http_rejects_empty_transaction(platform) -> None:
     data_root, engine = platform
     app = Flask("settings-empty-transaction-test")
     app.register_blueprint(
-        create_settings_blueprint(data_root=data_root, engine=engine)
+        create_settings_blueprint(data_root=data_root, engine=engine, profile=LOCAL_PROFILE)
     )
     response = app.test_client().put(
         "/api/v2/settings/transactions",

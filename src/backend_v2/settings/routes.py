@@ -19,7 +19,7 @@ from src.backend_v2.api.request_helpers import (
     required_string as _required_string,
     validate_multipart_fields as _validate_multipart_fields,
 )
-from src.backend_v2.runtime_profile import RuntimeProfile, resolve_runtime_profile
+from src.backend_v2.runtime_profile import RuntimeProfile
 from src.backend_v2.public_policy import PublicUserPolicyAccess
 from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.storage.builtin_fonts import SUPPORTED_FONT_SUFFIXES
@@ -76,9 +76,8 @@ def create_settings_blueprint(
     *,
     data_root: Path,
     engine: Engine,
-    profile: RuntimeProfile | None = None,
+    profile: RuntimeProfile,
 ) -> Blueprint:
-    profile = profile or resolve_runtime_profile("local")
     blueprint = Blueprint("settings_v2", __name__, url_prefix="/api/v2")
     settings = SettingsRepository(engine)
     prompt_repository = PromptRepository(engine)

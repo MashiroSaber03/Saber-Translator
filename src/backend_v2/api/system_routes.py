@@ -7,7 +7,7 @@ from sqlalchemy import Engine
 
 from src.backend_v2.api.request_helpers import error_response
 from src.backend_v2.auth.context import require_admin
-from src.backend_v2.runtime_profile import RuntimeProfile, resolve_runtime_profile
+from src.backend_v2.runtime_profile import RuntimeProfile
 from src.backend_v2.worker.model_lifecycle import (
     ModelInferenceBusy,
     WorkerCommandFenced,
@@ -15,10 +15,7 @@ from src.backend_v2.worker.model_lifecycle import (
 )
 
 
-def create_system_blueprint(
-    *, engine: Engine, profile: RuntimeProfile | None = None
-) -> Blueprint:
-    profile = profile or resolve_runtime_profile("local")
+def create_system_blueprint(*, engine: Engine, profile: RuntimeProfile) -> Blueprint:
     blueprint = Blueprint(
         "system_controls_v2",
         __name__,

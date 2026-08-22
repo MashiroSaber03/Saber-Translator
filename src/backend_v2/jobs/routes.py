@@ -27,20 +27,19 @@ from src.backend_v2.jobs.repository import (
 )
 from src.backend_v2.jobs.retry import JobRetryService
 from src.backend_v2.public_policy import PublicUserPolicyAccess
-from src.backend_v2.runtime_profile import RuntimeProfile, resolve_runtime_profile
+from src.backend_v2.runtime_profile import RuntimeProfile
 
 
 def create_jobs_blueprint(
     *,
     engine: Engine,
     broadcaster: JobEventBroadcaster,
-    profile: RuntimeProfile | None = None,
+    profile: RuntimeProfile,
 ) -> Blueprint:
-    profile = profile or resolve_runtime_profile("local")
     blueprint = Blueprint("jobs_v2", __name__, url_prefix="/api/v2")
     repository = JobQueueRepository(engine)
     public_access = PublicUserPolicyAccess(engine, profile)
-    retry_service = JobRetryService(engine, public_access=public_access)
+    retry_service = JobRetryService(engine, profile=profile)
 
     def require_retry_feature(job_id: str) -> None:
         kind = str(repository.get_job(job_id)["kind"])

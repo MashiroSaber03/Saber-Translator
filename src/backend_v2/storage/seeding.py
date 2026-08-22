@@ -99,13 +99,6 @@ def seed_system_records(engine: Engine, *, profile_name: str = "local") -> None:
             connection.execute(insert(queue_state).values(singleton_id=1))
 
 
-def seed_user_records(engine: Engine, user_id: str) -> None:
-    """Seed one user's quick workspace and default settings idempotently."""
-
-    with engine.begin() as connection:
-        seed_user_records_in_connection(connection, user_id)
-
-
 def seed_user_records_in_connection(connection: object, user_id: str) -> None:
         quick_book_id = connection.execute(
             select(books.c.id).where(

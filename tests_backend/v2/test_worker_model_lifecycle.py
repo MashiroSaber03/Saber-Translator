@@ -14,6 +14,7 @@ from src.backend_v2.api.system_routes import create_system_blueprint
 from src.backend_v2.content.repository import ContentRepository
 from src.backend_v2.jobs.repository import JobItemSpec, JobQueueRepository, JobSpec
 from src.backend_v2.jobs.worker_loop import JobWorkerLoop
+from src.backend_v2.runtime_profile import resolve_runtime_profile
 from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.epochs import (
     EpochRegistration,
@@ -31,6 +32,9 @@ from src.backend_v2.worker.model_lifecycle import (
     WorkerModelLifecycle,
     unload_loaded_models,
 )
+
+
+LOCAL_PROFILE = resolve_runtime_profile("local")
 
 
 @pytest.fixture()
@@ -177,7 +181,9 @@ def test_release_endpoint_returns_409_during_local_model_inference(
             )
         )
     app = Flask("model-control-test")
-    app.register_blueprint(create_system_blueprint(engine=engine))
+    app.register_blueprint(
+        create_system_blueprint(engine=engine, profile=LOCAL_PROFILE)
+    )
 
     response = app.test_client().post(
         "/api/v2/system/release-models"

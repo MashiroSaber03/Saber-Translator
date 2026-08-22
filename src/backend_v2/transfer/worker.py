@@ -122,7 +122,10 @@ class TransferWorkerService:
             raise ValueError("unsupported container type")
         if not entries:
             raise ValueError("container contains no supported images")
-        if len(entries) > self.limits.max_container_entries:
+        if (
+            self.limits.max_container_entries is not None
+            and len(entries) > self.limits.max_container_entries
+        ):
             raise ValueError("container contains too many pages")
         chapter_id = str(self._job_target(fence.job_id)["chapter_id"])
         with self.engine.connect() as connection:
@@ -405,10 +408,15 @@ class TransferWorkerService:
         entries: list[dict[str, object]] = []
         with zipfile.ZipFile(path) as archive:
             infos = archive.infolist()
-            if len(infos) > self.limits.max_container_entries:
+            if (
+                self.limits.max_container_entries is not None
+                and len(infos) > self.limits.max_container_entries
+            ):
                 raise ValueError("archive contains too many members")
-            if sum(info.file_size for info in infos) > (
-                self.limits.max_archive_uncompressed_bytes
+            if (
+                self.limits.max_archive_uncompressed_bytes is not None
+                and sum(info.file_size for info in infos)
+                > self.limits.max_archive_uncompressed_bytes
             ):
                 raise ValueError("archive uncompressed size is too large")
             seen_members: set[str] = set()

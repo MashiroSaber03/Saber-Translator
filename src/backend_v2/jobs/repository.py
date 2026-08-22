@@ -30,7 +30,6 @@ from src.backend_v2.timestamps import iso_utc as _iso, utcnow
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.engine import Connection
 
-from src.backend_v2.auth.constants import LOCAL_USER_ID
 from src.backend_v2.auth.credential_broker import parse_credential_reference
 from src.backend_v2.auth.ownership import effective_owner_id
 from src.backend_v2.domain.state_machines import (
@@ -194,7 +193,7 @@ class AttemptFence:
     job_id: str
     attempt_id: str
     worker_epoch_id: str
-    owner_user_id: str = LOCAL_USER_ID
+    owner_user_id: str
 
 
 def _load_required_object(value: object, field: str) -> dict[str, Any]:

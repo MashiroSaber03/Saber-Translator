@@ -9,6 +9,7 @@ from PIL import Image
 import pytest
 from sqlalchemy import insert, select
 
+from src.backend_v2.content.image_import import ImportSafetyLimits
 from src.backend_v2.content.repository import ContentRepository
 from src.backend_v2.jobs.repository import JobQueueRepository
 from src.backend_v2.storage.assets import AssetStorageService
@@ -51,6 +52,31 @@ def test_container_page_config_does_not_rescan_the_complete_entry_list() -> None
     )
 
     assert resolved["entries"] is entries
+
+
+def test_local_archive_scan_has_no_public_size_or_entry_caps(tmp_path: Path) -> None:
+    archive_path = tmp_path / "pages.cbz"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("001.png", _png((255, 0, 0)))
+        archive.writestr("002.png", _png((0, 255, 0)))
+
+    worker = object.__new__(TransferWorkerService)
+    worker.limits = ImportSafetyLimits()
+
+    assert len(worker._scan_zip(archive_path)) == 2
+
+
+def test_public_archive_scan_enforces_configured_entry_cap(tmp_path: Path) -> None:
+    archive_path = tmp_path / "pages.cbz"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("001.png", _png((255, 0, 0)))
+        archive.writestr("002.png", _png((0, 255, 0)))
+
+    worker = object.__new__(TransferWorkerService)
+    worker.limits = ImportSafetyLimits(max_container_entries=1)
+
+    with pytest.raises(ValueError, match="too many members"):
+        worker._scan_zip(archive_path)
 
 
 def _run_job(

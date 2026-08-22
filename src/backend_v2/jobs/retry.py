@@ -25,6 +25,7 @@ from src.backend_v2.jobs.repository import (
 from src.backend_v2.timestamps import utcnow
 from src.backend_v2.settings.resolver import SettingsResolver
 from src.backend_v2.public_policy import PublicUserPolicyAccess
+from src.backend_v2.runtime_profile import RuntimeProfile
 from src.backend_v2.storage.schema import (
     assets,
     analysis_page_results,
@@ -61,11 +62,12 @@ class JobRetryService:
         self,
         engine: Engine,
         *,
-        public_access: PublicUserPolicyAccess | None = None,
+        profile: RuntimeProfile,
     ) -> None:
         self.engine = engine
         self.repository = JobQueueRepository(engine)
-        self.public_access = public_access
+        self.profile = profile
+        self.public_access = PublicUserPolicyAccess(engine, profile)
         database_path = engine.url.database
         if not database_path:
             raise ValueError("job retries require a file-backed SQLite database")
@@ -617,7 +619,7 @@ class JobRetryService:
             }
         return TranslationJobCommandService(
             self.engine,
-            public_access=self.public_access,
+            profile=self.profile,
         ).create_chapter_job(
             chapter_id=str(chapter_id),
             config={
@@ -650,7 +652,7 @@ class JobRetryService:
             raise JobConflict("detection retry target chapter no longer exists")
         return AuxiliaryTranslationCommands(
             self.engine,
-            public_access=self.public_access,
+            profile=self.profile,
         ).create_detect_job(
             chapter_id=str(chapter_id),
             page_ids=self._page_ids(selected_items),
@@ -1078,7 +1080,7 @@ class JobRetryService:
             for item in selected_items
         )
         config = _json_object(source.get("config_json"))
-        if self.public_access is not None and str(source["kind"]) in {
+        if str(source["kind"]) in {
             "translation",
             "remove_text",
             "detect",

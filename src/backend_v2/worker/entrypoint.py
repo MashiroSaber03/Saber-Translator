@@ -191,6 +191,10 @@ def run_worker(args: object) -> int:
             from src.backend_v2.translation.pipeline import (
                 TranslationPipelineService,
             )
+            from src.backend_v2.content.image_import import (
+                ImportSafetyLimits,
+                PUBLIC_IMPORT_SAFETY_LIMITS,
+            )
             from src.backend_v2.transfer.worker import TransferWorkerService
             from src.backend_v2.web_import.worker import (
                 WebImportWorkerService,
@@ -247,6 +251,11 @@ def run_worker(args: object) -> int:
                 data_root=data_root,
                 engine=engine,
                 jobs_repository=job_repository,
+                limits=(
+                    PUBLIC_IMPORT_SAFETY_LIMITS
+                    if profile.name == "public"
+                    else ImportSafetyLimits()
+                ),
             )
             job_handlers = {
                 step_kind: translation.handler

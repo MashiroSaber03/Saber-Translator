@@ -21,6 +21,7 @@ from src.backend_v2.content.repository import ContentRepository
 from src.backend_v2.jobs.repository import JobQueueRepository
 from src.backend_v2.jobs.retry import JobRetryService
 from src.backend_v2.runtime_identity import RuntimeIdentity
+from src.backend_v2.runtime_profile import resolve_runtime_profile
 from src.backend_v2.storage.platform_repositories import (
     CredentialEdit,
     ProviderSettingMutation,
@@ -61,6 +62,9 @@ from src.core.web_import.agent import (
     MangaScraperAgent,
     WebImportAgentControlRequested,
 )
+
+
+LOCAL_PROFILE = resolve_runtime_profile("local")
 
 
 def _png(color: tuple[int, int, int]) -> bytes:
@@ -855,7 +859,7 @@ def test_web_extract_retry_creates_a_fresh_durable_draft(
     assert repository.finish_if_complete(fence) == "completed_with_errors"
     assert commands.get_draft(source_draft_id)["status"] == "failed"
 
-    retried = JobRetryService(engine).retry(
+    retried = JobRetryService(engine, profile=LOCAL_PROFILE).retry(
         job_id=source_job_id,
         failed_only=True,
         strategy="current",
@@ -961,7 +965,7 @@ def test_web_import_commit_retry_only_replays_failed_pages(
     assert repository.finish_if_complete(fence) == "completed_with_errors"
     assert commands.get_draft(draft_id)["status"] == "completed"
 
-    retried = JobRetryService(engine).retry(
+    retried = JobRetryService(engine, profile=LOCAL_PROFILE).retry(
         job_id=source_job_id,
         failed_only=True,
         strategy="current",

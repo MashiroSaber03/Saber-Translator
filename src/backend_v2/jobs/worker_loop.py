@@ -505,7 +505,9 @@ class JobWorkerLoop:
         has_deep_learning_pool = bool(
             set(pool_kinds).intersection(DEEP_LEARNING_STEP_KINDS)
         )
-        has_terminal_save = "save" in pool_kinds
+        has_terminal_page_step = bool(
+            {"save", "publish_clean"}.intersection(pool_kinds)
+        )
         policy = self._policy()
         slice_target = (
             self.repository.terminal_item_count(fence)
@@ -514,7 +516,7 @@ class JobWorkerLoop:
                 if policy is not None
                 else PARALLEL_PIPELINE_LEAD_WINDOW
             )
-            if has_terminal_save
+            if has_terminal_page_step
             else None
         )
         attempt_released = False
@@ -544,9 +546,9 @@ class JobWorkerLoop:
             current_deep_learning_limit(),
             (
                 int(policy["pageQuantum"])
-                if policy is not None and has_terminal_save
+                if policy is not None and has_terminal_page_step
                 else PARALLEL_PIPELINE_LEAD_WINDOW
-                if has_terminal_save
+                if has_terminal_page_step
                 else "disabled"
             ),
         )

@@ -14,6 +14,7 @@ import uuid
 
 from flask import current_app, has_request_context
 from sqlalchemy import Engine, delete, exists, func, insert, or_, select, update
+from sqlalchemy.engine import Connection
 
 from src.backend_v2.auth.ownership import effective_owner_id
 from src.backend_v2.runtime_profile import resolve_runtime_profile
@@ -163,6 +164,17 @@ class AssetStorageService:
         ):
             raise ValueError("asset dimensions must be positive")
 
+        owner_user_id = effective_owner_id()
+        quota_enforced = _quota_is_enforced()
+        initial_quota_bytes: int | None = None
+        initial_used_bytes = 0
+        if quota_enforced:
+            with self.engine.connect() as connection:
+                initial_quota_bytes, initial_used_bytes = self._quota_state(
+                    connection,
+                    owner_user_id,
+                )
+
         asset_id = str(uuid.uuid4())
         relative_path = f"objects/{asset_id[:2]}/{asset_id}.{canonical_extension}"
         staging_relative_path = f"temp/staging/{asset_id}.part"
@@ -173,16 +185,31 @@ class AssetStorageService:
 
         digest = hashlib.sha256()
         byte_size = 0
-        with staging_path.open("xb") as output:
-            while True:
-                chunk = source.read(1024 * 1024)
-                if not chunk:
-                    break
-                output.write(chunk)
-                digest.update(chunk)
-                byte_size += len(chunk)
-            output.flush()
-            os.fsync(output.fileno())
+        try:
+            with staging_path.open("xb") as output:
+                while True:
+                    chunk = source.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    incoming_bytes = byte_size + len(chunk)
+                    if (
+                        initial_quota_bytes is not None
+                        and initial_used_bytes + incoming_bytes
+                        > initial_quota_bytes
+                    ):
+                        raise AssetQuotaExceeded(
+                            used_bytes=initial_used_bytes,
+                            quota_bytes=initial_quota_bytes,
+                            incoming_bytes=incoming_bytes,
+                        )
+                    output.write(chunk)
+                    digest.update(chunk)
+                    byte_size = incoming_bytes
+                output.flush()
+                os.fsync(output.fileno())
+        except BaseException:
+            staging_path.unlink(missing_ok=True)
+            raise
         self._hit(failpoint, "staging_fsynced")
 
         record = AssetRecord(
@@ -220,24 +247,12 @@ class AssetStorageService:
             )
         self._hit(failpoint, "journal_file_published")
 
-        owner_user_id = effective_owner_id()
         try:
             with immediate_transaction(self.engine) as connection:
-                if _quota_is_enforced():
-                    quota_bytes = int(
-                        connection.execute(
-                            select(platform_config.c.asset_quota_bytes).where(
-                                platform_config.c.singleton_id == 1
-                            )
-                        ).scalar_one()
-                    )
-                    used_bytes = int(
-                        connection.execute(
-                            select(func.coalesce(func.sum(assets.c.byte_size), 0)).where(
-                                assets.c.owner_user_id == owner_user_id,
-                                assets.c.integrity_status == "ok",
-                            )
-                        ).scalar_one()
+                if quota_enforced:
+                    quota_bytes, used_bytes = self._quota_state(
+                        connection,
+                        owner_user_id,
                     )
                     if used_bytes + record.byte_size > quota_bytes:
                         raise AssetQuotaExceeded(
@@ -276,6 +291,28 @@ class AssetStorageService:
             raise
         self._hit(failpoint, "database_committed")
         return record
+
+    @staticmethod
+    def _quota_state(
+        connection: Connection,
+        owner_user_id: str,
+    ) -> tuple[int, int]:
+        quota_bytes = int(
+            connection.execute(
+                select(platform_config.c.asset_quota_bytes).where(
+                    platform_config.c.singleton_id == 1
+                )
+            ).scalar_one()
+        )
+        used_bytes = int(
+            connection.execute(
+                select(func.coalesce(func.sum(assets.c.byte_size), 0)).where(
+                    assets.c.owner_user_id == owner_user_id,
+                    assets.c.integrity_status == "ok",
+                )
+            ).scalar_one()
+        )
+        return quota_bytes, used_bytes
 
     @staticmethod
     def _hit(failpoint: Callable[[str], None] | None, point: str) -> None:

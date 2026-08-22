@@ -289,6 +289,7 @@ def test_page_operation_is_idempotent_fenced_and_persistent(
         attempt_id=str(uuid.uuid4()),
         executor_epoch_id=fence.executor_epoch_id,
         executor_role=fence.executor_role,
+        owner_user_id=fence.owner_user_id,
     )
     with pytest.raises(OperationFenced):
         repository.complete(forged, result={"text": "forbidden"})

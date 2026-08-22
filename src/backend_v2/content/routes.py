@@ -38,7 +38,7 @@ from src.backend_v2.storage.platform_repositories import (
     SettingsRepository,
 )
 from src.backend_v2.public_policy import PublicUserPolicyAccess
-from src.backend_v2.runtime_profile import RuntimeProfile, resolve_runtime_profile
+from src.backend_v2.runtime_profile import RuntimeProfile
 
 
 def _asset_download_name(
@@ -66,9 +66,8 @@ def create_content_blueprint(
     *,
     data_root,
     engine: Engine,
-    profile: RuntimeProfile | None = None,
+    profile: RuntimeProfile,
 ) -> Blueprint:
-    profile = profile or resolve_runtime_profile("local")
     blueprint = Blueprint("content_v2", __name__, url_prefix="/api/v2")
     public_access = PublicUserPolicyAccess(engine, profile)
     repository = ContentRepository(engine)

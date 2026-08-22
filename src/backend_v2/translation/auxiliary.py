@@ -21,6 +21,7 @@ from src.backend_v2.jobs.repository import (
 )
 from src.backend_v2.settings.resolver import SettingsResolver
 from src.backend_v2.public_policy import PublicUserPolicyAccess
+from src.backend_v2.runtime_profile import RuntimeProfile
 from src.backend_v2.translation.commands import resolve_chapter_pages
 from src.backend_v2.storage.schema import (
     assets,
@@ -153,12 +154,12 @@ class AuxiliaryTranslationCommands:
         self,
         engine: Engine,
         *,
-        public_access: PublicUserPolicyAccess | None = None,
+        profile: RuntimeProfile,
     ) -> None:
         self.engine = engine
         self.jobs = JobQueueRepository(engine)
         self.settings = SettingsResolver(engine)
-        self.public_access = public_access
+        self.public_access = PublicUserPolicyAccess(engine, profile)
 
     def create_detect_job(
         self,
@@ -191,8 +192,7 @@ class AuxiliaryTranslationCommands:
             "executionMode": str(resolved["executionMode"]),
             "settingsSnapshot": dict(resolved["settingsSnapshot"]),
         }
-        if self.public_access is not None:
-            config = self.public_access.apply_resolved_translation(config)
+        config = self.public_access.apply_resolved_translation(config)
         return self.jobs.create_batch(
             kind="detect",
             display_name=f"检测 {chapter['book_title']} / {chapter['title']}",

@@ -14,7 +14,6 @@ import uuid
 from sqlalchemy import Engine, exists, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
-from src.backend_v2.auth.constants import LOCAL_USER_ID
 from src.backend_v2.auth.ownership import effective_owner_id
 from sqlalchemy.engine import Connection
 
@@ -79,7 +78,7 @@ class OperationFence:
     attempt_id: str
     executor_epoch_id: str
     executor_role: str
-    owner_user_id: str = LOCAL_USER_ID
+    owner_user_id: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,7 +88,7 @@ class RenderFence:
     rendering_revision: int
     attempt_id: str
     api_epoch_id: str
-    owner_user_id: str = LOCAL_USER_ID
+    owner_user_id: str
 
 
 def _load_required_object(value: object, field: str) -> dict[str, Any]:

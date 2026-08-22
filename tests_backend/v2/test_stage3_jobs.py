@@ -35,6 +35,7 @@ from src.backend_v2.jobs.worker_loop import (
     PARALLEL_PIPELINE_LEAD_WINDOW,
     JobWorkerLoop,
 )
+from src.backend_v2.runtime_profile import resolve_runtime_profile
 from src.backend_v2.scheduling_policy import DEFAULT_SCHEDULING_POLICY
 from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.epochs import EpochRegistration, ProcessEpochRepository
@@ -55,6 +56,9 @@ from src.backend_v2.storage.schema import (
     process_epochs,
 )
 from src.backend_v2.storage.seeding import seed_system_records
+
+
+LOCAL_PROFILE = resolve_runtime_profile("local")
 
 
 @pytest.fixture()
@@ -653,6 +657,7 @@ def test_bad_attempt_id_cannot_publish_checkpoint(job_platform) -> None:
         job_id=fence.job_id,
         attempt_id=str(uuid.uuid4()),
         worker_epoch_id=fence.worker_epoch_id,
+        owner_user_id=fence.owner_user_id,
     )
     with pytest.raises(AttemptFenced):
         repository.complete_step(
@@ -800,8 +805,10 @@ def test_paused_job_releases_compute_slot_and_resume_joins_queue_tail(
     assert repository.get_job(first_id)["status"] == "queued"
 
 
+@pytest.mark.parametrize("terminal_step", ["save", "publish_clean"])
 def test_owner_round_robin_switches_only_after_each_completed_page_slice(
     job_platform,
+    terminal_step: str,
 ) -> None:
     _engine, repository, _book, _chapter, worker_epoch_id = job_platform
     owner_ids = (str(uuid.uuid4()), str(uuid.uuid4()))
@@ -821,7 +828,7 @@ def test_owner_round_robin_switches_only_after_each_completed_page_slice(
                         items=tuple(
                             JobItemSpec(
                                 page_id=None,
-                                step_kinds=("detect", "save"),
+                                step_kinds=("detect", terminal_step),
                             )
                             for _index in range(2)
                         ),
@@ -843,7 +850,7 @@ def test_owner_round_robin_switches_only_after_each_completed_page_slice(
         time.sleep(0.01)
         with state_lock:
             active_steps -= 1
-            if step["stepKind"] == "save":
+            if step["stepKind"] == terminal_step:
                 completed_page_owners.append(fence.owner_user_id)
         return {"done": str(step["stepKind"])}
 
@@ -854,7 +861,7 @@ def test_owner_round_robin_switches_only_after_each_completed_page_slice(
     loop = JobWorkerLoop(
         repository,
         worker_epoch_id=worker_epoch_id,
-        handlers={"detect": handler, "save": handler},
+        handlers={"detect": handler, terminal_step: handler},
         scheduling_policy=lambda: policy,
         admission_check=lambda: True,
         idle_poll_seconds=0.01,
@@ -1263,7 +1270,7 @@ def test_shared_event_broadcaster_replays_and_fans_out(job_platform) -> None:
         subscriber_capacity=8,
     )
     broadcaster.start()
-    subscription = broadcaster.subscribe()
+    subscription = broadcaster.subscribe(owner_user_id=effective_owner_id())
     try:
         new_job = _create_job(repository)
         event = subscription.queue.get(timeout=2)
@@ -1294,7 +1301,11 @@ def test_job_snapshot_route_reads_only_requested_current_projections(
     )
     app = Flask(__name__)
     app.register_blueprint(
-        create_jobs_blueprint(engine=engine, broadcaster=broadcaster)
+        create_jobs_blueprint(
+            engine=engine,
+            broadcaster=broadcaster,
+            profile=LOCAL_PROFILE,
+        )
     )
     try:
         response = app.test_client().get(
@@ -1330,7 +1341,11 @@ def test_job_routes_reject_coerced_numbers_and_unknown_filters(
     )
     app = Flask(__name__)
     app.register_blueprint(
-        create_jobs_blueprint(engine=engine, broadcaster=broadcaster)
+        create_jobs_blueprint(
+            engine=engine,
+            broadcaster=broadcaster,
+            profile=LOCAL_PROFILE,
+        )
     )
     client = app.test_client()
     try:
@@ -1449,7 +1464,7 @@ def test_failed_item_retry_creates_related_replacement_from_durable_facts(
             queue_rank=None,
         )
 
-    retried = JobRetryService(engine).retry(
+    retried = JobRetryService(engine, profile=LOCAL_PROFILE).retry(
         job_id=source_id,
         failed_only=True,
         strategy="original",
@@ -1479,7 +1494,7 @@ def test_retry_rejects_malformed_job_snapshot(job_platform) -> None:
             .where(jobs.c.id == source_id)
             .values(config_json="[]")
         )
-    service = JobRetryService(engine)
+    service = JobRetryService(engine, profile=LOCAL_PROFILE)
     with pytest.raises(
         JobConflict,
         match="jobs.config_json must contain a JSON object",

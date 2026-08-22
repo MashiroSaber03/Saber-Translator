@@ -32,16 +32,15 @@ from src.backend_v2.operations.repository import (
 )
 from src.backend_v2.settings.resolver import SettingsResolver
 from src.backend_v2.public_policy import PublicUserPolicyAccess
-from src.backend_v2.runtime_profile import RuntimeProfile, resolve_runtime_profile
+from src.backend_v2.runtime_profile import RuntimeProfile
 
 
 def create_operations_blueprint(
     *,
     data_root,
     engine: Engine,
-    profile: RuntimeProfile | None = None,
+    profile: RuntimeProfile,
 ) -> Blueprint:
-    profile = profile or resolve_runtime_profile("local")
     blueprint = Blueprint("operations_v2", __name__, url_prefix="/api/v2")
     repository = OperationRepository(engine)
     settings = SettingsResolver(engine)

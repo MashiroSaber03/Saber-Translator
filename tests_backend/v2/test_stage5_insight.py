@@ -61,6 +61,7 @@ from src.backend_v2.insight.routes import create_insight_blueprint
 from src.backend_v2.insight.worker import InsightAnalysisWorkerService
 from src.backend_v2.jobs.repository import JobQueueRepository
 from src.backend_v2.jobs.retry import JobRetryService
+from src.backend_v2.runtime_profile import resolve_runtime_profile
 from src.backend_v2.settings.resolver import SettingsResolver
 from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.storage.database import create_sqlite_engine
@@ -93,6 +94,9 @@ from src.backend_v2.storage.schema import (
     transient_requests,
     vector_generations,
 )
+
+
+LOCAL_PROFILE = resolve_runtime_profile("local")
 from src.backend_v2.storage.seeding import seed_system_records
 from src.backend_v2.timestamps import utcnow
 
@@ -980,7 +984,7 @@ def test_full_analysis_failed_item_retry_refreshes_settings_and_republishes(
             )
         )
 
-    retried = JobRetryService(platform["engine"]).retry(
+    retried = JobRetryService(platform["engine"], profile=LOCAL_PROFILE).retry(
         job_id=str(accepted["jobIds"][0]),
         failed_only=True,
         strategy="current",
@@ -1068,7 +1072,7 @@ def test_partial_analysis_retry_creates_isolated_run_and_rebinds_source(
         ),
     )
 
-    retried = JobRetryService(platform["engine"]).retry(
+    retried = JobRetryService(platform["engine"], profile=LOCAL_PROFILE).retry(
         job_id=str(accepted["jobIds"][0]),
         failed_only=True,
         strategy=strategy,
@@ -3154,6 +3158,7 @@ def test_continuation_http_commands_reject_missing_or_ignored_fields(
         create_insight_blueprint(
             engine=platform["engine"],
             data_root=platform["data_root"],
+            profile=LOCAL_PROFILE,
         )
     )
     client = app.test_client()
@@ -4786,6 +4791,7 @@ def test_qa_http_response_streams_without_creating_job_history(
             engine=platform["engine"],
             data_root=platform["data_root"],
             qa_algorithms=qa_algorithms,
+            profile=LOCAL_PROFILE,
         )
     )
     client = app.test_client()

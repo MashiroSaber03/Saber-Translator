@@ -23,6 +23,7 @@ from src.backend_v2.operations.repository import RenderRequestRepository
 from src.backend_v2.plugins.repository import PluginRegistry
 from src.backend_v2.plugins.runtime import PluginJobRuntime
 from src.backend_v2.runtime_identity import RuntimeIdentity
+from src.backend_v2.runtime_profile import resolve_runtime_profile
 from src.backend_v2.storage.platform_repositories import (
     CredentialEdit,
     ProviderSettingMutation,
@@ -77,6 +78,9 @@ from tests_backend.fake_provider import (
     DeterministicFakeProvider,
     registered_deterministic_fake_provider,
 )
+
+
+LOCAL_PROFILE = resolve_runtime_profile("local")
 from src.shared.ai_providers import VISION_OCR_CAPABILITY
 from src.core.config_models import BubbleState
 from src.shared.text_style_defaults import get_text_style_factory_defaults
@@ -746,7 +750,7 @@ def test_translation_job_executes_all_steps_and_publishes_each_page(
     translation_platform,
 ) -> None:
     platform = translation_platform
-    command = TranslationJobCommandService(platform["engine"])
+    command = TranslationJobCommandService(platform["engine"], profile=LOCAL_PROFILE)
     accepted = command.create_chapter_job(
         chapter_id=str(platform["chapter"]["id"]),
         config={"mode": "standard", "executionMode": "parallel"},
@@ -928,7 +932,7 @@ def test_translation_render_closes_image_when_asset_publication_fails(
     from src.backend_v2.translation import pipeline as pipeline_module
 
     platform = translation_platform
-    TranslationJobCommandService(platform["engine"]).create_chapter_job(
+    TranslationJobCommandService(platform["engine"], profile=LOCAL_PROFILE).create_chapter_job(
         chapter_id=str(platform["chapter"]["id"]),
         config={"mode": "standard", "executionMode": "sequential"},
         page_ids=None,
@@ -966,7 +970,7 @@ def test_translation_repair_closes_image_when_asset_publication_fails(
     from src.backend_v2.translation import pipeline as pipeline_module
 
     platform = translation_platform
-    TranslationJobCommandService(platform["engine"]).create_chapter_job(
+    TranslationJobCommandService(platform["engine"], profile=LOCAL_PROFILE).create_chapter_job(
         chapter_id=str(platform["chapter"]["id"]),
         config={"mode": "standard", "executionMode": "sequential"},
         page_ids=None,
@@ -1001,7 +1005,7 @@ def test_translation_render_does_not_fall_back_to_source_without_clean_asset(
     translation_platform,
 ) -> None:
     platform = translation_platform
-    TranslationJobCommandService(platform["engine"]).create_chapter_job(
+    TranslationJobCommandService(platform["engine"], profile=LOCAL_PROFILE).create_chapter_job(
         chapter_id=str(platform["chapter"]["id"]),
         config={"mode": "standard", "executionMode": "sequential"},
         page_ids=None,
@@ -1042,7 +1046,7 @@ def test_repair_closes_source_when_precise_mask_cannot_open(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     platform = translation_platform
-    TranslationJobCommandService(platform["engine"]).create_chapter_job(
+    TranslationJobCommandService(platform["engine"], profile=LOCAL_PROFILE).create_chapter_job(
         chapter_id=str(platform["chapter"]["id"]),
         config={"mode": "standard", "executionMode": "sequential"},
         page_ids=None,
@@ -1139,7 +1143,7 @@ def test_translation_plugins_mutate_domain_text_before_persistence(
         idempotency_key="translation-domain-mutation-v1",
     )
     accepted = TranslationJobCommandService(
-        platform["engine"]
+        platform["engine"], profile=LOCAL_PROFILE
     ).create_chapter_job(
         chapter_id=str(platform["chapter"]["id"]),
         config={"mode": "standard", "executionMode": "sequential"},
@@ -1203,7 +1207,7 @@ def test_translation_rejects_provider_result_count_mismatch(
 ) -> None:
     platform = translation_platform
     accepted = TranslationJobCommandService(
-        platform["engine"]
+        platform["engine"], profile=LOCAL_PROFILE
     ).create_chapter_job(
         chapter_id=str(platform["chapter"]["id"]),
         config={"mode": "standard", "executionMode": "sequential"},
@@ -1260,7 +1264,7 @@ def test_translation_rejects_misaligned_atomic_results(
 ) -> None:
     platform = translation_platform
     accepted = TranslationJobCommandService(
-        platform["engine"]
+        platform["engine"], profile=LOCAL_PROFILE
     ).create_chapter_job(
         chapter_id=str(platform["chapter"]["id"]),
         config={"mode": "standard", "executionMode": "sequential"},
@@ -1299,7 +1303,7 @@ def test_translation_rejects_plugin_result_count_mismatch(
 ) -> None:
     platform = translation_platform
     accepted = TranslationJobCommandService(
-        platform["engine"]
+        platform["engine"], profile=LOCAL_PROFILE
     ).create_chapter_job(
         chapter_id=str(platform["chapter"]["id"]),
         config={"mode": "standard", "executionMode": "sequential"},
@@ -1324,7 +1328,7 @@ def test_translation_rejects_plugin_string_instead_of_text_array(
 ) -> None:
     platform = translation_platform
     accepted = TranslationJobCommandService(
-        platform["engine"]
+        platform["engine"], profile=LOCAL_PROFILE
     ).create_chapter_job(
         chapter_id=str(platform["chapter"]["id"]),
         config={"mode": "standard", "executionMode": "sequential"},
@@ -1372,7 +1376,7 @@ def test_translation_uses_current_page_layout_and_inpainting_defaults(
             .values(page_style_defaults_json=json.dumps(page_style))
         )
 
-    TranslationJobCommandService(platform["engine"]).create_chapter_job(
+    TranslationJobCommandService(platform["engine"], profile=LOCAL_PROFILE).create_chapter_job(
         chapter_id=str(platform["chapter"]["id"]),
         config={"mode": "standard", "executionMode": "parallel"},
         page_ids=[platform["page_id"]],
@@ -1448,7 +1452,7 @@ def test_translation_rejects_a_stale_style_source_revision(
         ValueError,
         match="style source page document revision changed",
     ):
-        TranslationJobCommandService(platform["engine"]).create_chapter_job(
+        TranslationJobCommandService(platform["engine"], profile=LOCAL_PROFILE).create_chapter_job(
             chapter_id=str(platform["chapter"]["id"]),
             config={
                 "mode": "standard",
@@ -1484,7 +1488,7 @@ def test_translation_rejects_malformed_style_source(
         )
 
     with pytest.raises(ValueError, match="page text style is missing fields"):
-        TranslationJobCommandService(platform["engine"]).create_chapter_job(
+        TranslationJobCommandService(platform["engine"], profile=LOCAL_PROFILE).create_chapter_job(
             chapter_id=str(platform["chapter"]["id"]),
             config={
                 "mode": "standard",
@@ -1518,7 +1522,7 @@ def test_translation_rejects_malformed_style_target(
         )
 
     with pytest.raises(ValueError, match="page text style is missing fields"):
-        TranslationJobCommandService(platform["engine"]).create_chapter_job(
+        TranslationJobCommandService(platform["engine"], profile=LOCAL_PROFILE).create_chapter_job(
             chapter_id=str(platform["chapter"]["id"]),
             config={
                 "mode": "standard",
@@ -1563,7 +1567,7 @@ def test_translation_style_source_idempotency_replays_after_later_edits(
             page_id=target_page_id,
             requested_revision=int(target["document_revision"]),
         )
-    command = TranslationJobCommandService(platform["engine"])
+    command = TranslationJobCommandService(platform["engine"], profile=LOCAL_PROFILE)
     request = {
         "chapter_id": str(platform["chapter"]["id"]),
         "config": {
@@ -1614,7 +1618,7 @@ def test_translation_style_materialization_rolls_back_with_job_conflict(
 ) -> None:
     platform = translation_platform
     target_page_id = _import_extra_page(platform, "style-rollback-target.png")
-    command = TranslationJobCommandService(platform["engine"])
+    command = TranslationJobCommandService(platform["engine"], profile=LOCAL_PROFILE)
     command.create_chapter_job(
         chapter_id=str(platform["chapter"]["id"]),
         config={"mode": "standard"},
@@ -1716,7 +1720,7 @@ def test_translation_style_materialization_rejects_stale_bubble_revision(
         JobConflict,
         match="bubble revision does not match page document",
     ):
-        TranslationJobCommandService(platform["engine"]).create_chapter_job(
+        TranslationJobCommandService(platform["engine"], profile=LOCAL_PROFILE).create_chapter_job(
             chapter_id=str(platform["chapter"]["id"]),
             config={
                 "mode": "standard",
@@ -1813,7 +1817,7 @@ def test_translation_freezes_one_source_page_style_for_every_target_page(
             ).scalar_one()
         )
 
-    TranslationJobCommandService(platform["engine"]).create_chapter_job(
+    TranslationJobCommandService(platform["engine"], profile=LOCAL_PROFILE).create_chapter_job(
         chapter_id=str(platform["chapter"]["id"]),
         config={
             "mode": "standard",
@@ -1879,7 +1883,7 @@ def test_translation_style_snapshot_overrides_fonts_when_reusing_bubbles(
     source_page_id = platform["page_id"]
     target_page_id = _import_extra_page(platform, "style-font-reuse-target.png")
 
-    TranslationJobCommandService(platform["engine"]).create_chapter_job(
+    TranslationJobCommandService(platform["engine"], profile=LOCAL_PROFILE).create_chapter_job(
         chapter_id=str(platform["chapter"]["id"]),
         config={"mode": "standard", "executionMode": "sequential"},
         page_ids=[target_page_id],
@@ -1909,7 +1913,7 @@ def test_translation_style_snapshot_overrides_fonts_when_reusing_bubbles(
             ).scalar_one()
         )
 
-    TranslationJobCommandService(platform["engine"]).create_chapter_job(
+    TranslationJobCommandService(platform["engine"], profile=LOCAL_PROFILE).create_chapter_job(
         chapter_id=str(platform["chapter"]["id"]),
         config={
             "mode": "standard",
@@ -1984,7 +1988,7 @@ def test_translation_applies_extracted_colors_only_when_auto_color_is_enabled(
             .values(page_style_defaults_json=json.dumps(page_style))
         )
 
-    TranslationJobCommandService(platform["engine"]).create_chapter_job(
+    TranslationJobCommandService(platform["engine"], profile=LOCAL_PROFILE).create_chapter_job(
         chapter_id=str(platform["chapter"]["id"]),
         config={"mode": "standard", "executionMode": "sequential"},
         page_ids=[platform["page_id"]],
@@ -2082,7 +2086,7 @@ def test_style_apply_auto_modes_keep_target_manual_fallbacks_and_publish(
             .values(payload_json=json.dumps(target_payload))
         )
 
-    AuxiliaryTranslationCommands(platform["engine"]).create_style_apply_job(
+    AuxiliaryTranslationCommands(platform["engine"], profile=LOCAL_PROFILE).create_style_apply_job(
         chapter_id=str(platform["chapter"]["id"]),
         source_page_id=source_page_id,
         source_document_revision=int(source["documentRevision"]),
@@ -2188,7 +2192,7 @@ def test_text_import_render_preserves_materialized_auto_styles_and_publishes(
             .values(payload_json=json.dumps(payload))
         )
 
-    commands = AuxiliaryTranslationCommands(platform["engine"])
+    commands = AuxiliaryTranslationCommands(platform["engine"], profile=LOCAL_PROFILE)
     exported = commands.export_text(str(platform["chapter"]["id"]))
     imported = json.loads(json.dumps(exported))
     imported["pages"][0]["bubbles"][0]["translated_text"] = "文本导入后的译文"
@@ -2238,7 +2242,7 @@ def test_text_import_skips_render_for_original_text_only_change(
     translation_platform,
 ) -> None:
     platform = translation_platform
-    TranslationJobCommandService(platform["engine"]).create_chapter_job(
+    TranslationJobCommandService(platform["engine"], profile=LOCAL_PROFILE).create_chapter_job(
         chapter_id=str(platform["chapter"]["id"]),
         config={"mode": "standard", "executionMode": "sequential"},
         page_ids=[platform["page_id"]],
@@ -2263,7 +2267,7 @@ def test_text_import_skips_render_for_original_text_only_change(
             )
         ).one()
 
-    commands = AuxiliaryTranslationCommands(platform["engine"])
+    commands = AuxiliaryTranslationCommands(platform["engine"], profile=LOCAL_PROFILE)
     imported = commands.export_text(str(platform["chapter"]["id"]))
     imported["pages"][0]["bubbles"][0]["original_text"] = "更新后的原文"
     preview = commands.preview_text_import(
@@ -2317,7 +2321,7 @@ def test_text_import_rejects_noncurrent_document_shape(
     translation_platform,
 ) -> None:
     platform = translation_platform
-    commands = AuxiliaryTranslationCommands(platform["engine"])
+    commands = AuxiliaryTranslationCommands(platform["engine"], profile=LOCAL_PROFILE)
     exported = commands.export_text(str(platform["chapter"]["id"]))
     exported["legacy_pages"] = exported["pages"]
 
@@ -2347,7 +2351,7 @@ def test_text_import_rejects_invalid_text_direction(
         ],
         idempotency_key="invalid-text-direction-source",
     )
-    commands = AuxiliaryTranslationCommands(platform["engine"])
+    commands = AuxiliaryTranslationCommands(platform["engine"], profile=LOCAL_PROFILE)
     exported = commands.export_text(str(platform["chapter"]["id"]))
     exported["pages"][0]["bubbles"][0]["text_direction"] = "diagonal"
 
@@ -2396,7 +2400,7 @@ def test_text_export_reads_all_bubbles_with_one_query(
     )
     try:
         exported = AuxiliaryTranslationCommands(
-            platform["engine"]
+            platform["engine"], profile=LOCAL_PROFILE
         ).export_text(str(platform["chapter"]["id"]))
     finally:
         event.remove(
@@ -2413,7 +2417,7 @@ def test_batch_detect_republishes_changed_translated_page_and_precise_mask(
     translation_platform,
 ) -> None:
     platform = translation_platform
-    TranslationJobCommandService(platform["engine"]).create_chapter_job(
+    TranslationJobCommandService(platform["engine"], profile=LOCAL_PROFILE).create_chapter_job(
         chapter_id=str(platform["chapter"]["id"]),
         config={"mode": "standard", "executionMode": "sequential"},
         page_ids=[platform["page_id"]],
@@ -2421,7 +2425,7 @@ def test_batch_detect_republishes_changed_translated_page_and_precise_mask(
     )
     _run_translation_job(platform, DeterministicFakeProvider())
 
-    AuxiliaryTranslationCommands(platform["engine"]).create_detect_job(
+    AuxiliaryTranslationCommands(platform["engine"], profile=LOCAL_PROFILE).create_detect_job(
         chapter_id=str(platform["chapter"]["id"]),
         page_ids=[platform["page_id"]],
         idempotency_key="batch-detect-rerender",
@@ -2512,7 +2516,9 @@ def test_translation_constraints_are_frozen_extracted_and_consumed(
         },
     )
     assert saved["revision"] == 2
-    accepted = TranslationJobCommandService(platform["engine"]).create_chapter_job(
+    accepted = TranslationJobCommandService(
+        platform["engine"], profile=LOCAL_PROFILE
+    ).create_chapter_job(
         chapter_id=str(platform["chapter"]["id"]),
         config={"mode": "standard", "executionMode": "sequential"},
         page_ids=[platform["page_id"]],
@@ -2656,7 +2662,7 @@ def test_multi_chapter_batch_creates_eligible_jobs_and_reports_skips(
         idempotency_key="eligible-page",
     )
 
-    commands = TranslationJobCommandService(platform["engine"])
+    commands = TranslationJobCommandService(platform["engine"], profile=LOCAL_PROFILE)
     occupied = commands.create_chapter_job(
         chapter_id=str(platform["chapter"]["id"]),
         config={"mode": "standard"},
@@ -2725,7 +2731,7 @@ def test_book_batch_resolves_chapters_in_requested_book_order(
         idempotency_key="second-book-page",
     )
 
-    commands = TranslationJobCommandService(platform["engine"])
+    commands = TranslationJobCommandService(platform["engine"], profile=LOCAL_PROFILE)
     accepted = commands.create_batch(
         book_ids=[str(second_book["id"]), str(platform["book"]["id"])],
         config={"mode": "standard"},
@@ -2752,7 +2758,7 @@ def test_book_batch_idempotency_replays_before_resolving_mutable_books(
     monkeypatch,
 ) -> None:
     platform = translation_platform
-    commands = TranslationJobCommandService(platform["engine"])
+    commands = TranslationJobCommandService(platform["engine"], profile=LOCAL_PROFILE)
     command = {
         "book_ids": [str(platform["book"]["id"])],
         "config": {"mode": "standard"},
@@ -2833,7 +2839,7 @@ def test_translation_job_rejects_missing_backend_credential_before_admission(
     )
 
     with pytest.raises(ValueError, match="缺少已保存的 API Key"):
-        TranslationJobCommandService(platform["engine"]).create_chapter_job(
+        TranslationJobCommandService(platform["engine"], profile=LOCAL_PROFILE).create_chapter_job(
             chapter_id=str(platform["chapter"]["id"]),
             config={"mode": "standard"},
             page_ids=None,
@@ -2867,7 +2873,9 @@ def test_failed_item_retry_refreezes_current_backend_settings(
             ).where(pages.c.id == platform["page_id"])
         ).mappings().one()
     source_revision = int(source_page["document_revision"])
-    source = TranslationJobCommandService(platform["engine"]).create_chapter_job(
+    source = TranslationJobCommandService(
+        platform["engine"], profile=LOCAL_PROFILE
+    ).create_chapter_job(
         chapter_id=str(platform["chapter"]["id"]),
         config={
             "mode": "standard",
@@ -2961,7 +2969,7 @@ def test_failed_item_retry_refreezes_current_backend_settings(
         ),
     )
 
-    retried = JobRetryService(platform["engine"]).retry(
+    retried = JobRetryService(platform["engine"], profile=LOCAL_PROFILE).retry(
         job_id=source_id,
         failed_only=True,
         strategy="current",
@@ -3045,7 +3053,9 @@ def test_translation_job_resolves_backend_settings_and_reuses_manual_bubbles(
             ),
         ),
     )
-    accepted = TranslationJobCommandService(platform["engine"]).create_chapter_job(
+    accepted = TranslationJobCommandService(
+        platform["engine"], profile=LOCAL_PROFILE
+    ).create_chapter_job(
         chapter_id=str(platform["chapter"]["id"]),
         config={
             "mode": "standard",
@@ -3471,7 +3481,7 @@ def test_sequential_and_parallel_pipeline_results_are_equivalent(
     translation_platform,
 ) -> None:
     platform = translation_platform
-    commands = TranslationJobCommandService(platform["engine"])
+    commands = TranslationJobCommandService(platform["engine"], profile=LOCAL_PROFILE)
     sequential = commands.create_chapter_job(
         chapter_id=str(platform["chapter"]["id"]),
         config={"mode": "standard", "executionMode": "sequential"},
@@ -3520,7 +3530,7 @@ def test_hq_and_multiround_proofreading_use_durable_stable_id_batches(
     _import_extra_page(platform, "page-2.png")
     _import_extra_page(platform, "page-3.png")
     _configure_hq_and_proofreading(platform)
-    command = TranslationJobCommandService(platform["engine"])
+    command = TranslationJobCommandService(platform["engine"], profile=LOCAL_PROFILE)
 
     hq = command.create_chapter_job(
         chapter_id=str(platform["chapter"]["id"]),
@@ -3775,7 +3785,9 @@ def test_proofreading_skips_pages_without_existing_translation(
 ) -> None:
     platform = translation_platform
     _configure_hq_and_proofreading(platform)
-    accepted = TranslationJobCommandService(platform["engine"]).create_chapter_job(
+    accepted = TranslationJobCommandService(
+        platform["engine"], profile=LOCAL_PROFILE
+    ).create_chapter_job(
         chapter_id=str(platform["chapter"]["id"]),
         config={"mode": "proofread", "executionMode": "sequential"},
         page_ids=None,
@@ -3801,7 +3813,9 @@ def test_hq_batch_failure_isolated_and_later_batch_continues(
     _import_extra_page(platform, "page-2.png")
     _import_extra_page(platform, "page-3.png")
     _configure_hq_and_proofreading(platform)
-    accepted = TranslationJobCommandService(platform["engine"]).create_chapter_job(
+    accepted = TranslationJobCommandService(
+        platform["engine"], profile=LOCAL_PROFILE
+    ).create_chapter_job(
         chapter_id=str(platform["chapter"]["id"]),
         config={"mode": "hq", "executionMode": "sequential"},
         page_ids=None,
@@ -3824,7 +3838,7 @@ def test_failed_hq_redetect_preserves_previous_published_text(
     translation_platform,
 ) -> None:
     platform = translation_platform
-    command = TranslationJobCommandService(platform["engine"])
+    command = TranslationJobCommandService(platform["engine"], profile=LOCAL_PROFILE)
     standard = command.create_chapter_job(
         chapter_id=str(platform["chapter"]["id"]),
         config={"mode": "standard", "executionMode": "sequential"},
@@ -3869,7 +3883,9 @@ def test_hq_pause_resume_keeps_completed_batch_checkpoint(
     _import_extra_page(platform, "page-2.png")
     _import_extra_page(platform, "page-3.png")
     _configure_hq_and_proofreading(platform)
-    accepted = TranslationJobCommandService(platform["engine"]).create_chapter_job(
+    accepted = TranslationJobCommandService(
+        platform["engine"], profile=LOCAL_PROFILE
+    ).create_chapter_job(
         chapter_id=str(platform["chapter"]["id"]),
         config={"mode": "hq", "executionMode": "sequential"},
         page_ids=None,

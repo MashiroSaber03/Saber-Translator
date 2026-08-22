@@ -22,7 +22,6 @@ import uuid
 from sqlalchemy import Engine, and_, delete, exists, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
-from src.backend_v2.auth.constants import LOCAL_USER_ID
 from src.backend_v2.auth.ownership import effective_owner_id, owner_scope
 from src.backend_v2.serialization import canonical_json as _json
 from src.backend_v2.insight.derived import (
@@ -140,7 +139,7 @@ class TransientFence:
     request_id: str
     attempt_id: str
     worker_epoch_id: str
-    owner_user_id: str = LOCAL_USER_ID
+    owner_user_id: str
 
 
 @dataclass(frozen=True, slots=True)

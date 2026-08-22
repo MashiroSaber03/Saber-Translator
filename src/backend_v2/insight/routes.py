@@ -59,7 +59,7 @@ from src.backend_v2.insight.qa import (
 from src.backend_v2.jobs.repository import JobConflict
 from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.public_policy import PublicUserPolicyAccess
-from src.backend_v2.runtime_profile import RuntimeProfile, resolve_runtime_profile
+from src.backend_v2.runtime_profile import RuntimeProfile
 
 
 def create_insight_blueprint(
@@ -67,9 +67,8 @@ def create_insight_blueprint(
     engine: Engine,
     data_root: Path,
     qa_algorithms: QAApiAlgorithms | None = None,
-    profile: RuntimeProfile | None = None,
+    profile: RuntimeProfile,
 ) -> Blueprint:
-    profile = profile or resolve_runtime_profile("local")
     blueprint = Blueprint("insight_v2", __name__, url_prefix="/api/v2/insight")
     public_access = PublicUserPolicyAccess(engine, profile)
     repository = InsightRepository(engine)

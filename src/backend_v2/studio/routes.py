@@ -43,16 +43,15 @@ from src.backend_v2.studio.pure import (
     import_document_payload,
 )
 from src.backend_v2.public_policy import PublicUserPolicyAccess
-from src.backend_v2.runtime_profile import RuntimeProfile, resolve_runtime_profile
+from src.backend_v2.runtime_profile import RuntimeProfile
 
 
 def create_studio_blueprint(
     *,
     engine: Engine,
     data_root: Path,
-    profile: RuntimeProfile | None = None,
+    profile: RuntimeProfile,
 ) -> Blueprint:
-    profile = profile or resolve_runtime_profile("local")
     blueprint = Blueprint("studio_v2", __name__, url_prefix="/api/v2/studio")
     public_access = PublicUserPolicyAccess(engine, profile)
     repository = StudioRepository(engine)

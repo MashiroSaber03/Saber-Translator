@@ -19,19 +19,18 @@ from src.backend_v2.jobs.repository import JobConflict
 from src.backend_v2.translation.commands import TranslationJobCommandService
 from src.backend_v2.translation.auxiliary import AuxiliaryTranslationCommands
 from src.backend_v2.public_policy import PublicUserPolicyAccess
-from src.backend_v2.runtime_profile import RuntimeProfile, resolve_runtime_profile
+from src.backend_v2.runtime_profile import RuntimeProfile
 
 
 def create_translation_blueprint(
     *,
     engine: Engine,
-    profile: RuntimeProfile | None = None,
+    profile: RuntimeProfile,
 ) -> Blueprint:
-    profile = profile or resolve_runtime_profile("local")
     blueprint = Blueprint("translation_v2", __name__, url_prefix="/api/v2")
     public_access = PublicUserPolicyAccess(engine, profile)
-    service = TranslationJobCommandService(engine, public_access=public_access)
-    auxiliary = AuxiliaryTranslationCommands(engine, public_access=public_access)
+    service = TranslationJobCommandService(engine, profile=profile)
+    auxiliary = AuxiliaryTranslationCommands(engine, profile=profile)
 
     @blueprint.before_request
     def require_translation_access() -> None:

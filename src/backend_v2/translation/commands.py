@@ -31,6 +31,7 @@ from src.backend_v2.storage.schema import (
 )
 from src.backend_v2.settings.resolver import SettingsResolver
 from src.backend_v2.public_policy import PublicUserPolicyAccess
+from src.backend_v2.runtime_profile import RuntimeProfile
 from src.backend_v2.timestamps import utcnow
 from src.shared.ai_providers import (
     HQ_TRANSLATION_CAPABILITY,
@@ -116,12 +117,12 @@ class TranslationJobCommandService:
         self,
         engine: Engine,
         *,
-        public_access: PublicUserPolicyAccess | None = None,
+        profile: RuntimeProfile,
     ) -> None:
         self.engine = engine
         self.jobs = JobQueueRepository(engine)
         self.settings = SettingsResolver(engine)
-        self.public_access = public_access
+        self.public_access = PublicUserPolicyAccess(engine, profile)
 
     def create_chapter_job(
         self,
@@ -135,8 +136,7 @@ class TranslationJobCommandService:
         idempotency_scope: str | None = None,
     ) -> dict[str, object]:
         command = normalize_translation_command(config)
-        if self.public_access is not None:
-            self.public_access.enforce_translation_command(command)
+        self.public_access.enforce_translation_command(command)
         mode = command["mode"]
         job_kind = "remove_text" if mode == "remove_text" else "translation"
         _chapter, ordered_pages = resolve_chapter_pages(
@@ -207,8 +207,7 @@ class TranslationJobCommandService:
                 f"{'book' if requested_field == 'bookIds' else 'chapter'} IDs"
             )
         command = normalize_translation_command(config)
-        if self.public_access is not None:
-            self.public_access.enforce_translation_command(command)
+        self.public_access.enforce_translation_command(command)
         mode = command["mode"]
         job_kind = "remove_text" if mode == "remove_text" else "translation"
         idempotency_payload = {
@@ -353,11 +352,10 @@ class TranslationJobCommandService:
         )
         if text_style_snapshot is not None:
             normalized["textStyleSnapshot"] = text_style_snapshot
-        if self.public_access is not None:
-            normalized = self.public_access.apply_resolved_translation(
-                normalized,
-                page_ids=ordered_pages,
-            )
+        normalized = self.public_access.apply_resolved_translation(
+            normalized,
+            page_ids=ordered_pages,
+        )
         mode = command["mode"]
         step_kinds = step_kinds_for_mode(
             mode,

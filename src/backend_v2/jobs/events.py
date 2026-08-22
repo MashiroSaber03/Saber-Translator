@@ -8,7 +8,6 @@ import queue
 import threading
 from typing import Any
 
-from src.backend_v2.auth.constants import LOCAL_USER_ID
 from src.backend_v2.jobs.repository import JobQueueRepository
 from src.backend_v2.storage.epochs import ProcessEpochRepository
 
@@ -19,7 +18,7 @@ LOGGER = logging.getLogger("saber.api.job_events")
 @dataclass(eq=False, slots=True)
 class EventSubscription:
     queue: queue.Queue[dict[str, Any] | None]
-    owner_user_id: str = LOCAL_USER_ID
+    owner_user_id: str
     closed: threading.Event = field(default_factory=threading.Event)
 
 
@@ -68,7 +67,7 @@ class JobEventBroadcaster:
             subscription.closed.set()
             self._offer_close(subscription)
 
-    def subscribe(self, *, owner_user_id: str = LOCAL_USER_ID) -> EventSubscription:
+    def subscribe(self, *, owner_user_id: str) -> EventSubscription:
         self.start()
         subscription = EventSubscription(
             queue=queue.Queue(maxsize=self.subscriber_capacity),
