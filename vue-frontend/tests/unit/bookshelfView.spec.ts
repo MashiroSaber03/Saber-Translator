@@ -12,6 +12,7 @@ import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductCardGrid from '@/components/product/ProductCardGrid.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
+import PublicTrialNotice from '@/components/common/PublicTrialNotice.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 
 const { getBooksMock, getTagsMock, getBookDetailMock, getServerInfoMock, routerPushMock } =
@@ -143,6 +144,7 @@ function mountView(profile: 'local' | 'public' = 'local') {
 
 describe('BookshelfView', () => {
   beforeEach(() => {
+    localStorage.removeItem('saber_public_trial_notice_dismissed')
     routerPushMock.mockReset()
     getBooksMock.mockReset()
     getTagsMock.mockReset()
@@ -202,6 +204,25 @@ describe('BookshelfView', () => {
     expect(wrapper.find('[aria-label="复制局域网地址"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('局域网访问')
     expect(getServerInfoMock).not.toHaveBeenCalled()
+  })
+
+  it('shows a dismissible trial notice only in the public profile', async () => {
+    const localWrapper = mountView('local')
+    expect(localWrapper.findComponent(PublicTrialNotice).exists()).toBe(false)
+    localWrapper.unmount()
+
+    const publicWrapper = mountView('public')
+    const notice = publicWrapper.getComponent(PublicTrialNotice)
+    expect(notice.props('dismissible')).toBe(true)
+    expect(notice.text()).toContain('个人版完全开源免费')
+
+    await notice.get('[aria-label="关闭试用说明"]').trigger('click')
+    expect(publicWrapper.findComponent(PublicTrialNotice).exists()).toBe(false)
+    expect(localStorage.getItem('saber_public_trial_notice_dismissed')).toBe('true')
+    publicWrapper.unmount()
+
+    const remounted = mountView('public')
+    expect(remounted.findComponent(PublicTrialNotice).exists()).toBe(false)
   })
 
   it('keeps header metadata free of DOM id hooks', () => {

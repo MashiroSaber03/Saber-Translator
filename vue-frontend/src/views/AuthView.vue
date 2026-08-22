@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { recoverPassword } from '@/api/v2/auth'
 import { useAuthStore } from '@/stores/authStore'
 import { useRuntimeStore } from '@/stores/runtimeStore'
+import PublicTrialNotice from '@/components/common/PublicTrialNotice.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiField from '@/components/ui/UiField.vue'
@@ -23,6 +24,7 @@ const recoveryCodes = ref<string[]>([])
 const registrationRequiresInvite = computed(
   () => runtime.capabilities?.registrationRequiresInvite !== false,
 )
+const isPublicProfile = computed(() => runtime.capabilities?.profile === 'public')
 
 const mode = computed(() => String(route.name ?? 'login'))
 const title = computed(() =>
@@ -181,6 +183,11 @@ function downloadRecoveryCodes(): void {
           <RouterLink v-if="mode === 'login'" to="/recover">忘记密码</RouterLink>
         </nav>
       </form>
+      <PublicTrialNotice
+        v-if="isPublicProfile"
+        class="auth-trial-notice"
+        compact
+      />
     </section>
   </main>
 </template>
@@ -318,6 +325,10 @@ form {
 .auth-links a:hover {
   color: var(--color-text-strong);
   text-decoration-color: var(--color-text-strong);
+}
+
+.auth-trial-notice {
+  margin: 28px 0 0;
 }
 
 .recovery-list {

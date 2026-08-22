@@ -9,6 +9,7 @@ import BookSearch from '@/components/bookshelf/BookSearch.vue'
 import BookModal from '@/components/bookshelf/BookModal.vue'
 import BookDetailModal from '@/components/bookshelf/BookDetailModal.vue'
 import TagManageModal from '@/components/bookshelf/TagManageModal.vue'
+import PublicTrialNotice from '@/components/common/PublicTrialNotice.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductCardGrid from '@/components/product/ProductCardGrid.vue'
 import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
@@ -40,8 +41,17 @@ const taskCenterStore = useTaskCenterStore()
 const runtimeStore = useRuntimeStore()
 const publicAccess = usePublicUserAccess()
 
+const PUBLIC_TRIAL_NOTICE_DISMISSED_KEY = 'saber_public_trial_notice_dismissed'
+
 const lanUrl = ref<string>('获取中...')
 const showLanAccess = computed(() => runtimeStore.capabilities?.profile === 'local')
+const isPublicProfile = computed(() => runtimeStore.capabilities?.profile === 'public')
+const publicTrialNoticeDismissed = ref(
+  window.localStorage.getItem(PUBLIC_TRIAL_NOTICE_DISMISSED_KEY) === 'true',
+)
+const showPublicTrialNotice = computed(
+  () => isPublicProfile.value && !publicTrialNoticeDismissed.value,
+)
 const canTranslate = computed(() => publicAccess.featureAllowed('translation'))
 const canUseInsight = computed(() => publicAccess.featureAllowed('insight'))
 const canUseCharacterStudio = computed(() => publicAccess.featureAllowed('characterStudio'))
@@ -127,6 +137,11 @@ onUnmounted(() => {
 async function copyLanUrl() {
   const copied = await copyTextToClipboard(lanUrl.value)
   showToast(copied ? '局域网地址已复制！' : '复制局域网地址失败', copied ? 'success' : 'error')
+}
+
+function dismissPublicTrialNotice(): void {
+  publicTrialNoticeDismissed.value = true
+  window.localStorage.setItem(PUBLIC_TRIAL_NOTICE_DISMISSED_KEY, 'true')
 }
 
 function openCreateBookModal() {
@@ -323,6 +338,12 @@ async function applyBatchTags() {
       >
         {{ disabledFeatureMessage }}
       </ProductStatusBanner>
+      <PublicTrialNotice
+        v-if="showPublicTrialNotice"
+        class="bookshelf-trial-notice"
+        dismissible
+        @dismiss="dismissPublicTrialNotice"
+      />
       <div class="bookshelf-toolbar">
         <h1 class="bookshelf-toolbar__title">我的书架</h1>
         <ProductActionRow
@@ -559,6 +580,10 @@ async function applyBatchTags() {
   min-height: 0;
   margin: 0 auto;
   padding: 24px;
+}
+
+.bookshelf-trial-notice {
+  margin-bottom: 24px;
 }
 
 .bookshelf-page {

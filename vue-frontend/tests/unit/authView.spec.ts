@@ -17,4 +17,13 @@ describe('AuthView registration policy', () => {
     expect(source).toContain('无需邀请码，设置用户名和密码即可注册。')
     expect(source).toContain("registrationRequiresInvite ? '使用邀请码注册' : '注册账户'")
   })
+
+  it('shows the shared trial notice only in the public profile', () => {
+    expect(source).toContain(
+      "import PublicTrialNotice from '@/components/common/PublicTrialNotice.vue'",
+    )
+    expect(source).toContain("runtime.capabilities?.profile === 'public'")
+    expect(source).toContain('v-if="isPublicProfile"')
+    expect(source).toContain('<PublicTrialNotice')
+  })
 })
