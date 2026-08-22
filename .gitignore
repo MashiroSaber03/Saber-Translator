@@ -51,6 +51,12 @@ models/
 data/
 data-v2/
 
+# --- 本地部署状态（仅存在于部署机器，不进入仓库） ---
+/data-public/
+/backups/
+/local-deploy/
+/FIRST_ADMIN.txt
+
 # --- 配置文件 ---
 /config/
 
