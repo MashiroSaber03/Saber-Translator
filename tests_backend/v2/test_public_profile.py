@@ -201,6 +201,60 @@ def test_local_profile_does_not_mount_public_account_or_scheduler_controls(
         engine.dispose()
 
 
+def test_local_api_does_not_load_public_password_hashing_stack(tmp_path: Path) -> None:
+    script = """
+import json
+import sys
+from pathlib import Path
+
+from src.backend_v2.api.app import ApiSettings, create_api_app
+from src.backend_v2.runtime_identity import RuntimeIdentity
+from src.backend_v2.runtime_profile import resolve_runtime_profile
+from src.backend_v2.storage.database import create_sqlite_engine
+from src.backend_v2.storage.lifecycle import initialize_database
+
+data_root = Path(sys.argv[1])
+data_root.mkdir()
+initialized = initialize_database(data_root, profile_name="local")
+engine = create_sqlite_engine(initialized.database_path)
+app = create_api_app(
+    ApiSettings(
+        data_root=data_root,
+        identity=RuntimeIdentity(
+            epoch_id="local-import-test",
+            epoch_token="local-import-token",
+            test_mode=True,
+        ),
+        engine=engine,
+        profile=resolve_runtime_profile("local"),
+    )
+)
+print(
+    json.dumps(
+        {
+            "repository": "src.backend_v2.auth.repository" in sys.modules,
+            "argon2": "argon2" in sys.modules,
+        }
+    )
+)
+app.extensions["saber_v2_runtime"].close()
+engine.dispose()
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", script, str(tmp_path / "local-imports")],
+        cwd=Path(__file__).resolve().parents[2],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert json.loads(completed.stdout) == {
+        "repository": False,
+        "argon2": False,
+    }
+
+
 def test_public_capabilities_host_filter_and_security_headers(public_platform) -> None:
     app = public_platform["app"]
     client = app.test_client()

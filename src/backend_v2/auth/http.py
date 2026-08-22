@@ -5,7 +5,8 @@ from __future__ import annotations
 from flask import Flask, Response, g, jsonify, request
 
 from src.backend_v2.auth.constants import SESSION_COOKIE_NAME
-from src.backend_v2.auth.repository import AuthRepository, SessionIdentity
+from src.backend_v2.auth.identity import SessionIdentity
+from src.backend_v2.auth.repository import AuthRepository
 from src.backend_v2.runtime_profile import RuntimeProfile
 
 

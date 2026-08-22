@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from flask import g
 
-from src.backend_v2.auth.repository import SessionIdentity
+from src.backend_v2.auth.identity import SessionIdentity
 
 
 def current_identity() -> SessionIdentity:

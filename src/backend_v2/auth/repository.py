@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import timedelta
 import hashlib
 import re
@@ -15,6 +14,7 @@ from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerifyMismatchError
 from sqlalchemy import Engine, and_, case, delete, func, insert, select, update
 
+from src.backend_v2.auth.identity import SessionIdentity
 from src.backend_v2.storage.database import immediate_transaction
 from src.backend_v2.storage.schema import (
     CURRENT_JOB_STATUSES,
@@ -46,15 +46,6 @@ class AuthError(ValueError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
         self.code = code
-
-
-@dataclass(frozen=True, slots=True)
-class SessionIdentity:
-    user_id: str
-    username: str
-    role: str
-    session_token_hash: str
-    csrf_token_hash: str
 
 
 def normalize_username(value: str) -> str:
