@@ -9,6 +9,7 @@ import threading
 import time
 from typing import Any
 
+from src.backend_v2.auth.ownership import owner_scope
 from src.backend_v2.operations.repository import (
     OperationFence,
     OperationFenced,
@@ -119,7 +120,8 @@ class DurableOperationExecutor:
         )
         try:
             handler = self.handlers[str(operation["kind"])]
-            result = handler(fence, operation)
+            with owner_scope(fence.owner_user_id):
+                result = handler(fence, operation)
             if not isinstance(result, Mapping):
                 raise RuntimeError("operation handler result must be an object")
             already_published = result.get("__already_published__", False)
@@ -191,10 +193,11 @@ class WorkerOperationRunner:
             kind,
         )
         try:
-            result = self.handlers[str(operation["kind"])](
-                fence,
-                operation,
-            )
+            with owner_scope(fence.owner_user_id):
+                result = self.handlers[str(operation["kind"])](
+                    fence,
+                    operation,
+                )
             if not isinstance(result, Mapping):
                 raise RuntimeError("operation handler result must be an object")
             already_published = result.get("__already_published__", False)
@@ -292,8 +295,9 @@ class DurableRenderExecutor:
                 fence.rendering_revision,
             )
             try:
-                publisher = self.handler(fence)
-                self.repository.complete(fence, publisher=publisher)
+                with owner_scope(fence.owner_user_id):
+                    publisher = self.handler(fence)
+                    self.repository.complete(fence, publisher=publisher)
             except OperationFenced:
                 LOGGER.warning(
                     "渲染被 fencing 中断：request=%s page=%s",

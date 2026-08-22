@@ -31,18 +31,29 @@ from src.backend_v2.operations.repository import (
     OperationRepository,
 )
 from src.backend_v2.settings.resolver import SettingsResolver
+from src.backend_v2.public_policy import PublicUserPolicyAccess
+from src.backend_v2.runtime_profile import RuntimeProfile, resolve_runtime_profile
 
 
-def create_operations_blueprint(*, data_root, engine: Engine) -> Blueprint:
+def create_operations_blueprint(
+    *,
+    data_root,
+    engine: Engine,
+    profile: RuntimeProfile | None = None,
+) -> Blueprint:
+    profile = profile or resolve_runtime_profile("local")
     blueprint = Blueprint("operations_v2", __name__, url_prefix="/api/v2")
     repository = OperationRepository(engine)
     settings = SettingsResolver(engine)
+    public_access = PublicUserPolicyAccess(engine, profile)
     from src.backend_v2.operations.repair import PageRepairService
 
     repairs = PageRepairService(
         data_root=data_root,
         engine=engine,
         repository=repository,
+        method_validator=public_access.require_inpaint_method,
+        settings_transformer=public_access.apply_page_repair_settings,
     )
 
     @blueprint.errorhandler(OperationNotFound)
@@ -67,6 +78,11 @@ def create_operations_blueprint(*, data_root, engine: Engine) -> Blueprint:
             allowed_keys={"kind", "baseRevision", "bubbleId"}
         )
         kind = _required_string(body, "kind")
+        payload = settings.resolve_page_operation(
+            page_id=page_id,
+            kind=kind,
+        )
+        public_access.require_page_operation(kind, payload)
         bubble_id: str | None = None
         if "bubbleId" in body:
             bubble_id = _required_string(body, "bubbleId")
@@ -79,10 +95,7 @@ def create_operations_blueprint(*, data_root, engine: Engine) -> Blueprint:
                 minimum=1,
             ),
             bubble_id=bubble_id,
-            payload=settings.resolve_page_operation(
-                page_id=page_id,
-                kind=kind,
-            ),
+            payload=payload,
             idempotency_key=_require_idempotency_key(),
         )
         result = jsonify(response)
@@ -181,6 +194,7 @@ def create_operations_blueprint(*, data_root, engine: Engine) -> Blueprint:
 
     @blueprint.post("/pages/<page_id>/repairs")
     def create_repair(page_id: str):
+        public_access.require_feature("editMode")
         target = request.form.get("target", "")
         if target == "bubble":
             _validate_multipart_fields(

@@ -6,6 +6,7 @@ import { defineComponent, nextTick } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import BookshelfView from '@/views/BookshelfView.vue'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
+import { useRuntimeStore } from '@/stores/runtimeStore'
 import { useSettingsStore } from '@/stores/settings'
 import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
@@ -22,11 +23,12 @@ const { getBooksMock, getTagsMock, getBookDetailMock, getServerInfoMock, routerP
 }))
 
 vi.mock('vue-router', () => ({
+  useRoute: () => ({ query: {} }),
   useRouter: () => ({ push: routerPushMock }),
 }))
 
-vi.mock('@/api', () => ({
-  getServerInfo: getServerInfoMock,
+vi.mock('@/api/v2/system', () => ({
+  getV2ServerInfo: getServerInfoMock,
 }))
 
 vi.mock('@/api/bookshelf', () => ({
@@ -82,8 +84,45 @@ const BookCardStub = defineComponent({
   template: '<button class="book-card-stub" @click="$emit(\'click\')">{{ book.title }}</button>',
 })
 
-function mountView() {
+function mountView(profile: 'local' | 'public' = 'local') {
   setActivePinia(createPinia())
+  const runtimeStore = useRuntimeStore()
+  if (profile === 'local') {
+    runtimeStore.assumeLocalForTests()
+  } else {
+    runtimeStore.capabilities = {
+      profile: 'public',
+      requiresAuth: true,
+      browserCredentials: true,
+      registrationRequiresInvite: true,
+      publicUserPolicy: {
+        features: {
+          translation: true,
+          insight: true,
+          characterStudio: true,
+          editMode: true,
+        },
+        models: {
+          detector_default: true,
+          detector_ctd: true,
+          detector_yolo: true,
+          aux_ysg_yolo: true,
+          saber_yolo: true,
+          manga_ocr: true,
+          ocr_48px: true,
+          paddle_ocr: true,
+          paddleocr_vl: true,
+          lama_mpe: true,
+          litelama: true,
+        },
+        settings: {
+          lamaDisableResize: { editable: false, value: false },
+          parallel: { allowed: false, maxDeepLearningConcurrency: 1 },
+        },
+      },
+      features: { plugins: false, webImport: false, localProviders: false },
+    }
+  }
   return mount(BookshelfView, {
     global: {
       stubs: {
@@ -109,7 +148,7 @@ describe('BookshelfView', () => {
     getServerInfoMock.mockReset()
     getBooksMock.mockResolvedValue([])
     getTagsMock.mockResolvedValue([])
-    getServerInfoMock.mockResolvedValue({ success: true, lan_url: 'http://localhost:5173' })
+    getServerInfoMock.mockResolvedValue({ lanUrl: 'http://localhost:5173' })
   })
 
   it('registers pageshow handling before async bookshelf loading settles', () => {
@@ -150,6 +189,15 @@ describe('BookshelfView', () => {
     const githubLink = wrapper.get('.bookshelf-header__github-link')
     expect(githubLink.attributes('rel')).toBe('noopener noreferrer')
     expect(githubLink.getComponent(UiIcon).props('name')).toBe('github')
+  })
+
+  it('hides local network metadata in the public profile', async () => {
+    const wrapper = mountView('public')
+    await flushPromises()
+
+    expect(wrapper.find('[aria-label="复制局域网地址"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('局域网访问')
+    expect(getServerInfoMock).not.toHaveBeenCalled()
   })
 
   it('keeps header metadata free of DOM id hooks', () => {

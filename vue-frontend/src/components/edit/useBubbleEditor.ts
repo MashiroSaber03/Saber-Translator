@@ -13,8 +13,9 @@ import type {
 import { listV2Fonts } from '@/api/v2/settings'
 import { createBubbleState } from '@/utils/bubbleFactory'
 import { copyTextToClipboard } from '@/utils/clipboard'
-import { inpaintMethodOptions } from '@/utils/textStyleForm'
+import { inpaintMethodOptions as rawInpaintMethodOptions } from '@/utils/textStyleForm'
 import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
+import { usePublicUserAccess } from '@/composables/usePublicUserAccess'
 
 export interface BubbleEditorProps {
   bubble: BubbleState | null
@@ -43,6 +44,14 @@ type ColorInputRef = {
 }
 
 export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit) {
+  const publicAccess = usePublicUserAccess()
+  const inpaintMethodOptions = computed(() => publicAccess.modelOptions(
+    rawInpaintMethodOptions,
+    {
+      lama_mpe: 'lama_mpe',
+      litelama: 'litelama',
+    },
+  ))
   const defaultBubble: BubbleState = createBubbleState({
     coords: [0, 0, 0, 0],
     polygon: [],

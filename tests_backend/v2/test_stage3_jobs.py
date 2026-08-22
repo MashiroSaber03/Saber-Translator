@@ -15,6 +15,7 @@ from flask import Flask
 from sqlalchemy import event, insert, select, update
 from sqlalchemy.exc import OperationalError as SqlAlchemyOperationalError
 
+from src.backend_v2.auth.ownership import effective_owner_id, owner_scope
 from src.backend_v2.content.repository import ContentLocked, ContentRepository
 from src.backend_v2.jobs.events import JobEventBroadcaster
 from src.backend_v2.jobs.repository import (
@@ -714,6 +715,69 @@ def test_worker_loop_finishes_durable_job_without_browser(job_platform) -> None:
             .where(job_items.c.job_id == job_id)
             .order_by(job_steps.c.ordinal)
         ).scalars().all() == ["completed", "completed"]
+
+
+def test_parallel_worker_runs_each_job_in_its_claimed_owner_scope(
+    job_platform,
+) -> None:
+    engine, repository, _book, _chapter, worker_epoch_id = job_platform
+    owner_ids = (str(uuid.uuid4()), str(uuid.uuid4()))
+    expected: dict[str, str] = {}
+    for index, owner_id in enumerate(owner_ids, start=1):
+        with owner_scope(owner_id):
+            created = repository.create_batch(
+                kind="export",
+                display_name=f"owner {index}",
+                specs=[
+                    JobSpec(
+                        kind="export",
+                        config={
+                            "executionMode": "parallel",
+                            "deepLearningConcurrency": 1,
+                        },
+                        items=(
+                            JobItemSpec(page_id=None, step_kinds=("owned",)),
+                        ),
+                    )
+                ],
+            )
+        expected[str(created["jobIds"][0])] = owner_id
+
+    seen: dict[str, str] = {}
+    seen_lock = threading.Lock()
+
+    def handler(fence: AttemptFence, _step):
+        with seen_lock:
+            seen[fence.job_id] = effective_owner_id()
+        return {"ownerUserId": effective_owner_id()}
+
+    stop = threading.Event()
+    loop = JobWorkerLoop(
+        repository,
+        worker_epoch_id=worker_epoch_id,
+        handlers={"owned": handler},
+        idle_poll_seconds=0.01,
+    )
+    thread = threading.Thread(target=loop.run, args=(stop,), daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        with engine.connect() as connection:
+            statuses = dict(
+                connection.execute(
+                    select(jobs.c.id, jobs.c.status).where(
+                        jobs.c.id.in_(tuple(expected))
+                    )
+                ).all()
+            )
+        if statuses and set(statuses.values()) == {"completed"}:
+            break
+        time.sleep(0.01)
+    stop.set()
+    thread.join(timeout=2)
+
+    assert statuses == {job_id: "completed" for job_id in expected}
+    assert seen == expected
 
 
 def test_worker_loop_resolves_unbounded_dynamic_step_kinds(job_platform) -> None:

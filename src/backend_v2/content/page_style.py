@@ -7,9 +7,10 @@ import math
 import re
 from typing import Any, Mapping
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.engine import Connection
 
+from src.backend_v2.auth.ownership import effective_owner_id
 from src.backend_v2.storage.defaults import TEXT_STYLE_DEFAULTS_SCHEMA_VERSION
 from src.backend_v2.storage.schema import app_settings, fonts
 
@@ -185,7 +186,13 @@ def validate_text_style_defaults(
     if not isinstance(font_id, str) or not font_id:
         raise ValueError("fontFamily must be a font ID")
     if connection.execute(
-        select(fonts.c.id).where(fonts.c.id == font_id)
+        select(fonts.c.id).where(
+            fonts.c.id == font_id,
+            or_(
+                fonts.c.kind == "builtin",
+                fonts.c.owner_user_id == effective_owner_id(),
+            ),
+        )
     ).scalar_one_or_none() is None:
         raise ValueError("fontFamily does not reference an existing font")
     return font_id, validate_page_style(payload, partial=False)
@@ -199,7 +206,8 @@ def resolve_new_page_style(
             app_settings.c.payload_json,
             app_settings.c.schema_version,
         ).where(
-            app_settings.c.domain == "text_style_defaults"
+            app_settings.c.domain == "text_style_defaults",
+            app_settings.c.owner_user_id == effective_owner_id(),
         )
     ).mappings().one_or_none()
     if setting is None:

@@ -12,6 +12,7 @@ import uuid
 from sqlalchemy import Engine, delete, func, insert, select, update
 from sqlalchemy.engine import Connection
 
+from src.backend_v2.auth.ownership import effective_owner_id
 from src.backend_v2.serialization import canonical_json as _json
 from src.backend_v2.operations.repository import (
     OperationFence,
@@ -234,6 +235,7 @@ class StudioRepository:
             connection.execute(
                 insert(studio_documents).values(
                     id=document_id,
+                    owner_user_id=effective_owner_id(),
                     book_id=book_id,
                     title=canonical_title,
                     avatar_asset_id=avatar_asset_id,
@@ -2129,6 +2131,7 @@ class StudioRepository:
         connection.execute(
             insert(operations).values(
                 id=operation_id,
+                owner_user_id=effective_owner_id(),
                 kind=kind,
                 executor_role="api",
                 status="pending",
@@ -2267,7 +2270,8 @@ class StudioRepository:
     ) -> dict[str, Any]:
         row = connection.execute(
             select(studio_documents).where(
-                studio_documents.c.id == document_id
+                studio_documents.c.id == document_id,
+                studio_documents.c.owner_user_id == effective_owner_id(),
             )
         ).mappings().one_or_none()
         if row is None:
@@ -2280,6 +2284,7 @@ class StudioRepository:
             select(books.c.id).where(
                 books.c.id == book_id,
                 books.c.kind == "library",
+                books.c.owner_user_id == effective_owner_id(),
             )
         ).scalar_one_or_none() is None:
             raise StudioNotFound("book not found")
@@ -2291,7 +2296,8 @@ class StudioRepository:
     ) -> Mapping[str, Any]:
         row = connection.execute(
             select(studio_documents).where(
-                studio_documents.c.id == document_id
+                studio_documents.c.id == document_id,
+                studio_documents.c.owner_user_id == effective_owner_id(),
             )
         ).mappings().one_or_none()
         if row is None:
@@ -2460,7 +2466,10 @@ class StudioRepository:
         found = set(
             str(value)
             for value in connection.execute(
-                select(assets.c.id).where(assets.c.id.in_(tuple(asset_ids)))
+                select(assets.c.id).where(
+                    assets.c.id.in_(tuple(asset_ids)),
+                    assets.c.owner_user_id == effective_owner_id(),
+                )
             ).scalars()
         )
         if found != set(asset_ids):
@@ -2674,6 +2683,7 @@ class StudioRepository:
             ).where(
                 idempotency_records.c.scope == scope,
                 idempotency_records.c.key == key,
+                idempotency_records.c.owner_user_id == effective_owner_id(),
             )
         ).mappings().one_or_none()
         if row is None:
@@ -2683,6 +2693,7 @@ class StudioRepository:
                 delete(idempotency_records).where(
                     idempotency_records.c.scope == scope,
                     idempotency_records.c.key == key,
+                    idempotency_records.c.owner_user_id == effective_owner_id(),
                 )
             )
             return None
@@ -2710,6 +2721,7 @@ class StudioRepository:
     ) -> None:
         connection.execute(
             insert(idempotency_records).values(
+                owner_user_id=effective_owner_id(),
                 scope=scope,
                 key=key,
                 request_hash=request_hash,

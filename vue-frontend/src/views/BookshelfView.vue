@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
 import { getV2ServerInfo } from '@/api/v2/system'
 import { getBookDetail } from '@/api/bookshelf'
@@ -29,13 +29,29 @@ import { copyTextToClipboard } from '@/utils/clipboard'
 import { showToast } from '@/utils/toast'
 import { createTranslationBatch } from '@/api/v2/translation'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
+import { useRuntimeStore } from '@/stores/runtimeStore'
 import { confirmProductAction } from '@/composables/useProductConfirm'
+import { usePublicUserAccess } from '@/composables/usePublicUserAccess'
 
 const router = useRouter()
+const route = useRoute()
 const bookshelfStore = useBookshelfStore()
 const taskCenterStore = useTaskCenterStore()
+const runtimeStore = useRuntimeStore()
+const publicAccess = usePublicUserAccess()
 
 const lanUrl = ref<string>('获取中...')
+const showLanAccess = computed(() => runtimeStore.capabilities?.profile === 'local')
+const canTranslate = computed(() => publicAccess.featureAllowed('translation'))
+const canUseInsight = computed(() => publicAccess.featureAllowed('insight'))
+const canUseCharacterStudio = computed(() => publicAccess.featureAllowed('characterStudio'))
+const disabledFeatureMessage = computed(() => {
+  const key = route.query.disabledFeature
+  if (key === 'translation') return '管理员已关闭翻译功能。'
+  if (key === 'insight') return '管理员已关闭漫画分析功能。'
+  if (key === 'characterStudio') return '管理员已关闭角色工坊。'
+  return ''
+})
 
 const showBookModal = ref(false)
 const showDetailModal = ref(false)
@@ -95,11 +111,12 @@ async function loadServerInfo(): Promise<void> {
 onMounted(async () => {
   window.addEventListener('pageshow', handlePageShow)
 
-  await Promise.all([
+  const startupRequests: Promise<unknown>[] = [
     bookshelfStore.loadBooks(),
     bookshelfStore.loadTags(),
-    loadServerInfo(),
-  ])
+  ]
+  if (showLanAccess.value) startupRequests.push(loadServerInfo())
+  await Promise.all(startupRequests)
 })
 
 onUnmounted(() => {
@@ -252,7 +269,7 @@ async function applyBatchTags() {
       nav-label="书架外部链接"
       actions-label="书架偏好操作"
     >
-      <template #meta>
+      <template v-if="showLanAccess" #meta>
         <ProductHeaderMetaPill
           label="局域网访问"
           :value="lanUrl"
@@ -299,6 +316,13 @@ async function applyBatchTags() {
     </ProductPageHeader>
 
     <main class="bookshelf-main">
+      <ProductStatusBanner
+        v-if="disabledFeatureMessage"
+        tone="neutral"
+        role="status"
+      >
+        {{ disabledFeatureMessage }}
+      </ProductStatusBanner>
       <div class="bookshelf-toolbar">
         <h1 class="bookshelf-toolbar__title">我的书架</h1>
         <ProductActionRow
@@ -314,7 +338,7 @@ async function applyBatchTags() {
             <UiIcon name="tags" size="16" />
             <span>管理标签</span>
           </UiButton>
-          <UiButton variant="secondary" @click="goToTranslate">
+          <UiButton v-if="canTranslate" variant="secondary" @click="goToTranslate">
             <UiIcon name="languages" size="16" />
             <span>快速翻译</span>
           </UiButton>
@@ -386,6 +410,7 @@ async function applyBatchTags() {
         </UiButton>
         <span class="bookshelf-batch-bar__count">已选择 {{ selectedBookCount }} 本</span>
         <UiButton
+          v-if="canTranslate"
           variant="primary"
           :disabled="!hasSelectedChapters || batchBusy"
           @click="translateSelectedBooks"
@@ -483,6 +508,9 @@ async function applyBatchTags() {
 
     <BookDetailModal
       v-if="showDetailModal"
+      :character-studio-allowed="canUseCharacterStudio"
+      :insight-allowed="canUseInsight"
+      :translation-allowed="canTranslate"
       @close="closeBookDetail"
       @edit="openEditBookModal"
     />

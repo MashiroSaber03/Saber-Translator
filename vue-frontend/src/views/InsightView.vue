@@ -37,24 +37,30 @@ import {
 import { stepKindLabel } from '@/utils/taskDisplay'
 import type { BookData } from '@/types'
 import { showToast } from '@/utils/toast'
+import { usePublicUserAccess } from '@/composables/usePublicUserAccess'
 
 const route = useRoute()
 const router = useRouter()
 const insightStore = useInsightStore()
 const taskCenterStore = useTaskCenterStore()
+const publicAccess = usePublicUserAccess()
 
 type InsightTabId = 'overview' | 'qa' | 'timeline' | 'continuation' | 'character_studio'
 
-const insightTabs: Array<{ id: InsightTabId; label: string; glyph: string }> = [
+const allInsightTabs: Array<{ id: InsightTabId; label: string; glyph: string }> = [
   { id: 'overview', label: '概览', glyph: '📊' },
   { id: 'qa', label: '智能问答', glyph: '💬' },
   { id: 'timeline', label: '时间线', glyph: '📈' },
   { id: 'continuation', label: '续写', glyph: '🎨' },
   { id: 'character_studio', label: '角色工坊', glyph: '🃏' },
 ]
+const canUseCharacterStudio = computed(() => publicAccess.featureAllowed('characterStudio'))
+const insightTabs = computed(() => allInsightTabs.filter(tab => (
+  tab.id !== 'character_studio' || canUseCharacterStudio.value
+)))
 
 function insightTabGlyph(tabId: string): string {
-  return insightTabs.find(tab => tab.id === tabId)?.glyph ?? ''
+  return insightTabs.value.find(tab => tab.id === tabId)?.glyph ?? ''
 }
 
 const activeTab = ref<InsightTabId>('overview')
@@ -87,7 +93,7 @@ const bookCoverUrl = computed(() => {
 })
 
 function switchTab(tab: string): void {
-  const selectedTab = insightTabs.find(item => item.id === tab)
+  const selectedTab = insightTabs.value.find(item => item.id === tab)
   if (selectedTab) activeTab.value = selectedTab.id
 }
 
@@ -592,6 +598,7 @@ watch(
           </div>
 
           <div
+            v-if="canUseCharacterStudio"
             v-show="activeTab === 'character_studio'"
             id="product-workspace-panel-character_studio"
             class="insight-view__tab-content"

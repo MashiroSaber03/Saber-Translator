@@ -32,6 +32,7 @@
       >
         <UiCheckbox
           :model-value="settings.enableAuxYoloDetection"
+          :disabled="!auxYoloAllowed && !settings.enableAuxYoloDetection"
           label="启用辅助 YSGYolo 检测"
           @change="settingsStore.setEnableAuxYoloDetection"
         />
@@ -65,6 +66,7 @@
       >
         <UiCheckbox
           :model-value="settings.enableSaberYoloRefine"
+          :disabled="!saberYoloAllowed && !settings.enableSaberYoloRefine"
           label="启用 SaberYOLO 二阶段纠错"
           @change="settingsStore.setEnableSaberYoloRefine"
         />
@@ -178,16 +180,25 @@ import { computed } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import type { BoxExpandSettings, PreciseMaskSettings } from '@/types/settings'
 import type { UiSelectValue } from '@/components/ui/selectTypes'
+import { usePublicUserAccess } from '@/composables/usePublicUserAccess'
 
-const detectorOptions = [
+const rawDetectorOptions = [
   { label: 'CTD (Comic Text Detector)', value: 'ctd' },
   { label: 'YOLO', value: 'yolo' },
   { label: 'Default (DBNet)', value: 'default' }
 ]
 
 const settingsStore = useSettingsStore()
+const publicAccess = usePublicUserAccess()
 
 const settings = computed(() => settingsStore.settings)
+const detectorOptions = computed(() => publicAccess.modelOptions(rawDetectorOptions, {
+  default: 'detector_default',
+  ctd: 'detector_ctd',
+  yolo: 'detector_yolo',
+}))
+const auxYoloAllowed = computed(() => publicAccess.modelAllowed('aux_ysg_yolo'))
+const saberYoloAllowed = computed(() => publicAccess.modelAllowed('saber_yolo'))
 
 function updateTextDetector(value: UiSelectValue): void {
   if (value === 'ctd' || value === 'yolo' || value === 'default') {

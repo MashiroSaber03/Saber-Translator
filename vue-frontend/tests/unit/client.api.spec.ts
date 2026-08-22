@@ -114,6 +114,32 @@ describe('apiClient error normalization', () => {
     })
   })
 
+  it('does not report an expected unauthenticated session probe as an expired session', async () => {
+    await import('@/api/client')
+    const responseErrorHandler = responseUseMock.mock.calls[0]?.[1] as ResponseErrorHandler | undefined
+    if (!responseErrorHandler) throw new Error('response error interceptor was not registered')
+    const authenticationRequired = vi.fn()
+    window.addEventListener('saber:authentication-required', authenticationRequired)
+
+    const unauthorized = (url: string) => Object.assign(new Error('Unauthorized'), {
+      config: { url },
+      response: {
+        status: 401,
+        data: { error: { code: 'authentication_required', message: '请先登录' } },
+      },
+    }) as AxiosError
+
+    try {
+      await responseErrorHandler(unauthorized('/api/v2/auth/me')).catch(() => undefined)
+      expect(authenticationRequired).not.toHaveBeenCalled()
+
+      await responseErrorHandler(unauthorized('/api/v2/books')).catch(() => undefined)
+      expect(authenticationRequired).toHaveBeenCalledTimes(1)
+    } finally {
+      window.removeEventListener('saber:authentication-required', authenticationRequired)
+    }
+  })
+
   it('preserves request cancellation instead of reporting a network outage', async () => {
     const { ApiClientError, isRequestCanceled } = await import('@/api/client')
     const responseErrorHandler = responseUseMock.mock.calls[0]?.[1] as ResponseErrorHandler | undefined

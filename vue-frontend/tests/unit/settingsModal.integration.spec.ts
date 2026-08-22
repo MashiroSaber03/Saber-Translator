@@ -18,6 +18,12 @@ vi.mock('@/stores/settings', () => ({
   }),
 }))
 
+vi.mock('@/stores/runtimeStore', () => ({
+  useRuntimeStore: () => ({
+    capabilities: { features: { plugins: true } },
+  }),
+}))
+
 vi.mock('@/utils/toast', () => ({
   showToast: vi.fn(),
 }))

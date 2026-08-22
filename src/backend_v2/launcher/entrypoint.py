@@ -21,6 +21,11 @@ import webbrowser
 
 import psutil
 
+from src.backend_v2.auth.credential_broker import (
+    BROKER_TOKEN_ENV,
+    BROKER_URL_ENV,
+    CredentialLeaseBroker,
+)
 from src.backend_v2.logging_config import LOG_LEVEL_ENV, configure_backend_logging
 from src.backend_v2.paths import (
     DATA_ROOT_ENV,
@@ -36,9 +41,14 @@ from src.backend_v2.runtime_identity import (
     WORKER_EPOCH_ID_ENV,
     WORKER_EPOCH_TOKEN_ENV,
 )
+from src.backend_v2.runtime_profile import PROFILE_ENV, resolve_runtime_profile
 from src.backend_v2.launcher.windows_job import ChildProcessJob
 from src.backend_v2.storage.assets import AssetStorageService
-from src.backend_v2.storage.database import create_sqlite_engine, database_path_for
+from src.backend_v2.storage.database import (
+    create_sqlite_engine,
+    database_path_for,
+    is_sqlite_busy_error,
+)
 from src.backend_v2.storage.epochs import (
     EpochRegistration,
     ProcessEpochRepository,
@@ -49,7 +59,10 @@ from src.backend_v2.storage.single_instance import DataRootLock
 
 MAX_CONSECUTIVE_RESTARTS = 3
 API_HEALTH_CHECK_INTERVAL_SECONDS = 1.0
-API_HEALTH_FAILURE_LIMIT = 3
+# Windows can briefly interrupt even loopback probes while rebuilding a TUN
+# adapter.  Keep the existing supervisor, but do not recycle a healthy process
+# for a short network transition.
+API_HEALTH_FAILURE_LIMIT = 15
 RESTART_STABILITY_SECONDS = 30.0
 PREVIOUS_CHILD_EXIT_TIMEOUT_SECONDS = 5.0
 TORCH_CUDNN_V8_API_LRU_CACHE_LIMIT_ENV = "TORCH_CUDNN_V8_API_LRU_CACHE_LIMIT"
@@ -76,6 +89,7 @@ class LauncherConfig:
     data_root: Path
     host: str
     port: int
+    profile: str = "local"
     log_level: str | None = None
     open_browser: bool = False
 
@@ -103,7 +117,14 @@ class ManagedChild:
     health_failures: int = 0
 
 
-def _role_command(role: str, *, data_root: Path, host: str, port: int) -> list[str]:
+def _role_command(
+    role: str,
+    *,
+    data_root: Path,
+    host: str,
+    port: int,
+    profile: str,
+) -> list[str]:
     if getattr(sys, "frozen", False):
         command = [sys.executable]
     else:
@@ -118,6 +139,8 @@ def _role_command(role: str, *, data_root: Path, host: str, port: int) -> list[s
         host,
         "--port",
         str(port),
+        "--profile",
+        profile,
     ]
 
 
@@ -137,13 +160,23 @@ def _child_environment(
     role: str,
     registration: EpochRegistration,
     *,
+    profile: str = "local",
     log_level: str | None = None,
+    credential_broker_url: str | None = None,
+    credential_broker_token: str | None = None,
 ) -> dict[str, str]:
     environment = os.environ.copy()
     environment[DATA_ROOT_ENV] = str(data_root)
     environment[LAUNCHER_PID_ENV] = str(os.getpid())
+    environment[PROFILE_ENV] = profile
     if log_level:
         environment[LOG_LEVEL_ENV] = log_level
+    if credential_broker_url and credential_broker_token:
+        environment[BROKER_URL_ENV] = credential_broker_url
+        environment[BROKER_TOKEN_ENV] = credential_broker_token
+    else:
+        environment.pop(BROKER_URL_ENV, None)
+        environment.pop(BROKER_TOKEN_ENV, None)
     if registration.role != role:
         raise ValueError("child role and epoch registration role differ")
     if role == "api":
@@ -321,6 +354,29 @@ def _worker_epoch_requires_restart(
         return False
 
 
+def _try_reconcile_dead_child(
+    repository: ProcessEpochRepository,
+    *,
+    role: str,
+    epoch_id: str,
+) -> bool:
+    try:
+        if role == "api":
+            repository.reconcile_dead_api(epoch_id)
+        else:
+            repository.reconcile_dead_worker(epoch_id)
+    except Exception as error:
+        if not is_sqlite_busy_error(error):
+            raise
+        LOGGER.warning(
+            "%s 退出清理遇到 SQLite 写锁竞争，将在下一轮重试：epoch=%s",
+            role.upper(),
+            epoch_id[:8],
+        )
+        return False
+    return True
+
+
 def _reset_restart_count_after_stable_run(
     managed: ManagedChild,
     *,
@@ -371,10 +427,22 @@ def _wait_for_worker(
 
 
 def _stop_children(children: list[subprocess.Popen[str]]) -> None:
+    descendants: list[psutil.Process] = []
     for child in children:
         if child.poll() is None:
             LOGGER.info("正在停止子进程 pid=%s", child.pid)
-            child.terminate()
+            try:
+                child_descendants = psutil.Process(child.pid).children(recursive=True)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                child_descendants = []
+            descendants.extend(child_descendants)
+            for descendant in reversed(child_descendants):
+                try:
+                    descendant.terminate()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+            if child.poll() is None:
+                child.terminate()
     deadline = time.monotonic() + 5.0
     for child in children:
         remaining = max(0.0, deadline - time.monotonic())
@@ -384,16 +452,35 @@ def _stop_children(children: list[subprocess.Popen[str]]) -> None:
             LOGGER.warning("子进程 pid=%s 未按时退出，执行强制停止", child.pid)
             child.kill()
             child.wait(timeout=2.0)
+    if descendants:
+        _, alive = psutil.wait_procs(descendants, timeout=2.0)
+        for descendant in alive:
+            try:
+                descendant.kill()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        if alive:
+            psutil.wait_procs(alive, timeout=2.0)
 
 
-def _probe_payload(data_root: Path, host: str, port: int) -> dict[str, Any]:
+def _probe_payload(
+    data_root: Path,
+    host: str,
+    port: int,
+    profile: str = "local",
+) -> dict[str, Any]:
     return {
         "role": "launcher",
         "status": "ready",
         "dataRoot": str(data_root),
         "dataRootFingerprint": data_root_fingerprint(data_root),
-        "apiCommand": _role_command("api", data_root=data_root, host=host, port=port),
-        "workerCommand": _role_command("worker", data_root=data_root, host=host, port=port),
+        "profile": profile,
+        "apiCommand": _role_command(
+            "api", data_root=data_root, host=host, port=port, profile=profile
+        ),
+        "workerCommand": _role_command(
+            "worker", data_root=data_root, host=host, port=port, profile=profile
+        ),
     }
 
 
@@ -470,10 +557,13 @@ def _start_child(
     data_root: Path,
     host: str,
     port: int,
+    profile: str,
     repository: ProcessEpochRepository,
     child_job: ChildProcessJob,
     restart_count: int,
     log_level: str | None = None,
+    credential_broker_url: str | None = None,
+    credential_broker_token: str | None = None,
     output_callback: ChildOutputCallback | None = None,
     stop_event: threading.Event | None = None,
 ) -> ManagedChild:
@@ -490,12 +580,21 @@ def _start_child(
             restart_count,
         )
         process = _spawn(
-            _role_command(role, data_root=data_root, host=host, port=port),
+            _role_command(
+                role,
+                data_root=data_root,
+                host=host,
+                port=port,
+                profile=profile,
+            ),
             _child_environment(
                 data_root,
                 role,
                 registration,
+                profile=profile,
                 log_level=log_level,
+                credential_broker_url=credential_broker_url,
+                credential_broker_token=credential_broker_token,
             ),
             capture_output=output_callback is not None,
         )
@@ -567,10 +666,13 @@ def _start_child_with_retries(
     data_root: Path,
     host: str,
     port: int,
+    profile: str = "local",
     repository: ProcessEpochRepository,
     child_job: ChildProcessJob,
     restart_count: int,
     log_level: str | None = None,
+    credential_broker_url: str | None = None,
+    credential_broker_token: str | None = None,
     output_callback: ChildOutputCallback | None = None,
     stop_event: threading.Event | None = None,
 ) -> ManagedChild:
@@ -583,10 +685,13 @@ def _start_child_with_retries(
                 data_root=data_root,
                 host=host,
                 port=port,
+                profile=profile,
                 repository=repository,
                 child_job=child_job,
                 restart_count=current_restart_count,
                 log_level=log_level,
+                credential_broker_url=credential_broker_url,
+                credential_broker_token=credential_broker_token,
                 output_callback=output_callback,
                 stop_event=stop_event,
             )
@@ -660,6 +765,7 @@ class LauncherSupervisor:
         clean_exit = False
         children: dict[str, ManagedChild] = {}
         config = self.config
+        credential_broker: CredentialLeaseBroker | None = None
         try:
             self._publish(LauncherState.STARTING, "正在初始化后端")
             _raise_if_stop_requested(self._stop_event)
@@ -694,6 +800,11 @@ class LauncherSupervisor:
                         integrity.restored,
                     )
 
+                    if resolve_runtime_profile(config.profile).browser_credentials:
+                        credential_broker = CredentialLeaseBroker()
+                        credential_broker.start()
+                        LOGGER.info("浏览器密钥内存服务已启动（仅监听 127.0.0.1）")
+
                     with ChildProcessJob() as child_job:
                         try:
                             for role in ("api", "worker"):
@@ -702,10 +813,21 @@ class LauncherSupervisor:
                                     data_root=config.data_root,
                                     host=config.host,
                                     port=config.port,
+                                    profile=config.profile,
                                     repository=repository,
                                     child_job=child_job,
                                     restart_count=0,
                                     log_level=config.log_level,
+                                    credential_broker_url=(
+                                        credential_broker.url
+                                        if credential_broker is not None
+                                        else None
+                                    ),
+                                    credential_broker_token=(
+                                        credential_broker.token
+                                        if credential_broker is not None
+                                        else None
+                                    ),
                                     output_callback=self._output_callback,
                                     stop_event=self._stop_event,
                                 )
@@ -787,14 +909,12 @@ class LauncherSupervisor:
                                         managed.process.pid,
                                         return_code,
                                     )
-                                    if role == "api":
-                                        repository.reconcile_dead_api(
-                                            managed.registration.epoch_id
-                                        )
-                                    else:
-                                        repository.reconcile_dead_worker(
-                                            managed.registration.epoch_id
-                                        )
+                                    if not _try_reconcile_dead_child(
+                                        repository,
+                                        role=role,
+                                        epoch_id=managed.registration.epoch_id,
+                                    ):
+                                        continue
                                     restart_count = managed.restart_count + 1
                                     if restart_count > MAX_CONSECUTIVE_RESTARTS:
                                         raise RuntimeError(
@@ -811,10 +931,21 @@ class LauncherSupervisor:
                                         data_root=config.data_root,
                                         host=config.host,
                                         port=config.port,
+                                        profile=config.profile,
                                         repository=repository,
                                         child_job=child_job,
                                         restart_count=restart_count,
                                         log_level=config.log_level,
+                                        credential_broker_url=(
+                                            credential_broker.url
+                                            if credential_broker is not None
+                                            else None
+                                        ),
+                                        credential_broker_token=(
+                                            credential_broker.token
+                                            if credential_broker is not None
+                                            else None
+                                        ),
                                         output_callback=self._output_callback,
                                         stop_event=self._stop_event,
                                     )
@@ -839,6 +970,9 @@ class LauncherSupervisor:
                             for managed in children.values():
                                 repository.close(managed.registration)
                 finally:
+                    if credential_broker is not None:
+                        credential_broker.close()
+                        LOGGER.info("浏览器密钥内存服务已清空并停止")
                     repository.close(launcher_registration)
                     engine.dispose()
                     LOGGER.info("Launcher 已关闭")
@@ -860,9 +994,16 @@ def run_launcher(args: object) -> int:
     data_root = ensure_data_root(resolve_data_root(args.data_dir))
     host = args.host
     port = args.port
+    profile = resolve_runtime_profile(getattr(args, "profile", "local"))
+    os.environ[PROFILE_ENV] = profile.name
 
     if args.probe:
-        print(json.dumps(_probe_payload(data_root, host, port), sort_keys=True))
+        print(
+            json.dumps(
+                _probe_payload(data_root, host, port, profile.name),
+                sort_keys=True,
+            )
+        )
         return 0
 
     log_level = args.log_level
@@ -877,7 +1018,8 @@ def run_launcher(args: object) -> int:
         sys.version.split()[0],
     )
     LOGGER.info(
-        "运行参数：data_root=%s，监听=%s:%s，日志=%s",
+        "运行参数：profile=%s，data_root=%s，监听=%s:%s，日志=%s",
+        profile.name,
         data_root,
         host,
         port,
@@ -888,6 +1030,7 @@ def run_launcher(args: object) -> int:
             data_root=data_root,
             host=host,
             port=port,
+            profile=profile.name,
             log_level=log_level,
             open_browser=not args.no_browser,
         )

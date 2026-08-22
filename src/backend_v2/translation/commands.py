@@ -10,6 +10,7 @@ from typing import Any
 from sqlalchemy import Engine, func, select, update
 from sqlalchemy.engine import Connection
 
+from src.backend_v2.auth.ownership import effective_owner_id
 from src.backend_v2.content.page_style import validate_page_style
 from src.backend_v2.jobs.repository import (
     JobConflict,
@@ -29,6 +30,7 @@ from src.backend_v2.storage.schema import (
     render_requests,
 )
 from src.backend_v2.settings.resolver import SettingsResolver
+from src.backend_v2.public_policy import PublicUserPolicyAccess
 from src.backend_v2.timestamps import utcnow
 from src.shared.ai_providers import (
     HQ_TRANSLATION_CAPABILITY,
@@ -80,7 +82,10 @@ def resolve_chapter_pages(
                 books.c.title.label("book_title"),
             )
             .join(books, books.c.id == chapters.c.book_id)
-            .where(chapters.c.id == chapter_id)
+            .where(
+                chapters.c.id == chapter_id,
+                books.c.owner_user_id == effective_owner_id(),
+            )
         ).mappings().one_or_none()
         if chapter is None:
             raise ValueError("chapter not found")
@@ -107,10 +112,16 @@ def resolve_chapter_pages(
 
 
 class TranslationJobCommandService:
-    def __init__(self, engine: Engine) -> None:
+    def __init__(
+        self,
+        engine: Engine,
+        *,
+        public_access: PublicUserPolicyAccess | None = None,
+    ) -> None:
         self.engine = engine
         self.jobs = JobQueueRepository(engine)
         self.settings = SettingsResolver(engine)
+        self.public_access = public_access
 
     def create_chapter_job(
         self,
@@ -124,6 +135,8 @@ class TranslationJobCommandService:
         idempotency_scope: str | None = None,
     ) -> dict[str, object]:
         command = normalize_translation_command(config)
+        if self.public_access is not None:
+            self.public_access.enforce_translation_command(command)
         mode = command["mode"]
         job_kind = "remove_text" if mode == "remove_text" else "translation"
         _chapter, ordered_pages = resolve_chapter_pages(
@@ -194,6 +207,8 @@ class TranslationJobCommandService:
                 f"{'book' if requested_field == 'bookIds' else 'chapter'} IDs"
             )
         command = normalize_translation_command(config)
+        if self.public_access is not None:
+            self.public_access.enforce_translation_command(command)
         mode = command["mode"]
         job_kind = "remove_text" if mode == "remove_text" else "translation"
         idempotency_payload = {
@@ -290,6 +305,7 @@ class TranslationJobCommandService:
                     select(books.c.id).where(
                         books.c.id.in_(book_ids),
                         books.c.kind == "library",
+                        books.c.owner_user_id == effective_owner_id(),
                     )
                 ).scalars()
             }
@@ -337,6 +353,11 @@ class TranslationJobCommandService:
         )
         if text_style_snapshot is not None:
             normalized["textStyleSnapshot"] = text_style_snapshot
+        if self.public_access is not None:
+            normalized = self.public_access.apply_resolved_translation(
+                normalized,
+                page_ids=ordered_pages,
+            )
         mode = command["mode"]
         step_kinds = step_kinds_for_mode(
             mode,

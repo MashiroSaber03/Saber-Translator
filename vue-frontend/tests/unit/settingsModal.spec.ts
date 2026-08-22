@@ -6,27 +6,23 @@ import { defineComponent, h } from 'vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductSegmentedTabs from '@/components/product/ProductSegmentedTabs.vue'
 
-const {
-  loadFromBackendMock,
-  saveToBackendMock,
-  settingsStoreState,
-  translationSettingsSetupMock,
-} = vi.hoisted(() => ({
-  loadFromBackendMock: vi.fn(),
-  saveToBackendMock: vi.fn(),
-  translationSettingsSetupMock: vi.fn(),
-  settingsStoreState: {
-    settings: {
-      textStyle: {
+const { loadFromBackendMock, saveToBackendMock, settingsStoreState, translationSettingsSetupMock } =
+  vi.hoisted(() => ({
+    loadFromBackendMock: vi.fn(),
+    saveToBackendMock: vi.fn(),
+    translationSettingsSetupMock: vi.fn(),
+    settingsStoreState: {
+      settings: {
+        textStyle: {
+          fontSize: 16,
+        },
+      },
+      textStyleDefaults: {
         fontSize: 16,
       },
+      providerConfigs: {},
     },
-    textStyleDefaults: {
-      fontSize: 16,
-    },
-    providerConfigs: {},
-  },
-}))
+  }))
 
 vi.mock('@/stores/settings', async () => {
   const { reactive } = await import('vue')
@@ -35,16 +31,22 @@ vi.mock('@/stores/settings', async () => {
   settingsStoreState.providerConfigs = reactive(settingsStoreState.providerConfigs)
   return {
     useSettingsStore: () => ({
-    backendError: null,
-    isBackendReady: true,
-    settings: settingsStoreState.settings,
-    textStyleDefaults: settingsStoreState.textStyleDefaults,
-    providerConfigs: settingsStoreState.providerConfigs,
-    loadFromBackend: loadFromBackendMock,
-    saveToBackend: saveToBackendMock,
+      backendError: null,
+      isBackendReady: true,
+      settings: settingsStoreState.settings,
+      textStyleDefaults: settingsStoreState.textStyleDefaults,
+      providerConfigs: settingsStoreState.providerConfigs,
+      loadFromBackend: loadFromBackendMock,
+      saveToBackend: saveToBackendMock,
     }),
   }
 })
+
+vi.mock('@/stores/runtimeStore', () => ({
+  useRuntimeStore: () => ({
+    capabilities: { features: { plugins: true } },
+  }),
+}))
 
 vi.mock('@/utils/toast', () => ({
   showToast: vi.fn(),
@@ -62,22 +64,30 @@ vi.mock('@/components/common/BaseModal.vue', () => ({
     ],
     emits: ['update:modelValue', 'close'],
     setup(props, { slots }) {
-      return () => h('div', {
-        'data-header-variant': props.headerVariant,
-        'data-mobile-presentation': props.mobilePresentation,
-        'data-show-close-button': String(props.showCloseButton),
-        'data-close-on-overlay': String(props.closeOnOverlay),
-        'data-close-on-esc': String(props.closeOnEsc),
-      }, [
-        h('div', { class: 'modal-body-stub' }, slots.default ? slots.default() : []),
-        h('div', { class: 'modal-footer-stub' }, slots.footer ? slots.footer() : []),
-      ])
+      return () =>
+        h(
+          'div',
+          {
+            'data-header-variant': props.headerVariant,
+            'data-mobile-presentation': props.mobilePresentation,
+            'data-show-close-button': String(props.showCloseButton),
+            'data-close-on-overlay': String(props.closeOnOverlay),
+            'data-close-on-esc': String(props.closeOnEsc),
+          },
+          [
+            h('div', { class: 'modal-body-stub' }, slots.default ? slots.default() : []),
+            h('div', { class: 'modal-footer-stub' }, slots.footer ? slots.footer() : []),
+          ]
+        )
     },
   }),
 }))
 
 vi.mock('@/components/settings/OcrSettings.vue', () => ({
-  default: defineComponent({ name: 'OcrSettings', setup: () => () => h('div', 'OcrSettings stub') }),
+  default: defineComponent({
+    name: 'OcrSettings',
+    setup: () => () => h('div', 'OcrSettings stub'),
+  }),
 }))
 vi.mock('@/components/settings/TranslationSettings.vue', () => ({
   default: defineComponent({
@@ -89,22 +99,40 @@ vi.mock('@/components/settings/TranslationSettings.vue', () => ({
   }),
 }))
 vi.mock('@/components/settings/DetectionSettings.vue', () => ({
-  default: defineComponent({ name: 'DetectionSettings', setup: () => () => h('div', 'DetectionSettings stub') }),
+  default: defineComponent({
+    name: 'DetectionSettings',
+    setup: () => () => h('div', 'DetectionSettings stub'),
+  }),
 }))
 vi.mock('@/components/settings/HqTranslationSettings.vue', () => ({
-  default: defineComponent({ name: 'HqTranslationSettings', setup: () => () => h('div', 'HqTranslationSettings stub') }),
+  default: defineComponent({
+    name: 'HqTranslationSettings',
+    setup: () => () => h('div', 'HqTranslationSettings stub'),
+  }),
 }))
 vi.mock('@/components/settings/ProofreadingSettings.vue', () => ({
-  default: defineComponent({ name: 'ProofreadingSettings', setup: () => () => h('div', 'ProofreadingSettings stub') }),
+  default: defineComponent({
+    name: 'ProofreadingSettings',
+    setup: () => () => h('div', 'ProofreadingSettings stub'),
+  }),
 }))
 vi.mock('@/components/settings/PromptLibrary.vue', () => ({
-  default: defineComponent({ name: 'PromptLibrary', setup: () => () => h('div', 'PromptLibrary stub') }),
+  default: defineComponent({
+    name: 'PromptLibrary',
+    setup: () => () => h('div', 'PromptLibrary stub'),
+  }),
 }))
 vi.mock('@/components/settings/PluginManager.vue', () => ({
-  default: defineComponent({ name: 'PluginManager', setup: () => () => h('div', 'PluginManager stub') }),
+  default: defineComponent({
+    name: 'PluginManager',
+    setup: () => () => h('div', 'PluginManager stub'),
+  }),
 }))
 vi.mock('@/components/settings/MoreSettings.vue', () => ({
-  default: defineComponent({ name: 'MoreSettings', setup: () => () => h('div', 'MoreSettings stub') }),
+  default: defineComponent({
+    name: 'MoreSettings',
+    setup: () => () => h('div', 'MoreSettings stub'),
+  }),
 }))
 vi.mock('@/components/settings/TextStyleDefaultsSettings.vue', () => ({
   default: defineComponent({
@@ -140,7 +168,9 @@ describe('SettingsModal', () => {
       settingsStoreState.textStyleDefaults.fontSize = 18
       await wrapper.vm.$nextTick()
 
-      expect(wrapper.findAll('button').some(button => button.text().includes('保存设置'))).toBe(false)
+      expect(wrapper.findAll('button').some(button => button.text().includes('保存设置'))).toBe(
+        false
+      )
       expect(wrapper.text()).toContain('修改后自动保存')
 
       await vi.advanceTimersByTimeAsync(450)
@@ -155,9 +185,11 @@ describe('SettingsModal', () => {
   it('keeps every close path disabled while the save transaction is pending', async () => {
     vi.useFakeTimers()
     let resolveSave!: (value: boolean) => void
-    saveToBackendMock.mockReturnValueOnce(new Promise<boolean>((resolve) => {
-      resolveSave = resolve
-    }))
+    saveToBackendMock.mockReturnValueOnce(
+      new Promise<boolean>(resolve => {
+        resolveSave = resolve
+      })
+    )
     const wrapper = mount(SettingsModal, {
       props: { modelValue: true },
     })
@@ -231,9 +263,14 @@ describe('SettingsModal', () => {
       },
     })
 
-    expect(wrapper.get('[data-mobile-presentation]').attributes('data-mobile-presentation')).toBe('fullscreen')
+    expect(wrapper.get('[data-mobile-presentation]').attributes('data-mobile-presentation')).toBe(
+      'fullscreen'
+    )
 
-    const source = readFileSync(resolve(process.cwd(), 'src/components/settings/SettingsModal.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/settings/SettingsModal.vue'),
+      'utf8'
+    )
     expect(source).not.toContain('SettingsModal.global.styles.css')
   })
 
@@ -246,7 +283,10 @@ describe('SettingsModal', () => {
 
     expect(wrapper.get('[data-header-variant]').attributes('data-header-variant')).toBe('brand')
 
-    const source = readFileSync(resolve(process.cwd(), 'src/components/settings/SettingsModal.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/settings/SettingsModal.vue'),
+      'utf8'
+    )
     expect(source).toContain('header-variant="brand"')
     expect(source).not.toMatch(/header-(background|color)=/)
     expect(source).not.toMatch(/title-(color|font-size)=/)
@@ -262,12 +302,18 @@ describe('SettingsModal', () => {
 
     expect(wrapper.getComponent(ProductSegmentedTabs).props('appearance')).toBe('underline')
 
-    const source = readFileSync(resolve(process.cwd(), 'src/components/settings/SettingsModal.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/settings/SettingsModal.vue'),
+      'utf8'
+    )
     expect(source).toContain('appearance="underline"')
   })
 
   it('does not keep a hard-coded active pane class from the old local tab shell', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/settings/SettingsModal.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/settings/SettingsModal.vue'),
+      'utf8'
+    )
 
     expect(source).not.toContain('class="settings-tab-pane active"')
     expect(source).not.toContain('.settings-tab-pane.active')
@@ -275,7 +321,10 @@ describe('SettingsModal', () => {
   })
 
   it('keeps settings modal shell hooks under the modal owner contract', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/settings/SettingsModal.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/settings/SettingsModal.vue'),
+      'utf8'
+    )
 
     expect(source).toContain('class="settings-modal__title"')
     expect(source).toContain('class="settings-modal__tabs"')
@@ -293,10 +342,13 @@ describe('SettingsModal', () => {
   })
 
   it('keeps global text defaults in their isolated draft and one save transaction', () => {
-    const modalSource = readFileSync(resolve(process.cwd(), 'src/components/settings/SettingsModal.vue'), 'utf8')
+    const modalSource = readFileSync(
+      resolve(process.cwd(), 'src/components/settings/SettingsModal.vue'),
+      'utf8'
+    )
     const textDefaultsSource = readFileSync(
       resolve(process.cwd(), 'src/components/settings/TextStyleDefaultsSettings.vue'),
-      'utf8',
+      'utf8'
     )
 
     expect(modalSource).toContain('<TextStyleDefaultsSettings />')
@@ -314,7 +366,10 @@ describe('SettingsModal', () => {
   })
 
   it('does not keep the old save and cancel snapshot machinery', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/settings/SettingsModal.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/settings/SettingsModal.vue'),
+      'utf8'
+    )
 
     expect(source).toContain('scheduleAutoSave()')
     expect(source).toContain('hasUnsavedChanges')
@@ -325,9 +380,11 @@ describe('SettingsModal', () => {
 
   it('mounts setting forms only after the latest backend load completes', async () => {
     let resolveLoad!: (value: boolean) => void
-    loadFromBackendMock.mockReturnValueOnce(new Promise<boolean>((resolve) => {
-      resolveLoad = resolve
-    }))
+    loadFromBackendMock.mockReturnValueOnce(
+      new Promise<boolean>(resolve => {
+        resolveLoad = resolve
+      })
+    )
 
     const wrapper = mount(SettingsModal, {
       props: {
@@ -348,11 +405,14 @@ describe('SettingsModal', () => {
   })
 
   it('disables all settings writes while backend settings are unavailable', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/settings/SettingsModal.vue'), 'utf8')
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/settings/SettingsModal.vue'),
+      'utf8'
+    )
 
     expect(source).toContain('title="设置加载失败"')
     expect(source).toContain(':disabled="!settingsStore.isBackendReady || isSaving"')
-    expect(source).toContain('{{ settingsStore.backendError')
+    expect(source).toContain('settingsStore.backendError ||')
   })
 
   it('uses the product dialog action row for modal footer actions', () => {

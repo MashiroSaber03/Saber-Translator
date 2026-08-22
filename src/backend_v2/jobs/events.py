@@ -8,6 +8,7 @@ import queue
 import threading
 from typing import Any
 
+from src.backend_v2.auth.constants import LOCAL_USER_ID
 from src.backend_v2.jobs.repository import JobQueueRepository
 from src.backend_v2.storage.epochs import ProcessEpochRepository
 
@@ -18,6 +19,7 @@ LOGGER = logging.getLogger("saber.api.job_events")
 @dataclass(eq=False, slots=True)
 class EventSubscription:
     queue: queue.Queue[dict[str, Any] | None]
+    owner_user_id: str = LOCAL_USER_ID
     closed: threading.Event = field(default_factory=threading.Event)
 
 
@@ -66,10 +68,11 @@ class JobEventBroadcaster:
             subscription.closed.set()
             self._offer_close(subscription)
 
-    def subscribe(self) -> EventSubscription:
+    def subscribe(self, *, owner_user_id: str = LOCAL_USER_ID) -> EventSubscription:
         self.start()
         subscription = EventSubscription(
-            queue=queue.Queue(maxsize=self.subscriber_capacity)
+            queue=queue.Queue(maxsize=self.subscriber_capacity),
+            owner_user_id=owner_user_id,
         )
         with self._lock:
             if self._stop.is_set():
@@ -101,11 +104,19 @@ class JobEventBroadcaster:
             with self._lock:
                 subscriptions = list(self._subscribers)
             for event in events:
+                event_owner_id = event.get("_ownerUserId")
+                public_event = {
+                    key: value
+                    for key, value in event.items()
+                    if key != "_ownerUserId"
+                }
                 for subscription in subscriptions:
                     if subscription.closed.is_set():
                         continue
+                    if event_owner_id != subscription.owner_user_id:
+                        continue
                     try:
-                        subscription.queue.put_nowait(event)
+                        subscription.queue.put_nowait(public_event)
                     except queue.Full:
                         # A slow browser never backpressures the shared poller.
                         self.unsubscribe(subscription)

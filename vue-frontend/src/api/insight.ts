@@ -55,6 +55,10 @@ import {
   type V2InsightPageDetail,
   type V2InsightPageSummary,
 } from '@/api/v2/insight'
+import {
+  prepareBrowserCredentialTransaction,
+  restoreBrowserCredentialLeases,
+} from '@/services/browserCredentials'
 import { deepClone } from '@/utils/deepClone'
 import { getProviderDefaultModel } from '@/config/aiProviders'
 import {
@@ -74,6 +78,7 @@ import {
   type V2ProviderSettingEntry,
   type V2ProviderSettingMutation,
   type V2SettingsDocument,
+  type V2SettingsTransaction,
   type V2ConnectionTestResult,
 } from '@/api/v2/settings'
 
@@ -1523,7 +1528,10 @@ export function hasInsightCredential(domain: string, provider: string): boolean 
 
 export async function getGlobalConfig(): Promise<InsightSettingsSnapshot> {
   const [document, prompts] = await Promise.all([getV2Settings(INSIGHT_DOMAINS), listV2Prompts()])
-  credentialSummaries = document.credentials
+  credentialSummaries = mergeCredentialSummaries(
+    document.credentials,
+    await restoreBrowserCredentialLeases(),
+  )
   const appEntry = document.settings.find(row => row.domain === 'insight')
   if (!appEntry) throw new Error('后端 Insight 设置缺失')
   const app = requireInsightAppPayload(appEntry.payload)
@@ -1824,7 +1832,7 @@ export async function saveGlobalConfig(
       baseRevision: factory.revision,
     })
   }
-  const saved = await saveV2SettingsTransaction({
+  const prepared = await prepareBrowserCredentialTransaction({
     settings: [
       {
         domain: 'insight',
@@ -1836,8 +1844,12 @@ export async function saveGlobalConfig(
     providerSettings,
     credentialEdits,
     promptEdits,
-  })
-  credentialSummaries = mergeCredentialSummaries(document.credentials, saved.credentials)
+  } as V2SettingsTransaction)
+  const saved = await saveV2SettingsTransaction(prepared.transaction)
+  credentialSummaries = mergeCredentialSummaries(
+    mergeCredentialSummaries(document.credentials, saved.credentials),
+    prepared.summaries,
+  )
   return withoutInsightApiKeys(snapshot)
 }
 

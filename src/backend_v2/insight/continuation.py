@@ -16,6 +16,7 @@ import zipfile
 from sqlalchemy import Engine, delete, func, insert, select, update
 from sqlalchemy.engine import Connection
 
+from src.backend_v2.auth.ownership import effective_owner_id
 from src.backend_v2.serialization import canonical_json as _json
 from src.backend_v2.insight.derived import (
     AnalysisInputSnapshot,
@@ -187,6 +188,7 @@ class ContinuationRepository:
                 connection.execute(
                     insert(continuation_projects).values(
                         id=project_id,
+                        owner_user_id=effective_owner_id(),
                         book_id=book_id,
                         source_run_id=run_id,
                         revision=1,
@@ -439,7 +441,8 @@ class ContinuationRepository:
                     str(row["id"]): str(row["mime_type"])
                     for row in connection.execute(
                         select(assets.c.id, assets.c.mime_type).where(
-                            assets.c.id.in_(tuple(normalized))
+                            assets.c.id.in_(tuple(normalized)),
+                            assets.c.owner_user_id == effective_owner_id(),
                         )
                     ).mappings()
                 }
@@ -1138,7 +1141,8 @@ class ContinuationRepository:
                 existing_assets = set(
                     connection.execute(
                         select(assets.c.id).where(
-                            assets.c.id.in_((asset_id, thumbnail_asset_id))
+                            assets.c.id.in_((asset_id, thumbnail_asset_id)),
+                            assets.c.owner_user_id == effective_owner_id(),
                         )
                     ).scalars()
                 )

@@ -10,6 +10,7 @@ import uuid
 from sqlalchemy import Engine, select, update
 from sqlalchemy.engine import Connection
 
+from src.backend_v2.auth.ownership import effective_owner_id
 from src.backend_v2.insight.repository import (
     ANALYSIS_RUN_SCOPES,
     InsightConflict,
@@ -260,6 +261,7 @@ class InsightAnalysisCommandService:
             select(books.c.id, books.c.title).where(
                 books.c.id == book_id,
                 books.c.kind == "library",
+                books.c.owner_user_id == effective_owner_id(),
             )
         ).mappings().one_or_none()
         if book is None:

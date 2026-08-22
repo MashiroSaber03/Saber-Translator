@@ -14,9 +14,11 @@ const props = withDefaults(defineProps<{
   dragOverChapterIndex: number | null
   selectedChapterIds?: Set<string>
   translationPending?: boolean
+  translationAllowed?: boolean
 }>(), {
   selectedChapterIds: () => new Set<string>(),
   translationPending: false,
+  translationAllowed: true,
 })
 
 const emit = defineEmits<{
@@ -59,7 +61,7 @@ function toggleAll() {
     <ProductSectionHeader title="章节列表" :heading-level="3">
       <template #actions>
         <UiButton
-          v-if="chapters.length"
+          v-if="chapters.length && translationAllowed"
           size="sm"
           variant="secondary"
           :disabled="eligibleChapterIds.length === 0 || translationPending"
@@ -68,7 +70,7 @@ function toggleAll() {
           {{ allSelected ? '清空选择' : '全选可翻译章节' }}
         </UiButton>
         <UiButton
-          v-if="chapters.length"
+          v-if="chapters.length && translationAllowed"
           size="sm"
           variant="primary"
           :disabled="selectedChapterIds.size === 0"
@@ -98,7 +100,8 @@ function toggleAll() {
         :index="index"
         :is-dragging="draggedChapterIndex === index"
         :is-drag-over="dragOverChapterIndex === index && draggedChapterIndex !== index"
-        :selectable="true"
+        :selectable="translationAllowed"
+        :translation-allowed="translationAllowed"
         :selected="selectedChapterIds.has(chapter.id)"
         @delete="$emit('delete', $event)"
         @drag-end="$emit('dragEnd')"

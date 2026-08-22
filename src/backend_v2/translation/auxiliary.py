@@ -20,6 +20,7 @@ from src.backend_v2.jobs.repository import (
     JobSpec,
 )
 from src.backend_v2.settings.resolver import SettingsResolver
+from src.backend_v2.public_policy import PublicUserPolicyAccess
 from src.backend_v2.translation.commands import resolve_chapter_pages
 from src.backend_v2.storage.schema import (
     assets,
@@ -148,10 +149,16 @@ def _bubble_text(payload: Mapping[str, Any], field: str) -> str:
 
 
 class AuxiliaryTranslationCommands:
-    def __init__(self, engine: Engine) -> None:
+    def __init__(
+        self,
+        engine: Engine,
+        *,
+        public_access: PublicUserPolicyAccess | None = None,
+    ) -> None:
         self.engine = engine
         self.jobs = JobQueueRepository(engine)
         self.settings = SettingsResolver(engine)
+        self.public_access = public_access
 
     def create_detect_job(
         self,
@@ -181,9 +188,11 @@ class AuxiliaryTranslationCommands:
         config = {
             "deepLearningConcurrency": int(resolved["deepLearningConcurrency"]),
             "detector": dict(resolved["detector"]),
-            "executionMode": "parallel",
+            "executionMode": str(resolved["executionMode"]),
             "settingsSnapshot": dict(resolved["settingsSnapshot"]),
         }
+        if self.public_access is not None:
+            config = self.public_access.apply_resolved_translation(config)
         return self.jobs.create_batch(
             kind="detect",
             display_name=f"检测 {chapter['book_title']} / {chapter['title']}",

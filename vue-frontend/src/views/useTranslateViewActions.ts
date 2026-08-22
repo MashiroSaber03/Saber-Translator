@@ -23,6 +23,7 @@ interface UseTranslateViewActionsOptions {
   translateInit: ReturnType<typeof useTranslateInit>
   validateBeforeTranslation: (mode: TranslateValidationMode) => boolean
   isEditMode: Ref<boolean>
+  canUseEditMode?: Readonly<Ref<boolean>>
   confirmAction?: ProductConfirmAction
 }
 
@@ -35,6 +36,7 @@ export function useTranslateViewActions(options: UseTranslateViewActionsOptions)
     translateInit,
     validateBeforeTranslation,
     isEditMode,
+    canUseEditMode = { value: true },
     confirmAction = confirmProductAction,
   } = options
 
@@ -238,6 +240,10 @@ export function useTranslateViewActions(options: UseTranslateViewActionsOptions)
   async function toggleEditMode() {
     if (isEditMode.value) {
       isEditMode.value = false
+      return
+    }
+    if (!canUseEditMode.value) {
+      showToast('管理员已关闭编辑模式', 'info')
       return
     }
     const pageId = imageStore.currentImage?.id

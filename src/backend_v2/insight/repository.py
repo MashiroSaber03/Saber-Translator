@@ -15,6 +15,7 @@ import uuid
 from sqlalchemy import Engine, case, delete, func, insert, or_, select, update
 from sqlalchemy.engine import Connection
 
+from src.backend_v2.auth.ownership import effective_owner_id
 from src.backend_v2.serialization import canonical_json as _json
 from src.backend_v2.timestamps import iso_utc as _iso, utcnow
 from src.backend_v2.redaction import redact_sensitive_text
@@ -101,6 +102,7 @@ def _idempotency_replay(
         ).where(
             idempotency_records.c.scope == scope,
             idempotency_records.c.key == key,
+            idempotency_records.c.owner_user_id == effective_owner_id(),
         )
     ).mappings().one_or_none()
     if row is None:
@@ -114,6 +116,7 @@ def _idempotency_replay(
             delete(idempotency_records).where(
                 idempotency_records.c.scope == scope,
                 idempotency_records.c.key == key,
+                idempotency_records.c.owner_user_id == effective_owner_id(),
             )
         )
         return request_hash, None
@@ -142,6 +145,7 @@ def _record_idempotency(
 ) -> None:
     connection.execute(
         insert(idempotency_records).values(
+            owner_user_id=effective_owner_id(),
             scope=scope,
             key=key,
             request_hash=request_hash,
@@ -491,6 +495,7 @@ class InsightRepository:
         connection.execute(
             insert(analysis_runs).values(
                 id=run_id,
+                owner_user_id=effective_owner_id(),
                 book_id=book_id,
                 job_id=job_id,
                 scope=scope,
@@ -1923,7 +1928,10 @@ class InsightRepository:
                         books.c.cover_asset_id,
                         books.c.updated_at,
                     )
-                    .where(books.c.kind == "library")
+                    .where(
+                        books.c.kind == "library",
+                        books.c.owner_user_id == effective_owner_id(),
+                    )
                     .order_by(books.c.updated_at.desc(), books.c.title)
                 ).mappings()
             )
@@ -1971,6 +1979,7 @@ class InsightRepository:
                             )
                         ),
                         jobs.c.status.in_(NONTERMINAL_JOB_STATUSES),
+                        jobs.c.owner_user_id == effective_owner_id(),
                     )
                 ).mappings()
             )
@@ -3005,6 +3014,7 @@ class InsightRepository:
             connection.execute(
                 insert(notes).values(
                     id=note_id,
+                    owner_user_id=effective_owner_id(),
                     book_id=book_id,
                     title=title,
                     content=content,
@@ -3581,6 +3591,7 @@ class InsightRepository:
             select(books.c.id).where(
                 books.c.id == book_id,
                 books.c.kind == "library",
+                books.c.owner_user_id == effective_owner_id(),
             )
         ).scalar_one_or_none() is None:
             raise InsightNotFound("book not found")

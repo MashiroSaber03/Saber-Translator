@@ -6,17 +6,23 @@ import UiButton from '@/components/ui/UiButton.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
 import type { BookData } from '@/types/api'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   book: BookData
   chapterCount: number
   formatDate: (date?: string) => string
   getTagColor: (tagName: string) => string
-}>()
+  characterStudioAllowed?: boolean
+  insightAllowed?: boolean
+}>(), {
+  characterStudioAllowed: true,
+  insightAllowed: true,
+})
 
 const emit = defineEmits<{
   (event: 'addTag'): void
   (event: 'edit'): void
   (event: 'delete'): void
+  (event: 'characterStudio'): void
   (event: 'insight'): void
   (event: 'removeTag', tagName: string): void
 }>()
@@ -92,9 +98,17 @@ function handleCoverError(): void {
       <p class="book-detail-summary__meta-item"><span class="book-detail-summary__meta-label">创建时间：</span><span>{{ formatDate(book.createdAt) }}</span></p>
       <p class="book-detail-summary__meta-item"><span class="book-detail-summary__meta-label">最后更新：</span><span>{{ formatDate(book.updatedAt) }}</span></p>
       <div class="book-detail-summary__actions">
-        <UiButton size="sm" variant="primary" @click="emit('insight')">
+        <UiButton v-if="insightAllowed !== false" size="sm" variant="primary" @click="emit('insight')">
           <span aria-hidden="true">●</span>
           漫画分析
+        </UiButton>
+        <UiButton
+          v-if="characterStudioAllowed !== false"
+          size="sm"
+          variant="secondary"
+          @click="emit('characterStudio')"
+        >
+          角色工坊
         </UiButton>
         <UiButton size="sm" variant="secondary" @click="emit('edit')">编辑书籍</UiButton>
         <UiButton size="sm" variant="danger" @click="emit('delete')">删除书籍</UiButton>

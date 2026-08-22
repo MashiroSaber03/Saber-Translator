@@ -13,6 +13,9 @@ import uuid
 
 from sqlalchemy import Engine, exists, insert, select, update
 from sqlalchemy.exc import IntegrityError
+
+from src.backend_v2.auth.constants import LOCAL_USER_ID
+from src.backend_v2.auth.ownership import effective_owner_id
 from sqlalchemy.engine import Connection
 
 from src.backend_v2.serialization import canonical_json as _json
@@ -76,6 +79,7 @@ class OperationFence:
     attempt_id: str
     executor_epoch_id: str
     executor_role: str
+    owner_user_id: str = LOCAL_USER_ID
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +89,7 @@ class RenderFence:
     rendering_revision: int
     attempt_id: str
     api_epoch_id: str
+    owner_user_id: str = LOCAL_USER_ID
 
 
 def _load_required_object(value: object, field: str) -> dict[str, Any]:
@@ -216,6 +221,7 @@ class OperationRepository:
                 connection.execute(
                     insert(operations).values(
                         id=operation_id,
+                        owner_user_id=effective_owner_id(),
                         kind=kind,
                         executor_role=executor_role,
                         status="pending",
@@ -265,6 +271,7 @@ class OperationRepository:
             }
             connection.execute(
                 insert(idempotency_records).values(
+                    owner_user_id=effective_owner_id(),
                     scope=scope,
                     key=idempotency_key,
                     request_hash=request_hash,
@@ -371,6 +378,7 @@ class OperationRepository:
                 connection.execute(
                     insert(operations).values(
                         id=operation_id,
+                        owner_user_id=effective_owner_id(),
                         kind="page_repair",
                         executor_role=executor_role,
                         status="pending",
@@ -438,6 +446,7 @@ class OperationRepository:
             }
             connection.execute(
                 insert(idempotency_records).values(
+                    owner_user_id=effective_owner_id(),
                     scope=scope,
                     key=idempotency_key,
                     request_hash=request_hash,
@@ -740,6 +749,7 @@ class OperationRepository:
                     attempt_id=attempt_id,
                     executor_epoch_id=executor_epoch_id,
                     executor_role=executor_role,
+                    owner_user_id=str(row["owner_user_id"]),
                 ),
                 dto,
             )
@@ -1014,6 +1024,7 @@ class OperationRepository:
             ).where(
                 idempotency_records.c.scope == scope,
                 idempotency_records.c.key == key,
+                idempotency_records.c.owner_user_id == effective_owner_id(),
                 idempotency_records.c.expires_at > now,
             )
         ).mappings().one_or_none()
@@ -1132,6 +1143,7 @@ class RenderRequestRepository:
             connection.execute(
                 insert(render_requests).values(
                     id=request_id,
+                    owner_user_id=effective_owner_id(),
                     page_id=page_id,
                     requested_revision=requested_revision,
                     status="pending",
@@ -1230,8 +1242,8 @@ class RenderRequestRepository:
                 rendering_revision=int(row["requested_revision"]),
                 attempt_id=attempt_id,
                 api_epoch_id=api_epoch_id,
+                owner_user_id=str(row["owner_user_id"]),
             )
-
     def complete(
         self,
         fence: RenderFence,

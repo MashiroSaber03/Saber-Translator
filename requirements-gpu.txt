@@ -19,6 +19,7 @@
 # Flask related
 flask
 waitress>=3.0,<4
+argon2-cffi>=25.1,<26
 
 # Backend-first v2 persistence
 SQLAlchemy>=2.0,<2.1

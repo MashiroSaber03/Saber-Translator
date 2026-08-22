@@ -36,6 +36,7 @@ from src.backend_v2.storage.epochs import (
     utcnow,
 )
 from src.backend_v2.storage.lifecycle import (
+    DIRECT_UPGRADE_REVISION,
     SCHEMA_REVISION,
     UnsupportedDataRoot,
     initialize_database,
@@ -266,6 +267,39 @@ def test_storage_initialization_rejects_nonformal_database_without_rewriting_it(
         assert connection.execute("SELECT value FROM sentinel").fetchall() == [
             ("untouched",)
         ]
+
+
+def test_storage_initialization_upgrades_the_previous_public_schema(
+    tmp_path: Path,
+) -> None:
+    data_root = tmp_path / "data-v2"
+    data_root.mkdir()
+    initialized = initialize_database(data_root)
+
+    with sqlite3.connect(initialized.database_path) as connection:
+        connection.execute(
+            "ALTER TABLE platform_config DROP COLUMN public_user_policy_json"
+        )
+        connection.execute(
+            "UPDATE schema_metadata SET revision = ? WHERE singleton_id = 1",
+            (DIRECT_UPGRADE_REVISION,),
+        )
+
+    upgraded = initialize_database(data_root)
+
+    assert upgraded.created is False
+    assert upgraded.schema_revision == SCHEMA_REVISION
+    with sqlite3.connect(upgraded.database_path) as connection:
+        columns = {
+            str(row[1])
+            for row in connection.execute("PRAGMA table_info(platform_config)")
+        }
+        policy = connection.execute(
+            "SELECT public_user_policy_json FROM platform_config "
+            "WHERE singleton_id = 1"
+        ).fetchone()
+    assert "public_user_policy_json" in columns
+    assert policy is not None
 
 
 def test_storage_initialization_rejects_extra_nonformal_tables(

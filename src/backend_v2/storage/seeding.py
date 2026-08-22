@@ -22,15 +22,20 @@ from src.backend_v2.storage.defaults import (
     default_translation_settings,
 )
 from src.backend_v2.storage.schema import (
+    DEFAULT_ASSET_QUOTA_BYTES,
+    DEFAULT_PUBLIC_USER_POLICY_JSON,
     app_settings,
     books,
     chapters,
     fonts,
     plugins,
+    platform_config,
     prompts,
     queue_state,
     translation_constraints,
+    users,
 )
+from src.backend_v2.auth.constants import LOCAL_USER_ID, LOCAL_USERNAME
 
 
 QUICK_WORKSPACE_BOOK_ID = "00000000-0000-0000-0000-000000000001"
@@ -39,18 +44,83 @@ QUICK_WORKSPACE_CHAPTER_ID = "00000000-0000-0000-0000-000000000002"
 
 def seed_system_records(engine: Engine) -> None:
     with engine.begin() as connection:
+        if connection.execute(
+            select(users.c.id).where(users.c.id == LOCAL_USER_ID)
+        ).scalar_one_or_none() is None:
+            connection.execute(
+                insert(users).values(
+                    id=LOCAL_USER_ID,
+                    username=LOCAL_USERNAME,
+                    password_hash=None,
+                    role="admin",
+                    status="active",
+                )
+            )
+        if connection.execute(
+            select(platform_config.c.singleton_id)
+        ).scalar_one_or_none() is None:
+            connection.execute(
+                insert(platform_config).values(
+                    singleton_id=1,
+                    registration_requires_invite=True,
+                    asset_quota_bytes=DEFAULT_ASSET_QUOTA_BYTES,
+                    public_user_policy_json=DEFAULT_PUBLIC_USER_POLICY_JSON,
+                )
+            )
+
+        seed_user_records_in_connection(connection, LOCAL_USER_ID)
+
+        # Runtime enablement is a process-lifetime override.  The Launcher is
+        # the sole initialization/seeding owner, so reset it once before API and
+        # Worker are spawned; an API child restart must not rewrite this state.
+        connection.execute(
+            update(plugins).values(
+                runtime_enabled=plugins.c.default_enabled,
+                state=case(
+                    (plugins.c.state == "error", "error"),
+                    (
+                        plugins.c.default_enabled.is_(True),
+                        "enabled",
+                    ),
+                    else_="disabled",
+                ),
+            )
+        )
+
+        _seed_shared_records(connection)
+
+        if connection.execute(select(queue_state.c.singleton_id)).scalar_one_or_none() is None:
+            connection.execute(insert(queue_state).values(singleton_id=1))
+
+
+def seed_user_records(engine: Engine, user_id: str) -> None:
+    """Seed one user's quick workspace and default settings idempotently."""
+
+    with engine.begin() as connection:
+        seed_user_records_in_connection(connection, user_id)
+
+
+def seed_user_records_in_connection(connection: object, user_id: str) -> None:
         quick_book_id = connection.execute(
-            select(books.c.id).where(books.c.kind == "quick_workspace")
+            select(books.c.id).where(
+                books.c.owner_user_id == user_id,
+                books.c.kind == "quick_workspace",
+            )
         ).scalar_one_or_none()
         if quick_book_id is None:
+            quick_book_id = (
+                QUICK_WORKSPACE_BOOK_ID
+                if user_id == LOCAL_USER_ID
+                else str(uuid.uuid4())
+            )
             connection.execute(
                 insert(books).values(
-                    id=QUICK_WORKSPACE_BOOK_ID,
+                    id=quick_book_id,
+                    owner_user_id=user_id,
                     kind="quick_workspace",
                     title="快速翻译",
                 )
             )
-            quick_book_id = QUICK_WORKSPACE_BOOK_ID
 
         quick_chapter_id = connection.execute(
             select(chapters.c.id)
@@ -59,9 +129,14 @@ def seed_system_records(engine: Engine) -> None:
             .limit(1)
         ).scalar_one_or_none()
         if quick_chapter_id is None:
+            quick_chapter_id = (
+                QUICK_WORKSPACE_CHAPTER_ID
+                if user_id == LOCAL_USER_ID
+                else str(uuid.uuid4())
+            )
             connection.execute(
                 insert(chapters).values(
-                    id=QUICK_WORKSPACE_CHAPTER_ID,
+                    id=quick_chapter_id,
                     book_id=quick_book_id,
                     ordinal=1,
                     title="快速翻译",
@@ -92,35 +167,45 @@ def seed_system_records(engine: Engine) -> None:
             "text_style_defaults": TEXT_STYLE_DEFAULTS_SCHEMA_VERSION,
         }
         existing_domains = set(
-            connection.execute(select(app_settings.c.domain)).scalars()
+            connection.execute(
+                select(app_settings.c.domain).where(
+                    app_settings.c.owner_user_id == user_id
+                )
+            ).scalars()
         )
         for domain, payload in default_domains.items():
             if domain not in existing_domains:
                 connection.execute(
                     insert(app_settings).values(
+                        owner_user_id=user_id,
                         domain=domain,
                         payload_json=canonical_json(payload),
                         schema_version=default_schema_versions.get(domain, 1),
                     )
                 )
-
-        # Runtime enablement is a process-lifetime override.  The Launcher is
-        # the sole initialization/seeding owner, so reset it once before API and
-        # Worker are spawned; an API child restart must not rewrite this state.
-        connection.execute(
-            update(plugins).values(
-                runtime_enabled=plugins.c.default_enabled,
-                state=case(
-                    (plugins.c.state == "error", "error"),
-                    (
-                        plugins.c.default_enabled.is_(True),
-                        "enabled",
-                    ),
-                    else_="disabled",
-                ),
-            )
+        existing_factory_types = set(
+            connection.execute(
+                select(prompts.c.type).where(
+                    prompts.c.owner_user_id == user_id,
+                    prompts.c.is_factory_default.is_(True),
+                )
+            ).scalars()
         )
+        for prompt_type, content in FACTORY_PROMPTS.items():
+            if prompt_type not in existing_factory_types:
+                connection.execute(
+                    insert(prompts).values(
+                        id=str(uuid.uuid4()),
+                        owner_user_id=user_id,
+                        type=prompt_type,
+                        name="默认提示词",
+                        content=content,
+                        is_factory_default=True,
+                    )
+                )
 
+
+def _seed_shared_records(connection: object) -> None:
         bundled_fonts = {
             font.builtin_key: font for font in discover_bundled_fonts()
         }
@@ -162,25 +247,3 @@ def seed_system_records(engine: Engine) -> None:
                     "bundled font catalog display name mismatch for "
                     f"{bundled_font.builtin_key}"
                 )
-
-        existing_factory_types = set(
-            connection.execute(
-                select(prompts.c.type).where(
-                    prompts.c.is_factory_default.is_(True)
-                )
-            ).scalars()
-        )
-        for prompt_type, content in FACTORY_PROMPTS.items():
-            if prompt_type not in existing_factory_types:
-                connection.execute(
-                    insert(prompts).values(
-                        id=str(uuid.uuid4()),
-                        type=prompt_type,
-                        name="默认提示词",
-                        content=content,
-                        is_factory_default=True,
-                    )
-                )
-
-        if connection.execute(select(queue_state.c.singleton_id)).scalar_one_or_none() is None:
-            connection.execute(insert(queue_state).values(singleton_id=1))

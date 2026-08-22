@@ -18,6 +18,7 @@ import uuid
 from sqlalchemy import Engine, func, insert, select, update
 from sqlalchemy.engine import Connection
 
+from src.backend_v2.auth.ownership import effective_owner_id
 from src.backend_v2.redaction import redact_sensitive_text
 from src.backend_v2.serialization import canonical_json as _json
 from src.backend_v2.insight.page_schema import (
@@ -54,6 +55,7 @@ from src.backend_v2.storage.schema import (
     analysis_run_targets,
     analysis_runs,
     assets,
+    books,
     chapters,
     pages,
     page_assets,
@@ -1339,6 +1341,17 @@ class InsightDerivedRepository:
     def __init__(self, engine: Engine) -> None:
         self.engine = engine
 
+    @staticmethod
+    def _assert_book_owned(connection: Connection, book_id: str) -> None:
+        if connection.execute(
+            select(books.c.id).where(
+                books.c.id == book_id,
+                books.c.kind == "library",
+                books.c.owner_user_id == effective_owner_id(),
+            )
+        ).scalar_one_or_none() is None:
+            raise InsightNotFound("book not found")
+
     def snapshot(
         self,
         *,
@@ -1346,6 +1359,7 @@ class InsightDerivedRepository:
         frozen_inputs: Sequence[Mapping[str, Any]] | None = None,
     ) -> AnalysisInputSnapshot:
         with self.engine.connect() as connection:
+            self._assert_book_owned(connection, book_id)
             return self._snapshot(
                 connection,
                 book_id=book_id,
@@ -1361,6 +1375,7 @@ class InsightDerivedRepository:
     ) -> AnalysisInputSnapshot:
         """Read the current analysis snapshot inside a caller-owned transaction."""
 
+        self._assert_book_owned(connection, book_id)
         return self._snapshot(
             connection,
             book_id=book_id,
@@ -1376,7 +1391,10 @@ class InsightDerivedRepository:
                 select(
                     analysis_runs.c.book_id,
                     analysis_runs.c.status,
-                ).where(analysis_runs.c.id == run_id)
+                ).where(
+                    analysis_runs.c.id == run_id,
+                    analysis_runs.c.owner_user_id == effective_owner_id(),
+                )
             ).mappings().one_or_none()
             if run is None:
                 raise InsightNotFound("analysis run not found")
@@ -2956,6 +2974,7 @@ class InsightDerivedRepository:
         template: str,
     ) -> dict[str, Any] | None:
         with self.engine.connect() as connection:
+            self._assert_book_owned(connection, book_id)
             row = connection.execute(
                 select(analysis_artifacts).where(
                     analysis_artifacts.c.book_id == book_id,
@@ -3045,6 +3064,7 @@ class InsightDerivedRepository:
         if character_after is not None:
             _required_string(character_after, "character cursor")
         with self.engine.connect() as connection:
+            self._assert_book_owned(connection, book_id)
             row = connection.execute(
                 select(timeline_versions).where(
                     timeline_versions.c.book_id == book_id,
@@ -3337,6 +3357,7 @@ class InsightDerivedRepository:
         book_id: str,
     ) -> dict[str, Any] | None:
         with self.engine.connect() as connection:
+            self._assert_book_owned(connection, book_id)
             row = connection.execute(
                 select(
                     timeline_versions.c.id,
@@ -3373,6 +3394,7 @@ class InsightDerivedRepository:
         book_id: str,
     ) -> dict[str, Any] | None:
         with self.engine.connect() as connection:
+            self._assert_book_owned(connection, book_id)
             timeline = connection.execute(
                 select(
                     timeline_versions.c.id,
@@ -3454,6 +3476,7 @@ class InsightDerivedRepository:
         character_id: str,
     ) -> dict[str, Any] | None:
         with self.engine.connect() as connection:
+            self._assert_book_owned(connection, book_id)
             row = connection.execute(
                 select(
                     timeline_versions.c.id.label("timeline_version_id"),
@@ -3531,14 +3554,16 @@ class InsightDerivedRepository:
     ) -> dict[str, Any]:
         if mode not in {"exact", "global"}:
             raise ValueError("mode must be exact or global")
-        try:
-            current = self.snapshot(book_id=book_id)
-        except InsightNotFound:
-            return {
-                "available": False,
-                "reason": "analysis_missing",
-                "repairAction": "analyze",
-            }
+        with self.engine.connect() as connection:
+            self._assert_book_owned(connection, book_id)
+            try:
+                current = self._snapshot(connection, book_id=book_id)
+            except InsightNotFound:
+                return {
+                    "available": False,
+                    "reason": "analysis_missing",
+                    "repairAction": "analyze",
+                }
         if mode == "global":
             with self.engine.connect() as connection:
                 rows = list(

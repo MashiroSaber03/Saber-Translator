@@ -11,9 +11,10 @@ import { showToast } from '@/utils/toast'
 import {
   blockAlignOptions,
   inlineAlignOptions,
-  inpaintMethodOptions,
+  inpaintMethodOptions as rawInpaintMethodOptions,
   layoutDirectionOptions,
 } from '@/utils/textStyleForm'
+import { usePublicUserAccess } from '@/composables/usePublicUserAccess'
 import {
   DEFAULT_WORKFLOW_MODE,
   WORKFLOW_MODE_CONFIGS,
@@ -61,6 +62,15 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
   const imageStore = useImageStore()
   const settingsStore = useSettingsStore()
   const bookTranslationConstraintsStore = useBookTranslationConstraintsStore()
+  const publicAccess = usePublicUserAccess()
+
+  const inpaintMethodOptions = computed(() => publicAccess.modelOptions(
+    rawInpaintMethodOptions,
+    {
+      lama_mpe: 'lama_mpe',
+      litelama: 'litelama',
+    },
+  ))
 
   const showApplyOptions = ref(false)
 

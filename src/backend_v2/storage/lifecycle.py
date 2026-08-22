@@ -12,11 +12,16 @@ from src.backend_v2.storage.database import (
     create_sqlite_engine,
     database_path_for,
 )
-from src.backend_v2.storage.schema import metadata, schema_metadata
+from src.backend_v2.storage.schema import (
+    DEFAULT_PUBLIC_USER_POLICY_JSON,
+    metadata,
+    schema_metadata,
+)
 from src.backend_v2.storage.seeding import seed_system_records
 
 
-SCHEMA_REVISION = "backend_v2_20260820"
+SCHEMA_REVISION = "public_user_policy_direct_20260822_r1"
+DIRECT_UPGRADE_REVISION = "public_profiles_direct_20260820_r3"
 REQUIRED_TABLES = frozenset(metadata.tables)
 
 
@@ -38,11 +43,12 @@ def _database_revision(database_path: Path) -> str | None:
                 "SELECT 1 FROM sqlite_master "
                 "WHERE type = 'table' AND name = 'schema_metadata'"
             ).fetchone()
-            if has_version_table is None:
+            if has_version_table is not None:
+                rows = connection.execute(
+                    "SELECT revision FROM schema_metadata WHERE singleton_id = 1"
+                ).fetchall()
+            else:
                 return None
-            rows = connection.execute(
-                "SELECT revision FROM schema_metadata WHERE singleton_id = 1"
-            ).fetchall()
     except sqlite3.DatabaseError as exc:
         raise UnsupportedDataRoot(
             "data-v2/saber.sqlite3 不是当前架构的有效 SQLite 数据库"
@@ -86,16 +92,47 @@ def schema_smoke_test(database_path: Path) -> str:
         engine.dispose()
 
 
+def _upgrade_previous_public_schema(database_path: Path) -> None:
+    """Add the one policy column introduced after the live public release."""
+
+    quoted_default = DEFAULT_PUBLIC_USER_POLICY_JSON.replace("'", "''")
+    with sqlite3.connect(database_path) as connection:
+        columns = {
+            str(row[1])
+            for row in connection.execute("PRAGMA table_info(platform_config)")
+        }
+        if "public_user_policy_json" in columns:
+            raise UnsupportedDataRoot(
+                "旧公开版数据库的策略字段状态异常，未自动改写"
+            )
+        connection.execute(
+            "ALTER TABLE platform_config ADD COLUMN "
+            "public_user_policy_json TEXT NOT NULL "
+            f"DEFAULT '{quoted_default}'"
+        )
+        updated = connection.execute(
+            "UPDATE schema_metadata SET revision = ? "
+            "WHERE singleton_id = 1 AND revision = ?",
+            (SCHEMA_REVISION, DIRECT_UPGRADE_REVISION),
+        )
+        if updated.rowcount != 1:
+            raise UnsupportedDataRoot("旧公开版数据库版本在升级时发生变化")
+
+
 def initialize_database(data_root: Path) -> StorageInitializationResult:
     """Create the formal schema or validate an exact-current database.
 
-    Any existing database whose revision differs from the current foundation is
-    rejected. Old data is never read, converted, upgraded, backed up, or stamped.
+    The immediately preceding public schema is upgraded by adding its sole new
+    column. Every other non-current database remains unsupported.
     """
 
+    data_root.mkdir(parents=True, exist_ok=True)
     database_path = database_path_for(data_root)
     created = not database_path.exists() or database_path.stat().st_size == 0
     current_revision = None if created else _database_revision(database_path)
+    if not created and current_revision == DIRECT_UPGRADE_REVISION:
+        _upgrade_previous_public_schema(database_path)
+        current_revision = SCHEMA_REVISION
     if not created and current_revision != SCHEMA_REVISION:
         raise UnsupportedDataRoot(
             "data-v2 不属于当前正式存储架构；旧数据不会被读取或迁移，"

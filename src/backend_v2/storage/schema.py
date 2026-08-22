@@ -133,6 +133,20 @@ PROMPT_TYPES = (
     "analysis_system",
 )
 
+DEFAULT_ASSET_QUOTA_BYTES = 2 * 1024 * 1024 * 1024
+DEFAULT_PUBLIC_USER_POLICY_JSON = (
+    '{"features":{"characterStudio":true,"editMode":true,'
+    '"insight":true,"translation":true},"models":{'
+    '"aux_ysg_yolo":true,"detector_ctd":true,'
+    '"detector_default":true,"detector_yolo":true,'
+    '"lama_mpe":true,"litelama":true,"manga_ocr":true,'
+    '"ocr_48px":true,"paddle_ocr":true,"paddleocr_vl":true,'
+    '"saber_yolo":true},"settings":{"lamaDisableResize":{'
+    '"editable":false,"value":false},"parallel":{'
+    '"allowed":false,"maxDeepLearningConcurrency":1}}}'
+)
+LOCAL_OWNER_ID = "00000000-0000-0000-0000-000000000010"
+
 
 def _sql_values(values: tuple[str, ...]) -> str:
     return ", ".join(f"'{value}'" for value in values)
@@ -150,10 +164,114 @@ def _timestamps() -> tuple[Column[DateTime], Column[DateTime]]:
     )
 
 
+users = Table(
+    "users",
+    metadata,
+    Column("id", String(UUID_LENGTH), primary_key=True),
+    Column("username", String(32), nullable=False, unique=True),
+    Column("password_hash", Text),
+    Column("role", String(16), nullable=False, server_default="user"),
+    Column("status", String(16), nullable=False, server_default="active"),
+    *_timestamps(),
+    CheckConstraint("role IN ('user','admin')", name="role_values"),
+    CheckConstraint("status IN ('active','disabled')", name="status_values"),
+)
+
+sessions = Table(
+    "sessions",
+    metadata,
+    Column("token_hash", String(HASH_LENGTH), primary_key=True),
+    Column(
+        "user_id",
+        String(UUID_LENGTH),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("csrf_token_hash", String(HASH_LENGTH), nullable=False),
+    Column("expires_at", DateTime(timezone=True), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP")),
+)
+Index("ix_sessions_user_id", sessions.c.user_id)
+Index("ix_sessions_expires_at", sessions.c.expires_at)
+
+invite_codes = Table(
+    "invite_codes",
+    metadata,
+    Column("code_hash", String(HASH_LENGTH), primary_key=True),
+    Column(
+        "created_by_user_id",
+        String(UUID_LENGTH),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "used_by_user_id",
+        String(UUID_LENGTH),
+        ForeignKey("users.id", ondelete="SET NULL"),
+    ),
+    Column("expires_at", DateTime(timezone=True), nullable=False),
+    Column("used_at", DateTime(timezone=True)),
+    Column("revoked_at", DateTime(timezone=True)),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP")),
+)
+Index("ix_invite_codes_created_by", invite_codes.c.created_by_user_id)
+Index("ix_invite_codes_used_by", invite_codes.c.used_by_user_id)
+Index("ix_invite_codes_expires_at", invite_codes.c.expires_at)
+
+recovery_codes = Table(
+    "recovery_codes",
+    metadata,
+    Column("id", String(UUID_LENGTH), primary_key=True),
+    Column(
+        "user_id",
+        String(UUID_LENGTH),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("code_hash", String(HASH_LENGTH), nullable=False, unique=True),
+    Column("used_at", DateTime(timezone=True)),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP")),
+)
+Index("ix_recovery_codes_user_id", recovery_codes.c.user_id)
+
+platform_config = Table(
+    "platform_config",
+    metadata,
+    Column("singleton_id", Integer, primary_key=True, server_default="1"),
+    Column(
+        "registration_requires_invite",
+        Boolean,
+        nullable=False,
+        server_default="1",
+    ),
+    Column(
+        "asset_quota_bytes",
+        BigInteger,
+        nullable=False,
+        server_default=str(DEFAULT_ASSET_QUOTA_BYTES),
+    ),
+    Column(
+        "public_user_policy_json",
+        Text,
+        nullable=False,
+        server_default=DEFAULT_PUBLIC_USER_POLICY_JSON,
+    ),
+    *_timestamps(),
+    CheckConstraint("singleton_id = 1", name="single_row"),
+    CheckConstraint("asset_quota_bytes > 0", name="asset_quota_positive"),
+)
+
+
 assets = Table(
     "assets",
     metadata,
     Column("id", String(UUID_LENGTH), primary_key=True),
+    Column(
+        "owner_user_id",
+        String(UUID_LENGTH),
+        nullable=False,
+        server_default=LOCAL_OWNER_ID,
+    ),
     Column("relative_path", Text, nullable=False, unique=True),
     Column("mime_type", String(127), nullable=False),
     Column("checksum", String(HASH_LENGTH), nullable=False),
@@ -175,15 +293,22 @@ assets = Table(
 )
 Index("ix_assets_checksum", assets.c.checksum)
 Index("ix_assets_gc_marked_at", assets.c.gc_marked_at)
+Index("ix_assets_owner_state", assets.c.owner_user_id, assets.c.integrity_status)
 
 credentials = Table(
     "credentials",
     metadata,
     Column("id", String(UUID_LENGTH), primary_key=True),
+    Column(
+        "owner_user_id",
+        String(UUID_LENGTH),
+        nullable=False,
+        server_default=LOCAL_OWNER_ID,
+    ),
     Column("domain", String(64), nullable=False),
     Column("provider", String(64), nullable=False),
     *_timestamps(),
-    UniqueConstraint("domain", "provider"),
+    UniqueConstraint("owner_user_id", "domain", "provider"),
 )
 
 credential_versions = Table(
@@ -292,6 +417,12 @@ fonts = Table(
     "fonts",
     metadata,
     Column("id", String(UUID_LENGTH), primary_key=True),
+    Column(
+        "owner_user_id",
+        String(UUID_LENGTH),
+        nullable=False,
+        server_default=LOCAL_OWNER_ID,
+    ),
     Column("kind", String(16), nullable=False),
     Column("display_name", String(200), nullable=False),
     Column("asset_id", String(UUID_LENGTH), ForeignKey("assets.id", ondelete="RESTRICT")),
@@ -315,6 +446,12 @@ books = Table(
     "books",
     metadata,
     Column("id", String(UUID_LENGTH), primary_key=True),
+    Column(
+        "owner_user_id",
+        String(UUID_LENGTH),
+        nullable=False,
+        server_default=LOCAL_OWNER_ID,
+    ),
     Column("kind", String(24), nullable=False, server_default="library"),
     Column("title", String(500), nullable=False),
     Column("chapter_order_revision", Integer, nullable=False, server_default="1"),
@@ -325,6 +462,7 @@ books = Table(
 )
 Index(
     "uq_books_one_quick_workspace",
+    books.c.owner_user_id,
     books.c.kind,
     unique=True,
     sqlite_where=books.c.kind == "quick_workspace",
@@ -433,9 +571,16 @@ tags = Table(
     "tags",
     metadata,
     Column("id", String(UUID_LENGTH), primary_key=True),
-    Column("name", String(200), nullable=False, unique=True),
+    Column(
+        "owner_user_id",
+        String(UUID_LENGTH),
+        nullable=False,
+        server_default=LOCAL_OWNER_ID,
+    ),
+    Column("name", String(200), nullable=False),
     Column("color", String(16), nullable=False),
     *_timestamps(),
+    UniqueConstraint("owner_user_id", "name"),
 )
 
 book_tags = Table(
@@ -458,6 +603,13 @@ translation_constraints = Table(
 app_settings = Table(
     "app_settings",
     metadata,
+    Column(
+        "owner_user_id",
+        String(UUID_LENGTH),
+        primary_key=True,
+        nullable=False,
+        server_default=LOCAL_OWNER_ID,
+    ),
     Column("domain", String(64), primary_key=True),
     Column("revision", Integer, nullable=False, server_default="1"),
     Column("payload_json", Text, nullable=False),
@@ -483,6 +635,13 @@ book_settings = Table(
 provider_settings = Table(
     "provider_settings",
     metadata,
+    Column(
+        "owner_user_id",
+        String(UUID_LENGTH),
+        primary_key=True,
+        nullable=False,
+        server_default=LOCAL_OWNER_ID,
+    ),
     Column("domain", String(64), primary_key=True),
     Column("provider", String(64), primary_key=True),
     Column("revision", Integer, nullable=False, server_default="1"),
@@ -502,13 +661,19 @@ prompts = Table(
     "prompts",
     metadata,
     Column("id", String(UUID_LENGTH), primary_key=True),
+    Column(
+        "owner_user_id",
+        String(UUID_LENGTH),
+        nullable=False,
+        server_default=LOCAL_OWNER_ID,
+    ),
     Column("type", String(32), nullable=False),
     Column("name", String(200), nullable=False),
     Column("content", Text, nullable=False),
     Column("revision", Integer, nullable=False, server_default="1"),
     Column("is_factory_default", Boolean, nullable=False, server_default="0"),
     *_timestamps(),
-    UniqueConstraint("type", "name"),
+    UniqueConstraint("owner_user_id", "type", "name"),
     CheckConstraint(f"type IN ({_sql_values(PROMPT_TYPES)})", name="type_values"),
     CheckConstraint("revision >= 1", name="revision_positive"),
 )
@@ -558,6 +723,12 @@ job_batches = Table(
     "job_batches",
     metadata,
     Column("id", String(UUID_LENGTH), primary_key=True),
+    Column(
+        "owner_user_id",
+        String(UUID_LENGTH),
+        nullable=False,
+        server_default=LOCAL_OWNER_ID,
+    ),
     Column("kind", String(64), nullable=False),
     Column("display_name", String(500), nullable=False),
     Column("status_summary_json", Text, nullable=False, server_default="{}"),
@@ -568,6 +739,12 @@ jobs = Table(
     "jobs",
     metadata,
     Column("id", String(UUID_LENGTH), primary_key=True),
+    Column(
+        "owner_user_id",
+        String(UUID_LENGTH),
+        nullable=False,
+        server_default=LOCAL_OWNER_ID,
+    ),
     Column("batch_id", String(UUID_LENGTH), ForeignKey("job_batches.id", ondelete="SET NULL")),
     Column("kind", String(64), nullable=False),
     Column(
@@ -835,6 +1012,12 @@ studio_documents = Table(
     "studio_documents",
     metadata,
     Column("id", String(UUID_LENGTH), primary_key=True),
+    Column(
+        "owner_user_id",
+        String(UUID_LENGTH),
+        nullable=False,
+        server_default=LOCAL_OWNER_ID,
+    ),
     Column("book_id", String(UUID_LENGTH), ForeignKey("books.id", ondelete="CASCADE"), nullable=False),
     Column("origin_type", String(32), nullable=False),
     Column("source_character", String(500)),
@@ -966,6 +1149,12 @@ analysis_runs = Table(
     "analysis_runs",
     metadata,
     Column("id", String(UUID_LENGTH), primary_key=True),
+    Column(
+        "owner_user_id",
+        String(UUID_LENGTH),
+        nullable=False,
+        server_default=LOCAL_OWNER_ID,
+    ),
     Column(
         "book_id",
         String(UUID_LENGTH),
@@ -1356,6 +1545,12 @@ notes = Table(
     metadata,
     Column("id", String(UUID_LENGTH), primary_key=True),
     Column(
+        "owner_user_id",
+        String(UUID_LENGTH),
+        nullable=False,
+        server_default=LOCAL_OWNER_ID,
+    ),
+    Column(
         "book_id",
         String(UUID_LENGTH),
         ForeignKey("books.id", ondelete="CASCADE"),
@@ -1408,6 +1603,12 @@ continuation_projects = Table(
     "continuation_projects",
     metadata,
     Column("id", String(UUID_LENGTH), primary_key=True),
+    Column(
+        "owner_user_id",
+        String(UUID_LENGTH),
+        nullable=False,
+        server_default=LOCAL_OWNER_ID,
+    ),
     Column(
         "book_id",
         String(UUID_LENGTH),
@@ -1607,6 +1808,12 @@ operations = Table(
     "operations",
     metadata,
     Column("id", String(UUID_LENGTH), primary_key=True),
+    Column(
+        "owner_user_id",
+        String(UUID_LENGTH),
+        nullable=False,
+        server_default=LOCAL_OWNER_ID,
+    ),
     Column("kind", String(64), nullable=False),
     Column("executor_role", String(16), nullable=False),
     Column("status", String(16), nullable=False, server_default="pending"),
@@ -1813,6 +2020,12 @@ transient_requests = Table(
     "transient_requests",
     metadata,
     Column("id", String(UUID_LENGTH), primary_key=True),
+    Column(
+        "owner_user_id",
+        String(UUID_LENGTH),
+        nullable=False,
+        server_default=LOCAL_OWNER_ID,
+    ),
     Column("kind", String(64), nullable=False),
     Column(
         "book_id",
@@ -1853,6 +2066,12 @@ render_requests = Table(
     "render_requests",
     metadata,
     Column("id", String(UUID_LENGTH), primary_key=True),
+    Column(
+        "owner_user_id",
+        String(UUID_LENGTH),
+        nullable=False,
+        server_default=LOCAL_OWNER_ID,
+    ),
     Column("page_id", String(UUID_LENGTH), ForeignKey("pages.id", ondelete="CASCADE"), nullable=False, unique=True),
     Column("requested_revision", Integer, nullable=False),
     Column("rendering_revision", Integer),
@@ -1953,6 +2172,13 @@ provider_rate_limits = Table(
 idempotency_records = Table(
     "idempotency_records",
     metadata,
+    Column(
+        "owner_user_id",
+        String(UUID_LENGTH),
+        primary_key=True,
+        nullable=False,
+        server_default=LOCAL_OWNER_ID,
+    ),
     Column("scope", String(500), primary_key=True),
     Column("key", String(200), primary_key=True),
     Column("request_hash", String(HASH_LENGTH), nullable=False),

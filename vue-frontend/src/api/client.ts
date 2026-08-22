@@ -39,6 +39,11 @@ function createApiError(error: AxiosError): ApiError {
     ? backendError.message
     : undefined
   const backendDetails = backendError?.details
+  const inlineDetails = backendError
+    ? Object.fromEntries(
+        Object.entries(backendError).filter(([key]) => !['code', 'message', 'details'].includes(key)),
+      )
+    : undefined
   const contentType = String(response?.headers?.['content-type'] || '').toLowerCase()
   const isNetworkFailure = response === undefined
   const isCanceled = error.code === 'ERR_CANCELED' || error.name === 'CanceledError'
@@ -61,7 +66,9 @@ function createApiError(error: AxiosError): ApiError {
     status: response?.status ?? 0,
     details: backendDetails && typeof backendDetails === 'object' && !Array.isArray(backendDetails)
       ? backendDetails as Record<string, unknown>
-      : undefined,
+      : inlineDetails && Object.keys(inlineDetails).length > 0
+        ? inlineDetails
+        : undefined,
   })
 }
 
@@ -80,12 +87,29 @@ class ApiClient {
     this.instance = axios.create({
       baseURL: '',
       timeout: 300000,
+      withCredentials: true,
+    })
+
+    this.instance.interceptors.request.use((config) => {
+      const method = (config.method ?? 'get').toLowerCase()
+      if (!['get', 'head', 'options'].includes(method) && typeof document !== 'undefined') {
+        const csrf = document.cookie
+          .split('; ')
+          .find(value => value.startsWith('saber_csrf='))
+          ?.slice('saber_csrf='.length)
+        if (csrf) config.headers.set('X-CSRF-Token', decodeURIComponent(csrf))
+      }
+      return config
     })
 
     this.instance.interceptors.response.use(
       response => response,
       (error: AxiosError) => {
         const apiError = createApiError(error)
+        const isSessionProbe = error.config?.url === '/api/v2/auth/me'
+        if (apiError.status === 401 && !isSessionProbe && typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('saber:authentication-required'))
+        }
         return Promise.reject(apiError)
       }
     )

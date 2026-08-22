@@ -10,10 +10,12 @@ import { computed, ref } from 'vue'
 
 interface Props {
   isEditMode?: boolean
+  editModeAvailable?: boolean
 }
 
 withDefaults(defineProps<Props>(), {
   isEditMode: false,
+  editModeAvailable: true,
 })
 
 const emit = defineEmits<{
@@ -144,6 +146,7 @@ function handleImportText(file: File): void {
       :has-processed-image="hasProcessedImage"
       :image-size="imageSize"
       :is-edit-mode="isEditMode"
+      :edit-mode-available="editModeAvailable"
       :processed-image-label="processedImageLabel"
       :show-original="showOriginal"
       @retry-failed="retryFailed"

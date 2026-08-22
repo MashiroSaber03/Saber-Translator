@@ -6,6 +6,8 @@ from flask import Blueprint, jsonify
 from sqlalchemy import Engine
 
 from src.backend_v2.api.request_helpers import error_response
+from src.backend_v2.auth.context import require_admin
+from src.backend_v2.runtime_profile import RuntimeProfile, resolve_runtime_profile
 from src.backend_v2.worker.model_lifecycle import (
     ModelInferenceBusy,
     WorkerCommandFenced,
@@ -13,7 +15,10 @@ from src.backend_v2.worker.model_lifecycle import (
 )
 
 
-def create_system_blueprint(*, engine: Engine) -> Blueprint:
+def create_system_blueprint(
+    *, engine: Engine, profile: RuntimeProfile | None = None
+) -> Blueprint:
+    profile = profile or resolve_runtime_profile("local")
     blueprint = Blueprint(
         "system_controls_v2",
         __name__,
@@ -31,6 +36,8 @@ def create_system_blueprint(*, engine: Engine) -> Blueprint:
 
     @blueprint.post("/release-models")
     def release_model_cache():
+        if profile.requires_auth:
+            require_admin()
         return jsonify(repository.request_release()), 202
 
     return blueprint

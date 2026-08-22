@@ -18,6 +18,7 @@ from src.backend_v2.runtime_identity import (
     RuntimeIdentity,
     start_launcher_parent_monitor,
 )
+from src.backend_v2.runtime_profile import PROFILE_ENV, resolve_runtime_profile
 from src.backend_v2.storage.database import (
     create_sqlite_engine,
     database_path_for,
@@ -61,6 +62,8 @@ def _write_ready_marker(data_root: Path, identity: RuntimeIdentity) -> None:
 
 
 def run_worker(args: object) -> int:
+    profile = resolve_runtime_profile(getattr(args, "profile", "local"))
+    os.environ[PROFILE_ENV] = profile.name
     data_root = ensure_data_root(resolve_data_root(args.data_dir))
     if not args.probe:
         log_path = configure_backend_logging(

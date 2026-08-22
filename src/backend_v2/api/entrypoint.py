@@ -18,6 +18,7 @@ from src.backend_v2.runtime_identity import (
     RuntimeIdentity,
     start_launcher_parent_monitor,
 )
+from src.backend_v2.runtime_profile import PROFILE_ENV, resolve_runtime_profile
 from src.backend_v2.storage.database import create_sqlite_engine, database_path_for
 from src.backend_v2.storage.epochs import ProcessEpochRepository
 
@@ -27,6 +28,8 @@ LOGGER = logging.getLogger("saber.api")
 
 def run_api(args: object) -> int:
     data_root = ensure_data_root(resolve_data_root(args.data_dir))
+    profile = resolve_runtime_profile(getattr(args, "profile", "local"))
+    os.environ[PROFILE_ENV] = profile.name
     if not args.probe:
         log_path = configure_backend_logging(
             role="api",
@@ -97,6 +100,7 @@ def run_api(args: object) -> int:
                 engine=engine,
                 host=args.host,
                 port=args.port,
+                profile=profile,
             )
         )
         if not args.probe:

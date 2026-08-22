@@ -12,6 +12,9 @@ AI 服务访问统一网络策略
 """
 from __future__ import annotations
 
+import ipaddress
+import os
+import socket
 from typing import Optional
 from urllib.parse import urlsplit
 
@@ -23,6 +26,45 @@ BROWSER_USER_AGENT = (
 )
 
 BROWSER_HEADERS = {"User-Agent": BROWSER_USER_AGENT}
+
+
+def public_outbound_policy_enabled() -> bool:
+    return os.environ.get("SABER_V2_PROFILE", "local").lower() == "public"
+
+
+def validate_public_outbound_url(url: str) -> None:
+    """Reject URLs that could make a public deployment reach a private network."""
+
+    if not public_outbound_policy_enabled():
+        return
+    try:
+        parsed = urlsplit(url)
+    except ValueError as exc:
+        raise ValueError("Base URL 格式无效") from exc
+    if parsed.scheme != "https":
+        raise ValueError("公开模式只允许 HTTPS Base URL")
+    if not parsed.hostname or parsed.username or parsed.password or parsed.fragment:
+        raise ValueError("Base URL 不允许包含凭据或片段")
+    try:
+        addresses = {
+            item[4][0]
+            for item in socket.getaddrinfo(
+                parsed.hostname,
+                parsed.port or 443,
+                type=socket.SOCK_STREAM,
+            )
+        }
+    except OSError as exc:
+        raise ValueError("Base URL 域名无法解析") from exc
+    if not addresses:
+        raise ValueError("Base URL 域名无法解析")
+    for address in addresses:
+        try:
+            resolved = ipaddress.ip_address(address)
+        except ValueError as exc:
+            raise ValueError("Base URL 解析结果无效") from exc
+        if not resolved.is_global:
+            raise ValueError("公开模式禁止访问内网、回环或保留地址")
 
 
 def is_local_service(base_url: Optional[str]) -> bool:
@@ -46,8 +88,11 @@ def build_httpx_kwargs(base_url: Optional[str], timeout) -> dict:
     - 远程服务：trust_env=True，允许用户系统代理生效
     - 全部注入浏览器 UA，用于绕过基础 WAF UA 黑名单
     """
+    if base_url:
+        validate_public_outbound_url(base_url)
     return {
         "timeout": timeout,
         "trust_env": not is_local_service(base_url),
         "headers": dict(BROWSER_HEADERS),
+        "follow_redirects": False,
     }

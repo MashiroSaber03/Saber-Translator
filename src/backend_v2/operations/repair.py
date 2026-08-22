@@ -7,7 +7,7 @@ import hashlib
 from io import BytesIO
 import json
 from pathlib import Path
-from typing import Any, BinaryIO, Mapping
+from typing import Any, BinaryIO, Callable, Mapping
 
 from PIL import Image, ImageDraw, UnidentifiedImageError
 from sqlalchemy import Engine, insert, select, update
@@ -38,6 +38,10 @@ class PageRepairService:
         engine: Engine,
         repository: OperationRepository,
         plugin_runtime: Any | None = None,
+        method_validator: Callable[[str], None] | None = None,
+        settings_transformer: (
+            Callable[[Mapping[str, Any]], dict[str, Any]] | None
+        ) = None,
     ) -> None:
         self.engine = engine
         self.repository = repository
@@ -45,6 +49,8 @@ class PageRepairService:
         self.renders = RenderRequestRepository(engine)
         self.settings = SettingsResolver(engine)
         self.plugin_runtime = plugin_runtime
+        self.method_validator = method_validator
+        self.settings_transformer = settings_transformer
 
     def create_for_bubble(
         self,
@@ -93,6 +99,8 @@ class PageRepairService:
                 fill_color=fill_color,
             )
         )
+        if self.method_validator is not None:
+            self.method_validator(method)
         mask = Image.new("L", (width, height), 0)
         try:
             draw = ImageDraw.Draw(mask)
@@ -127,6 +135,8 @@ class PageRepairService:
             if method in {"lama_mpe", "litelama"}
             else {"disableResize": False, "settingsSnapshot": {}}
         )
+        if self.settings_transformer is not None:
+            repair_settings = self.settings_transformer(repair_settings)
         mask_asset = self._publish_mask_payload(
             mask_payload,
             width=width,
@@ -164,6 +174,8 @@ class PageRepairService:
                 fill_color=fill_color,
             )
         )
+        if self.method_validator is not None:
+            self.method_validator(method)
         try:
             with Image.open(upload) as opened:
                 if (
@@ -228,6 +240,8 @@ class PageRepairService:
             if method in {"lama_mpe", "litelama"}
             else {"disableResize": False, "settingsSnapshot": {}}
         )
+        if self.settings_transformer is not None:
+            repair_settings = self.settings_transformer(repair_settings)
         mask_asset = self._publish_mask_payload(
             mask_payload,
             width=int(page[0]),

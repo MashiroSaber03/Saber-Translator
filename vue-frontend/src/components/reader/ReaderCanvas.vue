@@ -8,6 +8,7 @@ import VirtualPageStream from '@/components/virtual/VirtualPageStream.vue'
 import type { VirtualPageStreamItem } from '@/components/virtual/VirtualPageStream.vue'
 import type { V2PageSummary } from '@/api/v2/content'
 import { DEFAULT_READER_SETTINGS } from './readerSettings'
+import { usePublicUserAccess } from '@/composables/usePublicUserAccess'
 
 const props = withDefaults(
   defineProps<{
@@ -29,6 +30,8 @@ const emit = defineEmits<{
   (e: 'pageChange', page: number): void
   (e: 'goTranslate'): void
 }>()
+const publicAccess = usePublicUserAccess()
+const canTranslate = computed(() => publicAccess.featureAllowed('translation'))
 
 const showEmptyState = computed(() => !props.isLoading && props.images.length === 0)
 const showImagesContainer = computed(() => !props.isLoading && props.images.length > 0)
@@ -80,7 +83,9 @@ function handleVisibleChange(ids: string[]): void {
     >
       <template #icon>📖</template>
       <template #actions>
-        <UiButton variant="primary" @click="emit('goTranslate')"> 进入翻译 </UiButton>
+        <UiButton v-if="canTranslate" variant="primary" @click="emit('goTranslate')">
+          进入翻译
+        </UiButton>
       </template>
     </ProductEmptyState>
 

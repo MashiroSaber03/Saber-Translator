@@ -29,6 +29,7 @@ import {
 import { useToast } from '@/utils/toast'
 import { pageSelectionToPageIndexes } from '@/utils/pageSelection'
 import { parseCompleteTextStyleSettings } from '@/defaults/textStyleDefaults'
+import { usePublicUserAccess } from '@/composables/usePublicUserAccess'
 type TranslationMode = 'standard' | 'hq' | 'proofread' | 'removeText'
 
 interface PageSelection {
@@ -454,6 +455,7 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
   const bubbleStore = useBubbleStore()
   const settingsStore = useSettingsStore()
   const taskCenterStore = useTaskCenterStore()
+  const publicAccess = usePublicUserAccess()
   const toast = useToast()
   const session = translationSession(imageStore)
   const { activeJobId, progress } = session
@@ -623,6 +625,7 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
         documentRevision: Number(committedStyleSource.documentRevision),
       }
       const executionMode = settingsStore.settings.parallel.enabled
+        && publicAccess.parallelAllowed()
         ? 'parallel'
         : 'sequential'
       const batch = mode === 'removeText'
@@ -709,6 +712,7 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
     try {
       await prepareJobCreation(imageStore.images.map(image => image.id))
       const executionMode = settingsStore.settings.parallel.enabled
+        && publicAccess.parallelAllowed()
         ? 'parallel'
         : 'sequential'
       const accepted = await taskCenterStore.retryLatestFailed(

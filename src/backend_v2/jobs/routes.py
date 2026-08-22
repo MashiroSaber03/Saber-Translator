@@ -9,6 +9,7 @@ from typing import Iterator
 from flask import Blueprint, Response, jsonify, redirect, request, stream_with_context
 from sqlalchemy import Engine
 
+from src.backend_v2.auth.context import current_user_id
 from src.backend_v2.api.request_helpers import (
     error_response as _error,
     integer_value as _integer_value,
@@ -25,16 +26,37 @@ from src.backend_v2.jobs.repository import (
     JobQueueRepository,
 )
 from src.backend_v2.jobs.retry import JobRetryService
+from src.backend_v2.public_policy import PublicUserPolicyAccess
+from src.backend_v2.runtime_profile import RuntimeProfile, resolve_runtime_profile
 
 
 def create_jobs_blueprint(
     *,
     engine: Engine,
     broadcaster: JobEventBroadcaster,
+    profile: RuntimeProfile | None = None,
 ) -> Blueprint:
+    profile = profile or resolve_runtime_profile("local")
     blueprint = Blueprint("jobs_v2", __name__, url_prefix="/api/v2")
     repository = JobQueueRepository(engine)
-    retry_service = JobRetryService(engine)
+    public_access = PublicUserPolicyAccess(engine, profile)
+    retry_service = JobRetryService(engine, public_access=public_access)
+
+    def require_retry_feature(job_id: str) -> None:
+        kind = str(repository.get_job(job_id)["kind"])
+        if kind in {"translation", "remove_text", "detect", "text_import"}:
+            public_access.require_feature("translation")
+        elif kind == "style_apply":
+            public_access.require_feature("translation")
+            public_access.require_feature("editMode")
+        elif kind in {
+            "insight_analysis",
+            "insight_export",
+            "vector_rebuild",
+            "continuation",
+            "derived_rebuild",
+        }:
+            public_access.require_feature("insight")
 
     @blueprint.errorhandler(JobNotFound)
     def not_found(error: JobNotFound):
@@ -78,7 +100,8 @@ def create_jobs_blueprint(
             "event cursor",
             minimum=0,
         )
-        subscription = broadcaster.subscribe()
+        owner_user_id = current_user_id()
+        subscription = broadcaster.subscribe(owner_user_id=owner_user_id)
 
         @stream_with_context
         def generate() -> Iterator[str]:
@@ -89,6 +112,7 @@ def create_jobs_blueprint(
                 while True:
                     backlog = repository.events_after(
                         after=cursor,
+                        owner_user_id=owner_user_id,
                         limit=1000,
                     )
                     if not backlog:
@@ -207,6 +231,7 @@ def create_jobs_blueprint(
 
     @blueprint.post("/jobs/<job_id>/retry")
     def retry_job(job_id: str) -> Response:
+        require_retry_feature(job_id)
         body = _json_body(allowed_keys={"strategy"}, optional=True)
         strategy = (
             _required_string(body, "strategy")
@@ -224,6 +249,7 @@ def create_jobs_blueprint(
 
     @blueprint.post("/jobs/<job_id>/retry-failed")
     def retry_failed_job(job_id: str) -> Response:
+        require_retry_feature(job_id)
         body = _json_body(allowed_keys={"strategy"}, optional=True)
         strategy = (
             _required_string(body, "strategy")
@@ -297,8 +323,11 @@ def create_jobs_blueprint(
 
 
 def _sse(event: dict[str, object]) -> str:
+    public_event = {
+        key: value for key, value in event.items() if key != "_ownerUserId"
+    }
     return (
         f"id: {event['eventId']}\n"
         f"event: {event['type']}\n"
-        f"data: {json.dumps(event, ensure_ascii=False, separators=(',', ':'))}\n\n"
+        f"data: {json.dumps(public_event, ensure_ascii=False, separators=(',', ':'))}\n\n"
     )

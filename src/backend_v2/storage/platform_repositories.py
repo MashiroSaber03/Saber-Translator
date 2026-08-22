@@ -12,10 +12,16 @@ import time
 import uuid
 from typing import Any, cast
 
-from sqlalchemy import Engine, and_, case, delete, func, insert, select, update
+from sqlalchemy import Engine, and_, case, delete, func, insert, or_, select, update
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
 
+from src.backend_v2.auth.credential_broker import (
+    credential_reference,
+    resolve_credential_reference,
+)
+from src.backend_v2.auth.ownership import effective_owner_id
+from src.backend_v2.runtime_profile import resolve_runtime_profile
 from src.backend_v2.serialization import canonical_json as _canonical_json
 from src.backend_v2.timestamps import utcnow as _utcnow
 from src.backend_v2.content.page_style import validate_text_style_defaults
@@ -31,6 +37,7 @@ from src.backend_v2.storage.schema import (
     PROMPT_TYPES,
     app_settings,
     book_settings,
+    books,
     credential_current_versions,
     credential_versions,
     credentials,
@@ -77,6 +84,7 @@ def _idempotency_replay(
         ).where(
             idempotency_records.c.scope == scope,
             idempotency_records.c.key == key,
+            idempotency_records.c.owner_user_id == effective_owner_id(),
         )
     ).mappings().one_or_none()
     if row is None:
@@ -91,6 +99,7 @@ def _idempotency_replay(
             delete(idempotency_records).where(
                 idempotency_records.c.scope == scope,
                 idempotency_records.c.key == key,
+                idempotency_records.c.owner_user_id == effective_owner_id(),
             )
         )
         return request_hash, None
@@ -125,6 +134,7 @@ def _record_idempotency(
 ) -> None:
     connection.execute(
         insert(idempotency_records).values(
+            owner_user_id=effective_owner_id(),
             scope=scope,
             key=key,
             request_hash=request_hash,
@@ -196,7 +206,8 @@ def _update_prompt(
 ) -> dict[str, object]:
     row = connection.execute(
         select(prompts.c.type, prompts.c.is_factory_default).where(
-            prompts.c.id == mutation.prompt_id
+            prompts.c.id == mutation.prompt_id,
+            prompts.c.owner_user_id == effective_owner_id(),
         )
     ).mappings().one_or_none()
     if row is None:
@@ -209,6 +220,7 @@ def _update_prompt(
             .where(
                 prompts.c.id == mutation.prompt_id,
                 prompts.c.revision == mutation.base_revision,
+                prompts.c.owner_user_id == effective_owner_id(),
             )
             .values(
                 name=mutation.name.strip(),
@@ -439,7 +451,8 @@ class SettingsRepository:
 
         stored_provider_pairs = connection.execute(
             select(provider_settings.c.domain, provider_settings.c.provider).where(
-                provider_settings.c.domain.like("proofreading_%")
+                provider_settings.c.domain.like("proofreading_%"),
+                provider_settings.c.owner_user_id == effective_owner_id(),
             )
         ).all()
         for domain, provider in stored_provider_pairs:
@@ -450,6 +463,7 @@ class SettingsRepository:
                 delete(provider_settings).where(
                     provider_settings.c.domain == pair[0],
                     provider_settings.c.provider == pair[1],
+                    provider_settings.c.owner_user_id == effective_owner_id(),
                 )
             )
 
@@ -516,17 +530,30 @@ class SettingsRepository:
             provider_settings.c.domain.in_(domains) if domains else True
         )
         with read_transaction(self.engine) as connection:
+            if book_id and connection.execute(
+                select(books.c.id).where(
+                    books.c.id == book_id,
+                    books.c.owner_user_id == effective_owner_id(),
+                )
+            ).scalar_one_or_none() is None:
+                raise LookupError("book not found")
             setting_rows = list(
                 connection.execute(
                     select(app_settings)
-                    .where(setting_condition)
+                    .where(
+                        setting_condition,
+                        app_settings.c.owner_user_id == effective_owner_id(),
+                    )
                     .order_by(app_settings.c.domain)
                 ).mappings()
             )
             provider_rows = list(
                 connection.execute(
                     select(provider_settings)
-                    .where(provider_condition)
+                    .where(
+                        provider_condition,
+                        provider_settings.c.owner_user_id == effective_owner_id(),
+                    )
                     .order_by(
                         provider_settings.c.domain,
                         provider_settings.c.provider,
@@ -631,13 +658,17 @@ class SettingsRepository:
             payload = {**page_style, "fontFamily": font_id}
         payload_json = _canonical_json(payload)
         current = connection.execute(  # type: ignore[attr-defined]
-            select(app_settings.c.revision).where(app_settings.c.domain == mutation.domain)
+            select(app_settings.c.revision).where(
+                app_settings.c.domain == mutation.domain,
+                app_settings.c.owner_user_id == effective_owner_id(),
+            )
         ).scalar_one_or_none()
         if current is None:
             if mutation.base_revision != 0:
                 raise RevisionConflict(f"setting {mutation.domain} does not exist at requested revision")
             connection.execute(  # type: ignore[attr-defined]
                 insert(app_settings).values(
+                    owner_user_id=effective_owner_id(),
                     domain=mutation.domain,
                     revision=1,
                     payload_json=payload_json,
@@ -652,6 +683,7 @@ class SettingsRepository:
             .where(
                 app_settings.c.domain == mutation.domain,
                 app_settings.c.revision == mutation.base_revision,
+                app_settings.c.owner_user_id == effective_owner_id(),
             )
             .values(
                 revision=mutation.base_revision + 1,
@@ -684,6 +716,7 @@ class SettingsRepository:
         key = and_(
             provider_settings.c.domain == mutation.domain,
             provider_settings.c.provider == mutation.provider,
+            provider_settings.c.owner_user_id == effective_owner_id(),
         )
         current = connection.execute(  # type: ignore[attr-defined]
             select(provider_settings.c.revision).where(key)
@@ -696,6 +729,7 @@ class SettingsRepository:
                     credential_versions.c.credential_id == credentials.c.id,
                 )
                 .where(credential_versions.c.id == credential_version_id)
+                .where(credentials.c.owner_user_id == effective_owner_id())
             ).mappings().one_or_none()
             if owner is None:
                 raise ValueError("credential version does not exist")
@@ -716,6 +750,7 @@ class SettingsRepository:
                 raise RevisionConflict("provider setting does not exist at requested revision")
             connection.execute(  # type: ignore[attr-defined]
                 insert(provider_settings).values(
+                    owner_user_id=effective_owner_id(),
                     domain=mutation.domain,
                     provider=mutation.provider,
                     revision=1,
@@ -751,6 +786,13 @@ class SettingsRepository:
     ) -> dict[str, object]:
         if mutation.base_revision < 0 or mutation.schema_version < 1:
             raise ValueError("book setting revisions must be non-negative")
+        if connection.execute(  # type: ignore[attr-defined]
+            select(books.c.id).where(
+                books.c.id == mutation.book_id,
+                books.c.owner_user_id == effective_owner_id(),
+            )
+        ).scalar_one_or_none() is None:
+            raise LookupError("book not found")
         key = and_(
             book_settings.c.book_id == mutation.book_id,
             book_settings.c.domain == mutation.domain,
@@ -820,6 +862,7 @@ class SettingsRepository:
                 select(credentials.c.id).where(
                     credentials.c.domain == edit.domain,
                     credentials.c.provider == edit.provider,
+                    credentials.c.owner_user_id == effective_owner_id(),
                 )
             ).scalar_one_or_none()
             if existing_id is not None:
@@ -831,6 +874,7 @@ class SettingsRepository:
             connection.execute(  # type: ignore[attr-defined]
                 insert(credentials).values(
                     id=credential_id,
+                    owner_user_id=effective_owner_id(),
                     domain=edit.domain,
                     provider=edit.provider,
                 )
@@ -877,7 +921,10 @@ class SettingsRepository:
                 credential_versions.c.id
                 == credential_current_versions.c.credential_version_id,
             )
-            .where(credentials.c.id == edit.credential_id)
+            .where(
+                credentials.c.id == edit.credential_id,
+                credentials.c.owner_user_id == effective_owner_id(),
+            )
         ).mappings().one_or_none()
         if current is None or current["revision"] != edit.base_revision:
             raise RevisionConflict("credential revision changed")
@@ -947,6 +994,7 @@ class SettingsRepository:
                 credential_versions.c.id
                 == credential_current_versions.c.credential_version_id,
             )
+            .where(credentials.c.owner_user_id == effective_owner_id())
             .order_by(credentials.c.domain, credentials.c.provider)
         )
         if domains:
@@ -966,10 +1014,21 @@ class SettingsRepository:
         ]
 
     def resolve_secret(self, credential_version_id: str) -> dict[str, Any]:
+        browser_secret = resolve_credential_reference(
+            credential_version_id, effective_owner_id()
+        )
+        if browser_secret is not None:
+            return browser_secret
         with self.engine.connect() as connection:
             value = connection.execute(
-                select(credential_versions.c.secret_json).where(
-                    credential_versions.c.id == credential_version_id
+                select(credential_versions.c.secret_json)
+                .join(
+                    credentials,
+                    credentials.c.id == credential_versions.c.credential_id,
+                )
+                .where(
+                    credential_versions.c.id == credential_version_id,
+                    credentials.c.owner_user_id == effective_owner_id(),
                 )
             ).scalar_one_or_none()
         if value is None:
@@ -1001,22 +1060,41 @@ class SettingsRepository:
         if not requested:
             return result
 
-        with self.engine.connect() as connection:
-            rows = connection.execute(
-                select(
-                    credential_versions.c.id,
-                    credential_versions.c.secret_json,
-                ).where(
-                    credential_versions.c.id.in_(set(requested.values()))
+        secrets: dict[str, dict[str, Any]] = {}
+        database_ids: set[str] = set()
+        for version_id in set(requested.values()):
+            browser_secret = resolve_credential_reference(
+                version_id, effective_owner_id()
+            )
+            if browser_secret is None:
+                database_ids.add(version_id)
+            else:
+                secrets[version_id] = browser_secret
+        if database_ids:
+            with self.engine.connect() as connection:
+                rows = connection.execute(
+                    select(
+                        credential_versions.c.id,
+                        credential_versions.c.secret_json,
+                    )
+                    .join(
+                        credentials,
+                        credentials.c.id == credential_versions.c.credential_id,
+                    )
+                    .where(
+                        credential_versions.c.id.in_(database_ids),
+                        credentials.c.owner_user_id == effective_owner_id(),
+                    )
+                ).mappings()
+                secrets.update(
+                    {
+                        str(row["id"]): _require_object(
+                            json.loads(str(row["secret_json"])),
+                            "stored credential secret",
+                        )
+                        for row in rows
+                    }
                 )
-            ).mappings()
-            secrets = {
-                str(row["id"]): _require_object(
-                    json.loads(str(row["secret_json"])),
-                    "stored credential secret",
-                )
-                for row in rows
-            }
         for section_name, version_id in requested.items():
             secret = secrets.get(version_id)
             if secret is None:
@@ -1045,9 +1123,17 @@ class SettingsRepository:
                 .where(
                     provider_settings.c.domain == domain,
                     provider_settings.c.provider == provider,
+                    provider_settings.c.owner_user_id == effective_owner_id(),
                 )
             ).scalar_one_or_none()
         if value is None:
+            if resolve_runtime_profile().browser_credentials:
+                browser_secret = resolve_credential_reference(
+                    credential_reference(domain, provider),
+                    effective_owner_id(),
+                )
+                if browser_secret is not None:
+                    return browser_secret
             raise LookupError(
                 f"no stored credential for {domain}/{provider}"
             )
@@ -1106,7 +1192,10 @@ class SettingsRepository:
         credential_id: str,
     ) -> None:
         removed = connection.execute(
-            delete(credentials).where(credentials.c.id == credential_id)
+            delete(credentials).where(
+                credentials.c.id == credential_id,
+                credentials.c.owner_user_id == effective_owner_id(),
+            )
         )
         if removed.rowcount != 1:
             raise LookupError("credential not found")
@@ -1123,7 +1212,10 @@ class PromptRepository:
         with self.engine.connect() as connection:
             rows = connection.execute(
                 select(prompts)
-                .where(condition)
+                .where(
+                    condition,
+                    prompts.c.owner_user_id == effective_owner_id(),
+                )
                 .order_by(prompts.c.type, prompts.c.name)
             ).mappings()
             return [self._dto(row) for row in rows]
@@ -1196,6 +1288,7 @@ class PromptRepository:
             connection.execute(
                 insert(prompts).values(
                     id=prompt_id,
+                    owner_user_id=effective_owner_id(),
                     type=prompt_type,
                     name=name.strip(),
                     content=content,
@@ -1320,14 +1413,20 @@ class PromptRepository:
     def _delete(connection: Connection, prompt_id: str) -> None:
         factory = connection.execute(
             select(prompts.c.is_factory_default).where(
-                prompts.c.id == prompt_id
+                prompts.c.id == prompt_id,
+                prompts.c.owner_user_id == effective_owner_id(),
             )
         ).scalar_one_or_none()
         if factory is None:
             raise LookupError("prompt not found")
         if factory:
             raise RevisionConflict("factory prompt cannot be deleted")
-        connection.execute(delete(prompts).where(prompts.c.id == prompt_id))
+        connection.execute(
+            delete(prompts).where(
+                prompts.c.id == prompt_id,
+                prompts.c.owner_user_id == effective_owner_id(),
+            )
+        )
 
     def reset(self, prompt_id: str, *, base_revision: int) -> dict[str, object]:
         with immediate_transaction(self.engine) as connection:
@@ -1383,7 +1482,10 @@ class PromptRepository:
                 prompts.c.type,
                 prompts.c.name,
                 prompts.c.is_factory_default,
-            ).where(prompts.c.id == prompt_id)
+            ).where(
+                prompts.c.id == prompt_id,
+                prompts.c.owner_user_id == effective_owner_id(),
+            )
         ).mappings().one_or_none()
         if row is None:
             raise LookupError("prompt not found")
@@ -1394,6 +1496,7 @@ class PromptRepository:
             .where(
                 prompts.c.id == prompt_id,
                 prompts.c.revision == base_revision,
+                prompts.c.owner_user_id == effective_owner_id(),
             )
             .values(
                 content=FACTORY_PROMPTS[str(row["type"])],
@@ -1512,6 +1615,7 @@ class FontRepository:
         connection.execute(
             insert(fonts).values(
                 id=font_id,
+                owner_user_id=effective_owner_id(),
                 kind="uploaded",
                 asset_id=asset_id,
                 display_name=display_name,
@@ -1521,7 +1625,14 @@ class FontRepository:
     def list(self) -> list[dict[str, object]]:
         with self.engine.connect() as connection:
             rows = connection.execute(
-                select(fonts).order_by(
+                select(fonts)
+                .where(
+                    or_(
+                        fonts.c.kind == "builtin",
+                        fonts.c.owner_user_id == effective_owner_id(),
+                    )
+                )
+                .order_by(
                     case((fonts.c.builtin_key == "default", 0), else_=1),
                     fonts.c.kind,
                     func.lower(fonts.c.display_name),
@@ -1593,13 +1704,21 @@ class FontRepository:
     @staticmethod
     def _delete_uploaded(connection: Connection, font_id: str) -> str:
         row = connection.execute(
-            select(fonts.c.kind, fonts.c.asset_id).where(fonts.c.id == font_id)
+            select(fonts.c.kind, fonts.c.asset_id).where(
+                fonts.c.id == font_id,
+                fonts.c.owner_user_id == effective_owner_id(),
+            )
         ).one_or_none()
         if row is None:
             raise LookupError("font not found")
         if row.kind != "uploaded":
             raise ValueError("built-in fonts cannot be deleted")
-        connection.execute(delete(fonts).where(fonts.c.id == font_id))
+        connection.execute(
+            delete(fonts).where(
+                fonts.c.id == font_id,
+                fonts.c.owner_user_id == effective_owner_id(),
+            )
+        )
         return str(row.asset_id)
 
 

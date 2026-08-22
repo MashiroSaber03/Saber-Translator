@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 from collections.abc import Sequence
 
+from src.backend_v2.runtime_profile import PROFILE_NAMES
+
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Saber Translator backend-first v2")
@@ -17,6 +19,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--data-dir", help="Explicit v2 data root.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=5000)
+    parser.add_argument(
+        "--profile",
+        choices=PROFILE_NAMES,
+        default="local",
+        help="Fixed runtime policy profile.",
+    )
     parser.add_argument(
         "--test-mode",
         action="store_true",

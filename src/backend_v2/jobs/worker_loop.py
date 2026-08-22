@@ -9,6 +9,7 @@ import threading
 import time
 from typing import Any
 
+from src.backend_v2.auth.ownership import owner_scope
 from src.backend_v2.jobs.repository import (
     AttemptFence,
     AttemptFenced,
@@ -98,7 +99,8 @@ class JobWorkerLoop:
                 stop_event.wait(self.idle_poll_seconds)
                 continue
             self._note_activity()
-            self._run_attempt(fence, stop_event)
+            with owner_scope(fence.owner_user_id):
+                self._run_attempt(fence, stop_event)
         LOGGER.info("持久任务调度器已停止")
 
     def _run_attempt(
@@ -300,10 +302,11 @@ class JobWorkerLoop:
                 if not self._before_pipeline(fence, step):
                     continue
                 try:
-                    checkpoint = handler(
-                        fence,
-                        step,
-                    )
+                    with owner_scope(fence.owner_user_id):
+                        checkpoint = handler(
+                            fence,
+                            step,
+                        )
                     if not isinstance(checkpoint, Mapping):
                         raise TypeError("step handler must return an object")
                 except Exception as exc:
@@ -483,7 +486,8 @@ class JobWorkerLoop:
             if not self._before_pipeline(fence, step):
                 return
             try:
-                checkpoint = handler(fence, step)
+                with owner_scope(fence.owner_user_id):
+                    checkpoint = handler(fence, step)
                 if not isinstance(checkpoint, Mapping):
                     raise TypeError("step handler must return an object")
             except Exception as exc:
@@ -960,7 +964,8 @@ class JobWorkerLoop:
             step_ids,
         )
         try:
-            checkpoint = handler(fence, active_steps)
+            with owner_scope(fence.owner_user_id):
+                checkpoint = handler(fence, active_steps)
             if not isinstance(checkpoint, Mapping):
                 raise TypeError("batch handler must return an object")
         except Exception as exc:

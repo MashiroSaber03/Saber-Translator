@@ -33,7 +33,7 @@
       role="alert"
       title="设置加载失败"
     >
-      {{ settingsStore.backendError || '正在读取后端设置。加载成功前只能查看出厂默认值，不能保存或调用 Provider。' }}
+      {{ backendUnavailableMessage }}
     </ProductStatusBanner>
 
     <fieldset
@@ -50,39 +50,75 @@
       />
 
       <div v-if="contentReady" class="settings-modal__tab-content">
-        <div v-if="hasVisitedTab('ocr')" v-show="activeTab === 'ocr'" class="settings-modal__tab-pane">
+        <div
+          v-if="hasVisitedTab('ocr')"
+          v-show="activeTab === 'ocr'"
+          class="settings-modal__tab-pane"
+        >
           <OcrSettings />
         </div>
 
-        <div v-if="hasVisitedTab('translate')" v-show="activeTab === 'translate'" class="settings-modal__tab-pane">
+        <div
+          v-if="hasVisitedTab('translate')"
+          v-show="activeTab === 'translate'"
+          class="settings-modal__tab-pane"
+        >
           <TranslationSettings />
         </div>
 
-        <div v-if="hasVisitedTab('detection')" v-show="activeTab === 'detection'" class="settings-modal__tab-pane">
+        <div
+          v-if="hasVisitedTab('detection')"
+          v-show="activeTab === 'detection'"
+          class="settings-modal__tab-pane"
+        >
           <DetectionSettings />
         </div>
 
-        <div v-if="hasVisitedTab('hq')" v-show="activeTab === 'hq'" class="settings-modal__tab-pane">
+        <div
+          v-if="hasVisitedTab('hq')"
+          v-show="activeTab === 'hq'"
+          class="settings-modal__tab-pane"
+        >
           <HqTranslationSettings />
         </div>
 
-        <div v-if="hasVisitedTab('proofreading')" v-show="activeTab === 'proofreading'" class="settings-modal__tab-pane">
+        <div
+          v-if="hasVisitedTab('proofreading')"
+          v-show="activeTab === 'proofreading'"
+          class="settings-modal__tab-pane"
+        >
           <ProofreadingSettings />
         </div>
 
-        <div v-if="hasVisitedTab('prompt-library')" v-show="activeTab === 'prompt-library'" class="settings-modal__tab-pane">
+        <div
+          v-if="hasVisitedTab('prompt-library')"
+          v-show="activeTab === 'prompt-library'"
+          class="settings-modal__tab-pane"
+        >
           <PromptLibrary />
         </div>
 
-        <div v-if="hasVisitedTab('plugins')" v-show="activeTab === 'plugins'" class="settings-modal__tab-pane">
+        <div
+          v-if="hasVisitedTab('plugins')"
+          v-show="activeTab === 'plugins'"
+          class="settings-modal__tab-pane"
+        >
           <PluginManager />
         </div>
 
-        <div v-if="hasVisitedTab('text-defaults')" v-show="activeTab === 'text-defaults'" class="settings-modal__tab-pane">
+        <div
+          v-if="hasVisitedTab('text-defaults')"
+          v-show="activeTab === 'text-defaults'"
+          class="settings-modal__tab-pane"
+        >
           <TextStyleDefaultsSettings />
         </div>
 
-        <div v-if="hasVisitedTab('more')" v-show="activeTab === 'more'" class="settings-modal__tab-pane">
+        <div
+          v-if="hasVisitedTab('more')"
+          v-show="activeTab === 'more'"
+          class="settings-modal__tab-pane"
+        >
           <MoreSettings />
         </div>
       </div>
@@ -90,10 +126,7 @@
     </fieldset>
 
     <template #footer>
-      <ProductActionRow
-        aria-label="设置状态"
-        variant="dialog"
-      >
+      <ProductActionRow aria-label="设置状态" variant="dialog">
         <span class="settings-modal__save-status">
           {{ isSaving ? '正在保存…' : '修改后自动保存' }}
         </span>
@@ -104,8 +137,9 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
+import { useRuntimeStore } from '@/stores/runtimeStore'
 import BaseModal from '@/components/common/BaseModal.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
@@ -132,6 +166,7 @@ const emit = defineEmits<{
 }>()
 
 const settingsStore = useSettingsStore()
+const runtimeStore = useRuntimeStore()
 
 const isOpen = ref(props.modelValue)
 type SettingsTabId =
@@ -149,13 +184,17 @@ const activeTab = ref<SettingsTabId>('ocr')
 const visitedTabs = ref<Set<SettingsTabId>>(new Set(['ocr']))
 const contentReady = ref(false)
 const isSaving = ref(false)
+const backendUnavailableMessage = computed(
+  () =>
+    settingsStore.backendError || '正在读取后端设置；完成前不展示或写入配置，也不调用 Provider。'
+)
 let openRequestId = 0
 let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
 let savePromise: Promise<boolean> | null = null
 let applyingPersistence = false
 let hasUnsavedChanges = false
 
-const tabs = [
+const allTabs = [
   { id: 'ocr', label: 'OCR识别' },
   { id: 'translate', label: '翻译服务' },
   { id: 'detection', label: '检测设置' },
@@ -164,11 +203,17 @@ const tabs = [
   { id: 'prompt-library', label: '提示词管理' },
   { id: 'plugins', label: '插件管理' },
   { id: 'text-defaults', label: '文本默认值' },
-  { id: 'more', label: '更多' }
+  { id: 'more', label: '更多' },
 ] satisfies Array<{ id: SettingsTabId; label: string }>
 
+const tabs = computed(() =>
+  allTabs.filter(
+    tab => tab.id !== 'plugins' || runtimeStore.capabilities?.features.plugins !== false
+  )
+)
+
 function isSettingsTabId(value: string): value is SettingsTabId {
-  return tabs.some(tab => tab.id === value)
+  return tabs.value.some(tab => tab.id === value)
 }
 
 function setActiveTab(tabId: string): void {
@@ -184,7 +229,7 @@ function hasVisitedTab(tabId: SettingsTabId): boolean {
 
 watch(
   () => props.modelValue,
-  (newVal) => {
+  newVal => {
     if (newVal) {
       isOpen.value = true
       if (props.initialTab && isSettingsTabId(props.initialTab)) {
@@ -195,29 +240,24 @@ watch(
       void persistChanges().finally(() => closeModal(false))
     }
   },
-  { immediate: true },
+  { immediate: true }
 )
 
 watch(
-  () => [
-    settingsStore.settings,
-    settingsStore.textStyleDefaults,
-    settingsStore.providerConfigs,
-  ],
+  () => [settingsStore.settings, settingsStore.textStyleDefaults, settingsStore.providerConfigs],
   () => {
     if (!isOpen.value || !contentReady.value || applyingPersistence) return
     hasUnsavedChanges = true
     scheduleAutoSave()
   },
-  { deep: true },
+  { deep: true }
 )
 
 async function handleOpen() {
   const requestId = ++openRequestId
   contentReady.value = false
-  const openingTab = props.initialTab && isSettingsTabId(props.initialTab)
-    ? props.initialTab
-    : activeTab.value
+  const openingTab =
+    props.initialTab && isSettingsTabId(props.initialTab) ? props.initialTab : activeTab.value
   activeTab.value = openingTab
   visitedTabs.value = new Set([openingTab])
   await settingsStore.loadFromBackend()

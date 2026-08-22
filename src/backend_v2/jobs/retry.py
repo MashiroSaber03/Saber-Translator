@@ -24,6 +24,7 @@ from src.backend_v2.jobs.repository import (
 )
 from src.backend_v2.timestamps import utcnow
 from src.backend_v2.settings.resolver import SettingsResolver
+from src.backend_v2.public_policy import PublicUserPolicyAccess
 from src.backend_v2.storage.schema import (
     assets,
     analysis_page_results,
@@ -56,9 +57,15 @@ from src.backend_v2.web_import.commands import (
 class JobRetryService:
     """Apply the plan's current-settings/original-snapshot retry semantics."""
 
-    def __init__(self, engine: Engine) -> None:
+    def __init__(
+        self,
+        engine: Engine,
+        *,
+        public_access: PublicUserPolicyAccess | None = None,
+    ) -> None:
         self.engine = engine
         self.repository = JobQueueRepository(engine)
+        self.public_access = public_access
         database_path = engine.url.database
         if not database_path:
             raise ValueError("job retries require a file-backed SQLite database")
@@ -608,7 +615,10 @@ class JobRetryService:
                 "styleSourcePageId": source_page_id,
                 "styleSourceDocumentRevision": int(source_revision),
             }
-        return TranslationJobCommandService(self.engine).create_chapter_job(
+        return TranslationJobCommandService(
+            self.engine,
+            public_access=self.public_access,
+        ).create_chapter_job(
             chapter_id=str(chapter_id),
             config={
                 "mode": mode,
@@ -638,7 +648,10 @@ class JobRetryService:
         chapter_id = source.get("chapter_id")
         if not chapter_id:
             raise JobConflict("detection retry target chapter no longer exists")
-        return AuxiliaryTranslationCommands(self.engine).create_detect_job(
+        return AuxiliaryTranslationCommands(
+            self.engine,
+            public_access=self.public_access,
+        ).create_detect_job(
             chapter_id=str(chapter_id),
             page_ids=self._page_ids(selected_items),
             idempotency_key=idempotency_key,
@@ -1065,6 +1078,21 @@ class JobRetryService:
             for item in selected_items
         )
         config = _json_object(source.get("config_json"))
+        if self.public_access is not None and str(source["kind"]) in {
+            "translation",
+            "remove_text",
+            "detect",
+        }:
+            if str(source["kind"]) in {"translation", "remove_text"}:
+                self.public_access.enforce_translation_command(config)
+            config = self.public_access.apply_resolved_translation(
+                config,
+                page_ids=(
+                    ()
+                    if str(source["kind"]) == "detect"
+                    else tuple(requested_page_ids)
+                ),
+            )
         display = _json_object(source.get("target_display_json"))
         spec = JobSpec(
             kind=str(source["kind"]),

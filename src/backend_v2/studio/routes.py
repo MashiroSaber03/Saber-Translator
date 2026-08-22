@@ -42,14 +42,19 @@ from src.backend_v2.studio.pure import (
     create_empty_document,
     import_document_payload,
 )
+from src.backend_v2.public_policy import PublicUserPolicyAccess
+from src.backend_v2.runtime_profile import RuntimeProfile, resolve_runtime_profile
 
 
 def create_studio_blueprint(
     *,
     engine: Engine,
     data_root: Path,
+    profile: RuntimeProfile | None = None,
 ) -> Blueprint:
+    profile = profile or resolve_runtime_profile("local")
     blueprint = Blueprint("studio_v2", __name__, url_prefix="/api/v2/studio")
+    public_access = PublicUserPolicyAccess(engine, profile)
     repository = StudioRepository(engine)
     settings = SettingsResolver(engine)
     derived = InsightDerivedRepository(engine)
@@ -63,6 +68,10 @@ def create_studio_blueprint(
         data_root=data_root,
         repository=repository,
     )
+
+    @blueprint.before_request
+    def require_character_studio_access() -> None:
+        public_access.require_feature("characterStudio")
 
     @blueprint.errorhandler(StudioNotFound)
     def not_found(error: StudioNotFound):

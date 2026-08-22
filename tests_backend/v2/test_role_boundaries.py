@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import socket
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -28,6 +29,8 @@ from src.backend_v2.launcher.entrypoint import (
     _is_expected_previous_child,
     _reset_restart_count_after_stable_run,
     _start_child_with_retries,
+    _stop_children,
+    _try_reconcile_dead_child,
 )
 from src.backend_v2.runtime_identity import (
     API_EPOCH_ID_ENV,
@@ -374,6 +377,85 @@ def test_launcher_requires_repeated_api_health_failures_before_restart(
     now = API_HEALTH_FAILURE_LIMIT * API_HEALTH_CHECK_INTERVAL_SECONDS
     assert _api_health_requires_restart(managed, port=5000, now=now)
     assert managed.health_failures == API_HEALTH_FAILURE_LIMIT
+
+
+def test_launcher_health_grace_covers_short_tun_transitions() -> None:
+    assert API_HEALTH_CHECK_INTERVAL_SECONDS * API_HEALTH_FAILURE_LIMIT >= 15
+
+
+def test_stop_children_terminates_descendants_before_wrapper(monkeypatch) -> None:
+    events: list[str] = []
+
+    class FakeDescendant:
+        def terminate(self) -> None:
+            events.append("descendant-terminate")
+
+        def kill(self) -> None:
+            events.append("descendant-kill")
+
+    class FakePsutilRoot:
+        def children(self, *, recursive: bool) -> list[FakeDescendant]:
+            assert recursive is True
+            return [descendant]
+
+    class FakeChild:
+        pid = 123
+
+        def poll(self):
+            return None
+
+        def terminate(self) -> None:
+            events.append("wrapper-terminate")
+
+        def wait(self, *, timeout: float):
+            events.append("wrapper-wait")
+            return 0
+
+        def kill(self) -> None:
+            events.append("wrapper-kill")
+
+    descendant = FakeDescendant()
+    monkeypatch.setattr(
+        "src.backend_v2.launcher.entrypoint.psutil.Process",
+        lambda _pid: FakePsutilRoot(),
+    )
+    monkeypatch.setattr(
+        "src.backend_v2.launcher.entrypoint.psutil.wait_procs",
+        lambda processes, timeout: (list(processes), []),
+    )
+
+    _stop_children([FakeChild()])  # type: ignore[list-item]
+
+    assert events == [
+        "descendant-terminate",
+        "wrapper-terminate",
+        "wrapper-wait",
+    ]
+
+
+def test_launcher_retries_dead_child_reconciliation_after_sqlite_busy() -> None:
+    class BusyRepository:
+        def reconcile_dead_worker(self, _epoch_id: str) -> None:
+            raise sqlite3.OperationalError("database is locked")
+
+    assert not _try_reconcile_dead_child(
+        BusyRepository(),  # type: ignore[arg-type]
+        role="worker",
+        epoch_id="worker-epoch",
+    )
+
+
+def test_launcher_does_not_hide_non_busy_reconciliation_errors() -> None:
+    class BrokenRepository:
+        def reconcile_dead_api(self, _epoch_id: str) -> None:
+            raise RuntimeError("reconciliation failed")
+
+    with pytest.raises(RuntimeError, match="reconciliation failed"):
+        _try_reconcile_dead_child(
+            BrokenRepository(),  # type: ignore[arg-type]
+            role="api",
+            epoch_id="api-epoch",
+        )
 
 
 def test_launcher_resets_only_stable_consecutive_restart_count() -> None:

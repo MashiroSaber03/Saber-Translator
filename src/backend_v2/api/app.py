@@ -17,6 +17,7 @@ import yaml
 from src.backend_v2.import_guard import assert_api_import_boundary
 from src.backend_v2.paths import data_root_fingerprint, project_root
 from src.backend_v2.runtime_identity import RuntimeIdentity
+from src.backend_v2.runtime_profile import RuntimeProfile, resolve_runtime_profile
 
 
 LOGGER = logging.getLogger("saber.api.http")
@@ -30,6 +31,7 @@ class ApiSettings:
     epoch_healthy: Callable[[], bool] = lambda: True
     host: str = "0.0.0.0"
     port: int = 5000
+    profile: RuntimeProfile = resolve_runtime_profile("local")
 
 
 @dataclass(slots=True)
@@ -58,20 +60,31 @@ def _load_openapi_document() -> dict[str, Any]:
 
 
 def _create_v2_blueprint(settings: ApiSettings) -> Blueprint:
+    from src.backend_v2.auth.repository import AuthRepository
+    from src.backend_v2.public_policy import PublicUserPolicyRepository
+
     blueprint = Blueprint("api_v2", __name__, url_prefix="/api/v2")
+    auth_repository = AuthRepository(settings.engine)
+    public_policy = PublicUserPolicyRepository(settings.engine)
 
     @blueprint.get("/health")
     def health() -> Response:
         healthy = settings.epoch_healthy()
-        response = jsonify(
-            {
-                "status": "ok" if healthy else "fenced",
-                "role": "api",
-                "schemaVersion": "v2",
-                "epochId": settings.identity.epoch_id,
-                "dataRootFingerprint": data_root_fingerprint(settings.data_root),
-            }
-        )
+        payload: dict[str, object] = {
+            "status": "ok" if healthy else "fenced",
+        }
+        if settings.profile.name != "public" or not request.headers.get(
+            "CF-Connecting-IP"
+        ):
+            payload.update(
+                {
+                    "role": "api",
+                    "schemaVersion": "v2",
+                    "epochId": settings.identity.epoch_id,
+                    "dataRootFingerprint": data_root_fingerprint(settings.data_root),
+                }
+            )
+        response = jsonify(payload)
         response.status_code = 200 if healthy else 503
         return response
 
@@ -82,8 +95,29 @@ def _create_v2_blueprint(settings: ApiSettings) -> Blueprint:
             content_type="application/json; charset=utf-8",
         )
 
+    @blueprint.get("/system/capabilities")
+    def capabilities() -> Response:
+        return jsonify(
+            {
+                "profile": settings.profile.name,
+                "requiresAuth": settings.profile.requires_auth,
+                "browserCredentials": settings.profile.browser_credentials,
+                "registrationRequiresInvite": (
+                    auth_repository.registration_requires_invite()
+                ),
+                "publicUserPolicy": public_policy.load(),
+                "features": {
+                    "plugins": settings.profile.allow_plugins,
+                    "webImport": settings.profile.allow_web_import,
+                    "localProviders": settings.profile.allow_local_providers,
+                },
+            }
+        )
+
     @blueprint.get("/system/server-info")
     def server_info() -> Response:
+        if settings.profile.name == "public":
+            return jsonify({"error": {"code": "not_found", "message": "not found"}}), 404
         hostname = socket.gethostname()
         try:
             lan_address = socket.gethostbyname(hostname)
@@ -165,9 +199,110 @@ def create_api_app(settings: ApiSettings) -> Flask:
         JSON_SORT_KEYS=False,
         SABER_V2_DATA_ROOT=str(settings.data_root),
         SABER_V2_API_EPOCH_ID=settings.identity.epoch_id,
+        SABER_V2_PROFILE=settings.profile.name,
+        MAX_CONTENT_LENGTH=90 * 1024 * 1024 if settings.profile.name == "public" else None,
     )
+    from src.backend_v2.public_policy import PublicPolicyDenied
+    from src.backend_v2.storage.assets import AssetQuotaExceeded
+
+    @app.errorhandler(PublicPolicyDenied)
+    def public_policy_denied(error: PublicPolicyDenied):
+        return jsonify(
+            {"error": {"code": error.code, "message": str(error)}}
+        ), 403
+
+    @app.errorhandler(AssetQuotaExceeded)
+    def asset_quota_exceeded(error: AssetQuotaExceeded):
+        return jsonify(
+            {
+                "error": {
+                    "code": "asset_quota_exceeded",
+                    "message": str(error),
+                    "usedBytes": error.used_bytes,
+                    "quotaBytes": error.quota_bytes,
+                    "incomingBytes": error.incoming_bytes,
+                }
+            }
+        ), 413
+
+    @app.errorhandler(413)
+    def request_too_large(_error):
+        return jsonify(
+            {
+                "error": {
+                    "code": "request_too_large",
+                    "message": "上传内容过大，单次请求最多 90MB",
+                }
+            }
+        ), 413
+
+    @app.errorhandler(PermissionError)
+    def permission_denied(error: PermissionError):
+        return jsonify(
+            {"error": {"code": "forbidden", "message": str(error)}}
+        ), 403
+
+    if settings.profile.name == "public":
+        allowed_hosts = {
+            "127.0.0.1",
+            "localhost",
+            settings.profile.public_host,
+        }
+
+        @app.before_request
+        def validate_public_host():
+            host = request.host.partition(":")[0].lower().rstrip(".")
+            if host not in allowed_hosts:
+                return jsonify(
+                    {"error": {"code": "invalid_host", "message": "invalid host"}}
+                ), 400
+            return None
+
+        @app.after_request
+        def add_public_security_headers(response: Response) -> Response:
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; script-src 'self'; "
+                "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
+                "font-src 'self' data:; connect-src 'self'; object-src 'none'; "
+                "base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+            )
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            response.headers["X-Frame-Options"] = "DENY"
+            response.headers["Referrer-Policy"] = "no-referrer"
+            response.headers["Permissions-Policy"] = (
+                "camera=(), microphone=(), geolocation=(), payment=()"
+            )
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=31536000; includeSubDomains"
+            )
+            if request.path.startswith("/api/") or request.path == "/":
+                response.headers["Cache-Control"] = "no-store"
+            elif request.path.startswith(("/js/", "/assets/")):
+                response.headers["Cache-Control"] = (
+                    "public, max-age=31536000, immutable"
+                )
+            return response
+
     _install_request_logging(app)
+    from src.backend_v2.auth.http import install_authentication
+    from src.backend_v2.auth.authorization import install_route_ownership
+    from src.backend_v2.auth.repository import AuthRepository
+    from src.backend_v2.auth.routes import create_auth_blueprint
+
+    install_authentication(
+        app,
+        repository=AuthRepository(settings.engine),
+        profile=settings.profile,
+    )
+    install_route_ownership(
+        app,
+        engine=settings.engine,
+        profile=settings.profile,
+    )
     app.register_blueprint(_create_v2_blueprint(settings))
+    app.register_blueprint(
+        create_auth_blueprint(engine=settings.engine, profile=settings.profile)
+    )
     from src.backend_v2.content.routes import create_content_blueprint
     from src.backend_v2.jobs.events import JobEventBroadcaster
     from src.backend_v2.jobs.repository import JobQueueRepository
@@ -256,52 +391,76 @@ def create_api_app(settings: ApiSettings) -> Flask:
         executors=(cpu_operation_executor, render_executor),
     )
     app.register_blueprint(
-        create_content_blueprint(data_root=settings.data_root, engine=engine)
+        create_content_blueprint(
+            data_root=settings.data_root,
+            engine=engine,
+            profile=settings.profile,
+        )
     )
-    app.register_blueprint(create_system_blueprint(engine=engine))
     app.register_blueprint(
-        create_jobs_blueprint(engine=engine, broadcaster=broadcaster)
+        create_system_blueprint(engine=engine, profile=settings.profile)
+    )
+    app.register_blueprint(
+        create_jobs_blueprint(
+            engine=engine,
+            broadcaster=broadcaster,
+            profile=settings.profile,
+        )
     )
     app.register_blueprint(
         create_insight_blueprint(
             engine=engine,
             data_root=settings.data_root,
+            profile=settings.profile,
         )
     )
     app.register_blueprint(
         create_studio_blueprint(
             engine=engine,
             data_root=settings.data_root,
+            profile=settings.profile,
         )
     )
     app.register_blueprint(
-        create_operations_blueprint(data_root=settings.data_root, engine=engine)
-    )
-    app.register_blueprint(
-        create_plugins_blueprint(
+        create_operations_blueprint(
             data_root=settings.data_root,
             engine=engine,
+            profile=settings.profile,
         )
     )
+    if settings.profile.allow_plugins:
+        app.register_blueprint(
+            create_plugins_blueprint(
+                data_root=settings.data_root,
+                engine=engine,
+            )
+        )
+        app.register_blueprint(
+            create_plugin_agent_blueprint(
+                data_root=settings.data_root,
+                engine=engine,
+            )
+        )
     app.register_blueprint(
-        create_plugin_agent_blueprint(
+        create_translation_blueprint(engine=engine, profile=settings.profile)
+    )
+    app.register_blueprint(
+        create_settings_blueprint(
             data_root=settings.data_root,
             engine=engine,
+            profile=settings.profile,
         )
-    )
-    app.register_blueprint(create_translation_blueprint(engine=engine))
-    app.register_blueprint(
-        create_settings_blueprint(data_root=settings.data_root, engine=engine)
     )
     app.register_blueprint(
         create_transfer_blueprint(data_root=settings.data_root, engine=engine)
     )
-    app.register_blueprint(
-        create_web_import_blueprint(
-            data_root=settings.data_root,
-            engine=engine,
+    if settings.profile.allow_web_import:
+        app.register_blueprint(
+            create_web_import_blueprint(
+                data_root=settings.data_root,
+                engine=engine,
+            )
         )
-    )
     app.register_blueprint(create_web_blueprint())
 
     # Unit tests may share a pytest process with suites that import Torch and

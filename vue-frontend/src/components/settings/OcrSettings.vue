@@ -353,8 +353,10 @@ import {
   useAiModelDiscovery,
   type AiModelDiscoveryMessageTone,
 } from '@/composables/useAiModelDiscovery'
+import { usePublicUserAccess } from '@/composables/usePublicUserAccess'
 const settingsStore = useSettingsStore()
 const toast = useToast()
+const publicAccess = usePublicUserAccess()
 const settings = computed(() => settingsStore.settings)
 const hasStoredBaiduCredential = computed(() => settingsStore.hasCredential('ocr', 'baidu'))
 const baiduStoredCredentialHint = computed(() =>
@@ -402,15 +404,21 @@ const aiVisionModelOptions = computed(() => {
   })
   return options
 })
+const policyOcrEngineOptions = computed(() => publicAccess.modelOptions(allOcrEngineOptions, {
+  manga_ocr: 'manga_ocr',
+  paddle_ocr: 'paddle_ocr',
+  paddleocr_vl: 'paddleocr_vl',
+  '48px_ocr': 'ocr_48px',
+}))
 const ocrEngineOptions = computed(() => {
   if (!settings.value.hybridOcr.enabled) {
-    return allOcrEngineOptions
+    return policyOcrEngineOptions.value
   }
   const supported = new Set<string>(SUPPORTED_HYBRID_OCR_ENGINES)
-  return allOcrEngineOptions.filter(option => supported.has(option.value))
+  return policyOcrEngineOptions.value.filter(option => supported.has(String(option.value)))
 })
 const hybridSecondaryEngineOptions = computed(() =>
-  allOcrEngineOptions
+  policyOcrEngineOptions.value
     .filter(
       option =>
         isSupportedHybridOcrEngine(option.value) && option.value !== settings.value.ocrEngine

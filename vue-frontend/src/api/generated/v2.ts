@@ -20,6 +20,265 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getRuntimeCapabilities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["registerAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["loginAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["logoutAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getCurrentAccount"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/recover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["recoverAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/change-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["changeAccountPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-credentials/{domain}/{provider}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                domain: string;
+                provider: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["loadBrowserCredentialLease"];
+        post?: never;
+        delete: operations["deleteBrowserCredentialLease"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listAdminUsers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{user_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["setAdminUserStatus"];
+        trace?: never;
+    };
+    "/admin/asset-quota": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getAssetQuota"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["setAssetQuota"];
+        trace?: never;
+    };
+    "/admin/registration-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getRegistrationPolicy"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["setRegistrationPolicy"];
+        trace?: never;
+    };
+    "/admin/public-user-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getPublicUserPolicy"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["setPublicUserPolicy"];
+        trace?: never;
+    };
+    "/admin/invites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listAdminInvites"];
+        put?: never;
+        post: operations["createAdminInvite"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/invites/{invite_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["revokeAdminInvite"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{user_id}/recovery-code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createAdminUserRecoveryCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/server-info": {
         parameters: {
             query?: never;
@@ -2429,6 +2688,157 @@ export interface components {
     schemas: {
         /** Format: uuid */
         Uuid: string;
+        RuntimeCapabilities: {
+            /** @enum {string} */
+            profile: "local" | "public";
+            requiresAuth: boolean;
+            browserCredentials: boolean;
+            registrationRequiresInvite: boolean;
+            publicUserPolicy: components["schemas"]["PublicUserPolicy"];
+            features: {
+                plugins: boolean;
+                webImport: boolean;
+                localProviders: boolean;
+            };
+        };
+        AuthUser: {
+            id: components["schemas"]["Uuid"];
+            username: string;
+            /** @enum {string} */
+            role: "user" | "admin";
+        };
+        AuthSession: {
+            user: components["schemas"]["AuthUser"];
+            csrfToken?: string;
+            assetUsageBytes: number;
+            assetQuotaBytes: number;
+            recoveryCodes?: string[];
+        };
+        LoginCommand: {
+            username: string;
+            password: string;
+        };
+        RegisterCommand: {
+            username: string;
+            password: string;
+            inviteCode?: string;
+        };
+        RecoverCommand: {
+            username: string;
+            recoveryCode: string;
+            newPassword: string;
+        };
+        ChangePasswordCommand: {
+            currentPassword: string;
+            newPassword: string;
+        };
+        BrowserCredentialCommand: {
+            secret: {
+                [key: string]: string;
+            };
+        };
+        BrowserCredentialLoaded: {
+            /** @constant */
+            status: "loaded";
+            credentialReference: string;
+        };
+        StatusResponse: {
+            /** @enum {string} */
+            status: "ok" | "deleted";
+        };
+        AssetQuota: {
+            assetQuotaBytes: number;
+        };
+        AdminQuotaCommand: {
+            assetQuotaBytes: number;
+        };
+        RegistrationPolicy: {
+            registrationRequiresInvite: boolean;
+        };
+        PublicUserPolicy: {
+            features: {
+                translation: boolean;
+                insight: boolean;
+                characterStudio: boolean;
+                editMode: boolean;
+            };
+            models: {
+                detector_default: boolean;
+                detector_ctd: boolean;
+                detector_yolo: boolean;
+                aux_ysg_yolo: boolean;
+                saber_yolo: boolean;
+                manga_ocr: boolean;
+                ocr_48px: boolean;
+                paddle_ocr: boolean;
+                paddleocr_vl: boolean;
+                lama_mpe: boolean;
+                litelama: boolean;
+            };
+            settings: {
+                lamaDisableResize: {
+                    editable: boolean;
+                    value: boolean;
+                };
+                parallel: {
+                    allowed: boolean;
+                    maxDeepLearningConcurrency: number;
+                };
+            };
+        };
+        AdminStatusCommand: {
+            /** @enum {string} */
+            status: "active" | "disabled";
+        };
+        AdminUser: {
+            id: components["schemas"]["Uuid"];
+            username: string;
+            /** @enum {string} */
+            role: "user" | "admin";
+            /** @enum {string} */
+            status: "active" | "disabled";
+            assetUsageBytes: number;
+            assetQuotaBytes: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** @enum {string} */
+            taskStatus: "active" | "queued" | "interrupted" | "idle";
+            activeTaskCount: number;
+            queuedTaskCount: number;
+            interruptedTaskCount: number;
+            /** @description Completed jobs still present in retained task history. */
+            completedTaskCount: number;
+            /** @description Failed or partially completed jobs still present in retained task history. */
+            issueTaskCount: number;
+            currentTaskKind: string | null;
+            currentTaskStartedAt: string | null;
+            lastTaskAt: string | null;
+        };
+        AdminUserList: {
+            users: components["schemas"]["AdminUser"][];
+        };
+        AdminInvite: {
+            id: string;
+            /** @enum {string} */
+            status: "active" | "used" | "expired" | "revoked";
+            /** Format: date-time */
+            expiresAt: string;
+            usedAt: string | null;
+            usedBy: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        AdminInviteList: {
+            invites: components["schemas"]["AdminInvite"][];
+        };
+        AdminInviteCreated: {
+            code: string;
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        RecoveryCodeCreated: {
+            recoveryCode: string;
+        };
         HealthResponse: {
             /** @constant */
             status: "ok";
@@ -4720,6 +5130,477 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    getRuntimeCapabilities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Fixed capabilities for the selected runtime profile. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeCapabilities"];
+                };
+            };
+        };
+    };
+    registerAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterCommand"];
+            };
+        };
+        responses: {
+            /** @description Account session and one-time recovery codes. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthSession"];
+                };
+            };
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    loginAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginCommand"];
+            };
+        };
+        responses: {
+            /** @description Authenticated browser session. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthSession"];
+                };
+            };
+            401: components["responses"]["NotFound"];
+        };
+    };
+    logoutAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Browser session deleted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusResponse"];
+                };
+            };
+        };
+    };
+    getCurrentAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current account and effective asset quota. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthSession"];
+                };
+            };
+        };
+    };
+    recoverAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecoverCommand"];
+            };
+        };
+        responses: {
+            /** @description Password reset and existing sessions revoked. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusResponse"];
+                };
+            };
+            401: components["responses"]["NotFound"];
+        };
+    };
+    changeAccountPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangePasswordCommand"];
+            };
+        };
+        responses: {
+            /** @description Password changed and all sessions revoked. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusResponse"];
+                };
+            };
+        };
+    };
+    loadBrowserCredentialLease: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                domain: string;
+                provider: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrowserCredentialCommand"];
+            };
+        };
+        responses: {
+            /** @description Credential loaded into launcher memory. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserCredentialLoaded"];
+                };
+            };
+        };
+    };
+    deleteBrowserCredentialLease: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                domain: string;
+                provider: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description In-memory credential lease removed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusResponse"];
+                };
+            };
+        };
+    };
+    listAdminUsers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accounts with asset usage, effective quotas, and retained task activity. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserList"];
+                };
+            };
+        };
+    };
+    setAdminUserStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminStatusCommand"];
+            };
+        };
+        responses: {
+            /** @description Account status updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusResponse"];
+                };
+            };
+        };
+    };
+    getAssetQuota: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Per-user asset quota shared by all accounts. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetQuota"];
+                };
+            };
+        };
+    };
+    setAssetQuota: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminQuotaCommand"];
+            };
+        };
+        responses: {
+            /** @description Updated per-user asset quota shared by all accounts. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetQuota"];
+                };
+            };
+        };
+    };
+    getRegistrationPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Whether new accounts must provide an invite code. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegistrationPolicy"];
+                };
+            };
+        };
+    };
+    setRegistrationPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegistrationPolicy"];
+            };
+        };
+        responses: {
+            /** @description Updated registration policy. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegistrationPolicy"];
+                };
+            };
+        };
+    };
+    getPublicUserPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Feature, local-model, and performance policy for ordinary public users. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicUserPolicy"];
+                };
+            };
+        };
+    };
+    setPublicUserPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublicUserPolicy"];
+            };
+        };
+        responses: {
+            /** @description Updated public-user policy. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicUserPolicy"];
+                };
+            };
+        };
+    };
+    listAdminInvites: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Invite audit list without raw invite secrets. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminInviteList"];
+                };
+            };
+        };
+    };
+    createAdminInvite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description New one-time invite code. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminInviteCreated"];
+                };
+            };
+        };
+    };
+    revokeAdminInvite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invite_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Invite revoked. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusResponse"];
+                };
+            };
+        };
+    };
+    createAdminUserRecoveryCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One-time recovery code shown only in this response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecoveryCodeCreated"];
                 };
             };
         };

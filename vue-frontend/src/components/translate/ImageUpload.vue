@@ -11,6 +11,7 @@ import UiProgressBar from '@/components/ui/UiProgressBar.vue'
 import { ref, watch } from 'vue'
 import { showToast } from '@/utils/toast'
 import { useWebImportStore } from '@/stores/webImportStore'
+import { useRuntimeStore } from '@/stores/runtimeStore'
 import {
   createContainerImportJob,
   importImagesSequentially,
@@ -29,6 +30,7 @@ const emit = defineEmits<{
   (e: 'uploadComplete', count: number): void
 }>()
 const webImportStore = useWebImportStore()
+const runtimeStore = useRuntimeStore()
 const folderInputRef = ref<InstanceType<typeof UiFileInput> | null>(null)
 const isLoading = ref(false)
 const errorMessage = ref('')
@@ -267,8 +269,9 @@ watch(() => props.chapterId, () => {
         <UiIcon name="folder-open" size="15" />
         <span>选择文件夹</span>
       </UiButton>
-      <span class="image-upload__separator" aria-hidden="true">|</span>
+      <span v-if="runtimeStore.capabilities?.features.webImport !== false" class="image-upload__separator" aria-hidden="true">|</span>
       <UiButton
+        v-if="runtimeStore.capabilities?.features.webImport !== false"
         class="image-upload__inline-action"
         variant="link"
         size="sm"

@@ -4,15 +4,18 @@ import UiButton from '@/components/ui/UiButton.vue'
 import UiField from '@/components/ui/UiField.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 
-defineProps<{
+withDefaults(defineProps<{
   failedImageCount: number
   hasFailedImages: boolean
   hasProcessedImage: boolean
   imageSize: number
   isEditMode: boolean
+  editModeAvailable?: boolean
   processedImageLabel: string
   showOriginal: boolean
-}>()
+}>(), {
+  editModeAvailable: true,
+})
 
 defineEmits<{
   (e: 'retryFailed'): void
@@ -38,6 +41,7 @@ defineEmits<{
     </UiButton>
 
     <UiButton
+      v-if="editModeAvailable"
       class="result-toolbar__control"
       :class="{ 'result-toolbar__control--active': isEditMode }"
       variant="primary"

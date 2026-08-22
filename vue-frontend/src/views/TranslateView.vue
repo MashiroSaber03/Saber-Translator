@@ -45,6 +45,8 @@ import { ApiClientError } from '@/api/client'
 import { HISTORY_JOB_STATUSES } from '@/api/v2/jobs'
 import { confirmProductAction } from '@/composables/useProductConfirm'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
+import { useRuntimeStore } from '@/stores/runtimeStore'
+import { usePublicUserAccess } from '@/composables/usePublicUserAccess'
 
 const route = useRoute()
 
@@ -52,6 +54,8 @@ const imageStore = useImageStore()
 const settingsStore = useSettingsStore()
 const bubbleStore = useBubbleStore()
 const taskCenterStore = useTaskCenterStore()
+const runtimeStore = useRuntimeStore()
+const publicAccess = usePublicUserAccess()
 
 const {
   validateBeforeTranslation,
@@ -79,6 +83,7 @@ const pendingContentImportJobIds = ref<Set<string>>(new Set())
 const showSponsorModal = ref(false)
 
 const isEditMode = ref(false)
+const canUseEditMode = computed(() => publicAccess.featureAllowed('editMode'))
 
 const currentImage = computed(() => imageStore.currentImage)
 const hasImages = computed(() => imageStore.hasImages)
@@ -228,6 +233,7 @@ const {
   translateInit,
   validateBeforeTranslation,
   isEditMode,
+  canUseEditMode,
 })
 
 watch(
@@ -459,6 +465,7 @@ async function handleQuickWorkspacePromoted() {
 
         <ImageResultDisplay
           :is-edit-mode="isEditMode"
+          :edit-mode-available="canUseEditMode"
           @toggle-edit-mode="toggleEditMode"
           @retry-failed="handleRetryFailed"
         />
@@ -497,9 +504,12 @@ async function handleQuickWorkspacePromoted() {
       @close="showSponsorModal = false"
     />
 
-    <WebImportDisclaimer />
+    <WebImportDisclaimer v-if="runtimeStore.capabilities?.features.webImport !== false" />
 
-    <WebImportModal @commit-accepted="handleWebImportCommitAccepted" />
+    <WebImportModal
+      v-if="runtimeStore.capabilities?.features.webImport !== false"
+      @commit-accepted="handleWebImportCommitAccepted"
+    />
   </AppShell>
 </template>
 

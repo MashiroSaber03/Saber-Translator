@@ -22,6 +22,8 @@ import uuid
 from sqlalchemy import Engine, and_, delete, exists, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
+from src.backend_v2.auth.constants import LOCAL_USER_ID
+from src.backend_v2.auth.ownership import effective_owner_id, owner_scope
 from src.backend_v2.serialization import canonical_json as _json
 from src.backend_v2.insight.derived import (
     InsightDerivedRepository,
@@ -52,6 +54,7 @@ from src.backend_v2.storage.schema import (
     analysis_artifacts,
     analysis_layer_result_pages,
     analysis_layer_results,
+    books,
     credential_versions,
     process_epochs,
     transient_requests,
@@ -137,6 +140,7 @@ class TransientFence:
     request_id: str
     attempt_id: str
     worker_epoch_id: str
+    owner_user_id: str = LOCAL_USER_ID
 
 
 @dataclass(frozen=True, slots=True)
@@ -316,9 +320,17 @@ class TransientRequestRepository:
         now = utcnow()
         try:
             with immediate_transaction(self.engine) as connection:
+                if connection.execute(
+                    select(books.c.id).where(
+                        books.c.id == book_id,
+                        books.c.owner_user_id == effective_owner_id(),
+                    )
+                ).scalar_one_or_none() is None:
+                    raise QAConflict("book not found")
                 connection.execute(
                     insert(transient_requests).values(
                         id=request_id,
+                        owner_user_id=effective_owner_id(),
                         kind="vector_query",
                         book_id=book_id,
                         status="pending",
@@ -339,8 +351,11 @@ class TransientRequestRepository:
         now = utcnow()
         attempt_id = str(uuid.uuid4())
         with immediate_transaction(self.engine) as connection:
-            request_id = connection.execute(
-                select(transient_requests.c.id)
+            candidate = connection.execute(
+                select(
+                    transient_requests.c.id,
+                    transient_requests.c.owner_user_id,
+                )
                 .where(
                     transient_requests.c.kind == "vector_query",
                     transient_requests.c.status == "pending",
@@ -348,9 +363,10 @@ class TransientRequestRepository:
                 )
                 .order_by(transient_requests.c.created_at)
                 .limit(1)
-            ).scalar_one_or_none()
-            if request_id is None:
+            ).mappings().one_or_none()
+            if candidate is None:
                 return None
+            request_id = str(candidate["id"])
             changed = connection.execute(
                 update(transient_requests)
                 .where(
@@ -371,6 +387,7 @@ class TransientRequestRepository:
             request_id=_required_string(request_id, "QA request id"),
             attempt_id=attempt_id,
             worker_epoch_id=worker_epoch_id,
+            owner_user_id=str(candidate["owner_user_id"]),
         )
 
     def request(self, fence: TransientFence) -> dict[str, Any]:
@@ -738,32 +755,33 @@ class InsightQAWorkerService:
             return False
         started_at = time.monotonic()
         LOGGER.info("Insight QA 检索开始：request=%s", fence.request_id[:8])
-        try:
-            request_payload = self.repository.request(fence)
-            result = self._retrieve(request_payload)
-            self.repository.complete(fence, result=result)
-        except QAFenced:
-            LOGGER.warning(
-                "Insight QA 检索已不再属于当前 Worker：request=%s",
-                fence.request_id[:8],
-            )
-            return True
-        except Exception as exc:
-            LOGGER.exception(
-                "Insight QA 检索失败：request=%s duration=%.2fs",
-                fence.request_id[:8],
-                time.monotonic() - started_at,
-            )
+        with owner_scope(fence.owner_user_id):
             try:
-                self.repository.fail(fence, message=str(exc))
+                request_payload = self.repository.request(fence)
+                result = self._retrieve(request_payload)
+                self.repository.complete(fence, result=result)
             except QAFenced:
-                pass
-        else:
-            LOGGER.info(
-                "Insight QA 检索完成：request=%s duration=%.2fs",
-                fence.request_id[:8],
-                time.monotonic() - started_at,
-            )
+                LOGGER.warning(
+                    "Insight QA 检索已不再属于当前 Worker：request=%s",
+                    fence.request_id[:8],
+                )
+                return True
+            except Exception as exc:
+                LOGGER.exception(
+                    "Insight QA 检索失败：request=%s duration=%.2fs",
+                    fence.request_id[:8],
+                    time.monotonic() - started_at,
+                )
+                try:
+                    self.repository.fail(fence, message=str(exc))
+                except QAFenced:
+                    pass
+            else:
+                LOGGER.info(
+                    "Insight QA 检索完成：request=%s duration=%.2fs",
+                    fence.request_id[:8],
+                    time.monotonic() - started_at,
+                )
         return True
 
     def _retrieve(self, request_payload: Mapping[str, Any]) -> dict[str, Any]:

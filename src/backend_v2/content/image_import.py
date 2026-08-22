@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import hashlib
 from io import BytesIO
 import json
+import os
 from pathlib import Path
 from typing import BinaryIO, Callable
 import uuid
@@ -25,17 +26,21 @@ FORMAT_DETAILS: dict[str, tuple[str, str]] = {
     "TIFF": ("tiff", "image/tiff"),
 }
 
-# Source artwork is intentionally not rejected by pixel dimensions.  All
-# upload paths spool bytes to disk before decoding, so Pillow's process-wide
-# decompression-bomb threshold would only reintroduce an undocumented size
-# gate that conflicts with the product's large-manga workflow.
-Image.MAX_IMAGE_PIXELS = None
+# Local mode keeps the original unrestricted artwork workflow. Public-facing
+# profiles retain a generous decompression-bomb ceiling to protect the host.
+Image.MAX_IMAGE_PIXELS = (
+    50_000_000
+    if os.environ.get("SABER_V2_PROFILE", "local") == "public"
+    else None
+)
 
 
 @dataclass(frozen=True, slots=True)
 class ImportSafetyLimits:
     max_compression_ratio: float = 1000.0
     stream_chunk_bytes: int = 1024 * 1024
+    max_container_entries: int = 10_000
+    max_archive_uncompressed_bytes: int = 2 * 1024 * 1024 * 1024
 
 
 class UnsupportedImage(ValueError):

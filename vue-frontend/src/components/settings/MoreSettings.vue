@@ -25,11 +25,15 @@
         hint="开启后，LAMA 修复将使用原图尺寸进行处理（不缩放到1024px），可获得更高画质。需要更强的 GPU 和更多显存，处理速度会变慢。推荐 RTX 4060 或更高配置使用。适用于两种LAMA修复方法（速度优化和通用）。"
       >
         <UiCheckbox
-          :model-value="settingsStore.settings.lamaDisableResize"
+          :model-value="lamaDisableResizeValue"
+          :disabled="!lamaDisableResizeEditable"
           label="禁用自动缩放"
           @change="settingsStore.setLamaDisableResize"
         />
       </UiField>
+      <p v-if="!lamaDisableResizeEditable" class="more-settings__policy-note">
+        该选项由管理员统一设置，普通用户不能修改。
+      </p>
     </ProductFormSection>
 
     <ProductFormSection>
@@ -134,9 +138,17 @@ import {
   isSupportedFontFileName,
 } from '@/utils/fontFiles'
 import ParallelSettings from './ParallelSettings.vue'
+import { usePublicUserAccess } from '@/composables/usePublicUserAccess'
 
 const settingsStore = useSettingsStore()
 const toast = useToast()
+const publicAccess = usePublicUserAccess()
+const lamaDisableResizeEditable = computed(() => publicAccess.lamaDisableResizeEditable())
+const lamaDisableResizeValue = computed(() => (
+  lamaDisableResizeEditable.value
+    ? settingsStore.settings.lamaDisableResize
+    : publicAccess.lamaDisableResizeValue()
+))
 
 const isLoadingFonts = ref(false)
 const fontList = computed<V2Font[]>(() => settingsStore.fontCatalog)
@@ -212,6 +224,12 @@ async function recoverAssetJournal() {
 </script>
 
 <style scoped>
+.more-settings__policy-note {
+  margin: 8px 0 0;
+  color: var(--color-text-supporting);
+  font-size: 12px;
+}
+
 .more-settings__font-upload-row {
   display: flex;
   align-items: center;

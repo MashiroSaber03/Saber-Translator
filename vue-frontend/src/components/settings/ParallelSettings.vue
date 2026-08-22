@@ -5,16 +5,31 @@ import UiIcon from '@/components/ui/UiIcon.vue'
 import UiNumberField from '@/components/ui/UiNumberField.vue'
 import UiSwitch from '@/components/ui/UiSwitch.vue'
 import { useSettingsStore } from '@/stores/settings'
+import { computed } from 'vue'
+import { usePublicUserAccess } from '@/composables/usePublicUserAccess'
 
 const settingsStore = useSettingsStore()
+const publicAccess = usePublicUserAccess()
+const parallelAllowed = computed(() => publicAccess.parallelAllowed())
+const maxConcurrency = computed(() => publicAccess.maxDeepLearningConcurrency())
+const parallelEnabled = computed(() => (
+  parallelAllowed.value && settingsStore.settings.parallel.enabled
+))
+const deepLearningConcurrency = computed(() => Math.min(
+  settingsStore.settings.parallel.deepLearningLockSize,
+  maxConcurrency.value ?? settingsStore.settings.parallel.deepLearningLockSize,
+))
 
 function updateParallelEnabled(value: boolean): void {
+  if (!parallelAllowed.value) return
   settingsStore.updateParallel({ enabled: value })
 }
 
 function updateLockSize(value: number | null): void {
   if (value === null || !Number.isInteger(value) || value < 1) return
-  settingsStore.updateParallel({ deepLearningLockSize: value })
+  settingsStore.updateParallel({
+    deepLearningLockSize: Math.min(value, maxConcurrency.value ?? value),
+  })
 }
 </script>
 
@@ -30,8 +45,9 @@ function updateLockSize(value: number | null): void {
         hint="使用流水线并行处理，可能提升批量翻译速度"
       >
         <UiSwitch
-          :model-value="settingsStore.settings.parallel.enabled"
+          :model-value="parallelEnabled"
           accessibility-label="启用并行模式"
+          :disabled="!parallelAllowed"
           @change="updateParallelEnabled"
         />
       </UiField>
@@ -41,20 +57,21 @@ function updateLockSize(value: number | null): void {
         label="深度学习并发数"
         control-id="parallelDeepLearningLockSize"
         hint="控制检测/OCR/颜色/修复的最大并发数（建议1-2）"
-        :class="{ 'parallel-settings__field--disabled': !settingsStore.settings.parallel.enabled }"
+        :class="{ 'parallel-settings__field--disabled': !parallelEnabled }"
       >
         <UiNumberField
-          :model-value="settingsStore.settings.parallel.deepLearningLockSize"
+          :model-value="deepLearningConcurrency"
           input-id="parallelDeepLearningLockSize"
           aria-label="深度学习并发数"
           :min="1"
+          :max="maxConcurrency ?? undefined"
           controls
-          :disabled="!settingsStore.settings.parallel.enabled"
+          :disabled="!parallelAllowed || !parallelEnabled"
           @update:model-value="updateLockSize"
         />
       </UiField>
 
-      <div class="parallel-settings__note" v-if="settingsStore.settings.parallel.enabled">
+      <div class="parallel-settings__note" v-if="parallelEnabled">
         <div class="parallel-settings__note-title">
           <UiIcon name="alert-triangle" />
           <span>注意事项</span>
@@ -65,6 +82,9 @@ function updateLockSize(value: number | null): void {
           <li class="parallel-settings__note-item">如果遇到显存不足，请将并发数设为1</li>
         </ul>
       </div>
+      <p v-if="!parallelAllowed" class="parallel-settings__policy-note">
+        管理员已关闭普通用户的并行模式，任务将按顺序执行。
+      </p>
     </ProductFormSection>
   </div>
 </template>
@@ -87,6 +107,12 @@ function updateLockSize(value: number | null): void {
   background: var(--parallel-settings-note-background);
   border: 1px solid var(--parallel-settings-note-border);
   border-radius: 6px;
+  font-size: 12px;
+}
+
+.parallel-settings__policy-note {
+  margin: 10px 0 0;
+  color: var(--color-text-supporting);
   font-size: 12px;
 }
 

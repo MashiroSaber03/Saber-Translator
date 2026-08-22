@@ -37,6 +37,8 @@ from src.backend_v2.storage.platform_repositories import (
     PromptRepository,
     SettingsRepository,
 )
+from src.backend_v2.public_policy import PublicUserPolicyAccess
+from src.backend_v2.runtime_profile import RuntimeProfile, resolve_runtime_profile
 
 
 def _asset_download_name(
@@ -60,8 +62,15 @@ def _asset_download_name(
     return f"{asset_id}{suffix}"
 
 
-def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
+def create_content_blueprint(
+    *,
+    data_root,
+    engine: Engine,
+    profile: RuntimeProfile | None = None,
+) -> Blueprint:
+    profile = profile or resolve_runtime_profile("local")
     blueprint = Blueprint("content_v2", __name__, url_prefix="/api/v2")
+    public_access = PublicUserPolicyAccess(engine, profile)
     repository = ContentRepository(engine)
     settings_repository = SettingsRepository(engine)
     prompt_repository = PromptRepository(engine)
@@ -402,6 +411,7 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
 
     @blueprint.patch("/pages/<page_id>/document")
     def mutate_page_document(page_id: str) -> Response:
+        public_access.require_feature("editMode")
         idempotency_key = _require_idempotency_key()
         body = _json_body(
             allowed_keys={
@@ -415,6 +425,15 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
         mutations = body.get("mutations")
         if not isinstance(mutations, list):
             raise ValueError("mutations must be an array")
+        style_patch = body.get("pageStyleDefaultsPatch")
+        if isinstance(style_patch, dict) and "inpaintMethod" in style_patch:
+            public_access.require_inpaint_method(style_patch["inpaintMethod"])
+        for mutation in mutations:
+            if not isinstance(mutation, dict):
+                continue
+            fields = mutation.get("fields")
+            if isinstance(fields, dict) and "inpaintMethod" in fields:
+                public_access.require_inpaint_method(fields["inpaintMethod"])
         optional_arguments: dict[str, object] = {}
         if "defaultFontId" in body:
             optional_arguments["default_font_id"] = body["defaultFontId"]
@@ -449,6 +468,7 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
         operation: str,
         bubble_id: str | None = None,
     ) -> Response:
+        public_access.require_feature("editMode")
         idempotency_key = _require_idempotency_key()
         body = _json_body(
             allowed_keys=(
@@ -464,6 +484,8 @@ def create_content_blueprint(*, data_root, engine: Engine) -> Blueprint:
             if not isinstance(fields_value, dict):
                 raise ValueError("fields must be an object")
             fields = fields_value
+            if "inpaintMethod" in fields:
+                public_access.require_inpaint_method(fields["inpaintMethod"])
         correlation_id = str(
             uuid.uuid5(
                 uuid.NAMESPACE_URL,

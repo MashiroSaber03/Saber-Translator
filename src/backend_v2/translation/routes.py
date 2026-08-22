@@ -18,12 +18,24 @@ from src.backend_v2.api.request_helpers import (
 from src.backend_v2.jobs.repository import JobConflict
 from src.backend_v2.translation.commands import TranslationJobCommandService
 from src.backend_v2.translation.auxiliary import AuxiliaryTranslationCommands
+from src.backend_v2.public_policy import PublicUserPolicyAccess
+from src.backend_v2.runtime_profile import RuntimeProfile, resolve_runtime_profile
 
 
-def create_translation_blueprint(*, engine: Engine) -> Blueprint:
+def create_translation_blueprint(
+    *,
+    engine: Engine,
+    profile: RuntimeProfile | None = None,
+) -> Blueprint:
+    profile = profile or resolve_runtime_profile("local")
     blueprint = Blueprint("translation_v2", __name__, url_prefix="/api/v2")
-    service = TranslationJobCommandService(engine)
-    auxiliary = AuxiliaryTranslationCommands(engine)
+    public_access = PublicUserPolicyAccess(engine, profile)
+    service = TranslationJobCommandService(engine, public_access=public_access)
+    auxiliary = AuxiliaryTranslationCommands(engine, public_access=public_access)
+
+    @blueprint.before_request
+    def require_translation_access() -> None:
+        public_access.require_feature("translation")
 
     @blueprint.errorhandler(JobConflict)
     def conflict(error: JobConflict):
@@ -135,6 +147,7 @@ def create_translation_blueprint(*, engine: Engine) -> Blueprint:
 
     @blueprint.post("/chapters/<chapter_id>/style-apply-jobs")
     def create_style_apply_job(chapter_id: str):
+        public_access.require_feature("editMode")
         body = _json_body(
             allowed_keys={
                 "sourcePageId",

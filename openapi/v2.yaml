@@ -9,6 +9,8 @@ servers:
   - url: /api/v2
 tags:
   - name: system
+  - name: auth
+  - name: admin
   - name: settings
   - name: content
   - name: pages
@@ -32,6 +34,297 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthResponse"
+  /system/capabilities:
+    get:
+      tags: [system]
+      operationId: getRuntimeCapabilities
+      responses:
+        "200":
+          description: Fixed capabilities for the selected runtime profile.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RuntimeCapabilities"}
+  /auth/register:
+    post:
+      tags: [auth]
+      operationId: registerAccount
+      x-command-mode: transient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/RegisterCommand"}
+      responses:
+        "200":
+          description: Account session and one-time recovery codes.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AuthSession"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /auth/login:
+    post:
+      tags: [auth]
+      operationId: loginAccount
+      x-command-mode: transient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/LoginCommand"}
+      responses:
+        "200":
+          description: Authenticated browser session.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AuthSession"}
+        "401": {$ref: "#/components/responses/NotFound"}
+  /auth/logout:
+    post:
+      tags: [auth]
+      operationId: logoutAccount
+      x-command-mode: transient
+      responses:
+        "200":
+          description: Browser session deleted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/StatusResponse"}
+  /auth/me:
+    get:
+      tags: [auth]
+      operationId: getCurrentAccount
+      responses:
+        "200":
+          description: Current account and effective asset quota.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AuthSession"}
+  /auth/recover:
+    post:
+      tags: [auth]
+      operationId: recoverAccount
+      x-command-mode: transient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/RecoverCommand"}
+      responses:
+        "200":
+          description: Password reset and existing sessions revoked.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/StatusResponse"}
+        "401": {$ref: "#/components/responses/NotFound"}
+  /auth/change-password:
+    post:
+      tags: [auth]
+      operationId: changeAccountPassword
+      x-command-mode: transient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ChangePasswordCommand"}
+      responses:
+        "200":
+          description: Password changed and all sessions revoked.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/StatusResponse"}
+  /browser-credentials/{domain}/{provider}:
+    parameters:
+      - name: domain
+        in: path
+        required: true
+        schema: {type: string, pattern: "^[A-Za-z0-9_.-]{1,96}$"}
+      - name: provider
+        in: path
+        required: true
+        schema: {type: string, pattern: "^[A-Za-z0-9_.-]{1,96}$"}
+    put:
+      tags: [auth]
+      operationId: loadBrowserCredentialLease
+      x-command-mode: transient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/BrowserCredentialCommand"}
+      responses:
+        "200":
+          description: Credential loaded into launcher memory.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/BrowserCredentialLoaded"}
+    delete:
+      tags: [auth]
+      operationId: deleteBrowserCredentialLease
+      x-command-mode: transient
+      responses:
+        "200":
+          description: In-memory credential lease removed.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/StatusResponse"}
+  /admin/users:
+    get:
+      tags: [admin]
+      operationId: listAdminUsers
+      responses:
+        "200":
+          description: Accounts with asset usage, effective quotas, and retained task activity.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AdminUserList"}
+  /admin/users/{user_id}/status:
+    patch:
+      tags: [admin]
+      operationId: setAdminUserStatus
+      x-command-mode: transient
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema: {$ref: "#/components/schemas/Uuid"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/AdminStatusCommand"}
+      responses:
+        "200":
+          description: Account status updated.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/StatusResponse"}
+  /admin/asset-quota:
+    get:
+      tags: [admin]
+      operationId: getAssetQuota
+      responses:
+        "200":
+          description: Per-user asset quota shared by all accounts.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AssetQuota"}
+    patch:
+      tags: [admin]
+      operationId: setAssetQuota
+      x-command-mode: transient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/AdminQuotaCommand"}
+      responses:
+        "200":
+          description: Updated per-user asset quota shared by all accounts.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AssetQuota"}
+  /admin/registration-policy:
+    get:
+      tags: [admin]
+      operationId: getRegistrationPolicy
+      responses:
+        "200":
+          description: Whether new accounts must provide an invite code.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RegistrationPolicy"}
+    patch:
+      tags: [admin]
+      operationId: setRegistrationPolicy
+      x-command-mode: transient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/RegistrationPolicy"}
+      responses:
+        "200":
+          description: Updated registration policy.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RegistrationPolicy"}
+  /admin/public-user-policy:
+    get:
+      tags: [admin]
+      operationId: getPublicUserPolicy
+      responses:
+        "200":
+          description: Feature, local-model, and performance policy for ordinary public users.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PublicUserPolicy"}
+    patch:
+      tags: [admin]
+      operationId: setPublicUserPolicy
+      x-command-mode: transient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/PublicUserPolicy"}
+      responses:
+        "200":
+          description: Updated public-user policy.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PublicUserPolicy"}
+  /admin/invites:
+    get:
+      tags: [admin]
+      operationId: listAdminInvites
+      responses:
+        "200":
+          description: Invite audit list without raw invite secrets.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AdminInviteList"}
+    post:
+      tags: [admin]
+      operationId: createAdminInvite
+      x-command-mode: transient
+      responses:
+        "201":
+          description: New one-time invite code.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AdminInviteCreated"}
+  /admin/invites/{invite_id}:
+    delete:
+      tags: [admin]
+      operationId: revokeAdminInvite
+      x-command-mode: transient
+      parameters:
+        - name: invite_id
+          in: path
+          required: true
+          schema: {type: string, minLength: 12, maxLength: 12}
+      responses:
+        "200":
+          description: Invite revoked.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/StatusResponse"}
+  /admin/users/{user_id}/recovery-code:
+    post:
+      tags: [admin]
+      operationId: createAdminUserRecoveryCode
+      x-command-mode: transient
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema: {$ref: "#/components/schemas/Uuid"}
+      responses:
+        "200":
+          description: One-time recovery code shown only in this response.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RecoveryCodeCreated"}
   /system/server-info:
     get:
       tags: [system]
@@ -3618,6 +3911,279 @@ components:
     Uuid:
       type: string
       format: uuid
+    RuntimeCapabilities:
+      type: object
+      additionalProperties: false
+      required: [profile, requiresAuth, browserCredentials, registrationRequiresInvite, publicUserPolicy, features]
+      properties:
+        profile: {type: string, enum: [local, public]}
+        requiresAuth: {type: boolean}
+        browserCredentials: {type: boolean}
+        registrationRequiresInvite: {type: boolean}
+        publicUserPolicy: {$ref: "#/components/schemas/PublicUserPolicy"}
+        features:
+          type: object
+          additionalProperties: false
+          required: [plugins, webImport, localProviders]
+          properties:
+            plugins: {type: boolean}
+            webImport: {type: boolean}
+            localProviders: {type: boolean}
+    AuthUser:
+      type: object
+      additionalProperties: false
+      required: [id, username, role]
+      properties:
+        id: {$ref: "#/components/schemas/Uuid"}
+        username: {type: string, pattern: "^[a-z0-9_-]{3,32}$"}
+        role: {type: string, enum: [user, admin]}
+    AuthSession:
+      type: object
+      additionalProperties: false
+      required: [user, assetUsageBytes, assetQuotaBytes]
+      properties:
+        user: {$ref: "#/components/schemas/AuthUser"}
+        csrfToken: {type: string}
+        assetUsageBytes: {type: integer, minimum: 0}
+        assetQuotaBytes: {type: integer, minimum: 1}
+        recoveryCodes:
+          type: array
+          items: {type: string}
+    LoginCommand:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username: {type: string, minLength: 3, maxLength: 32}
+        password: {type: string, minLength: 10, maxLength: 128}
+    RegisterCommand:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username: {type: string, minLength: 3, maxLength: 32}
+        password: {type: string, minLength: 10, maxLength: 128}
+        inviteCode: {type: string, minLength: 1}
+    RecoverCommand:
+      type: object
+      additionalProperties: false
+      required: [username, recoveryCode, newPassword]
+      properties:
+        username: {type: string, minLength: 3, maxLength: 32}
+        recoveryCode: {type: string, minLength: 1}
+        newPassword: {type: string, minLength: 10, maxLength: 128}
+    ChangePasswordCommand:
+      type: object
+      additionalProperties: false
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword: {type: string, minLength: 1, maxLength: 128}
+        newPassword: {type: string, minLength: 10, maxLength: 128}
+    BrowserCredentialCommand:
+      type: object
+      additionalProperties: false
+      required: [secret]
+      properties:
+        secret:
+          type: object
+          minProperties: 1
+          maxProperties: 16
+          additionalProperties: {type: string, maxLength: 16384}
+    BrowserCredentialLoaded:
+      type: object
+      additionalProperties: false
+      required: [status, credentialReference]
+      properties:
+        status: {type: string, const: loaded}
+        credentialReference: {type: string, pattern: "^browser:[A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+$"}
+    StatusResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: {type: string, enum: [ok, deleted]}
+    AssetQuota:
+      type: object
+      additionalProperties: false
+      required: [assetQuotaBytes]
+      properties:
+        assetQuotaBytes: {type: integer, minimum: 1}
+    AdminQuotaCommand:
+      type: object
+      additionalProperties: false
+      required: [assetQuotaBytes]
+      properties:
+        assetQuotaBytes: {type: integer, minimum: 1}
+    RegistrationPolicy:
+      type: object
+      additionalProperties: false
+      required: [registrationRequiresInvite]
+      properties:
+        registrationRequiresInvite: {type: boolean}
+    PublicUserPolicy:
+      type: object
+      additionalProperties: false
+      required: [features, models, settings]
+      properties:
+        features:
+          type: object
+          additionalProperties: false
+          required: [translation, insight, characterStudio, editMode]
+          properties:
+            translation: {type: boolean}
+            insight: {type: boolean}
+            characterStudio: {type: boolean}
+            editMode: {type: boolean}
+        models:
+          type: object
+          additionalProperties: false
+          required:
+            - detector_default
+            - detector_ctd
+            - detector_yolo
+            - aux_ysg_yolo
+            - saber_yolo
+            - manga_ocr
+            - ocr_48px
+            - paddle_ocr
+            - paddleocr_vl
+            - lama_mpe
+            - litelama
+          properties:
+            detector_default: {type: boolean}
+            detector_ctd: {type: boolean}
+            detector_yolo: {type: boolean}
+            aux_ysg_yolo: {type: boolean}
+            saber_yolo: {type: boolean}
+            manga_ocr: {type: boolean}
+            ocr_48px: {type: boolean}
+            paddle_ocr: {type: boolean}
+            paddleocr_vl: {type: boolean}
+            lama_mpe: {type: boolean}
+            litelama: {type: boolean}
+        settings:
+          type: object
+          additionalProperties: false
+          required: [lamaDisableResize, parallel]
+          properties:
+            lamaDisableResize:
+              type: object
+              additionalProperties: false
+              required: [editable, value]
+              properties:
+                editable: {type: boolean}
+                value: {type: boolean}
+            parallel:
+              type: object
+              additionalProperties: false
+              required: [allowed, maxDeepLearningConcurrency]
+              properties:
+                allowed: {type: boolean}
+                maxDeepLearningConcurrency: {type: integer, minimum: 1}
+    AdminStatusCommand:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: {type: string, enum: [active, disabled]}
+    AdminUser:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - username
+        - role
+        - status
+        - assetUsageBytes
+        - assetQuotaBytes
+        - createdAt
+        - taskStatus
+        - activeTaskCount
+        - queuedTaskCount
+        - interruptedTaskCount
+        - completedTaskCount
+        - issueTaskCount
+        - currentTaskKind
+        - currentTaskStartedAt
+        - lastTaskAt
+      properties:
+        id: {$ref: "#/components/schemas/Uuid"}
+        username: {type: string}
+        role: {type: string, enum: [user, admin]}
+        status: {type: string, enum: [active, disabled]}
+        assetUsageBytes: {type: integer, minimum: 0}
+        assetQuotaBytes: {type: integer, minimum: 1}
+        createdAt: {type: string, format: date-time}
+        taskStatus: {type: string, enum: [active, queued, interrupted, idle]}
+        activeTaskCount: {type: integer, minimum: 0}
+        queuedTaskCount: {type: integer, minimum: 0}
+        interruptedTaskCount: {type: integer, minimum: 0}
+        completedTaskCount:
+          type: integer
+          minimum: 0
+          description: Completed jobs still present in retained task history.
+        issueTaskCount:
+          type: integer
+          minimum: 0
+          description: Failed or partially completed jobs still present in retained task history.
+        currentTaskKind:
+          anyOf:
+            - {type: string}
+            - {type: "null"}
+        currentTaskStartedAt:
+          anyOf:
+            - {type: string, format: date-time}
+            - {type: "null"}
+        lastTaskAt:
+          anyOf:
+            - {type: string, format: date-time}
+            - {type: "null"}
+    AdminUserList:
+      type: object
+      additionalProperties: false
+      required: [users]
+      properties:
+        users:
+          type: array
+          items: {$ref: "#/components/schemas/AdminUser"}
+    AdminInvite:
+      type: object
+      additionalProperties: false
+      required: [id, status, expiresAt, usedAt, usedBy, createdAt]
+      properties:
+        id: {type: string, minLength: 12, maxLength: 12}
+        status: {type: string, enum: [active, used, expired, revoked]}
+        expiresAt: {type: string, format: date-time}
+        usedAt:
+          oneOf:
+            - {type: string, format: date-time}
+            - {type: "null"}
+        usedBy:
+          oneOf:
+            - {type: string}
+            - {type: "null"}
+        createdAt: {type: string, format: date-time}
+    AdminInviteList:
+      type: object
+      additionalProperties: false
+      required: [invites]
+      properties:
+        invites:
+          type: array
+          items: {$ref: "#/components/schemas/AdminInvite"}
+    AdminInviteCreated:
+      type: object
+      additionalProperties: false
+      required: [code, expiresAt]
+      properties:
+        code: {type: string}
+        expiresAt: {type: string, format: date-time}
+    RecoveryCodeCreated:
+      type: object
+      additionalProperties: false
+      required: [recoveryCode]
+      properties:
+        recoveryCode: {type: string}
     HealthResponse:
       type: object
       additionalProperties: false

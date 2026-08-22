@@ -74,6 +74,7 @@ Thumbs.db
 
 # --- 文档 ---
 docs/*
+!docs/public-deployment-plan.md
 !docs/refactor/
 !docs/refactor/**
 !vue-frontend/docs/

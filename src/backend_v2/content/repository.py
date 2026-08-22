@@ -13,6 +13,7 @@ import uuid
 from sqlalchemy import Engine, and_, delete, exists, func, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
+from src.backend_v2.auth.ownership import effective_owner_id
 from src.backend_v2.serialization import canonical_json as _json
 from src.backend_v2.timestamps import utcnow as _utcnow
 from src.backend_v2.content.translation_constraints import (
@@ -63,7 +64,6 @@ from src.backend_v2.storage.schema import (
     translation_constraints,
     web_import_drafts,
 )
-from src.backend_v2.storage.seeding import QUICK_WORKSPACE_BOOK_ID
 from src.core.config_models import (
     STORED_BUBBLE_FIELDS,
     validate_bubble_payload,
@@ -290,7 +290,10 @@ class ContentRepository:
             )
             .outerjoin(chapter_counts, chapter_counts.c.book_id == books.c.id)
             .outerjoin(page_counts, page_counts.c.book_id == books.c.id)
-            .where(books.c.kind == "library")
+            .where(
+                books.c.kind == "library",
+                books.c.owner_user_id == effective_owner_id(),
+            )
         )
         if sort_by != "title":
             sort_column = (
@@ -408,6 +411,7 @@ class ContentRepository:
             connection.execute(
                 insert(books).values(
                     id=book_id,
+                    owner_user_id=effective_owner_id(),
                     kind="library",
                     title=normalized,
                     cover_asset_id=cover_asset_id,
@@ -438,6 +442,7 @@ class ContentRepository:
                 select(books).where(
                     books.c.id == book_id,
                     books.c.kind == "library",
+                    books.c.owner_user_id == effective_owner_id(),
                 )
             ).mappings().one_or_none()
             if book is None:
@@ -544,7 +549,11 @@ class ContentRepository:
                 values["cover_asset_id"] = cover_asset_id
             changed = connection.execute(
                 update(books)
-                .where(books.c.id == book_id, books.c.kind == "library")
+                .where(
+                    books.c.id == book_id,
+                    books.c.kind == "library",
+                    books.c.owner_user_id == effective_owner_id(),
+                )
                 .values(**values)
             )
             if changed.rowcount != 1:
@@ -556,7 +565,10 @@ class ContentRepository:
     def delete_book(self, book_id: str) -> None:
         with immediate_transaction(self.engine) as connection:
             kind = connection.execute(
-                select(books.c.kind).where(books.c.id == book_id)
+                select(books.c.kind).where(
+                    books.c.id == book_id,
+                    books.c.owner_user_id == effective_owner_id(),
+                )
             ).scalar_one_or_none()
             if kind != "library":
                 raise ContentNotFound("book not found")
@@ -567,7 +579,12 @@ class ContentRepository:
                 ).scalars()
             ]
             self._assert_targets_idle(connection, book_id, chapter_ids)
-            connection.execute(delete(books).where(books.c.id == book_id))
+            connection.execute(
+                delete(books).where(
+                    books.c.id == book_id,
+                    books.c.owner_user_id == effective_owner_id(),
+                )
+            )
 
     def batch_delete_books(
         self,
@@ -601,7 +618,12 @@ class ContentRepository:
             raise ValueError("chapter title must contain 1-500 characters")
         with immediate_transaction(self.engine) as connection:
             row = connection.execute(
-                select(chapters.c.book_id).where(chapters.c.id == chapter_id)
+                select(chapters.c.book_id)
+                .join(books, books.c.id == chapters.c.book_id)
+                .where(
+                    chapters.c.id == chapter_id,
+                    books.c.owner_user_id == effective_owner_id(),
+                )
             ).mappings().one_or_none()
             if row is None:
                 raise ContentNotFound("chapter not found")
@@ -626,7 +648,10 @@ class ContentRepository:
                     books.c.kind,
                 )
                 .join(books, books.c.id == chapters.c.book_id)
-                .where(chapters.c.id == chapter_id)
+                .where(
+                    chapters.c.id == chapter_id,
+                    books.c.owner_user_id == effective_owner_id(),
+                )
             ).mappings().one_or_none()
             if row is None or row["kind"] != "library":
                 raise ContentNotFound("chapter not found")
@@ -666,6 +691,7 @@ class ContentRepository:
                     func.count(book_tags.c.book_id).label("book_count"),
                 )
                 .outerjoin(book_tags, book_tags.c.tag_id == tags.c.id)
+                .where(tags.c.owner_user_id == effective_owner_id())
                 .group_by(tags.c.id)
                 .order_by(tags.c.name)
             ).mappings()
@@ -690,6 +716,7 @@ class ContentRepository:
                 connection.execute(
                     insert(tags).values(
                         id=tag_id,
+                        owner_user_id=effective_owner_id(),
                         name=normalized_name,
                         color=normalized_color,
                     )
@@ -718,7 +745,10 @@ class ContentRepository:
             with immediate_transaction(self.engine) as connection:
                 changed = connection.execute(
                     update(tags)
-                    .where(tags.c.id == tag_id)
+                    .where(
+                        tags.c.id == tag_id,
+                        tags.c.owner_user_id == effective_owner_id(),
+                    )
                     .values(
                         name=normalized_name,
                         color=normalized_color,
@@ -737,7 +767,12 @@ class ContentRepository:
 
     def delete_tag(self, tag_id: str) -> None:
         with immediate_transaction(self.engine) as connection:
-            removed = connection.execute(delete(tags).where(tags.c.id == tag_id))
+            removed = connection.execute(
+                delete(tags).where(
+                    tags.c.id == tag_id,
+                    tags.c.owner_user_id == effective_owner_id(),
+                )
+            )
             if removed.rowcount != 1:
                 raise ContentNotFound("tag not found")
 
@@ -760,12 +795,16 @@ class ContentRepository:
                     select(books.c.id).where(
                         books.c.id.in_(book_ids),
                         books.c.kind == "library",
+                        books.c.owner_user_id == effective_owner_id(),
                     )
                 ).scalars()
             )
             existing_tags = set(
                 connection.execute(
-                    select(tags.c.id).where(tags.c.id.in_(tag_ids))
+                    select(tags.c.id).where(
+                        tags.c.id.in_(tag_ids),
+                        tags.c.owner_user_id == effective_owner_id(),
+                    )
                 ).scalars()
             )
             if existing_books != set(book_ids) or existing_tags != set(tag_ids):
@@ -791,7 +830,12 @@ class ContentRepository:
         with self.engine.connect() as connection:
             row = connection.execute(
                 select(translation_constraints).where(
-                    translation_constraints.c.book_id == book_id
+                    translation_constraints.c.book_id == book_id,
+                    translation_constraints.c.book_id.in_(
+                        select(books.c.id).where(
+                            books.c.owner_user_id == effective_owner_id()
+                        )
+                    ),
                 )
             ).mappings().one_or_none()
         if row is None:
@@ -819,6 +863,11 @@ class ContentRepository:
                 .where(
                     translation_constraints.c.book_id == book_id,
                     translation_constraints.c.revision == base_revision,
+                    translation_constraints.c.book_id.in_(
+                        select(books.c.id).where(
+                            books.c.owner_user_id == effective_owner_id()
+                        )
+                    ),
                 )
                 .values(
                     payload_json=_json(normalized),
@@ -828,7 +877,10 @@ class ContentRepository:
             )
             if changed.rowcount != 1:
                 exists_book = connection.execute(
-                    select(books.c.id).where(books.c.id == book_id)
+                    select(books.c.id).where(
+                        books.c.id == book_id,
+                        books.c.owner_user_id == effective_owner_id(),
+                    )
                 ).scalar_one_or_none()
                 if exists_book is None:
                     raise ContentNotFound("book not found")
@@ -845,7 +897,10 @@ class ContentRepository:
             row = connection.execute(
                 select(books.c.id, chapters.c.id.label("chapter_id"))
                 .join(chapters, chapters.c.book_id == books.c.id)
-                .where(books.c.kind == "quick_workspace")
+                .where(
+                    books.c.kind == "quick_workspace",
+                    books.c.owner_user_id == effective_owner_id(),
+                )
                 .order_by(chapters.c.ordinal)
                 .limit(1)
             ).mappings().one_or_none()
@@ -882,6 +937,7 @@ class ContentRepository:
                 .where(
                     books.c.id == book_id,
                     chapters.c.id == chapter_id,
+                    books.c.owner_user_id == effective_owner_id(),
                 )
             ).mappings().one_or_none()
             if row is None:
@@ -1130,6 +1186,7 @@ class ContentRepository:
                 select(books.c.chapter_order_revision).where(
                     books.c.id == book_id,
                     books.c.kind.in_(("library", "quick_workspace")),
+                    books.c.owner_user_id == effective_owner_id(),
                 )
             ).scalar_one_or_none()
             if book_revision is None:
@@ -1177,7 +1234,10 @@ class ContentRepository:
                     books.c.title,
                     books.c.kind,
                     books.c.chapter_order_revision,
-                ).where(books.c.id == book_id)
+                ).where(
+                    books.c.id == book_id,
+                    books.c.owner_user_id == effective_owner_id(),
+                )
             ).mappings().one_or_none()
             if book is None:
                 raise ContentNotFound("book not found")
@@ -1219,7 +1279,10 @@ class ContentRepository:
     ) -> int:
         with immediate_transaction(self.engine) as connection:
             revision = connection.execute(
-                select(books.c.chapter_order_revision).where(books.c.id == book_id)
+                select(books.c.chapter_order_revision).where(
+                    books.c.id == book_id,
+                    books.c.owner_user_id == effective_owner_id(),
+                )
             ).scalar_one_or_none()
             if revision is None:
                 raise ContentNotFound("book not found")
@@ -1426,6 +1489,7 @@ class ContentRepository:
                 ).where(
                     idempotency_records.c.scope == idempotency_scope,
                     idempotency_records.c.key == idempotency_key,
+                    idempotency_records.c.owner_user_id == effective_owner_id(),
                 )
             ).mappings().one_or_none()
             if replay is not None:
@@ -1439,6 +1503,7 @@ class ContentRepository:
                     delete(idempotency_records).where(
                         idempotency_records.c.scope == idempotency_scope,
                         idempotency_records.c.key == idempotency_key,
+                        idempotency_records.c.owner_user_id == effective_owner_id(),
                     )
                 )
             page = connection.execute(
@@ -1524,6 +1589,7 @@ class ContentRepository:
             }
             connection.execute(
                 insert(idempotency_records).values(
+                    owner_user_id=effective_owner_id(),
                     scope=idempotency_scope,
                     key=idempotency_key,
                     request_hash=request_hash,
@@ -1560,6 +1626,7 @@ class ContentRepository:
                 ).where(
                     idempotency_records.c.scope == idempotency_scope,
                     idempotency_records.c.key == idempotency_key,
+                    idempotency_records.c.owner_user_id == effective_owner_id(),
                 )
             ).mappings().one_or_none()
             if replay is not None:
@@ -1573,6 +1640,7 @@ class ContentRepository:
                     delete(idempotency_records).where(
                         idempotency_records.c.scope == idempotency_scope,
                         idempotency_records.c.key == idempotency_key,
+                        idempotency_records.c.owner_user_id == effective_owner_id(),
                     )
                 )
 
@@ -1670,6 +1738,7 @@ class ContentRepository:
             }
             connection.execute(
                 insert(idempotency_records).values(
+                    owner_user_id=effective_owner_id(),
                     scope=idempotency_scope,
                     key=idempotency_key,
                     request_hash=request_hash,
@@ -1697,6 +1766,7 @@ class ContentRepository:
                 ).where(
                     idempotency_records.c.scope == scope,
                     idempotency_records.c.key == key,
+                    idempotency_records.c.owner_user_id == effective_owner_id(),
                     idempotency_records.c.expires_at > _utcnow(),
                 )
             ).mappings().one_or_none()
@@ -1950,6 +2020,7 @@ class ContentRepository:
                 ).where(
                     idempotency_records.c.scope == scope,
                     idempotency_records.c.key == idempotency_key,
+                    idempotency_records.c.owner_user_id == effective_owner_id(),
                     idempotency_records.c.expires_at > now,
                 )
             ).mappings().one_or_none()
@@ -2019,7 +2090,13 @@ class ContentRepository:
                 if value in validated_font_ids:
                     return
                 if connection.execute(
-                    select(fonts.c.id).where(fonts.c.id == value)
+                    select(fonts.c.id).where(
+                        fonts.c.id == value,
+                        or_(
+                            fonts.c.kind == "builtin",
+                            fonts.c.owner_user_id == effective_owner_id(),
+                        ),
+                    )
                 ).scalar_one_or_none() is None:
                     raise ContentNotFound("font not found")
                 validated_font_ids.add(value)
@@ -2349,6 +2426,7 @@ class ContentRepository:
             }
             connection.execute(
                 insert(idempotency_records).values(
+                    owner_user_id=effective_owner_id(),
                     scope=scope,
                     key=idempotency_key,
                     request_hash=request_hash,
@@ -2502,17 +2580,21 @@ class ContentRepository:
     def reset_quick_workspace(self) -> dict[str, str]:
         with immediate_transaction(self.engine) as connection:
             book = connection.execute(
-                select(books.c.id).where(books.c.kind == "quick_workspace")
+                select(books.c.id).where(
+                    books.c.kind == "quick_workspace",
+                    books.c.owner_user_id == effective_owner_id(),
+                )
             ).scalar_one_or_none()
             if book is None:
+                book = str(uuid.uuid4())
                 connection.execute(
                     insert(books).values(
-                        id=QUICK_WORKSPACE_BOOK_ID,
+                        id=book,
+                        owner_user_id=effective_owner_id(),
                         kind="quick_workspace",
                         title="快速翻译",
                     )
                 )
-                book = QUICK_WORKSPACE_BOOK_ID
             chapter_ids = list(
                 connection.execute(
                     select(chapters.c.id).where(chapters.c.book_id == book)
@@ -2575,7 +2657,10 @@ class ContentRepository:
                 raise ValueError("target book ID is required")
         with immediate_transaction(self.engine) as connection:
             quick_book_id = connection.execute(
-                select(books.c.id).where(books.c.kind == "quick_workspace")
+                select(books.c.id).where(
+                    books.c.kind == "quick_workspace",
+                    books.c.owner_user_id == effective_owner_id(),
+                )
             ).scalar_one_or_none()
             if quick_book_id is None:
                 raise ContentNotFound("quick workspace not found")
@@ -2599,6 +2684,7 @@ class ContentRepository:
                 duplicate_book = connection.execute(
                     select(books.c.id).where(
                         books.c.kind == "library",
+                        books.c.owner_user_id == effective_owner_id(),
                         func.lower(books.c.title)
                         == normalized_new_book_title.lower(),
                     )
@@ -2609,6 +2695,7 @@ class ContentRepository:
                 connection.execute(
                     insert(books).values(
                         id=destination_book_id,
+                        owner_user_id=effective_owner_id(),
                         kind="library",
                         title=normalized_new_book_title,
                     )
@@ -2640,7 +2727,10 @@ class ContentRepository:
                         translation_constraints,
                         translation_constraints.c.book_id == books.c.id,
                     )
-                    .where(books.c.id == destination_book_id)
+                    .where(
+                        books.c.id == destination_book_id,
+                        books.c.owner_user_id == effective_owner_id(),
+                    )
                 ).mappings().one_or_none()
                 if destination is None or destination["kind"] != "library":
                     raise ContentNotFound("target library book not found")
@@ -2794,7 +2884,10 @@ class ContentRepository:
         if tag_ids:
             found = set(
                 connection.execute(  # type: ignore[attr-defined]
-                    select(tags.c.id).where(tags.c.id.in_(tag_ids))
+                    select(tags.c.id).where(
+                        tags.c.id.in_(tag_ids),
+                        tags.c.owner_user_id == effective_owner_id(),
+                    )
                 ).scalars()
             )
             if found != set(tag_ids):

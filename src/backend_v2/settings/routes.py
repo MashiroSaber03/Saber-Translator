@@ -19,6 +19,8 @@ from src.backend_v2.api.request_helpers import (
     required_string as _required_string,
     validate_multipart_fields as _validate_multipart_fields,
 )
+from src.backend_v2.runtime_profile import RuntimeProfile, resolve_runtime_profile
+from src.backend_v2.public_policy import PublicUserPolicyAccess
 from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.storage.builtin_fonts import SUPPORTED_FONT_SUFFIXES
 from src.backend_v2.settings.diagnostics import (
@@ -51,15 +53,39 @@ _DIAGNOSTIC_FIELDS = frozenset(
         "secret",
     }
 )
+_LOCAL_PROVIDER_IDS = frozenset({"ollama", "sakura"})
 
 
-def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
+def _uses_local_provider(value: object) -> bool:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if (
+                key.lower().endswith("provider")
+                and isinstance(child, str)
+                and child.lower() in _LOCAL_PROVIDER_IDS
+            ):
+                return True
+            if _uses_local_provider(child):
+                return True
+    elif isinstance(value, list):
+        return any(_uses_local_provider(child) for child in value)
+    return False
+
+
+def create_settings_blueprint(
+    *,
+    data_root: Path,
+    engine: Engine,
+    profile: RuntimeProfile | None = None,
+) -> Blueprint:
+    profile = profile or resolve_runtime_profile("local")
     blueprint = Blueprint("settings_v2", __name__, url_prefix="/api/v2")
     settings = SettingsRepository(engine)
     prompt_repository = PromptRepository(engine)
     font_repository = FontRepository(engine)
     storage = AssetStorageService(data_root, engine)
     diagnostics = ProviderDiagnostics(settings)
+    public_access = PublicUserPolicyAccess(engine, profile)
 
     @blueprint.errorhandler(RevisionConflict)
     def conflict(error: RevisionConflict):
@@ -88,15 +114,21 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
             for value in request.args.get("domains", "").split(",")
             if value
         )
-        return jsonify(
-            settings.load(
-                domains=domains,
-                book_id=request.args.get("book_id"),
-            )
+        document = settings.load(
+            domains=domains,
+            book_id=request.args.get("book_id"),
         )
+        public_access.apply_settings_document(document)
+        if profile.browser_credentials:
+            document["credentials"] = []
+            for row in document.get("providerSettings", []):
+                row["credentialVersionId"] = None
+        return jsonify(document)
 
     @blueprint.delete("/credentials/<credential_id>")
     def delete_credential(credential_id: str) -> Response:
+        if profile.browser_credentials:
+            raise ValueError("公开模式的密钥只保存在当前浏览器中")
         result, replayed = settings.delete_credential_idempotent(
             idempotency_key=_require_idempotency_key(),
             credential_id=credential_id,
@@ -164,6 +196,22 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
             "promptEdits",
             allowed_keys={"id", "name", "content", "baseRevision"},
         )
+        for row in setting_rows:
+            if row.get("domain") != "translation":
+                continue
+            payload = _required_object(row, "payload")
+            row["payload"] = public_access.apply_translation_setting(payload)
+        if profile.browser_credentials and (
+            credential_rows
+            or any(
+                row.get("credentialVersionId") is not None
+                or row.get("credentialEditRef") is not None
+                for row in provider_rows
+            )
+        ):
+            raise ValueError("公开模式禁止把 API Key 或密钥版本写入数据库")
+        if not profile.allow_local_providers and _uses_local_provider(body):
+            raise ValueError("公开模式不支持 Ollama 或 Sakura 等本机模型服务")
         if not any(
             (
                 setting_rows,
@@ -291,22 +339,19 @@ def create_settings_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
 
     @blueprint.post("/model-catalog")
     def model_catalog() -> Response:
-        return jsonify(
-            diagnostics.model_catalog(
-                _json_body(allowed_keys=_DIAGNOSTIC_FIELDS)
-            )
-        )
+        body = _json_body(allowed_keys=_DIAGNOSTIC_FIELDS)
+        if not profile.allow_local_providers and _uses_local_provider(body):
+            raise ValueError("公开模式不支持本机模型服务")
+        return jsonify(diagnostics.model_catalog(body))
 
     @blueprint.post("/connection-tests/<kind>")
     def connection_test(kind: str) -> Response:
         if kind not in CONNECTION_TEST_KINDS:
             raise ValueError("unsupported connection test kind")
-        return jsonify(
-            diagnostics.connection_test(
-                kind,
-                _json_body(allowed_keys=_DIAGNOSTIC_FIELDS),
-            )
-        )
+        body = _json_body(allowed_keys=_DIAGNOSTIC_FIELDS)
+        if not profile.allow_local_providers and _uses_local_provider(body):
+            raise ValueError("公开模式不支持本机模型服务")
+        return jsonify(diagnostics.connection_test(kind, body))
 
     @blueprint.get("/prompts")
     def list_prompts() -> Response:

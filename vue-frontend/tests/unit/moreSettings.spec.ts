@@ -50,6 +50,13 @@ vi.mock('@/utils/toast', () => ({
   useToast: () => mocks.toast,
 }))
 
+vi.mock('@/composables/usePublicUserAccess', () => ({
+  usePublicUserAccess: () => ({
+    lamaDisableResizeEditable: () => true,
+    lamaDisableResizeValue: () => false,
+  }),
+}))
+
 function mountSettings() {
   return mount(MoreSettings, {
     global: {

@@ -21,6 +21,16 @@ const emit = defineEmits<{
   edit: [bookId: string]
 }>()
 
+withDefaults(defineProps<{
+  characterStudioAllowed?: boolean
+  insightAllowed?: boolean
+  translationAllowed?: boolean
+}>(), {
+  characterStudioAllowed: true,
+  insightAllowed: true,
+  translationAllowed: true,
+})
+
 const router = useRouter()
 const bookshelfStore = useBookshelfStore()
 const taskCenterStore = useTaskCenterStore()
@@ -268,6 +278,15 @@ function goToInsight() {
   }
 }
 
+function goToCharacterStudio() {
+  if (currentBook.value) {
+    router.push({
+      name: 'character-studio',
+      query: { book: currentBook.value.id },
+    })
+  }
+}
+
 async function handleChapterReorder(chapterIds: string[]): Promise<boolean> {
   if (!currentBook.value || isReordering.value) return false
   isReordering.value = true
@@ -457,13 +476,16 @@ async function quickAddTagToBook(tagName: string): Promise<boolean> {
     <div v-if="currentBook" class="book-detail-container">
       <BookDetailSummary
         :book="currentBook"
+        :character-studio-allowed="characterStudioAllowed"
         :chapter-count="chapters.length"
         :format-date="formatDate"
         :get-tag-color="getTagColor"
+        :insight-allowed="insightAllowed"
         @add-tag="openAddTagModal"
         @delete="deleteCurrentBook"
         @edit="editCurrentBook"
         @insight="goToInsight"
+        @character-studio="goToCharacterStudio"
         @remove-tag="removeTag"
       />
 
@@ -473,6 +495,7 @@ async function quickAddTagToBook(tagName: string): Promise<boolean> {
         :dragged-chapter-index="draggedChapterIndex"
         :selected-chapter-ids="selectedChapterIds"
         :translation-pending="isBatchTranslating"
+        :translation-allowed="translationAllowed"
         @create="openCreateChapterModal"
         @delete="deleteChapter"
         @drag-end="handleChapterDragEnd"

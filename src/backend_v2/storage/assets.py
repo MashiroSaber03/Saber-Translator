@@ -12,15 +12,39 @@ import re
 from typing import BinaryIO
 import uuid
 
-from sqlalchemy import Engine, delete, exists, insert, or_, select, update
+from flask import current_app, has_request_context
+from sqlalchemy import Engine, delete, exists, func, insert, or_, select, update
 
+from src.backend_v2.auth.ownership import effective_owner_id
+from src.backend_v2.runtime_profile import resolve_runtime_profile
 from src.backend_v2.timestamps import utcnow as _utcnow
 from src.backend_v2.storage.database import immediate_transaction
-from src.backend_v2.storage.schema import assets, metadata, object_commit_journal
+from src.backend_v2.storage.schema import (
+    assets,
+    metadata,
+    object_commit_journal,
+    platform_config,
+)
 
 
 _EXTENSION_PATTERN = re.compile(r"^[a-z0-9]{1,12}$")
 ASSET_GC_BATCH_LIMIT = 500
+
+
+class AssetQuotaExceeded(RuntimeError):
+    """The authenticated user's persistent asset quota would be exceeded."""
+
+    def __init__(self, *, used_bytes: int, quota_bytes: int, incoming_bytes: int) -> None:
+        super().__init__("资产空间不足，请删除旧资产或联系管理员调整额度")
+        self.used_bytes = used_bytes
+        self.quota_bytes = quota_bytes
+        self.incoming_bytes = incoming_bytes
+
+
+def _quota_is_enforced() -> bool:
+    if has_request_context():
+        return str(current_app.config.get("SABER_V2_PROFILE", "local")) == "public"
+    return resolve_runtime_profile().enforce_asset_quota
 
 
 @dataclass(frozen=True, slots=True)
@@ -196,26 +220,60 @@ class AssetStorageService:
             )
         self._hit(failpoint, "journal_file_published")
 
-        with self.engine.begin() as connection:
-            connection.execute(
-                insert(assets).values(
-                    id=record.id,
-                    relative_path=record.relative_path,
-                    mime_type=record.mime_type,
-                    checksum=record.checksum,
-                    byte_size=record.byte_size,
-                    width=record.width,
-                    height=record.height,
+        owner_user_id = effective_owner_id()
+        try:
+            with immediate_transaction(self.engine) as connection:
+                if _quota_is_enforced():
+                    quota_bytes = int(
+                        connection.execute(
+                            select(platform_config.c.asset_quota_bytes).where(
+                                platform_config.c.singleton_id == 1
+                            )
+                        ).scalar_one()
+                    )
+                    used_bytes = int(
+                        connection.execute(
+                            select(func.coalesce(func.sum(assets.c.byte_size), 0)).where(
+                                assets.c.owner_user_id == owner_user_id,
+                                assets.c.integrity_status == "ok",
+                            )
+                        ).scalar_one()
+                    )
+                    if used_bytes + record.byte_size > quota_bytes:
+                        raise AssetQuotaExceeded(
+                            used_bytes=used_bytes,
+                            quota_bytes=quota_bytes,
+                            incoming_bytes=record.byte_size,
+                        )
+                connection.execute(
+                    insert(assets).values(
+                        id=record.id,
+                        owner_user_id=owner_user_id,
+                        relative_path=record.relative_path,
+                        mime_type=record.mime_type,
+                        checksum=record.checksum,
+                        byte_size=record.byte_size,
+                        width=record.width,
+                        height=record.height,
+                    )
                 )
-            )
-            if bind is not None:
-                bind(connection, asset_id)
-            self._hit(failpoint, "database_before_commit")
-            connection.execute(
-                delete(object_commit_journal).where(
-                    object_commit_journal.c.asset_id == asset_id
+                if bind is not None:
+                    bind(connection, asset_id)
+                self._hit(failpoint, "database_before_commit")
+                connection.execute(
+                    delete(object_commit_journal).where(
+                        object_commit_journal.c.asset_id == asset_id
+                    )
                 )
-            )
+        except AssetQuotaExceeded:
+            final_path.unlink(missing_ok=True)
+            with self.engine.begin() as connection:
+                connection.execute(
+                    delete(object_commit_journal).where(
+                        object_commit_journal.c.asset_id == asset_id
+                    )
+                )
+            raise
         self._hit(failpoint, "database_committed")
         return record
 

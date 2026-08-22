@@ -38,6 +38,11 @@ export interface AiProviderManifestEntry {
 export const AI_PROVIDER_MANIFEST = providerManifestData as AiProviderManifestEntry[]
 
 const PROVIDER_MAP = new Map(AI_PROVIDER_MANIFEST.map(entry => [entry.id, entry] as const))
+let localProvidersEnabled = true
+
+export function configureLocalProviderVisibility(enabled: boolean): void {
+  localProvidersEnabled = enabled
+}
 
 export function normalizeProviderId(provider?: string | null): string {
   if (!provider) return ''
@@ -99,7 +104,10 @@ export function getProviderDisplayName(provider: string): string {
 
 export function getProviderOptionsForCapability(capability: ProviderCapability): Array<{ value: string; label: string }> {
   return AI_PROVIDER_MANIFEST
-    .filter(provider => provider.capabilities.includes(capability))
+    .filter(provider => (
+      provider.capabilities.includes(capability)
+      && (localProvidersEnabled || !provider.isLocal)
+    ))
     .map(provider => ({ value: provider.id, label: provider.label }))
 }
 

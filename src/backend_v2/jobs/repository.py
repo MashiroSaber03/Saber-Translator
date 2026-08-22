@@ -30,6 +30,9 @@ from src.backend_v2.timestamps import iso_utc as _iso, utcnow
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.engine import Connection
 
+from src.backend_v2.auth.constants import LOCAL_USER_ID
+from src.backend_v2.auth.credential_broker import parse_credential_reference
+from src.backend_v2.auth.ownership import effective_owner_id
 from src.backend_v2.domain.state_machines import (
     InvalidTransition,
     JobEvent,
@@ -52,6 +55,10 @@ from src.backend_v2.storage.schema import (
     JOB_STATUSES,
     NONTERMINAL_JOB_STATUSES,
     chapter_write_locks,
+    chapters,
+    books,
+    continuation_projects,
+    credentials,
     credential_versions,
     idempotency_records,
     assets,
@@ -62,6 +69,7 @@ from src.backend_v2.storage.schema import (
     job_events,
     job_items,
     job_font_snapshots,
+    fonts,
     job_plugin_snapshots,
     job_steps,
     jobs,
@@ -185,6 +193,7 @@ class AttemptFence:
     job_id: str
     attempt_id: str
     worker_epoch_id: str
+    owner_user_id: str = LOCAL_USER_ID
 
 
 def _load_required_object(value: object, field: str) -> dict[str, Any]:
@@ -595,6 +604,124 @@ class JobQueueRepository:
     def __init__(self, engine: Engine) -> None:
         self.engine = engine
 
+    @staticmethod
+    def _assert_specs_owned(
+        connection: Connection,
+        specs: Sequence[JobSpec],
+        *,
+        owner_user_id: str,
+    ) -> None:
+        """Reject body-supplied targets that do not belong to the request owner."""
+
+        def require(statement, label: str) -> None:
+            if connection.execute(statement).scalar_one_or_none() is None:
+                raise JobNotFound(f"{label} not found")
+
+        for spec in specs:
+            if spec.retry_of_job_id:
+                require(
+                    select(jobs.c.id).where(
+                        jobs.c.id == spec.retry_of_job_id,
+                        jobs.c.owner_user_id == owner_user_id,
+                    ),
+                    "retry source job",
+                )
+            if spec.book_id:
+                require(
+                    select(books.c.id).where(
+                        books.c.id == spec.book_id,
+                        books.c.owner_user_id == owner_user_id,
+                    ),
+                    "book",
+                )
+            if spec.chapter_id:
+                require(
+                    select(chapters.c.id)
+                    .join(books, books.c.id == chapters.c.book_id)
+                    .where(
+                        chapters.c.id == spec.chapter_id,
+                        books.c.owner_user_id == owner_user_id,
+                    ),
+                    "chapter",
+                )
+            if spec.page_id:
+                require(
+                    select(pages.c.id)
+                    .join(chapters, chapters.c.id == pages.c.chapter_id)
+                    .join(books, books.c.id == chapters.c.book_id)
+                    .where(
+                        pages.c.id == spec.page_id,
+                        books.c.owner_user_id == owner_user_id,
+                    ),
+                    "page",
+                )
+            if spec.analysis_run_id:
+                require(
+                    select(analysis_runs.c.id).where(
+                        analysis_runs.c.id == spec.analysis_run_id,
+                        analysis_runs.c.owner_user_id == owner_user_id,
+                    ),
+                    "analysis run",
+                )
+            if spec.continuation_project_id:
+                require(
+                    select(continuation_projects.c.id).where(
+                        continuation_projects.c.id == spec.continuation_project_id,
+                        continuation_projects.c.owner_user_id == owner_user_id,
+                    ),
+                    "continuation project",
+                )
+            for item in spec.items:
+                if item.page_id:
+                    require(
+                        select(pages.c.id)
+                        .join(chapters, chapters.c.id == pages.c.chapter_id)
+                        .join(books, books.c.id == chapters.c.book_id)
+                        .where(
+                            pages.c.id == item.page_id,
+                            books.c.owner_user_id == owner_user_id,
+                        ),
+                        "job item page",
+                    )
+                for asset_id in (item.asset_inputs or {}).values():
+                    require(
+                        select(assets.c.id).where(
+                            assets.c.id == asset_id,
+                            assets.c.owner_user_id == owner_user_id,
+                        ),
+                        "asset",
+                    )
+            for font_id in (spec.font_snapshots or {}).values():
+                require(
+                    select(fonts.c.id).where(
+                        fonts.c.id == font_id,
+                        or_(
+                            fonts.c.kind == "builtin",
+                            fonts.c.owner_user_id == owner_user_id,
+                        ),
+                    ),
+                    "font",
+                )
+            credential_ids = {
+                **credential_version_references(spec.config),
+                **dict(spec.credential_snapshots or {}),
+            }.values()
+            for credential_version_id in credential_ids:
+                if parse_credential_reference(credential_version_id) is not None:
+                    continue
+                require(
+                    select(credential_versions.c.id)
+                    .join(
+                        credentials,
+                        credentials.c.id == credential_versions.c.credential_id,
+                    )
+                    .where(
+                        credential_versions.c.id == credential_version_id,
+                        credentials.c.owner_user_id == owner_user_id,
+                    ),
+                    "credential",
+                )
+
     def idempotency_replay(
         self,
         *,
@@ -616,6 +743,7 @@ class JobQueueRepository:
                 ).where(
                     idempotency_records.c.scope == scope,
                     idempotency_records.c.key == key,
+                    idempotency_records.c.owner_user_id == effective_owner_id(),
                     idempotency_records.c.expires_at > utcnow(),
                 )
             ).mappings().one_or_none()
@@ -674,6 +802,8 @@ class JobQueueRepository:
                         ).where(
                             idempotency_records.c.scope == idempotency_scope,
                             idempotency_records.c.key == idempotency_key,
+                            idempotency_records.c.owner_user_id
+                            == effective_owner_id(),
                             idempotency_records.c.expires_at > now,
                         )
                     ).mappings().one_or_none()
@@ -689,6 +819,7 @@ class JobQueueRepository:
                 connection.execute(
                     insert(job_batches).values(
                         id=batch_id,
+                        owner_user_id=effective_owner_id(),
                         kind=kind,
                         display_name=normalized_name,
                         status_summary_json=_json(
@@ -700,6 +831,11 @@ class JobQueueRepository:
                 )
                 if transaction_initializer is not None:
                     transaction_initializer(connection, batch_id)
+                self._assert_specs_owned(
+                    connection,
+                    specs,
+                    owner_user_id=effective_owner_id(),
+                )
                 next_rank = int(
                     connection.execute(
                         select(func.coalesce(func.max(jobs.c.queue_rank), 0))
@@ -717,6 +853,7 @@ class JobQueueRepository:
                     connection.execute(
                         insert(jobs).values(
                             id=job_id,
+                            owner_user_id=effective_owner_id(),
                             batch_id=batch_id,
                             kind=spec.kind,
                             retry_of_job_id=spec.retry_of_job_id,
@@ -755,6 +892,11 @@ class JobQueueRepository:
                     credential_refs = {
                         **credential_version_references(spec.config),
                         **dict(spec.credential_snapshots or {}),
+                    }
+                    credential_refs = {
+                        role: version_id
+                        for role, version_id in credential_refs.items()
+                        if parse_credential_reference(version_id) is None
                     }
                     if credential_refs:
                         connection.execute(
@@ -882,6 +1024,7 @@ class JobQueueRepository:
                 if idempotency_scope and idempotency_key and request_hash:
                     connection.execute(
                         insert(idempotency_records).values(
+                            owner_user_id=effective_owner_id(),
                             scope=idempotency_scope,
                             key=idempotency_key,
                             request_hash=request_hash,
@@ -927,7 +1070,7 @@ class JobQueueRepository:
             raise ValueError("unsupported job status")
         if kind is not None and kind not in JOB_KINDS:
             raise ValueError("unsupported job type")
-        filters = []
+        filters = [jobs.c.owner_user_id == effective_owner_id()]
         if scope == "queue":
             scope_condition = jobs.c.status.in_(QUEUE_JOB_STATUSES)
         else:
@@ -959,12 +1102,16 @@ class JobQueueRepository:
                 interrupted_jobs = jobs.alias("interrupted_jobs")
                 interrupted_batch_ids = select(
                     interrupted_jobs.c.batch_id
-                ).where(interrupted_jobs.c.status == "interrupted")
+                ).where(
+                    interrupted_jobs.c.status == "interrupted",
+                    interrupted_jobs.c.owner_user_id == effective_owner_id(),
+                )
                 limited_batch_ids = (
                     select(job_batches.c.id)
                     .join(jobs, jobs.c.batch_id == job_batches.c.id)
                     .where(
                         jobs.c.status.in_(TERMINAL_JOB_STATUSES),
+                        jobs.c.owner_user_id == effective_owner_id(),
                         *filters,
                     )
                     .group_by(job_batches.c.id, job_batches.c.created_at)
@@ -999,6 +1146,8 @@ class JobQueueRepository:
             event_cursor = int(
                 connection.execute(
                     select(func.coalesce(func.max(job_events.c.id), 0))
+                    .join(jobs, jobs.c.id == job_events.c.job_id)
+                    .where(jobs.c.owner_user_id == effective_owner_id())
                 ).scalar_one()
             )
             now = utcnow()
@@ -1195,6 +1344,7 @@ class JobQueueRepository:
         *,
         after: int = 0,
         job_id: str | None = None,
+        owner_user_id: str | None = None,
         limit: int = 200,
     ) -> list[dict[str, object]]:
         if after < 0:
@@ -1204,10 +1354,16 @@ class JobQueueRepository:
         condition = job_events.c.id > after
         if job_id:
             condition = and_(condition, job_events.c.job_id == job_id)
+        if owner_user_id:
+            condition = and_(condition, jobs.c.owner_user_id == owner_user_id)
         with self.engine.connect() as connection:
             rows = list(
                 connection.execute(
-                    select(job_events)
+                    select(
+                        job_events,
+                        jobs.c.owner_user_id.label("_owner_user_id"),
+                    )
+                    .join(jobs, jobs.c.id == job_events.c.job_id)
                     .where(condition)
                     .order_by(job_events.c.id)
                     .limit(limit)
@@ -1222,9 +1378,17 @@ class JobQueueRepository:
         if len(unique_ids) > 200:
             raise ValueError("at most 200 job IDs may be read at once")
         with self.engine.connect() as connection:
+            owned_ids = set(
+                connection.execute(
+                    select(jobs.c.id).where(
+                        jobs.c.id.in_(unique_ids),
+                        jobs.c.owner_user_id == effective_owner_id(),
+                    )
+                ).scalars()
+            )
             snapshots = self._job_snapshots(
                 connection,
-                job_ids=set(unique_ids),
+                job_ids=owned_ids,
             )
             revision = int(
                 connection.execute(
@@ -1252,10 +1416,15 @@ class JobQueueRepository:
         with self.engine.connect() as connection:
             rows = list(
                 connection.execute(
-                    select(job_events)
+                    select(
+                        job_events,
+                        jobs.c.owner_user_id.label("_owner_user_id"),
+                    )
+                    .join(jobs, jobs.c.id == job_events.c.job_id)
                     .where(
                         job_events.c.job_id == job_id,
                         job_events.c.id < before,
+                        jobs.c.owner_user_id == effective_owner_id(),
                     )
                     .order_by(job_events.c.id.desc())
                     .limit(limit)
@@ -1290,6 +1459,7 @@ class JobQueueRepository:
                     select(jobs.c.id)
                     .where(
                         jobs.c.status == "queued",
+                        jobs.c.owner_user_id == effective_owner_id(),
                         ~jobs.c.id.in_(select(chapter_write_locks.c.job_id)),
                     )
                     .order_by(jobs.c.queue_rank)
@@ -1312,7 +1482,10 @@ class JobQueueRepository:
         now = utcnow()
         with immediate_transaction(self.engine) as connection:
             exists_batch = connection.execute(
-                select(job_batches.c.id).where(job_batches.c.id == batch_id)
+                select(job_batches.c.id).where(
+                    job_batches.c.id == batch_id,
+                    job_batches.c.owner_user_id == effective_owner_id(),
+                )
             ).scalar_one_or_none()
             if exists_batch is None:
                 raise JobNotFound("job batch not found")
@@ -1330,6 +1503,7 @@ class JobQueueRepository:
                     select(jobs.c.id)
                     .where(
                         jobs.c.status == "queued",
+                        jobs.c.owner_user_id == effective_owner_id(),
                         ~jobs.c.id.in_(select(chapter_write_locks.c.job_id)),
                     )
                     .order_by(jobs.c.queue_rank, jobs.c.created_at)
@@ -1374,7 +1548,10 @@ class JobQueueRepository:
         with immediate_transaction(self.engine) as connection:
             ids = list(
                 connection.execute(
-                    select(jobs.c.id).where(jobs.c.status == "queued")
+                    select(jobs.c.id).where(
+                        jobs.c.status == "queued",
+                        jobs.c.owner_user_id == effective_owner_id(),
+                    )
                 ).scalars()
             )
             for job_id in ids:
@@ -1392,7 +1569,10 @@ class JobQueueRepository:
         now = utcnow()
         with immediate_transaction(self.engine) as connection:
             exists_batch = connection.execute(
-                select(job_batches.c.id).where(job_batches.c.id == batch_id)
+                select(job_batches.c.id).where(
+                    job_batches.c.id == batch_id,
+                    job_batches.c.owner_user_id == effective_owner_id(),
+                )
             ).scalar_one_or_none()
             if exists_batch is None:
                 raise JobNotFound("job batch not found")
@@ -1402,6 +1582,7 @@ class JobQueueRepository:
                     .where(
                         jobs.c.batch_id == batch_id,
                         jobs.c.status == "queued",
+                        jobs.c.owner_user_id == effective_owner_id(),
                     )
                     .order_by(jobs.c.queue_rank, jobs.c.created_at)
                 ).scalars()
@@ -1424,7 +1605,10 @@ class JobQueueRepository:
         updated_jobs: list[dict[str, object]] = []
         with immediate_transaction(self.engine) as connection:
             exists_batch = connection.execute(
-                select(job_batches.c.id).where(job_batches.c.id == batch_id)
+                select(job_batches.c.id).where(
+                    job_batches.c.id == batch_id,
+                    job_batches.c.owner_user_id == effective_owner_id(),
+                )
             ).scalar_one_or_none()
             if exists_batch is None:
                 raise JobNotFound("job batch not found")
@@ -1434,6 +1618,7 @@ class JobQueueRepository:
                     .where(
                         jobs.c.batch_id == batch_id,
                         jobs.c.status.in_(("paused", "interrupted")),
+                        jobs.c.owner_user_id == effective_owner_id(),
                     )
                     .order_by(jobs.c.queue_rank, jobs.c.created_at)
                 ).mappings()
@@ -1484,7 +1669,8 @@ class JobQueueRepository:
                 str(value)
                 for value in connection.execute(
                     select(jobs.c.id).where(
-                        jobs.c.status.in_(TERMINAL_JOB_STATUSES)
+                        jobs.c.status.in_(TERMINAL_JOB_STATUSES),
+                        jobs.c.owner_user_id == effective_owner_id(),
                     )
                 ).scalars()
             }
@@ -3969,6 +4155,7 @@ class JobQueueRepository:
             job_id=job_id,
             attempt_id=str(attempt_id),
             worker_epoch_id=worker_epoch_id,
+            owner_user_id=str(candidate["owner_user_id"]),
         )
 
     @staticmethod
@@ -4677,7 +4864,7 @@ class JobQueueRepository:
     def _event_dto(
         row: Mapping[str, Any],
     ) -> dict[str, object]:
-        return {
+        result: dict[str, object] = {
             "eventId": int(row["id"]),
             "jobId": row["job_id"],
             "type": row["event_type"],
@@ -4687,6 +4874,10 @@ class JobQueueRepository:
             ),
             "createdAt": _iso(row["created_at"]),
         }
+        owner_user_id = row.get("_owner_user_id")
+        if owner_user_id is not None:
+            result["_ownerUserId"] = str(owner_user_id)
+        return result
 
     @staticmethod
     def _job_snapshots(

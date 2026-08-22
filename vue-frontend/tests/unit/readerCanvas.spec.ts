@@ -1,8 +1,9 @@
 import { mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import { defineComponent } from 'vue'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import ReaderCanvas from '@/components/reader/ReaderCanvas.vue'
 import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
 import UiButton from '@/components/ui/UiButton.vue'
@@ -43,6 +44,10 @@ function readScopedStyle(filePath: string): string {
 }
 
 describe('ReaderCanvas', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
   it('passes only immutable current-page URLs into the virtual stream', async () => {
     const wrapper = mount(ReaderCanvas, {
       props: {

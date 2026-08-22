@@ -8,6 +8,9 @@ from typing import Any, Mapping
 
 from sqlalchemy import Engine, or_, select
 
+from src.backend_v2.auth.credential_broker import credential_reference
+from src.backend_v2.auth.ownership import effective_owner_id
+from src.backend_v2.runtime_profile import resolve_runtime_profile
 from src.shared.ai_providers import get_provider_manifest
 from src.backend_v2.content.translation_constraints import (
     validate_translation_constraints,
@@ -21,6 +24,7 @@ from src.backend_v2.storage.database import read_transaction
 from src.backend_v2.storage.schema import (
     app_settings,
     book_settings,
+    books,
     chapters,
     pages,
     prompts,
@@ -152,6 +156,18 @@ def _provider_payload(
     return _deep_merge(selected, dict(row["payload"]) if row else {})
 
 
+def _browser_credential_reference(domain: str, provider: str) -> str | None:
+    if not resolve_runtime_profile().browser_credentials:
+        return None
+    if domain == "ocr" and provider == "baidu":
+        return credential_reference(domain, provider)
+    try:
+        requires_api_key = get_provider_manifest(provider).requires_api_key
+    except ValueError:
+        requires_api_key = False
+    return credential_reference(domain, provider) if requires_api_key else None
+
+
 def _provider_section(
     *,
     domain: str,
@@ -188,7 +204,9 @@ def _provider_section(
     prompt = payload.get("prompt")
     if prompt is not None:
         section["prompt_content"] = prompt
-    credential_version_id = row.get("credentialVersionId")
+    credential_version_id = row.get("credentialVersionId") or (
+        _browser_credential_reference(domain, str(provider))
+    )
     if credential_version_id:
         section["credentialVersionId"] = credential_version_id
     return section
@@ -325,14 +343,22 @@ class SettingsResolver:
                     app_settings.c.payload_json,
                     app_settings.c.revision,
                     app_settings.c.schema_version,
-                ).where(app_settings.c.domain == "translation")
+                ).where(
+                    app_settings.c.domain == "translation",
+                    app_settings.c.owner_user_id == effective_owner_id(),
+                )
             ).mappings().one_or_none()
             chapter_row = connection.execute(
                 select(
                     chapters.c.book_id,
                     chapters.c.settings_memory_json,
                     chapters.c.settings_memory_revision,
-                ).where(chapters.c.id == chapter_id)
+                )
+                .join(books, books.c.id == chapters.c.book_id)
+                .where(
+                    chapters.c.id == chapter_id,
+                    books.c.owner_user_id == effective_owner_id(),
+                )
             ).mappings().one_or_none()
             if chapter_row is None:
                 raise ValueError("chapter not found")
@@ -353,6 +379,7 @@ class SettingsResolver:
                     provider_settings.c.revision,
                     provider_settings.c.schema_version,
                 ).where(
+                    provider_settings.c.owner_user_id == effective_owner_id(),
                     or_(
                         provider_settings.c.domain.in_(
                             ("translation", "hq", "ai_vision_ocr", "ocr")
@@ -516,9 +543,14 @@ class SettingsResolver:
                 .join(chapters, chapters.c.id == pages.c.chapter_id)
                 .join(
                     app_settings,
-                    app_settings.c.domain == "translation",
+                    (app_settings.c.domain == "translation")
+                    & (app_settings.c.owner_user_id == effective_owner_id()),
                 )
-                .where(pages.c.id == page_id)
+                .join(books, books.c.id == chapters.c.book_id)
+                .where(
+                    pages.c.id == page_id,
+                    books.c.owner_user_id == effective_owner_id(),
+                )
             ).mappings().one_or_none()
         if row is None:
             raise ValueError("page or translation settings not found")
@@ -574,8 +606,16 @@ class SettingsResolver:
                 )
                 .select_from(pages)
                 .join(chapters, chapters.c.id == pages.c.chapter_id)
-                .join(app_settings, app_settings.c.domain == "translation")
-                .where(pages.c.id == page_id)
+                .join(
+                    app_settings,
+                    (app_settings.c.domain == "translation")
+                    & (app_settings.c.owner_user_id == effective_owner_id()),
+                )
+                .join(books, books.c.id == chapters.c.book_id)
+                .where(
+                    pages.c.id == page_id,
+                    books.c.owner_user_id == effective_owner_id(),
+                )
             ).mappings().one_or_none()
             if row is None:
                 raise ValueError("page or translation settings not found")
@@ -610,6 +650,7 @@ class SettingsResolver:
                     ).where(
                         provider_settings.c.domain == provider_key[0],
                         provider_settings.c.provider == provider_key[1],
+                        provider_settings.c.owner_user_id == effective_owner_id(),
                     )
                 ).mappings().one_or_none()
                 if provider_row is not None:
@@ -672,7 +713,10 @@ class SettingsResolver:
                     app_settings.c.payload_json,
                     app_settings.c.revision,
                     app_settings.c.schema_version,
-                ).where(app_settings.c.domain == "web_import")
+                ).where(
+                    app_settings.c.domain == "web_import",
+                    app_settings.c.owner_user_id == effective_owner_id(),
+                )
             ).mappings().one_or_none()
             raw_provider_rows = connection.execute(
                 select(
@@ -683,6 +727,7 @@ class SettingsResolver:
                     provider_settings.c.revision,
                     provider_settings.c.schema_version,
                 ).where(
+                    provider_settings.c.owner_user_id == effective_owner_id(),
                     provider_settings.c.domain.in_(
                         (
                             "web_import_agent",
@@ -798,7 +843,10 @@ class SettingsResolver:
                     app_settings.c.payload_json,
                     app_settings.c.revision,
                     app_settings.c.schema_version,
-                ).where(app_settings.c.domain == "insight")
+                ).where(
+                    app_settings.c.domain == "insight",
+                    app_settings.c.owner_user_id == effective_owner_id(),
+                )
             ).mappings().one_or_none()
             book_row = connection.execute(
                 select(
@@ -808,6 +856,12 @@ class SettingsResolver:
                 ).where(
                     book_settings.c.book_id == book_id,
                     book_settings.c.domain == "insight",
+                    select(books.c.id)
+                    .where(
+                        books.c.id == book_id,
+                        books.c.owner_user_id == effective_owner_id(),
+                    )
+                    .exists(),
                 )
             ).mappings().one_or_none()
             raw_provider_rows = connection.execute(
@@ -818,7 +872,10 @@ class SettingsResolver:
                     provider_settings.c.credential_version_id,
                     provider_settings.c.revision,
                     provider_settings.c.schema_version,
-                ).where(provider_settings.c.domain.in_(provider_domains))
+                ).where(
+                    provider_settings.c.domain.in_(provider_domains),
+                    provider_settings.c.owner_user_id == effective_owner_id(),
+                )
             ).mappings()
             provider_rows = {
                 (str(row["domain"]), str(row["provider"])):
@@ -833,7 +890,10 @@ class SettingsResolver:
                         prompts.c.content,
                         prompts.c.revision,
                         prompts.c.is_factory_default,
-                    ).where(prompts.c.type.in_(prompt_types))
+                    ).where(
+                        prompts.c.type.in_(prompt_types),
+                        prompts.c.owner_user_id == effective_owner_id(),
+                    )
                 ).mappings()
             )
 
@@ -1023,8 +1083,11 @@ class SettingsResolver:
                     "baidu_ocr_language": payload["sourceLanguage"],
                 }
             )
-            if row.get("credentialVersionId"):
-                result["credentialVersionId"] = row["credentialVersionId"]
+            credential_version_id = row.get("credentialVersionId") or (
+                _browser_credential_reference("ocr", "baidu")
+            )
+            if credential_version_id:
+                result["credentialVersionId"] = credential_version_id
         elif engine == "ai_vision":
             selected = dict(effective["aiVisionOcr"])
             selected = _provider_payload(

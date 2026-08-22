@@ -58,6 +58,8 @@ from src.backend_v2.insight.qa import (
 )
 from src.backend_v2.jobs.repository import JobConflict
 from src.backend_v2.storage.assets import AssetStorageService
+from src.backend_v2.public_policy import PublicUserPolicyAccess
+from src.backend_v2.runtime_profile import RuntimeProfile, resolve_runtime_profile
 
 
 def create_insight_blueprint(
@@ -65,8 +67,11 @@ def create_insight_blueprint(
     engine: Engine,
     data_root: Path,
     qa_algorithms: QAApiAlgorithms | None = None,
+    profile: RuntimeProfile | None = None,
 ) -> Blueprint:
+    profile = profile or resolve_runtime_profile("local")
     blueprint = Blueprint("insight_v2", __name__, url_prefix="/api/v2/insight")
+    public_access = PublicUserPolicyAccess(engine, profile)
     repository = InsightRepository(engine)
     commands = InsightAnalysisCommandService(engine)
     derived = InsightDerivedRepository(engine)
@@ -85,6 +90,10 @@ def create_insight_blueprint(
         repository=ContentRepository(engine),
         storage=AssetStorageService(data_root, engine),
     )
+
+    @blueprint.before_request
+    def require_insight_access() -> None:
+        public_access.require_feature("insight")
 
     @blueprint.errorhandler(InsightNotFound)
     def not_found(error: InsightNotFound):

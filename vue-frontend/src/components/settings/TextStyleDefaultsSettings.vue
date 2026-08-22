@@ -233,12 +233,21 @@ import UiCombobox from '@/components/ui/UiCombobox.vue'
 import {
   blockAlignOptions,
   inlineAlignOptions,
-  inpaintMethodOptions,
+  inpaintMethodOptions as rawInpaintMethodOptions,
   layoutDirectionOptions,
 } from '@/utils/textStyleForm'
+import { usePublicUserAccess } from '@/composables/usePublicUserAccess'
 
 const toast = useToast()
 const settingsStore = useSettingsStore()
+const publicAccess = usePublicUserAccess()
+const inpaintMethodOptions = computed(() => publicAccess.modelOptions(
+  rawInpaintMethodOptions,
+  {
+    lama_mpe: 'lama_mpe',
+    litelama: 'litelama',
+  },
+))
 const draftDefaults = computed(() => settingsStore.textStyleDefaults)
 const isLoading = ref(false)
 const isUploadingFont = ref(false)

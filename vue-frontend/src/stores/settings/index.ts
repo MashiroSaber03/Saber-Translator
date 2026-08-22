@@ -11,11 +11,16 @@ import {
   type V2Prompt,
   type V2ProviderSettingMutation,
   type V2SettingsDocument,
+  type V2SettingsTransaction,
   type V2SettingsTransactionResult,
   type V2WorkflowPreferences,
   updateV2WorkflowPreferences,
 } from '@/api/v2/settings'
 import { deepClone } from '@/utils/deepClone'
+import {
+  prepareBrowserCredentialTransaction,
+  restoreBrowserCredentialLeases,
+} from '@/services/browserCredentials'
 import {
   normalizeTextStyleSettings,
   parseCompleteTextStyleSettings,
@@ -479,7 +484,13 @@ export const useSettingsStore = defineStore('settings', () => {
     if (loadPromise) return loadPromise
     loadPromise = (async () => {
       try {
-        return hydrateFromBackendDocument(await getV2Settings())
+        const hydrated = hydrateFromBackendDocument(await getV2Settings())
+        if (!hydrated) return false
+        credentialSummaries.value = mergeCredentialSummaries(
+          credentialSummaries.value,
+          await restoreBrowserCredentialLeases(),
+        )
+        return true
       } catch (error) {
         isBackendReady.value = false
         backendError.value = error instanceof Error ? error.message : '设置加载失败'
@@ -726,8 +737,15 @@ export const useSettingsStore = defineStore('settings', () => {
       return false
     }
     try {
-      const result = await saveV2SettingsTransaction(buildSettingsTransaction())
+      const prepared = await prepareBrowserCredentialTransaction(
+        buildSettingsTransaction() as V2SettingsTransaction,
+      )
+      const result = await saveV2SettingsTransaction(prepared.transaction)
       applyTransactionResult(result)
+      credentialSummaries.value = mergeCredentialSummaries(
+        credentialSummaries.value,
+        prepared.summaries,
+      )
       clearSubmittedSecrets()
       backendError.value = null
       return true
@@ -787,7 +805,7 @@ export const useSettingsStore = defineStore('settings', () => {
         )
       }
 
-      const result = await saveV2SettingsTransaction({
+      const prepared = await prepareBrowserCredentialTransaction({
         settings: [{
           domain: 'translation',
           payload: translationPayload,
@@ -796,7 +814,8 @@ export const useSettingsStore = defineStore('settings', () => {
         }],
         providerSettings,
         credentialEdits,
-      })
+      } as V2SettingsTransaction)
+      const result = await saveV2SettingsTransaction(prepared.transaction)
 
       settingsRevision = translationEntry.revision
       freshRevisions.forEach((revision, identity) => {
@@ -807,6 +826,10 @@ export const useSettingsStore = defineStore('settings', () => {
         authoritative.credentials,
       )
       applyTransactionResult(result)
+      credentialSummaries.value = mergeCredentialSummaries(
+        credentialSummaries.value,
+        prepared.summaries,
+      )
       settings.value.pluginAgent.apiKey = ''
       clearProviderCacheApiKeys(providerConfigs.value.pluginAgent)
       backendError.value = null

@@ -16,9 +16,11 @@ const props = withDefaults(defineProps<{
   isDragOver: boolean
   selectable?: boolean
   selected?: boolean
+  translationAllowed?: boolean
 }>(), {
   selectable: false,
   selected: false,
+  translationAllowed: true,
 })
 
 defineEmits<{
@@ -85,6 +87,7 @@ const canSelect = computed(() => imageCount.value > 0 && !hasActiveTranslation.v
         justify="end"
       >
         <UiButton
+          v-if="translationAllowed"
           variant="primary"
           size="xs"
           @click="$emit('translate', chapter.id)"
