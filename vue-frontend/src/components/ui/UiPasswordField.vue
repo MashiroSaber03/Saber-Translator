@@ -17,7 +17,7 @@ const props = withDefaults(defineProps<{
   modelValue: '',
   inputId: undefined,
   placeholder: '',
-  autocomplete: 'off',
+  autocomplete: 'new-password',
   disabled: false,
   readonly: false,
   showLabel: '显示密钥',
@@ -46,6 +46,7 @@ function toggleVisibility(): void {
   <div class="ui-password-field">
     <UiInput
       :id="inputId"
+      :name="inputId"
       class="ui-password-field__input"
       :model-value="modelValue"
       :type="inputType"

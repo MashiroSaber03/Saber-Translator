@@ -548,7 +548,8 @@ describe('UI primitives architecture contracts', () => {
 
     const input = wrapper.get('input#settingsApiKey')
     expect(input.attributes('type')).toBe('password')
-    expect(input.attributes('autocomplete')).toBe('off')
+    expect(input.attributes('autocomplete')).toBe('new-password')
+    expect(input.attributes('name')).toBe('settingsApiKey')
     expect(input.attributes('placeholder')).toBe('请输入 API Key')
 
     const toggle = wrapper.get('button')
@@ -567,6 +568,19 @@ describe('UI primitives architecture contracts', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/components/ui/UiPasswordField.vue'), 'utf8')
     expect(source).not.toContain('input: [event: Event]')
     expect(source).not.toContain('@input="$emit')
+  })
+
+  it('allows account password owners to override the API credential autocomplete hint', () => {
+    const wrapper = mount(UiPasswordField, {
+      props: {
+        inputId: 'accountPassword',
+        autocomplete: 'current-password',
+      },
+    })
+
+    const input = wrapper.get('input#accountPassword')
+    expect(input.attributes('autocomplete')).toBe('current-password')
+    expect(input.attributes('name')).toBe('accountPassword')
   })
 
   it('supports textarea readonly disabled size and error states', () => {
