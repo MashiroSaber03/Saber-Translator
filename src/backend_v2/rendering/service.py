@@ -60,8 +60,13 @@ class AuthoritativeRenderService:
                     pages.c.document_revision,
                 ).where(pages.c.id == fence.page_id)
             ).mappings().one_or_none()
-            if page is None or page["document_revision"] != fence.rendering_revision:
-                raise RuntimeError("render target revision is no longer current")
+            if page is None:
+                raise RuntimeError("render target page no longer exists")
+            if page["document_revision"] != fence.rendering_revision:
+                # The render repository owns revision coalescing.  Let its
+                # atomic completion check requeue the newest revision without
+                # rendering or reporting an expected superseded attempt.
+                return lambda _connection: None
             asset = connection.execute(
                 select(assets.c.relative_path)
                 .join(page_assets, page_assets.c.asset_id == assets.c.id)

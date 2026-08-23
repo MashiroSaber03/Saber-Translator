@@ -23,6 +23,7 @@ from src.backend_v2.operations.repository import (
     RenderRequestRepository,
 )
 from src.backend_v2.operations.repair import PageRepairService
+from src.backend_v2.rendering.service import AuthoritativeRenderService
 from src.backend_v2.plugins.repository import PluginRegistry
 from src.backend_v2.plugins.runtime import PluginOperationRuntime
 from src.backend_v2.storage.assets import AssetStorageService
@@ -974,6 +975,42 @@ def test_render_request_coalesces_and_old_revision_cannot_publish(
             )
         ).one()
     assert page == (2, "ready")
+
+
+def test_superseded_render_prepare_defers_to_repository_coalescing(
+    operation_platform,
+) -> None:
+    platform = operation_platform
+    repository = RenderRequestRepository(platform["engine"])
+    service = AuthoritativeRenderService(
+        data_root=platform["data_root"],
+        engine=platform["engine"],
+    )
+    with immediate_transaction(platform["engine"]) as connection:
+        request_id = repository.upsert(
+            connection,
+            page_id=platform["page_id"],
+            requested_revision=1,
+        )
+    first = repository.claim_next(api_epoch_id=platform["api_epoch_id"])
+    assert first is not None
+    with immediate_transaction(platform["engine"]) as connection:
+        connection.execute(
+            update(pages)
+            .where(pages.c.id == platform["page_id"])
+            .values(document_revision=2, render_status="stale")
+        )
+        assert repository.upsert(
+            connection,
+            page_id=platform["page_id"],
+            requested_revision=2,
+        ) == request_id
+
+    publisher = service.prepare(first)
+    assert not repository.complete(first, publisher=publisher)
+    second = repository.claim_next(api_epoch_id=platform["api_epoch_id"])
+    assert second is not None
+    assert second.rendering_revision == 2
 
 
 def test_non_rendering_page_edit_advances_an_existing_render_chain(

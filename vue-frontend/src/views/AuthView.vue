@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { recoverPassword } from '@/api/v2/auth'
 import { useAuthStore } from '@/stores/authStore'
@@ -14,6 +14,7 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const runtime = useRuntimeStore()
+const logoUrl = '/pic/logo.png'
 const username = ref('')
 const password = ref('')
 const inviteCode = ref('')
@@ -39,6 +40,10 @@ const description = computed(() =>
       ? '输入一次性恢复码，并为账户设置新密码。'
       : '继续管理你的漫画翻译项目。'
 )
+
+watch(mode, () => {
+  error.value = ''
+})
 
 async function submit(): Promise<void> {
   error.value = ''
@@ -84,7 +89,7 @@ function downloadRecoveryCodes(): void {
   <main class="auth-page">
     <section class="auth-card">
       <div class="auth-brand">
-        <img src="/pic/logo.png" alt="" class="auth-logo" />
+        <img :src="logoUrl" alt="" class="auth-logo" />
         <span>Saber Translator</span>
       </div>
       <template v-if="recoveryCodes.length">

@@ -18,6 +18,15 @@ function settingsDocument(provider = 'openai', modelName = 'gpt-4o-mini') {
   const settings = createDefaultWebImportSettings()
   settings.agent.provider = provider
   settings.agent.modelName = modelName
+  const backendSettings = structuredClone(settings)
+  delete (backendSettings.firecrawl as Partial<typeof backendSettings.firecrawl>).apiKey
+  delete (backendSettings.agent as Partial<typeof backendSettings.agent>).apiKey
+  delete (
+    backendSettings.advanced as Partial<typeof backendSettings.advanced>
+  ).customCookie
+  delete (
+    backendSettings.advanced as Partial<typeof backendSettings.advanced>
+  ).customHeaders
   return {
     credentials: [
       {
@@ -46,7 +55,7 @@ function settingsDocument(provider = 'openai', modelName = 'gpt-4o-mini') {
     settings: [
       {
         domain: 'web_import',
-        payload: settings,
+        payload: backendSettings,
         revision: 2,
         schemaVersion: 1,
       },
@@ -101,13 +110,41 @@ describe('webImportStore backend settings workflow', () => {
   })
 
   it('loads configuration and credential availability from the backend', async () => {
-    mocks.getSettings.mockResolvedValue(settingsDocument('deepseek', 'deepseek-chat'))
+    const document = settingsDocument('deepseek', 'deepseek-chat')
+    document.credentials.push(
+      {
+        credentialId: 'credential-firecrawl',
+        credentialVersionId: 'credential-version-firecrawl',
+        currentVersion: 1,
+        domain: 'web_import_firecrawl',
+        hasKey: true,
+        provider: 'firecrawl',
+        revision: 1,
+        secret: { api_key: 'firecrawl-key' },
+      },
+      {
+        credentialId: 'credential-http',
+        credentialVersionId: 'credential-version-http',
+        currentVersion: 1,
+        domain: 'web_import_http',
+        hasKey: true,
+        provider: 'headers',
+        revision: 1,
+        secret: { cookie: 'session=value', headers: { Referer: 'https://example.com' } },
+      },
+    )
+    mocks.getSettings.mockResolvedValue(document)
     const store = useWebImportStore()
 
     expect(await store.loadFromBackend()).toBe(true)
     expect(store.settings.agent.provider).toBe('deepseek')
     expect(store.settings.agent.modelName).toBe('deepseek-chat')
     expect(store.settings.agent.apiKey).toBe('deepseek-key')
+    expect(store.settings.firecrawl.apiKey).toBe('firecrawl-key')
+    expect(store.settings.advanced.customCookie).toBe('session=value')
+    expect(store.settings.advanced.customHeaders).toBe(
+      '{\n  "Referer": "https://example.com"\n}',
+    )
   })
 
   it('rejects a missing or empty backend settings fact instead of using browser defaults', async () => {

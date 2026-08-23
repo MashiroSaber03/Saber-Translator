@@ -355,6 +355,26 @@ describe('PagesTree', () => {
     expect(wrapper.find('.tree-chapter-status').exists()).toBe(false)
   })
 
+  it('shows zero pages for an empty chapter range', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useInsightStore()
+    store.currentBookId = 'book-1'
+    store.setBookTotalPages(0)
+    store.setChapters([
+      { id: 'ch-empty', title: '空章节', startPage: 0, endPage: 0, analyzed: false },
+    ])
+    getInsightPagesPageMock.mockResolvedValueOnce({ items: [], nextCursor: null })
+
+    const wrapper = mount(PagesTree, { global: { plugins: [pinia] } })
+    await flushPromises()
+
+    const chapterStatus = wrapper
+      .findAllComponents(ProductChipList)
+      .find(chipList => chipList.props('ariaLabel') === '空章节章节状态')
+    expect(chapterStatus?.props('items')[0]).toMatchObject({ label: '0页' })
+  })
+
   it('uses the product section header for content navigation statistics', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)

@@ -155,11 +155,14 @@ function chapterStateChips(chapter: {
   analyzedCount?: number
 }): ProductChipItem[] {
   const analysisState = chapterAnalysisState(chapter)
+  const pageCount = chapter.startPage > 0 && chapter.endPage >= chapter.startPage
+    ? chapter.endPage - chapter.startPage + 1
+    : 0
 
   return [
     {
       id: `${chapter.id}-pages`,
-      label: `${chapter.endPage - chapter.startPage + 1}页`,
+      label: `${pageCount}页`,
       tone: 'neutral',
     },
     {

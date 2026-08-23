@@ -56,6 +56,14 @@ function parseCustomHeaders(value: string): Record<string, string> | undefined {
 
 function hydrateBackendWebImportSettings(value: unknown): unknown {
   const payload = deepClone(value) as Record<string, unknown>
+  if (payload.firecrawl && typeof payload.firecrawl === 'object') {
+    const firecrawl = payload.firecrawl as Record<string, unknown>
+    firecrawl.apiKey = ''
+  }
+  if (payload.agent && typeof payload.agent === 'object') {
+    const agent = payload.agent as Record<string, unknown>
+    agent.apiKey = ''
+  }
   if (payload.advanced && typeof payload.advanced === 'object') {
     const advanced = payload.advanced as Record<string, unknown>
     advanced.customCookie = ''
