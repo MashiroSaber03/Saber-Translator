@@ -65,6 +65,7 @@ function mountSettings() {
     global: {
       stubs: {
         ParallelSettings: true,
+        CustomAiProfileManager: true,
       },
     },
   })
@@ -177,6 +178,18 @@ describe('MoreSettings backend controls', () => {
     await checkbox?.setValue(true)
 
     expect(mocks.settings.exportPreferences.preserveOriginalFilenames).toBe(true)
+  })
+
+  it('opens the unified custom OpenAI service manager', async () => {
+    const wrapper = mountSettings()
+    const button = wrapper.findAll('button').find(
+      candidate => candidate.text() === '管理自定义服务',
+    )
+
+    expect(wrapper.find('custom-ai-profile-manager-stub').exists()).toBe(false)
+    await button?.trigger('click')
+
+    expect(wrapper.find('custom-ai-profile-manager-stub').exists()).toBe(true)
   })
 
   it('does not expose browser PDF processing or optional auto-save controls', () => {

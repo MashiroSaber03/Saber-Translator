@@ -7,7 +7,7 @@
           :model-value="hqSettings.provider"
           input-id="settingsHqTranslateProvider"
           :options="providerOptions"
-          custom-profile-kind="chat"
+          custom-profile-kind="chatVision"
           :custom-profile-api-key="hqSettings.apiKey"
           :custom-profile-base-url="hqSettings.customBaseUrl"
           :custom-profile-model="hqSettings.modelName"

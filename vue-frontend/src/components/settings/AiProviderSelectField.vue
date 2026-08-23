@@ -53,15 +53,15 @@ function emitChange(value: UiSelectValue): void {
       @update:model-value="emitModelValue"
       @change="emitChange"
     />
+    <CustomAiProfilePicker
+      v-if="modelValue === 'custom' && customProfileKind"
+      :input-id="`${inputId}CustomProfile`"
+      :kind="customProfileKind"
+      :api-key="customProfileApiKey"
+      :base-url="customProfileBaseUrl"
+      :model="customProfileModel"
+      :disabled="disabled"
+      @apply="emit('apply-custom-profile', $event)"
+    />
   </UiField>
-  <CustomAiProfilePicker
-    v-if="modelValue === 'custom' && customProfileKind"
-    :input-id="`${inputId}CustomProfile`"
-    :kind="customProfileKind"
-    :api-key="customProfileApiKey"
-    :base-url="customProfileBaseUrl"
-    :model="customProfileModel"
-    :disabled="disabled"
-    @apply="emit('apply-custom-profile', $event)"
-  />
 </template>

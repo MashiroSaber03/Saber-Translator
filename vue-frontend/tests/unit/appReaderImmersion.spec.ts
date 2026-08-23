@@ -3,12 +3,21 @@ import { defineComponent } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { authStoreMock, runtimeStoreMock, settingsStoreMock, taskCenterStoreMock } = vi.hoisted(
+const {
+  authStoreMock,
+  customAiProfileStoreMock,
+  runtimeStoreMock,
+  settingsStoreMock,
+  taskCenterStoreMock,
+} = vi.hoisted(
   () => ({
     authStoreMock: {
       authenticated: false,
       user: null as { id: string } | null,
       markUnauthenticated: vi.fn(),
+    },
+    customAiProfileStoreMock: {
+      reset: vi.fn(),
     },
     runtimeStoreMock: {
       capabilities: { requiresAuth: false } as { requiresAuth: boolean } | null,
@@ -41,6 +50,10 @@ vi.mock('@/stores/runtimeStore', () => ({
 
 vi.mock('@/stores/authStore', () => ({
   useAuthStore: () => authStoreMock,
+}))
+
+vi.mock('@/stores/customAiProfileStore', () => ({
+  useCustomAiProfileStore: () => customAiProfileStoreMock,
 }))
 
 import App from '@/App.vue'

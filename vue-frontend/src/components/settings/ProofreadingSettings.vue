@@ -59,7 +59,7 @@
               :model-value="round.provider"
               :input-id="roundFieldId(round.id, 'Provider')"
               :options="providerOptions"
-              custom-profile-kind="chat"
+              custom-profile-kind="chatVision"
               :custom-profile-api-key="round.apiKey"
               :custom-profile-base-url="round.customBaseUrl"
               :custom-profile-model="round.modelName"

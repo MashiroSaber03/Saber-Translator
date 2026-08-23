@@ -8,8 +8,11 @@ import UiButton from '@/components/ui/UiButton.vue'
 import UiField from '@/components/ui/UiField.vue'
 import UiInput from '@/components/ui/UiInput.vue'
 import UiPasswordField from '@/components/ui/UiPasswordField.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
+import type { UiSelectValue } from '@/components/ui/selectTypes'
 import { useCustomAiProfileStore } from '@/stores/customAiProfileStore'
 import {
+  CUSTOM_AI_PROFILE_KINDS,
   CUSTOM_AI_PROFILE_KIND_LABELS,
   type CustomAiProfile,
   type CustomAiProfileKind,
@@ -17,12 +20,11 @@ import {
 
 const props = defineProps<{
   modelValue: boolean
-  kind: CustomAiProfileKind
+  initialKind?: CustomAiProfileKind
 }>()
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
-  saved: [profile: CustomAiProfile]
 }>()
 
 const store = useCustomAiProfileStore()
@@ -30,8 +32,17 @@ const editingId = ref<string | null>(null)
 const pendingDeleteId = ref<string | null>(null)
 const draft = ref<Omit<CustomAiProfile, 'id'>>(emptyDraft())
 
-const kindLabel = computed(() => CUSTOM_AI_PROFILE_KIND_LABELS[props.kind])
-const profiles = computed(() => store.byKind(props.kind))
+const kindOptions = CUSTOM_AI_PROFILE_KINDS.map(kind => ({
+  value: kind,
+  label: CUSTOM_AI_PROFILE_KIND_LABELS[kind],
+}))
+const groupedProfiles = computed(() => CUSTOM_AI_PROFILE_KINDS
+  .map(kind => ({
+    kind,
+    label: CUSTOM_AI_PROFILE_KIND_LABELS[kind],
+    profiles: store.byKind(kind),
+  }))
+  .filter(group => group.profiles.length > 0))
 const canSave = computed(() => (
   draft.value.name.trim().length > 0
   && draft.value.baseUrl.trim().length > 0
@@ -43,7 +54,7 @@ const canSave = computed(() => (
 function emptyDraft(): Omit<CustomAiProfile, 'id'> {
   return {
     name: '',
-    kind: props.kind,
+    kind: props.initialKind ?? 'chatVision',
     baseUrl: '',
     apiKey: '',
     model: '',
@@ -55,13 +66,19 @@ function close(): void {
   emit('update:modelValue', false)
 }
 
-function startCreate(): void {
+function resetEditor(): void {
   editingId.value = null
   pendingDeleteId.value = null
   draft.value = emptyDraft()
 }
 
+function startCreate(): void {
+  store.clearError()
+  resetEditor()
+}
+
 function startEdit(profile: CustomAiProfile): void {
+  store.clearError()
   editingId.value = profile.id
   pendingDeleteId.value = null
   draft.value = {
@@ -77,7 +94,17 @@ function updateDraft(
   field: 'name' | 'baseUrl' | 'apiKey' | 'model',
   value: string | number | boolean,
 ): void {
-  if (typeof value === 'string') draft.value[field] = value
+  if (typeof value === 'string') {
+    store.clearError()
+    draft.value[field] = value
+  }
+}
+
+function updateKind(value: UiSelectValue): void {
+  if (typeof value !== 'string') return
+  if (!CUSTOM_AI_PROFILE_KINDS.includes(value as CustomAiProfileKind)) return
+  store.clearError()
+  draft.value.kind = value as CustomAiProfileKind
 }
 
 async function save(): Promise<void> {
@@ -85,16 +112,13 @@ async function save(): Promise<void> {
   if (editingId.value) {
     const profile = { ...draft.value, id: editingId.value }
     if (await store.update(profile)) {
-      const saved = store.profiles.find(item => item.id === profile.id)
-      if (saved) emit('saved', saved)
-      startCreate()
+      resetEditor()
     }
     return
   }
   const profile = await store.create(draft.value)
   if (profile) {
-    emit('saved', profile)
-    startCreate()
+    resetEditor()
   }
 }
 
@@ -105,7 +129,7 @@ async function remove(profileId: string): Promise<void> {
   }
   if (await store.remove(profileId)) {
     pendingDeleteId.value = null
-    if (editingId.value === profileId) startCreate()
+    if (editingId.value === profileId) resetEditor()
   }
 }
 
@@ -113,21 +137,17 @@ watch(
   () => props.modelValue,
   async (open) => {
     if (!open) return
-    await store.load()
-    startCreate()
+    if (await store.load()) startCreate()
   },
+  { immediate: true },
 )
 
-watch(
-  () => props.kind,
-  () => startCreate(),
-)
 </script>
 
 <template>
   <BaseModal
     :model-value="modelValue"
-    :title="`管理${kindLabel}自定义服务`"
+    title="管理自定义 OpenAI 服务"
     size="large"
     frame-variant="outlined"
     divider-variant="soft"
@@ -141,55 +161,71 @@ watch(
       <section class="custom-ai-profile-manager__list" aria-label="已保存配置">
         <div class="custom-ai-profile-manager__section-heading">
           <div>
-            <h4>已保存配置</h4>
-            <p>选择后会把 Base URL、API Key 和模型名应用到当前功能。</p>
+            <h4>全部配置</h4>
+            <p>统一管理对话与视觉、Embedding、Reranker 和图像生成服务。</p>
           </div>
           <UiButton type="button" size="sm" variant="secondary" @click="startCreate">
             新增配置
           </UiButton>
         </div>
 
-        <div v-if="profiles.length" class="custom-ai-profile-manager__records">
-          <article
-            v-for="profile in profiles"
-            :key="profile.id"
-            class="custom-ai-profile-manager__record"
+        <div v-if="groupedProfiles.length" class="custom-ai-profile-manager__records">
+          <section
+            v-for="group in groupedProfiles"
+            :key="group.kind"
+            class="custom-ai-profile-manager__group"
           >
-            <div class="custom-ai-profile-manager__record-copy">
-              <strong>{{ profile.name }}</strong>
-              <span>{{ profile.model }}</span>
-              <small>{{ profile.baseUrl }}</small>
-            </div>
-            <ProductActionRow justify="end" :aria-label="`${profile.name} 操作`">
-              <UiButton type="button" size="xs" variant="ghost" @click="startEdit(profile)">
-                编辑
-              </UiButton>
-              <UiButton
-                type="button"
-                size="xs"
-                :variant="pendingDeleteId === profile.id ? 'danger' : 'ghost'"
-                :disabled="store.isSaving"
-                @click="remove(profile.id)"
-              >
-                {{ pendingDeleteId === profile.id ? '确认删除' : '删除' }}
-              </UiButton>
-              <UiButton
-                v-if="pendingDeleteId === profile.id"
-                type="button"
-                size="xs"
-                variant="ghost"
-                @click="pendingDeleteId = null"
-              >
-                取消
-              </UiButton>
-            </ProductActionRow>
-          </article>
+            <h5>{{ group.label }}</h5>
+            <article
+              v-for="profile in group.profiles"
+              :key="profile.id"
+              class="custom-ai-profile-manager__record"
+            >
+              <div class="custom-ai-profile-manager__record-copy">
+                <strong>{{ profile.name }}</strong>
+                <span>{{ profile.model }}</span>
+                <small>{{ profile.baseUrl }}</small>
+              </div>
+              <ProductActionRow justify="end" :aria-label="`${profile.name} 操作`">
+                <UiButton type="button" size="xs" variant="ghost" @click="startEdit(profile)">
+                  编辑
+                </UiButton>
+                <UiButton
+                  type="button"
+                  size="xs"
+                  :variant="pendingDeleteId === profile.id ? 'danger' : 'ghost'"
+                  :disabled="store.isSaving"
+                  @click="remove(profile.id)"
+                >
+                  {{ pendingDeleteId === profile.id ? '确认删除' : '删除' }}
+                </UiButton>
+                <UiButton
+                  v-if="pendingDeleteId === profile.id"
+                  type="button"
+                  size="xs"
+                  variant="ghost"
+                  @click="pendingDeleteId = null"
+                >
+                  取消
+                </UiButton>
+              </ProductActionRow>
+            </article>
+          </section>
         </div>
-        <p v-else class="custom-ai-profile-manager__empty">尚未保存此用途的配置。</p>
+        <p v-else class="custom-ai-profile-manager__empty">尚未保存自定义服务配置。</p>
       </section>
 
       <section class="custom-ai-profile-manager__editor" aria-label="配置编辑器">
         <h4>{{ editingId ? '编辑配置' : '新增配置' }}</h4>
+        <UiField variant="settings" label="用途" control-id="customAiProfileKind">
+          <UiSelect
+            id="customAiProfileKind"
+            :model-value="draft.kind"
+            :options="kindOptions"
+            :disabled="store.isSaving"
+            @change="updateKind"
+          />
+        </UiField>
         <UiField variant="settings" label="配置名称" control-id="customAiProfileName">
           <UiInput
             id="customAiProfileName"
@@ -302,7 +338,19 @@ watch(
 
 .custom-ai-profile-manager__records {
   display: grid;
-  gap: 10px;
+  gap: 18px;
+}
+
+.custom-ai-profile-manager__group {
+  display: grid;
+  gap: 8px;
+}
+
+.custom-ai-profile-manager__group h5 {
+  margin: 0;
+  color: var(--color-text-supporting);
+  font-size: 13px;
+  font-weight: 650;
 }
 
 .custom-ai-profile-manager__record {

@@ -162,7 +162,7 @@ useInsightSettingsDraft<StoreVlmConfig>({
       v-model:model="model"
       v-model:base-url="baseUrl"
       :provider-options="VLM_PROVIDER_OPTIONS"
-      custom-profile-kind="vision"
+      custom-profile-kind="chatVision"
       :show-api-key="providerRequiresApiKey(provider)"
       credential-id="insight-vlm-api-key"
       provider-input-id="insight-vlm-provider"

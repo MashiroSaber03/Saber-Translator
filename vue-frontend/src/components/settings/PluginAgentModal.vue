@@ -49,7 +49,7 @@
               :options="providerOptions"
               :disabled="unref(isRunning)"
               field-class="plugin-agent-field"
-              custom-profile-kind="chat"
+              custom-profile-kind="chatVision"
               :custom-profile-api-key="agentSettings.apiKey"
               :custom-profile-base-url="agentSettings.customBaseUrl"
               :custom-profile-model="agentSettings.modelName"

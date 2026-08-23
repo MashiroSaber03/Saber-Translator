@@ -36,7 +36,7 @@ const options = computed(() => [
 function matchingProfile(): CustomAiProfile | undefined {
   return profiles.value.find(profile => (
     profile.apiKey === props.apiKey
-    && profile.baseUrl === props.baseUrl.replace(/\/$/, '')
+    && profile.baseUrl === props.baseUrl.replace(/\/+$/, '')
     && profile.model === props.model
   ))
 }
@@ -51,10 +51,6 @@ function select(value: UiSelectValue): void {
   selectedId.value = value
   const profile = profiles.value.find(item => item.id === value)
   if (profile) apply(profile)
-}
-
-function handleSaved(profile: CustomAiProfile): void {
-  if (profile.kind === props.kind) apply(profile)
 }
 
 onMounted(async () => {
@@ -106,13 +102,17 @@ watch(
   </UiField>
 
   <CustomAiProfileManager
+    v-if="managerOpen"
     v-model="managerOpen"
-    :kind="kind"
-    @saved="handleSaved"
+    :initial-kind="kind"
   />
 </template>
 
 <style scoped>
+.custom-ai-profile-picker {
+  margin-top: 14px;
+}
+
 .custom-ai-profile-picker__controls {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

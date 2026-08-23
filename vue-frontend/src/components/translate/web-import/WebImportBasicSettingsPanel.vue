@@ -86,7 +86,7 @@ function applyCustomProfile(profile: CustomAiProfile): void {
       :model-value="draftSettings.agent.provider"
       input-id="webImportAgentProvider"
       :options="agentProviderOptions"
-      custom-profile-kind="chat"
+      custom-profile-kind="chatVision"
       :custom-profile-api-key="draftSettings.agent.apiKey"
       :custom-profile-base-url="draftSettings.agent.customBaseUrl"
       :custom-profile-model="draftSettings.agent.modelName"

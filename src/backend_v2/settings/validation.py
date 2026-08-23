@@ -63,7 +63,7 @@ _PROOFREADING_DOMAIN = re.compile(
     r"[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 )
 _CUSTOM_AI_PROFILE_KINDS = frozenset(
-    {"chat", "vision", "embedding", "reranker", "imageGen"}
+    {"chatVision", "embedding", "reranker", "imageGen"}
 )
 _SECRET_KEYS = frozenset(
     {

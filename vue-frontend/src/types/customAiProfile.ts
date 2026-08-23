@@ -1,6 +1,5 @@
 export const CUSTOM_AI_PROFILE_KINDS = [
-  'chat',
-  'vision',
+  'chatVision',
   'embedding',
   'reranker',
   'imageGen',
@@ -20,8 +19,7 @@ export interface CustomAiProfile {
 export type CustomAiProfilePayload = Omit<CustomAiProfile, 'apiKey'>
 
 export const CUSTOM_AI_PROFILE_KIND_LABELS: Record<CustomAiProfileKind, string> = {
-  chat: '对话 / 文本',
-  vision: '视觉',
+  chatVision: '对话 / 视觉',
   embedding: 'Embedding',
   reranker: 'Reranker',
   imageGen: '图像生成',

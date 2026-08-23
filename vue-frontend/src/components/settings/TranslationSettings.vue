@@ -8,7 +8,7 @@
           input-id="settingsModelProvider"
           :options="providerOptions"
           label="翻译服务商"
-          custom-profile-kind="chat"
+          custom-profile-kind="chatVision"
           :custom-profile-api-key="translationSettings.apiKey"
           :custom-profile-base-url="translationSettings.customBaseUrl"
           :custom-profile-model="translationSettings.modelName"

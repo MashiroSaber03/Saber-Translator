@@ -7,10 +7,12 @@ import type {
   V2SettingsTransaction,
 } from '@/api/v2/settings'
 import {
+  deleteV2Credential,
   getV2Settings,
   saveV2SettingsTransaction,
 } from '@/api/v2/settings'
 import {
+  deleteBrowserCredential,
   prepareBrowserCredentialTransaction,
   restoreBrowserCredentialLeases,
 } from '@/services/browserCredentials'
@@ -83,7 +85,7 @@ function normalizedProfile(profile: CustomAiProfile): CustomAiProfile {
     id: profile.id,
     name: profile.name.trim(),
     kind: profile.kind,
-    baseUrl: profile.baseUrl.trim().replace(/\/$/, ''),
+    baseUrl: profile.baseUrl.trim().replace(/\/+$/, ''),
     apiKey: profile.apiKey.trim(),
     model: profile.model.trim(),
   }
@@ -107,10 +109,15 @@ function validateProfiles(profiles: CustomAiProfile[]): string | null {
     } catch {
       return 'Base URL 必须是有效的 HTTP 地址'
     }
-    if (!profile.apiKey) return 'API Key 不能为空'
     if (!profile.model) return '模型名不能为空'
   }
   return null
+}
+
+interface ProfileAuthority {
+  profiles: CustomAiProfile[]
+  revision: number
+  credentials: V2CredentialSummary[]
 }
 
 export const useCustomAiProfileStore = defineStore('customAiProfiles', () => {
@@ -118,8 +125,7 @@ export const useCustomAiProfileStore = defineStore('customAiProfiles', () => {
   const isLoaded = ref(false)
   const isSaving = ref(false)
   const error = ref<string | null>(null)
-  let settingRevision = 0
-  let credentials: V2CredentialSummary[] = []
+  let contextGeneration = 0
   let loadPromise: Promise<boolean> | null = null
 
   const profilesByKind = computed(() => {
@@ -130,55 +136,81 @@ export const useCustomAiProfileStore = defineStore('customAiProfiles', () => {
     return result
   })
 
+  async function readAuthority(): Promise<ProfileAuthority> {
+    const [document, browserCredentials] = await Promise.all([
+      getV2Settings([SETTING_DOMAIN, CREDENTIAL_DOMAIN]),
+      restoreBrowserCredentialLeases(),
+    ])
+    const entry = document.settings.find(item => item.domain === SETTING_DOMAIN)
+    if (!entry) throw new Error('后端自定义 OpenAI 配置库缺失')
+    const payload = parsePayload(entry.payload)
+    if (!payload) throw new Error('后端自定义 OpenAI 配置格式无效')
+    const credentials = mergeCredentials(document.credentials, browserCredentials)
+    return {
+      profiles: payload.map(profile => ({
+        ...profile,
+        apiKey: profileApiKey(credentials, profile.id),
+      })),
+      revision: entry.revision,
+      credentials,
+    }
+  }
+
   async function load(): Promise<boolean> {
     if (isLoaded.value) return true
     if (loadPromise) return loadPromise
-    loadPromise = (async () => {
+    const generation = contextGeneration
+    const pending = (async () => {
       try {
-        const [document, browserCredentials] = await Promise.all([
-          getV2Settings([SETTING_DOMAIN, CREDENTIAL_DOMAIN]),
-          restoreBrowserCredentialLeases(),
-        ])
-        const entry = document.settings.find(item => item.domain === SETTING_DOMAIN)
-        if (!entry) throw new Error('后端自定义 OpenAI 配置库缺失')
-        const payload = parsePayload(entry.payload)
-        if (!payload) throw new Error('后端自定义 OpenAI 配置格式无效')
-        settingRevision = entry.revision
-        credentials = mergeCredentials(document.credentials, browserCredentials)
-        profiles.value = payload.map(profile => ({
-          ...profile,
-          apiKey: profileApiKey(credentials, profile.id),
-        }))
+        const authority = await readAuthority()
+        if (generation !== contextGeneration) return false
+        profiles.value = authority.profiles
         error.value = null
         isLoaded.value = true
         return true
       } catch (reason) {
+        if (generation !== contextGeneration) return false
         error.value = reason instanceof Error ? reason.message : '自定义 OpenAI 配置加载失败'
         return false
       }
     })()
+    loadPromise = pending
     try {
-      return await loadPromise
+      return await pending
     } finally {
-      loadPromise = null
+      if (loadPromise === pending) loadPromise = null
     }
   }
 
-  async function persist(nextProfiles: CustomAiProfile[]): Promise<boolean> {
-    const normalized = nextProfiles.map(normalizedProfile)
-    const validationError = validateProfiles(normalized)
-    if (validationError) {
-      error.value = validationError
-      return false
-    }
+  async function deleteProfileCredential(
+    authority: ProfileAuthority,
+    profileId: string,
+  ): Promise<void> {
+    if (await deleteBrowserCredential(CREDENTIAL_DOMAIN, profileId)) return
+    const credential = authority.credentials.find(
+      item => item.domain === CREDENTIAL_DOMAIN && item.provider === profileId,
+    )
+    if (credential) await deleteV2Credential(credential.credentialId)
+  }
+
+  async function persist(
+    mutate: (current: CustomAiProfile[]) => CustomAiProfile[],
+    removedProfileId?: string,
+  ): Promise<boolean> {
+    const generation = contextGeneration
     isSaving.value = true
     try {
+      const authority = await readAuthority()
+      if (generation !== contextGeneration) return false
+      const normalized = mutate(authority.profiles).map(normalizedProfile)
+      const validationError = validateProfiles(normalized)
+      if (validationError) throw new Error(validationError)
       const credentialEdits: V2CredentialEdit[] = []
       normalized.forEach((profile) => {
-        const existing = credentials.find(
+        const existing = authority.credentials.find(
           item => item.domain === CREDENTIAL_DOMAIN && item.provider === profile.id,
         )
-        if (existing?.secret.api_key === profile.apiKey) return
+        if (!profile.apiKey || existing?.secret.api_key === profile.apiKey) return
         credentialEdits.push({
           domain: CREDENTIAL_DOMAIN,
           provider: profile.id,
@@ -194,26 +226,36 @@ export const useCustomAiProfileStore = defineStore('customAiProfiles', () => {
           payload: {
             profiles: normalized.map(({ apiKey: _apiKey, ...profile }) => profile),
           },
-          baseRevision: settingRevision,
+          baseRevision: authority.revision,
           schemaVersion: 1,
         }],
         credentialEdits,
       }
       const prepared = await prepareBrowserCredentialTransaction(transaction)
       const result = await saveV2SettingsTransaction(prepared.transaction)
+      if (generation !== contextGeneration) return false
       const settingResult = result.settings.find(item => item.domain === SETTING_DOMAIN)
       if (!settingResult) throw new Error('后端未返回自定义 OpenAI 配置保存结果')
-      settingRevision = settingResult.revision
-      credentials = mergeCredentials(credentials, result.credentials)
-      credentials = mergeCredentials(credentials, prepared.summaries)
       profiles.value = normalized
+      isLoaded.value = true
       error.value = null
-      return true
+      if (removedProfileId) {
+        try {
+          await deleteProfileCredential(authority, removedProfileId)
+        } catch (reason) {
+          if (generation === contextGeneration) {
+            const message = reason instanceof Error ? reason.message : '未知错误'
+            error.value = `配置已删除，但关联 API Key 清理失败：${message}`
+          }
+        }
+      }
+      return generation === contextGeneration
     } catch (reason) {
+      if (generation !== contextGeneration) return false
       error.value = reason instanceof Error ? reason.message : '自定义 OpenAI 配置保存失败'
       return false
     } finally {
-      isSaving.value = false
+      if (generation === contextGeneration) isSaving.value = false
     }
   }
 
@@ -222,20 +264,48 @@ export const useCustomAiProfileStore = defineStore('customAiProfiles', () => {
   }
 
   async function create(profile: Omit<CustomAiProfile, 'id'>): Promise<CustomAiProfile | null> {
-    const created = { ...profile, id: crypto.randomUUID() }
-    return await persist([...profiles.value, created]) ? normalizedProfile(created) : null
+    const created = normalizedProfile({ ...profile, id: crypto.randomUUID() })
+    if (!created.apiKey) {
+      error.value = 'API Key 不能为空'
+      return null
+    }
+    return await persist(current => [...current, created]) ? created : null
   }
 
   async function update(profile: CustomAiProfile): Promise<boolean> {
-    if (!profiles.value.some(item => item.id === profile.id)) {
-      error.value = '要编辑的自定义服务不存在'
+    const updated = normalizedProfile(profile)
+    if (!updated.apiKey) {
+      error.value = 'API Key 不能为空'
       return false
     }
-    return persist(profiles.value.map(item => item.id === profile.id ? profile : item))
+    return persist((current) => {
+      if (!current.some(item => item.id === updated.id)) {
+        throw new Error('要编辑的自定义服务不存在')
+      }
+      return current.map(item => item.id === updated.id ? updated : item)
+    })
   }
 
   async function remove(profileId: string): Promise<boolean> {
-    return persist(profiles.value.filter(item => item.id !== profileId))
+    return persist((current) => {
+      if (!current.some(item => item.id === profileId)) {
+        throw new Error('要删除的自定义服务不存在')
+      }
+      return current.filter(item => item.id !== profileId)
+    }, profileId)
+  }
+
+  function clearError(): void {
+    error.value = null
+  }
+
+  function reset(): void {
+    contextGeneration += 1
+    loadPromise = null
+    profiles.value = []
+    isLoaded.value = false
+    isSaving.value = false
+    error.value = null
   }
 
   return {
@@ -248,5 +318,7 @@ export const useCustomAiProfileStore = defineStore('customAiProfiles', () => {
     create,
     update,
     remove,
+    clearError,
+    reset,
   }
 })

@@ -137,7 +137,7 @@
           :model-value="settings.aiVisionOcr.provider"
           input-id="settingsAiVisionProvider"
           :options="aiVisionProviderOptions"
-          custom-profile-kind="vision"
+          custom-profile-kind="chatVision"
           :custom-profile-api-key="settings.aiVisionOcr.apiKey"
           :custom-profile-base-url="settings.aiVisionOcr.customBaseUrl"
           :custom-profile-model="settings.aiVisionOcr.modelName"

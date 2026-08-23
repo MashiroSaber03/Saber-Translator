@@ -18,6 +18,19 @@
     </ProductFormSection>
 
     <ProductFormSection>
+      <template #title>自定义 OpenAI 服务</template>
+      <UiField
+        variant="settings"
+        label="配置管理"
+        hint="统一管理可在翻译、OCR、插件和漫画分析中复用的 Base URL、API Key 与模型名。"
+      >
+        <UiButton variant="secondary" type="button" @click="customAiProfileManagerOpen = true">
+          管理自定义服务
+        </UiButton>
+      </UiField>
+    </ProductFormSection>
+
+    <ProductFormSection>
       <template #title>消除文字模式</template>
       <UiField
         variant="settings"
@@ -129,6 +142,11 @@
         <p class="more-settings__about-disclaimer">本项目完全开源免费，请勿上当受骗</p>
       </div>
     </ProductFormSection>
+
+    <CustomAiProfileManager
+      v-if="customAiProfileManagerOpen"
+      v-model="customAiProfileManagerOpen"
+    />
   </div>
 </template>
 
@@ -153,6 +171,7 @@ import {
   isSupportedFontFileName,
 } from '@/utils/fontFiles'
 import ParallelSettings from './ParallelSettings.vue'
+import CustomAiProfileManager from './CustomAiProfileManager.vue'
 import { usePublicUserAccess } from '@/composables/usePublicUserAccess'
 
 const settingsStore = useSettingsStore()
@@ -169,6 +188,7 @@ const isLoadingFonts = ref(false)
 const fontList = computed<V2Font[]>(() => settingsStore.fontCatalog)
 const isUploadingFont = ref(false)
 const isRecoveringAssets = ref(false)
+const customAiProfileManagerOpen = ref(false)
 const fontInput = ref<InstanceType<typeof UiFileInput> | null>(null)
 const selectedFontFileName = ref('')
 

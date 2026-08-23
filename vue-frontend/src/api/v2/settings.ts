@@ -22,6 +22,7 @@ export type V2ExportPreferences = components['schemas']['ExportPreferences']
 type V2FontList = components['schemas']['FontList']
 type V2ModelCatalogResponse = components['schemas']['ModelCatalogResponse']
 type V2PromptList = components['schemas']['PromptList']
+type V2DeletedResponse = components['schemas']['DeletedResponse']
 
 export function getV2Settings(
   domains: string[] = [],
@@ -39,6 +40,13 @@ export function saveV2SettingsTransaction(
   return apiClient.put<V2SettingsTransactionResult>(
     '/api/v2/settings/transactions',
     payload,
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
+  )
+}
+
+export function deleteV2Credential(credentialId: string): Promise<V2DeletedResponse> {
+  return apiClient.delete<V2DeletedResponse>(
+    `/api/v2/credentials/${encodeURIComponent(credentialId)}`,
     { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
 }

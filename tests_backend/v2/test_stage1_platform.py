@@ -356,14 +356,14 @@ def test_custom_ai_profiles_validate_reusable_service_metadata() -> None:
             {
                 "id": "11111111-1111-4111-8111-111111111111",
                 "name": "Shared Gateway",
-                "kind": "chat",
+                "kind": "chatVision",
                 "baseUrl": "https://example.com/v1",
                 "model": "chat-model",
             },
             {
                 "id": "22222222-2222-4222-8222-222222222222",
                 "name": "Shared Gateway",
-                "kind": "vision",
+                "kind": "embedding",
                 "baseUrl": "https://example.com/v1",
                 "model": "vision-model",
             },
@@ -377,11 +377,20 @@ def test_custom_ai_profiles_validate_reusable_service_metadata() -> None:
     ) == payload
 
     duplicate_name = deepcopy(payload)
-    duplicate_name["profiles"][1]["kind"] = "chat"
+    duplicate_name["profiles"][1]["kind"] = "chatVision"
     with pytest.raises(ValueError, match="unique within each kind"):
         validate_setting_payload(
             "custom_ai_profiles",
             duplicate_name,
+            schema_version=1,
+        )
+
+    retired_kind = deepcopy(payload)
+    retired_kind["profiles"][0]["kind"] = "vision"
+    with pytest.raises(ValueError, match="kind is invalid"):
+        validate_setting_payload(
+            "custom_ai_profiles",
+            retired_kind,
             schema_version=1,
         )
 
@@ -594,6 +603,60 @@ def test_credentials_require_the_current_domain_provider_identity() -> None:
             "custom",
             {"api_key": "   "},
         )
+
+
+def test_removed_custom_ai_profile_credential_can_be_deleted(platform) -> None:
+    _data_root, engine = platform
+    repository = SettingsRepository(engine)
+    profile_id = "11111111-1111-4111-8111-111111111111"
+    saved = repository.save_transaction(
+        settings=(
+            SettingMutation(
+                domain="custom_ai_profiles",
+                payload={
+                    "profiles": [
+                        {
+                            "id": profile_id,
+                            "name": "Shared Gateway",
+                            "kind": "chatVision",
+                            "baseUrl": "https://example.com/v1",
+                            "model": "chat-model",
+                        }
+                    ]
+                },
+                base_revision=0,
+                schema_version=1,
+            ),
+        ),
+        credentials_edits=(
+            CredentialEdit(
+                domain="custom_ai_profile",
+                provider=profile_id,
+                secret={"api_key": "secret"},
+                base_revision=0,
+            ),
+        ),
+    )
+    credential_id = str(saved["credentials"][0]["credentialId"])
+    repository.save_transaction(
+        settings=(
+            SettingMutation(
+                domain="custom_ai_profiles",
+                payload={"profiles": []},
+                base_revision=1,
+                schema_version=1,
+            ),
+        ),
+    )
+
+    result, replayed = repository.delete_credential_idempotent(
+        idempotency_key="delete-custom-profile-credential",
+        credential_id=credential_id,
+    )
+
+    assert result == {"deleted": True}
+    assert replayed is False
+    assert repository.credential_summaries() == []
 
 
 @pytest.mark.parametrize(

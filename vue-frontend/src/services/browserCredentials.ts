@@ -108,6 +108,18 @@ export async function restoreBrowserCredentialLeases(): Promise<V2CredentialSumm
   return records.map(summary)
 }
 
+export async function deleteBrowserCredential(
+  domain: string,
+  provider: string,
+): Promise<boolean> {
+  if (!usesBrowserCredentials()) return false
+  await transact<undefined>('readwrite', store => store.delete(recordKey(domain, provider)))
+  await apiClient.delete(
+    `/api/v2/browser-credentials/${encodeURIComponent(domain)}/${encodeURIComponent(provider)}`,
+  )
+  return true
+}
+
 async function saveCredentialEdit(edit: V2CredentialEdit): Promise<BrowserCredentialRecord> {
   const record: BrowserCredentialRecord = {
     key: recordKey(edit.domain, edit.provider),

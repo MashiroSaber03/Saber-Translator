@@ -13,12 +13,14 @@ import UiSpinner from '@/components/ui/UiSpinner.vue'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import { useRuntimeStore } from '@/stores/runtimeStore'
 import { useAuthStore } from '@/stores/authStore'
+import { useCustomAiProfileStore } from '@/stores/customAiProfileStore'
 import AccountDock from '@/components/common/AccountDock.vue'
 
 const settingsStore = useSettingsStore()
 const taskCenterStore = useTaskCenterStore()
 const runtimeStore = useRuntimeStore()
 const authStore = useAuthStore()
+const customAiProfileStore = useCustomAiProfileStore()
 const route = useRoute()
 const router = useRouter()
 const routerReady = ref(false)
@@ -93,6 +95,7 @@ async function activateApplication(): Promise<void> {
   if (!context) return
   if (!applicationSettingsReady.value) {
     if (settingsLoading.value) return
+    customAiProfileStore.reset()
     settingsLoading.value = true
     const loaded = await settingsStore.loadFromBackend()
     settingsLoading.value = false

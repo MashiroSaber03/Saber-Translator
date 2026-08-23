@@ -5,7 +5,7 @@ import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { useInsightStore } from '@/stores/insightStore'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
-import type { V2Job } from '@/api/v2/jobs'
+import { jobsApi, type V2Job } from '@/api/v2/jobs'
 
 const {
   rebuildEmbeddingsMock,
@@ -112,6 +112,10 @@ describe('QAPanel vector rebuild task projection', () => {
     showToastMock.mockReset()
     confirmProductActionMock.mockReset()
     confirmProductActionMock.mockResolvedValue(true)
+    vi.spyOn(jobsApi, 'list').mockResolvedValue({
+      items: [],
+      queueRevision: 1,
+    })
   })
 
   afterEach(() => {
