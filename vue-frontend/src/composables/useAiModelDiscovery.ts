@@ -16,7 +16,6 @@ export interface AiModelDiscoverySource {
   provider: string
   apiKey?: string
   baseUrl?: string
-  hasStoredCredential?: boolean
 }
 
 export interface AiModelDiscoveryOptions {
@@ -39,7 +38,6 @@ interface AiModelDiscoverySnapshot {
   provider: string
   apiKey: string
   baseUrl: string
-  hasStoredCredential: boolean
 }
 
 function snapshotSource(source: AiModelDiscoverySource): AiModelDiscoverySnapshot {
@@ -47,7 +45,6 @@ function snapshotSource(source: AiModelDiscoverySource): AiModelDiscoverySnapsho
     provider: source.provider.trim(),
     apiKey: source.apiKey?.trim() ?? '',
     baseUrl: source.baseUrl?.trim() ?? '',
-    hasStoredCredential: source.hasStoredCredential === true,
   }
 }
 
@@ -55,7 +52,6 @@ function sameSnapshot(left: AiModelDiscoverySnapshot, right: AiModelDiscoverySna
   return left.provider === right.provider
     && left.apiKey === right.apiKey
     && left.baseUrl === right.baseUrl
-    && left.hasStoredCredential === right.hasStoredCredential
 }
 
 export function useAiModelDiscovery(options: AiModelDiscoveryOptions) {
@@ -90,7 +86,6 @@ export function useAiModelDiscovery(options: AiModelDiscoveryOptions) {
     if (
       requiresApiKey(snapshot.provider, snapshot.baseUrl)
       && !snapshot.apiKey
-      && !snapshot.hasStoredCredential
     ) {
       options.notify('请先填写 API Key', validationTone)
       return null

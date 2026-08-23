@@ -13,7 +13,6 @@ withDefaults(defineProps<{
   model: string
   baseUrl?: string
   showApiKey?: boolean
-  hasStoredCredential?: boolean
   credentialId: string
   providerInputId: string
   modelInputId: string
@@ -37,7 +36,6 @@ withDefaults(defineProps<{
   apiKey: '',
   baseUrl: '',
   showApiKey: false,
-  hasStoredCredential: false,
   modelHint: '',
   modelError: '',
   showBaseUrl: false,
@@ -115,7 +113,6 @@ function handleBaseUrlUpdate(value: string | number | boolean): void {
       :show-api-key="showApiKey"
       :show-base-url="false"
       :include-base-url="false"
-      :has-stored-credential="hasStoredCredential"
       @update:api-key="handleApiKeyUpdate"
     />
 

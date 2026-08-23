@@ -77,12 +77,11 @@
           variant="settings"
           label="API Key"
           control-id="settingsBaiduApiKey"
-          :hint="baiduStoredCredentialHint"
         >
           <UiPasswordField
             input-id="settingsBaiduApiKey"
             :model-value="settings.baiduOcr.apiKey"
-            :placeholder="baiduStoredCredentialPlaceholder || '请输入百度OCR API Key'"
+            placeholder="请输入百度OCR API Key"
             show-label="显示百度 API Key"
             hide-label="隐藏百度 API Key"
             @update:model-value="updateBaiduString('apiKey', $event)"
@@ -92,12 +91,11 @@
           variant="settings"
           label="Secret Key"
           control-id="settingsBaiduSecretKey"
-          :hint="baiduStoredCredentialHint"
         >
           <UiPasswordField
             input-id="settingsBaiduSecretKey"
             :model-value="settings.baiduOcr.secretKey"
-            :placeholder="baiduStoredCredentialPlaceholder || '请输入Secret Key'"
+            placeholder="请输入Secret Key"
             show-label="显示百度 Secret Key"
             hide-label="隐藏百度 Secret Key"
             @update:model-value="updateBaiduString('secretKey', $event)"
@@ -150,9 +148,6 @@
           :show-base-url="false"
           :include-base-url="false"
           :api-key-placeholder="aiVisionApiKeyRequired ? '请输入API Key' : '本地无鉴权服务可留空'"
-          :has-stored-credential="
-            settingsStore.hasCredential('ai_vision_ocr', settings.aiVisionOcr.provider)
-          "
           api-key-show-label="显示 AI 视觉 API Key"
           api-key-hide-label="隐藏 AI 视觉 API Key"
           @update:api-key="updateAiVisionString('apiKey', $event)"
@@ -358,15 +353,6 @@ const settingsStore = useSettingsStore()
 const toast = useToast()
 const publicAccess = usePublicUserAccess()
 const settings = computed(() => settingsStore.settings)
-const hasStoredBaiduCredential = computed(() => settingsStore.hasCredential('ocr', 'baidu'))
-const baiduStoredCredentialHint = computed(() =>
-  hasStoredBaiduCredential.value && !settings.value.baiduOcr.apiKey && !settings.value.baiduOcr.secretKey
-    ? '百度 OCR 凭据已安全保存在后端；留空表示保持不变，更换时必须同时填写两项'
-    : ''
-)
-const baiduStoredCredentialPlaceholder = computed(() =>
-  baiduStoredCredentialHint.value ? '已保存在后端，留空保持不变' : ''
-)
 const isTesting = ref(false)
 const aiVisionApiKeyRequired = computed(() => providerRequiresApiKeyForBaseUrl(
   settings.value.aiVisionOcr.provider,
@@ -380,10 +366,6 @@ const aiVisionModelDiscovery = useAiModelDiscovery({
     provider: settingsStore.settings.aiVisionOcr.provider,
     apiKey: settingsStore.settings.aiVisionOcr.apiKey,
     baseUrl: settingsStore.settings.aiVisionOcr.customBaseUrl,
-    hasStoredCredential: settingsStore.hasCredential(
-      'ai_vision_ocr',
-      settingsStore.settings.aiVisionOcr.provider
-    ),
   }),
   fetcher: (provider, apiKey, baseUrl) => fetchV2Models(provider, apiKey, baseUrl, 'ai_vision_ocr'),
   requiresApiKey: provider => providerRequiresApiKeyForBaseUrl(
@@ -512,7 +494,7 @@ async function testBaiduOcr() {
     toast.warning('更换百度 OCR 凭据时必须同时填写 API Key 和 Secret Key')
     return
   }
-  if ((!apiKey || !secretKey) && !settingsStore.hasCredential('ocr', 'baidu')) {
+  if (!apiKey || !secretKey) {
     toast.warning('请填写百度OCR的API Key和Secret Key')
     return
   }
@@ -540,7 +522,6 @@ async function testAiVisionOcr() {
   if (
     providerRequiresApiKeyForBaseUrl(provider, customBaseUrl)
     && !apiKey
-    && !settingsStore.hasCredential('ai_vision_ocr', provider)
   ) {
     toast.warning('请先填写 API Key')
     return

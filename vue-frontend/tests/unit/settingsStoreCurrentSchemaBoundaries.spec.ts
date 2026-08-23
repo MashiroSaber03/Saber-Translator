@@ -220,6 +220,7 @@ describe('settings store current schema boundaries', () => {
         hasKey: true,
         provider: 'siliconflow',
         revision: 1,
+        secret: { api_key: 'new-secret' },
       }],
       prompts: [],
     })
@@ -227,8 +228,7 @@ describe('settings store current schema boundaries', () => {
     expect(await store.saveToBackend()).toBe(true)
 
     expect(settingsApiMocks.getV2Settings).toHaveBeenCalledTimes(1)
-    expect(store.settings.translation.apiKey).toBe('')
-    expect(store.hasCredential('translation', 'siliconflow')).toBe(true)
+    expect(store.settings.translation.apiKey).toBe('new-secret')
 
     expect(await store.saveToBackend()).toBe(true)
     const secondTransaction = (
@@ -237,7 +237,11 @@ describe('settings store current schema boundaries', () => {
     expect(secondTransaction.settings?.[0]?.baseRevision).toBe(9)
     expect(secondTransaction.providerSettings?.find(
       row => row.domain === 'translation' && row.provider === 'siliconflow',
-    )?.baseRevision).toBe(1)
+    )).toMatchObject({
+      baseRevision: 1,
+      credentialVersionId: '22222222-2222-4222-8222-222222222222',
+    })
+    expect(secondTransaction.credentialEdits).toEqual([])
     expect(settingsApiMocks.getV2Settings).toHaveBeenCalledTimes(1)
   })
 

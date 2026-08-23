@@ -4,7 +4,6 @@ import UiNumberField from '@/components/ui/UiNumberField.vue'
 import { computed, ref } from 'vue'
 import { getProviderDefaultModel, providerRequiresApiKey, providerRequiresBaseUrl, providerRequiresModel } from '@/config/aiProviders'
 import { useInsightStore } from '@/stores/insightStore'
-import * as insightApi from '@/api/insight'
 import type { StoreImageGenConfig } from '@/types/insight'
 import InsightModelProviderSection from './InsightModelProviderSection.vue'
 import InsightSettingsPanel from './InsightSettingsPanel.vue'
@@ -32,9 +31,6 @@ const timeoutSeconds = ref(insightStore.config.imageGen.timeoutSeconds)
 
 const showBaseUrl = computed(() => providerRequiresBaseUrl(provider.value))
 const showModelWarning = computed(() => providerRequiresModel(provider.value) && !model.value.trim())
-const hasStoredCredential = computed(() => (
-  insightApi.hasInsightCredential('insight_image_gen', provider.value)
-))
 
 function getDefaultModel(providerId: string): string {
   return getProviderDefaultModel(providerId, 'imageGen')
@@ -94,7 +90,6 @@ useInsightSettingsDraft<StoreImageGenConfig>({
       v-model:base-url="baseUrl"
       :provider-options="IMAGE_GEN_PROVIDER_OPTIONS"
       :show-api-key="providerRequiresApiKey(provider)"
-      :has-stored-credential="hasStoredCredential"
       credential-id="insight-imagegen-api-key"
       provider-input-id="insight-imagegen-provider"
       model-input-id="insight-imagegen-model"

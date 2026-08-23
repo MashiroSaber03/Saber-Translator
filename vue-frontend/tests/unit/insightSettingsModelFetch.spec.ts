@@ -19,14 +19,12 @@ import UiPasswordField from '@/components/ui/UiPasswordField.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import { useInsightStore } from '@/stores/insightStore'
 
-const { fetchModelsMock, hasInsightCredentialMock } = vi.hoisted(() => ({
+const { fetchModelsMock } = vi.hoisted(() => ({
   fetchModelsMock: vi.fn(),
-  hasInsightCredentialMock: vi.fn(() => false),
 }))
 
 vi.mock('@/api/insight', () => ({
   fetchModels: fetchModelsMock,
-  hasInsightCredential: hasInsightCredentialMock,
   testVlmConnection: vi.fn(),
   testLlmConnection: vi.fn(),
   testEmbeddingConnection: vi.fn(),

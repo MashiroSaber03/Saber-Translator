@@ -10,7 +10,6 @@ import {
 import { useSettingsStore } from '@/stores/settings'
 import { useToast } from '@/utils/toast'
 import type { ProofreadingRound } from '@/types/settings'
-import { proofreadingProviderDomain } from '@/stores/settings/proofreadingIdentity'
 import { isSupportedHybridOcrCombo } from '@/utils/hybridOcr'
 
 interface ValidationResult {
@@ -32,18 +31,6 @@ export function useValidation() {
   const isSettingsButtonHighlighted = ref(false)
   let highlightTimer: ReturnType<typeof setTimeout> | null = null
 
-  function hasStoredCredential(domain: string, provider: string): boolean {
-    return settingsStore.hasCredential(domain, normalizeProviderId(provider))
-  }
-
-  function hasUsableApiKey(
-    apiKey: string | undefined,
-    domain: string,
-    provider: string,
-  ): boolean {
-    return Boolean(apiKey?.trim()) || hasStoredCredential(domain, provider)
-  }
-
   function validateOcrConfig(): ValidationResult {
     const settings = settingsStore.settings
     const engine = settings.ocrEngine
@@ -63,12 +50,10 @@ export function useValidation() {
       if (ocrEngine === 'baidu_ocr') {
         const apiKey = baiduOcr?.apiKey?.trim() ?? ''
         const secretKey = baiduOcr?.secretKey?.trim() ?? ''
-        const isReplacingCredential = Boolean(apiKey || secretKey)
-        const hasStoredBaiduCredential = hasStoredCredential('ocr', 'baidu')
-        if (!apiKey && (isReplacingCredential || !hasStoredBaiduCredential)) {
+        if (!apiKey) {
           missingItems.push(`${prefix}百度OCR 的 API Key`)
         }
-        if (!secretKey && (isReplacingCredential || !hasStoredBaiduCredential)) {
+        if (!secretKey) {
           missingItems.push(`${prefix}百度OCR 的 Secret Key`)
         }
       }
@@ -86,11 +71,7 @@ export function useValidation() {
             normalizeProviderId(aiVisionOcr.provider),
             aiVisionOcr.customBaseUrl,
           ) &&
-          !hasUsableApiKey(
-            aiVisionOcr?.apiKey,
-            'ai_vision_ocr',
-            aiVisionOcr.provider,
-          )
+          !aiVisionOcr?.apiKey?.trim()
         ) {
           missingItems.push(`${prefix}AI视觉OCR 的 API Key`)
         }
@@ -150,7 +131,7 @@ export function useValidation() {
     }
 
     if (providerRequiresApiKeyForBaseUrl(provider, customBaseUrl)) {
-      if (!hasUsableApiKey(apiKey, 'translation', provider)) {
+      if (!apiKey?.trim()) {
         missingItems.push(`${getProviderDisplayName(provider)} 的 API Key`)
       }
     }
@@ -194,7 +175,7 @@ export function useValidation() {
 
     if (
       providerRequiresApiKeyForBaseUrl(provider, customBaseUrl)
-      && !hasUsableApiKey(apiKey, 'hq', provider)
+      && !apiKey?.trim()
     ) {
       missingItems.push('高质量翻译的 API Key')
     }
@@ -247,11 +228,7 @@ export function useValidation() {
 
       if (
         providerRequiresApiKeyForBaseUrl(round.provider, round.customBaseUrl)
-        && !hasUsableApiKey(
-          round.apiKey,
-          proofreadingProviderDomain(round.id),
-          round.provider,
-        )
+        && !round.apiKey?.trim()
       ) {
         missingItems.push(`校对 ${roundName} 的 API Key`)
       }

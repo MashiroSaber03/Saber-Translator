@@ -16,11 +16,9 @@ import type { WebImportSettings } from '@/types/webImport'
 import { providerRequiresApiKeyForBaseUrl } from '@/config/aiProviders'
 import type { WebImportSettingsActions } from './webImportSettingsActions'
 
-const props = defineProps<{
+defineProps<{
   agentProviderOptions: UiSelectOption[]
   draftSettings: WebImportSettings
-  hasAgentCredential?: boolean
-  hasFirecrawlCredential?: boolean
   isFetchingModels: boolean
   modelList: string[]
   modelListOptions: UiSelectOption[]
@@ -43,7 +41,6 @@ function applyNumber(action: (value: number) => void, value: number | null): voi
   if (value !== null) action(value)
 }
 
-const storedCredentialHint = '凭据已安全保存在后端；留空表示保持不变，输入新值可替换'
 </script>
 
 <template>
@@ -53,18 +50,11 @@ const storedCredentialHint = '凭据已安全保存在后端；留空表示保�
       variant="settings"
       label="API Key"
       control-id="webImportFirecrawlApiKey"
-      :hint="
-        !draftSettings.firecrawl.apiKey && props.hasFirecrawlCredential ? storedCredentialHint : ''
-      "
     >
       <UiPasswordField
         input-id="webImportFirecrawlApiKey"
         :model-value="draftSettings.firecrawl.apiKey"
-        :placeholder="
-          !draftSettings.firecrawl.apiKey && props.hasFirecrawlCredential
-            ? '已保存在后端，留空保持不变'
-            : 'fc-xxxxxxxxxxxxxxxx'
-        "
+        placeholder="fc-xxxxxxxxxxxxxxxx"
         show-label="显示 Firecrawl API Key"
         hide-label="隐藏 Firecrawl API Key"
         @update:model-value="settingsActions.setFirecrawlApiKey"
@@ -74,7 +64,7 @@ const storedCredentialHint = '凭据已安全保存在后端；留空表示保�
     <ProductActionRow aria-label="Firecrawl 操作" justify="start">
       <UiButton
         variant="secondary"
-        :disabled="testingFirecrawl || (!draftSettings.firecrawl.apiKey && !hasFirecrawlCredential)"
+        :disabled="testingFirecrawl || !draftSettings.firecrawl.apiKey"
         @click="$emit('test-firecrawl')"
       >
         {{ testingFirecrawl ? '测试中...' : '测试连接' }}
@@ -99,7 +89,6 @@ const storedCredentialHint = '凭据已安全保存在后端；留空表示保�
       base-url-input-id="webImportAgentBaseUrl"
       :show-api-key="providerRequiresApiKey(draftSettings.agent.provider)"
       :show-base-url="showCustomUrl"
-      :has-stored-credential="hasAgentCredential"
       api-key-placeholder="sk-xxxxxxxxxxxxxxxx"
       api-key-show-label="显示 AI Agent API Key"
       api-key-hide-label="隐藏 AI Agent API Key"
@@ -171,8 +160,7 @@ const storedCredentialHint = '凭据已安全保存在后端；留空表示保�
               draftSettings.agent.provider,
               draftSettings.agent.customBaseUrl,
             ) &&
-              !draftSettings.agent.apiKey &&
-              !hasAgentCredential)
+              !draftSettings.agent.apiKey)
         "
         @click="$emit('test-agent')"
       >

@@ -23,10 +23,12 @@ function settingsDocument(provider = 'openai', modelName = 'gpt-4o-mini') {
       {
         credentialId: 'credential-1',
         credentialVersionId: 'credential-version-1',
+        currentVersion: 1,
         domain: 'web_import_agent',
         hasKey: true,
         provider,
         revision: 1,
+        secret: { api_key: `${provider}-key` },
       },
     ],
     providerSettings: [
@@ -64,10 +66,12 @@ describe('webImportStore backend settings workflow', () => {
         {
           credentialId: 'credential-deepseek',
           credentialVersionId: 'credential-version-deepseek',
+          currentVersion: 1,
           domain: 'web_import_agent',
           hasKey: true,
           provider: 'deepseek',
           revision: 1,
+          secret: { api_key: 'deepseek-key' },
         },
       ],
       prompts: [],
@@ -103,8 +107,7 @@ describe('webImportStore backend settings workflow', () => {
     expect(await store.loadFromBackend()).toBe(true)
     expect(store.settings.agent.provider).toBe('deepseek')
     expect(store.settings.agent.modelName).toBe('deepseek-chat')
-    expect(store.settings.agent.apiKey).toBe('')
-    expect(store.hasCredential('web_import_agent', 'deepseek')).toBe(true)
+    expect(store.settings.agent.apiKey).toBe('deepseek-key')
   })
 
   it('rejects a missing or empty backend settings fact instead of using browser defaults', async () => {
@@ -161,9 +164,8 @@ describe('webImportStore backend settings workflow', () => {
         ],
       })
     )
-    expect(store.settings.agent.apiKey).toBe('')
-    expect(store.draftSettings.agent.apiKey).toBe('')
-    expect(store.hasCredential('web_import_agent', 'deepseek')).toBe(true)
+    expect(store.settings.agent.apiKey).toBe('deepseek-key')
+    expect(store.draftSettings.agent.apiKey).toBe('deepseek-key')
     expect(mocks.getSettings).toHaveBeenCalledTimes(1)
   })
 

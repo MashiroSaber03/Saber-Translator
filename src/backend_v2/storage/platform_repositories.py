@@ -900,6 +900,7 @@ class SettingsRepository:
                 "credentialVersionId": version_id,
                 "domain": edit.domain,
                 "provider": edit.provider,
+                "secret": secret,
                 "hasKey": True,
                 "currentVersion": 1,
                 "revision": 1,
@@ -961,6 +962,7 @@ class SettingsRepository:
             "credentialVersionId": version_id,
             "domain": edit.domain,
             "provider": edit.provider,
+            "secret": secret,
             "hasKey": True,
             "currentVersion": version,
             "revision": edit.base_revision + 1,
@@ -984,6 +986,7 @@ class SettingsRepository:
                 credential_current_versions.c.revision,
                 credential_current_versions.c.credential_version_id,
                 credential_versions.c.version,
+                credential_versions.c.secret_json,
             )
             .join(
                 credential_current_versions,
@@ -1006,6 +1009,10 @@ class SettingsRepository:
                 "credentialVersionId": row["credential_version_id"],
                 "domain": row["domain"],
                 "provider": row["provider"],
+                "secret": _require_object(
+                    json.loads(row["secret_json"]),
+                    "stored credential secret",
+                ),
                 "hasKey": True,
                 "currentVersion": row["version"],
                 "revision": row["revision"],

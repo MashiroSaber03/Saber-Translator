@@ -1398,6 +1398,24 @@ function readProviderDrafts(document: V2SettingsDocument): InsightProviderDrafts
       throw new Error(`后端 Insight provider domain 格式无效：${row.domain}`)
     }
   }
+  const domains: Array<[
+    InsightProviderDomain,
+    Record<string, { apiKey: string }>,
+  ]> = [
+    ['insight_vlm', drafts.vlm],
+    ['insight_chat', drafts.llm],
+    ['insight_embedding', drafts.embedding],
+    ['insight_reranker', drafts.reranker],
+    ['insight_image_gen', drafts.imageGen],
+  ]
+  for (const [domain, providerDrafts] of domains) {
+    for (const [provider, draft] of Object.entries(providerDrafts)) {
+      const value = document.credentials.find(
+        credential => credential.domain === domain && credential.provider === provider,
+      )?.secret.api_key
+      draft.apiKey = typeof value === 'string' ? value : ''
+    }
+  }
   return drafts
 }
 
@@ -1520,18 +1538,13 @@ function requireInsightAppPayload(value: unknown): InsightAppPayload {
   return payload as InsightAppPayload
 }
 
-export function hasInsightCredential(domain: string, provider: string): boolean {
-  return credentialSummaries.some(
-    row => row.domain === domain && row.provider === provider && row.hasKey
-  )
-}
-
 export async function getGlobalConfig(): Promise<InsightSettingsSnapshot> {
   const [document, prompts] = await Promise.all([getV2Settings(INSIGHT_DOMAINS), listV2Prompts()])
   credentialSummaries = mergeCredentialSummaries(
     document.credentials,
     await restoreBrowserCredentialLeases(),
   )
+  document.credentials = credentialSummaries
   const appEntry = document.settings.find(row => row.domain === 'insight')
   if (!appEntry) throw new Error('后端 Insight 设置缺失')
   const app = requireInsightAppPayload(appEntry.payload)
@@ -1655,26 +1668,6 @@ function mergeCredentialSummaries(
   return [...byIdentity.values()]
 }
 
-function withoutInsightApiKeys(snapshot: InsightSettingsSnapshot): InsightSettingsSnapshot {
-  const saved = deepClone(snapshot)
-  saved.config.vlm.apiKey = ''
-  saved.config.llm.apiKey = ''
-  saved.config.embedding.apiKey = ''
-  saved.config.reranker.apiKey = ''
-  saved.config.imageGen.apiKey = ''
-  const clearDraftKeys = <TDraft extends { apiKey: string }>(
-    drafts: Record<string, TDraft>
-  ): void => {
-    for (const draft of Object.values(drafts)) draft.apiKey = ''
-  }
-  clearDraftKeys(saved.providerDrafts.vlm)
-  clearDraftKeys(saved.providerDrafts.llm)
-  clearDraftKeys(saved.providerDrafts.embedding)
-  clearDraftKeys(saved.providerDrafts.reranker)
-  clearDraftKeys(saved.providerDrafts.imageGen)
-  return saved
-}
-
 export async function saveGlobalConfig(
   snapshot: InsightSettingsSnapshot
 ): Promise<InsightSettingsSnapshot> {
@@ -1682,7 +1675,11 @@ export async function saveGlobalConfig(
     getV2Settings(INSIGHT_DOMAINS),
     listV2Prompts(),
   ])
-  credentialSummaries = document.credentials
+  credentialSummaries = mergeCredentialSummaries(
+    document.credentials,
+    await restoreBrowserCredentialLeases(),
+  )
+  document.credentials = credentialSummaries
   const currentApp = document.settings.find(row => row.domain === 'insight')
   if (!currentApp) throw new Error('后端 Insight 设置缺失')
   const { config, providerDrafts } = snapshot
@@ -1757,7 +1754,8 @@ export async function saveGlobalConfig(
           : {}),
       }
       const secret = draft.apiKey.trim()
-      if (secret) {
+      const currentApiKey = existingCredential?.secret.api_key
+      if (secret && currentApiKey !== secret) {
         const clientRef = `insight:${domain}:${provider}`
         credentialEdits.push({
           domain,
@@ -1850,7 +1848,7 @@ export async function saveGlobalConfig(
     mergeCredentialSummaries(document.credentials, saved.credentials),
     prepared.summaries,
   )
-  return withoutInsightApiKeys(snapshot)
+  return deepClone(snapshot)
 }
 
 function diagnosticRequest(

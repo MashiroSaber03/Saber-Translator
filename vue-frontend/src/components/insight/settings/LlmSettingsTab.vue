@@ -39,9 +39,6 @@ const transportRetries = ref(insightStore.config.llm.openaiOptions.execution.tra
 const businessRetries = ref(insightStore.config.llm.openaiOptions.execution.businessRetries)
 
 const showBaseUrl = computed(() => provider.value === 'custom')
-const hasStoredCredential = computed(() =>
-  insightApi.hasInsightCredential('insight_chat', provider.value)
-)
 const {
   isFetchingModels,
   modelOptions,
@@ -161,7 +158,6 @@ useInsightSettingsDraft<StoreLlmConfig>({
       v-model:base-url="baseUrl"
       :provider-options="LLM_PROVIDER_OPTIONS"
       :show-api-key="providerRequiresApiKey(provider)"
-      :has-stored-credential="hasStoredCredential"
       credential-id="insight-llm-api-key"
       provider-input-id="insight-llm-provider"
       model-input-id="insight-llm-model"

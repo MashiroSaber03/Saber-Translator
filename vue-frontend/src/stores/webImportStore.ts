@@ -56,18 +56,52 @@ function parseCustomHeaders(value: string): Record<string, string> | undefined {
 
 function hydrateBackendWebImportSettings(value: unknown): unknown {
   const payload = deepClone(value) as Record<string, unknown>
-  if (payload.firecrawl && typeof payload.firecrawl === 'object') {
-    ;(payload.firecrawl as Record<string, unknown>).apiKey = ''
-  }
-  if (payload.agent && typeof payload.agent === 'object') {
-    ;(payload.agent as Record<string, unknown>).apiKey = ''
-  }
   if (payload.advanced && typeof payload.advanced === 'object') {
     const advanced = payload.advanced as Record<string, unknown>
     advanced.customCookie = ''
     advanced.customHeaders = ''
   }
   return payload
+}
+
+function credentialValue(
+  credentials: V2CredentialSummary[],
+  domain: string,
+  provider: string,
+  field: string,
+): unknown {
+  return credentials.find(
+    row => row.domain === domain && row.provider === provider,
+  )?.secret[field]
+}
+
+function credentialText(
+  credentials: V2CredentialSummary[],
+  domain: string,
+  provider: string,
+  field: string,
+): string {
+  const value = credentialValue(credentials, domain, provider, field)
+  return typeof value === 'string' ? value : ''
+}
+
+function canonicalCredentialValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalCredentialValue)
+  if (!value || typeof value !== 'object') return value
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, child]) => [key, canonicalCredentialValue(child)]),
+  )
+}
+
+function credentialMatches(
+  current: V2CredentialSummary | undefined,
+  secret: Record<string, unknown>,
+): boolean {
+  if (!current) return false
+  return JSON.stringify(canonicalCredentialValue(current.secret))
+    === JSON.stringify(canonicalCredentialValue(secret))
 }
 
 export const useWebImportStore = defineStore('webImport', () => {
@@ -125,12 +159,6 @@ export const useWebImportStore = defineStore('webImport', () => {
     return true
   }
 
-  function hasCredential(domain: string, provider: string): boolean {
-    return credentialSummaries.value.some(
-      row => row.domain === domain && row.provider === provider && row.hasKey
-    )
-  }
-
   async function loadFromBackend(): Promise<boolean> {
     try {
       const response = await getV2Settings([
@@ -153,7 +181,12 @@ export const useWebImportStore = defineStore('webImport', () => {
       for (const row of response.providerSettings) {
         if (row.domain !== 'web_import_agent') continue
         loadedAgentProviderConfigs[row.provider] = {
-          apiKey: '',
+          apiKey: credentialText(
+            credentialSummaries.value,
+            row.domain,
+            row.provider,
+            'api_key',
+          ),
           ...row.payload,
         }
       }
@@ -168,12 +201,29 @@ export const useWebImportStore = defineStore('webImport', () => {
         hasLoadedBackendSettings.value = false
         return false
       }
-      settings.value.firecrawl.apiKey = ''
-      settings.value.agent.apiKey = ''
-      settings.value.advanced.customCookie = ''
-      settings.value.advanced.customHeaders = ''
-      settingsMethods.restoreAgentProviderConfig(settings.value.agent.provider)
-      settings.value.agent.apiKey = ''
+      settings.value.firecrawl.apiKey = credentialText(
+        credentialSummaries.value,
+        'web_import_firecrawl',
+        'firecrawl',
+        'api_key',
+      )
+      const activeAgent = providerConfigs.value.agent[settings.value.agent.provider]
+      if (activeAgent) Object.assign(settings.value.agent, activeAgent)
+      settings.value.advanced.customCookie = credentialText(
+        credentialSummaries.value,
+        'web_import_http',
+        'headers',
+        'cookie',
+      )
+      const headers = credentialValue(
+        credentialSummaries.value,
+        'web_import_http',
+        'headers',
+        'headers',
+      )
+      settings.value.advanced.customHeaders = headers && typeof headers === 'object'
+        ? JSON.stringify(headers, null, 2)
+        : ''
       syncDraftFromCommitted()
       hasLoadedBackendSettings.value = true
       return true
@@ -208,7 +258,10 @@ export const useWebImportStore = defineStore('webImport', () => {
           baseRevision: providerRevisions.get(identity) ?? 0,
           schemaVersion: 1,
         }
-        if (Object.keys(nonEmptySecret).length > 0) {
+        if (
+          Object.keys(nonEmptySecret).length > 0
+          && !credentialMatches(existing, nonEmptySecret)
+        ) {
           const clientRef = `credential:${domain}:${provider}`
           credentialEdits.push({
             domain,
@@ -285,13 +338,6 @@ export const useWebImportStore = defineStore('webImport', () => {
           ),
           summary,
         ]
-      }
-      settings.value.firecrawl.apiKey = ''
-      settings.value.agent.apiKey = ''
-      settings.value.advanced.customCookie = ''
-      settings.value.advanced.customHeaders = ''
-      for (const config of Object.values(providerConfigs.value.agent)) {
-        config.apiKey = ''
       }
       return true
     } catch (error) {
@@ -516,7 +562,6 @@ export const useWebImportStore = defineStore('webImport', () => {
     hasUnsavedSettings,
     isSavingSettings,
     settingsSaveError,
-    hasCredential,
     loadFromBackend,
     saveToBackend,
     initSettings,

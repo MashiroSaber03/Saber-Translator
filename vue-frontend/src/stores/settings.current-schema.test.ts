@@ -148,7 +148,7 @@ describe('useSettingsStore backend-first loading', () => {
     expect(store.settings.textStyle.useAutoTextColor).toBe(false)
   })
 
-  it('loads provider memory without hydrating stored secrets into the browser', async () => {
+  it('loads provider memory and hydrates the stored API key into the form', async () => {
     const settings = createDefaultSettings()
     settings.translation = {
       ...settings.translation,
@@ -195,6 +195,7 @@ describe('useSettingsStore backend-first loading', () => {
         hasKey: true,
         provider: 'custom',
         revision: 1,
+        secret: { api_key: 'stored-api-key' },
       }],
     })
 
@@ -203,9 +204,36 @@ describe('useSettingsStore backend-first loading', () => {
     expect(await store.loadFromBackend()).toBe(true)
 
     expect(store.settings.translation.provider).toBe('custom')
-    expect(store.settings.translation.apiKey).toBe('')
+    expect(store.settings.translation.apiKey).toBe('stored-api-key')
     expect(store.providerConfigs.translation.custom?.modelName).toBe('cached-model')
     expect(store.credentialSummaries[0]?.hasKey).toBe(true)
+
+    settingsApiMocks.saveV2SettingsTransaction.mockResolvedValue({
+      settings: [
+        { domain: 'translation', revision: 5 },
+        { domain: 'text_style_defaults', revision: 2 },
+      ],
+      bookSettings: [],
+      providerSettings: [{
+        domain: 'translation',
+        provider: 'custom',
+        revision: 3,
+      }],
+      credentials: [],
+      prompts: [],
+    })
+    expect(await store.saveToBackend()).toBe(true)
+    const transaction = settingsApiMocks.saveV2SettingsTransaction.mock.calls[0]?.[0]
+    expect(transaction.credentialEdits).not.toContainEqual(expect.objectContaining({
+      domain: 'translation',
+      provider: 'custom',
+    }))
+    expect(transaction.providerSettings).toContainEqual(expect.objectContaining({
+      domain: 'translation',
+      provider: 'custom',
+      credentialVersionId: 'version-1',
+    }))
+    expect(store.settings.translation.apiKey).toBe('stored-api-key')
   })
 
   it('saves a new API key, applies its returned summary, and keeps it usable', async () => {
@@ -257,6 +285,7 @@ describe('useSettingsStore backend-first loading', () => {
         hasKey: true,
         provider: 'deepseek',
         revision: 1,
+        secret: { api_key: 'sk-new-secret' },
       }],
       prompts: [],
     })
@@ -280,8 +309,8 @@ describe('useSettingsStore backend-first loading', () => {
       provider: 'deepseek',
       credentialEditRef: 'credential:translation:deepseek',
     }))
-    expect(store.settings.translation.apiKey).toBe('')
-    expect(store.hasCredential('translation', 'deepseek')).toBe(true)
+    expect(store.settings.translation.apiKey).toBe('sk-new-secret')
+    expect(store.credentialSummaries[0]?.secret).toEqual({ api_key: 'sk-new-secret' })
     expect(settingsApiMocks.getV2Settings).toHaveBeenCalledTimes(1)
   })
 
@@ -334,6 +363,63 @@ describe('useSettingsStore backend-first loading', () => {
       enabled: true,
       deepLearningLockSize: 2,
     })
+  })
+
+  it('keeps globally stored API keys when an active chapter state is reapplied', async () => {
+    const settings = createDefaultSettings()
+    settings.translation.provider = 'siliconflow'
+    const document = {
+      settings: [
+        {
+          domain: 'translation',
+          revision: 1,
+          schemaVersion: 6,
+          payload: settings,
+        },
+        {
+          domain: 'text_style_defaults',
+          revision: 1,
+          schemaVersion: 2,
+          payload: settings.textStyle,
+        },
+        workflowPreferencesEntry(),
+        exportPreferencesEntry(),
+      ],
+      bookSettings: [],
+      providerSettings: [],
+      credentials: [],
+    }
+    settingsApiMocks.getV2Settings.mockResolvedValueOnce(document)
+    const store = useSettingsStore()
+    expect(await store.loadFromBackend()).toBe(true)
+    expect(store.hydrateChapterWorkState('chapter-1', {
+      translation: { provider: 'siliconflow' },
+    })).toBe(true)
+
+    settingsApiMocks.getV2Settings.mockResolvedValueOnce({
+      ...document,
+      providerSettings: [{
+        domain: 'translation',
+        provider: 'siliconflow',
+        revision: 1,
+        schemaVersion: 1,
+        credentialVersionId: 'version-1',
+        payload: { modelName: 'model-1' },
+      }],
+      credentials: [{
+        credentialId: 'credential-1',
+        credentialVersionId: 'version-1',
+        currentVersion: 1,
+        domain: 'translation',
+        hasKey: true,
+        provider: 'siliconflow',
+        revision: 1,
+        secret: { api_key: 'stored-api-key' },
+      }],
+    })
+
+    expect(await store.loadFromBackend()).toBe(true)
+    expect(store.settings.translation.apiKey).toBe('stored-api-key')
   })
 
   it('keeps current-page text style separate from reloaded global defaults', async () => {

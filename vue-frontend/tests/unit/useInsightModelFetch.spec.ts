@@ -4,14 +4,12 @@ import { ref } from 'vue'
 
 import { useInsightModelFetch } from '@/components/insight/settings/useInsightModelFetch'
 
-const { fetchModelsMock, hasInsightCredentialMock } = vi.hoisted(() => ({
+const { fetchModelsMock } = vi.hoisted(() => ({
   fetchModelsMock: vi.fn(),
-  hasInsightCredentialMock: vi.fn(() => false),
 }))
 
 vi.mock('@/api/insight', () => ({
   fetchModels: fetchModelsMock,
-  hasInsightCredential: hasInsightCredentialMock,
 }))
 
 function createDeferred<T>() {

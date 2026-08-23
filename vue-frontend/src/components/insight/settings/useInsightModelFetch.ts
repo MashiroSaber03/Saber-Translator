@@ -27,10 +27,6 @@ export function useInsightModelFetch(options: ModelFetchOptions) {
       provider: options.provider.value,
       apiKey: options.apiKey.value,
       baseUrl: options.baseUrl.value,
-      hasStoredCredential: insightApi.hasInsightCredential(
-        options.domain,
-        options.provider.value,
-      ),
     }),
     fetcher: (provider, apiKey, baseUrl) => insightApi.fetchModels(
       provider,

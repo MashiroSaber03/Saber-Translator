@@ -106,9 +106,6 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
   let initializeRequestId = 0
 
   const agentSettings = computed(() => settingsStore.settings.pluginAgent)
-  const hasStoredAgentCredential = computed(() =>
-    settingsStore.hasCredential('plugin_agent', agentSettings.value.provider)
-  )
   function notifyModelDiscovery(message: string, tone: AiModelDiscoveryMessageTone): void {
     toast[tone](message)
   }
@@ -117,7 +114,6 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
       provider: agentSettings.value.provider,
       apiKey: agentSettings.value.apiKey,
       baseUrl: agentSettings.value.customBaseUrl,
-      hasStoredCredential: hasStoredAgentCredential.value,
     }),
     fetcher: (provider, apiKey, baseUrl) =>
       fetchV2Models(provider, apiKey, baseUrl, 'plugin_agent'),
@@ -739,7 +735,6 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
     if (
       providerRequiresApiKeyForBaseUrl(provider, baseUrl)
       && !apiKey
-      && !hasStoredAgentCredential.value
     ) {
       toast.warning('请先填写 API Key')
       return
@@ -836,7 +831,6 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
     isAwaitingPlanningReply,
     isSessionCommandPending,
     agentSettings,
-    hasStoredAgentCredential,
     messages,
     modelListOptions,
     timelineItems,

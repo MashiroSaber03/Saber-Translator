@@ -75,6 +75,7 @@ function backendDocument(
       hasKey: true,
       provider: 'siliconflow',
       revision: 2,
+      secret: { api_key: 'stored-agent-key' },
     }, {
       credentialId: 'translation-credential',
       credentialVersionId: 'translation-credential-version',
@@ -83,6 +84,7 @@ function backendDocument(
       hasKey: true,
       provider: 'siliconflow',
       revision: 4,
+      secret: { api_key: 'stored-translation-key' },
     }],
   }
 }
@@ -110,7 +112,16 @@ describe('settings store plugin agent configuration', () => {
         provider: 'siliconflow',
         revision: 4,
       }],
-      credentials: [],
+      credentials: [{
+        credentialId: 'credential-1',
+        credentialVersionId: 'credential-version-2',
+        currentVersion: 2,
+        domain: 'plugin_agent',
+        hasKey: true,
+        provider: 'siliconflow',
+        revision: 3,
+        secret: { api_key: 'agent-key' },
+      }],
       prompts: [],
     })
   })
@@ -229,8 +240,12 @@ describe('settings store plugin agent configuration', () => {
     }])
     expect(store.settings.translation.modelName).toBe('unsaved-local-translation-change')
     expect(store.settings.pluginAgent.modelName).toBe('agent-model')
-    expect(store.settings.pluginAgent.apiKey).toBe('')
-    expect(store.hasCredential('translation', 'siliconflow')).toBe(true)
+    expect(store.settings.pluginAgent.apiKey).toBe('agent-key')
+    expect(store.credentialSummaries).toContainEqual(expect.objectContaining({
+      domain: 'translation',
+      provider: 'siliconflow',
+      secret: { api_key: 'stored-translation-key' },
+    }))
   })
 
   it('resets plugin agent openai options to defaults for an uncached provider', () => {

@@ -33,9 +33,6 @@ const businessRetries = ref(insightStore.config.reranker.businessRetries ?? 0)
 const timeoutSeconds = ref(insightStore.config.reranker.timeoutSeconds ?? 0)
 
 const showBaseUrl = computed(() => provider.value === 'custom')
-const hasStoredCredential = computed(() =>
-  insightApi.hasInsightCredential('insight_reranker', provider.value)
-)
 const {
   isFetchingModels,
   modelOptions,
@@ -145,7 +142,6 @@ useInsightSettingsDraft<StoreRerankerConfig>({
       v-model:base-url="baseUrl"
       :provider-options="RERANKER_PROVIDER_OPTIONS"
       show-api-key
-      :has-stored-credential="hasStoredCredential"
       credential-id="reranker-api-key"
       provider-input-id="reranker-provider"
       model-input-id="reranker-model"

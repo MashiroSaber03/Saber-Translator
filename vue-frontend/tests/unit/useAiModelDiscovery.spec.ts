@@ -81,16 +81,15 @@ describe('useAiModelDiscovery', () => {
     expect(fetcher).toHaveBeenCalledWith('custom', '', 'http://localhost:8000/v1')
   })
 
-  it('allows model discovery through a credential already stored by the backend', async () => {
+  it('uses the API key hydrated from the backend for model discovery', async () => {
     const fetcher = vi.fn().mockResolvedValue({
       models: [{ id: 'stored-model', name: 'Stored Model' }],
     } satisfies FetchModelsResponse)
     const discovery = useAiModelDiscovery({
       source: () => ({
         provider: 'deepseek',
-        apiKey: '',
+        apiKey: 'stored-secret',
         baseUrl: '',
-        hasStoredCredential: true,
       }),
       fetcher,
       notify: vi.fn(),
@@ -98,7 +97,7 @@ describe('useAiModelDiscovery', () => {
 
     await discovery.fetchModels()
 
-    expect(fetcher).toHaveBeenCalledWith('deepseek', '', undefined)
+    expect(fetcher).toHaveBeenCalledWith('deepseek', 'stored-secret', undefined)
     expect(discovery.models.value).toEqual([
       { id: 'stored-model', name: 'Stored Model' },
     ])

@@ -77,6 +77,7 @@ const settingsDocument = {
       hasKey: true,
       provider: 'gemini',
       revision: 5,
+      secret: { api_key: 'stored-gemini-key' },
     },
   ],
 }
@@ -122,7 +123,7 @@ describe('insight v2 settings ownership', () => {
     expect(config.config.vlm).toMatchObject({
       provider: 'gemini',
       model: 'old-model',
-      apiKey: '',
+      apiKey: 'stored-gemini-key',
     })
     expect(config.providerDrafts.vlm.gemini).toMatchObject({
       model: 'old-model',
@@ -332,8 +333,7 @@ describe('insight v2 settings ownership', () => {
       }),
       { headers: { 'Idempotency-Key': expect.any(String) } }
     )
-    expect(saved.config.vlm.apiKey).toBe('')
-    expect(saved.providerDrafts.vlm.gemini?.apiKey).toBe('')
+    expect(saved.config.vlm.apiKey).toBe('replacement-secret')
     expect(getMock.mock.calls.filter(([url]) => url === '/api/v2/settings')).toHaveLength(2)
     expect(getMock.mock.calls.filter(([url]) => url === '/api/v2/prompts')).toHaveLength(2)
   })
@@ -417,12 +417,12 @@ describe('insight v2 settings ownership', () => {
           hasKey: true,
           provider: 'openai',
           revision: 1,
+          secret: { api_key: 'inactive-secret' },
         },
       ],
       prompts: [],
     })
-    const { getGlobalConfig, hasInsightCredential, saveGlobalConfig } =
-      await import('@/api/insight')
+    const { getGlobalConfig, saveGlobalConfig } = await import('@/api/insight')
     const current = await getGlobalConfig()
     current.providerDrafts.vlm.openai = {
       apiKey: 'inactive-secret',
@@ -440,7 +440,7 @@ describe('insight v2 settings ownership', () => {
       imageMaxSize: 1536,
     }
 
-    await saveGlobalConfig(current)
+    const saved = await saveGlobalConfig(current)
 
     const request = putMock.mock.calls.at(-1)?.[1] as {
       providerSettings: Array<{
@@ -471,7 +471,7 @@ describe('insight v2 settings ownership', () => {
         secret: { api_key: 'inactive-secret' },
       })
     )
-    expect(hasInsightCredential('insight_vlm', 'openai')).toBe(true)
+    expect(saved.providerDrafts.vlm.openai?.apiKey).toBe('inactive-secret')
   })
 
   it('commits changed factory prompts in the same settings transaction', async () => {

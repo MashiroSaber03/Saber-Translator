@@ -20,9 +20,6 @@
           :include-base-url="false"
           :api-key-label="apiKeyLabel"
           :api-key-placeholder="apiKeyPlaceholder"
-          :has-stored-credential="
-            settingsStore.hasCredential('translation', modelProvider)
-          "
           api-key-show-label="显示翻译 API Key"
           api-key-hide-label="隐藏翻译 API Key"
           @update:api-key="updateTranslationString('apiKey', $event)"
@@ -337,10 +334,6 @@ const remoteModelDiscovery = useAiModelDiscovery({
     provider: modelProvider.value,
     apiKey: translationSettings.value.apiKey,
     baseUrl: translationSettings.value.customBaseUrl,
-    hasStoredCredential: settingsStore.hasCredential(
-      'translation',
-      modelProvider.value
-    ),
   }),
   fetcher: (provider, apiKey, baseUrl) => fetchV2Models(provider, apiKey, baseUrl, 'translation'),
   notify: notifyModelDiscovery,
@@ -525,8 +518,7 @@ async function testCloudConnection() {
   const baseUrl = translationSettings.value.customBaseUrl?.trim()
   if (
     providerRequiresApiKeyForBaseUrl(provider, baseUrl) &&
-    !apiKey &&
-    !settingsStore.hasCredential('translation', provider)
+    !apiKey
   ) {
     toast.warning('请先填写 API Key')
     return

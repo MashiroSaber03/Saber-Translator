@@ -4398,6 +4398,7 @@ components:
         - credentialVersionId
         - domain
         - provider
+        - secret
         - hasKey
         - currentVersion
         - revision
@@ -4406,6 +4407,10 @@ components:
         credentialVersionId: {$ref: "#/components/schemas/Uuid"}
         domain: {type: string}
         provider: {type: string}
+        secret:
+          type: object
+          additionalProperties: true
+          readOnly: true
         hasKey: {type: boolean, const: true}
         currentVersion: {type: integer, minimum: 1}
         revision: {type: integer, minimum: 1}

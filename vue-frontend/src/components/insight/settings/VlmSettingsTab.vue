@@ -41,9 +41,6 @@ const useStream = ref(insightStore.config.vlm.openaiOptions.execution.useStream)
 const imageMaxSize = ref(insightStore.config.vlm.imageMaxSize ?? 0)
 
 const showBaseUrl = computed(() => provider.value === 'custom')
-const hasStoredCredential = computed(() =>
-  insightApi.hasInsightCredential('insight_vlm', provider.value)
-)
 const {
   isFetchingModels,
   modelOptions,
@@ -166,7 +163,6 @@ useInsightSettingsDraft<StoreVlmConfig>({
       v-model:base-url="baseUrl"
       :provider-options="VLM_PROVIDER_OPTIONS"
       :show-api-key="providerRequiresApiKey(provider)"
-      :has-stored-credential="hasStoredCredential"
       credential-id="insight-vlm-api-key"
       provider-input-id="insight-vlm-provider"
       model-input-id="insight-vlm-model"

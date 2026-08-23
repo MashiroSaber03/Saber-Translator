@@ -120,18 +120,11 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
   const error = computed(() => webImportStore.error)
   const isProcessing = computed(() => webImportStore.isProcessing)
   const draftSettings = computed(() => webImportStore.draftSettings)
-  const hasAgentCredential = computed(() =>
-    webImportStore.hasCredential('web_import_agent', draftSettings.value.agent.provider)
-  )
-  const hasFirecrawlCredential = computed(() =>
-    webImportStore.hasCredential('web_import_firecrawl', 'firecrawl')
-  )
   const modelDiscovery = useAiModelDiscovery({
     source: () => ({
       provider: draftSettings.value.agent.provider,
       apiKey: draftSettings.value.agent.apiKey,
       baseUrl: draftSettings.value.agent.customBaseUrl,
-      hasStoredCredential: hasAgentCredential.value,
     }),
     fetcher: (provider, apiKey, baseUrl) =>
       fetchV2Models(provider, apiKey, baseUrl, 'web_import_agent'),
@@ -811,7 +804,7 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
   )
 
   async function handleTestFirecrawl() {
-    if (!draftSettings.value.firecrawl.apiKey && !hasFirecrawlCredential.value) {
+    if (!draftSettings.value.firecrawl.apiKey) {
       showToast('请输入 Firecrawl API Key', 'warning')
       return
     }
@@ -845,8 +838,7 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
         draftSettings.value.agent.provider,
         draftSettings.value.agent.customBaseUrl,
       ) &&
-      !draftSettings.value.agent.apiKey &&
-      !hasAgentCredential.value
+      !draftSettings.value.agent.apiKey
     ) {
       showToast('请输入 AI Agent API Key', 'warning')
       return
@@ -956,8 +948,6 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
     isProcessing,
     draftSettings,
     hasUnsavedSettings,
-    hasAgentCredential,
-    hasFirecrawlCredential,
     isSavingSettings,
     showAgentLogs,
     agentProviderOptions,

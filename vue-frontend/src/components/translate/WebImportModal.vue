@@ -32,8 +32,6 @@ const {
   handleSaveSettings,
   handleTestAgent,
   handleTestFirecrawl,
-  hasAgentCredential,
-  hasFirecrawlCredential,
   hasUnsavedSettings,
   hasMorePages,
   isAllSelected,
@@ -109,8 +107,6 @@ const {
         :agent-provider-options="agentProviderOptions"
         :draft-settings="draftSettings"
         :has-unsaved-settings="hasUnsavedSettings"
-        :has-agent-credential="hasAgentCredential"
-        :has-firecrawl-credential="hasFirecrawlCredential"
         :is-fetching-models="isFetchingModels"
         :is-saving-settings="isSavingSettings"
         :model-list="modelList"

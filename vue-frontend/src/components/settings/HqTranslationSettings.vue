@@ -18,7 +18,6 @@
           :show-base-url="false"
           :include-base-url="false"
           api-key-placeholder="请输入API Key"
-          :has-stored-credential="settingsStore.hasCredential('hq', hqSettings.provider)"
           api-key-show-label="显示高质量翻译 API Key"
           api-key-hide-label="隐藏高质量翻译 API Key"
           @update:api-key="updateHqString('apiKey', $event)"
@@ -230,7 +229,6 @@ const modelDiscovery = useAiModelDiscovery({
     provider: hqSettings.value.provider,
     apiKey: hqSettings.value.apiKey,
     baseUrl: hqSettings.value.customBaseUrl,
-    hasStoredCredential: settingsStore.hasCredential('hq', hqSettings.value.provider),
   }),
   fetcher: (provider, apiKey, baseUrl) => fetchV2Models(provider, apiKey, baseUrl, 'hq'),
   notify: notifyModelDiscovery,
@@ -289,7 +287,6 @@ async function testConnection() {
   if (
     providerRequiresApiKeyForBaseUrl(provider, baseUrl)
     && !apiKey
-    && !settingsStore.hasCredential('hq', provider)
   ) {
     toast.warning('请先填写 API Key')
     return

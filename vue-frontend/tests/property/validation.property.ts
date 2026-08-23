@@ -22,22 +22,6 @@ function constantFromList<T>(values: T[]): fc.Arbitrary<T> {
   return fc.constantFrom(...(values as [T, ...T[]]))
 }
 
-function addStoredCredential(
-  store: ReturnType<typeof useSettingsStore>,
-  domain: string,
-  provider: string,
-): void {
-  store.credentialSummaries.push({
-    credentialId: `credential-${domain}-${provider}`,
-    credentialVersionId: `version-${domain}-${provider}`,
-    currentVersion: 1,
-    domain,
-    hasKey: true,
-    provider,
-    revision: 1,
-  })
-}
-
 const translationProviderIds = AI_PROVIDER_MANIFEST
   .filter(provider => provider.capabilities.includes('translation'))
   .map(provider => provider.id as TranslationProvider)
@@ -193,27 +177,6 @@ describe('validation properties', () => {
     expect(validation.validateBeforeTranslation('proofread', {
       proofreadingRounds: [],
     })).toBe(false)
-  })
-
-  it('uses backend credential summaries when secret inputs are intentionally blank', () => {
-    const store = useSettingsStore()
-    const validation = useValidation()
-
-    store.setTranslationProvider('deepseek')
-    store.updateTranslationService({ apiKey: '', modelName: 'deepseek-chat' })
-    addStoredCredential(store, 'translation', 'deepseek')
-    expect(validation.validateBeforeTranslation('normal')).toBe(true)
-
-    store.setHqProvider('deepseek')
-    store.updateHqTranslation({ apiKey: '', modelName: 'deepseek-chat' })
-    addStoredCredential(store, 'hq', 'deepseek')
-    expect(validation.validateBeforeTranslation('hq')).toBe(true)
-
-    store.setOcrEngine('ai_vision')
-    store.setAiVisionOcrProvider('gemini')
-    store.updateAiVisionOcr({ apiKey: '', modelName: 'gemini-2.5-flash' })
-    addStoredCredential(store, 'ai_vision_ocr', 'gemini')
-    expect(validation.validateBeforeTranslation('ocr')).toBe(true)
   })
 
   it('validates local, Baidu, and AI vision OCR configurations', () => {

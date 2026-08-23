@@ -250,6 +250,37 @@ function credentialIdentity(domain: string, provider: string): string {
   return `${domain}\u0000${provider}`
 }
 
+function credentialSecret(
+  credentials: V2CredentialSummary[],
+  domain: string,
+  provider: string,
+): Record<string, unknown> {
+  return credentials.find(
+    row => row.domain === domain && row.provider === provider,
+  )?.secret ?? {}
+}
+
+function credentialText(
+  credentials: V2CredentialSummary[],
+  domain: string,
+  provider: string,
+  field: string,
+): string {
+  const value = credentialSecret(credentials, domain, provider)[field]
+  return typeof value === 'string' ? value : ''
+}
+
+function credentialMatches(
+  current: V2CredentialSummary | undefined,
+  secret: Record<string, unknown>,
+): boolean {
+  if (!current) return false
+  const stored = current.secret
+  const keys = Object.keys(secret)
+  return keys.length === Object.keys(stored).length
+    && keys.every(key => stored[key] === secret[key])
+}
+
 export const useSettingsStore = defineStore('settings', () => {
   const settings = ref<TranslationSettings>(createDefaultSettings())
   // Global defaults and the active page style have different persistence
@@ -399,7 +430,12 @@ export const useSettingsStore = defineStore('settings', () => {
       if (cacheDomain) {
         providerConfigs.value[cacheDomain][row.provider] = {
           ...deepClone(row.payload),
-          apiKey: '',
+          apiKey: credentialText(
+            document.credentials,
+            row.domain,
+            row.provider,
+            row.domain === 'ai_vision_ocr' ? 'ai_vision_api_key' : 'api_key',
+          ),
         }
       }
       providerRevisions.set(credentialIdentity(row.domain, row.provider), row.revision)
@@ -410,17 +446,7 @@ export const useSettingsStore = defineStore('settings', () => {
     hqTranslationModule.restoreHqProviderConfig(settings.value.hqTranslation.provider)
     pluginAgentModule.restorePluginAgentProviderConfig(settings.value.pluginAgent.provider)
     ocrModule.restoreAiVisionOcrProviderConfig(settings.value.aiVisionOcr.provider)
-
-    // A credential summary deliberately never hydrates a secret into the form.
-    settings.value.translation.apiKey = ''
-    settings.value.hqTranslation.apiKey = ''
-    settings.value.pluginAgent.apiKey = ''
-    settings.value.aiVisionOcr.apiKey = ''
-    settings.value.baiduOcr.apiKey = ''
-    settings.value.baiduOcr.secretKey = ''
-    settings.value.proofreading.rounds.forEach((round) => {
-      round.apiKey = ''
-    })
+    applyCredentialSecrets()
     if (activeChapterWorkState && currentChapterWorkState) {
       activeChapterWorkState.payload = deepClone(currentChapterWorkState)
       applyChapterWorkState(currentChapterWorkState)
@@ -507,12 +533,16 @@ export const useSettingsStore = defineStore('settings', () => {
     if (loadPromise) return loadPromise
     loadPromise = (async () => {
       try {
-        const hydrated = hydrateFromBackendDocument(await getV2Settings())
-        if (!hydrated) return false
-        credentialSummaries.value = mergeCredentialSummaries(
-          credentialSummaries.value,
-          await restoreBrowserCredentialLeases(),
+        const [document, browserCredentials] = await Promise.all([
+          getV2Settings(),
+          restoreBrowserCredentialLeases(),
+        ])
+        document.credentials = mergeCredentialSummaries(
+          document.credentials,
+          browserCredentials,
         )
+        const hydrated = hydrateFromBackendDocument(document)
+        if (!hydrated) return false
         return true
       } catch (error) {
         isBackendReady.value = false
@@ -546,17 +576,47 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  function currentCredential(
-    domain: string,
-    provider: string,
-  ): V2CredentialSummary | undefined {
-    return credentialSummaries.value.find(
-      row => row.domain === domain && row.provider === provider,
+  function applyCredentialSecrets(): void {
+    const credentials = credentialSummaries.value
+    const providerTargets = [
+      ['translation', settings.value.translation, 'api_key'],
+      ['hq', settings.value.hqTranslation, 'api_key'],
+      ['plugin_agent', settings.value.pluginAgent, 'api_key'],
+      ['ai_vision_ocr', settings.value.aiVisionOcr, 'ai_vision_api_key'],
+    ] as const
+    providerTargets.forEach(([domain, target, field]) => {
+      target.apiKey = credentialText(credentials, domain, target.provider, field)
+    })
+    Object.entries(CACHE_BY_PROVIDER_DOMAIN).forEach(([domain, cacheDomain]) => {
+      Object.entries(providerConfigs.value[cacheDomain]).forEach(([provider, config]) => {
+        config.apiKey = credentialText(
+          credentials,
+          domain,
+          provider,
+          domain === 'ai_vision_ocr' ? 'ai_vision_api_key' : 'api_key',
+        )
+      })
+    })
+    settings.value.baiduOcr.apiKey = credentialText(
+      credentials,
+      'ocr',
+      'baidu',
+      'baidu_api_key',
     )
-  }
-
-  function hasCredential(domain: string, provider: string): boolean {
-    return Boolean(currentCredential(domain, provider)?.hasKey)
+    settings.value.baiduOcr.secretKey = credentialText(
+      credentials,
+      'ocr',
+      'baidu',
+      'baidu_secret_key',
+    )
+    settings.value.proofreading.rounds.forEach((round) => {
+      round.apiKey = credentialText(
+        credentials,
+        proofreadingProviderDomain(round.id),
+        round.provider,
+        'api_key',
+      )
+    })
   }
 
   function mergeCredentialSummaries(
@@ -602,31 +662,11 @@ export const useSettingsStore = defineStore('settings', () => {
       credentialSummaries.value,
       result.credentials,
     )
+    applyCredentialSecrets()
     result.prompts.forEach((prompt) => {
       const index = promptCatalog.value.findIndex(item => item.id === prompt.id)
       if (index >= 0) promptCatalog.value[index] = deepClone(prompt)
     })
-  }
-
-  function clearProviderCacheApiKeys(
-    cache: Record<string, { apiKey?: string }>,
-  ): void {
-    Object.values(cache).forEach((config) => {
-      if (config.apiKey !== undefined) config.apiKey = ''
-    })
-  }
-
-  function clearSubmittedSecrets(): void {
-    settings.value.translation.apiKey = ''
-    settings.value.hqTranslation.apiKey = ''
-    settings.value.pluginAgent.apiKey = ''
-    settings.value.aiVisionOcr.apiKey = ''
-    settings.value.baiduOcr.apiKey = ''
-    settings.value.baiduOcr.secretKey = ''
-    settings.value.proofreading.rounds.forEach((round) => {
-      round.apiKey = ''
-    })
-    Object.values(providerConfigs.value).forEach(clearProviderCacheApiKeys)
   }
 
   function addProviderMutation(
@@ -669,7 +709,10 @@ export const useSettingsStore = defineStore('settings', () => {
       baseRevision: revisions.get(credentialIdentity(domain, provider)) ?? 0,
       schemaVersion: 1,
     }
-    if (Object.keys(nonEmptySecret).length > 0) {
+    if (
+      Object.keys(nonEmptySecret).length > 0
+      && !credentialMatches(existingCredential, nonEmptySecret)
+    ) {
       credentialEdits.push({
         domain,
         provider,
@@ -778,7 +821,7 @@ export const useSettingsStore = defineStore('settings', () => {
         credentialSummaries.value,
         prepared.summaries,
       )
-      clearSubmittedSecrets()
+      applyCredentialSecrets()
       backendError.value = null
       return true
     } catch (error) {
@@ -862,8 +905,7 @@ export const useSettingsStore = defineStore('settings', () => {
         credentialSummaries.value,
         prepared.summaries,
       )
-      settings.value.pluginAgent.apiKey = ''
-      clearProviderCacheApiKeys(providerConfigs.value.pluginAgent)
+      applyCredentialSecrets()
       backendError.value = null
       return true
     } catch (error) {
@@ -883,7 +925,6 @@ export const useSettingsStore = defineStore('settings', () => {
     promptCatalog,
     workflowPreferences,
     exportPreferences,
-    hasCredential,
     isBackendReady,
     backendError,
     theme,

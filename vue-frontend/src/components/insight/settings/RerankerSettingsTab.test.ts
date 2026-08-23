@@ -21,7 +21,6 @@ const { testRerankerConnection } = vi.hoisted(() => ({
 vi.mock('@/api/insight', () => ({
   testRerankerConnection,
   fetchModels: vi.fn(),
-  hasInsightCredential: vi.fn(() => false),
 }))
 
 describe('RerankerSettingsTab', () => {

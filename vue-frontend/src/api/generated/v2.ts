@@ -2969,6 +2969,9 @@ export interface components {
             credentialVersionId: components["schemas"]["Uuid"];
             domain: string;
             provider: string;
+            readonly secret: {
+                [key: string]: unknown;
+            };
             /** @constant */
             hasKey: true;
             currentVersion: number;

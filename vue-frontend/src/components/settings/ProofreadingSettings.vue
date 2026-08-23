@@ -70,9 +70,6 @@
               :show-base-url="false"
               :include-base-url="false"
               api-key-placeholder="请输入API Key"
-              :has-stored-credential="
-                settingsStore.hasCredential(proofreadingProviderDomain(round.id), round.provider)
-              "
               :api-key-show-label="`显示${round.name} API Key`"
               :api-key-hide-label="`隐藏${round.name} API Key`"
               @update:api-key="updateRoundString(index, 'apiKey', $event)"
@@ -318,9 +315,6 @@ function getRoundModelDiscovery(round: ProofreadingRound): ReturnType<typeof use
         provider: currentRound?.provider ?? '',
         apiKey: currentRound?.apiKey ?? '',
         baseUrl: currentRound?.customBaseUrl ?? '',
-        hasStoredCredential: currentRound
-          ? settingsStore.hasCredential(proofreadingProviderDomain(roundId), currentRound.provider)
-          : false,
       }
     },
     fetcher: (provider, apiKey, baseUrl) =>
@@ -414,8 +408,7 @@ async function testRoundConnection(round: ProofreadingRound) {
 
   if (
     providerRequiresApiKeyForBaseUrl(provider, baseUrl) &&
-    !apiKey &&
-    !settingsStore.hasCredential(proofreadingProviderDomain(round.id), provider)
+    !apiKey
   ) {
     toast.warning('请先填写 API Key')
     return

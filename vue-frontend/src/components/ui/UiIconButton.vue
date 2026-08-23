@@ -54,7 +54,7 @@ withDefaults(defineProps<{
   border-radius: 8px;
   font: inherit;
   cursor: pointer;
-  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, translate 0.2s ease;
 }
 
 .ui-icon-button--md {
@@ -131,7 +131,7 @@ withDefaults(defineProps<{
 }
 
 .ui-icon-button:hover:not(:disabled) {
-  transform: translateY(-1px);
+  translate: 0 -1px;
 }
 
 .ui-icon-button--inverse:hover:not(:disabled) {

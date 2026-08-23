@@ -1804,8 +1804,10 @@ def test_settings_credentials_plugins_fonts_and_shared_limiter(platform) -> None
     )
     credential_summary = result["credentials"][0]
     assert credential_summary["hasKey"] is True
-    assert "never-return-me" not in json.dumps(result)
-    assert "secret" not in json.dumps(settings.credential_summaries()).lower()
+    assert credential_summary["secret"] == {"api_key": "never-return-me"}
+    assert settings.credential_summaries()[0]["secret"] == {
+        "api_key": "never-return-me"
+    }
 
     credential_id = str(credential_summary["credentialId"])
     with engine.connect() as connection:
@@ -2752,7 +2754,7 @@ def test_provider_diagnostics_reject_retired_credential_id(platform) -> None:
         )
 
 
-def test_settings_http_transaction_persists_secret_without_returning_it(
+def test_settings_http_transaction_returns_the_saved_secret_to_the_settings_ui(
     platform,
 ) -> None:
     data_root, engine = platform
@@ -2761,7 +2763,7 @@ def test_settings_http_transaction_persists_secret_without_returning_it(
         create_settings_blueprint(data_root=data_root, engine=engine, profile=LOCAL_PROFILE)
     )
     client = app.test_client()
-    secret = "sk-must-never-return-to-browser"
+    secret = "sk-return-to-settings-ui"
 
     saved = client.put(
         "/api/v2/settings/transactions",
@@ -2787,12 +2789,11 @@ def test_settings_http_transaction_persists_secret_without_returning_it(
         },
     )
     assert saved.status_code == 200
-    assert secret not in saved.get_data(as_text=True)
+    assert saved.get_json()["credentials"][0]["secret"] == {"api_key": secret}
 
     loaded = client.get("/api/v2/settings?domains=translation")
     assert loaded.status_code == 200
     document = loaded.get_json()
-    assert secret not in loaded.get_data(as_text=True)
     assert document["credentials"] == [
         {
             "credentialId": document["credentials"][0]["credentialId"],
@@ -2804,6 +2805,7 @@ def test_settings_http_transaction_persists_secret_without_returning_it(
             "hasKey": True,
             "provider": "deepseek",
             "revision": 1,
+            "secret": {"api_key": secret},
         }
     ]
     assert document["providerSettings"][0]["credentialVersionId"] == (
