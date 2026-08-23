@@ -30,7 +30,7 @@ import {
 import { createDefaultOpenAiOptions } from '@/utils/openaiOptions'
 import { deepClone } from '@/utils/deepClone'
 
-export const TRANSLATION_SETTINGS_SCHEMA_VERSION = 6
+export const TRANSLATION_SETTINGS_SCHEMA_VERSION = 7
 export const TEXT_STYLE_DEFAULTS_SCHEMA_VERSION = 2
 
 export function createDefaultTextStyle(): TextStyleSettings {
@@ -177,6 +177,7 @@ export function createDefaultSettings(): TranslationSettings {
     showDetectionDebug: false,
     parallel: deepClone(DEFAULT_PARALLEL),
     removeTextWithOcr: false,
+    compressVisionImages: true,
     enableVerboseLogs: false,
     lamaDisableResize: false
   }

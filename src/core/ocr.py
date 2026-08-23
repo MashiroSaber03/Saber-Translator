@@ -266,6 +266,7 @@ def _recognize_with_ai_vision_results(
     custom_ai_vision_base_url=None,
     ai_vision_min_image_size: int = constants.DEFAULT_AI_VISION_MIN_IMAGE_SIZE,
     ai_vision_openai_options: OpenAICompatibleOptions | None = None,
+    compress_vision_images: bool = True,
     credential_version_id: str | None = None,
     *,
     primary_engine=constants.AI_VISION_OCR_ENGINE_ID,
@@ -307,6 +308,8 @@ def _recognize_with_ai_vision_results(
         or ai_vision_min_image_size < 0
     ):
         raise ValueError("AI视觉OCR最小图像尺寸必须是非负整数")
+    if not isinstance(compress_vision_images, bool):
+        raise ValueError("视觉模型图片压缩开关必须是布尔值")
     current_prompt = ai_vision_ocr_prompt.strip()
 
     if not current_prompt:
@@ -357,6 +360,7 @@ def _recognize_with_ai_vision_results(
                     custom_base_url=custom_ai_vision_base_url,
                     openai_options=effective_options,
                     credential_version_id=credential_version_id,
+                    compress_vision_images=compress_vision_images,
                 )
             finally:
                 bubble_img_pil.close()
@@ -394,6 +398,7 @@ def _recognize_with_engine(
     custom_ai_vision_base_url=None,
     ai_vision_min_image_size: int = constants.DEFAULT_AI_VISION_MIN_IMAGE_SIZE,
     ai_vision_openai_options: OpenAICompatibleOptions | None = None,
+    compress_vision_images: bool = True,
     credential_version_id: str | None = None,
     textlines_per_bubble=None,
     *,
@@ -456,6 +461,7 @@ def _recognize_with_engine(
             custom_ai_vision_base_url=custom_ai_vision_base_url,
             ai_vision_min_image_size=ai_vision_min_image_size,
             ai_vision_openai_options=ai_vision_openai_options,
+            compress_vision_images=compress_vision_images,
             credential_version_id=credential_version_id,
             primary_engine=effective_primary_engine,
             fallback_used=fallback_used,
@@ -481,6 +487,7 @@ def recognize_ocr_results_in_bubbles(
     custom_ai_vision_base_url=None,
     ai_vision_min_image_size: int = constants.DEFAULT_AI_VISION_MIN_IMAGE_SIZE,
     ai_vision_openai_options: OpenAICompatibleOptions | None = None,
+    compress_vision_images: bool = True,
     credential_version_id: str | None = None,
     textlines_per_bubble=None,
     enable_hybrid_ocr: bool = False,
@@ -539,6 +546,7 @@ def recognize_ocr_results_in_bubbles(
         custom_ai_vision_base_url=custom_ai_vision_base_url,
         ai_vision_min_image_size=ai_vision_min_image_size,
         ai_vision_openai_options=ai_vision_openai_options,
+        compress_vision_images=compress_vision_images,
         credential_version_id=credential_version_id,
         textlines_per_bubble=textlines_per_bubble,
         primary_engine=ocr_engine,

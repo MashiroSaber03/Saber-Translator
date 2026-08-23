@@ -988,6 +988,7 @@ export const useSettingsStore = defineStore('settings', () => {
     updateParallel: miscModule.updateParallel,
     setShowDetectionDebug: miscModule.setShowDetectionDebug,
     setRemoveTextWithOcr: miscModule.setRemoveTextWithOcr,
+    setCompressVisionImages: miscModule.setCompressVisionImages,
     setEnableVerboseLogs: miscModule.setEnableVerboseLogs,
     setLamaDisableResize: miscModule.setLamaDisableResize,
 

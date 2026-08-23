@@ -8,24 +8,41 @@ import io
 from PIL import Image
 
 
-def image_to_base64(image: Image.Image, image_format: str = "PNG") -> str:
-    """
-    将PIL图像对象转换为base64编码字符串
-    
-    Args:
-        image: PIL图像对象
-        image_format: 图像格式，默认为 PNG
-        
-    Returns:
-        base64编码的图像字符串
-    """
+VISION_IMAGE_JPEG_QUALITY = 95
+
+
+def encode_vision_image(
+    image: Image.Image,
+    *,
+    compress: bool,
+) -> tuple[str, str]:
+    """Encode a PIL image for an OpenAI-compatible vision request."""
+
     if not isinstance(image, Image.Image):
         raise TypeError("待编码图片必须是 PIL Image")
-    if not isinstance(image_format, str) or not image_format.strip():
-        raise ValueError("图片编码格式不能为空")
-    with io.BytesIO() as buffered:
-        image.save(buffered, format=image_format.strip())
-        return base64.b64encode(buffered.getvalue()).decode("ascii")
+    if not isinstance(compress, bool):
+        raise TypeError("视觉模型图片压缩开关必须是布尔值")
+
+    converted = image.convert("RGB") if compress and image.mode != "RGB" else image
+    try:
+        with io.BytesIO() as buffered:
+            if compress:
+                converted.save(
+                    buffered,
+                    format="JPEG",
+                    quality=VISION_IMAGE_JPEG_QUALITY,
+                    optimize=True,
+                    subsampling=0,
+                )
+                media_type = "image/jpeg"
+            else:
+                converted.save(buffered, format="PNG")
+                media_type = "image/png"
+            encoded = base64.b64encode(buffered.getvalue()).decode("ascii")
+    finally:
+        if converted is not image:
+            converted.close()
+    return encoded, media_type
 
 
 def image_to_rgb_array(image: Image.Image):

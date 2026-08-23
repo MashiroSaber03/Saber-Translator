@@ -118,6 +118,7 @@ def _frozen_ai_vision_ocr_config() -> dict[str, object]:
         "ai_vision_ocr_prompt": "",
         "ai_vision_prompt_mode": "paddleocr_vl",
         "ai_vision_min_image_size": 32,
+        "compress_vision_images": True,
     }
 
 
@@ -2821,7 +2822,7 @@ def test_translation_job_rejects_missing_backend_credential_before_admission(
                 domain="translation",
                 payload=payload,
                 base_revision=1,
-                schema_version=6,
+                schema_version=7,
             ),
         ),
         providers=(
@@ -2942,7 +2943,7 @@ def test_failed_item_retry_refreezes_current_backend_settings(
                 domain="translation",
                 payload=settings_payload,
                 base_revision=1,
-                schema_version=6,
+                schema_version=7,
             ),
         ),
         credentials_edits=(
@@ -3026,7 +3027,7 @@ def test_translation_job_resolves_backend_settings_and_reuses_manual_bubbles(
                 domain="translation",
                 payload=payload,
                 base_revision=1,
-                schema_version=6,
+                schema_version=7,
             ),
         ),
         credentials_edits=(
@@ -3124,13 +3125,14 @@ def test_translation_resolver_uses_provider_specific_hq_and_ocr_parameters(
         "batchSize": 2,
         "prompt": "global hq prompt",
     }
+    payload["compressVisionImages"] = False
     SettingsRepository(platform["engine"]).save_transaction(
         settings=(
             SettingMutation(
                 domain="translation",
                 payload=payload,
                 base_revision=1,
-                schema_version=6,
+                schema_version=7,
             ),
         ),
         credentials_edits=(
@@ -3201,11 +3203,13 @@ def test_translation_resolver_uses_provider_specific_hq_and_ocr_parameters(
     assert standard["ocr"]["ai_vision_ocr_prompt"] == "provider ocr prompt"
     assert standard["ocr"]["ai_vision_prompt_mode"] == "json"
     assert standard["ocr"]["ai_vision_min_image_size"] == 96
+    assert standard["ocr"]["compress_vision_images"] is False
     assert "providerRevision" not in standard["settingsSnapshot"]
     assert standard["settingsSnapshot"]["providerRevisions"]
     assert hq["translation"]["model_name"] == "provider-hq-model"
     assert hq["translation"]["prompt_content"] == "provider hq prompt"
     assert hq["translation"]["batchSize"] == 7
+    assert hq["translation"]["compress_vision_images"] is False
 
 
 def test_page_operations_resolve_only_the_settings_they_execute(
@@ -3302,7 +3306,7 @@ def _configure_hq_and_proofreading(platform: Mapping[str, Any]) -> None:
                 domain="translation",
                 payload=payload,
                 base_revision=1,
-                schema_version=6,
+                schema_version=7,
             ),
         ),
         credentials_edits=tuple(
@@ -3730,6 +3734,7 @@ def test_hq_transport_uses_batch_local_ids_and_restores_database_ids(
                 "model_name": "test-model",
                 "custom_base_url": "",
                 "enable_debug_logs": False,
+                "compress_vision_images": True,
                 "openai_options": {
                     "request": {
                         "force_json_output": True,
@@ -3770,6 +3775,11 @@ def test_hq_transport_uses_batch_local_ids_and_restores_database_ids(
     assert "imageIndex" in user_content[0]["text"]
     assert json.loads(user_content[1]["text"])["pageId"] == "p1"
     assert json.loads(user_content[3]["text"])["pageId"] == "p2"
+    assert all(
+        item["image_url"]["url"].startswith("data:image/jpeg;base64,")
+        for item in user_content
+        if item["type"] == "image_url"
+    )
     serialized_messages = json.dumps(request.messages, ensure_ascii=False)
     for database_id in (
         "database-page-1",

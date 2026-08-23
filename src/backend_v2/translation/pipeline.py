@@ -4,9 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-import base64
 import hashlib
-from io import BytesIO
 import json
 import logging
 import math
@@ -50,6 +48,7 @@ from src.backend_v2.storage.schema import (
 )
 from src.core.config_models import validate_bubble_payload
 from src.core.ocr_types import OcrResult
+from src.shared.image_helpers import encode_vision_image
 from src.shared.paddleocr_vl import PADDLEOCR_VL_LANGUAGE_NAMES
 
 
@@ -900,6 +899,7 @@ class CoreTranslationAlgorithms:
                     "custom_ai_vision_base_url",
                     "ai_vision_min_image_size",
                     "ai_vision_openai_options",
+                    "compress_vision_images",
                 }
             )
             credential_fields = {
@@ -1197,6 +1197,10 @@ class CoreTranslationAlgorithms:
             "credential_version_id",
         )
         enable_debug_logs = _config_boolean(config, "enable_debug_logs")
+        compress_vision_images = _config_boolean(
+            config,
+            "compress_vision_images",
+        )
         task_instruction = (
             "结合原图、原文、当前译文和相邻页面上下文改进已有译文。"
             if mode == "proofread"
@@ -1234,8 +1238,10 @@ class CoreTranslationAlgorithms:
             }
         ]
         for page, image in zip(wire_pages, images):
-            payload = BytesIO()
-            image.save(payload, format="PNG")
+            image_base64, image_media_type = encode_vision_image(
+                image,
+                compress=compress_vision_images,
+            )
             content.extend(
                 (
                     {
@@ -1249,8 +1255,9 @@ class CoreTranslationAlgorithms:
                     {
                         "type": "image_url",
                         "image_url": {
-                            "url": "data:image/png;base64,"
-                            + base64.b64encode(payload.getvalue()).decode("ascii")
+                            "url": (
+                                f"data:{image_media_type};base64,{image_base64}"
+                            )
                         },
                     },
                 )

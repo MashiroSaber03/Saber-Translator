@@ -786,6 +786,11 @@ def _validate_ai_provider_section(
         raise ValueError(
             f"{label}缺少已保存的 API Key，请先在设置中填写并保存"
         )
+    if (
+        capability == HQ_TRANSLATION_CAPABILITY
+        and not isinstance(section.get("compress_vision_images"), bool)
+    ):
+        raise ValueError(f"{label}图片压缩开关必须是布尔值")
 
 
 def _validate_ocr_section(value: object) -> None:
@@ -827,6 +832,7 @@ def _validate_ocr_section(value: object) -> None:
                 "ai_vision_ocr_prompt",
                 "ai_vision_prompt_mode",
                 "ai_vision_min_image_size",
+                "compress_vision_images",
             }
         )
         if "credentialVersionId" in section:
@@ -865,6 +871,8 @@ def _validate_ocr_section(value: object) -> None:
         return
     if engine != "ai_vision":
         return
+    if not isinstance(section["compress_vision_images"], bool):
+        raise ValueError("视觉模型图片压缩开关必须是布尔值")
     _validate_ai_provider_section(
         {
             "provider": section.get("ai_vision_provider"),

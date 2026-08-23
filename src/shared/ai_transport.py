@@ -184,6 +184,7 @@ class UnifiedVisionRequest:
     model: str
     prompt: str
     image_base64: str
+    image_media_type: str = "image/png"
     credential_version_id: Optional[str] = None
     base_url: Optional[str] = None
     openai_options: OpenAICompatibleOptions = field(
@@ -201,6 +202,14 @@ class UnifiedVisionRequest:
         _require_nonempty_string(self.model, name="model")
         _require_nonempty_string(self.prompt, name="prompt")
         _require_nonempty_string(self.image_base64, name="image_base64")
+        if self.image_media_type not in {
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+        }:
+            raise ValueError(
+                "image_media_type 必须是 image/jpeg、image/png 或 image/webp"
+            )
         self.credential_version_id = _require_optional_string(
             self.credential_version_id,
             name="credential_version_id",
@@ -594,7 +603,12 @@ class OpenAICompatibleChatTransport:
                         {"type": "text", "text": request.prompt},
                         {
                             "type": "image_url",
-                            "image_url": {"url": f"data:image/png;base64,{request.image_base64}"},
+                            "image_url": {
+                                "url": (
+                                    f"data:{request.image_media_type};base64,"
+                                    f"{request.image_base64}"
+                                )
+                            },
                         },
                     ],
                 }
@@ -942,7 +956,12 @@ class AsyncOpenAICompatibleTransport:
                         {"type": "text", "text": request.prompt},
                         {
                             "type": "image_url",
-                            "image_url": {"url": f"data:image/png;base64,{request.image_base64}"},
+                            "image_url": {
+                                "url": (
+                                    f"data:{request.image_media_type};base64,"
+                                    f"{request.image_base64}"
+                                )
+                            },
                         },
                     ],
                 }

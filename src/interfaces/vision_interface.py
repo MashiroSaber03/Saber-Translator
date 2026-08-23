@@ -27,7 +27,7 @@ from src.shared.openai_options import (
     OpenAICompatibleOptions,
     create_openai_compatible_options,
 )
-from src.shared.image_helpers import image_to_base64
+from src.shared.image_helpers import encode_vision_image
 
 # 设置日志
 logger = logging.getLogger("VisionInterface")
@@ -61,7 +61,8 @@ def call_ai_vision_ocr_service(image_pil, provider='siliconflow', api_key=None, 
                                prompt_mode: str = 'normal',
                                custom_base_url=None,
                                openai_options: OpenAICompatibleOptions | None = None,
-                               credential_version_id: str | None = None):
+                               credential_version_id: str | None = None,
+                               compress_vision_images: bool = True):
     if not isinstance(image_pil, Image.Image):
         raise ValueError("未提供有效图像")
     if prompt_mode not in {"normal", "json", "paddleocr_vl"}:
@@ -71,7 +72,10 @@ def call_ai_vision_ocr_service(image_pil, provider='siliconflow', api_key=None, 
 
     start_time = time.time()
     try:
-        image_base64 = image_to_base64(image_pil)
+        image_base64, image_media_type = encode_vision_image(
+            image_pil,
+            compress=compress_vision_images,
+        )
     except Exception as e:
         logger.error(f"图像转Base64失败: {e}", exc_info=True)
         raise
@@ -122,6 +126,7 @@ def call_ai_vision_ocr_service(image_pil, provider='siliconflow', api_key=None, 
                 credential_version_id=credential_version_id,
                 prompt=prompt,
                 image_base64=image_base64,
+                image_media_type=image_media_type,
                 capability=VISION_OCR_CAPABILITY,
                 base_url=custom_base_url if provider_lower == 'custom' else None,
                 openai_options=effective_options,

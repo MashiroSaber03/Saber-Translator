@@ -31,6 +31,10 @@ export function useMiscSettings(
     settings.value.removeTextWithOcr = enabled
   }
 
+  function setCompressVisionImages(enabled: boolean): void {
+    settings.value.compressVisionImages = enabled
+  }
+
   function setEnableVerboseLogs(enabled: boolean): void {
     settings.value.enableVerboseLogs = enabled
   }
@@ -46,6 +50,7 @@ export function useMiscSettings(
     updateParallel,
     setShowDetectionDebug,
     setRemoveTextWithOcr,
+    setCompressVisionImages,
     setEnableVerboseLogs,
     setLamaDisableResize
   }

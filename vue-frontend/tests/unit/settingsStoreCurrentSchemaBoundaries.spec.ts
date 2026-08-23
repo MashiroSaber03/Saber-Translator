@@ -27,7 +27,7 @@ function settingsDocument(
         domain: 'translation',
         payload: settings as unknown as Record<string, unknown>,
         revision,
-        schemaVersion: 6,
+        schemaVersion: 7,
       },
       {
         domain: 'text_style_defaults',
@@ -391,7 +391,7 @@ describe('settings store current schema boundaries', () => {
 
   it('rejects malformed authoritative backend settings', async () => {
     settingsApiMocks.getV2Settings.mockResolvedValue(settingsDocument({
-      settingsSchemaVersion: 6,
+      settingsSchemaVersion: 7,
       translation: { provider: 'custom' },
     } as unknown as ReturnType<typeof createDefaultSettings>))
     const store = useSettingsStore()

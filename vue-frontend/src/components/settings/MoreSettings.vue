@@ -46,6 +46,21 @@
     </ProductFormSection>
 
     <ProductFormSection>
+      <template #title>视觉模型图片</template>
+      <UiField
+        variant="settings"
+        control="checkbox"
+        hint="开启后，高质量翻译、AI 校对和 AI 视觉 OCR 会使用高质量 JPEG 传图，显著减少传输体积；关闭后使用无损 PNG。此设置不会改变后端保存的原图或导出文件。"
+      >
+        <UiCheckbox
+          :model-value="settingsStore.settings.compressVisionImages"
+          label="压缩发送给视觉模型的图片"
+          @change="settingsStore.setCompressVisionImages"
+        />
+      </UiField>
+    </ProductFormSection>
+
+    <ProductFormSection>
       <template #title>LAMA 修复设置</template>
       <UiField
         variant="settings"

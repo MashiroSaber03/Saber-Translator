@@ -1,9 +1,15 @@
+import base64
 import unittest
 from unittest import mock
 
 from PIL import Image
 
-from src.shared.ai_transport import OpenAICompatibleChatTransport, UnifiedChatRequest
+from src.shared.ai_transport import (
+    OpenAICompatibleChatTransport,
+    UnifiedChatRequest,
+    UnifiedVisionRequest,
+)
+from src.shared.image_helpers import encode_vision_image
 from src.shared.openai_execution import (
     OpenAICompatibleEmptyContentError,
     build_openai_compatible_runtime_options,
@@ -17,6 +23,60 @@ from src.shared.openai_options import (
 
 
 class OpenAICompatibleOptionsContractTests(unittest.TestCase):
+    def test_vision_image_encoder_uses_jpeg_only_when_compression_is_enabled(self) -> None:
+        with Image.new("RGB", (32, 32), "white") as image:
+            compressed, compressed_type = encode_vision_image(image, compress=True)
+            lossless, lossless_type = encode_vision_image(image, compress=False)
+
+        self.assertEqual(compressed_type, "image/jpeg")
+        self.assertEqual(lossless_type, "image/png")
+        self.assertTrue(base64.b64decode(compressed).startswith(b"\xff\xd8"))
+        self.assertTrue(base64.b64decode(lossless).startswith(b"\x89PNG"))
+
+    def test_sync_vision_transport_uses_the_encoded_image_media_type(self) -> None:
+        class FakeResponse:
+            status_code = 200
+            text = ""
+
+            def json(self):
+                return {"choices": [{"message": {"content": "识别成功"}}]}
+
+        class FakeClient:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def request(self, method=None, url=None, headers=None, json=None):
+                self.last_request = {
+                    "method": method,
+                    "url": url,
+                    "headers": headers,
+                    "json": json,
+                }
+                return FakeResponse()
+
+        fake_client = FakeClient()
+        with mock.patch("src.shared.ai_transport.httpx.Client", return_value=fake_client):
+            content = OpenAICompatibleChatTransport().complete_vision(
+                UnifiedVisionRequest(
+                    provider="custom",
+                    api_key="test-key",
+                    model="vision-model",
+                    prompt="read",
+                    image_base64="aW1hZ2U=",
+                    image_media_type="image/jpeg",
+                    base_url="https://example.com/v1",
+                )
+            )
+
+        self.assertEqual(content, "识别成功")
+        image_url = fake_client.last_request["json"]["messages"][0]["content"][1][
+            "image_url"
+        ]["url"]
+        self.assertEqual(image_url, "data:image/jpeg;base64,aW1hZ2U=")
+
     def test_sync_chat_transport_accepts_nested_openai_options(self) -> None:
         class FakeResponse:
             status_code = 200

@@ -110,6 +110,7 @@ export interface TranslationSettings {
   showDetectionDebug: boolean
   parallel: ParallelSettings
   removeTextWithOcr: boolean
+  compressVisionImages: boolean
   enableVerboseLogs: boolean
   lamaDisableResize: boolean
 }

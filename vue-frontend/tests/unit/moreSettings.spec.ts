@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => ({
     },
     settings: {
       removeTextWithOcr: false,
+      compressVisionImages: true,
       enableVerboseLogs: false,
       lamaDisableResize: false,
     },
@@ -34,6 +35,7 @@ const mocks = vi.hoisted(() => ({
     hydrateResourceCatalogs: vi.fn(),
     upsertFont: vi.fn(),
     setRemoveTextWithOcr: vi.fn(),
+    setCompressVisionImages: vi.fn(),
     setEnableVerboseLogs: vi.fn(),
     setLamaDisableResize: vi.fn(),
   },
@@ -178,6 +180,17 @@ describe('MoreSettings backend controls', () => {
     await checkbox?.setValue(true)
 
     expect(mocks.settings.exportPreferences.preserveOriginalFilenames).toBe(true)
+  })
+
+  it('updates vision image compression through the settings store', async () => {
+    const wrapper = mountSettings()
+    const checkbox = wrapper.findAll('input[type="checkbox"]').find(input => (
+      input.element.parentElement?.textContent?.includes('压缩发送给视觉模型的图片')
+    ))
+
+    await checkbox?.setValue(false)
+
+    expect(mocks.settings.setCompressVisionImages).toHaveBeenCalledWith(false)
   })
 
   it('opens the unified custom OpenAI service manager', async () => {

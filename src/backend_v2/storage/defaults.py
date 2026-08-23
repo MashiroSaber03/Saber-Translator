@@ -15,7 +15,7 @@ from src.shared.constants import (
 
 
 DEFAULT_FONT_ID = "00000000-0000-0000-0000-000000000010"
-TRANSLATION_SETTINGS_SCHEMA_VERSION = 6
+TRANSLATION_SETTINGS_SCHEMA_VERSION = 7
 TEXT_STYLE_DEFAULTS_SCHEMA_VERSION = 2
 
 DEFAULT_TEXT_STYLE: dict[str, object] = {
@@ -259,6 +259,7 @@ def default_translation_settings() -> dict[str, object]:
         "showDetectionDebug": False,
         "parallel": {"enabled": False, "deepLearningLockSize": 1},
         "removeTextWithOcr": False,
+        "compressVisionImages": True,
         "enableVerboseLogs": False,
         "lamaDisableResize": False,
     }

@@ -432,6 +432,9 @@ class SettingsResolver:
                         "name": selected_round["name"],
                         "batchSize": selected_round["batchSize"],
                         "enable_debug_logs": effective["enableVerboseLogs"],
+                        "compress_vision_images": effective[
+                            "compressVisionImages"
+                        ],
                         "prompt_content": self._translation_prompt(
                             selected_round,
                             mode=mode,
@@ -475,6 +478,9 @@ class SettingsResolver:
                 )
             if mode == "hq":
                 translation["batchSize"] = selected_translation["batchSize"]
+                translation["compress_vision_images"] = effective[
+                    "compressVisionImages"
+                ]
             provider_revision_keys.append(
                 (
                     translation_domain,
@@ -1113,6 +1119,9 @@ class SettingsResolver:
                     "ai_vision_ocr_prompt": selected["prompt"],
                     "ai_vision_prompt_mode": selected["promptMode"],
                     "ai_vision_min_image_size": selected["minImageSize"],
+                    "compress_vision_images": effective[
+                        "compressVisionImages"
+                    ],
                 }
             )
             if provider_section.get("credentialVersionId"):

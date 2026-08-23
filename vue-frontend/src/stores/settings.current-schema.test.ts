@@ -63,7 +63,7 @@ describe('useSettingsStore backend-first loading', () => {
         {
           domain: 'translation',
           revision: 1,
-          schemaVersion: 6,
+          schemaVersion: 7,
           payload: {
             ...settings,
             textStyle: {
@@ -95,7 +95,7 @@ describe('useSettingsStore backend-first loading', () => {
         {
           domain: 'translation',
           revision: 1,
-          schemaVersion: 6,
+          schemaVersion: 7,
           payload: settings,
         },
         {
@@ -125,7 +125,7 @@ describe('useSettingsStore backend-first loading', () => {
         {
           domain: 'translation',
           revision: 1,
-          schemaVersion: 6,
+          schemaVersion: 7,
           payload: settings,
         },
         {
@@ -162,7 +162,7 @@ describe('useSettingsStore backend-first loading', () => {
         {
           domain: 'translation',
           revision: 4,
-          schemaVersion: 6,
+          schemaVersion: 7,
           payload: settings,
         },
         {
@@ -249,7 +249,7 @@ describe('useSettingsStore backend-first loading', () => {
         {
           domain: 'translation',
           revision: 1,
-          schemaVersion: 6,
+          schemaVersion: 7,
           payload: initialSettings,
         },
         {
@@ -321,7 +321,7 @@ describe('useSettingsStore backend-first loading', () => {
           {
             domain: 'translation',
             revision: 1,
-            schemaVersion: 6,
+            schemaVersion: 7,
             payload: initialSettings,
           },
           {
@@ -373,7 +373,7 @@ describe('useSettingsStore backend-first loading', () => {
         {
           domain: 'translation',
           revision: 1,
-          schemaVersion: 6,
+          schemaVersion: 7,
           payload: settings,
         },
         {
@@ -434,7 +434,7 @@ describe('useSettingsStore backend-first loading', () => {
         {
           domain: 'translation',
           revision: 1,
-          schemaVersion: 6,
+          schemaVersion: 7,
           payload: settings,
         },
         {
@@ -487,7 +487,7 @@ describe('useSettingsStore backend-first loading', () => {
         {
           domain: 'translation',
           revision: 1,
-          schemaVersion: 6,
+          schemaVersion: 7,
           payload: settings,
         },
         {
@@ -543,7 +543,7 @@ describe('useSettingsStore backend-first loading', () => {
         {
           domain: 'translation',
           revision: 1,
-          schemaVersion: 6,
+          schemaVersion: 7,
           payload: settings,
         },
         {
