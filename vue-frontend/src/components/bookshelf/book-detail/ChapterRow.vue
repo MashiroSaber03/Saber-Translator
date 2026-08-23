@@ -7,7 +7,6 @@ import UiIcon from '@/components/ui/UiIcon.vue'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import type { ChapterData } from '@/types/api'
 import TaskStatusBadge from '@/components/task-center/TaskStatusBadge.vue'
-import { useTaskCenterStore } from '@/stores/taskCenterStore'
 
 const props = withDefaults(defineProps<{
   chapter: ChapterData
@@ -36,13 +35,8 @@ defineEmits<{
   (event: 'select', chapterId: string, selected: boolean): void
 }>()
 
-const taskCenterStore = useTaskCenterStore()
 const imageCount = computed(() => props.chapter.imageCount ?? 0)
-const hasActiveTranslation = computed(() => taskCenterStore.hasActiveTranslation(
-  props.chapter.id,
-  props.chapter.jobStatusSummary,
-))
-const canSelect = computed(() => imageCount.value > 0 && !hasActiveTranslation.value)
+const canSelect = computed(() => imageCount.value > 0)
 </script>
 
 <template>

@@ -26,7 +26,9 @@ import type { BookData, TagData } from '@/types/api'
 import * as bookshelfApi from '@/api/bookshelf'
 import { ApiClientError } from '@/api/client'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
+import { useSettingsStore } from '@/stores/settings'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
+import * as browserDownload from '@/utils/browserDownload'
 import { setTestBooks } from '../helpers/bookshelfFixtures'
 
 vi.mock('vue-router', () => ({
@@ -62,9 +64,10 @@ const ChapterListStub = defineComponent({
       type: Set,
       default: () => new Set<string>(),
     },
+    downloadPending: Boolean,
     translationPending: Boolean,
   },
-  emits: ['delete', 'select'],
+  emits: ['delete', 'downloadSelected', 'select', 'selectAll', 'translateSelected'],
   template: '<div class="chapter-list-stub" />',
 })
 
@@ -428,7 +431,33 @@ describe('bookshelf detail child components', () => {
 
     expect(row.get('input[type="checkbox"]').attributes('disabled')).toBeUndefined()
     expect(row.findComponent(TaskStatusBadge).find('button').exists()).toBe(false)
-    expect(list.findAll('button').some(button => button.text().includes('全选可翻译章节'))).toBe(true)
+    expect(list.findAll('button').some(button => button.text().includes('全选有内容章节'))).toBe(true)
+  })
+
+  it('keeps chapter download selection available when translation is unavailable', async () => {
+    const wrapper = mount(ChapterList, {
+      props: {
+        chapters: [{
+          id: 'chapter-download',
+          title: 'Download Only',
+          imageCount: 2,
+        }],
+        draggedChapterIndex: null,
+        dragOverChapterIndex: null,
+        translationAllowed: false,
+        selectedChapterIds: new Set(['chapter-download']),
+      },
+    })
+
+    const checkbox = wrapper.get('input[type="checkbox"]')
+    expect(checkbox.attributes('disabled')).toBeUndefined()
+    const downloadButton = wrapper.findAllComponents(UiButton)
+      .find(button => button.text().includes('下载选中章节'))!
+    expect(downloadButton.attributes('disabled')).toBeUndefined()
+    expect(wrapper.text()).not.toContain('翻译选中章节')
+
+    await downloadButton.trigger('click')
+    expect(wrapper.emitted('downloadSelected')).toHaveLength(1)
   })
 
   it('reuses an existing tag casing when quick-add is submitted from the keyboard', async () => {
@@ -568,6 +597,75 @@ describe('bookshelf detail child components', () => {
     expect(wrapper.getComponent(ChapterListStub).props('selectedChapterIds').size).toBe(0)
   })
 
+  it('exports selected chapters through one durable ZIP job', async () => {
+    const store = useBookshelfStore()
+    setTestBooks(store, [{
+      ...book,
+      chapters: [
+        {
+          id: 'chapter-1',
+          title: 'Chapter 1',
+          order: 0,
+          imageCount: 1,
+        },
+        {
+          id: 'chapter-2',
+          title: 'Chapter 2',
+          order: 1,
+          imageCount: 1,
+        },
+      ],
+      chapterCount: 2,
+    }])
+    store.setCurrentBook(book.id)
+    useSettingsStore().exportPreferences.preserveOriginalFilenames = true
+    const createExportSpy = vi.spyOn(bookshelfApi, 'createChaptersExportJob')
+      .mockResolvedValue({
+        batchId: 'batch-export',
+        jobIds: ['job-export'],
+        status: 'queued',
+      })
+    const taskStore = useTaskCenterStore()
+    vi.spyOn(taskStore, 'refresh').mockResolvedValue(undefined)
+    const openSpy = vi.spyOn(taskStore, 'open').mockImplementation(() => undefined)
+    vi.spyOn(taskStore, 'waitForJob').mockResolvedValue({
+      artifacts: [{ url: '/api/v2/assets/asset-export' }],
+    } as Awaited<ReturnType<typeof taskStore.waitForJob>>)
+    const downloadSpy = vi.spyOn(browserDownload, 'triggerUrlDownload')
+      .mockImplementation(() => undefined)
+    const wrapper = mount(BookDetailModal, {
+      global: {
+        stubs: {
+          BaseModal: BaseModalStub,
+          BookDeleteConfirmContent: true,
+          BookDetailSummary: true,
+          ChapterFormContent: true,
+          ChapterList: ChapterListStub,
+          QuickTagPicker: true,
+        },
+      },
+    })
+    const chapterList = wrapper.getComponent(ChapterListStub)
+    chapterList.vm.$emit('select', 'chapter-1', true)
+    chapterList.vm.$emit('select', 'chapter-2', true)
+    await nextTick()
+
+    chapterList.vm.$emit('downloadSelected')
+    await flushPromises()
+
+    expect(createExportSpy).toHaveBeenCalledOnce()
+    expect(createExportSpy).toHaveBeenCalledWith(
+      ['chapter-1', 'chapter-2'],
+      true,
+    )
+    expect(openSpy).toHaveBeenCalledWith({ batchId: 'batch-export' })
+    expect(downloadSpy).toHaveBeenCalledWith(
+      '/api/v2/assets/asset-export?download=1&filename=chapters-2-export.zip',
+    )
+    expect(wrapper.getComponent(ChapterListStub).props('selectedChapterIds').size).toBe(0)
+    expect(wrapper.getComponent(ChapterListStub).props('downloadPending')).toBe(false)
+  })
+
   it('opens the task center when a book deletion is locked', async () => {
     const store = useBookshelfStore()
     setTestBooks(store, [book])
@@ -583,7 +681,7 @@ describe('bookshelf detail child components', () => {
     })
     const deleteSpy = vi.spyOn(store, 'deleteBookApi').mockRejectedValueOnce(locked)
     const taskStore = useTaskCenterStore()
-    const openSpy = vi.spyOn(taskStore, 'open')
+    const openSpy = vi.spyOn(taskStore, 'open').mockImplementation(() => undefined)
     const wrapper = mount(BookDetailModal, {
       global: {
         stubs: {

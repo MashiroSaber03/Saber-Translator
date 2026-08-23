@@ -6,17 +6,18 @@ import ProductSectionHeader from '@/components/product/ProductSectionHeader.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import type { ChapterData } from '@/types/api'
 import ChapterRow from './ChapterRow.vue'
-import { useTaskCenterStore } from '@/stores/taskCenterStore'
 
 const props = withDefaults(defineProps<{
   chapters: ChapterData[]
   draggedChapterIndex: number | null
   dragOverChapterIndex: number | null
   selectedChapterIds?: Set<string>
+  downloadPending?: boolean
   translationPending?: boolean
   translationAllowed?: boolean
 }>(), {
   selectedChapterIds: () => new Set<string>(),
+  downloadPending: false,
   translationPending: false,
   translationAllowed: true,
 })
@@ -34,25 +35,21 @@ const emit = defineEmits<{
   (event: 'delete', chapterId: string): void
   (event: 'select', chapterId: string, selected: boolean): void
   (event: 'selectAll', chapterIds: string[]): void
+  (event: 'downloadSelected'): void
   (event: 'translateSelected'): void
 }>()
 
-const taskCenterStore = useTaskCenterStore()
-const eligibleChapterIds = computed(() => props.chapters.filter(chapter => {
-  const pageCount = chapter.imageCount ?? 0
-  if (pageCount === 0) return false
-  return !taskCenterStore.hasActiveTranslation(
-    chapter.id,
-    chapter.jobStatusSummary,
-  )
-}).map(chapter => chapter.id))
+const selectableChapterIds = computed(() => props.chapters
+  .filter(chapter => (chapter.imageCount ?? 0) > 0)
+  .map(chapter => chapter.id))
+const actionPending = computed(() => props.downloadPending || props.translationPending)
 const allSelected = computed(() => (
-  eligibleChapterIds.value.length > 0
-  && eligibleChapterIds.value.every(id => props.selectedChapterIds.has(id))
+  selectableChapterIds.value.length > 0
+  && selectableChapterIds.value.every(id => props.selectedChapterIds.has(id))
 ))
 
 function toggleAll() {
-  emit('selectAll', allSelected.value ? [] : eligibleChapterIds.value)
+  emit('selectAll', allSelected.value ? [] : selectableChapterIds.value)
 }
 </script>
 
@@ -61,19 +58,29 @@ function toggleAll() {
     <ProductSectionHeader title="章节列表" :heading-level="3">
       <template #actions>
         <UiButton
-          v-if="chapters.length && translationAllowed"
+          v-if="chapters.length"
           size="sm"
           variant="secondary"
-          :disabled="eligibleChapterIds.length === 0 || translationPending"
+          :disabled="selectableChapterIds.length === 0 || actionPending"
           @click="toggleAll"
         >
-          {{ allSelected ? '清空选择' : '全选可翻译章节' }}
+          {{ allSelected ? '清空选择' : '全选有内容章节' }}
+        </UiButton>
+        <UiButton
+          v-if="chapters.length"
+          size="sm"
+          variant="secondary"
+          :disabled="selectedChapterIds.size === 0 || actionPending"
+          :loading="downloadPending"
+          @click="$emit('downloadSelected')"
+        >
+          下载选中章节（{{ selectedChapterIds.size }}）
         </UiButton>
         <UiButton
           v-if="chapters.length && translationAllowed"
           size="sm"
           variant="primary"
-          :disabled="selectedChapterIds.size === 0"
+          :disabled="selectedChapterIds.size === 0 || actionPending"
           :loading="translationPending"
           @click="$emit('translateSelected')"
         >
@@ -100,7 +107,7 @@ function toggleAll() {
         :index="index"
         :is-dragging="draggedChapterIndex === index"
         :is-drag-over="dragOverChapterIndex === index && draggedChapterIndex !== index"
-        :selectable="translationAllowed"
+        selectable
         :translation-allowed="translationAllowed"
         :selected="selectedChapterIds.has(chapter.id)"
         @delete="$emit('delete', $event)"

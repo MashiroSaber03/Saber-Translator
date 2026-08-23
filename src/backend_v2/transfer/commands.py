@@ -420,6 +420,78 @@ class TransferCommandService:
             )
             if {str(row["id"]) for row in book_rows} != selected_book_ids:
                 raise ValueError("bookIds must all belong to the current user")
+            selected_chapter_ids = {
+                str(value)
+                for value in connection.execute(
+                    select(chapters.c.id).where(
+                        chapters.c.book_id.in_(selected_book_ids)
+                    )
+                ).scalars()
+            }
+        return self._create_library_export(
+            selected_chapter_ids=selected_chapter_ids,
+            preserve_original_filenames=preserve_original_filenames,
+            display_name=f"批量导出 {len(book_rows)} 本书籍",
+            target_display={"bookCount": len(book_rows)},
+            empty_message="selected books do not contain exportable pages",
+            idempotency_scope="books-export",
+            idempotency_key=idempotency_key,
+            selection_payload={"bookIds": sorted(selected_book_ids)},
+        )
+
+    def create_chapters_export(
+        self,
+        *,
+        chapter_ids: list[str],
+        preserve_original_filenames: bool,
+        idempotency_key: str,
+    ) -> dict[str, object]:
+        selected_chapter_ids = set(chapter_ids)
+        if not chapter_ids or len(selected_chapter_ids) != len(chapter_ids):
+            raise ValueError("chapterIds must contain unique chapter IDs")
+        with self.engine.connect() as connection:
+            chapter_rows = list(
+                connection.execute(
+                    select(chapters.c.id, chapters.c.book_id)
+                    .join(books, books.c.id == chapters.c.book_id)
+                    .where(
+                        chapters.c.id.in_(selected_chapter_ids),
+                        books.c.kind == "library",
+                        books.c.owner_user_id == effective_owner_id(),
+                    )
+                ).mappings()
+            )
+        if {str(row["id"]) for row in chapter_rows} != selected_chapter_ids:
+            raise ValueError(
+                "chapterIds must all belong to library books owned by the current user"
+            )
+        return self._create_library_export(
+            selected_chapter_ids=selected_chapter_ids,
+            preserve_original_filenames=preserve_original_filenames,
+            display_name=f"批量导出 {len(chapter_rows)} 个章节",
+            target_display={
+                "bookCount": len({str(row["book_id"]) for row in chapter_rows}),
+                "chapterCount": len(chapter_rows),
+            },
+            empty_message="selected chapters do not contain exportable pages",
+            idempotency_scope="chapters-export",
+            idempotency_key=idempotency_key,
+            selection_payload={"chapterIds": sorted(selected_chapter_ids)},
+        )
+
+    def _create_library_export(
+        self,
+        *,
+        selected_chapter_ids: set[str],
+        preserve_original_filenames: bool,
+        display_name: str,
+        target_display: dict[str, object],
+        empty_message: str,
+        idempotency_scope: str,
+        idempotency_key: str,
+        selection_payload: dict[str, object],
+    ) -> dict[str, object]:
+        with self.engine.connect() as connection:
             rows = list(
                 connection.execute(
                     select(
@@ -436,7 +508,8 @@ class TransferCommandService:
                     .join(pages, pages.c.chapter_id == chapters.c.id)
                     .join(page_assets, page_assets.c.page_id == pages.c.id)
                     .where(
-                        books.c.id.in_(selected_book_ids),
+                        chapters.c.id.in_(selected_chapter_ids),
+                        books.c.kind == "library",
                         books.c.owner_user_id == effective_owner_id(),
                         page_assets.c.role.in_(("source", "clean", "translated")),
                     )
@@ -478,7 +551,7 @@ class TransferCommandService:
                 }
             )
         if not entries:
-            raise ValueError("selected books do not contain exportable pages")
+            raise ValueError(empty_message)
 
         asset_inputs = {
             f"page:{index:06d}": str(entry["assetId"])
@@ -494,7 +567,7 @@ class TransferCommandService:
         )
         return self.jobs.create_batch(
             kind="export",
-            display_name=f"批量导出 {len(book_rows)} 本书籍",
+            display_name=display_name,
             specs=[
                 JobSpec(
                     kind="export",
@@ -507,16 +580,16 @@ class TransferCommandService:
                         ),
                     ),
                     target_display={
-                        "bookCount": len(book_rows),
+                        **target_display,
                         "pageCount": len(entries),
                         "format": "zip",
                     },
                 )
             ],
-            idempotency_scope="books-export",
+            idempotency_scope=idempotency_scope,
             idempotency_key=idempotency_key,
             idempotency_payload={
-                "bookIds": sorted(selected_book_ids),
+                **selection_payload,
                 "preserveOriginalFilenames": preserve_original_filenames,
                 "entries": [
                     {

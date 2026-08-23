@@ -508,3 +508,88 @@ def test_multi_book_export_uses_one_durable_zip_job(tmp_path: Path) -> None:
             "Book_One/Chapter_A/001.png",
         ]
     engine.dispose()
+
+
+def test_selected_chapters_export_as_one_durable_zip_job(tmp_path: Path) -> None:
+    data_root = tmp_path / "data-v2"
+    data_root.mkdir()
+    engine = create_sqlite_engine(data_root / "saber.sqlite3")
+    metadata.create_all(engine)
+    seed_system_records(engine)
+    content = ContentRepository(engine)
+    storage = AssetStorageService(data_root, engine)
+    book = content.create_book(title="Selected Book")
+    selected_chapter_ids: list[str] = []
+    for ordinal, title in enumerate(
+        ("Chapter 1", "Chapter 2", "Chapter 3"),
+        start=1,
+    ):
+        chapter = content.create_chapter(book_id=str(book["id"]), title=title)
+        chapter_id = str(chapter["id"])
+        if ordinal != 2:
+            selected_chapter_ids.append(chapter_id)
+        page_id = str(uuid.uuid4())
+        with engine.begin() as connection:
+            connection.execute(
+                insert(pages).values(
+                    id=page_id,
+                    chapter_id=chapter_id,
+                    ordinal=1,
+                    logical_source_path=f"{ordinal:03d}.png",
+                )
+            )
+        storage.publish_bytes(
+            _png((ordinal * 60, 0, 0)),
+            extension="png",
+            mime_type="image/png",
+            width=32,
+            height=40,
+            bind=lambda connection, asset_id, page_id=page_id: connection.execute(
+                insert(page_assets).values(
+                    page_id=page_id,
+                    role="source",
+                    asset_id=asset_id,
+                    input_source_revision=1,
+                )
+            ),
+        )
+
+    jobs = JobQueueRepository(engine)
+    accepted = TransferCommandService(
+        data_root=data_root,
+        engine=engine,
+    ).create_chapters_export(
+        chapter_ids=selected_chapter_ids,
+        preserve_original_filenames=True,
+        idempotency_key="chapters-export",
+    )
+    assert len(accepted["jobIds"]) == 1
+    epoch_id = str(uuid.uuid4())
+    ProcessEpochRepository(engine).register(
+        EpochRegistration(epoch_id, "worker", "worker", 903)
+    )
+    worker = TransferWorkerService(
+        data_root=data_root,
+        engine=engine,
+        jobs_repository=jobs,
+    )
+    job_id = _run_job(jobs, worker, epoch_id)
+    assert job_id == accepted["jobIds"][0]
+
+    from src.backend_v2.storage.schema import assets
+
+    with engine.connect() as connection:
+        artifact_id = connection.execute(
+            select(job_artifacts.c.asset_id).where(
+                job_artifacts.c.job_id == job_id
+            )
+        ).scalar_one()
+        relative = connection.execute(
+            select(assets.c.relative_path).where(assets.c.id == artifact_id)
+        ).scalar_one()
+    with zipfile.ZipFile(storage.resolve_relative_path(relative)) as packaged:
+        assert packaged.namelist() == [
+            "Selected Book/Chapter 1/001.png",
+            "Selected Book/Chapter 3/003.png",
+        ]
+    engine.dispose()

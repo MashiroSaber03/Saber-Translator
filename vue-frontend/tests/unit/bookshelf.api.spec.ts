@@ -126,6 +126,30 @@ describe('bookshelf v2 api contracts', () => {
     )
   })
 
+  it('creates one durable ZIP job for selected chapters', async () => {
+    postMock.mockResolvedValue({
+      batchId: 'batch-export',
+      jobIds: ['job-export'],
+      status: 'queued',
+    })
+    const { createChaptersExportJob } = await import('@/api/bookshelf')
+
+    await createChaptersExportJob(['chapter-1', 'chapter-3'], true)
+
+    expect(postMock).toHaveBeenCalledWith(
+      '/api/v2/chapters/export-jobs',
+      {
+        chapterIds: ['chapter-1', 'chapter-3'],
+        preserveOriginalFilenames: true,
+      },
+      {
+        headers: {
+          'Idempotency-Key': expect.any(String),
+        },
+      },
+    )
+  })
+
   it('saves the structured constraint document through its dedicated CAS resource', async () => {
     putMock.mockResolvedValue({
       ...constraints,

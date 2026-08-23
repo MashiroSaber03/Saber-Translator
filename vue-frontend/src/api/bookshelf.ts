@@ -14,6 +14,7 @@ type V2TagList = components['schemas']['TagList']
 type V2JobBatchAccepted = components['schemas']['JobBatchAccepted']
 
 const BOOKS_ENDPOINT = '/api/v2/books'
+const CHAPTERS_ENDPOINT = '/api/v2/chapters'
 const TAGS_ENDPOINT = '/api/v2/tags'
 const tagIdsByName = new Map<string, string>()
 const chapterOrderRevisions = new Map<string, number>()
@@ -32,7 +33,7 @@ function bookPath(bookId: string, suffix = ''): string {
 }
 
 function chapterPath(chapterId: string): string {
-  return `/api/v2/chapters/${encodeURIComponent(chapterId)}`
+  return `${CHAPTERS_ENDPOINT}/${encodeURIComponent(chapterId)}`
 }
 
 function rememberTags(
@@ -266,6 +267,17 @@ export function createBooksExportJob(
   return apiClient.post<V2JobBatchAccepted>(
     `${BOOKS_ENDPOINT}/export-jobs`,
     { bookIds, preserveOriginalFilenames },
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
+  )
+}
+
+export function createChaptersExportJob(
+  chapterIds: string[],
+  preserveOriginalFilenames: boolean,
+): Promise<V2JobBatchAccepted> {
+  return apiClient.post<V2JobBatchAccepted>(
+    `${CHAPTERS_ENDPOINT}/export-jobs`,
+    { chapterIds, preserveOriginalFilenames },
     { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
 }

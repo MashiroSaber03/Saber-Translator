@@ -3,8 +3,9 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
 import { ApiClientError } from '@/api/client'
-import { getBookDetail } from '@/api/bookshelf'
-import { showToast } from '@/utils/toast'
+import { createChaptersExportJob, getBookDetail } from '@/api/bookshelf'
+import { showToast, useToast } from '@/utils/toast'
+import { triggerUrlDownload, withDownloadFileName } from '@/utils/browserDownload'
 import BaseModal from '@/components/common/BaseModal.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import UiButton from '@/components/ui/UiButton.vue'
@@ -15,6 +16,7 @@ import ChapterList from './book-detail/ChapterList.vue'
 import QuickTagPicker from './book-detail/QuickTagPicker.vue'
 import { createTranslationBatch } from '@/api/v2/translation'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
+import { useSettingsStore } from '@/stores/settings'
 
 const emit = defineEmits<{
   close: []
@@ -34,6 +36,8 @@ withDefaults(defineProps<{
 const router = useRouter()
 const bookshelfStore = useBookshelfStore()
 const taskCenterStore = useTaskCenterStore()
+const settingsStore = useSettingsStore()
+const toast = useToast()
 
 const showChapterModal = ref(false)
 const editingChapterId = ref<string | null>(null)
@@ -45,6 +49,7 @@ const deleteTarget = ref<'book' | 'chapter'>('book')
 const deleteChapterId = ref<string | null>(null)
 const isDeleting = ref(false)
 const isChapterSaving = ref(false)
+const isBatchDownloading = ref(false)
 const isBatchTranslating = ref(false)
 const isReordering = ref(false)
 
@@ -163,7 +168,7 @@ function selectAllChapters(chapterIds: string[]) {
 
 async function translateSelectedChapters() {
   const chapterIds = [...selectedChapterIds.value]
-  if (!chapterIds.length || isBatchTranslating.value) return
+  if (!chapterIds.length || isBatchTranslating.value || isBatchDownloading.value) return
   isBatchTranslating.value = true
   try {
     const result = await createTranslationBatch({ chapterIds }, { mode: 'standard' })
@@ -182,6 +187,37 @@ async function translateSelectedChapters() {
     showToast(error instanceof Error ? error.message : '创建批量翻译任务失败', 'error')
   } finally {
     isBatchTranslating.value = false
+  }
+}
+
+async function downloadSelectedChapters() {
+  const chapterIds = [...selectedChapterIds.value]
+  if (!chapterIds.length || isBatchDownloading.value || isBatchTranslating.value) return
+  isBatchDownloading.value = true
+  let queuedToastId: number | null = null
+  try {
+    const accepted = await createChaptersExportJob(
+      chapterIds,
+      settingsStore.exportPreferences.preserveOriginalFilenames,
+    )
+    const jobId = accepted.jobIds[0]
+    if (!jobId) throw new Error('后端没有返回批量章节导出任务')
+    await taskCenterStore.refresh()
+    taskCenterStore.open({ batchId: accepted.batchId })
+    queuedToastId = showToast('章节下载已进入后端队列，可安全关闭书籍详情', 'info', 0)
+    const job = await taskCenterStore.waitForJob(jobId)
+    const artifact = job.artifacts[0]
+    if (!artifact) throw new Error('批量章节导出任务未生成可下载文件')
+    triggerUrlDownload(
+      withDownloadFileName(artifact.url, `chapters-${chapterIds.length}-export.zip`),
+    )
+    selectedChapterIds.value = new Set()
+    showToast('章节导出完成，下载已开始', 'success')
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '章节批量下载失败', 'error')
+  } finally {
+    if (queuedToastId !== null) toast.removeToast(queuedToastId)
+    isBatchDownloading.value = false
   }
 }
 
@@ -493,6 +529,7 @@ async function quickAddTagToBook(tagName: string): Promise<boolean> {
         :chapters="chapters"
         :drag-over-chapter-index="dragOverChapterIndex"
         :dragged-chapter-index="draggedChapterIndex"
+        :download-pending="isBatchDownloading"
         :selected-chapter-ids="selectedChapterIds"
         :translation-pending="isBatchTranslating"
         :translation-allowed="translationAllowed"
@@ -503,6 +540,7 @@ async function quickAddTagToBook(tagName: string): Promise<boolean> {
         @drag-over="handleChapterDragOver"
         @drag-start="handleChapterDragStart"
         @drop="handleChapterDrop"
+        @download-selected="downloadSelectedChapters"
         @edit="openEditChapterModal"
         @read="goToReader"
         @translate="goToTranslate"

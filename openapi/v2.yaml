@@ -2078,6 +2078,25 @@ paths:
         "404": {$ref: "#/components/responses/NotFound"}
         "409": {$ref: "#/components/responses/Conflict"}
         "422": {$ref: "#/components/responses/ValidationError"}
+  /chapters/export-jobs:
+    post:
+      tags: [transfer]
+      operationId: createChaptersExportJob
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ChaptersExportJobCommand"}
+      responses:
+        "202":
+          description: Multi-chapter ZIP export job accepted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/JobBatchAccepted"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
   /chapters/{chapter_id}/export-jobs:
     post:
       tags: [transfer]
@@ -5191,6 +5210,17 @@ components:
           type: string
           enum: [cbz, pdf, zip]
         pageIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: {$ref: "#/components/schemas/Uuid"}
+        preserveOriginalFilenames: {type: boolean}
+    ChaptersExportJobCommand:
+      type: object
+      additionalProperties: false
+      required: [chapterIds, preserveOriginalFilenames]
+      properties:
+        chapterIds:
           type: array
           minItems: 1
           uniqueItems: true

@@ -68,6 +68,28 @@ def create_transfer_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
         )
         return jsonify(result), 202
 
+    @blueprint.post("/chapters/export-jobs")
+    def create_chapters_export():
+        body = _json_body(
+            allowed_keys={"chapterIds", "preserveOriginalFilenames"}
+        )
+        chapter_ids = body.get("chapterIds")
+        if (
+            not isinstance(chapter_ids, list)
+            or not chapter_ids
+            or not all(isinstance(value, str) and value for value in chapter_ids)
+        ):
+            raise ValueError("chapterIds must be a non-empty string array")
+        result = service.create_chapters_export(
+            chapter_ids=chapter_ids,
+            preserve_original_filenames=_required_boolean(
+                body,
+                "preserveOriginalFilenames",
+            ),
+            idempotency_key=_require_idempotency_key(),
+        )
+        return jsonify(result), 202
+
     @blueprint.post("/books/export-jobs")
     def create_books_export():
         body = _json_body(

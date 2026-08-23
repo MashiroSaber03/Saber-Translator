@@ -1555,6 +1555,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/chapters/export-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createChaptersExportJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/chapters/{chapter_id}/export-jobs": {
         parameters: {
             query?: never;
@@ -3353,6 +3369,10 @@ export interface components {
             /** @enum {string} */
             format: "cbz" | "pdf" | "zip";
             pageIds?: components["schemas"]["Uuid"][];
+            preserveOriginalFilenames: boolean;
+        };
+        ChaptersExportJobCommand: {
+            chapterIds: components["schemas"]["Uuid"][];
             preserveOriginalFilenames: boolean;
         };
         FileUploadCommand: {
@@ -8217,6 +8237,35 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    createChaptersExportJob: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChaptersExportJobCommand"];
+            };
+        };
+        responses: {
+            /** @description Multi-chapter ZIP export job accepted. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobBatchAccepted"];
+                };
+            };
             409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationError"];
         };
