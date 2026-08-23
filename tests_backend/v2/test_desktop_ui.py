@@ -7,10 +7,16 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtNetwork import QNetworkReply
-from PySide6.QtWidgets import QAbstractSpinBox, QApplication, QLabel, QPushButton
+from PySide6.QtWidgets import (
+    QAbstractSpinBox,
+    QApplication,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+)
 
 from src.backend_v2.desktop.entrypoint import DesktopController
 from src.backend_v2.launcher.entrypoint import LauncherState, LauncherStatus
@@ -84,6 +90,13 @@ def test_settings_page_accepts_pet_menu_updates(tmp_path) -> None:
         "WARNING",
         "ERROR",
     ]
+
+
+def test_settings_page_selects_the_default_75_percent_pet_scale(tmp_path) -> None:
+    _app()
+    page = SettingsPage(DesktopSettings(), tmp_path)
+
+    assert page.pet_scale.currentText() == "75%"
 
 
 def test_settings_emit_immediately_without_a_save_button(tmp_path) -> None:
@@ -359,6 +372,7 @@ def test_controller_uses_one_rounded_logo_for_window_tray_and_sidebar(tmp_path) 
         brand_logo_path=BRAND_LOGO,
     )
 
+    assert app.styleSheet() == WINDOW_STYLESHEET
     expected_icon = QIcon(str(NATIVE_ICON)).pixmap(64, 64).toImage()
     assert controller.window.windowIcon().pixmap(64, 64).toImage() == expected_icon
     assert controller.tray.icon().pixmap(64, 64).toImage() == expected_icon
@@ -389,6 +403,63 @@ def test_interrupted_task_offers_continue_and_cancel() -> None:
     actions = page._actions({"jobId": "job-1", "status": "interrupted"})
 
     assert [button.text() for button in actions.findChildren(QPushButton)] == ["继续", "取消"]
+
+
+def test_task_action_buttons_fit_their_dedicated_column() -> None:
+    app = _app()
+    page = TaskCenterPage()
+    page.setStyleSheet(WINDOW_STYLESHEET)
+    page.resize(920, 640)
+    page.set_jobs(
+        [
+            {
+                "jobId": "job-1",
+                "kind": "translation",
+                "status": "running",
+                "createdAt": "2026-08-23T07:05:02",
+                "progress": {"totalItems": 10, "completedItems": 2},
+            }
+        ],
+        [],
+    )
+    page.show()
+    app.processEvents()
+
+    table = page.tables[0]
+    actions = table.cellWidget(0, 5)
+    assert actions is not None
+    buttons = actions.findChildren(QPushButton)
+    assert [button.text() for button in buttons] == ["暂停", "取消"]
+    assert table.columnWidth(5) == TaskCenterPage.ACTION_COLUMN_WIDTH
+    assert actions.layout().minimumSize().width() <= table.columnWidth(5)
+    for button in buttons:
+        required_text_width = button.fontMetrics().horizontalAdvance(button.text()) + 20
+        assert button.width() >= required_text_width
+        assert button.height() >= button.minimumSizeHint().height()
+
+    page.close()
+    page.deleteLater()
+    app.processEvents()
+
+
+def test_task_tabs_leave_clear_space_above_the_table() -> None:
+    app = _app()
+    page = TaskCenterPage()
+    page.setStyleSheet(WINDOW_STYLESHEET)
+    page.resize(920, 640)
+    page.show()
+    app.processEvents()
+
+    tab_bar = page.tabs.tabBar()
+    table = page.tables[0]
+    tab_bottom = tab_bar.mapTo(page, QPoint()).y() + tab_bar.height()
+    table_top = table.mapTo(page, QPoint()).y()
+
+    assert table_top - tab_bottom >= 6
+
+    page.close()
+    page.deleteLater()
+    app.processEvents()
 
 
 def test_overview_keeps_paused_task_visible() -> None:
@@ -443,11 +514,57 @@ def test_log_view_and_backing_buffer_share_the_same_bound() -> None:
     assert page.output.document().blockCount() == 5000
 
 
+def test_log_view_preserves_unicode_messages() -> None:
+    _app()
+    page = LogPage()
+
+    page.add_line("WORKER", "[INFO] 本地模型加载完成：漫画文字识别")
+
+    assert page.output.toPlainText() == "[INFO] 本地模型加载完成：漫画文字识别"
+
+
+def test_log_auto_scroll_keeps_the_start_of_new_lines_visible() -> None:
+    app = _app()
+    page = LogPage()
+    page.resize(400, 300)
+    for index in range(40):
+        page.add_line("WORKER", f"[INFO] {index} " + "很长的日志内容" * 100)
+    page.show()
+    app.processEvents()
+
+    horizontal = page.output.horizontalScrollBar()
+    vertical = page.output.verticalScrollBar()
+    assert horizontal.value() == horizontal.minimum()
+    assert vertical.value() == vertical.maximum()
+
+    page.close()
+
+
 def test_log_view_inherits_the_bundled_application_font() -> None:
     log_style = WINDOW_STYLESHEET.split("QPlainTextEdit {", 1)[1].split("}", 1)[0]
 
     assert "font-family" not in log_style
     assert "Fixedsys" not in WINDOW_STYLESHEET
+
+
+def test_message_box_width_applies_to_text_without_stretching_the_icon() -> None:
+    app = _app()
+    box = QMessageBox(
+        QMessageBox.Icon.Warning,
+        "Saber-Translator",
+        "设置自动保存失败：测试消息",
+    )
+    box.setStyleSheet(WINDOW_STYLESHEET)
+    box.show()
+    app.processEvents()
+
+    labels = {label.objectName(): label for label in box.findChildren(QLabel)}
+    assert labels["qt_msgbox_label"].minimumWidth() == 280
+    assert labels["qt_msgboxex_icon_label"].minimumWidth() < 280
+
+    box.close()
+    box.deleteLater()
+    app.processEvents()
 
 
 def test_window_close_requests_quit_when_system_tray_is_unavailable(tmp_path: Path) -> None:

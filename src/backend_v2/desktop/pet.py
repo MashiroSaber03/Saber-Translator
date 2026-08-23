@@ -171,7 +171,7 @@ class PetWindow(QWidget):
         manifest_path: Path,
         *,
         fallback_logo: Path,
-        scale_percent: int = 100,
+        scale_percent: int = 75,
         always_on_top: bool = True,
     ) -> None:
         super().__init__()
@@ -188,7 +188,7 @@ class PetWindow(QWidget):
         self._window_origin: QPoint | None = None
         self._dragged = False
         self._last_drag_x = 0
-        self._scale_percent = scale_percent if scale_percent in PET_SCALES else 100
+        self._scale_percent = scale_percent if scale_percent in PET_SCALES else 75
         self._always_on_top = always_on_top
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)

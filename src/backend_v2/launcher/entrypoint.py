@@ -169,6 +169,11 @@ def _child_environment(
     credential_broker_token: str | None = None,
 ) -> dict[str, str]:
     environment = os.environ.copy()
+    # The desktop supervisor decodes the captured pipe as UTF-8.  Windows can
+    # otherwise make redirected Python stdout use the active ANSI code page,
+    # which irreversibly corrupts Chinese log messages in the GUI.
+    environment["PYTHONUTF8"] = "1"
+    environment["PYTHONIOENCODING"] = "utf-8"
     environment[DATA_ROOT_ENV] = str(data_root)
     environment[LAUNCHER_PID_ENV] = str(os.getpid())
     environment[PROFILE_ENV] = profile

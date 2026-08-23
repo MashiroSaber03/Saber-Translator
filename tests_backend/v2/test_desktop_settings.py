@@ -6,6 +6,13 @@ from pathlib import Path
 from src.backend_v2.desktop.settings import DesktopSettings, DesktopSettingsStore
 
 
+def test_desktop_settings_default_pet_scale_is_75_percent(tmp_path: Path) -> None:
+    store = DesktopSettingsStore(tmp_path)
+
+    assert DesktopSettings().pet_scale_percent == 75
+    assert store.load().pet_scale_percent == 75
+
+
 def test_desktop_settings_round_trip(tmp_path: Path) -> None:
     store = DesktopSettingsStore(tmp_path)
     expected = DesktopSettings(

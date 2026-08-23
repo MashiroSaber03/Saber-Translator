@@ -24,7 +24,7 @@ class DesktopSettings:
     open_browser_on_start: bool = True
     pet_enabled: bool = True
     pet_always_on_top: bool = True
-    pet_scale_percent: int = 100
+    pet_scale_percent: int = 75
     pet_screen_name: str = ""
     pet_position_x: float = 1.0
     pet_position_y: float = 1.0

@@ -17,6 +17,7 @@ from src.backend_v2.desktop.pet import PetWindow
 from src.backend_v2.desktop.pet_state import PetStateMachine
 from src.backend_v2.desktop.settings import DesktopSettings, DesktopSettingsStore
 from src.backend_v2.desktop.task_client import TaskApiClient
+from src.backend_v2.desktop.theme import WINDOW_STYLESHEET
 from src.backend_v2.desktop.window import DesktopWindow
 from src.backend_v2.launcher.entrypoint import (
     LauncherConfig,
@@ -75,6 +76,7 @@ class DesktopController(QObject):
     ) -> None:
         super().__init__()
         self.app = app
+        self.app.setStyleSheet(WINDOW_STYLESHEET)
         self.data_root = data_root
         self.settings_store = settings_store
         self.settings = settings

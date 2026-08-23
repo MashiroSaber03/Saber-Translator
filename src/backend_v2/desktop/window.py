@@ -7,8 +7,17 @@ import re
 from pathlib import Path
 from typing import Iterable, Mapping
 
-from PySide6.QtCore import QRect, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QCloseEvent, QIcon, QMouseEvent, QPainter, QPixmap, QResizeEvent
+from PySide6.QtCore import QRect, QRectF, Qt, QTimer, Signal
+from PySide6.QtGui import (
+    QColor,
+    QCloseEvent,
+    QIcon,
+    QMouseEvent,
+    QPainter,
+    QPixmap,
+    QResizeEvent,
+    QShowEvent,
+)
 from PySide6.QtWidgets import (
     QAbstractButton,
     QAbstractItemView,
@@ -36,7 +45,6 @@ from PySide6.QtWidgets import (
 )
 
 from src.backend_v2.desktop.settings import DesktopSettings, LOG_LEVELS, PET_SCALES
-from src.backend_v2.desktop.theme import WINDOW_STYLESHEET
 from src.backend_v2.launcher.entrypoint import LauncherState, LauncherStatus
 
 
@@ -116,9 +124,10 @@ class TitleBar(QFrame):
         super().__init__()
         self._window = window
         self.setObjectName("titleBar")
-        self.setFixedHeight(54)
+        self.setFixedHeight(58)
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(24, 8, 10, 8)
+        layout.setContentsMargins(26, 10, 12, 10)
+        layout.setSpacing(4)
         self.title = _label("概览", "pageTitle")
         layout.addWidget(self.title)
         layout.addStretch()
@@ -175,10 +184,10 @@ class Sidebar(QFrame):
     def __init__(self, brand_logo_path: Path) -> None:
         super().__init__()
         self.setObjectName("sidebar")
-        self.setFixedWidth(172)
+        self.setFixedWidth(184)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 18, 14, 14)
-        layout.setSpacing(6)
+        layout.setContentsMargins(16, 20, 16, 16)
+        layout.setSpacing(7)
         brand = QHBoxLayout()
         logo = QLabel()
         logo.setObjectName("brandLogo")
@@ -200,7 +209,7 @@ class Sidebar(QFrame):
         brand.addWidget(logo)
         brand.addLayout(brand_text)
         layout.addLayout(brand)
-        layout.addSpacing(18)
+        layout.addSpacing(20)
         self.buttons: list[QPushButton] = []
         for index, title in enumerate(("概览", "任务中心", "运行日志", "设置")):
             button = QPushButton(title)
@@ -234,12 +243,13 @@ class OverviewPage(QWidget):
         super().__init__()
         self.setObjectName("page")
         root = QVBoxLayout(self)
-        root.setContentsMargins(26, 18, 26, 26)
-        root.setSpacing(14)
+        root.setContentsMargins(28, 22, 28, 28)
+        root.setSpacing(16)
         hero = QFrame()
         hero.setObjectName("card")
         hero_layout = QHBoxLayout(hero)
-        hero_layout.setContentsMargins(22, 20, 22, 20)
+        hero_layout.setContentsMargins(24, 22, 24, 22)
+        hero_layout.setSpacing(20)
         intro = QVBoxLayout()
         intro.setSpacing(5)
         intro.addWidget(_label("DESKTOP CONTROL CENTER", "eyebrow"))
@@ -248,6 +258,7 @@ class OverviewPage(QWidget):
         intro.addWidget(self.hero_message)
         hero_layout.addLayout(intro, 1)
         controls = QHBoxLayout()
+        controls.setSpacing(8)
         self.start_button = QPushButton("启动后端")
         self.start_button.setObjectName("primaryButton")
         self.stop_button = QPushButton("停止")
@@ -258,13 +269,14 @@ class OverviewPage(QWidget):
         self.restart_button.clicked.connect(self.restart_requested)
         self.open_button.clicked.connect(self.open_web_requested)
         for button in (self.start_button, self.stop_button, self.restart_button, self.open_button):
+            button.setMinimumWidth(82)
             controls.addWidget(button)
         hero_layout.addLayout(controls)
         root.addWidget(hero)
 
         cards = QGridLayout()
-        cards.setHorizontalSpacing(12)
-        cards.setVerticalSpacing(12)
+        cards.setHorizontalSpacing(14)
+        cards.setVerticalSpacing(14)
         self.service_value, service_card = self._status_card("服务状态", "未启动")
         self.api_value, api_card = self._status_card("API 进程", "—")
         self.worker_value, worker_card = self._status_card("Worker 进程", "—")
@@ -278,8 +290,8 @@ class OverviewPage(QWidget):
         current = QFrame()
         current.setObjectName("card")
         current_layout = QVBoxLayout(current)
-        current_layout.setContentsMargins(20, 18, 20, 18)
-        current_layout.setSpacing(10)
+        current_layout.setContentsMargins(22, 20, 22, 20)
+        current_layout.setSpacing(11)
         header = QHBoxLayout()
         header.addWidget(_label("当前工作", "sectionTitle"))
         header.addStretch()
@@ -303,7 +315,8 @@ class OverviewPage(QWidget):
         card = QFrame()
         card.setObjectName("card")
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setContentsMargins(20, 18, 20, 18)
+        layout.setSpacing(7)
         layout.addWidget(_label(title, "muted"))
         value_label = _label(value, "statusValue")
         layout.addWidget(value_label)
@@ -387,12 +400,14 @@ def _progress_summary(progress: object) -> tuple[int, str]:
 class TaskCenterPage(QWidget):
     command_requested = Signal(str, str)
 
+    ACTION_COLUMN_WIDTH = 164
+
     def __init__(self) -> None:
         super().__init__()
         self.setObjectName("page")
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(26, 18, 26, 26)
-        layout.setSpacing(12)
+        layout.setContentsMargins(28, 22, 28, 28)
+        layout.setSpacing(14)
         header = QHBoxLayout()
         header.addWidget(_label("集中查看并控制后台任务", "sectionTitle"))
         header.addStretch()
@@ -400,6 +415,7 @@ class TaskCenterPage(QWidget):
         header.addWidget(self.connection)
         layout.addLayout(header)
         self.tabs = QTabWidget()
+        self.tabs.setObjectName("taskTabs")
         self.tables = [self._create_table() for _ in range(3)]
         for title, table in zip(("运行中", "排队中", "最近完成"), self.tables, strict=True):
             self.tabs.addTab(table, title)
@@ -415,13 +431,22 @@ class TaskCenterPage(QWidget):
         table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         table.setShowGrid(False)
         table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        table.setWordWrap(False)
+        table.setTextElideMode(Qt.TextElideMode.ElideRight)
         header = table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setMinimumSectionSize(64)
+        header.setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
+        table.setColumnWidth(0, 108)
+        table.setColumnWidth(1, 82)
+        table.setColumnWidth(3, 72)
+        table.setColumnWidth(4, 164)
+        table.setColumnWidth(5, TaskCenterPage.ACTION_COLUMN_WIDTH)
         return table
 
     def set_connected(self, connected: bool) -> None:
@@ -461,13 +486,14 @@ class TaskCenterPage(QWidget):
                     item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 table.setItem(row, column, item)
             table.setCellWidget(row, 5, self._actions(job))
-            table.setRowHeight(row, 54)
+            table.setRowHeight(row, 58)
 
     def _actions(self, job: Mapping[str, object]) -> QWidget:
         wrapper = QWidget()
+        wrapper.setObjectName("actionCell")
         layout = QHBoxLayout(wrapper)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(5)
+        layout.setContentsMargins(6, 5, 6, 5)
+        layout.setSpacing(6)
         status = str(job.get("status") or "")
         job_id = str(job.get("jobId") or "")
         actions: list[tuple[str, str]] = []
@@ -479,9 +505,11 @@ class TaskCenterPage(QWidget):
             actions.append(("继续", "continue"))
         if status in {"queued", "running", "pausing", "paused", "interrupted"}:
             actions.append(("取消", "cancel"))
+        layout.addStretch()
         for label, action in actions:
             button = QPushButton(label)
             button.setObjectName("compactButton")
+            button.setMinimumWidth(50)
             button.clicked.connect(
                 lambda _checked=False, job_id=job_id, action=action: self.command_requested.emit(
                     job_id,
@@ -498,16 +526,35 @@ class LogPage(QWidget):
         super().__init__()
         self.setObjectName("page")
         self._lines: deque[tuple[str, str, str]] = deque(maxlen=MAX_LOG_LINES)
+        self._auto_scroll_timer = QTimer(self)
+        self._auto_scroll_timer.setSingleShot(True)
+        self._auto_scroll_timer.timeout.connect(self._scroll_to_latest)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(26, 18, 26, 26)
-        layout.setSpacing(12)
-        controls = QHBoxLayout()
+        layout.setContentsMargins(28, 22, 28, 28)
+        layout.setSpacing(14)
+        toolbar = QFrame()
+        toolbar.setObjectName("toolbarCard")
+        toolbar_layout = QVBoxLayout(toolbar)
+        toolbar_layout.setContentsMargins(12, 11, 12, 11)
+        toolbar_layout.setSpacing(9)
+        filters = QHBoxLayout()
+        filters.setSpacing(9)
         self.source_filter = QComboBox()
         self.source_filter.addItems(("全部来源", "LAUNCHER", "API", "WORKER"))
+        self.source_filter.setMinimumWidth(128)
         self.level_filter = QComboBox()
         self.level_filter.addItems(("全部等级", "DEBUG", "INFO", "WARNING", "ERROR"))
+        self.level_filter.setMinimumWidth(128)
         self.search = QLineEdit()
         self.search.setPlaceholderText("搜索日志")
+        self.search.setMinimumWidth(220)
+        filters.addWidget(self.source_filter)
+        filters.addWidget(self.level_filter)
+        filters.addWidget(self.search, 1)
+        toolbar_layout.addLayout(filters)
+
+        actions = QHBoxLayout()
+        actions.setSpacing(9)
         self.auto_scroll = ToggleSwitch(True)
         self.auto_scroll.setAccessibleName("日志自动滚动")
         auto_scroll_control = QWidget()
@@ -518,13 +565,14 @@ class LogPage(QWidget):
         auto_scroll_layout.addWidget(_label("自动滚动"))
         clear = QPushButton("清空视图")
         copy = QPushButton("复制全部")
-        controls.addWidget(self.source_filter)
-        controls.addWidget(self.level_filter)
-        controls.addWidget(self.search, 1)
-        controls.addWidget(auto_scroll_control)
-        controls.addWidget(copy)
-        controls.addWidget(clear)
-        layout.addLayout(controls)
+        copy.setMinimumWidth(84)
+        clear.setMinimumWidth(84)
+        actions.addWidget(auto_scroll_control)
+        actions.addStretch()
+        actions.addWidget(copy)
+        actions.addWidget(clear)
+        toolbar_layout.addLayout(actions)
+        layout.addWidget(toolbar)
         self.output = QPlainTextEdit()
         self.output.setReadOnly(True)
         self.output.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
@@ -533,6 +581,7 @@ class LogPage(QWidget):
         self.source_filter.currentTextChanged.connect(self._render)
         self.level_filter.currentTextChanged.connect(self._render)
         self.search.textChanged.connect(self._render)
+        self.auto_scroll.toggled.connect(self._schedule_auto_scroll)
         clear.clicked.connect(self.clear)
         copy.clicked.connect(lambda: QApplication.clipboard().setText(self.output.toPlainText()))
 
@@ -549,8 +598,7 @@ class LogPage(QWidget):
         self._lines.append((source.upper(), level, clean))
         if self._matches(source.upper(), level, clean):
             self.output.appendPlainText(clean)
-            if self.auto_scroll.isChecked():
-                self.output.verticalScrollBar().setValue(self.output.verticalScrollBar().maximum())
+            self._schedule_auto_scroll()
 
     def clear(self) -> None:
         self._lines.clear()
@@ -571,16 +619,33 @@ class LogPage(QWidget):
             line for source, level, line in self._lines if self._matches(source, level, line)
         )
         self.output.setPlainText(text)
-        if self.auto_scroll.isChecked():
-            self.output.verticalScrollBar().setValue(self.output.verticalScrollBar().maximum())
+        self._schedule_auto_scroll()
+
+    def _schedule_auto_scroll(self, enabled: bool | None = None) -> None:
+        if enabled is False or not self.auto_scroll.isChecked():
+            self._auto_scroll_timer.stop()
+            return
+        self._auto_scroll_timer.start(0)
+
+    def _scroll_to_latest(self) -> None:
+        if not self.auto_scroll.isChecked():
+            return
+        vertical = self.output.verticalScrollBar()
+        horizontal = self.output.horizontalScrollBar()
+        vertical.setValue(vertical.maximum())
+        horizontal.setValue(horizontal.minimum())
+
+    def showEvent(self, event: QShowEvent) -> None:
+        super().showEvent(event)
+        self._schedule_auto_scroll()
 
 
 def _setting_row(title: str, description: str, control: QWidget) -> QWidget:
     row = QWidget()
     row.setObjectName("settingRow")
     layout = QHBoxLayout(row)
-    layout.setContentsMargins(0, 11, 0, 11)
-    layout.setSpacing(20)
+    layout.setContentsMargins(0, 12, 0, 12)
+    layout.setSpacing(24)
     copy = QVBoxLayout()
     copy.setContentsMargins(0, 0, 0, 0)
     copy.setSpacing(3)
@@ -601,7 +666,7 @@ def _settings_card(
     card = QFrame()
     card.setObjectName("settingsCard")
     layout = QVBoxLayout(card)
-    layout.setContentsMargins(20, 17, 20, 7)
+    layout.setContentsMargins(22, 19, 22, 8)
     layout.setSpacing(0)
     layout.addWidget(_label(title, "settingsSectionTitle"))
     description_label = _label(description, "settingsSectionDescription")
@@ -624,42 +689,43 @@ class SettingsPage(QWidget):
         self._applying = True
         self.setObjectName("page")
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(26, 18, 26, 26)
-        outer.setSpacing(12)
-
-        auto_save = QHBoxLayout()
-        auto_save.addWidget(_label("所有修改都会自动保存，无需额外确认。", "settingsHint"))
-        auto_save.addStretch()
-        self.auto_save_status = _label("自动保存已开启", "autoSaveStatus")
-        auto_save.addWidget(self.auto_save_status)
-        outer.addLayout(auto_save)
+        outer.setContentsMargins(28, 22, 28, 28)
+        outer.setSpacing(0)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
         content = QWidget()
         content.setObjectName("settingsContent")
-        content.setMaximumWidth(900)
+        content.setMaximumWidth(980)
         layout = QVBoxLayout(content)
         layout.setContentsMargins(0, 0, 7, 0)
-        layout.setSpacing(12)
+        layout.setSpacing(14)
+
+        auto_save = QHBoxLayout()
+        auto_save.addWidget(_label("所有修改都会自动保存，无需额外确认。", "settingsHint"))
+        auto_save.addStretch()
+        self.auto_save_status = _label("自动保存已开启", "autoSaveStatus")
+        auto_save.addWidget(self.auto_save_status)
+        layout.addLayout(auto_save)
 
         self.port = QSpinBox()
         self.port.setRange(1, 65535)
         self.port.setKeyboardTracking(False)
-        self.port.setFixedWidth(160)
+        self.port.setFixedWidth(190)
         self.port.setValue(settings.port)
         self.allow_lan = ToggleSwitch(settings.allow_lan)
         self.allow_lan.setAccessibleName("允许局域网访问")
         self.log_level = QComboBox()
         self.log_level.addItems(LOG_LEVELS)
-        self.log_level.setFixedWidth(160)
+        self.log_level.setFixedWidth(190)
         self.log_level.setCurrentText(settings.log_level)
         self.open_browser = ToggleSwitch(settings.open_browser_on_start)
         self.open_browser.setAccessibleName("自动打开网页")
         data_path = QLineEdit(str(data_root))
         data_path.setReadOnly(True)
-        data_path.setFixedWidth(430)
+        data_path.setMinimumWidth(300)
+        data_path.setMaximumWidth(480)
         data_path.setCursorPosition(0)
         data_path.setToolTip(str(data_root))
         server_rows = (
@@ -682,7 +748,7 @@ class SettingsPage(QWidget):
         self.pet_top.setAccessibleName("桌宠始终置顶")
         self.pet_scale = QComboBox()
         self.pet_scale.addItems([f"{value}%" for value in sorted(PET_SCALES)])
-        self.pet_scale.setFixedWidth(160)
+        self.pet_scale.setFixedWidth(190)
         self.pet_scale.setCurrentText(f"{settings.pet_scale_percent}%")
         pet_rows = (
             _setting_row("显示桌宠", "随控制中心启动并记住上次位置", self.pet_enabled),
@@ -798,7 +864,6 @@ class DesktopWindow(QMainWindow):
             self.stack.addWidget(page)
         content_layout.addWidget(self.stack, 1)
         shell_layout.addWidget(content, 1)
-        self.setStyleSheet(WINDOW_STYLESHEET)
         self._resize_zones = self._create_resize_zones()
         self.sidebar.page_selected.connect(self._select_page)
         self.overview.start_requested.connect(self.start_requested)
