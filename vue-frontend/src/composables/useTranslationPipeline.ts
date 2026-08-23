@@ -493,70 +493,70 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
           })
         }
       }
-      if (!['job_finished', 'job_failed', 'job_cancelled'].includes(event.type)) return
-
-      const trackedJobFinished = event.jobId === activeJobId.value
-      const eventJob = [...taskCenterStore.queue, ...taskCenterStore.history]
-        .find(job => job.jobId === event.jobId)
-      const currentChapterId = imageStore.currentImage?.chapterId
-        ?? imageStore.images[0]?.chapterId
-      const openChapterChanged = Boolean(
-        eventJob
-        && currentChapterId
-        && eventJob.chapterId === currentChapterId
-        && CHAPTER_CONTENT_JOB_KINDS.has(eventJob.kind),
-      )
-      if (trackedJobFinished || openChapterChanged) {
-        void refreshCurrentChapter(imageStore, bubbleStore, settingsStore)
-          .catch((error) => {
-            toast.error(
-              `刷新后端翻译结果失败：${error instanceof Error ? error.message : '未知错误'}`,
-            )
-          })
-          .finally(() => {
-            if (trackedJobFinished) imageStore.setTranslationInProgress(false)
-          })
-      }
-      if (!trackedJobFinished) return
-
-      const terminalStatus: V2JobStatus = eventJob?.status
-        ?? (event.type === 'job_finished'
-          ? 'completed'
-          : event.type === 'job_cancelled' ? 'cancelled' : 'failed')
-      progress.value = {
-        ...progress.value,
-        isInProgress: false,
-        label: jobStatusLabel(terminalStatus),
-        status: terminalStatus,
-      }
-      activeJobId.value = null
     },
   )
 
+  let observedChapterId: string | null = null
+  let observedTerminalContentJobs = new Set<string>()
+
   if (options.observeProgress !== false) watch(
-    () => [taskCenterStore.queue, taskCenterStore.history] as const,
-    ([queue, history]) => {
+    () => [
+      taskCenterStore.queue,
+      taskCenterStore.history,
+      imageStore.currentImage?.chapterId ?? imageStore.images[0]?.chapterId ?? null,
+    ] as const,
+    ([queue, history, currentChapterId]) => {
+      const jobs = [...queue, ...history]
+      let shouldRefreshChapter = false
       const jobId = activeJobId.value
-      if (!jobId) return
-      const job = [...queue, ...history].find(item => item.jobId === jobId)
-      if (!job) return
-      applyProgressSnapshot(
-        progress,
-        job.progress,
-        jobStatusLabel(job.status),
-        { queuePosition: job.queueRank, status: job.status },
-      )
-      if (NONTERMINAL_JOB_STATUSES.has(job.status)) return
-      activeJobId.value = null
+      const trackedJob = jobId
+        ? jobs.find(item => item.jobId === jobId)
+        : undefined
+      if (trackedJob) {
+        applyProgressSnapshot(
+          progress,
+          trackedJob.progress,
+          jobStatusLabel(trackedJob.status),
+          { queuePosition: trackedJob.queueRank, status: trackedJob.status },
+        )
+        if (!NONTERMINAL_JOB_STATUSES.has(trackedJob.status)) {
+          activeJobId.value = null
+          imageStore.setTranslationInProgress(false)
+          if (trackedJob.chapterId === currentChapterId) {
+            shouldRefreshChapter = true
+          }
+        }
+      }
+
+      const currentTerminalContentJobs = new Set<string>()
+      if (currentChapterId) {
+        for (const job of jobs) {
+          if (
+            job.chapterId !== currentChapterId
+            || !CHAPTER_CONTENT_JOB_KINDS.has(job.kind)
+          ) continue
+          if (NONTERMINAL_JOB_STATUSES.has(job.status)) continue
+          currentTerminalContentJobs.add(job.jobId)
+          if (
+            observedChapterId === currentChapterId
+            && !observedTerminalContentJobs.has(job.jobId)
+          ) {
+            shouldRefreshChapter = true
+          }
+        }
+      }
+      observedChapterId = currentChapterId
+      observedTerminalContentJobs = currentTerminalContentJobs
+
+      if (!shouldRefreshChapter) return
       void refreshCurrentChapter(imageStore, bubbleStore, settingsStore)
         .catch((error) => {
           toast.error(
             `刷新后端翻译结果失败：${error instanceof Error ? error.message : '未知错误'}`,
           )
         })
-        .finally(() => imageStore.setTranslationInProgress(false))
     },
-    { deep: true },
+    { deep: true, immediate: true },
   )
 
   async function prepareJobCreation(

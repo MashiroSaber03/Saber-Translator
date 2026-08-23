@@ -446,13 +446,30 @@ describe('useTranslationPipeline', () => {
     })
 
     await expect(useTranslation().translateCurrentImage()).resolves.toBe(true)
-    taskCenterStore.latestEvent = {
-      eventId: 999,
+    taskCenterStore.history = [{
       jobId: 'job-1',
-      type: 'job_finished',
-      payload: {},
+      batchId: 'batch-1',
+      batchDisplayName: 'Book / Chapter',
+      kind: 'translation',
+      retryOfJobId: null,
+      retryMode: null,
+      status: 'completed',
+      queueRank: null,
+      bookId: 'book-1',
+      chapterId: 'chapter-1',
+      pageId: null,
+      blockedReason: null,
+      blockedByJobId: null,
+      progress: jobProgress({
+        jobStatus: 'completed',
+        totalItems: 1,
+        completedItems: 1,
+      }),
+      target: { pageCount: 1 },
       createdAt: new Date().toISOString(),
-    }
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+    }]
     await nextTick()
 
     await vi.waitFor(() => expect(mocks.listChapterPages).toHaveBeenCalledWith(
@@ -551,13 +568,30 @@ describe('useTranslationPipeline', () => {
     const translation = useTranslation()
     await translation.translateCurrentImage()
 
-    taskCenterStore.latestEvent = {
-      eventId: 1002,
+    taskCenterStore.history = [{
       jobId: 'job-1',
-      type: 'job_finished',
-      payload: {},
+      batchId: 'batch-1',
+      batchDisplayName: 'Book / Chapter',
+      kind: 'translation',
+      retryOfJobId: null,
+      retryMode: null,
+      status: 'completed',
+      queueRank: null,
+      bookId: 'book-1',
+      chapterId: 'chapter-1',
+      pageId: null,
+      blockedReason: null,
+      blockedByJobId: null,
+      progress: jobProgress({
+        jobStatus: 'completed',
+        totalItems: 1,
+        completedItems: 1,
+      }),
+      target: { pageCount: 1 },
       createdAt: new Date().toISOString(),
-    }
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+    }]
     await vi.waitFor(() => expect(mocks.listChapterPages).toHaveBeenCalledOnce())
     imageStore.setCurrentImageIndex(1)
     resolvePages()
@@ -654,14 +688,14 @@ describe('useTranslationPipeline', () => {
       nextCursor: null,
       pageOrderRevision: 2,
     })
-    taskCenterStore.history = [{
+    const runningContainerJob = {
       jobId: 'container-job',
       batchId: 'container-batch',
       batchDisplayName: 'Container import',
       kind: 'container_import',
       retryOfJobId: null,
       retryMode: null,
-      status: 'completed',
+      status: 'running',
       queueRank: null,
       bookId: 'book-1',
       chapterId: 'chapter-1',
@@ -669,25 +703,30 @@ describe('useTranslationPipeline', () => {
       blockedReason: null,
       blockedByJobId: null,
       progress: jobProgress({
-        jobStatus: 'completed',
+        jobStatus: 'running',
         totalItems: 2,
-        completedItems: 2,
+        completedItems: 1,
       }),
       target: { pageCount: 2 },
       createdAt: null,
       startedAt: null,
       finishedAt: null,
-    }]
+    } as const
+    taskCenterStore.queue = [runningContainerJob]
 
     useTranslation()
-    taskCenterStore.latestEvent = {
-      eventId: 1001,
-      jobId: 'container-job',
-      type: 'job_finished',
-      payload: {},
-      createdAt: new Date().toISOString(),
-    }
     await nextTick()
+    taskCenterStore.queue = []
+    taskCenterStore.history = [{
+      ...runningContainerJob,
+      status: 'completed',
+      progress: jobProgress({
+        jobStatus: 'completed',
+        totalItems: 2,
+        completedItems: 2,
+      }),
+      finishedAt: new Date().toISOString(),
+    }]
 
     await vi.waitFor(() => expect(imageStore.images).toHaveLength(2))
     expect(imageStore.images[1]).toMatchObject({

@@ -21,6 +21,7 @@ const QUEUE_STATUSES = new Set<V2JobStatus>([
   ...CURRENT_JOB_STATUSES,
 ])
 const HISTORY_BATCH_LIMIT = 200
+const ACTIVE_JOB_RECONCILE_MS = 2_000
 const JOB_EVENT_FIELDS = new Set(['eventId', 'jobId', 'type', 'payload', 'createdAt'])
 
 function parseJobEvent(value: unknown): V2JobEvent | null {
@@ -84,6 +85,7 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
   const bookFilter = ref('')
   let eventSource: EventSource | null = null
   let eventStreamOpenedOnce = false
+  let activeJobReconcileTimer: ReturnType<typeof setTimeout> | null = null
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
   let refreshPromise: Promise<void> | null = null
   let eventRefreshInFlight = false
@@ -271,6 +273,34 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     }, 100)
   }
 
+  function stopActiveJobReconciliation(): void {
+    if (activeJobReconcileTimer) clearTimeout(activeJobReconcileTimer)
+    activeJobReconcileTimer = null
+  }
+
+  function scheduleActiveJobReconciliation(): void {
+    if (
+      activeJobReconcileTimer
+      || !eventSource
+      || !eventStreamOpenedOnce
+      || !queue.value.some(job => NONTERMINAL_JOB_STATUSES.has(job.status))
+    ) return
+    activeJobReconcileTimer = setTimeout(() => {
+      activeJobReconcileTimer = null
+      if (!eventSource || !eventStreamOpenedOnce) return
+      const activeJobIds = queue.value
+        .filter(job => NONTERMINAL_JOB_STATUSES.has(job.status))
+        .map(job => job.jobId)
+      for (const jobId of activeJobIds) scheduleJobProjection(jobId)
+      scheduleActiveJobReconciliation()
+    }, ACTIVE_JOB_RECONCILE_MS)
+  }
+
+  watch(
+    () => queue.value.map(job => `${job.jobId}:${job.status}`).join('|'),
+    () => scheduleActiveJobReconciliation(),
+  )
+
   async function flushJobProjections(): Promise<void> {
     if (projectionPromise || pendingProjectionJobIds.size === 0) return
     const jobIds = [...pendingProjectionJobIds].slice(0, 200)
@@ -344,9 +374,11 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
         void refresh().catch(() => undefined)
       }
       eventStreamOpenedOnce = true
+      scheduleActiveJobReconciliation()
     }
     eventSource.onerror = () => {
       connected.value = false
+      scheduleRefresh()
     }
     for (const eventType of TASK_EVENT_TYPES) {
       eventSource.addEventListener(
@@ -367,6 +399,7 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
   }
 
   function disconnect(): void {
+    stopActiveJobReconciliation()
     if (refreshTimer) clearTimeout(refreshTimer)
     refreshTimer = null
     if (projectionTimer) clearTimeout(projectionTimer)

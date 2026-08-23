@@ -150,6 +150,42 @@ describe('taskCenterStore snapshot reconciliation', () => {
     expect(store.connected).toBe(true)
   })
 
+  it('reconciles active jobs when the event stream stops delivering updates', async () => {
+    vi.useFakeTimers()
+    const running = makeJob({
+      jobId: 'job-1',
+      status: 'running',
+      chapterId: 'chapter-1',
+    })
+    const completed = makeJob({
+      ...running,
+      status: 'completed',
+      finishedAt: '2026-08-23T04:01:42Z',
+    })
+    mocks.list.mockImplementation(async (scope: 'queue' | 'history') => ({
+      items: scope === 'queue' ? [running] : [],
+      queueRevision: 1,
+    }))
+    mocks.snapshot.mockResolvedValue({
+      items: [completed],
+      queueRevision: 2,
+    })
+    const store = useTaskCenterStore()
+    await store.initialize()
+    FakeEventSource.latest?.onopen?.()
+    FakeEventSource.latest?.onerror?.()
+    mocks.snapshot.mockClear()
+
+    await vi.advanceTimersByTimeAsync(2_100)
+
+    expect(mocks.snapshot).toHaveBeenCalledOnce()
+    expect(mocks.snapshot).toHaveBeenCalledWith(['job-1'])
+    expect(store.queue).toEqual([])
+    expect(store.history[0]?.status).toBe('completed')
+    store.disconnect()
+    vi.useRealTimers()
+  })
+
   it('connects the event stream and recovers when the initial snapshot fails', async () => {
     mocks.list.mockRejectedValueOnce(new Error('temporary snapshot failure'))
     const store = useTaskCenterStore()
