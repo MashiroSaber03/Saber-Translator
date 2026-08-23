@@ -89,6 +89,12 @@ describe('TextStyleDefaultsSettings', () => {
           revision: 1,
           schemaVersion: 1,
         },
+        {
+          domain: 'export_preferences',
+          payload: { preserveOriginalFilenames: false },
+          revision: 1,
+          schemaVersion: 1,
+        },
       ],
       bookSettings: [],
       providerSettings: [],

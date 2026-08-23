@@ -17,6 +17,7 @@ export type V2SettingsTransaction = components['schemas']['SettingsTransaction']
 export type V2SettingsTransactionResult = components['schemas']['SettingsTransactionResult']
 
 export type V2WorkflowPreferences = components['schemas']['WorkflowPreferences']
+export type V2ExportPreferences = components['schemas']['ExportPreferences']
 
 type V2FontList = components['schemas']['FontList']
 type V2ModelCatalogResponse = components['schemas']['ModelCatalogResponse']

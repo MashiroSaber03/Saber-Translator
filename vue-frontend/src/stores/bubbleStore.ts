@@ -6,7 +6,6 @@ import type {
   BubbleStateUpdates
 } from '@/types/bubble'
 import { useImageStore } from '@/stores/imageStore'
-import { useSettingsStore } from '@/stores/settings'
 
 import {
   createBubbleState,
@@ -75,9 +74,10 @@ export const useBubbleStore = defineStore('bubble', () => {
   function addBubble(coords: BubbleCoords, overrides?: Partial<BubbleState>): BubbleState {
     const integerCoords = coords.map(value => Math.round(value)) as BubbleCoords
     const autoDirection = detectTextDirection(integerCoords)
-
-    const settingsStore = useSettingsStore()
-    const textStyle = settingsStore.settings.textStyle
+    const textStyle = useImageStore().currentImage
+    if (!textStyle) {
+      throw new Error('无法添加文本框：当前页面尚未完成后端初始化')
+    }
 
     const layoutDirection = textStyle.layoutDirection
     const bubbleTextDirection =

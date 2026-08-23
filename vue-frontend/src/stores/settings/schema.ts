@@ -28,6 +28,10 @@ export interface CurrentWorkflowPreferences {
   lastWorkflowMode: WorkflowMode
 }
 
+export interface CurrentExportPreferences {
+  preserveOriginalFilenames: boolean
+}
+
 const CURRENT_WORKFLOW_MODES: ReadonlySet<string> = new Set([
   'translate-current',
   'translate-batch',
@@ -326,5 +330,20 @@ export function parseCurrentWorkflowPreferences(
   return {
     rememberWorkflowModeEnabled: value.rememberWorkflowModeEnabled,
     lastWorkflowMode: value.lastWorkflowMode as WorkflowMode,
+  }
+}
+
+export function parseCurrentExportPreferences(
+  value: unknown,
+): CurrentExportPreferences | null {
+  if (
+    !isPlainRecord(value)
+    || !hasExactKeys(value, ['preserveOriginalFilenames'])
+    || typeof value.preserveOriginalFilenames !== 'boolean'
+  ) {
+    return null
+  }
+  return {
+    preserveOriginalFilenames: value.preserveOriginalFilenames,
   }
 }

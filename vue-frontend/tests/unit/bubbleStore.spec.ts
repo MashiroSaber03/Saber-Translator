@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
+import { useSettingsStore } from '@/stores/settings'
 import { createBubbleState } from '@/utils/bubbleFactory'
 import { addTestImage } from '../helpers/imageFixtures'
 
@@ -81,11 +82,37 @@ describe('bubbleStore', () => {
   })
 
   it('stores newly drawn bubble coordinates as backend-safe integers', () => {
+    const imageStore = useImageStore()
     const bubbleStore = useBubbleStore()
+    addTestImage(imageStore, 'page.png', '/api/v2/assets/source-1')
 
     const bubble = bubbleStore.addBubble([10.4, 20.6, 110.7, 220.2])
 
     expect(bubble.coords).toEqual([10, 21, 111, 220])
+  })
+
+  it('inherits new bubble styles from the authoritative current page', () => {
+    const imageStore = useImageStore()
+    const settingsStore = useSettingsStore()
+    const bubbleStore = useBubbleStore()
+    settingsStore.settings.textStyle.fontFamily = 'stale-global-font'
+    settingsStore.settings.textStyle.fontSize = 12
+    addTestImage(imageStore, 'custom-font-page.png', '/api/v2/assets/source-2', {
+      documentRevision: 3,
+      fontFamily: 'uploaded-font-id',
+      fontSize: 41,
+      inlineAlign: 'center',
+      blockAlign: 'end',
+    })
+
+    const bubble = bubbleStore.addBubble([10, 20, 110, 220])
+
+    expect(bubble).toMatchObject({
+      fontFamily: 'uploaded-font-id',
+      fontSize: 41,
+      inlineAlign: 'center',
+      blockAlign: 'end',
+    })
   })
 
   it('does not write routine console logs for normal bubble state transitions', () => {

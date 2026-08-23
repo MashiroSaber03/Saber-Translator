@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useBubbleActions } from '@/composables/useBubbleActions'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
+import { createDefaultSettings } from '@/stores/settings/defaults'
 import { createBubbleState } from '@/utils/bubbleFactory'
 
 const {
@@ -67,10 +68,13 @@ describe('useBubbleActions backend-first operations', () => {
     queuePageDocumentSaveMock.mockReset().mockResolvedValue(undefined)
     runPageOperationMock.mockReset().mockResolvedValue(undefined)
     runBubbleRepairMock.mockReset().mockResolvedValue(undefined)
+    const { fontFamily, ...pageStyleDefaults } = createDefaultSettings().textStyle
     getPageDocumentMock.mockReset().mockResolvedValue({
       pageId: 'page-1',
       chapterId: 'chapter-1',
       documentRevision: 8,
+      defaultFontId: fontFamily,
+      pageStyleDefaults,
       bubbles: [],
     })
     registerPageDocumentMock.mockReset().mockReturnValue([

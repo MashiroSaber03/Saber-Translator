@@ -40,6 +40,10 @@ DEFAULT_WORKFLOW_PREFERENCES: dict[str, object] = {
     "lastWorkflowMode": "translate-current",
 }
 
+DEFAULT_EXPORT_PREFERENCES: dict[str, object] = {
+    "preserveOriginalFilenames": False,
+}
+
 DEFAULT_WEB_IMPORT_SETTINGS: dict[str, object] = {
     "firecrawl": {},
     "agent": {

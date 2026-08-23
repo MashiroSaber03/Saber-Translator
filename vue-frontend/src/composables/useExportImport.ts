@@ -7,9 +7,10 @@ import {
   previewChapterTextImport,
 } from '@/api/v2/translation'
 import { useImageStore } from '@/stores/imageStore'
+import { useSettingsStore } from '@/stores/settings'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import type { ImageData } from '@/types/image'
-import { triggerUrlDownload } from '@/utils/browserDownload'
+import { triggerUrlDownload, withDownloadFileName } from '@/utils/browserDownload'
 import { useToast } from '@/utils/toast'
 
 export const DOWNLOAD_FORMATS = ['zip', 'pdf', 'cbz'] as const
@@ -20,14 +21,11 @@ export function resolveDownloadFileName(
   originalFileName: string,
   imageIndex: number,
   type: DownloadImageType,
+  preserveOriginalFilename: boolean,
 ): string {
-  const fileName = originalFileName || `image_${imageIndex}.png`
-  return `${type}_${fileName.replace(/\.[^/.]+$/, '')}.png`
-}
-
-function downloadUrl(url: string, filename: string): string {
-  const separator = url.includes('?') ? '&' : '?'
-  return `${url}${separator}download=1&filename=${encodeURIComponent(filename)}`
+  const fileName = originalFileName.split(/[\\/]/).pop() || `image_${imageIndex}.png`
+  const stem = fileName.replace(/\.[^/.]+$/, '')
+  return `${preserveOriginalFilename ? '' : `${type}_`}${stem}.png`
 }
 
 function chapterIdFor(images: ImageData[]): string | null {
@@ -46,6 +44,7 @@ function progressValue(progress: Record<string, unknown>, field: string): number
 
 export function useExportImport() {
   const imageStore = useImageStore()
+  const settingsStore = useSettingsStore()
   const taskCenterStore = useTaskCenterStore()
   const toast = useToast()
 
@@ -143,8 +142,9 @@ export function useExportImport() {
       image.fileName,
       imageStore.currentImageIndex,
       type,
+      settingsStore.exportPreferences.preserveOriginalFilenames,
     )
-    triggerUrlDownload(downloadUrl(assetUrl, filename))
+    triggerUrlDownload(withDownloadFileName(assetUrl, filename))
     toast.success(`下载已开始：${filename}`)
   }
 
@@ -190,6 +190,7 @@ export function useExportImport() {
       const accepted = await createChapterExportJob(
         chapterId,
         format,
+        settingsStore.exportPreferences.preserveOriginalFilenames,
         imageStore.images.map(image => image.id),
       )
       const jobId = accepted.jobIds[0]
@@ -202,7 +203,7 @@ export function useExportImport() {
       downloadProgress.value = 100
       downloadProgressText.value = '导出完成，下载已开始'
       triggerUrlDownload(
-        downloadUrl(artifact.url, `chapter-export.${format}`),
+        withDownloadFileName(artifact.url, `chapter-export.${format}`),
       )
       if (job.status === 'completed_with_errors') {
         toast.warning('后端导出已完成，但有部分页面失败；已下载可用结果')

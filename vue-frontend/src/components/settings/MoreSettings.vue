@@ -3,6 +3,21 @@
     <ParallelSettings />
 
     <ProductFormSection>
+      <template #title>下载设置</template>
+      <UiField
+        variant="settings"
+        control="checkbox"
+        hint="开启后，单张与批量图片导出不再添加 translated、clean 或 original 前缀；文件扩展名仍与实际导出格式一致。"
+      >
+        <UiCheckbox
+          :model-value="settingsStore.exportPreferences.preserveOriginalFilenames"
+          label="保持原文件名"
+          @change="settingsStore.exportPreferences.preserveOriginalFilenames = $event"
+        />
+      </UiField>
+    </ProductFormSection>
+
+    <ProductFormSection>
       <template #title>消除文字模式</template>
       <UiField
         variant="settings"

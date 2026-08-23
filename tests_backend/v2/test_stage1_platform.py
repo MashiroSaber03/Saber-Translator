@@ -164,6 +164,7 @@ def test_launcher_initialization_seeds_one_persistent_quick_workspace(
     assert quick_books == [QUICK_WORKSPACE_BOOK_ID]
     assert quick_chapters == [QUICK_WORKSPACE_CHAPTER_ID]
     assert seeded_setting_domains == {
+        "export_preferences",
         "insight",
         "text_style_defaults",
         "translation",
@@ -331,6 +332,21 @@ def test_custom_insight_architecture_has_no_arbitrary_size_gate() -> None:
     validated = validate_setting_payload("insight", payload, schema_version=1)
 
     assert len(validated["analysis"]["batch"]["customLayers"]) == 9
+
+
+def test_export_preferences_accept_only_the_current_boolean_contract() -> None:
+    payload = {"preserveOriginalFilenames": True}
+    assert validate_setting_payload(
+        "export_preferences",
+        payload,
+        schema_version=1,
+    ) == payload
+    with pytest.raises(ValueError, match="must be boolean"):
+        validate_setting_payload(
+            "export_preferences",
+            {"preserveOriginalFilenames": "true"},
+            schema_version=1,
+        )
 
 
 def _current_insight_provider_payload(domain: str) -> dict[str, object]:

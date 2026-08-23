@@ -88,11 +88,12 @@ export async function createChapterStyleApplyJob(
 export function createChapterExportJob(
   chapterId: string,
   format: 'cbz' | 'pdf' | 'zip',
+  preserveOriginalFilenames: boolean,
   pageIds?: string[],
 ): Promise<V2TranslationBatchAccepted> {
   return apiClient.post<V2TranslationBatchAccepted>(
     `/api/v2/chapters/${encodeURIComponent(chapterId)}/export-jobs`,
-    { format, ...(pageIds ? { pageIds } : {}) },
+    { format, preserveOriginalFilenames, ...(pageIds ? { pageIds } : {}) },
     { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
 }

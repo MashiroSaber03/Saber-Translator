@@ -12,7 +12,6 @@ from PySide6.QtGui import QColor, QCloseEvent, QIcon, QMouseEvent, QPainter, QPi
 from PySide6.QtWidgets import (
     QAbstractButton,
     QAbstractItemView,
-    QAbstractSpinBox,
     QApplication,
     QComboBox,
     QFrame,
@@ -647,7 +646,6 @@ class SettingsPage(QWidget):
 
         self.port = QSpinBox()
         self.port.setRange(1, 65535)
-        self.port.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
         self.port.setKeyboardTracking(False)
         self.port.setFixedWidth(160)
         self.port.setValue(settings.port)

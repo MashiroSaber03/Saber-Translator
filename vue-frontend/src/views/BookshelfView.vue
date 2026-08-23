@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
 import { getV2ServerInfo } from '@/api/v2/system'
-import { getBookDetail } from '@/api/bookshelf'
+import { createBooksExportJob, getBookDetail } from '@/api/bookshelf'
 import BookCard from '@/components/bookshelf/BookCard.vue'
 import BookSearch from '@/components/bookshelf/BookSearch.vue'
 import BookModal from '@/components/bookshelf/BookModal.vue'
@@ -27,19 +27,23 @@ import type { UiSelectValue } from '@/components/ui/selectTypes'
 import UiCheckbox from '@/components/ui/UiCheckbox.vue'
 import BaseModal from '@/components/common/BaseModal.vue'
 import { copyTextToClipboard } from '@/utils/clipboard'
-import { showToast } from '@/utils/toast'
+import { showToast, useToast } from '@/utils/toast'
 import { createTranslationBatch } from '@/api/v2/translation'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import { useRuntimeStore } from '@/stores/runtimeStore'
+import { useSettingsStore } from '@/stores/settings'
 import { confirmProductAction } from '@/composables/useProductConfirm'
 import { usePublicUserAccess } from '@/composables/usePublicUserAccess'
+import { triggerUrlDownload, withDownloadFileName } from '@/utils/browserDownload'
 
 const router = useRouter()
 const route = useRoute()
 const bookshelfStore = useBookshelfStore()
 const taskCenterStore = useTaskCenterStore()
 const runtimeStore = useRuntimeStore()
+const settingsStore = useSettingsStore()
 const publicAccess = usePublicUserAccess()
+const toast = useToast()
 
 const PUBLIC_TRIAL_NOTICE_DISMISSED_KEY = 'saber_public_trial_notice_dismissed'
 
@@ -86,6 +90,13 @@ const selectedBookCount = computed(() => bookshelfStore.selectedBookIds.size)
 const hasSelectedChapters = computed(() => bookshelfStore.books.some(book => (
   bookshelfStore.selectedBookIds.has(book.id)
   && (book.chapterCount ?? book.chapters?.length ?? 0) > 0
+)))
+const hasSelectedPages = computed(() => bookshelfStore.books.some(book => (
+  bookshelfStore.selectedBookIds.has(book.id)
+  && (book.totalPages ?? book.chapters?.reduce(
+    (total, chapter) => total + (chapter.imageCount ?? 0),
+    0,
+  ) ?? 0) > 0
 )))
 const sortValue = computed(() => `${bookshelfStore.sortBy}:${bookshelfStore.sortOrder}`)
 const sortOptions = [
@@ -209,6 +220,38 @@ async function translateSelectedBooks() {
   } catch (error) {
     showToast(error instanceof Error ? error.message : '创建批量翻译失败', 'error')
   } finally {
+    batchBusy.value = false
+  }
+}
+
+async function downloadSelectedBooks() {
+  const bookIds = [...bookshelfStore.selectedBookIds]
+  if (!bookIds.length || batchBusy.value) return
+  batchBusy.value = true
+  let queuedToastId: number | null = null
+  try {
+    const accepted = await createBooksExportJob(
+      bookIds,
+      settingsStore.exportPreferences.preserveOriginalFilenames,
+    )
+    const jobId = accepted.jobIds[0]
+    if (!jobId) throw new Error('后端没有返回批量导出任务')
+    await taskCenterStore.refresh()
+    taskCenterStore.open({ batchId: accepted.batchId })
+    queuedToastId = showToast('批量下载已进入后端队列，可安全离开书架页面', 'info', 0)
+    const job = await taskCenterStore.waitForJob(jobId)
+    const artifact = job.artifacts[0]
+    if (!artifact) throw new Error('批量导出任务未生成可下载文件')
+    triggerUrlDownload(
+      withDownloadFileName(artifact.url, `books-${bookIds.length}-export.zip`),
+    )
+    showToast('批量导出完成，下载已开始', 'success')
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '批量下载失败', 'error')
+  } finally {
+    if (queuedToastId !== null) {
+      toast.removeToast(queuedToastId)
+    }
     batchBusy.value = false
   }
 }
@@ -437,6 +480,13 @@ async function applyBatchTags() {
           @click="translateSelectedBooks"
         >
           翻译全部章节
+        </UiButton>
+        <UiButton
+          variant="secondary"
+          :disabled="!hasSelectedPages || batchBusy"
+          @click="downloadSelectedBooks"
+        >
+          下载选中书籍
         </UiButton>
         <UiButton
           variant="secondary"

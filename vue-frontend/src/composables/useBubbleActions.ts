@@ -14,6 +14,7 @@ import { useImageStore } from '@/stores/imageStore'
 import { showToast } from '@/utils/toast'
 import type { BubbleState, BubbleCoords } from '@/types/bubble'
 import { buildDrawingRectStyle } from '@/components/edit/bubbleOverlayGeometry'
+import { parseCompleteTextStyleSettings } from '@/defaults/textStyleDefaults'
 
 export interface BubbleActionCallbacks {
   onReRender?: () => void | Promise<unknown>
@@ -228,7 +229,14 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
       throw new Error(`页面 ${pageId} 的后端文档身份不匹配`)
     }
     const updated = registerPageDocument(document)
+    const pageTextStyle = parseCompleteTextStyleSettings({
+      ...document.pageStyleDefaults,
+      ...(document.defaultFontId
+        ? { fontFamily: document.defaultFontId }
+        : {}),
+    })
     imageStore.updateCurrentImage({
+      ...pageTextStyle,
       bubbleStates: updated,
       documentRevision: document.documentRevision,
       hasUnsavedChanges: false,

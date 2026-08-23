@@ -456,6 +456,24 @@ describe('UI primitives architecture contracts', () => {
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([1])
   })
 
+  it('keeps native number steppers when explicit controls are present', () => {
+    const plain = mount(UiNumberField, {
+      props: { modelValue: 2 },
+    })
+    const controlled = mount(UiNumberField, {
+      props: { modelValue: 2, controls: true },
+    })
+
+    expect(plain.classes()).not.toContain('ui-number-field--with-controls')
+    expect(controlled.classes()).toContain('ui-number-field--with-controls')
+
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/ui/UiNumberField.vue'),
+      'utf8',
+    )
+    expect(source).not.toMatch(/::-webkit-(?:inner|outer)-spin-button/)
+  })
+
   it('preserves nullable number fields when the input is cleared', async () => {
     const wrapper = mount(UiNumberField, {
       props: {

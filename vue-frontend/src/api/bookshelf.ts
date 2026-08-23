@@ -2,6 +2,7 @@ import { apiClient } from './client'
 import type { components } from '@/api/generated/v2'
 import type { BookData, ChapterData, TagData } from '@/types'
 import type { BookTranslationConstraints } from '@/types/bookTranslationConstraints'
+import { newIdempotencyKey } from '@/api/v2/content'
 
 type V2Book = components['schemas']['Book']
 type V2BookList = components['schemas']['BookList']
@@ -10,6 +11,7 @@ type V2ChapterTitleResult = components['schemas']['ChapterTitleResult']
 type V2ConstraintDocument = components['schemas']['TranslationConstraintDocument']
 type V2Tag = components['schemas']['Tag']
 type V2TagList = components['schemas']['TagList']
+type V2JobBatchAccepted = components['schemas']['JobBatchAccepted']
 
 const BOOKS_ENDPOINT = '/api/v2/books'
 const TAGS_ENDPOINT = '/api/v2/tags'
@@ -254,6 +256,17 @@ export async function updateChapter(
   return apiClient.put<V2ChapterTitleResult>(
     chapterPath(chapterId),
     { title },
+  )
+}
+
+export function createBooksExportJob(
+  bookIds: string[],
+  preserveOriginalFilenames: boolean,
+): Promise<V2JobBatchAccepted> {
+  return apiClient.post<V2JobBatchAccepted>(
+    `${BOOKS_ENDPOINT}/export-jobs`,
+    { bookIds, preserveOriginalFilenames },
+    { headers: { 'Idempotency-Key': newIdempotencyKey() } },
   )
 }
 

@@ -8,6 +8,7 @@ import BookshelfView from '@/views/BookshelfView.vue'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
 import { useRuntimeStore } from '@/stores/runtimeStore'
 import { useSettingsStore } from '@/stores/settings'
+import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductCardGrid from '@/components/product/ProductCardGrid.vue'
@@ -15,13 +16,23 @@ import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import PublicTrialNotice from '@/components/common/PublicTrialNotice.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 
-const { getBooksMock, getTagsMock, getBookDetailMock, getServerInfoMock, routerPushMock } =
+const {
+  createBooksExportJobMock,
+  getBooksMock,
+  getTagsMock,
+  getBookDetailMock,
+  getServerInfoMock,
+  routerPushMock,
+  triggerUrlDownloadMock,
+} =
   vi.hoisted(() => ({
+    createBooksExportJobMock: vi.fn(),
     getBooksMock: vi.fn(),
     getTagsMock: vi.fn(),
     getBookDetailMock: vi.fn(),
     getServerInfoMock: vi.fn(),
     routerPushMock: vi.fn(),
+    triggerUrlDownloadMock: vi.fn(),
   }))
 
 vi.mock('vue-router', () => ({
@@ -34,9 +45,17 @@ vi.mock('@/api/v2/system', () => ({
 }))
 
 vi.mock('@/api/bookshelf', () => ({
+  createBooksExportJob: createBooksExportJobMock,
   getBooks: getBooksMock,
   getTags: getTagsMock,
   getBookDetail: getBookDetailMock,
+}))
+
+vi.mock('@/utils/browserDownload', () => ({
+  triggerUrlDownload: triggerUrlDownloadMock,
+  withDownloadFileName: (url: string, filename: string) => (
+    `${url}?download=1&filename=${encodeURIComponent(filename)}`
+  ),
 }))
 
 function deferred<T>() {
@@ -146,10 +165,12 @@ describe('BookshelfView', () => {
   beforeEach(() => {
     localStorage.removeItem('saber_public_trial_notice_dismissed')
     routerPushMock.mockReset()
+    createBooksExportJobMock.mockReset()
     getBooksMock.mockReset()
     getTagsMock.mockReset()
     getBookDetailMock.mockReset()
     getServerInfoMock.mockReset()
+    triggerUrlDownloadMock.mockReset()
     getBooksMock.mockResolvedValue([])
     getTagsMock.mockResolvedValue([])
     getServerInfoMock.mockResolvedValue({ lanUrl: 'http://localhost:5173' })
@@ -365,6 +386,46 @@ describe('BookshelfView', () => {
     store.books = [{ id: 'empty-book', title: 'Empty', chapterCount: 1 }]
     await nextTick()
     expect(translateButton?.attributes('disabled')).toBeUndefined()
+  })
+
+  it('downloads selected books through one durable backend export job', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    const store = useBookshelfStore()
+    const taskCenter = useTaskCenterStore()
+    store.books = [{ id: 'book-1', title: 'Book', chapterCount: 1, totalPages: 1 }]
+    store.enterBatchMode()
+    store.toggleBookSelection('book-1')
+    createBooksExportJobMock.mockResolvedValue({
+      batchId: 'batch-export',
+      jobIds: ['job-export'],
+      status: 'queued',
+    })
+    vi.spyOn(taskCenter, 'refresh').mockResolvedValue()
+    vi.spyOn(taskCenter, 'open').mockImplementation(() => undefined)
+    vi.spyOn(taskCenter, 'waitForJob').mockResolvedValue({
+      artifacts: [{
+        assetId: 'asset-export',
+        expiresAt: null,
+        kind: 'zip',
+        url: '/api/v2/assets/asset-export',
+      }],
+      jobId: 'job-export',
+      status: 'completed',
+    } as never)
+    await nextTick()
+
+    const button = wrapper.findAll('button').find(candidate => (
+      candidate.text().includes('下载选中书籍')
+    ))
+    await button?.trigger('click')
+    await flushPromises()
+
+    expect(createBooksExportJobMock).toHaveBeenCalledWith(['book-1'], false)
+    expect(taskCenter.waitForJob).toHaveBeenCalledWith('job-export')
+    expect(triggerUrlDownloadMock).toHaveBeenCalledWith(
+      '/api/v2/assets/asset-export?download=1&filename=books-1-export.zip',
+    )
   })
 
   it('only opens the latest book when detail requests finish out of order', async () => {

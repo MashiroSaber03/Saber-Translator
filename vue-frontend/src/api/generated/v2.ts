@@ -1307,6 +1307,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/books/export-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createBooksExportJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/books/{book_id}": {
         parameters: {
             query?: never;
@@ -3019,6 +3035,9 @@ export interface components {
             lastWorkflowMode: "translate-current" | "translate-batch" | "hq-batch" | "proofread-batch" | "remove-current" | "remove-batch" | "retry-failed" | "delete-current" | "clear-all";
             rememberWorkflowModeEnabled: boolean;
         };
+        ExportPreferences: {
+            preserveOriginalFilenames: boolean;
+        };
         /** @enum {string} */
         PromptType: "translate" | "textbox" | "ai_vision_ocr" | "hq_translate" | "proofreading" | "batch_analysis" | "segment_summary" | "chapter_summary" | "book_overview" | "group_summary" | "qa_response" | "question_decompose" | "analysis_system";
         PromptResource: {
@@ -3334,6 +3353,7 @@ export interface components {
             /** @enum {string} */
             format: "cbz" | "pdf" | "zip";
             pageIds?: components["schemas"]["Uuid"][];
+            preserveOriginalFilenames: boolean;
         };
         FileUploadCommand: {
             /** Format: binary */
@@ -4200,6 +4220,10 @@ export interface components {
             tagIds: components["schemas"]["Uuid"][];
             /** @enum {string} */
             action: "add" | "remove";
+        };
+        BooksExportJobCommand: {
+            bookIds: components["schemas"]["Uuid"][];
+            preserveOriginalFilenames: boolean;
         };
         DeletedResult: {
             /** @constant */
@@ -7621,6 +7645,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UpdatedCount"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    createBooksExportJob: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BooksExportJobCommand"];
+            };
+        };
+        responses: {
+            /** @description Multi-book ZIP export job accepted. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobBatchAccepted"];
                 };
             };
             409: components["responses"]["Conflict"];

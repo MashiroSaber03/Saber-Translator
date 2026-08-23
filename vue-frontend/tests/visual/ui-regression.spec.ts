@@ -482,6 +482,12 @@ function fixtureSettingsDocument() {
         schemaVersion: 1,
       },
       {
+        domain: 'export_preferences',
+        payload: { preserveOriginalFilenames: false },
+        revision: 1,
+        schemaVersion: 1,
+      },
+      {
         domain: 'web_import',
         payload: {
           firecrawl: {},

@@ -1703,6 +1703,25 @@ paths:
               schema: {$ref: "#/components/schemas/UpdatedCount"}
         "409": {$ref: "#/components/responses/Conflict"}
         "422": {$ref: "#/components/responses/ValidationError"}
+  /books/export-jobs:
+    post:
+      tags: [transfer]
+      operationId: createBooksExportJob
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/BooksExportJobCommand"}
+      responses:
+        "202":
+          description: Multi-book ZIP export job accepted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/JobBatchAccepted"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
   /books/{book_id}:
     parameters:
       - $ref: "#/components/parameters/BookId"
@@ -4505,6 +4524,12 @@ components:
             - delete-current
             - clear-all
         rememberWorkflowModeEnabled: {type: boolean}
+    ExportPreferences:
+      type: object
+      additionalProperties: false
+      required: [preserveOriginalFilenames]
+      properties:
+        preserveOriginalFilenames: {type: boolean}
     PromptType:
       type: string
       enum:
@@ -5160,7 +5185,7 @@ components:
     ChapterExportJobCommand:
       type: object
       additionalProperties: false
-      required: [format]
+      required: [format, preserveOriginalFilenames]
       properties:
         format:
           type: string
@@ -5170,6 +5195,7 @@ components:
           minItems: 1
           uniqueItems: true
           items: {$ref: "#/components/schemas/Uuid"}
+        preserveOriginalFilenames: {type: boolean}
     FileUploadCommand:
       type: object
       additionalProperties: false
@@ -6910,6 +6936,17 @@ components:
           uniqueItems: true
           items: {$ref: "#/components/schemas/Uuid"}
         action: {type: string, enum: [add, remove]}
+    BooksExportJobCommand:
+      type: object
+      additionalProperties: false
+      required: [bookIds, preserveOriginalFilenames]
+      properties:
+        bookIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: {$ref: "#/components/schemas/Uuid"}
+        preserveOriginalFilenames: {type: boolean}
     DeletedResult:
       type: object
       additionalProperties: false

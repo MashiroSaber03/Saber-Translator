@@ -33,6 +33,7 @@ APP_SETTING_SCHEMA_VERSIONS = {
     "translation": TRANSLATION_SETTINGS_SCHEMA_VERSION,
     "text_style_defaults": TEXT_STYLE_DEFAULTS_SCHEMA_VERSION,
     "workflow_preferences": 1,
+    "export_preferences": 1,
     "web_import": 1,
     "insight": 1,
 }
@@ -515,6 +516,16 @@ def _validate_workflow_preferences(payload: dict[str, Any]) -> None:
         raise ValueError("lastWorkflowMode is invalid")
 
 
+def _validate_export_preferences(payload: dict[str, Any]) -> None:
+    _exact_keys(
+        payload,
+        {"preserveOriginalFilenames"},
+        "export_preferences",
+    )
+    if not isinstance(payload["preserveOriginalFilenames"], bool):
+        raise ValueError("preserveOriginalFilenames must be boolean")
+
+
 def _validate_web_import(payload: dict[str, Any]) -> None:
     expected = {
         "firecrawl",
@@ -728,6 +739,8 @@ def validate_setting_payload(
         _validate_translation(result, schema_version)
     elif domain == "workflow_preferences":
         _validate_workflow_preferences(result)
+    elif domain == "export_preferences":
+        _validate_export_preferences(result)
     elif domain == "web_import":
         _validate_web_import(result)
     elif domain == "insight":

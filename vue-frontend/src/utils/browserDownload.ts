@@ -1,3 +1,8 @@
+export function withDownloadFileName(url: string, filename: string): string {
+  const separator = url.includes('?') ? '&' : '?'
+  return `${url}${separator}download=1&filename=${encodeURIComponent(filename)}`
+}
+
 export function triggerUrlDownload(url: string, filename = ''): void {
   const link = document.createElement('a')
   link.href = url

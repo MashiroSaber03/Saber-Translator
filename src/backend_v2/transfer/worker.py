@@ -345,6 +345,9 @@ class TransferWorkerService:
                             entry,
                             used_names,
                             extension=path.suffix.lower() or ".png",
+                            preserve_original_filename=bool(
+                                config["preserveOriginalFilenames"]
+                            ),
                         )
                         archive.write(path, member)
                         successful += 1
@@ -605,6 +608,7 @@ class TransferWorkerService:
         used: set[str],
         *,
         extension: str,
+        preserve_original_filename: bool,
     ) -> str:
         logical = PurePosixPath(str(entry["logicalPath"]))
         role = str(entry.get("assetRole") or "")
@@ -616,12 +620,13 @@ class TransferWorkerService:
             else "original"
         )
         parent = "" if str(logical.parent) == "." else f"{logical.parent.as_posix()}/"
-        base = f"{parent}{prefix}_{logical.stem}{extension}"
+        name_prefix = "" if preserve_original_filename else f"{prefix}_"
+        base = f"{parent}{name_prefix}{logical.stem}{extension}"
         candidate = base
         counter = 2
         while candidate.lower() in used:
             candidate = (
-                f"{parent}{prefix}_{logical.stem} ({counter}){extension}"
+                f"{parent}{name_prefix}{logical.stem} ({counter}){extension}"
             )
             counter += 1
         used.add(candidate.lower())

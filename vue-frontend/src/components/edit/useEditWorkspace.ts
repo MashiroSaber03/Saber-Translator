@@ -21,7 +21,10 @@ import { isRequestCanceled } from '@/api/client'
 import type EditImageComparison from './EditImageComparison.vue'
 import { LAYOUT_MODE_KEY } from '@/constants'
 import type { BubbleState, InpaintMethod } from '@/types/bubble'
-import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
+import {
+  parseCompleteTextStyleSettings,
+  TEXT_STYLE_DEFAULTS,
+} from '@/defaults/textStyleDefaults'
 
 export type EditWorkspaceEmit = {
   (e: 'exit'): void
@@ -169,6 +172,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
 
   const isRepairLoading = ref(false)
   const isNavigationPending = ref(false)
+  const isPageDocumentReady = ref(false)
 
   let layoutFitTimeout: ReturnType<typeof setTimeout> | null = null
   let initialFitTimeout: ReturnType<typeof setTimeout> | null = null
@@ -333,6 +337,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
     pageDocumentRequest += 1
     pageDocumentAbortController?.abort()
     pageDocumentAbortController = null
+    isPageDocumentReady.value = false
     if (currentImage.value?.bubbleStates) {
       // skipSync=true 避免冗余同步（数据已经在 imageStore 中）
       bubbleStore.setBubbles([...currentImage.value.bubbleStates], true)
@@ -357,13 +362,21 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
           throw new Error(`页面 ${pageId} 的后端文档身份不匹配`)
         }
         const loaded = registerPageDocument(document)
+        const pageTextStyle = parseCompleteTextStyleSettings({
+          ...document.pageStyleDefaults,
+          ...(document.defaultFontId
+            ? { fontFamily: document.defaultFontId }
+            : {}),
+        })
         imageStore.updateCurrentImage({
+          ...pageTextStyle,
           bubbleStates: loaded,
           documentRevision: document.documentRevision,
           hasUnsavedChanges: false,
         })
         bubbleStore.setBubbles(loaded, true)
         selectFirstBubbleIfExists()
+        isPageDocumentReady.value = true
       })
       .catch(error => {
         if (isRequestCanceled(error)) return
@@ -392,7 +405,8 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
   })
 
   const isBusy = computed(() => (
-    isProcessing.value
+    !isPageDocumentReady.value
+    || isProcessing.value
     || isOcrLoading.value
     || isRepairLoading.value
     || isBrushSubmitting.value
@@ -664,7 +678,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
     const width = x2 - x1
     const height = y2 - y1
 
-    if (width > 10 && height > 10) {
+    if (width > 10 && height > 10 && isPageDocumentReady.value) {
       handleDrawBubble(currentDrawingRect.value)
     }
 
@@ -878,7 +892,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
 
   watch(currentImageIndex, () => {
     loadBubbleStatesFromImage()
-  })
+  }, { flush: 'sync' })
 
   watch(selectedBubble, (bubble) => {
     if (bubble) {

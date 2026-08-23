@@ -10,7 +10,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtNetwork import QNetworkReply
-from PySide6.QtWidgets import QApplication, QLabel, QPushButton
+from PySide6.QtWidgets import QAbstractSpinBox, QApplication, QLabel, QPushButton
 
 from src.backend_v2.desktop.entrypoint import DesktopController
 from src.backend_v2.launcher.entrypoint import LauncherState, LauncherStatus
@@ -96,6 +96,13 @@ def test_settings_emit_immediately_without_a_save_button(tmp_path) -> None:
 
     assert changes[-1].pet_enabled is False
     assert "保存设置" not in [button.text() for button in page.findChildren(QPushButton)]
+
+
+def test_port_field_keeps_native_stepper_buttons(tmp_path) -> None:
+    _app()
+    page = SettingsPage(DesktopSettings(), tmp_path)
+
+    assert page.port.buttonSymbols() == QAbstractSpinBox.ButtonSymbols.UpDownArrows
 
 
 def test_backend_startup_controls_remain_editable_while_service_is_running(

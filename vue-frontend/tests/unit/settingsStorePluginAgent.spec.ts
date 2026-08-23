@@ -47,6 +47,12 @@ function backendDocument(
         revision,
         schemaVersion: 1,
       },
+      {
+        domain: 'export_preferences',
+        payload: { preserveOriginalFilenames: false },
+        revision,
+        schemaVersion: 1,
+      },
     ],
     bookSettings: [],
     providerSettings: [{

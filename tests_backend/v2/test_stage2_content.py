@@ -551,6 +551,7 @@ def test_translation_bootstrap_includes_backend_owned_runtime_configuration(
         "translation",
         "text_style_defaults",
         "workflow_preferences",
+        "export_preferences",
     } <= settings_by_domain.keys()
     translation = settings_by_domain["translation"]
     assert translation["schemaVersion"] == 6
@@ -566,6 +567,9 @@ def test_translation_bootstrap_includes_backend_owned_runtime_configuration(
     assert workflow == {
         "rememberWorkflowModeEnabled": False,
         "lastWorkflowMode": "translate-current",
+    }
+    assert settings_by_domain["export_preferences"]["payload"] == {
+        "preserveOriginalFilenames": False,
     }
     assert payload["fonts"] == [
         {

@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useExportImport } from '@/composables/useExportImport'
 import { useImageStore } from '@/stores/imageStore'
+import { useSettingsStore } from '@/stores/settings'
 import { addTestImage } from '../helpers/imageFixtures'
 
 const mocks = vi.hoisted(() => ({
@@ -45,6 +46,9 @@ vi.mock('@/api/v2/jobs', async importOriginal => {
 
 vi.mock('@/utils/browserDownload', () => ({
   triggerUrlDownload: mocks.triggerUrlDownload,
+  withDownloadFileName: (url: string, filename: string) => (
+    `${url}?download=1&filename=${encodeURIComponent(filename)}`
+  ),
 }))
 
 vi.mock('@/utils/toast', () => ({
@@ -133,6 +137,22 @@ describe('backend-owned export/import contracts', () => {
     expect(mocks.jobList).toHaveBeenCalledTimes(2)
     expect(mocks.toast.success).toHaveBeenCalledWith(
       '已提交 1 页文本导入，可安全关闭页面；跳过 1 页冲突',
+    )
+  })
+
+  it('keeps the original basename when the export preference is enabled', () => {
+    const imageStore = seedChapter()
+    const settingsStore = useSettingsStore()
+    settingsStore.exportPreferences.preserveOriginalFilenames = true
+    imageStore.updateCurrentImage({
+      fileName: 'folder/001.jpg',
+      translatedAssetUrl: '/api/v2/assets/translated-1',
+    })
+
+    useExportImport().downloadCurrentImage()
+
+    expect(mocks.triggerUrlDownload).toHaveBeenCalledWith(
+      '/api/v2/assets/translated-1?download=1&filename=001.png',
     )
   })
 
@@ -232,6 +252,7 @@ describe('backend-owned export/import contracts', () => {
     expect(mocks.createChapterExportJob).toHaveBeenCalledWith(
       'chapter-1',
       'cbz',
+      false,
       ['page-1', 'page-2'],
     )
     expect(mocks.jobGet).toHaveBeenCalledWith('job-export-1')

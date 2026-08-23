@@ -244,7 +244,12 @@ watch(
 )
 
 watch(
-  () => [settingsStore.settings, settingsStore.textStyleDefaults, settingsStore.providerConfigs],
+  () => [
+    settingsStore.settings,
+    settingsStore.textStyleDefaults,
+    settingsStore.exportPreferences,
+    settingsStore.providerConfigs,
+  ],
   () => {
     if (!isOpen.value || !contentReady.value || applyingPersistence) return
     hasUnsavedChanges = true

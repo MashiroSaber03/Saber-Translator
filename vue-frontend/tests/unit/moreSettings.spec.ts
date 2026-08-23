@@ -21,6 +21,9 @@ const mocks = vi.hoisted(() => ({
     success: vi.fn(),
   },
   settings: {
+    exportPreferences: {
+      preserveOriginalFilenames: false,
+    },
     settings: {
       removeTextWithOcr: false,
       enableVerboseLogs: false,
@@ -163,6 +166,17 @@ describe('MoreSettings backend controls', () => {
 
     expect(mocks.cleanTemp).toHaveBeenCalled()
     expect(mocks.toast.success).toHaveBeenCalledWith('已处理 2 个临时文件记录')
+  })
+
+  it('updates the preserve-filename preference directly', async () => {
+    const wrapper = mountSettings()
+    const checkbox = wrapper.findAll('input[type="checkbox"]').find(input => (
+      input.element.parentElement?.textContent?.includes('保持原文件名')
+    ))
+
+    await checkbox?.setValue(true)
+
+    expect(mocks.settings.exportPreferences.preserveOriginalFilenames).toBe(true)
   })
 
   it('does not expose browser PDF processing or optional auto-save controls', () => {

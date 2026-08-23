@@ -194,9 +194,4 @@ function stepBy(direction: -1 | 1): void {
   line-height: 1;
 }
 
-.ui-number-field__input::-webkit-inner-spin-button,
-.ui-number-field__input::-webkit-outer-spin-button {
-  appearance: none;
-  margin: 0;
-}
 </style>

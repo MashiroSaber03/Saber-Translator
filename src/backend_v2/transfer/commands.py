@@ -9,6 +9,7 @@ import uuid
 
 from sqlalchemy import Engine, select
 
+from src.backend_v2.auth.ownership import effective_owner_id
 from src.backend_v2.content.image_import import ImportSafetyLimits
 from src.backend_v2.jobs.repository import (
     JobItemSpec,
@@ -137,12 +138,21 @@ def validate_export_config(value: object) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise TransferDataInvalid("export config must be an object")
     config = dict(value)
-    if set(config) != {"format", "entries", "executionMode"}:
+    if set(config) != {
+        "format",
+        "entries",
+        "executionMode",
+        "preserveOriginalFilenames",
+    }:
         raise TransferDataInvalid("export config fields are invalid")
     if config.get("format") not in EXPORT_FORMATS:
         raise TransferDataInvalid("export format is invalid")
     if config.get("executionMode") != "sequential":
         raise TransferDataInvalid("export execution mode is invalid")
+    if not isinstance(config.get("preserveOriginalFilenames"), bool):
+        raise TransferDataInvalid(
+            "export preserveOriginalFilenames must be boolean"
+        )
     entries = config.get("entries")
     if not isinstance(entries, list) or not entries:
         raise TransferDataInvalid("export entries must be a non-empty array")
@@ -280,6 +290,7 @@ class TransferCommandService:
         chapter_id: str,
         export_format: str,
         page_ids: list[str] | None,
+        preserve_original_filenames: bool,
         idempotency_key: str,
     ) -> dict[str, object]:
         if export_format not in EXPORT_FORMATS:
@@ -342,6 +353,7 @@ class TransferCommandService:
                 "format": export_format,
                 "entries": entries,
                 "executionMode": "sequential",
+                "preserveOriginalFilenames": preserve_original_filenames,
             }
         )
         return self.jobs.create_batch(
@@ -373,6 +385,139 @@ class TransferCommandService:
             idempotency_payload={
                 "chapterId": chapter_id,
                 "format": export_format,
+                "preserveOriginalFilenames": preserve_original_filenames,
+                "entries": [
+                    {
+                        "pageId": entry["pageId"],
+                        "assetId": entry["assetId"],
+                    }
+                    for entry in entries
+                ],
+            },
+        )
+
+    def create_books_export(
+        self,
+        *,
+        book_ids: list[str],
+        preserve_original_filenames: bool,
+        idempotency_key: str,
+    ) -> dict[str, object]:
+        selected_book_ids = set(book_ids)
+        if not book_ids or len(selected_book_ids) != len(book_ids):
+            raise ValueError("bookIds must contain unique book IDs")
+        with self.engine.connect() as connection:
+            book_rows = list(
+                connection.execute(
+                    select(books.c.id, books.c.title)
+                    .where(
+                        books.c.id.in_(selected_book_ids),
+                        books.c.kind == "library",
+                        books.c.owner_user_id == effective_owner_id(),
+                    )
+                    .order_by(books.c.title, books.c.id)
+                ).mappings()
+            )
+            if {str(row["id"]) for row in book_rows} != selected_book_ids:
+                raise ValueError("bookIds must all belong to the current user")
+            rows = list(
+                connection.execute(
+                    select(
+                        books.c.id.label("book_id"),
+                        books.c.title.label("book_title"),
+                        chapters.c.id.label("chapter_id"),
+                        chapters.c.title.label("chapter_title"),
+                        pages.c.id.label("page_id"),
+                        pages.c.logical_source_path,
+                        page_assets.c.role,
+                        page_assets.c.asset_id,
+                    )
+                    .join(chapters, chapters.c.book_id == books.c.id)
+                    .join(pages, pages.c.chapter_id == chapters.c.id)
+                    .join(page_assets, page_assets.c.page_id == pages.c.id)
+                    .where(
+                        books.c.id.in_(selected_book_ids),
+                        books.c.owner_user_id == effective_owner_id(),
+                        page_assets.c.role.in_(("source", "clean", "translated")),
+                    )
+                    .order_by(
+                        books.c.title,
+                        books.c.id,
+                        chapters.c.ordinal,
+                        pages.c.ordinal,
+                        (page_assets.c.role == "translated").desc(),
+                        (page_assets.c.role == "clean").desc(),
+                    )
+                ).mappings()
+            )
+
+        entries: list[dict[str, object]] = []
+        seen_pages: set[str] = set()
+        for row in rows:
+            page_id = str(row["page_id"])
+            if page_id in seen_pages:
+                continue
+            seen_pages.add(page_id)
+            book_segment = _archive_segment(
+                row["book_title"],
+                fallback=f"book-{str(row['book_id'])[:8]}",
+            )
+            chapter_segment = _archive_segment(
+                row["chapter_title"],
+                fallback=f"chapter-{str(row['chapter_id'])[:8]}",
+            )
+            entries.append(
+                {
+                    "pageId": page_id,
+                    "logicalPath": (
+                        f"{book_segment}/{chapter_segment}/"
+                        f"{row['logical_source_path']}"
+                    ),
+                    "assetId": str(row["asset_id"]),
+                    "assetRole": str(row["role"]),
+                }
+            )
+        if not entries:
+            raise ValueError("selected books do not contain exportable pages")
+
+        asset_inputs = {
+            f"page:{index:06d}": str(entry["assetId"])
+            for index, entry in enumerate(entries, start=1)
+        }
+        config = validate_export_config(
+            {
+                "format": "zip",
+                "entries": entries,
+                "executionMode": "sequential",
+                "preserveOriginalFilenames": preserve_original_filenames,
+            }
+        )
+        return self.jobs.create_batch(
+            kind="export",
+            display_name=f"批量导出 {len(book_rows)} 本书籍",
+            specs=[
+                JobSpec(
+                    kind="export",
+                    config=config,
+                    items=(
+                        JobItemSpec(
+                            page_id=None,
+                            step_kinds=("export_package",),
+                            asset_inputs=asset_inputs,
+                        ),
+                    ),
+                    target_display={
+                        "bookCount": len(book_rows),
+                        "pageCount": len(entries),
+                        "format": "zip",
+                    },
+                )
+            ],
+            idempotency_scope="books-export",
+            idempotency_key=idempotency_key,
+            idempotency_payload={
+                "bookIds": sorted(selected_book_ids),
+                "preserveOriginalFilenames": preserve_original_filenames,
                 "entries": [
                     {
                         "pageId": entry["pageId"],
@@ -393,11 +538,23 @@ class TransferCommandService:
                     books.c.title.label("book_title"),
                 )
                 .join(books, books.c.id == chapters.c.book_id)
-                .where(chapters.c.id == chapter_id)
+                .where(
+                    chapters.c.id == chapter_id,
+                    books.c.owner_user_id == effective_owner_id(),
+                )
             ).mappings().one_or_none()
         if row is None:
             raise ValueError("chapter not found")
         return row
+
+
+def _archive_segment(value: object, *, fallback: str) -> str:
+    text = str(value).strip()
+    sanitized = "".join(
+        "_" if character in '<>:"/\\|?*' or ord(character) < 32 else character
+        for character in text
+    ).rstrip(". ")
+    return sanitized or fallback
 
 
 def _validate_container_signature(path: Path, suffix: str) -> None:

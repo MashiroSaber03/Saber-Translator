@@ -7,6 +7,7 @@ import {
   saveV2SettingsTransaction,
   type V2CredentialEdit,
   type V2CredentialSummary,
+  type V2ExportPreferences,
   type V2Font,
   type V2Prompt,
   type V2ProviderSettingMutation,
@@ -32,7 +33,11 @@ import {
   TRANSLATION_SETTINGS_SCHEMA_VERSION,
   createDefaultSettings,
 } from './defaults'
-import { parseCurrentSettings, parseCurrentWorkflowPreferences } from './schema'
+import {
+  parseCurrentExportPreferences,
+  parseCurrentSettings,
+  parseCurrentWorkflowPreferences,
+} from './schema'
 import { useThemePreference } from './useThemePreference'
 import { proofreadingProviderDomain } from './proofreadingIdentity'
 import {
@@ -263,12 +268,16 @@ export const useSettingsStore = defineStore('settings', () => {
     rememberWorkflowModeEnabled: false,
     lastWorkflowMode: 'translate-current',
   })
+  const exportPreferences = ref<V2ExportPreferences>({
+    preserveOriginalFilenames: false,
+  })
   const isBackendReady = ref(false)
   const backendError = ref<string | null>(null)
 
   let settingsRevision = 0
   let textStyleDefaultsRevision = 0
   let workflowPreferencesRevision = 0
+  let exportPreferencesRevision = 0
   let providerRevisions = new Map<string, number>()
   let loadPromise: Promise<boolean> | null = null
   let activeChapterWorkState: {
@@ -324,6 +333,9 @@ export const useSettingsStore = defineStore('settings', () => {
     const workflowPreferencesEntry = document.settings.find(
       row => row.domain === 'workflow_preferences',
     )
+    const exportPreferencesEntry = document.settings.find(
+      row => row.domain === 'export_preferences',
+    )
     if (!translationEntry) {
       throw new Error('后端翻译设置缺失')
     }
@@ -335,6 +347,9 @@ export const useSettingsStore = defineStore('settings', () => {
     }
     if (!workflowPreferencesEntry) {
       throw new Error('后端工作流偏好设置缺失')
+    }
+    if (!exportPreferencesEntry || exportPreferencesEntry.schemaVersion !== 1) {
+      throw new Error('后端导出偏好设置缺失或版本无效')
     }
     let parsedTextStyleDefaults: TextStyleSettings
     try {
@@ -364,11 +379,19 @@ export const useSettingsStore = defineStore('settings', () => {
       throw new Error('后端工作流偏好设置格式无效')
     }
     workflowPreferencesRevision = workflowPreferencesEntry.revision
+    const parsedExportPreferences = parseCurrentExportPreferences(
+      exportPreferencesEntry.payload,
+    )
+    if (!parsedExportPreferences) {
+      throw new Error('后端导出偏好设置格式无效')
+    }
+    exportPreferencesRevision = exportPreferencesEntry.revision
     textStyleDefaults.value = parsedTextStyleDefaults
     settings.value = parsed
     settings.value.textStyle = currentPageTextStyle
       ?? deepClone(textStyleDefaults.value)
     workflowPreferences.value = parsedWorkflowPreferences
+    exportPreferences.value = parsedExportPreferences
     providerConfigs.value = emptyProviderConfigs()
     providerRevisions = new Map()
     for (const row of document.providerSettings) {
@@ -564,6 +587,9 @@ export const useSettingsStore = defineStore('settings', () => {
       if (entry.domain === 'workflow_preferences') {
         workflowPreferencesRevision = entry.revision
       }
+      if (entry.domain === 'export_preferences') {
+        exportPreferencesRevision = entry.revision
+      }
     })
     result.providerSettings.forEach((entry) => {
       if (!entry.provider) return
@@ -725,6 +751,12 @@ export const useSettingsStore = defineStore('settings', () => {
           baseRevision: textStyleDefaultsRevision,
           schemaVersion: TEXT_STYLE_DEFAULTS_SCHEMA_VERSION,
         },
+        {
+          domain: 'export_preferences',
+          payload: deepClone(exportPreferences.value) as unknown as Record<string, unknown>,
+          baseRevision: exportPreferencesRevision,
+          schemaVersion: 1,
+        },
       ],
       providerSettings,
       credentialEdits,
@@ -850,6 +882,7 @@ export const useSettingsStore = defineStore('settings', () => {
     fontCatalog,
     promptCatalog,
     workflowPreferences,
+    exportPreferences,
     hasCredential,
     isBackendReady,
     backendError,

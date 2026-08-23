@@ -26,6 +26,15 @@ function workflowPreferencesEntry(revision = 1) {
   }
 }
 
+function exportPreferencesEntry(revision = 1) {
+  return {
+    domain: 'export_preferences',
+    revision,
+    schemaVersion: 1,
+    payload: { preserveOriginalFilenames: false },
+  }
+}
+
 describe('useSettingsStore backend-first loading', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -65,6 +74,7 @@ describe('useSettingsStore backend-first loading', () => {
           },
         },
         workflowPreferencesEntry(),
+        exportPreferencesEntry(),
       ],
       bookSettings: [],
       providerSettings: [],
@@ -95,6 +105,7 @@ describe('useSettingsStore backend-first loading', () => {
           payload: settings.textStyle,
         },
         workflowPreferencesEntry(),
+        exportPreferencesEntry(),
       ],
       bookSettings: [],
       providerSettings: [],
@@ -124,6 +135,7 @@ describe('useSettingsStore backend-first loading', () => {
           payload: partialTextStyle,
         },
         workflowPreferencesEntry(),
+        exportPreferencesEntry(),
       ],
       bookSettings: [],
       providerSettings: [],
@@ -160,6 +172,7 @@ describe('useSettingsStore backend-first loading', () => {
           payload: settings.textStyle,
         },
         workflowPreferencesEntry(),
+        exportPreferencesEntry(),
       ],
       bookSettings: [],
       providerSettings: [{
@@ -218,6 +231,7 @@ describe('useSettingsStore backend-first loading', () => {
           payload: initialSettings.textStyle,
         },
         workflowPreferencesEntry(),
+        exportPreferencesEntry(),
       ],
       bookSettings: [],
       providerSettings: [],
@@ -288,6 +302,7 @@ describe('useSettingsStore backend-first loading', () => {
             payload: initialSettings.textStyle,
           },
           workflowPreferencesEntry(),
+          exportPreferencesEntry(),
         ],
         bookSettings: [],
         providerSettings: [],
@@ -343,6 +358,7 @@ describe('useSettingsStore backend-first loading', () => {
           payload: globalTextDefaults,
         },
         workflowPreferencesEntry(),
+        exportPreferencesEntry(),
       ],
       bookSettings: [],
       providerSettings: [],
@@ -395,6 +411,7 @@ describe('useSettingsStore backend-first loading', () => {
           payload: settings.textStyle,
         },
         workflowPreferencesEntry(),
+        exportPreferencesEntry(),
       ],
       bookSettings: [],
       providerSettings: [],
@@ -450,6 +467,7 @@ describe('useSettingsStore backend-first loading', () => {
           payload: settings.textStyle,
         },
         workflowPreferencesEntry(),
+        exportPreferencesEntry(),
       ],
       bookSettings: [],
       providerSettings: [],

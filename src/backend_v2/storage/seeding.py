@@ -12,6 +12,7 @@ from src.backend_v2.content.translation_constraints import (
     empty_translation_constraints,
 )
 from src.backend_v2.storage.defaults import (
+    DEFAULT_EXPORT_PREFERENCES,
     DEFAULT_INSIGHT_SETTINGS,
     DEFAULT_TEXT_STYLE,
     DEFAULT_WEB_IMPORT_SETTINGS,
@@ -157,6 +158,7 @@ def seed_user_records_in_connection(connection: object, user_id: str) -> None:
         default_domains = {
             "translation": default_translation_settings(),
             "workflow_preferences": DEFAULT_WORKFLOW_PREFERENCES,
+            "export_preferences": DEFAULT_EXPORT_PREFERENCES,
             "text_style_defaults": DEFAULT_TEXT_STYLE,
             "insight": DEFAULT_INSIGHT_SETTINGS,
             "web_import": DEFAULT_WEB_IMPORT_SETTINGS,
