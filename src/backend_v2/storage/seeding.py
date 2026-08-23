@@ -12,6 +12,7 @@ from src.backend_v2.content.translation_constraints import (
     empty_translation_constraints,
 )
 from src.backend_v2.storage.defaults import (
+    DEFAULT_CUSTOM_AI_PROFILES,
     DEFAULT_EXPORT_PREFERENCES,
     DEFAULT_INSIGHT_SETTINGS,
     DEFAULT_TEXT_STYLE,
@@ -159,6 +160,7 @@ def seed_user_records_in_connection(connection: object, user_id: str) -> None:
             "translation": default_translation_settings(),
             "workflow_preferences": DEFAULT_WORKFLOW_PREFERENCES,
             "export_preferences": DEFAULT_EXPORT_PREFERENCES,
+            "custom_ai_profiles": DEFAULT_CUSTOM_AI_PROFILES,
             "text_style_defaults": DEFAULT_TEXT_STYLE,
             "insight": DEFAULT_INSIGHT_SETTINGS,
             "web_import": DEFAULT_WEB_IMPORT_SETTINGS,

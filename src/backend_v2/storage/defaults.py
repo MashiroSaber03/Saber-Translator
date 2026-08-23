@@ -44,6 +44,10 @@ DEFAULT_EXPORT_PREFERENCES: dict[str, object] = {
     "preserveOriginalFilenames": False,
 }
 
+DEFAULT_CUSTOM_AI_PROFILES: dict[str, object] = {
+    "profiles": [],
+}
+
 DEFAULT_WEB_IMPORT_SETTINGS: dict[str, object] = {
     "firecrawl": {},
     "agent": {

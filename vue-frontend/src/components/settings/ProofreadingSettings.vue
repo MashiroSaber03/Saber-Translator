@@ -59,7 +59,12 @@
               :model-value="round.provider"
               :input-id="roundFieldId(round.id, 'Provider')"
               :options="providerOptions"
+              custom-profile-kind="chat"
+              :custom-profile-api-key="round.apiKey"
+              :custom-profile-base-url="round.customBaseUrl"
+              :custom-profile-model="round.modelName"
               @change="handleRoundProviderChange(index, round, $event)"
+              @apply-custom-profile="applyCustomProfile(index, $event)"
             />
             <AiProviderCredentialFields
               :api-key="round.apiKey"
@@ -250,6 +255,7 @@ import UiNumberField from '@/components/ui/UiNumberField.vue'
 import AiProviderCredentialFields from '@/components/settings/AiProviderCredentialFields.vue'
 import AiProviderSelectField from '@/components/settings/AiProviderSelectField.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
+import type { CustomAiProfile } from '@/types/customAiProfile'
 import { computed, onBeforeUnmount, ref } from 'vue'
 import {
   getProviderOptionsForCapability,
@@ -351,6 +357,14 @@ function updateRoundString(
   value: string | number,
 ): void {
   settingsStore.updateProofreadingRound(index, { [field]: String(value) })
+}
+
+function applyCustomProfile(index: number, profile: CustomAiProfile): void {
+  settingsStore.updateProofreadingRound(index, {
+    apiKey: profile.apiKey,
+    customBaseUrl: profile.baseUrl,
+    modelName: profile.model,
+  })
 }
 
 function updateRoundModel(index: number, value: string | number): void {

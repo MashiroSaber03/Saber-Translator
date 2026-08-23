@@ -13,10 +13,11 @@ import UiTextarea from '@/components/ui/UiTextarea.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import type { UiSelectOption } from '@/components/ui/selectTypes'
 import type { WebImportSettings } from '@/types/webImport'
+import type { CustomAiProfile } from '@/types/customAiProfile'
 import { providerRequiresApiKeyForBaseUrl } from '@/config/aiProviders'
 import type { WebImportSettingsActions } from './webImportSettingsActions'
 
-defineProps<{
+const props = defineProps<{
   agentProviderOptions: UiSelectOption[]
   draftSettings: WebImportSettings
   isFetchingModels: boolean
@@ -39,6 +40,12 @@ defineEmits<{
 
 function applyNumber(action: (value: number) => void, value: number | null): void {
   if (value !== null) action(value)
+}
+
+function applyCustomProfile(profile: CustomAiProfile): void {
+  props.settingsActions.setAgentApiKey(profile.apiKey)
+  props.settingsActions.setAgentBaseUrl(profile.baseUrl)
+  props.settingsActions.setAgentModelName(profile.model)
 }
 
 </script>
@@ -79,7 +86,12 @@ function applyNumber(action: (value: number) => void, value: number | null): voi
       :model-value="draftSettings.agent.provider"
       input-id="webImportAgentProvider"
       :options="agentProviderOptions"
+      custom-profile-kind="chat"
+      :custom-profile-api-key="draftSettings.agent.apiKey"
+      :custom-profile-base-url="draftSettings.agent.customBaseUrl"
+      :custom-profile-model="draftSettings.agent.modelName"
       @update:model-value="settingsActions.setAgentProvider"
+      @apply-custom-profile="applyCustomProfile"
     />
 
     <AiProviderCredentialFields

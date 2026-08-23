@@ -147,6 +147,7 @@ useInsightSettingsDraft<StoreEmbeddingConfig>({
       v-model:model="model"
       v-model:base-url="baseUrl"
       :provider-options="EMBEDDING_PROVIDER_OPTIONS"
+      custom-profile-kind="embedding"
       :show-api-key="providerRequiresApiKey(provider)"
       credential-id="insight-embedding-api-key"
       provider-input-id="insight-embedding-provider"

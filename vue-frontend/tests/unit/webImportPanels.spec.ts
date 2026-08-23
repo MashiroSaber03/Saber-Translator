@@ -328,6 +328,7 @@ describe('WebImport panels', () => {
     const actionRows = wrapper.findAllComponents(ProductActionRow)
     expect(actionRows.map(row => row.props('ariaLabel'))).toEqual([
       'Firecrawl 操作',
+      '自定义服务配置操作',
       'AI Agent 操作',
       '提取提示词操作',
     ])

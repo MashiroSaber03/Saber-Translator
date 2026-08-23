@@ -14,7 +14,7 @@ class FakeResponse:
 
 
 class SharedProviderRegistryImageGenTests(unittest.TestCase):
-    def test_shared_registry_exposes_gpt2api_and_newapi_as_image_gen_providers(self) -> None:
+    def test_shared_registry_exposes_openai_compatible_image_gen_providers(self) -> None:
         from src.shared.ai_providers import (
             IMAGE_GEN_CAPABILITY,
             get_provider_manifest,
@@ -24,6 +24,7 @@ class SharedProviderRegistryImageGenTests(unittest.TestCase):
 
         self.assertTrue(provider_supports_capability("gpt2api", IMAGE_GEN_CAPABILITY))
         self.assertTrue(provider_supports_capability("newapi", IMAGE_GEN_CAPABILITY))
+        self.assertTrue(provider_supports_capability("custom", IMAGE_GEN_CAPABILITY))
         self.assertFalse(provider_supports_capability("openai", IMAGE_GEN_CAPABILITY))
         self.assertFalse(provider_supports_capability("qwen", IMAGE_GEN_CAPABILITY))
         self.assertEqual(

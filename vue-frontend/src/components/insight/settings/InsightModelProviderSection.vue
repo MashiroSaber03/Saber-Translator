@@ -5,6 +5,7 @@ import AiProviderSelectField from '@/components/settings/AiProviderSelectField.v
 import UiField from '@/components/ui/UiField.vue'
 import UiModelPicker from '@/components/ui/UiModelPicker.vue'
 import type { UiSelectOption, UiSelectValue } from '@/components/ui/selectTypes'
+import type { CustomAiProfile, CustomAiProfileKind } from '@/types/customAiProfile'
 
 withDefaults(defineProps<{
   provider: string
@@ -32,6 +33,7 @@ withDefaults(defineProps<{
   testLabel?: string
   testingLabel?: string
   testPlacement?: 'inline' | 'panel-end'
+  customProfileKind?: CustomAiProfileKind
 }>(), {
   apiKey: '',
   baseUrl: '',
@@ -90,6 +92,12 @@ function handleModelChange(value: UiSelectValue): void {
 function handleBaseUrlUpdate(value: string | number | boolean): void {
   emit('update:baseUrl', asString(value))
 }
+
+function applyCustomProfile(profile: CustomAiProfile): void {
+  emit('update:apiKey', profile.apiKey)
+  emit('update:model', profile.model)
+  emit('update:baseUrl', profile.baseUrl)
+}
 </script>
 
 <template>
@@ -101,8 +109,13 @@ function handleBaseUrlUpdate(value: string | number | boolean): void {
       :model-value="provider"
       :input-id="providerInputId"
       :options="providerOptions"
+      :custom-profile-kind="customProfileKind"
+      :custom-profile-api-key="apiKey"
+      :custom-profile-base-url="baseUrl"
+      :custom-profile-model="model"
       @update:model-value="handleProviderUpdate"
       @change="handleProviderChange"
+      @apply-custom-profile="applyCustomProfile"
     />
 
     <AiProviderCredentialFields

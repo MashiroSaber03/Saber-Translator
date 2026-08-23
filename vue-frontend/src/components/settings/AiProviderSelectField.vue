@@ -2,6 +2,8 @@
 import UiField from '@/components/ui/UiField.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import type { UiSelectOption, UiSelectValue } from '@/components/ui/selectTypes'
+import type { CustomAiProfile, CustomAiProfileKind } from '@/types/customAiProfile'
+import CustomAiProfilePicker from './CustomAiProfilePicker.vue'
 
 withDefaults(defineProps<{
   modelValue: string
@@ -11,16 +13,25 @@ withDefaults(defineProps<{
   hint?: string
   disabled?: boolean
   fieldClass?: string
+  customProfileKind?: CustomAiProfileKind
+  customProfileApiKey?: string
+  customProfileBaseUrl?: string
+  customProfileModel?: string
 }>(), {
   label: '服务商',
   hint: '',
   disabled: false,
   fieldClass: '',
+  customProfileKind: undefined,
+  customProfileApiKey: '',
+  customProfileBaseUrl: '',
+  customProfileModel: '',
 })
 
 const emit = defineEmits<{
   'update:modelValue': [value: string]
   change: [value: string]
+  'apply-custom-profile': [profile: CustomAiProfile]
 }>()
 
 function emitModelValue(value: UiSelectValue): void {
@@ -43,4 +54,14 @@ function emitChange(value: UiSelectValue): void {
       @change="emitChange"
     />
   </UiField>
+  <CustomAiProfilePicker
+    v-if="modelValue === 'custom' && customProfileKind"
+    :input-id="`${inputId}CustomProfile`"
+    :kind="customProfileKind"
+    :api-key="customProfileApiKey"
+    :base-url="customProfileBaseUrl"
+    :model="customProfileModel"
+    :disabled="disabled"
+    @apply="emit('apply-custom-profile', $event)"
+  />
 </template>

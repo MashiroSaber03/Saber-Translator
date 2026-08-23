@@ -137,7 +137,12 @@
           :model-value="settings.aiVisionOcr.provider"
           input-id="settingsAiVisionProvider"
           :options="aiVisionProviderOptions"
+          custom-profile-kind="vision"
+          :custom-profile-api-key="settings.aiVisionOcr.apiKey"
+          :custom-profile-base-url="settings.aiVisionOcr.customBaseUrl"
+          :custom-profile-model="settings.aiVisionOcr.modelName"
           @change="handleAiVisionProviderChange"
+          @apply-custom-profile="applyCustomProfile"
         />
         <AiProviderCredentialFields
           :api-key="settings.aiVisionOcr.apiKey"
@@ -309,6 +314,7 @@ import AiProviderCredentialFields from '@/components/settings/AiProviderCredenti
 import AiProviderSelectField from '@/components/settings/AiProviderSelectField.vue'
 import type { UiSelectValue } from '@/components/ui/selectTypes'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
+import type { CustomAiProfile } from '@/types/customAiProfile'
 import { ref, computed } from 'vue'
 import {
   normalizeProviderId,
@@ -445,6 +451,13 @@ function updateAiVisionString(
   value: string,
 ): void {
   settingsStore.updateAiVisionOcr({ [field]: value })
+}
+function applyCustomProfile(profile: CustomAiProfile): void {
+  settingsStore.updateAiVisionOcr({
+    apiKey: profile.apiKey,
+    customBaseUrl: profile.baseUrl,
+    modelName: profile.model,
+  })
 }
 function updateAiVisionModel(value: UiSelectValue): void {
   if (typeof value !== 'string') return

@@ -78,7 +78,7 @@
     "id": "custom",
     "label": "自定义 OpenAI 兼容服务",
     "kind": "openai_compatible",
-    "capabilities": ["translation", "hqTranslation", "visionOcr", "modelFetch", "connectionTest", "pluginAgent", "vlm", "chat", "embedding", "rerank", "webImportAgent"],
+    "capabilities": ["translation", "hqTranslation", "visionOcr", "modelFetch", "connectionTest", "pluginAgent", "vlm", "chat", "embedding", "rerank", "imageGen", "webImportAgent"],
     "requiresApiKey": true,
     "requiresModel": true,
     "requiresBaseUrl": true,

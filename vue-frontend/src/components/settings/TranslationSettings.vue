@@ -8,7 +8,12 @@
           input-id="settingsModelProvider"
           :options="providerOptions"
           label="翻译服务商"
+          custom-profile-kind="chat"
+          :custom-profile-api-key="translationSettings.apiKey"
+          :custom-profile-base-url="translationSettings.customBaseUrl"
+          :custom-profile-model="translationSettings.modelName"
           @change="handleProviderSelect"
+          @apply-custom-profile="applyCustomProfile"
         />
         <AiProviderCredentialFields
           :api-key="translationSettings.apiKey"
@@ -284,6 +289,7 @@ import {
   DEFAULT_SINGLE_BUBBLE_JSON_PROMPT,
 } from '@/constants'
 import type { TranslationMode, TranslationProvider } from '@/types/settings'
+import type { CustomAiProfile } from '@/types/customAiProfile'
 import OpenAIExtraBodyEditor from '@/components/common/OpenAIExtraBodyEditor.vue'
 import SavedPromptsPicker from '@/components/settings/SavedPromptsPicker.vue'
 import { useLatestRequestGuard } from '@/composables/useLatestRequestGuard'
@@ -409,6 +415,14 @@ function updateTranslationString(
   value: string,
 ): void {
   settingsStore.updateTranslationService({ [field]: value })
+}
+
+function applyCustomProfile(profile: CustomAiProfile): void {
+  settingsStore.updateTranslationService({
+    apiKey: profile.apiKey,
+    customBaseUrl: profile.baseUrl,
+    modelName: profile.model,
+  })
 }
 
 function updateTranslationNumber(

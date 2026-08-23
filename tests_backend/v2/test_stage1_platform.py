@@ -164,6 +164,7 @@ def test_launcher_initialization_seeds_one_persistent_quick_workspace(
     assert quick_books == [QUICK_WORKSPACE_BOOK_ID]
     assert quick_chapters == [QUICK_WORKSPACE_CHAPTER_ID]
     assert seeded_setting_domains == {
+        "custom_ai_profiles",
         "export_preferences",
         "insight",
         "text_style_defaults",
@@ -349,6 +350,51 @@ def test_export_preferences_accept_only_the_current_boolean_contract() -> None:
         )
 
 
+def test_custom_ai_profiles_validate_reusable_service_metadata() -> None:
+    payload = {
+        "profiles": [
+            {
+                "id": "11111111-1111-4111-8111-111111111111",
+                "name": "Shared Gateway",
+                "kind": "chat",
+                "baseUrl": "https://example.com/v1",
+                "model": "chat-model",
+            },
+            {
+                "id": "22222222-2222-4222-8222-222222222222",
+                "name": "Shared Gateway",
+                "kind": "vision",
+                "baseUrl": "https://example.com/v1",
+                "model": "vision-model",
+            },
+        ]
+    }
+
+    assert validate_setting_payload(
+        "custom_ai_profiles",
+        payload,
+        schema_version=1,
+    ) == payload
+
+    duplicate_name = deepcopy(payload)
+    duplicate_name["profiles"][1]["kind"] = "chat"
+    with pytest.raises(ValueError, match="unique within each kind"):
+        validate_setting_payload(
+            "custom_ai_profiles",
+            duplicate_name,
+            schema_version=1,
+        )
+
+    invalid_url = deepcopy(payload)
+    invalid_url["profiles"][0]["baseUrl"] = "example.com/v1"
+    with pytest.raises(ValueError, match="absolute HTTP URL"):
+        validate_setting_payload(
+            "custom_ai_profiles",
+            invalid_url,
+            schema_version=1,
+        )
+
+
 def _current_insight_provider_payload(domain: str) -> dict[str, object]:
     common: dict[str, object] = {
         "modelName": "test-model",
@@ -513,6 +559,17 @@ def test_ai_batch_provider_settings_have_no_fixed_upper_bound() -> None:
 
 
 def test_credentials_require_the_current_domain_provider_identity() -> None:
+    assert validate_credential_secret(
+        "custom_ai_profile",
+        "11111111-1111-4111-8111-111111111111",
+        {"api_key": "secret"},
+    ) == {"api_key": "secret"}
+    with pytest.raises(ValueError, match="must be a UUID"):
+        validate_credential_secret(
+            "custom_ai_profile",
+            "not-a-profile-id",
+            {"api_key": "secret"},
+        )
     with pytest.raises(ValueError, match="does not support"):
         validate_credential_secret(
             "ai_vision_ocr",

@@ -49,7 +49,12 @@
               :options="providerOptions"
               :disabled="unref(isRunning)"
               field-class="plugin-agent-field"
+              custom-profile-kind="chat"
+              :custom-profile-api-key="agentSettings.apiKey"
+              :custom-profile-base-url="agentSettings.customBaseUrl"
+              :custom-profile-model="agentSettings.modelName"
               @change="handleProviderChange"
+              @apply-custom-profile="applyCustomProfile"
             />
             <AiProviderCredentialFields
               :api-key="agentSettings.apiKey"
@@ -404,6 +409,7 @@ import UiNumberField from '@/components/ui/UiNumberField.vue'
 import OpenAIExtraBodyEditor from '@/components/common/OpenAIExtraBodyEditor.vue'
 import AiProviderCredentialFields from '@/components/settings/AiProviderCredentialFields.vue'
 import AiProviderSelectField from '@/components/settings/AiProviderSelectField.vue'
+import type { CustomAiProfile } from '@/types/customAiProfile'
 import { computed, unref } from 'vue'
 import { usePluginAgentModal, type PluginAgentModalEmit, type PluginAgentModalProps } from './usePluginAgentModal'
 
@@ -463,6 +469,12 @@ const {
   escapeHtml,
   formatEventPayload,
 } = usePluginAgentModal(props, emit)
+
+function applyCustomProfile(profile: CustomAiProfile): void {
+  updateAgentString('apiKey', profile.apiKey)
+  updateAgentString('customBaseUrl', profile.baseUrl)
+  updateAgentString('modelName', profile.model)
+}
 
 type PluginAgentMode = 'create' | 'modify'
 

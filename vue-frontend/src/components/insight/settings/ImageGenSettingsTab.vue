@@ -81,7 +81,7 @@ useInsightSettingsDraft<StoreImageGenConfig>({
 <template>
   <InsightSettingsPanel
     class="imagegen-settings-tab"
-    description="生图模型服务商保留为可扩展选择器，当前支持 gpt2api 与 New API，带参考图时会自动适配到其图片编辑路由。"
+    description="生图模型支持 gpt2api、New API 与自定义 OpenAI 兼容服务；带参考图时会自动使用图片编辑路由。"
   >
     <InsightModelProviderSection
       v-model:provider="provider"
@@ -89,6 +89,7 @@ useInsightSettingsDraft<StoreImageGenConfig>({
       v-model:model="model"
       v-model:base-url="baseUrl"
       :provider-options="IMAGE_GEN_PROVIDER_OPTIONS"
+      custom-profile-kind="imageGen"
       :show-api-key="providerRequiresApiKey(provider)"
       credential-id="insight-imagegen-api-key"
       provider-input-id="insight-imagegen-provider"

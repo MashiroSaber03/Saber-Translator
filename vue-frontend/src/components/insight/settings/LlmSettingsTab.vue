@@ -157,6 +157,7 @@ useInsightSettingsDraft<StoreLlmConfig>({
       v-model:model="model"
       v-model:base-url="baseUrl"
       :provider-options="LLM_PROVIDER_OPTIONS"
+      custom-profile-kind="chat"
       :show-api-key="providerRequiresApiKey(provider)"
       credential-id="insight-llm-api-key"
       provider-input-id="insight-llm-provider"

@@ -6,6 +6,7 @@ from copy import deepcopy
 import math
 import re
 from typing import Any, Mapping
+from urllib.parse import urlsplit
 
 from src.backend_v2.storage.defaults import (
     TEXT_STYLE_DEFAULTS_SCHEMA_VERSION,
@@ -34,6 +35,7 @@ APP_SETTING_SCHEMA_VERSIONS = {
     "text_style_defaults": TEXT_STYLE_DEFAULTS_SCHEMA_VERSION,
     "workflow_preferences": 1,
     "export_preferences": 1,
+    "custom_ai_profiles": 1,
     "web_import": 1,
     "insight": 1,
 }
@@ -52,13 +54,16 @@ PROVIDER_CAPABILITIES = {
     "insight_reranker": RERANK_CAPABILITY,
     "insight_image_gen": IMAGE_GEN_CAPABILITY,
 }
-_PROOFREADING_ROUND_ID = re.compile(
+_UUID_ID = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-"
     r"[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 )
 _PROOFREADING_DOMAIN = re.compile(
     r"^proofreading_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-"
     r"[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+)
+_CUSTOM_AI_PROFILE_KINDS = frozenset(
+    {"chat", "vision", "embedding", "reranker", "imageGen"}
 )
 _SECRET_KEYS = frozenset(
     {
@@ -351,7 +356,7 @@ def _validate_proofreading_rounds(payload: Mapping[str, object]) -> None:
         round_config = _object(value, path)
         _exact_keys(round_config, expected, path)
         round_id = round_config["id"]
-        if not isinstance(round_id, str) or not _PROOFREADING_ROUND_ID.fullmatch(round_id):
+        if not isinstance(round_id, str) or not _UUID_ID.fullmatch(round_id):
             raise ValueError(f"{path}.id must be a UUID")
         if round_id in round_ids:
             raise ValueError("translation.proofreading.rounds must use unique IDs")
@@ -524,6 +529,48 @@ def _validate_export_preferences(payload: dict[str, Any]) -> None:
     )
     if not isinstance(payload["preserveOriginalFilenames"], bool):
         raise ValueError("preserveOriginalFilenames must be boolean")
+
+
+def _validate_custom_ai_profiles(payload: dict[str, Any]) -> None:
+    _exact_keys(payload, {"profiles"}, "custom_ai_profiles")
+    profiles = payload["profiles"]
+    if not isinstance(profiles, list):
+        raise ValueError("custom_ai_profiles.profiles must be an array")
+    profile_ids: set[str] = set()
+    profile_names: set[tuple[str, str]] = set()
+    for index, value in enumerate(profiles):
+        path = f"custom_ai_profiles.profiles[{index}]"
+        profile = _object(value, path)
+        _exact_keys(profile, {"id", "name", "kind", "baseUrl", "model"}, path)
+        profile_id = profile["id"]
+        if not isinstance(profile_id, str) or not _UUID_ID.fullmatch(profile_id):
+            raise ValueError(f"{path}.id must be a UUID")
+        if profile_id in profile_ids:
+            raise ValueError("custom AI profile IDs must be unique")
+        profile_ids.add(profile_id)
+        name = profile["name"]
+        if not isinstance(name, str) or not name.strip() or len(name.strip()) > 80:
+            raise ValueError(f"{path}.name must contain 1 to 80 characters")
+        kind = profile["kind"]
+        if kind not in _CUSTOM_AI_PROFILE_KINDS:
+            raise ValueError(f"{path}.kind is invalid")
+        name_identity = (kind, name.strip().casefold())
+        if name_identity in profile_names:
+            raise ValueError(
+                "custom AI profile names must be unique within each kind"
+            )
+        profile_names.add(name_identity)
+        base_url = profile["baseUrl"]
+        if not isinstance(base_url, str) or not base_url.strip():
+            raise ValueError(f"{path}.baseUrl is required")
+        parsed_url = urlsplit(base_url.strip())
+        if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
+            raise ValueError(f"{path}.baseUrl must be an absolute HTTP URL")
+        if parsed_url.query or parsed_url.fragment:
+            raise ValueError(f"{path}.baseUrl must not contain query or fragment")
+        model = profile["model"]
+        if not isinstance(model, str) or not model.strip():
+            raise ValueError(f"{path}.model is required")
 
 
 def _validate_web_import(payload: dict[str, Any]) -> None:
@@ -741,6 +788,8 @@ def validate_setting_payload(
         _validate_workflow_preferences(result)
     elif domain == "export_preferences":
         _validate_export_preferences(result)
+    elif domain == "custom_ai_profiles":
+        _validate_custom_ai_profiles(result)
     elif domain == "web_import":
         _validate_web_import(result)
     elif domain == "insight":
@@ -899,6 +948,10 @@ def validate_credential_secret(
     elif domain == "web_import_http" and provider == "headers":
         allowed = {"cookie", "headers"}
     elif domain == "web_import_firecrawl" and provider == "firecrawl":
+        allowed = {"api_key"}
+    elif domain == "custom_ai_profile":
+        if not _UUID_ID.fullmatch(provider):
+            raise ValueError("custom AI profile credential provider must be a UUID")
         allowed = {"api_key"}
     elif domain in PROVIDER_CAPABILITIES:
         _require_provider(

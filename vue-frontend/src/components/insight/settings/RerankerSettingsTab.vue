@@ -141,6 +141,7 @@ useInsightSettingsDraft<StoreRerankerConfig>({
       v-model:model="model"
       v-model:base-url="baseUrl"
       :provider-options="RERANKER_PROVIDER_OPTIONS"
+      custom-profile-kind="reranker"
       show-api-key
       credential-id="reranker-api-key"
       provider-input-id="reranker-provider"

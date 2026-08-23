@@ -7,7 +7,12 @@
           :model-value="hqSettings.provider"
           input-id="settingsHqTranslateProvider"
           :options="providerOptions"
+          custom-profile-kind="chat"
+          :custom-profile-api-key="hqSettings.apiKey"
+          :custom-profile-base-url="hqSettings.customBaseUrl"
+          :custom-profile-model="hqSettings.modelName"
           @change="handleProviderChange"
+          @apply-custom-profile="applyCustomProfile"
         />
         <AiProviderCredentialFields
           :api-key="hqSettings.apiKey"
@@ -192,6 +197,7 @@ import UiNumberField from '@/components/ui/UiNumberField.vue'
 import AiProviderCredentialFields from '@/components/settings/AiProviderCredentialFields.vue'
 import AiProviderSelectField from '@/components/settings/AiProviderSelectField.vue'
 import type { UiSelectValue } from '@/components/ui/selectTypes'
+import type { CustomAiProfile } from '@/types/customAiProfile'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import { ref, computed } from 'vue'
 import {
@@ -257,6 +263,14 @@ function updateHqString(
   value: string,
 ): void {
   settingsStore.updateHqTranslation({ [field]: value })
+}
+
+function applyCustomProfile(profile: CustomAiProfile): void {
+  settingsStore.updateHqTranslation({
+    apiKey: profile.apiKey,
+    customBaseUrl: profile.baseUrl,
+    modelName: profile.model,
+  })
 }
 
 function updateHqModel(value: UiSelectValue): void {
