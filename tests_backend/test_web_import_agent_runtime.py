@@ -178,7 +178,10 @@ class WebImportAgentRuntimeTests(unittest.TestCase):
             chat=types.SimpleNamespace(completions=types.SimpleNamespace(create=create_mock))
         )
 
-        message = agent._call_llm([{"role": "user", "content": "hello"}])
+        with self.assertLogs("saber.user", level="DEBUG") as captured:
+            message = agent._call_llm(
+                [{"role": "user", "content": "hello"}]
+            )
 
         self.assertIsNotNone(message)
         self.assertEqual(message.content, "done")
@@ -186,6 +189,11 @@ class WebImportAgentRuntimeTests(unittest.TestCase):
         self.assertEqual(message.tool_calls[0].id, "call_1")
         self.assertEqual(message.tool_calls[0].function.name, "search")
         self.assertEqual(message.tool_calls[0].function.arguments, '{"query":"hello"}')
+        rendered = "\n".join(captured.output)
+        self.assertIn("网页导入助手请求内容", rendered)
+        self.assertIn("网页导入助手开始流式返回", rendered)
+        self.assertIn("done", rendered)
+        self.assertIn("返回 1 个工具调用", rendered)
 
     def test_extract_stops_before_provider_call_when_control_is_requested(self) -> None:
         from src.core.web_import.agent import WebImportAgentControlRequested

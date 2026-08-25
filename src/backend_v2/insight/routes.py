@@ -58,6 +58,13 @@ from src.backend_v2.insight.qa import (
 )
 from src.backend_v2.jobs.repository import JobConflict
 from src.backend_v2.storage.assets import AssetStorageService
+from src.shared.user_logging import (
+    log_result,
+    log_step_failed,
+    log_step_finished,
+    log_step_started,
+    user_log_context,
+)
 from src.backend_v2.public_policy import PublicUserPolicyAccess
 from src.backend_v2.runtime_profile import RuntimeProfile
 
@@ -424,20 +431,45 @@ def create_insight_blueprint(
                         },
                     )
                 else:
-                    answer_emitted = False
-                    for chunk in qa_api.stream_answer(
-                        question=handle.question,
-                        candidates=candidates,
-                        config=config,
-                        cancelled=cancelled,
+                    answer_started_at = time.monotonic()
+                    with user_log_context(
+                        operation_id=handle.request_id,
+                        step_kind="insight_qa_answer",
                     ):
-                        if chunk:
-                            answer_emitted = True
-                            yield _qa_sse("chunk", {"text": chunk})
-                        else:
-                            yield ": heartbeat\n\n"
-                    if not answer_emitted:
-                        raise QAConflict("QA provider returned an empty answer")
+                        log_step_started()
+                        log_result(
+                            "漫画问答输入",
+                            (
+                                f"问题：{handle.question}",
+                                f"参考资料：{len(candidates)} 条",
+                            ),
+                        )
+                        answer_emitted = False
+                        try:
+                            for chunk in qa_api.stream_answer(
+                                question=handle.question,
+                                candidates=candidates,
+                                config=config,
+                                cancelled=cancelled,
+                            ):
+                                if chunk:
+                                    answer_emitted = True
+                                    yield _qa_sse("chunk", {"text": chunk})
+                                else:
+                                    yield ": heartbeat\n\n"
+                            if not answer_emitted:
+                                raise QAConflict(
+                                    "QA provider returned an empty answer"
+                                )
+                        except Exception as exc:
+                            log_step_failed(
+                                exc,
+                                duration=time.monotonic() - answer_started_at,
+                            )
+                            raise
+                        log_step_finished(
+                            duration=time.monotonic() - answer_started_at,
+                        )
                 yield _qa_sse("done", {})
             except GeneratorExit:
                 raise

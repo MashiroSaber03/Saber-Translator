@@ -634,7 +634,6 @@ def test_core_translation_adapter_honors_batch_textbox_prompt(
             "textbox_prompt_content": "textbox",
             "translation_mode": "batch",
             "use_textbox_prompt": True,
-            "enable_debug_logs": False,
         },
         mode="standard",
     )
@@ -2376,6 +2375,95 @@ def test_text_import_rejects_invalid_text_direction(
         )
 
 
+def test_labelplus_export_uses_bubble_centers_and_layout_text(
+    translation_platform,
+) -> None:
+    platform = translation_platform
+    payload = BubbleState().to_dict()
+    payload.pop("fontFamily")
+    payload.pop("autoTextDirection")
+    content = ContentRepository(platform["engine"])
+    content.mutate_page_document(
+        page_id=platform["page_id"],
+        base_revision=1,
+        mutations=[
+            {
+                "op": "create",
+                "clientMutationId": "labelplus-layout-text",
+                "fields": {
+                    **payload,
+                    "coords": [8, 16, 40, 48],
+                    "translatedText": "未排版译文",
+                    "textboxText": "第一行\n第二行",
+                },
+            },
+            {
+                "op": "create",
+                "clientMutationId": "labelplus-translation-fallback",
+                "fields": {
+                    **payload,
+                    "coords": [0, 0, 16, 16],
+                    "translatedText": "回退译文",
+                    "textboxText": "",
+                },
+            },
+        ],
+        idempotency_key="labelplus-export-source",
+    )
+
+    exported = AuxiliaryTranslationCommands(
+        platform["engine"], profile=LOCAL_PROFILE
+    ).export_labelplus(str(platform["chapter"]["id"]))
+
+    assert exported.startswith(
+        "1,0\r\n-\r\n框内\r\n框外\r\n-\r\n由 Saber Translator 导出\r\n"
+    )
+    assert ">>>>>>>>[page.png]<<<<<<<<\r\n" in exported
+    assert (
+        "----------------[1]----------------[0.375,0.500,1]\r\n"
+        "第一行\r\n第二行\r\n"
+    ) in exported
+    assert (
+        "----------------[2]----------------[0.125,0.125,1]\r\n"
+        "回退译文\r\n"
+    ) in exported
+    assert "未排版译文" not in exported
+
+
+def test_labelplus_export_route_returns_bom_encoded_text(
+    translation_platform,
+) -> None:
+    platform = translation_platform
+    app = create_api_app(
+        ApiSettings(
+            data_root=platform["data_root"],
+            identity=RuntimeIdentity(
+                epoch_id="test-labelplus-export-route",
+                epoch_token="test-only",
+                test_mode=True,
+            ),
+            engine=platform["engine"],
+        )
+    )
+    try:
+        response = app.test_client().get(
+            f"/api/v2/chapters/{platform['chapter']['id']}"
+            "/text-export?format=labelplus"
+        )
+        invalid = app.test_client().get(
+            f"/api/v2/chapters/{platform['chapter']['id']}"
+            "/text-export?format=unknown"
+        )
+    finally:
+        app.extensions["saber_v2_runtime"].close()
+
+    assert response.status_code == 200
+    assert response.mimetype == "text/plain"
+    assert response.data.startswith(b"\xef\xbb\xbf1,0\r\n")
+    assert response.headers["Content-Disposition"].endswith("-labelplus.txt\"")
+    assert invalid.status_code == 422
+
+
 def test_text_export_reads_all_bubbles_with_one_query(
     translation_platform,
 ) -> None:
@@ -2822,7 +2910,7 @@ def test_translation_job_rejects_missing_backend_credential_before_admission(
                 domain="translation",
                 payload=payload,
                 base_revision=1,
-                schema_version=7,
+                schema_version=8,
             ),
         ),
         providers=(
@@ -2943,7 +3031,7 @@ def test_failed_item_retry_refreezes_current_backend_settings(
                 domain="translation",
                 payload=settings_payload,
                 base_revision=1,
-                schema_version=7,
+                schema_version=8,
             ),
         ),
         credentials_edits=(
@@ -3018,7 +3106,6 @@ def test_translation_job_resolves_backend_settings_and_reuses_manual_bubbles(
         "translationMode": "single",
     }
     payload["lamaDisableResize"] = True
-    payload["enableVerboseLogs"] = True
     payload["textboxPrompt"] = "backend textbox prompt"
     payload["useTextboxPrompt"] = True
     settings.save_transaction(
@@ -3027,7 +3114,7 @@ def test_translation_job_resolves_backend_settings_and_reuses_manual_bubbles(
                 domain="translation",
                 payload=payload,
                 base_revision=1,
-                schema_version=7,
+                schema_version=8,
             ),
         ),
         credentials_edits=(
@@ -3093,7 +3180,6 @@ def test_translation_job_resolves_backend_settings_and_reuses_manual_bubbles(
     assert frozen["translation"]["textbox_prompt_content"] == "backend textbox prompt"
     assert frozen["translation"]["translation_mode"] == "batch"
     assert frozen["translation"]["use_textbox_prompt"] is True
-    assert frozen["translation"]["enable_debug_logs"] is True
     assert frozen["inpainting"]["disable_resize"] is True
     assert frozen["deepLearningConcurrency"] == 3
     assert "backend-only-secret" not in json.dumps(frozen)
@@ -3132,7 +3218,7 @@ def test_translation_resolver_uses_provider_specific_hq_and_ocr_parameters(
                 domain="translation",
                 payload=payload,
                 base_revision=1,
-                schema_version=7,
+                schema_version=8,
             ),
         ),
         credentials_edits=(
@@ -3306,7 +3392,7 @@ def _configure_hq_and_proofreading(platform: Mapping[str, Any]) -> None:
                 domain="translation",
                 payload=payload,
                 base_revision=1,
-                schema_version=7,
+                schema_version=8,
             ),
         ),
         credentials_edits=tuple(
@@ -3733,7 +3819,6 @@ def test_hq_transport_uses_batch_local_ids_and_restores_database_ids(
                 "provider": "custom",
                 "model_name": "test-model",
                 "custom_base_url": "",
-                "enable_debug_logs": False,
                 "compress_vision_images": True,
                 "openai_options": {
                     "request": {

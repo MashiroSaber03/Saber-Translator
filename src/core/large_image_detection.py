@@ -80,7 +80,7 @@ class LargeImageDetectorWrapper:
                 aux_yolo_overlap_threshold=aux_yolo_overlap_threshold,
             )
         
-        logger.info(f"图像尺寸过大 ({im_w}x{im_h})，启用切割检测")
+        logger.debug(f"图像尺寸过大 ({im_w}x{im_h})，启用切割检测")
         
         return self._detect_with_slicing(
             img_cv, im_w, im_h,
@@ -125,10 +125,10 @@ class LargeImageDetectorWrapper:
 
             enable_aux_yolo_detection = constants.ENABLE_AUX_YOLO_DETECTION
         
-        logger.info(f"开始检测 {len(patches)} 个切片...")
+        logger.debug(f"开始检测 {len(patches)} 个切片...")
         
         for patch_idx, patch in enumerate(patches):
-            logger.info(f"检测切片 {patch_idx + 1}/{len(patches)}...")
+            logger.debug(f"检测切片 {patch_idx + 1}/{len(patches)}...")
             
             patch_textlines, patch_mask = BaseTextDetector._validate_raw_result(
                 self.detector._detect_raw(patch),
@@ -146,25 +146,25 @@ class LargeImageDetectorWrapper:
                 )
             
             num_lines = len(patch_textlines) if patch_textlines else 0
-            logger.info(f"  切片 {patch_idx + 1}: 检测到 {num_lines} 个文本行")
+            logger.debug(f"切片 {patch_idx + 1}: 检测到 {num_lines} 个文本行")
             
             if patch_textlines:
                 transformed_textlines = transform_textlines_to_original(
                     patch_textlines, patch_idx, context
                 )
                 all_textlines.extend(transformed_textlines)
-                logger.info(f"  切片 {patch_idx + 1}: 坐标转换后 {len(transformed_textlines)} 个文本行")
+                logger.debug(f"切片 {patch_idx + 1}: 坐标转换后 {len(transformed_textlines)} 个文本行")
             
             patch_masks.append(patch_mask)
         
-        logger.info(f"切割检测完成: 共检测到 {len(all_textlines)} 个文本行 (来自 {len(patches)} 个切片)")
+        logger.debug(f"切割检测完成: 共检测到 {len(all_textlines)} 个文本行 (来自 {len(patches)} 个切片)")
         
         # 3. 合并掩码
         final_mask = merge_masks_from_patches(patch_masks, context)
         
         # 4. 处理文本行
         if not all_textlines:
-            logger.info("未检测到文本区域")
+            logger.debug("未检测到文本区域")
             return DetectionResult(blocks=[], mask=final_mask, raw_lines=[])
         
         # 剪裁到图像边界
@@ -177,7 +177,7 @@ class LargeImageDetectorWrapper:
             if line.area > 16 and all(0 <= pt[0] <= im_w and 0 <= pt[1] <= im_h for pt in line.pts)
         ]
         
-        logger.info(f"有效文本行: {len(valid_textlines)} / {len(all_textlines)}")
+        logger.debug(f"有效文本行: {len(valid_textlines)} / {len(all_textlines)}")
         
         # 5. 合并文本行
         if merge_lines and valid_textlines:
@@ -186,7 +186,7 @@ class LargeImageDetectorWrapper:
                 edge_ratio_threshold=edge_ratio_threshold,
                 verbose=True
             )
-            logger.info(f"合并后得到 {len(blocks)} 个文本块")
+            logger.debug(f"合并后得到 {len(blocks)} 个文本块")
         else:
             blocks = [TextBlock(lines=[line]) for line in valid_textlines]
         

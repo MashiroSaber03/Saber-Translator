@@ -6,6 +6,7 @@ from io import BytesIO
 import json
 from pathlib import Path
 import threading
+import time
 from typing import Any, Mapping
 
 from flask import (
@@ -44,6 +45,13 @@ from src.backend_v2.studio.pure import (
 )
 from src.backend_v2.public_policy import PublicUserPolicyAccess
 from src.backend_v2.runtime_profile import RuntimeProfile
+from src.shared.user_logging import (
+    inline_log_text,
+    log_step_failed,
+    log_step_finished,
+    log_step_started,
+    user_log_context,
+)
 
 
 def create_studio_blueprint(
@@ -693,38 +701,63 @@ def create_studio_blueprint(
 
         @stream_with_context
         def generate():
-            try:
-                yield "event: ready\ndata: {}\n\n"
-                for chunk in runtime.agent_chunks(
-                    document=document,
-                    messages=messages,
-                    config=config,
-                    cancelled=cancelled,
-                ):
+            started_at = time.monotonic()
+            with user_log_context(
+                operation_id=document_id,
+                step_kind="studio_agent",
+            ):
+                log_step_started()
+                step_closed = False
+                try:
+                    yield "event: ready\ndata: {}\n\n"
+                    for chunk in runtime.agent_chunks(
+                        document=document,
+                        messages=messages,
+                        config=config,
+                        cancelled=cancelled,
+                    ):
+                        yield (
+                            "event: chunk\ndata: "
+                            + json.dumps(
+                                {"text": chunk},
+                                ensure_ascii=False,
+                                separators=(",", ":"),
+                            )
+                            + "\n\n"
+                        )
+                    log_step_finished(
+                        duration=time.monotonic() - started_at,
+                    )
+                    step_closed = True
+                    yield "event: done\ndata: {}\n\n"
+                except GeneratorExit:
+                    if not step_closed:
+                        log_step_finished(
+                            duration=time.monotonic() - started_at,
+                            status="cancelled",
+                        )
+                    raise
+                except Exception as exc:
+                    log_step_failed(
+                        exc,
+                        duration=time.monotonic() - started_at,
+                    )
+                    step_closed = True
                     yield (
-                        "event: chunk\ndata: "
+                        "event: error\ndata: "
                         + json.dumps(
-                            {"text": chunk},
+                            {
+                                "message": redact_sensitive_text(
+                                    inline_log_text(exc)
+                                )
+                            },
                             ensure_ascii=False,
                             separators=(",", ":"),
                         )
                         + "\n\n"
                     )
-                yield "event: done\ndata: {}\n\n"
-            except GeneratorExit:
-                raise
-            except Exception as exc:
-                yield (
-                    "event: error\ndata: "
-                    + json.dumps(
-                        {"message": redact_sensitive_text(exc)},
-                        ensure_ascii=False,
-                        separators=(",", ":"),
-                    )
-                    + "\n\n"
-                )
-            finally:
-                cancelled.set()
+                finally:
+                    cancelled.set()
 
         response = Response(
             generate(),

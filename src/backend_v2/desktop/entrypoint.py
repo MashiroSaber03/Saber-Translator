@@ -25,13 +25,19 @@ from src.backend_v2.launcher.entrypoint import (
     LauncherStatus,
     LauncherSupervisor,
 )
-from src.backend_v2.logging_config import SecretSafeFormatter, configure_backend_logging
+from src.backend_v2.logging_config import (
+    configure_product_handler,
+    configure_backend_logging,
+    product_stream_frame,
+    set_backend_console_level,
+)
 from src.backend_v2.paths import (
     data_root_fingerprint,
     ensure_data_root,
     project_root,
     resolve_data_root,
 )
+from src.shared.user_logging import user_log
 
 
 LOGGER = logging.getLogger("saber.desktop")
@@ -42,19 +48,25 @@ class DesktopLogBridge(QObject):
 
 
 class DesktopLogHandler(logging.Handler):
-    def __init__(self, bridge: DesktopLogBridge) -> None:
-        super().__init__(logging.DEBUG)
+    def __init__(self, bridge: DesktopLogBridge, *, level: str = "INFO") -> None:
+        super().__init__()
         self._bridge = bridge
-        self.setFormatter(
-            SecretSafeFormatter(
-                "%(asctime)s [%(levelname)s] [LAUNCHER:%(process)d] %(name)s - %(message)s",
-                datefmt="%Y-%m-%d %H:%M:%S",
-            )
+        self.set_log_level(level)
+
+    def set_log_level(self, level: str) -> None:
+        configure_product_handler(
+            self,
+            role="desktop",
+            level=level,
         )
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
-            self._bridge.line.emit("LAUNCHER", self.format(record))
+            formatted = self.format(record)
+            self._bridge.line.emit(
+                "DESKTOP",
+                product_stream_frame(record, formatted) or formatted,
+            )
         except Exception:
             self.handleError(record)
 
@@ -63,6 +75,7 @@ class DesktopController(QObject):
     launcher_status = Signal(object)
     launcher_output = Signal(str, str)
     launcher_finished = Signal(object)
+    log_level_changed = Signal(str)
 
     def __init__(
         self,
@@ -172,6 +185,7 @@ class DesktopController(QObject):
         webbrowser.open_new(f"http://127.0.0.1:{self.settings.port}/")
 
     def apply_settings(self, submitted: DesktopSettings) -> None:
+        previous_log_level = self.settings.log_level
         restart_required = (
             submitted.port != self.settings.port
             or submitted.allow_lan != self.settings.allow_lan
@@ -186,6 +200,9 @@ class DesktopController(QObject):
         )
         if not self._store_settings(updated):
             return
+        if updated.log_level != previous_log_level:
+            set_backend_console_level(updated.log_level)
+            self.log_level_changed.emit(updated.log_level)
         self.pet.set_scale_percent(self.settings.pet_scale_percent)
         self.pet.set_always_on_top(self.settings.pet_always_on_top)
         self.window.settings.apply_pet_settings(self.settings)
@@ -307,9 +324,11 @@ class DesktopController(QObject):
         self._update_pet_state()
 
     def _on_task_error(self, message: str) -> None:
-        LOGGER.warning("桌面任务中心：%s", message)
         if message.startswith("任务操作失败"):
+            LOGGER.warning("桌面任务中心：%s", message)
             self.window.show_error(message)
+        else:
+            LOGGER.debug("桌面任务中心：%s", message)
 
     def _update_pet_state(self) -> None:
         state = self._pet_state.update(
@@ -461,14 +480,14 @@ def run_desktop(args: object) -> int:
     )
     bridge = DesktopLogBridge()
     bridge.line.connect(controller.window.add_log)
-    handler = DesktopLogHandler(bridge)
+    handler = DesktopLogHandler(bridge, level=settings.log_level)
+    controller.log_level_changed.connect(handler.set_log_level)
     logging.getLogger().addHandler(handler)
-    LOGGER.info(
-        "Saber-Translator 桌面控制中心启动：pid=%s，data_root=%s，日志=%s",
-        os.getpid(),
-        data_root,
-        log_path,
+    LOGGER.debug(
+        "桌面控制中心运行参数：pid=%s data_root=%s log=%s",
+        os.getpid(), data_root, log_path,
     )
+    user_log("system", "桌面控制中心已启动")
     controller.show()
     try:
         return app.exec()

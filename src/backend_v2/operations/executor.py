@@ -18,6 +18,14 @@ from src.backend_v2.operations.repository import (
     RenderRequestRepository,
 )
 from src.backend_v2.storage.database import is_sqlite_busy_error
+from src.shared.user_logging import (
+    RetryLogEpisode,
+    log_step_failed,
+    log_step_finished,
+    log_step_started,
+    user_log,
+    user_log_context,
+)
 
 
 OperationHandler = Callable[
@@ -30,6 +38,58 @@ LOGGER = logging.getLogger("saber.operations")
 
 def _short(value: object) -> str:
     return str(value)[:8]
+
+
+def _execute_operation(
+    repository: OperationRepository,
+    handlers: Mapping[str, OperationHandler],
+    fence: OperationFence,
+    operation: Mapping[str, Any],
+) -> None:
+    """Run the shared persisted-operation lifecycle for either executor role."""
+
+    started_at = time.monotonic()
+    kind = str(operation.get("kind", "unknown"))
+    with user_log_context(
+        operation_id=fence.operation_id,
+        step_kind=kind,
+    ):
+        log_step_started()
+        try:
+            handler = handlers.get(kind)
+            if handler is None:
+                raise RuntimeError(f"没有即时操作处理器：{kind}")
+            with owner_scope(fence.owner_user_id):
+                result = handler(fence, operation)
+            if not isinstance(result, Mapping):
+                raise RuntimeError("operation handler result must be an object")
+            already_published = result.get("__already_published__", False)
+            if not isinstance(already_published, bool):
+                raise RuntimeError("operation publication marker must be boolean")
+            if not already_published:
+                repository.complete(fence, result=result)
+            log_step_finished(duration=time.monotonic() - started_at)
+        except OperationFenced as error:
+            LOGGER.debug(
+                "即时操作结果已被 fencing：operation=%s kind=%s reason=%s",
+                _short(fence.operation_id),
+                kind,
+                error,
+            )
+            user_log(
+                "system",
+                "目标数据或执行状态已变化，本次操作结果不再应用",
+            )
+        except Exception as error:
+            log_step_failed(error, duration=time.monotonic() - started_at)
+            try:
+                repository.fail(
+                    fence,
+                    code="OPERATION_FAILED",
+                    message=str(error),
+                )
+            except OperationFenced:
+                pass
 
 
 class DurableOperationExecutor:
@@ -58,6 +118,7 @@ class DurableOperationExecutor:
         self._stop = threading.Event()
         self._admission_lock = threading.Lock()
         self._active = 0
+        self._scheduler_log = RetryLogEpisode("即时操作调度")
         self._pool = ThreadPoolExecutor(
             max_workers=max_workers,
             thread_name_prefix=f"{executor_role}-operation",
@@ -82,11 +143,12 @@ class DurableOperationExecutor:
         while not self._stop.wait(self.poll_seconds):
             try:
                 reserved = self._reserve_slot()
-            except Exception:
-                LOGGER.exception(
-                    "%s operation 调度器读取并发上限失败，将继续轮询",
-                    self.executor_role,
-                )
+            except Exception as exc:
+                if self._scheduler_log.record_failure(exc):
+                    LOGGER.exception(
+                        "%s operation 调度器读取并发上限失败，将继续轮询",
+                        self.executor_role,
+                    )
                 self._stop.wait(max(1.0, self.poll_seconds))
                 continue
             if not reserved:
@@ -104,17 +166,19 @@ class DurableOperationExecutor:
             except Exception as exc:
                 self._release_slot()
                 if is_sqlite_busy_error(exc):
-                    LOGGER.warning(
+                    LOGGER.debug(
                         "%s operation 调度器遇到 SQLite 写锁竞争，将继续轮询",
                         self.executor_role,
                     )
                 else:
-                    LOGGER.exception(
-                        "%s operation 调度器领取失败，将继续轮询",
-                        self.executor_role,
-                    )
+                    if self._scheduler_log.record_failure(exc):
+                        LOGGER.exception(
+                            "%s operation 调度器领取失败，将继续轮询",
+                            self.executor_role,
+                        )
                 self._stop.wait(max(1.0, self.poll_seconds))
                 continue
+            self._scheduler_log.report_recovery()
             if claimed is None:
                 self._release_slot()
                 continue
@@ -142,56 +206,10 @@ class DurableOperationExecutor:
         fence: OperationFence,
         operation: Mapping[str, Any],
     ) -> None:
-        started_at = time.monotonic()
-        kind = str(operation.get("kind", "unknown"))
-        LOGGER.info(
-            "操作开始：role=%s operation=%s kind=%s",
-            self.executor_role,
-            _short(fence.operation_id),
-            kind,
-        )
         try:
-            handler = self.handlers[str(operation["kind"])]
-            with owner_scope(fence.owner_user_id):
-                result = handler(fence, operation)
-            if not isinstance(result, Mapping):
-                raise RuntimeError("operation handler result must be an object")
-            already_published = result.get("__already_published__", False)
-            if not isinstance(already_published, bool):
-                raise RuntimeError(
-                    "operation publication marker must be boolean"
-                )
-            if not already_published:
-                self.repository.complete(fence, result=result)
-        except OperationFenced:
-            LOGGER.warning(
-                "操作被 fencing 中断：operation=%s kind=%s",
-                _short(fence.operation_id),
-                kind,
-            )
-        except Exception as exc:
-            LOGGER.exception(
-                "操作失败：operation=%s kind=%s duration=%.2fs",
-                _short(fence.operation_id),
-                kind,
-                time.monotonic() - started_at,
-            )
-            try:
-                self.repository.fail(
-                    fence,
-                    code="OPERATION_FAILED",
-                    message=str(exc),
-                )
-            except OperationFenced:
-                pass
+            _execute_operation(self.repository, self.handlers, fence, operation)
         finally:
             self._release_slot()
-        LOGGER.info(
-            "操作结束：operation=%s kind=%s duration=%.2fs",
-            _short(fence.operation_id),
-            kind,
-            time.monotonic() - started_at,
-        )
 
 
 class WorkerOperationRunner:
@@ -217,55 +235,7 @@ class WorkerOperationRunner:
         if claimed is None:
             return False
         fence, operation = claimed
-        started_at = time.monotonic()
-        kind = str(operation.get("kind", "unknown"))
-        LOGGER.info(
-            "Worker 操作开始：operation=%s kind=%s",
-            _short(fence.operation_id),
-            kind,
-        )
-        try:
-            with owner_scope(fence.owner_user_id):
-                result = self.handlers[str(operation["kind"])](
-                    fence,
-                    operation,
-                )
-            if not isinstance(result, Mapping):
-                raise RuntimeError("operation handler result must be an object")
-            already_published = result.get("__already_published__", False)
-            if not isinstance(already_published, bool):
-                raise RuntimeError(
-                    "operation publication marker must be boolean"
-                )
-            if not already_published:
-                self.repository.complete(fence, result=result)
-        except OperationFenced:
-            LOGGER.warning(
-                "Worker 操作被 fencing 中断：operation=%s kind=%s",
-                _short(fence.operation_id),
-                kind,
-            )
-        except Exception as exc:
-            LOGGER.exception(
-                "Worker 操作失败：operation=%s kind=%s duration=%.2fs",
-                _short(fence.operation_id),
-                kind,
-                time.monotonic() - started_at,
-            )
-            try:
-                self.repository.fail(
-                    fence,
-                    code="OPERATION_FAILED",
-                    message=str(exc),
-                )
-            except OperationFenced:
-                pass
-        LOGGER.info(
-            "Worker 操作结束：operation=%s kind=%s duration=%.2fs",
-            _short(fence.operation_id),
-            kind,
-            time.monotonic() - started_at,
-        )
+        _execute_operation(self.repository, self.handlers, fence, operation)
         return True
 
 
@@ -285,6 +255,7 @@ class DurableRenderExecutor:
         self.handler = handler
         self.poll_seconds = poll_seconds
         self._stop = threading.Event()
+        self._scheduler_log = RetryLogEpisode("编辑结果调度")
         self._thread = threading.Thread(
             target=self._run,
             name="api-render-executor",
@@ -310,38 +281,48 @@ class DurableRenderExecutor:
                 return
             except Exception as exc:
                 if is_sqlite_busy_error(exc):
-                    LOGGER.warning(
+                    LOGGER.debug(
                         "render 调度器遇到 SQLite 写锁竞争，将继续轮询"
                     )
                 else:
-                    LOGGER.exception("render 调度器领取失败，将继续轮询")
+                    if self._scheduler_log.record_failure(exc):
+                        LOGGER.exception("render 调度器领取失败，将继续轮询")
                 self._stop.wait(max(1.0, self.poll_seconds))
                 continue
+            self._scheduler_log.report_recovery()
             if fence is None:
                 continue
-            started_at = time.monotonic()
-            LOGGER.debug(
-                "渲染开始：request=%s page=%s revision=%s",
-                _short(fence.render_request_id),
-                _short(fence.page_id),
-                fence.rendering_revision,
+            self._execute(fence)
+
+    def _execute(self, fence: RenderFence) -> None:
+        assert self.handler is not None
+        started_at = time.monotonic()
+        with user_log_context(
+            operation_id=fence.render_request_id,
+            step_kind="live_render",
+        ):
+            user_log(
+                "step",
+                f"开始｜文档版本 {fence.rendering_revision}",
+                level=logging.DEBUG,
             )
             try:
                 with owner_scope(fence.owner_user_id):
                     publisher = self.handler(fence)
-                    self.repository.complete(fence, publisher=publisher)
+                    published = self.repository.complete(
+                        fence,
+                        publisher=publisher,
+                    )
             except OperationFenced:
-                LOGGER.warning(
+                LOGGER.debug(
                     "渲染被 fencing 中断：request=%s page=%s",
                     _short(fence.render_request_id),
                     _short(fence.page_id),
                 )
             except Exception as exc:
-                LOGGER.exception(
-                    "渲染失败：request=%s page=%s duration=%.2fs",
-                    _short(fence.render_request_id),
-                    _short(fence.page_id),
-                    time.monotonic() - started_at,
+                log_step_failed(
+                    exc,
+                    duration=time.monotonic() - started_at,
                 )
                 try:
                     self.repository.fail(
@@ -351,9 +332,11 @@ class DurableRenderExecutor:
                     )
                 except OperationFenced:
                     pass
-            LOGGER.debug(
-                "渲染结束：request=%s page=%s duration=%.2fs",
-                _short(fence.render_request_id),
-                _short(fence.page_id),
-                time.monotonic() - started_at,
-            )
+            else:
+                outcome = "完成" if published else "已由新版本接管"
+                user_log(
+                    "step",
+                    f"{outcome}｜文档版本 {fence.rendering_revision}｜"
+                    f"耗时 {time.monotonic() - started_at:.2f} 秒",
+                    level=logging.DEBUG,
+                )

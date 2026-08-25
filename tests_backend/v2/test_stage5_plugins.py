@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 import json
+import logging
 from pathlib import Path
 import threading
 import uuid
@@ -837,6 +838,7 @@ def test_plugin_management_http_api_is_metadata_only(
 
 def test_api_import_does_not_execute_plugin_and_worker_uses_frozen_snapshot(
     plugin_platform,
+    caplog,
 ) -> None:
     data_root, engine = plugin_platform
     registry = PluginRegistry(data_root=data_root, engine=engine)
@@ -863,6 +865,7 @@ def test_api_import_does_not_execute_plugin_and_worker_uses_frozen_snapshot(
             source=(
                 "class Plugin:\n"
                 "    def before_translate(self, context, payload):\n"
+                "        context.logger.info('frozen input', count=len(payload['originalTexts']))\n"
                 "        result = dict(payload)\n"
                 "        result['originalTexts'] = [\n"
                 "            context.config['prefix'] + value\n"
@@ -916,18 +919,25 @@ def test_api_import_does_not_execute_plugin_and_worker_uses_frozen_snapshot(
         repository=jobs,
     )
     hook_page_id = str(uuid.uuid4())
-    changed = runtime.run_atomic(
-        fence,
-        phase="before",
-        step="translate",
-        page_id=hook_page_id,
-        data={
-            "pageId": hook_page_id,
-            "originalTexts": ["source"],
-            "translationConfig": {},
-        },
-    )
+    with caplog.at_level(logging.INFO, logger="saber.user"):
+        changed = runtime.run_atomic(
+            fence,
+            phase="before",
+            step="translate",
+            page_id=hook_page_id,
+            data={
+                "pageId": hook_page_id,
+                "originalTexts": ["source"],
+                "translationConfig": {},
+            },
+        )
     assert changed["originalTexts"] == ["[v3]source"]
+    assert any(
+        "插件 frozen_v3（before_translate）｜frozen input" in record.getMessage()
+        and '"count": 1' in record.getMessage()
+        for record in caplog.records
+        if record.name == "saber.user"
+    )
     loaded_version_root = (
         data_root
         / "plugins"

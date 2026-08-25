@@ -20,6 +20,7 @@ from src.shared import constants
 from src.shared.image_helpers import image_to_rgb_array
 from src.shared.memory_errors import is_memory_allocation_error
 from src.shared.path_helpers import resource_path
+from src.shared.user_logging import inline_log_text, user_log
 
 logger = logging.getLogger("PaddleOCR_ONNX")
 
@@ -77,7 +78,12 @@ class PaddleOCRHandlerONNX:
             except Exception as error:
                 if is_memory_allocation_error(error):
                     raise
-                logger.warning("CUDA 运行库预加载失败，PP-OCRv6 将使用 CPU: %s", error)
+                logger.debug("CUDA 运行库预加载失败，PP-OCRv6 将使用 CPU: %s", error)
+                user_log(
+                    "warning",
+                    "PP-OCRv6 无法加载 CUDA 运行库，已切换到 CPU｜"
+                    f"{inline_log_text(error)}",
+                )
                 return False
         return True
 
@@ -102,6 +108,11 @@ class PaddleOCRHandlerONNX:
                     self.MODEL_TIER,
                     self.model_base_dir,
                 )
+                user_log(
+                    "error",
+                    "PP-OCRv6 模型文件不完整",
+                    details=missing,
+                )
                 return False
 
             from rapidocr import (
@@ -114,7 +125,7 @@ class PaddleOCRHandlerONNX:
             )
             use_cuda = self._cuda_execution_provider_available()
 
-            logger.info(
+            logger.debug(
                 "初始化 %s %s ONNX 模型 (%s)",
                 self.MODEL_VERSION,
                 self.MODEL_TIER,
@@ -140,11 +151,25 @@ class PaddleOCRHandlerONNX:
                 }
             )
             self.initialized = True
-            logger.info("%s %s 已初始化", self.MODEL_VERSION, self.MODEL_TIER)
+            logger.debug(
+                "%s %s 已初始化（%s）",
+                self.MODEL_VERSION,
+                self.MODEL_TIER,
+                "CUDA" if use_cuda else "CPU",
+            )
+            user_log(
+                "system",
+                f"PP-OCRv6 {self.MODEL_TIER} 模型已加载｜"
+                f"设备 {'GPU' if use_cuda else 'CPU'}",
+            )
             return True
         except ImportError as error:
             logger.error("rapidocr 3.x 或 onnxruntime 未安装: %s", error)
             logger.error("请安装 requirements-cpu.txt 或 requirements-gpu.txt 中的依赖")
+            user_log(
+                "error",
+                f"PP-OCRv6 运行库未安装｜{inline_log_text(error)}",
+            )
             return False
         except Exception as error:
             logger.error("Paddle OCR 初始化失败: %s", error, exc_info=True)
@@ -312,7 +337,7 @@ class PaddleOCRHandlerONNX:
                         fallback_used=fallback_used,
                     )
                 )
-                logger.info(
+                logger.debug(
                     "气泡 %d/%d OCR 完成，文本行=%d，耗时=%.2fs",
                     index + 1,
                     len(bubble_coords),

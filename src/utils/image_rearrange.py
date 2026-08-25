@@ -151,7 +151,7 @@ def check_needs_rearrange(
     needs_rearrange = down_scale_ratio > downscale_threshold and asp_ratio > aspect_threshold
     
     if needs_rearrange:
-        logger.info(
+        logger.debug(
             f"图像需要重排处理: 尺寸=({img.shape[1]}x{img.shape[0]}), "
             f"缩放比={down_scale_ratio:.2f}, 长宽比={asp_ratio:.2f}, 转置={transpose}"
         )
@@ -234,7 +234,7 @@ def slice_image_for_detection(
         patches_info=patches_info,
     )
     
-    logger.info(f"图像已切割: {num_patches} 个切片")
+    logger.debug(f"图像已切割: {num_patches} 个切片")
     
     return patches, context
 

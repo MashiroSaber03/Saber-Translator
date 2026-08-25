@@ -30,7 +30,6 @@ describe('settingsStore routine logging', () => {
     store.saveTranslationProviderConfig('custom')
     store.restoreTranslationProviderConfig('custom')
     store.setRemoveTextWithOcr(true)
-    store.setEnableVerboseLogs(true)
     store.setLamaDisableResize(true)
 
     expect(consoleLog).not.toHaveBeenCalled()

@@ -12,6 +12,7 @@ import time
 from typing import Protocol
 
 from src.shared.ai_providers import normalize_provider_id
+from src.shared.user_logging import user_log
 
 
 logger = logging.getLogger("SharedOpenAIRateLimits")
@@ -37,6 +38,8 @@ class ProviderRateLimitStore(Protocol):
 _store: ProviderRateLimitStore | None = None
 _local_windows: dict[str, tuple[float, int, int]] = {}
 _local_locks: defaultdict[str, threading.Lock] = defaultdict(threading.Lock)
+_wait_log_lock = threading.Lock()
+_wait_log_deadlines: dict[str, float] = {}
 
 
 def configure_provider_rate_limit_store(
@@ -77,7 +80,8 @@ class SharedRPMLimiter:
             wait_seconds = self._acquire()
             if wait_seconds <= 0:
                 return
-            logger.info(
+            self._log_wait(wait_seconds)
+            logger.debug(
                 "RPM 限制(%s): 等待 %.1f 秒",
                 self.provider,
                 wait_seconds,
@@ -89,12 +93,27 @@ class SharedRPMLimiter:
             wait_seconds = self._acquire()
             if wait_seconds <= 0:
                 return
-            logger.info(
+            self._log_wait(wait_seconds)
+            logger.debug(
                 "RPM 限制(%s): 等待 %.1f 秒",
                 self.provider,
                 wait_seconds,
             )
             await asyncio.sleep(wait_seconds)
+
+    def _log_wait(self, wait_seconds: float) -> None:
+        now = time.monotonic()
+        with _wait_log_lock:
+            if now < _wait_log_deadlines.get(self.provider, 0.0):
+                return
+            _wait_log_deadlines[self.provider] = (
+                now + min(60.0, max(1.0, wait_seconds))
+            )
+        user_log(
+            "system",
+            f"服务商 {self.provider} 已达到每分钟请求上限，"
+            f"等待 {wait_seconds:.1f} 秒后继续",
+        )
 
     def _acquire(self) -> float:
         if self.rpm_limit <= 0:

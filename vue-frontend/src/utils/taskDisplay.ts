@@ -111,7 +111,7 @@ export function jobKindLabel(kind: string): string {
 
 export function stepKindLabel(kind: string): string {
   const layer = /^insight_build_layer_(\d+)$/.exec(kind)
-  if (layer) return `构建分析层 ${layer[1]}`
+  if (layer) return `构建分析层 ${Number(layer[1]) + 1}`
   return STEP_KIND_LABELS[kind] ?? unknownLabel('步骤', kind)
 }
 

@@ -167,7 +167,7 @@ def recognize_manga_48_hybrid(
     threshold: float = DEFAULT_HYBRID_THRESHOLD,
 ) -> List[OcrResult]:
     validate_manga_48_hybrid_combo(primary_engine, secondary_engine)
-    logger.info(
+    logger.debug(
         "混合OCR专用链路启动: %s -> %s, 气泡=%d",
         primary_engine,
         secondary_engine,

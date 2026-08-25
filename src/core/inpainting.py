@@ -9,7 +9,6 @@ from src.interfaces.lama_interface import clean_image_with_lama
 from src.shared import constants
 
 logger = logging.getLogger("CoreInpainting")
-# logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 
 def _validate_bubble_geometry(bubble_coords, bubble_polygons=None):

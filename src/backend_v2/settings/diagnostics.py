@@ -46,6 +46,7 @@ from src.shared.ai_transport import (
     UnifiedVisionRequest,
 )
 from src.shared.memory_errors import is_memory_allocation_error
+from src.shared.user_logging import log_result, user_log
 
 
 CONNECTION_TEST_KINDS = frozenset(
@@ -66,6 +67,23 @@ CONNECTION_TEST_KINDS = frozenset(
         "reranker",
     }
 )
+
+_CONNECTION_TEST_LABELS = {
+    "ollama": "Ollama 翻译",
+    "sakura": "Sakura 翻译",
+    "lama_repair": "LaMA 文字修复",
+    "baidu_ocr": "百度 OCR",
+    "ai_vision_ocr": "视觉 OCR",
+    "baidu_translate": "百度翻译",
+    "youdao_translate": "有道翻译",
+    "ai_translate": "AI 翻译",
+    "firecrawl": "Firecrawl 网页提取",
+    "web_import_agent": "网页导入助手",
+    "vlm": "漫画视觉分析",
+    "llm": "对话模型",
+    "embedding": "文本向量模型",
+    "reranker": "重排模型",
+}
 
 _MODEL_CATALOG_FIELDS = frozenset(
     {"provider", "domain", "baseUrl", "secret"}
@@ -162,15 +180,25 @@ class ProviderDiagnostics:
         if kind not in CONNECTION_TEST_KINDS:
             raise DiagnosticRequestError("unsupported connection test kind")
         self._validate_fields(body, _CONNECTION_TEST_FIELDS[kind])
+        label = _CONNECTION_TEST_LABELS[kind]
+        user_log("system", f"开始测试「{label}」连接")
         try:
             message = self._run_test(kind, body)
-            return {"success": True, "message": message}
-        except (DiagnosticRequestError, LookupError):
+        except (DiagnosticRequestError, LookupError) as exc:
+            user_log(
+                "warning",
+                f"「{label}」连接测试无法执行｜{self._friendly_error(exc)}",
+            )
             raise
         except Exception as exc:
+            message = self._friendly_error(exc)
             if is_memory_allocation_error(exc):
+                user_log("error", f"「{label}」连接测试失败｜{message}")
                 raise
-            return {"success": False, "message": self._friendly_error(exc)}
+            user_log("warning", f"「{label}」连接测试失败｜{message}")
+            return {"success": False, "message": message}
+        log_result(f"「{label}」连接测试完成", details=(message,))
+        return {"success": True, "message": message}
 
     def _run_test(self, kind: str, body: Mapping[str, object]) -> str:
         if kind == "lama_repair":

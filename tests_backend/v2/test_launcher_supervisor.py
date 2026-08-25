@@ -10,6 +10,7 @@ from src.backend_v2.launcher.entrypoint import (
     _new_registration,
     _spawn,
 )
+from src.backend_v2.logging_config import STREAM_FRAME_ENV
 
 
 def test_child_process_logs_are_forced_to_utf8(tmp_path) -> None:
@@ -29,6 +30,21 @@ def test_child_process_logs_are_forced_to_utf8(tmp_path) -> None:
 
     assert process.returncode == 0
     assert output.strip() == "中文子进程日志"
+
+
+def test_desktop_captured_children_enable_stream_frames(tmp_path) -> None:
+    registration = _new_registration("worker")
+
+    direct = _child_environment(tmp_path, "worker", registration)
+    captured = _child_environment(
+        tmp_path,
+        "worker",
+        registration,
+        stream_frames=True,
+    )
+
+    assert STREAM_FRAME_ENV not in direct
+    assert captured[STREAM_FRAME_ENV] == "1"
 
 
 def test_stop_requested_before_run_is_not_lost(tmp_path) -> None:

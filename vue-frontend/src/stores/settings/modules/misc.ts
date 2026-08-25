@@ -35,10 +35,6 @@ export function useMiscSettings(
     settings.value.compressVisionImages = enabled
   }
 
-  function setEnableVerboseLogs(enabled: boolean): void {
-    settings.value.enableVerboseLogs = enabled
-  }
-
   function setLamaDisableResize(disabled: boolean): void {
     settings.value.lamaDisableResize = disabled
   }
@@ -51,7 +47,6 @@ export function useMiscSettings(
     setShowDetectionDebug,
     setRemoveTextWithOcr,
     setCompressVisionImages,
-    setEnableVerboseLogs,
     setLamaDisableResize
   }
 }

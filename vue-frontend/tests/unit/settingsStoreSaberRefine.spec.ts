@@ -25,7 +25,7 @@ function settingsDocument(
         domain: 'translation',
         payload: settings as unknown as Record<string, unknown>,
         revision,
-        schemaVersion: 7,
+        schemaVersion: 8,
       },
       {
         domain: 'text_style_defaults',
@@ -121,7 +121,7 @@ describe('settings store saber yolo refine', () => {
       enableAuxYoloDetection: true,
       auxYoloConfThreshold: 0.55,
       auxYoloOverlapThreshold: 0.2,
-      settingsSchemaVersion: 7,
+      settingsSchemaVersion: 8,
     })
   })
 })

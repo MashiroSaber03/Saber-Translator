@@ -88,7 +88,7 @@ class VLMClient:
         self._transport = AsyncOpenAICompatibleTransport()
         self._executor = OpenAICompatibleAsyncExecutor(self._transport)
 
-        logger.info(
+        logger.debug(
             "VLMClient 初始化: provider=%s, base_url=%s",
             config.provider,
             self._base_url,
@@ -172,7 +172,6 @@ class VLMClient:
                 openai_options=options,
                 runtime_options=build_openai_compatible_runtime_options(
                     timeout=self._timeout,
-                    print_stream_output=options.execution.use_stream,
                     stream_output_label="漫画分析",
                 ),
             ),

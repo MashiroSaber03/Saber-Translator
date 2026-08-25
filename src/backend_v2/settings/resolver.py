@@ -431,7 +431,6 @@ class SettingsResolver:
                         "roundIndex": index,
                         "name": selected_round["name"],
                         "batchSize": selected_round["batchSize"],
-                        "enable_debug_logs": effective["enableVerboseLogs"],
                         "compress_vision_images": effective[
                             "compressVisionImages"
                         ],
@@ -467,7 +466,6 @@ class SettingsResolver:
                 selected_translation,
                 mode=mode,
             )
-            translation["enable_debug_logs"] = effective["enableVerboseLogs"]
             if mode not in {"hq", "proofread"}:
                 translation.update(
                     {
@@ -698,7 +696,6 @@ class SettingsResolver:
                     selected_translation,
                     mode="standard",
                 ),
-                "enable_debug_logs": effective["enableVerboseLogs"],
                 "translation_mode": selected_translation["translationMode"],
                 "use_textbox_prompt": effective["useTextboxPrompt"],
                 "textbox_prompt_content": effective["textboxPrompt"],

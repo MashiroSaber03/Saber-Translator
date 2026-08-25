@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import deque
+import json
 import re
 from pathlib import Path
 from typing import Iterable, Mapping
@@ -17,6 +18,7 @@ from PySide6.QtGui import (
     QPixmap,
     QResizeEvent,
     QShowEvent,
+    QTextCursor,
 )
 from PySide6.QtWidgets import (
     QAbstractButton,
@@ -46,26 +48,22 @@ from PySide6.QtWidgets import (
 
 from src.backend_v2.desktop.settings import DesktopSettings, LOG_LEVELS, PET_SCALES
 from src.backend_v2.launcher.entrypoint import LauncherState, LauncherStatus
+from src.shared.user_logging import CATEGORY_LABELS, STREAM_FRAME_PREFIX, job_label
 
 
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 MAX_LOG_LINES = 5000
-KIND_LABELS = {
-    "translation": "漫画翻译",
-    "remove_text": "清除文字",
-    "detect": "文本检测",
-    "style_apply": "应用样式",
-    "text_import": "文本导入",
-    "container_import": "容器导入",
-    "web_extract": "网页提取",
-    "web_import_commit": "网页导入",
-    "export": "内容导出",
-    "insight_analysis": "漫画分析",
-    "insight_export": "分析导出",
-    "vector_rebuild": "向量重建",
-    "continuation": "续作处理",
-    "derived_rebuild": "衍生重建",
-    "plugin_agent": "插件代理",
+PRODUCT_LOG_CATEGORIES = frozenset(CATEGORY_LABELS.values())
+LOG_CATEGORY_PATTERN = re.compile(
+    r"\[(" + "|".join(map(re.escape, CATEGORY_LABELS.values())) + r")\]"
+)
+LOG_CATEGORY_FILTERS = {
+    "工作日志": PRODUCT_LOG_CATEGORIES,
+    "任务过程": frozenset({"任务", "步骤", "结果"}),
+    "模型输出": frozenset({"模型", "流式"}),
+    "警告错误": frozenset({"警告", "错误"}),
+    "系统信息": frozenset({"系统"}),
+    "全部内容": None,
 }
 STATUS_LABELS = {
     "queued": "排队中",
@@ -364,8 +362,8 @@ class OverviewPage(QWidget):
         status = str(active.get("status") or "")
         progress = active.get("progress")
         percent, detail = _progress_summary(progress)
-        self.task_value.setText(KIND_LABELS.get(kind, kind))
-        self.current_title.setText(KIND_LABELS.get(kind, kind))
+        self.task_value.setText(job_label(kind))
+        self.current_title.setText(job_label(kind))
         self.current_detail.setText(f"{STATUS_LABELS.get(status, status)} · {detail}")
         self.current_progress.setValue(percent)
 
@@ -474,7 +472,7 @@ class TaskCenterPage(QWidget):
             progress = job.get("progress")
             percent, detail = _progress_summary(progress)
             values = (
-                KIND_LABELS.get(kind, kind),
+                job_label(kind),
                 STATUS_LABELS.get(status, status),
                 detail,
                 f"{percent}%",
@@ -525,7 +523,11 @@ class LogPage(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self.setObjectName("page")
-        self._lines: deque[tuple[str, str, str]] = deque(maxlen=MAX_LOG_LINES)
+        self._lines: deque[tuple[str, str, str, str, str | None]] = deque(
+            maxlen=MAX_LOG_LINES
+        )
+        self._tail_stream: tuple[str, str] | None = None
+        self._stream_headers: dict[tuple[str, str], str] = {}
         self._auto_scroll_timer = QTimer(self)
         self._auto_scroll_timer.setSingleShot(True)
         self._auto_scroll_timer.timeout.connect(self._scroll_to_latest)
@@ -540,16 +542,27 @@ class LogPage(QWidget):
         filters = QHBoxLayout()
         filters.setSpacing(9)
         self.source_filter = QComboBox()
-        self.source_filter.addItems(("全部来源", "LAUNCHER", "API", "WORKER"))
+        self.source_filter.addItem("全部来源", "")
+        self.source_filter.addItem("接口进程", "API")
+        self.source_filter.addItem("工作进程", "WORKER")
+        self.source_filter.addItem("桌面与启动器", "DESKTOP")
         self.source_filter.setMinimumWidth(128)
         self.level_filter = QComboBox()
-        self.level_filter.addItems(("全部等级", "DEBUG", "INFO", "WARNING", "ERROR"))
+        self.level_filter.addItem("全部级别", "")
+        self.level_filter.addItem("调试", "DEBUG")
+        self.level_filter.addItem("信息", "INFO")
+        self.level_filter.addItem("警告", "WARNING")
+        self.level_filter.addItem("错误", "ERROR")
         self.level_filter.setMinimumWidth(128)
+        self.category_filter = QComboBox()
+        self.category_filter.addItems(tuple(LOG_CATEGORY_FILTERS))
+        self.category_filter.setMinimumWidth(128)
         self.search = QLineEdit()
         self.search.setPlaceholderText("搜索日志")
         self.search.setMinimumWidth(220)
         filters.addWidget(self.source_filter)
         filters.addWidget(self.level_filter)
+        filters.addWidget(self.category_filter)
         filters.addWidget(self.search, 1)
         toolbar_layout.addLayout(filters)
 
@@ -564,7 +577,7 @@ class LogPage(QWidget):
         auto_scroll_layout.addWidget(self.auto_scroll)
         auto_scroll_layout.addWidget(_label("自动滚动"))
         clear = QPushButton("清空视图")
-        copy = QPushButton("复制全部")
+        copy = QPushButton("复制当前")
         copy.setMinimumWidth(84)
         clear.setMinimumWidth(84)
         actions.addWidget(auto_scroll_control)
@@ -580,43 +593,190 @@ class LogPage(QWidget):
         layout.addWidget(self.output, 1)
         self.source_filter.currentTextChanged.connect(self._render)
         self.level_filter.currentTextChanged.connect(self._render)
+        self.category_filter.currentTextChanged.connect(self._render)
         self.search.textChanged.connect(self._render)
         self.auto_scroll.toggled.connect(self._schedule_auto_scroll)
         clear.clicked.connect(self.clear)
         copy.clicked.connect(lambda: QApplication.clipboard().setText(self.output.toPlainText()))
 
     def add_line(self, source: str, line: str) -> None:
+        if line.startswith(STREAM_FRAME_PREFIX) and self._add_stream_frame(source, line):
+            return
         clean = ANSI_ESCAPE.sub("", line)
-        level = next(
-            (
-                name
-                for name in ("ERROR", "WARNING", "INFO", "DEBUG")
-                if f"[{name}]" in clean
-            ),
-            "INFO",
+        detected_level = (
+            "DEBUG"
+            if "[调试]" in clean
+            else "ERROR"
+            if "[CRITICAL]" in clean
+            else next(
+                (
+                    name
+                    for name in ("ERROR", "WARNING", "INFO", "DEBUG")
+                    if f"[{name}]" in clean
+                ),
+                None,
+            )
         )
-        self._lines.append((source.upper(), level, clean))
-        if self._matches(source.upper(), level, clean):
-            self.output.appendPlainText(clean)
+        category_match = LOG_CATEGORY_PATTERN.search(clean)
+        category = (
+            category_match.group(1)
+            if category_match is not None
+            else "错误" if detected_level == "ERROR"
+            else "警告" if detected_level == "WARNING"
+            else "诊断"
+        )
+        if detected_level is not None:
+            level = detected_level
+        elif category == "错误":
+            level = "ERROR"
+        elif category == "警告":
+            level = "WARNING"
+        else:
+            level = "INFO"
+        normalized_source = source.upper()
+        if normalized_source == "LAUNCHER":
+            normalized_source = "DESKTOP"
+        self._tail_stream = None
+        self._append_entry(normalized_source, level, category, clean)
+
+    def _add_stream_frame(self, source: str, line: str) -> bool:
+        try:
+            payload = json.loads(line.removeprefix(STREAM_FRAME_PREFIX))
+        except (TypeError, ValueError):
+            return False
+        if not isinstance(payload, dict):
+            return False
+        action = payload.get("action")
+        stream_id = payload.get("streamId")
+        formatted = payload.get("formatted")
+        chunk = payload.get("chunk")
+        if (
+            action not in {"start", "chunk", "end"}
+            or not isinstance(stream_id, str)
+            or not isinstance(formatted, str)
+            or not isinstance(chunk, str)
+        ):
+            return False
+        normalized_source = source.upper()
+        if normalized_source == "LAUNCHER":
+            normalized_source = "DESKTOP"
+        level = payload.get("level")
+        if level not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
+            level = "INFO"
+        if level == "CRITICAL":
+            level = "ERROR"
+        category = payload.get("category")
+        if category not in PRODUCT_LOG_CATEGORIES:
+            category = "流式"
+        clean_formatted = ANSI_ESCAPE.sub("", formatted)
+        clean_chunk = ANSI_ESCAPE.sub("", chunk)
+        key = (normalized_source, stream_id)
+
+        if action == "start":
+            self._tail_stream = key
+            self._stream_headers[key] = clean_formatted.replace(
+                "开始流式返回：",
+                "继续流式返回：",
+            )
+            self._append_entry(
+                normalized_source,
+                level,
+                category,
+                clean_formatted,
+                stream_id=stream_id,
+            )
+            return True
+
+        if action == "chunk":
+            if (
+                clean_chunk
+                and self._tail_stream == key
+                and self._lines
+                and self._lines[-1][0] == normalized_source
+                and self._lines[-1][4] == stream_id
+            ):
+                entry = self._lines[-1]
+                was_visible = self._matches(*entry[:4])
+                self._lines[-1] = (*entry[:3], entry[3] + clean_chunk, stream_id)
+                is_visible = self._matches(*self._lines[-1][:4])
+                if was_visible and is_visible:
+                    cursor = self.output.textCursor()
+                    cursor.movePosition(QTextCursor.MoveOperation.End)
+                    cursor.insertText(clean_chunk)
+                    self.output.setTextCursor(cursor)
+                    self._schedule_auto_scroll()
+                elif was_visible != is_visible:
+                    self._render()
+            else:
+                self._tail_stream = key
+                resumed = self._stream_headers.get(key, "") + clean_chunk
+                self._append_entry(
+                    normalized_source,
+                    level,
+                    category,
+                    resumed or clean_formatted,
+                    stream_id=stream_id,
+                )
+            return True
+
+        self._stream_headers.pop(key, None)
+        self._tail_stream = None
+        self._append_entry(
+            normalized_source,
+            level,
+            category,
+            clean_formatted,
+        )
+        return True
+
+    def _append_entry(
+        self,
+        source: str,
+        level: str,
+        category: str,
+        text: str,
+        *,
+        stream_id: str | None = None,
+    ) -> None:
+        self._lines.append((source, level, category, text, stream_id))
+        if self._matches(source, level, category, text):
+            self.output.appendPlainText(text)
             self._schedule_auto_scroll()
 
     def clear(self) -> None:
         self._lines.clear()
+        self._tail_stream = None
+        self._stream_headers.clear()
         self.output.clear()
 
-    def _matches(self, source: str, level: str, line: str) -> bool:
-        selected_source = self.source_filter.currentText()
-        selected_level = self.level_filter.currentText()
+    def _matches(
+        self,
+        source: str,
+        level: str,
+        category: str,
+        line: str,
+    ) -> bool:
+        selected_source = str(self.source_filter.currentData() or "")
+        selected_level = str(self.level_filter.currentData() or "")
+        selected_categories = LOG_CATEGORY_FILTERS[
+            self.category_filter.currentText()
+        ]
         needle = self.search.text().strip().lower()
         return (
-            (selected_source == "全部来源" or selected_source == source)
-            and (selected_level == "全部等级" or selected_level == level)
+            (not selected_source or selected_source == source)
+            and (not selected_level or selected_level == level)
+            and (
+                selected_categories is None
+                or category in selected_categories
+            )
             and (not needle or needle in line.lower())
         )
 
     def _render(self) -> None:
         text = "\n".join(
-            line for source, level, line in self._lines if self._matches(source, level, line)
+            line
+            for source, level, category, line, _stream_id in self._lines
+            if self._matches(source, level, category, line)
         )
         self.output.setPlainText(text)
         self._schedule_auto_scroll()

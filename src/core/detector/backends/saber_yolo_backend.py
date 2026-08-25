@@ -15,6 +15,7 @@ from ..base import BaseTextDetector
 from ..data_types import TextLine
 from src.shared.path_helpers import resource_path
 from src.shared import constants
+from src.shared.user_logging import user_log
 
 logger = logging.getLogger("SaberYoloBackend")
 
@@ -64,7 +65,8 @@ class SaberYoloBackend(BaseTextDetector):
 
         self.model = MODEL(model_path).to(device=self.device)
         self.model_path = model_path
-        logger.info(f"SaberYOLO 检测器初始化完成 - 设备: {self.device}, 模型: {model_path}")
+        logger.debug(f"SaberYOLO 检测器初始化完成 - 设备: {self.device}, 模型: {model_path}")
+        user_log("system", f"SaberYOLO 文本检测模型已加载｜设备 {self.device.upper()}")
 
     def _detect_raw(
         self,
@@ -92,5 +94,5 @@ class SaberYoloBackend(BaseTextDetector):
             conf = float(result.obb.conf[i].cpu().numpy())
             textlines.append(TextLine(pts=pts, confidence=conf))
 
-        logger.info(f"SaberYOLO 检测到 {len(textlines)} 个文本块候选")
+        logger.debug(f"SaberYOLO 检测到 {len(textlines)} 个文本块候选")
         return textlines, None

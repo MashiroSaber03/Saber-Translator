@@ -12,7 +12,7 @@ import uuid
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerifyMismatchError
-from sqlalchemy import Engine, and_, case, delete, func, insert, select, update
+from sqlalchemy import Engine, case, delete, func, insert, select, update
 
 from src.backend_v2.auth.identity import SessionIdentity
 from src.backend_v2.storage.database import immediate_transaction

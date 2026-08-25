@@ -79,8 +79,6 @@ def _validate_ocr_inputs(
     return normalized
 
 
-# logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
 # 在解析JSON响应时增加安全提取方法
 
 
@@ -103,9 +101,9 @@ def _recognize_with_baidu_ocr_results(
     if not isinstance(baidu_ocr_language, str) or not baidu_ocr_language:
         raise ValueError("百度OCR语言必须是非空字符串")
     if baidu_ocr_language == 'auto_detect':
-        logger.info("百度OCR使用自动检测语言")
+        logger.debug("百度OCR使用自动检测语言")
     else:
-        logger.info(f"百度OCR使用指定语言: '{baidu_ocr_language}'")
+        logger.debug(f"百度OCR使用指定语言: '{baidu_ocr_language}'")
 
     for i, (x1, y1, x2, y2) in enumerate(bubble_coords):
         try:
@@ -170,7 +168,7 @@ def _recognize_with_manga_ocr_results(
 ) -> List[OcrResult]:
     img_np = image_to_rgb_array(image_pil)
     results: List[OcrResult] = []
-    logger.info(f"开始使用 MangaOCR 逐个识别 {len(bubble_coords)} 个气泡...")
+    logger.debug(f"开始使用 MangaOCR 逐个识别 {len(bubble_coords)} 个气泡...")
 
     for i, (x1, y1, x2, y2) in enumerate(bubble_coords):
         try:
@@ -322,16 +320,16 @@ def _recognize_with_ai_vision_results(
         else:
             current_prompt = constants.DEFAULT_AI_VISION_OCR_PROMPT
     elif use_json_format_for_ai_vision and '"extracted_text"' not in current_prompt:
-        logger.warning("AI视觉OCR 当前为 JSON 模式，但将按用户自定义提示词原样请求；若返回非JSON，解析可能失败。")
+        logger.debug("AI视觉OCR 当前为 JSON 模式，但用户提示词未声明 extracted_text 字段")
 
-    logger.info(
+    logger.debug(
         "[AI视觉OCR] 请求配置: provider=%s, model=%s, prompt_mode=%s, json_mode=%s",
         ai_vision_provider,
         ai_vision_model_name,
         ai_vision_prompt_mode,
         use_json_format_for_ai_vision,
     )
-    logger.info("[AI视觉OCR] 实际提示词开始\n%s\n[AI视觉OCR] 实际提示词结束", current_prompt)
+    logger.debug("[AI视觉OCR] 实际提示词开始\n%s\n[AI视觉OCR] 实际提示词结束", current_prompt)
 
     for i, (x1, y1, x2, y2) in enumerate(bubble_coords):
         try:
@@ -501,7 +499,7 @@ def recognize_ocr_results_in_bubbles(
         paddleocr_vl_source_language=paddleocr_vl_source_language,
     )
     if not bubble_coords:
-        logger.info("没有气泡坐标，跳过 OCR。")
+        logger.debug("没有气泡坐标，跳过 OCR。")
         return []
 
     if not isinstance(enable_hybrid_ocr, bool):

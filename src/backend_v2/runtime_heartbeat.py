@@ -13,6 +13,7 @@ from src.backend_v2.storage.database import (
     is_sqlite_busy_error,
 )
 from src.backend_v2.storage.epochs import ProcessEpochRepository
+from src.shared.user_logging import inline_log_text, user_log
 
 
 LOGGER = logging.getLogger("saber.runtime.heartbeat")
@@ -54,6 +55,7 @@ class EpochHeartbeat:
         self._thread.start()
 
     def _run(self) -> None:
+        role_label = "接口进程" if self._role == "api" else "工作进程"
         while not self._stop.wait(self._interval_seconds):
             busy_failures = 0
             while True:
@@ -69,7 +71,7 @@ class EpochHeartbeat:
                         and busy_failures < SQLITE_HEARTBEAT_BUSY_RETRY_LIMIT
                     ):
                         busy_failures += 1
-                        LOGGER.warning(
+                        LOGGER.debug(
                             "%s epoch 心跳遇到 SQLite 写锁竞争，将有限重试："
                             "attempt=%s/%s",
                             self._role.upper(),
@@ -85,12 +87,21 @@ class EpochHeartbeat:
                         "%s epoch 心跳执行失败，执行器立即自我隔离",
                         self._role.upper(),
                     )
+                    user_log(
+                        "error",
+                        f"{role_label}心跳失败，已停止领取新任务｜"
+                        f"{inline_log_text(exc)}",
+                    )
                     self._fence()
                     return
                 break
             if renewed:
                 continue
             LOGGER.error("%s epoch 心跳失租，执行器立即自我隔离", self._role.upper())
+            user_log(
+                "error",
+                f"{role_label}运行权已失效，已停止领取新任务",
+            )
             self._fence()
             return
 

@@ -53,6 +53,7 @@ from src.backend_v2.storage.schema import (
 )
 from src.core.config_models import validate_bubble_payload
 from src.shared.memory_errors import is_memory_allocation_error
+from src.shared.user_logging import json_details, user_log
 
 
 class PluginHookFailure(RuntimeError):
@@ -217,15 +218,21 @@ class _PluginLogger:
         message: str,
         fields: Mapping[str, Any],
     ) -> None:
+        rendered_message = str(message)[:20_000]
         self.emit(
             "plugin_log",
             {
                 "pluginId": self.plugin_id,
                 "hook": self.hook,
                 "level": level,
-                "message": str(message)[:20_000],
+                "message": rendered_message,
                 "fields": dict(fields),
             },
+        )
+        user_log(
+            {"warning": "warning", "error": "error"}.get(level, "system"),
+            f"插件 {self.plugin_id}（{self.hook}）｜{rendered_message}",
+            details=json_details(dict(fields)) if fields else (),
         )
 
 

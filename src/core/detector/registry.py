@@ -41,7 +41,7 @@ def register_detector(name: str, detector_class: Type[BaseTextDetector]):
     if not issubclass(detector_class, BaseTextDetector):
         raise TypeError(f"{detector_class} 必须继承 BaseTextDetector")
     _detector_registry[name] = detector_class
-    logger.info(f"已注册检测器: {name}")
+    logger.debug(f"已注册检测器: {name}")
 
 
 def _lazy_register_builtin():
@@ -84,7 +84,7 @@ def get_detector(
     
     # 检查是否需要创建新实例
     if detector_type not in _detector_instances:
-        logger.info(f"创建检测器实例: {detector_type}")
+        logger.debug(f"创建检测器实例: {detector_type}")
         detector_class = _detector_registry[detector_type]
         _detector_instances[detector_type] = detector_class()
     
@@ -102,10 +102,10 @@ def reset_detector(detector_type: DetectorType = None):
     
     if detector_type is None:
         _detector_instances = {}
-        logger.info("所有检测器已重置")
+        logger.debug("所有检测器已重置")
     elif detector_type in _detector_instances:
         del _detector_instances[detector_type]
-        logger.info(f"检测器 {detector_type} 已重置")
+        logger.debug(f"检测器 {detector_type} 已重置")
 
 
 def detect(

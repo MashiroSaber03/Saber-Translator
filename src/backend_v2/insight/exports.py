@@ -50,6 +50,7 @@ from src.backend_v2.storage.schema import (
     timeline_events,
     timeline_versions,
 )
+from src.shared.user_logging import log_result
 
 
 def _json(value: object) -> str:
@@ -321,6 +322,13 @@ class InsightExportWorkerService:
             step_id=step_id,
             checkpoint=checkpoint,
             publisher=publish,
+        )
+        log_result(
+            "漫画分析报告导出完成",
+            (
+                f"页面：{len(config['pages'])} 页",
+                "格式：ZIP",
+            ),
         )
         return {**checkpoint, "__already_published__": True}
 

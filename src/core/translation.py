@@ -36,6 +36,12 @@ from src.shared.openai_options import (
     create_openai_compatible_options,
 )
 from src.shared.openai_rate_limits import SharedRPMLimiter
+from src.shared.user_logging import (
+    log_model_input,
+    log_model_request,
+    log_model_response,
+    log_retry,
+)
 
 logger = logging.getLogger("CoreTranslation")
 _chat_transport = OpenAICompatibleChatTransport()
@@ -78,11 +84,9 @@ def _build_translation_runtime_options(
     *,
     timeout: float,
     label: str,
-    use_stream: bool,
 ) -> OpenAICompatibleRuntimeOptions:
     return build_openai_compatible_runtime_options(
         timeout=timeout,
-        print_stream_output=use_stream,
         stream_output_label=label,
     )
 
@@ -211,15 +215,14 @@ def translate_single_text(
         else:
             prompt_content = constants.DEFAULT_PROMPT
     elif use_json_format and '"translated_text"' not in prompt_content:
-        # 如果用户传入了自定义提示词但不是JSON格式，给出警告
-        logger.warning("期望JSON格式输出，但提供的翻译提示词可能不是JSON格式。")
+        logger.debug("翻译启用了 JSON 模式，但用户提示词未声明 translated_text 字段")
 
 
     canonical_provider = normalize_provider_id(model_provider)
     manifest = get_provider_manifest(canonical_provider)
     if not provider_supports_capability(canonical_provider, TRANSLATION_CAPABILITY):
         raise ValueError(f"{manifest.display_name}不支持翻译")
-    logger.info(
+    logger.debug(
         "开始翻译文本（服务商=%s, rpm=%s, transport_retries=%s, business_retries=%s）",
         canonical_provider,
         rpm_limit_translation if rpm_limit_translation > 0 else "无",
@@ -254,7 +257,6 @@ def translate_single_text(
                 runtime_options=_build_translation_runtime_options(
                     timeout=30.0,
                     label="普通翻译",
-                    use_stream=effective_options.execution.use_stream,
                 ),
                 messages=messages,
             ),
@@ -270,7 +272,21 @@ def translate_single_text(
         translated_text = None
         last_error = None
         total_attempts = business_retries + 1
+        log_model_input(
+            "普通翻译",
+            (
+                f"目标语言：{target_language}",
+                f"待翻译文本：\n{text}",
+            ),
+        )
         for attempt in range(total_attempts):
+            log_model_request(
+                provider=manifest.display_name,
+                model=None,
+                stream=False,
+                attempt=attempt + 1,
+                total_attempts=total_attempts,
+            )
             try:
                 SharedRPMLimiter(
                     rpm_limit_translation,
@@ -312,6 +328,7 @@ def translate_single_text(
                     raise OpenAICompatibleBusinessRetryableError(
                         "翻译服务返回空结果"
                     )
+                log_model_response("普通翻译", translated_text)
                 break
             except Exception as error:
                 if is_memory_allocation_error(error):
@@ -330,6 +347,12 @@ def translate_single_text(
                     raise
                 if attempt >= business_retries:
                     break
+                log_retry(
+                    "普通翻译",
+                    attempt + 2,
+                    total_attempts,
+                    error,
+                )
                 time.sleep(1)
 
         if translated_text is None:
@@ -337,7 +360,7 @@ def translate_single_text(
                 raise RuntimeError("翻译失败且未提供错误原因")
             raise last_error
 
-    logger.info("文本翻译成功")
+    logger.debug("文本翻译成功")
 
     return translated_text
 
@@ -545,7 +568,7 @@ def _translate_batch_with_llm(
     # 组装消息列表 (包含 system prompt、few-shot 示例、user prompt)
     messages, batch_size = _assemble_batch_prompt(texts, custom_prompt, use_json_format)
     
-    logger.info("批量翻译请求：%s 个文本片段（消息数=%s）", batch_size, len(messages))
+    logger.debug("批量翻译请求：%s 个文本片段（消息数=%s）", batch_size, len(messages))
     
     canonical_provider = normalize_provider_id(model_provider)
     manifest = get_provider_manifest(canonical_provider)
@@ -573,7 +596,6 @@ def _translate_batch_with_llm(
             runtime_options=_build_translation_runtime_options(
                 timeout=120.0,
                 label="普通翻译",
-                use_stream=effective_options.execution.use_stream,
             ),
         ),
         capability=TRANSLATION_CAPABILITY,
@@ -584,7 +606,7 @@ def _translate_batch_with_llm(
         ),
         logger_instance=logger,
     )
-    logger.info("批量翻译成功：%s 个文本片段", len(texts))
+    logger.debug("批量翻译成功：%s 个文本片段", len(texts))
     return result.parsed
 
 
@@ -657,7 +679,7 @@ def translate_text_list(
     manifest = get_provider_manifest(canonical_provider)
     if not provider_supports_capability(canonical_provider, TRANSLATION_CAPABILITY):
         raise ValueError(f"{manifest.display_name}不支持翻译")
-    logger.info(
+    logger.debug(
         "开始批量翻译 %s 个文本片段（服务商=%s, rpm=%s）",
         len(non_empty_texts),
         canonical_provider,
@@ -689,7 +711,7 @@ def translate_text_list(
 
     else:
         # 非 LLM 提供商 (如百度翻译、有道翻译)，使用原有的逐个翻译逻辑
-        logger.info("服务商 %s 使用逐条翻译", canonical_provider)
+        logger.debug("服务商 %s 使用逐条翻译", canonical_provider)
         for index, text in enumerate(non_empty_texts):
             translated = translate_single_text(
                 text,
@@ -705,5 +727,5 @@ def translate_text_list(
             final_translations[non_empty_indices[index]] = translated
 
     completed_count = sum(1 for translated in final_translations if translated)
-    logger.info("批量翻译完成：成功 %s/%s", completed_count, len(texts))
+    logger.debug("批量翻译完成：成功 %s/%s", completed_count, len(texts))
     return final_translations

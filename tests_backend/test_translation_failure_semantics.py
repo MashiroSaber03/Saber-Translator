@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from unittest import mock
 
 from PIL import Image
@@ -535,3 +536,36 @@ def test_adapter_transient_server_failure_uses_finite_business_retries(
 
     assert result == "译文"
     assert translate.call_count == 2
+
+
+def test_adapter_translation_uses_the_shared_product_log(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.setattr(
+        translation,
+        "translate_with_caiyun",
+        mock.Mock(return_value="译文"),
+    )
+
+    with caplog.at_level(logging.DEBUG, logger="saber.user"):
+        result = translation.translate_single_text(
+            "原文",
+            "zh",
+            "caiyun",
+            api_key="secret-key",
+            openai_options=create_openai_compatible_options(business_retries=0),
+        )
+
+    assert result == "译文"
+    messages = "\n".join(
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "saber.user"
+    )
+    assert "待翻译文本：" in messages
+    assert "原文" in messages
+    assert "请求 彩云小译 / 默认模型" in messages
+    assert "普通翻译返回 2 个字符" in messages
+    assert "译文" in messages
+    assert "secret-key" not in messages

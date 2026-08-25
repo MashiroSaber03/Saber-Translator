@@ -45,6 +45,7 @@ from src.shared.openai_options import (
     validate_and_clone_openai_extra_body,
 )
 from src.shared.openai_rate_limits import SharedRPMLimiter
+from src.shared.user_logging import inline_log_text, user_log
 
 logger = logging.getLogger("SharedAITransport")
 
@@ -58,6 +59,27 @@ RETRYABLE_EXCEPTIONS = (
     httpx.RemoteProtocolError,
     ConnectionResetError,
 )
+
+
+def _log_transport_retry(
+    reason: object,
+    *,
+    wait_seconds: float,
+    attempt: int,
+    max_retries: int,
+) -> None:
+    logger.debug(
+        "AI 网络请求重试：reason=%s wait=%.1fs attempt=%s/%s",
+        reason,
+        wait_seconds,
+        attempt,
+        max_retries,
+    )
+    user_log(
+        "warning",
+        f"模型服务暂时不可用（{inline_log_text(reason)}）｜"
+        f"{wait_seconds:.1f} 秒后重试｜第 {attempt}/{max_retries} 次重试",
+    )
 
 
 def _require_nonempty_string(value: Any, *, name: str) -> str:
@@ -158,10 +180,6 @@ class UnifiedChatRequest:
     @property
     def use_stream(self) -> bool:
         return self.openai_options.execution.use_stream
-
-    @property
-    def print_stream_output(self) -> bool:
-        return self.runtime_options.print_stream_output
 
     @property
     def stream_output_label(self) -> Optional[str]:
@@ -716,12 +734,11 @@ class OpenAICompatibleChatTransport:
 
                     if response.status_code in RETRYABLE_STATUS_CODES and attempt < max_retries:
                         wait_time = _calculate_backoff(attempt, response)
-                        logger.warning(
-                            "Sync transport received %s, retrying in %.1fs (%s/%s)",
-                            response.status_code,
-                            wait_time,
-                            attempt + 1,
-                            max_retries,
+                        _log_transport_retry(
+                            f"HTTP {response.status_code}",
+                            wait_seconds=wait_time,
+                            attempt=attempt + 1,
+                            max_retries=max_retries,
                         )
                         time.sleep(wait_time)
                         continue
@@ -738,12 +755,11 @@ class OpenAICompatibleChatTransport:
                     last_exception = exc
                     if attempt < max_retries:
                         wait_time = _calculate_backoff(attempt)
-                        logger.warning(
-                            "Sync transport request failed (%s), retrying in %.1fs (%s/%s)",
+                        _log_transport_retry(
                             type(exc).__name__,
-                            wait_time,
-                            attempt + 1,
-                            max_retries,
+                            wait_seconds=wait_time,
+                            attempt=attempt + 1,
+                            max_retries=max_retries,
                         )
                         time.sleep(wait_time)
                         continue
@@ -784,12 +800,11 @@ class OpenAICompatibleChatTransport:
                     ) as response:
                         if response.status_code in RETRYABLE_STATUS_CODES and attempt < max_retries:
                             wait_time = _calculate_backoff(attempt, response)
-                            logger.warning(
-                                "Sync stream transport received %s, retrying in %.1fs (%s/%s)",
-                                response.status_code,
-                                wait_time,
-                                attempt + 1,
-                                max_retries,
+                            _log_transport_retry(
+                                f"HTTP {response.status_code}",
+                                wait_seconds=wait_time,
+                                attempt=attempt + 1,
+                                max_retries=max_retries,
                             )
                             time.sleep(wait_time)
                             continue
@@ -797,10 +812,6 @@ class OpenAICompatibleChatTransport:
                         if response.status_code != 200:
                             error_text = response.read().decode("utf-8", errors="ignore")[:500]
                             raise ValueError(f"API 错误 {response.status_code}: {error_text}")
-
-                        if invocation.runtime_options.print_stream_output:
-                            label = invocation.runtime_options.stream_output_label or request.model
-                            print(f"\n[{label}] 开始流式输出: ", end="", flush=True)
 
                         for line in response.iter_lines():
                             if time.monotonic() - attempt_started_at > invocation.timeout:
@@ -822,12 +833,6 @@ class OpenAICompatibleChatTransport:
                                 full_text += chunk
                                 if invocation.runtime_options.on_stream_chunk:
                                     invocation.runtime_options.on_stream_chunk(chunk, full_text)
-                                if invocation.runtime_options.print_stream_output:
-                                    print(chunk, end="", flush=True)
-
-                    if invocation.runtime_options.print_stream_output:
-                        label = invocation.runtime_options.stream_output_label or request.model
-                        print(f"\n[{label}] 流式输出完成，共 {len(full_text)} 字符\n", flush=True)
                     full_text = full_text.strip()
                     if not full_text:
                         raise OpenAICompatibleEmptyContentError("AI 未返回有效内容")
@@ -836,12 +841,11 @@ class OpenAICompatibleChatTransport:
                     last_exception = exc
                     if attempt < max_retries and not full_text:
                         wait_time = _calculate_backoff(attempt)
-                        logger.warning(
-                            "Sync stream transport failed (%s), retrying in %.1fs (%s/%s)",
+                        _log_transport_retry(
                             type(exc).__name__,
-                            wait_time,
-                            attempt + 1,
-                            max_retries,
+                            wait_seconds=wait_time,
+                            attempt=attempt + 1,
+                            max_retries=max_retries,
                         )
                         time.sleep(wait_time)
                         continue
@@ -1074,12 +1078,11 @@ class AsyncOpenAICompatibleTransport:
 
                 if response.status_code in RETRYABLE_STATUS_CODES and attempt < max_retries:
                     wait_time = _calculate_backoff(attempt, response)
-                    logger.warning(
-                        "Async transport received %s, retrying in %.1fs (%s/%s)",
-                        response.status_code,
-                        wait_time,
-                        attempt + 1,
-                        max_retries,
+                    _log_transport_retry(
+                        f"HTTP {response.status_code}",
+                        wait_seconds=wait_time,
+                        attempt=attempt + 1,
+                        max_retries=max_retries,
                     )
                     await asyncio.sleep(wait_time)
                     continue
@@ -1096,12 +1099,11 @@ class AsyncOpenAICompatibleTransport:
                 last_exception = exc
                 if attempt < max_retries:
                     wait_time = _calculate_backoff(attempt)
-                    logger.warning(
-                        "Async transport request failed (%s), retrying in %.1fs (%s/%s)",
+                    _log_transport_retry(
                         type(exc).__name__,
-                        wait_time,
-                        attempt + 1,
-                        max_retries,
+                        wait_seconds=wait_time,
+                        attempt=attempt + 1,
+                        max_retries=max_retries,
                     )
                     await asyncio.sleep(wait_time)
                     continue
@@ -1154,12 +1156,11 @@ class AsyncOpenAICompatibleTransport:
                                 and attempt < max_retries
                             ):
                                 wait_time = _calculate_backoff(attempt, response)
-                                logger.warning(
-                                    "Async stream transport received %s, retrying in %.1fs (%s/%s)",
-                                    response.status_code,
-                                    wait_time,
-                                    attempt + 1,
-                                    max_retries,
+                                _log_transport_retry(
+                                    f"HTTP {response.status_code}",
+                                    wait_seconds=wait_time,
+                                    attempt=attempt + 1,
+                                    max_retries=max_retries,
                                 )
                                 await asyncio.sleep(wait_time)
                                 continue
@@ -1172,13 +1173,6 @@ class AsyncOpenAICompatibleTransport:
                                 raise ValueError(
                                     f"API 错误 {response.status_code}: {error_text}"
                                 )
-
-                            if invocation.runtime_options.print_stream_output:
-                                label = (
-                                    invocation.runtime_options.stream_output_label
-                                    or request.model
-                                )
-                                print(f"\n[{label}] 开始流式输出: ", end="", flush=True)
 
                             async for line in response.aiter_lines():
                                 data_str = _extract_sse_data(line)
@@ -1195,17 +1189,12 @@ class AsyncOpenAICompatibleTransport:
                                     full_text += chunk
                                     if invocation.runtime_options.on_stream_chunk:
                                         invocation.runtime_options.on_stream_chunk(chunk, full_text)
-                                    if invocation.runtime_options.print_stream_output:
-                                        print(chunk, end="", flush=True)
                 except TimeoutError as exc:
                     raise httpx.ReadTimeout(
                         "AI stream attempt exceeded "
                         f"{invocation.timeout:g} seconds"
                     ) from exc
 
-                if invocation.runtime_options.print_stream_output:
-                    label = invocation.runtime_options.stream_output_label or request.model
-                    print(f"\n[{label}] 流式输出完成，共 {len(full_text)} 字符\n", flush=True)
                 full_text = full_text.strip()
                 if not full_text:
                     raise OpenAICompatibleEmptyContentError("AI 未返回有效内容")
@@ -1214,12 +1203,11 @@ class AsyncOpenAICompatibleTransport:
                 last_exception = exc
                 if attempt < max_retries and not full_text:
                     wait_time = _calculate_backoff(attempt)
-                    logger.warning(
-                        "Async stream transport failed (%s), retrying in %.1fs (%s/%s)",
+                    _log_transport_retry(
                         type(exc).__name__,
-                        wait_time,
-                        attempt + 1,
-                        max_retries,
+                        wait_seconds=wait_time,
+                        attempt=attempt + 1,
+                        max_retries=max_retries,
                     )
                     await asyncio.sleep(wait_time)
                     continue

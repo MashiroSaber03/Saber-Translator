@@ -28,6 +28,7 @@ from src.backend_v2.jobs.repository import (
 from src.backend_v2.jobs.retry import JobRetryService
 from src.backend_v2.public_policy import PublicUserPolicyAccess
 from src.backend_v2.runtime_profile import RuntimeProfile
+from src.shared.user_logging import job_label, user_log, user_log_context
 
 
 def create_jobs_blueprint(
@@ -40,6 +41,15 @@ def create_jobs_blueprint(
     repository = JobQueueRepository(engine)
     public_access = PublicUserPolicyAccess(engine, profile)
     retry_service = JobRetryService(engine, profile=profile)
+
+    def log_job_command(result: dict[str, object], action: str) -> None:
+        job_id = str(result.get("jobId") or "")
+        kind = str(result.get("kind") or "")
+        with user_log_context(job_id=job_id or None):
+            user_log(
+                "task",
+                f"{job_label(kind)}{action}",
+            )
 
     def require_retry_feature(job_id: str) -> None:
         kind = str(repository.get_job(job_id)["kind"])
@@ -56,6 +66,16 @@ def create_jobs_blueprint(
             "derived_rebuild",
         }:
             public_access.require_feature("insight")
+
+    def replacement_job_id(result: dict[str, object]) -> str:
+        job_ids = result.get("jobIds")
+        if (
+            isinstance(job_ids, list)
+            and job_ids
+            and isinstance(job_ids[0], str)
+        ):
+            return job_ids[0]
+        return ""
 
     @blueprint.errorhandler(JobNotFound)
     def not_found(error: JobNotFound):
@@ -214,19 +234,28 @@ def create_jobs_blueprint(
 
     @blueprint.post("/jobs/<job_id>/pause")
     def pause_job(job_id: str) -> Response:
-        return jsonify(repository.request_pause(job_id))
+        result = repository.request_pause(job_id)
+        log_job_command(result, "已请求暂停")
+        return jsonify(result)
 
     @blueprint.post("/jobs/<job_id>/resume")
     def resume_job(job_id: str) -> Response:
-        return jsonify(repository.resume(job_id))
+        result = repository.resume(job_id)
+        log_job_command(result, "已恢复并重新排队")
+        return jsonify(result)
 
     @blueprint.post("/jobs/<job_id>/continue")
     def continue_job(job_id: str) -> Response:
-        return jsonify(repository.continue_interrupted(job_id))
+        result = repository.continue_interrupted(job_id)
+        log_job_command(result, "已继续并重新排队")
+        return jsonify(result)
 
     @blueprint.post("/jobs/<job_id>/cancel")
     def cancel_job(job_id: str) -> Response:
-        return jsonify(repository.request_cancel(job_id))
+        result = repository.request_cancel(job_id)
+        action = "已取消" if result.get("status") == "cancelled" else "已请求取消"
+        log_job_command(result, action)
+        return jsonify(result)
 
     @blueprint.post("/jobs/<job_id>/retry")
     def retry_job(job_id: str) -> Response:
@@ -237,14 +266,19 @@ def create_jobs_blueprint(
             if "strategy" in body
             else "current"
         )
-        return jsonify(
-            retry_service.retry(
-                job_id=job_id,
-                failed_only=False,
-                strategy=strategy,
-                idempotency_key=_require_idempotency_key(),
+        result = retry_service.retry(
+            job_id=job_id,
+            failed_only=False,
+            strategy=strategy,
+            idempotency_key=_require_idempotency_key(),
+        )
+        new_job_id = replacement_job_id(result)
+        with user_log_context(job_id=new_job_id or None):
+            user_log(
+                "task",
+                f"已从任务 {job_id[:8]} 创建完整重试",
             )
-        ), 202
+        return jsonify(result), 202
 
     @blueprint.post("/jobs/<job_id>/retry-failed")
     def retry_failed_job(job_id: str) -> Response:
@@ -255,14 +289,19 @@ def create_jobs_blueprint(
             if "strategy" in body
             else "current"
         )
-        return jsonify(
-            retry_service.retry(
-                job_id=job_id,
-                failed_only=True,
-                strategy=strategy,
-                idempotency_key=_require_idempotency_key(),
+        result = retry_service.retry(
+            job_id=job_id,
+            failed_only=True,
+            strategy=strategy,
+            idempotency_key=_require_idempotency_key(),
+        )
+        new_job_id = replacement_job_id(result)
+        with user_log_context(job_id=new_job_id or None):
+            user_log(
+                "task",
+                f"已从任务 {job_id[:8]} 创建失败页面重试",
             )
-        ), 202
+        return jsonify(result), 202
 
     @blueprint.post("/jobs/reorder")
     def reorder_jobs() -> Response:
@@ -280,15 +319,20 @@ def create_jobs_blueprint(
                 minimum=1,
             ),
         )
+        user_log("task", f"任务队列顺序已更新｜共 {len(ordered)} 个任务")
         return jsonify({"queueRevision": revision})
 
     @blueprint.post("/jobs/cancel-queued")
     def cancel_queued() -> Response:
-        return jsonify({"cancelled": repository.cancel_all_queued()})
+        cancelled = repository.cancel_all_queued()
+        user_log("task", f"已取消全部排队任务｜共 {cancelled} 个")
+        return jsonify({"cancelled": cancelled})
 
     @blueprint.post("/jobs/history/clear")
     def clear_history() -> Response:
-        return jsonify({"removed": repository.clear_history()})
+        removed = repository.clear_history()
+        user_log("task", f"已清理任务历史｜共 {removed} 个")
+        return jsonify({"removed": removed})
 
     @blueprint.get("/job-batches/<batch_id>")
     def get_batch(batch_id: str) -> Response:
@@ -296,27 +340,29 @@ def create_jobs_blueprint(
 
     @blueprint.post("/job-batches/<batch_id>/cancel")
     def cancel_batch(batch_id: str) -> Response:
-        return jsonify({"cancelled": repository.cancel_batch_queued(batch_id)})
+        cancelled = repository.cancel_batch_queued(batch_id)
+        user_log("task", f"已取消任务批次中的排队任务｜共 {cancelled} 个")
+        return jsonify({"cancelled": cancelled})
 
     @blueprint.post("/job-batches/<batch_id>/prioritize")
     def prioritize_batch(batch_id: str) -> Response:
         body = _json_body(allowed_keys={"baseRevision"})
-        return jsonify(
-            {
-                "queueRevision": repository.prioritize_batch(
-                    batch_id=batch_id,
-                    base_revision=_required_integer(
-                        body,
-                        "baseRevision",
-                        minimum=1,
-                    ),
-                )
-            }
+        queue_revision = repository.prioritize_batch(
+            batch_id=batch_id,
+            base_revision=_required_integer(
+                body,
+                "baseRevision",
+                minimum=1,
+            ),
         )
+        user_log("task", f"任务批次 {batch_id[:8]} 已移到队列前方")
+        return jsonify({"queueRevision": queue_revision})
 
     @blueprint.post("/job-batches/<batch_id>/continue")
     def continue_batch(batch_id: str) -> Response:
-        return jsonify(repository.continue_batch(batch_id))
+        result = repository.continue_batch(batch_id)
+        user_log("task", f"已继续任务批次｜共 {result['continued']} 个任务")
+        return jsonify(result)
 
     return blueprint
 

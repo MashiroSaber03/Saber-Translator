@@ -74,7 +74,9 @@ describe('backend-owned export/import contracts', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
-    mocks.getChapterTextExportUrl.mockReturnValue('/api/v2/chapters/chapter-1/text-export')
+    mocks.getChapterTextExportUrl.mockImplementation((chapterId, format = 'json') => (
+      `/api/v2/chapters/${chapterId}/text-export?format=${format}`
+    ))
     mocks.toast.info.mockReturnValue(101)
     mocks.jobList.mockResolvedValue({ items: [], queueRevision: 1 })
   })
@@ -84,11 +86,24 @@ describe('backend-owned export/import contracts', () => {
 
     useExportImport().exportText()
 
-    expect(mocks.getChapterTextExportUrl).toHaveBeenCalledWith('chapter-1')
+    expect(mocks.getChapterTextExportUrl).toHaveBeenCalledWith('chapter-1', 'json')
     expect(mocks.triggerUrlDownload).toHaveBeenCalledWith(
-      '/api/v2/chapters/chapter-1/text-export',
+      '/api/v2/chapters/chapter-1/text-export?format=json',
       'chapter-chapter-1-text.json',
     )
+  })
+
+  it('downloads LabelPlus text from the same backend export endpoint', () => {
+    seedChapter()
+
+    useExportImport().exportText('labelplus')
+
+    expect(mocks.getChapterTextExportUrl).toHaveBeenCalledWith('chapter-1', 'labelplus')
+    expect(mocks.triggerUrlDownload).toHaveBeenCalledWith(
+      '/api/v2/chapters/chapter-1/text-export?format=labelplus',
+      'chapter-chapter-1-labelplus.txt',
+    )
+    expect(mocks.toast.success).toHaveBeenCalledWith('LabelPlus 文本导出已开始')
   })
 
   it('previews text on the backend and commits only matched changed pages', async () => {

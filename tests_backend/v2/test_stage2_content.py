@@ -554,9 +554,9 @@ def test_translation_bootstrap_includes_backend_owned_runtime_configuration(
         "export_preferences",
     } <= settings_by_domain.keys()
     translation = settings_by_domain["translation"]
-    assert translation["schemaVersion"] == 7
+    assert translation["schemaVersion"] == 8
     assert translation["revision"] == 1
-    assert translation["payload"]["settingsSchemaVersion"] == 7
+    assert translation["payload"]["settingsSchemaVersion"] == 8
     assert settings_by_domain["text_style_defaults"]["schemaVersion"] == 2
     assert translation["payload"]["translation"]["provider"]
     assert "textStyle" not in translation["payload"]

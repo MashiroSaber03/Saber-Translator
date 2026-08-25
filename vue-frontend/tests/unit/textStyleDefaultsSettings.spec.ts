@@ -72,7 +72,7 @@ describe('TextStyleDefaultsSettings', () => {
           domain: 'translation',
           payload: settings,
           revision: 1,
-          schemaVersion: 7,
+          schemaVersion: 8,
         },
         {
           domain: 'text_style_defaults',

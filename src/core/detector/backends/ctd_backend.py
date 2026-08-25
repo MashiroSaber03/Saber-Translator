@@ -16,6 +16,7 @@ import torch
 from ..base import BaseTextDetector
 from ..data_types import TextLine
 from src.shared.path_helpers import resource_path
+from src.shared.user_logging import user_log
 
 logger = logging.getLogger("CTDBackend")
 
@@ -94,16 +95,17 @@ class CTDBackend(BaseTextDetector):
             )
             self.model.to(self.device)
             self.backend = 'torch'
-            logger.info(f"加载 PyTorch 模型: {model_path}")
+            logger.debug(f"加载 PyTorch 模型: {model_path}")
         else:
             model_path = os.path.join(self.model_dir, 'comictextdetector.pt.onnx')
             if not os.path.exists(model_path):
                 raise FileNotFoundError(f"模型文件未找到: {model_path}")
             self.model = TextDetBaseDNN(self.input_size[0], model_path)
             self.backend = 'opencv'
-            logger.info(f"加载 ONNX 模型: {model_path}")
+            logger.debug(f"加载 ONNX 模型: {model_path}")
         
-        logger.info(f"CTD 检测器初始化完成 - 设备: {self.device}")
+        logger.debug(f"CTD 检测器初始化完成 - 设备: {self.device}")
+        user_log("system", f"CTD 文本检测模型已加载｜设备 {self.device.upper()}")
     
     
     def _preprocess_image(self, image: np.ndarray) -> Tuple[np.ndarray, float, int, int]:
@@ -171,5 +173,5 @@ class CTDBackend(BaseTextDetector):
             textline = TextLine(pts=pts, confidence=float(score))
             textlines.append(textline)
         
-        logger.info(f"CTD 检测到 {len(textlines)} 个文本行")
+        logger.debug(f"CTD 检测到 {len(textlines)} 个文本行")
         return textlines, mask

@@ -366,7 +366,7 @@ function fixtureOpenAiOptions(useStream: boolean, rpmLimit = 0) {
 
 function createFixtureSettings() {
   return {
-    settingsSchemaVersion: 7,
+    settingsSchemaVersion: 8,
     textStyle: { ...fixtureTextStyle },
     ocrEngine: 'manga_ocr',
     textDetector: 'default',
@@ -452,7 +452,6 @@ function createFixtureSettings() {
     },
     removeTextWithOcr: false,
     compressVisionImages: true,
-    enableVerboseLogs: false,
     lamaDisableResize: false,
   }
 }
@@ -465,7 +464,7 @@ function fixtureSettingsDocument() {
         domain: 'translation',
         payload: settings,
         revision: 1,
-        schemaVersion: 7,
+        schemaVersion: 8,
       },
       {
         domain: 'text_style_defaults',

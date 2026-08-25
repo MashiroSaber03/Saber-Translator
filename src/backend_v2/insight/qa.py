@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterator, Mapping, Sequence
+from contextvars import copy_context
 from dataclasses import dataclass
 from datetime import timedelta
 import hashlib
@@ -58,6 +59,20 @@ from src.backend_v2.storage.schema import (
     process_epochs,
     transient_requests,
     vector_generations,
+)
+from src.shared.ai_providers import get_provider_manifest
+from src.shared.user_logging import (
+    json_details,
+    log_model_input,
+    log_model_request,
+    log_model_response,
+    log_result,
+    log_retry,
+    log_step_failed,
+    log_step_finished,
+    log_step_started,
+    user_log,
+    user_log_context,
 )
 
 
@@ -569,7 +584,7 @@ class TransientRequestRepository:
                     or attempt >= SQLITE_HEARTBEAT_BUSY_RETRY_LIMIT
                 ):
                     raise
-                LOGGER.warning(
+                LOGGER.debug(
                     "Insight QA 连接心跳遇到 SQLite 写锁竞争，将重试："
                     "request=%s retry=%s/%s",
                     request_id[:8],
@@ -753,34 +768,43 @@ class InsightQAWorkerService:
         if fence is None:
             return False
         started_at = time.monotonic()
-        LOGGER.info("Insight QA 检索开始：request=%s", fence.request_id[:8])
-        with owner_scope(fence.owner_user_id):
-            try:
-                request_payload = self.repository.request(fence)
-                result = self._retrieve(request_payload)
-                self.repository.complete(fence, result=result)
-            except QAFenced:
-                LOGGER.warning(
-                    "Insight QA 检索已不再属于当前 Worker：request=%s",
-                    fence.request_id[:8],
-                )
-                return True
-            except Exception as exc:
-                LOGGER.exception(
-                    "Insight QA 检索失败：request=%s duration=%.2fs",
-                    fence.request_id[:8],
-                    time.monotonic() - started_at,
-                )
+        with user_log_context(
+            operation_id=fence.request_id,
+            step_kind="insight_qa_retrieve",
+        ):
+            log_step_started()
+            with owner_scope(fence.owner_user_id):
                 try:
-                    self.repository.fail(fence, message=str(exc))
+                    request_payload = self.repository.request(fence)
+                    result = self._retrieve(request_payload)
+                    self.repository.complete(fence, result=result)
                 except QAFenced:
-                    pass
-            else:
-                LOGGER.info(
-                    "Insight QA 检索完成：request=%s duration=%.2fs",
-                    fence.request_id[:8],
-                    time.monotonic() - started_at,
-                )
+                    LOGGER.debug(
+                        "Insight QA 检索已不再属于当前 Worker：request=%s",
+                        fence.request_id[:8],
+                    )
+                    user_log(
+                        "system",
+                        "问答请求已取消或被新请求替代，本次检索停止",
+                    )
+                    return True
+                except Exception as exc:
+                    log_step_failed(
+                        exc,
+                        duration=time.monotonic() - started_at,
+                    )
+                    try:
+                        self.repository.fail(fence, message=str(exc))
+                    except QAFenced:
+                        pass
+                else:
+                    log_result(
+                        "问答资料检索结果",
+                        json_details(result),
+                    )
+                    log_step_finished(
+                        duration=time.monotonic() - started_at,
+                    )
         return True
 
     def _retrieve(self, request_payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -1198,6 +1222,16 @@ class DefaultQAApiAlgorithms:
                 else reranker_config.timeout_seconds
             ),
         )
+        log_model_input(
+            "重排模型",
+            (
+                f"查询：{question}",
+                *(
+                    f"候选 {index:02d}：{document}"
+                    for index, document in enumerate(documents, start=1)
+                ),
+            ),
+        )
 
         def validate_result(result: object) -> list[dict[str, Any]]:
             if not isinstance(result, Mapping) or "results" not in result:
@@ -1240,16 +1274,32 @@ class DefaultQAApiAlgorithms:
             transport = AsyncOpenAICompatibleTransport(
                 max_retries=reranker_config.transport_retries
             )
-            for attempt in range(reranker_config.business_retries + 1):
+            total_attempts = reranker_config.business_retries + 1
+            for attempt in range(total_attempts):
+                log_model_request(
+                    provider=get_provider_manifest(
+                        reranker_config.provider
+                    ).display_name,
+                    model=reranker_config.model,
+                    stream=False,
+                    attempt=attempt + 1,
+                    total_attempts=total_attempts,
+                )
                 try:
-                    return validate_result(await transport.rerank(request))
+                    raw_result = await transport.rerank(request)
+                    log_model_response(
+                        "重排模型",
+                        json.dumps(raw_result, ensure_ascii=False),
+                    )
+                    return validate_result(raw_result)
                 except QAConflict as exc:
                     if attempt >= reranker_config.business_retries:
                         raise
-                    LOGGER.warning(
-                        "Insight reranker 业务重试 %s/%s: %s",
-                        attempt + 1,
-                        reranker_config.business_retries,
+                    LOGGER.debug("Insight 重排结果校验失败：%s", exc)
+                    log_retry(
+                        "重排模型",
+                        attempt + 2,
+                        total_attempts,
                         exc,
                     )
                     await asyncio.sleep(1)
@@ -1265,11 +1315,9 @@ class DefaultQAApiAlgorithms:
         config: Mapping[str, Any],
         cancelled: threading.Event,
     ) -> Iterator[str]:
-        from src.shared.ai_transport import (
-            AsyncOpenAICompatibleTransport,
-            UnifiedChatRequest,
-        )
+        from src.shared.ai_transport import UnifiedChatRequest
         from src.shared.openai_execution import (
+            OpenAICompatibleAsyncExecutor,
             build_openai_compatible_runtime_options,
         )
         from src.shared.openai_options import OpenAICompatibleOptions
@@ -1345,8 +1393,9 @@ class DefaultQAApiAlgorithms:
             async def check_connection() -> None:
                 before_request()
 
-            await AsyncOpenAICompatibleTransport().complete(
+            await OpenAICompatibleAsyncExecutor().execute(
                 request,
+                capability=request.capability,
                 before_request=check_connection,
             )
 
@@ -1364,8 +1413,9 @@ class DefaultQAApiAlgorithms:
             finally:
                 publish_chunk(done)
 
+        producer_context = copy_context()
         thread = threading.Thread(
-            target=run,
+            target=lambda: producer_context.run(run),
             name="insight-qa-stream",
             daemon=True,
         )

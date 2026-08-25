@@ -178,6 +178,18 @@ def create_translation_blueprint(
 
     @blueprint.get("/chapters/<chapter_id>/text-export")
     def export_text(chapter_id: str):
+        export_format = request.args.get("format", "json")
+        if export_format == "labelplus":
+            response = Response(
+                "\ufeff" + auxiliary.export_labelplus(chapter_id),
+                content_type="text/plain; charset=utf-8",
+            )
+            response.headers["Content-Disposition"] = (
+                f'attachment; filename="chapter-{chapter_id}-labelplus.txt"'
+            )
+            return response
+        if export_format != "json":
+            raise ValueError("format must be json or labelplus")
         payload = json.dumps(
             auxiliary.export_text(chapter_id),
             ensure_ascii=False,

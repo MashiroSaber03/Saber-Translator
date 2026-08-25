@@ -50,9 +50,42 @@ from src.core.config_models import validate_bubble_payload
 from src.core.ocr_types import OcrResult
 from src.shared.image_helpers import encode_vision_image
 from src.shared.paddleocr_vl import PADDLEOCR_VL_LANGUAGE_NAMES
+from src.shared.user_logging import (
+    inline_log_text,
+    log_result,
+    user_log,
+    user_log_context,
+)
 
 
 LOGGER = logging.getLogger("saber.worker.translation")
+
+
+def _step_page_number(step: Mapping[str, Any]) -> int | None:
+    value = step.get("itemOrdinal")
+    return (
+        value
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0
+        else None
+    )
+
+
+def _log_translation_pairs(
+    title: str,
+    originals: list[str],
+    translations: list[str],
+) -> None:
+    log_result(
+        f"{title}｜{len(translations)} 个气泡",
+        [
+            f"{index:02d}. 原文：{inline_log_text(source)}\n"
+            f"    译文：{inline_log_text(target)}"
+            for index, (source, target) in enumerate(
+                zip(originals, translations),
+                start=1,
+            )
+        ],
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1004,7 +1037,6 @@ class CoreTranslationAlgorithms:
         )
         options = _openai_options(config.get("openai_options"))
         options.request.force_json_output = False
-
         def parse_terms(raw: str) -> list[Mapping[str, Any]]:
             parsed = parse_json_block_from_text(raw)
             if isinstance(parsed, Mapping):
@@ -1025,7 +1057,10 @@ class CoreTranslationAlgorithms:
             messages=[{"role": "user", "content": rendered_prompt}],
             base_url=custom_base_url or None,
             openai_options=options,
-            runtime_options=build_openai_compatible_runtime_options(timeout=120),
+            runtime_options=build_openai_compatible_runtime_options(
+                timeout=120,
+                stream_output_label="术语提取",
+            ),
             capability=TRANSLATION_CAPABILITY,
         )
         result = OpenAICompatibleSyncExecutor().execute(
@@ -1053,7 +1088,6 @@ class CoreTranslationAlgorithms:
         if translation_mode not in {"batch", "single"}:
             raise ValueError("unsupported translation mode")
         openai_options = _openai_options(config.get("openai_options"))
-        enable_debug_logs = _config_boolean(config, "enable_debug_logs")
         api_key = _optional_config_string(config, "api_key")
         model_name = _config_string(
             config,
@@ -1081,14 +1115,7 @@ class CoreTranslationAlgorithms:
         )
         use_textbox_prompt = _config_boolean(config, "use_textbox_prompt")
 
-        def run(prompt: object, options: object, *, label: str) -> list[str]:
-            if enable_debug_logs:
-                LOGGER.info(
-                    "[详细日志][%s] 提示词：%s\n输入文本：%s",
-                    label,
-                    prompt,
-                    json.dumps(texts, ensure_ascii=False),
-                )
+        def run(prompt: object, options: object) -> list[str]:
             arguments = {
                 "target_language": target_language,
                 "model_provider": str(provider),
@@ -1106,18 +1133,11 @@ class CoreTranslationAlgorithms:
                 ]
             else:
                 result = translate_text_list(texts, **arguments)
-            if enable_debug_logs:
-                LOGGER.info(
-                    "[详细日志][%s] 模型结果：%s",
-                    label,
-                    json.dumps(result, ensure_ascii=False),
-                )
             return result
 
         translated = run(
             prompt_content,
             openai_options,
-            label="标准翻译",
         )
         textbox: list[str] = []
         if use_textbox_prompt and textbox_prompt:
@@ -1128,7 +1148,6 @@ class CoreTranslationAlgorithms:
             textbox = run(
                 textbox_prompt,
                 textbox_options,
-                label="文本框二次翻译",
             )
         return {"translated": translated, "textbox": textbox, "mode": mode}
 
@@ -1196,7 +1215,6 @@ class CoreTranslationAlgorithms:
             config,
             "credential_version_id",
         )
-        enable_debug_logs = _config_boolean(config, "enable_debug_logs")
         compress_vision_images = _config_boolean(
             config,
             "compress_vision_images",
@@ -1277,39 +1295,6 @@ class CoreTranslationAlgorithms:
         ]
         messages.append({"role": "user", "content": content})
         options = _openai_options(config.get("openai_options"))
-        if enable_debug_logs:
-            LOGGER.info(
-                "[详细日志][%s] 完整消息结构，共 %d 条消息",
-                "AI校对" if mode == "proofread" else "高质量翻译",
-                len(messages),
-            )
-            for message_index, message in enumerate(messages, start=1):
-                LOGGER.info(
-                    "[详细日志] Message %d role=%s",
-                    message_index,
-                    message.get("role"),
-                )
-                message_content = message.get("content")
-                if isinstance(message_content, str):
-                    LOGGER.info("[详细日志] %s", message_content)
-                elif isinstance(message_content, list):
-                    for item_index, item in enumerate(message_content, start=1):
-                        if item.get("type") == "text":
-                            LOGGER.info(
-                                "[详细日志] 文本块 %d：%s",
-                                item_index,
-                                item.get("text", ""),
-                            )
-                        elif item.get("type") == "image_url":
-                            image_url = str(
-                                dict(item.get("image_url", {})).get("url", "")
-                            )
-                            LOGGER.info(
-                                "[详细日志] 图片块 %d：%s...（长度 %d）",
-                                item_index,
-                                image_url[:100],
-                                len(image_url),
-                            )
         executor = OpenAICompatibleSyncExecutor()
 
         def parse(raw: str) -> dict[str, dict[str, str]]:
@@ -1340,7 +1325,6 @@ class CoreTranslationAlgorithms:
                 openai_options=options,
                 runtime_options=build_openai_compatible_runtime_options(
                     timeout=300.0 if options.execution.use_stream else 120.0,
-                    print_stream_output=options.execution.use_stream,
                     stream_output_label=(
                         "AI校对" if mode == "proofread" else "高质量翻译"
                     ),
@@ -1350,12 +1334,6 @@ class CoreTranslationAlgorithms:
             capability=HQ_TRANSLATION_CAPABILITY,
             parser=parse,
         )
-        if enable_debug_logs:
-            LOGGER.info(
-                "[详细日志][%s] 模型原始结果（前 1000 字符）：%s",
-                "AI校对" if mode == "proofread" else "高质量翻译",
-                result.raw_content[:1000],
-            )
         return {
             "rawContent": result.raw_content,
             "pages": result.parsed,
@@ -1482,6 +1460,7 @@ class TranslationPipelineService:
             result = self._checkpoint_only(
                 fence, step, {"published": "clean"}
             )
+            log_result("去字图已发布")
         else:
             raise ValueError(f"unsupported translation step: {kind}")
         return {**result, "__already_published__": True}
@@ -1573,6 +1552,13 @@ class TranslationPipelineService:
                     step_id=str(step["stepId"]),
                     reason="page_has_no_translated_bubbles",
                 )
+                with user_log_context(
+                    job_id=fence.job_id,
+                    page_number=_step_page_number(step),
+                    step_kind=kind,
+                    step_ordinal=step_ordinal,
+                ):
+                    log_result("本页没有可校对的译文，已跳过")
                 continue
             prepared.append((step, snapshot, bubble_payloads))
 
@@ -1835,6 +1821,26 @@ class TranslationPipelineService:
                 },
                 input_fingerprint=fingerprint,
             )
+            with user_log_context(
+                job_id=fence.job_id,
+                page_number=_step_page_number(step),
+                step_kind=kind,
+                step_ordinal=step_ordinal,
+            ):
+                _log_translation_pairs(
+                    "AI 校对结果" if mode == "proofread" else "高质量翻译结果",
+                    [bubble["originalText"] for bubble in requested_bubbles],
+                    [
+                        translated_by_id[bubble["bubbleId"]]
+                        for bubble in requested_bubbles
+                    ],
+                )
+                if warnings:
+                    user_log(
+                        "warning",
+                        f"发现 {len(warnings)} 条术语约束提示",
+                        details=[json.dumps(value, ensure_ascii=False) for value in warnings],
+                    )
             completed += 1
         return {
             "__already_published__": True,
@@ -2055,6 +2061,18 @@ class TranslationPipelineService:
             checkpoint=checkpoint,
             publisher=publish,
         )
+        direction_labels = {"horizontal": "横排", "vertical": "竖排"}
+        log_result(
+            f"检测到 {len(payloads)} 个文本框",
+            [
+                (
+                    f"{index:02d}. 坐标 {payload['coords']} ｜ "
+                    f"{direction_labels.get(str(payload['textDirection']), payload['textDirection'])} ｜ "
+                    f"旋转 {payload['rotationAngle']}°"
+                )
+                for index, payload in enumerate(payloads, start=1)
+            ],
+        )
         return checkpoint
 
     def _ocr(
@@ -2133,13 +2151,34 @@ class TranslationPipelineService:
         for index, payload in enumerate(updated):
             payload["originalText"] = texts[index]
             payload["ocrResult"] = details[index]
-        return self._publish_bubble_update(
+        checkpoint = self._publish_bubble_update(
             fence,
             step,
             snapshot,
             updated,
             {"recognized": len(texts)},
         )
+        log_result(
+            f"OCR 识别完成｜{len(texts)} 个气泡",
+            [
+                (
+                    f"{index:02d}. [{detail['engine']}] "
+                    f"{inline_log_text(text)}"
+                    + (
+                        f" ｜ 置信度 {float(detail['confidence']):.1%}"
+                        if detail["confidenceSupported"]
+                        and detail["confidence"] is not None
+                        else ""
+                    )
+                    + (" ｜ 已使用备用 OCR" if detail["fallbackUsed"] else "")
+                )
+                for index, (text, detail) in enumerate(
+                    zip(texts, details),
+                    start=1,
+                )
+            ],
+        )
+        return checkpoint
 
     def _color(
         self,
@@ -2229,13 +2268,25 @@ class TranslationPipelineService:
                 payload["textColor"] = rgb_to_hex(foreground)
             if uses_auto_color and background is not None:
                 payload["fillColor"] = rgb_to_hex(background)
-        return self._publish_bubble_update(
+        checkpoint = self._publish_bubble_update(
             fence,
             step,
             snapshot,
             updated,
             {"colored": len(colors)},
         )
+        log_result(
+            f"颜色分析完成｜{len(colors)} 个气泡",
+            [
+                (
+                    f"{index:02d}. 文字 {rgb_to_hex(color['fg_color']) if color['fg_color'] is not None else '未识别'} ｜ "
+                    f"背景 {rgb_to_hex(color['bg_color']) if color['bg_color'] is not None else '未识别'} ｜ "
+                    f"置信度 {float(color['confidence']):.1%}"
+                )
+                for index, color in enumerate(colors, start=1)
+            ],
+        )
+        return checkpoint
 
     def _auto_terms(
         self,
@@ -2295,6 +2346,14 @@ class TranslationPipelineService:
                 step_id=str(step["stepId"]),
                 checkpoint=checkpoint,
                 input_fingerprint=fingerprint,
+            )
+            log_result(
+                "术语提取已跳过",
+                (
+                    "原因：未启用自动术语提取"
+                    if checkpoint["skipped"] == "disabled"
+                    else "原因：本页没有可用的 OCR 文本",
+                ),
             )
             return checkpoint
 
@@ -2440,6 +2499,14 @@ class TranslationPipelineService:
             input_fingerprint=fingerprint,
             publisher=publish,
         )
+        log_result(
+            f"术语提取完成｜新增 {added_count} 条｜重复 {duplicate_count} 条",
+            [
+                f"{index:02d}. {entry['source']} → {entry['target']}"
+                + (f" ｜ {entry['note']}" if entry.get("note") else "")
+                for index, entry in enumerate(delta, start=1)
+            ],
+        )
         return checkpoint
 
     def _translate(
@@ -2577,7 +2644,7 @@ class TranslationPipelineService:
             payload["textboxText"] = (
                 textbox[index] if index < len(textbox) else ""
             )
-        return self._publish_bubble_update(
+        checkpoint = self._publish_bubble_update(
             fence,
             step,
             snapshot,
@@ -2599,6 +2666,16 @@ class TranslationPipelineService:
                 ).encode("utf-8")
             ).hexdigest(),
         )
+        _log_translation_pairs("翻译结果", persisted_texts, translated)
+        if textbox:
+            _log_translation_pairs("文本框二次翻译结果", persisted_texts, textbox)
+        if warnings:
+            user_log(
+                "warning",
+                f"发现 {len(warnings)} 条术语约束提示",
+                details=[json.dumps(value, ensure_ascii=False) for value in warnings],
+            )
+        return checkpoint
 
     def _repair(
         self,
@@ -2741,6 +2818,14 @@ class TranslationPipelineService:
             step_id=str(step["stepId"]),
             checkpoint=checkpoint,
             publisher=publish,
+        )
+        log_result(
+            "文字修复完成",
+            (
+                f"方式：{'纯色填充' if method == 'solid' else inpainting['lama_model']}",
+                f"处理气泡：{len(input_bubbles)} 个",
+                f"输出尺寸：{source_size[0]}×{source_size[1]}",
+            ),
         )
         return checkpoint
 
@@ -2941,6 +3026,13 @@ class TranslationPipelineService:
             checkpoint=checkpoint,
             publisher=publish,
         )
+        log_result(
+            "排版渲染完成",
+            (
+                f"渲染气泡：{len(render_bubbles)} 个",
+                f"输出尺寸：{clean_size[0]}×{clean_size[1]}",
+            ),
+        )
         return checkpoint
 
     def _save(
@@ -3039,6 +3131,13 @@ class TranslationPipelineService:
             step_id=str(step["stepId"]),
             checkpoint=checkpoint,
             publisher=publish,
+        )
+        log_result(
+            "结果已保存",
+            (
+                f"图片尺寸：{translated.width}×{translated.height}",
+                f"文件大小：{translated.byte_size / 1024:.1f} KiB",
+            ),
         )
         return checkpoint
 

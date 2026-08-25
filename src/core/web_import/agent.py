@@ -27,6 +27,15 @@ from src.shared.ai_providers import (
 from src.shared.openai_helpers import create_openai_client
 from src.shared.memory_errors import is_memory_allocation_error
 from src.shared.ai_transport import RETRYABLE_STATUS_CODES
+from src.shared.user_logging import (
+    inline_log_text,
+    StreamLog,
+    log_model_input,
+    log_model_request,
+    log_model_response,
+    log_retry,
+    user_log,
+)
 
 from .firecrawl_tools import FIRECRAWL_TOOLS, execute_firecrawl_tool_sync
 
@@ -186,7 +195,16 @@ class MangaScraperAgent:
         def emit_log(log_type: str, message: str):
             if on_log:
                 on_log(self._create_log(log_type, message))
-            logger.info(f"[{log_type}] {message}")
+            if log_type == "error":
+                user_log("error", message)
+                logger.error("[%s] %s", log_type, message)
+            else:
+                # Thinking/tool-call/status events remain available in the
+                # web-import timeline. Product logs already contain the model
+                # request, returned tool call and final extraction result.
+                if log_type == "tool_result":
+                    user_log("result", f"网页工具{message}")
+                logger.debug("[%s] %s", log_type, message)
         
         emit_log('info', f"开始提取: {source_url}")
         
@@ -291,10 +309,22 @@ class MangaScraperAgent:
             LLM 响应
         """
         max_attempts = self.max_retries + 1
+        log_model_input(
+            "网页导入助手",
+            self._model_input_details(messages),
+        )
 
         for attempt in range(max_attempts):
             self._check_control(should_stop)
+            log_model_request(
+                provider=get_provider_manifest(self.provider).display_name,
+                model=self.model_name,
+                stream=self.use_stream,
+                attempt=attempt + 1,
+                total_attempts=max_attempts,
+            )
             try:
+                streamed = self.use_stream
                 if self.use_stream:
                     try:
                         response = self._call_llm_stream(
@@ -303,12 +333,26 @@ class MangaScraperAgent:
                         )
                     except StreamFallbackNeeded as exc:
                         logger.warning("流式响应无法可靠解析，回退到非流式请求: %s", exc)
+                        user_log(
+                            "warning",
+                            "网页导入助手流式工具调用不完整，改用非流式请求｜"
+                            f"{inline_log_text(exc)}",
+                        )
                         self._check_control(should_stop)
+                        log_model_request(
+                            provider=get_provider_manifest(self.provider).display_name,
+                            model=self.model_name,
+                            stream=False,
+                            attempt=attempt + 1,
+                            total_attempts=max_attempts,
+                        )
                         response = self._call_llm_non_stream(messages)
+                        streamed = False
                 else:
                     response = self._call_llm_non_stream(messages)
 
                 self._check_control(should_stop)
+                self._log_model_return(response, streamed=streamed)
                 return response
             except WebImportAgentControlRequested:
                 raise
@@ -318,7 +362,71 @@ class MangaScraperAgent:
                 logger.error(f"LLM 调用失败 (尝试 {attempt + 1}/{max_attempts}): {e}")
                 if attempt >= max_attempts - 1 or not self._should_retry_llm_error(e):
                     raise
+                log_retry(
+                    "网页导入助手",
+                    attempt + 2,
+                    max_attempts,
+                    e,
+                )
                 self._wait_before_retry(2 ** attempt, should_stop)
+
+    @staticmethod
+    def _model_input_details(messages: list[dict[str, Any]]) -> list[str]:
+        details: list[str] = []
+        labels = {
+            "system": "系统指令",
+            "user": "用户内容",
+            "assistant": "模型历史",
+            "tool": "工具结果",
+        }
+        for index, message in enumerate(messages, start=1):
+            role = str(message.get("role") or "message")
+            label = labels.get(role, role)
+            content = message.get("content")
+            if role == "tool" and isinstance(content, str):
+                details.append(f"{label} {index}：{len(content)} 个字符（正文已省略）")
+            elif isinstance(content, str) and content:
+                details.append(f"{label} {index}：\n{content}")
+            tool_calls = message.get("tool_calls")
+            if isinstance(tool_calls, list):
+                for tool_call in tool_calls:
+                    if not isinstance(tool_call, dict):
+                        continue
+                    function = tool_call.get("function")
+                    if not isinstance(function, dict):
+                        continue
+                    details.append(
+                        f"历史工具调用：{function.get('name', '未知工具')}｜"
+                        f"参数 {function.get('arguments', '')}"
+                    )
+        return details
+
+    @staticmethod
+    def _log_model_return(response: Any, *, streamed: bool) -> None:
+        content = getattr(response, "content", None)
+        content_text = content if isinstance(content, str) else ""
+        tool_calls = getattr(response, "tool_calls", None) or []
+        if content_text or not tool_calls:
+            log_model_response(
+                "网页导入助手",
+                content_text,
+                include_content=not streamed,
+            )
+        details: list[str] = []
+        for tool_call in tool_calls:
+            function = getattr(tool_call, "function", None)
+            if function is None:
+                continue
+            details.append(
+                f"{getattr(function, 'name', '未知工具')}："
+                f"{getattr(function, 'arguments', '')}"
+            )
+        if details:
+            user_log(
+                "model",
+                f"网页导入助手返回 {len(details)} 个工具调用",
+                details=details,
+            )
 
     def _call_llm_non_stream(self, messages: list[dict[str, Any]]) -> Any:
         response = self.client.chat.completions.create(
@@ -348,53 +456,59 @@ class MangaScraperAgent:
         content_parts: list[str] = []
         tool_calls_by_index: dict[int, dict[str, Any]] = {}
         saw_tool_call_delta = False
+        stream_log = StreamLog("网页导入助手")
+        stream_completed = False
+        try:
+            for chunk in response_stream:
+                self._check_control(should_stop)
+                choices = getattr(chunk, "choices", None) or []
+                if not choices:
+                    continue
 
-        for chunk in response_stream:
-            self._check_control(should_stop)
-            choices = getattr(chunk, "choices", None) or []
-            if not choices:
-                continue
+                delta = getattr(choices[0], "delta", None)
+                if not delta:
+                    continue
 
-            delta = getattr(choices[0], "delta", None)
-            if not delta:
-                continue
+                content = getattr(delta, "content", None)
+                if content:
+                    content_parts.append(content)
+                    stream_log(content, "".join(content_parts))
 
-            content = getattr(delta, "content", None)
-            if content:
-                content_parts.append(content)
-
-            delta_tool_calls = getattr(delta, "tool_calls", None) or []
-            for tool_call in delta_tool_calls:
-                saw_tool_call_delta = True
-                index = int(getattr(tool_call, "index", 0) or 0)
-                state = tool_calls_by_index.setdefault(
-                    index,
-                    {
-                        "id": "",
-                        "type": "function",
-                        "function": {
-                            "name": "",
-                            "arguments": "",
+                delta_tool_calls = getattr(delta, "tool_calls", None) or []
+                for tool_call in delta_tool_calls:
+                    saw_tool_call_delta = True
+                    index = int(getattr(tool_call, "index", 0) or 0)
+                    state = tool_calls_by_index.setdefault(
+                        index,
+                        {
+                            "id": "",
+                            "type": "function",
+                            "function": {
+                                "name": "",
+                                "arguments": "",
+                            },
                         },
-                    },
-                )
+                    )
 
-                tool_call_id = getattr(tool_call, "id", None)
-                if tool_call_id:
-                    state["id"] = tool_call_id
+                    tool_call_id = getattr(tool_call, "id", None)
+                    if tool_call_id:
+                        state["id"] = tool_call_id
 
-                tool_call_type = getattr(tool_call, "type", None)
-                if tool_call_type:
-                    state["type"] = tool_call_type
+                    tool_call_type = getattr(tool_call, "type", None)
+                    if tool_call_type:
+                        state["type"] = tool_call_type
 
-                function = getattr(tool_call, "function", None)
-                if function:
-                    function_name = getattr(function, "name", None)
-                    if function_name:
-                        state["function"]["name"] = function_name
-                    function_arguments = getattr(function, "arguments", None)
-                    if function_arguments:
-                        state["function"]["arguments"] += function_arguments
+                    function = getattr(tool_call, "function", None)
+                    if function:
+                        function_name = getattr(function, "name", None)
+                        if function_name:
+                            state["function"]["name"] = function_name
+                        function_arguments = getattr(function, "arguments", None)
+                        if function_arguments:
+                            state["function"]["arguments"] += function_arguments
+            stream_completed = True
+        finally:
+            stream_log.finish(completed=stream_completed)
 
         tool_calls = None
         if saw_tool_call_delta:

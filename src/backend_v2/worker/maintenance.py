@@ -27,6 +27,7 @@ from src.backend_v2.storage.schema import (
     web_import_drafts,
 )
 from src.backend_v2.timestamps import utcnow
+from src.shared.user_logging import user_log
 
 
 LOGGER = logging.getLogger(__name__)
@@ -65,21 +66,21 @@ class WorkerMaintenance:
         if not force and now < self._next_run:
             return False
         started_at = time.monotonic()
-        LOGGER.info("Worker 后台维护开始")
+        LOGGER.debug("Worker 后台维护开始")
         errors: list[str] = []
         actions = (
-            ("recover_journal", self.storage.recover_journal),
-            ("prune_import_temp", self._prune_import_temp),
-            ("prune_job_history", self.jobs.prune_history),
-            ("prune_expired_artifacts", self._prune_expired_artifacts),
-            ("prune_terminal_operations", self._prune_terminal_operations),
-            ("prune_idempotency_records", self._prune_idempotency_records),
-            ("collect_insight_garbage", self.insight_gc.collect),
-            ("collect_garbage", self.storage.collect_garbage),
-            ("reconcile_orphan_objects", self.storage.reconcile_orphan_objects),
-            ("prune_transient_requests", self.transient_requests.prune),
+            ("恢复存储事务", self.storage.recover_journal),
+            ("清理导入临时文件", self._prune_import_temp),
+            ("清理任务历史", self.jobs.prune_history),
+            ("清理过期下载文件", self._prune_expired_artifacts),
+            ("清理已结束即时操作", self._prune_terminal_operations),
+            ("清理幂等请求记录", self._prune_idempotency_records),
+            ("清理漫画分析数据", self.insight_gc.collect),
+            ("清理未引用资源", self.storage.collect_garbage),
+            ("核对孤立资源", self.storage.reconcile_orphan_objects),
+            ("清理临时问答请求", self.transient_requests.prune),
             (
-                "collect_orphan_vector_collections",
+                "清理孤立向量集合",
                 lambda: self.vector_store.collect_orphan_collections(self.engine),
             ),
         )
@@ -97,8 +98,12 @@ class WorkerMaintenance:
                 time.monotonic() - started_at,
                 ",".join(errors),
             )
+            user_log(
+                "warning",
+                f"后台维护部分失败｜{'、'.join(errors)}｜将在下一轮重试",
+            )
         else:
-            LOGGER.info(
+            LOGGER.debug(
                 "Worker 后台维护结束：duration=%.2fs",
                 time.monotonic() - started_at,
             )

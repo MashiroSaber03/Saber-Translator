@@ -17,6 +17,7 @@ import einops
 from ..base import BaseTextDetector
 from ..data_types import TextLine
 from src.shared.path_helpers import resource_path
+from src.shared.user_logging import user_log
 
 logger = logging.getLogger("DefaultBackend")
 
@@ -101,7 +102,7 @@ class DefaultBackend(BaseTextDetector):
             )
         
         # 加载模型
-        logger.info(f"加载 Default 模型: {model_path}")
+        logger.debug(f"加载 Default 模型: {model_path}")
         self.model = TextDetection()
         state_dict = torch.load(model_path, map_location='cpu', weights_only=True)
         self.model.load_state_dict(state_dict)
@@ -116,7 +117,8 @@ class DefaultBackend(BaseTextDetector):
             unclip_ratio=self.unclip_ratio
         )
         
-        logger.info(f"Default 检测器初始化完成 - 设备: {self.device}")
+        logger.debug(f"Default 检测器初始化完成 - 设备: {self.device}")
+        user_log("system", f"DBNet 文本检测模型已加载｜设备 {self.device.upper()}")
     
     def _preprocess_image(self, image: np.ndarray) -> Tuple[np.ndarray, float, int, int]:
         """
@@ -229,5 +231,5 @@ class DefaultBackend(BaseTextDetector):
         raw_mask = cv2.resize(mask_cropped, (im_w, im_h), interpolation=cv2.INTER_LINEAR)
         raw_mask = np.clip(raw_mask * 255, 0, 255).astype(np.uint8)
         
-        logger.info(f"Default 检测到 {len(textlines)} 个文本行")
+        logger.debug(f"Default 检测到 {len(textlines)} 个文本行")
         return textlines, raw_mask

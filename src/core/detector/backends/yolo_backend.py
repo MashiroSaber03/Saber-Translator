@@ -16,6 +16,7 @@ import numpy as np
 from ..base import BaseTextDetector
 from ..data_types import TextLine
 from src.shared.path_helpers import resource_path
+from src.shared.user_logging import user_log
 
 logger = logging.getLogger("YoloBackend")
 
@@ -120,7 +121,8 @@ class YoloBackend(BaseTextDetector):
         self.model = MODEL(model_path).to(device=self.device)
         self.model_path = model_path
         
-        logger.info(f"YSGYolo 检测器初始化完成 - 设备: {self.device}, 模型: {model_path}")
+        logger.debug(f"YSGYolo 检测器初始化完成 - 设备: {self.device}, 模型: {model_path}")
+        user_log("system", f"YSGYolo 文本检测模型已加载｜设备 {self.device.upper()}")
     
     def get_valid_labels(self) -> List[str]:
         """获取有效标签"""
@@ -217,5 +219,5 @@ class YoloBackend(BaseTextDetector):
             )
             mask = cv2.dilate(mask, element)
         
-        logger.info(f"YSGYolo 检测到 {len(textlines)} 个文本区域")
+        logger.debug(f"YSGYolo 检测到 {len(textlines)} 个文本区域")
         return textlines, mask

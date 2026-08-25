@@ -12,6 +12,7 @@ from src.shared.ai_transport import (
 from src.shared.image_helpers import encode_vision_image
 from src.shared.openai_execution import (
     OpenAICompatibleEmptyContentError,
+    OpenAICompatibleSyncExecutor,
     build_openai_compatible_runtime_options,
     resolve_openai_compatible_invocation,
 )
@@ -674,6 +675,34 @@ class ProviderRegistryContractTests(unittest.TestCase):
         finally:
             configure_provider_rate_limit_store(None)
 
+    def test_rate_limit_wait_log_is_collapsed_per_provider(self) -> None:
+        from src.shared.openai_rate_limits import (
+            SharedRPMLimiter,
+            _wait_log_deadlines,
+        )
+
+        limiter = SharedRPMLimiter(
+            1,
+            provider="openai",
+            credential_version_id="credential-log-test",
+        )
+        second_credential = SharedRPMLimiter(
+            1,
+            provider="openai",
+            credential_version_id="credential-log-test-2",
+        )
+        _wait_log_deadlines.clear()
+        try:
+            with self.assertLogs("saber.user", level="INFO") as captured:
+                limiter._log_wait(30.0)
+                second_credential._log_wait(30.0)
+            self.assertEqual(
+                sum("已达到每分钟请求上限" in line for line in captured.output),
+                1,
+            )
+        finally:
+            _wait_log_deadlines.clear()
+
     def test_unsupported_stream_and_json_modes_are_rejected_not_downgraded(self) -> None:
         with self.assertRaisesRegex(ValueError, "不支持流式调用"):
             resolve_openai_compatible_invocation(
@@ -760,21 +789,26 @@ class ProviderRegistryContractTests(unittest.TestCase):
     def test_ai_vision_local_custom_service_accepts_an_empty_api_key(self) -> None:
         from src.interfaces.vision_interface import call_ai_vision_ocr_service
 
-        with mock.patch(
-            "src.interfaces.vision_interface._transport.complete_vision",
-            return_value="测试",
-        ) as complete_mock, Image.new("RGB", (12, 12), color="white") as image:
-            content = call_ai_vision_ocr_service(
-                image,
-                provider="custom",
-                api_key="",
-                model_name="local-vision",
-                prompt="识别图片里的文本",
-                custom_base_url="http://localhost:8000/v1",
-            )
+        with self.assertLogs("saber.user", level="DEBUG") as captured:
+            with mock.patch(
+                "src.interfaces.vision_interface._transport.complete_vision",
+                return_value="测试",
+            ) as complete_mock, Image.new("RGB", (12, 12), color="white") as image:
+                content = call_ai_vision_ocr_service(
+                    image,
+                    provider="custom",
+                    api_key="",
+                    model_name="local-vision",
+                    prompt="识别图片里的文本",
+                    custom_base_url="http://localhost:8000/v1",
+                )
 
         self.assertEqual(content, "测试")
         self.assertEqual(complete_mock.call_args.args[0].api_key, "")
+        logged = "\n".join(captured.output)
+        self.assertIn("识别图片里的文本", logged)
+        self.assertIn("图片：", logged)
+        self.assertNotIn(complete_mock.call_args.args[0].image_base64, logged)
 
     def test_ai_vision_json_mode_does_not_override_custom_prompt(self) -> None:
         from src.core.ocr import recognize_ocr_results_in_bubbles
@@ -877,7 +911,7 @@ class ProviderRegistryContractTests(unittest.TestCase):
         self.assertEqual(complete_mock.call_count, 2)
         self.assertEqual(content, "测试")
 
-    def test_hq_stream_transport_prints_chunks_when_enabled(self) -> None:
+    def test_hq_stream_executor_emits_product_stream_and_response_logs(self) -> None:
         class FakeResponse:
             status_code = 200
 
@@ -916,20 +950,31 @@ class ProviderRegistryContractTests(unittest.TestCase):
                 execution=OpenAICompatibleExecutionOptions(use_stream=True),
             ),
             runtime_options=build_openai_compatible_runtime_options(
-                print_stream_output=True,
-                stream_output_label="HQ Test",
+                stream_output_label="高质量翻译",
             ),
         )
 
-        with mock.patch("src.shared.ai_transport.httpx.Client", return_value=FakeClient()), \
-             mock.patch("builtins.print") as print_mock:
-            content = transport.complete(request)
+        with mock.patch(
+            "src.shared.ai_transport.httpx.Client",
+            return_value=FakeClient(),
+        ), self.assertLogs("saber.user", level="DEBUG") as captured:
+            result = OpenAICompatibleSyncExecutor(transport).execute(
+                request,
+                capability="translation",
+            )
 
-        self.assertEqual(content, "你好，世界")
-        printed = "\n".join(" ".join(map(str, call.args)) for call in print_mock.call_args_list)
-        self.assertIn("HQ Test", printed)
-        self.assertIn("你好", printed)
-        self.assertIn("，世界", printed)
+        self.assertEqual(result.raw_content, "你好，世界")
+        logged = "\n".join(captured.output)
+        self.assertIn("高质量翻译请求内容", logged)
+        self.assertIn("hello", logged)
+        self.assertIn("高质量翻译开始流式返回", logged)
+        streamed = "".join(
+            str(getattr(record, "saber_stream_chunk", ""))
+            for record in captured.records
+        )
+        self.assertEqual(streamed, "你好，世界")
+        self.assertIn("高质量翻译流式接收完成", logged)
+        self.assertIn("返回 5 个字符", logged)
 
     def test_hq_stream_transport_invokes_stream_callback_with_cumulative_text(self) -> None:
         class FakeResponse:

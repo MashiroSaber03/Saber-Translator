@@ -30,7 +30,7 @@ function backendDocument(
         domain: 'translation',
         payload: settings as unknown as Record<string, unknown>,
         revision,
-        schemaVersion: 7,
+        schemaVersion: 8,
       },
       {
         domain: 'text_style_defaults',
@@ -205,7 +205,7 @@ describe('settings store plugin agent configuration', () => {
     expect(transaction.settings?.[0]).toMatchObject({
       domain: 'translation',
       baseRevision: 5,
-      schemaVersion: 7,
+      schemaVersion: 8,
     })
     expect(transaction.settings?.[0]?.payload).toMatchObject({
       translation: { modelName: 'backend-translation-model' },

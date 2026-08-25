@@ -25,6 +25,7 @@ from src.backend_v2.storage.database import (
     is_sqlite_busy_error,
 )
 from src.backend_v2.storage.epochs import ProcessEpochRepository
+from src.shared.user_logging import inline_log_text, user_log
 
 
 LOGGER = logging.getLogger("saber.worker")
@@ -73,7 +74,7 @@ def run_worker(args: object) -> int:
             data_root=data_root,
             console_level=args.log_level,
         )
-        LOGGER.info(
+        LOGGER.debug(
             "Worker 进程启动：pid=%s，data_root=%s，日志=%s",
             os.getpid(),
             data_root,
@@ -110,7 +111,7 @@ def run_worker(args: object) -> int:
         return 0
 
     _write_ready_marker(data_root, identity)
-    LOGGER.info(
+    LOGGER.debug(
         "Worker 租约验证完成：epoch=%s，ready marker 已写入",
         identity.epoch_id[:8],
     )
@@ -128,7 +129,7 @@ def run_worker(args: object) -> int:
     )
 
     def request_stop(_signum: int, _frame: object) -> None:
-        LOGGER.info("Worker 收到终止信号")
+        LOGGER.debug("Worker 收到终止信号")
         stop_event.set()
 
     def stop_orphaned_worker() -> None:
@@ -408,11 +409,11 @@ def run_worker(args: object) -> int:
                 engine=engine,
             )
             maintenance.run_if_due(force=True)
-            LOGGER.info(
+            LOGGER.debug(
                 "Worker 服务初始化完成：任务步骤处理器=%s，批处理器=3，操作处理器=4",
                 len(job_handlers),
             )
-            LOGGER.info("Worker 调度循环已就绪，开始从 SQLite 队列领取任务")
+            user_log("system", "任务执行器已就绪")
 
             def memory_admitted() -> bool:
                 if scheduling_policy is None:
@@ -445,7 +446,7 @@ def run_worker(args: object) -> int:
                 except Exception as exc:
                     if not is_sqlite_busy_error(exc):
                         raise
-                    LOGGER.warning(
+                    LOGGER.debug(
                         "Worker 即时任务遇到 SQLite 写锁竞争，将在下一轮重试"
                     )
                     return False
@@ -475,17 +476,21 @@ def run_worker(args: object) -> int:
                 on_activity=model_lifecycle.note_activity,
                 plugin_runtime=plugin_job_runtime,
             ).run(stop_event)
-    except BaseException:
+    except BaseException as exc:
         LOGGER.exception("Worker 运行失败")
+        user_log(
+            "error",
+            f"任务执行器异常退出｜{inline_log_text(exc)}",
+        )
         raise
     finally:
-        LOGGER.info("Worker 正在关闭")
+        LOGGER.debug("Worker 正在关闭")
         if heartbeat is not None:
             heartbeat.stop()
         if parent_monitor is not None:
             parent_monitor.stop()
         if engine is not None:
             engine.dispose()
-        LOGGER.info("Worker 已关闭")
+        LOGGER.debug("Worker 已关闭")
 
     return 75 if heartbeat is not None and not heartbeat.healthy else 0

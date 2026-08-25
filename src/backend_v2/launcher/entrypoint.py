@@ -26,7 +26,11 @@ from src.backend_v2.auth.credential_broker import (
     BROKER_URL_ENV,
     CredentialLeaseBroker,
 )
-from src.backend_v2.logging_config import LOG_LEVEL_ENV, configure_backend_logging
+from src.backend_v2.logging_config import (
+    LOG_LEVEL_ENV,
+    STREAM_FRAME_ENV,
+    configure_backend_logging,
+)
 from src.backend_v2.paths import (
     DATA_ROOT_ENV,
     data_root_fingerprint,
@@ -34,6 +38,7 @@ from src.backend_v2.paths import (
     project_root,
     resolve_data_root,
 )
+from src.backend_v2.redaction import redact_sensitive_text
 from src.backend_v2.runtime_identity import (
     API_EPOCH_ID_ENV,
     API_EPOCH_TOKEN_ENV,
@@ -61,6 +66,7 @@ from src.backend_v2.storage.epochs import (
 )
 from src.backend_v2.storage.lifecycle import initialize_database
 from src.backend_v2.storage.single_instance import DataRootLock
+from src.shared.user_logging import STREAM_FRAME_PREFIX, inline_log_text, user_log
 
 
 MAX_CONSECUTIVE_RESTARTS = 3
@@ -167,6 +173,7 @@ def _child_environment(
     log_level: str | None = None,
     credential_broker_url: str | None = None,
     credential_broker_token: str | None = None,
+    stream_frames: bool = False,
 ) -> dict[str, str]:
     environment = os.environ.copy()
     # The desktop supervisor decodes the captured pipe as UTF-8.  Windows can
@@ -179,6 +186,10 @@ def _child_environment(
     environment[PROFILE_ENV] = profile
     if log_level:
         environment[LOG_LEVEL_ENV] = log_level
+    if stream_frames:
+        environment[STREAM_FRAME_ENV] = "1"
+    else:
+        environment.pop(STREAM_FRAME_ENV, None)
     if credential_broker_url and credential_broker_token:
         environment[BROKER_URL_ENV] = credential_broker_url
         environment[BROKER_TOKEN_ENV] = credential_broker_token
@@ -250,7 +261,12 @@ def _start_output_reader(
     def read_output() -> None:
         try:
             for line in process.stdout:
-                rendered = line.rstrip("\r\n")
+                raw_line = line.rstrip("\r\n")
+                rendered = (
+                    raw_line
+                    if raw_line.startswith(STREAM_FRAME_PREFIX)
+                    else redact_sensitive_text(raw_line, redact_paths=False)
+                )
                 if rendered:
                     try:
                         callback(role, rendered)
@@ -376,7 +392,7 @@ def _try_reconcile_dead_child(
     except Exception as error:
         if not is_sqlite_busy_error(error):
             raise
-        LOGGER.warning(
+        LOGGER.debug(
             "%s 退出清理遇到 SQLite 写锁竞争，将在下一轮重试：epoch=%s",
             role.upper(),
             epoch_id[:8],
@@ -394,7 +410,7 @@ def _reset_restart_count_after_stable_run(
         managed.restart_count > 0
         and now - managed.ready_at >= RESTART_STABILITY_SECONDS
     ):
-        LOGGER.info(
+        LOGGER.debug(
             "%s 子进程已稳定运行 %.0f 秒，连续重启计数清零",
             managed.role.upper(),
             RESTART_STABILITY_SECONDS,
@@ -438,7 +454,7 @@ def _stop_children(children: list[subprocess.Popen[str]]) -> None:
     descendants: list[psutil.Process] = []
     for child in children:
         if child.poll() is None:
-            LOGGER.info("正在停止子进程 pid=%s", child.pid)
+            LOGGER.debug("正在停止子进程 pid=%s", child.pid)
             try:
                 child_descendants = psutil.Process(child.pid).children(recursive=True)
             except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -581,7 +597,7 @@ def _start_child(
     process: subprocess.Popen[str] | None = None
     try:
         repository.register(registration)
-        LOGGER.info(
+        LOGGER.debug(
             "正在启动 %s 子进程（epoch=%s，restart=%s）",
             role.upper(),
             registration.epoch_id[:8],
@@ -603,6 +619,7 @@ def _start_child(
                 log_level=log_level,
                 credential_broker_url=credential_broker_url,
                 credential_broker_token=credential_broker_token,
+                stream_frames=output_callback is not None,
             ),
             capture_output=output_callback is not None,
         )
@@ -632,7 +649,7 @@ def _start_child(
             )
     except BaseException as error:
         if isinstance(error, _LauncherStopRequested):
-            LOGGER.info(
+            LOGGER.debug(
                 "正在取消 %s 子进程启动（epoch=%s）",
                 role.upper(),
                 registration.epoch_id[:8],
@@ -650,7 +667,7 @@ def _start_child(
         else:
             repository.reconcile_dead_worker(registration.epoch_id)
         raise
-    LOGGER.info(
+    LOGGER.debug(
         "%s 子进程已就绪：pid=%s，epoch=%s，耗时=%.2fs",
         role.upper(),
         process.pid,
@@ -778,12 +795,12 @@ class LauncherSupervisor:
             self._publish(LauncherState.STARTING, "正在初始化后端")
             _raise_if_stop_requested(self._stop_event)
             with DataRootLock(config.data_root):
-                LOGGER.info("已取得数据目录单实例锁")
+                LOGGER.debug("已取得数据目录单实例锁")
                 storage = initialize_database(
                     config.data_root,
                     profile_name=config.profile,
                 )
-                LOGGER.info(
+                LOGGER.debug(
                     "数据库初始化与完整性检查完成：revision=%s，新建=%s",
                     storage.schema_revision,
                     "是" if storage.created else "否",
@@ -800,10 +817,10 @@ class LauncherSupervisor:
                         stop_event=self._stop_event,
                     )
                     _reconcile_all_previous_epochs(repository)
-                    LOGGER.info("已完成历史进程租约与中断任务恢复")
+                    LOGGER.debug("已完成历史进程租约与中断任务恢复")
                     recovered = object_storage.recover_journal()
                     integrity = object_storage.scan_integrity()
-                    LOGGER.info(
+                    LOGGER.debug(
                         "对象存储检查完成：恢复日志=%s，检查对象=%s，缺失=%s，恢复=%s",
                         recovered,
                         integrity.checked,
@@ -814,7 +831,7 @@ class LauncherSupervisor:
                     if resolve_runtime_profile(config.profile).browser_credentials:
                         credential_broker = CredentialLeaseBroker()
                         credential_broker.start()
-                        LOGGER.info("浏览器密钥内存服务已启动（仅监听 127.0.0.1）")
+                        LOGGER.debug("浏览器密钥内存服务已启动（仅监听 127.0.0.1）")
 
                     with ChildProcessJob() as child_job:
                         try:
@@ -846,15 +863,14 @@ class LauncherSupervisor:
                             _raise_if_stop_requested(self._stop_event)
                             if config.open_browser:
                                 webbrowser.open_new(f"http://127.0.0.1:{config.port}/")
-                                LOGGER.info(
+                                LOGGER.debug(
                                     "已请求打开浏览器：http://127.0.0.1:%s/",
                                     config.port,
                                 )
-                            LOGGER.info(
-                                "后端全部就绪：本机 http://127.0.0.1:%s/，监听 %s:%s",
-                                config.port,
-                                config.host,
-                                config.port,
+                            user_log(
+                                "system",
+                                f"后端已就绪｜网页 http://127.0.0.1:{config.port}/ ｜"
+                                f"监听 {config.host}:{config.port}",
                             )
                             self._publish(
                                 LauncherState.RUNNING,
@@ -865,6 +881,7 @@ class LauncherSupervisor:
                             while not self._stop_event.wait(0.25):
                                 now = time.monotonic()
                                 for role, managed in list(children.items()):
+                                    recovery_was_requested = False
                                     _reset_restart_count_after_stable_run(
                                         managed,
                                         now=now,
@@ -884,11 +901,16 @@ class LauncherSupervisor:
                                             managed.process.pid,
                                             managed.registration.epoch_id[:8],
                                         )
+                                        user_log(
+                                            "warning",
+                                            "接口进程健康检查持续失败，正在自动恢复",
+                                        )
                                         self._publish(
                                             LauncherState.DEGRADED,
                                             "API 健康检查失败，正在恢复",
                                             children,
                                         )
+                                        recovery_was_requested = True
                                         _stop_children([managed.process])
                                         return_code = managed.process.poll()
                                     if (
@@ -905,11 +927,16 @@ class LauncherSupervisor:
                                             managed.process.pid,
                                             managed.registration.epoch_id[:8],
                                         )
+                                        user_log(
+                                            "warning",
+                                            "任务执行器运行权已失效，正在自动重启",
+                                        )
                                         self._publish(
                                             LauncherState.DEGRADED,
                                             "Worker 状态异常，正在恢复",
                                             children,
                                         )
+                                        recovery_was_requested = True
                                         _stop_children([managed.process])
                                         return_code = managed.process.poll()
                                     if return_code is None:
@@ -920,6 +947,17 @@ class LauncherSupervisor:
                                         managed.process.pid,
                                         return_code,
                                     )
+                                    if not recovery_was_requested:
+                                        role_label = (
+                                            "接口进程"
+                                            if role == "api"
+                                            else "任务执行器"
+                                        )
+                                        user_log(
+                                            "warning",
+                                            f"{role_label}意外退出｜退出码 {return_code}｜"
+                                            "正在自动恢复",
+                                        )
                                     if not _try_reconcile_dead_child(
                                         repository,
                                         role=role,
@@ -967,7 +1005,7 @@ class LauncherSupervisor:
                                     )
                             clean_exit = True
                         except KeyboardInterrupt:
-                            LOGGER.info("收到终止信号，准备关闭后端")
+                            user_log("system", "收到终止信号，正在关闭后端")
                             clean_exit = True
                         finally:
                             self._publish(
@@ -983,16 +1021,20 @@ class LauncherSupervisor:
                 finally:
                     if credential_broker is not None:
                         credential_broker.close()
-                        LOGGER.info("浏览器密钥内存服务已清空并停止")
+                        LOGGER.debug("浏览器密钥内存服务已清空并停止")
                     repository.close(launcher_registration)
                     engine.dispose()
-                    LOGGER.info("Launcher 已关闭")
+                    user_log("system", "后端已关闭")
         except _LauncherStopRequested:
             clean_exit = True
-            LOGGER.info("收到停止请求，取消后端启动")
+            user_log("system", "已取消后端启动")
         except BaseException as error:
             self._publish(LauncherState.DEGRADED, f"后端运行失败：{error}")
             LOGGER.exception("Launcher 运行失败")
+            user_log(
+                "error",
+                f"后端运行失败｜{inline_log_text(error)}",
+            )
             raise
         finally:
             if clean_exit:
@@ -1030,12 +1072,11 @@ def run_launcher(args: object) -> int:
         data_root=data_root,
         console_level=log_level,
     )
-    LOGGER.info(
-        "Saber-Translator Backend-First V2 启动中：pid=%s，Python=%s",
-        os.getpid(),
-        sys.version.split()[0],
+    user_log(
+        "system",
+        f"Saber-Translator 正在启动｜Python {sys.version.split()[0]}",
     )
-    LOGGER.info(
+    LOGGER.debug(
         "运行参数：profile=%s，data_root=%s，监听=%s:%s，日志=%s",
         profile.name,
         data_root,

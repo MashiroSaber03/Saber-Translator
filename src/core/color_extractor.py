@@ -121,7 +121,7 @@ class ColorExtractor:
                     logger.error(f"48px OCR 模型切换到 {device} 失败，颜色提取不可用")
                     return False
                 self._device = device
-                logger.info(f"✅ 颜色提取器已切换到设备: {device}")
+                logger.debug(f"颜色提取器已切换到设备: {device}")
                 return True
             # Worker 的空闲/手动模型释放会重置底层 48px 单例。
             # 上层颜色提取器必须随之失效，以便本次调用重新获取并懒加载模型。
@@ -138,7 +138,7 @@ class ColorExtractor:
             
             self._device = device
             self._initialized = True
-            logger.info(f"✅ 颜色提取器已初始化 (设备: {device})")
+            logger.debug(f"颜色提取器已初始化 (设备: {device})")
             return True
             
         except Exception as e:

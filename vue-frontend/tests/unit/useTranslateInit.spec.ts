@@ -65,7 +65,7 @@ function bootstrap(
           domain: 'translation',
           payload: createDefaultSettings() as unknown as Record<string, unknown>,
           revision: 1,
-          schemaVersion: 7,
+          schemaVersion: 8,
         },
         {
           domain: 'text_style_defaults',

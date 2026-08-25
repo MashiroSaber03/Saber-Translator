@@ -5,6 +5,8 @@ import threading
 import time
 from typing import List
 
+from src.shared.user_logging import inline_log_text, user_log
+
 # 配置日志
 logger = logging.getLogger(__name__)
 REQUEST_TIMEOUT_SECONDS = 120.0
@@ -87,7 +89,7 @@ class BaiduOCRInterface:
 
             if elapsed < min_interval_ms:
                 sleep_time = (min_interval_ms - elapsed) / 1000
-                logger.info(f"强制请求延迟 {sleep_time:.2f}s 以避免QPS限制")
+                logger.debug(f"强制请求延迟 {sleep_time:.2f}s 以避免QPS限制")
                 time.sleep(sleep_time)
 
             self.last_request_time = time.time() * 1000
@@ -136,10 +138,10 @@ class BaiduOCRInterface:
             if language.lower() in self.LANGUAGE_MAPPING:
                 lang_code = self.LANGUAGE_MAPPING[language.lower()]
             data["language_type"] = lang_code
-            logger.info(f"设置百度OCR语言类型为: {lang_code} (源语言: {language})")
+            logger.debug(f"设置百度OCR语言类型为: {lang_code} (源语言: {language})")
         else:
             # 如果是auto或auto_detect，不设置language_type参数，让API自动检测
-            logger.info("使用自动检测语言，不设置language_type参数")
+            logger.debug("使用自动检测语言，不设置language_type参数")
         
         # 确保请求间隔
         self._ensure_request_interval()
@@ -151,9 +153,9 @@ class BaiduOCRInterface:
         for retry in range(max_retries):
             try:
                 headers = {'Content-Type': 'application/x-www-form-urlencoded'}
-                logger.info(f"发送百度OCR请求 (尝试 {retry+1}/{max_retries})")
+                logger.debug(f"发送百度OCR请求 (尝试 {retry+1}/{max_retries})")
                 # 不记录完整请求参数，仅记录端点和是否有语言设置
-                logger.info(f"请求端点: {endpoint.split('/')[-1]}, 语言设置: {'有' if 'language_type' in data else '无'}")
+                logger.debug(f"请求端点: {endpoint.split('/')[-1]}, 语言设置: {'有' if 'language_type' in data else '无'}")
                 
                 response = requests.post(
                     endpoint,
@@ -174,7 +176,8 @@ class BaiduOCRInterface:
                     
                     # 处理不同类型的错误
                     if error_code in [110, 111]:  # 令牌过期
-                        logger.info("访问令牌过期，重新获取...")
+                        logger.debug("访问令牌过期，正在重新获取")
+                        user_log("warning", "百度 OCR 访问令牌已过期，正在自动刷新")
                         self.access_token = self._get_access_token()
                         params["access_token"] = self.access_token
                         continue  # 使用新令牌重试
@@ -182,7 +185,11 @@ class BaiduOCRInterface:
                     elif error_code == 18:  # QPS限制
                         if retry < max_retries - 1:
                             wait_time = retry_delay * (retry + 1)
-                            logger.info(f"触发QPS限制，等待 {wait_time} 秒后重试...")
+                            logger.debug(f"触发QPS限制，等待 {wait_time} 秒后重试")
+                            user_log(
+                                "warning",
+                                f"百度 OCR 已达到 QPS 上限，等待 {wait_time} 秒后重试",
+                            )
                             time.sleep(wait_time)
                             continue  # 等待后重试
                         else:
@@ -207,14 +214,19 @@ class BaiduOCRInterface:
                         )
                     text_results.append(item["words"])
                 
-                logger.info(f"百度OCR识别成功，返回 {len(text_results)} 个文本结果")
+                logger.debug(f"百度OCR识别成功，返回 {len(text_results)} 个文本结果")
                 return text_results
             
             except (requests.RequestException, ValueError) as e:
                 logger.error(f"百度OCR识别时出错: {str(e)}")
                 if retry < max_retries - 1:
                     wait_time = retry_delay * (retry + 1)
-                    logger.info(f"将在 {wait_time} 秒后重试...")
+                    logger.debug(f"百度OCR请求将在 {wait_time} 秒后重试")
+                    user_log(
+                        "warning",
+                        f"百度 OCR 请求失败，等待 {wait_time} 秒后重试｜"
+                        f"{inline_log_text(e)}",
+                    )
                     time.sleep(wait_time)
                 else:
                     raise RuntimeError("百度OCR请求重试耗尽") from e

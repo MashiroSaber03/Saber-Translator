@@ -26,6 +26,7 @@ from src.shared.path_helpers import resource_path
 from src.shared import constants
 from src.shared.image_helpers import image_to_rgb_array
 from src.shared.memory_errors import is_memory_allocation_error
+from src.shared.user_logging import user_log
 from src.core.ocr_types import OcrResult, OcrTextlineResult, create_ocr_result, create_ocr_textline_result
 
 logger = logging.getLogger("Model48pxOCR")
@@ -136,9 +137,10 @@ class Model48pxOCR:
                 try:
                     self.model.to(device)
                     self.device = device
-                    logger.info(f"✅ 48px OCR 已切换到设备: {device}")
+                    logger.debug(f"48px OCR 已切换到设备: {device}")
+                    user_log("system", f"48px OCR 模型已切换｜设备 {device.upper()}")
                 except Exception as e:
-                    logger.error(f"❌ 48px OCR 切换设备失败: {e}", exc_info=True)
+                    logger.error(f"48px OCR 切换设备失败: {e}", exc_info=True)
                     if is_memory_allocation_error(e):
                         raise
                     return False
@@ -151,8 +153,9 @@ class Model48pxOCR:
             dict_path = os.path.join(model_dir, constants.MODEL_48PX_DICT)
             
             if not os.path.exists(ckpt_path) or not os.path.exists(dict_path):
-                logger.error("❌ 48px OCR 模型文件不存在")
-                logger.info("请运行: python scripts/download_48px_model.py")
+                logger.error(
+                    "48px OCR 模型文件不存在，请运行 scripts/download_48px_model.py"
+                )
                 return False
             
             # 加载字典
@@ -174,11 +177,12 @@ class Model48pxOCR:
                 self.model = self.model.to(device)
             
             self.initialized = True
-            logger.info(f"✅ 48px OCR 已加载 (设备: {device})")
+            logger.debug(f"48px OCR 已加载 (设备: {device})")
+            user_log("system", f"48px OCR 模型已加载｜设备 {device.upper()}")
             return True
             
         except Exception as e:
-            logger.error(f"❌ 48px OCR 初始化失败: {e}", exc_info=True)
+            logger.error(f"48px OCR 初始化失败: {e}", exc_info=True)
             if is_memory_allocation_error(e):
                 raise
             return False
@@ -313,7 +317,7 @@ class Model48pxOCR:
             img_np = image_to_rgb_array(image)
 
             if textlines_per_bubble is None:
-                logger.warning("未提供原始文本行信息，使用简单裁剪模式")
+                logger.debug("未提供原始文本行信息，使用简单裁剪模式")
                 bubble_regions = [
                     img_np[y1:y2, x1:x2]
                     for x1, y1, x2, y2 in bubble_coords
@@ -333,7 +337,7 @@ class Model48pxOCR:
             if len(textlines_per_bubble) != len(bubble_coords):
                 raise ValueError("48px OCR 文本行分组数量与气泡数量不匹配")
 
-            logger.info(f"使用 48px OCR 识别 {len(bubble_coords)} 个气泡 (使用原始文本行)")
+            logger.debug(f"使用 48px OCR 识别 {len(bubble_coords)} 个气泡 (使用原始文本行)")
 
             flat_regions: List[np.ndarray] = []
             flat_bubble_indices: List[int] = []
@@ -395,7 +399,7 @@ class Model48pxOCR:
                     else 0.0
                 )
                 if bubble_text:
-                    logger.info(f"气泡 {bubble_idx}: '{bubble_text}'")
+                    logger.debug(f"气泡 {bubble_idx}: '{bubble_text}'")
 
                 results.append(
                     create_ocr_result(
@@ -428,7 +432,7 @@ class Model48pxOCR:
             return []
 
         try:
-            logger.info(f"使用 48px OCR 识别 {len(textlines)} 个文本行")
+            logger.debug(f"使用 48px OCR 识别 {len(textlines)} 个文本行")
             img_np = image_to_rgb_array(image)
             results: List[Optional[OcrTextlineResult]] = [None] * len(textlines)
             valid_regions: List[np.ndarray] = []
@@ -585,7 +589,7 @@ class Model48pxOCR:
         if max_chunk_size <= 0:
             raise ValueError("颜色提取批大小必须大于零")
         
-        logger.info(f"开始为 {len(bubble_coords)} 个气泡提取颜色（批量模式）...")
+        logger.debug(f"开始为 {len(bubble_coords)} 个气泡提取颜色（批量模式）...")
         
         try:
             img_np = image_to_rgb_array(image)
@@ -597,7 +601,7 @@ class Model48pxOCR:
             
             # 如果没有提供原始文本行，使用简单裁剪模式
             if textlines_per_bubble is None:
-                logger.info("使用简单裁剪模式提取颜色")
+                logger.debug("使用简单裁剪模式提取颜色")
                 for bubble_idx, (x1, y1, x2, y2) in enumerate(bubble_coords):
                     bubble = img_np[y1:y2, x1:x2]
                     region = self._prepare_region_for_batch(bubble)
@@ -639,7 +643,7 @@ class Model48pxOCR:
             if not all_regions:
                 raise RuntimeError("没有有效的文本区域可提取颜色")
             
-            logger.info(f"收集到 {len(all_regions)} 个文本区域，开始批量推理...")
+            logger.debug(f"收集到 {len(all_regions)} 个文本区域，开始批量推理...")
             
             # ========== 第2步：按宽度排序（减少padding浪费） ==========
             perm = sorted(range(len(all_regions)), key=lambda x: all_widths[x])
@@ -740,7 +744,7 @@ class Model48pxOCR:
             if self.device == 'cuda':
                 torch.cuda.empty_cache()
             
-            logger.info(f"颜色提取完成，成功 {sum(1 for r in results if r.fg_color)} / {len(results)}")
+            logger.debug(f"颜色提取完成，成功 {sum(1 for r in results if r.fg_color)} / {len(results)}")
             return results
             
         except Exception as e:
@@ -797,4 +801,4 @@ def reset_48px_ocr_handler():
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
-    logger.info("48px OCR 实例已重置")
+    logger.debug("48px OCR 实例已重置")

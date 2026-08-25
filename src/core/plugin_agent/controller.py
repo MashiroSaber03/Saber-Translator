@@ -129,7 +129,11 @@ class PluginAgentController:
     ) -> dict[str, Any]:
         system_prompt = self._build_planning_system_prompt(session)
         messages = self._build_chat_messages(session, system_prompt, skill_markdown)
-        return self._call_agent_json(messages, agent_config, label="PluginAgent-Planning")
+        return self._call_agent_json(
+            messages,
+            agent_config,
+            label="插件助手规划",
+        )
 
     def execute(
         self,
@@ -189,7 +193,7 @@ class PluginAgentController:
             envelope = self._call_agent_json(
                 messages,
                 agent_config,
-                label="PluginAgent-Execution",
+                label="插件助手执行",
                 on_stream_chunk=handle_stream_chunk,
                 before_request=check_control,
                 require_action=True,
@@ -308,7 +312,6 @@ class PluginAgentController:
                 openai_options=openai_options,
                 runtime_options=build_openai_compatible_runtime_options(
                     timeout=180.0,
-                    print_stream_output=openai_options.execution.use_stream,
                     stream_output_label=label,
                     on_stream_chunk=on_stream_chunk,
                 ),

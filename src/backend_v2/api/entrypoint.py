@@ -25,6 +25,7 @@ from src.backend_v2.runtime_profile import (
 )
 from src.backend_v2.storage.database import create_sqlite_engine, database_path_for
 from src.backend_v2.storage.epochs import ProcessEpochRepository
+from src.shared.user_logging import user_log
 
 
 LOGGER = logging.getLogger("saber.api")
@@ -43,7 +44,7 @@ def run_api(args: object) -> int:
             data_root=data_root,
             console_level=args.log_level,
         )
-        LOGGER.info(
+        LOGGER.debug(
             "API 进程启动：pid=%s，data_root=%s，日志=%s",
             os.getpid(),
             data_root,
@@ -112,7 +113,7 @@ def run_api(args: object) -> int:
             )
         )
         if not args.probe:
-            LOGGER.info(
+            LOGGER.debug(
                 "API 应用初始化完成：已注册 %s 条路由",
                 sum(1 for _rule in app.url_map.iter_rules()),
             )
@@ -144,16 +145,14 @@ def run_api(args: object) -> int:
         if fenced.is_set():
             return 75
         app.extensions["saber_v2_runtime"].start()
-        LOGGER.info(
-            "API 服务就绪：http://127.0.0.1:%s/（监听 %s:%s，线程数=24）",
-            args.port,
-            args.host,
-            args.port,
+        user_log(
+            "system",
+            f"API 服务已就绪｜{args.host}:{args.port}｜24 个请求线程",
         )
         server.run()
     finally:
         if server is not None:
-            LOGGER.info("API 服务正在关闭")
+            LOGGER.debug("API 服务正在关闭")
         if heartbeat is not None:
             heartbeat.stop()
         if parent_monitor is not None:
@@ -165,7 +164,7 @@ def run_api(args: object) -> int:
             app.extensions["saber_v2_runtime"].close()
         engine.dispose()
         if server is not None:
-            LOGGER.info("API 服务已关闭")
+            LOGGER.debug("API 服务已关闭")
     if fenced.is_set():
         return 75
     return 0

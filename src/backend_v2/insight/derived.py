@@ -66,6 +66,7 @@ from src.backend_v2.storage.schema import (
     jobs,
 )
 from src.shared.memory_errors import is_memory_allocation_error
+from src.shared.user_logging import json_details, log_result
 
 
 DERIVED_KINDS = frozenset(
@@ -3945,6 +3946,21 @@ class InsightDerivedWorkerService:
                             "content": dict(content),
                         }
                     )
+                log_result(
+                    f"第 {layer_index + 1} 层汇总结果｜{len(completed_units)} 个分组",
+                    json_details(
+                        [
+                            {
+                                "unit": index,
+                                "content": value["content"],
+                            }
+                            for index, value in enumerate(
+                                completed_units,
+                                start=1,
+                            )
+                        ]
+                    ),
+                )
                 checkpoint: dict[str, Any] = {}
 
                 def publish(connection: Connection) -> None:
@@ -3991,6 +4007,10 @@ class InsightDerivedWorkerService:
                     payload.get("content"),
                     "overview result content",
                 )
+                log_result(
+                    "作品概览生成结果",
+                    json_details(payload),
+                )
                 checkpoint = {}
 
                 def publish(connection: Connection) -> None:
@@ -4017,6 +4037,10 @@ class InsightDerivedWorkerService:
                     raise InsightConflict(
                         "compressed context algorithm returned an empty or non-object result"
                     )
+                log_result(
+                    "压缩上下文生成结果",
+                    json_details(payload),
+                )
                 checkpoint = {}
 
                 def publish(connection: Connection) -> None:
@@ -4046,6 +4070,10 @@ class InsightDerivedWorkerService:
                     raise InsightConflict(
                         "timeline algorithm returned a non-object result"
                     )
+                log_result(
+                    "剧情时间线生成结果",
+                    json_details(timeline),
+                )
                 checkpoint = {}
 
                 def publish(connection: Connection) -> None:
@@ -4072,6 +4100,14 @@ class InsightDerivedWorkerService:
                     for key, value in vector_build.items()
                     if not key.startswith("__")
                 }
+                log_result(
+                    "语义索引生成进度",
+                    (
+                        f"页面：{checkpoint.get('pageCount', 0)}/{checkpoint.get('pageTotal', 0)}",
+                        f"事件：{checkpoint.get('eventCount', 0)}/{checkpoint.get('eventTotal', 0)}",
+                        f"覆盖率：{float(checkpoint.get('coverage', 0)):.1%}",
+                    ),
+                )
                 if vector_build.get("__control_drained__"):
                     return {
                         **checkpoint,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import sqlite3
@@ -207,6 +208,7 @@ def test_job_detail_does_not_expose_internal_step_asset_checkpoints(
     job_id = _create_job(repository)
     fence = repository.claim_next(worker_epoch_id=worker_epoch_id)
     assert fence is not None
+    assert fence.first_claim is True
     step = repository.next_step(fence)
     assert step is not None
     asset_id = str(uuid.uuid4())
@@ -658,6 +660,9 @@ def test_bad_attempt_id_cannot_publish_checkpoint(job_platform) -> None:
         attempt_id=str(uuid.uuid4()),
         worker_epoch_id=fence.worker_epoch_id,
         owner_user_id=fence.owner_user_id,
+        kind=fence.kind,
+        first_claim=fence.first_claim,
+        started_at=fence.started_at,
     )
     with pytest.raises(AttemptFenced):
         repository.complete_step(
@@ -665,6 +670,22 @@ def test_bad_attempt_id_cannot_publish_checkpoint(job_platform) -> None:
             step_id=str(step["stepId"]),
             checkpoint={"mustNotPublish": True},
         )
+
+
+def test_attempt_fence_marks_only_the_first_job_claim(job_platform) -> None:
+    _engine, repository, _book, _chapter, worker_epoch_id = job_platform
+    job_id = _create_job(repository)
+
+    first = repository.claim_next(worker_epoch_id=worker_epoch_id)
+    assert first is not None
+    assert first.job_id == job_id
+    assert first.first_claim is True
+
+    repository.yield_attempt(first, reason="fairness")
+    second = repository.claim_next(worker_epoch_id=worker_epoch_id)
+    assert second is not None
+    assert second.job_id == job_id
+    assert second.first_claim is False
 
 
 def test_lost_worker_epoch_fences_all_late_writes(job_platform) -> None:
@@ -721,6 +742,262 @@ def test_worker_loop_finishes_durable_job_without_browser(job_platform) -> None:
             .where(job_items.c.job_id == job_id)
             .order_by(job_steps.c.ordinal)
         ).scalars().all() == ["completed", "completed"]
+
+
+def test_worker_loop_emits_readable_sequential_product_records(
+    job_platform,
+    caplog,
+) -> None:
+    _engine, repository, _book, _chapter, worker_epoch_id = job_platform
+    _create_job(repository, steps=("one", "two"))
+    fence = repository.claim_next(worker_epoch_id=worker_epoch_id)
+    assert fence is not None
+    loop = JobWorkerLoop(
+        repository,
+        worker_epoch_id=worker_epoch_id,
+        handlers={
+            "one": lambda _fence, step: {"done": step["stepKind"]},
+            "two": lambda _fence, step: {"done": step["stepKind"]},
+        },
+    )
+
+    with caplog.at_level(logging.INFO, logger="saber.user"):
+        loop._run_attempt(fence, threading.Event())
+
+    records = [
+        record
+        for record in caplog.records
+        if record.name == "saber.user"
+    ]
+    messages = [record.getMessage() for record in records]
+    assert any("开始｜顺序模式" in message for message in messages)
+    assert any("one｜开始" in message for message in messages)
+    assert any("one｜完成" in message for message in messages)
+    assert any("two｜开始" in message for message in messages)
+    assert any("two｜完成" in message for message in messages)
+    assert any("已完成" in message for message in messages)
+    assert all(record.levelno >= logging.INFO for record in records)
+
+
+def test_worker_loop_emits_readable_parallel_batch_product_records(
+    job_platform,
+    caplog,
+) -> None:
+    _engine, repository, _book, _chapter, worker_epoch_id = job_platform
+    created = repository.create_batch(
+        kind="export",
+        display_name="parallel batch logs",
+        specs=[
+            JobSpec(
+                kind="export",
+                config={"executionMode": "parallel", "deepLearningConcurrency": 1},
+                items=(JobItemSpec(page_id=None, step_kinds=("batch",)),),
+            )
+        ],
+    )
+    fence = repository.claim_next(worker_epoch_id=worker_epoch_id)
+    assert fence is not None
+    assert fence.job_id == created["jobIds"][0]
+    loop = JobWorkerLoop(
+        repository,
+        worker_epoch_id=worker_epoch_id,
+        handlers={"batch": lambda _fence, _step: {}},
+        batch_handlers={
+            "batch": lambda _fence, steps: {
+                "steps": {str(step["stepId"]): {} for step in steps}
+            }
+        },
+    )
+
+    with caplog.at_level(logging.INFO, logger="saber.user"):
+        loop._run_attempt(fence, threading.Event())
+
+    messages = [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "saber.user"
+    ]
+    assert any("文件导出开始｜并行模式" in message for message in messages)
+    assert any("batch｜批处理开始｜共 1 页" in message for message in messages)
+    assert any("batch｜完成" in message for message in messages)
+
+
+@pytest.mark.parametrize(
+    ("execution_mode", "uses_batch_handler"),
+    (
+        ("sequential", False),
+        ("parallel", False),
+        ("sequential", True),
+        ("parallel", True),
+    ),
+)
+def test_worker_fencing_is_not_logged_as_a_step_failure(
+    job_platform,
+    caplog,
+    execution_mode: str,
+    uses_batch_handler: bool,
+) -> None:
+    _engine, repository, _book, _chapter, worker_epoch_id = job_platform
+    step_kind = "batch" if uses_batch_handler else "ordinary"
+    created = repository.create_batch(
+        kind="export",
+        display_name="fenced logging",
+        specs=[
+            JobSpec(
+                kind="export",
+                config={
+                    "executionMode": execution_mode,
+                    "deepLearningConcurrency": 1,
+                },
+                items=(JobItemSpec(page_id=None, step_kinds=(step_kind,)),),
+            )
+        ],
+    )
+    fence = repository.claim_next(worker_epoch_id=worker_epoch_id)
+    assert fence is not None
+    assert fence.job_id == created["jobIds"][0]
+
+    def fenced(*_args):
+        raise AttemptFenced("execution rights changed")
+
+    loop = JobWorkerLoop(
+        repository,
+        worker_epoch_id=worker_epoch_id,
+        handlers={step_kind: fenced},
+        batch_handlers={step_kind: fenced} if uses_batch_handler else None,
+    )
+
+    with caplog.at_level(logging.INFO, logger="saber.user"):
+        loop._run_attempt(fence, threading.Event())
+
+    messages = [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "saber.user"
+    ]
+    assert not any("失败" in message for message in messages)
+    assert repository.get_job(fence.job_id)["status"] == "running"
+
+
+def test_plugin_pipeline_fencing_is_not_logged_as_a_plugin_failure(
+    job_platform,
+    caplog,
+) -> None:
+    _engine, repository, _book, _chapter, worker_epoch_id = job_platform
+    created = repository.create_batch(
+        kind="export",
+        display_name="fenced plugin hook",
+        specs=[
+            JobSpec(
+                kind="export",
+                config={},
+                items=(JobItemSpec(page_id=None, step_kinds=("ordinary",)),),
+            )
+        ],
+    )
+    fence = repository.claim_next(worker_epoch_id=worker_epoch_id)
+    assert fence is not None
+    assert fence.job_id == created["jobIds"][0]
+
+    class FencedPluginRuntime:
+        @staticmethod
+        def before_pipeline(*_args, **_kwargs):
+            raise AttemptFenced("execution rights changed")
+
+        @staticmethod
+        def after_pipeline(*_args, **_kwargs):
+            raise AttemptFenced("execution rights changed")
+
+    loop = JobWorkerLoop(
+        repository,
+        worker_epoch_id=worker_epoch_id,
+        handlers={"ordinary": lambda *_args: {}},
+        plugin_runtime=FencedPluginRuntime(),
+    )
+    step = {
+        "itemId": "item-1",
+        "stepId": "step-1",
+        "pageId": "page-1",
+        "isFirstStep": True,
+    }
+
+    with caplog.at_level(logging.INFO, logger="saber.user"):
+        with pytest.raises(AttemptFenced):
+            loop._before_pipeline(fence, step)
+        with pytest.raises(AttemptFenced):
+            loop._after_pipeline(
+                fence,
+                item_id="item-1",
+                page_id="page-1",
+                status="completed",
+            )
+
+    assert not any(
+        "插件" in record.getMessage()
+        for record in caplog.records
+        if record.name == "saber.user"
+    )
+
+
+def test_batch_logs_use_each_persisted_step_outcome_and_one_shared_error(
+    job_platform,
+    caplog,
+) -> None:
+    _engine, repository, _book, _chapter, worker_epoch_id = job_platform
+    created = repository.create_batch(
+        kind="export",
+        display_name="partial batch failure",
+        specs=[
+            JobSpec(
+                kind="export",
+                config={
+                    "executionMode": "sequential",
+                    "translation": {"batchSize": 2},
+                },
+                items=(
+                    JobItemSpec(page_id=None, step_kinds=("hq_translate",)),
+                    JobItemSpec(page_id=None, step_kinds=("hq_translate",)),
+                ),
+            )
+        ],
+    )
+    fence = repository.claim_next(worker_epoch_id=worker_epoch_id)
+    assert fence is not None
+    assert fence.job_id == created["jobIds"][0]
+
+    def fail_after_first_step(current_fence, steps):
+        repository.complete_step(
+            current_fence,
+            step_id=str(steps[0]["stepId"]),
+            checkpoint={"completed": True},
+        )
+        raise RuntimeError("shared batch failure")
+
+    loop = JobWorkerLoop(
+        repository,
+        worker_epoch_id=worker_epoch_id,
+        handlers={"hq_translate": lambda _fence, _step: {}},
+        batch_handlers={"hq_translate": fail_after_first_step},
+    )
+
+    with caplog.at_level(logging.INFO, logger="saber.user"):
+        loop._run_attempt(fence, threading.Event())
+
+    messages = [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "saber.user"
+    ]
+    assert sum("shared batch failure" in message for message in messages) == 1
+    assert sum("高质量翻译｜完成" in message for message in messages) == 1
+    assert sum("高质量翻译｜已记录失败" in message for message in messages) == 1
+    page_outcomes = [
+        message
+        for message in messages
+        if "高质量翻译｜完成" in message
+        or "高质量翻译｜已记录失败" in message
+    ]
+    assert all("耗时" not in message for message in page_outcomes)
 
 
 def test_parallel_worker_runs_each_job_in_its_claimed_owner_scope(
@@ -969,6 +1246,85 @@ def test_scheduler_waits_for_memory_admission_without_failing_the_job(
     finally:
         stop.set()
         thread.join(timeout=2)
+
+
+@pytest.mark.parametrize("execution_mode", ["sequential", "parallel"])
+@pytest.mark.parametrize(
+    ("command", "terminal_status", "step_message"),
+    [
+        ("pause", "paused", "已暂停"),
+        ("cancel", "cancelled", "已取消"),
+    ],
+)
+def test_control_drained_step_log_matches_the_real_task_state(
+    job_platform,
+    caplog: pytest.LogCaptureFixture,
+    execution_mode: str,
+    command: str,
+    terminal_status: str,
+    step_message: str,
+) -> None:
+    _engine, repository, _book, _chapter, worker_epoch_id = job_platform
+    created = repository.create_batch(
+        kind="plugin_agent",
+        display_name="checkpoint logging",
+        specs=[
+            JobSpec(
+                kind="plugin_agent",
+                config={"executionMode": execution_mode},
+                items=(
+                    JobItemSpec(
+                        page_id=None,
+                        step_kinds=("plugin_agent_execute",),
+                    ),
+                ),
+            )
+        ],
+    )
+    job_id = str(created["jobIds"][0])
+
+    def handler(fence: AttemptFence, step):
+        if command == "pause":
+            repository.request_pause(job_id)
+        else:
+            repository.request_cancel(job_id)
+        status = repository.checkpoint_step(
+            fence,
+            step_id=str(step["stepId"]),
+            checkpoint={},
+        )
+        assert status == ("pausing" if command == "pause" else "cancelling")
+        return {
+            "__already_published__": True,
+            "__control_drained__": True,
+        }
+
+    stop = threading.Event()
+    loop = JobWorkerLoop(
+        repository,
+        worker_epoch_id=worker_epoch_id,
+        handlers={"plugin_agent_execute": handler},
+        idle_poll_seconds=0.01,
+    )
+    with caplog.at_level(logging.INFO, logger="saber.user"):
+        thread = threading.Thread(target=loop.run, args=(stop,), daemon=True)
+        thread.start()
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            if repository.get_job(job_id)["status"] == terminal_status:
+                break
+            time.sleep(0.01)
+        stop.set()
+        thread.join(timeout=2)
+
+    assert repository.get_job(job_id)["status"] == terminal_status
+    step_logs = [
+        record.getMessage()
+        for record in caplog.records
+        if "执行插件任务｜" in record.getMessage()
+    ]
+    assert any(f"执行插件任务｜{step_message}｜耗时" in value for value in step_logs)
+    assert not any("执行插件任务｜完成｜" in value for value in step_logs)
 
 
 def test_interactive_work_is_bounded_between_page_slices(job_platform) -> None:
@@ -1326,6 +1682,104 @@ def test_job_snapshot_route_reads_only_requested_current_projections(
 
         missing = app.test_client().get("/api/v2/jobs/snapshot")
         assert missing.status_code == 422
+    finally:
+        broadcaster.close()
+
+
+def test_job_queue_control_routes_log_successful_mutations(
+    job_platform,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    engine, repository, _book, _chapter, _worker_epoch_id = job_platform
+    first_job = _create_job(repository)
+    second_job = _create_job(repository)
+    first_batch = str(repository.get_job(first_job)["batchId"])
+    broadcaster = JobEventBroadcaster(
+        repository,
+        epoch_repository=ProcessEpochRepository(engine),
+    )
+    app = Flask(__name__)
+    app.register_blueprint(
+        create_jobs_blueprint(
+            engine=engine,
+            broadcaster=broadcaster,
+            profile=LOCAL_PROFILE,
+        )
+    )
+    client = app.test_client()
+    try:
+        queue = repository.list_jobs(scope="queue")
+        with caplog.at_level(logging.INFO, logger="saber.user"):
+            reordered = client.post(
+                "/api/v2/jobs/reorder",
+                json={
+                    "orderedJobIds": [second_job, first_job],
+                    "baseRevision": queue["queueRevision"],
+                },
+            )
+            assert reordered.status_code == 200
+            prioritized = client.post(
+                f"/api/v2/job-batches/{first_batch}/prioritize",
+                json={
+                    "baseRevision": reordered.get_json()["queueRevision"],
+                },
+            )
+            assert prioritized.status_code == 200
+
+        messages = [record.getMessage() for record in caplog.records]
+        assert "任务队列顺序已更新｜共 2 个任务" in messages
+        assert f"任务批次 {first_batch[:8]} 已移到队列前方" in messages
+    finally:
+        broadcaster.close()
+
+
+def test_retry_route_logs_the_replacement_job_identity(
+    job_platform,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    engine, repository, _book, _chapter, worker_epoch_id = job_platform
+    source_job_id = _create_job(repository)
+    fence = repository.claim_next(worker_epoch_id=worker_epoch_id)
+    assert fence is not None
+    step = repository.next_step(fence)
+    assert step is not None
+    repository.fail_step(
+        fence,
+        step_id=str(step["stepId"]),
+        code="TEST_FAILURE",
+        message="retry me",
+    )
+    assert repository.finish_if_complete(fence) == "completed_with_errors"
+
+    broadcaster = JobEventBroadcaster(
+        repository,
+        epoch_repository=ProcessEpochRepository(engine),
+    )
+    app = Flask(__name__)
+    app.register_blueprint(
+        create_jobs_blueprint(
+            engine=engine,
+            broadcaster=broadcaster,
+            profile=LOCAL_PROFILE,
+        )
+    )
+    try:
+        with caplog.at_level(logging.INFO, logger="saber.user"):
+            response = app.test_client().post(
+                f"/api/v2/jobs/{source_job_id}/retry-failed",
+                json={"strategy": "original"},
+                headers={"Idempotency-Key": "retry-log-identity"},
+            )
+        assert response.status_code == 202
+        replacement_job_id = str(response.get_json()["jobIds"][0])
+        assert any(
+            record.getMessage()
+            == (
+                f"任务 {replacement_job_id[:8]}｜"
+                f"已从任务 {source_job_id[:8]} 创建失败页面重试"
+            )
+            for record in caplog.records
+        )
     finally:
         broadcaster.close()
 

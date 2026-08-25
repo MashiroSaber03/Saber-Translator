@@ -20,8 +20,15 @@ from src.shared.openai_options import OpenAICompatibleOptions
 from src.shared.ai_providers import (
     CHAT_CAPABILITY,
     EMBEDDING_CAPABILITY,
+    get_provider_manifest,
     normalize_provider_id,
     resolve_provider_base_url_for_capability,
+)
+from src.shared.user_logging import (
+    log_model_input,
+    log_model_request,
+    log_retry,
+    user_log,
 )
 
 from .config_models import EmbeddingConfig, ChatLLMConfig
@@ -54,7 +61,7 @@ class EmbeddingClient:
         )
         self._business_retries = config.business_retries
 
-        logger.info(
+        logger.debug(
             "EmbeddingClient 初始化: provider=%s, base_url=%s",
             config.provider,
             self._base_url,
@@ -79,8 +86,23 @@ class EmbeddingClient:
     async def _embed_request(self, texts: list[str]) -> list[list[float]]:
         last_error: Exception | None = None
         total_attempts = self._business_retries + 1
+        log_model_input(
+            "向量模型",
+            [
+                f"{index:02d}. {text}"
+                for index, text in enumerate(texts, start=1)
+            ],
+        )
+        provider_label = get_provider_manifest(self.provider).display_name
 
         for attempt in range(total_attempts):
+            log_model_request(
+                provider=provider_label,
+                model=self.config.model,
+                stream=False,
+                attempt=attempt + 1,
+                total_attempts=total_attempts,
+            )
             try:
                 embeddings = await self._transport.embed(
                     UnifiedEmbeddingRequest(
@@ -95,17 +117,18 @@ class EmbeddingClient:
                     )
                 )
                 self._validate_embeddings_result(texts, embeddings)
+                vector_size = len(embeddings[0]) if embeddings else 0
+                user_log(
+                    "model",
+                    f"向量模型返回 {len(embeddings)} 条结果｜维度 {vector_size}",
+                )
                 return embeddings
             except EmbeddingBusinessRetryableError as exc:
                 last_error = exc
                 if attempt >= total_attempts - 1:
                     break
-                logger.warning(
-                    "Embedding 业务重试 %s/%s: %s",
-                    attempt + 1,
-                    self._business_retries,
-                    exc,
-                )
+                logger.debug("Embedding 结果校验失败：%s", exc)
+                log_retry("向量模型", attempt + 2, total_attempts, exc)
                 await asyncio.sleep(1)
 
         if last_error:
@@ -144,7 +167,7 @@ class ChatClient:
         self._transport = AsyncOpenAICompatibleTransport()
         self._executor = OpenAICompatibleAsyncExecutor(self._transport)
 
-        logger.info(
+        logger.debug(
             "ChatClient 初始化: provider=%s, base_url=%s",
             provider,
             self._base_url,
@@ -205,7 +228,6 @@ class ChatClient:
                         openai_options=options,
                         runtime_options=build_openai_compatible_runtime_options(
                             timeout=self._timeout,
-                            print_stream_output=options.execution.use_stream,
                             stream_output_label="漫画分析对话",
                         ),
                     ),

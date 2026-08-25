@@ -2124,13 +2124,22 @@ paths:
       operationId: exportChapterText
       parameters:
         - $ref: "#/components/parameters/ChapterId"
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [json, labelplus]
+            default: json
       responses:
         "200":
           description: Chapter text export.
           content:
             application/json:
               schema: {$ref: "#/components/schemas/ChapterTextExport"}
+            text/plain:
+              schema: {type: string}
         "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
   /chapters/{chapter_id}/text-import/preview:
     post:
       tags: [transfer]

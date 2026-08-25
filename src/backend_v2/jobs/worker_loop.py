@@ -16,6 +16,18 @@ from src.backend_v2.jobs.repository import (
     JobQueueRepository,
 )
 from src.backend_v2.storage.database import is_sqlite_busy_error
+from src.backend_v2.timestamps import utcnow
+from src.shared.user_logging import (
+    inline_log_text,
+    log_step_failed,
+    log_step_finished,
+    log_step_started,
+    log_task_failed,
+    log_task_finished,
+    log_task_started,
+    user_log,
+    user_log_context,
+)
 
 
 StepHandler = Callable[[AttemptFence, Mapping[str, Any]], Mapping[str, Any]]
@@ -37,12 +49,50 @@ def _short(value: object) -> str:
     return str(value)[:8]
 
 
-def _step_log_fields(step: Mapping[str, Any]) -> tuple[str, str, str]:
-    return (
-        str(step.get("stepKind", "unknown")),
-        _short(step.get("stepId", "-")),
-        _short(step.get("pageId") or step.get("jobItemId") or "-"),
+def _task_duration(fence: AttemptFence) -> float:
+    return max(0.0, (utcnow() - fence.started_at).total_seconds())
+
+
+def _step_context_values(
+    fence: AttemptFence,
+    step: Mapping[str, Any],
+) -> dict[str, Any]:
+    raw_page_number = step.get("itemOrdinal")
+    page_number = (
+        int(raw_page_number)
+        if isinstance(raw_page_number, int) and not isinstance(raw_page_number, bool)
+        else None
     )
+    raw_step_ordinal = step.get("stepOrdinal")
+    step_ordinal = (
+        int(raw_step_ordinal)
+        if isinstance(raw_step_ordinal, int) and not isinstance(raw_step_ordinal, bool)
+        else None
+    )
+    page_id = step.get("pageId")
+    return {
+        "job_id": fence.job_id,
+        "page_number": page_number if isinstance(page_id, str) else None,
+        "step_kind": str(step.get("stepKind") or ""),
+        "step_ordinal": step_ordinal,
+    }
+
+
+def _checkpoint_log_status(checkpoint: Mapping[str, Any]) -> str:
+    if checkpoint.get("failed") is True:
+        return "failed"
+    skipped = checkpoint.get("skipped")
+    if skipped is True or isinstance(skipped, str):
+        return "skipped"
+    return "completed"
+
+
+def _control_log_status(status: str) -> str:
+    if status == "pausing":
+        return "paused"
+    if status == "cancelling":
+        return "cancelled"
+    raise RuntimeError("control-drained step has no active control request")
 
 
 class JobWorkerLoop:
@@ -80,7 +130,7 @@ class JobWorkerLoop:
         self.idle_poll_seconds = idle_poll_seconds
 
     def run(self, stop_event: threading.Event) -> None:
-        LOGGER.info("持久任务调度器开始运行")
+        LOGGER.debug("持久任务调度器开始运行")
         while not stop_event.is_set():
             if (
                 self.scheduling_policy is None
@@ -96,7 +146,7 @@ class JobWorkerLoop:
             except Exception as exc:
                 if not is_sqlite_busy_error(exc):
                     raise
-                LOGGER.warning(
+                LOGGER.debug(
                     "持久任务调度器读取调度条件时遇到 SQLite 写锁竞争"
                 )
                 stop_event.wait(self.idle_poll_seconds)
@@ -126,7 +176,7 @@ class JobWorkerLoop:
             except Exception as exc:
                 if not is_sqlite_busy_error(exc):
                     raise
-                LOGGER.warning(
+                LOGGER.debug(
                     "持久任务调度器遇到 SQLite 写锁竞争，将继续轮询"
                 )
                 stop_event.wait(self.idle_poll_seconds)
@@ -139,7 +189,7 @@ class JobWorkerLoop:
             self._note_activity()
             with owner_scope(fence.owner_user_id):
                 self._run_attempt(fence, stop_event)
-        LOGGER.info("持久任务调度器已停止")
+        LOGGER.debug("持久任务调度器已停止")
 
     def _run_attempt(
         self,
@@ -147,6 +197,7 @@ class JobWorkerLoop:
         stop_event: threading.Event,
     ) -> None:
         started_at = time.monotonic()
+        execution_mode = "sequential"
         try:
             config = self.repository.attempt_config(fence)
             if self.plugin_runtime is not None:
@@ -159,18 +210,18 @@ class JobWorkerLoop:
                 raise ValueError("executionMode must be a string")
             if execution_mode not in {"sequential", "parallel"}:
                 raise ValueError(f"unsupported execution mode: {execution_mode}")
-            LOGGER.info(
-                "任务开始：job=%s attempt=%s mode=%s",
-                _short(fence.job_id),
-                _short(fence.attempt_id),
-                execution_mode,
-            )
+            if fence.first_claim:
+                log_task_started(
+                    job_id=fence.job_id,
+                    kind=fence.kind,
+                    execution_mode=execution_mode,
+                )
             if execution_mode == "parallel":
                 self._run_parallel_attempt(fence, stop_event, config)
             else:
                 self._run_sequential_attempt(fence, stop_event)
         except AttemptFenced:
-            LOGGER.warning(
+            LOGGER.debug(
                 "任务执行被 fencing 中断：job=%s attempt=%s",
                 _short(fence.job_id),
                 _short(fence.attempt_id),
@@ -190,11 +241,17 @@ class JobWorkerLoop:
                 )
             except AttemptFenced:
                 pass
+            log_task_failed(
+                job_id=fence.job_id,
+                kind=fence.kind,
+                duration=_task_duration(fence),
+                error=exc,
+            )
         finally:
             if self.plugin_runtime is not None:
                 self.plugin_runtime.release_job_state(fence.job_id)
             self._note_activity()
-            LOGGER.info(
+            LOGGER.debug(
                 "任务轮次结束：job=%s attempt=%s duration=%.2fs",
                 _short(fence.job_id),
                 _short(fence.attempt_id),
@@ -298,13 +355,13 @@ class JobWorkerLoop:
             while not stop_event.is_set():
                 status = self.repository.control_status(fence)
                 if status in {"pausing", "cancelling"}:
-                    LOGGER.info(
-                        "任务进入安全排空：job=%s status=%s last_step=%s",
-                        _short(fence.job_id),
-                        status,
-                        _short(last_step_id or "-"),
-                    )
                     self.repository.finalize_control(fence)
+                    log_task_finished(
+                        job_id=fence.job_id,
+                        kind=fence.kind,
+                        duration=_task_duration(fence),
+                        status="paused" if status == "pausing" else "cancelled",
+                    )
                     return
                 if (
                     self.scheduling_policy is None
@@ -372,6 +429,9 @@ class JobWorkerLoop:
                             )
                             if unsupported:
                                 kinds = ", ".join(unsupported)
+                                error = RuntimeError(
+                                    f"没有以下步骤的处理器：{kinds}"
+                                )
                                 LOGGER.error(
                                     "任务步骤无处理器：job=%s kinds=%s",
                                     _short(fence.job_id),
@@ -381,6 +441,12 @@ class JobWorkerLoop:
                                     fence,
                                     code="UNSUPPORTED_STEP_KIND",
                                     message=f"Worker 没有以下步骤的处理器：{kinds}",
+                                )
+                                log_task_failed(
+                                    job_id=fence.job_id,
+                                    kind=fence.kind,
+                                    duration=_task_duration(fence),
+                                    error=error,
                                 )
                                 return
                         stop_event.wait(
@@ -394,15 +460,19 @@ class JobWorkerLoop:
                         )
                         continue
                     final_status = self._finish_job(fence)
-                    LOGGER.info(
-                        "任务全部步骤处理结束：job=%s status=%s",
-                        _short(fence.job_id),
-                        final_status or "running",
+                    log_task_finished(
+                        job_id=fence.job_id,
+                        kind=fence.kind,
+                        duration=_task_duration(fence),
+                        status=final_status,
                     )
                     return
                 last_step_id = str(step["stepId"])
                 handler = self.handlers.get(str(step["stepKind"]))
                 if handler is None:
+                    error = RuntimeError(
+                        f"没有步骤处理器：{step['stepKind']}"
+                    )
                     LOGGER.error(
                         "任务步骤无处理器：job=%s kind=%s step=%s",
                         _short(fence.job_id),
@@ -414,67 +484,65 @@ class JobWorkerLoop:
                         code="UNSUPPORTED_STEP_KIND",
                         message=f"Worker 没有步骤处理器：{step['stepKind']}",
                     )
+                    log_task_failed(
+                        job_id=fence.job_id,
+                        kind=fence.kind,
+                        duration=_task_duration(fence),
+                        error=error,
+                    )
                     return
-                step_kind, step_id, page_id = _step_log_fields(step)
                 step_started_at = time.monotonic()
-                LOGGER.info(
-                    "步骤开始：job=%s kind=%s step=%s page=%s",
-                    _short(fence.job_id),
-                    step_kind,
-                    step_id,
-                    page_id,
-                )
-                if not self._before_pipeline(fence, step):
-                    if finish_slice_if_needed():
-                        return
-                    continue
-                try:
-                    with owner_scope(fence.owner_user_id):
-                        checkpoint = handler(
-                            fence,
-                            step,
-                        )
-                    if not isinstance(checkpoint, Mapping):
-                        raise TypeError("step handler must return an object")
-                except Exception as exc:
-                    LOGGER.exception(
-                        "步骤失败：job=%s kind=%s step=%s page=%s duration=%.2fs",
-                        _short(fence.job_id),
-                        step_kind,
-                        step_id,
-                        page_id,
-                        time.monotonic() - step_started_at,
-                    )
-                    self._after_pipeline(
-                        fence,
-                        item_id=str(step["itemId"]),
-                        page_id=step.get("pageId"),
-                        status="failed",
-                    )
-                    self.repository.fail_step(
-                        fence,
-                        step_id=last_step_id,
-                        code="STEP_FAILED",
-                        message=str(exc),
-                    )
-                else:
-                    if checkpoint.get("__control_drained__"):
+                with user_log_context(**_step_context_values(fence, step)):
+                    log_step_started()
+                    if not self._before_pipeline(fence, step):
+                        if finish_slice_if_needed():
+                            return
                         continue
-                    LOGGER.info(
-                        "步骤完成：job=%s kind=%s step=%s page=%s duration=%.2fs",
-                        _short(fence.job_id),
-                        step_kind,
-                        step_id,
-                        page_id,
-                        time.monotonic() - step_started_at,
-                    )
-                    if not checkpoint.get("__already_published__"):
-                        self.repository.complete_step(
+                    try:
+                        with owner_scope(fence.owner_user_id):
+                            checkpoint = handler(
+                                fence,
+                                step,
+                            )
+                        if not isinstance(checkpoint, Mapping):
+                            raise TypeError("step handler must return an object")
+                    except AttemptFenced:
+                        raise
+                    except Exception as exc:
+                        duration = time.monotonic() - step_started_at
+                        log_step_failed(exc, duration=duration)
+                        self._after_pipeline(
+                            fence,
+                            item_id=str(step["itemId"]),
+                            page_id=step.get("pageId"),
+                            status="failed",
+                        )
+                        self.repository.fail_step(
                             fence,
                             step_id=last_step_id,
-                            checkpoint=checkpoint,
+                            code="STEP_FAILED",
+                            message=str(exc),
                         )
-                    self._after_completed_step(fence, step)
+                    else:
+                        if checkpoint.get("__control_drained__"):
+                            log_step_finished(
+                                duration=time.monotonic() - step_started_at,
+                                status=_control_log_status(
+                                    self.repository.control_status(fence)
+                                ),
+                            )
+                            continue
+                        log_step_finished(
+                            duration=time.monotonic() - step_started_at,
+                            status=_checkpoint_log_status(checkpoint),
+                        )
+                        if not checkpoint.get("__already_published__"):
+                            self.repository.complete_step(
+                                fence,
+                                step_id=last_step_id,
+                                checkpoint=checkpoint,
+                            )
+                        self._after_completed_step(fence, step)
                 if finish_slice_if_needed():
                     return
         except AttemptFenced:
@@ -490,10 +558,18 @@ class JobWorkerLoop:
 
         pool_kinds = self.repository.step_kinds(fence)
         if not pool_kinds:
+            error = RuntimeError("并行任务没有可执行的步骤")
+            LOGGER.error("并行任务没有可执行步骤：job=%s", _short(fence.job_id))
             self.repository.fail_job(
                 fence,
                 code="NO_STEP_HANDLERS",
                 message="parallel job has no registered step handlers",
+            )
+            log_task_failed(
+                job_id=fence.job_id,
+                kind=fence.kind,
+                duration=_task_duration(fence),
+                error=error,
             )
             return
         admission_closed = threading.Event()
@@ -538,8 +614,8 @@ class JobWorkerLoop:
                 int(current_policy["maxDeepLearningConcurrency"]),
             )
 
-        LOGGER.info(
-            "并行流水线启动：job=%s pools=%s deep_learning_concurrency=%s "
+        LOGGER.debug(
+            "并行流水线参数：job=%s pools=%s deep_learning_concurrency=%s "
             "lead_window=%s",
             _short(fence.job_id),
             ",".join(pool_kinds),
@@ -579,7 +655,7 @@ class JobWorkerLoop:
                     if not is_sqlite_busy_error(exc):
                         raise
                     if busy_failures >= PIPELINE_BUSY_RETRY_LIMIT:
-                        LOGGER.warning(
+                        LOGGER.debug(
                             "深度学习并发锁遥测持续遇到 SQLite 写锁竞争，"
                             "跳过本次遥测：job=%s pool=%s waiting=%s",
                             _short(fence.job_id),
@@ -593,7 +669,7 @@ class JobWorkerLoop:
                         * (2 ** (busy_failures - 1)),
                         pipeline_wait_seconds,
                     )
-                    LOGGER.warning(
+                    LOGGER.debug(
                         "深度学习并发锁遥测遇到 SQLite 写锁竞争，将有限重试："
                         "job=%s pool=%s attempt=%s/%s",
                         _short(fence.job_id),
@@ -603,7 +679,7 @@ class JobWorkerLoop:
                     )
                     if stop_event.wait(delay):
                         break
-            LOGGER.info(
+            LOGGER.debug(
                 "深度学习并发锁状态：job=%s pool=%s waiting=%s",
                 _short(fence.job_id),
                 pool_kind,
@@ -635,84 +711,79 @@ class JobWorkerLoop:
             pool_kind: str,
             step: Mapping[str, Any],
         ) -> None:
-            handler = self.handlers.get(str(step["stepKind"]))
-            if handler is None:
-                LOGGER.error(
-                    "并行步骤无处理器：job=%s kind=%s step=%s",
-                    _short(fence.job_id),
-                    step["stepKind"],
-                    _short(step["stepId"]),
-                )
-                self.repository.fail_step(
-                    fence,
-                    step_id=str(step["stepId"]),
-                    code="UNSUPPORTED_STEP_KIND",
-                    message=f"no Worker handler for {step['stepKind']}",
-                )
-                return
-
-            step_kind, step_id, page_id = _step_log_fields(step)
             step_started_at = time.monotonic()
-            LOGGER.info(
-                "步骤开始：job=%s kind=%s step=%s page=%s pool=%s",
-                _short(fence.job_id),
-                step_kind,
-                step_id,
-                page_id,
-                pool_kind,
-            )
-            if not self._before_pipeline(fence, step):
-                return
-            try:
-                with owner_scope(fence.owner_user_id):
-                    checkpoint = handler(fence, step)
-                if not isinstance(checkpoint, Mapping):
-                    raise TypeError("step handler must return an object")
-            except Exception as exc:
-                LOGGER.exception(
-                    "步骤失败：job=%s kind=%s step=%s page=%s "
-                    "pool=%s duration=%.2fs",
-                    _short(fence.job_id),
-                    step_kind,
-                    step_id,
-                    page_id,
-                    pool_kind,
-                    time.monotonic() - step_started_at,
-                )
-                self._after_pipeline(
-                    fence,
-                    item_id=str(step["itemId"]),
-                    page_id=step.get("pageId"),
-                    status="failed",
-                )
-                self.repository.fail_step(
-                    fence,
-                    step_id=str(step["stepId"]),
-                    code="STEP_FAILED",
-                    message=str(exc),
-                )
-                return
+            with user_log_context(**_step_context_values(fence, step)):
+                log_step_started()
+                handler = self.handlers.get(str(step["stepKind"]))
+                if handler is None:
+                    error = RuntimeError(
+                        f"没有步骤处理器：{step['stepKind']}"
+                    )
+                    LOGGER.error(
+                        "并行步骤无处理器：job=%s kind=%s step=%s",
+                        _short(fence.job_id),
+                        step["stepKind"],
+                        _short(step["stepId"]),
+                    )
+                    self.repository.fail_step(
+                        fence,
+                        step_id=str(step["stepId"]),
+                        code="UNSUPPORTED_STEP_KIND",
+                        message=f"no Worker handler for {step['stepKind']}",
+                    )
+                    log_step_failed(
+                        error,
+                        duration=time.monotonic() - step_started_at,
+                    )
+                    return
+                if not self._before_pipeline(fence, step):
+                    return
+                try:
+                    with owner_scope(fence.owner_user_id):
+                        checkpoint = handler(fence, step)
+                    if not isinstance(checkpoint, Mapping):
+                        raise TypeError("step handler must return an object")
+                except AttemptFenced:
+                    raise
+                except Exception as exc:
+                    log_step_failed(
+                        exc,
+                        duration=time.monotonic() - step_started_at,
+                    )
+                    self._after_pipeline(
+                        fence,
+                        item_id=str(step["itemId"]),
+                        page_id=step.get("pageId"),
+                        status="failed",
+                    )
+                    self.repository.fail_step(
+                        fence,
+                        step_id=str(step["stepId"]),
+                        code="STEP_FAILED",
+                        message=str(exc),
+                    )
+                    return
 
-            if checkpoint.get("__control_drained__"):
-                admission_closed.set()
-                return
-            LOGGER.info(
-                "步骤完成：job=%s kind=%s step=%s page=%s "
-                "pool=%s duration=%.2fs",
-                _short(fence.job_id),
-                step_kind,
-                step_id,
-                page_id,
-                pool_kind,
-                time.monotonic() - step_started_at,
-            )
-            if not checkpoint.get("__already_published__"):
-                self.repository.complete_step(
-                    fence,
-                    step_id=str(step["stepId"]),
-                    checkpoint=checkpoint,
+                if checkpoint.get("__control_drained__"):
+                    log_step_finished(
+                        duration=time.monotonic() - step_started_at,
+                        status=_control_log_status(
+                            self.repository.control_status(fence)
+                        ),
+                    )
+                    admission_closed.set()
+                    return
+                log_step_finished(
+                    duration=time.monotonic() - step_started_at,
+                    status=_checkpoint_log_status(checkpoint),
                 )
-            self._after_completed_step(fence, step)
+                if not checkpoint.get("__already_published__"):
+                    self.repository.complete_step(
+                        fence,
+                        step_id=str(step["stepId"]),
+                        checkpoint=checkpoint,
+                    )
+                self._after_completed_step(fence, step)
 
         def execute_claimed(
             pool_kind: str,
@@ -757,7 +828,7 @@ class JobWorkerLoop:
                 except Exception as exc:
                     if is_sqlite_busy_error(exc):
                         if busy_failures >= PIPELINE_BUSY_RETRY_LIMIT:
-                            LOGGER.warning(
+                            LOGGER.debug(
                                 "并行阶段领取持续遇到 SQLite 写锁竞争，本轮延后："
                                 "job=%s pool=%s retries=%s",
                                 _short(fence.job_id),
@@ -771,7 +842,7 @@ class JobWorkerLoop:
                             * (2 ** (busy_failures - 1)),
                             pipeline_wait_seconds,
                         )
-                        LOGGER.warning(
+                        LOGGER.debug(
                             "并行阶段领取遇到 SQLite 写锁竞争，将重试："
                             "job=%s pool=%s attempt=%s/%s delay=%.2fs",
                             _short(fence.job_id),
@@ -1034,21 +1105,29 @@ class JobWorkerLoop:
                 code="PIPELINE_POOL_FAILED",
                 message=str(worker_errors[0]),
             )
+            log_task_failed(
+                job_id=fence.job_id,
+                kind=fence.kind,
+                duration=_task_duration(fence),
+                error=worker_errors[0],
+            )
             return
         status = self.repository.control_status(fence)
         if status in {"pausing", "cancelling"}:
-            LOGGER.info(
-                "并行任务进入安全排空：job=%s status=%s",
-                _short(fence.job_id),
-                status,
-            )
             self.repository.finalize_control(fence)
+            log_task_finished(
+                job_id=fence.job_id,
+                kind=fence.kind,
+                duration=_task_duration(fence),
+                status="paused" if status == "pausing" else "cancelled",
+            )
             return
         final_status = self._finish_job(fence)
-        LOGGER.info(
-            "并行任务全部步骤处理结束：job=%s status=%s",
-            _short(fence.job_id),
-            final_status or "running",
+        log_task_finished(
+            job_id=fence.job_id,
+            kind=fence.kind,
+            duration=_task_duration(fence),
+            status=final_status,
         )
 
     def _before_pipeline(
@@ -1063,6 +1142,7 @@ class JobWorkerLoop:
             or not isinstance(page_id, str)
         ):
             return True
+        started_at = time.monotonic()
         try:
             self.plugin_runtime.before_pipeline(
                 fence,
@@ -1070,12 +1150,12 @@ class JobWorkerLoop:
                 page_id=page_id,
                 data={"pageId": page_id},
             )
+        except AttemptFenced:
+            raise
         except Exception as exc:
-            LOGGER.exception(
-                "页面流水线 before 插件失败：job=%s item=%s page=%s",
-                _short(fence.job_id),
-                _short(step["itemId"]),
-                _short(page_id),
+            log_step_failed(
+                exc,
+                duration=time.monotonic() - started_at,
             )
             self.repository.fail_step(
                 fence,
@@ -1103,12 +1183,19 @@ class JobWorkerLoop:
                 page_id=page_id,
                 data={"pageId": page_id, "status": status},
             )
+        except AttemptFenced:
+            raise
         except Exception as exc:
-            LOGGER.exception(
+            LOGGER.debug(
                 "页面流水线 after 插件失败：job=%s item=%s page=%s",
                 _short(fence.job_id),
                 _short(item_id),
                 _short(page_id),
+                exc_info=True,
+            )
+            user_log(
+                "error",
+                f"页面完成后的插件处理失败｜{inline_log_text(exc)}",
             )
             if status in {"completed", "skipped", "cancelled"}:
                 self.repository.fail_terminal_item(
@@ -1156,76 +1243,86 @@ class JobWorkerLoop:
         handler: BatchStepHandler,
         steps: Sequence[Mapping[str, Any]],
     ) -> None:
-        active_steps = [
-            step
-            for step in steps
-            if self._before_pipeline(fence, step)
-        ]
+        active_steps: list[Mapping[str, Any]] = []
+        for step in steps:
+            with user_log_context(**_step_context_values(fence, step)):
+                if self._before_pipeline(fence, step):
+                    active_steps.append(step)
         if not active_steps:
             return
-        step_kind = str(active_steps[0].get("stepKind", "unknown"))
-        step_ids = ",".join(
-            _short(step.get("stepId", "-")) for step in active_steps
-        )
         started_at = time.monotonic()
-        LOGGER.info(
-            "批处理开始：job=%s kind=%s count=%s steps=%s",
-            _short(fence.job_id),
-            step_kind,
-            len(active_steps),
-            step_ids,
-        )
+        batch_context = _step_context_values(fence, active_steps[0])
+        batch_context["page_number"] = None
         try:
-            with owner_scope(fence.owner_user_id):
-                checkpoint = handler(fence, active_steps)
+            with user_log_context(**batch_context):
+                user_log("step", f"批处理开始｜共 {len(active_steps)} 页")
+                with owner_scope(fence.owner_user_id):
+                    checkpoint = handler(fence, active_steps)
             if not isinstance(checkpoint, Mapping):
                 raise TypeError("batch handler must return an object")
+        except AttemptFenced:
+            raise
         except Exception as exc:
-            LOGGER.exception(
-                "批处理失败：job=%s kind=%s count=%s duration=%.2fs",
-                _short(fence.job_id),
-                step_kind,
-                len(active_steps),
-                time.monotonic() - started_at,
+            duration = time.monotonic() - started_at
+            with user_log_context(**batch_context):
+                log_step_failed(exc, duration=duration)
+            step_statuses = self.repository.step_statuses(
+                fence,
+                tuple(str(step["stepId"]) for step in active_steps),
             )
-            statuses = self.repository.item_statuses(
+            item_statuses = self.repository.item_statuses(
                 fence,
                 tuple(str(step["itemId"]) for step in active_steps),
             )
             for step in active_steps:
+                step_id = str(step["stepId"])
                 item_id = str(step["itemId"])
-                status = statuses.get(item_id, "running")
-                if status in {"completed", "failed", "skipped", "cancelled"}:
-                    self._after_pipeline(
-                        fence,
-                        item_id=item_id,
-                        page_id=step.get("pageId"),
-                        status=status,
-                    )
-                    continue
-                self._after_pipeline(
-                    fence,
-                    item_id=item_id,
-                    page_id=step.get("pageId"),
-                    status="failed",
-                )
-                try:
-                    self.repository.fail_step(
-                        fence,
-                        step_id=str(step["stepId"]),
-                        code="BATCH_STEP_FAILED",
-                        message=str(exc),
-                    )
-                except AttemptFenced:
-                    continue
+                step_status = step_statuses.get(step_id, "running")
+                item_status = item_statuses.get(item_id, "running")
+                with user_log_context(**_step_context_values(fence, step)):
+                    if item_status in {
+                        "completed",
+                        "failed",
+                        "skipped",
+                        "cancelled",
+                    }:
+                        self._after_pipeline(
+                            fence,
+                            item_id=item_id,
+                            page_id=step.get("pageId"),
+                            status=item_status,
+                        )
+                        if step_status not in {
+                            "completed",
+                            "failed",
+                            "skipped",
+                            "cancelled",
+                        }:
+                            step_status = item_status
+                    elif step_status not in {
+                        "completed",
+                        "failed",
+                        "skipped",
+                        "cancelled",
+                    }:
+                        self._after_pipeline(
+                            fence,
+                            item_id=item_id,
+                            page_id=step.get("pageId"),
+                            status="failed",
+                        )
+                        try:
+                            self.repository.fail_step(
+                                fence,
+                                step_id=step_id,
+                                code="BATCH_STEP_FAILED",
+                                message=str(exc),
+                            )
+                        except AttemptFenced:
+                            continue
+                        step_status = "failed"
+                    log_step_finished(duration=None, status=step_status)
             return
-        LOGGER.info(
-            "批处理完成：job=%s kind=%s count=%s duration=%.2fs",
-            _short(fence.job_id),
-            step_kind,
-            len(active_steps),
-            time.monotonic() - started_at,
-        )
         if not checkpoint.get("__already_published__"):
             per_step = checkpoint.get("steps")
             for step in active_steps:
@@ -1239,6 +1336,33 @@ class JobWorkerLoop:
                     step_id=str(step["stepId"]),
                     checkpoint=value if isinstance(value, Mapping) else {},
                 )
+        duration = time.monotonic() - started_at
+        step_statuses = self.repository.step_statuses(
+            fence,
+            tuple(str(step["stepId"]) for step in active_steps),
+        )
+        per_step = checkpoint.get("steps")
+        for step in active_steps:
+            value = (
+                per_step.get(str(step["stepId"]), {})
+                if isinstance(per_step, Mapping)
+                else checkpoint
+            )
+            with user_log_context(**_step_context_values(fence, step)):
+                status = step_statuses.get(str(step["stepId"]))
+                if status not in {"completed", "failed", "skipped", "cancelled"}:
+                    status = _checkpoint_log_status(
+                        value if isinstance(value, Mapping) else {}
+                    )
+                log_step_finished(
+                    duration=None,
+                    status=status,
+                )
+        with user_log_context(**batch_context):
+            user_log(
+                "step",
+                f"批处理完成｜共 {len(active_steps)} 页｜耗时 {duration:.2f} 秒",
+            )
         statuses = self.repository.item_statuses(
             fence,
             tuple(str(step["itemId"]) for step in active_steps),
@@ -1247,12 +1371,13 @@ class JobWorkerLoop:
             item_id = str(step["itemId"])
             status = statuses.get(item_id)
             if status in {"completed", "failed", "skipped", "cancelled"}:
-                self._after_pipeline(
-                    fence,
-                    item_id=item_id,
-                    page_id=step.get("pageId"),
-                    status=status,
-                )
+                with user_log_context(**_step_context_values(fence, step)):
+                    self._after_pipeline(
+                        fence,
+                        item_id=item_id,
+                        page_id=step.get("pageId"),
+                        status=status,
+                    )
 
     @staticmethod
     def _batch_size(

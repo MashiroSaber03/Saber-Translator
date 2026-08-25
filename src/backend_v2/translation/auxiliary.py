@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import PurePosixPath
 from typing import Any, Mapping
 
 from sqlalchemy import Engine, select, update
@@ -32,6 +33,7 @@ from src.backend_v2.storage.schema import (
     page_assets,
     pages,
 )
+from src.shared.user_logging import log_result
 from src.core.config_models import validate_bubble_payload
 
 
@@ -412,6 +414,101 @@ class AuxiliaryTranslationCommands:
             "exported_at": datetime.now(timezone.utc).isoformat(),
             "pages": exported_pages,
         }
+
+    def export_labelplus(self, chapter_id: str) -> str:
+        with self.engine.connect() as connection:
+            chapter_exists = connection.execute(
+                select(chapters.c.id).where(chapters.c.id == chapter_id)
+            ).scalar_one_or_none()
+            if chapter_exists is None:
+                raise ValueError("chapter not found")
+            page_rows = list(
+                connection.execute(
+                    select(
+                        pages.c.id,
+                        pages.c.ordinal,
+                        pages.c.logical_source_path,
+                        pages.c.document_revision,
+                        assets.c.width,
+                        assets.c.height,
+                    )
+                    .join(
+                        page_assets,
+                        (page_assets.c.page_id == pages.c.id)
+                        & (page_assets.c.role == "source"),
+                    )
+                    .join(assets, assets.c.id == page_assets.c.asset_id)
+                    .where(pages.c.chapter_id == chapter_id)
+                    .order_by(pages.c.ordinal)
+                ).mappings()
+            )
+            bubble_rows_by_page: dict[str, list[Mapping[str, Any]]] = {}
+            for row in connection.execute(
+                select(
+                    bubbles,
+                    pages.c.document_revision.label(
+                        "page_document_revision"
+                    ),
+                )
+                .join(pages, pages.c.id == bubbles.c.page_id)
+                .where(pages.c.chapter_id == chapter_id)
+                .order_by(pages.c.ordinal, bubbles.c.ordinal)
+            ).mappings():
+                bubble_rows_by_page.setdefault(str(row["page_id"]), []).append(
+                    row
+                )
+
+        lines = [
+            "1,0",
+            "-",
+            "框内",
+            "框外",
+            "-",
+            "由 Saber Translator 导出",
+        ]
+        for page in page_rows:
+            width = page["width"]
+            height = page["height"]
+            if (
+                isinstance(width, bool)
+                or not isinstance(width, int)
+                or width < 1
+                or isinstance(height, bool)
+                or not isinstance(height, int)
+                or height < 1
+            ):
+                raise RuntimeError("LabelPlus export source dimensions are invalid")
+            filename = PurePosixPath(
+                str(page["logical_source_path"]).replace("\\", "/")
+            ).name
+            if not filename:
+                raise RuntimeError("LabelPlus export source filename is invalid")
+            lines.extend(("", f">>>>>>>>[{filename}]<<<<<<<<"))
+            for index, row in enumerate(
+                bubble_rows_by_page.get(str(page["id"]), ()),
+                start=1,
+            ):
+                payload = _load_current_bubble_payload(
+                    row,
+                    document_revision=int(page["document_revision"]),
+                    label=f"bubble {row['id']}",
+                )
+                x1, y1, x2, y2 = payload["coords"]
+                x = min(1.0, max(0.0, (x1 + x2) / (2 * width)))
+                y = min(1.0, max(0.0, (y1 + y2) / (2 * height)))
+                text = _bubble_text(payload, "textboxText") or _bubble_text(
+                    payload,
+                    "translatedText",
+                )
+                lines.append(
+                    f"----------------[{index}]----------------"
+                    f"[{x:.3f},{y:.3f},1]"
+                )
+                lines.extend(
+                    text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+                )
+                lines.append("")
+        return "\r\n".join(lines) + "\r\n"
 
     def preview_text_import(
         self,
@@ -1173,6 +1270,29 @@ class StyleApplyWorkerService:
             checkpoint=checkpoint,
             publisher=publish,
         )
+        field_labels = {
+            "fontFamily": "字体",
+            "fontSize": "字号",
+            "layoutDirection": "排版方向",
+            "lineSpacing": "行间距",
+            "alignment": "行内对齐",
+            "blockAlignment": "文本块对齐",
+            "textColor": "文字颜色",
+            "fillColor": "气泡填充色",
+            "bubbleFillMode": "气泡填充方式",
+            "textStroke": "文字描边",
+            "textStrokeWidth": "描边宽度",
+            "inpaintMethod": "文字修复方式",
+        }
+        log_result(
+            "样式应用完成" if changed else "目标页样式无需更改",
+            (
+                "应用字段："
+                + "、".join(field_labels.get(field, field) for field in selected_fields),
+                f"目标气泡：{len(bubble_rows)} 个",
+                f"后续重新渲染：{'是' if needs_render else '否'}",
+            ),
+        )
         return {**checkpoint, "__already_published__": True}
 
 
@@ -1444,5 +1564,22 @@ class TextImportWorkerService:
             step_id=str(step["stepId"]),
             checkpoint=checkpoint,
             publisher=publish,
+        )
+        field_labels = {
+            "originalText": "原文",
+            "translatedText": "译文",
+            "textboxText": "文本框文字",
+            "textDirection": "排版方向",
+        }
+        log_result(
+            f"文本导入完成｜更新 {len(updates)} 个气泡",
+            (
+                "更新字段："
+                + "、".join(
+                    field_labels.get(field, field)
+                    for field in sorted(changed_fields)
+                ),
+                f"后续重新渲染：{'是' if needs_render else '否'}",
+            ),
         )
         return {**checkpoint, "__already_published__": True}

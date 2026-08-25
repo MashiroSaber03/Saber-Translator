@@ -32,6 +32,7 @@ from src.core.plugin_agent.models import (
     PluginAgentMessage,
     PluginAgentSession,
 )
+from src.shared.user_logging import log_result
 
 
 class PluginAgentWorkerService:
@@ -213,6 +214,15 @@ class PluginAgentWorkerService:
                 "message": assistant_message,
             }
             emit("done", done_payload)
+            result_details = [
+                "修改文件：" + ("、".join(touched) if touched else "无"),
+            ]
+            if assistant_message.strip():
+                result_details.append(f"助手回复：{assistant_message.strip()}")
+            log_result(
+                f"插件任务完成｜修改 {len(touched)} 个文件",
+                details=result_details,
+            )
             return done_payload
         except PluginAgentControlRequested:
             step_id = step.get("stepId")

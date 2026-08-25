@@ -12,6 +12,8 @@ import cv2
 import numpy as np
 from PIL import Image
 
+from src.shared.user_logging import user_log
+
 from .data_types import TextLine, TextBlock, DetectionResult
 from .textline_merge import merge_textlines
 from .postprocess import postprocess_blocks
@@ -48,7 +50,8 @@ class BaseTextDetector(ABC):
         """解析设备，处理 CUDA 不可用的情况"""
         import torch
         if device == 'cuda' and not torch.cuda.is_available():
-            logger.warning("CUDA 不可用，回退到 CPU")
+            logger.debug("CUDA 不可用，回退到 CPU")
+            user_log("warning", "文本检测未找到可用 GPU，已切换到 CPU")
             return 'cpu'
         return device
     
@@ -177,10 +180,10 @@ class BaseTextDetector(ABC):
             )
         
         if not textlines:
-            logger.info("未检测到文本区域")
+            logger.debug("未检测到文本区域")
             return DetectionResult(blocks=[], mask=mask, raw_lines=[])
         
-        logger.info(f"检测到 {len(textlines)} 个文本行")
+        logger.debug(f"检测到 {len(textlines)} 个文本行")
         
         # 3. 文本行合并
         if merge_lines and textlines:
@@ -189,7 +192,7 @@ class BaseTextDetector(ABC):
                 edge_ratio_threshold=edge_ratio_threshold,
                 verbose=True
             )
-            logger.info(f"合并后得到 {len(blocks)} 个文本块")
+            logger.debug(f"合并后得到 {len(blocks)} 个文本块")
         else:
             # 不合并时，每个 TextLine 创建一个 TextBlock
             blocks = [TextBlock(lines=[line]) for line in textlines]

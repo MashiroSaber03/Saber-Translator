@@ -8307,7 +8307,9 @@ export interface operations {
     };
     exportChapterText: {
         parameters: {
-            query?: never;
+            query?: {
+                format?: "json" | "labelplus";
+            };
             header?: never;
             path: {
                 chapter_id: components["parameters"]["ChapterId"];
@@ -8323,9 +8325,11 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChapterTextExport"];
+                    "text/plain": string;
                 };
             };
             404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
         };
     };
     previewChapterTextImport: {

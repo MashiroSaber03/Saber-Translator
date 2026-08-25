@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import codecs
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 from datetime import timedelta
 import hashlib
 from html.parser import HTMLParser
@@ -65,6 +66,7 @@ from src.backend_v2.web_import.commands import (
 )
 from src.core.web_import import WebImportAgentControlRequested
 from src.shared.memory_errors import is_memory_allocation_error
+from src.shared.user_logging import log_result, user_log
 
 
 IMAGE_CONTENT_TYPES = {
@@ -153,11 +155,12 @@ class WebImportWorkerService:
                 except Exception as record_error:
                     if is_memory_allocation_error(record_error):
                         raise
-                    logger.warning(
+                    logger.debug(
                         "网页导入失败状态记录失败："
                         "original=%s, record=%s",
                         redact_sensitive_text(exc),
                         redact_sensitive_text(record_error),
+                        exc_info=True,
                     )
             raise
         raise ValueError(f"unsupported web import step: {kind}")
@@ -174,10 +177,13 @@ class WebImportWorkerService:
             thread_name_prefix="web-import-download",
         ) as executor:
             work = [
-                (step, executor.submit(self.handle, fence, step))
+                (
+                    step,
+                    executor.submit(copy_context().run, self.handle, fence, step),
+                )
                 for step in steps
             ]
-            for step, future in work:
+            for batch_index, (step, future) in enumerate(work, start=1):
                 try:
                     future.result()
                 except AttemptFenced:
@@ -185,11 +191,22 @@ class WebImportWorkerService:
                 except Exception as exc:
                     if is_memory_allocation_error(exc):
                         raise
+                    message = redact_sensitive_text(exc)
                     self.jobs.fail_step(
                         fence,
                         step_id=str(step["stepId"]),
                         code="WEB_IMPORT_DOWNLOAD_FAILED",
-                        message=redact_sensitive_text(exc),
+                        message=message,
+                    )
+                    item_ordinal = step.get("itemOrdinal")
+                    if (
+                        isinstance(item_ordinal, bool)
+                        or not isinstance(item_ordinal, int)
+                    ):
+                        item_ordinal = batch_index
+                    user_log(
+                        "error",
+                        f"候选图片 {item_ordinal} 下载失败｜{message}",
                     )
         return {
             "processed": len(steps),
@@ -294,6 +311,10 @@ class WebImportWorkerService:
             checkpoint=checkpoint,
             publisher=publish,
         )
+        log_result(
+            f"网页解析完成｜发现 {len(entries)} 张候选图片",
+            (f"解析方式：{actual_engine}",),
+        )
         return {**checkpoint, "__already_published__": True}
 
     def _download_page(
@@ -332,6 +353,9 @@ class WebImportWorkerService:
                     fence,
                     step_id=str(step["stepId"]),
                     checkpoint=checkpoint,
+                )
+                log_result(
+                    f"候选图片 {int(entry['ordinal'])} 已复用本地文件"
                 )
                 return {**checkpoint, "__already_published__": True}
 
@@ -399,6 +423,10 @@ class WebImportWorkerService:
             input_fingerprint=checksum,
             publisher=publish,
         )
+        log_result(
+            f"候选图片 {int(entry['ordinal'])} 下载完成",
+            (f"文件大小：{target.stat().st_size / 1024:.1f} KiB",),
+        )
         return {**checkpoint, "__already_published__": True}
 
     def _auto_commit(
@@ -431,6 +459,11 @@ class WebImportWorkerService:
             fence,
             step_id=str(step["stepId"]),
             checkpoint=checkpoint,
+        )
+        log_result(
+            "没有可导入的图片，已跳过自动保存"
+            if checkpoint["status"] == "skipped"
+            else "网页内容已提交到书架导入队列"
         )
         return {**checkpoint, "__already_published__": True}
 
@@ -480,6 +513,14 @@ class WebImportWorkerService:
             step_id=str(step["stepId"]),
             checkpoint=checkpoint,
             publisher=publish,
+        )
+        log_result(
+            f"网页图片整理完成｜成功 {successful_count} 张",
+            (
+                "状态：可选择导入"
+                if final_status == "ready"
+                else "状态：没有可用图片",
+            ),
         )
         return {**checkpoint, "__already_published__": True}
 
@@ -616,6 +657,14 @@ class WebImportWorkerService:
             input_fingerprint=str(entry["checksum"]),
             publisher=publish,
         )
+        log_result(
+            "网页页面导入完成",
+            (
+                f"文件：{logical_path}",
+                f"图片尺寸：{source_asset.width}×{source_asset.height}",
+                f"文件大小：{source_asset.byte_size / 1024:.1f} KiB",
+            ),
+        )
         return {**checkpoint, "__already_published__": True}
 
     def _freeze_commit_paths(
@@ -723,6 +772,7 @@ class WebImportWorkerService:
             checkpoint=checkpoint,
             publisher=publish,
         )
+        log_result("网页页面已全部导入书架")
         return {**checkpoint, "__already_published__": True}
 
     def _extract_urls(

@@ -45,6 +45,7 @@ from src.backend_v2.translation.pipeline import (
     _validate_ocr_results,
 )
 from src.core.config_models import validate_bubble_payload
+from src.shared.user_logging import inline_log_text, log_result
 
 
 class InteractivePageOperationService:
@@ -200,6 +201,21 @@ class InteractivePageOperationService:
             "documentRevision": new_revision,
         }
         self.repository.complete(fence, result=response, publisher=publish)
+        detail = details[0]
+        log_result(
+            "单气泡 OCR 识别结果",
+            (
+                f"引擎：{detail['engine']}"
+                + (" （已使用备用 OCR）" if detail["fallbackUsed"] else ""),
+                f"文本：{inline_log_text(texts[0])}",
+                *(
+                    (f"置信度：{float(detail['confidence']):.1%}",)
+                    if detail["confidenceSupported"]
+                    and detail["confidence"] is not None
+                    else ()
+                ),
+            ),
+        )
         return response
 
     def _bubble_translate(
@@ -288,6 +304,18 @@ class InteractivePageOperationService:
             "documentRevision": new_revision,
         }
         self.repository.complete(fence, result=response, publisher=publish)
+        log_result(
+            "单气泡翻译结果",
+            (
+                f"原文：{inline_log_text(original_text)}",
+                f"译文：{inline_log_text(values[0])}",
+                *(
+                    (f"文本框二次译文：{inline_log_text(textbox[0])}",)
+                    if textbox
+                    else ()
+                ),
+            ),
+        )
         return response
 
     def _bubble_color(
@@ -431,6 +459,14 @@ class InteractivePageOperationService:
             "documentRevision": new_revision,
         }
         self.repository.complete(fence, result=response, publisher=publish)
+        log_result(
+            "单气泡颜色分析结果",
+            (
+                f"文字颜色：{rgb_to_hex(color['fg_color']) if color['fg_color'] is not None else '未识别'}",
+                f"背景颜色：{rgb_to_hex(color['bg_color']) if color['bg_color'] is not None else '未识别'}",
+                f"置信度：{float(color['confidence']):.1%}",
+            ),
+        )
         return response
 
     def _page_detect(
@@ -652,6 +688,17 @@ class InteractivePageOperationService:
             "textMaskAssetId": mask_record.id if mask_record else None,
         }
         self.repository.complete(fence, result=response, publisher=publish)
+        direction_labels = {"horizontal": "横排", "vertical": "竖排"}
+        log_result(
+            f"当前页检测到 {len(payloads)} 个文本框",
+            [
+                (
+                    f"{index:02d}. 坐标 {payload['coords']} ｜ "
+                    f"{direction_labels.get(str(payload['textDirection']), payload['textDirection'])}"
+                )
+                for index, payload in enumerate(payloads, start=1)
+            ],
+        )
         return response
 
     def _snapshot(self, page_id: str, *, expected_revision: int):

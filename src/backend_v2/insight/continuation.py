@@ -62,6 +62,7 @@ from src.backend_v2.storage.schema import (
     timeline_characters,
     timeline_versions,
 )
+from src.shared.user_logging import json_details, log_result
 
 
 def _load(value: object) -> object:
@@ -3409,6 +3410,50 @@ class ContinuationWorkerService:
             checkpoint=checkpoint,
             publisher=publish,
         )
+        if kind == "continuation_generate_script":
+            log_result(
+                "续写脚本生成结果",
+                str(content).splitlines(),
+            )
+        elif kind == "continuation_generate_page":
+            if checkpoint.get("skipped"):
+                log_result(
+                    "续写页面方案已跳过",
+                    (f"原因：{checkpoint.get('reason', '页面状态已变化')}",),
+                )
+            elif payload is not None:
+                log_result(
+                    f"第 {target_ordinal} 页续写方案",
+                    json_details(payload),
+                )
+        elif kind == "continuation_generate_character_sheet":
+            log_result(
+                "角色设定图生成完成",
+                (
+                    f"角色：{character_name}",
+                    f"形态：{form_name}",
+                    f"版本：{checkpoint.get('version')}",
+                ),
+            )
+        elif kind == "continuation_generate_image":
+            if checkpoint.get("skipped"):
+                log_result(
+                    "续写图片已跳过",
+                    (f"原因：{checkpoint.get('reason', '页面状态已变化')}",),
+                )
+            else:
+                log_result(
+                    f"第 {target_ordinal} 页续写图片生成完成",
+                    (f"版本：{checkpoint.get('version')}",),
+                )
+        elif kind == "continuation_export":
+            log_result(
+                "续写作品导出完成",
+                (
+                    f"格式：{output_format.upper()}",
+                    f"图片：{len(images)} 张",
+                ),
+            )
         return {**checkpoint, "__already_published__": True}
 
     def _reference_window_asset_ids(

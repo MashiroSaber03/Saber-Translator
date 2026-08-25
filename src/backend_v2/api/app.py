@@ -24,6 +24,7 @@ from src.backend_v2.runtime_profile import (
     resolve_runtime_profile,
     validate_profile_bind_host,
 )
+from src.shared.user_logging import user_log
 
 
 LOGGER = logging.getLogger("saber.api.http")
@@ -180,22 +181,22 @@ def _install_request_logging(app: Flask) -> None:
             else 0.0
         )
         path = request.path
-        quiet_read = request.method == "GET" and (
-            path == "/api/v2/health"
-            or "/assets/" in path
-            or path.endswith("/media")
-            or path.endswith("/events")
+        successful_health_check = (
+            request.method == "GET"
+            and path == "/api/v2/health"
+            and response.status_code < 400
+            and duration_ms < 1000
         )
-        if response.status_code >= 500:
-            level = logging.ERROR
-        elif response.status_code >= 400 or duration_ms >= 1000:
-            level = logging.WARNING
-        elif quiet_read:
-            level = logging.DEBUG
-        else:
-            level = logging.INFO
-        LOGGER.log(
-            level,
+        if successful_health_check:
+            response.headers["X-Response-Time"] = f"{duration_ms / 1000:.3f}s"
+            return response
+        if response.status_code >= 500 and path != "/api/v2/health":
+            user_log(
+                "error",
+                f"接口请求失败｜{request.method} {path}｜"
+                f"状态码 {response.status_code}｜耗时 {duration_ms:.1f} 毫秒",
+            )
+        LOGGER.debug(
             "HTTP %s %s -> %s (%.1f ms, client=%s)",
             request.method,
             path,

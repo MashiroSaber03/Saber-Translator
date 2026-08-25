@@ -292,7 +292,7 @@ def create_settings_blueprint(
                 for row in prompt_rows
             ),
         )
-        LOGGER.info(
+        LOGGER.debug(
             "设置事务已保存：domains=%s book_settings=%s providers=%s "
             "credentials=%s prompts=%s replayed=%s",
             ",".join(str(row.get("domain", "?")) for row in setting_rows) or "-",

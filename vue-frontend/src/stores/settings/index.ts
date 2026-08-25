@@ -473,7 +473,6 @@ export const useSettingsStore = defineStore('settings', () => {
     candidate.settingsSchemaVersion = TRANSLATION_SETTINGS_SCHEMA_VERSION
     candidate.textStyle = deepClone(settings.value.textStyle)
     candidate.pluginAgent = deepClone(settings.value.pluginAgent)
-    candidate.enableVerboseLogs = settings.value.enableVerboseLogs
     const parsed = parseCurrentSettings(candidate)
     if (!parsed) return false
     settings.value = parsed
@@ -989,7 +988,6 @@ export const useSettingsStore = defineStore('settings', () => {
     setShowDetectionDebug: miscModule.setShowDetectionDebug,
     setRemoveTextWithOcr: miscModule.setRemoveTextWithOcr,
     setCompressVisionImages: miscModule.setCompressVisionImages,
-    setEnableVerboseLogs: miscModule.setEnableVerboseLogs,
     setLamaDisableResize: miscModule.setLamaDisableResize,
 
     setTheme,

@@ -17,6 +17,7 @@ from src.shared.paddleocr_vl import (
     build_paddleocr_vl_prompt,
 )
 from src.shared.path_helpers import resource_path
+from src.shared.user_logging import inline_log_text, user_log
 
 logger = logging.getLogger("PaddleOCR_VL")
 
@@ -108,15 +109,24 @@ class PaddleOCRVLHandler:
             )
             self.model = self.model.to(self.device).eval()
             self.initialized = True
-            logger.info(
+            logger.debug(
                 "%s 原生模型已加载到 %s，精度=%s",
                 constants.PADDLEOCR_VL_VERSION,
                 self.device,
                 self.torch_dtype,
             )
+            user_log(
+                "system",
+                f"{constants.PADDLEOCR_VL_VERSION} 模型已加载｜"
+                f"设备 {self.device.upper()}｜精度 {self.torch_dtype}",
+            )
             return True
         except ImportError as error:
             logger.error("PaddleOCR-VL 原生 Transformers 运行时不可用: %s", error)
+            user_log(
+                "error",
+                f"PaddleOCR-VL 运行库不可用｜{inline_log_text(error)}",
+            )
             self._release_loaded_model()
             return False
         except Exception as error:
@@ -207,7 +217,7 @@ class PaddleOCRVLHandler:
             return []
 
         build_paddleocr_vl_prompt(source_language)
-        logger.info(
+        logger.debug(
             "使用 %s 识别 %d 个气泡，源语言=%s",
             constants.PADDLEOCR_VL_VERSION,
             len(bubble_coords),
@@ -227,7 +237,7 @@ class PaddleOCRVLHandler:
                 raise ValueError(f"气泡 {index} 图像区域无效")
             text = self._recognize_single(bubble, source_language)
             results.append(text)
-            logger.info(
+            logger.debug(
                 "气泡 %d/%d %s 识别完成",
                 index + 1,
                 len(bubble_coords),
@@ -252,4 +262,4 @@ def reset_paddleocr_vl_handler() -> None:
     _paddleocr_vl_handler = None
     if handler is not None:
         handler._release_loaded_model()
-    logger.info("PaddleOCR-VL 处理器已重置")
+    logger.debug("PaddleOCR-VL 处理器已重置")

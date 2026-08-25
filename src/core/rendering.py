@@ -25,7 +25,6 @@ if TYPE_CHECKING:
     from src.core.config_models import BubbleState
 
 logger = logging.getLogger("CoreRendering")
-# logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 # =============================================================================
 # 字体回退系统
@@ -217,11 +216,13 @@ def get_cached_freetype_font(path: str) -> Optional["freetype.Face"]:
                 _freetype_font_cache[path] = freetype.Face(file_handle)
                 logger.debug(f"FreeType 字体加载成功: {abs_path}")
             else:
+                _freetype_font_cache[path] = None
                 logger.warning(f"FreeType 字体未找到: {path}")
                 return None
         except Exception as e:
             if is_memory_allocation_error(e):
                 raise
+            _freetype_font_cache[path] = None
             logger.error(f"FreeType 字体加载失败: {path} - {e}")
             return None
     
@@ -636,7 +637,7 @@ def get_font(font_family_relative_path=constants.DEFAULT_FONT_RELATIVE_PATH, fon
 
     font_path_abs = get_font_path(font_family_relative_path)
     font = ImageFont.truetype(font_path_abs, font_size, encoding="utf-8")
-    logger.info(f"成功加载字体: {font_path_abs} (大小: {font_size})")
+    logger.debug(f"成功加载字体: {font_path_abs} (大小: {font_size})")
 
     _font_cache[cache_key] = font
     return font
@@ -720,7 +721,7 @@ def calculate_auto_font_size(text, bubble_width, bubble_height, text_direction='
             high = mid - 1
 
     result = max(min_size, best_size)
-    logger.info(f"自动计算的最佳字体大小: {result}px (范围: {min_size}-{max_size})")
+    logger.debug(f"自动计算的最佳字体大小: {result}px (范围: {min_size}-{max_size})")
     return result
 
 
@@ -1301,7 +1302,7 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_width, max_height,
                                     except Exception as e:
                                         if is_memory_allocation_error(e):
                                             raise
-                                        logger.warning(f"回退字体加载失败: {fallback_path} - {e}")
+                                        logger.debug(f"回退字体加载失败: {fallback_path} - {e}")
                                         continue
                     else:
                         if converted_char in SPECIAL_CHARS:
@@ -1415,7 +1416,7 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_width, max_height,
                             except Exception as e:
                                 if is_memory_allocation_error(e):
                                     raise
-                                logger.warning(
+                                logger.debug(
                                     f"旋转字符粘贴失败: {e}，回退到直接绘制"
                                 )
                                 text_x_char = current_x_col - char_width
@@ -1575,7 +1576,7 @@ def draw_multiline_text_horizontal(draw, text, font, x, y, max_width, max_height
                             except Exception as e:
                                 if is_memory_allocation_error(e):
                                     raise
-                                logger.warning(f"回退字体加载失败: {fallback_path} - {e}")
+                                logger.debug(f"回退字体加载失败: {fallback_path} - {e}")
                                 continue
             else:
                 # FreeType 不可用时，回退到使用 SPECIAL_CHARS 检查
@@ -1635,11 +1636,11 @@ def render_bubbles_unified(
         处理后的图像（同一个对象，已被修改）
     """
     if not bubble_states:
-        logger.warning("bubble_states 为空，跳过渲染。")
+        logger.debug("bubble_states 为空，跳过渲染。")
         return image
     
     draw = ImageDraw.Draw(image)
-    logger.info(f"[统一渲染] 开始渲染 {len(bubble_states)} 个气泡...")
+    logger.debug(f"[统一渲染] 开始渲染 {len(bubble_states)} 个气泡...")
     
     for i, state in enumerate(bubble_states):
         text = state.translated_text
@@ -1774,5 +1775,5 @@ def render_bubbles_unified(
             logger.error(f"渲染气泡 {i} 时出错: {render_e}", exc_info=True)
             raise
     
-    logger.info("[统一渲染] 所有气泡文本渲染完成。")
+    logger.debug("[统一渲染] 所有气泡文本渲染完成。")
     return image

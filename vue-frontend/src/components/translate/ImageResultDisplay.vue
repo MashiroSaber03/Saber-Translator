@@ -3,7 +3,11 @@ import DetectedTextPanel, { type DetectedTextItem } from '@/components/translate
 import ExportActions from '@/components/translate/result/ExportActions.vue'
 import ResultImageCanvas from '@/components/translate/result/ResultImageCanvas.vue'
 import ResultToolbar from '@/components/translate/result/ResultToolbar.vue'
-import { useExportImport, type DownloadFormat } from '@/composables/useExportImport'
+import {
+  useExportImport,
+  type DownloadFormat,
+  type TextExportFormat,
+} from '@/composables/useExportImport'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settings'
 import { computed, ref } from 'vue'
@@ -39,6 +43,7 @@ const showOriginal = computed({
 })
 
 const downloadFormat = ref<DownloadFormat>('zip')
+const textExportFormat = ref<TextExportFormat>('json')
 
 const isDownloading = computed(() => exportImport.isDownloading.value)
 const isImporting = computed(() => exportImport.isImporting.value)
@@ -113,6 +118,12 @@ function updateDownloadFormat(value: string | number): void {
   }
 }
 
+function updateTextExportFormat(value: string | number): void {
+  if (value === 'json' || value === 'labelplus') {
+    textExportFormat.value = value
+  }
+}
+
 function retryFailed(): void {
   emit('retry-failed')
 }
@@ -126,7 +137,7 @@ function handleDownloadAll(): void {
 }
 
 function handleExportText(): void {
-  exportImport.exportText()
+  exportImport.exportText(textExportFormat.value)
 }
 
 function handleImportText(file: File): void {
@@ -175,11 +186,13 @@ function handleImportText(file: File): void {
       :has-images="hasImages"
       :is-downloading="isDownloading"
       :is-importing="isImporting"
+      :text-export-format="textExportFormat"
       @download-all="handleDownloadAll"
       @download-current="handleDownloadCurrent"
       @export-text="handleExportText"
       @import-text="handleImportText"
       @update:download-format="updateDownloadFormat"
+      @update:text-export-format="updateTextExportFormat"
     />
   </section>
 </template>

@@ -9,7 +9,9 @@ import threading
 from typing import Any
 
 from src.backend_v2.jobs.repository import JobQueueRepository
+from src.backend_v2.storage.database import is_sqlite_busy_error
 from src.backend_v2.storage.epochs import ProcessEpochRepository
+from src.shared.user_logging import RetryLogEpisode, user_log
 
 
 LOGGER = logging.getLogger("saber.api.job_events")
@@ -39,6 +41,7 @@ class JobEventBroadcaster:
         self._lock = threading.Lock()
         self._started = False
         self._subscribers: set[EventSubscription] = set()
+        self._poll_log = RetryLogEpisode("任务状态同步")
         # Do not touch SQLite during application construction.  This keeps API
         # probes side-effect free and lets the Launcher own schema initialization.
         self._cursor = 0
@@ -94,9 +97,18 @@ class JobEventBroadcaster:
                     after=self._cursor,
                     limit=1000,
                 )
-            except Exception:
-                LOGGER.exception("任务事件与 Worker 租约共享轮询失败，将继续重试")
+            except Exception as error:
+                if is_sqlite_busy_error(error):
+                    LOGGER.debug(
+                        "任务事件与 Worker 租约共享轮询遇到 SQLite 写锁竞争"
+                    )
+                else:
+                    if self._poll_log.record_failure(error):
+                        LOGGER.exception(
+                            "任务事件与 Worker 租约共享轮询失败，将继续重试"
+                        )
                 continue
+            self._poll_log.report_recovery()
             if not events:
                 continue
             self._cursor = int(events[-1]["eventId"])
@@ -133,6 +145,18 @@ class JobEventBroadcaster:
                     result.jobs_cancelled,
                     result.operations_requeued,
                 )
+                if (
+                    result.jobs_interrupted
+                    or result.jobs_cancelled
+                    or result.operations_requeued
+                ):
+                    user_log(
+                        "warning",
+                        "检测到工作进程异常退出，已自动恢复任务｜"
+                        f"中断 {result.jobs_interrupted} 个｜"
+                        f"取消 {result.jobs_cancelled} 个｜"
+                        f"重新排队 {result.operations_requeued} 个即时操作",
+                    )
 
     @staticmethod
     def _offer_close(subscription: EventSubscription) -> None:

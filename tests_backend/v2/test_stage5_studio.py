@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from io import BytesIO
 import json
+import logging
 from pathlib import Path
 import threading
 from typing import Any, Mapping
@@ -62,6 +63,7 @@ from src.backend_v2.studio.pure import (
     create_empty_document,
     import_document_payload,
 )
+from src.shared.user_logging import user_log, user_log_context
 
 
 class FakeStudioAlgorithms:
@@ -229,7 +231,7 @@ def test_studio_complete_respects_saved_nonstream_setting(
 
     captured: dict[str, Any] = {}
 
-    def complete(self, request) -> str:
+    def complete(self, request, **_kwargs) -> str:
         captured["use_stream"] = (
             request.openai_options.execution.use_stream
         )
@@ -248,7 +250,7 @@ def test_studio_complete_respects_saved_nonstream_setting(
         [{"role": "user", "content": "test"}],
         config={
             "chat": {
-                "provider": "test",
+                "provider": "ollama",
                 "model_name": "test-model",
                 "custom_base_url": "",
                 "openai_options": {
@@ -305,6 +307,40 @@ def test_studio_agent_emits_complete_nonstream_response(
             cancelled=threading.Event(),
         )
     ) == ["非流式卡片助手回复"]
+
+
+def test_studio_agent_thread_keeps_product_log_context(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class LoggingStudioAlgorithms(FakeStudioAlgorithms):
+        def chat(self, **_kwargs) -> str:
+            user_log("model", "角色工作室模型返回")
+            return "完成"
+
+    service = StudioOperationService(
+        engine=create_sqlite_engine(tmp_path / "agent-log-context.sqlite3"),
+        algorithms=LoggingStudioAlgorithms(),
+    )
+
+    with caplog.at_level(logging.INFO, logger="saber.user"), user_log_context(
+        operation_id="12345678-operation",
+        step_kind="studio_chat",
+    ):
+        assert list(
+            service.agent_chunks(
+                document=create_empty_document("book-1", title="测试角色"),
+                messages=[{"role": "user", "content": "请审查"}],
+                config={},
+                cancelled=threading.Event(),
+            )
+        ) == ["完成"]
+
+    assert any(
+        "操作 12345678 · 角色工作室对话｜角色工作室模型返回"
+        in record.getMessage()
+        for record in caplog.records
+    )
 
 
 def test_studio_agent_rejects_empty_or_inconsistent_provider_output(
@@ -945,6 +981,7 @@ def test_generate_rejects_unchanged_document_without_revision_bump(
 
 def test_chat_operation_persists_reply_after_request_lifecycle(
     studio_platform,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     repository = StudioRepository(studio_platform["engine"])
     document = repository.create_document(
@@ -973,11 +1010,12 @@ def test_chat_operation_persists_reply_after_request_lifecycle(
     assert claimed is not None
     fence, operation = claimed
     assert operation["operationId"] == accepted["operationId"]
-    result = StudioOperationService(
-        engine=studio_platform["engine"],
-        repository=repository,
-        algorithms=FakeStudioAlgorithms(),
-    ).handle(fence, operation)
+    with caplog.at_level(logging.INFO, logger="saber.user"):
+        result = StudioOperationService(
+            engine=studio_platform["engine"],
+            repository=repository,
+            algorithms=FakeStudioAlgorithms(),
+        ).handle(fence, operation)
     assert result["__already_published__"]
     restored = repository.get_session(str(session["sessionId"]))
     assert [message["role"] for message in restored["messages"]] == [
@@ -985,6 +1023,9 @@ def test_chat_operation_persists_reply_after_request_lifecycle(
         "assistant",
     ]
     assert restored["messages"][-1]["content"] == "持久化回复"
+    messages = "\n".join(record.getMessage() for record in caplog.records)
+    assert "角色回复已保存｜5 个字符" in messages
+    assert "持久化回复" in messages
 
 
 def test_abort_advances_generation_and_fences_late_reply(
@@ -2273,6 +2314,55 @@ def test_studio_http_short_commands_and_operation_event_catchup(
     )
     assert events.status_code == 200
     assert events.get_json()["items"][-1]["type"] == "operation_completed"
+
+
+def test_studio_agent_route_logs_one_complete_contextual_step(
+    studio_platform,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def fake_agent_chunks(self, **_kwargs):
+        user_log("model", "角色卡助手模型返回")
+        yield "审阅完成"
+
+    monkeypatch.setattr(
+        StudioOperationService,
+        "agent_chunks",
+        fake_agent_chunks,
+    )
+    app = create_api_app(
+        ApiSettings(
+            data_root=studio_platform["data_root"],
+            identity=RuntimeIdentity(
+                epoch_id="studio-agent-log",
+                epoch_token="test-only",
+                test_mode=True,
+            ),
+            engine=studio_platform["engine"],
+        )
+    )
+    client = app.test_client()
+    document = client.post(
+        "/api/v2/studio/books/"
+        f"{studio_platform['book']['id']}/documents",
+        json={"title": "Agent log"},
+        headers={"Idempotency-Key": "studio-agent-log-document"},
+    ).get_json()
+
+    with caplog.at_level(logging.INFO, logger="saber.user"):
+        response = client.post(
+            f"/api/v2/studio/documents/{document['id']}/agent",
+            json={"content": "请审阅"},
+            buffered=True,
+        )
+
+    assert response.status_code == 200
+    assert "审阅完成" in response.get_data(as_text=True)
+    messages = [record.getMessage() for record in caplog.records]
+    prefix = f"操作 {document['id'][:8]} · 角色卡助手｜"
+    assert any(message == prefix + "开始" for message in messages)
+    assert any(message == prefix + "角色卡助手模型返回" for message in messages)
+    assert sum(message.startswith(prefix + "完成｜耗时") for message in messages) == 1
 
 
 def test_studio_routes_reject_invalid_scalar_types_without_500(

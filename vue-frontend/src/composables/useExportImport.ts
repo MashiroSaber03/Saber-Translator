@@ -15,6 +15,8 @@ import { useToast } from '@/utils/toast'
 
 export const DOWNLOAD_FORMATS = ['zip', 'pdf', 'cbz'] as const
 export type DownloadFormat = (typeof DOWNLOAD_FORMATS)[number]
+export const TEXT_EXPORT_FORMATS = ['json', 'labelplus'] as const
+export type TextExportFormat = (typeof TEXT_EXPORT_FORMATS)[number]
 export type DownloadImageType = 'translated' | 'clean' | 'original'
 
 export function resolveDownloadFileName(
@@ -65,17 +67,20 @@ export function useExportImport() {
     }, 2000)
   }
 
-  function exportText(): void {
+  function exportText(format: TextExportFormat = 'json'): void {
     const chapterId = chapterIdFor(imageStore.images)
     if (!chapterId) {
       toast.warning('当前图片不属于同一个后端章节')
       return
     }
+    const isLabelPlus = format === 'labelplus'
     triggerUrlDownload(
-      getChapterTextExportUrl(chapterId),
-      `chapter-${chapterId}-text.json`,
+      getChapterTextExportUrl(chapterId, format),
+      isLabelPlus
+        ? `chapter-${chapterId}-labelplus.txt`
+        : `chapter-${chapterId}-text.json`,
     )
-    toast.success('后端文本导出已开始')
+    toast.success(`${isLabelPlus ? 'LabelPlus' : 'Saber JSON'} 文本导出已开始`)
   }
 
   async function importText(file: File): Promise<void> {

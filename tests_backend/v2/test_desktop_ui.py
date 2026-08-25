@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import logging
 import os
 from pathlib import Path
 
@@ -18,7 +20,11 @@ from PySide6.QtWidgets import (
     QPushButton,
 )
 
-from src.backend_v2.desktop.entrypoint import DesktopController
+from src.backend_v2.desktop.entrypoint import (
+    DesktopController,
+    DesktopLogBridge,
+    DesktopLogHandler,
+)
 from src.backend_v2.launcher.entrypoint import LauncherState, LauncherStatus
 from src.backend_v2.desktop.settings import DesktopSettings, DesktopSettingsStore
 from src.backend_v2.desktop.task_client import TaskApiClient
@@ -31,6 +37,11 @@ from src.backend_v2.desktop.window import (
     TaskCenterPage,
     _progress_summary,
 )
+from src.shared.user_logging import (
+    CATEGORY_FIELD,
+    STREAM_FRAME_PREFIX,
+    USER_LOG_MARKER,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -41,6 +52,42 @@ BRAND_LOGO = ASSET_ROOT / "app-icon.png"
 
 def _app() -> QApplication:
     return QApplication.instance() or QApplication([])
+
+
+def test_desktop_log_bridge_respects_the_configured_level() -> None:
+    bridge = DesktopLogBridge()
+    handler = DesktopLogHandler(bridge, level="INFO")
+
+    assert handler.level == logging.INFO
+
+    handler.set_log_level("DEBUG")
+    assert handler.level == logging.DEBUG
+
+    handler.set_log_level("invalid")
+    assert handler.level == logging.INFO
+
+
+def test_desktop_log_handler_uses_the_desktop_source_and_role() -> None:
+    bridge = DesktopLogBridge()
+    lines: list[tuple[str, str]] = []
+    bridge.line.connect(lambda source, line: lines.append((source, line)))
+    handler = DesktopLogHandler(bridge, level="INFO")
+    record = logging.LogRecord(
+        "saber.user",
+        logging.INFO,
+        __file__,
+        1,
+        "桌面设置已应用",
+        (),
+        None,
+    )
+    setattr(record, USER_LOG_MARKER, True)
+    setattr(record, CATEGORY_FIELD, "system")
+
+    handler.handle(record)
+
+    assert lines[0][0] == "DESKTOP"
+    assert "[桌面窗口] [系统]" in lines[0][1]
 
 
 def test_task_command_fails_locally_when_backend_is_disconnected() -> None:
@@ -506,6 +553,7 @@ def test_progress_summary_treats_invalid_counts_as_empty() -> None:
 def test_log_view_and_backing_buffer_share_the_same_bound() -> None:
     _app()
     page = LogPage()
+    page.category_filter.setCurrentText("全部内容")
 
     for index in range(5001):
         page.add_line("API", f"[INFO] line {index}")
@@ -518,9 +566,148 @@ def test_log_view_preserves_unicode_messages() -> None:
     _app()
     page = LogPage()
 
-    page.add_line("WORKER", "[INFO] 本地模型加载完成：漫画文字识别")
+    page.add_line("WORKER", "[INFO] [系统] 本地模型加载完成：漫画文字识别")
 
-    assert page.output.toPlainText() == "[INFO] 本地模型加载完成：漫画文字识别"
+    assert page.output.toPlainText() == "[INFO] [系统] 本地模型加载完成：漫画文字识别"
+
+
+def test_log_view_appends_framed_stream_chunks_to_the_same_line_immediately() -> None:
+    _app()
+    page = LogPage()
+
+    def frame(action: str, chunk: str, formatted: str) -> str:
+        return STREAM_FRAME_PREFIX + json.dumps(
+            {
+                "action": action,
+                "streamId": "stream-1",
+                "chunk": chunk,
+                "formatted": formatted,
+                "level": "INFO",
+                "category": "流式",
+            },
+            ensure_ascii=False,
+        )
+
+    page.add_line(
+        "WORKER",
+        frame(
+            "start",
+            "",
+            "2026-08-25 12:00:00 [工作进程] [流式] 高质量翻译开始流式返回：",
+        ),
+    )
+    page.add_line(
+        "WORKER",
+        frame(
+            "chunk",
+            "你好",
+            "2026-08-25 12:00:01 [工作进程] [流式] 高质量翻译流式片段｜你好",
+        ),
+    )
+    assert page.output.toPlainText().endswith("高质量翻译开始流式返回：你好")
+    page.add_line(
+        "WORKER",
+        frame(
+            "chunk",
+            "，世界",
+            "2026-08-25 12:00:02 [工作进程] [流式] 高质量翻译流式片段｜，世界",
+        ),
+    )
+    assert page.output.toPlainText().endswith("高质量翻译开始流式返回：你好，世界")
+    page.add_line(
+        "WORKER",
+        frame(
+            "end",
+            "",
+            "2026-08-25 12:00:03 [工作进程] [流式] 高质量翻译流式接收完成",
+        ),
+    )
+
+    lines = page.output.toPlainText().splitlines()
+    assert len(lines) == 2
+    assert lines[0].endswith("高质量翻译开始流式返回：你好，世界")
+    assert lines[1].endswith("高质量翻译流式接收完成")
+
+
+def test_stream_line_appears_when_a_later_chunk_matches_search() -> None:
+    _app()
+    page = LogPage()
+    page.search.setText("世界")
+
+    def frame(action: str, chunk: str, formatted: str) -> str:
+        return STREAM_FRAME_PREFIX + json.dumps(
+            {
+                "action": action,
+                "streamId": "stream-search",
+                "chunk": chunk,
+                "formatted": formatted,
+                "level": "INFO",
+                "category": "流式",
+            },
+            ensure_ascii=False,
+        )
+
+    page.add_line("WORKER", frame("start", "", "高质量翻译开始流式返回："))
+    page.add_line("WORKER", frame("chunk", "你好，", "高质量翻译流式片段｜你好，"))
+    assert page.output.toPlainText() == ""
+    page.add_line("WORKER", frame("chunk", "世界", "高质量翻译流式片段｜世界"))
+
+    assert page.output.toPlainText() == "高质量翻译开始流式返回：你好，世界"
+
+
+def test_log_view_hides_unstructured_diagnostics_by_default() -> None:
+    _app()
+    page = LogPage()
+
+    page.add_line("WORKER", "native runtime debug output")
+    page.add_line("WORKER", "[INFO] [结果] OCR 识别完成")
+
+    assert page.output.toPlainText() == "[INFO] [结果] OCR 识别完成"
+    page.category_filter.setCurrentText("全部内容")
+    assert "native runtime debug output" in page.output.toPlainText()
+
+
+def test_log_view_filters_new_chinese_categories_and_levels() -> None:
+    _app()
+    page = LogPage()
+    page.add_line(
+        "WORKER",
+        "2026-08-25 12:00:00 [工作进程 42] [结果] 第 1 页 OCR 结果",
+    )
+    page.add_line(
+        "WORKER",
+        "2026-08-25 12:00:01 [工作进程 42] [警告] 正在重试",
+    )
+
+    page.level_filter.setCurrentIndex(page.level_filter.findData("WARNING"))
+
+    assert page.output.toPlainText().endswith("[警告] 正在重试")
+    assert "OCR 结果" not in page.output.toPlainText()
+
+
+def test_log_view_recognizes_detailed_product_logs_as_debug() -> None:
+    _app()
+    page = LogPage()
+    page.add_line(
+        "WORKER",
+        "2026-08-25 12:00:00 [工作进程] [调试] [模型] 完整提示词",
+    )
+
+    page.level_filter.setCurrentIndex(page.level_filter.findData("DEBUG"))
+
+    assert "完整提示词" in page.output.toPlainText()
+
+
+def test_log_view_groups_launcher_with_desktop_and_treats_critical_as_error() -> None:
+    _app()
+    page = LogPage()
+    page.add_line("LAUNCHER", "[CRITICAL] 子进程无法启动")
+
+    page.source_filter.setCurrentIndex(page.source_filter.findData("DESKTOP"))
+    page.level_filter.setCurrentIndex(page.level_filter.findData("ERROR"))
+    page.category_filter.setCurrentText("全部内容")
+
+    assert page.output.toPlainText() == "[CRITICAL] 子进程无法启动"
 
 
 def test_log_auto_scroll_keeps_the_start_of_new_lines_visible() -> None:

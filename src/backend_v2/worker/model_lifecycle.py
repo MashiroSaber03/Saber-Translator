@@ -23,6 +23,7 @@ from src.backend_v2.storage.schema import (
     process_epochs,
     transient_requests,
 )
+from src.shared.user_logging import inline_log_text, user_log
 
 LOGGER = logging.getLogger("saber.worker.models")
 
@@ -299,13 +300,18 @@ class WorkerModelLifecycle:
         if command is None:
             return False
         command_id = str(command["commandId"])
-        LOGGER.info("开始执行手动模型释放：command=%s", command_id[:8])
+        LOGGER.debug("开始执行手动模型释放：command=%s", command_id[:8])
+        user_log("system", "正在释放本地模型与运行时缓存")
         try:
             result = unload_loaded_models(
                 release_callbacks=self.release_callbacks,
             )
         except Exception as exc:
-            LOGGER.exception("手动模型释放失败：command=%s", command_id[:8])
+            LOGGER.debug("手动模型释放失败：command=%s", command_id[:8], exc_info=True)
+            user_log(
+                "error",
+                f"本地模型释放失败｜{inline_log_text(exc)}",
+            )
             self.repository.fail(
                 command_id=command_id,
                 worker_epoch_id=self.worker_epoch_id,
@@ -319,10 +325,9 @@ class WorkerModelLifecycle:
                 worker_epoch_id=self.worker_epoch_id,
                 result=result,
             )
-            LOGGER.info(
-                "手动模型释放完成：command=%s released=%s",
-                command_id[:8],
-                _log_list(result.get("released")),
+            user_log(
+                "system",
+                f"本地模型与缓存已释放｜{_log_list(result.get('released'))}",
             )
         self.last_activity = self.monotonic()
         self.released_since_activity = True
@@ -342,9 +347,10 @@ class WorkerModelLifecycle:
         unload_loaded_models(
             release_callbacks=self.release_callbacks,
         )
-        LOGGER.info(
-            "Worker 空闲 %.0fs，已自动释放本地模型与运行时缓存",
-            self.monotonic() - self.last_activity,
+        user_log(
+            "system",
+            f"空闲 {self.monotonic() - self.last_activity:.0f} 秒，"
+            "已自动释放本地模型与缓存",
         )
         self.released_since_activity = True
         return True
@@ -355,7 +361,10 @@ class WorkerModelLifecycle:
         if self.released_since_activity or self.repository.model_inference_busy():
             return False
         unload_loaded_models(release_callbacks=self.release_callbacks)
-        LOGGER.warning("可用内存低于调度阈值，已释放本地模型与运行时缓存")
+        user_log(
+            "warning",
+            "可用内存低于安全阈值，已释放本地模型与运行时缓存",
+        )
         self.released_since_activity = True
         return True
 

@@ -80,21 +80,6 @@
     </ProductFormSection>
 
     <ProductFormSection>
-      <template #title>调试选项</template>
-      <UiField
-        variant="settings"
-        control="checkbox"
-        hint="开启后，后端终端会打印详细的诊断日志（包括完整的消息结构、模型响应等），便于调试问题。影响所有翻译模式，默认关闭以保持日志简洁。"
-      >
-        <UiCheckbox
-          :model-value="settingsStore.settings.enableVerboseLogs"
-          label="详细日志"
-          @change="settingsStore.setEnableVerboseLogs"
-        />
-      </UiField>
-    </ProductFormSection>
-
-    <ProductFormSection>
       <template #title>字体设置</template>
       <UiField variant="settings" label="系统字体列表">
         <UiButton variant="secondary" @click="refreshFontList" :disabled="isLoadingFonts">

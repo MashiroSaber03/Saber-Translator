@@ -21,6 +21,7 @@ from src.backend_v2.jobs.repository import (
 )
 from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.storage.platform_repositories import SettingsRepository
+from src.shared.user_logging import json_details, log_result, user_log
 
 
 class InsightAlgorithms(Protocol):
@@ -204,6 +205,10 @@ class InsightAnalysisWorkerService:
                 input_fingerprint=digest,
                 publisher=publish,
             )
+            log_result(
+                "本页漫画分析结果",
+                json_details(canonical),
+            )
             return {**checkpoint, "__already_published__": True}
         except AttemptFenced:
             raise
@@ -228,6 +233,10 @@ class InsightAnalysisWorkerService:
                 code="INSIGHT_PAGE_FAILED",
                 message=message,
                 publisher=publish_failure,
+            )
+            user_log(
+                "error",
+                f"本页漫画分析失败｜{message}",
             )
             return {
                 "runId": run_id,
@@ -267,6 +276,13 @@ class InsightAnalysisWorkerService:
                 checkpoint=checkpoint,
                 publisher=publish,
             )
+            log_result(
+                "分析结果校验完成",
+                (
+                    f"成功页：{checkpoint.get('successCount', 0)}",
+                    f"失败页：{checkpoint.get('failureCount', 0)}",
+                ),
+            )
             return {**checkpoint, "__already_published__": True}
         except AttemptFenced:
             raise
@@ -288,6 +304,10 @@ class InsightAnalysisWorkerService:
                 code="INSIGHT_VALIDATION_FAILED",
                 message=message,
                 publisher=publish_failure,
+            )
+            user_log(
+                "error",
+                f"分析结果校验失败｜{message}",
             )
             return {
                 "runId": run_id,
@@ -322,6 +342,13 @@ class InsightAnalysisWorkerService:
                 checkpoint=checkpoint,
                 publisher=publish,
             )
+            log_result(
+                "漫画分析结果已发布",
+                (
+                    f"成功页：{checkpoint.get('successCount', checkpoint.get('publishedCount', 0))}",
+                    f"失败页：{checkpoint.get('failureCount', 0)}",
+                ),
+            )
             return {**checkpoint, "__already_published__": True}
         except AttemptFenced:
             raise
@@ -343,6 +370,10 @@ class InsightAnalysisWorkerService:
                 code="INSIGHT_PUBLISH_FAILED",
                 message=message,
                 publisher=publish_failure,
+            )
+            user_log(
+                "error",
+                f"漫画分析发布失败｜{message}",
             )
             return {
                 "runId": run_id,

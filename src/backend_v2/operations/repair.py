@@ -28,6 +28,7 @@ from src.backend_v2.storage.schema import (
     pages,
 )
 from src.core.config_models import validate_bubble_payload
+from src.shared.user_logging import log_result
 
 
 class PageRepairService:
@@ -478,6 +479,19 @@ class PageRepairService:
             "method": method,
         }
         self.repository.complete(fence, result=result, publisher=publish)
+        method_labels = {
+            "solid": "纯色填充",
+            "restore_source": "恢复原图",
+            "lama_mpe": "LaMA MPE",
+            "litelama": "LiteLaMA",
+        }
+        log_result(
+            "当前页文字修复完成",
+            (
+                f"方式：{method_labels.get(method, method)}",
+                f"输出尺寸：{expected_size[0]}×{expected_size[1]}",
+            ),
+        )
         return {**result, "__already_published__": True}
 
     @staticmethod

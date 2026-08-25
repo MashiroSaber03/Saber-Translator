@@ -52,6 +52,7 @@ from src.backend_v2.storage.schema import (
 from src.backend_v2.transfer.commands import (
     validate_container_config,
 )
+from src.shared.user_logging import log_result
 
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tif", ".tiff"}
@@ -202,6 +203,10 @@ class TransferWorkerService:
             checkpoint=checkpoint,
             publisher=publish,
         )
+        log_result(
+            f"导入文件扫描完成｜发现 {len(entries)} 页",
+            (f"文件类型：{container_type.upper()}",),
+        )
         return {**checkpoint, "__already_published__": True}
 
     def _import_container_page(
@@ -313,6 +318,14 @@ class TransferWorkerService:
             input_fingerprint=source.checksum,
             publisher=publish,
         )
+        log_result(
+            "页面导入完成",
+            (
+                f"文件：{logical_path}",
+                f"图片尺寸：{source.width}×{source.height}",
+                f"文件大小：{source.byte_size / 1024:.1f} KiB",
+            ),
+        )
         return {**checkpoint, "__already_published__": True}
 
     def _export(
@@ -404,6 +417,14 @@ class TransferWorkerService:
             step_id=str(step["stepId"]),
             checkpoint=checkpoint,
             publisher=publish,
+        )
+        log_result(
+            f"下载文件生成完成｜{successful} 页",
+            (
+                f"格式：{export_format.upper()}",
+                f"文件大小：{artifact.byte_size / 1024 / 1024:.2f} MiB",
+                "下载有效期：24 小时",
+            ),
         )
         return {**checkpoint, "__already_published__": True}
 

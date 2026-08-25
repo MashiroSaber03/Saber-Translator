@@ -280,6 +280,6 @@ def merge_textlines(
     )
     
     if verbose:
-        logger.info(f"文本行合并: {len(textlines)} 行 -> {len(blocks)} 块")
+        logger.debug(f"文本行合并: {len(textlines)} 行 -> {len(blocks)} 块")
     
     return blocks

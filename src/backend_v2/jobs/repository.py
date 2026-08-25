@@ -194,6 +194,9 @@ class AttemptFence:
     attempt_id: str
     worker_epoch_id: str
     owner_user_id: str
+    kind: str
+    first_claim: bool
+    started_at: datetime
 
 
 def _load_required_object(value: object, field: str) -> dict[str, Any]:
@@ -2466,6 +2469,33 @@ class JobQueueRepository:
             )
             return {str(item_id): str(status) for item_id, status in rows}
 
+    def step_statuses(
+        self,
+        fence: AttemptFence,
+        step_ids: Sequence[str],
+    ) -> dict[str, str]:
+        """Return the persisted outcome for a bounded set of claimed steps."""
+
+        if not step_ids:
+            return {}
+        now = utcnow()
+        with self.engine.connect() as connection:
+            self._assert_attempt(
+                connection,
+                fence,
+                now,
+                allowed_statuses=("running", "pausing", "cancelling"),
+            )
+            rows = connection.execute(
+                select(job_steps.c.id, job_steps.c.status)
+                .join(job_items, job_items.c.id == job_steps.c.job_item_id)
+                .where(
+                    job_items.c.job_id == fence.job_id,
+                    job_steps.c.id.in_(tuple(step_ids)),
+                )
+            )
+            return {str(step_id): str(status) for step_id, status in rows}
+
     def terminal_page_items(
         self,
         fence: AttemptFence,
@@ -4259,6 +4289,9 @@ class JobQueueRepository:
             attempt_id=str(attempt_id),
             worker_epoch_id=worker_epoch_id,
             owner_user_id=str(candidate["owner_user_id"]),
+            kind=str(candidate["kind"]),
+            first_claim=candidate["started_at"] is None,
+            started_at=candidate["started_at"] or now,
         )
 
     @staticmethod

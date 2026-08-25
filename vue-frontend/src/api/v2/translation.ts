@@ -98,8 +98,11 @@ export function createChapterExportJob(
   )
 }
 
-export function getChapterTextExportUrl(chapterId: string): string {
-  return `/api/v2/chapters/${encodeURIComponent(chapterId)}/text-export`
+export function getChapterTextExportUrl(
+  chapterId: string,
+  format: 'json' | 'labelplus' = 'json',
+): string {
+  return `/api/v2/chapters/${encodeURIComponent(chapterId)}/text-export?format=${format}`
 }
 
 export function previewChapterTextImport(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 from collections.abc import Mapping, Sequence
+from contextvars import copy_context
 from copy import deepcopy
 import json
 from pathlib import Path
@@ -29,6 +30,19 @@ from src.backend_v2.studio.pure import (
     sort_lorebook_hits,
     validate_current_document,
 )
+from src.shared.user_logging import log_result
+
+
+_GENERATION_SECTION_LABELS = {
+    "identity": "基础身份",
+    "greetings": "开场白",
+    "lorebook": "世界书",
+    "regex": "正则脚本",
+    "state-tasks": "状态任务",
+    "translate": "文本翻译",
+    "full": "完整角色卡",
+    "review": "角色卡审阅",
+}
 
 
 class StudioAlgorithms(Protocol):
@@ -282,11 +296,9 @@ class DefaultStudioAlgorithms:
         on_chunk: Callable[[str, str], None] | None,
         prefer_vlm: bool = False,
     ) -> str:
-        from src.shared.ai_transport import (
-            OpenAICompatibleChatTransport,
-            UnifiedChatRequest,
-        )
+        from src.shared.ai_transport import UnifiedChatRequest
         from src.shared.openai_execution import (
+            OpenAICompatibleSyncExecutor,
             build_openai_compatible_runtime_options,
         )
         from src.shared.openai_options import OpenAICompatibleOptions
@@ -335,7 +347,11 @@ class DefaultStudioAlgorithms:
                 on_stream_chunk=on_chunk,
             ),
         )
-        return OpenAICompatibleChatTransport().complete(request)
+        result = OpenAICompatibleSyncExecutor().execute(
+            request,
+            capability=request.capability,
+        )
+        return str(result.parsed)
 
 
 class StudioOperationService:
@@ -405,11 +421,21 @@ class StudioOperationService:
                 on_chunk=on_chunk,
             )
             if section == "review":
-                return self.repository.publish_generate(
+                review = _normalize_review(generated)
+                published = self.repository.publish_generate(
                     fence,
                     generated_document=document,
-                    review=_normalize_review(generated),
+                    review=review,
                 )
+                review_details = [review["summary"]]
+                review_details.extend(
+                    f"问题：{value}" for value in review["issues"]
+                )
+                review_details.extend(
+                    f"建议：{value}" for value in review["suggestions"]
+                )
+                log_result("角色卡审阅完成", details=review_details)
+                return published
             _validate_generated_payload(
                 document,
                 generated,
@@ -420,10 +446,16 @@ class StudioOperationService:
                 generated,
                 section=section,
             )
-            return self.repository.publish_generate(
+            published = self.repository.publish_generate(
                 fence,
                 generated_document=merged,
             )
+            section_label = _GENERATION_SECTION_LABELS.get(section, section)
+            log_result(
+                f"角色设定「{section_label}」已保存｜生成 {len(generated)} 个字段",
+                details=("字段：" + "、".join(sorted(generated)),),
+            )
+            return published
         if kind == "studio_chat":
             _exact_keys(
                 request,
@@ -479,10 +511,15 @@ class StudioOperationService:
             summary_text = summary.get("summary")
             if not isinstance(summary_text, str) or not summary_text.strip():
                 raise ValueError("Studio summary did not return summary text")
-            return self.repository.publish_summary(
+            published = self.repository.publish_summary(
                 fence,
                 summary={"summary": summary_text.strip()},
             )
+            log_result(
+                f"对话摘要已保存｜{len(summary_text.strip())} 个字符",
+                details=(summary_text.strip(),),
+            )
+            return published
         raise ValueError(f"unsupported Studio operation: {kind}")
 
     def _chat(
@@ -644,13 +681,18 @@ class StudioOperationService:
                 event="message_sent",
             )
         )
-        return self.repository.publish_chat(
+        published = self.repository.publish_chat(
             fence,
             content=visible_assistant,
             runtime_log=runtime_log,
             variables=session_work["variables"],
             runtime_state=session_work["_runtime"],
         )
+        log_result(
+            f"角色回复已保存｜{len(visible_assistant)} 个字符",
+            details=(visible_assistant,),
+        )
+        return published
 
     def prompt_preview(
         self,
@@ -863,8 +905,9 @@ class StudioOperationService:
             finally:
                 publish_control(done)
 
+        producer_context = copy_context()
         thread = threading.Thread(
-            target=run,
+            target=lambda: producer_context.run(run),
             name="studio-transient-agent",
             daemon=True,
         )

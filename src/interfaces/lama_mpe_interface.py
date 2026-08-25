@@ -13,6 +13,7 @@ from torch import Tensor
 from typing import Optional
 
 from src.shared.path_helpers import resource_path
+from src.shared.user_logging import user_log
 
 logger = logging.getLogger("LAMAMPEInterface")
 
@@ -608,8 +609,7 @@ class LamaMPEInpainter:
                 f"并放置到: models/lama/inpainting_lama_mpe.ckpt"
             )
         
-        logger.info(f"加载 LAMA MPE 模型: {self.model_path}")
-        logger.info(f"使用设备: {device}")
+        logger.debug(f"加载 LAMA MPE 模型: {self.model_path}，设备: {device}")
         
         model = load_lama_mpe(self.model_path, device='cpu')
         if device.startswith('cuda') or device == 'mps':
@@ -618,7 +618,8 @@ class LamaMPEInpainter:
         LamaMPEInpainter._model = model
         LamaMPEInpainter._device = device
         LamaMPEInpainter._loaded = True
-        logger.info("LAMA MPE 模型加载完成")
+        logger.debug("LAMA MPE 模型已加载（设备: %s）", device)
+        user_log("system", f"LaMA MPE 文字修复模型已加载｜设备 {device.upper()}")
     
     def unload(self):
         """卸载模型释放内存"""
@@ -632,7 +633,7 @@ class LamaMPEInpainter:
                 torch.cuda.empty_cache()
             import gc
             gc.collect()
-            logger.info("LAMA MPE 模型已卸载")
+            logger.debug("LAMA MPE 模型已卸载")
     
     def inpaint(self, image: np.ndarray, mask: np.ndarray, inpainting_size: int = 1024, disable_resize: bool = False) -> np.ndarray:
         """
@@ -697,7 +698,7 @@ class LamaMPEInpainter:
                 interpolation=cv2.INTER_NEAREST,
             )
         elif disable_resize:
-            logger.info(
+            logger.debug(
                 "LAMA MPE: 禁用缩放模式，使用原图尺寸 %sx%s",
                 width,
                 height,
@@ -727,7 +728,7 @@ class LamaMPEInpainter:
                 value=0,
             )
 
-        logger.info("Inpainting resolution: %sx%s", padded_width, padded_height)
+        logger.debug("Inpainting resolution: %sx%s", padded_width, padded_height)
         img_torch = (
             torch.from_numpy(np.ascontiguousarray(processed_image))
             .permute(2, 0, 1)

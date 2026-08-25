@@ -106,9 +106,9 @@ def call_ai_vision_ocr_service(image_pil, provider='siliconflow', api_key=None, 
                 prompt = constants.DEFAULT_AI_VISION_OCR_JSON_PROMPT
             else:
                 prompt = constants.DEFAULT_AI_VISION_OCR_PROMPT
-            logger.info("使用默认AI视觉OCR提示词")
+            logger.debug("使用默认AI视觉OCR提示词")
 
-        logger.info(
+        logger.debug(
             "[AI视觉OCR-请求] provider=%s, model=%s, prompt_mode=%s, json_mode=%s, base_url=%s",
             provider_lower,
             model_name,
@@ -116,7 +116,7 @@ def call_ai_vision_ocr_service(image_pil, provider='siliconflow', api_key=None, 
             effective_options.request.force_json_output,
             resolved_base_url,
         )
-        logger.info("[AI视觉OCR-请求] 实际提示词开始\n%s\n[AI视觉OCR-请求] 实际提示词结束", prompt)
+        logger.debug("[AI视觉OCR-请求] 实际提示词开始\n%s\n[AI视觉OCR-请求] 实际提示词结束", prompt)
         use_json_format = effective_options.request.force_json_output
         result = _sync_executor.execute(
             UnifiedVisionRequest(
@@ -132,7 +132,6 @@ def call_ai_vision_ocr_service(image_pil, provider='siliconflow', api_key=None, 
                 openai_options=effective_options,
                 runtime_options=build_openai_compatible_runtime_options(
                     timeout=120.0,
-                    print_stream_output=effective_options.execution.use_stream,
                     stream_output_label="AI视觉OCR",
                 ),
             ),
@@ -149,8 +148,8 @@ def call_ai_vision_ocr_service(image_pil, provider='siliconflow', api_key=None, 
         content = content.strip()
 
         elapsed_time = time.time() - start_time
-        logger.info(f"{provider_lower} 视觉OCR识别成功，耗时: {elapsed_time:.2f}秒")
-        logger.info(f"识别结果 (前100字符): {content[:100]}")
+        logger.debug(f"{provider_lower} 视觉OCR识别成功，耗时: {elapsed_time:.2f}秒")
+        logger.debug(f"识别结果 (前100字符): {content[:100]}")
         return content
     except Exception as e:
         logger.error(f"调用AI视觉OCR服务 ({provider}) 时发生顶层异常: {e}", exc_info=True)

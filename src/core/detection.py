@@ -54,7 +54,7 @@ def _filter_small_text_blocks(
 
     removed_count = len(blocks) - len(filtered_blocks)
     if removed_count > 0:
-        logger.info(
+        logger.debug(
             "已按面积阈值过滤 %s 个极小文本框 (阈值: %s%%, 保留: %s)",
             removed_count,
             threshold,

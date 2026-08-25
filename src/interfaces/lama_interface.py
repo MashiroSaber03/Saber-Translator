@@ -8,6 +8,7 @@ from PIL import Image
 # 导入路径助手
 from src.shared.path_helpers import resource_path
 from src.shared.memory_errors import is_memory_allocation_error
+from src.shared.user_logging import user_log
 
 logger = logging.getLogger("LAMAInterface")
 
@@ -27,16 +28,16 @@ try:
     
     if is_lama_mpe_available():
         LAMA_MPE_AVAILABLE = True
-        logger.info("✓ LAMA MPE 模型可用")
+        logger.debug("LAMA MPE 模型可用")
     else:
-        logger.info("LAMA MPE 模型文件不存在: models/lama/inpainting_lama_mpe.ckpt")
+        logger.debug("LAMA MPE 模型文件不存在: models/lama/inpainting_lama_mpe.ckpt")
         
 except ImportError as e:
-    logger.warning(f"无法导入 LAMA MPE 模块: {e}")
+    logger.debug(f"无法导入 LAMA MPE 模块: {e}")
 except Exception as e:
     if is_memory_allocation_error(e):
         raise
-    logger.warning(f"LAMA MPE 初始化失败: {e}")
+    logger.debug("LAMA MPE 可用性检查失败: %s", e, exc_info=True)
 
 # --- 检查 litelama ---
 LiteLama = None
@@ -51,16 +52,16 @@ try:
     checkpoint_path = os.path.join(model_path, "big-lama.safetensors")
     if os.path.exists(checkpoint_path):
         LAMA_LITELAMA_AVAILABLE = True
-        logger.info("✓ litelama 模型可用")
+        logger.debug("litelama 模型可用")
     else:
-        logger.info("litelama 模型文件不存在: models/lama/big-lama.safetensors")
+        logger.debug("litelama 模型文件不存在: models/lama/big-lama.safetensors")
 
 except ImportError as e:
-    logger.warning(f"litelama 库不可用: {e}")
+    logger.debug(f"litelama 库不可用: {e}")
 except Exception as e:
     if is_memory_allocation_error(e):
         raise
-    logger.warning(f"litelama 初始化失败: {e}")
+    logger.debug("litelama 可用性检查失败: %s", e, exc_info=True)
 
 # 最终状态日志
 if LAMA_MPE_AVAILABLE or LAMA_LITELAMA_AVAILABLE:
@@ -69,11 +70,9 @@ if LAMA_MPE_AVAILABLE or LAMA_LITELAMA_AVAILABLE:
         available_models.append("lama_mpe (速度优化)")
     if LAMA_LITELAMA_AVAILABLE:
         available_models.append("litelama (通用)")
-    logger.info(f"LAMA 功能已启用，可用模型: {', '.join(available_models)}")
+    logger.debug(f"LAMA 功能已启用，可用模型: {', '.join(available_models)}")
 else:
-    logger.warning("✗ LAMA 功能不可用，请下载模型文件")
-    logger.warning("  LAMA MPE: inpainting_lama_mpe.ckpt -> models/lama/")
-    logger.warning("  litelama: big-lama.safetensors -> models/lama/")
+    logger.debug("LAMA 功能不可用：未找到可用模型")
 
 
 # ============================================================
@@ -127,9 +126,10 @@ class LiteLamaInpainter:
         if LiteLamaInpainter._loaded and LiteLamaInpainter._model is not None:
             # 已加载，检查是否需要切换设备
             if device and device != LiteLamaInpainter._device:
-                logger.info(f"litelama 切换设备: {LiteLamaInpainter._device} -> {device}")
+                logger.debug(f"litelama 切换设备: {LiteLamaInpainter._device} -> {device}")
                 LiteLamaInpainter._model.to(device)
                 LiteLamaInpainter._device = device
+                user_log("system", f"LiteLaMA 文字修复模型已切换｜设备 {device.upper()}")
             return
         
         if device is None:
@@ -142,8 +142,7 @@ class LiteLamaInpainter:
                 f"并放置到: models/lama/big-lama.safetensors"
             )
         
-        logger.info(f"加载 litelama 模型: {self.model_path}")
-        logger.info(f"使用设备: {device}")
+        logger.debug(f"加载 litelama 模型: {self.model_path}，设备: {device}")
         
         # 获取 litelama 的默认配置文件
         import litelama
@@ -163,7 +162,8 @@ class LiteLamaInpainter:
         LiteLamaInpainter._device = device
         LiteLamaInpainter._loaded = True
         
-        logger.info("litelama 模型加载完成")
+        logger.debug("litelama 模型已加载（设备: %s）", device)
+        user_log("system", f"LiteLaMA 文字修复模型已加载｜设备 {device.upper()}")
     
     def unload(self):
         """卸载模型释放内存"""
@@ -177,7 +177,7 @@ class LiteLamaInpainter:
                 torch.cuda.empty_cache()
             import gc
             gc.collect()
-            logger.info("litelama 模型已卸载")
+            logger.debug("litelama 模型已卸载")
     
     def inpaint(self, image, mask, inpainting_size: int = 1024, disable_resize: bool = False):
         """
@@ -229,7 +229,7 @@ class LiteLamaInpainter:
                 scale = inpainting_size / max_dim
                 processed_width = max(1, int(width * scale))
                 processed_height = max(1, int(height * scale))
-                logger.info(
+                logger.debug(
                     "litelama: 缩放图像 %sx%s -> %sx%s",
                     width,
                     height,
@@ -249,7 +249,7 @@ class LiteLamaInpainter:
                 init_image = opened.enter_context(Image.fromarray(resized_image))
                 mask_image = opened.enter_context(Image.fromarray(resized_mask))
             elif disable_resize:
-                logger.info(
+                logger.debug(
                     "litelama: 禁用缩放模式，使用原图尺寸 %sx%s",
                     width,
                     height,

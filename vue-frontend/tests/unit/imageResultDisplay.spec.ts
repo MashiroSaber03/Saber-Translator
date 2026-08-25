@@ -68,7 +68,7 @@ describe('ImageResultDisplay', () => {
     expect(progress.text()).toContain('正在打包下载')
     expect(wrapper.find('.progress').exists()).toBe(false)
     expect(wrapper.findAllComponents(UiButton).filter(button => (
-      ['下载当前图片', '下载所有图片', '导出文本', '导入文本'].includes(button.text())
+      ['下载当前页', '下载全部', '导出文本', '导入 Saber JSON'].includes(button.text())
     )).every(button => button.props('disabled'))).toBe(true)
   })
 
@@ -167,13 +167,13 @@ describe('ImageResultDisplay', () => {
 
     const wrapper = mount(ImageResultDisplay)
 
-    const formatSelect = wrapper.getComponent(UiSelect)
+    const formatSelect = wrapper.findAllComponents(UiSelect)[0]!
     expect(formatSelect.exists()).toBe(true)
 
     formatSelect.vm.$emit('update:modelValue', 'pdf')
     const downloadAllButton = wrapper
       .findAllComponents(UiButton)
-      .find(button => button.text().includes('下载所有图片'))
+      .find(button => button.text().includes('下载全部'))
     expect(downloadAllButton).toBeTruthy()
     await downloadAllButton!.trigger('click')
 
@@ -190,9 +190,14 @@ describe('ImageResultDisplay', () => {
     const actionRows = wrapper.findAllComponents(ProductActionRow)
     expect(actionRows.map(row => row.props('ariaLabel'))).toEqual([
       '图片查看操作',
-      '翻译结果导出操作',
+      '图片文件导出操作',
+      '文本交换操作',
     ])
-    expect(actionRows.every(row => row.props('justify') === 'center')).toBe(true)
+    expect(actionRows.map(row => row.props('justify'))).toEqual([
+      'center',
+      'start',
+      'start',
+    ])
     expect(wrapper.find('.image-controls').exists()).toBe(false)
     expect(wrapper.find('.download-buttons').exists()).toBe(false)
   })
@@ -216,6 +221,23 @@ describe('ImageResultDisplay', () => {
     await wrapper.vm.$nextTick()
 
     expect(exportImportMock.importText).toHaveBeenCalledWith(file)
+  })
+
+  it('exports the selected text exchange format', async () => {
+    exportImportMock.state.isDownloading = false
+    const imageStore = useImageStore()
+    addTestImage(imageStore, 'page.png', 'data:image/png;base64,aW1hZ2U=')
+    const wrapper = mount(ImageResultDisplay)
+    const textFormatSelect = wrapper.findAllComponents(UiSelect)[1]!
+
+    textFormatSelect.vm.$emit('update:modelValue', 'labelplus')
+    await wrapper.vm.$nextTick()
+    const exportButton = wrapper
+      .findAllComponents(UiButton)
+      .find(button => button.text() === '导出文本')
+    await exportButton!.trigger('click')
+
+    expect(exportImportMock.exportText).toHaveBeenCalledWith('labelplus')
   })
 
   it('prevents overlapping backend export submissions while one export is pending', () => {

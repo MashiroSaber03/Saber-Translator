@@ -8,6 +8,7 @@ import torch
 # 导入路径助手
 from src.shared.path_helpers import resource_path
 from src.shared.memory_errors import is_memory_allocation_error
+from src.shared.user_logging import user_log
 
 # 设置缓存目录路径 - 新位置：models/manga_ocr/
 model_cache_dir = resource_path('models/manga_ocr')
@@ -51,7 +52,7 @@ def reset_manga_ocr_instance():
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-    logger.info("MangaOCR 实例已重置")
+    logger.debug("MangaOCR 实例已重置")
 
 
 def get_manga_ocr_instance():
@@ -105,7 +106,12 @@ def get_manga_ocr_instance():
             raise
         _manga_ocr_instance = instance
         end_time = time.time()
-        logger.info(f"MangaOCR 初始化完成，耗时 {end_time - start_time:.1f}s")
+        logger.debug(f"MangaOCR 初始化完成，耗时 {end_time - start_time:.1f}s")
+        user_log(
+            "system",
+            f"MangaOCR 模型已加载｜设备 {'CPU' if force_cpu else 'GPU'}｜"
+            f"耗时 {end_time - start_time:.1f} 秒",
+        )
         return _manga_ocr_instance
 
 

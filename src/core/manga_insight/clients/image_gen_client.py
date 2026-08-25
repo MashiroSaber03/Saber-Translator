@@ -25,6 +25,7 @@ import httpx
 
 from src.shared.ai_providers import (
     IMAGE_GEN_CAPABILITY,
+    get_provider_manifest,
     normalize_provider_id,
     provider_requires_api_key,
     provider_requires_model,
@@ -33,6 +34,12 @@ from src.shared.ai_providers import (
 )
 from src.shared.ai_transport import RETRYABLE_EXCEPTIONS, RETRYABLE_STATUS_CODES
 from src.shared.http_config import build_httpx_kwargs, is_local_service
+from src.shared.user_logging import (
+    log_model_input,
+    log_model_request,
+    log_retry,
+    user_log,
+)
 
 from ..config_models import ImageGenConfig
 
@@ -62,11 +69,11 @@ class ImageGenClient:
         self._transport_retries = config.transport_retries
         self._business_retries = config.business_retries
         if is_local_service(self._base_url):
-            logger.info("检测到本地生图服务 (%s)，禁用代理", self._base_url)
+            logger.debug("检测到本地生图服务 (%s)，禁用代理", self._base_url)
         self.client = httpx.AsyncClient(
             **build_httpx_kwargs(self._base_url, self._timeout)
         )
-        logger.info(
+        logger.debug(
             "ImageGenClient 初始化: provider=%s, base_url=%s",
             config.provider,
             self._base_url,
@@ -112,6 +119,13 @@ class ImageGenClient:
         request_url = self._build_api_url(
             "images/edits" if prepared_refs else "images/generations"
         )
+        log_model_input(
+            "图像生成",
+            (
+                f"提示词：{prompt}",
+                f"参考图：{len(prepared_refs)} 张",
+            ),
+        )
         return await self._request_image_bytes(
             request_url,
             prompt,
@@ -128,25 +142,32 @@ class ImageGenClient:
         total_attempts = self._business_retries + 1
 
         for attempt in range(total_attempts):
+            log_model_request(
+                provider=get_provider_manifest(self.provider).display_name,
+                model=self.config.model,
+                stream=False,
+                attempt=attempt + 1,
+                total_attempts=total_attempts,
+            )
             try:
                 payload = await self._request_generation_payload(request_url, prompt, prepared_refs)
                 if not self._payload_has_result(payload):
                     raise ImageGenBusinessRetryableError(f"{self.config.provider} 返回中没有图片结果")
                 try:
-                    return await self._extract_image_bytes_from_payload(payload)
+                    image_bytes = await self._extract_image_bytes_from_payload(payload)
+                    user_log(
+                        "model",
+                        f"生图模型返回图片｜{len(image_bytes) / 1024:.1f} KiB",
+                    )
+                    return image_bytes
                 except ValueError as exc:
                     raise ImageGenBusinessRetryableError(str(exc)) from exc
             except ImageGenBusinessRetryableError as exc:
                 last_error = exc
                 if attempt >= total_attempts - 1:
                     break
-                logger.warning(
-                    "%s 生图业务重试 %s/%s: %s",
-                    self.config.provider,
-                    attempt + 1,
-                    self._business_retries,
-                    exc,
-                )
+                logger.debug("生图结果校验失败：%s", exc)
+                log_retry("图像生成", attempt + 2, total_attempts, exc)
                 await asyncio.sleep(1)
 
         if last_error:
@@ -180,12 +201,10 @@ class ImageGenClient:
                     response.status_code in RETRYABLE_STATUS_CODES
                     and attempt < self._transport_retries
                 ):
-                    logger.warning(
-                        "%s 生图传输重试 %s/%s: HTTP %s",
-                        self.config.provider,
-                        attempt + 1,
-                        self._transport_retries,
-                        response.status_code,
+                    user_log(
+                        "warning",
+                        f"生图服务暂时返回 HTTP {response.status_code}｜"
+                        f"{2 ** attempt} 秒后重试｜第 {attempt + 1}/{self._transport_retries} 次重试",
                     )
                     await asyncio.sleep(2 ** attempt)
                     continue
@@ -195,12 +214,10 @@ class ImageGenClient:
                 return payload
             except RETRYABLE_EXCEPTIONS as exc:
                 if attempt < self._transport_retries:
-                    logger.warning(
-                        "%s 生图传输重试 %s/%s: %s",
-                        self.config.provider,
-                        attempt + 1,
-                        self._transport_retries,
-                        type(exc).__name__,
+                    user_log(
+                        "warning",
+                        f"生图网络请求失败（{type(exc).__name__}）｜"
+                        f"{2 ** attempt} 秒后重试｜第 {attempt + 1}/{self._transport_retries} 次重试",
                     )
                     await asyncio.sleep(2 ** attempt)
                     continue
@@ -282,7 +299,7 @@ class ImageGenClient:
         filename = os.path.basename(image_path)
         if not filename:
             raise ValueError("reference image filename is invalid")
-        logger.info("已添加风格参考图: %s", image_path)
+        logger.debug("已加载风格参考图：%s", filename)
         return {
             "filename": filename,
             "bytes": image_bytes,

@@ -27,7 +27,6 @@ const mocks = vi.hoisted(() => ({
     settings: {
       removeTextWithOcr: false,
       compressVisionImages: true,
-      enableVerboseLogs: false,
       lamaDisableResize: false,
     },
     fontCatalog: [] as Array<Record<string, unknown>>,
@@ -36,7 +35,6 @@ const mocks = vi.hoisted(() => ({
     upsertFont: vi.fn(),
     setRemoveTextWithOcr: vi.fn(),
     setCompressVisionImages: vi.fn(),
-    setEnableVerboseLogs: vi.fn(),
     setLamaDisableResize: vi.fn(),
   },
 }))
