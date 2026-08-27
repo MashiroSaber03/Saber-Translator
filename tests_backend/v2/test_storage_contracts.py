@@ -15,6 +15,10 @@ from src.backend_v2.storage.lifecycle import (
     schema_smoke_test,
 )
 from src.backend_v2.storage.schema import (
+    CURRENT_JOB_STATUSES,
+    EXECUTING_JOB_STATUSES,
+    JOB_STATUSES,
+    NONTERMINAL_JOB_STATUSES,
     assets,
     books,
     chapters,
@@ -27,6 +31,7 @@ from src.backend_v2.storage.schema import (
     pages,
     web_import_drafts,
 )
+
 
 def _stored_job_progress(status: str) -> str:
     return json.dumps(
@@ -90,6 +95,34 @@ def test_schema_contains_backend_first_ownership_tables(engine) -> None:
     assert metadata.tables["plugins"].c.id.type.length == 100
     assert metadata.tables["plugin_versions"].c.plugin_id.type.length == 100
     assert metadata.tables["plugin_current_versions"].c.plugin_id.type.length == 100
+
+
+def test_task_schema_vocabulary_is_exact() -> None:
+    assert JOB_STATUSES == (
+        "queued",
+        "running",
+        "paused",
+        "cancelled",
+        "completed",
+        "completed_with_errors",
+        "failed",
+        "interrupted",
+    )
+    assert CURRENT_JOB_STATUSES == ("running", "paused")
+    assert EXECUTING_JOB_STATUSES == ("running",)
+    assert NONTERMINAL_JOB_STATUSES == (
+        "queued",
+        "running",
+        "paused",
+        "interrupted",
+    )
+    assert tuple(job_batches.c.keys()) == (
+        "id",
+        "owner_user_id",
+        "display_name",
+        "created_at",
+    )
+    assert "blocked_reason" not in jobs.c
 
 
 def test_every_non_primary_foreign_key_has_a_leading_lookup_index() -> None:
@@ -187,7 +220,6 @@ def test_large_dataset_hot_queries_use_declared_indexes(engine) -> None:
             [
                 {
                     "id": f"batch-{index:04d}",
-                    "kind": "export",
                     "display_name": f"Batch {index}",
                 }
                 for index in range(200)
@@ -599,10 +631,10 @@ def test_only_one_current_job_can_exist(engine) -> None:
                     "INSERT INTO jobs "
                     "(id, kind, status, config_json, latest_progress_json, "
                     "created_at, updated_at) "
-                    "VALUES ('job-2', 'export', 'pausing', '{}', :progress, "
+                    "VALUES ('job-2', 'export', 'running', '{}', :progress, "
                     "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
                 ),
-                {"progress": _stored_job_progress("pausing")},
+                {"progress": _stored_job_progress("running")},
             )
 
 

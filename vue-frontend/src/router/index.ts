@@ -1,5 +1,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { APP_ROUTE_PATHS } from '@/constants/routes'
+import { useAuthStore } from '@/stores/authStore'
+import { useRuntimeStore } from '@/stores/runtimeStore'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -89,8 +91,6 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to, _from, next) => {
-  const { useRuntimeStore } = await import('@/stores/runtimeStore')
-  const { useAuthStore } = await import('@/stores/authStore')
   const runtime = useRuntimeStore()
   const auth = useAuthStore()
   try {

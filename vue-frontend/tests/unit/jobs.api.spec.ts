@@ -21,14 +21,16 @@ describe('jobs v2 api contracts', () => {
     vi.spyOn(crypto, 'randomUUID').mockReturnValue('00000000-0000-4000-8000-000000000001')
   })
 
-  it('does not apply the history pagination limit to the live queue', async () => {
+  it('supports one combined queue and history snapshot', async () => {
     getMock.mockResolvedValue({ items: [], nextCursor: null })
 
     await jobsApi.list('queue')
     await jobsApi.list('history')
+    await jobsApi.list('all')
 
     expect(getMock).toHaveBeenNthCalledWith(1, '/api/v2/jobs?scope=queue')
     expect(getMock).toHaveBeenNthCalledWith(2, '/api/v2/jobs?scope=history&limit=200')
+    expect(getMock).toHaveBeenNthCalledWith(3, '/api/v2/jobs?scope=all&limit=200')
   })
 
   it.each(['pause', 'resume', 'continue', 'cancel'] as const)(

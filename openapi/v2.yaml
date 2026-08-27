@@ -789,7 +789,7 @@ paths:
       parameters:
         - name: scope
           in: query
-          schema: {type: string, enum: [queue, history], default: queue}
+          schema: {type: string, enum: [queue, history, all], default: queue}
         - name: status
           in: query
           schema: {$ref: "#/components/schemas/JobStatus"}
@@ -896,10 +896,10 @@ paths:
         - $ref: "#/components/parameters/JobId"
       responses:
         "200":
-          description: Pause intent accepted or replayed.
+          description: Job paused immediately; active steps return to pending for resume.
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/Job"}
+              schema: {$ref: "#/components/schemas/JobCommandResult"}
         "409":
           $ref: "#/components/responses/InvalidTransition"
   /jobs/{job_id}/resume:
@@ -914,7 +914,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Job"
+                $ref: "#/components/schemas/JobCommandResult"
         "409":
           $ref: "#/components/responses/InvalidTransition"
   /jobs/{job_id}/cancel:
@@ -925,10 +925,10 @@ paths:
         - $ref: "#/components/parameters/JobId"
       responses:
         "200":
-          description: Cancel intent accepted or the queued job cancelled.
+          description: The job and its unfinished graph were atomically cancelled.
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/Job"}
+              schema: {$ref: "#/components/schemas/JobCommandResult"}
         "409":
           $ref: "#/components/responses/InvalidTransition"
   /jobs/{job_id}/retry:
@@ -982,17 +982,38 @@ paths:
             schema: {$ref: "#/components/schemas/JobReorderCommand"}
       responses:
         "200":
-          description: Updated queue revision.
+          description: Queue order updated.
           content:
             application/json:
               schema:
                 type: object
                 additionalProperties: false
-                required: [queueRevision]
+                required: [status]
                 properties:
-                  queueRevision: {type: integer, minimum: 1}
+                  status: {type: string, enum: [reordered]}
         "409":
           $ref: "#/components/responses/Conflict"
+  /jobs/queue/pause:
+    post:
+      tags: [jobs]
+      operationId: pauseJobQueue
+      description: Stop admitting queued jobs. The current job and immediate operations continue.
+      responses:
+        "200":
+          description: Persistent queue admission state.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/QueueControlState"}
+  /jobs/queue/resume:
+    post:
+      tags: [jobs]
+      operationId: resumeJobQueue
+      responses:
+        "200":
+          description: Persistent queue admission state.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/QueueControlState"}
   /jobs/cancel-queued:
     post:
       tags: [jobs]
@@ -1013,20 +1034,6 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/RemovedCount"}
-  /job-batches/{batch_id}:
-    get:
-      tags: [jobs]
-      operationId: getJobBatch
-      parameters:
-        - $ref: "#/components/parameters/BatchId"
-      responses:
-        "200":
-          description: Batch summary and member jobs.
-          content:
-            application/json:
-              schema: {$ref: "#/components/schemas/JobBatch"}
-        "404":
-          $ref: "#/components/responses/NotFound"
   /job-batches/{batch_id}/cancel:
     post:
       tags: [jobs]
@@ -1046,17 +1053,17 @@ paths:
       operationId: prioritizeQueuedJobBatchMembers
       parameters:
         - $ref: "#/components/parameters/BatchId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: {$ref: "#/components/schemas/BatchPrioritizeCommand"}
       responses:
         "200":
           description: Queued ordinary members moved to the front in batch order.
           content:
             application/json:
-              schema: {$ref: "#/components/schemas/QueueRevision"}
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status]
+                properties:
+                  status: {type: string, enum: [prioritized]}
         "404": {$ref: "#/components/responses/NotFound"}
         "409": {$ref: "#/components/responses/Conflict"}
         "422": {$ref: "#/components/responses/ValidationError"}
@@ -1086,25 +1093,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Job"
+                $ref: "#/components/schemas/JobCommandResult"
         "409":
           $ref: "#/components/responses/InvalidTransition"
-  /jobs/{job_id}/download:
-    get:
-      tags: [jobs]
-      operationId: downloadJobArtifact
-      parameters:
-        - $ref: "#/components/parameters/JobId"
-        - name: kind
-          in: query
-          schema: {type: string}
-      responses:
-        "200":
-          description: Stream one durable job artifact.
-          content:
-            application/octet-stream:
-              schema: {type: string, format: binary}
-        "404": {$ref: "#/components/responses/NotFound"}
   /studio/books/{book_id}/index:
     get:
       tags: [studio]
@@ -4189,7 +4180,7 @@ components:
       properties:
         jobId: {$ref: "#/components/schemas/Uuid"}
         kind: {$ref: "#/components/schemas/JobKind"}
-        status: {type: string, enum: [running, pausing, cancelling]}
+        status: {type: string, const: running}
         ownerUserId: {$ref: "#/components/schemas/Uuid"}
         ownerUsername: {type: string}
         startedAt: {type: [string, "null"], format: date-time}
@@ -4218,7 +4209,7 @@ components:
         totalMemoryMiB: {type: integer, minimum: 0}
         waitingReason:
           type: [string, "null"]
-          enum: [worker_offline, low_memory, queue_blocked, null]
+          enum: [queue_paused, worker_offline, low_memory, queue_blocked, null]
     SchedulingOverview:
       type: object
       additionalProperties: false
@@ -4661,9 +4652,7 @@ components:
       enum:
         - queued
         - running
-        - pausing
         - paused
-        - cancelling
         - cancelled
         - completed
         - completed_with_errors
@@ -4763,7 +4752,24 @@ components:
       type: object
       additionalProperties: false
       required:
-        [jobId, kind, retryOfJobId, retryMode, status, queueRank, progress, target, createdAt]
+        - jobId
+        - batchId
+        - batchDisplayName
+        - kind
+        - retryOfJobId
+        - retryMode
+        - status
+        - queueRank
+        - bookId
+        - chapterId
+        - pageId
+        - blockedReason
+        - blockedByJobId
+        - progress
+        - target
+        - createdAt
+        - startedAt
+        - finishedAt
       properties:
         jobId:
           $ref: "#/components/schemas/Uuid"
@@ -4808,7 +4814,6 @@ components:
           enum:
             - null
             - blocked_by_job
-            - draining_immediate_writes
             - retained_chapter_lock
         blockedByJobId:
           oneOf:
@@ -4831,23 +4836,35 @@ components:
     JobList:
       type: object
       additionalProperties: false
-      required: [items, queueRevision, eventCursor, workerOnline]
+      required:
+        [items, queuePaused, eventCursor, workerOnline, executorBusy, waitingReason]
       properties:
         items:
           type: array
           items: {$ref: "#/components/schemas/Job"}
-        queueRevision: {type: integer, minimum: 1}
+        queuePaused: {type: boolean}
         eventCursor: {type: integer, minimum: 0}
         workerOnline: {type: boolean}
+        executorBusy: {type: boolean}
+        waitingReason:
+          type: [string, "null"]
+          enum:
+            [queue_paused, worker_offline, low_memory, queue_blocked, executor_busy, null]
     JobSnapshot:
       type: object
       additionalProperties: false
-      required: [items, queueRevision]
+      required: [items, queuePaused, workerOnline, executorBusy, waitingReason]
       properties:
         items:
           type: array
           items: {$ref: "#/components/schemas/Job"}
-        queueRevision: {type: integer, minimum: 1}
+        queuePaused: {type: boolean}
+        workerOnline: {type: boolean}
+        executorBusy: {type: boolean}
+        waitingReason:
+          type: [string, "null"]
+          enum:
+            [queue_paused, worker_offline, low_memory, queue_blocked, executor_busy, null]
     JobDetail:
       unevaluatedProperties: false
       allOf:
@@ -4991,7 +5008,7 @@ components:
         jobId: {$ref: "#/components/schemas/Uuid"}
         type: {type: string}
         payload: {type: object, additionalProperties: true}
-        createdAt: {type: [string, "null"], format: date-time}
+        createdAt: {type: string, format: date-time}
     JobEventList:
       type: object
       additionalProperties: false
@@ -5003,26 +5020,19 @@ components:
     JobReorderCommand:
       type: object
       additionalProperties: false
-      required: [baseRevision, orderedJobIds]
+      required: [orderedJobIds]
       properties:
-        baseRevision: {type: integer, minimum: 1}
         orderedJobIds:
           type: array
           uniqueItems: true
           minItems: 1
           items: {$ref: "#/components/schemas/Uuid"}
-    BatchPrioritizeCommand:
+    QueueControlState:
       type: object
       additionalProperties: false
-      required: [baseRevision]
+      required: [queuePaused]
       properties:
-        baseRevision: {type: integer, minimum: 1}
-    QueueRevision:
-      type: object
-      additionalProperties: false
-      required: [queueRevision]
-      properties:
-        queueRevision: {type: integer, minimum: 1}
+        queuePaused: {type: boolean}
     CancelledCount:
       type: object
       additionalProperties: false
@@ -5035,19 +5045,13 @@ components:
       required: [removed]
       properties:
         removed: {type: integer, minimum: 0}
-    JobBatch:
+    JobCommandResult:
       type: object
       additionalProperties: false
-      required: [batchId, kind, displayName, summary, jobs, createdAt]
+      required: [jobId, status]
       properties:
-        batchId: {$ref: "#/components/schemas/Uuid"}
-        kind: {type: string}
-        displayName: {type: string}
-        summary: {type: object, additionalProperties: true}
-        jobs:
-          type: array
-          items: {$ref: "#/components/schemas/Job"}
-        createdAt: {type: [string, "null"], format: date-time}
+        jobId: {$ref: "#/components/schemas/Uuid"}
+        status: {$ref: "#/components/schemas/JobStatus"}
     JobBatchAccepted:
       type: object
       additionalProperties: false
@@ -5117,13 +5121,9 @@ components:
     BatchContinueResult:
       type: object
       additionalProperties: false
-      required: [continued, jobs]
+      required: [continued]
       properties:
         continued: {type: integer, minimum: 1}
-        jobs:
-          type: array
-          minItems: 1
-          items: {$ref: "#/components/schemas/Job"}
     TranslationJobConfig:
       type: object
       additionalProperties: false
@@ -6592,7 +6592,7 @@ components:
         run_state:
           type: string
           enum:
-            [drafting, awaiting_target_lock, ready, running, pausing, paused, cancelling, completed, failed, cancelled]
+            [drafting, awaiting_target_lock, ready, running, paused, completed, failed, cancelled]
         selected_plugin_id: {type: [string, "null"]}
         pending_target:
           oneOf:
@@ -7029,9 +7029,7 @@ components:
       properties:
         queued: {type: integer, minimum: 0}
         running: {type: integer, minimum: 0}
-        pausing: {type: integer, minimum: 0}
         paused: {type: integer, minimum: 0}
-        cancelling: {type: integer, minimum: 0}
         interrupted: {type: integer, minimum: 0}
         failed: {type: integer, minimum: 0}
     TitleUpdateCommand:

@@ -11,6 +11,7 @@ from sqlalchemy import Engine, select
 
 from src.backend_v2.jobs.repository import (
     AttemptFence,
+    AttemptFenced,
     JobQueueRepository,
 )
 from src.backend_v2.plugins.agent import (
@@ -120,13 +121,17 @@ class PluginAgentWorkerService:
                 touched.append(relative)
             previews.pop(relative, None)
 
+        def control_requested() -> bool:
+            try:
+                self.jobs.assert_attempt_active(fence)
+            except AttemptFenced:
+                return True
+            return False
+
         tools = PluginAgentWorktreeTools(
             worktree=worktree,
             skill_markdown=self.skill_markdown,
-            control_requested=lambda: (
-                self.jobs.control_status(fence)
-                in {"pausing", "cancelling"}
-            ),
+            control_requested=control_requested,
             on_write=on_write,
             on_delete=on_delete,
         )
@@ -224,33 +229,15 @@ class PluginAgentWorkerService:
                 details=result_details,
             )
             return done_payload
+        except AttemptFenced:
+            raise
         except PluginAgentControlRequested:
-            step_id = step.get("stepId")
-            if not isinstance(step_id, str) or not step_id:
-                raise ValueError("Plugin Agent step id is invalid")
-            status = self.jobs.checkpoint_step(
-                fence,
-                step_id=step_id,
-                checkpoint={},
-            )
-            if status not in {"pausing", "cancelling"}:
-                raise RuntimeError(
-                    "plugin agent control checkpoint lost its control state"
-                )
-            return {
-                "__already_published__": True,
-                "__control_drained__": True,
-            }
+            raise AttemptFenced("Plugin Agent execution rights were revoked")
         except Exception as exc:
-            run_state = (
-                "cancelled"
-                if self.jobs.control_status(fence) == "cancelling"
-                else "failed"
-            )
             emit(
                 "error",
                 {
-                    "run_state": run_state,
+                    "run_state": "failed",
                     "message": self.jobs.redact_attempt_message(
                         fence,
                         exc,

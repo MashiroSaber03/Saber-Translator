@@ -3971,7 +3971,7 @@ def test_failed_hq_redetect_preserves_previous_published_text(
     assert payload["translatedText"] == "你好"
 
 
-def test_hq_pause_resume_keeps_completed_batch_checkpoint(
+def test_hq_hard_pause_discards_and_retries_the_active_batch(
     translation_platform,
 ) -> None:
     platform = translation_platform
@@ -3997,16 +3997,16 @@ def test_hq_pause_resume_keeps_completed_batch_checkpoint(
     assert _run_translation_job(platform, algorithms) == job_id
     paused = repository.get_job(job_id)
     assert paused["status"] == "paused"
-    completed_hq = [
+    hq_steps = [
         step
         for item in paused["items"]
         for step in item["steps"]
-        if step["kind"] == "hq_translate" and step["status"] == "completed"
+        if step["kind"] == "hq_translate"
     ]
-    assert len(completed_hq) == 2
+    assert [step["status"] for step in hq_steps] == ["pending"] * 3
 
     algorithms.on_batch = None
     repository.resume(job_id)
     assert _run_translation_job(platform, algorithms) == job_id
     assert repository.get_job(job_id)["status"] == "completed"
-    assert [len(call["pageIds"]) for call in algorithms.batch_calls] == [2, 1]
+    assert [len(call["pageIds"]) for call in algorithms.batch_calls] == [2, 2, 1]

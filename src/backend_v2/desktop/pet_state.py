@@ -33,7 +33,7 @@ TRANSFER_JOB_KINDS = frozenset(
     {"text_import", "container_import", "web_extract", "web_import_commit", "export", "insight_export"}
 )
 RUNNING_STATUSES = frozenset({"running"})
-PAUSED_STATUSES = frozenset({"pausing", "paused", "cancelling"})
+PAUSED_STATUSES = frozenset({"paused"})
 TERMINAL_REACTIONS = {
     "completed": PetState.SUCCESS,
     "completed_with_errors": PetState.WARNING,

@@ -55,7 +55,7 @@ export interface SchedulingStatus {
   pausedJobCount: number
   availableMemoryMiB: number
   totalMemoryMiB: number
-  waitingReason: 'worker_offline' | 'low_memory' | 'queue_blocked' | null
+  waitingReason: 'queue_paused' | 'worker_offline' | 'low_memory' | 'queue_blocked' | null
 }
 
 export interface SchedulingOverview {

@@ -13,12 +13,14 @@ import VirtualThumbnailGrid from '@/components/virtual/VirtualThumbnailGrid.vue'
 
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useInsightStore } from '@/stores/insightStore'
+import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import * as insightApi from '@/api/insight'
 import type { V2InsightPageSummary } from '@/api/v2/insight'
 import { showToast } from '@/utils/toast'
 import { confirmProductAction } from '@/composables/useProductConfirm'
 
 const insightStore = useInsightStore()
+const taskCenterStore = useTaskCenterStore()
 
 const expandedChapters = ref<Set<string>>(new Set())
 interface PageListState {
@@ -197,8 +199,7 @@ async function reanalyzeChapter(chapterId: string): Promise<void> {
     if (!confirmed || insightStore.currentBookId !== bookId) return
     const submission = await insightApi.reanalyzeChapter(bookId, chapterId)
     if (insightStore.currentBookId !== bookId) return
-    insightStore.setCurrentTaskId(submission.jobId)
-    insightStore.setAnalysisStatus('queued')
+    taskCenterStore.trackJob(submission.jobId)
     showToast('章节分析已启动', 'success')
   } catch (error) {
     if (insightStore.currentBookId === bookId) {

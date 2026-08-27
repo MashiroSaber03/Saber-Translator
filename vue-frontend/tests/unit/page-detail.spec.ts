@@ -15,11 +15,13 @@ import UiIconButton from '@/components/ui/UiIconButton.vue'
 const {
   getPageDataMock,
   reanalyzePageMock,
+  trackJobMock,
   downloadPageAnalysisMock,
   triggerBlobDownloadMock,
 } = vi.hoisted(() => ({
   getPageDataMock: vi.fn(),
   reanalyzePageMock: vi.fn(),
+  trackJobMock: vi.fn(),
   downloadPageAnalysisMock: vi.fn(),
   triggerBlobDownloadMock: vi.fn(),
 }))
@@ -28,6 +30,10 @@ vi.mock('@/api/insight', () => ({
   getPageData: getPageDataMock,
   reanalyzePage: reanalyzePageMock,
   downloadPageAnalysis: downloadPageAnalysisMock,
+}))
+
+vi.mock('@/stores/taskCenterStore', () => ({
+  useTaskCenterStore: () => ({ trackJob: trackJobMock }),
 }))
 
 vi.mock('@/utils/browserDownload', () => ({
@@ -71,6 +77,7 @@ describe('PageDetail', () => {
     reanalyzePageMock.mockResolvedValue({
       jobId: 'task-123',
     })
+    trackJobMock.mockReset()
     downloadPageAnalysisMock.mockReset()
     downloadPageAnalysisMock.mockResolvedValue(new Blob(['analysis']))
     triggerBlobDownloadMock.mockReset()
@@ -147,9 +154,6 @@ describe('PageDetail', () => {
     store.setAnalysisStatus('idle')
     store.dataRefreshKey = 0
 
-    const setStatusSpy = vi.spyOn(store, 'setAnalysisStatus')
-    const setTaskSpy = vi.spyOn(store, 'setCurrentTaskId')
-
     const wrapper = mount(PageDetail, {
       global: {
         plugins: [pinia],
@@ -166,8 +170,9 @@ describe('PageDetail', () => {
     await flushPromises()
 
     expect(reanalyzePageMock).toHaveBeenCalledWith('book-1', 3)
-    expect(setTaskSpy).toHaveBeenCalledWith('task-123')
-    expect(setStatusSpy).toHaveBeenCalledWith('queued')
+    expect(trackJobMock).toHaveBeenCalledWith('task-123')
+    expect(store.currentTaskId).toBeNull()
+    expect(store.analysisStatus).toBe('idle')
 
     // 不应在启动后立即当作同步完成并刷新详情
     expect(getPageDataMock).toHaveBeenCalledTimes(1)
@@ -245,6 +250,8 @@ describe('PageDetail', () => {
     store.selectPage(3)
     store.setBookTotalPages(20)
     store.setAnalysisStatus('idle')
+    const submission = deferred<{ jobId: string }>()
+    reanalyzePageMock.mockReturnValueOnce(submission.promise)
 
     const wrapper = mount(PageDetail, {
       global: {
@@ -257,12 +264,14 @@ describe('PageDetail', () => {
     expect(reanalyzeButton).toBeTruthy()
 
     await reanalyzeButton!.trigger('click')
-    await flushPromises()
+    await nextTick()
 
-    const runningButton = wrapper.findAll('button').find(button => button.text().includes('分析中...'))
+    const runningButton = wrapper.findAll('button').find(button => button.text().includes('启动中...'))
     expect(runningButton).toBeTruthy()
     const spinner = runningButton!.getComponent(UiSpinner)
     expect(spinner.props('decorative')).toBe(true)
+    submission.resolve({ jobId: 'task-123' })
+    await flushPromises()
   })
 
   it('uses shared button variants for page navigation controls', async () => {

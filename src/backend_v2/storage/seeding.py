@@ -98,7 +98,12 @@ def seed_system_records(engine: Engine, *, profile_name: str = "local") -> None:
         _seed_shared_records(connection)
 
         if connection.execute(select(queue_state.c.singleton_id)).scalar_one_or_none() is None:
-            connection.execute(insert(queue_state).values(singleton_id=1))
+            connection.execute(
+                insert(queue_state).values(
+                    singleton_id=1,
+                    admission_paused=False,
+                )
+            )
 
 
 def seed_user_records_in_connection(connection: object, user_id: str) -> None:

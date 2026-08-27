@@ -202,7 +202,6 @@ class InsightAnalysisWorkerService:
                 fence,
                 step_id=step_id,
                 checkpoint=checkpoint,
-                input_fingerprint=digest,
                 publisher=publish,
             )
             log_result(

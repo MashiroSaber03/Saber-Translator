@@ -102,6 +102,7 @@ async function handleExport() {
     const format = selectedFormat.value === 'images' ? 'zip' : 'pdf'
     const jobId = await continuationApi.createContinuationExportJob(bookId, format)
     if (!isCurrent()) return
+    taskCenterStore.trackJob(jobId)
     state.showMessage('续写导出任务已进入任务中心，关闭浏览器也会继续运行', 'info')
     const job = await taskCenterStore.waitForJob(jobId)
     if (!isCurrent()) return

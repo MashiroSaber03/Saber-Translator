@@ -15,6 +15,7 @@ import { addTestImage } from '../helpers/imageFixtures'
 import type { components } from '@/api/generated/v2'
 
 type JobProgress = components['schemas']['JobProgress']
+type JobEvent = components['schemas']['JobEvent']
 
 function jobProgress(overrides: Partial<JobProgress> = {}): JobProgress {
   return {
@@ -87,7 +88,7 @@ describe('useTranslationPipeline', () => {
       jobIds: ['job-1'],
       status: 'queued',
     })
-    mocks.jobsList.mockResolvedValue({ items: [], queueRevision: 1 })
+    mocks.jobsList.mockResolvedValue({ items: [], queuePaused: false, eventCursor: 0, workerOnline: true, executorBusy: false, waitingReason: null })
     mocks.jobsRetryFailed.mockResolvedValue({
       batchId: 'retry-batch',
       jobIds: ['retry-job'],
@@ -206,10 +207,15 @@ describe('useTranslationPipeline', () => {
       documentRevision: 7,
       id: 'page-1',
     })
+    let emitTaskEvent: ((event: JobEvent) => void) | undefined
+    vi.spyOn(taskCenterStore, 'subscribeEvents').mockImplementation((listener) => {
+      emitTaskEvent = listener
+      return () => undefined
+    })
     const translation = useTranslation()
     await translation.translateCurrentImage()
 
-    taskCenterStore.latestEvent = {
+    emitTaskEvent?.({
       eventId: 997,
       jobId: 'job-1',
       type: 'pipeline_progress',
@@ -220,7 +226,7 @@ describe('useTranslationPipeline', () => {
         },
       },
       createdAt: new Date().toISOString(),
-    }
+    })
     await nextTick()
 
     expect(translation.progress.value).toMatchObject({
@@ -334,21 +340,21 @@ describe('useTranslationPipeline', () => {
       translatedUrl: '/api/v2/assets/translated-1',
     })
 
+    let emitTaskEvent: ((event: JobEvent) => void) | undefined
+    vi.spyOn(taskCenterStore, 'subscribeEvents').mockImplementation((listener) => {
+      emitTaskEvent = listener
+      return () => undefined
+    })
     await useTranslation().translateAllImages()
-    taskCenterStore.latestEvent = {
+    emitTaskEvent?.({
       eventId: 998,
       jobId: 'job-1',
       type: 'page_completed',
       payload: {
         pageId: 'page-1',
-        progress: jobProgress({
-          jobStatus: 'running',
-          totalItems: 2,
-          completedItems: 1,
-        }),
       },
       createdAt: new Date().toISOString(),
-    }
+    })
     await nextTick()
 
     await vi.waitFor(() => {
@@ -608,6 +614,11 @@ describe('useTranslationPipeline', () => {
       chapterId: 'chapter-1',
       id: 'page-1',
     })
+    let emitTaskEvent: ((event: JobEvent) => void) | undefined
+    vi.spyOn(taskCenterStore, 'subscribeEvents').mockImplementation((listener) => {
+      emitTaskEvent = listener
+      return () => undefined
+    })
     useTranslation()
     taskCenterStore.history = [{
       jobId: 'job-export',
@@ -627,13 +638,13 @@ describe('useTranslationPipeline', () => {
       startedAt: null,
       finishedAt: new Date().toISOString(),
     }]
-    taskCenterStore.latestEvent = {
+    emitTaskEvent?.({
       eventId: 1000,
       jobId: 'job-export',
       type: 'job_finished',
       payload: {},
       createdAt: new Date().toISOString(),
-    }
+    })
     await nextTick()
 
     expect(mocks.listChapterPages).not.toHaveBeenCalled()
@@ -708,7 +719,7 @@ describe('useTranslationPipeline', () => {
         completedItems: 1,
       }),
       target: { pageCount: 2 },
-      createdAt: null,
+      createdAt: '2026-08-23T04:00:00Z',
       startedAt: null,
       finishedAt: null,
     } as const
@@ -768,7 +779,7 @@ describe('useTranslationPipeline', () => {
         jobStatus: 'running',
       }),
       target: { book: 'Book', chapter: 'Chapter', pageCount: 1 },
-      createdAt: null,
+      createdAt: '2026-08-23T04:00:00Z',
       startedAt: null,
       finishedAt: null,
     }]
@@ -795,7 +806,7 @@ describe('useTranslationPipeline', () => {
         jobStatus: 'completed',
       }),
       target: { book: 'Book', chapter: 'Chapter', pageCount: 1 },
-      createdAt: null,
+      createdAt: '2026-08-23T04:00:00Z',
     }]
     await nextTick()
 
@@ -810,9 +821,8 @@ describe('useTranslationPipeline', () => {
       id: 'page-1',
     })
     imageStore.setTranslationStatus(0, 'failed')
-    mocks.jobsList.mockImplementation(async (scope: string) => ({
-      items: scope === 'history'
-        ? [{
+    mocks.jobsList.mockResolvedValue({
+      items: [{
             jobId: 'source-job',
             batchId: 'source-batch',
             batchDisplayName: 'source',
@@ -832,13 +842,11 @@ describe('useTranslationPipeline', () => {
               failedItems: 1,
             }),
             target: {},
-            createdAt: null,
+            createdAt: '2026-08-23T04:00:00Z',
             startedAt: null,
             finishedAt: null,
-          }]
-        : [],
-      queueRevision: 1,
-    }))
+          }],
+    })
 
     const retried = await useTranslation().retryFailedImages()
 

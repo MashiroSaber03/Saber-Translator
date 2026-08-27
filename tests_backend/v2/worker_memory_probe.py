@@ -52,7 +52,6 @@ def main() -> int:
     )
     repository = JobQueueRepository(engine)
     created = repository.create_batch(
-        kind="export",
         display_name=f"{item_count}-item memory probe",
         specs=(
             JobSpec(

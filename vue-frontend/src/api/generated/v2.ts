@@ -761,6 +761,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/jobs/queue/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Stop admitting queued jobs. The current job and immediate operations continue. */
+        post: operations["pauseJobQueue"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/jobs/queue/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["resumeJobQueue"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/jobs/cancel-queued": {
         parameters: {
             query?: never;
@@ -787,22 +820,6 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["clearJobHistory"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/job-batches/{batch_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["getJobBatch"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -867,22 +884,6 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["continueInterruptedJob"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/jobs/{job_id}/download": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["downloadJobArtifact"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2849,8 +2850,8 @@ export interface components {
         SchedulingCurrentTask: {
             jobId: components["schemas"]["Uuid"];
             kind: components["schemas"]["JobKind"];
-            /** @enum {string} */
-            status: "running" | "pausing" | "cancelling";
+            /** @constant */
+            status: "running";
             ownerUserId: components["schemas"]["Uuid"];
             ownerUsername: string;
             /** Format: date-time */
@@ -2865,7 +2866,7 @@ export interface components {
             availableMemoryMiB: number;
             totalMemoryMiB: number;
             /** @enum {string|null} */
-            waitingReason: "worker_offline" | "low_memory" | "queue_blocked" | null;
+            waitingReason: "queue_paused" | "worker_offline" | "low_memory" | "queue_blocked" | null;
         };
         SchedulingOverview: {
             policy: components["schemas"]["SchedulingPolicy"];
@@ -3107,7 +3108,7 @@ export interface components {
             deleted: true;
         };
         /** @enum {string} */
-        JobStatus: "queued" | "running" | "pausing" | "paused" | "cancelling" | "cancelled" | "completed" | "completed_with_errors" | "failed" | "interrupted";
+        JobStatus: "queued" | "running" | "paused" | "cancelled" | "completed" | "completed_with_errors" | "failed" | "interrupted";
         /** @enum {string} */
         JobKind: "translation" | "remove_text" | "detect" | "style_apply" | "text_import" | "container_import" | "web_extract" | "web_import_commit" | "export" | "insight_analysis" | "insight_export" | "vector_rebuild" | "continuation" | "derived_rebuild" | "plugin_agent";
         JobProgressCurrentStep: {
@@ -3151,20 +3152,20 @@ export interface components {
         };
         Job: {
             jobId: components["schemas"]["Uuid"];
-            batchId?: components["schemas"]["Uuid"] | null;
-            batchDisplayName?: string | null;
+            batchId: components["schemas"]["Uuid"] | null;
+            batchDisplayName: string | null;
             kind: components["schemas"]["JobKind"];
             retryOfJobId: components["schemas"]["Uuid"] | null;
             /** @enum {string|null} */
             retryMode: null | "current" | "original";
             status: components["schemas"]["JobStatus"];
             queueRank: number | null;
-            bookId?: components["schemas"]["Uuid"] | null;
-            chapterId?: components["schemas"]["Uuid"] | null;
-            pageId?: components["schemas"]["Uuid"] | null;
+            bookId: components["schemas"]["Uuid"] | null;
+            chapterId: components["schemas"]["Uuid"] | null;
+            pageId: components["schemas"]["Uuid"] | null;
             /** @enum {string|null} */
-            blockedReason?: null | "blocked_by_job" | "draining_immediate_writes" | "retained_chapter_lock";
-            blockedByJobId?: components["schemas"]["Uuid"] | null;
+            blockedReason: null | "blocked_by_job" | "retained_chapter_lock";
+            blockedByJobId: components["schemas"]["Uuid"] | null;
             progress: components["schemas"]["JobProgress"];
             target: {
                 [key: string]: unknown;
@@ -3172,19 +3173,26 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
-            startedAt?: string | null;
+            startedAt: string | null;
             /** Format: date-time */
-            finishedAt?: string | null;
+            finishedAt: string | null;
         };
         JobList: {
             items: components["schemas"]["Job"][];
-            queueRevision: number;
+            queuePaused: boolean;
             eventCursor: number;
             workerOnline: boolean;
+            executorBusy: boolean;
+            /** @enum {string|null} */
+            waitingReason: "queue_paused" | "worker_offline" | "low_memory" | "queue_blocked" | "executor_busy" | null;
         };
         JobSnapshot: {
             items: components["schemas"]["Job"][];
-            queueRevision: number;
+            queuePaused: boolean;
+            workerOnline: boolean;
+            executorBusy: boolean;
+            /** @enum {string|null} */
+            waitingReason: "queue_paused" | "worker_offline" | "low_memory" | "queue_blocked" | "executor_busy" | null;
         };
         JobDetail: components["schemas"]["Job"] & {
             counts: components["schemas"]["JobCounts"];
@@ -3258,20 +3266,16 @@ export interface components {
                 [key: string]: unknown;
             };
             /** Format: date-time */
-            createdAt: string | null;
+            createdAt: string;
         };
         JobEventList: {
             items: components["schemas"]["JobEvent"][];
         };
         JobReorderCommand: {
-            baseRevision: number;
             orderedJobIds: components["schemas"]["Uuid"][];
         };
-        BatchPrioritizeCommand: {
-            baseRevision: number;
-        };
-        QueueRevision: {
-            queueRevision: number;
+        QueueControlState: {
+            queuePaused: boolean;
         };
         CancelledCount: {
             cancelled: number;
@@ -3279,16 +3283,9 @@ export interface components {
         RemovedCount: {
             removed: number;
         };
-        JobBatch: {
-            batchId: components["schemas"]["Uuid"];
-            kind: string;
-            displayName: string;
-            summary: {
-                [key: string]: unknown;
-            };
-            jobs: components["schemas"]["Job"][];
-            /** Format: date-time */
-            createdAt: string | null;
+        JobCommandResult: {
+            jobId: components["schemas"]["Uuid"];
+            status: components["schemas"]["JobStatus"];
         };
         JobBatchAccepted: {
             batchId: components["schemas"]["Uuid"];
@@ -3328,7 +3325,6 @@ export interface components {
         };
         BatchContinueResult: {
             continued: number;
-            jobs: components["schemas"]["Job"][];
         };
         TranslationJobConfig: {
             /** @enum {string} */
@@ -4046,7 +4042,7 @@ export interface components {
             /** @enum {string} */
             mode: "create" | "modify";
             /** @enum {string} */
-            run_state: "drafting" | "awaiting_target_lock" | "ready" | "running" | "pausing" | "paused" | "cancelling" | "completed" | "failed" | "cancelled";
+            run_state: "drafting" | "awaiting_target_lock" | "ready" | "running" | "paused" | "completed" | "failed" | "cancelled";
             selected_plugin_id?: string | null;
             pending_target?: components["schemas"]["PluginAgentTarget"] | null;
             locked_target?: components["schemas"]["PluginAgentLockedTarget"] | null;
@@ -4270,9 +4266,7 @@ export interface components {
         JobStatusSummary: {
             queued?: number;
             running?: number;
-            pausing?: number;
             paused?: number;
-            cancelling?: number;
             interrupted?: number;
             failed?: number;
         };
@@ -6330,7 +6324,7 @@ export interface operations {
     listJobs: {
         parameters: {
             query?: {
-                scope?: "queue" | "history";
+                scope?: "queue" | "history" | "all";
                 status?: components["schemas"]["JobStatus"];
                 type?: components["schemas"]["JobKind"];
                 book_id?: components["schemas"]["Uuid"];
@@ -6462,13 +6456,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Pause intent accepted or replayed. */
+            /** @description Job paused immediately; active steps return to pending for resume. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Job"];
+                    "application/json": components["schemas"]["JobCommandResult"];
                 };
             };
             409: components["responses"]["InvalidTransition"];
@@ -6491,7 +6485,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Job"];
+                    "application/json": components["schemas"]["JobCommandResult"];
                 };
             };
             409: components["responses"]["InvalidTransition"];
@@ -6508,13 +6502,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Cancel intent accepted or the queued job cancelled. */
+            /** @description The job and its unfinished graph were atomically cancelled. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Job"];
+                    "application/json": components["schemas"]["JobCommandResult"];
                 };
             };
             409: components["responses"]["InvalidTransition"];
@@ -6597,18 +6591,59 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Updated queue revision. */
+            /** @description Queue order updated. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": {
-                        queueRevision: number;
+                        /** @enum {string} */
+                        status: "reordered";
                     };
                 };
             };
             409: components["responses"]["Conflict"];
+        };
+    };
+    pauseJobQueue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Persistent queue admission state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueControlState"];
+                };
+            };
+        };
+    };
+    resumeJobQueue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Persistent queue admission state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueControlState"];
+                };
+            };
         };
     };
     cancelQueuedJobs: {
@@ -6651,29 +6686,6 @@ export interface operations {
             };
         };
     };
-    getJobBatch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                batch_id: components["parameters"]["BatchId"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Batch summary and member jobs. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["JobBatch"];
-                };
-            };
-            404: components["responses"]["NotFound"];
-        };
-    };
     cancelQueuedJobBatchMembers: {
         parameters: {
             query?: never;
@@ -6706,11 +6718,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["BatchPrioritizeCommand"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Queued ordinary members moved to the front in batch order. */
             200: {
@@ -6718,7 +6726,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["QueueRevision"];
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "prioritized";
+                    };
                 };
             };
             404: components["responses"]["NotFound"];
@@ -6767,35 +6778,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Job"];
+                    "application/json": components["schemas"]["JobCommandResult"];
                 };
             };
             409: components["responses"]["InvalidTransition"];
-        };
-    };
-    downloadJobArtifact: {
-        parameters: {
-            query?: {
-                kind?: string;
-            };
-            header?: never;
-            path: {
-                job_id: components["parameters"]["JobId"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Stream one durable job artifact. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/octet-stream": string;
-                };
-            };
-            404: components["responses"]["NotFound"];
         };
     };
     getStudioIndex: {

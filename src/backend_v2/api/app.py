@@ -360,7 +360,6 @@ def create_api_app(settings: ApiSettings) -> Flask:
     )
     from src.backend_v2.api.web import create_web_blueprint
     from src.backend_v2.api.system_routes import create_system_blueprint
-    from src.backend_v2.storage.epochs import ProcessEpochRepository
     from src.backend_v2.storage.platform_repositories import ProviderRateLimiter
     from src.backend_v2.scheduling_policy import (
         SchedulingPolicyCache,
@@ -372,7 +371,6 @@ def create_api_app(settings: ApiSettings) -> Flask:
     configure_provider_rate_limit_store(ProviderRateLimiter(engine))
     broadcaster = JobEventBroadcaster(
         JobQueueRepository(engine),
-        epoch_repository=ProcessEpochRepository(engine),
     )
     render_service = AuthoritativeRenderService(
         data_root=settings.data_root,

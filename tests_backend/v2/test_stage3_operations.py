@@ -10,6 +10,7 @@ from PIL import Image
 import pytest
 from sqlalchemy import insert, select, update
 
+from src.backend_v2.auth.ownership import owner_scope
 from src.backend_v2.content.image_import import ImageImportService
 from src.backend_v2.content.repository import ContentConflict, ContentRepository
 from src.backend_v2.operations.executor import WorkerOperationRunner
@@ -19,6 +20,7 @@ from src.backend_v2.operations.repository import (
     OperationFence,
     OperationFenced,
     OperationLocked,
+    OperationNotFound,
     OperationRepository,
     RenderRequestRepository,
 )
@@ -181,6 +183,44 @@ def test_empty_operation_claim_does_not_compete_for_sqlite_write_lock(
         )
 
     assert claimed is None
+
+
+def test_operation_reads_and_page_creation_are_scoped_to_owner(
+    operation_platform,
+) -> None:
+    platform = operation_platform
+    repository = OperationRepository(platform["engine"])
+    accepted, _replayed = repository.create_page_operation(
+        page_id=platform["page_id"],
+        kind="bubble_color",
+        base_revision=1,
+        bubble_id=platform["bubble_id"],
+        payload={},
+        idempotency_key="owned-operation",
+    )
+    operation_id = str(accepted["operationId"])
+
+    with owner_scope(str(uuid.uuid4())):
+        with pytest.raises(OperationNotFound):
+            repository.get(operation_id)
+        with pytest.raises(OperationNotFound):
+            repository.events_after(operation_id)
+        with pytest.raises(OperationNotFound):
+            repository.create_page_operation(
+                page_id=platform["page_id"],
+                kind="bubble_color",
+                base_revision=1,
+                bubble_id=platform["bubble_id"],
+                payload={},
+                idempotency_key="foreign-operation",
+            )
+        with platform["engine"].begin() as connection:
+            with pytest.raises(OperationNotFound):
+                RenderRequestRepository(platform["engine"]).upsert(
+                    connection,
+                    page_id=platform["page_id"],
+                    requested_revision=1,
+                )
 
 
 def test_empty_operation_claim_still_fences_an_inactive_epoch(
@@ -1408,6 +1448,12 @@ def test_lama_page_repair_freezes_and_consumes_disable_resize(
 def test_failed_page_repair_sets_explicit_page_state(operation_platform) -> None:
     platform = operation_platform
     repository = OperationRepository(platform["engine"])
+    with platform["engine"].begin() as connection:
+        RenderRequestRepository(platform["engine"]).upsert(
+            connection,
+            page_id=platform["page_id"],
+            requested_revision=1,
+        )
     service = PageRepairService(
         data_root=platform["data_root"],
         engine=platform["engine"],
@@ -1433,6 +1479,17 @@ def test_failed_page_repair_sets_explicit_page_state(operation_platform) -> None
                 pages.c.id == platform["page_id"]
             )
         ).scalar_one() == "repair_failed"
+        render = connection.execute(
+            select(
+                render_requests.c.status,
+                render_requests.c.rendering_revision,
+                render_requests.c.executor_epoch_id,
+                render_requests.c.attempt_id,
+                render_requests.c.error_json,
+            ).where(render_requests.c.page_id == platform["page_id"])
+        ).one()
+    assert render[:4] == ("failed", None, None, None)
+    assert json.loads(render.error_json)["code"] == "PAGE_REPAIR_FAILED"
 
 
 def test_page_repair_closes_result_when_asset_publication_fails(

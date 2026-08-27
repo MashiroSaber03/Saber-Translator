@@ -7,6 +7,8 @@ import UiSelect from '@/components/ui/UiSelect.vue'
 import type { UiSelectOption, UiSelectValue } from '@/components/ui/selectTypes'
 import type { V2Job } from '@/api/v2/jobs'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
+import { useAuthStore } from '@/stores/authStore'
+import { useRuntimeStore } from '@/stores/runtimeStore'
 import {
   batchProgressCounts,
   batchStatusCounts,
@@ -34,12 +36,19 @@ import {
 } from '@/utils/taskDisplay'
 
 const store = useTaskCenterStore()
+const auth = useAuthStore()
+const runtime = useRuntimeStore()
 const tab = ref<'queue' | 'history'>('queue')
 const expanded = ref(new Set<string>())
 const downloading = ref(new Set<string>())
 const analysisModalOpen = ref(false)
 const releasingModels = ref(false)
+const queueControlBusy = ref(false)
 const panelRef = ref<HTMLElement | null>(null)
+const canControlQueue = computed(
+  () => runtime.capabilities?.profile === 'local' || auth.isAdmin
+)
+const isPublicProfile = computed(() => runtime.capabilities?.profile === 'public')
 
 useBodyScrollLock(toRef(store, 'drawerOpen'))
 useDialogLifecycle({
@@ -147,9 +156,7 @@ watch(
 const statusLabels: Record<string, string> = {
   queued: '排队中',
   running: '运行中',
-  pausing: '正在暂停',
   paused: '已暂停',
-  cancelling: '正在取消',
   cancelled: '已取消',
   completed: '已完成',
   completed_with_errors: '部分失败',
@@ -168,7 +175,7 @@ function toggle(key: string) {
 }
 
 function canCancel(job: V2Job) {
-  return ['queued', 'running', 'pausing', 'paused', 'interrupted'].includes(job.status)
+  return ['queued', 'running', 'paused', 'interrupted'].includes(job.status)
 }
 
 function hasBatchContinuations(jobs: V2Job[]) {
@@ -276,8 +283,6 @@ function queuePosition(job: V2Job): number | null {
 
 function blockedReasonLabel(job: V2Job): string {
   switch (job.blockedReason) {
-    case 'draining_immediate_writes':
-      return '正在排空即时写入，新编辑已暂停'
     case 'retained_chapter_lock':
       return '等待重新领取，章节锁已保留'
     case 'blocked_by_job':
@@ -285,6 +290,22 @@ function blockedReasonLabel(job: V2Job): string {
     default:
       return job.blockedReason ? `等待：${job.blockedReason}` : ''
   }
+}
+
+function queueWaitLabel(job: V2Job): string {
+  const position = queuePosition(job)
+  if (!position) return ''
+  const positionLabel = isPublicProfile.value
+    ? `你的队列第 ${position} 项`
+    : `待领取第 ${position} 位`
+  if (store.waitingReason === 'queue_paused') return `${positionLabel} · 队列已暂停`
+  if (store.waitingReason === 'worker_offline') return `${positionLabel} · Worker 离线`
+  if (store.waitingReason === 'low_memory') return `${positionLabel} · 等待可用内存`
+  const blocker = blockedReasonLabel(job)
+  if (blocker) return `${positionLabel} · ${blocker}`
+  if (store.waitingReason === 'queue_blocked') return `${positionLabel} · 等待章节锁释放`
+  if (store.waitingReason === 'executor_busy') return `${positionLabel} · 执行器正忙`
+  return positionLabel
 }
 
 function batchProgressLabel(jobs: V2Job[]): string {
@@ -312,10 +333,10 @@ function canDownloadArtifact(job: V2Job): boolean {
 }
 
 async function cancelJob(job: V2Job) {
-  if (['running', 'pausing', 'paused'].includes(job.status)) {
+  if (['running', 'paused'].includes(job.status)) {
     const confirmed = await confirmProductAction({
       title: '取消当前任务',
-      message: '当前任务将在下一个安全点停止。已经完成并持久化的步骤不会丢失，确定取消吗？',
+      message: '任务会立即标记为已取消并撤销写入权；正在执行的调用若未快速退出，Worker 会在短宽限期后自动回收。已经完成并持久化的步骤不会丢失。确定取消吗？',
       confirmText: '确认取消',
       tone: 'danger',
     })
@@ -323,8 +344,22 @@ async function cancelJob(job: V2Job) {
   }
   await runAction(
     () => store.cancel(job.jobId),
-    job.status === 'queued' ? '排队任务已取消' : '已提交取消请求'
+    '任务已取消'
   )
+}
+
+async function toggleQueuePause() {
+  if (queueControlBusy.value || !canControlQueue.value) return
+  const wasPaused = store.queuePaused
+  queueControlBusy.value = true
+  try {
+    await runAction(
+      () => wasPaused ? store.resumeQueue() : store.pauseQueue(),
+      wasPaused ? '任务队列已恢复' : '任务队列已暂停；当前任务继续运行'
+    )
+  } finally {
+    queueControlBusy.value = false
+  }
 }
 
 async function clearHistory() {
@@ -398,6 +433,7 @@ async function releaseModels() {
 }
 
 function analysisCreated(result: V2InsightAnalysisJobAccepted) {
+  for (const jobId of result.jobIds) store.trackJob(jobId)
   store.open({
     batchId: result.batchId,
     jobId: result.jobIds[0],
@@ -442,6 +478,10 @@ function analysisCreated(result: V2InsightAnalysisJobAccepted) {
         <div v-if="!store.workerOnline" class="task-center__offline">
           Worker 离线，排队任务会在 Worker 恢复后自动继续。
         </div>
+        <div v-if="store.queuePaused" class="task-center__paused">
+          队列暂不领取新任务；当前任务、即时编辑、渲染和问答继续运行。
+          <template v-if="!canControlQueue">请联系管理员恢复队列。</template>
+        </div>
 
         <nav class="task-center__tabs" aria-label="任务分区">
           <UiButton
@@ -463,6 +503,18 @@ function analysisCreated(result: V2InsightAnalysisJobAccepted) {
             历史 {{ store.historyBatches.length }}
           </UiButton>
           <span class="task-center__spacer" />
+          <span class="task-center__queue-state">
+            {{ store.queuePaused ? '队列已暂停' : '队列运行中' }}
+          </span>
+          <UiButton
+            v-if="tab === 'queue' && canControlQueue"
+            size="xs"
+            variant="ghost"
+            :disabled="queueControlBusy"
+            @click="toggleQueuePause"
+          >
+            {{ store.queuePaused ? '恢复队列' : '暂停队列' }}
+          </UiButton>
           <UiButton
             v-if="tab === 'queue' && store.queuedCount"
             size="xs"
@@ -527,7 +579,7 @@ function analysisCreated(result: V2InsightAnalysisJobAccepted) {
               v-if="tab === 'queue' && store.currentJobs.some(job => job.status === 'paused')"
               class="task-center__paused"
             >
-              队列已因暂停阻塞
+              有任务已暂停；正在处理的步骤已放弃，恢复后会从最近检查点重新执行。
             </div>
 
             <p v-if="tab === 'history' && !groups.length" class="task-center__empty">
@@ -628,8 +680,8 @@ function analysisCreated(result: V2InsightAnalysisJobAccepted) {
                         <strong>{{ describeJobTarget(job) }}</strong>
                         <span>
                           <span :title="job.kind">{{ jobKindLabel(job.kind) }}</span>
-                          <template v-if="queuePosition(job)">
-                            · 队列第 {{ queuePosition(job) }} 位</template>
+                          <template v-if="job.status === 'queued'">
+                            · {{ queueWaitLabel(job) }}</template>
                         </span>
                       </div>
                       <span class="task-job__status" :data-status="job.status">
@@ -656,9 +708,6 @@ function analysisCreated(result: V2InsightAnalysisJobAccepted) {
                         </span>
                       </div>
                     </div>
-                    <p v-if="job.blockedReason" class="task-job__hint">
-                      {{ blockedReasonLabel(job) }}
-                    </p>
                     <div class="task-job__actions">
                       <UiButton
                         v-if="canDownloadArtifact(job)"
@@ -674,7 +723,7 @@ function analysisCreated(result: V2InsightAnalysisJobAccepted) {
                         v-if="job.status === 'running'"
                         size="xs"
                         variant="secondary"
-                        @click="runAction(() => store.pause(job.jobId), '已提交暂停请求')"
+                        @click="runAction(() => store.pause(job.jobId), '任务已暂停；当前步骤将在恢复后重做')"
                       >
                         暂停
                       </UiButton>
@@ -695,7 +744,7 @@ function analysisCreated(result: V2InsightAnalysisJobAccepted) {
                         从检查点继续
                       </UiButton>
                       <UiButton
-                        v-if="job.status === 'queued' && !job.blockedReason"
+                        v-if="job.status === 'queued' && job.blockedReason !== 'retained_chapter_lock'"
                         size="xs"
                         variant="ghost"
                         @click="runAction(() => store.prioritizeQueued(job.jobId), '任务已置顶')"
@@ -703,7 +752,7 @@ function analysisCreated(result: V2InsightAnalysisJobAccepted) {
                         置顶
                       </UiButton>
                       <UiButton
-                        v-if="job.status === 'queued' && !job.blockedReason"
+                        v-if="job.status === 'queued' && job.blockedReason !== 'retained_chapter_lock'"
                         size="xs"
                         variant="ghost"
                         @click="runAction(() => store.moveQueued(job.jobId, -1))"
@@ -711,7 +760,7 @@ function analysisCreated(result: V2InsightAnalysisJobAccepted) {
                         上移
                       </UiButton>
                       <UiButton
-                        v-if="job.status === 'queued' && !job.blockedReason"
+                        v-if="job.status === 'queued' && job.blockedReason !== 'retained_chapter_lock'"
                         size="xs"
                         variant="ghost"
                         @click="runAction(() => store.moveQueued(job.jobId, 1))"
@@ -768,7 +817,7 @@ function analysisCreated(result: V2InsightAnalysisJobAccepted) {
                             <dd>
                               {{
                                 queuePosition(store.selectedDetail)
-                                  ? `第 ${queuePosition(store.selectedDetail)} 位`
+                                  ? queueWaitLabel(store.selectedDetail)
                                   : '—'
                               }}
                             </dd>
@@ -964,6 +1013,12 @@ function analysisCreated(result: V2InsightAnalysisJobAccepted) {
 
 .task-center__spacer {
   flex: 1;
+}
+
+.task-center__queue-state {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .task-center__content {

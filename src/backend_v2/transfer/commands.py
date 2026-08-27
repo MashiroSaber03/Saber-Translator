@@ -255,7 +255,6 @@ class TransferCommandService:
             }
             validate_container_config(config)
             return self.jobs.create_batch(
-                kind="container_import",
                 display_name=f"导入 {safe_filename}",
                 specs=[
                     JobSpec(
@@ -357,7 +356,6 @@ class TransferCommandService:
             }
         )
         return self.jobs.create_batch(
-            kind="export",
             display_name=f"导出 {chapter['book_title']} / {chapter['title']}",
             specs=[
                 JobSpec(
@@ -566,7 +564,6 @@ class TransferCommandService:
             }
         )
         return self.jobs.create_batch(
-            kind="export",
             display_name=display_name,
             specs=[
                 JobSpec(

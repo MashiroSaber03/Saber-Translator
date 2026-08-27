@@ -12,10 +12,19 @@ const store = useTaskCenterStore()
       class="task-center-launcher"
       variant="ghost"
       size="sm"
-      :aria-label="`打开任务中心，${store.activeCount} 个活动任务，${store.queuedCount} 个排队中，${store.interruptedCount} 个中断待处理`"
+      :aria-label="`打开任务中心，${store.activeCount} 个当前任务，${store.queuedCount} 个排队中，${store.interruptedCount} 个中断待处理`"
       @click="store.open"
     >
-      <span class="task-center-launcher__signal" :class="{ 'task-center-launcher__signal--active': store.activeCount > 0 }" />
+      <span
+        class="task-center-launcher__signal"
+        :class="{
+          'task-center-launcher__signal--active': store.currentJobs.some(job => job.status === 'running'),
+          'task-center-launcher__signal--paused': (
+            !store.currentJobs.some(job => job.status === 'running')
+            && store.currentJobs.some(job => job.status === 'paused')
+          ),
+        }"
+      />
       <span class="task-center-launcher__label">任务中心</span>
       <span v-if="store.activeCount + store.queuedCount" class="task-center-launcher__badge">
         {{ store.activeCount + store.queuedCount }}
@@ -63,6 +72,11 @@ const store = useTaskCenterStore()
 .task-center-launcher__signal--active {
   background: var(--color-status-success);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-status-success) 18%, transparent);
+}
+
+.task-center-launcher__signal--paused {
+  background: var(--color-status-warning);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-status-warning) 18%, transparent);
 }
 
 .task-center-launcher__badge {

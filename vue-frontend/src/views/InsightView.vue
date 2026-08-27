@@ -69,7 +69,8 @@ const showMobileSidebar = ref(false)
 const showMobileWorkspace = ref(false)
 let bookLoadSequence = 0
 let isInsightViewMounted = false
-let lastHandledTerminalEventId = 0
+let terminalProjectionPrimed = false
+const observedTerminalKeys = new Set<string>()
 
 const loadedBookDetail = ref<{
   id: string
@@ -142,6 +143,8 @@ async function loadBook(bookId: string): Promise<void> {
   showMobileSidebar.value = false
   showMobileWorkspace.value = false
   loadedBookDetail.value = null
+  observedTerminalKeys.clear()
+  terminalProjectionPrimed = false
   insightStore.setCurrentBook(bookId)
   insightStore.setLoading(true)
 
@@ -155,6 +158,7 @@ async function loadBook(bookId: string): Promise<void> {
 
     applyLoadedBook(book, chapters)
     applyAnalysisStatus(analysisStatus)
+    primeTerminalJobs(bookId)
     projectActiveInsightJob()
     void insightStore.loadNotesFromAPI()
     void router.replace({ query: { book: bookId } })
@@ -170,22 +174,47 @@ async function loadBook(bookId: string): Promise<void> {
   }
 }
 
-async function loadAnalysisStatus(bookId = insightStore.currentBookId): Promise<void> {
-  if (!bookId) return
-
+async function refreshAnalysisFacts(bookId: string): Promise<void> {
   try {
     const response = await insightApi.getAnalysisStatus(bookId)
     if (!isInsightViewMounted || insightStore.currentBookId !== bookId) return
-    applyAnalysisStatus(response)
-    projectActiveInsightJob()
+    insightStore.setAnalyzedPagesCount(response.analyzedPagesCount)
   } catch {
-    // 保持最近一次后端快照；全局任务流仍可继续投影活动任务。
+    // The durable task projection remains authoritative for task state.
   }
 }
 
 function projectActiveInsightJob(): void {
   const bookId = insightStore.currentBookId
-  if (!bookId) return
+  if (
+    !bookId
+    || !isInsightViewMounted
+  ) return
+  const jobs = [...taskCenterStore.queue, ...taskCenterStore.history]
+  let refreshDomainData = false
+  let refreshAnalysisStatus = false
+  for (const job of jobs) {
+    if (
+      job.bookId !== bookId
+      || job.status === 'interrupted'
+      || !['cancelled', 'completed', 'completed_with_errors', 'failed'].includes(job.status)
+      || ![
+        'insight_analysis',
+        'derived_rebuild',
+        'vector_rebuild',
+        'continuation',
+      ].includes(job.kind)
+    ) continue
+    const key = `${bookId}:${job.jobId}:${job.status}`
+    if (observedTerminalKeys.has(key)) continue
+    observedTerminalKeys.add(key)
+    if (terminalProjectionPrimed) {
+      refreshDomainData = true
+      if (job.kind === 'insight_analysis') refreshAnalysisStatus = true
+    }
+  }
+  if (refreshDomainData) insightStore.triggerDataRefresh()
+  if (refreshAnalysisStatus) void refreshAnalysisFacts(bookId)
   const matchesBookAnalysis = (job: (typeof taskCenterStore.queue)[number]): boolean => (
     job.bookId === bookId && job.kind === 'insight_analysis'
   )
@@ -193,15 +222,61 @@ function projectActiveInsightJob(): void {
     ?? taskCenterStore.history.find(job => (
       matchesBookAnalysis(job) && job.status === 'interrupted'
     ))
-  if (!active) return
-  insightStore.setCurrentTaskId(active.jobId)
-  insightStore.setAnalysisStatus(active.status)
-  const progress = projectInsightPageProgress(active.progress)
-  insightStore.updateProgress(
-    progress.current,
-    progress.total,
-    progress.currentStepKind ? stepKindLabel(progress.currentStepKind) : undefined,
+  if (active) {
+    insightStore.setCurrentTaskId(active.jobId)
+    insightStore.setAnalysisStatus(active.status)
+    const progress = projectInsightPageProgress(active.progress)
+    insightStore.updateProgress(
+      progress.current,
+      progress.total,
+      progress.currentStepKind ? stepKindLabel(progress.currentStepKind) : undefined,
+    )
+    return
+  }
+
+  const terminal = taskCenterStore.history.find(job => (
+    matchesBookAnalysis(job) && job.status !== 'interrupted'
+  ))
+  if (!terminal) return
+  const shouldProject = (
+    insightStore.currentTaskId === terminal.jobId
+    || ['queued', 'running', 'paused', 'interrupted'].includes(
+      insightStore.analysisStatus,
+    )
   )
+  if (!shouldProject) return
+  const eventType: InsightTerminalEventType = terminal.status === 'cancelled'
+    ? 'job_cancelled'
+    : terminal.status === 'failed'
+      ? 'job_failed'
+      : 'job_finished'
+  const progress = projectTerminalInsightPageProgress(
+    terminal.progress,
+    eventType,
+  )
+  insightStore.setAnalysisStatus(terminal.status)
+  insightStore.setCurrentTaskId(null)
+  insightStore.updateProgress(progress.current, progress.total)
+}
+
+function primeTerminalJobs(bookId: string): void {
+  observedTerminalKeys.clear()
+  for (const job of [...taskCenterStore.queue, ...taskCenterStore.history]) {
+    if (
+      job.bookId === bookId
+      && job.status !== 'interrupted'
+      && ['cancelled', 'completed', 'completed_with_errors', 'failed'].includes(job.status)
+      && [
+        'insight_analysis',
+        'derived_rebuild',
+        'vector_rebuild',
+        'continuation',
+      ].includes(job.kind)
+    ) {
+      observedTerminalKeys.add(`${bookId}:${job.jobId}:${job.status}`)
+    }
+  }
+  terminalProjectionPrimed = true
 }
 
 function routeBookId(value: unknown): string {
@@ -282,6 +357,8 @@ function resetBookSelection(): void {
   showChapterSelectModal.value = false
   showMobileSidebar.value = false
   showMobileWorkspace.value = false
+  observedTerminalKeys.clear()
+  terminalProjectionPrimed = false
   insightStore.setCurrentBook(null)
   insightStore.setLoading(false)
 }
@@ -291,13 +368,8 @@ function chooseAnotherBook(): void {
   void router.replace({ query: {} })
 }
 
-function isInsightTerminalEventType(type: string): type is InsightTerminalEventType {
-  return type === 'job_finished' || type === 'job_failed' || type === 'job_cancelled'
-}
-
 onMounted(() => {
   isInsightViewMounted = true
-
   const bookId = routeBookId(route.query.book)
   if (bookId) {
     void loadBook(bookId)
@@ -307,6 +379,8 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  observedTerminalKeys.clear()
+  terminalProjectionPrimed = false
   isInsightViewMounted = false
   bookLoadSequence += 1
   insightStore.setLoading(false)
@@ -334,71 +408,6 @@ watch(
   { immediate: true },
 )
 
-watch(
-  [
-    () => taskCenterStore.latestEvent,
-    () => taskCenterStore.queue,
-    () => taskCenterStore.history,
-  ],
-  async ([event]) => {
-    if (
-      !event
-      || event.eventId <= lastHandledTerminalEventId
-      || !isInsightTerminalEventType(event.type)
-    ) {
-      return
-    }
-    const relatedJob = [...taskCenterStore.queue, ...taskCenterStore.history]
-      .find(job => job.jobId === event.jobId)
-    if (!relatedJob || relatedJob.bookId !== insightStore.currentBookId) return
-    if (['derived_rebuild', 'vector_rebuild', 'continuation'].includes(relatedJob.kind)) {
-      lastHandledTerminalEventId = event.eventId
-      insightStore.triggerDataRefresh()
-      return
-    }
-    if (
-      relatedJob.kind !== 'insight_analysis'
-      || event.jobId !== insightStore.currentTaskId
-    ) {
-      return
-    }
-    let terminalStatus: 'completed' | 'completed_with_errors' | 'cancelled' | 'failed'
-    if (event.type === 'job_finished') {
-      if (event.payload.status === 'completed' || event.payload.status === 'completed_with_errors') {
-        terminalStatus = event.payload.status
-      } else if (relatedJob.status === 'completed' || relatedJob.status === 'completed_with_errors') {
-        terminalStatus = relatedJob.status
-      } else {
-        return
-      }
-    } else {
-      terminalStatus = event.type === 'job_cancelled' ? 'cancelled' : 'failed'
-    }
-
-    lastHandledTerminalEventId = event.eventId
-    const relatedBookId = relatedJob.bookId
-    const relatedJobId = event.jobId
-    const terminalProgress = projectTerminalInsightPageProgress(
-      relatedJob.progress,
-      event.type,
-    )
-    await loadAnalysisStatus(relatedBookId)
-    if (
-      !isInsightViewMounted
-      || insightStore.currentBookId !== relatedBookId
-      || (
-        insightStore.currentTaskId !== null
-        && insightStore.currentTaskId !== relatedJobId
-      )
-    ) return
-    if (terminalProgress.total > 0) {
-      insightStore.updateProgress(terminalProgress.current, terminalProgress.total)
-    }
-    insightStore.setAnalysisStatus(terminalStatus)
-    insightStore.setCurrentTaskId(null)
-    insightStore.triggerDataRefresh()
-  },
-)
 </script>
 
 <template>

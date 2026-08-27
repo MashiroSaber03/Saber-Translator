@@ -12,6 +12,7 @@ import { ref, watch } from 'vue'
 import { showToast } from '@/utils/toast'
 import { useWebImportStore } from '@/stores/webImportStore'
 import { useRuntimeStore } from '@/stores/runtimeStore'
+import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import {
   createContainerImportJob,
   importImagesSequentially,
@@ -31,6 +32,7 @@ const emit = defineEmits<{
 }>()
 const webImportStore = useWebImportStore()
 const runtimeStore = useRuntimeStore()
+const taskCenterStore = useTaskCenterStore()
 const folderInputRef = ref<InstanceType<typeof UiFileInput> | null>(null)
 const isLoading = ref(false)
 const errorMessage = ref('')
@@ -166,7 +168,8 @@ async function processFiles(files: File[]) {
       if (props.chapterId === chapterId) {
         currentFileName.value = `上传到后端任务：${file.name}`
       }
-      await createContainerImportJob(chapterId, file)
+      const accepted = await createContainerImportJob(chapterId, file)
+      for (const jobId of accepted.jobIds) taskCenterStore.trackJob(jobId)
       if (props.chapterId === chapterId) {
         uploadProgress.value = (index + 1) / containers.length * 100
       }

@@ -11,7 +11,7 @@ const translationMocks = vi.hoisted(() => ({
 }))
 
 const taskCenterMocks = vi.hoisted(() => ({
-  refresh: vi.fn(),
+  trackJob: vi.fn(),
 }))
 
 const contentMocks = vi.hoisted(() => ({
@@ -32,7 +32,7 @@ vi.mock('@/api/v2/translation', () => ({
 }))
 
 vi.mock('@/stores/taskCenterStore', () => ({
-  useTaskCenterStore: () => ({ refresh: taskCenterMocks.refresh }),
+  useTaskCenterStore: () => ({ trackJob: taskCenterMocks.trackJob }),
 }))
 
 import { useTextStyleSync } from './useTextStyleSync'
@@ -48,8 +48,7 @@ describe('useTextStyleSync page defaults', () => {
     persistenceMocks.queuePageDocumentMutation.mockResolvedValue(undefined)
     translationMocks.createChapterStyleApplyJob.mockReset()
     translationMocks.createChapterStyleApplyJob.mockResolvedValue({ jobIds: ['job-1'] })
-    taskCenterMocks.refresh.mockReset()
-    taskCenterMocks.refresh.mockResolvedValue(undefined)
+    taskCenterMocks.trackJob.mockReset()
     contentMocks.getPageRenderStatus.mockReset()
     contentMocks.getPageRenderStatus.mockResolvedValue({
       pageId: '00000000-0000-0000-0000-000000000001',

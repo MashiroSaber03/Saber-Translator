@@ -1,4 +1,4 @@
-import { computed, ref, watch, type Ref } from 'vue'
+import { computed, getCurrentScope, onScopeDispose, ref, watch, type Ref } from 'vue'
 
 import {
   createChapterRemoveTextJob,
@@ -53,8 +53,6 @@ export interface TranslationProgress {
 
 type TranslationCurrentStep = components['schemas']['JobProgressCurrentStep']
 type V2JobProgress = components['schemas']['JobProgress']
-type V2JobProgressPool = components['schemas']['JobProgressPool']
-type V2JobProgressPoolCurrent = components['schemas']['JobProgressPoolCurrent']
 
 export interface TranslationPoolProgress {
   kind: string
@@ -71,7 +69,6 @@ export interface TranslationPoolProgress {
 
 interface TranslationSessionState {
   activeJobId: Ref<string | null>
-  lastHandledEventId: number
   progress: Ref<TranslationProgress>
 }
 
@@ -101,7 +98,6 @@ function translationSession(
   if (existing) return existing
   const created: TranslationSessionState = {
     activeJobId: ref(null),
-    lastHandledEventId: 0,
     progress: ref(initialProgress()),
   }
   translationSessions.set(imageStore, created)
@@ -111,14 +107,6 @@ function translationSession(
 function range(start: number, end: number): number[] {
   return Array.from({ length: Math.max(0, end - start) }, (_, index) => start + index)
 }
-
-const JOB_STATUSES = new Set<V2JobStatus>([
-  ...NONTERMINAL_JOB_STATUSES,
-  'cancelled',
-  'completed',
-  'completed_with_errors',
-  'failed',
-])
 
 const CHAPTER_CONTENT_JOB_KINDS = new Set<V2Job['kind']>([
   'translation',
@@ -134,120 +122,13 @@ function jobStatusLabel(status: V2JobStatus | undefined): string {
   switch (status) {
     case 'queued': return '任务正在后端队列中等待'
     case 'running': return '后端正在处理'
-    case 'pausing': return '正在等待当前步骤结束后暂停'
-    case 'paused': return '任务已暂停'
-    case 'cancelling': return '正在等待当前步骤结束后取消'
+    case 'paused': return '任务已暂停；当前步骤将在恢复后重做'
     case 'interrupted': return 'Worker 中断，请在任务中心继续'
     case 'completed_with_errors': return '任务完成，但有页面失败'
     case 'completed': return '后端任务已完成'
     case 'cancelled': return '后端任务已取消'
     case 'failed': return '后端任务失败'
     default: return '后端正在处理'
-  }
-}
-
-function recordValue(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null
-}
-
-function nonNegativeInteger(value: unknown): value is number {
-  return Number.isInteger(value) && Number(value) >= 0
-}
-
-function positiveInteger(value: unknown): value is number {
-  return Number.isInteger(value) && Number(value) >= 1
-}
-
-function progressPoolCurrent(value: unknown): V2JobProgressPoolCurrent | null {
-  const current = recordValue(value)
-  if (
-    !current
-    || typeof current.itemId !== 'string'
-    || (current.pageId !== null && typeof current.pageId !== 'string')
-    || !positiveInteger(current.itemOrdinal)
-    || typeof current.stepId !== 'string'
-    || !positiveInteger(current.stepOrdinal)
-  ) return null
-  return {
-    itemId: current.itemId,
-    pageId: current.pageId,
-    itemOrdinal: current.itemOrdinal,
-    stepId: current.stepId,
-    stepOrdinal: current.stepOrdinal,
-  }
-}
-
-function progressPool(value: unknown): V2JobProgressPool | null {
-  const pool = recordValue(value)
-  if (
-    !pool
-    || typeof pool.kind !== 'string'
-    || !pool.kind
-    || !nonNegativeInteger(pool.total)
-    || !nonNegativeInteger(pool.completed)
-    || !nonNegativeInteger(pool.failed)
-    || !nonNegativeInteger(pool.skipped)
-    || !nonNegativeInteger(pool.cancelled)
-    || !nonNegativeInteger(pool.waiting)
-    || !nonNegativeInteger(pool.processing)
-    || typeof pool.lockWaiting !== 'boolean'
-    || !Array.isArray(pool.current)
-  ) return null
-  const current = pool.current.map(progressPoolCurrent)
-  if (current.some(item => item === null)) return null
-  return {
-    kind: pool.kind,
-    total: pool.total,
-    completed: pool.completed,
-    failed: pool.failed,
-    skipped: pool.skipped,
-    cancelled: pool.cancelled,
-    waiting: pool.waiting,
-    processing: pool.processing,
-    lockWaiting: pool.lockWaiting,
-    current: current as V2JobProgressPoolCurrent[],
-  }
-}
-
-function progressCurrentStep(value: unknown): TranslationCurrentStep | null {
-  const current = recordValue(value)
-  const shared = progressPoolCurrent(value)
-  if (!current || !shared || typeof current.kind !== 'string' || !current.kind) return null
-  return { kind: current.kind, ...shared }
-}
-
-function parseJobProgress(value: unknown): V2JobProgress | null {
-  const snapshot = recordValue(value)
-  if (
-    !snapshot
-    || (snapshot.executionMode !== 'sequential' && snapshot.executionMode !== 'parallel')
-    || typeof snapshot.jobStatus !== 'string'
-    || !JOB_STATUSES.has(snapshot.jobStatus as V2JobStatus)
-    || !nonNegativeInteger(snapshot.totalItems)
-    || !nonNegativeInteger(snapshot.completedItems)
-    || !nonNegativeInteger(snapshot.failedItems)
-    || !nonNegativeInteger(snapshot.skippedItems)
-    || !nonNegativeInteger(snapshot.cancelledItems)
-    || !Array.isArray(snapshot.pools)
-  ) return null
-  const pools = snapshot.pools.map(progressPool)
-  if (pools.some(pool => pool === null)) return null
-  const currentStep = snapshot.currentStep === undefined
-    ? undefined
-    : progressCurrentStep(snapshot.currentStep)
-  if (snapshot.currentStep !== undefined && !currentStep) return null
-  return {
-    executionMode: snapshot.executionMode,
-    jobStatus: snapshot.jobStatus as V2JobStatus,
-    totalItems: snapshot.totalItems,
-    completedItems: snapshot.completedItems,
-    failedItems: snapshot.failedItems,
-    skippedItems: snapshot.skippedItems,
-    cancelledItems: snapshot.cancelledItems,
-    pools: pools as V2JobProgressPool[],
-    ...(currentStep ? { currentStep } : {}),
   }
 }
 
@@ -293,15 +174,13 @@ function activeTranslationJob(
 ): TranslationBootstrapJob | undefined {
   const priority: Record<V2JobStatus, number> = {
     running: 0,
-    pausing: 1,
-    cancelling: 2,
-    paused: 3,
-    interrupted: 4,
-    queued: 5,
-    completed_with_errors: 6,
-    completed: 7,
-    failed: 8,
-    cancelled: 9,
+    paused: 1,
+    interrupted: 2,
+    queued: 3,
+    completed_with_errors: 4,
+    completed: 5,
+    failed: 6,
+    cancelled: 7,
   }
   return jobs
     .filter(job => (
@@ -462,22 +341,8 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
 
   const progressPercent = computed(() => progress.value.percentage || 0)
 
-  if (options.observeProgress !== false) watch(
-    () => taskCenterStore.latestEvent,
-    event => {
-      if (!event || event.eventId <= session.lastHandledEventId) return
-      session.lastHandledEventId = event.eventId
-      const eventProgress = parseJobProgress(event.payload.progress)
-      if (
-        event.jobId === activeJobId.value
-        && eventProgress
-      ) {
-        applyProgressSnapshot(
-          progress,
-          eventProgress,
-          event.type === 'page_completed' ? '后端正在处理后续页面' : '后端正在处理',
-        )
-      }
+  if (options.observeProgress !== false) {
+    const unsubscribe = taskCenterStore.subscribeEvents((event) => {
       if (event.type === 'page_completed') {
         const pageId = event.payload.pageId
         if (typeof pageId === 'string') {
@@ -493,8 +358,9 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
           })
         }
       }
-    },
-  )
+    })
+    if (getCurrentScope()) onScopeDispose(unsubscribe)
+  }
 
   let observedChapterId: string | null = null
   let observedTerminalContentJobs = new Set<string>()
@@ -663,7 +529,7 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
         const index = imageStore.images.findIndex(image => image.id === pageId)
         if (index >= 0) imageStore.setTranslationStatus(index, 'processing')
       }
-      void taskCenterStore.refresh().catch(() => undefined)
+      taskCenterStore.trackJob(jobId)
       toast.success('任务已加入后端任务中心，可安全关闭页面')
       return true
     } catch (error) {
@@ -743,7 +609,7 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
         status: 'queued',
         pools: [],
       }
-      void taskCenterStore.refresh().catch(() => undefined)
+      taskCenterStore.trackJob(jobId)
       toast.success('失败项已按当前设置加入后端任务中心')
       return true
     } catch (error) {

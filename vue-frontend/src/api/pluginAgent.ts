@@ -219,10 +219,6 @@ export async function startPluginAgentExecution(sessionId: string): Promise<Plug
   return result.session
 }
 
-export async function cancelPluginAgentExecution(jobId: string): Promise<void> {
-  await jobsApi.cancel(jobId)
-}
-
 export function pluginAgentEventFromJobEvent(event: V2JobEvent): PluginAgentEvent | null {
   if (event.type.startsWith('plugin_agent_')) {
     return {
@@ -230,15 +226,13 @@ export function pluginAgentEventFromJobEvent(event: V2JobEvent): PluginAgentEven
       eventKey: `job:${event.eventId}`,
       type: event.type.slice('plugin_agent_'.length),
       payload: event.payload,
-      timestamp: event.createdAt ?? '',
+      timestamp: event.createdAt,
     }
   }
   const activeState = {
     job_started: ['running', '执行中'],
-    job_request_pause: ['pausing', '正在暂停'],
     job_paused: ['paused', '已暂停'],
     job_resume: ['running', '执行中'],
-    job_request_cancel: ['cancelling', '正在取消'],
   }[event.type] as [PluginAgentRunState, string] | undefined
   if (activeState) {
     return {
@@ -249,7 +243,7 @@ export function pluginAgentEventFromJobEvent(event: V2JobEvent): PluginAgentEven
         run_state: activeState[0],
         label: activeState[1],
       },
-      timestamp: event.createdAt ?? '',
+      timestamp: event.createdAt,
     }
   }
   if (!['job_failed', 'job_cancelled', 'job_finished'].includes(event.type)) return null
@@ -273,7 +267,7 @@ export function pluginAgentEventFromJobEvent(event: V2JobEvent): PluginAgentEven
           ? '插件 Agent 任务已取消'
           : '插件 Agent 执行未成功，请在任务中心查看错误详情',
     },
-    timestamp: event.createdAt ?? '',
+    timestamp: event.createdAt,
   }
 }
 

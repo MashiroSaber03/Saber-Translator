@@ -1,10 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { getMock, postMock, deleteMock, cancelMock, eventsMock } = vi.hoisted(() => ({
+const { getMock, postMock, deleteMock, eventsMock } = vi.hoisted(() => ({
   getMock: vi.fn(),
   postMock: vi.fn(),
   deleteMock: vi.fn(),
-  cancelMock: vi.fn(),
   eventsMock: vi.fn(),
 }))
 
@@ -23,7 +22,6 @@ vi.mock('@/api/client', () => ({
 
 vi.mock('@/api/v2/jobs', () => ({
   jobsApi: {
-    cancel: cancelMock,
     events: eventsMock,
   },
 }))
@@ -60,7 +58,6 @@ describe('plugin agent v2 api', () => {
     getMock.mockReset()
     postMock.mockReset()
     deleteMock.mockReset()
-    cancelMock.mockReset()
     eventsMock.mockReset()
   })
 
@@ -132,10 +129,8 @@ describe('plugin agent v2 api', () => {
         batchId: 'batch-1',
         jobId: 'job-1',
       })
-    cancelMock.mockResolvedValue({ status: 'cancelling' })
     deleteMock.mockResolvedValue({ deleted: true })
     const {
-      cancelPluginAgentExecution,
       deletePluginAgentSession,
       getPluginAgentSession,
       lockPluginAgentTarget,
@@ -154,7 +149,6 @@ describe('plugin agent v2 api', () => {
       supported_modes: ['standard'],
     })
     await startPluginAgentExecution(scopedSession.session_id)
-    await cancelPluginAgentExecution('job-1')
     await deletePluginAgentSession(scopedSession.session_id)
 
     expect(getMock).toHaveBeenCalledWith(`/api/v2/plugin-agent/sessions/${encoded}`)
@@ -185,7 +179,6 @@ describe('plugin agent v2 api', () => {
         },
       }
     )
-    expect(cancelMock).toHaveBeenCalledWith('job-1')
     expect(deleteMock).toHaveBeenCalledWith(`/api/v2/plugin-agent/sessions/${encoded}`)
   })
 
@@ -292,10 +285,8 @@ describe('plugin agent v2 api', () => {
   })
 
   it.each([
-    ['job_request_pause', 'pausing', '正在暂停'],
     ['job_paused', 'paused', '已暂停'],
     ['job_resume', 'running', '执行中'],
-    ['job_request_cancel', 'cancelling', '正在取消'],
   ] as const)('maps durable %s events into the Plugin Agent session state', async (
     eventType,
     runState,

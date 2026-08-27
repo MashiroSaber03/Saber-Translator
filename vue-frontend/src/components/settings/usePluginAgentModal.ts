@@ -2,7 +2,6 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { marked } from 'marked'
 import { fetchModels as fetchV2Models, testAiTranslateConnection } from '@/api/v2/diagnostics'
 import {
-  cancelPluginAgentExecution,
   createPluginAgentSession,
   deletePluginAgentSession,
   getPluginAgentSession,
@@ -68,9 +67,7 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
     awaiting_target_lock: '等待锁定目标插件',
     ready: '已就绪',
     running: '执行中',
-    pausing: '正在暂停',
     paused: '已暂停',
-    cancelling: '正在取消',
     completed: '已完成',
     failed: '执行失败',
     cancelled: '已取消',
@@ -171,7 +168,7 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
     )
   )
   const isRunning = computed(() =>
-    ['running', 'pausing', 'paused', 'cancelling'].includes(
+    ['running', 'paused'].includes(
       session.value?.run_state || ''
     )
   )
@@ -690,7 +687,7 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
     if (isSessionCommandPending.value || !session.value?.job_id) return
     isSessionCommandPending.value = true
     try {
-      await cancelPluginAgentExecution(session.value.job_id)
+      await taskCenterStore.cancel(session.value.job_id)
       toast.info('已请求取消执行')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '取消执行失败')

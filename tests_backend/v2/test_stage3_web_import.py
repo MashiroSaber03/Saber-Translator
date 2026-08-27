@@ -18,7 +18,7 @@ from sqlalchemy import select, update
 from src.backend_v2.api.app import ApiSettings, create_api_app
 from src.backend_v2.content.image_import import ImportSafetyLimits
 from src.backend_v2.content.repository import ContentRepository
-from src.backend_v2.jobs.repository import JobQueueRepository
+from src.backend_v2.jobs.repository import AttemptFenced, JobQueueRepository
 from src.backend_v2.jobs.retry import JobRetryService
 from src.backend_v2.runtime_identity import RuntimeIdentity
 from src.backend_v2.runtime_profile import resolve_runtime_profile
@@ -751,33 +751,21 @@ def test_web_import_failure_recording_cannot_mask_original_error(
         worker.handle(object(), {"stepKind": "web_extract_scan"})
 
 
-@pytest.mark.parametrize("status", ["pausing", "cancelling"])
-def test_web_import_agent_control_yields_the_running_step(
+def test_web_import_agent_control_is_fenced_after_hard_pause(
     monkeypatch: pytest.MonkeyPatch,
-    status: str,
 ) -> None:
-    checkpoints: list[tuple[str, dict[str, object]]] = []
     worker = object.__new__(WebImportWorkerService)
-    worker.jobs = SimpleNamespace(
-        checkpoint_step=lambda _fence, *, step_id, checkpoint: (
-            checkpoints.append((step_id, checkpoint)) or status
-        )
-    )
+    worker.jobs = SimpleNamespace()
 
     def request_control(_fence, _step):
         raise WebImportAgentControlRequested("control requested")
 
     monkeypatch.setattr(worker, "_scan", request_control)
-    result = worker.handle(
-        object(),
-        {"stepKind": "web_extract_scan", "stepId": "scan-step"},
-    )
-
-    assert result == {
-        "__already_published__": True,
-        "__control_drained__": True,
-    }
-    assert checkpoints == [("scan-step", {})]
+    with pytest.raises(AttemptFenced):
+        worker.handle(
+            object(),
+            {"stepKind": "web_extract_scan", "stepId": "scan-step"},
+        )
 
 
 def test_cancelled_web_extract_draft_is_not_restored_as_active(

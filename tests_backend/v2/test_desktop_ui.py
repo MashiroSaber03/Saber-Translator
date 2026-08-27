@@ -94,16 +94,11 @@ def test_task_command_fails_locally_when_backend_is_disconnected() -> None:
     _app()
     client = TaskApiClient()
     errors: list[str] = []
-    results: list[tuple[str, str, bool]] = []
     client.error.connect(errors.append)
-    client.command_finished.connect(
-        lambda job_id, action, success: results.append((job_id, action, success))
-    )
 
     client.command("job-1", "pause")
 
     assert errors == ["任务操作失败：后端尚未连接"]
-    assert results == [("job-1", "pause", False)]
 
 
 def test_task_command_rejects_an_empty_job_id() -> None:
@@ -282,14 +277,59 @@ def test_task_list_failure_releases_refresh_gate() -> None:
         def deleteLater(self) -> None:
             pass
 
-    client._finish_list("queue", FailedReply(), client._generation)
-    client._finish_list("history", FailedReply(), client._generation)
+    client._finish_list(FailedReply(), client._generation)
 
     assert client._refresh_inflight is False
     client.stop()
 
 
-def test_task_refresh_never_limits_the_live_queue() -> None:
+def test_task_list_requires_and_emits_current_scheduler_contract() -> None:
+    _app()
+    client = TaskApiClient()
+    updates: list[tuple[object, ...]] = []
+    errors: list[str] = []
+    client.jobs_updated.connect(lambda *values: updates.append(values))
+    client.error.connect(errors.append)
+    client._running = True
+    client._refresh_inflight = True
+    client._sse_reply = object()
+
+    class Reply:
+        def __init__(self, payload: dict[str, object]) -> None:
+            self.payload = payload
+
+        def error(self):
+            return QNetworkReply.NetworkError.NoError
+
+        def readAll(self) -> bytes:
+            return json.dumps(self.payload).encode("utf-8")
+
+        def deleteLater(self) -> None:
+            pass
+
+    payload = {
+        "items": [],
+        "queuePaused": False,
+        "eventCursor": 7,
+        "workerOnline": True,
+        "executorBusy": True,
+        "waitingReason": "executor_busy",
+    }
+    client._finish_list(Reply(payload), client._generation)
+    assert updates == [([], [], True, False, True, "executor_busy")]
+    assert errors == []
+
+    client._refresh_inflight = True
+    client._finish_list(
+        Reply({key: value for key, value in payload.items() if key != "executorBusy"}),
+        client._generation,
+    )
+    assert errors[-1] == "任务列表响应格式无效"
+    client._sse_reply = None
+    client.stop()
+
+
+def test_task_refresh_reads_queue_and_history_in_one_snapshot() -> None:
     _app()
     client = TaskApiClient()
     requested_urls: list[str] = []
@@ -313,8 +353,7 @@ def test_task_refresh_never_limits_the_live_queue() -> None:
     client.refresh()
 
     assert requested_urls == [
-        "http://127.0.0.1:5000/api/v2/jobs?scope=queue",
-        "http://127.0.0.1:5000/api/v2/jobs?scope=history&limit=200",
+        "http://127.0.0.1:5000/api/v2/jobs?scope=all&limit=200",
     ]
     client.stop()
 
@@ -359,10 +398,6 @@ def test_task_json_requests_have_a_finite_timeout() -> None:
 def test_stale_task_command_reply_is_ignored_after_backend_restart() -> None:
     _app()
     client = TaskApiClient()
-    results: list[tuple[str, str, bool]] = []
-    client.command_finished.connect(
-        lambda job_id, action, success: results.append((job_id, action, success))
-    )
 
     class StaleReply:
         deleted = False
@@ -373,10 +408,9 @@ def test_stale_task_command_reply_is_ignored_after_backend_restart() -> None:
     reply = StaleReply()
     client._generation = 2
 
-    client._finish_command(reply, "job-1", "pause", 1)
+    client._finish_command(reply, 1)
 
     assert reply.deleted is True
-    assert results == []
 
 
 def test_controller_persists_and_applies_settings_as_the_control_changes(tmp_path) -> None:
@@ -468,7 +502,12 @@ def test_task_action_buttons_fit_their_dedicated_column() -> None:
             }
         ],
         [],
+        False,
+        True,
+        True,
+        "executor_busy",
     )
+    assert page.scheduler_state.text() == "执行器正忙"
     page.show()
     app.processEvents()
 

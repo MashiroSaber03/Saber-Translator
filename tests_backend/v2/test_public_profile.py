@@ -362,6 +362,44 @@ def test_admin_can_update_the_single_global_scheduling_policy(public_platform) -
     assert rejected.status_code == 422
 
 
+def test_only_public_admin_can_toggle_the_visible_global_queue_gate(
+    public_platform,
+) -> None:
+    app = public_platform["app"]
+    admin_client, admin_csrf = _login(app, "admin", ADMIN_PASSWORD)
+    alice_client, alice_csrf = _login(app, "alice", ALICE_PASSWORD)
+
+    denied = alice_client.post(
+        "/api/v2/jobs/queue/pause",
+        base_url=PUBLIC_BASE,
+        headers={"X-CSRF-Token": alice_csrf},
+    )
+    assert denied.status_code == 403
+
+    paused = admin_client.post(
+        "/api/v2/jobs/queue/pause",
+        base_url=PUBLIC_BASE,
+        headers={"X-CSRF-Token": admin_csrf},
+    )
+    assert paused.status_code == 200
+    assert paused.get_json()["queuePaused"] is True
+    visible = alice_client.get(
+        "/api/v2/jobs",
+        base_url=PUBLIC_BASE,
+        query_string={"scope": "queue"},
+    )
+    assert visible.status_code == 200
+    assert visible.get_json()["queuePaused"] is True
+
+    resumed = admin_client.post(
+        "/api/v2/jobs/queue/resume",
+        base_url=PUBLIC_BASE,
+        headers={"X-CSRF-Token": admin_csrf},
+    )
+    assert resumed.status_code == 200
+    assert resumed.get_json()["queuePaused"] is False
+
+
 def test_public_authentication_csrf_admin_gate_and_owner_isolation(
     public_platform,
 ) -> None:

@@ -10,6 +10,7 @@ import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 
 import { ref, computed, onUnmounted, watch } from 'vue'
 import { useInsightStore } from '@/stores/insightStore'
+import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import * as insightApi from '@/api/insight'
 import type { PageAnalysisData } from '@/api/insight'
 import { useBodyScrollLock } from '@/composables/useBodyScrollLock'
@@ -17,6 +18,7 @@ import { useDialogLifecycle } from '@/composables/useDialogLifecycle'
 import { triggerBlobDownload } from '@/utils/browserDownload'
 
 const insightStore = useInsightStore()
+const taskCenterStore = useTaskCenterStore()
 
 const pageAnalysis = ref<PageAnalysisData | null>(null)
 const loadedImageUrl = ref('')
@@ -159,9 +161,8 @@ async function reanalyzePage(): Promise<void> {
   try {
     const submission = await insightApi.reanalyzePage(bookId, pageNum)
     if (insightStore.currentBookId !== bookId || selectedPageNum.value !== pageNum) return
-    insightStore.setCurrentTaskId(submission.jobId)
     pendingReanalyzePage.value = pageNum
-    insightStore.setAnalysisStatus('queued')
+    taskCenterStore.trackJob(submission.jobId)
   } catch (error) {
     if (insightStore.currentBookId === bookId && selectedPageNum.value === pageNum) {
       const message = (error as { message?: string })?.message

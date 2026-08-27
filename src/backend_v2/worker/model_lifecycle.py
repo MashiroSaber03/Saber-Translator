@@ -30,7 +30,7 @@ LOGGER = logging.getLogger("saber.worker.models")
 
 LOCAL_MODEL_JOB_STEPS = frozenset({"detect", "ocr", "color", "repair"})
 ACTIVE_JOB_RUNTIME_STATUSES = frozenset(
-    {"running", "pausing", "cancelling"}
+    {"running"}
 )
 
 

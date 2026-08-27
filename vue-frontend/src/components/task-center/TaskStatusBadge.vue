@@ -24,9 +24,7 @@ const liveJobs = computed(() => (
     && [
       'queued',
       'running',
-      'pausing',
       'paused',
-      'cancelling',
       'interrupted',
       'failed',
     ].includes(job.status)
@@ -51,7 +49,7 @@ const resolved = computed(() => {
     { statuses: ['interrupted'], tone: 'danger', label: '中断' },
     { statuses: ['failed'], tone: 'danger', label: '失败' },
     { statuses: ['paused'], tone: 'warning', label: '暂停' },
-    { statuses: ['running', 'pausing', 'cancelling'], tone: 'success', label: '进行中' },
+    { statuses: ['running'], tone: 'success', label: '进行中' },
     { statuses: ['queued'], tone: 'neutral', label: '排队' },
   ] as const
   for (const entry of entries) {

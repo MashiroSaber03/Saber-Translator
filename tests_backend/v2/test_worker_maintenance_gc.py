@@ -98,7 +98,6 @@ def test_maintenance_prunes_bounded_ttl_records_without_active_work(
         connection.execute(
             insert(job_batches).values(
                 id=batch_id,
-                kind="export",
                 display_name="active export",
             )
         )

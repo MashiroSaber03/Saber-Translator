@@ -73,7 +73,7 @@ function vectorJob(overrides: Partial<V2Job> = {}): V2Job {
       pools: [],
     },
     target: {},
-    createdAt: null,
+    createdAt: '2026-08-23T04:00:00Z',
     ...overrides,
   }
 }
@@ -114,7 +114,6 @@ describe('QAPanel vector rebuild task projection', () => {
     confirmProductActionMock.mockResolvedValue(true)
     vi.spyOn(jobsApi, 'list').mockResolvedValue({
       items: [],
-      queueRevision: 1,
     })
   })
 

@@ -38,6 +38,7 @@ UNKEYED_STATE_COMMANDS = frozenset(
         "deletePage",
         "deleteTag",
         "pauseRunningJob",
+        "pauseJobQueue",
         "prioritizeQueuedJobBatchMembers",
         "promoteQuickWorkspace",
         "reorderChapterPages",
@@ -45,6 +46,7 @@ UNKEYED_STATE_COMMANDS = frozenset(
         "reorderJobs",
         "resetQuickWorkspace",
         "resumePausedJob",
+        "resumeJobQueue",
         "updateBook",
         "updateBookTranslationConstraints",
         "updateChapter",
@@ -249,6 +251,8 @@ def test_required_backend_first_commands_are_explicit() -> None:
         "/jobs/{job_id}/continue",
         "/studio/chat/sessions/{session_id}/messages",
     } <= set(paths)
+    assert "/jobs/{job_id}/download" not in paths
+    assert "/job-batches/{batch_id}" not in paths
 
     schemas = document["components"]["schemas"]
     assert schemas["JobStatus"]["enum"]
@@ -256,6 +260,10 @@ def test_required_backend_first_commands_are_explicit() -> None:
     assert set(schemas["StudioMessageCommand"]["required"]) >= {
         "baseSessionRevision",
     }
+    assert schemas["JobCommandResult"]["required"] == ["jobId", "status"]
+    assert schemas["BatchContinueResult"]["required"] == ["continued"]
+    list_scope = paths["/jobs"]["get"]["parameters"][0]["schema"]["enum"]
+    assert list_scope == ["queue", "history", "all"]
 
 
 def test_idempotency_keys_are_reserved_for_replayable_commands() -> None:

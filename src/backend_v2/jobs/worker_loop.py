@@ -35,6 +35,7 @@ BatchStepHandler = Callable[
     [AttemptFence, Sequence[Mapping[str, Any]]],
     Mapping[str, Any],
 ]
+ControlTimeoutHandler = Callable[[AttemptFence, str], None]
 DEEP_LEARNING_STEP_KINDS = frozenset({"detect", "ocr", "color", "repair"})
 PIPELINE_BUSY_RETRY_LIMIT = 3
 PIPELINE_BUSY_RETRY_BASE_SECONDS = 0.05
@@ -42,6 +43,8 @@ PARALLEL_PIPELINE_LEAD_WINDOW = 50
 MAX_DEEP_LEARNING_THREADS = 8
 MIN_SCHEDULER_POLL_SECONDS = 0.1
 MAX_SCHEDULER_POLL_SECONDS = 0.5
+DEFAULT_CONTROL_TIMEOUT_SECONDS = 1.5
+DEFAULT_CONTROL_POLL_SECONDS = 0.25
 LOGGER = logging.getLogger("saber.worker.jobs")
 
 
@@ -87,14 +90,6 @@ def _checkpoint_log_status(checkpoint: Mapping[str, Any]) -> str:
     return "completed"
 
 
-def _control_log_status(status: str) -> str:
-    if status == "pausing":
-        return "paused"
-    if status == "cancelling":
-        return "cancelled"
-    raise RuntimeError("control-drained step has no active control request")
-
-
 class JobWorkerLoop:
     """Single compute-slot scheduler with persisted step checkpoints."""
 
@@ -108,9 +103,13 @@ class JobWorkerLoop:
         handler_resolver: Callable[[str], StepHandler | None] | None = None,
         plugin_runtime: Any | None = None,
         safe_point: Callable[[], bool] | None = None,
+        idle_work: Callable[[], bool] | None = None,
         scheduling_policy: Callable[[], Mapping[str, Any]] | None = None,
         admission_check: Callable[[], bool] | None = None,
         on_activity: Callable[[], None] | None = None,
+        on_control_timeout: ControlTimeoutHandler | None = None,
+        control_timeout_seconds: float = DEFAULT_CONTROL_TIMEOUT_SECONDS,
+        control_poll_seconds: float = DEFAULT_CONTROL_POLL_SECONDS,
         idle_poll_seconds: float = 0.25,
     ) -> None:
         self.repository = repository
@@ -122,9 +121,17 @@ class JobWorkerLoop:
             raise ValueError("every batch handler requires a matching step handler")
         self.plugin_runtime = plugin_runtime
         self.safe_point = safe_point
+        self.idle_work = idle_work
         self.scheduling_policy = scheduling_policy
         self.admission_check = admission_check
         self.on_activity = on_activity
+        self.on_control_timeout = on_control_timeout
+        if control_timeout_seconds <= 0:
+            raise ValueError("control timeout must be positive")
+        if control_poll_seconds <= 0:
+            raise ValueError("control poll interval must be positive")
+        self.control_timeout_seconds = control_timeout_seconds
+        self.control_poll_seconds = control_poll_seconds
         if idle_poll_seconds <= 0:
             raise ValueError("idle poll interval must be positive")
         self.idle_poll_seconds = idle_poll_seconds
@@ -132,12 +139,6 @@ class JobWorkerLoop:
     def run(self, stop_event: threading.Event) -> None:
         LOGGER.debug("持久任务调度器开始运行")
         while not stop_event.is_set():
-            if (
-                self.scheduling_policy is None
-                and self.safe_point is not None
-                and self.safe_point()
-            ):
-                continue
             try:
                 policy = self._policy()
                 admitted = (
@@ -160,7 +161,6 @@ class JobWorkerLoop:
                 claim_options = (
                     {
                         "queue_discipline": str(policy["queueDiscipline"]),
-                        "allow_paused_bypass": True,
                     }
                     if policy is not None
                     else {}
@@ -184,6 +184,8 @@ class JobWorkerLoop:
             if fence is None:
                 if self.safe_point is not None and self.safe_point():
                     continue
+                if self.idle_work is not None and self.idle_work():
+                    continue
                 stop_event.wait(self.idle_poll_seconds)
                 continue
             self._note_activity()
@@ -198,6 +200,16 @@ class JobWorkerLoop:
     ) -> None:
         started_at = time.monotonic()
         execution_mode = "sequential"
+        watchdog_stop = threading.Event()
+        watchdog: threading.Thread | None = None
+        if self.on_control_timeout is not None:
+            watchdog = threading.Thread(
+                target=self._watch_attempt_control,
+                args=(fence, stop_event, watchdog_stop),
+                name=f"job-control-{_short(fence.job_id)}",
+                daemon=True,
+            )
+            watchdog.start()
         try:
             config = self.repository.attempt_config(fence)
             if self.plugin_runtime is not None:
@@ -248,6 +260,9 @@ class JobWorkerLoop:
                 error=exc,
             )
         finally:
+            watchdog_stop.set()
+            if watchdog is not None and watchdog is not threading.current_thread():
+                watchdog.join(timeout=max(1.0, self.control_poll_seconds * 2))
             if self.plugin_runtime is not None:
                 self.plugin_runtime.release_job_state(fence.job_id)
             self._note_activity()
@@ -257,6 +272,59 @@ class JobWorkerLoop:
                 _short(fence.attempt_id),
                 time.monotonic() - started_at,
             )
+
+    def _watch_attempt_control(
+        self,
+        fence: AttemptFence,
+        stop_event: threading.Event,
+        watchdog_stop: threading.Event,
+    ) -> None:
+        controlled_since: float | None = None
+        reason = ""
+        while not watchdog_stop.wait(self.control_poll_seconds):
+            if stop_event.is_set():
+                return
+            try:
+                self.repository.assert_attempt_active(fence)
+            except AttemptFenced:
+                current_reason = "execution_rights_revoked"
+            except Exception as exc:
+                if not is_sqlite_busy_error(exc):
+                    LOGGER.warning(
+                        "任务控制看门狗读取失败，将继续重试：job=%s attempt=%s",
+                        _short(fence.job_id),
+                        _short(fence.attempt_id),
+                        exc_info=exc,
+                    )
+                continue
+            else:
+                controlled_since = None
+                reason = ""
+                continue
+            if controlled_since is None or current_reason != reason:
+                controlled_since = time.monotonic()
+                reason = current_reason
+                LOGGER.debug(
+                    "任务控制看门狗开始等待处理器退出：job=%s attempt=%s reason=%s",
+                    _short(fence.job_id),
+                    _short(fence.attempt_id),
+                    reason,
+                )
+                continue
+            if time.monotonic() - controlled_since < self.control_timeout_seconds:
+                continue
+            LOGGER.critical(
+                "任务处理器未在控制宽限期内退出：job=%s attempt=%s "
+                "reason=%s timeout=%.1fs",
+                _short(fence.job_id),
+                _short(fence.attempt_id),
+                reason,
+                self.control_timeout_seconds,
+            )
+            handler = self.on_control_timeout
+            if handler is not None:
+                handler(fence, reason)
+            return
 
     def _note_activity(self) -> None:
         if self.on_activity is not None:
@@ -270,15 +338,6 @@ class JobWorkerLoop:
             raise RuntimeError("scheduling policy provider must return an object")
         return value
 
-    def _run_interactive_burst(self) -> None:
-        policy = self._policy()
-        if policy is None or self.safe_point is None:
-            return
-        limit = int(policy["interactiveBurst"])
-        for _index in range(limit):
-            if not self.safe_point():
-                break
-
     def _slice_boundary(
         self,
         fence: AttemptFence,
@@ -287,19 +346,19 @@ class JobWorkerLoop:
     ) -> tuple[bool, int]:
         """Serve bounded interactive work and decide whether to yield."""
 
-        self._run_interactive_burst()
-        status = self.repository.control_status(fence)
-        if status in {"pausing", "cancelling"}:
-            self.repository.finalize_control(fence)
-            return True, terminal_count
+        self.repository.assert_attempt_active(fence)
         if self.admission_check is not None and not self.admission_check():
             self.repository.yield_attempt(fence, reason="memory_pressure")
             return True, terminal_count
         policy = self._policy()
+        if policy is not None and self.safe_point is not None:
+            for _index in range(int(policy["interactiveBurst"])):
+                if not self.safe_point():
+                    break
         if (
             policy is not None
             and policy["queueDiscipline"] == "owner_round_robin"
-            and self.repository.has_queued_competitor(
+            and self.repository.has_ready_queued_competitor(
                 owner_user_id=fence.owner_user_id
             )
         ):
@@ -353,22 +412,7 @@ class JobWorkerLoop:
 
         try:
             while not stop_event.is_set():
-                status = self.repository.control_status(fence)
-                if status in {"pausing", "cancelling"}:
-                    self.repository.finalize_control(fence)
-                    log_task_finished(
-                        job_id=fence.job_id,
-                        kind=fence.kind,
-                        duration=_task_duration(fence),
-                        status="paused" if status == "pausing" else "cancelled",
-                    )
-                    return
-                if (
-                    self.scheduling_policy is None
-                    and self.safe_point is not None
-                    and self.safe_point()
-                ):
-                    continue
+                self.repository.assert_attempt_active(fence)
                 handled_batch = False
                 config = self.repository.attempt_config(fence)
                 ordinal_limit = (
@@ -524,14 +568,6 @@ class JobWorkerLoop:
                             message=str(exc),
                         )
                     else:
-                        if checkpoint.get("__control_drained__"):
-                            log_step_finished(
-                                duration=time.monotonic() - step_started_at,
-                                status=_control_log_status(
-                                    self.repository.control_status(fence)
-                                ),
-                            )
-                            continue
                         log_step_finished(
                             duration=time.monotonic() - step_started_at,
                             status=_checkpoint_log_status(checkpoint),
@@ -545,8 +581,9 @@ class JobWorkerLoop:
                         self._after_completed_step(fence, step)
                 if finish_slice_if_needed():
                     return
+
         except AttemptFenced:
-            return
+            raise
 
     def _run_parallel_attempt(
         self,
@@ -581,7 +618,7 @@ class JobWorkerLoop:
         has_deep_learning_pool = bool(
             set(pool_kinds).intersection(DEEP_LEARNING_STEP_KINDS)
         )
-        has_terminal_page_step = bool(
+        has_local_pipeline_window = bool(
             {"save", "publish_clean"}.intersection(pool_kinds)
         )
         policy = self._policy()
@@ -592,7 +629,7 @@ class JobWorkerLoop:
                 if policy is not None
                 else PARALLEL_PIPELINE_LEAD_WINDOW
             )
-            if has_terminal_page_step
+            if policy is not None or has_local_pipeline_window
             else None
         )
         attempt_released = False
@@ -622,9 +659,9 @@ class JobWorkerLoop:
             current_deep_learning_limit(),
             (
                 int(policy["pageQuantum"])
-                if policy is not None and has_terminal_page_step
+                if policy is not None
                 else PARALLEL_PIPELINE_LEAD_WINDOW
-                if has_terminal_page_step
+                if has_local_pipeline_window
                 else "disabled"
             ),
         )
@@ -690,6 +727,8 @@ class JobWorkerLoop:
             nonlocal active_model_calls
             waiting_recorded = False
             while True:
+                if admission_closed.is_set():
+                    raise AttemptFenced("parallel attempt admission closed")
                 with model_gate:
                     if active_model_calls < current_deep_learning_limit():
                         active_model_calls += 1
@@ -764,15 +803,6 @@ class JobWorkerLoop:
                     )
                     return
 
-                if checkpoint.get("__control_drained__"):
-                    log_step_finished(
-                        duration=time.monotonic() - step_started_at,
-                        status=_control_log_status(
-                            self.repository.control_status(fence)
-                        ),
-                    )
-                    admission_closed.set()
-                    return
                 log_step_finished(
                     duration=time.monotonic() - step_started_at,
                     status=_checkpoint_log_status(checkpoint),
@@ -866,30 +896,44 @@ class JobWorkerLoop:
                 pool_kind,
                 exc_info=exc,
             )
+            if worker_errors:
+                return
             worker_errors.append(exc)
             admission_closed.set()
+            try:
+                self.repository.fail_job(
+                    fence,
+                    code="PIPELINE_POOL_FAILED",
+                    message=str(exc),
+                )
+            except AttemptFenced:
+                pass
+            except Exception:
+                LOGGER.exception(
+                    "并行流水线失败状态持久化失败：job=%s",
+                    _short(fence.job_id),
+                )
 
         # cuDNN keeps host-side execution plans per calling thread.  A dedicated
         # pool preserves the configured concurrency without migrating model calls
         # across every pipeline thread during long jobs.
-        with (
-            ThreadPoolExecutor(
-                max_workers=(
-                    deep_learning_concurrency
-                    if self.scheduling_policy is None
-                    else min(
-                        MAX_DEEP_LEARNING_THREADS,
-                        deep_learning_concurrency,
-                    )
-                ),
-                thread_name_prefix="job-model",
-            ) as deep_learning_executor,
-            ThreadPoolExecutor(
-                max_workers=len(pool_kinds),
-                thread_name_prefix="job-pipeline",
-            ) as executor,
-        ):
-            active_futures: dict[Future[None], str] = {}
+        deep_learning_executor = ThreadPoolExecutor(
+            max_workers=(
+                deep_learning_concurrency
+                if self.scheduling_policy is None
+                else min(
+                    MAX_DEEP_LEARNING_THREADS,
+                    deep_learning_concurrency,
+                )
+            ),
+            thread_name_prefix="job-model",
+        )
+        executor = ThreadPoolExecutor(
+            max_workers=len(pool_kinds),
+            thread_name_prefix="job-pipeline",
+        )
+        active_futures: dict[Future[None], str] = {}
+        try:
             while not stop_event.is_set():
                 finished = [
                     future for future in active_futures if future.done()
@@ -906,10 +950,7 @@ class JobWorkerLoop:
                     break
 
                 try:
-                    status = self.repository.control_status(fence)
-                    if status in {"pausing", "cancelling"}:
-                        admission_closed.set()
-                        break
+                    self.repository.assert_attempt_active(fence)
                     if not active_futures:
                         pending, running = self.repository.active_step_counts(
                             fence
@@ -942,14 +983,6 @@ class JobWorkerLoop:
                         slice_target = (
                             terminal_count + PARALLEL_PIPELINE_LEAD_WINDOW
                         )
-
-                if (
-                    self.scheduling_policy is None
-                    and not active_futures
-                    and self.safe_point is not None
-                ):
-                    if self.safe_point():
-                        continue
 
                 try:
                     should_admit = (
@@ -1081,14 +1114,39 @@ class JobWorkerLoop:
                     continue
                 stop_event.wait(pipeline_wait_seconds)
 
+        finally:
             admission_closed.set()
-            for future, pool_kind in tuple(active_futures.items()):
+            with model_gate:
+                model_gate.notify_all()
+            for future in active_futures:
+                future.cancel()
+            completed: set[Future[None]] = set()
+            unfinished: set[Future[None]] = set()
+            if active_futures:
+                completed, unfinished = wait(
+                    tuple(active_futures),
+                    timeout=self.control_timeout_seconds,
+                )
+            for future in completed:
+                pool_kind = active_futures[future]
                 try:
                     future.result()
                 except AttemptFenced:
                     pass
                 except Exception as exc:
                     record_worker_error(pool_kind, exc)
+            executor.shutdown(wait=False, cancel_futures=True)
+            deep_learning_executor.shutdown(wait=False, cancel_futures=True)
+            if unfinished:
+                LOGGER.critical(
+                    "并行流水线线程未在回收宽限期内退出：job=%s count=%s",
+                    _short(fence.job_id),
+                    len(unfinished),
+                )
+                stop_event.set()
+                handler = self.on_control_timeout
+                if handler is not None:
+                    handler(fence, "pipeline_abort_timeout")
 
         if stop_event.is_set():
             return
@@ -1100,11 +1158,14 @@ class JobWorkerLoop:
                 _short(fence.job_id),
                 worker_errors[0],
             )
-            self.repository.fail_job(
-                fence,
-                code="PIPELINE_POOL_FAILED",
-                message=str(worker_errors[0]),
-            )
+            try:
+                self.repository.fail_job(
+                    fence,
+                    code="PIPELINE_POOL_FAILED",
+                    message=str(worker_errors[0]),
+                )
+            except AttemptFenced:
+                pass
             log_task_failed(
                 job_id=fence.job_id,
                 kind=fence.kind,
@@ -1112,16 +1173,7 @@ class JobWorkerLoop:
                 error=worker_errors[0],
             )
             return
-        status = self.repository.control_status(fence)
-        if status in {"pausing", "cancelling"}:
-            self.repository.finalize_control(fence)
-            log_task_finished(
-                job_id=fence.job_id,
-                kind=fence.kind,
-                duration=_task_duration(fence),
-                status="paused" if status == "pausing" else "cancelled",
-            )
-            return
+        self.repository.assert_attempt_active(fence)
         final_status = self._finish_job(fence)
         log_task_finished(
             job_id=fence.job_id,

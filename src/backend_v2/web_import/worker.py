@@ -130,22 +130,7 @@ class WebImportWorkerService:
         except AttemptFenced:
             raise
         except WebImportAgentControlRequested:
-            step_id = step.get("stepId")
-            if not isinstance(step_id, str) or not step_id:
-                raise ValueError("web import step id is invalid")
-            status = self.jobs.checkpoint_step(
-                fence,
-                step_id=step_id,
-                checkpoint={},
-            )
-            if status not in {"pausing", "cancelling"}:
-                raise RuntimeError(
-                    "web import control checkpoint lost its control state"
-                )
-            return {
-                "__already_published__": True,
-                "__control_drained__": True,
-            }
+            raise AttemptFenced("web import agent execution rights were revoked")
         except Exception as exc:
             if is_memory_allocation_error(exc):
                 raise
@@ -262,8 +247,6 @@ class WebImportWorkerService:
                         "job_id": fence.job_id,
                         "ordinal": next_ordinal,
                         "status": "pending",
-                        "created_at": now,
-                        "updated_at": now,
                     }
                 )
                 step_rows.append(
@@ -273,8 +256,6 @@ class WebImportWorkerService:
                         "ordinal": 1,
                         "kind": step_kind,
                         "status": "pending",
-                        "created_at": now,
-                        "updated_at": now,
                     }
                 )
             connection.execute(insert(job_items), item_rows)
@@ -420,7 +401,6 @@ class WebImportWorkerService:
             fence,
             step_id=str(step["stepId"]),
             checkpoint=checkpoint,
-            input_fingerprint=checksum,
             publisher=publish,
         )
         log_result(
@@ -620,7 +600,7 @@ class WebImportWorkerService:
             connection.execute(
                 update(job_items)
                 .where(job_items.c.id == step["itemId"])
-                .values(page_id=page_id, updated_at=now)
+                .values(page_id=page_id)
             )
             connection.execute(
                 update(chapters)
@@ -654,7 +634,6 @@ class WebImportWorkerService:
             fence,
             step_id=str(step["stepId"]),
             checkpoint=checkpoint,
-            input_fingerprint=str(entry["checksum"]),
             publisher=publish,
         )
         log_result(
@@ -733,7 +712,7 @@ class WebImportWorkerService:
                     jobs.c.id == fence.job_id,
                     jobs.c.attempt_id == fence.attempt_id,
                     jobs.c.worker_epoch_id == fence.worker_epoch_id,
-                    jobs.c.status.in_(("running", "pausing", "cancelling")),
+                    jobs.c.status == "running",
                 )
                 .values(config_json=_json(frozen), updated_at=now)
             )
@@ -857,10 +836,10 @@ class WebImportWorkerService:
             nonlocal last_control_check, control_requested
             now = time.monotonic()
             if not control_requested and now - last_control_check >= 0.25:
-                control_requested = self.jobs.control_status(fence) in {
-                    "pausing",
-                    "cancelling",
-                }
+                try:
+                    self.jobs.assert_attempt_active(fence)
+                except AttemptFenced:
+                    control_requested = True
                 last_control_check = now
             return control_requested
 
@@ -1195,7 +1174,7 @@ class WebImportWorkerService:
                 jobs.c.id == fence.job_id,
                 jobs.c.attempt_id == fence.attempt_id,
                 jobs.c.worker_epoch_id == fence.worker_epoch_id,
-                jobs.c.status.in_(("running", "pausing", "cancelling")),
+                jobs.c.status == "running",
             )
         ).scalar_one_or_none() is not None
 

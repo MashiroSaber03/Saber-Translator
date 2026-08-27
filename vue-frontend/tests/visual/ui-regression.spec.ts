@@ -712,7 +712,44 @@ async function mockApi(route: Route, options: VisualFixtureOptions = {}) {
   }
 
   if (path === '/api/v2/jobs') {
-    await fulfillJson({ items: [], queueRevision: 1 })
+    await fulfillJson({ items: [], queuePaused: false, eventCursor: 0, workerOnline: true, executorBusy: false, waitingReason: null })
+    return
+  }
+
+  if (path === '/api/v2/system/capabilities') {
+    await fulfillJson({
+      profile: 'local',
+      requiresAuth: false,
+      browserCredentials: false,
+      registrationRequiresInvite: false,
+      publicUserPolicy: {
+        features: {
+          translation: true,
+          insight: true,
+          characterStudio: true,
+          editMode: true,
+        },
+        models: {
+          detector_default: true,
+          detector_ctd: true,
+          detector_yolo: true,
+          aux_ysg_yolo: true,
+          saber_yolo: true,
+          manga_ocr: true,
+          ocr_48px: true,
+          paddle_ocr: true,
+          paddleocr_vl: true,
+          lama_mpe: true,
+          litelama: true,
+        },
+        settings: {
+          lamaDisableResize: { editable: true, value: false },
+          parallel: { allowed: true },
+        },
+      },
+      scheduling: { maxDeepLearningConcurrency: null },
+      features: { plugins: true, webImport: true, localProviders: true },
+    } satisfies V2Schema<'RuntimeCapabilities'>)
     return
   }
 
@@ -2029,11 +2066,19 @@ test('drawing a bubble persists integer image coordinates', async ({ page }) => 
   await expect(page.getByTestId('translation-result-display')).toBeVisible()
   await page.getByRole('button', { name: '切换编辑模式' }).click()
   await expect(page.locator('.edit-workspace')).toBeVisible()
-  await page.getByRole('button', { name: '添加' }).click()
+  const addButton = page.getByRole('button', { name: '添加' })
+  await expect(addButton).toBeEnabled()
+  await addButton.click()
+  await expect(addButton).toHaveAttribute('aria-pressed', 'true')
 
   const wrapper = page
     .locator('.edit-image-comparison__image-panel--translated .edit-image-comparison__canvas-wrapper')
-  const bounds = await wrapper.boundingBox()
+  const translatedImage = wrapper.locator('img')
+  await expect(translatedImage).toBeVisible()
+  await expect.poll(() => translatedImage.evaluate(image => (
+    image.complete && image.naturalWidth > 0 && image.naturalHeight > 0
+  ))).toBe(true)
+  const bounds = await translatedImage.boundingBox()
   expect(bounds).not.toBeNull()
   const patchRequest = page.waitForRequest(request => (
     request.method() === 'PATCH'

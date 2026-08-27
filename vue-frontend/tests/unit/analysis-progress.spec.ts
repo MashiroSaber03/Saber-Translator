@@ -10,29 +10,37 @@ import UiSelect from '@/components/ui/UiSelect.vue'
 
 const {
   startAnalysisMock,
-  pauseAnalysisMock,
-  resumeAnalysisMock,
-  cancelAnalysisMock,
-  continueAnalysisMock,
+  trackJobMock,
+  pauseJobMock,
+  resumeJobMock,
+  cancelJobMock,
+  continueJobMock,
   exportAnalysisMock,
   confirmProductActionMock,
 } = vi.hoisted(() => ({
   startAnalysisMock: vi.fn(),
-  pauseAnalysisMock: vi.fn(),
-  resumeAnalysisMock: vi.fn(),
-  cancelAnalysisMock: vi.fn(),
-  continueAnalysisMock: vi.fn(),
+  trackJobMock: vi.fn(),
+  pauseJobMock: vi.fn(),
+  resumeJobMock: vi.fn(),
+  cancelJobMock: vi.fn(),
+  continueJobMock: vi.fn(),
   exportAnalysisMock: vi.fn(),
   confirmProductActionMock: vi.fn(),
 }))
 
 vi.mock('@/api/insight', () => ({
   startAnalysis: startAnalysisMock,
-  pauseAnalysis: pauseAnalysisMock,
-  resumeAnalysis: resumeAnalysisMock,
-  continueAnalysis: continueAnalysisMock,
-  cancelAnalysis: cancelAnalysisMock,
   exportAnalysis: exportAnalysisMock,
+}))
+
+vi.mock('@/stores/taskCenterStore', () => ({
+  useTaskCenterStore: () => ({
+    trackJob: trackJobMock,
+    pause: pauseJobMock,
+    resume: resumeJobMock,
+    continueJob: continueJobMock,
+    cancel: cancelJobMock,
+  }),
 }))
 
 vi.mock('@/composables/useProductConfirm', () => ({
@@ -63,20 +71,21 @@ describe('AnalysisProgress', () => {
     store.updateProgress(0, 0)
 
     startAnalysisMock.mockReset()
-    pauseAnalysisMock.mockReset()
-    resumeAnalysisMock.mockReset()
-    cancelAnalysisMock.mockReset()
-    continueAnalysisMock.mockReset()
+    trackJobMock.mockReset()
+    pauseJobMock.mockReset()
+    resumeJobMock.mockReset()
+    cancelJobMock.mockReset()
+    continueJobMock.mockReset()
     exportAnalysisMock.mockReset()
     confirmProductActionMock.mockReset()
     startAnalysisMock.mockRejectedValue({
       status: 409,
       message: '书籍 book-1 已有运行中的任务',
     })
-    pauseAnalysisMock.mockResolvedValue(undefined)
-    resumeAnalysisMock.mockResolvedValue(undefined)
-    cancelAnalysisMock.mockResolvedValue(undefined)
-    continueAnalysisMock.mockResolvedValue(undefined)
+    pauseJobMock.mockResolvedValue(undefined)
+    resumeJobMock.mockResolvedValue(undefined)
+    cancelJobMock.mockResolvedValue(undefined)
+    continueJobMock.mockResolvedValue(undefined)
     exportAnalysisMock.mockResolvedValue(undefined)
     confirmProductActionMock.mockResolvedValue(true)
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
@@ -269,7 +278,7 @@ describe('AnalysisProgress', () => {
     expect(startAnalysisMock).toHaveBeenCalled()
   })
 
-  it('clears the previous job progress when a new analysis is accepted', async () => {
+  it('tracks a new analysis without writing an optimistic task state', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const store = useInsightStore()
@@ -288,14 +297,14 @@ describe('AnalysisProgress', () => {
     await wrapper.get('button[aria-label="重新分析"]').trigger('click')
     await flushPromises()
 
-    expect(store.currentTaskId).toBe('task-retry')
-    expect(store.analysisStatus).toBe('queued')
-    expect(store.progress.current).toBe(0)
-    expect(store.progress.total).toBe(0)
-    expect(wrapper.text()).not.toContain('20/20')
+    expect(trackJobMock).toHaveBeenCalledWith('task-retry')
+    expect(store.currentTaskId).toBeNull()
+    expect(store.analysisStatus).toBe('completed')
+    expect(store.progress.current).toBe(20)
+    expect(store.progress.total).toBe(20)
   })
 
-  it('uses product confirmation before cancelling analysis', async () => {
+  it('uses product confirmation before analysis cancellation', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const store = useInsightStore()
@@ -321,10 +330,10 @@ describe('AnalysisProgress', () => {
       tone: 'danger',
     })
     expect(confirmSpy).not.toHaveBeenCalled()
-    expect(cancelAnalysisMock).toHaveBeenCalledWith('task-1')
-    expect(store.analysisStatus).toBe('cancelling')
+    expect(cancelJobMock).toHaveBeenCalledWith('task-1')
+    expect(store.analysisStatus).toBe('running')
     expect(store.currentTaskId).toBe('task-1')
-    expect(wrapper.text()).toContain('取消中')
+    expect(wrapper.text()).toContain('分析中')
   })
 
   it('uses the distinct continue command for an interrupted job', async () => {
@@ -342,8 +351,8 @@ describe('AnalysisProgress', () => {
     await wrapper.get('button[aria-label="继续中断任务"]').trigger('click')
     await flushPromises()
 
-    expect(continueAnalysisMock).toHaveBeenCalledWith('task-interrupted')
-    expect(store.analysisStatus).toBe('queued')
+    expect(continueJobMock).toHaveBeenCalledWith('task-interrupted')
+    expect(store.analysisStatus).toBe('interrupted')
   })
 
   it('does not submit the same control command twice while it is pending', async () => {
@@ -354,7 +363,7 @@ describe('AnalysisProgress', () => {
     store.setCurrentTaskId('task-1')
     store.setAnalysisStatus('running')
     const pauseRequest = createDeferred<void>()
-    pauseAnalysisMock.mockReturnValueOnce(pauseRequest.promise)
+    pauseJobMock.mockReturnValueOnce(pauseRequest.promise)
 
     const wrapper = mount(AnalysisProgress, {
       global: { plugins: [pinia] },
@@ -363,12 +372,12 @@ describe('AnalysisProgress', () => {
     await pauseButton.trigger('click')
     await pauseButton.trigger('click')
 
-    expect(pauseAnalysisMock).toHaveBeenCalledTimes(1)
+    expect(pauseJobMock).toHaveBeenCalledTimes(1)
     expect(pauseButton.attributes('disabled')).toBeDefined()
 
     pauseRequest.resolve()
     await flushPromises()
-    expect(store.analysisStatus).toBe('pausing')
+    expect(store.analysisStatus).toBe('running')
   })
 
   it('does not write an accepted old-book job into the newly selected book', async () => {

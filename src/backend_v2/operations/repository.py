@@ -27,8 +27,10 @@ from src.backend_v2.redaction import (
 from src.backend_v2.storage.database import immediate_transaction
 from src.backend_v2.plugins.snapshots import enabled_plugin_snapshots
 from src.backend_v2.storage.schema import (
+    books,
     bubbles,
     chapter_write_locks,
+    chapters,
     credential_versions,
     idempotency_records,
     operation_asset_inputs,
@@ -191,8 +193,12 @@ class OperationRepository:
             if replay is not None:
                 return replay, True
             page = connection.execute(
-                select(pages.c.chapter_id, pages.c.document_revision).where(
-                    pages.c.id == page_id
+                select(pages.c.chapter_id, pages.c.document_revision)
+                .join(chapters, chapters.c.id == pages.c.chapter_id)
+                .join(books, books.c.id == chapters.c.book_id)
+                .where(
+                    pages.c.id == page_id,
+                    books.c.owner_user_id == effective_owner_id(),
                 )
             ).mappings().one_or_none()
             if page is None:
@@ -343,8 +349,12 @@ class OperationRepository:
             if replay is not None:
                 return replay, True
             page = connection.execute(
-                select(pages.c.chapter_id, pages.c.document_revision).where(
-                    pages.c.id == page_id
+                select(pages.c.chapter_id, pages.c.document_revision)
+                .join(chapters, chapters.c.id == pages.c.chapter_id)
+                .join(books, books.c.id == chapters.c.book_id)
+                .where(
+                    pages.c.id == page_id,
+                    books.c.owner_user_id == effective_owner_id(),
                 )
             ).mappings().one_or_none()
             if page is None:
@@ -523,7 +533,10 @@ class OperationRepository:
     def get(self, operation_id: str) -> dict[str, object]:
         with self.engine.connect() as connection:
             row = connection.execute(
-                select(operations).where(operations.c.id == operation_id)
+                select(operations).where(
+                    operations.c.id == operation_id,
+                    operations.c.owner_user_id == effective_owner_id(),
+                )
             ).mappings().one_or_none()
         if row is None:
             raise OperationNotFound("operation not found")
@@ -548,7 +561,8 @@ class OperationRepository:
         with self.engine.connect() as connection:
             if connection.execute(
                 select(operations.c.id).where(
-                    operations.c.id == operation_id
+                    operations.c.id == operation_id,
+                    operations.c.owner_user_id == effective_owner_id(),
                 )
             ).scalar_one_or_none() is None:
                 raise OperationNotFound("operation not found")
@@ -858,6 +872,26 @@ class OperationRepository:
                     )
                     .values(render_status="repair_failed", updated_at=now)
                 )
+                connection.execute(
+                    update(render_requests)
+                    .where(
+                        render_requests.c.page_id == row["page_id"],
+                        render_requests.c.status.in_(("pending", "running")),
+                    )
+                    .values(
+                        status="failed",
+                        rendering_revision=None,
+                        executor_epoch_id=None,
+                        attempt_id=None,
+                        error_json=_json(
+                            {
+                                "code": "PAGE_REPAIR_FAILED",
+                                "message": "Page repair failed before rendering",
+                            }
+                        ),
+                        updated_at=now,
+                    )
+                )
             changed = connection.execute(
                 update(operations)
                 .where(
@@ -1116,8 +1150,12 @@ class RenderRequestRepository:
         ):
             raise ValueError("requested_revision must be a positive integer")
         page = connection.execute(
-            select(pages.c.chapter_id, pages.c.document_revision).where(
-                pages.c.id == page_id
+            select(pages.c.chapter_id, pages.c.document_revision)
+            .join(chapters, chapters.c.id == pages.c.chapter_id)
+            .join(books, books.c.id == chapters.c.book_id)
+            .where(
+                pages.c.id == page_id,
+                books.c.owner_user_id == effective_owner_id(),
             )
         ).mappings().one_or_none()
         if page is None:

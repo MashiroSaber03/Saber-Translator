@@ -59,7 +59,10 @@ from src.backend_v2.insight.repository import (
 )
 from src.backend_v2.insight.routes import create_insight_blueprint
 from src.backend_v2.insight.worker import InsightAnalysisWorkerService
-from src.backend_v2.jobs.repository import JobQueueRepository
+from src.backend_v2.jobs.repository import (
+    AttemptFenced,
+    JobQueueRepository,
+)
 from src.backend_v2.jobs.retry import JobRetryService
 from src.backend_v2.runtime_profile import resolve_runtime_profile
 from src.backend_v2.settings.resolver import SettingsResolver
@@ -211,7 +214,6 @@ class FakeVectorStore:
         return {
             "pageCount": int(kwargs["expected_page_count"]),
             "eventCount": int(kwargs["expected_event_count"]),
-            "completed": True,
         }
 
 
@@ -222,10 +224,12 @@ class CheckpointingFakeVectorStore:
         queue: JobQueueRepository,
         job_id: str,
         control: str | None = None,
+        control_after_batches: bool = False,
     ) -> None:
         self.queue = queue
         self.job_id = job_id
         self.control = control
+        self.control_after_batches = control_after_batches
         self.calls: list[dict[str, object]] = []
 
     def publish_batches(self, **kwargs) -> dict[str, object]:
@@ -251,20 +255,20 @@ class CheckpointingFakeVectorStore:
                 else:
                     event_count += len(records)
                     count = event_count
-                if self.control and not control_sent:
+                if self.control and not self.control_after_batches and not control_sent:
                     control_sent = True
                     if self.control == "pause":
                         self.queue.request_pause(self.job_id)
                     else:
                         self.queue.request_cancel(self.job_id)
-                if not callback(kind, count):
-                    return {
-                        "completed": False,
-                        "pageCount": page_count,
-                        "eventCount": event_count,
-                    }
+                callback(kind, count)
+        if self.control and self.control_after_batches:
+            if self.control == "pause":
+                self.queue.request_pause(self.job_id)
+            else:
+                self.queue.request_cancel(self.job_id)
+            callback("events", event_count)
         return {
-            "completed": True,
             "pageCount": page_count,
             "eventCount": event_count,
         }
@@ -1333,7 +1337,6 @@ def test_page_state_remains_running_until_the_run_is_published(
     )
     assert listed["items"][0]["analysisState"] == "running"
     assert queue.request_cancel(str(accepted["jobIds"][0]))["status"] in {
-        "cancelling",
         "cancelled",
     }
 
@@ -2026,7 +2029,7 @@ def test_derived_commands_reject_noncanonical_templates(
         )
 
 
-def test_vector_cancel_keeps_partial_generation_without_switching_active(
+def test_vector_cancel_fences_partial_generation_publication(
     insight_platform,
 ) -> None:
     platform = insight_platform
@@ -2061,15 +2064,11 @@ def test_vector_cancel_keeps_partial_generation_without_switching_active(
         ),
     )
 
-    result = service.handle(fence, step)
+    with pytest.raises(AttemptFenced):
+        service.handle(fence, step)
 
-    assert result["__control_drained__"]
-    assert queue.finalize_control(fence) == "cancelled"
     detail = queue.get_job(job_id)
-    checkpoint = detail["items"][0]["steps"][0]["checkpoint"]
-    assert checkpoint["pageCount"] == 2
-    assert checkpoint["eventCount"] == 0
-    assert 0 < checkpoint["coverage"] < 1
+    assert detail["status"] == "cancelled"
     with platform["engine"].connect() as connection:
         generations = list(
             connection.execute(
@@ -2078,11 +2077,8 @@ def test_vector_cancel_keeps_partial_generation_without_switching_active(
                 .order_by(vector_generations.c.generation)
             ).mappings()
         )
-    assert len(generations) == 2
+    assert len(generations) == 1
     assert generations[0]["is_active"]
-    assert not generations[1]["is_active"]
-    assert generations[1]["status"] == "building"
-    assert generations[1]["page_count"] == 2
 
 
 def test_vector_pause_resumes_from_checkpoint_and_switches_only_on_completion(
@@ -2108,20 +2104,22 @@ def test_vector_pause_resumes_from_checkpoint_and_switches_only_on_completion(
     assert fence is not None
     step = queue.next_step(fence)
     assert step is not None
-    pausing_store = CheckpointingFakeVectorStore(
+    paused_store = CheckpointingFakeVectorStore(
         queue=queue,
         job_id=job_id,
         control="pause",
+        control_after_batches=True,
     )
     service = InsightDerivedWorkerService(
         data_root=platform["data_root"],
         engine=platform["engine"],
         jobs=queue,
         algorithms=FakeDerivedAlgorithms(),
-        vector_store=pausing_store,
+        vector_store=paused_store,
     )
-    assert service.handle(fence, step)["__control_drained__"]
-    assert queue.finalize_control(fence) == "paused"
+    with pytest.raises(AttemptFenced):
+        service.handle(fence, step)
+    assert queue.get_job(job_id)["status"] == "paused"
 
     queue.resume(job_id)
     resumed_fence = queue.claim_next(worker_epoch_id=platform["epoch_id"])
@@ -2131,6 +2129,7 @@ def test_vector_pause_resumes_from_checkpoint_and_switches_only_on_completion(
     resumed_step = queue.next_step(resumed_fence)
     assert resumed_step is not None
     assert resumed_step["checkpoint"]["pageCount"] == 2
+    assert resumed_step["checkpoint"]["eventCount"] == 2
     resumed_store = CheckpointingFakeVectorStore(
         queue=queue,
         job_id=job_id,
@@ -2143,15 +2142,14 @@ def test_vector_pause_resumes_from_checkpoint_and_switches_only_on_completion(
         vector_store=resumed_store,
     )
 
-    completed = resumed_service.handle(resumed_fence, resumed_step)
+    resumed_service.handle(resumed_fence, resumed_step)
 
-    assert "__control_drained__" not in completed
     assert queue.finish_if_complete(resumed_fence) == "completed"
     assert resumed_store.calls == [
         {
             "resume": True,
             "initialPageCount": 2,
-            "initialEventCount": 0,
+            "initialEventCount": 2,
         }
     ]
     with platform["engine"].connect() as connection:
@@ -2356,11 +2354,11 @@ def test_vector_worker_rejects_invalid_store_success_result(
 
     class InvalidVectorStore:
         def publish_batches(self, **kwargs):
-            assert kwargs["on_batch"](
+            kwargs["on_batch"](
                 "pages",
                 kwargs["expected_page_count"],
             )
-            assert kwargs["on_batch"](
+            kwargs["on_batch"](
                 "events",
                 kwargs["expected_event_count"],
             )

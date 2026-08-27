@@ -490,7 +490,6 @@ class WebImportCommandService:
             )
 
         result = self.jobs.create_batch(
-            kind="web_extract",
             display_name=f"网页提取 {chapter['book_title']} / {chapter['title']}",
             specs=[
                 JobSpec(
@@ -855,7 +854,6 @@ class WebImportCommandService:
 
         try:
             result = self.jobs.create_batch(
-                kind="web_import_commit",
                 display_name=(
                     f"网页入库 {chapter['book_title']} / {chapter['title']}"
                 ),

@@ -277,7 +277,6 @@ def test_durable_job_activity_rearms_idle_release_after_models_reload(
 
     jobs = JobQueueRepository(engine)
     created = jobs.create_batch(
-        kind="export",
         display_name="model activity integration",
         specs=[
             JobSpec(

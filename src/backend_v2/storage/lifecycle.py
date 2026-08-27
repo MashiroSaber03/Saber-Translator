@@ -17,7 +17,7 @@ from src.backend_v2.storage.schema import metadata, schema_metadata
 from src.backend_v2.storage.seeding import seed_system_records
 
 
-SCHEMA_REVISION = "backend_v2_profile_isolation_20260822"
+SCHEMA_REVISION = "backend_v2_simplified_task_system_20260827"
 REQUIRED_TABLES = frozenset(metadata.tables)
 
 

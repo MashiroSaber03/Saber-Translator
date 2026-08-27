@@ -68,14 +68,19 @@ LOG_CATEGORY_FILTERS = {
 STATUS_LABELS = {
     "queued": "排队中",
     "running": "运行中",
-    "pausing": "暂停中",
     "paused": "已暂停",
-    "cancelling": "取消中",
     "cancelled": "已取消",
     "completed": "已完成",
     "completed_with_errors": "部分完成",
     "failed": "失败",
     "interrupted": "已中断",
+}
+WAITING_REASON_LABELS = {
+    "queue_paused": "队列已暂停",
+    "worker_offline": "Worker 离线",
+    "low_memory": "等待可用内存",
+    "queue_blocked": "等待章节锁",
+    "executor_busy": "执行器正忙",
 }
 
 
@@ -259,7 +264,7 @@ class OverviewPage(QWidget):
         controls.setSpacing(8)
         self.start_button = QPushButton("启动后端")
         self.start_button.setObjectName("primaryButton")
-        self.stop_button = QPushButton("停止")
+        self.stop_button = QPushButton("停止后端")
         self.restart_button = QPushButton("重启")
         self.open_button = QPushButton("打开网页")
         self.start_button.clicked.connect(self.start_requested)
@@ -397,6 +402,7 @@ def _progress_summary(progress: object) -> tuple[int, str]:
 
 class TaskCenterPage(QWidget):
     command_requested = Signal(str, str)
+    queue_pause_requested = Signal(bool)
 
     ACTION_COLUMN_WIDTH = 164
 
@@ -409,13 +415,21 @@ class TaskCenterPage(QWidget):
         header = QHBoxLayout()
         header.addWidget(_label("集中查看并控制后台任务", "sectionTitle"))
         header.addStretch()
+        self._queue_paused = False
+        self.queue_button = QPushButton("暂停队列")
+        self.queue_button.setObjectName("compactButton")
+        self.queue_button.setEnabled(False)
+        self.queue_button.clicked.connect(self._toggle_queue_pause)
+        header.addWidget(self.queue_button)
+        self.scheduler_state = _label("调度状态未知", "statusPill")
+        header.addWidget(self.scheduler_state)
         self.connection = _label("离线", "statusPill")
         header.addWidget(self.connection)
         layout.addLayout(header)
         self.tabs = QTabWidget()
         self.tabs.setObjectName("taskTabs")
         self.tables = [self._create_table() for _ in range(3)]
-        for title, table in zip(("运行中", "排队中", "最近完成"), self.tables, strict=True):
+        for title, table in zip(("当前", "排队中", "最近完成"), self.tables, strict=True):
             self.tabs.addTab(table, title)
         layout.addWidget(self.tabs, 1)
 
@@ -449,19 +463,38 @@ class TaskCenterPage(QWidget):
 
     def set_connected(self, connected: bool) -> None:
         self.connection.setText("实时连接" if connected else "等待连接")
+        self.queue_button.setEnabled(connected)
+
+    def _toggle_queue_pause(self) -> None:
+        self.queue_pause_requested.emit(not self._queue_paused)
 
     def set_jobs(
         self,
         queue: Iterable[Mapping[str, object]],
         history: Iterable[Mapping[str, object]],
+        queue_paused: bool,
+        worker_online: bool,
+        executor_busy: bool,
+        waiting_reason: str | None,
     ) -> None:
+        self._queue_paused = queue_paused
+        self.queue_button.setText("恢复队列" if queue_paused else "暂停队列")
+        if waiting_reason is not None:
+            scheduler_label = WAITING_REASON_LABELS[waiting_reason]
+        elif not worker_online:
+            scheduler_label = "Worker 离线"
+        elif executor_busy:
+            scheduler_label = "执行器正忙"
+        else:
+            scheduler_label = "调度就绪"
+        self.scheduler_state.setText(scheduler_label)
         queue_list = list(queue)
         active = [job for job in queue_list if job.get("status") != "queued"]
         waiting = [job for job in queue_list if job.get("status") == "queued"]
         self._populate(self.tables[0], active)
         self._populate(self.tables[1], waiting)
         self._populate(self.tables[2], list(history))
-        self.tabs.setTabText(0, f"运行中 {len(active)}")
+        self.tabs.setTabText(0, f"当前 {len(active)}")
         self.tabs.setTabText(1, f"排队中 {len(waiting)}")
 
     def _populate(self, table: QTableWidget, jobs: list[Mapping[str, object]]) -> None:
@@ -501,7 +534,7 @@ class TaskCenterPage(QWidget):
             actions.append(("恢复", "resume"))
         elif status == "interrupted":
             actions.append(("继续", "continue"))
-        if status in {"queued", "running", "pausing", "paused", "interrupted"}:
+        if status in {"queued", "running", "paused", "interrupted"}:
             actions.append(("取消", "cancel"))
         layout.addStretch()
         for label, action in actions:
@@ -978,6 +1011,7 @@ class DesktopWindow(QMainWindow):
     quit_requested = Signal()
     settings_changed = Signal(object)
     job_command_requested = Signal(str, str)
+    queue_pause_requested = Signal(bool)
 
     def __init__(
         self,
@@ -1031,6 +1065,7 @@ class DesktopWindow(QMainWindow):
         self.overview.restart_requested.connect(self.restart_requested)
         self.overview.open_web_requested.connect(self.open_web_requested)
         self.tasks.command_requested.connect(self.job_command_requested)
+        self.tasks.queue_pause_requested.connect(self.queue_pause_requested)
         self.settings.settings_changed.connect(self.settings_changed)
 
     def _select_page(self, index: int, title: str) -> None:
@@ -1076,9 +1111,20 @@ class DesktopWindow(QMainWindow):
         self,
         queue: list[Mapping[str, object]],
         history: list[Mapping[str, object]],
+        queue_paused: bool,
+        worker_online: bool,
+        executor_busy: bool,
+        waiting_reason: str | None,
     ) -> None:
         self.overview.update_jobs(queue)
-        self.tasks.set_jobs(queue, history)
+        self.tasks.set_jobs(
+            queue,
+            history,
+            queue_paused,
+            worker_online,
+            executor_busy,
+            waiting_reason,
+        )
 
     def set_task_connected(self, connected: bool) -> None:
         self.overview.set_connected(connected)

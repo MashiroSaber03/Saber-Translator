@@ -141,12 +141,18 @@ function setRouteQuery(query: Record<string, unknown>): void {
 function insightJob(overrides: Partial<V2Job> = {}): V2Job {
   return {
     jobId: 'analysis-job-1',
+    batchId: null,
+    batchDisplayName: null,
     kind: 'insight_analysis',
     retryOfJobId: null,
     retryMode: null,
     status: 'running',
     queueRank: 1,
     bookId: 'book-1',
+    chapterId: null,
+    pageId: null,
+    blockedReason: null,
+    blockedByJobId: null,
     progress: {
       executionMode: 'sequential',
       jobStatus: 'running',
@@ -183,7 +189,9 @@ function insightJob(overrides: Partial<V2Job> = {}): V2Job {
       ],
     },
     target: {},
-    createdAt: null,
+    createdAt: '2026-08-23T04:00:00Z',
+    startedAt: null,
+    finishedAt: null,
     ...overrides,
   }
 }
@@ -259,6 +267,8 @@ describe('InsightView task event projection', () => {
     setActivePinia(pinia)
 
     const insightStore = useInsightStore()
+    const taskCenterStore = useTaskCenterStore()
+    setRouteQuery({ book: 'book-1' })
 
     shallowMount(InsightView, {
       global: {
@@ -268,8 +278,7 @@ describe('InsightView task event projection', () => {
     })
 
     await flushPromises()
-    insightStore.setCurrentBook('book-1')
-    const taskCenterStore = useTaskCenterStore()
+    getAnalysisStatusMock.mockClear()
     const refreshKeyBefore = insightStore.dataRefreshKey
     taskCenterStore.queue = [insightJob()]
     await nextTick()
@@ -279,13 +288,15 @@ describe('InsightView task event projection', () => {
     expect(insightStore.progress.current).toBe(4)
     expect(insightStore.progress.total).toBe(4)
 
-    taskCenterStore.latestEvent = {
-      eventId: 101,
-      jobId: 'analysis-job-1',
-      type: 'job_finished',
-      payload: { status: 'completed' },
-      createdAt: null,
-    }
+    taskCenterStore.queue = []
+    taskCenterStore.history = [insightJob({
+      status: 'completed',
+      progress: {
+        ...insightJob().progress,
+        jobStatus: 'completed',
+        completedItems: 4,
+      },
+    })]
     await flushPromises()
 
     expect(getAnalysisStatusMock).toHaveBeenCalledTimes(1)
@@ -301,12 +312,12 @@ describe('InsightView task event projection', () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const insightStore = useInsightStore()
-    insightStore.setCurrentBook('book-1')
+    const taskCenterStore = useTaskCenterStore()
+    setRouteQuery({ book: 'book-1' })
     const statusLoad = createDeferred<{
       analyzedPagesCount: number
       fullyAnalyzed: boolean
     }>()
-    getAnalysisStatusMock.mockReturnValueOnce(statusLoad.promise)
 
     shallowMount(InsightView, {
       global: {
@@ -316,22 +327,16 @@ describe('InsightView task event projection', () => {
     })
 
     await flushPromises()
-    insightStore.setCurrentBook('book-1')
-    const taskCenterStore = useTaskCenterStore()
+    getAnalysisStatusMock.mockReset().mockReturnValueOnce(statusLoad.promise)
     taskCenterStore.queue = [insightJob()]
     await nextTick()
     expect(insightStore.currentTaskId).toBe('analysis-job-1')
 
-    const refreshKeyBefore = insightStore.dataRefreshKey
-    taskCenterStore.latestEvent = {
-      eventId: 104,
-      jobId: 'analysis-job-1',
-      type: 'job_finished',
-      payload: { status: 'completed' },
-      createdAt: null,
-    }
+    taskCenterStore.queue = []
+    taskCenterStore.history = [insightJob({ status: 'completed' })]
     await nextTick()
     expect(getAnalysisStatusMock).toHaveBeenCalledWith('book-1')
+    const refreshKeyAfterTransition = insightStore.dataRefreshKey
 
     insightStore.setCurrentBook('book-2')
     statusLoad.resolve({ analyzedPagesCount: 10, fullyAnalyzed: true })
@@ -342,7 +347,7 @@ describe('InsightView task event projection', () => {
     expect(insightStore.analysisStatus).toBe('idle')
     expect(insightStore.analyzedPageCount).toBe(0)
     expect(insightStore.progress).toEqual({ current: 0, total: 0, status: 'idle' })
-    expect(insightStore.dataRefreshKey).toBe(refreshKeyBefore)
+    expect(insightStore.dataRefreshKey).toBe(refreshKeyAfterTransition)
   })
 
   it('keeps a recoverable interrupted job available for the distinct continue command', async () => {
@@ -370,11 +375,46 @@ describe('InsightView task event projection', () => {
     expect(insightStore.currentTaskId).toBe('analysis-job-1')
   })
 
+  it('projects a terminal durable snapshot even when its SSE event was missed', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const insightStore = useInsightStore()
+    const taskCenterStore = useTaskCenterStore()
+    setRouteQuery({ book: 'book-1' })
+    shallowMount(InsightView, {
+      global: {
+        plugins: [pinia],
+        stubs: insightViewStubs(),
+      },
+    })
+    await flushPromises()
+    taskCenterStore.queue = [insightJob()]
+    await nextTick()
+    const refreshKeyBefore = insightStore.dataRefreshKey
+
+    taskCenterStore.queue = []
+    taskCenterStore.history = [insightJob({
+      status: 'completed',
+      progress: {
+        ...insightJob().progress,
+        jobStatus: 'completed',
+        completedItems: 4,
+      },
+    })]
+    await nextTick()
+
+    expect(insightStore.analysisStatus).toBe('completed')
+    expect(insightStore.currentTaskId).toBeNull()
+    expect(insightStore.dataRefreshKey).toBe(refreshKeyBefore + 1)
+  })
+
   it('refreshes derived Insight facts when a backend rebuild finishes', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
 
     const insightStore = useInsightStore()
+    const taskCenterStore = useTaskCenterStore()
+    setRouteQuery({ book: 'book-1' })
 
     shallowMount(InsightView, {
       global: {
@@ -384,9 +424,8 @@ describe('InsightView task event projection', () => {
     })
 
     await flushPromises()
-    insightStore.setCurrentBook('book-1')
+    getAnalysisStatusMock.mockClear()
     insightStore.dataRefreshKey = 0
-    const taskCenterStore = useTaskCenterStore()
     const refreshKeyBefore = insightStore.dataRefreshKey
     taskCenterStore.queue = [insightJob({
       jobId: 'derived-job-1',
@@ -394,13 +433,12 @@ describe('InsightView task event projection', () => {
     })]
     await nextTick()
 
-    taskCenterStore.latestEvent = {
-      eventId: 103,
+    taskCenterStore.queue = []
+    taskCenterStore.history = [insightJob({
       jobId: 'derived-job-1',
-      type: 'job_finished',
-      payload: {},
-      createdAt: null,
-    }
+      kind: 'derived_rebuild',
+      status: 'completed',
+    })]
     await flushPromises()
 
     expect(getAnalysisStatusMock).not.toHaveBeenCalled()
@@ -412,6 +450,8 @@ describe('InsightView task event projection', () => {
     setActivePinia(pinia)
 
     const insightStore = useInsightStore()
+    const taskCenterStore = useTaskCenterStore()
+    setRouteQuery({ book: 'book-1' })
 
     const wrapper = shallowMount(InsightView, {
       global: {
@@ -421,23 +461,17 @@ describe('InsightView task event projection', () => {
     })
 
     await flushPromises()
-    insightStore.setCurrentBook('book-1')
+    getAnalysisStatusMock.mockClear()
     insightStore.setAnalysisStatus('idle')
     insightStore.dataRefreshKey = 0
-    const taskCenterStore = useTaskCenterStore()
     const refreshKeyBefore = insightStore.dataRefreshKey
     taskCenterStore.queue = [insightJob()]
     await nextTick()
     expect(insightStore.currentTaskId).toBe('analysis-job-1')
 
     wrapper.unmount()
-    taskCenterStore.latestEvent = {
-      eventId: 102,
-      jobId: 'analysis-job-1',
-      type: 'job_finished',
-      payload: {},
-      createdAt: null,
-    }
+    taskCenterStore.queue = []
+    taskCenterStore.history = [insightJob({ status: 'completed' })]
     await flushPromises()
 
     expect(getAnalysisStatusMock).not.toHaveBeenCalled()
@@ -484,7 +518,10 @@ describe('InsightView task event projection', () => {
 
     expect(viewSource).not.toContain('setInterval(')
     expect(viewSource).not.toContain('setTimeout(')
-    expect(viewSource).toContain('taskCenterStore.latestEvent')
+    expect(viewSource).not.toContain('taskCenterStore.subscribeEvents')
+    expect(viewSource).toContain('() => taskCenterStore.queue')
+    expect(viewSource).toContain('() => taskCenterStore.history')
+    expect(viewSource).not.toContain('taskCenterStore.latestEvent')
   })
 
   it('keeps page header action appearance on the product header primitive', () => {
@@ -768,9 +805,11 @@ describe('InsightView task event projection', () => {
     expect(wrapper.text()).toContain('选择要分析的书籍')
   })
 
-  it('reprocesses a terminal event after its durable job projection arrives', async () => {
+  it('refreshes once when a new terminal durable projection arrives', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
+    const taskCenterStore = useTaskCenterStore()
+    setRouteQuery({ book: 'book-1' })
     const wrapper = shallowMount(InsightView, {
       global: {
         plugins: [pinia],
@@ -780,19 +819,7 @@ describe('InsightView task event projection', () => {
     await flushPromises()
 
     const insightStore = useInsightStore()
-    const taskCenterStore = useTaskCenterStore()
-    insightStore.setCurrentBook('book-1')
     const refreshKeyBefore = insightStore.dataRefreshKey
-    taskCenterStore.latestEvent = {
-      eventId: 106,
-      jobId: 'derived-job-late',
-      type: 'job_finished',
-      payload: { status: 'completed' },
-      createdAt: null,
-    }
-    await nextTick()
-    expect(insightStore.dataRefreshKey).toBe(refreshKeyBefore)
-
     taskCenterStore.history = [insightJob({
       jobId: 'derived-job-late',
       kind: 'derived_rebuild',
@@ -800,6 +827,9 @@ describe('InsightView task event projection', () => {
     })]
     await nextTick()
 
+    expect(insightStore.dataRefreshKey).toBe(refreshKeyBefore + 1)
+    taskCenterStore.history = [...taskCenterStore.history]
+    await nextTick()
     expect(insightStore.dataRefreshKey).toBe(refreshKeyBefore + 1)
     wrapper.unmount()
   })

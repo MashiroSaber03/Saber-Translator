@@ -407,9 +407,7 @@ function handleQAStatusAction(): void {
 
 function dependencyTaskProgressLabel(job: V2Job, runningLabel: string): string {
   if (job.status === 'queued') return '等待执行'
-  if (job.status === 'pausing') return '暂停中'
   if (job.status === 'paused') return '已暂停'
-  if (job.status === 'cancelling') return '取消中'
   if (job.status === 'interrupted') return '已中断，请在任务中心继续或取消'
   const phase = job.progress.currentStep?.kind
     ? stepKindLabel(job.progress.currentStep.kind)

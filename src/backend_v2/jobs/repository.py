@@ -47,8 +47,6 @@ from src.backend_v2.redaction import (
 from src.backend_v2.plugins.snapshots import enabled_plugin_snapshots
 from src.backend_v2.storage.database import immediate_transaction, read_transaction
 from src.backend_v2.storage.schema import (
-    ACTIVE_OPERATION_STATUSES,
-    ACTIVE_RENDER_REQUEST_STATUSES,
     CURRENT_JOB_STATUSES,
     EXECUTING_JOB_STATUSES,
     JOB_KINDS,
@@ -73,6 +71,7 @@ from src.backend_v2.storage.schema import (
     job_plugin_snapshots,
     job_steps,
     jobs,
+    operation_events,
     operations,
     page_assets,
     pages,
@@ -470,27 +469,6 @@ def _job_step_payloads(
     return checkpoint, error
 
 
-def _batch_summary(value: object) -> dict[str, int]:
-    summary = _load_required_object(
-        value,
-        "job_batches.status_summary_json",
-    )
-    if "total" not in summary or not set(summary) <= {"total", *JOB_STATUSES}:
-        raise JobDataInvalid("job batch status summary fields are invalid")
-    counts = {
-        key: _nonnegative_integer(
-            raw_value,
-            f"job_batches.status_summary_json.{key}",
-        )
-        for key, raw_value in summary.items()
-    }
-    if counts["total"] != sum(
-        count for key, count in counts.items() if key != "total"
-    ):
-        raise JobDataInvalid("job batch status summary counts are inconsistent")
-    return counts
-
-
 def _validate_progress_graph(
     progress: Mapping[str, Any],
     item_rows: Sequence[Mapping[str, Any]],
@@ -674,6 +652,16 @@ class JobQueueRepository:
                     ),
                     "continuation project",
                 )
+            if spec.web_import_draft_id:
+                require(
+                    select(web_import_drafts.c.id)
+                    .join(books, books.c.id == web_import_drafts.c.book_id)
+                    .where(
+                        web_import_drafts.c.id == spec.web_import_draft_id,
+                        books.c.owner_user_id == owner_user_id,
+                    ),
+                    "web import draft",
+                )
             for item in spec.items:
                 if item.page_id:
                     require(
@@ -764,7 +752,6 @@ class JobQueueRepository:
     def create_batch(
         self,
         *,
-        kind: str,
         display_name: str,
         specs: Sequence[JobSpec],
         response_extra: Mapping[str, object] | None = None,
@@ -823,13 +810,8 @@ class JobQueueRepository:
                     insert(job_batches).values(
                         id=batch_id,
                         owner_user_id=effective_owner_id(),
-                        kind=kind,
                         display_name=normalized_name,
-                        status_summary_json=_json(
-                            {"total": len(specs), "queued": len(specs)}
-                        ),
                         created_at=now,
-                        updated_at=now,
                     )
                 )
                 if transaction_initializer is not None:
@@ -953,8 +935,6 @@ class JobQueueRepository:
                                 ordinal=item_ordinal,
                                 page_id=item_spec.page_id,
                                 status="pending",
-                                created_at=now,
-                                updated_at=now,
                             )
                         )
                         connection.execute(
@@ -966,8 +946,6 @@ class JobQueueRepository:
                                     "ordinal": step_ordinal,
                                     "kind": step_kind,
                                     "status": "pending",
-                                    "created_at": now,
-                                    "updated_at": now,
                                 }
                                 for step_ordinal, step_kind in enumerate(
                                     item_spec.step_kinds, start=1
@@ -1001,7 +979,6 @@ class JobQueueRepository:
                         payload={
                             "batchId": batch_id,
                             "queueRank": next_rank,
-                            "progress": initial_progress,
                         },
                         now=now,
                     )
@@ -1011,7 +988,6 @@ class JobQueueRepository:
                         batch_id,
                         tuple(created_ids),
                     )
-                self._bump_queue_revision(connection, now)
                 response = {
                     "batchId": batch_id,
                     "jobIds": created_ids,
@@ -1063,9 +1039,10 @@ class JobQueueRepository:
         kind: str | None = None,
         book_id: str | None = None,
         limit: int = 200,
+        low_memory: bool = False,
     ) -> dict[str, object]:
-        if scope not in {"queue", "history"}:
-            raise ValueError("scope must be queue or history")
+        if scope not in {"queue", "history", "all"}:
+            raise ValueError("scope must be queue, history, or all")
         if limit < 1 or limit > 200:
             raise ValueError("limit must be between 1 and 200")
         valid_statuses = set(QUEUE_JOB_STATUSES) | set(HISTORY_JOB_STATUSES)
@@ -1074,22 +1051,19 @@ class JobQueueRepository:
         if kind is not None and kind not in JOB_KINDS:
             raise ValueError("unsupported job type")
         filters = [jobs.c.owner_user_id == effective_owner_id()]
-        if scope == "queue":
-            scope_condition = jobs.c.status.in_(QUEUE_JOB_STATUSES)
-        else:
-            scope_condition = jobs.c.status.in_(HISTORY_JOB_STATUSES)
         if status is not None:
             filters.append(jobs.c.status == status)
         if kind is not None:
             filters.append(jobs.c.kind == kind)
         if book_id:
             filters.append(jobs.c.book_id == book_id)
-        order = (
-            (jobs.c.queue_rank.asc(), jobs.c.created_at.asc())
-            if scope == "queue"
-            else (jobs.c.finished_at.desc(), jobs.c.created_at.desc())
-        )
-        with self.engine.connect() as connection:
+
+        def statement_for(selected_scope: str):
+            scope_condition = (
+                jobs.c.status.in_(QUEUE_JOB_STATUSES)
+                if selected_scope == "queue"
+                else jobs.c.status.in_(HISTORY_JOB_STATUSES)
+            )
             statement = (
                 select(
                     jobs,
@@ -1101,13 +1075,14 @@ class JobQueueRepository:
                 .join(job_batches, job_batches.c.id == jobs.c.batch_id, isouter=True)
                 .where(scope_condition, *filters)
             )
-            if scope == "history":
+            if selected_scope == "history":
                 interrupted_jobs = jobs.alias("interrupted_jobs")
                 interrupted_batch_ids = select(
                     interrupted_jobs.c.batch_id
                 ).where(
                     interrupted_jobs.c.status == "interrupted",
                     interrupted_jobs.c.owner_user_id == effective_owner_id(),
+                    interrupted_jobs.c.batch_id.is_not(None),
                 )
                 limited_batch_ids = (
                     select(job_batches.c.id)
@@ -1115,6 +1090,7 @@ class JobQueueRepository:
                     .where(
                         jobs.c.status.in_(TERMINAL_JOB_STATUSES),
                         jobs.c.owner_user_id == effective_owner_id(),
+                        job_batches.c.id.not_in(interrupted_batch_ids),
                         *filters,
                     )
                     .group_by(job_batches.c.id, job_batches.c.created_at)
@@ -1133,19 +1109,25 @@ class JobQueueRepository:
                 ).order_by(
                     job_batches.c.created_at.desc(),
                     job_batches.c.id.desc(),
-                    *order,
+                    jobs.c.finished_at.desc(),
+                    jobs.c.created_at.desc(),
                 )
             else:
-                # Every nonterminal job must remain visible and manageable in
-                # the task center. The limit is a retained-history batch limit,
-                # not a truncation boundary for the live queue.
-                statement = statement.order_by(*order)
-            rows = connection.execute(statement).mappings()
-            revision = connection.execute(
-                select(queue_state.c.queue_revision).where(
-                    queue_state.c.singleton_id == 1
+                statement = statement.order_by(
+                    jobs.c.queue_rank.asc(),
+                    jobs.c.created_at.asc(),
                 )
-            ).scalar_one()
+            return statement
+
+        with read_transaction(self.engine) as connection:
+            selected_scopes = ("queue", "history") if scope == "all" else (scope,)
+            rows: list[Mapping[str, Any]] = []
+            for selected_scope in selected_scopes:
+                rows.extend(
+                    connection.execute(
+                        statement_for(selected_scope)
+                    ).mappings()
+                )
             event_cursor = int(
                 connection.execute(
                     select(func.coalesce(func.max(job_events.c.id), 0))
@@ -1153,23 +1135,14 @@ class JobQueueRepository:
                     .where(jobs.c.owner_user_id == effective_owner_id())
                 ).scalar_one()
             )
-            now = utcnow()
-            worker_online = bool(
-                connection.execute(
-                    select(
-                        exists().where(
-                            process_epochs.c.role == "worker",
-                            process_epochs.c.status == "active",
-                            process_epochs.c.lease_expires_at > now,
-                        )
-                    )
-                ).scalar()
+            runtime = self._queue_runtime(
+                connection,
+                low_memory=low_memory,
             )
             return {
                 "items": [self._job_dto(row) for row in rows],
-                "queueRevision": int(revision),
                 "eventCursor": event_cursor,
-                "workerOnline": worker_online,
+                **runtime,
             }
 
     def get_job(self, job_id: str) -> dict[str, object]:
@@ -1183,7 +1156,10 @@ class JobQueueRepository:
                     ).label("holds_chapter_lock"),
                 )
                 .join(job_batches, job_batches.c.id == jobs.c.batch_id, isouter=True)
-                .where(jobs.c.id == job_id)
+                .where(
+                    jobs.c.id == job_id,
+                    jobs.c.owner_user_id == effective_owner_id(),
+                )
             ).mappings().one_or_none()
             if job is None:
                 raise JobNotFound("job not found")
@@ -1316,32 +1292,6 @@ class JobQueueRepository:
         ]
         return result
 
-    def get_batch(self, batch_id: str) -> dict[str, object]:
-        with self.engine.connect() as connection:
-            batch = connection.execute(
-                select(job_batches).where(job_batches.c.id == batch_id)
-            ).mappings().one_or_none()
-            if batch is None:
-                raise JobNotFound("job batch not found")
-            member_rows = connection.execute(
-                select(
-                    jobs,
-                    exists().where(
-                        chapter_write_locks.c.job_id == jobs.c.id
-                    ).label("holds_chapter_lock"),
-                )
-                .where(jobs.c.batch_id == batch_id)
-                .order_by(jobs.c.queue_rank, jobs.c.created_at)
-            ).mappings()
-        return {
-            "batchId": batch["id"],
-            "kind": batch["kind"],
-            "displayName": batch["display_name"],
-            "summary": _batch_summary(batch["status_summary_json"]),
-            "jobs": [self._job_dto(row) for row in member_rows],
-            "createdAt": _iso(batch["created_at"]),
-        }
-
     def events_after(
         self,
         *,
@@ -1374,7 +1324,12 @@ class JobQueueRepository:
             )
         return [self._event_dto(row) for row in rows]
 
-    def job_snapshot(self, *, job_ids: Sequence[str]) -> dict[str, object]:
+    def job_snapshot(
+        self,
+        *,
+        job_ids: Sequence[str],
+        low_memory: bool = False,
+    ) -> dict[str, object]:
         unique_ids = tuple(dict.fromkeys(str(value) for value in job_ids if value))
         if not unique_ids:
             raise ValueError("at least one job_id is required")
@@ -1393,16 +1348,13 @@ class JobQueueRepository:
                 connection,
                 job_ids=owned_ids,
             )
-            revision = int(
-                connection.execute(
-                    select(queue_state.c.queue_revision).where(
-                        queue_state.c.singleton_id == 1
-                    )
-                ).scalar_one()
+            runtime = self._queue_runtime(
+                connection,
+                low_memory=low_memory,
             )
         return {
             "items": [snapshots[value] for value in unique_ids if value in snapshots],
-            "queueRevision": revision,
+            **runtime,
         }
 
     def events_before(
@@ -1443,20 +1395,11 @@ class JobQueueRepository:
                 ).scalar_one()
             )
 
-    def reorder(self, *, ordered_job_ids: Sequence[str], base_revision: int) -> int:
+    def reorder(self, *, ordered_job_ids: Sequence[str]) -> None:
         if not ordered_job_ids or len(set(ordered_job_ids)) != len(ordered_job_ids):
             raise ValueError("orderedJobIds must contain unique job IDs")
         now = utcnow()
         with immediate_transaction(self.engine) as connection:
-            revision = int(
-                connection.execute(
-                    select(queue_state.c.queue_revision).where(
-                        queue_state.c.singleton_id == 1
-                    )
-                ).scalar_one()
-            )
-            if revision != base_revision:
-                raise JobConflict("queue revision changed")
             sortable = list(
                 connection.execute(
                     select(jobs.c.id)
@@ -1477,9 +1420,8 @@ class JobQueueRepository:
                 ordered_job_ids=ordered_job_ids,
                 now=now,
             )
-            return self._bump_queue_revision(connection, now)
 
-    def prioritize_batch(self, *, batch_id: str, base_revision: int) -> int:
+    def prioritize_batch(self, *, batch_id: str) -> None:
         """Move ordinary queued members to the front without splitting their order."""
 
         now = utcnow()
@@ -1492,15 +1434,6 @@ class JobQueueRepository:
             ).scalar_one_or_none()
             if exists_batch is None:
                 raise JobNotFound("job batch not found")
-            revision = int(
-                connection.execute(
-                    select(queue_state.c.queue_revision).where(
-                        queue_state.c.singleton_id == 1
-                    )
-                ).scalar_one()
-            )
-            if revision != base_revision:
-                raise JobConflict("queue revision changed")
             sortable = list(
                 connection.execute(
                     select(jobs.c.id)
@@ -1532,13 +1465,147 @@ class JobQueueRepository:
                 ordered_job_ids=ordered,
                 now=now,
             )
-            return self._bump_queue_revision(connection, now)
 
     def request_pause(self, job_id: str) -> dict[str, object]:
-        return self._command(job_id, JobEvent.REQUEST_PAUSE)
+        """Fence the active attempt and preserve its durable checkpoints."""
+
+        now = utcnow()
+        with immediate_transaction(self.engine) as connection:
+            row = connection.execute(
+                select(jobs).where(
+                    jobs.c.id == job_id,
+                    jobs.c.owner_user_id == effective_owner_id(),
+                )
+            ).mappings().one_or_none()
+            if row is None:
+                raise JobNotFound("job not found")
+            stored_status = str(row["status"])
+            if stored_status == JobStatus.PAUSED.value:
+                return self._job_dto(row)
+            current = JobStatus(stored_status)
+            try:
+                new_status = transition_job(current, JobEvent.REQUEST_PAUSE)
+            except InvalidTransition as exc:
+                raise InvalidJobTransition(
+                    str(exc)
+                ) from exc
+            if new_status is not JobStatus.PAUSED:
+                raise RuntimeError("pause transition must be immediate")
+            item_ids = select(job_items.c.id).where(
+                job_items.c.job_id == job_id
+            )
+            abandoned_steps = connection.execute(
+                update(job_steps)
+                .where(
+                    job_steps.c.job_item_id.in_(item_ids),
+                    job_steps.c.status == "running",
+                )
+                .values(status="pending", attempt_id=None)
+            ).rowcount
+            connection.execute(
+                update(job_items)
+                .where(
+                    job_items.c.job_id == job_id,
+                    job_items.c.status == "running",
+                )
+                .values(status="pending")
+            )
+            values: dict[str, object] = {
+                "status": new_status.value,
+                "attempt_id": None,
+                "worker_epoch_id": None,
+                "updated_at": now,
+            }
+            progress = self._progress_snapshot(
+                connection,
+                job_id,
+                lock_waiting={},
+                job_status=new_status.value,
+            )
+            values["latest_progress_json"] = _json(progress)
+            connection.execute(
+                update(jobs).where(jobs.c.id == job_id).values(**values)
+            )
+            self._append_event(
+                connection,
+                job_id=job_id,
+                event_type="job_paused",
+                payload={
+                    "from": stored_status,
+                    "to": new_status.value,
+                    "source": "api",
+                    "abandonedRunningSteps": abandoned_steps,
+                },
+                now=now,
+            )
+            updated = dict(row)
+            updated.update(values)
+            return self._job_dto(updated)
 
     def request_cancel(self, job_id: str) -> dict[str, object]:
-        return self._command(job_id, JobEvent.REQUEST_CANCEL)
+        """Atomically revoke all publication rights and cancel the job graph."""
+
+        now = utcnow()
+        with immediate_transaction(self.engine) as connection:
+            row = connection.execute(
+                select(jobs).where(
+                    jobs.c.id == job_id,
+                    jobs.c.owner_user_id == effective_owner_id(),
+                )
+            ).mappings().one_or_none()
+            if row is None:
+                raise JobNotFound("job not found")
+            stored_status = str(row["status"])
+            if stored_status == JobStatus.CANCELLED.value:
+                return self._job_dto(row)
+            current = JobStatus(stored_status)
+            try:
+                new_status = transition_job(current, JobEvent.REQUEST_CANCEL)
+            except InvalidTransition as exc:
+                raise InvalidJobTransition(str(exc)) from exc
+            if new_status is not JobStatus.CANCELLED:
+                raise RuntimeError("cancel transition must be terminal")
+            self._cancel_unfinished_graph(connection, job_id)
+            self._release_write_reservations(connection, job_id, now=now)
+            self._sync_domain_terminal(
+                connection,
+                job_id=job_id,
+                status="cancelled",
+                now=now,
+            )
+            progress = self._progress_snapshot(
+                connection,
+                job_id,
+                lock_waiting={},
+                job_status="cancelled",
+            )
+            values: dict[str, object] = {
+                "status": "cancelled",
+                "queue_rank": None,
+                "attempt_id": None,
+                "worker_epoch_id": None,
+                "blocked_by_job_id": None,
+                "finished_at": now,
+                "latest_progress_json": _json(progress),
+                "updated_at": now,
+            }
+            connection.execute(
+                update(jobs).where(jobs.c.id == job_id).values(**values)
+            )
+            self._append_event(
+                connection,
+                job_id=job_id,
+                event_type="job_cancelled",
+                payload={
+                    "from": stored_status,
+                    "to": "cancelled",
+                    "source": "api",
+                },
+                now=now,
+            )
+            updated = dict(row)
+            updated.update(values)
+            return self._job_dto(updated)
 
     def resume(self, job_id: str) -> dict[str, object]:
         return self._command(job_id, JobEvent.RESUME)
@@ -1564,8 +1631,6 @@ class JobQueueRepository:
                     source="cancel_all_queued",
                     now=now,
                 )
-            if ids:
-                self._bump_queue_revision(connection, now)
             return len(ids)
 
     def cancel_batch_queued(self, batch_id: str) -> int:
@@ -1597,15 +1662,13 @@ class JobQueueRepository:
                     source="cancel_batch_queued",
                     now=now,
                 )
-            if ids:
-                self._bump_queue_revision(connection, now)
             return len(ids)
 
     def continue_batch(self, batch_id: str) -> dict[str, object]:
         """Resume paused and continue interrupted members in batch order."""
 
         now = utcnow()
-        updated_jobs: list[dict[str, object]] = []
+        continued = 0
         with immediate_transaction(self.engine) as connection:
             exists_batch = connection.execute(
                 select(job_batches.c.id).where(
@@ -1643,8 +1706,12 @@ class JobQueueRepository:
                     "updated_at": now,
                 }
                 next_queue_rank += 1
-                progress = decode_job_progress(row)
-                progress["jobStatus"] = "queued"
+                progress = self._progress_snapshot(
+                    connection,
+                    str(row["id"]),
+                    lock_waiting={},
+                    job_status="queued",
+                )
                 values["latest_progress_json"] = _json(progress)
                 connection.execute(
                     update(jobs).where(jobs.c.id == row["id"]).values(**values)
@@ -1657,19 +1724,15 @@ class JobQueueRepository:
                         "from": row["status"],
                         "to": "queued",
                         "source": "batch",
-                        "progress": progress,
                     },
                     now=now,
                 )
-                updated = dict(row)
-                updated.update(values)
-                updated_jobs.append(self._job_dto(updated))
-            self._bump_queue_revision(connection, now)
-            self._refresh_batch_summary(connection, str(rows[0]["id"]), now)
-        return {"continued": len(updated_jobs), "jobs": updated_jobs}
+                continued += 1
+        return {"continued": continued}
 
     def clear_history(self) -> int:
         now = utcnow()
+        interrupted_sibling = jobs.alias("interrupted_history_sibling")
         with immediate_transaction(self.engine) as connection:
             candidates = {
                 str(value)
@@ -1677,6 +1740,12 @@ class JobQueueRepository:
                     select(jobs.c.id).where(
                         jobs.c.status.in_(TERMINAL_JOB_STATUSES),
                         jobs.c.owner_user_id == effective_owner_id(),
+                        ~exists(
+                            select(interrupted_sibling.c.id).where(
+                                interrupted_sibling.c.batch_id == jobs.c.batch_id,
+                                interrupted_sibling.c.status == "interrupted",
+                            )
+                        ),
                     )
                 ).scalars()
             }
@@ -1776,10 +1845,10 @@ class JobQueueRepository:
     ) -> int:
         member = jobs.alias("history_member")
         nonhistory_member = jobs.alias("nonhistory_member")
-        history_batch_ids = [
-            str(value)
-            for value in connection.execute(
-                select(job_batches.c.id)
+        interrupted_member = jobs.alias("interrupted_history_member")
+        history_batches = list(
+            connection.execute(
+                select(job_batches.c.id, job_batches.c.owner_user_id)
                 .where(
                     exists(
                         select(member.c.id).where(
@@ -1794,33 +1863,34 @@ class JobQueueRepository:
                             ),
                         )
                     ),
+                    ~exists(
+                        select(interrupted_member.c.id).where(
+                            interrupted_member.c.batch_id == job_batches.c.id,
+                            interrupted_member.c.status == "interrupted",
+                        )
+                    ),
                 )
                 .order_by(
+                    job_batches.c.owner_user_id,
                     job_batches.c.created_at.desc(),
                     job_batches.c.id.desc(),
                 )
-            ).scalars()
-        ]
-        old_batch_ids = set(history_batch_ids[max_batches:])
+            )
+        )
+        owner_batch_counts: dict[str, int] = {}
+        old_batch_ids: set[str] = set()
+        for batch_id, owner_user_id in history_batches:
+            owner = str(owner_user_id)
+            owner_batch_counts[owner] = owner_batch_counts.get(owner, 0) + 1
+            if owner_batch_counts[owner] > max_batches:
+                old_batch_ids.add(str(batch_id))
         if not old_batch_ids:
-            return 0
-        interrupted_batches = {
-            str(value)
-            for value in connection.execute(
-                select(jobs.c.batch_id).where(
-                    jobs.c.batch_id.in_(old_batch_ids),
-                    jobs.c.status == "interrupted",
-                )
-            ).scalars()
-        }
-        deletable_batches = old_batch_ids - interrupted_batches
-        if not deletable_batches:
             return 0
         candidates = {
             str(value)
             for value in connection.execute(
                 select(jobs.c.id).where(
-                    jobs.c.batch_id.in_(deletable_batches),
+                    jobs.c.batch_id.in_(old_batch_ids),
                     jobs.c.status.in_(TERMINAL_JOB_STATUSES),
                 )
             ).scalars()
@@ -1905,7 +1975,6 @@ class JobQueueRepository:
         *,
         worker_epoch_id: str,
         queue_discipline: str = "fifo",
-        allow_paused_bypass: bool = False,
     ) -> AttemptFence | None:
         """Claim the next executable job."""
 
@@ -1913,26 +1982,37 @@ class JobQueueRepository:
             raise ValueError("unsupported queue discipline")
 
         now = utcnow()
-        slot_statuses = (
-            EXECUTING_JOB_STATUSES
-            if allow_paused_bypass
-            else CURRENT_JOB_STATUSES
-        )
         # Observe that common no-op case without taking SQLite's writer lock.
         with self.engine.connect() as connection:
             self._assert_worker_epoch(connection, worker_epoch_id, now)
+            if bool(
+                connection.execute(
+                    select(queue_state.c.admission_paused).where(
+                        queue_state.c.singleton_id == 1
+                    )
+                ).scalar_one()
+            ):
+                return None
             current = connection.execute(
                 select(jobs.c.id)
-                .where(jobs.c.status.in_(slot_statuses))
+                .where(jobs.c.status.in_(EXECUTING_JOB_STATUSES))
                 .limit(1)
             ).scalar_one_or_none()
             if current is not None:
                 return None
         with immediate_transaction(self.engine) as connection:
             self._assert_worker_epoch(connection, worker_epoch_id, now)
+            if bool(
+                connection.execute(
+                    select(queue_state.c.admission_paused).where(
+                        queue_state.c.singleton_id == 1
+                    )
+                ).scalar_one()
+            ):
+                return None
             current = connection.execute(
                 select(jobs.c.id)
-                .where(jobs.c.status.in_(slot_statuses))
+                .where(jobs.c.status.in_(EXECUTING_JOB_STATUSES))
                 .limit(1)
             ).scalar_one_or_none()
             if current is not None:
@@ -1947,6 +2027,7 @@ class JobQueueRepository:
             )
             for candidate in candidates:
                 try:
+                    decode_job_config(candidate)
                     self._job_dto(candidate)
                 except JobDataInvalid as exc:
                     self._fail_invalid_queued_job(
@@ -1962,8 +2043,6 @@ class JobQueueRepository:
                         candidate=candidate,
                         now=now,
                     )
-                    if reservation == "draining":
-                        return None
                     if reservation == "blocked":
                         continue
                 fence = self._claim_row(
@@ -1981,16 +2060,64 @@ class JobQueueRepository:
                 return fence
         return None
 
-    def has_queued_competitor(self, *, owner_user_id: str) -> bool:
-        """Return whether another owner has ready durable work."""
+    def set_queue_paused(self, paused: bool) -> dict[str, object]:
+        if not isinstance(paused, bool):
+            raise ValueError("queue pause state must be boolean")
+        with immediate_transaction(self.engine) as connection:
+            connection.execute(
+                update(queue_state)
+                .where(queue_state.c.singleton_id == 1)
+                .values(admission_paused=paused)
+            )
+            return {"queuePaused": paused}
+
+    def has_ready_queued_job(self) -> bool:
+        """Return whether queue admission can immediately serve durable work."""
 
         with self.engine.connect() as connection:
+            admission_paused = bool(
+                connection.execute(
+                    select(queue_state.c.admission_paused).where(
+                        queue_state.c.singleton_id == 1
+                    )
+                ).scalar_one()
+            )
+            if admission_paused:
+                return False
+            if connection.execute(
+                select(jobs.c.id)
+                .where(jobs.c.status.in_(EXECUTING_JOB_STATUSES))
+                .limit(1)
+            ).scalar_one_or_none() is not None:
+                return False
+            return connection.execute(
+                select(jobs.c.id)
+                .where(
+                    jobs.c.status == "queued",
+                    jobs.c.blocked_by_job_id.is_(None),
+                )
+                .limit(1)
+            ).scalar_one_or_none() is not None
+
+    def has_ready_queued_competitor(self, *, owner_user_id: str) -> bool:
+        """Return whether another owner has unblocked durable work."""
+
+        with self.engine.connect() as connection:
+            admission_paused = bool(
+                connection.execute(
+                    select(queue_state.c.admission_paused).where(
+                        queue_state.c.singleton_id == 1
+                    )
+                ).scalar_one()
+            )
+            if admission_paused:
+                return False
             return connection.execute(
                 select(jobs.c.id)
                 .where(
                     jobs.c.status == "queued",
                     jobs.c.owner_user_id != owner_user_id,
-                    jobs.c.blocked_reason.is_(None),
+                    jobs.c.blocked_by_job_id.is_(None),
                 )
                 .limit(1)
             ).scalar_one_or_none() is not None
@@ -2001,7 +2128,7 @@ class JobQueueRepository:
         *,
         reason: str,
     ) -> None:
-        """Checkpoint a drained attempt and put it at the global queue tail."""
+        """Return a checkpointed attempt to the global queue tail."""
 
         if reason not in {"fairness", "memory_pressure"}:
             raise ValueError("unsupported scheduling yield reason")
@@ -2025,6 +2152,7 @@ class JobQueueRepository:
             progress = self._progress_snapshot(
                 connection,
                 fence.job_id,
+                lock_waiting={},
                 job_status="queued",
             )
             changed = connection.execute(
@@ -2053,14 +2181,11 @@ class JobQueueRepository:
                 payload={
                     "reason": reason,
                     "queueRank": queue_rank,
-                    "progress": progress,
                 },
                 now=now,
             )
-            self._bump_queue_revision(connection, now)
-            self._refresh_batch_summary(connection, fence.job_id, now)
 
-    def control_status(self, fence: AttemptFence) -> str:
+    def assert_attempt_active(self, fence: AttemptFence) -> None:
         with self.engine.connect() as connection:
             value = connection.execute(
                 select(jobs.c.status).where(
@@ -2071,7 +2196,8 @@ class JobQueueRepository:
             ).scalar_one_or_none()
         if value is None:
             raise AttemptFenced("job attempt lost execution rights")
-        return str(value)
+        if str(value) != "running":
+            raise AttemptFenced("job attempt is no longer running")
 
     def bind_item_inputs(
         self,
@@ -2268,7 +2394,7 @@ class JobQueueRepository:
                 connection,
                 fence,
                 now,
-                allowed_statuses=("running", "pausing", "cancelling"),
+                allowed_statuses=("running",),
             )
             row = connection.execute(
                 select(
@@ -2290,7 +2416,7 @@ class JobQueueRepository:
                 connection,
                 fence,
                 now,
-                allowed_statuses=("running", "pausing", "cancelling"),
+                allowed_statuses=("running",),
             )
             secret_values = _job_secret_values(connection, fence.job_id)
         return redact_sensitive_text(message, secret_values=secret_values)
@@ -2313,7 +2439,7 @@ class JobQueueRepository:
                 connection,
                 fence,
                 now,
-                allowed_statuses=("running", "pausing", "cancelling"),
+                allowed_statuses=("running",),
             )
             safe_payload = redact_sensitive_value(
                 dict(payload),
@@ -2337,7 +2463,7 @@ class JobQueueRepository:
                 connection,
                 fence,
                 now,
-                allowed_statuses=("running", "pausing", "cancelling"),
+                allowed_statuses=("running",),
             )
             rows = connection.execute(
                 select(job_events.c.payload_json).where(
@@ -2386,7 +2512,7 @@ class JobQueueRepository:
                 connection,
                 fence,
                 now,
-                allowed_statuses=("running", "pausing", "cancelling"),
+                allowed_statuses=("running",),
             )
             if job_config is not None:
                 changed = connection.execute(
@@ -2427,7 +2553,7 @@ class JobQueueRepository:
                 connection,
                 fence,
                 now,
-                allowed_statuses=("running", "pausing", "cancelling"),
+                allowed_statuses=("running",),
             )
             conditions = [
                 job_items.c.job_id == fence.job_id,
@@ -2459,7 +2585,7 @@ class JobQueueRepository:
                 connection,
                 fence,
                 now,
-                allowed_statuses=("running", "pausing", "cancelling"),
+                allowed_statuses=("running",),
             )
             rows = connection.execute(
                 select(job_items.c.id, job_items.c.status).where(
@@ -2484,7 +2610,7 @@ class JobQueueRepository:
                 connection,
                 fence,
                 now,
-                allowed_statuses=("running", "pausing", "cancelling"),
+                allowed_statuses=("running",),
             )
             rows = connection.execute(
                 select(job_steps.c.id, job_steps.c.status)
@@ -2506,7 +2632,7 @@ class JobQueueRepository:
                 connection,
                 fence,
                 now,
-                allowed_statuses=("running", "pausing", "cancelling"),
+                allowed_statuses=("running",),
             )
             rows = connection.execute(
                 select(
@@ -2539,7 +2665,7 @@ class JobQueueRepository:
                 connection,
                 fence,
                 now,
-                allowed_statuses=("running", "pausing", "cancelling"),
+                allowed_statuses=("running",),
             )
             return int(
                 connection.execute(
@@ -2561,7 +2687,7 @@ class JobQueueRepository:
                 connection,
                 fence,
                 now,
-                allowed_statuses=("running", "pausing", "cancelling"),
+                allowed_statuses=("running",),
             )
             rows = connection.execute(
                 select(job_steps.c.kind)
@@ -2584,7 +2710,7 @@ class JobQueueRepository:
                 connection,
                 fence,
                 now,
-                allowed_statuses=("running", "pausing", "cancelling"),
+                allowed_statuses=("running",),
             )
             rows = connection.execute(
                 select(
@@ -2700,7 +2826,7 @@ class JobQueueRepository:
             connection.execute(
                 update(job_items)
                 .where(job_items.c.id == row["item_id"])
-                .values(status="running", updated_at=now)
+                .values(status="running")
             )
             claimed = connection.execute(
                 update(job_steps)
@@ -2711,7 +2837,6 @@ class JobQueueRepository:
                 .values(
                     status="running",
                     attempt_id=fence.attempt_id,
-                    updated_at=now,
                 )
             )
             if claimed.rowcount != 1:
@@ -2738,7 +2863,6 @@ class JobQueueRepository:
                     "pageId": row["page_id"],
                     "stepId": row["step_id"],
                     "stepKind": row["step_kind"],
-                    "progress": snapshot,
                 },
                 now=now,
             )
@@ -2883,7 +3007,7 @@ class JobQueueRepository:
                 connection.execute(
                     update(job_items)
                     .where(job_items.c.id == row["item_id"])
-                    .values(status="running", updated_at=now)
+                    .values(status="running")
                 )
                 claimed = connection.execute(
                     update(job_steps)
@@ -2894,7 +3018,6 @@ class JobQueueRepository:
                     .values(
                         status="running",
                         attempt_id=fence.attempt_id,
-                        updated_at=now,
                     )
                 )
                 if claimed.rowcount != 1:
@@ -2941,7 +3064,6 @@ class JobQueueRepository:
                         "stepId": row["step_id"],
                         "stepKind": row["step_kind"],
                         "batchOrdinal": int(first_ordinal),
-                        "progress": snapshot,
                     },
                     now=now,
                 )
@@ -3038,8 +3160,8 @@ class JobQueueRepository:
         step_id: str,
         checkpoint: Mapping[str, Any],
         publisher: Callable[[Connection], None] | None = None,
-    ) -> str:
-        """Persist an intra-step safe point and yield when control was requested."""
+    ) -> None:
+        """Persist an intra-step safe point for retry and crash recovery."""
 
         now = utcnow()
         with immediate_transaction(self.engine) as connection:
@@ -3047,7 +3169,7 @@ class JobQueueRepository:
                 connection,
                 fence,
                 now,
-                allowed_statuses=("running", "pausing", "cancelling"),
+                allowed_statuses=("running",),
             )
             safe_checkpoint = redact_sensitive_value(
                 dict(checkpoint),
@@ -3070,27 +3192,14 @@ class JobQueueRepository:
                 raise AttemptFenced("step checkpoint was fenced")
             if publisher is not None:
                 publisher(connection)
-            yielding = job_status in {"pausing", "cancelling"}
-            values: dict[str, object] = {
-                "checkpoint_json": _json(safe_checkpoint),
-                "updated_at": now,
-            }
-            if yielding:
-                values.update(status="pending", attempt_id=None)
             connection.execute(
                 update(job_steps)
                 .where(
                     job_steps.c.id == step_id,
                     job_steps.c.attempt_id == fence.attempt_id,
                 )
-                .values(**values)
+                .values(checkpoint_json=_json(safe_checkpoint))
             )
-            if yielding:
-                connection.execute(
-                    update(job_items)
-                    .where(job_items.c.id == step["job_item_id"])
-                    .values(status="pending", updated_at=now)
-                )
             snapshot = self._progress_snapshot(connection, fence.job_id)
             connection.execute(
                 update(jobs)
@@ -3113,13 +3222,9 @@ class JobQueueRepository:
                         else None
                     ),
                     "stepId": step_id,
-                    "yielded": yielding,
-                    "checkpoint": safe_checkpoint,
-                    "progress": snapshot,
                 },
                 now=now,
             )
-            return job_status
 
     def complete_step(
         self,
@@ -3127,19 +3232,15 @@ class JobQueueRepository:
         *,
         step_id: str,
         checkpoint: Mapping[str, Any],
-        input_fingerprint: str | None = None,
         publisher: Callable[[Connection], bool | None] | None = None,
-        defer_on_control: bool = False,
-    ) -> bool:
-        return self._finish_step(
+    ) -> None:
+        self._finish_step(
             fence,
             step_id=step_id,
             status="completed",
             checkpoint=checkpoint,
             error=None,
-            input_fingerprint=input_fingerprint,
             publisher=publisher,
-            defer_on_control=defer_on_control,
         )
 
     def fail_step(
@@ -3157,9 +3258,7 @@ class JobQueueRepository:
             status="failed",
             checkpoint=None,
             error={"code": code, "message": message},
-            input_fingerprint=None,
             publisher=publisher,
-            defer_on_control=False,
         )
 
     def fail_terminal_item(
@@ -3176,7 +3275,7 @@ class JobQueueRepository:
                 connection,
                 fence,
                 now,
-                allowed_statuses=("running", "pausing", "cancelling"),
+                allowed_statuses=("running",),
             )
             row = connection.execute(
                 select(job_items.c.status, job_items.c.page_id).where(
@@ -3200,7 +3299,6 @@ class JobQueueRepository:
                 .values(
                     status="failed",
                     error_json=_json(safe_error),
-                    updated_at=now,
                 )
             )
             snapshot = self._progress_snapshot(connection, fence.job_id)
@@ -3222,7 +3320,6 @@ class JobQueueRepository:
                     "pageId": row["page_id"],
                     "status": "failed",
                     "error": safe_error,
-                    "progress": snapshot,
                 },
                 now=now,
             )
@@ -3242,7 +3339,7 @@ class JobQueueRepository:
                 connection,
                 fence,
                 now,
-                allowed_statuses=("running", "pausing", "cancelling"),
+                allowed_statuses=("running",),
             )
             item_id = connection.execute(
                 select(job_steps.c.job_item_id).where(
@@ -3274,7 +3371,6 @@ class JobQueueRepository:
                         {"skipped": True, "reason": safe_reason}
                     ),
                     attempt_id=fence.attempt_id,
-                    updated_at=now,
                 )
             )
             connection.execute(
@@ -3285,7 +3381,6 @@ class JobQueueRepository:
                     result_json=_json(
                         {"skipped": True, "reason": safe_reason}
                     ),
-                    updated_at=now,
                 )
             )
             snapshot = self._progress_snapshot(connection, fence.job_id)
@@ -3306,7 +3401,6 @@ class JobQueueRepository:
                     "itemId": str(item_id),
                     "stepId": step_id,
                     "reason": safe_reason,
-                    "progress": snapshot,
                 },
                 now=now,
             )
@@ -3339,6 +3433,7 @@ class JobQueueRepository:
             final_progress = self._progress_snapshot(
                 connection,
                 fence.job_id,
+                lock_waiting={},
                 job_status=final,
             )
             connection.execute(
@@ -3357,7 +3452,7 @@ class JobQueueRepository:
                     updated_at=now,
                 )
             )
-            self._release_write_reservations(connection, fence.job_id)
+            self._release_write_reservations(connection, fence.job_id, now=now)
             self._sync_domain_terminal(
                 connection,
                 job_id=fence.job_id,
@@ -3371,12 +3466,9 @@ class JobQueueRepository:
                 payload={
                     "status": final,
                     "failedItems": failed,
-                    "progress": final_progress,
                 },
                 now=now,
             )
-            self._bump_queue_revision(connection, now)
-            self._refresh_batch_summary(connection, fence.job_id, now)
             return final
 
     @staticmethod
@@ -3416,52 +3508,52 @@ class JobQueueRepository:
         self,
         connection: Connection,
         *,
-        worker_epoch_id: str,
+        worker_epoch_id: str | None,
         now: datetime,
-    ) -> tuple[int, int]:
+        reason: str = "WORKER_EPOCH_LOST",
+    ) -> int:
         """Atomically converge jobs owned by a Worker epoch that was lost."""
 
+        epoch_matches = (
+            jobs.c.worker_epoch_id.is_(None)
+            if worker_epoch_id is None
+            else jobs.c.worker_epoch_id == worker_epoch_id
+        )
         affected = list(
             connection.execute(
                 select(jobs.c.id, jobs.c.status).where(
-                    jobs.c.worker_epoch_id == worker_epoch_id,
-                    jobs.c.status.in_(("running", "pausing", "cancelling")),
+                    epoch_matches,
+                    jobs.c.status == "running",
                 )
             ).mappings()
         )
         interrupted = 0
-        cancelled = 0
         for row in affected:
             job_id = str(row["id"])
             previous_status = str(row["status"])
-            if previous_status == "cancelling":
-                final_status = "cancelled"
-                self._cancel_unfinished_graph(connection, job_id, now)
-            else:
-                final_status = "interrupted"
-                item_ids = select(job_items.c.id).where(
-                    job_items.c.job_id == job_id
+            final_status = "interrupted"
+            item_ids = select(job_items.c.id).where(
+                job_items.c.job_id == job_id
+            )
+            connection.execute(
+                update(job_steps)
+                .where(
+                    job_steps.c.job_item_id.in_(item_ids),
+                    job_steps.c.status == "running",
                 )
-                connection.execute(
-                    update(job_steps)
-                    .where(
-                        job_steps.c.job_item_id.in_(item_ids),
-                        job_steps.c.status == "running",
-                    )
-                    .values(
-                        status="pending",
-                        attempt_id=None,
-                        updated_at=now,
-                    )
+                .values(
+                    status="pending",
+                    attempt_id=None,
                 )
-                connection.execute(
-                    update(job_items)
-                    .where(
-                        job_items.c.job_id == job_id,
-                        job_items.c.status == "running",
-                    )
-                    .values(status="pending", updated_at=now)
+            )
+            connection.execute(
+                update(job_items)
+                .where(
+                    job_items.c.job_id == job_id,
+                    job_items.c.status == "running",
                 )
+                .values(status="pending")
+            )
 
             progress = self._progress_snapshot(
                 connection,
@@ -3476,45 +3568,29 @@ class JobQueueRepository:
                 "latest_progress_json": _json(progress),
                 "updated_at": now,
             }
-            if final_status == "cancelled":
-                values.update(queue_rank=None, finished_at=now)
             changed = connection.execute(
                 update(jobs)
                 .where(
                     jobs.c.id == job_id,
-                    jobs.c.worker_epoch_id == worker_epoch_id,
+                    epoch_matches,
                     jobs.c.status == previous_status,
                 )
                 .values(**values)
             )
             if changed.rowcount != 1:
                 raise JobConflict("lost Worker job changed during recovery")
-            if final_status == "cancelled":
-                cancelled += 1
-                self._release_write_reservations(connection, job_id)
-                self._sync_domain_terminal(
-                    connection,
-                    job_id=job_id,
-                    status="cancelled",
-                    now=now,
-                )
-            else:
-                interrupted += 1
+            interrupted += 1
             self._append_event(
                 connection,
                 job_id=job_id,
                 event_type=f"job_{final_status}",
                 payload={
-                    "reason": "WORKER_EPOCH_LOST",
+                    "reason": reason,
                     "workerEpochId": worker_epoch_id,
-                    "progress": progress,
                 },
                 now=now,
             )
-            self._refresh_batch_summary(connection, job_id, now)
-        if affected:
-            self._bump_queue_revision(connection, now)
-        return interrupted, cancelled
+        return interrupted
 
     def write_pipeline_progress(
         self,
@@ -3536,7 +3612,7 @@ class JobQueueRepository:
                 connection,
                 fence,
                 now,
-                allowed_statuses=("running", "pausing", "cancelling"),
+                allowed_statuses=("running",),
             )
             snapshot = self._progress_snapshot(
                 connection,
@@ -3549,7 +3625,7 @@ class JobQueueRepository:
                     jobs.c.id == fence.job_id,
                     jobs.c.attempt_id == fence.attempt_id,
                     jobs.c.worker_epoch_id == fence.worker_epoch_id,
-                    jobs.c.status.in_(("running", "pausing", "cancelling")),
+                    jobs.c.status == "running",
                 )
                 .values(latest_progress_json=_json(snapshot), updated_at=now)
             )
@@ -3559,79 +3635,10 @@ class JobQueueRepository:
                 connection,
                 job_id=fence.job_id,
                 event_type="pipeline_progress",
-                payload={"progress": snapshot},
+                payload={},
                 now=now,
             )
             return snapshot
-
-    def finalize_control(self, fence: AttemptFence) -> str:
-        """Finish a pause or cancellation after the Worker reaches a safe point."""
-
-        now = utcnow()
-        with immediate_transaction(self.engine) as connection:
-            status = self._assert_attempt(
-                connection,
-                fence,
-                now,
-                allowed_statuses=("pausing", "cancelling"),
-            )
-            active = int(
-                connection.execute(
-                    select(func.count())
-                    .select_from(job_steps)
-                    .join(job_items, job_items.c.id == job_steps.c.job_item_id)
-                    .where(
-                        job_items.c.job_id == fence.job_id,
-                        job_steps.c.status == "running",
-                    )
-                ).scalar_one()
-            )
-            if active:
-                raise JobConflict("job still has a running step")
-            final = "paused" if status == "pausing" else "cancelled"
-            values: dict[str, object] = {
-                "status": final,
-                "attempt_id": None,
-                "worker_epoch_id": None,
-                "updated_at": now,
-            }
-            if final == "cancelled":
-                values.update(queue_rank=None, finished_at=now)
-                self._cancel_unfinished_graph(connection, fence.job_id, now)
-                self._release_write_reservations(connection, fence.job_id)
-                self._sync_domain_terminal(
-                    connection,
-                    job_id=fence.job_id,
-                    status="cancelled",
-                    now=now,
-                )
-            final_progress = self._progress_snapshot(
-                connection,
-                fence.job_id,
-                job_status=final,
-            )
-            values["latest_progress_json"] = _json(final_progress)
-            connection.execute(
-                update(jobs)
-                .where(
-                    jobs.c.id == fence.job_id,
-                    jobs.c.attempt_id == fence.attempt_id,
-                )
-                .values(**values)
-            )
-            self._append_event(
-                connection,
-                job_id=fence.job_id,
-                event_type=f"job_{final}",
-                payload={
-                    "source": "worker_drain",
-                    "progress": final_progress,
-                },
-                now=now,
-            )
-            self._bump_queue_revision(connection, now)
-            self._refresh_batch_summary(connection, fence.job_id, now)
-            return final
 
     def fail_job(
         self,
@@ -3646,7 +3653,7 @@ class JobQueueRepository:
                 connection,
                 fence,
                 now,
-                allowed_statuses=("running", "pausing"),
+                allowed_statuses=("running",),
             )
             message = redact_sensitive_text(
                 message,
@@ -3657,11 +3664,11 @@ class JobQueueRepository:
                 connection,
                 job_id=fence.job_id,
                 error=failure,
-                now=now,
             )
             failed_progress = self._progress_snapshot(
                 connection,
                 fence.job_id,
+                lock_waiting={},
                 job_status="failed",
             )
             connection.execute(
@@ -3680,7 +3687,7 @@ class JobQueueRepository:
                     updated_at=now,
                 )
             )
-            self._release_write_reservations(connection, fence.job_id)
+            self._release_write_reservations(connection, fence.job_id, now=now)
             self._sync_domain_terminal(
                 connection,
                 job_id=fence.job_id,
@@ -3694,12 +3701,9 @@ class JobQueueRepository:
                 payload={
                     "code": code,
                     "message": message,
-                    "progress": failed_progress,
                 },
                 now=now,
             )
-            self._bump_queue_revision(connection, now)
-            self._refresh_batch_summary(connection, fence.job_id, now)
 
     def _finish_step(
         self,
@@ -3709,17 +3713,15 @@ class JobQueueRepository:
         status: str,
         checkpoint: Mapping[str, Any] | None,
         error: Mapping[str, Any] | None,
-        input_fingerprint: str | None,
         publisher: Callable[[Connection], bool | None] | None,
-        defer_on_control: bool,
-    ) -> bool:
+    ) -> None:
         now = utcnow()
         with immediate_transaction(self.engine) as connection:
             job_status = self._assert_attempt(
                 connection,
                 fence,
                 now,
-                allowed_statuses=("running", "pausing", "cancelling"),
+                allowed_statuses=("running",),
             )
             secret_values = _job_secret_values(connection, fence.job_id)
             step = connection.execute(
@@ -3764,62 +3766,6 @@ class JobQueueRepository:
                 if error is not None
                 else None
             )
-            if (
-                status != "skipped"
-                and defer_on_control
-                and job_status in {"pausing", "cancelling"}
-            ):
-                connection.execute(
-                    update(job_steps)
-                    .where(
-                        job_steps.c.id == step_id,
-                        job_steps.c.attempt_id == fence.attempt_id,
-                    )
-                    .values(
-                        status="pending",
-                        attempt_id=None,
-                        checkpoint_json=(
-                            _json(safe_checkpoint)
-                            if safe_checkpoint
-                            else None
-                        ),
-                        updated_at=now,
-                    )
-                )
-                connection.execute(
-                    update(job_items)
-                    .where(job_items.c.id == step["job_item_id"])
-                    .values(status="pending", updated_at=now)
-                )
-                snapshot = self._progress_snapshot(connection, fence.job_id)
-                connection.execute(
-                    update(jobs)
-                    .where(
-                        jobs.c.id == fence.job_id,
-                        jobs.c.attempt_id == fence.attempt_id,
-                        jobs.c.status == job_status,
-                    )
-                    .values(latest_progress_json=_json(snapshot), updated_at=now)
-                )
-                self._append_event(
-                    connection,
-                    job_id=fence.job_id,
-                    event_type="step_checkpointed",
-                    payload={
-                        "itemId": str(step["job_item_id"]),
-                        "pageId": (
-                            str(step["page_id"])
-                            if step["page_id"] is not None
-                            else None
-                        ),
-                        "stepId": step_id,
-                        "yielded": True,
-                        "checkpoint": safe_checkpoint or {},
-                        "progress": snapshot,
-                    },
-                    now=now,
-                )
-                return False
             connection.execute(
                 update(job_steps)
                 .where(
@@ -3828,14 +3774,12 @@ class JobQueueRepository:
                 )
                 .values(
                     status=status,
-                    input_fingerprint=input_fingerprint,
                     checkpoint_json=(
                         _json(safe_checkpoint)
                         if safe_checkpoint
                         else None
                     ),
                     error_json=_json(safe_error) if safe_error else None,
-                    updated_at=now,
                 )
             )
             item_id = str(step["job_item_id"])
@@ -3847,7 +3791,6 @@ class JobQueueRepository:
                     .values(
                         status="failed",
                         error_json=_json(safe_error or {}),
-                        updated_at=now,
                     )
                 )
                 connection.execute(
@@ -3856,7 +3799,7 @@ class JobQueueRepository:
                         job_steps.c.job_item_id == item_id,
                         job_steps.c.status == "pending",
                     )
-                    .values(status="skipped", updated_at=now)
+                    .values(status="skipped")
                 )
                 event_type = "page_failed"
             elif status == "skipped":
@@ -3870,7 +3813,6 @@ class JobQueueRepository:
                     .values(
                         status="skipped",
                         checkpoint_json=_json(safe_checkpoint or {}),
-                        updated_at=now,
                     )
                 )
                 connection.execute(
@@ -3879,7 +3821,6 @@ class JobQueueRepository:
                     .values(
                         status="skipped",
                         result_json=_json(safe_checkpoint or {}),
-                        updated_at=now,
                     )
                 )
                 event_type = "page_skipped"
@@ -3904,7 +3845,6 @@ class JobQueueRepository:
                             result_json=_json(
                                 {"lastCheckpoint": safe_checkpoint or {}}
                             ),
-                            updated_at=now,
                         )
                     )
                     event_type = "page_completed"
@@ -3942,30 +3882,25 @@ class JobQueueRepository:
                     ),
                     "stepId": step_id,
                     "status": status,
-                    "progress": snapshot,
                 },
                 now=now,
             )
-            return True
 
     def _command(self, job_id: str, event: JobEvent) -> dict[str, object]:
+        if event not in {JobEvent.RESUME, JobEvent.CONTINUE}:
+            raise ValueError("generic job command only supports resume and continue")
         now = utcnow()
         with immediate_transaction(self.engine) as connection:
             row = connection.execute(
-                select(jobs).where(jobs.c.id == job_id)
+                select(jobs).where(
+                    jobs.c.id == job_id,
+                    jobs.c.owner_user_id == effective_owner_id(),
+                )
             ).mappings().one_or_none()
             if row is None:
                 raise JobNotFound("job not found")
             current = JobStatus(str(row["status"]))
 
-            # Repeated in-flight pause/cancel requests are idempotent.
-            if event is JobEvent.REQUEST_PAUSE and current is JobStatus.PAUSING:
-                return self._job_dto(row)
-            if event is JobEvent.REQUEST_CANCEL and current in {
-                JobStatus.CANCELLING,
-                JobStatus.CANCELLED,
-            }:
-                return self._job_dto(row)
             try:
                 new_status = transition_job(current, event)
             except InvalidTransition as exc:
@@ -3975,32 +3910,19 @@ class JobQueueRepository:
                 "status": new_status.value,
                 "updated_at": now,
             }
-            if new_status in {JobStatus.CANCELLED, JobStatus.QUEUED}:
-                values.update(
-                    attempt_id=None,
-                    worker_epoch_id=None,
-                )
-            if new_status is JobStatus.QUEUED:
-                values["queue_rank"] = self._next_queue_rank(connection)
-            if new_status is JobStatus.CANCELLED:
-                values.update(queue_rank=None, finished_at=now)
-                self._cancel_unfinished_graph(connection, job_id, now)
-                self._release_write_reservations(connection, job_id)
-                self._sync_domain_terminal(
-                    connection,
-                    job_id=job_id,
-                    status="cancelled",
-                    now=now,
-                )
-            if new_status is JobStatus.CANCELLED:
-                progress = self._progress_snapshot(
-                    connection,
-                    job_id,
-                    job_status=new_status.value,
-                )
-            else:
-                progress = decode_job_progress(row)
-                progress["jobStatus"] = new_status.value
+            if new_status is not JobStatus.QUEUED:
+                raise RuntimeError("resume and continue must requeue the job")
+            values.update(
+                attempt_id=None,
+                worker_epoch_id=None,
+                queue_rank=self._next_queue_rank(connection),
+            )
+            progress = self._progress_snapshot(
+                connection,
+                job_id,
+                lock_waiting={},
+                job_status=new_status.value,
+            )
             values["latest_progress_json"] = _json(progress)
             connection.execute(
                 update(jobs).where(jobs.c.id == job_id).values(**values)
@@ -4012,12 +3934,9 @@ class JobQueueRepository:
                 payload={
                     "from": current.value,
                     "to": new_status.value,
-                    "progress": progress,
                 },
                 now=now,
             )
-            self._bump_queue_revision(connection, now)
-            self._refresh_batch_summary(connection, job_id, now)
             updated = dict(row)
             updated.update(values)
             return self._job_dto(updated)
@@ -4127,46 +4046,43 @@ class JobQueueRepository:
         if owned_lock_chapters:
             if owned_lock_chapters != set(chapter_ids):
                 raise JobConflict("job owns an incomplete chapter write-lock set")
-            return "ready"
-
-        foreign_lock = connection.execute(
-            select(chapter_write_locks.c.job_id)
-            .where(chapter_write_locks.c.chapter_id.in_(chapter_ids))
-            .limit(1)
-        ).scalar_one_or_none()
-        if foreign_lock is not None:
-            self._set_blocked(
-                connection,
-                job_id=job_id,
-                reason="blocked_by_job",
-                blocked_job_id=str(foreign_lock),
-                now=now,
-            )
-            return "blocked"
-
-        if self._old_write_chains_active(connection, chapter_ids):
-            self._set_blocked(
-                connection,
-                job_id=job_id,
-                reason="draining_immediate_writes",
-                blocked_job_id=None,
-                now=now,
-            )
-            return "draining"
-
-        for chapter_id in chapter_ids:
-            connection.execute(
-                insert(chapter_write_locks).values(
-                    chapter_id=chapter_id,
+        else:
+            foreign_lock = connection.execute(
+                select(chapter_write_locks.c.job_id)
+                .where(chapter_write_locks.c.chapter_id.in_(chapter_ids))
+                .limit(1)
+            ).scalar_one_or_none()
+            if foreign_lock is not None:
+                self._set_blocked(
+                    connection,
                     job_id=job_id,
-                    created_at=now,
+                    blocked_job_id=str(foreign_lock),
+                    now=now,
                 )
+                return "blocked"
+
+            # Reserve first so no new immediate page write can enter this
+            # chapter while pre-existing attempts are fenced below.
+            for chapter_id in chapter_ids:
+                connection.execute(
+                    insert(chapter_write_locks).values(
+                        chapter_id=chapter_id,
+                        job_id=job_id,
+                        created_at=now,
+                    )
+                )
+            self._append_event(
+                connection,
+                job_id=job_id,
+                event_type="chapter_write_lock_acquired",
+                payload={"chapterIds": chapter_ids},
+                now=now,
             )
-        self._append_event(
+
+        self._preempt_immediate_write_chains(
             connection,
+            chapter_ids=chapter_ids,
             job_id=job_id,
-            event_type="chapter_write_lock_acquired",
-            payload={"chapterIds": chapter_ids},
             now=now,
         )
         return "ready"
@@ -4208,7 +4124,6 @@ class JobQueueRepository:
             connection,
             job_id=job_id,
             error=stored_error,
-            now=now,
         )
         progress = self._progress_snapshot(
             connection,
@@ -4224,6 +4139,7 @@ class JobQueueRepository:
                 queue_rank=None,
                 attempt_id=None,
                 worker_epoch_id=None,
+                blocked_by_job_id=None,
                 latest_progress_json=_json(progress),
                 finished_at=now,
                 updated_at=now,
@@ -4231,7 +4147,7 @@ class JobQueueRepository:
         )
         if changed.rowcount != 1:
             raise JobConflict("invalid queued job changed during failure")
-        self._release_write_reservations(connection, job_id)
+        self._release_write_reservations(connection, job_id, now=now)
         self._sync_domain_terminal(
             connection,
             job_id=job_id,
@@ -4242,11 +4158,9 @@ class JobQueueRepository:
             connection,
             job_id=job_id,
             event_type="job_failed",
-            payload={"error": stored_error, "progress": progress},
+            payload={"error": stored_error},
             now=now,
         )
-        self._bump_queue_revision(connection, now)
-        self._refresh_batch_summary(connection, job_id, now)
 
     def _claim_row(
         self,
@@ -4257,7 +4171,7 @@ class JobQueueRepository:
         now: datetime,
     ) -> AttemptFence:
         job_id = str(candidate["id"])
-        attempt_id = candidate.get("attempt_id") or str(uuid.uuid4())
+        attempt_id = str(uuid.uuid4())
         progress = decode_job_progress(candidate)
         progress["jobStatus"] = "running"
         result = connection.execute(
@@ -4267,7 +4181,6 @@ class JobQueueRepository:
                 status="running",
                 attempt_id=attempt_id,
                 worker_epoch_id=worker_epoch_id,
-                blocked_reason=None,
                 blocked_by_job_id=None,
                 started_at=func.coalesce(jobs.c.started_at, now),
                 latest_progress_json=_json(progress),
@@ -4280,10 +4193,9 @@ class JobQueueRepository:
             connection,
             job_id=job_id,
             event_type="job_started",
-            payload={"attemptId": attempt_id, "progress": progress},
+            payload={"attemptId": attempt_id},
             now=now,
         )
-        self._bump_queue_revision(connection, now)
         return AttemptFence(
             job_id=job_id,
             attempt_id=str(attempt_id),
@@ -4318,47 +4230,145 @@ class JobQueueRepository:
         )
 
     @staticmethod
-    def _old_write_chains_active(connection: Any, chapter_ids: Sequence[str]) -> bool:
-        active_operation = connection.execute(
-            select(operations.c.id)
-            .join(pages, pages.c.id == operations.c.page_id)
-            .where(
-                pages.c.chapter_id.in_(chapter_ids),
-                operations.c.status.in_(ACTIVE_OPERATION_STATUSES),
-            )
-            .limit(1)
-        ).scalar_one_or_none()
-        if active_operation is not None:
-            return True
-        active_render = connection.execute(
-            select(render_requests.c.id)
-            .join(pages, pages.c.id == render_requests.c.page_id)
-            .where(
-                pages.c.chapter_id.in_(chapter_ids),
-                render_requests.c.status.in_(ACTIVE_RENDER_REQUEST_STATUSES),
-            )
-            .limit(1)
-        ).scalar_one_or_none()
-        return active_render is not None
-
-    @staticmethod
-    def _set_blocked(
-        connection: Any,
+    def _preempt_immediate_write_chains(
+        connection: Connection,
         *,
+        chapter_ids: Sequence[str],
         job_id: str,
-        reason: str,
-        blocked_job_id: str | None,
         now: datetime,
     ) -> None:
+        operation_rows = list(
+            connection.execute(
+                select(
+                    operations.c.id,
+                    operations.c.kind,
+                    operations.c.page_id,
+                )
+                .join(pages, pages.c.id == operations.c.page_id)
+                .where(
+                    pages.c.chapter_id.in_(chapter_ids),
+                    operations.c.status.in_(("pending", "running")),
+                )
+            ).mappings()
+        )
+        operation_ids = [str(row["id"]) for row in operation_rows]
+        if operation_ids:
+            connection.execute(
+                update(operations)
+                .where(
+                    operations.c.id.in_(operation_ids),
+                    operations.c.status.in_(("pending", "running")),
+                )
+                .values(
+                    status="cancelled",
+                    result_json=None,
+                    error_json=None,
+                    executor_epoch_id=None,
+                    attempt_id=None,
+                    finished_at=now,
+                    updated_at=now,
+                )
+            )
+            for operation_id in operation_ids:
+                connection.execute(
+                    insert(operation_events).values(
+                        operation_id=operation_id,
+                        type="operation_cancelled",
+                        payload_json=_json(
+                            {
+                                "status": "cancelled",
+                                "reason": "preempted_by_durable_job",
+                                "jobId": job_id,
+                            }
+                        ),
+                        created_at=now,
+                    )
+                )
+            repair_page_ids = [
+                str(row["page_id"])
+                for row in operation_rows
+                if row["kind"] == "page_repair" and row["page_id"] is not None
+            ]
+            if repair_page_ids:
+                connection.execute(
+                    update(pages)
+                    .where(
+                        pages.c.id.in_(repair_page_ids),
+                        pages.c.render_status == "awaiting_repair",
+                    )
+                    .values(render_status="repair_failed", updated_at=now)
+                )
+
+        render_rows = list(
+            connection.execute(
+                select(render_requests.c.id, render_requests.c.page_id)
+                .join(pages, pages.c.id == render_requests.c.page_id)
+                .where(
+                    pages.c.chapter_id.in_(chapter_ids),
+                    render_requests.c.status.in_(("pending", "running")),
+                )
+            ).mappings()
+        )
+        render_ids = [str(row["id"]) for row in render_rows]
+        if not render_ids:
+            return
+        error = {
+            "code": "DURABLE_JOB_PREEMPTED",
+            "message": "A queued durable job superseded this render request",
+        }
         connection.execute(
-            update(jobs)
-            .where(jobs.c.id == job_id, jobs.c.status == "queued")
+            update(render_requests)
+            .where(
+                render_requests.c.id.in_(render_ids),
+                render_requests.c.status.in_(("pending", "running")),
+            )
             .values(
-                blocked_reason=reason,
-                blocked_by_job_id=blocked_job_id,
+                status="failed",
+                rendering_revision=None,
+                executor_epoch_id=None,
+                attempt_id=None,
+                error_json=_json(error),
                 updated_at=now,
             )
         )
+        render_page_ids = [str(row["page_id"]) for row in render_rows]
+        connection.execute(
+            update(pages)
+            .where(
+                pages.c.id.in_(render_page_ids),
+                pages.c.render_status == "rendering",
+            )
+            .values(render_status="stale", updated_at=now)
+        )
+
+    def _set_blocked(
+        self,
+        connection: Any,
+        *,
+        job_id: str,
+        blocked_job_id: str,
+        now: datetime,
+    ) -> None:
+        changed = connection.execute(
+            update(jobs)
+            .where(
+                jobs.c.id == job_id,
+                jobs.c.status == "queued",
+                jobs.c.blocked_by_job_id.is_distinct_from(blocked_job_id),
+            )
+            .values(
+                blocked_by_job_id=blocked_job_id,
+                updated_at=now,
+            )
+        ).rowcount
+        if changed:
+            self._append_event(
+                connection,
+                job_id=job_id,
+                event_type="job_blocked",
+                payload={"blockedByJobId": blocked_job_id},
+                now=now,
+            )
 
     @staticmethod
     def _assert_worker_epoch(
@@ -4390,7 +4400,6 @@ class JobQueueRepository:
                 jobs.c.id == fence.job_id,
                 jobs.c.attempt_id == fence.attempt_id,
                 jobs.c.worker_epoch_id == fence.worker_epoch_id,
-                jobs.c.status.in_(allowed_statuses),
                 exists(
                     select(process_epochs.c.id).where(
                         process_epochs.c.id == fence.worker_epoch_id,
@@ -4403,19 +4412,54 @@ class JobQueueRepository:
         ).scalar_one_or_none()
         if row is None:
             raise AttemptFenced("job attempt lost execution rights")
-        return str(row)
+        status = str(row)
+        if status in allowed_statuses:
+            return status
+        raise AttemptFenced("job attempt no longer has an executable status")
 
-    @staticmethod
-    def _release_write_reservations(connection: Any, job_id: str) -> None:
+    def _release_write_reservations(
+        self,
+        connection: Any,
+        job_id: str,
+        *,
+        now: datetime,
+    ) -> None:
         connection.execute(
             delete(chapter_write_locks).where(chapter_write_locks.c.job_id == job_id)
         )
+        dependents = [
+            str(value)
+            for value in connection.execute(
+                select(jobs.c.id).where(
+                    jobs.c.status == "queued",
+                    jobs.c.blocked_by_job_id == job_id,
+                )
+            ).scalars()
+        ]
+        if not dependents:
+            return
+        connection.execute(
+            update(jobs)
+            .where(
+                jobs.c.id.in_(dependents),
+                jobs.c.status == "queued",
+                jobs.c.blocked_by_job_id == job_id,
+            )
+            .values(blocked_by_job_id=None, updated_at=now)
+        )
+        for dependent_id in dependents:
+            self._append_event(
+                connection,
+                job_id=dependent_id,
+                event_type="job_unblocked",
+                payload={"blockedByJobId": job_id},
+                now=now,
+            )
 
     @staticmethod
     def _cancel_unfinished_graph(
         connection: Any,
         job_id: str,
-        now: datetime,
     ) -> None:
         item_ids = select(job_items.c.id).where(job_items.c.job_id == job_id)
         connection.execute(
@@ -4424,7 +4468,7 @@ class JobQueueRepository:
                 job_steps.c.job_item_id.in_(item_ids),
                 job_steps.c.status.in_(("pending", "running")),
             )
-            .values(status="cancelled", attempt_id=None, updated_at=now)
+            .values(status="cancelled", attempt_id=None)
         )
         connection.execute(
             update(job_items)
@@ -4432,7 +4476,7 @@ class JobQueueRepository:
                 job_items.c.job_id == job_id,
                 job_items.c.status.in_(("pending", "running")),
             )
-            .values(status="cancelled", updated_at=now)
+            .values(status="cancelled")
         )
 
     @staticmethod
@@ -4441,7 +4485,6 @@ class JobQueueRepository:
         *,
         job_id: str,
         error: Mapping[str, Any],
-        now: datetime,
     ) -> None:
         item_ids = select(job_items.c.id).where(job_items.c.job_id == job_id)
         serialized_error = _json(error)
@@ -4455,7 +4498,6 @@ class JobQueueRepository:
                 status="failed",
                 attempt_id=None,
                 error_json=serialized_error,
-                updated_at=now,
             )
         )
         connection.execute(
@@ -4464,7 +4506,7 @@ class JobQueueRepository:
                 job_steps.c.job_item_id.in_(item_ids),
                 job_steps.c.status == "pending",
             )
-            .values(status="skipped", attempt_id=None, updated_at=now)
+            .values(status="skipped", attempt_id=None)
         )
         connection.execute(
             update(job_items)
@@ -4472,7 +4514,7 @@ class JobQueueRepository:
                 job_items.c.job_id == job_id,
                 job_items.c.status.in_(("pending", "running")),
             )
-            .values(status="failed", error_json=serialized_error, updated_at=now)
+            .values(status="failed", error_json=serialized_error)
         )
 
     def _cancel_queued_job(
@@ -4483,10 +4525,11 @@ class JobQueueRepository:
         source: str,
         now: datetime,
     ) -> None:
-        self._cancel_unfinished_graph(connection, job_id, now)
+        self._cancel_unfinished_graph(connection, job_id)
         snapshot = self._progress_snapshot(
             connection,
             job_id,
+            lock_waiting={},
             job_status="cancelled",
         )
         result = connection.execute(
@@ -4495,6 +4538,7 @@ class JobQueueRepository:
             .values(
                 status="cancelled",
                 queue_rank=None,
+                blocked_by_job_id=None,
                 latest_progress_json=_json(snapshot),
                 finished_at=now,
                 updated_at=now,
@@ -4502,7 +4546,7 @@ class JobQueueRepository:
         )
         if result.rowcount != 1:
             raise JobConflict("queued job changed during cancellation")
-        self._release_write_reservations(connection, job_id)
+        self._release_write_reservations(connection, job_id, now=now)
         self._sync_domain_terminal(
             connection,
             job_id=job_id,
@@ -4513,10 +4557,9 @@ class JobQueueRepository:
             connection,
             job_id=job_id,
             event_type="job_cancelled",
-            payload={"source": source, "progress": snapshot},
+            payload={"source": source},
             now=now,
         )
-        self._refresh_batch_summary(connection, job_id, now)
 
     @staticmethod
     def _next_queue_rank(connection: Any) -> int:
@@ -4564,13 +4607,6 @@ class JobQueueRepository:
                 .where(jobs.c.id == job_id, jobs.c.status == "queued")
                 .values(queue_rank=queue_rank, updated_at=now)
             )
-            self._append_event(
-                connection,
-                job_id=job_id,
-                event_type="job_reordered",
-                payload={"queueRank": queue_rank, "source": "owner_round_robin"},
-                now=now,
-            )
 
     def _reorder_ordinary(
         self,
@@ -4579,6 +4615,16 @@ class JobQueueRepository:
         ordered_job_ids: Sequence[str],
         now: datetime,
     ) -> None:
+        queue_ranks = [
+            int(rank)
+            for rank in connection.execute(
+                select(jobs.c.queue_rank)
+                .where(jobs.c.id.in_(ordered_job_ids))
+                .order_by(jobs.c.queue_rank)
+            ).scalars()
+        ]
+        if len(queue_ranks) != len(ordered_job_ids):
+            raise JobConflict("queued jobs changed during reordering")
         # Move through a disjoint positive range to avoid transient UNIQUE
         # collisions without violating the queue-rank CHECK constraint.
         temporary_start = int(
@@ -4592,19 +4638,11 @@ class JobQueueRepository:
                 .where(jobs.c.id == job_id)
                 .values(queue_rank=temporary_start + offset, updated_at=now)
             )
-        prefix_max = int(
-            connection.execute(
-                select(func.coalesce(func.max(jobs.c.queue_rank), 0)).where(
-                    or_(
-                        jobs.c.status != "queued",
-                        jobs.c.id.not_in(ordered_job_ids),
-                    ),
-                    jobs.c.queue_rank.is_not(None),
-                )
-            ).scalar_one()
-        )
-        for offset, job_id in enumerate(ordered_job_ids, start=1):
-            queue_rank = prefix_max + offset
+        for job_id, queue_rank in zip(
+            ordered_job_ids,
+            queue_ranks,
+            strict=True,
+        ):
             connection.execute(
                 update(jobs)
                 .where(jobs.c.id == job_id)
@@ -5016,19 +5054,22 @@ class JobQueueRepository:
 
     @staticmethod
     def _job_dto(row: Mapping[str, Any]) -> dict[str, object]:
-        decode_job_config(row)
         progress = decode_job_progress(row)
         target = _load_required_object(
             row["target_display_json"],
             "jobs.target_display_json",
         )
-        blocked_reason = row["blocked_reason"]
-        if (
-            blocked_reason is None
-            and row["status"] == "queued"
-            and bool(row.get("holds_chapter_lock"))
-        ):
-            blocked_reason = "retained_chapter_lock"
+        blocked_by_job_id = row["blocked_by_job_id"]
+        blocking_label = (
+            "blocked_by_job"
+            if blocked_by_job_id is not None
+            else (
+                "retained_chapter_lock"
+                if row["status"] == "queued"
+                and bool(row.get("holds_chapter_lock"))
+                else None
+            )
+        )
         return {
             "jobId": row["id"],
             "batchId": row["batch_id"],
@@ -5041,8 +5082,8 @@ class JobQueueRepository:
             "bookId": row["book_id"],
             "chapterId": row["chapter_id"],
             "pageId": row["page_id"],
-            "blockedReason": blocked_reason,
-            "blockedByJobId": row["blocked_by_job_id"],
+            "blockedReason": blocking_label,
+            "blockedByJobId": blocked_by_job_id,
             "progress": progress,
             "target": target,
             "createdAt": _iso(row["created_at"]),
@@ -5098,6 +5139,79 @@ class JobQueueRepository:
         }
 
     @staticmethod
+    def _queue_runtime(
+        connection: Any,
+        *,
+        low_memory: bool,
+    ) -> dict[str, object]:
+        owner_user_id = effective_owner_id()
+        now = utcnow()
+        queue_paused = bool(
+            connection.execute(
+                select(queue_state.c.admission_paused).where(
+                    queue_state.c.singleton_id == 1
+                )
+            ).scalar_one()
+        )
+        worker_online = bool(
+            connection.execute(
+                select(
+                    exists().where(
+                        process_epochs.c.role == "worker",
+                        process_epochs.c.status == "active",
+                        process_epochs.c.lease_expires_at > now,
+                    )
+                )
+            ).scalar()
+        )
+        executor_busy = bool(
+            connection.execute(
+                select(
+                    exists().where(jobs.c.status.in_(EXECUTING_JOB_STATUSES))
+                )
+            ).scalar()
+        )
+        owner_has_queued = bool(
+            connection.execute(
+                select(
+                    exists().where(
+                        jobs.c.status == "queued",
+                        jobs.c.owner_user_id == owner_user_id,
+                    )
+                )
+            ).scalar()
+        )
+        owner_has_ready = bool(
+            connection.execute(
+                select(
+                    exists().where(
+                        jobs.c.status == "queued",
+                        jobs.c.owner_user_id == owner_user_id,
+                        jobs.c.blocked_by_job_id.is_(None),
+                    )
+                )
+            ).scalar()
+        )
+        waiting_reason: str | None = None
+        if owner_has_queued:
+            if queue_paused:
+                waiting_reason = "queue_paused"
+            elif not worker_online:
+                waiting_reason = "worker_offline"
+            elif not owner_has_ready:
+                waiting_reason = "queue_blocked"
+            elif executor_busy:
+                waiting_reason = "executor_busy"
+            elif low_memory:
+                waiting_reason = "low_memory"
+        return {
+            "queuePaused": queue_paused,
+            "workerOnline": worker_online,
+            "executorBusy": executor_busy,
+            "waitingReason": waiting_reason,
+        }
+
+    @staticmethod
     def _append_event(
         connection: Any,
         *,
@@ -5115,45 +5229,3 @@ class JobQueueRepository:
             )
         )
         return int(result.inserted_primary_key[0])
-
-    @staticmethod
-    def _bump_queue_revision(connection: Any, now: datetime) -> int:
-        connection.execute(
-            update(queue_state)
-            .where(queue_state.c.singleton_id == 1)
-            .values(
-                queue_revision=queue_state.c.queue_revision + 1,
-                updated_at=now,
-            )
-        )
-        return int(
-            connection.execute(
-                select(queue_state.c.queue_revision).where(
-                    queue_state.c.singleton_id == 1
-                )
-            ).scalar_one()
-        )
-
-    @staticmethod
-    def _refresh_batch_summary(connection: Any, job_id: str, now: datetime) -> None:
-        batch_id = connection.execute(
-            select(jobs.c.batch_id).where(jobs.c.id == job_id)
-        ).scalar_one_or_none()
-        if batch_id is None:
-            return
-        rows = connection.execute(
-            select(jobs.c.status, func.count())
-            .where(jobs.c.batch_id == batch_id)
-            .group_by(jobs.c.status)
-        )
-        counts = {str(status): int(count) for status, count in rows}
-        connection.execute(
-            update(job_batches)
-            .where(job_batches.c.id == batch_id)
-            .values(
-                status_summary_json=_json(
-                    {"total": sum(counts.values()), **counts}
-                ),
-                updated_at=now,
-            )
-        )

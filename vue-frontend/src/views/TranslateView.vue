@@ -248,7 +248,7 @@ function handleWebImportCommitAccepted(jobIds: string[]): void {
     ...pendingContentImportJobIds.value,
     ...jobIds,
   ])
-  void taskCenterStore.refresh().catch(() => undefined)
+  for (const jobId of jobIds) taskCenterStore.trackJob(jobId)
 }
 
 watch(

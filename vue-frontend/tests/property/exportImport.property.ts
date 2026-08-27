@@ -1,11 +1,12 @@
 import { readFileSync } from 'node:fs'
 
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useExportImport } from '@/composables/useExportImport'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settings'
+import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import { addTestImage } from '../helpers/imageFixtures'
 
 const mocks = vi.hoisted(() => ({
@@ -14,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   getChapterTextExportUrl: vi.fn(),
   jobGet: vi.fn(),
   jobList: vi.fn(),
+  jobSnapshot: vi.fn(),
   previewChapterTextImport: vi.fn(),
   triggerUrlDownload: vi.fn(),
   toast: {
@@ -40,6 +42,7 @@ vi.mock('@/api/v2/jobs', async importOriginal => {
       ...actual.jobsApi,
       get: mocks.jobGet,
       list: mocks.jobList,
+      snapshot: mocks.jobSnapshot,
     },
   }
 })
@@ -78,7 +81,12 @@ describe('backend-owned export/import contracts', () => {
       `/api/v2/chapters/${chapterId}/text-export?format=${format}`
     ))
     mocks.toast.info.mockReturnValue(101)
-    mocks.jobList.mockResolvedValue({ items: [], queueRevision: 1 })
+    mocks.jobList.mockResolvedValue({ items: [], queuePaused: false, eventCursor: 0, workerOnline: true, executorBusy: false, waitingReason: null })
+    mocks.jobSnapshot.mockResolvedValue({ items: [], queuePaused: false, workerOnline: true, executorBusy: false, waitingReason: null })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('downloads text from the backend export endpoint', () => {
@@ -108,6 +116,7 @@ describe('backend-owned export/import contracts', () => {
 
   it('previews text on the backend and commits only matched changed pages', async () => {
     seedChapter()
+    const trackJob = vi.spyOn(useTaskCenterStore(), 'trackJob')
     const matchingPage = {
       baseDocumentRevision: 7,
       changes: [{
@@ -149,7 +158,8 @@ describe('backend-owned export/import contracts', () => {
 
     expect(mocks.previewChapterTextImport).toHaveBeenCalledWith('chapter-1', file)
     expect(mocks.commitChapterTextImport).toHaveBeenCalledWith('chapter-1', [matchingPage])
-    expect(mocks.jobList).toHaveBeenCalledTimes(2)
+    expect(trackJob).toHaveBeenCalledWith('job-import-1')
+    expect(mocks.jobList).not.toHaveBeenCalled()
     expect(mocks.toast.success).toHaveBeenCalledWith(
       '已提交 1 页文本导入，可安全关闭页面；跳过 1 页冲突',
     )
@@ -171,7 +181,8 @@ describe('backend-owned export/import contracts', () => {
     )
   })
 
-  it('does not report a committed import as failed when task-center refresh is unavailable', async () => {
+  it('does not report a committed import as failed when its targeted snapshot is unavailable', async () => {
+    vi.useFakeTimers()
     seedChapter()
     mocks.previewChapterTextImport.mockResolvedValue({
       chapterId: 'chapter-1',
@@ -193,9 +204,10 @@ describe('backend-owned export/import contracts', () => {
       jobIds: ['job-import-1'],
       status: 'queued',
     })
-    mocks.jobList.mockRejectedValue(new Error('snapshot unavailable'))
+    mocks.jobSnapshot.mockRejectedValue(new Error('snapshot unavailable'))
 
     await useExportImport().importText(new File(['{}'], 'translation.json'))
+    await vi.runAllTimersAsync()
 
     expect(mocks.toast.success).toHaveBeenCalledWith(
       '已提交 1 页文本导入，可安全关闭页面',
@@ -251,16 +263,13 @@ describe('backend-owned export/import contracts', () => {
       progress: { completedItems: 2, failedItems: 0, totalItems: 2 },
       status: 'completed',
     })
-    mocks.jobList.mockImplementation((scope: string) => Promise.resolve({
-      items: scope === 'queue'
-        ? [{
+    mocks.jobList.mockResolvedValue({
+      items: [{
             jobId: 'job-export-1',
             progress: { completedItems: 2, failedItems: 0, totalItems: 2 },
             status: 'completed',
-          }]
-        : [],
-      queueRevision: 1,
-    }))
+          }],
+    })
 
     await useExportImport().downloadAllImages('cbz')
 

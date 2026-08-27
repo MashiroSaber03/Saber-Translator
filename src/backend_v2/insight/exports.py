@@ -235,7 +235,6 @@ class InsightExportCommandService:
                 )
 
         return self.jobs.create_batch(
-            kind="insight_export",
             display_name="Insight · 导出全部",
             specs=(
                 JobSpec(

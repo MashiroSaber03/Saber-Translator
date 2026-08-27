@@ -14,6 +14,7 @@ from src.backend_v2.logging_config import configure_backend_logging
 from src.backend_v2.paths import data_root_fingerprint, ensure_data_root, resolve_data_root
 from src.backend_v2.runtime_heartbeat import EpochHeartbeat
 from src.backend_v2.runtime_identity import (
+    CHILD_LEASE_LOST_EXIT_CODE,
     LauncherParentMonitor,
     RuntimeIdentity,
     start_launcher_parent_monitor,
@@ -66,7 +67,7 @@ def run_api(args: object) -> int:
 
     def stop_orphaned_server() -> None:
         LOGGER.critical("Launcher 进程已退出，API 立即终止")
-        os._exit(75)
+        os._exit(CHILD_LEASE_LOST_EXIT_CODE)
 
     if not identity.test_mode:
         repository = ProcessEpochRepository(engine)
@@ -143,7 +144,7 @@ def run_api(args: object) -> int:
         )
         close_server = server.close
         if fenced.is_set():
-            return 75
+            return CHILD_LEASE_LOST_EXIT_CODE
         app.extensions["saber_v2_runtime"].start()
         user_log(
             "system",
@@ -166,5 +167,5 @@ def run_api(args: object) -> int:
         if server is not None:
             LOGGER.debug("API 服务已关闭")
     if fenced.is_set():
-        return 75
+        return CHILD_LEASE_LOST_EXIT_CODE
     return 0

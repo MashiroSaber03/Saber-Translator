@@ -35,7 +35,7 @@ function job(overrides: Partial<V2Job>): V2Job {
     queueRank: 1,
     progress: progress(),
     target: {},
-    createdAt: null,
+    createdAt: '2026-08-23T04:00:00Z',
     ...overrides,
   }
 }

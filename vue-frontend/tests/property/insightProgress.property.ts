@@ -17,9 +17,7 @@ const analysisStatusArbitrary = fc.constantFrom<AnalysisStatus>(
   'idle',
   'queued',
   'running',
-  'pausing',
   'paused',
-  'cancelling',
   'interrupted',
   'completed',
   'completed_with_errors',
@@ -30,9 +28,7 @@ const analysisStatusArbitrary = fc.constantFrom<AnalysisStatus>(
 const activeStatuses = new Set<AnalysisStatus>([
   'queued',
   'running',
-  'pausing',
   'paused',
-  'cancelling',
   'interrupted',
 ])
 

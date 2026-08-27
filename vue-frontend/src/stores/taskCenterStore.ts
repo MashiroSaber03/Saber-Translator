@@ -5,6 +5,7 @@ import {
   HISTORY_JOB_STATUSES,
   NONTERMINAL_JOB_STATUSES,
   jobsApi,
+  type JobListResponse,
   type JobRetryAccepted,
   type V2Job,
   type V2JobDetail,
@@ -15,13 +16,14 @@ import { groupJobsByBatch } from '@/stores/taskCenterProjection'
 import { TASK_EVENT_TYPES } from '@/utils/taskDisplay'
 
 type TaskCenterEventListener = (event: V2JobEvent) => void
+type TaskWaitingReason = JobListResponse['waitingReason']
 
 const QUEUE_STATUSES = new Set<V2JobStatus>([
   'queued',
   ...CURRENT_JOB_STATUSES,
 ])
 const HISTORY_BATCH_LIMIT = 200
-const ACTIVE_JOB_RECONCILE_MS = 2_000
+const RECONCILE_MS = 15_000
 const JOB_EVENT_FIELDS = new Set(['eventId', 'jobId', 'type', 'payload', 'createdAt'])
 
 function parseJobEvent(value: unknown): V2JobEvent | null {
@@ -39,14 +41,9 @@ function parseJobEvent(value: unknown): V2JobEvent | null {
     || !record.payload
     || typeof record.payload !== 'object'
     || Array.isArray(record.payload)
-    || !(
-      record.createdAt === null
-      || (
-        typeof record.createdAt === 'string'
-        && record.createdAt.length > 0
-        && Number.isFinite(Date.parse(record.createdAt))
-      )
-    )
+    || typeof record.createdAt !== 'string'
+    || record.createdAt.length === 0
+    || !Number.isFinite(Date.parse(record.createdAt))
   ) return null
   return record as unknown as V2JobEvent
 }
@@ -66,15 +63,16 @@ export interface TaskCenterFocus {
 export const useTaskCenterStore = defineStore('taskCenter', () => {
   const queue = ref<V2Job[]>([])
   const history = ref<V2Job[]>([])
-  const queueRevision = ref(1)
+  const queuePaused = ref(false)
   const drawerOpen = ref(false)
   const focusTarget = ref<TaskCenterFocus | null>(null)
   const loading = ref(false)
   const snapshotLoaded = ref(false)
   const connected = ref(false)
-  const workerOnline = ref(true)
+  const workerOnline = ref(false)
+  const executorBusy = ref(false)
+  const waitingReason = ref<TaskWaitingReason>(null)
   const lastEventId = ref(0)
-  const latestEvent = ref<V2JobEvent | null>(null)
   const selectedDetail = ref<V2JobDetail | null>(null)
   const selectedDetailJobId = ref<string | null>(null)
   const detailLoading = ref(false)
@@ -85,7 +83,7 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
   const bookFilter = ref('')
   let eventSource: EventSource | null = null
   let eventStreamOpenedOnce = false
-  let activeJobReconcileTimer: ReturnType<typeof setTimeout> | null = null
+  let reconcileTimer: ReturnType<typeof setTimeout> | null = null
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
   let refreshPromise: Promise<void> | null = null
   let eventRefreshInFlight = false
@@ -97,8 +95,11 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
   let detailProjectionPromise: Promise<void> | null = null
   let detailProjectionDirty = false
   let detailRequestVersion = 0
+  let lifecycleGeneration = 0
+  let lifecycleActive = false
   const pendingProjectionJobIds = new Set<string>()
   const eventListeners = new Set<TaskCenterEventListener>()
+  const lifecycleResetListeners = new Set<() => void>()
 
   const activeCount = computed(
     () => queue.value.filter(job => CURRENT_JOB_STATUSES.has(job.status)).length
@@ -124,20 +125,21 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
 
   function refresh(): Promise<void> {
     if (refreshPromise) return refreshPromise
+    const generation = lifecycleGeneration
     const startedProjectionVersion = projectionVersion
     loading.value = true
-    refreshPromise = Promise.all([
-      jobsApi.list('queue'),
-      jobsApi.list('history'),
-    ]).then(([queueResult, historyResult]) => {
+    const request = jobsApi.list('all').then((result) => {
+      if (generation !== lifecycleGeneration) return
       if (projectionVersion !== startedProjectionVersion) {
         scheduleRefresh()
         return
       }
-      queue.value = queueResult.items
-      history.value = historyResult.items
-      queueRevision.value = queueResult.queueRevision
-      workerOnline.value = queueResult.workerOnline !== false
+      queue.value = result.items.filter(job => QUEUE_STATUSES.has(job.status))
+      history.value = result.items.filter(job => HISTORY_JOB_STATUSES.has(job.status))
+      queuePaused.value = result.queuePaused
+      workerOnline.value = result.workerOnline
+      executorBusy.value = result.executorBusy
+      waitingReason.value = result.waitingReason
       snapshotLoaded.value = true
       if (selectedDetail.value) {
         scheduleSelectedDetailRefresh(selectedDetail.value.jobId)
@@ -145,25 +147,25 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
       if (
         !eventSource &&
         lastEventId.value === 0 &&
-        typeof queueResult.eventCursor === 'number' &&
-        typeof historyResult.eventCursor === 'number'
+        typeof result.eventCursor === 'number'
       ) {
-        // The two snapshots are independent reads.  Starting from the older
-        // cursor guarantees that an event committed between them is replayed.
-        lastEventId.value = Math.min(queueResult.eventCursor, historyResult.eventCursor)
+        lastEventId.value = result.eventCursor
       }
     }).finally(() => {
-      loading.value = false
-      refreshPromise = null
+      if (refreshPromise === request) {
+        loading.value = false
+        refreshPromise = null
+      }
     })
-    return refreshPromise
+    refreshPromise = request
+    return request
   }
 
   function queueOrder(left: V2Job, right: V2Job): number {
     const leftRank = left.queueRank ?? Number.MAX_SAFE_INTEGER
     const rightRank = right.queueRank ?? Number.MAX_SAFE_INTEGER
     if (leftRank !== rightRank) return leftRank - rightRank
-    return String(left.createdAt || '').localeCompare(String(right.createdAt || ''))
+    return left.createdAt.localeCompare(right.createdAt)
   }
 
   function trimHistoryBatches(items: V2Job[]): V2Job[] {
@@ -238,7 +240,9 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
       || !jobId
     ) return
     detailProjectionDirty = false
+    const generation = lifecycleGeneration
     const request = jobsApi.get(jobId).then((detail) => {
+      if (generation !== lifecycleGeneration) return
       const previous = selectedDetail.value
       if (previous?.jobId !== jobId) return
       selectedDetail.value = {
@@ -249,10 +253,12 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
       // The durable queue/history projection remains usable if the optional
       // expanded-detail refresh races with a transient request failure.
     }).finally(() => {
-      detailProjectionPromise = null
-      const selectedJobId = selectedDetail.value?.jobId
-      if (detailProjectionDirty && selectedJobId) {
-        scheduleSelectedDetailRefresh(selectedJobId)
+      if (detailProjectionPromise === request) {
+        detailProjectionPromise = null
+        const selectedJobId = selectedDetail.value?.jobId
+        if (detailProjectionDirty && selectedJobId) {
+          scheduleSelectedDetailRefresh(selectedJobId)
+        }
       }
     })
     detailProjectionPromise = request
@@ -273,53 +279,70 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     }, 100)
   }
 
-  function stopActiveJobReconciliation(): void {
-    if (activeJobReconcileTimer) clearTimeout(activeJobReconcileTimer)
-    activeJobReconcileTimer = null
+  function stopReconciliation(): void {
+    if (reconcileTimer) clearTimeout(reconcileTimer)
+    reconcileTimer = null
   }
 
-  function scheduleActiveJobReconciliation(): void {
+  function scheduleReconciliation(): void {
+    const hasNonterminalJob = queue.value.some(job =>
+      NONTERMINAL_JOB_STATUSES.has(job.status)
+    )
     if (
-      activeJobReconcileTimer
+      reconcileTimer
       || !eventSource
       || !eventStreamOpenedOnce
-      || !queue.value.some(job => NONTERMINAL_JOB_STATUSES.has(job.status))
+      || (!hasNonterminalJob && !drawerOpen.value)
     ) return
-    activeJobReconcileTimer = setTimeout(() => {
-      activeJobReconcileTimer = null
+    reconcileTimer = setTimeout(() => {
+      reconcileTimer = null
       if (!eventSource || !eventStreamOpenedOnce) return
       const activeJobIds = queue.value
         .filter(job => NONTERMINAL_JOB_STATUSES.has(job.status))
         .map(job => job.jobId)
-      for (const jobId of activeJobIds) scheduleJobProjection(jobId)
-      scheduleActiveJobReconciliation()
-    }, ACTIVE_JOB_RECONCILE_MS)
+      if (activeJobIds.length) {
+        for (const jobId of activeJobIds) scheduleJobProjection(jobId)
+      } else if (drawerOpen.value) {
+        void refresh().catch(() => undefined)
+      }
+      scheduleReconciliation()
+    }, RECONCILE_MS)
   }
 
   watch(
-    () => queue.value.map(job => `${job.jobId}:${job.status}`).join('|'),
-    () => scheduleActiveJobReconciliation(),
+    [
+      () => queue.value.map(job => `${job.jobId}:${job.status}`).join('|'),
+      () => drawerOpen.value,
+    ],
+    () => scheduleReconciliation(),
   )
 
   async function flushJobProjections(): Promise<void> {
     if (projectionPromise || pendingProjectionJobIds.size === 0) return
+    const generation = lifecycleGeneration
     const jobIds = [...pendingProjectionJobIds].slice(0, 200)
     for (const jobId of jobIds) pendingProjectionJobIds.delete(jobId)
     const request = jobsApi.snapshot(jobIds).then(result => {
+      if (generation !== lifecycleGeneration) return
       const found = new Set(result.items.map(job => job.jobId))
       for (const job of result.items) applyJobProjection(job)
       for (const jobId of jobIds) {
         if (!found.has(jobId)) removeJobProjection(jobId)
       }
-      queueRevision.value = Math.max(queueRevision.value, result.queueRevision)
+      queuePaused.value = result.queuePaused
+      workerOnline.value = result.workerOnline
+      executorBusy.value = result.executorBusy
+      waitingReason.value = result.waitingReason
       projectionVersion += 1
     }).catch(() => {
-      scheduleRefresh()
+      if (generation === lifecycleGeneration) scheduleRefresh()
     }).finally(() => {
-      projectionPromise = null
-      if (pendingProjectionJobIds.size > 0) {
-        const nextJobId = pendingProjectionJobIds.values().next().value
-        if (nextJobId) scheduleJobProjection(nextJobId)
+      if (projectionPromise === request) {
+        projectionPromise = null
+        if (pendingProjectionJobIds.size > 0) {
+          const nextJobId = pendingProjectionJobIds.values().next().value
+          if (nextJobId) scheduleJobProjection(nextJobId)
+        }
       }
     })
     projectionPromise = request
@@ -331,6 +354,7 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     if (refreshTimer || eventRefreshInFlight) return
     refreshTimer = setTimeout(async () => {
       refreshTimer = null
+      const generation = lifecycleGeneration
       eventRefreshInFlight = true
       eventRefreshDirty = false
       try {
@@ -340,13 +364,20 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
         // the durable snapshot. Background refresh failures must not surface as
         // unhandled promise rejections.
       } finally {
-        eventRefreshInFlight = false
-        if (eventRefreshDirty) scheduleRefresh()
+        if (generation === lifecycleGeneration) {
+          eventRefreshInFlight = false
+          if (eventRefreshDirty) scheduleRefresh()
+        }
       }
     }, 250)
   }
 
-  function receiveEvent(event: MessageEvent<string>, expectedType: string): void {
+  function receiveEvent(
+    event: MessageEvent<string>,
+    expectedType: string,
+    generation: number,
+  ): void {
+    if (generation !== lifecycleGeneration || !lifecycleActive) return
     try {
       const parsed = parseJobEvent(JSON.parse(event.data))
       if (!parsed || parsed.type !== expectedType) {
@@ -354,52 +385,62 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
         return
       }
       if (parsed.eventId <= lastEventId.value) return
-      const cursorGap = lastEventId.value > 0 && parsed.eventId !== lastEventId.value + 1
-      latestEvent.value = parsed
       lastEventId.value = parsed.eventId
       for (const listener of eventListeners) listener(parsed)
-      if (cursorGap) scheduleRefresh()
-      else scheduleJobProjection(parsed.jobId)
+      scheduleJobProjection(parsed.jobId)
     } catch {
       scheduleRefresh()
     }
   }
 
-  function connect(): void {
-    if (eventSource) return
-    eventSource = new EventSource(`/api/v2/jobs/events?after=${lastEventId.value}`)
-    eventSource.onopen = () => {
+  function connect(generation = lifecycleGeneration): void {
+    if (eventSource || !lifecycleActive || generation !== lifecycleGeneration) return
+    const source = new EventSource(`/api/v2/jobs/events?after=${lastEventId.value}`)
+    eventSource = source
+    source.onopen = () => {
+      if (
+        generation !== lifecycleGeneration
+        || !lifecycleActive
+        || eventSource !== source
+      ) return
       connected.value = true
       if (eventStreamOpenedOnce || !snapshotLoaded.value) {
         void refresh().catch(() => undefined)
       }
       eventStreamOpenedOnce = true
-      scheduleActiveJobReconciliation()
+      scheduleReconciliation()
     }
-    eventSource.onerror = () => {
+    source.onerror = () => {
+      if (generation !== lifecycleGeneration || eventSource !== source) return
       connected.value = false
       scheduleRefresh()
     }
     for (const eventType of TASK_EVENT_TYPES) {
-      eventSource.addEventListener(
+      source.addEventListener(
         eventType,
-        (event) => receiveEvent(event as MessageEvent<string>, eventType),
+        (event) => receiveEvent(event as MessageEvent<string>, eventType, generation),
       )
     }
   }
 
   async function initialize(): Promise<void> {
+    if (lifecycleActive) return
+    lifecycleActive = true
+    const generation = lifecycleGeneration
     try {
       await refresh()
     } catch {
       // EventSource reconnects independently and refreshes the durable
       // snapshot on open, so a transient startup failure is recoverable.
     }
-    connect()
+    if (lifecycleActive && generation === lifecycleGeneration) connect(generation)
   }
 
   function disconnect(): void {
-    stopActiveJobReconciliation()
+    lifecycleActive = false
+    lifecycleGeneration += 1
+    for (const listener of [...lifecycleResetListeners]) listener()
+    stopReconciliation()
     if (refreshTimer) clearTimeout(refreshTimer)
     refreshTimer = null
     if (projectionTimer) clearTimeout(projectionTimer)
@@ -409,11 +450,29 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     detailProjectionDirty = false
     pendingProjectionJobIds.clear()
     eventRefreshDirty = false
+    eventRefreshInFlight = false
     eventSource?.close()
     eventSource = null
+    refreshPromise = null
+    projectionPromise = null
+    detailProjectionPromise = null
     eventStreamOpenedOnce = false
+    projectionVersion = 0
+    queue.value = []
+    history.value = []
+    queuePaused.value = false
+    workerOnline.value = false
+    executorBusy.value = false
+    waitingReason.value = null
+    lastEventId.value = 0
+    loading.value = false
     snapshotLoaded.value = false
     connected.value = false
+    drawerOpen.value = false
+    focusTarget.value = null
+    statusFilter.value = ''
+    kindFilter.value = ''
+    bookFilter.value = ''
     clearDetail()
   }
 
@@ -423,9 +482,13 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
   }
 
   async function waitForJob(jobId: string, options: WaitForJobOptions = {}): Promise<V2JobDetail> {
+    const generation = lifecycleGeneration
     options.signal?.throwIfAborted()
     await refresh()
     options.signal?.throwIfAborted()
+    if (generation !== lifecycleGeneration) {
+      throw new Error('任务上下文已切换')
+    }
 
     return new Promise<V2JobDetail>((resolve, reject) => {
       let settled = false
@@ -437,9 +500,12 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
         settled = true
         stop?.()
         options.signal?.removeEventListener('abort', abort)
+        lifecycleResetListeners.delete(resetLifecycle)
         action()
       }
       const abort = (): void => finish(() => reject(new DOMException('Aborted', 'AbortError')))
+      const resetLifecycle = (): void => finish(() => reject(new Error('任务上下文已切换')))
+      lifecycleResetListeners.add(resetLifecycle)
 
       stop = watch(
         () => [...queue.value, ...history.value].find(job => job.jobId === jobId),
@@ -478,27 +544,33 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
   }
 
   async function runCommand<T>(command: () => Promise<T>): Promise<T> {
+    const generation = lifecycleGeneration
     const result = await command()
-    if (refreshPromise) await refreshPromise.catch(() => undefined)
-    await refresh().catch(() => undefined)
+    if (generation !== lifecycleGeneration) return result
+    const commandResult = result && typeof result === 'object'
+      ? result as { jobId?: unknown; jobIds?: unknown }
+      : null
+    const jobIds = Array.isArray(commandResult?.jobIds)
+      ? commandResult.jobIds
+      : null
+    if (typeof commandResult?.jobId === 'string') {
+      scheduleJobProjection(commandResult.jobId)
+    } else if (
+      jobIds
+      && jobIds.length > 0
+      && jobIds.every((jobId): jobId is string => (
+        typeof jobId === 'string' && jobId.length > 0
+      ))
+    ) {
+      for (const jobId of jobIds) scheduleJobProjection(jobId)
+    } else {
+      scheduleRefresh()
+    }
     return result
   }
 
-  function hasActiveTranslation(
-    chapterId: string,
-    summary: Partial<Record<V2JobStatus, number>> = {},
-  ): boolean {
-    const matchesChapter = (job: V2Job) => (
-      job.chapterId === chapterId
-      && job.kind === 'translation'
-      && NONTERMINAL_JOB_STATUSES.has(job.status)
-    )
-    if (queue.value.some(matchesChapter) || history.value.some(matchesChapter)) {
-      return true
-    }
-    if (snapshotLoaded.value) return false
-    return [...NONTERMINAL_JOB_STATUSES]
-      .some(status => (summary[status] || 0) > 0)
+  function trackJob(jobId: string): void {
+    if (jobId) scheduleJobProjection(jobId)
   }
 
   async function loadDetail(jobId: string): Promise<void> {
@@ -599,36 +671,50 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
   }
 
   async function moveQueued(jobId: string, delta: -1 | 1): Promise<void> {
-    const sortable = queue.value.filter(job => job.status === 'queued' && !job.blockedReason)
+    const sortable = queue.value.filter(
+      job => job.status === 'queued' && job.blockedReason !== 'retained_chapter_lock'
+    )
     const index = sortable.findIndex(job => job.jobId === jobId)
     const target = index + delta
     if (index < 0 || target < 0 || target >= sortable.length) return
     const ordered = sortable.map(job => job.jobId)
     ;[ordered[index], ordered[target]] = [ordered[target]!, ordered[index]!]
-    await runCommand(() => jobsApi.reorder(ordered, queueRevision.value))
+    await runCommand(() => jobsApi.reorder(ordered))
   }
 
   async function prioritizeQueued(jobId: string): Promise<void> {
-    const sortable = queue.value.filter(job => job.status === 'queued' && !job.blockedReason)
+    const sortable = queue.value.filter(
+      job => job.status === 'queued' && job.blockedReason !== 'retained_chapter_lock'
+    )
     const index = sortable.findIndex(job => job.jobId === jobId)
     if (index <= 0) return
     const ordered = sortable.map(job => job.jobId)
     ordered.splice(index, 1)
     ordered.unshift(jobId)
-    await runCommand(() => jobsApi.reorder(ordered, queueRevision.value))
+    await runCommand(() => jobsApi.reorder(ordered))
+  }
+
+  async function setQueuePaused(paused: boolean): Promise<void> {
+    const generation = lifecycleGeneration
+    const result = await runCommand(() => (
+      paused ? jobsApi.pauseQueue() : jobsApi.resumeQueue()
+    ))
+    if (generation !== lifecycleGeneration) return
+    queuePaused.value = result.queuePaused
   }
 
   return {
     queue,
     history,
-    queueRevision,
+    queuePaused,
     drawerOpen,
     focusTarget,
     loading,
     snapshotLoaded,
     connected,
     workerOnline,
-    latestEvent,
+    executorBusy,
+    waitingReason,
     selectedDetail,
     selectedDetailJobId,
     detailLoading,
@@ -646,7 +732,7 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     initialize,
     disconnect,
     subscribeEvents,
-    hasActiveTranslation,
+    trackJob,
     waitForJob,
     refresh,
     open: (target?: TaskCenterFocus) => {
@@ -669,9 +755,11 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     loadOlderEvents,
     moveQueued,
     prioritizeQueued,
+    pauseQueue: () => setQueuePaused(true),
+    resumeQueue: () => setQueuePaused(false),
     cancelBatch: (batchId: string) => runCommand(() => jobsApi.cancelBatch(batchId)),
     prioritizeBatch: (batchId: string) =>
-      runCommand(() => jobsApi.prioritizeBatch(batchId, queueRevision.value)),
+      runCommand(() => jobsApi.prioritizeBatch(batchId)),
     continueBatch: (batchId: string) => runCommand(() => jobsApi.continueBatch(batchId)),
     cancelQueued: () => runCommand(() => jobsApi.cancelQueued()),
     clearHistory: () => runCommand(() => jobsApi.clearHistory()),

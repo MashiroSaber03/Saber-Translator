@@ -11,6 +11,7 @@ import uuid
 
 from sqlalchemy import Engine, select, update
 
+from src.backend_v2.auth.ownership import effective_owner_id
 from src.backend_v2.checksums import sha256_file
 from src.backend_v2.insight.repository import InsightRepository
 from src.backend_v2.jobs.repository import (
@@ -85,6 +86,7 @@ class JobRetryService:
             raise ValueError("strategy must be current or original")
         source, selected_items = self._source(job_id, failed_only=failed_only)
         kind = str(source["kind"])
+        self._require_feature(kind)
         if kind == "style_apply":
             strategy = "original"
 
@@ -148,24 +150,34 @@ class JobRetryService:
             "failedOnly": failed_only,
         }
 
+    def _require_feature(self, kind: str) -> None:
+        if kind in {"translation", "remove_text", "detect", "text_import"}:
+            self.public_access.require_feature("translation")
+        elif kind == "style_apply":
+            self.public_access.require_feature("translation")
+            self.public_access.require_feature("editMode")
+        elif kind in {
+            "insight_analysis",
+            "insight_export",
+            "vector_rebuild",
+            "continuation",
+            "derived_rebuild",
+        }:
+            self.public_access.require_feature("insight")
+
     def _source(
         self,
         job_id: str,
         *,
         failed_only: bool,
     ) -> tuple[Mapping[str, Any], list[Mapping[str, Any]]]:
-        try:
-            detail = self.repository.get_job(job_id)
-        except JobDataInvalid as exc:
-            raise JobConflict(f"source job data is invalid: {exc}") from exc
         expected_status = "completed_with_errors" if failed_only else "failed"
-        if str(detail["status"]) != expected_status:
-            raise JobConflict(
-                f"{expected_status} is required for this retry command"
-            )
         with self.engine.connect() as connection:
             source = connection.execute(
-                select(jobs).where(jobs.c.id == job_id)
+                select(jobs).where(
+                    jobs.c.id == job_id,
+                    jobs.c.owner_user_id == effective_owner_id(),
+                )
             ).mappings().one_or_none()
             if source is None:
                 raise JobNotFound("job not found")
@@ -175,7 +187,7 @@ class JobRetryService:
                 raise JobConflict(f"source job data is invalid: {exc}") from exc
             if str(source["status"]) != expected_status:
                 raise JobConflict(
-                    "source job changed while the retry was being prepared"
+                    f"{expected_status} is required for this retry command"
                 )
             conditions = [job_items.c.job_id == job_id]
             if failed_only:
@@ -319,7 +331,6 @@ class JobRetryService:
             retry_mode=strategy,
         )
         return self.repository.create_batch(
-            kind="container_import",
             display_name=(
                 f"重试 · {display.get('chapter') or display.get('book') or '容器导入'}"
             ),
@@ -527,7 +538,6 @@ class JobRetryService:
                 )
 
         return self.repository.create_batch(
-            kind="web_import_commit",
             display_name=(
                 f"重试 · {display.get('chapter') or display.get('book') or '网页入库'}"
             ),
@@ -949,7 +959,6 @@ class JobRetryService:
             )
 
         response = self.repository.create_batch(
-            kind="insight_analysis",
             display_name=(
                 f"重试 · {display.get('chapter') or display.get('book') or 'Insight'}"
             ),
@@ -1122,7 +1131,6 @@ class JobRetryService:
             retry_mode="original",
         )
         return self.repository.create_batch(
-            kind=str(source["kind"]),
             display_name=f"重试 · {display.get('chapter') or display.get('book') or source['kind']}",
             specs=(spec,),
             idempotency_scope=(

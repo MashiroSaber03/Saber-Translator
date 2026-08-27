@@ -125,21 +125,17 @@ describe('insight v2 api', () => {
     postMock.mockReset()
   })
 
-  it('resolves display page numbers to stable IDs and controls durable jobs', async () => {
+  it('resolves display page numbers to stable IDs when creating a durable job', async () => {
     getMock
       .mockResolvedValueOnce({ items: [pages[0]], nextCursor: 1 })
       .mockResolvedValueOnce({ items: [pages[1]], nextCursor: null })
     postMock.mockResolvedValueOnce(accepted('job-1')).mockResolvedValue({})
-    const { cancelAnalysis, pauseAnalysis, resumeAnalysis, startAnalysis } =
-      await import('@/api/insight')
+    const { startAnalysis } = await import('@/api/insight')
 
     const result = await startAnalysis('book/id one', {
       mode: 'pages',
       pages: [1, 2],
     })
-    await pauseAnalysis('job-1')
-    await resumeAnalysis('job-1')
-    await cancelAnalysis('job-1')
 
     expect(result).toEqual({ jobId: 'job-1', runId: 'run-1' })
     expect(getMock).toHaveBeenNthCalledWith(1, '/api/v2/insight/books/book%2Fid%20one/pages', {
@@ -158,12 +154,7 @@ describe('insight v2 api', () => {
       },
       { headers: { 'Idempotency-Key': expect.any(String) } }
     )
-    for (const [index, command] of ['pause', 'resume', 'cancel'].entries()) {
-      expect(postMock).toHaveBeenNthCalledWith(
-        index + 2,
-        `/api/v2/jobs/job-1/${command}`,
-      )
-    }
+    expect(postMock).toHaveBeenCalledTimes(1)
   })
 
   it('re-resolves page numbers for every command instead of reusing stale page IDs', async () => {

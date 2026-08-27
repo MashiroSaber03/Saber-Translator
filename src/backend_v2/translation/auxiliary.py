@@ -196,7 +196,6 @@ class AuxiliaryTranslationCommands:
         }
         config = self.public_access.apply_resolved_translation(config)
         return self.jobs.create_batch(
-            kind="detect",
             display_name=f"检测 {chapter['book_title']} / {chapter['title']}",
             specs=[
                 JobSpec(
@@ -305,7 +304,6 @@ class AuxiliaryTranslationCommands:
             "executionMode": "sequential",
         }
         return self.jobs.create_batch(
-            kind="style_apply",
             display_name=f"应用样式 {chapter['book_title']} / {chapter['title']}",
             specs=[
                 JobSpec(
@@ -905,7 +903,6 @@ class AuxiliaryTranslationCommands:
             "executionMode": "sequential",
         }
         return self.jobs.create_batch(
-            kind="text_import",
             display_name=f"导入文本 {chapter['book_title']} / {chapter['title']}",
             specs=[
                 JobSpec(

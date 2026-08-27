@@ -61,23 +61,19 @@ schema_metadata = Table(
 JOB_STATUSES = (
     "queued",
     "running",
-    "pausing",
     "paused",
-    "cancelling",
     "cancelled",
     "completed",
     "completed_with_errors",
     "failed",
     "interrupted",
 )
-CURRENT_JOB_STATUSES = ("running", "pausing", "paused", "cancelling")
-EXECUTING_JOB_STATUSES = ("running", "pausing", "cancelling")
+CURRENT_JOB_STATUSES = ("running", "paused")
+EXECUTING_JOB_STATUSES = ("running",)
 NONTERMINAL_JOB_STATUSES = (
     "queued",
     "running",
-    "pausing",
     "paused",
-    "cancelling",
     "interrupted",
 )
 JOB_KINDS = (
@@ -748,10 +744,13 @@ job_batches = Table(
         nullable=False,
         server_default=LOCAL_USER_ID,
     ),
-    Column("kind", String(64), nullable=False),
     Column("display_name", String(500), nullable=False),
-    Column("status_summary_json", Text, nullable=False, server_default="{}"),
-    *_timestamps(),
+    Column(
+        "created_at",
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    ),
 )
 
 jobs = Table(
@@ -792,7 +791,6 @@ jobs = Table(
         String(UUID_LENGTH),
         ForeignKey("web_import_drafts.id", ondelete="SET NULL"),
     ),
-    Column("blocked_reason", String(64)),
     Column("blocked_by_job_id", String(UUID_LENGTH), ForeignKey("jobs.id", ondelete="SET NULL")),
     Column("attempt_id", String(UUID_LENGTH)),
     Column(
@@ -818,11 +816,6 @@ jobs = Table(
         name="retry_lineage_complete",
     ),
     CheckConstraint("queue_rank IS NULL OR queue_rank >= 1", name="queue_rank_positive"),
-    CheckConstraint(
-        "blocked_reason IS NULL OR blocked_reason IN ("
-        "'blocked_by_job','draining_immediate_writes')",
-        name="blocked_reason_values",
-    ),
 )
 
 # The indexed expression is always 1 under the partial predicate, providing the
@@ -861,10 +854,8 @@ queue_state = Table(
     "queue_state",
     metadata,
     Column("singleton_id", Integer, primary_key=True, server_default="1"),
-    Column("queue_revision", Integer, nullable=False, server_default="1"),
-    *_timestamps(),
+    Column("admission_paused", Boolean, nullable=False, server_default="0"),
     CheckConstraint("singleton_id = 1", name="single_row"),
-    CheckConstraint("queue_revision >= 1", name="revision_positive"),
 )
 
 job_items = Table(
@@ -875,10 +866,8 @@ job_items = Table(
     Column("ordinal", Integer, nullable=False),
     Column("page_id", String(UUID_LENGTH), ForeignKey("pages.id", ondelete="SET NULL")),
     Column("status", String(32), nullable=False, server_default="pending"),
-    Column("input_fingerprint", String(HASH_LENGTH)),
     Column("result_json", Text),
     Column("error_json", Text),
-    *_timestamps(),
     UniqueConstraint("job_id", "ordinal"),
     CheckConstraint("ordinal >= 1", name="ordinal_positive"),
     CheckConstraint(
@@ -896,10 +885,8 @@ job_steps = Table(
     Column("kind", String(64), nullable=False),
     Column("status", String(32), nullable=False, server_default="pending"),
     Column("attempt_id", String(UUID_LENGTH)),
-    Column("input_fingerprint", String(HASH_LENGTH)),
     Column("checkpoint_json", Text),
     Column("error_json", Text),
-    *_timestamps(),
     UniqueConstraint("job_item_id", "ordinal"),
     CheckConstraint("ordinal >= 1", name="ordinal_positive"),
     CheckConstraint(

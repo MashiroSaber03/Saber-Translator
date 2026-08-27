@@ -63,7 +63,6 @@ from src.backend_v2.storage.schema import (
     timeline_events,
     timeline_versions,
     vector_generations,
-    jobs,
 )
 from src.shared.memory_errors import is_memory_allocation_error
 from src.shared.user_logging import json_details, log_result
@@ -1136,8 +1135,8 @@ class InsightVectorStore:
         initial_event_count: int = 0,
         expected_page_count: int | None = None,
         expected_event_count: int | None = None,
-        on_batch: Callable[[str, int], bool] | None = None,
-    ) -> dict[str, object]:
+        on_batch: Callable[[str, int], None] | None = None,
+    ) -> dict[str, int]:
         try:
             import chromadb
             from chromadb.config import Settings
@@ -1202,12 +1201,8 @@ class InsightVectorStore:
                     metadatas=page_metadatas,
                 )
                 page_count += len(page_records)
-                if on_batch is not None and not on_batch("pages", page_count):
-                    return {
-                        "completed": False,
-                        "pageCount": page_count,
-                        "eventCount": event_count,
-                    }
+                if on_batch is not None:
+                    on_batch("pages", page_count)
             for event_records, event_embeddings in event_batches:
                 (
                     event_ids,
@@ -1228,12 +1223,8 @@ class InsightVectorStore:
                     metadatas=event_metadatas,
                 )
                 event_count += len(event_records)
-                if on_batch is not None and not on_batch("events", event_count):
-                    return {
-                        "completed": False,
-                        "pageCount": page_count,
-                        "eventCount": event_count,
-                    }
+                if on_batch is not None:
+                    on_batch("events", event_count)
             if (
                 expected_page_count is not None
                 and pages_collection.count() != expected_page_count
@@ -1245,7 +1236,6 @@ class InsightVectorStore:
             ):
                 raise InsightConflict("event vector coverage is incomplete")
             return {
-                "completed": True,
                 "pageCount": page_count,
                 "eventCount": event_count,
             }
@@ -3747,7 +3737,6 @@ class InsightDerivedCommandService:
         }[kind]
         job_kind = "vector_rebuild" if kind == "vector" else "derived_rebuild"
         return self.jobs.create_batch(
-            kind=job_kind,
             display_name=f"Insight · {kind}",
             specs=(
                 JobSpec(
@@ -4108,51 +4097,26 @@ class InsightDerivedWorkerService:
                         f"覆盖率：{float(checkpoint.get('coverage', 0)):.1%}",
                     ),
                 )
-                if vector_build.get("__control_drained__"):
-                    return {
-                        **checkpoint,
-                        "__already_published__": True,
-                        "__control_drained__": True,
-                    }
-
                 def publish(connection: Connection) -> None:
-                    job_status = connection.execute(
-                        select(jobs.c.status).where(jobs.c.id == fence.job_id)
-                    ).scalar_one()
-                    if job_status == "running":
-                        checkpoint.update(
-                            self.repository.publish_vector_generation(
-                                connection=connection,
-                                frozen=frozen,
-                                generation=vector_build["generation"],
-                                page_count=vector_build["pageCount"],
-                                event_count=vector_build["eventCount"],
-                                activate=not full_stage,
-                            )
-                        )
-                    elif job_status in {"pausing", "cancelling"}:
-                        self.repository.checkpoint_vector_generation(
+                    checkpoint.update(
+                        self.repository.publish_vector_generation(
                             connection=connection,
                             frozen=frozen,
                             generation=vector_build["generation"],
                             page_count=vector_build["pageCount"],
                             event_count=vector_build["eventCount"],
+                            activate=not full_stage,
                         )
-                    else:
-                        raise JobConflict(
-                            "vector job left a publishable control state"
-                        )
-                completed = self.jobs.complete_step(
+                    )
+                self.jobs.complete_step(
                     fence,
                     step_id=step_id,
                     checkpoint=checkpoint,
                     publisher=publish,
-                    defer_on_control=True,
                 )
                 return {
                     **checkpoint,
                     "__already_published__": True,
-                    **({"__control_drained__": True} if not completed else {}),
                 }
             else:
                 raise JobConflict(f"unsupported derived step: {kind}")
@@ -4287,7 +4251,7 @@ class InsightDerivedWorkerService:
             "eventTotal": len(event_records),
         }
 
-        def checkpoint_batch(kind: str, count: int) -> bool:
+        def checkpoint_batch(kind: str, count: int) -> None:
             if kind not in {"pages", "events"}:
                 raise InsightConflict("vector store checkpoint kind is invalid")
             if isinstance(count, bool) or not isinstance(count, int):
@@ -4313,13 +4277,12 @@ class InsightDerivedWorkerService:
                     event_count=checkpoint["eventCount"],
                 )
 
-            status = self.jobs.checkpoint_step(
+            self.jobs.checkpoint_step(
                 fence,
                 step_id=step_id,
                 checkpoint=checkpoint,
                 publisher=publish_partial,
             )
-            return status == "running"
 
         try:
             result = self.vector_store.publish_batches(
@@ -4351,14 +4314,13 @@ class InsightDerivedWorkerService:
         try:
             if not isinstance(result, Mapping):
                 raise InsightConflict("vector store returned an invalid result")
-            if set(result) != {"pageCount", "eventCount", "completed"}:
+            if set(result) != {"pageCount", "eventCount"}:
                 raise InsightConflict("vector store result fields are invalid")
             if (
                 isinstance(result["pageCount"], bool)
                 or not isinstance(result["pageCount"], int)
                 or isinstance(result["eventCount"], bool)
                 or not isinstance(result["eventCount"], int)
-                or not isinstance(result["completed"], bool)
             ):
                 raise InsightConflict("vector store result types are invalid")
             if (
@@ -4370,13 +4332,13 @@ class InsightDerivedWorkerService:
                 raise InsightConflict("vector store result counts are invalid")
             checkpoint["pageCount"] = result["pageCount"]
             checkpoint["eventCount"] = result["eventCount"]
-            if not result["completed"]:
-                return {**checkpoint, "__control_drained__": True}
             if (
                 result["pageCount"] != len(page_records)
                 or result["eventCount"] != len(event_records)
             ):
                 raise InsightConflict("vector store completed with incomplete coverage")
+        except AttemptFenced:
+            raise
         except Exception:
             self.repository.fail_vector_generation(
                 book_id=frozen.book_id,

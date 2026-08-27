@@ -38,7 +38,7 @@ MAINTENANCE_DELETE_LIMIT = 500
 
 
 class WorkerMaintenance:
-    """Run bounded maintenance only at Worker scheduler safe points."""
+    """Run bounded maintenance only while durable job admission is idle."""
 
     def __init__(
         self,
@@ -71,6 +71,7 @@ class WorkerMaintenance:
         actions = (
             ("恢复存储事务", self.storage.recover_journal),
             ("清理导入临时文件", self._prune_import_temp),
+            ("清理插件任务临时目录", self._prune_plugin_worktrees),
             ("清理任务历史", self.jobs.prune_history),
             ("清理过期下载文件", self._prune_expired_artifacts),
             ("清理已结束即时操作", self._prune_terminal_operations),
@@ -279,6 +280,49 @@ class WorkerMaintenance:
             "webImportDrafts": removed_drafts,
             "containerInputs": removed_containers,
         }
+
+    def _prune_plugin_worktrees(self) -> int:
+        with self.engine.connect() as connection:
+            protected_job_ids = {
+                str(value)
+                for value in connection.execute(
+                    select(jobs.c.id).where(
+                        jobs.c.status.in_(NONTERMINAL_JOB_STATUSES)
+                    )
+                ).scalars()
+            }
+
+        root = (self.data_root / "temp" / "jobs").resolve()
+        if not root.is_dir():
+            return 0
+        cutoff = time.time() - timedelta(hours=24).total_seconds()
+        removed = 0
+        for job_dir in root.iterdir():
+            if not job_dir.is_dir() or job_dir.name in protected_job_ids:
+                continue
+            try:
+                resolved_job_dir = job_dir.resolve()
+                resolved_job_dir.relative_to(root)
+                worktree = (resolved_job_dir / "plugin-worktree").resolve()
+                worktree.relative_to(resolved_job_dir)
+            except (OSError, ValueError):
+                continue
+            if not worktree.is_dir() or worktree.stat().st_mtime > cutoff:
+                continue
+            try:
+                shutil.rmtree(worktree)
+                try:
+                    resolved_job_dir.rmdir()
+                except OSError:
+                    pass
+            except OSError:
+                LOGGER.warning(
+                    "无法删除过期插件任务临时目录，下次维护重试：%s",
+                    worktree,
+                )
+                continue
+            removed += 1
+        return removed
 
     def _prune_web_import_drafts(self, now: datetime) -> int:
         with immediate_transaction(self.engine) as connection:

@@ -13,6 +13,7 @@ from PIL import Image, ImageDraw, UnidentifiedImageError
 from sqlalchemy import Engine, insert, select, update
 from sqlalchemy.engine import Connection
 
+from src.backend_v2.auth.ownership import effective_owner_id
 from src.backend_v2.operations.repository import (
     OperationConflict,
     OperationFence,
@@ -23,7 +24,9 @@ from src.backend_v2.settings.resolver import SettingsResolver
 from src.backend_v2.storage.assets import AssetRecord, AssetStorageService
 from src.backend_v2.storage.schema import (
     assets,
+    books,
     bubbles,
+    chapters,
     page_assets,
     pages,
 )
@@ -71,6 +74,8 @@ class PageRepairService:
                     bubbles.c.updated_revision,
                 )
                 .join(bubbles, bubbles.c.page_id == pages.c.id)
+                .join(chapters, chapters.c.id == pages.c.chapter_id)
+                .join(books, books.c.id == chapters.c.book_id)
                 .join(
                     page_assets,
                     (page_assets.c.page_id == pages.c.id)
@@ -80,6 +85,7 @@ class PageRepairService:
                 .where(
                     pages.c.id == page_id,
                     bubbles.c.id == bubble_id,
+                    books.c.owner_user_id == effective_owner_id(),
                 )
             ).mappings().one_or_none()
         if row is None:
@@ -211,9 +217,12 @@ class PageRepairService:
                     )
                     .join(page_assets, page_assets.c.asset_id == assets.c.id)
                     .join(pages, pages.c.id == page_assets.c.page_id)
+                    .join(chapters, chapters.c.id == pages.c.chapter_id)
+                    .join(books, books.c.id == chapters.c.book_id)
                     .where(
                         page_assets.c.page_id == page_id,
                         page_assets.c.role == "source",
+                        books.c.owner_user_id == effective_owner_id(),
                     )
                 ).one_or_none()
             if page is None or mask.size != (int(page[0]), int(page[1])):

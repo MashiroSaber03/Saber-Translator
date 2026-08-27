@@ -92,8 +92,6 @@ const isParallelProgress = computed(
 )
 const isActivelyAdvancing = computed(() => (
   currentProgress.value.status === 'running'
-  || currentProgress.value.status === 'pausing'
-  || currentProgress.value.status === 'cancelling'
 ))
 const progressPercent = computed(() => {
   if (currentProgress.value.percentage !== undefined) {

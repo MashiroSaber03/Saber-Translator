@@ -282,9 +282,7 @@ class PluginAgentSessionService:
             session = self._require(session_id)
             if session.run_state in {
                 "running",
-                "pausing",
                 "paused",
-                "cancelling",
             }:
                 raise ValueError(
                     "execution already started; follow the durable job"
@@ -448,7 +446,6 @@ class PluginAgentSessionService:
                 "provider": provider,
             }
             created = self.jobs.create_batch(
-                kind="plugin_agent",
                 display_name=(
                     "创建插件 "
                     if target["mode"] == "create"
@@ -561,9 +558,7 @@ class PluginAgentSessionService:
         active_state = {
             "queued": "running",
             "running": "running",
-            "pausing": "pausing",
             "paused": "paused",
-            "cancelling": "cancelling",
         }.get(status)
         if active_state is not None:
             if session.run_state != active_state:

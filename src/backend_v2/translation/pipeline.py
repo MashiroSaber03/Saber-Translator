@@ -1819,7 +1819,6 @@ class TranslationPipelineService:
                     "constraintWarnings": warnings,
                     "inputFingerprint": fingerprint,
                 },
-                input_fingerprint=fingerprint,
             )
             with user_log_context(
                 job_id=fence.job_id,
@@ -2317,17 +2316,6 @@ class TranslationPipelineService:
             or baseline_revision < 0
         ):
             raise JobConflict("translation constraint revision is invalid")
-        fingerprint = hashlib.sha256(
-            _json(
-                {
-                    "pageId": page_id,
-                    "texts": texts,
-                    "baselineRevision": baseline_revision,
-                    "effectiveGlossary": glossary["entries"],
-                },
-            ).encode("utf-8")
-        ).hexdigest()
-
         if not bool(glossary["autoExtractEnabled"]) or not texts:
             checkpoint = {
                 "baselineRevision": baseline_revision,
@@ -2345,7 +2333,6 @@ class TranslationPipelineService:
                 fence,
                 step_id=str(step["stepId"]),
                 checkpoint=checkpoint,
-                input_fingerprint=fingerprint,
             )
             log_result(
                 "术语提取已跳过",
@@ -2496,7 +2483,6 @@ class TranslationPipelineService:
             fence,
             step_id=str(step["stepId"]),
             checkpoint=checkpoint,
-            input_fingerprint=fingerprint,
             publisher=publish,
         )
         log_result(
@@ -2654,17 +2640,6 @@ class TranslationPipelineService:
                 "mode": mode,
                 "constraintWarnings": warnings,
             },
-            input_fingerprint=hashlib.sha256(
-                _json(
-                    {
-                        "pageId": page_id,
-                        "documentRevision": snapshot.document_revision,
-                        "texts": texts,
-                        "mode": mode,
-                        "translationConstraints": constraints,
-                    },
-                ).encode("utf-8")
-            ).hexdigest(),
         )
         _log_translation_pairs("翻译结果", persisted_texts, translated)
         if textbox:
@@ -3148,8 +3123,6 @@ class TranslationPipelineService:
         snapshot: PageSnapshot,
         payloads: list[dict[str, Any]],
         checkpoint: dict[str, Any],
-        *,
-        input_fingerprint: str | None = None,
     ) -> Mapping[str, Any]:
         new_revision = snapshot.document_revision + 1
 
@@ -3205,7 +3178,6 @@ class TranslationPipelineService:
             fence,
             step_id=str(step["stepId"]),
             checkpoint=checkpoint,
-            input_fingerprint=input_fingerprint,
             publisher=publish,
         )
         return checkpoint

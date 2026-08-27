@@ -217,7 +217,6 @@ class InsightAnalysisCommandService:
             )
 
         response = self.jobs.create_batch(
-            kind="insight_analysis",
             display_name=f"{book['title']} · {_scope_label(scope)}",
             specs=(spec,),
             response_extra={"runId": run_id},

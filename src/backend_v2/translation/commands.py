@@ -168,7 +168,6 @@ class TranslationJobCommandService:
             retry_mode=retry_mode,
         )
         return self.jobs.create_batch(
-            kind=job_kind,
             display_name=f"{chapter['book_title']} / {chapter['title']}",
             specs=[spec],
             idempotency_scope=scope,
@@ -273,7 +272,6 @@ class TranslationJobCommandService:
             )
             raise ValueError(f"没有可创建任务的章节：{summary}")
         return self.jobs.create_batch(
-            kind=job_kind,
             display_name=(
                 f"{len(specs)} 个章节"
                 if len(specs) > 1

@@ -12,6 +12,7 @@ import UiSpinner from '@/components/ui/UiSpinner.vue'
 
 import { ref, computed, watch } from 'vue'
 import { useInsightStore } from '@/stores/insightStore'
+import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import * as insightApi from '@/api/insight'
 import { NONTERMINAL_JOB_STATUSES } from '@/api/v2/jobs'
 import type { ApiError } from '@/types'
@@ -37,6 +38,7 @@ const chapterOptions = computed(() => {
 })
 
 const insightStore = useInsightStore()
+const taskCenterStore = useTaskCenterStore()
 
 const analysisMode = ref<AnalysisScope>('full')
 const incrementalAnalysis = ref(true)
@@ -54,9 +56,7 @@ const statusDotClass = computed(() => {
     'analysis-progress-panel__status-dot': true,
     'analysis-progress-panel__status-dot--queued': status === 'queued',
     'analysis-progress-panel__status-dot--running': status === 'running',
-    'analysis-progress-panel__status-dot--pausing': status === 'pausing',
     'analysis-progress-panel__status-dot--paused': status === 'paused',
-    'analysis-progress-panel__status-dot--cancelling': status === 'cancelling',
     'analysis-progress-panel__status-dot--interrupted': status === 'interrupted',
     'analysis-progress-panel__status-dot--completed': status === 'completed',
     'analysis-progress-panel__status-dot--completed-with-errors': status === 'completed_with_errors',
@@ -68,9 +68,7 @@ const statusLabel = computed(() => {
   switch (insightStore.analysisStatus) {
     case 'queued': return '已排队'
     case 'running': return '分析中'
-    case 'pausing': return '暂停中'
     case 'paused': return '已暂停'
-    case 'cancelling': return '取消中'
     case 'interrupted': return '已中断'
     case 'completed': return '已完成'
     case 'completed_with_errors': return '部分完成'
@@ -103,7 +101,6 @@ const showPausedButtons = computed(() => {
 })
 
 const showQueuedButtons = computed(() => insightStore.analysisStatus === 'queued')
-const showPausingButtons = computed(() => insightStore.analysisStatus === 'pausing')
 const showInterruptedButtons = computed(() => insightStore.analysisStatus === 'interrupted')
 const showProgress = computed(() => (
   insightStore.analysisStatus !== 'idle'
@@ -223,9 +220,7 @@ async function startAnalysis(): Promise<void> {
 
     const submission = await insightApi.startAnalysis(bookId, options)
     if (isCurrentBook(bookId)) {
-      insightStore.setCurrentTaskId(submission.jobId)
-      insightStore.setAnalysisStatus('queued')
-      insightStore.updateProgress(0, 0)
+      taskCenterStore.trackJob(submission.jobId)
     }
   } catch (error) {
     if (isCurrentBook(bookId)) showFeedback(getStartErrorMessage(error))
@@ -242,8 +237,7 @@ async function pauseAnalysis(): Promise<void> {
   isControlling.value = true
 
   try {
-    await insightApi.pauseAnalysis(taskId)
-    if (isCurrentTask(bookId, taskId)) insightStore.setAnalysisStatus('pausing')
+    await taskCenterStore.pause(taskId)
   } catch (error) {
     if (isCurrentBook(bookId)) showFeedback(commandErrorMessage(error, '暂停分析失败'))
   } finally {
@@ -259,8 +253,7 @@ async function resumeAnalysis(): Promise<void> {
   isControlling.value = true
 
   try {
-    await insightApi.resumeAnalysis(taskId)
-    if (isCurrentTask(bookId, taskId)) insightStore.setAnalysisStatus('queued')
+    await taskCenterStore.resume(taskId)
   } catch (error) {
     if (isCurrentBook(bookId)) showFeedback(commandErrorMessage(error, '继续分析失败'))
   } finally {
@@ -276,8 +269,7 @@ async function continueAnalysis(): Promise<void> {
   isControlling.value = true
 
   try {
-    await insightApi.continueAnalysis(taskId)
-    if (isCurrentTask(bookId, taskId)) insightStore.setAnalysisStatus('queued')
+    await taskCenterStore.continueJob(taskId)
   } catch (error) {
     if (isCurrentBook(bookId)) showFeedback(commandErrorMessage(error, '继续中断任务失败'))
   } finally {
@@ -302,8 +294,7 @@ async function cancelAnalysis(): Promise<void> {
     })
     if (!confirmed) return
     if (!isCurrentTask(bookId, taskId)) return
-    await insightApi.cancelAnalysis(taskId)
-    if (isCurrentTask(bookId, taskId)) insightStore.setAnalysisStatus('cancelling')
+    await taskCenterStore.cancel(taskId)
   } catch (error) {
     if (isCurrentBook(bookId)) showFeedback(commandErrorMessage(error, '取消分析失败'))
   } finally {
@@ -463,9 +454,9 @@ watch(() => insightStore.currentBookId, () => {
       </ProductActionRow>
 
       <ProductActionRow
-        v-if="showQueuedButtons || showPausingButtons"
+        v-if="showQueuedButtons"
         class="analysis-progress-panel__action-row"
-        :aria-label="showQueuedButtons ? '已排队分析操作' : '暂停中的分析操作'"
+        aria-label="已排队分析操作"
         justify="start"
         variant="toolbar"
       >
@@ -670,9 +661,7 @@ watch(() => insightStore.currentBookId, () => {
   animation: pulse-glow 1.5s infinite;
 }
 
-.analysis-progress-panel__status-dot--queued,
-.analysis-progress-panel__status-dot--pausing,
-.analysis-progress-panel__status-dot--cancelling {
+.analysis-progress-panel__status-dot--queued {
   background: var(--insight-action-primary);
   animation: pulse-glow 1.5s infinite;
 }

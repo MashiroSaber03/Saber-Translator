@@ -168,8 +168,6 @@ class TransferWorkerService:
                         job_id=fence.job_id,
                         ordinal=next_ordinal,
                         status="pending",
-                        created_at=now,
-                        updated_at=now,
                     )
                 )
                 connection.execute(
@@ -179,8 +177,6 @@ class TransferWorkerService:
                         ordinal=1,
                         kind="container_import_page",
                         status="pending",
-                        created_at=now,
-                        updated_at=now,
                     )
                 )
                 next_ordinal += 1
@@ -289,7 +285,7 @@ class TransferWorkerService:
                     job_items.c.id == step["itemId"],
                     job_items.c.job_id == fence.job_id,
                 )
-                .values(page_id=page_id, updated_at=now)
+                .values(page_id=page_id)
             )
             connection.execute(
                 update(chapters)
@@ -315,7 +311,6 @@ class TransferWorkerService:
             fence,
             step_id=str(step["stepId"]),
             checkpoint=checkpoint,
-            input_fingerprint=source.checksum,
             publisher=publish,
         )
         log_result(

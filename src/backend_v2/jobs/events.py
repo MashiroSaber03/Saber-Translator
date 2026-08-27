@@ -10,8 +10,7 @@ from typing import Any
 
 from src.backend_v2.jobs.repository import JobQueueRepository
 from src.backend_v2.storage.database import is_sqlite_busy_error
-from src.backend_v2.storage.epochs import ProcessEpochRepository
-from src.shared.user_logging import RetryLogEpisode, user_log
+from src.shared.user_logging import RetryLogEpisode
 
 
 LOGGER = logging.getLogger("saber.api.job_events")
@@ -29,12 +28,10 @@ class JobEventBroadcaster:
         self,
         repository: JobQueueRepository,
         *,
-        epoch_repository: ProcessEpochRepository,
         poll_seconds: float = 0.5,
         subscriber_capacity: int = 256,
     ) -> None:
         self.repository = repository
-        self.epoch_repository = epoch_repository
         self.poll_seconds = poll_seconds
         self.subscriber_capacity = subscriber_capacity
         self._stop = threading.Event()
@@ -92,7 +89,6 @@ class JobEventBroadcaster:
     def _run(self) -> None:
         while not self._stop.wait(self.poll_seconds):
             try:
-                self._recover_expired_workers()
                 events = self.repository.events_after(
                     after=self._cursor,
                     limit=1000,
@@ -100,12 +96,12 @@ class JobEventBroadcaster:
             except Exception as error:
                 if is_sqlite_busy_error(error):
                     LOGGER.debug(
-                        "任务事件与 Worker 租约共享轮询遇到 SQLite 写锁竞争"
+                        "任务事件轮询遇到 SQLite 写锁竞争"
                     )
                 else:
                     if self._poll_log.record_failure(error):
                         LOGGER.exception(
-                            "任务事件与 Worker 租约共享轮询失败，将继续重试"
+                            "任务事件轮询失败，将继续重试"
                         )
                 continue
             self._poll_log.report_recovery()
@@ -132,31 +128,6 @@ class JobEventBroadcaster:
                         # A slow browser never backpressures the shared poller.
                         self.unsubscribe(subscription)
                         self._offer_close(subscription)
-
-    def _recover_expired_workers(self) -> None:
-        for epoch_id in self.epoch_repository.expired_worker_epochs():
-            result = self.epoch_repository.reconcile_dead_worker(epoch_id)
-            if result.changed:
-                LOGGER.error(
-                    "Worker 租约已过期，已执行权威恢复：epoch=%s interrupted=%s "
-                    "cancelled=%s operations_requeued=%s",
-                    epoch_id[:8],
-                    result.jobs_interrupted,
-                    result.jobs_cancelled,
-                    result.operations_requeued,
-                )
-                if (
-                    result.jobs_interrupted
-                    or result.jobs_cancelled
-                    or result.operations_requeued
-                ):
-                    user_log(
-                        "warning",
-                        "检测到工作进程异常退出，已自动恢复任务｜"
-                        f"中断 {result.jobs_interrupted} 个｜"
-                        f"取消 {result.jobs_cancelled} 个｜"
-                        f"重新排队 {result.operations_requeued} 个即时操作",
-                    )
 
     @staticmethod
     def _offer_close(subscription: EventSubscription) -> None:

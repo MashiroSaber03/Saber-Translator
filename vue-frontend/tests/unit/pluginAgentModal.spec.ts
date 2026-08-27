@@ -28,7 +28,7 @@ const {
   sendPluginAgentMessageMock,
   lockPluginAgentTargetMock,
   startPluginAgentExecutionMock,
-  cancelPluginAgentExecutionMock,
+  cancelTaskMock,
   listPluginAgentJobEventsMock,
   pluginAgentEventFromJobEventMock,
   subscribeTaskEventsMock,
@@ -42,7 +42,7 @@ const {
   sendPluginAgentMessageMock: vi.fn(),
   lockPluginAgentTargetMock: vi.fn(),
   startPluginAgentExecutionMock: vi.fn(),
-  cancelPluginAgentExecutionMock: vi.fn(),
+  cancelTaskMock: vi.fn(),
   listPluginAgentJobEventsMock: vi.fn(),
   pluginAgentEventFromJobEventMock: vi.fn(),
   subscribeTaskEventsMock: vi.fn(),
@@ -58,13 +58,15 @@ vi.mock('@/api/pluginAgent', () => ({
   sendPluginAgentMessage: sendPluginAgentMessageMock,
   lockPluginAgentTarget: lockPluginAgentTargetMock,
   startPluginAgentExecution: startPluginAgentExecutionMock,
-  cancelPluginAgentExecution: cancelPluginAgentExecutionMock,
   listPluginAgentJobEvents: listPluginAgentJobEventsMock,
   pluginAgentEventFromJobEvent: pluginAgentEventFromJobEventMock,
 }))
 
 vi.mock('@/stores/taskCenterStore', () => ({
-  useTaskCenterStore: () => ({ subscribeEvents: subscribeTaskEventsMock }),
+  useTaskCenterStore: () => ({
+    subscribeEvents: subscribeTaskEventsMock,
+    cancel: cancelTaskMock,
+  }),
 }))
 
 vi.mock('@/components/common/BaseModal.vue', () => ({
@@ -178,7 +180,7 @@ describe('PluginAgentModal', () => {
     sendPluginAgentMessageMock.mockReset()
     lockPluginAgentTargetMock.mockReset()
     startPluginAgentExecutionMock.mockReset()
-    cancelPluginAgentExecutionMock.mockReset().mockResolvedValue(undefined)
+    cancelTaskMock.mockReset().mockResolvedValue(undefined)
     listPluginAgentJobEventsMock.mockReset()
     pluginAgentEventFromJobEventMock.mockReset()
     subscribeTaskEventsMock.mockReset().mockReturnValue(vi.fn())

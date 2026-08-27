@@ -20,6 +20,7 @@ from src.backend_v2.storage.schema import (
     jobs,
     platform_config,
     process_epochs,
+    queue_state,
     users,
 )
 from src.backend_v2.timestamps import iso_utc, utcnow
@@ -173,7 +174,17 @@ class SchedulingPolicyRepository:
                 connection.execute(
                     select(func.count())
                     .select_from(jobs)
-                    .where(jobs.c.status == "queued", jobs.c.blocked_reason.is_(None))
+                    .where(
+                        jobs.c.status == "queued",
+                        jobs.c.blocked_by_job_id.is_(None),
+                    )
+                ).scalar_one()
+            )
+            queue_paused = bool(
+                connection.execute(
+                    select(queue_state.c.admission_paused).where(
+                        queue_state.c.singleton_id == 1
+                    )
                 ).scalar_one()
             )
             queued_users = int(
@@ -192,7 +203,9 @@ class SchedulingPolicyRepository:
         available = int(memory.available // (1024 * 1024))
         threshold = int(policy["minAvailableMemoryMiB"])
         waiting_reason: str | None = None
-        if current is None and queued_jobs:
+        if queued_jobs and queue_paused:
+            waiting_reason = "queue_paused"
+        elif current is None and queued_jobs:
             if not worker_online:
                 waiting_reason = "worker_offline"
             elif threshold and available < threshold:

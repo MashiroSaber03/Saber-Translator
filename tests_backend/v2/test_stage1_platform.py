@@ -66,9 +66,6 @@ from src.backend_v2.storage.schema import (
     credentials,
     fonts,
     idempotency_records,
-    job_events,
-    job_items,
-    job_steps,
     jobs,
     metadata,
     object_commit_journal,
@@ -78,6 +75,7 @@ from src.backend_v2.storage.schema import (
     platform_config,
     process_epochs,
     render_requests,
+    transient_requests,
 )
 
 
@@ -274,6 +272,27 @@ def test_storage_initialization_rejects_nonformal_database_without_rewriting_it(
         assert connection.execute("SELECT value FROM sentinel").fetchall() == [
             ("untouched",)
         ]
+
+
+def test_storage_initialization_rejects_a_retired_revision_without_rewriting_it(
+    tmp_path: Path,
+) -> None:
+    data_root = tmp_path / "data-v2"
+    initialized = initialize_database(data_root)
+    retired_revision = "retired_task_schema"
+    with sqlite3.connect(initialized.database_path) as connection:
+        connection.execute(
+            "UPDATE schema_metadata SET revision = ? WHERE singleton_id = 1",
+            (retired_revision,),
+        )
+
+    with pytest.raises(UnsupportedDataRoot, match="旧数据不会被读取或迁移"):
+        initialize_database(data_root)
+
+    with sqlite3.connect(initialized.database_path) as connection:
+        assert connection.execute(
+            "SELECT revision FROM schema_metadata WHERE singleton_id = 1"
+        ).fetchone() == (retired_revision,)
 
 
 def test_storage_data_root_cannot_be_reused_by_the_other_profile(
@@ -1178,114 +1197,265 @@ def test_worker_recovery_is_idempotent_and_preserves_chapter_lock(platform) -> N
     assert lock_count == 1
 
 
-@pytest.mark.parametrize(
-    "initial_status,expected_status,lock_is_retained",
-    [
-        ("pausing", "interrupted", True),
-        ("cancelling", "cancelled", False),
-    ],
-)
-def test_worker_recovery_resolves_drain_transition_states(
-    platform,
-    initial_status: str,
-    expected_status: str,
-    lock_is_retained: bool,
-) -> None:
+def test_normal_worker_close_interrupts_running_jobs(platform) -> None:
     _data_root, engine = platform
     seed_system_records(engine)
     repository = ProcessEpochRepository(engine)
     registration = EpochRegistration(
-        f"worker-{initial_status}",
-        f"token-{initial_status}",
+        "worker-normal-close",
+        "worker-normal-token",
         "worker",
-        456,
+        321,
     )
     repository.register(registration)
     with engine.begin() as connection:
         connection.execute(
-            insert(books).values(id="book", kind="library", title="Book")
+            insert(jobs).values(
+                id="normal-close-job",
+                kind="export",
+                status="running",
+                config_json="{}",
+                latest_progress_json=_stored_job_progress("running"),
+                worker_epoch_id=registration.epoch_id,
+                attempt_id="normal-close-attempt",
+            )
+        )
+
+    assert repository.close(registration)
+    assert not repository.close(registration)
+    with engine.connect() as connection:
+        assert connection.execute(
+            select(jobs.c.status).where(jobs.c.id == "normal-close-job")
+        ).scalar_one() == "interrupted"
+        assert connection.execute(
+            select(process_epochs.c.status).where(
+                process_epochs.c.id == registration.epoch_id
+            )
+        ).scalar_one() == "closed"
+
+
+def test_startup_reconciles_work_left_by_an_already_closed_epoch(platform) -> None:
+    _data_root, engine = platform
+    seed_system_records(engine)
+    repository = ProcessEpochRepository(engine)
+    registration = EpochRegistration(
+        "closed-worker",
+        "closed-worker-token",
+        "worker",
+        654,
+    )
+    repository.register(registration)
+    with engine.begin() as connection:
+        connection.execute(
+            update(process_epochs)
+            .where(process_epochs.c.id == registration.epoch_id)
+            .values(status="closed")
+        )
+        connection.execute(
+            insert(jobs).values(
+                id="closed-epoch-orphan-job",
+                kind="export",
+                status="running",
+                config_json="{}",
+                latest_progress_json=_stored_job_progress("running"),
+                worker_epoch_id=registration.epoch_id,
+                attempt_id="closed-epoch-orphan-attempt",
+            )
+        )
+
+    results = repository.reconcile_orphaned_work()
+
+    assert len(results) == 1
+    assert results[0].jobs_interrupted == 1
+    with engine.connect() as connection:
+        assert connection.execute(
+            select(jobs.c.status).where(jobs.c.id == "closed-epoch-orphan-job")
+        ).scalar_one() == "interrupted"
+
+
+def test_startup_interrupts_running_job_without_a_worker_epoch(platform) -> None:
+    _data_root, engine = platform
+    seed_system_records(engine)
+    repository = ProcessEpochRepository(engine)
+    with engine.begin() as connection:
+        connection.execute(
+            insert(jobs).values(
+                id="missing-epoch-job",
+                kind="export",
+                status="running",
+                config_json="{}",
+                latest_progress_json=_stored_job_progress("running"),
+                worker_epoch_id=None,
+                attempt_id="missing-epoch-attempt",
+            )
+        )
+
+    results = repository.reconcile_orphaned_work()
+
+    assert len(results) == 1
+    assert results[0].epoch_id == "missing"
+    assert results[0].jobs_interrupted == 1
+    with engine.connect() as connection:
+        assert connection.execute(
+            select(jobs.c.status).where(jobs.c.id == "missing-epoch-job")
+        ).scalar_one() == "interrupted"
+
+
+def test_startup_recovers_all_running_work_without_an_executor_epoch(platform) -> None:
+    _data_root, engine = platform
+    seed_system_records(engine)
+    repository = ProcessEpochRepository(engine)
+    with engine.begin() as connection:
+        connection.execute(
+            insert(books).values(id="orphan-book", kind="library", title="Book")
         )
         connection.execute(
             insert(chapters).values(
-                id="chapter",
-                book_id="book",
+                id="orphan-chapter",
+                book_id="orphan-book",
                 ordinal=1,
                 title="Chapter",
             )
         )
-        connection.execute(
-            insert(jobs).values(
-                id="job",
-                kind="translation",
-                status=initial_status,
-                chapter_id="chapter",
-                config_json="{}",
-                latest_progress_json=_stored_job_progress(initial_status),
-                worker_epoch_id=registration.epoch_id,
-                attempt_id="attempt",
+        for ordinal, page_id in enumerate(
+            ("worker-page", "safe-api-page", "remote-page", "render-page"),
+            start=1,
+        ):
+            connection.execute(
+                insert(pages).values(
+                    id=page_id,
+                    chapter_id="orphan-chapter",
+                    ordinal=ordinal,
+                    logical_source_path=f"{page_id}.png",
+                    render_status=("rendering" if page_id == "render-page" else "not_rendered"),
+                )
             )
-        )
         connection.execute(
-            insert(job_items).values(
-                id=f"item-{initial_status}",
-                job_id="job",
+            insert(bubbles).values(
+                id="remote-bubble",
+                page_id="remote-page",
                 ordinal=1,
-                status="running",
+                payload_json="{}",
+                updated_revision=1,
             )
         )
         connection.execute(
-            insert(job_steps).values(
-                id=f"step-{initial_status}",
-                job_item_id=f"item-{initial_status}",
-                ordinal=1,
-                kind="detect",
+            insert(operations),
+            [
+                {
+                    "id": "missing-worker-operation",
+                    "kind": "page_detect",
+                    "executor_role": "worker",
+                    "status": "running",
+                    "page_id": "worker-page",
+                    "bubble_id": None,
+                    "base_revision": 1,
+                    "request_json": "{}",
+                    "executor_epoch_id": None,
+                    "attempt_id": "worker-attempt",
+                },
+                {
+                    "id": "missing-safe-api-operation",
+                    "kind": "page_repair",
+                    "executor_role": "api",
+                    "status": "running",
+                    "page_id": "safe-api-page",
+                    "bubble_id": None,
+                    "base_revision": 1,
+                    "request_json": "{}",
+                    "executor_epoch_id": None,
+                    "attempt_id": "safe-api-attempt",
+                },
+                {
+                    "id": "missing-remote-operation",
+                    "kind": "bubble_translate",
+                    "executor_role": "api",
+                    "status": "running",
+                    "page_id": "remote-page",
+                    "bubble_id": "remote-bubble",
+                    "base_revision": 1,
+                    "request_json": "{}",
+                    "executor_epoch_id": None,
+                    "attempt_id": "remote-attempt",
+                },
+            ],
+        )
+        connection.execute(
+            insert(render_requests).values(
+                id="missing-render",
+                page_id="render-page",
+                requested_revision=1,
+                rendering_revision=1,
                 status="running",
-                attempt_id="attempt",
+                executor_epoch_id=None,
+                attempt_id="render-attempt",
             )
         )
         connection.execute(
-            insert(chapter_write_locks).values(
-                chapter_id="chapter",
-                job_id="job",
-            )
+            insert(transient_requests),
+            [
+                {
+                    "id": "missing-open-transient",
+                    "kind": "vector_query",
+                    "status": "running",
+                    "connection_token_hash": "open-token",
+                    "connection_open": True,
+                    "request_json": "{}",
+                    "worker_epoch_id": None,
+                    "attempt_id": "open-attempt",
+                },
+                {
+                    "id": "missing-closed-transient",
+                    "kind": "vector_query",
+                    "status": "running",
+                    "connection_token_hash": "closed-token",
+                    "connection_open": False,
+                    "request_json": "{}",
+                    "worker_epoch_id": None,
+                    "attempt_id": "closed-attempt",
+                },
+            ],
         )
 
-    result = repository.reconcile_dead_worker(registration.epoch_id)
+    results = repository.reconcile_orphaned_work()
+
+    assert {(result.role, result.epoch_id) for result in results} == {
+        ("worker", "missing"),
+        ("api", "missing"),
+    }
     with engine.connect() as connection:
-        job = connection.execute(
-            select(jobs.c.status, jobs.c.latest_progress_json).where(
-                jobs.c.id == "job"
+        operation_statuses = {
+            str(operation_id): str(status)
+            for operation_id, status in connection.execute(
+                select(operations.c.id, operations.c.status)
             )
+        }
+        render = connection.execute(
+            select(
+                render_requests.c.status,
+                render_requests.c.rendering_revision,
+            ).where(render_requests.c.id == "missing-render")
         ).one()
-        lock = connection.execute(
-            select(chapter_write_locks.c.job_id)
-        ).scalar_one_or_none()
-        item_status = connection.execute(
-            select(job_items.c.status).where(job_items.c.job_id == "job")
-        ).scalar_one()
-        step = connection.execute(
-            select(job_steps.c.status, job_steps.c.attempt_id).where(
-                job_steps.c.job_item_id == f"item-{initial_status}"
+        transient_statuses = {
+            str(request_id): str(status)
+            for request_id, status in connection.execute(
+                select(transient_requests.c.id, transient_requests.c.status)
             )
-        ).one()
-        recovery_event = connection.execute(
-            select(job_events.c.payload_json).where(
-                job_events.c.job_id == "job",
-                job_events.c.event_type == f"job_{expected_status}",
-            )
+        }
+        page_render_status = connection.execute(
+            select(pages.c.render_status).where(pages.c.id == "render-page")
         ).scalar_one()
-    progress = json.loads(job.latest_progress_json)
-    assert job.status == expected_status
-    assert progress["jobStatus"] == expected_status
-    assert json.loads(recovery_event)["progress"] == progress
-    assert (lock is not None) is lock_is_retained
-    expected_graph_status = (
-        "cancelled" if expected_status == "cancelled" else "pending"
-    )
-    assert item_status == expected_graph_status
-    assert step == (expected_graph_status, None)
-    assert result.jobs_interrupted == int(expected_status == "interrupted")
-    assert result.jobs_cancelled == int(expected_status == "cancelled")
+    assert operation_statuses == {
+        "missing-worker-operation": "pending",
+        "missing-safe-api-operation": "pending",
+        "missing-remote-operation": "failed",
+    }
+    assert render == ("pending", None)
+    assert transient_statuses == {
+        "missing-open-transient": "pending",
+        "missing-closed-transient": "cancelled",
+    }
+    assert page_render_status == "stale"
 
 
 def test_worker_recovery_requeues_operation_with_a_durable_event(platform) -> None:
@@ -1887,6 +2057,54 @@ def test_worker_maintenance_continues_after_failed_action(
 
     assert maintenance.run_if_due(force=True) is True
     assert completed == ["vector_gc"]
+
+
+def test_worker_maintenance_prunes_only_old_inactive_plugin_worktrees(
+    platform,
+) -> None:
+    data_root, engine = platform
+    with engine.begin() as connection:
+        connection.execute(
+            insert(jobs),
+            [
+                {
+                    "id": "active-plugin-job",
+                    "kind": "plugin_agent",
+                    "status": "paused",
+                    "config_json": "{}",
+                    "latest_progress_json": _stored_job_progress("paused"),
+                },
+                {
+                    "id": "terminal-plugin-job",
+                    "kind": "plugin_agent",
+                    "status": "completed",
+                    "config_json": "{}",
+                    "latest_progress_json": _stored_job_progress("completed"),
+                },
+            ],
+        )
+    root = data_root / "temp" / "jobs"
+    worktrees = {
+        name: root / name / "plugin-worktree"
+        for name in (
+            "active-plugin-job",
+            "terminal-plugin-job",
+            "missing-plugin-job",
+        )
+    }
+    for worktree in worktrees.values():
+        worktree.mkdir(parents=True)
+        os.utime(worktree, (1, 1))
+
+    removed = WorkerMaintenance(
+        data_root=data_root,
+        engine=engine,
+    )._prune_plugin_worktrees()
+
+    assert removed == 2
+    assert worktrees["active-plugin-job"].is_dir()
+    assert not worktrees["terminal-plugin-job"].exists()
+    assert not worktrees["missing-plugin-job"].exists()
 
 
 def test_settings_credentials_plugins_fonts_and_shared_limiter(platform) -> None:

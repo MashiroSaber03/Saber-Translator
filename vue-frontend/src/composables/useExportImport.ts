@@ -112,8 +112,9 @@ export function useExportImport() {
         return
       }
       const accepted = await commitChapterTextImport(chapterId, confirmed)
-      if (!accepted.jobIds[0]) throw new Error('后端没有返回文本导入任务')
-      void taskCenterStore.refresh().catch(() => undefined)
+      const jobId = accepted.jobIds[0]
+      if (!jobId) throw new Error('后端没有返回文本导入任务')
+      taskCenterStore.trackJob(jobId)
       const conflictSuffix = preview.conflictedPages > 0
         ? `；跳过 ${preview.conflictedPages} 页冲突`
         : ''
@@ -200,6 +201,7 @@ export function useExportImport() {
       )
       const jobId = accepted.jobIds[0]
       if (!jobId) throw new Error('后端没有返回导出任务')
+      taskCenterStore.trackJob(jobId)
       if (disposed) return
       queuedToastId = toast.info('导出任务已进入后端队列，可安全关闭页面', 0)
       const job = await waitForExport(jobId)

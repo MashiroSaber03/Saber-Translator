@@ -228,7 +228,7 @@ describe('task center controls', () => {
           pools: [],
         },
         target: {},
-        createdAt: null,
+        createdAt: '2026-08-23T04:00:00Z',
       },
     ]
     wrapper = mount(TaskCenterDrawer, {
@@ -287,7 +287,7 @@ describe('task center controls', () => {
           ],
         },
         target: {},
-        createdAt: null,
+        createdAt: '2026-08-23T04:00:00Z',
       },
     ]
     wrapper = mount(TaskCenterDrawer, {
@@ -335,7 +335,7 @@ describe('task center controls', () => {
         ],
       },
       target: { book: '测试漫画', pageCount: 6 },
-      createdAt: null,
+      createdAt: '2026-08-23T04:00:00Z',
     }
     store.drawerOpen = true
     store.queue = [insightJob]

@@ -9,13 +9,13 @@ export type JobListResponse = components['schemas']['JobList']
 export type JobSnapshotResponse = components['schemas']['JobSnapshot']
 export type JobRetryAccepted = components['schemas']['JobRetryAccepted']
 export type JobEventList = components['schemas']['JobEventList']
+export type QueueControlState = components['schemas']['QueueControlState']
+export type JobCommandResult = components['schemas']['JobCommandResult']
 
 export const NONTERMINAL_JOB_STATUSES: ReadonlySet<V2JobStatus> = new Set([
   'queued',
   'running',
-  'pausing',
   'paused',
-  'cancelling',
   'interrupted',
 ])
 
@@ -29,9 +29,7 @@ export const HISTORY_JOB_STATUSES: ReadonlySet<V2JobStatus> = new Set([
 
 export const CURRENT_JOB_STATUSES: ReadonlySet<V2JobStatus> = new Set([
   'running',
-  'pausing',
   'paused',
-  'cancelling',
 ])
 
 function replayHeaders(): Record<string, string> {
@@ -40,11 +38,11 @@ function replayHeaders(): Record<string, string> {
 
 export const jobsApi = {
   list(
-    scope: 'queue' | 'history',
+    scope: 'queue' | 'history' | 'all',
     filters: { status?: V2JobStatus; type?: V2Job['kind']; bookId?: string } = {},
   ): Promise<JobListResponse> {
     const query = new URLSearchParams({ scope })
-    if (scope === 'history') query.set('limit', '200')
+    if (scope !== 'queue') query.set('limit', '200')
     if (filters.status) query.set('status', filters.status)
     if (filters.type) query.set('type', filters.type)
     if (filters.bookId) query.set('book_id', filters.bookId)
@@ -79,25 +77,25 @@ export const jobsApi = {
     )
   },
 
-  pause(jobId: string): Promise<V2Job> {
+  pause(jobId: string): Promise<JobCommandResult> {
     return apiClient.post(
       `/api/v2/jobs/${encodeURIComponent(jobId)}/pause`,
     )
   },
 
-  resume(jobId: string): Promise<V2Job> {
+  resume(jobId: string): Promise<JobCommandResult> {
     return apiClient.post(
       `/api/v2/jobs/${encodeURIComponent(jobId)}/resume`,
     )
   },
 
-  continue(jobId: string): Promise<V2Job> {
+  continue(jobId: string): Promise<JobCommandResult> {
     return apiClient.post(
       `/api/v2/jobs/${encodeURIComponent(jobId)}/continue`,
     )
   },
 
-  cancel(jobId: string): Promise<V2Job> {
+  cancel(jobId: string): Promise<JobCommandResult> {
     return apiClient.post(
       `/api/v2/jobs/${encodeURIComponent(jobId)}/cancel`,
     )
@@ -122,11 +120,19 @@ export const jobsApi = {
     )
   },
 
-  reorder(orderedJobIds: string[], baseRevision: number): Promise<{ queueRevision: number }> {
+  reorder(orderedJobIds: string[]): Promise<{ status: 'reordered' }> {
     return apiClient.post(
       '/api/v2/jobs/reorder',
-      { orderedJobIds, baseRevision },
+      { orderedJobIds },
     )
+  },
+
+  pauseQueue(): Promise<QueueControlState> {
+    return apiClient.post('/api/v2/jobs/queue/pause')
+  },
+
+  resumeQueue(): Promise<QueueControlState> {
+    return apiClient.post('/api/v2/jobs/queue/resume')
   },
 
   cancelQueued(): Promise<{ cancelled: number }> {
@@ -143,13 +149,9 @@ export const jobsApi = {
     )
   },
 
-  prioritizeBatch(
-    batchId: string,
-    baseRevision: number,
-  ): Promise<{ queueRevision: number }> {
+  prioritizeBatch(batchId: string): Promise<{ status: 'prioritized' }> {
     return apiClient.post(
       `/api/v2/job-batches/${encodeURIComponent(batchId)}/prioritize`,
-      { baseRevision },
     )
   },
 

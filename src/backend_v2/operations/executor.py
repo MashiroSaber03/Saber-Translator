@@ -213,7 +213,7 @@ class DurableOperationExecutor:
 
 
 class WorkerOperationRunner:
-    """Run at most one local-model operation at a Worker safe point."""
+    """Run at most one local-model operation in an auxiliary Worker slot."""
 
     def __init__(
         self,

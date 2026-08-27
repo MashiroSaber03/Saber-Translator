@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
 import { createBubbleState } from '@/utils/bubbleFactory'
@@ -16,7 +16,7 @@ const {
   getPageRenderStatusMock,
   queueMutationMock,
   registerPageDocumentMock,
-  refreshTasksMock,
+  trackJobMock,
   showToastMock,
 } = vi.hoisted(() => ({
   createStyleJobMock: vi.fn(),
@@ -25,7 +25,7 @@ const {
   getPageRenderStatusMock: vi.fn(),
   queueMutationMock: vi.fn(),
   registerPageDocumentMock: vi.fn(),
-  refreshTasksMock: vi.fn(),
+  trackJobMock: vi.fn(),
   showToastMock: vi.fn(),
 }))
 
@@ -45,7 +45,7 @@ vi.mock('@/services/pageDocumentPersistence', () => ({
 }))
 
 vi.mock('@/stores/taskCenterStore', () => ({
-  useTaskCenterStore: () => ({ refresh: refreshTasksMock }),
+  useTaskCenterStore: () => ({ trackJob: trackJobMock }),
 }))
 
 vi.mock('@/utils/toast', () => ({
@@ -65,7 +65,7 @@ describe('useTextStyleSync backend ownership', () => {
     getPageRenderStatusMock.mockReset()
     queueMutationMock.mockReset().mockResolvedValue(undefined)
     registerPageDocumentMock.mockReset().mockReturnValue([])
-    refreshTasksMock.mockReset().mockResolvedValue(undefined)
+    trackJobMock.mockReset()
     showToastMock.mockReset()
   })
 
@@ -173,44 +173,10 @@ describe('useTextStyleSync backend ownership', () => {
       sourcePageId: image.id,
     })
     expect(flushPageDocumentMock).toHaveBeenCalledWith(image.id)
-    expect(refreshTasksMock).toHaveBeenCalled()
+    expect(trackJobMock).toHaveBeenCalledWith('job-1')
     expect(showToastMock).toHaveBeenCalledWith(
       '样式应用任务已加入后端任务中心，可安全关闭页面',
       'success',
-    )
-  })
-
-  afterEach(() => {
-    vi.useRealTimers()
-  })
-
-  it('does not report an accepted style job as failed when task refresh fails', async () => {
-    mountPage()
-    refreshTasksMock.mockRejectedValue(new Error('snapshot unavailable'))
-    const { useTextStyleSync } = await import('@/composables/useTextStyleSync')
-
-    await useTextStyleSync().handleApplyToAll({
-      fillColor: false,
-      fontFamily: false,
-      fontSize: true,
-      layoutDirection: false,
-      lineSpacing: false,
-      strokeColor: false,
-      strokeEnabled: false,
-      strokeWidth: false,
-      inlineAlign: false,
-      blockAlign: false,
-      textColor: false,
-    })
-
-    expect(createStyleJobMock).toHaveBeenCalledOnce()
-    expect(showToastMock).toHaveBeenCalledWith(
-      '样式应用任务已加入后端任务中心，可安全关闭页面',
-      'success',
-    )
-    expect(showToastMock).not.toHaveBeenCalledWith(
-      expect.stringContaining('创建样式应用任务失败'),
-      'error',
     )
   })
 

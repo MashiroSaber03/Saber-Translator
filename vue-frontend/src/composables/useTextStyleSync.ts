@@ -362,12 +362,12 @@ export function useTextStyleSync() {
       if (committed?.documentRevision === undefined) {
         throw new Error('当前页文档版本不可用')
       }
-      await createChapterStyleApplyJob(image.chapterId, {
+      const accepted = await createChapterStyleApplyJob(image.chapterId, {
         selectedFields,
         sourceDocumentRevision: committed.documentRevision,
         sourcePageId: image.id,
       })
-      void taskCenterStore.refresh().catch(() => undefined)
+      for (const jobId of accepted.jobIds) taskCenterStore.trackJob(jobId)
       showToast('样式应用任务已加入后端任务中心，可安全关闭页面', 'success')
     } catch (error) {
       showToast(

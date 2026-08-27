@@ -350,9 +350,7 @@ class ContentRepository:
                             (
                                 "queued",
                                 "running",
-                                "pausing",
                                 "paused",
-                                "cancelling",
                                 "interrupted",
                                 "failed",
                             )
@@ -486,9 +484,7 @@ class ContentRepository:
                             (
                                 "queued",
                                 "running",
-                                "pausing",
                                 "paused",
-                                "cancelling",
                                 "interrupted",
                                 "failed",
                             )

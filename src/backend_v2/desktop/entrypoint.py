@@ -100,6 +100,10 @@ class DesktopController(QObject):
         self._quitting = False
         self._queue_jobs: list[dict[str, object]] = []
         self._history_jobs: list[dict[str, object]] = []
+        self._queue_paused = False
+        self._worker_online = False
+        self._executor_busy = False
+        self._waiting_reason: str | None = None
         self._pet_state = PetStateMachine()
 
         self.window = DesktopWindow(
@@ -169,6 +173,25 @@ class DesktopController(QObject):
         self._restart_pending = False
         if self._supervisor is not None:
             self._supervisor.request_stop()
+
+    def request_stop_backend(self) -> None:
+        active_count = sum(
+            1
+            for job in self._queue_jobs
+            if job.get("status") == "running"
+        )
+        if active_count:
+            answer = QMessageBox.question(
+                self.window,
+                "停止后端",
+                f"停止后端会将 {active_count} 个正在执行的任务标记为已中断，"
+                "稍后可从检查点继续。确定停止吗？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        self.stop_backend()
 
     def restart_backend(self) -> None:
         if self._supervisor_thread is None or not self._supervisor_thread.is_alive():
@@ -269,11 +292,12 @@ class DesktopController(QObject):
 
     def _connect_signals(self) -> None:
         self.window.start_requested.connect(self.start_backend)
-        self.window.stop_requested.connect(self.stop_backend)
+        self.window.stop_requested.connect(self.request_stop_backend)
         self.window.restart_requested.connect(self.restart_backend)
         self.window.open_web_requested.connect(self.open_web)
         self.window.settings_changed.connect(self.apply_settings)
         self.window.job_command_requested.connect(self.tasks.command)
+        self.window.queue_pause_requested.connect(self.tasks.set_queue_paused)
         self.window.quit_requested.connect(self.request_quit)
         self.launcher_status.connect(self._on_launcher_status)
         self.launcher_output.connect(self.window.add_log)
@@ -301,7 +325,17 @@ class DesktopController(QObject):
             self.tasks.stop()
             self._queue_jobs = []
             self._history_jobs = []
-            self.window.set_jobs([], [])
+            self._worker_online = False
+            self._executor_busy = False
+            self._waiting_reason = None
+            self.window.set_jobs(
+                [],
+                [],
+                self._queue_paused,
+                self._worker_online,
+                self._executor_busy,
+                self._waiting_reason,
+            )
         self._update_pet_state()
 
     def _on_launcher_finished(self, error: object) -> None:
@@ -317,10 +351,31 @@ class DesktopController(QObject):
             self._restart_pending = False
             QTimer.singleShot(0, self.start_backend)
 
-    def _on_jobs_updated(self, queue: object, history: object, _worker_online: bool) -> None:
+    def _on_jobs_updated(
+        self,
+        queue: object,
+        history: object,
+        worker_online: bool,
+        queue_paused: bool,
+        executor_busy: bool,
+        waiting_reason: object,
+    ) -> None:
         self._queue_jobs = [dict(item) for item in queue if isinstance(item, dict)]
         self._history_jobs = [dict(item) for item in history if isinstance(item, dict)]
-        self.window.set_jobs(self._queue_jobs, self._history_jobs)
+        self._queue_paused = queue_paused
+        self._worker_online = worker_online
+        self._executor_busy = executor_busy
+        self._waiting_reason = (
+            str(waiting_reason) if isinstance(waiting_reason, str) else None
+        )
+        self.window.set_jobs(
+            self._queue_jobs,
+            self._history_jobs,
+            self._queue_paused,
+            self._worker_online,
+            self._executor_busy,
+            self._waiting_reason,
+        )
         self._update_pet_state()
 
     def _on_task_error(self, message: str) -> None:
@@ -340,7 +395,7 @@ class DesktopController(QObject):
 
     def _toggle_service(self) -> None:
         if self._supervisor_thread is not None and self._supervisor_thread.is_alive():
-            self.stop_backend()
+            self.request_stop_backend()
         else:
             self.start_backend()
 

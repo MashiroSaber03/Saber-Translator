@@ -173,7 +173,7 @@ async function translateSelectedChapters() {
   try {
     const result = await createTranslationBatch({ chapterIds }, { mode: 'standard' })
     selectedChapterIds.value = new Set()
-    await taskCenterStore.refresh().catch(() => undefined)
+    for (const jobId of result.jobIds) taskCenterStore.trackJob(jobId)
     await refreshBookDetail()
     const skipped = result.skipped.length
     showToast(
@@ -202,7 +202,7 @@ async function downloadSelectedChapters() {
     )
     const jobId = accepted.jobIds[0]
     if (!jobId) throw new Error('后端没有返回批量章节导出任务')
-    await taskCenterStore.refresh()
+    taskCenterStore.trackJob(jobId)
     taskCenterStore.open({ batchId: accepted.batchId })
     queuedToastId = showToast('章节下载已进入后端队列，可安全关闭书籍详情', 'info', 0)
     const job = await taskCenterStore.waitForJob(jobId)

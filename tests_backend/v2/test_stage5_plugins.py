@@ -14,6 +14,7 @@ from sqlalchemy import select
 import src.backend_v2.plugins.repository as plugin_repository_module
 from src.backend_v2.api.app import ApiSettings, create_api_app
 from src.backend_v2.jobs.repository import (
+    AttemptFenced,
     JobItemSpec,
     JobQueueRepository,
     JobSpec,
@@ -518,7 +519,6 @@ def test_runtime_default_snapshot_and_reference_lock(
 
     jobs = JobQueueRepository(engine)
     jobs.create_batch(
-        kind="export",
         display_name="plugin reference",
         specs=[
             JobSpec(
@@ -880,7 +880,6 @@ def test_api_import_does_not_execute_plugin_and_worker_uses_frozen_snapshot(
     frozen = _enabled_snapshots(engine)
     jobs = JobQueueRepository(engine)
     created = jobs.create_batch(
-        kind="export",
         display_name="frozen plugin",
         specs=[
             JobSpec(
@@ -1047,7 +1046,6 @@ def test_worker_operation_snapshots_plugins_and_fail_policy_is_enforced(
 
     jobs = JobQueueRepository(engine)
     jobs.create_batch(
-        kind="export",
         display_name="strict plugin",
         specs=[
             JobSpec(
@@ -1112,7 +1110,6 @@ def test_continue_plugin_cannot_swallow_memory_failure(plugin_platform) -> None:
     )
     jobs = JobQueueRepository(engine)
     jobs.create_batch(
-        kind="export",
         display_name="memory failure plugin",
         specs=[
             JobSpec(
@@ -1179,7 +1176,6 @@ def test_plugin_load_cannot_swallow_memory_failure(plugin_platform) -> None:
     )
     jobs = JobQueueRepository(engine)
     jobs.create_batch(
-        kind="export",
         display_name="plugin load memory failure",
         specs=[
             JobSpec(
@@ -1304,7 +1300,6 @@ def test_worker_plugin_lifecycle_is_job_once_and_pipeline_once_per_page(
     )
     jobs = JobQueueRepository(engine)
     created = jobs.create_batch(
-        kind="export",
         display_name="plugin lifecycle",
         specs=[
             JobSpec(
@@ -1688,10 +1683,16 @@ def test_plugin_agent_planning_hands_off_to_durable_worker_job(
     queue = JobQueueRepository(engine)
     first_fence = queue.claim_next(worker_epoch_id=epoch_id)
     assert first_fence is not None
-    assert queue.request_pause(job_id)["status"] == "pausing"
-    assert sessions.get(session_id)["run_state"] == "pausing"
-    assert queue.finalize_control(first_fence) == "paused"
+    first_step = queue.next_step(first_fence)
+    assert first_step is not None
+    assert queue.request_pause(job_id)["status"] == "paused"
     assert sessions.get(session_id)["run_state"] == "paused"
+    with pytest.raises(AttemptFenced):
+        queue.checkpoint_step(
+            first_fence,
+            step_id=str(first_step["stepId"]),
+            checkpoint={},
+        )
     assert queue.resume(job_id)["status"] == "queued"
     assert sessions.get(session_id)["run_state"] == "running"
 
@@ -1739,12 +1740,9 @@ def test_plugin_agent_planning_hands_off_to_durable_worker_job(
     ).exists()
 
 
-@pytest.mark.parametrize("status", ["pausing", "cancelling"])
-def test_plugin_agent_control_yields_the_running_step(
+def test_plugin_agent_control_is_fenced_after_hard_pause(
     tmp_path: Path,
-    status: str,
 ) -> None:
-    checkpoints: list[tuple[str, dict[str, object]]] = []
     events: list[tuple[str, dict[str, object]]] = []
 
     class Jobs:
@@ -1758,18 +1756,8 @@ def test_plugin_agent_control_yields_the_running_step(
             events.append((event_type, payload))
 
         @staticmethod
-        def control_status(_fence) -> str:
-            return status
-
-        @staticmethod
-        def checkpoint_step(
-            _fence,
-            *,
-            step_id: str,
-            checkpoint: dict[str, object],
-        ) -> str:
-            checkpoints.append((step_id, checkpoint))
-            return status
+        def assert_attempt_active(_fence) -> None:
+            return None
 
     data_root = tmp_path / "data-v2"
     data_root.mkdir()
@@ -1783,34 +1771,29 @@ def test_plugin_agent_control_yields_the_running_step(
         provider_resolver=_FakeAgentProvider(),
     )
     fence = type("Fence", (), {"job_id": "job-1"})()
-    result = worker.handle(
-        fence,
-        {
-            "stepKind": "plugin_agent_execute",
+    with pytest.raises(AttemptFenced):
+        worker.handle(
+            fence,
+            {
+                "stepKind": "plugin_agent_execute",
                 "stepId": "plugin-step",
                 "config": {
                     "executionMode": "sequential",
                     "sessionId": "a" * 32,
-                "target": {
-                    "mode": "create",
-                    "plugin_id": "agent_v3",
-                    "display_name": "Agent v3",
-                    "supported_steps": ["translate"],
+                    "target": {
+                        "mode": "create",
+                        "plugin_id": "agent_v3",
+                        "display_name": "Agent v3",
+                        "supported_steps": ["translate"],
                         "supported_modes": ["standard"],
                         "baseRevision": 0,
                         "pluginVersionId": None,
                     },
-                "messages": [],
-                "provider": {},
+                    "messages": [],
+                    "provider": {},
+                },
             },
-        },
-    )
-
-    assert result == {
-        "__already_published__": True,
-        "__control_drained__": True,
-    }
-    assert checkpoints == [("plugin-step", {})]
+        )
     assert [event_type for event_type, _payload in events] == [
         "plugin_agent_state"
     ]

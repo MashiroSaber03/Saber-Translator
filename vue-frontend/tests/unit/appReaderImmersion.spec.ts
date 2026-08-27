@@ -272,7 +272,7 @@ describe('App reader immersion', () => {
 
     expect(taskCenterStoreMock.initialize).not.toHaveBeenCalled()
     expect(taskCenterStoreMock.close).toHaveBeenCalledOnce()
-    expect(taskCenterStoreMock.disconnect).toHaveBeenCalledOnce()
+    expect(taskCenterStoreMock.disconnect).toHaveBeenCalled()
     expect(wrapper.find('[data-testid="task-launcher"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="task-drawer"]').exists()).toBe(false)
 
@@ -312,7 +312,8 @@ describe('App reader immersion', () => {
 
     await router.push('/reader')
     await flushPromises()
-    expect(taskCenterStoreMock.disconnect).toHaveBeenCalledOnce()
+    const disconnectCountAfterReader = taskCenterStoreMock.disconnect.mock.calls.length
+    expect(disconnectCountAfterReader).toBeGreaterThan(0)
 
     await router.push('/')
     await flushPromises()
@@ -322,7 +323,7 @@ describe('App reader immersion', () => {
     resolveInitialInitialization?.()
     await flushPromises()
 
-    expect(taskCenterStoreMock.disconnect).toHaveBeenCalledOnce()
+    expect(taskCenterStoreMock.disconnect).toHaveBeenCalledTimes(disconnectCountAfterReader)
     wrapper.unmount()
   })
 })

@@ -8,14 +8,17 @@ import os
 from pathlib import Path
 import signal
 import threading
+import time
 from typing import Any
 
 from src.backend_v2.logging_config import configure_backend_logging
 from src.backend_v2.paths import data_root_fingerprint, ensure_data_root, resolve_data_root
 from src.backend_v2.runtime_heartbeat import EpochHeartbeat
 from src.backend_v2.runtime_identity import (
+    CHILD_LEASE_LOST_EXIT_CODE,
     LauncherParentMonitor,
     RuntimeIdentity,
+    WORKER_RECYCLE_EXIT_CODE,
     start_launcher_parent_monitor,
 )
 from src.backend_v2.runtime_profile import PROFILE_ENV, resolve_runtime_profile
@@ -110,11 +113,6 @@ def run_worker(args: object) -> int:
             engine.dispose()
         return 0
 
-    _write_ready_marker(data_root, identity)
-    LOGGER.debug(
-        "Worker 租约验证完成：epoch=%s，ready marker 已写入",
-        identity.epoch_id[:8],
-    )
     stop_event = threading.Event()
     parent_monitor: LauncherParentMonitor | None = None
     heartbeat = (
@@ -134,7 +132,7 @@ def run_worker(args: object) -> int:
 
     def stop_orphaned_worker() -> None:
         LOGGER.critical("Launcher 进程已退出，Worker 立即终止")
-        os._exit(75)
+        os._exit(CHILD_LEASE_LOST_EXIT_CODE)
 
     signal.signal(signal.SIGINT, request_stop)
     signal.signal(signal.SIGTERM, request_stop)
@@ -154,6 +152,7 @@ def run_worker(args: object) -> int:
         raise
     try:
         if engine is None:
+            _write_ready_marker(data_root, identity)
             while not stop_event.wait(timeout=0.5):
                 pass
         else:
@@ -408,12 +407,6 @@ def run_worker(args: object) -> int:
                 data_root=data_root,
                 engine=engine,
             )
-            maintenance.run_if_due(force=True)
-            LOGGER.debug(
-                "Worker 服务初始化完成：任务步骤处理器=%s，批处理器=3，操作处理器=4",
-                len(job_handlers),
-            )
-            user_log("system", "任务执行器已就绪")
 
             def memory_admitted() -> bool:
                 if scheduling_policy is None:
@@ -433,8 +426,6 @@ def run_worker(args: object) -> int:
 
             def run_immediate_work() -> bool:
                 try:
-                    if maintenance.run_if_due():
-                        return True
                     if model_lifecycle.run_pending_release():
                         return True
                     if not memory_admitted():
@@ -451,7 +442,74 @@ def run_worker(args: object) -> int:
                     )
                     return False
 
-            JobWorkerLoop(
+            def run_idle_work() -> bool:
+                try:
+                    return maintenance.run_if_due()
+                except Exception as exc:
+                    if not is_sqlite_busy_error(exc):
+                        raise
+                    LOGGER.debug(
+                        "Worker 空闲维护遇到 SQLite 写锁竞争，将在下一轮重试"
+                    )
+                    return False
+
+            def abort_stalled_attempt(fence: Any, reason: str) -> None:
+                LOGGER.critical(
+                    "任务处理器控制超时，立即退出 Worker 交由 Launcher 恢复："
+                    "job=%s attempt=%s reason=%s",
+                    str(fence.job_id)[:8],
+                    str(fence.attempt_id)[:8],
+                    reason,
+                )
+                os._exit(WORKER_RECYCLE_EXIT_CODE)
+
+            auxiliary_lock = threading.Lock()
+            auxiliary_label: str | None = None
+
+            def run_auxiliary(label: str, callback: Any) -> bool:
+                nonlocal auxiliary_label
+                with auxiliary_lock:
+                    auxiliary_label = label
+                try:
+                    return bool(callback())
+                finally:
+                    with auxiliary_lock:
+                        auxiliary_label = None
+
+            def watch_auxiliary_work() -> None:
+                queued_since: float | None = None
+                while not stop_event.wait(0.25):
+                    with auxiliary_lock:
+                        label = auxiliary_label
+                    if label is None:
+                        queued_since = None
+                        continue
+                    try:
+                        durable_work_waiting = (
+                            job_repository.has_ready_queued_job()
+                        )
+                    except Exception as exc:
+                        if not is_sqlite_busy_error(exc):
+                            LOGGER.warning(
+                                "Worker 辅助工作看门狗读取队列失败",
+                                exc_info=exc,
+                            )
+                        continue
+                    if not durable_work_waiting:
+                        queued_since = None
+                        continue
+                    if queued_since is None:
+                        queued_since = time.monotonic()
+                        continue
+                    if time.monotonic() - queued_since < 1.5:
+                        continue
+                    LOGGER.critical(
+                        "辅助工作阻塞持久任务领取，立即回收 Worker：kind=%s",
+                        label,
+                    )
+                    os._exit(WORKER_RECYCLE_EXIT_CODE)
+
+            job_loop = JobWorkerLoop(
                 job_repository,
                 worker_epoch_id=identity.epoch_id,
                 handlers=job_handlers,
@@ -464,7 +522,14 @@ def run_worker(args: object) -> int:
                     step_kind,
                     insight_derived,
                 ),
-                safe_point=run_immediate_work,
+                safe_point=lambda: run_auxiliary(
+                    "interactive",
+                    run_immediate_work,
+                ),
+                idle_work=lambda: run_auxiliary(
+                    "maintenance",
+                    run_idle_work,
+                ),
                 scheduling_policy=(
                     scheduling_policy.load
                     if scheduling_policy is not None
@@ -474,8 +539,23 @@ def run_worker(args: object) -> int:
                     memory_admitted if scheduling_policy is not None else None
                 ),
                 on_activity=model_lifecycle.note_activity,
+                on_control_timeout=abort_stalled_attempt,
                 plugin_runtime=plugin_job_runtime,
-            ).run(stop_event)
+            )
+            threading.Thread(
+                target=watch_auxiliary_work,
+                name="worker-auxiliary-watchdog",
+                daemon=True,
+            ).start()
+            _write_ready_marker(data_root, identity)
+            LOGGER.debug(
+                "Worker 服务初始化完成并写入 ready marker："
+                "epoch=%s，任务步骤处理器=%s，批处理器=3，操作处理器=4",
+                identity.epoch_id[:8],
+                len(job_handlers),
+            )
+            user_log("system", "任务执行器已就绪")
+            job_loop.run(stop_event)
     except BaseException as exc:
         LOGGER.exception("Worker 运行失败")
         user_log(
@@ -493,4 +573,8 @@ def run_worker(args: object) -> int:
             engine.dispose()
         LOGGER.debug("Worker 已关闭")
 
-    return 75 if heartbeat is not None and not heartbeat.healthy else 0
+    return (
+        CHILD_LEASE_LOST_EXIT_CODE
+        if heartbeat is not None and not heartbeat.healthy
+        else 0
+    )

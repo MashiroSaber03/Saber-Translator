@@ -209,7 +209,8 @@ async function translateSelectedBooks() {
   batchBusy.value = true
   try {
     const result = await createTranslationBatch({ bookIds }, { mode: 'standard' })
-    await Promise.allSettled([taskCenterStore.refresh(), bookshelfStore.loadBooks()])
+    for (const jobId of result.jobIds) taskCenterStore.trackJob(jobId)
+    await bookshelfStore.loadBooks()
     showToast(
       result.skipped.length
         ? `已创建 ${result.jobIds.length} 个任务，跳过 ${result.skipped.length} 个章节`
@@ -236,7 +237,7 @@ async function downloadSelectedBooks() {
     )
     const jobId = accepted.jobIds[0]
     if (!jobId) throw new Error('后端没有返回批量导出任务')
-    await taskCenterStore.refresh()
+    taskCenterStore.trackJob(jobId)
     taskCenterStore.open({ batchId: accepted.batchId })
     queuedToastId = showToast('批量下载已进入后端队列，可安全离开书架页面', 'info', 0)
     const job = await taskCenterStore.waitForJob(jobId)

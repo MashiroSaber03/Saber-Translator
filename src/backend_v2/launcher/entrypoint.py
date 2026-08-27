@@ -43,6 +43,7 @@ from src.backend_v2.runtime_identity import (
     API_EPOCH_ID_ENV,
     API_EPOCH_TOKEN_ENV,
     LAUNCHER_PID_ENV,
+    WORKER_RECYCLE_EXIT_CODE,
     WORKER_EPOCH_ID_ENV,
     WORKER_EPOCH_TOKEN_ENV,
 )
@@ -573,6 +574,12 @@ def _reconcile_all_previous_epochs(repository: ProcessEpochRepository) -> None:
         repository.reconcile_dead_api(epoch_id)
     for epoch_id in repository.active_epochs("worker"):
         repository.reconcile_dead_worker(epoch_id)
+    recovered = repository.reconcile_orphaned_work()
+    if recovered:
+        LOGGER.warning(
+            "启动时已收敛 %s 个非活动进程遗留的运行中工作",
+            len(recovered),
+        )
 
 
 def _start_child(
@@ -941,9 +948,23 @@ class LauncherSupervisor:
                                         return_code = managed.process.poll()
                                     if return_code is None:
                                         continue
-                                    LOGGER.warning(
-                                        "%s 子进程意外退出：pid=%s，exit_code=%s",
+                                    controlled_recycle = (
+                                        role == "worker"
+                                        and return_code == WORKER_RECYCLE_EXIT_CODE
+                                    )
+                                    log_child_exit = (
+                                        LOGGER.info
+                                        if controlled_recycle
+                                        else LOGGER.warning
+                                    )
+                                    log_child_exit(
+                                        "%s 子进程%s：pid=%s，exit_code=%s",
                                         role.upper(),
+                                        (
+                                            "已受控回收"
+                                            if controlled_recycle
+                                            else "意外退出"
+                                        ),
                                         managed.process.pid,
                                         return_code,
                                     )
@@ -953,11 +974,18 @@ class LauncherSupervisor:
                                             if role == "api"
                                             else "任务执行器"
                                         )
-                                        user_log(
-                                            "warning",
-                                            f"{role_label}意外退出｜退出码 {return_code}｜"
-                                            "正在自动恢复",
-                                        )
+                                        if controlled_recycle:
+                                            user_log(
+                                                "system",
+                                                "任务执行器已主动回收卡住的处理器，"
+                                                "正在自动恢复",
+                                            )
+                                        else:
+                                            user_log(
+                                                "warning",
+                                                f"{role_label}意外退出｜"
+                                                f"退出码 {return_code}｜正在自动恢复",
+                                            )
                                     if not _try_reconcile_dead_child(
                                         repository,
                                         role=role,

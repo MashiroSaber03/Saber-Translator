@@ -94,6 +94,7 @@ async function activateApplication(): Promise<void> {
   const context = settingsContext.value
   if (!context) return
   if (!applicationSettingsReady.value) {
+    taskCenterStore.disconnect()
     if (settingsLoading.value) return
     customAiProfileStore.reset()
     settingsLoading.value = true

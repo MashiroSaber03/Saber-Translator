@@ -3,19 +3,21 @@
 from __future__ import annotations
 
 import json
-import uuid
 from urllib.parse import quote
 
 from PySide6.QtCore import QByteArray, QObject, QTimer, QUrl, Signal
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 
+QUEUE_JOB_STATUSES = frozenset({"queued", "running", "paused"})
+HISTORY_JOB_STATUSES = frozenset(
+    {"cancelled", "completed", "completed_with_errors", "failed", "interrupted"}
+)
+
 
 class TaskApiClient(QObject):
-    jobs_updated = Signal(object, object, bool)
+    jobs_updated = Signal(object, object, bool, bool, bool, object)
     connected_changed = Signal(bool)
-    event_received = Signal(object)
     error = Signal(str)
-    command_finished = Signal(str, str, bool)
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -30,12 +32,13 @@ class TaskApiClient(QObject):
         self._reconnect_attempt = 0
         self._refresh_inflight = False
         self._refresh_pending = False
-        self._list_results: dict[str, dict[str, object]] = {}
-        self._list_finished: set[str] = set()
         self._refresh_timer = QTimer(self)
         self._refresh_timer.setSingleShot(True)
         self._refresh_timer.setInterval(500)
         self._refresh_timer.timeout.connect(self.refresh)
+        self._poll_timer = QTimer(self)
+        self._poll_timer.setInterval(15_000)
+        self._poll_timer.timeout.connect(self.refresh)
 
     def start(self, base_url: str) -> None:
         self.stop()
@@ -46,12 +49,14 @@ class TaskApiClient(QObject):
         self._reconnect_attempt = 0
         self._refresh_inflight = False
         self._refresh_pending = False
+        self._poll_timer.start()
         self.refresh()
 
     def stop(self) -> None:
         self._generation += 1
         self._running = False
         self._refresh_timer.stop()
+        self._poll_timer.stop()
         self._refresh_pending = False
         reply = self._sse_reply
         if reply is not None:
@@ -69,22 +74,15 @@ class TaskApiClient(QObject):
             self._refresh_pending = True
             return
         self._refresh_inflight = True
-        self._list_results = {}
-        self._list_finished = set()
         generation = self._generation
-        for scope in ("queue", "history"):
-            path = f"/api/v2/jobs?scope={scope}"
-            if scope == "history":
-                path += "&limit=200"
-            request = self._json_request(path)
-            reply = self._manager.get(request)
-            reply.finished.connect(
-                lambda scope=scope, reply=reply, generation=generation: self._finish_list(
-                    scope,
-                    reply,
-                    generation,
-                )
+        request = self._json_request("/api/v2/jobs?scope=all&limit=200")
+        reply = self._manager.get(request)
+        reply.finished.connect(
+            lambda reply=reply, generation=generation: self._finish_list(
+                reply,
+                generation,
             )
+        )
 
     def schedule_refresh(self) -> None:
         if self._running and not self._refresh_timer.isActive():
@@ -97,61 +95,88 @@ class TaskApiClient(QObject):
             raise ValueError("job id is required")
         if not self._running or not self._base_url:
             self.error.emit("任务操作失败：后端尚未连接")
-            self.command_finished.emit(job_id, action, False)
             return
         request = self._json_request(
             f"/api/v2/jobs/{quote(job_id, safe='')}/{action}",
-            idempotent=True,
         )
         reply = self._manager.post(request, QByteArray(b"{}"))
         generation = self._generation
         reply.finished.connect(
             lambda reply=reply,
-            job_id=job_id,
-            action=action,
-            generation=generation: self._finish_command(
-                reply,
-                job_id,
-                action,
-                generation,
+            generation=generation: self._finish_command(reply, generation)
+        )
+
+    def set_queue_paused(self, paused: bool) -> None:
+        if not self._running or not self._base_url:
+            self.error.emit("任务操作失败：后端尚未连接")
+            return
+        action = "pause" if paused else "resume"
+        request = self._json_request(
+            f"/api/v2/jobs/queue/{action}",
+        )
+        reply = self._manager.post(request, QByteArray(b"{}"))
+        generation = self._generation
+        reply.finished.connect(
+            lambda reply=reply, generation=generation: self._finish_command(
+                reply, generation
             )
         )
 
-    def _json_request(self, path: str, *, idempotent: bool = False) -> QNetworkRequest:
+    def _json_request(self, path: str) -> QNetworkRequest:
         request = QNetworkRequest(QUrl(f"{self._base_url}{path}"))
         request.setRawHeader(b"Accept", b"application/json")
         request.setRawHeader(b"Content-Type", b"application/json")
         request.setTransferTimeout(15_000)
-        if idempotent:
-            request.setRawHeader(b"Idempotency-Key", str(uuid.uuid4()).encode("ascii"))
         return request
 
-    def _finish_list(self, scope: str, reply: QNetworkReply, generation: int) -> None:
+    def _finish_list(self, reply: QNetworkReply, generation: int) -> None:
         if generation != self._generation:
             reply.deleteLater()
             return
+        payload: dict[str, object] | None = None
         try:
             if reply.error() != QNetworkReply.NetworkError.NoError:
                 self.error.emit(f"任务中心请求失败：{reply.errorString()}")
             else:
-                payload = json.loads(bytes(reply.readAll()).decode("utf-8"))
-                if not isinstance(payload, dict) or not isinstance(
-                    payload.get("items"), list
+                decoded = json.loads(bytes(reply.readAll()).decode("utf-8"))
+                expected_fields = {
+                    "items",
+                    "queuePaused",
+                    "eventCursor",
+                    "workerOnline",
+                    "executorBusy",
+                    "waitingReason",
+                }
+                valid_waiting_reasons = {
+                    None,
+                    "queue_paused",
+                    "worker_offline",
+                    "low_memory",
+                    "queue_blocked",
+                    "executor_busy",
+                }
+                if (
+                    not isinstance(decoded, dict)
+                    or set(decoded) != expected_fields
+                    or not isinstance(decoded.get("items"), list)
+                    or type(decoded.get("queuePaused")) is not bool
+                    or type(decoded.get("workerOnline")) is not bool
+                    or type(decoded.get("executorBusy")) is not bool
+                    or decoded.get("waitingReason") not in valid_waiting_reasons
+                    or type(decoded.get("eventCursor")) is not int
+                    or int(decoded["eventCursor"]) < 0
                 ):
                     raise ValueError("任务列表响应格式无效")
-                self._list_results[scope] = payload
+                payload = decoded
         except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
             self.error.emit(str(error))
         finally:
-            self._list_finished.add(scope)
             reply.deleteLater()
 
-        if len(self._list_finished) < 2:
-            return
         self._refresh_inflight = False
         if not self._running:
             return
-        if len(self._list_results) < 2:
+        if payload is None:
             if self._refresh_pending:
                 self._refresh_pending = False
                 self.schedule_refresh()
@@ -161,17 +186,30 @@ class TaskApiClient(QObject):
                     lambda generation=generation: self._retry_refresh(generation),
                 )
             return
-        queue = self._list_results["queue"]
-        history = self._list_results["history"]
-        cursors = [
-            value
-            for value in (queue.get("eventCursor"), history.get("eventCursor"))
-            if isinstance(value, int)
+        items = payload["items"]
+        queue = [
+            item
+            for item in items
+            if isinstance(item, dict)
+            and item.get("status") in QUEUE_JOB_STATUSES
         ]
-        if self._last_event_id == 0 and cursors:
-            self._last_event_id = min(cursors)
-        worker_online = queue.get("workerOnline") is not False
-        self.jobs_updated.emit(queue["items"], history["items"], worker_online)
+        history = [
+            item
+            for item in items
+            if isinstance(item, dict)
+            and item.get("status") in HISTORY_JOB_STATUSES
+        ]
+        event_cursor = payload.get("eventCursor")
+        if self._last_event_id == 0 and isinstance(event_cursor, int):
+            self._last_event_id = event_cursor
+        self.jobs_updated.emit(
+            queue,
+            history,
+            payload["workerOnline"],
+            payload["queuePaused"],
+            payload["executorBusy"],
+            payload["waitingReason"],
+        )
         if self._sse_reply is None:
             self._connect_sse()
         if self._refresh_pending:
@@ -227,7 +265,6 @@ class TaskApiClient(QObject):
             event_id = payload.get("eventId")
             if isinstance(event_id, int) and event_id > self._last_event_id:
                 self._last_event_id = event_id
-            self.event_received.emit(payload)
             self.schedule_refresh()
 
     def _finish_sse(self, reply: QNetworkReply) -> None:
@@ -259,15 +296,12 @@ class TaskApiClient(QObject):
     def _finish_command(
         self,
         reply: QNetworkReply,
-        job_id: str,
-        action: str,
         generation: int,
     ) -> None:
         if generation != self._generation:
             reply.deleteLater()
             return
-        success = reply.error() == QNetworkReply.NetworkError.NoError
-        if not success:
+        if reply.error() != QNetworkReply.NetworkError.NoError:
             body = bytes(reply.readAll()).decode("utf-8", errors="replace")
             message = reply.errorString()
             try:
@@ -280,7 +314,6 @@ class TaskApiClient(QObject):
                 pass
             self.error.emit(f"任务操作失败：{message}")
         reply.deleteLater()
-        self.command_finished.emit(job_id, action, success)
         self.refresh()
 
     def _set_connected(self, connected: bool) -> None:

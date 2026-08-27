@@ -6,11 +6,13 @@ import { useInsightStore } from '@/stores/insightStore'
 
 const {
   reanalyzeChapterMock,
+  trackJobMock,
   getInsightPagesPageMock,
   showToastMock,
   confirmProductActionMock,
 } = vi.hoisted(() => ({
   reanalyzeChapterMock: vi.fn(),
+  trackJobMock: vi.fn(),
   getInsightPagesPageMock: vi.fn(),
   showToastMock: vi.fn(),
   confirmProductActionMock: vi.fn(),
@@ -19,6 +21,10 @@ const {
 vi.mock('@/api/insight', () => ({
   reanalyzeChapter: reanalyzeChapterMock,
   getInsightPagesPage: getInsightPagesPageMock,
+}))
+
+vi.mock('@/stores/taskCenterStore', () => ({
+  useTaskCenterStore: () => ({ trackJob: trackJobMock }),
 }))
 
 vi.mock('@/utils/toast', () => ({
@@ -86,6 +92,7 @@ describe('PagesTree', () => {
     reanalyzeChapterMock.mockResolvedValue({
       jobId: 'task-chapter-1',
     })
+    trackJobMock.mockReset()
     getInsightPagesPageMock.mockReset().mockResolvedValue({
       items: [pageSummary(1), pageSummary(2)],
       nextCursor: null,
@@ -102,7 +109,7 @@ describe('PagesTree', () => {
     vi.clearAllMocks()
   })
 
-  it('starts chapter reanalyze via API and writes task state to store', async () => {
+  it('starts chapter reanalyze and tracks the durable task', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
 
@@ -135,8 +142,9 @@ describe('PagesTree', () => {
     })
     expect(confirmSpy).not.toHaveBeenCalled()
     expect(reanalyzeChapterMock).toHaveBeenCalledWith('book-1', 'ch-1')
-    expect(store.currentTaskId).toBe('task-chapter-1')
-    expect(store.analysisStatus).toBe('queued')
+    expect(trackJobMock).toHaveBeenCalledWith('task-chapter-1')
+    expect(store.currentTaskId).toBeNull()
+    expect(store.analysisStatus).toBe('idle')
     expect(showToastMock).toHaveBeenCalledWith('章节分析已启动', 'success')
   })
 

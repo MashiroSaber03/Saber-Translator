@@ -255,7 +255,7 @@ function mapRunStateToCardStatus(runState: string): PluginAgentTimelineItem['sta
   if (runState === 'completed') {
     return 'success'
   }
-  if (runState === 'running' || runState === 'pausing' || runState === 'cancelling') {
+  if (runState === 'running') {
     return 'streaming'
   }
   if (runState === 'awaiting_target_lock' || runState === 'ready' || runState === 'paused') {

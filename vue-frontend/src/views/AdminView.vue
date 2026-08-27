@@ -290,6 +290,7 @@ function updateSchedulingNumber(key: NumericSchedulingKey, value: number | null)
 function schedulerWaitingLabel(reason: SchedulingOverview['status']['waitingReason']): string {
   if (reason === null) return '正常调度'
   return {
+    queue_paused: '队列已暂停',
     worker_offline: 'Worker 离线',
     low_memory: '可用内存不足',
     queue_blocked: '任务等待写入锁',

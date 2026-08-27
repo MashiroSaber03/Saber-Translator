@@ -14,6 +14,7 @@ import {
 } from '@/services/pageDocumentPersistence'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
+import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import type { BubbleState } from '@/types/bubble'
 import type { ImageData } from '@/types/image'
 import { showToast } from '@/utils/toast'
@@ -32,6 +33,7 @@ export function useEditWorkspaceProcessingActions(
 ) {
   const bubbleStore = useBubbleStore()
   const imageStore = useImageStore()
+  const taskCenterStore = useTaskCenterStore()
   const { translateWithCurrentBubbles: translateWithBubbles } = useTranslation({
     observeProgress: false,
   })
@@ -183,10 +185,11 @@ export function useEditWorkspaceProcessingActions(
         showToast('当前章节上下文不存在', 'error')
         return
       }
-      await createChapterDetectJob(
+      const accepted = await createChapterDetectJob(
         image.chapterId,
         options.images.value.map(item => item.id),
       )
+      for (const jobId of accepted.jobIds) taskCenterStore.trackJob(jobId)
       showToast('批量检测已加入任务中心；关闭浏览器也会继续执行', 'success')
     } catch (error) {
       if (isRequestCanceled(error)) return

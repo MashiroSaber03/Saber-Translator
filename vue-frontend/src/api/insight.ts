@@ -26,7 +26,6 @@ import { projectInsightPageProgress } from '@/utils/insightJobProgress'
 import { readApiErrorMessage } from '@/api/download'
 import { readSseStream } from '@/api/sse'
 import { ApiClientError } from '@/api/client'
-import { jobsApi } from '@/api/v2/jobs'
 import {
   createInsightAnalysisJob,
   createInsightExport,
@@ -357,22 +356,6 @@ export async function startAnalysis(
   }
 }
 
-export async function pauseAnalysis(taskId: string): Promise<void> {
-  await jobsApi.pause(taskId)
-}
-
-export async function resumeAnalysis(taskId: string): Promise<void> {
-  await jobsApi.resume(taskId)
-}
-
-export async function continueAnalysis(taskId: string): Promise<void> {
-  await jobsApi.continue(taskId)
-}
-
-export async function cancelAnalysis(taskId: string): Promise<void> {
-  await jobsApi.cancel(taskId)
-}
-
 function requireAnalysisCount(value: unknown, field: string): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
     throw new Error(`漫画分析 ${field} 格式无效`)
@@ -389,9 +372,7 @@ function requireInsightTaskStatus(value: unknown): InsightTaskStatus {
   if (
     value === 'queued' ||
     value === 'running' ||
-    value === 'pausing' ||
     value === 'paused' ||
-    value === 'cancelling' ||
     value === 'interrupted' ||
     value === 'completed' ||
     value === 'completed_with_errors' ||

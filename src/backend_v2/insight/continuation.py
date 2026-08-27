@@ -2074,7 +2074,6 @@ class ContinuationCommandService:
             )
 
         return self.jobs.create_batch(
-            kind="continuation",
             display_name="续写 · 生成脚本",
             specs=(
                 JobSpec(
@@ -2241,7 +2240,6 @@ class ContinuationCommandService:
             )
 
         return self.jobs.create_batch(
-            kind="continuation",
             display_name="续写 · 页面剧情",
             specs=(
                 JobSpec(
@@ -2407,7 +2405,6 @@ class ContinuationCommandService:
             )
 
         return self.jobs.create_batch(
-            kind="continuation",
             display_name="续写 · 批量生图",
             specs=(
                 JobSpec(
@@ -2536,7 +2533,6 @@ class ContinuationCommandService:
                 )
 
         return self.jobs.create_batch(
-            kind="continuation",
             display_name=f"续写 · 导出 {output_format.upper()}",
             specs=(
                 JobSpec(
@@ -2688,7 +2684,6 @@ class ContinuationCommandService:
                 )
 
         return self.jobs.create_batch(
-            kind="continuation",
             display_name=(
                 f"续写 · {row['character_name']} · {row['name']} 三视图"
             ),
