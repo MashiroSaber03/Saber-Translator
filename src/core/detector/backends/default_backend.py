@@ -26,7 +26,6 @@ DEFAULT_MODEL_DIR = 'models/default'
 DEFAULT_MODEL_NAME = 'detect-20241225.ckpt'
 DEFAULT_DETECT_SIZE = 1536
 DEFAULT_TEXT_THRESHOLD = 0.5
-DEFAULT_BOX_THRESHOLD = 0.7
 DEFAULT_UNCLIP_RATIO = 2.2
 
 
@@ -46,7 +45,6 @@ class DefaultBackend(BaseTextDetector):
                  device: str = 'cuda',
                  detect_size: int = DEFAULT_DETECT_SIZE,
                  text_threshold: float = DEFAULT_TEXT_THRESHOLD,
-                 box_threshold: float = DEFAULT_BOX_THRESHOLD,
                  unclip_ratio: float = DEFAULT_UNCLIP_RATIO):
         """
         初始化 Default 检测器
@@ -56,23 +54,18 @@ class DefaultBackend(BaseTextDetector):
             device: 设备 ('cuda', 'cpu', 'mps')
             detect_size: 检测尺寸
             text_threshold: 文本阈值
-            box_threshold: 框阈值
             unclip_ratio: 框扩展比例
         """
         self.model_dir = resource_path(DEFAULT_MODEL_DIR) if model_dir is None else model_dir
         if isinstance(detect_size, bool) or not isinstance(detect_size, int) or detect_size <= 0:
             raise ValueError("Default 检测尺寸必须是正整数")
-        for label, value in (
-            ("文本", text_threshold),
-            ("文本框", box_threshold),
+        if (
+            isinstance(text_threshold, bool)
+            or not isinstance(text_threshold, (int, float))
+            or not math.isfinite(float(text_threshold))
+            or not 0 <= float(text_threshold) <= 1
         ):
-            if (
-                isinstance(value, bool)
-                or not isinstance(value, (int, float))
-                or not math.isfinite(float(value))
-                or not 0 <= float(value) <= 1
-            ):
-                raise ValueError(f"Default {label}阈值必须是 0 到 1 之间的数字")
+            raise ValueError("Default 文本阈值必须是 0 到 1 之间的数字")
         if (
             isinstance(unclip_ratio, bool)
             or not isinstance(unclip_ratio, (int, float))
@@ -82,7 +75,6 @@ class DefaultBackend(BaseTextDetector):
             raise ValueError("Default 文本框扩展比例必须大于零")
         self.detect_size = detect_size
         self.text_threshold = float(text_threshold)
-        self.box_threshold = float(box_threshold)
         self.unclip_ratio = float(unclip_ratio)
         self.seg_rep = None
         
@@ -195,11 +187,8 @@ class DefaultBackend(BaseTextDetector):
         # 过滤无效框并调整坐标
         textlines = []
         if boxes.size > 0:
-            # 过滤全零框
-            idx = (
-                (boxes.reshape(boxes.shape[0], -1).sum(axis=1) > 0)
-                & (scores >= self.box_threshold)
-            )
+            # 历史 Default 流程只过滤全零框，不按置信度做二次筛选。
+            idx = boxes.reshape(boxes.shape[0], -1).sum(axis=1) > 0
             polys = boxes[idx].astype(np.float64)
             valid_scores = scores[idx]
             
@@ -211,7 +200,8 @@ class DefaultBackend(BaseTextDetector):
             for pts, score in zip(polys, valid_scores):
                 if pts.shape[0] == 4:
                     textline = TextLine(pts=pts, confidence=float(score))
-                    textlines.append(textline)
+                    if textline.area > 16:
+                        textlines.append(textline)
         
         # 处理掩码 - 缩放到原图尺寸
         # mask 输出是 1/2 分辨率（从 up4 输出，经过 upconv7 上采样后是 H/2）

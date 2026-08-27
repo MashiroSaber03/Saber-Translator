@@ -6,6 +6,7 @@ from pathlib import Path
 import threading
 from types import SimpleNamespace
 from typing import Any, Mapping
+from unittest import mock
 import uuid
 import zipfile
 
@@ -130,11 +131,136 @@ def _frozen_ai_vision_ocr_config() -> dict[str, object]:
     }
 
 
+def _frozen_detector_config(detector_type: str = "default") -> dict[str, object]:
+    return {
+        "detector_type": detector_type,
+        "expand_ratio": 11,
+        "expand_top": 12,
+        "expand_bottom": 13,
+        "expand_left": 14,
+        "expand_right": 15,
+        "enable_aux_yolo_detection": True,
+        "aux_yolo_conf_threshold": 0.31,
+        "aux_yolo_overlap_threshold": 0.21,
+        "enable_saber_yolo_refine": True,
+        "saber_yolo_refine_overlap_threshold": 0.41,
+        "min_text_block_area_percent": 0.05,
+    }
+
+
 def test_core_translation_detect_rejects_incomplete_configuration() -> None:
     image = Image.new("RGB", (16, 16), "white")
     try:
         with pytest.raises(ValueError, match="detector configuration fields"):
             CoreTranslationAlgorithms().detect(image, {})
+    finally:
+        image.close()
+
+
+def test_core_translation_default_detect_reuses_primary_mask() -> None:
+    image = Image.new("RGB", (16, 16), "white")
+    primary_mask = object()
+    primary_result = {"coords": [[1, 2, 3, 4]], "raw_mask": primary_mask}
+    config = _frozen_detector_config()
+    try:
+        with mock.patch(
+            "src.core.detection.get_bubble_detection_result_with_auto_directions",
+            return_value=primary_result,
+        ) as detect_mock:
+            result = CoreTranslationAlgorithms().detect(image, config)
+    finally:
+        image.close()
+
+    assert result is primary_result
+    assert result["raw_mask"] is primary_mask
+    detect_mock.assert_called_once_with(mock.ANY, **config)
+
+
+@pytest.mark.parametrize("detector_type", ["ctd", "yolo"])
+def test_core_translation_non_default_detect_uses_default_mask_only(
+    detector_type: str,
+) -> None:
+    image = Image.new("RGB", (16, 16), "white")
+    selected_mask = object()
+    precise_mask = object()
+    primary_result = {
+        "coords": [[1, 2, 3, 4]],
+        "polygons": [[[1, 2], [3, 2], [3, 4], [1, 4]]],
+        "angles": [7],
+        "auto_directions": ["v"],
+        "textlines_per_bubble": [[{"confidence": 0.8}]],
+        "raw_mask": selected_mask,
+    }
+    mask_result = {
+        "coords": [[8, 8, 9, 9]],
+        "raw_mask": precise_mask,
+    }
+    config = _frozen_detector_config(detector_type)
+    try:
+        with mock.patch(
+            "src.core.detection.get_bubble_detection_result_with_auto_directions",
+            side_effect=[primary_result, mask_result],
+        ) as detect_mock:
+            result = CoreTranslationAlgorithms().detect(image, config)
+    finally:
+        image.close()
+
+    assert result["coords"] == primary_result["coords"]
+    assert result["polygons"] == primary_result["polygons"]
+    assert result["angles"] == primary_result["angles"]
+    assert result["auto_directions"] == primary_result["auto_directions"]
+    assert result["textlines_per_bubble"] == primary_result["textlines_per_bubble"]
+    assert result["raw_mask"] is precise_mask
+    assert primary_result["raw_mask"] is selected_mask
+    assert detect_mock.call_count == 2
+    assert detect_mock.call_args_list[0].kwargs == config
+    assert detect_mock.call_args_list[1].kwargs == {
+        **config,
+        "detector_type": "default",
+        "expand_ratio": 0,
+        "expand_top": 0,
+        "expand_bottom": 0,
+        "expand_left": 0,
+        "expand_right": 0,
+        "enable_aux_yolo_detection": False,
+        "enable_saber_yolo_refine": False,
+        "min_text_block_area_percent": 0,
+    }
+
+
+@pytest.mark.parametrize("detector_type", ["default", "ctd"])
+def test_core_translation_detect_requires_default_mask(detector_type: str) -> None:
+    image = Image.new("RGB", (16, 16), "white")
+    results = [{"coords": [], "raw_mask": None}]
+    if detector_type != "default":
+        results.insert(0, {"coords": [], "raw_mask": object()})
+    try:
+        with mock.patch(
+            "src.core.detection.get_bubble_detection_result_with_auto_directions",
+            side_effect=results,
+        ), pytest.raises(RuntimeError, match="did not produce a text mask"):
+            CoreTranslationAlgorithms().detect(
+                image,
+                _frozen_detector_config(detector_type),
+            )
+    finally:
+        image.close()
+
+
+def test_core_translation_detect_propagates_default_mask_failure() -> None:
+    image = Image.new("RGB", (16, 16), "white")
+    try:
+        with mock.patch(
+            "src.core.detection.get_bubble_detection_result_with_auto_directions",
+            side_effect=[
+                {"coords": [], "raw_mask": object()},
+                RuntimeError("mask detector failed"),
+            ],
+        ), pytest.raises(RuntimeError, match="mask detector failed"):
+            CoreTranslationAlgorithms().detect(
+                image,
+                _frozen_detector_config("yolo"),
+            )
     finally:
         image.close()
 

@@ -160,7 +160,6 @@ class BaseTextDetector(ABC):
             im_w,
             im_h,
         )
-        textlines = [line for line in textlines if line.area > 16]
 
         if enable_aux_yolo_detection is None:
             from src.shared import constants

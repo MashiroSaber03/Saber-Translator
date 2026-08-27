@@ -877,7 +877,40 @@ class CoreTranslationAlgorithms:
                 raise ValueError(f"detector configuration {field} must be from 0 to 1")
         if config["min_text_block_area_percent"] < 0:
             raise ValueError("minimum text block area cannot be negative")
-        return get_bubble_detection_result_with_auto_directions(image, **dict(config))
+
+        primary_result = get_bubble_detection_result_with_auto_directions(
+            image,
+            **dict(config),
+        )
+        if config["detector_type"] == "default":
+            if primary_result.get("raw_mask") is None:
+                raise RuntimeError("Default detector did not produce a text mask")
+            return primary_result
+
+        # 历史约定：所选检测器负责文本框，Default 单独负责精确文字掩膜。
+        mask_config = dict(config)
+        mask_config.update(
+            detector_type="default",
+            expand_ratio=0,
+            expand_top=0,
+            expand_bottom=0,
+            expand_left=0,
+            expand_right=0,
+            enable_aux_yolo_detection=False,
+            enable_saber_yolo_refine=False,
+            min_text_block_area_percent=0,
+        )
+        mask_result = get_bubble_detection_result_with_auto_directions(
+            image,
+            **mask_config,
+        )
+        precise_mask = mask_result.get("raw_mask")
+        if precise_mask is None:
+            raise RuntimeError("Default detector did not produce a text mask")
+
+        result = dict(primary_result)
+        result["raw_mask"] = precise_mask
+        return result
 
     def ocr(
         self,

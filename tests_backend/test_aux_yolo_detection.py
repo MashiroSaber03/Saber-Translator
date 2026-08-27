@@ -1,6 +1,8 @@
+import inspect
 import os
 import sys
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 import numpy as np
@@ -15,6 +17,7 @@ if PROJECT_ROOT not in sys.path:
 from src.core import detection as detection_module
 from src.core.detector import registry as detector_registry
 from src.core.detector.aux_yolo import (
+    detect_aux_yolo_lines,
     merge_aux_yolo_lines,
     maybe_merge_with_aux_yolo,
     normalize_aux_overlap_threshold,
@@ -22,6 +25,10 @@ from src.core.detector.aux_yolo import (
 from src.core.detector.data_types import DetectionResult, TextBlock, TextLine
 from src.core.detector.base import BaseTextDetector
 from src.core.detector.backends.default_backend import DefaultBackend
+from src.core.detector.backends.yolo_backend import (
+    DEFAULT_DETECT_SIZE as DEFAULT_YOLO_DETECT_SIZE,
+    YoloBackend,
+)
 from src.core.detector.textline_merge import build_text_block_from_lines
 from src.core.large_image_detection import LargeImageDetectorWrapper
 from src.utils.image_rearrange import (
@@ -328,7 +335,7 @@ class AuxYoloDetectionTests(unittest.TestCase):
         self.assertIsNotNone(block)
         self.assertEqual(block.prob, 0.0)
 
-    def test_default_detector_applies_box_confidence_threshold(self) -> None:
+    def test_default_detector_keeps_valid_low_confidence_boxes_and_drops_tiny_boxes(self) -> None:
         class FakeTensor:
             def __init__(self, value: np.ndarray) -> None:
                 self.value = value
@@ -354,25 +361,76 @@ class AuxYoloDetectionTests(unittest.TestCase):
                 [
                     np.array(
                         [
-                            [[0, 0], [2, 0], [2, 2], [0, 2]],
+                            [[0, 0], [5, 0], [5, 5], [0, 5]],
+                            [[1, 1], [7, 1], [7, 7], [1, 7]],
                             [[1, 1], [3, 1], [3, 3], [1, 3]],
+                            [[0, 0], [0, 0], [0, 0], [0, 0]],
                         ],
                         dtype=np.int64,
                     )
                 ],
-                [np.array([0.69, 0.71], dtype=np.float32)],
+                [np.array([0.69, 0.71, 0.99, 0.99], dtype=np.float32)],
             )
         )
-        backend.box_threshold = 0.7
         backend.device = "cpu"
         backend._preprocess_image = mock.Mock(
-            return_value=(np.zeros((4, 4, 3), dtype=np.uint8), 1.0, 0, 0)
+            return_value=(np.zeros((8, 8, 3), dtype=np.uint8), 1.0, 0, 0)
         )
 
-        lines, _mask = backend._detect_raw(np.zeros((4, 4, 3), dtype=np.uint8))
+        lines, _mask = backend._detect_raw(np.zeros((8, 8, 3), dtype=np.uint8))
 
-        self.assertEqual(len(lines), 1)
-        self.assertAlmostEqual(lines[0].confidence, 0.71, places=2)
+        self.assertEqual(len(lines), 2)
+        self.assertEqual([line.xyxy for line in lines], [(0, 0, 5, 5), (1, 1, 7, 7)])
+        self.assertAlmostEqual(lines[0].confidence, 0.69, places=2)
+        self.assertNotIn("box_threshold", inspect.signature(DefaultBackend.__init__).parameters)
+
+    def test_base_detector_does_not_drop_tiny_lines_from_other_backends(self) -> None:
+        class TinyLineDetector(BaseTextDetector):
+            detector_id = "tiny"
+            requires_merge = False
+
+            def _load_model(self) -> None:
+                self.model = object()
+
+            def _detect_raw(self, image: np.ndarray):
+                return [make_line(0, 0, 2, 2)], np.zeros(image.shape[:2], dtype=np.uint8)
+
+        detector = TinyLineDetector(device="cpu")
+        result = detector.detect(
+            self.image,
+            merge_lines=False,
+            sort_method="none",
+            enable_aux_yolo_detection=False,
+        )
+
+        self.assertEqual(len(result.raw_lines), 1)
+        self.assertEqual(result.raw_lines[0].area, 4)
+
+    def test_yolo_primary_and_aux_use_historical_inference_size(self) -> None:
+        backend = object.__new__(YoloBackend)
+        backend.model = mock.Mock()
+        backend.model.predict.return_value = [
+            SimpleNamespace(names={}, boxes=None, obb=None)
+        ]
+        backend.conf_thresh = 0.3
+        backend.iou_thresh = 0.5
+        backend.detect_size = DEFAULT_YOLO_DETECT_SIZE
+        backend.mask_dilate_size = 2
+        backend.labels = {}
+        image = np.zeros((16, 24, 3), dtype=np.uint8)
+
+        backend._detect_raw(image)
+        detect_aux_yolo_lines(image, conf_threshold=0.4, aux_detector=backend)
+
+        self.assertEqual(DEFAULT_YOLO_DETECT_SIZE, 640)
+        self.assertEqual(backend.model.predict.call_count, 2)
+        primary_call, aux_call = backend.model.predict.call_args_list
+        self.assertEqual(primary_call.kwargs["imgsz"], 640)
+        self.assertEqual(aux_call.kwargs["imgsz"], 640)
+        self.assertEqual(primary_call.kwargs["conf"], 0.3)
+        self.assertEqual(aux_call.kwargs["conf"], 0.4)
+        self.assertEqual(primary_call.kwargs["iou"], 0.5)
+        self.assertEqual(aux_call.kwargs["iou"], 0.5)
 
 
 if __name__ == "__main__":

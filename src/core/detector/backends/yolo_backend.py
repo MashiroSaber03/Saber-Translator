@@ -25,7 +25,8 @@ DEFAULT_MODEL_DIR = 'models/yolo'
 DEFAULT_MODEL_NAME = 'ysgyolo_1.2_OS1.0.pt'
 DEFAULT_CONF_THRESH = 0.3
 DEFAULT_IOU_THRESH = 0.5
-DEFAULT_DETECT_SIZE = 1024
+# 显式固定历史推理尺寸，避免 Ultralytics 默认值变化影响检测结果。
+DEFAULT_DETECT_SIZE = 640
 DEFAULT_MASK_DILATE = 2
 
 # 默认标签

@@ -316,6 +316,9 @@ class PublicUserPolicyAccess:
         selected = _DETECTOR_MODELS.get(str(detector.get("detector_type")))
         if selected is not None:
             self.require_model(selected)
+            # CTD/Yolo 只负责文本框，精确文字掩膜仍由 Default 生成。
+            if selected != "detector_default":
+                self.require_model("detector_default")
         if detector.get("enable_aux_yolo_detection") is True:
             self.require_model("aux_ysg_yolo")
         if detector.get("enable_saber_yolo_refine") is True:

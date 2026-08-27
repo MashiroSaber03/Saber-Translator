@@ -25,7 +25,10 @@ from src.backend_v2.auth.credential_broker import (
 from src.backend_v2.auth.constants import LOCAL_USER_ID
 from src.backend_v2.auth.repository import AuthRepository
 from src.backend_v2.runtime_identity import RuntimeIdentity
-from src.backend_v2.public_policy import DEFAULT_PUBLIC_USER_POLICY
+from src.backend_v2.public_policy import (
+    DEFAULT_PUBLIC_USER_POLICY,
+    PublicUserPolicyAccess,
+)
 from src.backend_v2.runtime_profile import (
     PROFILE_ENV,
     PUBLIC_HOST_ENV,
@@ -989,6 +992,30 @@ def test_public_policy_forces_locked_settings_on_read_and_write(
     assert saved_translation["parallel"]["deepLearningLockSize"] == 9
 
 
+@pytest.mark.parametrize(
+    ("detector_type", "selected_model"),
+    [("ctd", "detector_ctd"), ("yolo", "detector_yolo")],
+)
+def test_non_default_detector_policy_requires_default_mask_model(
+    detector_type: str,
+    selected_model: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    access = object.__new__(PublicUserPolicyAccess)
+    required_models: list[str] = []
+    monkeypatch.setattr(access, "require_model", required_models.append)
+
+    access._require_detector(
+        {
+            "detector_type": detector_type,
+            "enable_aux_yolo_detection": False,
+            "enable_saber_yolo_refine": False,
+        }
+    )
+
+    assert required_models == [selected_model, "detector_default"]
+
+
 def test_disabled_local_model_is_rejected_before_job_creation(
     public_platform,
 ) -> None:
@@ -1005,6 +1032,38 @@ def test_disabled_local_model_is_rejected_before_job_creation(
         headers={"X-CSRF-Token": admin_csrf},
         json=policy,
     ).status_code == 200
+
+    settings_document = alice_client.get(
+        "/api/v2/settings",
+        base_url=PUBLIC_BASE,
+        query_string={"domains": "translation"},
+    ).get_json()
+    translation = settings_document["settings"][0]
+    translation_payload = deepcopy(translation["payload"])
+    translation_payload["textDetector"] = "yolo"
+    saved = alice_client.put(
+        "/api/v2/settings/transactions",
+        base_url=PUBLIC_BASE,
+        headers={
+            "Idempotency-Key": "policy-yolo-settings",
+            "X-CSRF-Token": alice_csrf,
+        },
+        json={
+            "settings": [
+                {
+                    "domain": "translation",
+                    "payload": translation_payload,
+                    "baseRevision": translation["revision"],
+                    "schemaVersion": translation["schemaVersion"],
+                }
+            ],
+            "bookSettings": [],
+            "providerSettings": [],
+            "credentialEdits": [],
+            "promptEdits": [],
+        },
+    )
+    assert saved.status_code == 200, saved.get_data(as_text=True)
 
     book = alice_client.post(
         "/api/v2/books",
@@ -1050,6 +1109,21 @@ def test_disabled_local_model_is_rejected_before_job_creation(
     )
     assert blocked.status_code == 403
     assert blocked.get_json()["error"]["code"] == "model_disabled"
+
+    blocked_page_detect = alice_client.post(
+        f"/api/v2/pages/{page.get_json()['page']['id']}/operations",
+        base_url=PUBLIC_BASE,
+        headers={
+            "Idempotency-Key": "policy-model-page-detect",
+            "X-CSRF-Token": alice_csrf,
+        },
+        json={
+            "kind": "page_detect",
+            "baseRevision": 1,
+        },
+    )
+    assert blocked_page_detect.status_code == 403
+    assert blocked_page_detect.get_json()["error"]["code"] == "model_disabled"
 
     blocked_ocr = alice_client.post(
         f"/api/v2/pages/{page.get_json()['page']['id']}/operations",
