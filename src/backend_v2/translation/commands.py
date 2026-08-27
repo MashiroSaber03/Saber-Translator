@@ -50,7 +50,6 @@ ALLOWED_CONFIG_KEYS = frozenset(
         "mode",
         "executionMode",
         "skipCompleted",
-        "reuseExistingBubbles",
         "styleSourcePageId",
         "styleSourceDocumentRevision",
     }
@@ -110,6 +109,35 @@ def resolve_chapter_pages(
     if not ordered:
         raise ValueError(empty_message)
     return chapter, ordered
+
+
+def _page_ids_skipping_detection(
+    engine: Engine,
+    page_ids: Sequence[str],
+) -> set[str]:
+    """Return pages whose persisted state makes detection unnecessary."""
+
+    if not page_ids:
+        return set()
+    with engine.connect() as connection:
+        rows = list(
+            connection.execute(
+                select(
+                    pages.c.id,
+                    pages.c.detection_state,
+                    func.count(bubbles.c.id).label("bubble_count"),
+                )
+                .outerjoin(bubbles, bubbles.c.page_id == pages.c.id)
+                .where(pages.c.id.in_(page_ids))
+                .group_by(pages.c.id, pages.c.detection_state)
+            ).mappings()
+        )
+    return {
+        str(row["id"])
+        for row in rows
+        if row["detection_state"] == "processed"
+        or int(row["bubble_count"]) > 0
+    }
 
 
 class TranslationJobCommandService:
@@ -355,20 +383,41 @@ class TranslationJobCommandService:
             page_ids=ordered_pages,
         )
         mode = command["mode"]
-        step_kinds = step_kinds_for_mode(
-            mode,
-            reuse_existing_bubbles=bool(command["reuseExistingBubbles"]),
-            proofreading_rounds=len(normalized.get("proofreadingRounds", ())),
-            remove_text_with_ocr=bool(normalized["removeTextWithOcr"]),
+        skip_detection_page_ids = (
+            _page_ids_skipping_detection(self.engine, ordered_pages)
+            if mode in {"standard", "hq", "remove_text"}
+            else set()
         )
-        validate_translation_job_requirements(normalized, step_kinds)
+        step_kinds_by_page = {
+            page_id: step_kinds_for_mode(
+                mode,
+                skip_detection=page_id in skip_detection_page_ids,
+                proofreading_rounds=len(normalized.get("proofreadingRounds", ())),
+                remove_text_with_ocr=bool(normalized["removeTextWithOcr"]),
+            )
+            for page_id in ordered_pages
+        }
+        distinct_step_kinds = tuple(dict.fromkeys(step_kinds_by_page.values()))
+        validation_step_kinds = distinct_step_kinds[0]
+        if len(distinct_step_kinds) > 1:
+            validation_step_kinds = tuple(
+                dict.fromkeys(
+                    step_kind
+                    for page_steps in distinct_step_kinds
+                    for step_kind in page_steps
+                )
+            )
+        validate_translation_job_requirements(normalized, validation_step_kinds)
         spec = JobSpec(
             kind=job_kind,
             book_id=str(chapter["book_id"]),
             chapter_id=chapter_id,
             config=normalized,
             items=tuple(
-                JobItemSpec(page_id=page_id, step_kinds=step_kinds)
+                JobItemSpec(
+                    page_id=page_id,
+                    step_kinds=step_kinds_by_page[page_id],
+                )
                 for page_id in ordered_pages
             ),
             target_display={
@@ -622,16 +671,12 @@ def normalize_translation_command(config: Mapping[str, Any]) -> dict[str, Any]:
     ):
         raise ValueError("styleSourceDocumentRevision must be a positive integer")
     skip_completed = config.get("skipCompleted", False)
-    reuse_existing = config.get("reuseExistingBubbles", False)
     if not isinstance(skip_completed, bool):
         raise ValueError("skipCompleted must be a boolean")
-    if not isinstance(reuse_existing, bool):
-        raise ValueError("reuseExistingBubbles must be a boolean")
     normalized = {
         "mode": mode,
         "executionMode": execution_mode,
         "skipCompleted": skip_completed,
-        "reuseExistingBubbles": reuse_existing,
     }
     if source_page_id is not None:
         normalized.update(
@@ -657,7 +702,7 @@ def _batch_skip_reason(message: str) -> str:
 def step_kinds_for_mode(
     mode: str,
     *,
-    reuse_existing_bubbles: bool = False,
+    skip_detection: bool = False,
     proofreading_rounds: int = 1,
     remove_text_with_ocr: bool = False,
 ) -> tuple[str, ...]:
@@ -672,7 +717,7 @@ def step_kinds_for_mode(
             "render",
             "save",
         )
-        return steps[1:] if reuse_existing_bubbles else steps
+        return steps[1:] if skip_detection else steps
     if mode == "hq":
         steps = (
             "detect",
@@ -684,7 +729,7 @@ def step_kinds_for_mode(
             "render",
             "save",
         )
-        return steps[1:] if reuse_existing_bubbles else steps
+        return steps[1:] if skip_detection else steps
     if mode == "proofread":
         if proofreading_rounds < 1:
             raise ValueError("proofread mode requires at least one proofreading round")
@@ -694,12 +739,13 @@ def step_kinds_for_mode(
             "save",
         )
     if mode == "remove_text":
-        return (
+        steps = (
             "detect",
             *(("ocr",) if remove_text_with_ocr else ()),
             "repair",
             "publish_clean",
         )
+        return steps[1:] if skip_detection else steps
     raise ValueError(f"unsupported translation mode: {mode}")
 
 

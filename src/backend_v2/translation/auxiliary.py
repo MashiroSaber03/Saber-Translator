@@ -185,7 +185,6 @@ class AuxiliaryTranslationCommands:
                 "mode": "standard",
                 "executionMode": "parallel",
                 "skipCompleted": False,
-                "reuseExistingBubbles": False,
             },
         )
         config = {

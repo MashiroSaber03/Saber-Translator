@@ -1411,6 +1411,117 @@ def test_page_document_uses_stable_bubble_ids_and_revision_cas(
         )
 
 
+def test_bubble_mutations_mark_detection_processed_but_style_changes_do_not(
+    content_platform,
+) -> None:
+    (
+        _root,
+        engine,
+        repository,
+        _storage,
+        importer,
+        _book,
+        chapter,
+    ) = content_platform
+    imported, _ = _import(
+        repository,
+        importer,
+        chapter_id=str(chapter["id"]),
+        payload=_image_bytes((80, 80)),
+        logical_path="detection-state.png",
+        key="detection-state",
+    )
+    page_id = str(imported["page"]["id"])
+
+    def detection_state() -> str:
+        with engine.connect() as connection:
+            return str(
+                connection.execute(
+                    select(pages.c.detection_state).where(pages.c.id == page_id)
+                ).scalar_one()
+            )
+
+    def reset_detection_state() -> None:
+        with engine.begin() as connection:
+            connection.execute(
+                update(pages)
+                .where(pages.c.id == page_id)
+                .values(detection_state="unprocessed")
+            )
+
+    styled, _ = repository.mutate_page_document(
+        page_id=page_id,
+        base_revision=1,
+        mutations=[],
+        idempotency_key="detection-state-style",
+        page_style_defaults_patch={"fontSize": 31},
+    )
+    assert detection_state() == "unprocessed"
+
+    created, _ = repository.mutate_page_document(
+        page_id=page_id,
+        base_revision=styled["document"]["documentRevision"],
+        mutations=[
+            {
+                "op": "create",
+                "clientMutationId": "detection-state-create",
+                "fields": _bubble_fields(coords=[4, 5, 44, 52]),
+            }
+        ],
+        idempotency_key="detection-state-create",
+    )
+    bubble_id = created["mutationResults"][0]["bubbleId"]
+    assert detection_state() == "processed"
+
+    reset_detection_state()
+    patched, _ = repository.mutate_page_document(
+        page_id=page_id,
+        base_revision=created["document"]["documentRevision"],
+        mutations=[
+            {
+                "op": "patch",
+                "clientMutationId": "detection-state-patch",
+                "bubbleId": bubble_id,
+                "fields": {"rotationAngle": 17},
+            }
+        ],
+        idempotency_key="detection-state-patch",
+    )
+    assert detection_state() == "processed"
+
+    reset_detection_state()
+    reset, _ = repository.mutate_page_document(
+        page_id=page_id,
+        base_revision=patched["document"]["documentRevision"],
+        mutations=[
+            {
+                "op": "reset",
+                "clientMutationId": "detection-state-reset",
+                "bubbleId": bubble_id,
+                "fields": _bubble_fields(coords=[6, 7, 48, 56]),
+            }
+        ],
+        idempotency_key="detection-state-reset",
+    )
+    assert detection_state() == "processed"
+
+    reset_detection_state()
+    deleted, _ = repository.mutate_page_document(
+        page_id=page_id,
+        base_revision=reset["document"]["documentRevision"],
+        mutations=[
+            {
+                "op": "delete",
+                "clientMutationId": "detection-state-delete",
+                "bubbleId": bubble_id,
+            }
+        ],
+        idempotency_key="detection-state-delete",
+    )
+    assert deleted["document"]["bubbles"] == []
+    assert detection_state() == "processed"
+
+
 def test_page_document_derives_auto_direction_from_geometry_without_overwriting_actual_direction(
     content_platform,
 ) -> None:
@@ -1826,6 +1937,19 @@ def test_plan_page_source_bubble_and_render_status_routes(
         key="plan-routes",
     )
     page_id = str(imported["page"]["id"])
+    seeded, _ = repository.mutate_page_document(
+        page_id=page_id,
+        base_revision=1,
+        mutations=[
+            {
+                "op": "create",
+                "clientMutationId": "plan-source-existing-bubble",
+                "fields": _bubble_fields(coords=[3, 4, 30, 40]),
+            }
+        ],
+        idempotency_key="plan-source-existing-bubble",
+    )
+    assert seeded["document"]["bubbles"]
     app = create_api_app(
         ApiSettings(
             data_root=data_root,
@@ -1852,6 +1976,17 @@ def test_plan_page_source_bubble_and_render_status_routes(
         assert "/api/v2/pages/<page_id>/replace-source" not in {
             rule.rule for rule in app.url_map.iter_rules()
         }
+        with engine.connect() as connection:
+            state = connection.execute(
+                select(pages.c.detection_state).where(pages.c.id == page_id)
+            ).scalar_one()
+            bubble_count = len(
+                connection.execute(
+                    select(bubbles.c.id).where(bubbles.c.page_id == page_id)
+                ).scalars().all()
+            )
+        assert state == "unprocessed"
+        assert bubble_count == 0
 
         base_revision = replaced.get_json()["documentRevision"]
         created = client.post(
@@ -1904,6 +2039,10 @@ def test_plan_page_source_bubble_and_render_status_routes(
         )
         assert deleted.status_code == 200
         assert deleted.get_json()["document"]["bubbles"] == []
+        with engine.connect() as connection:
+            assert connection.execute(
+                select(pages.c.detection_state).where(pages.c.id == page_id)
+            ).scalar_one() == "processed"
     finally:
         app.extensions["saber_v2_runtime"].close()
 

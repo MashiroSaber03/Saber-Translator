@@ -11,6 +11,7 @@ import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settings'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import { createDefaultSettings } from '@/stores/settings/defaults'
+import { createBubbleState } from '@/utils/bubbleFactory'
 import { addTestImage } from '../helpers/imageFixtures'
 import type { components } from '@/api/generated/v2'
 
@@ -163,6 +164,41 @@ describe('useTranslationPipeline', () => {
     expect(mocks.toast.error).not.toHaveBeenCalled()
     expect(mocks.toast.success).toHaveBeenCalledWith(
       '任务已加入后端任务中心，可安全关闭页面',
+    )
+  })
+
+  it('uses the ordinary current-page translation for the existing-bubbles action', async () => {
+    const imageStore = useImageStore()
+    const bubbleStore = useBubbleStore()
+    addTestImage(imageStore, '001.png', '/api/v2/assets/source-1', {
+      chapterId: 'chapter-1',
+      documentRevision: 7,
+      id: 'page-1',
+    })
+    const translation = useTranslation()
+
+    await expect(translation.translateWithCurrentBubbles()).resolves.toBe(false)
+    expect(mocks.createChapterTranslationJob).not.toHaveBeenCalled()
+    expect(mocks.toast.error).toHaveBeenCalledWith(
+      '当前图片没有气泡框，请先检测或手动添加',
+    )
+
+    bubbleStore.setBubbles([
+      createBubbleState({ coords: [5, 6, 45, 52] }),
+    ], true)
+    await expect(translation.translateWithCurrentBubbles()).resolves.toBe(true)
+
+    expect(mocks.createChapterTranslationJob).toHaveBeenCalledWith(
+      'chapter-1',
+      ['page-1'],
+      expect.objectContaining({
+        mode: 'standard',
+        styleSourcePageId: 'page-1',
+        styleSourceDocumentRevision: 7,
+      }),
+    )
+    expect(mocks.createChapterTranslationJob.mock.calls[0]?.[2]).not.toHaveProperty(
+      'reuseExistingBubbles',
     )
   })
 

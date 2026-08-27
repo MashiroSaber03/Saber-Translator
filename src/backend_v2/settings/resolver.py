@@ -518,7 +518,6 @@ class SettingsResolver:
                 int(constraint_row["revision"])
             ),
             "skipCompleted": command["skipCompleted"],
-            "reuseExistingBubbles": command["reuseExistingBubbles"],
             "settingsSnapshot": {
                 "appRevision": int(app_row["revision"]),
                 "chapterMemoryRevision": int(

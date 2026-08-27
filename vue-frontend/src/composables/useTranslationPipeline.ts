@@ -446,7 +446,6 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
   async function translatePages(
     pageIndexes: number[],
     mode: TranslationMode,
-    pageOptions: { reuseExistingBubbles?: boolean } = {},
   ): Promise<boolean> {
     const uniqueIndexes = [...new Set(pageIndexes)]
     if (uniqueIndexes.length === 0) {
@@ -506,9 +505,6 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
             mode,
             styleSourcePageId: styleSource.pageId,
             styleSourceDocumentRevision: styleSource.documentRevision,
-            ...(pageOptions.reuseExistingBubbles === undefined
-              ? {}
-              : { reuseExistingBubbles: pageOptions.reuseExistingBubbles }),
           })
       const jobId = batch.jobIds[0]
       if (!jobId) throw new Error('后端没有返回任务')
@@ -638,11 +634,7 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
       toast.error('当前图片没有气泡框，请先检测或手动添加')
       return false
     }
-    return translatePages(
-      [imageStore.currentImageIndex],
-      'standard',
-      { reuseExistingBubbles: true },
-    )
+    return translateCurrentImage()
   }
 
   return {

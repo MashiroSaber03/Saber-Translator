@@ -602,10 +602,6 @@ class JobRetryService:
         config = _json_object(source.get("config_json"))
         mode = _required_text(config, "mode")
         execution_mode = _required_text(config, "executionMode")
-        reuse_existing_bubbles = _required_boolean(
-            config,
-            "reuseExistingBubbles",
-        )
         style_source: dict[str, object] = {}
         frozen_style = config.get("textStyleSnapshot")
         if frozen_style is not None:
@@ -636,7 +632,6 @@ class JobRetryService:
                 "mode": mode,
                 "executionMode": execution_mode,
                 "skipCompleted": False,
-                "reuseExistingBubbles": reuse_existing_bubbles,
                 **style_source,
             },
             page_ids=page_ids,
@@ -1182,13 +1177,6 @@ def _required_text(value: Mapping[str, Any], key: str) -> str:
     selected = value.get(key)
     if not isinstance(selected, str) or not selected:
         raise JobConflict(f"stored job field {key} must be a non-empty string")
-    return selected
-
-
-def _required_boolean(value: Mapping[str, Any], key: str) -> bool:
-    selected = value.get(key)
-    if not isinstance(selected, bool):
-        raise JobConflict(f"stored job field {key} must be a boolean")
     return selected
 
 

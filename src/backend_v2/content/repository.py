@@ -2376,6 +2376,8 @@ class ContentRepository:
                 "document_revision": new_revision,
                 "updated_at": _utcnow(),
             }
+            if mutations:
+                page_values["detection_state"] = "processed"
             if default_font_id is not _MISSING:
                 page_values["default_font_id"] = default_font_id
             if style_patch:

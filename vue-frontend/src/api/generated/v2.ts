@@ -3332,7 +3332,6 @@ export interface components {
             /** @enum {string} */
             executionMode?: "sequential" | "parallel";
             skipCompleted?: boolean;
-            reuseExistingBubbles?: boolean;
             /** @description Page whose persisted text style is frozen for every target page. */
             styleSourcePageId?: components["schemas"]["Uuid"];
             /** @description Optimistic revision of styleSourcePageId; required with it. */

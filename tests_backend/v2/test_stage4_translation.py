@@ -93,6 +93,14 @@ def _page_style(**overrides: object) -> dict[str, object]:
     return style
 
 
+def _bubble_fields(**overrides: object) -> dict[str, object]:
+    payload = BubbleState().to_dict()
+    payload.pop("fontFamily")
+    payload.pop("autoTextDirection")
+    payload.update(overrides)
+    return payload
+
+
 def _frozen_ai_vision_ocr_config() -> dict[str, object]:
     return {
         "ocr_engine": "ai_vision",
@@ -648,7 +656,25 @@ def test_core_translation_adapter_honors_batch_textbox_prompt(
     assert calls[1]["openai_options"].request.force_json_output is False
 
 
-def test_remove_text_ocr_step_follows_the_frozen_setting() -> None:
+def test_translation_step_builder_skips_only_detection() -> None:
+    assert step_kinds_for_mode("standard") == (
+        "detect",
+        "ocr",
+        "color",
+        "auto_terms",
+        "translate",
+        "repair",
+        "render",
+        "save",
+    )
+    assert step_kinds_for_mode(
+        "standard",
+        skip_detection=True,
+    )[0] == "ocr"
+    assert "detect" not in step_kinds_for_mode(
+        "hq",
+        skip_detection=True,
+    )
     assert step_kinds_for_mode(
         "remove_text",
         remove_text_with_ocr=False,
@@ -657,6 +683,16 @@ def test_remove_text_ocr_step_follows_the_frozen_setting() -> None:
         "remove_text",
         remove_text_with_ocr=True,
     ) == ("detect", "ocr", "repair", "publish_clean")
+    assert step_kinds_for_mode(
+        "remove_text",
+        skip_detection=True,
+        remove_text_with_ocr=False,
+    ) == ("repair", "publish_clean")
+    assert step_kinds_for_mode(
+        "remove_text",
+        skip_detection=True,
+        remove_text_with_ocr=True,
+    ) == ("ocr", "repair", "publish_clean")
 
 
 @pytest.fixture(autouse=True)
@@ -1918,7 +1954,6 @@ def test_translation_style_snapshot_overrides_fonts_when_reusing_bubbles(
         config={
             "mode": "standard",
             "executionMode": "sequential",
-            "reuseExistingBubbles": True,
             "styleSourcePageId": source_page_id,
             "styleSourceDocumentRevision": source_revision,
         },
@@ -2885,12 +2920,16 @@ def test_translation_command_rejects_browser_supplied_provider_config() -> None:
         {"mode": True},
         {"executionMode": {"value": "parallel"}},
         {"skipCompleted": 1},
-        {"reuseExistingBubbles": "false"},
     ),
 )
 def test_translation_command_rejects_coerced_scalar_types(config) -> None:
     with pytest.raises(ValueError):
         normalize_translation_command(config)
+
+
+def test_translation_command_rejects_retired_reuse_override() -> None:
+    with pytest.raises(ValueError, match="unknown translation config fields"):
+        normalize_translation_command({"reuseExistingBubbles": True})
 
 
 def test_translation_job_rejects_missing_backend_credential_before_admission(
@@ -2979,6 +3018,12 @@ def test_failed_item_retry_refreezes_current_backend_settings(
     current_style = json.loads(source_page["page_style_defaults_json"])
     current_style["fillColor"] = "#123456"
     with platform["engine"].begin() as connection:
+        legacy_config = json.loads(
+            connection.execute(
+                select(jobs.c.config_json).where(jobs.c.id == source_id)
+            ).scalar_one()
+        )
+        legacy_config["reuseExistingBubbles"] = False
         connection.execute(
             update(job_items)
             .where(job_items.c.job_id == source_id)
@@ -3003,6 +3048,7 @@ def test_failed_item_retry_refreezes_current_backend_settings(
             update(jobs)
             .where(jobs.c.id == source_id)
             .values(
+                config_json=json.dumps(legacy_config),
                 status="completed_with_errors",
                 queue_rank=None,
                 latest_progress_json=json.dumps(
@@ -3016,6 +3062,7 @@ def test_failed_item_retry_refreezes_current_backend_settings(
             .where(pages.c.id == platform["page_id"])
             .values(
                 document_revision=source_revision + 1,
+                detection_state="processed",
                 page_style_defaults_json=json.dumps(current_style),
             )
         )
@@ -3071,6 +3118,14 @@ def test_failed_item_retry_refreezes_current_backend_settings(
                 select(jobs.c.config_json).where(jobs.c.id == replacement_id)
             ).scalar_one()
         )
+        replacement_steps = list(
+            connection.execute(
+                select(job_steps.c.kind)
+                .join(job_items, job_items.c.id == job_steps.c.job_item_id)
+                .where(job_items.c.job_id == replacement_id)
+                .order_by(job_steps.c.ordinal)
+            ).scalars()
+        )
     detail = JobQueueRepository(platform["engine"]).get_job(replacement_id)
     assert frozen["translation"]["provider"] == "custom"
     assert frozen["translation"]["model_name"] == "retry-current-model"
@@ -3084,6 +3139,8 @@ def test_failed_item_retry_refreezes_current_backend_settings(
     assert detail["retryOfJobId"] == source_id
     assert detail["retryMode"] == "current"
     assert detail["configSummary"]["translation"]["model"] == "retry-current-model"
+    assert "detect" not in replacement_steps
+    assert replacement_steps[0] == "ocr"
 
 
 def test_translation_job_resolves_backend_settings_and_reuses_manual_bubbles(
@@ -3141,6 +3198,22 @@ def test_translation_job_resolves_backend_settings_and_reuses_manual_bubbles(
             ),
         ),
     )
+    ContentRepository(platform["engine"]).mutate_page_document(
+        page_id=platform["page_id"],
+        base_revision=1,
+        mutations=[
+            {
+                "op": "create",
+                "clientMutationId": "manual-bubble-before-translation",
+                "fields": _bubble_fields(
+                    coords=[7, 9, 48, 55],
+                    polygon=[[7, 9], [48, 9], [48, 55], [7, 55]],
+                    rotationAngle=12.5,
+                ),
+            }
+        ],
+        idempotency_key="manual-bubble-before-translation",
+    )
     accepted = TranslationJobCommandService(
         platform["engine"], profile=LOCAL_PROFILE
     ).create_chapter_job(
@@ -3148,7 +3221,6 @@ def test_translation_job_resolves_backend_settings_and_reuses_manual_bubbles(
         config={
             "mode": "standard",
             "executionMode": "sequential",
-            "reuseExistingBubbles": True,
         },
         page_ids=[platform["page_id"]],
         idempotency_key="manual-bubbles",
@@ -3272,7 +3344,6 @@ def test_translation_resolver_uses_provider_specific_hq_and_ocr_parameters(
             "mode": "standard",
             "executionMode": "sequential",
             "skipCompleted": False,
-            "reuseExistingBubbles": False,
         },
     )
     hq = resolver.resolve_translation(
@@ -3281,7 +3352,6 @@ def test_translation_resolver_uses_provider_specific_hq_and_ocr_parameters(
             "mode": "hq",
             "executionMode": "sequential",
             "skipCompleted": False,
-            "reuseExistingBubbles": False,
         },
     )
 
@@ -3426,6 +3496,124 @@ def _configure_hq_and_proofreading(platform: Mapping[str, Any]) -> None:
     )
 
 
+@pytest.mark.parametrize("mode", ("standard", "hq", "remove_text"))
+@pytest.mark.parametrize("execution_mode", ("sequential", "parallel"))
+def test_translation_job_builds_per_page_detection_steps_for_mixed_annotations(
+    translation_platform,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    execution_mode: str,
+) -> None:
+    from src.backend_v2.translation import commands as translation_commands
+
+    platform = translation_platform
+    if mode == "hq":
+        _configure_hq_and_proofreading(platform)
+
+    processed_empty_page_id = platform["page_id"]
+    manual_page_id = _import_extra_page(
+        platform,
+        f"mixed-{mode}-{execution_mode}-manual.png",
+    )
+    legacy_manual_page_id = _import_extra_page(
+        platform,
+        f"mixed-{mode}-{execution_mode}-legacy.png",
+    )
+    unprocessed_page_id = _import_extra_page(
+        platform,
+        f"mixed-{mode}-{execution_mode}-unprocessed.png",
+    )
+    content = ContentRepository(platform["engine"])
+    content.mutate_page_document(
+        page_id=manual_page_id,
+        base_revision=1,
+        mutations=[
+            {
+                "op": "create",
+                "clientMutationId": "mixed-manual",
+                "fields": _bubble_fields(coords=[5, 6, 45, 52]),
+            }
+        ],
+        idempotency_key=f"mixed-{mode}-{execution_mode}-manual",
+    )
+    content.mutate_page_document(
+        page_id=legacy_manual_page_id,
+        base_revision=1,
+        mutations=[
+            {
+                "op": "create",
+                "clientMutationId": "mixed-legacy-manual",
+                "fields": _bubble_fields(coords=[8, 9, 50, 54]),
+            }
+        ],
+        idempotency_key=f"mixed-{mode}-{execution_mode}-legacy",
+    )
+    with platform["engine"].begin() as connection:
+        connection.execute(
+            update(pages)
+            .where(pages.c.id == processed_empty_page_id)
+            .values(detection_state="processed")
+        )
+        connection.execute(
+            update(pages)
+            .where(pages.c.id == legacy_manual_page_id)
+            .values(detection_state="unprocessed")
+        )
+
+    validation_calls: list[tuple[str, ...]] = []
+    original_validate = translation_commands.validate_translation_job_requirements
+
+    def record_validation(
+        config: Mapping[str, Any],
+        step_kinds: tuple[str, ...],
+    ) -> None:
+        validation_calls.append(tuple(step_kinds))
+        original_validate(config, step_kinds)
+
+    monkeypatch.setattr(
+        translation_commands,
+        "validate_translation_job_requirements",
+        record_validation,
+    )
+    accepted = TranslationJobCommandService(
+        platform["engine"], profile=LOCAL_PROFILE
+    ).create_chapter_job(
+        chapter_id=str(platform["chapter"]["id"]),
+        config={"mode": mode, "executionMode": execution_mode},
+        page_ids=[
+            processed_empty_page_id,
+            manual_page_id,
+            legacy_manual_page_id,
+            unprocessed_page_id,
+        ],
+        idempotency_key=f"mixed-{mode}-{execution_mode}",
+    )
+    job_id = str(accepted["jobIds"][0])
+
+    plans: dict[str, list[str]] = {}
+    with platform["engine"].connect() as connection:
+        rows = connection.execute(
+            select(job_items.c.page_id, job_steps.c.kind)
+            .join(job_steps, job_steps.c.job_item_id == job_items.c.id)
+            .where(job_items.c.job_id == job_id)
+            .order_by(job_items.c.ordinal, job_steps.c.ordinal)
+        )
+        for page_id, step_kind in rows:
+            plans.setdefault(str(page_id), []).append(str(step_kind))
+
+    detected_steps = step_kinds_for_mode(mode)
+    skip_detection_steps = step_kinds_for_mode(mode, skip_detection=True)
+    assert tuple(plans[processed_empty_page_id]) == skip_detection_steps
+    assert tuple(plans[manual_page_id]) == skip_detection_steps
+    assert tuple(plans[legacy_manual_page_id]) == skip_detection_steps
+    assert tuple(plans[unprocessed_page_id]) == detected_steps
+    assert len(validation_calls) == 1
+    assert set(validation_calls[0]) == set(detected_steps).union(
+        skip_detection_steps
+    )
+    assert "detect" in validation_calls[0]
+
+
 def _run_translation_job(
     platform: Mapping[str, Any],
     algorithms: DeterministicFakeProvider,
@@ -3470,6 +3658,151 @@ def _run_translation_job(
         },
     )._run_attempt(fence, threading.Event())
     return fence.job_id
+
+
+def test_hq_mixed_batch_detects_only_unprocessed_page_and_preserves_manual_bubble(
+    translation_platform,
+) -> None:
+    platform = translation_platform
+    _configure_hq_and_proofreading(platform)
+    manual_page_id = _import_extra_page(platform, "hq-manual-bubble.png")
+    manual, _ = ContentRepository(platform["engine"]).mutate_page_document(
+        page_id=manual_page_id,
+        base_revision=1,
+        mutations=[
+            {
+                "op": "create",
+                "clientMutationId": "hq-manual-bubble",
+                "fields": _bubble_fields(
+                    coords=[7, 8, 49, 57],
+                    polygon=[[7, 8], [49, 8], [49, 57], [7, 57]],
+                    fontSize=37,
+                    textDirection="horizontal",
+                    textColor="#123456",
+                    fillColor="#ABCDEF",
+                    rotationAngle=13.5,
+                    position={"x": 3, "y": -2},
+                    strokeEnabled=True,
+                    strokeColor="#654321",
+                    strokeWidth=4,
+                    lineSpacing=1.4,
+                    inlineAlign="end",
+                    blockAlign="start",
+                ),
+            }
+        ],
+        idempotency_key="hq-manual-bubble",
+        page_style_defaults_patch={
+            "autoFontSize": False,
+            "fontSize": 37,
+            "layoutDirection": "horizontal",
+            "useAutoTextColor": False,
+        },
+    )
+    manual_bubble = manual["document"]["bubbles"][0]
+    manual_bubble_id = str(manual_bubble["bubbleId"])
+    preserved_fields = {
+        field: manual_bubble["payload"][field]
+        for field in (
+            "coords",
+            "polygon",
+            "fontSize",
+            "textDirection",
+            "textColor",
+            "fillColor",
+            "rotationAngle",
+            "position",
+            "strokeEnabled",
+            "strokeColor",
+            "strokeWidth",
+            "lineSpacing",
+            "inlineAlign",
+            "blockAlign",
+        )
+    }
+
+    class CountingAlgorithms(DeterministicFakeProvider):
+        def __init__(self) -> None:
+            super().__init__()
+            self.detect_calls = 0
+
+        def detect(self, image, config):
+            self.detect_calls += 1
+            return super().detect(image, config)
+
+    accepted = TranslationJobCommandService(
+        platform["engine"], profile=LOCAL_PROFILE
+    ).create_chapter_job(
+        chapter_id=str(platform["chapter"]["id"]),
+        config={"mode": "hq", "executionMode": "sequential"},
+        page_ids=[platform["page_id"], manual_page_id],
+        idempotency_key="hq-protect-manual-bubble",
+    )
+    algorithms = CountingAlgorithms()
+    assert _run_translation_job(platform, algorithms) == accepted["jobIds"][0]
+
+    manual_after = ContentRepository(platform["engine"]).get_page_document(
+        manual_page_id
+    )
+    assert algorithms.detect_calls == 1
+    assert len(manual_after["bubbles"]) == 1
+    assert manual_after["bubbles"][0]["bubbleId"] == manual_bubble_id
+    assert {
+        field: manual_after["bubbles"][0]["payload"][field]
+        for field in preserved_fields
+    } == preserved_fields
+    assert manual_bubble_id in {
+        bubble_id
+        for call in algorithms.batch_calls
+        for bubble_id in call["bubbleIds"]
+    }
+
+
+def test_remove_text_uses_existing_bubbles_without_running_detection(
+    translation_platform,
+) -> None:
+    platform = translation_platform
+    created, _ = ContentRepository(platform["engine"]).mutate_page_document(
+        page_id=platform["page_id"],
+        base_revision=1,
+        mutations=[
+            {
+                "op": "create",
+                "clientMutationId": "remove-text-existing-bubble",
+                "fields": _bubble_fields(
+                    coords=[9, 10, 51, 58],
+                    rotationAngle=8,
+                ),
+            }
+        ],
+        idempotency_key="remove-text-existing-bubble",
+    )
+    bubble_id = created["mutationResults"][0]["bubbleId"]
+
+    class NoDetectionAlgorithms(DeterministicFakeProvider):
+        def detect(self, _image, _config):
+            raise AssertionError("remove-text unexpectedly ran detection")
+
+    accepted = TranslationJobCommandService(
+        platform["engine"], profile=LOCAL_PROFILE
+    ).create_chapter_job(
+        chapter_id=str(platform["chapter"]["id"]),
+        config={"mode": "remove_text", "executionMode": "sequential"},
+        page_ids=[platform["page_id"]],
+        idempotency_key="remove-text-reuse-existing-bubble",
+    )
+    job_id = _run_translation_job(platform, NoDetectionAlgorithms())
+    assert job_id == accepted["jobIds"][0]
+    detail = JobQueueRepository(platform["engine"]).get_job(job_id)
+    assert [step["kind"] for step in detail["items"][0]["steps"]] == [
+        "repair",
+        "publish_clean",
+    ]
+    document = ContentRepository(platform["engine"]).get_page_document(
+        platform["page_id"]
+    )
+    assert document["bubbles"][0]["bubbleId"] == bubble_id
+    assert document["bubbles"][0]["payload"]["coords"] == [9, 10, 51, 58]
 
 
 def _run_auxiliary_job(
