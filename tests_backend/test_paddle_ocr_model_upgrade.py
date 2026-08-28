@@ -70,6 +70,49 @@ def test_ppocrv6_parses_rapidocr_v3_output_and_passes_bgr() -> None:
         }
 
 
+def test_ppocrv6_detects_and_orders_vertical_textlines() -> None:
+    handler = PaddleOCRHandlerONNX()
+    handler.initialized = True
+    handler.ocr = mock.Mock(
+        return_value=SimpleNamespace(
+            boxes=np.asarray(
+                [
+                    [[1, 1], [3, 1], [3, 7], [1, 7]],
+                    [[5, 0], [7, 0], [7, 6], [5, 6]],
+                ],
+                dtype=np.float32,
+            ),
+            scores=(0.4, 0.9),
+        )
+    )
+    image = Image.new("RGB", (8, 8), (255, 0, 0))
+    try:
+        textlines = handler.detect_textlines(image)
+    finally:
+        image.close()
+
+    assert textlines == [
+        {
+            "polygon": [[5, 0], [7, 0], [7, 6], [5, 6]],
+            "direction": "v",
+            "confidence": 0.9,
+        },
+        {
+            "polygon": [[1, 1], [3, 1], [3, 7], [1, 7]],
+            "direction": "v",
+            "confidence": 0.4,
+        },
+    ]
+    model_input = handler.ocr.call_args.args[0]
+    assert model_input.flags["C_CONTIGUOUS"]
+    assert model_input[0, 0].tolist() == [0, 0, 255]
+    assert handler.ocr.call_args.kwargs == {
+        "use_det": True,
+        "use_cls": False,
+        "use_rec": False,
+    }
+
+
 def test_ppocrv6_requires_current_textlines() -> None:
     handler = PaddleOCRHandlerONNX()
     handler.initialized = True
@@ -120,6 +163,136 @@ def test_core_passes_detected_textlines_to_ppocrv6(
         primary_engine="paddle_ocr",
         fallback_used=False,
     )
+    handler.detect_textlines.assert_not_called()
+
+
+def test_core_detects_missing_textlines_and_offsets_them(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.core import ocr as core_ocr
+    from src.core.ocr_types import create_ocr_result
+
+    handler = mock.Mock()
+    handler.initialize.return_value = True
+    handler.detect_textlines.return_value = [
+        {
+            "polygon": [[2, 1], [6, 1], [6, 12], [2, 12]],
+            "direction": "v",
+            "confidence": 0.85,
+        }
+    ]
+    handler.recognize_text_with_details.return_value = [
+        create_ocr_result("手工框原文", "paddle_ocr")
+    ]
+    monkeypatch.setattr(core_ocr, "get_paddle_ocr_handler", lambda: handler)
+    image = Image.new("RGB", (40, 40), "white")
+    original_textlines = [[]]
+    try:
+        results = core_ocr.recognize_ocr_results_in_bubbles(
+            image,
+            [(10, 5, 30, 35)],
+            ocr_engine="paddle_ocr",
+            textlines_per_bubble=original_textlines,
+        )
+    finally:
+        image.close()
+
+    assert [result.text for result in results] == ["手工框原文"]
+    assert original_textlines == [[]]
+    assert handler.detect_textlines.call_args.args[0].size == (20, 30)
+    handler.recognize_text_with_details.assert_called_once_with(
+        image,
+        [(10, 5, 30, 35)],
+        [[
+            {
+                "polygon": [[12, 6], [16, 6], [16, 17], [12, 17]],
+                "direction": "v",
+                "confidence": 0.85,
+            }
+        ]],
+        primary_engine="paddle_ocr",
+        fallback_used=False,
+    )
+
+
+def test_core_uses_whole_bubble_textline_when_detection_is_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.core import ocr as core_ocr
+    from src.core.ocr_types import create_ocr_result
+
+    handler = mock.Mock()
+    handler.initialize.return_value = True
+    handler.detect_textlines.return_value = []
+    handler.recognize_text_with_details.return_value = [
+        create_ocr_result("整框原文", "paddle_ocr")
+    ]
+    monkeypatch.setattr(core_ocr, "get_paddle_ocr_handler", lambda: handler)
+    image = Image.new("RGB", (20, 30), "white")
+    try:
+        results = core_ocr.recognize_ocr_results_in_bubbles(
+            image,
+            [(3, 2, 10, 25)],
+            ocr_engine="paddle_ocr",
+            textlines_per_bubble=[[]],
+        )
+    finally:
+        image.close()
+
+    assert [result.text for result in results] == ["整框原文"]
+    assert handler.recognize_text_with_details.call_args.args[2] == [[
+        {
+            "polygon": [[3, 2], [9, 2], [9, 24], [3, 24]],
+            "direction": "v",
+            "confidence": 0.0,
+        }
+    ]]
+
+
+def test_48px_keeps_whole_bubble_fallback_when_paddle_detection_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.core import ocr as core_ocr
+    from src.core.ocr_types import create_ocr_result
+    from src.interfaces import ocr_48px
+
+    paddle_handler = mock.Mock()
+    paddle_handler.initialize.return_value = False
+    ocr48_handler = mock.Mock()
+    ocr48_handler.initialize.return_value = True
+    ocr48_handler.recognize_text_with_details.return_value = [
+        create_ocr_result("48px整框原文", "48px_ocr")
+    ]
+    monkeypatch.setattr(
+        core_ocr,
+        "get_paddle_ocr_handler",
+        lambda: paddle_handler,
+    )
+    monkeypatch.setattr(
+        ocr_48px,
+        "get_48px_ocr_handler",
+        lambda: ocr48_handler,
+    )
+    monkeypatch.setattr(core_ocr.torch.cuda, "is_available", lambda: False)
+    image = Image.new("RGB", (20, 30), "white")
+    try:
+        results = core_ocr.recognize_ocr_results_in_bubbles(
+            image,
+            [(3, 2, 10, 25)],
+            ocr_engine="48px_ocr",
+            textlines_per_bubble=None,
+        )
+    finally:
+        image.close()
+
+    assert [result.text for result in results] == ["48px整框原文"]
+    assert ocr48_handler.recognize_text_with_details.call_args.args[2] == [[
+        {
+            "polygon": [[3, 2], [9, 2], [9, 24], [3, 24]],
+            "direction": "v",
+            "confidence": 0.0,
+        }
+    ]]
 
 
 def test_ppocrv6_uses_one_fixed_multilingual_model_set() -> None:

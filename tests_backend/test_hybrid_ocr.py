@@ -100,6 +100,47 @@ class HybridOcrCoreTests(unittest.TestCase):
         self.assertEqual(results, mocked_results)
         hybrid_mock.assert_called_once()
 
+    def test_supported_hybrid_combo_detects_missing_textlines(self) -> None:
+        mocked_results = [create_ocr_result("混合结果", "manga_ocr")]
+        paddle_handler = mock.Mock()
+        paddle_handler.initialize.return_value = True
+        paddle_handler.detect_textlines.return_value = [
+            {
+                "polygon": [[1, 2], [5, 2], [5, 10], [1, 10]],
+                "direction": "v",
+                "confidence": 0.8,
+            }
+        ]
+
+        with mock.patch(
+            "src.core.ocr.get_paddle_ocr_handler",
+            return_value=paddle_handler,
+        ), mock.patch(
+            "src.core.ocr.recognize_manga_48_hybrid",
+            return_value=mocked_results,
+        ) as hybrid_mock:
+            results = recognize_ocr_results_in_bubbles(
+                Image.new("RGB", (32, 32), color="white"),
+                [(10, 5, 20, 25)],
+                ocr_engine="manga_ocr",
+                enable_hybrid_ocr=True,
+                secondary_ocr_engine="48px_ocr",
+                textlines_per_bubble=[[]],
+                hybrid_ocr_threshold=0.2,
+            )
+
+        self.assertEqual(results, mocked_results)
+        self.assertEqual(
+            hybrid_mock.call_args.args[2],
+            [[
+                {
+                    "polygon": [[11, 7], [15, 7], [15, 15], [11, 15]],
+                    "direction": "v",
+                    "confidence": 0.8,
+                }
+            ]],
+        )
+
     def test_unsupported_hybrid_combo_raises_value_error(self) -> None:
         with self.assertRaisesRegex(ValueError, "仅支持 MangaOCR / 48px OCR 组合"):
             recognize_ocr_results_in_bubbles(

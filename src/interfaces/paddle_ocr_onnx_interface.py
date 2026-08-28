@@ -221,6 +221,122 @@ class PaddleOCRHandlerONNX:
             normalized_scores.append(float(score))
         return normalized_texts, normalized_scores
 
+    def detect_textlines(self, image: Image.Image) -> List[dict]:
+        """Detect ordered text lines inside one bubble crop.
+
+        Returned polygons use coordinates local to ``image``.  The shared OCR
+        dispatcher is responsible for translating them back to source-image
+        coordinates before recognition.
+        """
+
+        if not self.initialized or self.ocr is None:
+            raise RuntimeError("Paddle OCR 未初始化")
+        if not isinstance(image, Image.Image) or image.width <= 0 or image.height <= 0:
+            raise ValueError("Paddle OCR 文本行检测图像无效")
+
+        try:
+            rgb = image_to_rgb_array(image)
+            image_bgr = np.ascontiguousarray(rgb[:, :, ::-1])
+            output = self.ocr(
+                image_bgr,
+                use_det=True,
+                use_cls=False,
+                use_rec=False,
+            )
+        except Exception as error:
+            logger.error("Paddle OCR 文本行检测失败: %s", error, exc_info=True)
+            raise
+
+        boxes_raw = getattr(output, "boxes", None)
+        if boxes_raw is None:
+            return []
+        try:
+            boxes = np.asarray(boxes_raw, dtype=np.float32)
+        except (TypeError, ValueError) as error:
+            raise RuntimeError("RapidOCR 检测框必须由数字坐标组成") from error
+        if boxes.size == 0:
+            return []
+        if boxes.ndim != 3 or boxes.shape[1:] != (4, 2) or not np.isfinite(boxes).all():
+            raise RuntimeError("RapidOCR 检测框必须包含四个有效坐标点")
+
+        scores_raw = getattr(output, "scores", None)
+        if scores_raw is None:
+            scores: List[float] = [0.0] * len(boxes)
+        else:
+            scores = list(scores_raw)
+            if len(scores) != len(boxes):
+                raise RuntimeError("RapidOCR 检测框与置信度数量不一致")
+
+        textlines: List[dict] = []
+        for index, (box, score) in enumerate(zip(boxes, scores)):
+            if isinstance(score, bool) or not isinstance(score, Real):
+                raise RuntimeError(f"RapidOCR 检测框 {index} 的置信度必须是数字")
+            confidence = float(score)
+            if not np.isfinite(confidence):
+                raise RuntimeError(f"RapidOCR 检测框 {index} 的置信度必须是有限数字")
+
+            points = np.asarray(box, dtype=np.float32).copy()
+            points[:, 0] = np.clip(points[:, 0], 0, image.width - 1)
+            points[:, 1] = np.clip(points[:, 1], 0, image.height - 1)
+            horizontal_length = float(
+                (
+                    np.linalg.norm(points[1] - points[0])
+                    + np.linalg.norm(points[2] - points[3])
+                )
+                / 2
+            )
+            vertical_length = float(
+                (
+                    np.linalg.norm(points[3] - points[0])
+                    + np.linalg.norm(points[2] - points[1])
+                )
+                / 2
+            )
+            polygon = np.rint(points).astype(np.int64)
+            area = abs(
+                float(
+                    np.dot(polygon[:, 0], np.roll(polygon[:, 1], -1))
+                    - np.dot(polygon[:, 1], np.roll(polygon[:, 0], -1))
+                )
+                / 2
+            )
+            if horizontal_length <= 0 or vertical_length <= 0 or area <= 0:
+                logger.warning("忽略无有效面积的 Paddle OCR 检测框: index=%d", index)
+                continue
+
+            textlines.append(
+                {
+                    "polygon": polygon.tolist(),
+                    "direction": "v" if vertical_length > horizontal_length else "h",
+                    "confidence": min(max(confidence, 0.0), 1.0),
+                }
+            )
+
+        if not textlines:
+            return []
+
+        vertical_count = sum(line["direction"] == "v" for line in textlines)
+        vertical_layout = (
+            vertical_count > len(textlines) - vertical_count
+            or (
+                vertical_count == len(textlines) - vertical_count
+                and image.height > image.width
+            )
+        )
+        if vertical_layout:
+            # Japanese vertical text reads from right to left.  Stable sorting
+            # preserves RapidOCR's top-to-bottom order inside one column.
+            textlines.sort(
+                key=lambda line: -sum(point[0] for point in line["polygon"]) / 4
+            )
+        else:
+            # Stable sorting preserves RapidOCR's left-to-right order inside
+            # one horizontal row.
+            textlines.sort(
+                key=lambda line: sum(point[1] for point in line["polygon"]) / 4
+            )
+        return textlines
+
     @staticmethod
     def _expand_textline_polygon(
         polygon: object,

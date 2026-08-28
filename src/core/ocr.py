@@ -26,6 +26,7 @@ from src.shared.paddleocr_vl import (
     PADDLEOCR_VL_LANGUAGE_NAMES,
     build_paddleocr_vl_prompt,
 )
+from src.core.config_models import BubbleTextline
 from src.core.ocr_types import OcrResult, create_ocr_result
 from src.core.ocr_hybrid_manga_48 import is_supported_manga_48_hybrid, recognize_manga_48_hybrid
 
@@ -38,6 +39,12 @@ _OCR_ENGINES = frozenset(
         constants.OCR_ENGINE_PADDLEOCR_VL,
         "baidu_ocr",
         constants.AI_VISION_OCR_ENGINE_ID,
+        constants.OCR_ENGINE_48PX,
+    }
+)
+_TEXTLINE_AWARE_OCR_ENGINES = frozenset(
+    {
+        "paddle_ocr",
         constants.OCR_ENGINE_48PX,
     }
 )
@@ -77,6 +84,113 @@ def _validate_ocr_inputs(
             raise ValueError(f"OCR 气泡坐标[{index}]超出图像范围")
         normalized.append((x1, y1, x2, y2))
     return normalized
+
+
+def _whole_bubble_textline(
+    coords: tuple[int, int, int, int],
+) -> dict:
+    """Build the recognition fallback for a bubble with no detected lines."""
+
+    x1, y1, x2, y2 = coords
+    return {
+        "polygon": [
+            [x1, y1],
+            [x2 - 1, y1],
+            [x2 - 1, y2 - 1],
+            [x1, y2 - 1],
+        ],
+        "direction": "v" if y2 - y1 > x2 - x1 else "h",
+        "confidence": 0.0,
+    }
+
+
+def _resolve_textlines_for_ocr(
+    image_pil: Image.Image,
+    bubble_coords: list[tuple[int, int, int, int]],
+    textlines_per_bubble: object,
+    *,
+    strict_detection: bool,
+) -> list[list[dict]]:
+    """Fill empty text-line groups with Paddle detection or a whole box.
+
+    Existing detector-owned text lines are preserved byte-for-byte.  Generated
+    lines are execution-local OCR input and are not persisted to Bubble state.
+    """
+
+    if textlines_per_bubble is None:
+        textlines_per_bubble = [[] for _ in bubble_coords]
+    elif not isinstance(textlines_per_bubble, list):
+        raise ValueError("OCR 文本行必须是数组")
+    if len(textlines_per_bubble) != len(bubble_coords):
+        raise ValueError("OCR 文本行分组数量与气泡数量不匹配")
+
+    resolved: list[list[dict]] = []
+    missing_indices: list[int] = []
+    for index, textlines in enumerate(textlines_per_bubble):
+        if not isinstance(textlines, list):
+            raise ValueError(f"OCR 气泡 {index} 的文本行必须是数组")
+        resolved.append(textlines)
+        if not textlines:
+            missing_indices.append(index)
+
+    if not missing_indices:
+        return resolved
+
+    paddle_ocr = get_paddle_ocr_handler()
+    if not paddle_ocr or not paddle_ocr.initialize():
+        if strict_detection:
+            raise RuntimeError("PaddleOCR 初始化失败")
+        logger.warning("Paddle OCR 文本行检测不可用，48px OCR 将使用整框文本行")
+        for index in missing_indices:
+            resolved[index] = [_whole_bubble_textline(bubble_coords[index])]
+        return resolved
+
+    for index in missing_indices:
+        coords = bubble_coords[index]
+        x1, y1, x2, y2 = coords
+        try:
+            with image_pil.crop(coords) as bubble_image:
+                detected = paddle_ocr.detect_textlines(bubble_image)
+        except Exception:
+            if strict_detection:
+                raise
+            logger.warning(
+                "气泡 %d 的 Paddle OCR 文本行检测失败，48px OCR 将使用整框文本行",
+                index,
+                exc_info=True,
+            )
+            detected = []
+
+        absolute_lines: list[dict] = []
+        for line_index, line in enumerate(detected):
+            try:
+                normalized = BubbleTextline.from_dict(line).to_dict()
+            except (TypeError, ValueError) as error:
+                raise RuntimeError(
+                    f"Paddle OCR 气泡 {index} 的检测行 {line_index} 无效"
+                ) from error
+            absolute_lines.append(
+                {
+                    **normalized,
+                    "polygon": [
+                        [
+                            min(max(x1 + point[0], x1), x2 - 1),
+                            min(max(y1 + point[1], y1), y2 - 1),
+                        ]
+                        for point in normalized["polygon"]
+                    ],
+                }
+            )
+
+        resolved[index] = absolute_lines or [_whole_bubble_textline(coords)]
+        logger.debug(
+            "气泡 %d 已补全 OCR 文本行: detected=%d, whole_box_fallback=%s",
+            index,
+            len(absolute_lines),
+            not absolute_lines,
+        )
+
+    return resolved
 
 
 # 在解析JSON响应时增加安全提取方法
@@ -518,6 +632,12 @@ def recognize_ocr_results_in_bubbles(
             raise ValueError("混合OCR置信度阈值必须是 0 到 1 之间的数字")
         if not isinstance(textlines_per_bubble, list):
             raise ValueError("混合OCR文本行必须是数组")
+        textlines_per_bubble = _resolve_textlines_for_ocr(
+            image_pil,
+            bubble_coords,
+            textlines_per_bubble,
+            strict_detection=False,
+        )
         return recognize_manga_48_hybrid(
             image_pil,
             bubble_coords,
@@ -525,6 +645,14 @@ def recognize_ocr_results_in_bubbles(
             primary_engine=ocr_engine,
             secondary_engine=secondary_ocr_engine,
             threshold=float(hybrid_ocr_threshold),
+        )
+
+    if ocr_engine in _TEXTLINE_AWARE_OCR_ENGINES:
+        textlines_per_bubble = _resolve_textlines_for_ocr(
+            image_pil,
+            bubble_coords,
+            textlines_per_bubble,
+            strict_detection=ocr_engine == "paddle_ocr",
         )
 
     return _recognize_with_engine(
