@@ -18,6 +18,7 @@ import {
 } from '@/api/v2/jobs'
 import { pageSummaryToImage } from '@/adapters/v2ContentAdapter'
 import { useBubbleStore } from '@/stores/bubbleStore'
+import { useBookTranslationConstraintsStore } from '@/stores/bookTranslationConstraintsStore'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settings'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
@@ -331,6 +332,7 @@ export interface TranslationPipelineOptions {
 export function useTranslation(options: TranslationPipelineOptions = {}) {
   const imageStore = useImageStore()
   const bubbleStore = useBubbleStore()
+  const bookTranslationConstraintsStore = useBookTranslationConstraintsStore()
   const settingsStore = useSettingsStore()
   const taskCenterStore = useTaskCenterStore()
   const publicAccess = usePublicUserAccess()
@@ -342,6 +344,19 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
 
   if (options.observeProgress !== false) {
     const unsubscribe = taskCenterStore.subscribeEvents((event) => {
+      if (
+        (event.type === 'step_completed' || event.type === 'page_completed')
+        && event.payload.stepKind === 'auto_terms'
+        && event.payload.status === 'completed'
+        && event.payload.bookId === bookTranslationConstraintsStore.bookId
+      ) {
+        void bookTranslationConstraintsStore.refreshBookConstraints()
+          .catch((error) => {
+            toast.error(
+              `刷新实时术语表失败：${error instanceof Error ? error.message : '未知错误'}`,
+            )
+          })
+      }
       if (event.type === 'page_completed') {
         const pageId = event.payload.pageId
         if (typeof pageId === 'string') {
@@ -373,6 +388,7 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
     ([queue, history, currentChapterId]) => {
       const jobs = [...queue, ...history]
       let shouldRefreshChapter = false
+      let shouldRefreshConstraints = false
       const jobId = activeJobId.value
       const trackedJob = jobId
         ? jobs.find(item => item.jobId === jobId)
@@ -389,6 +405,7 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
           imageStore.setTranslationInProgress(false)
           if (trackedJob.chapterId === currentChapterId) {
             shouldRefreshChapter = true
+            shouldRefreshConstraints = trackedJob.kind === 'translation'
           }
         }
       }
@@ -407,6 +424,7 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
             && !observedTerminalContentJobs.has(job.jobId)
           ) {
             shouldRefreshChapter = true
+            if (job.kind === 'translation') shouldRefreshConstraints = true
           }
         }
       }
@@ -420,6 +438,14 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
             `刷新后端翻译结果失败：${error instanceof Error ? error.message : '未知错误'}`,
           )
         })
+      if (shouldRefreshConstraints) {
+        void bookTranslationConstraintsStore.refreshBookConstraints()
+          .catch((error) => {
+            toast.error(
+              `刷新术语表失败：${error instanceof Error ? error.message : '未知错误'}`,
+            )
+          })
+      }
     },
     { deep: true, immediate: true },
   )

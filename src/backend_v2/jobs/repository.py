@@ -3731,8 +3731,10 @@ class JobQueueRepository:
                     job_steps.c.ordinal.label("step_ordinal"),
                     job_items.c.ordinal.label("item_ordinal"),
                     job_items.c.page_id,
+                    jobs.c.book_id,
                 )
                 .join(job_items, job_items.c.id == job_steps.c.job_item_id)
+                .join(jobs, jobs.c.id == job_items.c.job_id)
                 .where(
                     job_steps.c.id == step_id,
                     job_steps.c.status == "running",
@@ -3881,6 +3883,12 @@ class JobQueueRepository:
                         else None
                     ),
                     "stepId": step_id,
+                    "stepKind": str(step["kind"]),
+                    "bookId": (
+                        str(step["book_id"])
+                        if step["book_id"] is not None
+                        else None
+                    ),
                     "status": status,
                 },
                 now=now,

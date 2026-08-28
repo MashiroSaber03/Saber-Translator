@@ -4,11 +4,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_AUTO_GLOSSARY_PROMPT } from '@/constants'
 import type { BookTranslationConstraints } from '@/types/bookTranslationConstraints'
 
-const { updateBookTranslationConstraintsMock } = vi.hoisted(() => ({
+const {
+  getBookTranslationConstraintsMock,
+  updateBookTranslationConstraintsMock,
+} = vi.hoisted(() => ({
+  getBookTranslationConstraintsMock: vi.fn(),
   updateBookTranslationConstraintsMock: vi.fn(),
 }))
 
 vi.mock('@/api/bookshelf', () => ({
+  getBookTranslationConstraints: getBookTranslationConstraintsMock,
   updateBookTranslationConstraints: updateBookTranslationConstraintsMock,
 }))
 
@@ -44,6 +49,7 @@ function savedConstraints(): BookTranslationConstraints {
 describe('bookTranslationConstraintsStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    getBookTranslationConstraintsMock.mockReset()
     updateBookTranslationConstraintsMock.mockReset()
   })
 
@@ -88,6 +94,54 @@ describe('bookTranslationConstraintsStore', () => {
     expect(store.constraints).toEqual(next)
     expect(store.revision).toBe(8)
     expect(store.isSaving).toBe(false)
+  })
+
+  it('refreshes the current book from a newer authoritative revision', async () => {
+    const store = useBookTranslationConstraintsStore()
+    const latest = savedConstraints()
+    store.loadBookConstraints('book-1', initialConstraints(), 7)
+    getBookTranslationConstraintsMock.mockResolvedValueOnce({
+      constraints: latest,
+      revision: 8,
+    })
+
+    await store.refreshBookConstraints()
+
+    expect(getBookTranslationConstraintsMock).toHaveBeenCalledWith('book-1')
+    expect(store.constraints).toEqual(latest)
+    expect(store.revision).toBe(8)
+  })
+
+  it('does not regress or cross book context when refresh responses arrive late', async () => {
+    const store = useBookTranslationConstraintsStore()
+    let resolveRefresh!: (value: {
+      constraints: BookTranslationConstraints
+      revision: number
+    }) => void
+    getBookTranslationConstraintsMock.mockReturnValueOnce(new Promise(resolve => {
+      resolveRefresh = resolve
+    }))
+    store.loadBookConstraints('book-1', initialConstraints(), 7)
+
+    const pendingRefresh = store.refreshBookConstraints()
+    const otherBookConstraints = savedConstraints()
+    store.loadBookConstraints('book-2', otherBookConstraints, 3)
+    resolveRefresh({ constraints: savedConstraints(), revision: 8 })
+    await pendingRefresh
+
+    expect(store.bookId).toBe('book-2')
+    expect(store.constraints).toEqual(otherBookConstraints)
+    expect(store.revision).toBe(3)
+
+    store.loadBookConstraints('book-1', savedConstraints(), 9)
+    getBookTranslationConstraintsMock.mockResolvedValueOnce({
+      constraints: initialConstraints(),
+      revision: 8,
+    })
+    await store.refreshBookConstraints()
+
+    expect(store.constraints).toEqual(savedConstraints())
+    expect(store.revision).toBe(9)
   })
 
   it('propagates backend failures without mutating the current document', async () => {

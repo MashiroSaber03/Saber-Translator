@@ -1,7 +1,10 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
-import { updateBookTranslationConstraints } from '@/api/bookshelf'
+import {
+  getBookTranslationConstraints,
+  updateBookTranslationConstraints,
+} from '@/api/bookshelf'
 import type { BookTranslationConstraints } from '@/types/bookTranslationConstraints'
 import { createEmptyBookTranslationConstraints } from '@/utils/bookTranslationConstraints'
 
@@ -29,6 +32,21 @@ export const useBookTranslationConstraintsStore = defineStore('bookTranslationCo
     currentBookId.value = null
     currentRevision.value = null
     constraints.value = createEmptyBookTranslationConstraints()
+  }
+
+  async function refreshBookConstraints(): Promise<void> {
+    const bookId = currentBookId.value
+    if (!bookId) return
+
+    const result = await getBookTranslationConstraints(bookId)
+    if (currentBookId.value !== bookId) return
+    if (
+      currentRevision.value !== null
+      && result.revision <= currentRevision.value
+    ) return
+
+    constraints.value = result.constraints
+    currentRevision.value = result.revision
   }
 
   async function saveBookConstraints(nextConstraints: BookTranslationConstraints): Promise<void> {
@@ -67,6 +85,7 @@ export const useBookTranslationConstraintsStore = defineStore('bookTranslationCo
     isSaving,
     loadBookConstraints,
     resetBookConstraints,
+    refreshBookConstraints,
     saveBookConstraints,
   }
 })

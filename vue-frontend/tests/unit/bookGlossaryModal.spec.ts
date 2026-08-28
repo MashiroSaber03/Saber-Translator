@@ -10,7 +10,12 @@ import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import UiField from '@/components/ui/UiField.vue'
 import UiTextarea from '@/components/ui/UiTextarea.vue'
 
-const { saveBookConstraintsMock, showToastMock } = vi.hoisted(() => ({
+const {
+  refreshBookConstraintsMock,
+  saveBookConstraintsMock,
+  showToastMock,
+} = vi.hoisted(() => ({
+  refreshBookConstraintsMock: vi.fn(),
   saveBookConstraintsMock: vi.fn(),
   showToastMock: vi.fn(),
 }))
@@ -31,6 +36,8 @@ vi.mock('@/components/common/BaseModal.vue', () => ({
 
 vi.mock('@/components/settings/shared/TranslationConstraintTable.vue', () => ({
   default: defineComponent({
+    name: 'TranslationConstraintTableStub',
+    props: ['modelValue'],
     setup() {
       return () => h('div', { class: 'translation-constraint-table-stub' })
     },
@@ -48,8 +55,10 @@ import BookNonTranslateModal from '@/components/translate/BookNonTranslateModal.
 describe('BookGlossaryModal', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    refreshBookConstraintsMock.mockReset().mockResolvedValue(undefined)
     saveBookConstraintsMock.mockReset()
     showToastMock.mockReset()
+    useBookTranslationConstraintsStore().refreshBookConstraints = refreshBookConstraintsMock
   })
 
   it('loads and saves the auto extract settings with glossary constraints', async () => {
@@ -119,6 +128,62 @@ describe('BookGlossaryModal', () => {
     await wrapper.find('.reset-auto-glossary-prompt-btn').trigger('click')
 
     expect((promptTextarea.element as HTMLTextAreaElement).value).toBe(DEFAULT_AUTO_GLOSSARY_PROMPT)
+  })
+
+  it('shows newly appended backend terms live without overwriting draft edits', async () => {
+    const store = useBookTranslationConstraintsStore()
+    store.loadBookConstraints('book-1', {
+      glossary: {
+        enabled: true,
+        autoExtractEnabled: true,
+        autoExtractPrompt: DEFAULT_AUTO_GLOSSARY_PROMPT,
+        entries: [],
+      },
+      nonTranslate: { enabled: false, entries: [] },
+    }, 1)
+    const wrapper = mount(BookGlossaryModal, { props: { modelValue: true } })
+    const checkboxes = wrapper.findAll('input[type="checkbox"]')
+    await checkboxes[0]!.setValue(false)
+
+    store.loadBookConstraints('book-1', {
+      glossary: {
+        enabled: true,
+        autoExtractEnabled: true,
+        autoExtractPrompt: DEFAULT_AUTO_GLOSSARY_PROMPT,
+        entries: [
+          { source: 'Alice', target: '爱丽丝', note: '', matchMode: 'text' },
+        ],
+      },
+      nonTranslate: { enabled: false, entries: [] },
+    }, 2)
+    await wrapper.vm.$nextTick()
+
+    expect((checkboxes[0]!.element as HTMLInputElement).checked).toBe(false)
+    expect(
+      wrapper.getComponent({ name: 'TranslationConstraintTableStub' }).props('modelValue'),
+    ).toEqual([
+      { source: 'Alice', target: '爱丽丝', note: '', matchMode: 'text' },
+    ])
+
+    store.loadBookConstraints('book-2', {
+      glossary: {
+        enabled: true,
+        autoExtractEnabled: false,
+        autoExtractPrompt: DEFAULT_AUTO_GLOSSARY_PROMPT,
+        entries: [
+          { source: 'Bob', target: '鲍勃', note: '', matchMode: 'text' },
+        ],
+      },
+      nonTranslate: { enabled: false, entries: [] },
+    }, 1)
+    await wrapper.vm.$nextTick()
+
+    expect((checkboxes[0]!.element as HTMLInputElement).checked).toBe(true)
+    expect(
+      wrapper.getComponent({ name: 'TranslationConstraintTableStub' }).props('modelValue'),
+    ).toEqual([
+      { source: 'Bob', target: '鲍勃', note: '', matchMode: 'text' },
+    ])
   })
 
   it('uses product dialog primitives for constraint modal forms and footers', () => {

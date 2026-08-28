@@ -100,11 +100,16 @@ async function resolveTagIds(names: string[] | undefined): Promise<string[] | un
   })
 }
 
-async function getConstraints(bookId: string): Promise<BookTranslationConstraints> {
+export async function getBookTranslationConstraints(
+  bookId: string,
+): Promise<{ constraints: BookTranslationConstraints; revision: number }> {
   const document = await apiClient.get<V2ConstraintDocument>(
     bookPath(bookId, '/translation-constraints'),
   )
-  return document.payload
+  return {
+    constraints: document.payload,
+    revision: document.revision,
+  }
 }
 
 export async function updateBookTranslationConstraints(
@@ -145,11 +150,11 @@ export async function getBooks(params?: GetBooksParams): Promise<BookData[]> {
 }
 
 export async function getBookDetail(bookId: string): Promise<BookData> {
-  const [book, constraints] = await Promise.all([
+  const [book, constraintDocument] = await Promise.all([
     apiClient.get<V2Book & { chapters: V2Chapter[] }>(bookPath(bookId)),
-    getConstraints(bookId),
+    getBookTranslationConstraints(bookId),
   ])
-  return toBook(book, constraints)
+  return toBook(book, constraintDocument.constraints)
 }
 
 function createBookFormData(title: string, tagIds: string[], cover: File): FormData {

@@ -464,8 +464,8 @@ def test_chapter_write_lock_is_acquired_atomically_and_released(
         ).scalar_one_or_none() is None
 
 
-def test_page_completed_event_identifies_the_published_page(job_platform) -> None:
-    engine, repository, _book, chapter, worker_epoch_id = job_platform
+def test_step_completion_events_identify_page_kind_and_book(job_platform) -> None:
+    engine, repository, book, chapter, worker_epoch_id = job_platform
     from src.backend_v2.storage.schema import pages
 
     page_id = str(uuid.uuid4())
@@ -484,11 +484,15 @@ def test_page_completed_event_identifies_the_published_page(job_platform) -> Non
             JobSpec(
                 kind="translation",
                 config={"mode": "test"},
+                book_id=str(book["id"]),
                 chapter_id=str(chapter["id"]),
                 items=(
-                    JobItemSpec(page_id=page_id, step_kinds=("save",)),
+                    JobItemSpec(
+                        page_id=page_id,
+                        step_kinds=("auto_terms", "save"),
+                    ),
                 ),
-            )
+            ),
         ],
     )
     job_id = str(batch["jobIds"][0])
@@ -497,6 +501,25 @@ def test_page_completed_event_identifies_the_published_page(job_platform) -> Non
     assert fence is not None
     step = repository.next_step(fence)
     assert step is not None
+    assert step["stepKind"] == "auto_terms"
+    repository.complete_step(
+        fence,
+        step_id=str(step["stepId"]),
+        checkpoint={"addedCount": 1},
+    )
+
+    events = repository.events_after(job_id=job_id)
+    step_completed = [
+        event for event in events if event["type"] == "step_completed"
+    ]
+    assert len(step_completed) == 1
+    assert step_completed[0]["payload"]["pageId"] == page_id
+    assert step_completed[0]["payload"]["stepKind"] == "auto_terms"
+    assert step_completed[0]["payload"]["bookId"] == str(book["id"])
+
+    step = repository.next_step(fence)
+    assert step is not None
+    assert step["stepKind"] == "save"
     repository.complete_step(
         fence,
         step_id=str(step["stepId"]),
@@ -507,6 +530,8 @@ def test_page_completed_event_identifies_the_published_page(job_platform) -> Non
     completed = [event for event in events if event["type"] == "page_completed"]
     assert len(completed) == 1
     assert completed[0]["payload"]["pageId"] == page_id
+    assert completed[0]["payload"]["stepKind"] == "save"
+    assert completed[0]["payload"]["bookId"] == str(book["id"])
 
 
 def test_step_publication_persists_mutated_checkpoint_and_can_skip(

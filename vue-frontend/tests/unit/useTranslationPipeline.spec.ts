@@ -6,6 +6,7 @@ import { nextTick } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useTranslation } from '@/composables/useTranslationPipeline'
+import { useBookTranslationConstraintsStore } from '@/stores/bookTranslationConstraintsStore'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settings'
@@ -40,6 +41,7 @@ const mocks = vi.hoisted(() => ({
   jobsList: vi.fn(),
   jobsRetryFailed: vi.fn(),
   listChapterPages: vi.fn(),
+  refreshBookConstraints: vi.fn(),
   toast: {
     error: vi.fn(),
     info: vi.fn(),
@@ -79,6 +81,8 @@ describe('useTranslationPipeline', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    mocks.refreshBookConstraints.mockResolvedValue(undefined)
+    useBookTranslationConstraintsStore().refreshBookConstraints = mocks.refreshBookConstraints
     mocks.createChapterRemoveTextJob.mockResolvedValue({
       batchId: 'remove-batch-1',
       jobIds: ['remove-job-1'],
@@ -408,6 +412,49 @@ describe('useTranslationPipeline', () => {
     expect(mocks.getPageDocument).toHaveBeenCalledWith('page-1')
   })
 
+  it('refreshes the current book constraints when auto terms complete', async () => {
+    const imageStore = useImageStore()
+    const constraintStore = useBookTranslationConstraintsStore()
+    const taskCenterStore = useTaskCenterStore()
+    addTestImage(imageStore, '001.png', '/api/v2/assets/source-1', {
+      chapterId: 'chapter-1',
+      documentRevision: 1,
+      id: 'page-1',
+    })
+    constraintStore.loadBookConstraints('book-1', {
+      glossary: {
+        enabled: true,
+        autoExtractEnabled: true,
+        autoExtractPrompt: '提取术语',
+        entries: [],
+      },
+      nonTranslate: { enabled: false, entries: [] },
+    }, 1)
+    let emitTaskEvent: ((event: JobEvent) => void) | undefined
+    vi.spyOn(taskCenterStore, 'subscribeEvents').mockImplementation((listener) => {
+      emitTaskEvent = listener
+      return () => undefined
+    })
+    useTranslation()
+
+    emitTaskEvent?.({
+      eventId: 999,
+      jobId: 'job-1',
+      type: 'step_completed',
+      payload: {
+        bookId: 'book-1',
+        pageId: 'page-1',
+        status: 'completed',
+        stepId: 'step-1',
+        stepKind: 'auto_terms',
+      },
+      createdAt: new Date().toISOString(),
+    })
+    await nextTick()
+
+    expect(mocks.refreshBookConstraints).toHaveBeenCalledOnce()
+  })
+
   it('rehydrates the current page document when a durable job finishes', async () => {
     const imageStore = useImageStore()
     const bubbleStore = useBubbleStore()
@@ -685,6 +732,7 @@ describe('useTranslationPipeline', () => {
 
     expect(mocks.listChapterPages).not.toHaveBeenCalled()
     expect(mocks.getPageDocument).not.toHaveBeenCalled()
+    expect(mocks.refreshBookConstraints).not.toHaveBeenCalled()
   })
 
   it('reconciles newly imported pages when a backend container job finishes', async () => {

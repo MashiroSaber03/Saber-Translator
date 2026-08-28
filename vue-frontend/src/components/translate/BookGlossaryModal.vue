@@ -99,6 +99,7 @@ import BaseModal from '@/components/common/BaseModal.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import TranslationConstraintTable from '@/components/settings/shared/TranslationConstraintTable.vue'
 import { useBookTranslationConstraintsStore } from '@/stores/bookTranslationConstraintsStore'
+import type { BookTranslationConstraints } from '@/types/bookTranslationConstraints'
 import type { GlossaryEntry } from '@/types/translationConstraints'
 import { deepClone } from '@/utils/deepClone'
 import { getStringField, validateRegexEntries } from '@/utils/translationConstraintTable'
@@ -118,6 +119,8 @@ const draft = ref({
   autoExtractPrompt: DEFAULT_AUTO_GLOSSARY_PROMPT,
   entries: [] as GlossaryEntry[],
 })
+const lastSyncedBookId = ref<string | null>(null)
+const lastSyncedGlossary = ref<BookTranslationConstraints['glossary'] | null>(null)
 
 const columns = [
   { key: 'source', label: '原文' },
@@ -159,13 +162,62 @@ watch(
   value => {
     if (value) {
       syncDraft()
+      void constraintStore.refreshBookConstraints().catch((error) => {
+        showToast(
+          `刷新术语表失败：${error instanceof Error ? error.message : '未知错误'}`,
+          'error',
+        )
+      })
     }
   },
   { immediate: true }
 )
 
+watch(
+  () => [constraintStore.bookId, constraintStore.revision] as const,
+  () => {
+    if (!props.modelValue) return
+    if (constraintStore.bookId !== lastSyncedBookId.value) {
+      syncDraft()
+      return
+    }
+    mergeLatestGlossary()
+  },
+)
+
 function syncDraft(): void {
-  draft.value = deepClone(constraintStore.glossary)
+  const latest = deepClone(constraintStore.glossary)
+  draft.value = latest
+  lastSyncedBookId.value = constraintStore.bookId
+  lastSyncedGlossary.value = deepClone(latest)
+}
+
+function glossaryEntryKey(entry: GlossaryEntry): string {
+  return `${entry.matchMode}\u0000${entry.source}`
+}
+
+function mergeLatestGlossary(): void {
+  const latest = deepClone(constraintStore.glossary)
+  const previous = lastSyncedGlossary.value
+  if (!previous || JSON.stringify(draft.value) === JSON.stringify(previous)) {
+    draft.value = latest
+    lastSyncedGlossary.value = deepClone(latest)
+    return
+  }
+
+  const previousKeys = new Set(previous.entries.map(glossaryEntryKey))
+  const draftKeys = new Set(draft.value.entries.map(glossaryEntryKey))
+  const appended = latest.entries.filter((entry) => {
+    const key = glossaryEntryKey(entry)
+    return !previousKeys.has(key) && !draftKeys.has(key)
+  })
+  if (appended.length > 0) {
+    draft.value.entries = [
+      ...draft.value.entries,
+      ...deepClone(appended),
+    ]
+  }
+  lastSyncedGlossary.value = deepClone(latest)
 }
 
 function toggleEnabled(checked: boolean): void {
