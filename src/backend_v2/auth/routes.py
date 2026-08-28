@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-import ipaddress
 
 from flask import Blueprint, Response, jsonify, request
 from sqlalchemy import Engine
@@ -67,15 +66,14 @@ def create_auth_blueprint(*, engine: Engine, profile: RuntimeProfile) -> Bluepri
         response.headers["Retry-After"] = "600"
         return response
 
+    @blueprint.errorhandler(ValueError)
+    def validation(error: ValueError):
+        return jsonify(
+            {"error": {"code": "validation_error", "message": str(error)}}
+        ), 422
+
     def client_ip() -> str:
-        remote = request.remote_addr or "unknown"
-        forwarded = request.headers.get("X-Forwarded-For", "").rsplit(",", 1)[-1].strip()
-        if remote in {"127.0.0.1", "::1"} and forwarded:
-            try:
-                return str(ipaddress.ip_address(forwarded))
-            except ValueError:
-                pass
-        return remote
+        return request.remote_addr or "unknown"
 
     def attempt_key(username: object) -> str:
         return str(username).strip().lower()[:64]

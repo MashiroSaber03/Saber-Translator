@@ -17,6 +17,7 @@ from src.backend_v2.plugins.agent import (
     PluginAgentSessionNotFound,
     PluginAgentSessionService,
 )
+from src.backend_v2.plugins.repository import PluginNotFound
 
 
 def create_plugin_agent_blueprint(
@@ -36,6 +37,10 @@ def create_plugin_agent_blueprint(
 
     @blueprint.errorhandler(PluginAgentSessionNotFound)
     def not_found(error: PluginAgentSessionNotFound):
+        return _error("not_found", str(error), 404)
+
+    @blueprint.errorhandler(PluginNotFound)
+    def plugin_not_found(error: PluginNotFound):
         return _error("not_found", str(error), 404)
 
     @blueprint.errorhandler(JobConflict)

@@ -1,5 +1,5 @@
 <template>
-  <div class="edit-toolbar">
+  <div class="edit-toolbar" @pointerup="$emit('pointer-action-complete')">
     <div class="edit-toolbar__row edit-toolbar__row--primary">
       <div class="edit-toolbar__image-navigator">
         <UiIconButton
@@ -326,6 +326,7 @@ defineEmits<{
   (e: 'activate-repair-brush'): void
   (e: 'activate-restore-brush'): void
   (e: 'apply-and-next'): void
+  (e: 'pointer-action-complete'): void
 }>()
 
 const brushCursorStyle = computed(() => {

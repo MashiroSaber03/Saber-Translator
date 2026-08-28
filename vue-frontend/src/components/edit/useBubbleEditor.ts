@@ -30,7 +30,6 @@ export type BubbleEditorEmit = {
   (e: 'applyToAllStyle', updates: Partial<BubbleState>): void
   (e: 'ocrRecognize', index: number): void
   (e: 'reTranslate', index: number): void
-  (e: 'resetCurrent', index: number): void
 }
 
 type TextareaFieldRef = {
@@ -319,11 +318,6 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     })
   }
 
-  function resetBubbleEdit(): void {
-    if (!props.bubble || props.bubbleIndex < 0) return
-    emit('resetCurrent', props.bubbleIndex)
-  }
-
   function handleOcrRecognize(): void {
     if (!props.bubble || props.bubbleIndex < 0) return
     emit('ocrRecognize', props.bubbleIndex)
@@ -494,7 +488,6 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     moveDown,
     resetPosition,
     applyToAll,
-    resetBubbleEdit,
     handleOcrRecognize,
     handleReTranslate,
     toggleJpKeyboard,

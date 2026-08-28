@@ -21,6 +21,7 @@ from src.backend_v2.runtime_identity import (
 )
 from src.backend_v2.runtime_profile import (
     PROFILE_ENV,
+    RuntimeProfile,
     resolve_public_host,
     resolve_runtime_profile,
 )
@@ -30,6 +31,17 @@ from src.shared.user_logging import user_log
 
 
 LOGGER = logging.getLogger("saber.api")
+
+
+def _waitress_server_options(profile: RuntimeProfile) -> dict[str, object]:
+    options: dict[str, object] = {"threads": 24}
+    if profile.name == "public":
+        options.update(
+            trusted_proxy="*",
+            trusted_proxy_count=1,
+            trusted_proxy_headers={"x-forwarded-for"},
+        )
+    return options
 
 
 def run_api(args: object) -> int:
@@ -140,7 +152,7 @@ def run_api(args: object) -> int:
             app,
             host=args.host,
             port=args.port,
-            threads=24,
+            **_waitress_server_options(profile),
         )
         close_server = server.close
         if fenced.is_set():

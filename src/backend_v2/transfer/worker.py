@@ -56,6 +56,11 @@ from src.shared.user_logging import log_result
 
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tif", ".tiff"}
+MOBI_MIN_IMAGE_BYTES = 5_000
+
+
+def _is_macos_metadata(path: PurePosixPath) -> bool:
+    return "__MACOSX" in path.parts or path.name.startswith("._")
 
 
 class TransferWorkerService:
@@ -469,6 +474,7 @@ class TransferWorkerService:
                 if (
                     not info.is_dir()
                     and pure.suffix.lower() in IMAGE_SUFFIXES
+                    and not _is_macos_metadata(pure)
                 ):
                     entries.append(
                         {
@@ -488,14 +494,17 @@ class TransferWorkerService:
     ) -> list[dict[str, object]]:
         import mobi
 
-        temporary_root, extracted_path = mobi.extract(str(path))
+        temporary_root, _extracted_path = mobi.extract(str(path))
         destination = self.data_root / "temp" / "container-import" / job_id
         destination.mkdir(parents=True, exist_ok=True)
         entries: list[dict[str, object]] = []
         try:
-            root = Path(extracted_path)
+            root = Path(temporary_root)
+            if not root.is_dir():
+                raise ValueError("MOBI extraction did not produce a directory")
             resolved_root = root.resolve()
-            for source in sorted(root.rglob("*")):
+            candidates: dict[str, tuple[Path, Path, int]] = {}
+            for source in root.rglob("*"):
                 if source.is_symlink():
                     raise ValueError("MOBI extraction contains a symbolic link")
                 if not source.is_file() or source.suffix.lower() not in IMAGE_SUFFIXES:
@@ -509,6 +518,16 @@ class TransferWorkerService:
                     ) from exc
                 relative = source.relative_to(root)
                 byte_size = source.stat().st_size
+                if byte_size <= MOBI_MIN_IMAGE_BYTES:
+                    continue
+                current = candidates.get(source.name)
+                if current is None or byte_size > current[2]:
+                    candidates[source.name] = (source, relative, byte_size)
+
+            for source, relative, byte_size in sorted(
+                candidates.values(),
+                key=lambda candidate: natural_sort_key(candidate[0].name),
+            ):
                 target = destination / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(source, target)
@@ -527,7 +546,6 @@ class TransferWorkerService:
                 )
         finally:
             shutil.rmtree(temporary_root, ignore_errors=True)
-        entries.sort(key=lambda entry: natural_sort_key(entry["logicalPath"]))
         return entries
 
     def _publish_entry(
@@ -546,7 +564,10 @@ class TransferWorkerService:
 
             with fitz.open(container) as document:
                 page = document.load_page(int(entry["pageIndex"]))
-                raw = page.get_pixmap(alpha=False).tobytes("png")
+                raw = page.get_pixmap(
+                    matrix=fitz.Matrix(2.0, 2.0),
+                    alpha=False,
+                ).tobytes("png")
             return self.importer.publish_standalone_image(BytesIO(raw))
         if kind == "file":
             path = self._data_path(str(entry["relativePath"]))

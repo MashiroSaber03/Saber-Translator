@@ -253,7 +253,6 @@ async function refreshOpenPageDocument(
   })
   settingsStore.updateTextStyle(pageTextStyle)
   bubbleStore.setBubbles(bubbles, true)
-  bubbleStore.saveAsInitial()
 }
 
 async function refreshCompletedPage(

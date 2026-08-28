@@ -2927,14 +2927,14 @@ export interface components {
             recoveryCode: string;
         };
         HealthResponse: {
+            /** @enum {string} */
+            status: "ok" | "fenced";
             /** @constant */
-            status: "ok";
+            role?: "api";
             /** @constant */
-            role: "api";
-            /** @constant */
-            schemaVersion: "v2";
-            epochId: string;
-            dataRootFingerprint: string;
+            schemaVersion?: "v2";
+            epochId?: string;
+            dataRootFingerprint?: string;
         };
         ServerInfo: {
             hostname: string;
@@ -5217,8 +5217,17 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Process health and epoch identity. */
+            /** @description Profile-safe process health; local mode also includes epoch identity. */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+            /** @description The API process has lost its runtime epoch lease. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5296,6 +5305,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
         };
     };
     logoutAccount: {
@@ -5361,6 +5371,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
         };
     };
     changeAccountPassword: {
@@ -5385,6 +5396,7 @@ export interface operations {
                     "application/json": components["schemas"]["StatusResponse"];
                 };
             };
+            422: components["responses"]["ValidationError"];
         };
     };
     loadBrowserCredentialLease: {
@@ -10651,6 +10663,7 @@ export interface operations {
                     "application/json": components["schemas"]["PluginAgentSessionEnvelope"];
                 };
             };
+            404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationError"];
         };
     };

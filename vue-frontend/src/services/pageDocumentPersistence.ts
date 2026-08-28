@@ -381,7 +381,6 @@ async function persistLoop(
         state.desired = cloneBubbles(state.persisted)
         if (imageStore.currentImage?.id === pageId) {
           bubbleStore.setBubbles(cloneBubbles(state.persisted), true)
-          bubbleStore.saveAsInitial()
         }
         if (
           Object.keys(state.desiredStylePatch).length === 0

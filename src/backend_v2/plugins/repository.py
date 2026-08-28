@@ -73,6 +73,24 @@ def _request_hash(payload: Mapping[str, Any]) -> str:
     return hashlib.sha256(_json(dict(payload)).encode("utf-8")).hexdigest()
 
 
+def _upgrade_config(
+    schema: Mapping[str, Any],
+    stored_config: object,
+) -> dict[str, Any]:
+    if not isinstance(stored_config, Mapping):
+        raise PluginConflict("stored plugin config is invalid")
+    merged = default_config(schema)
+    for key in merged:
+        if key not in stored_config:
+            continue
+        candidate = {**merged, key: stored_config[key]}
+        try:
+            merged = validate_config(schema, candidate)
+        except PluginContractError:
+            continue
+    return validate_config(schema, merged)
+
+
 class PluginRegistry:
     def __init__(self, *, data_root: Path, engine: Engine) -> None:
         self.data_root = data_root.resolve()
@@ -215,6 +233,40 @@ class PluginRegistry:
                             "currentRevision": current_revision,
                         },
                     )
+                if current is not None:
+                    current_version = connection.execute(
+                        select(
+                            plugin_versions.c.id,
+                            plugin_versions.c.version,
+                            plugin_versions.c.checksum,
+                        ).where(
+                            plugin_versions.c.id
+                            == current["plugin_version_id"]
+                        )
+                    ).mappings().one_or_none()
+                    if current_version is None:
+                        raise PluginConflict(
+                            "plugin current version is missing"
+                        )
+                    if current_version["checksum"] == tree_checksum:
+                        response = {
+                            "pluginId": plugin_id,
+                            "pluginVersionId": str(current_version["id"]),
+                            "packageVersion": str(current_version["version"]),
+                            "currentRevision": current_revision,
+                        }
+                        self._record_idempotency_in_connection(
+                            connection,
+                            scope=scope,
+                            key=idempotency_key,
+                            request_hash=request_hash,
+                            response=response,
+                            http_status=201,
+                            resource_type="plugin_version",
+                            resource_id=str(current_version["id"]),
+                            now=now,
+                        )
+                        return response
                 schema = parsed.manifest.config_schema
                 if plugin is None:
                     config = default_config(schema)
@@ -242,7 +294,10 @@ class PluginRegistry:
                         )
                     )
                 else:
-                    config = default_config(schema)
+                    config = _upgrade_config(
+                        schema,
+                        _load(str(plugin["config_json"])),
+                    )
                     connection.execute(
                         update(plugins)
                         .where(plugins.c.id == plugin_id)
@@ -324,18 +379,16 @@ class PluginRegistry:
                     "packageVersion": parsed.manifest.package_version,
                     "currentRevision": next_revision,
                 }
-                connection.execute(
-                    insert(idempotency_records).values(
-                        scope=scope,
-                        key=idempotency_key,
-                        request_hash=request_hash,
-                        http_status=201,
-                        response_json=_json(response),
-                        resource_type="plugin_version",
-                        resource_id=plugin_version_id,
-                        created_at=now,
-                        expires_at=now + timedelta(days=7),
-                    )
+                self._record_idempotency_in_connection(
+                    connection,
+                    scope=scope,
+                    key=idempotency_key,
+                    request_hash=request_hash,
+                    response=response,
+                    http_status=201,
+                    resource_type="plugin_version",
+                    resource_id=plugin_version_id,
+                    now=now,
                 )
             return response
         except Exception:

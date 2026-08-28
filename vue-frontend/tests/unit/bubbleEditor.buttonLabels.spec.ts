@@ -272,11 +272,7 @@ describe('BubbleEditor button labels', () => {
       block: true,
     })
     expect(applyButton?.classes()).not.toContain('btn-apply-all')
-    expect(resetButton?.props()).toMatchObject({
-      variant: 'secondary',
-      block: true,
-    })
-    expect(resetButton?.classes()).not.toContain('btn-reset')
+    expect(resetButton).toBeUndefined()
 
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/edit/BubbleEditor.vue'),

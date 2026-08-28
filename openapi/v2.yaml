@@ -29,7 +29,13 @@ paths:
       operationId: getV2Health
       responses:
         "200":
-          description: Process health and epoch identity.
+          description: Profile-safe process health; local mode also includes epoch identity.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "503":
+          description: The API process has lost its runtime epoch lease.
           content:
             application/json:
               schema:
@@ -78,6 +84,7 @@ paths:
             application/json:
               schema: {$ref: "#/components/schemas/AuthSession"}
         "401": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
   /auth/logout:
     post:
       tags: [auth]
@@ -116,6 +123,7 @@ paths:
             application/json:
               schema: {$ref: "#/components/schemas/StatusResponse"}
         "401": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
   /auth/change-password:
     post:
       tags: [auth]
@@ -132,6 +140,7 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/StatusResponse"}
+        "422": {$ref: "#/components/responses/ValidationError"}
   /browser-credentials/{domain}/{provider}:
     parameters:
       - name: domain
@@ -3669,6 +3678,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PluginAgentSessionEnvelope"
+        "404": {$ref: "#/components/responses/NotFound"}
         "422": {$ref: "#/components/responses/ValidationError"}
   /plugin-agent/sessions/{session_id}:
     get:
@@ -4326,11 +4336,11 @@ components:
     HealthResponse:
       type: object
       additionalProperties: false
-      required: [status, role, schemaVersion, epochId, dataRootFingerprint]
+      required: [status]
       properties:
         status:
           type: string
-          const: ok
+          enum: [ok, fenced]
         role:
           type: string
           const: api

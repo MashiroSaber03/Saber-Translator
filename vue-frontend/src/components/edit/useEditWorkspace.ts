@@ -133,6 +133,12 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
 
   const workspaceRef = ref<HTMLElement | null>(null)
   const imageComparisonRef = ref<EditImageComparisonExposed | null>(null)
+
+  function focusWorkspaceAfterToolbarPointer(): void {
+    requestAnimationFrame(() => {
+      workspaceRef.value?.focus({ preventScroll: true })
+    })
+  }
   const originalViewportRef = computed(() => imageComparisonRef.value?.originalViewportRef ?? null)
   const originalWrapperRef = computed(() => imageComparisonRef.value?.originalWrapperRef ?? null)
   const originalImageRef = computed(() => imageComparisonRef.value?.originalImageRef ?? null)
@@ -747,21 +753,6 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
     handleReRender()
   }
 
-  function handleResetCurrentBubble(index: number): void {
-    if (isBusy.value) return
-    const initialState = bubbleStore.initialStates[index]
-    if (!initialState) {
-      showToast('无法重置：找不到初始状态', 'warning')
-      return
-    }
-
-    const clonedState = deepClone(initialState)
-    bubbleStore.updateBubble(index, clonedState)
-    showToast('气泡已重置', 'success')
-
-    void reRenderFullImage()
-  }
-
   async function handleOcrRecognize(index: number): Promise<void> {
     if (isBusy.value) return
     isOcrLoading.value = true
@@ -904,6 +895,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
   return {
     workspaceRef,
     imageComparisonRef,
+    focusWorkspaceAfterToolbarPointer,
     images,
     currentImageIndex,
     currentImage,
@@ -966,7 +958,6 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
     handleApplyStyleToAllBubbles,
     handleExitToolbarAction,
     handleBubbleUpdateWithSync,
-    handleResetCurrentBubble,
     handleOcrRecognize,
     handleReTranslateBubble,
     handleRepairSelectedBubble,

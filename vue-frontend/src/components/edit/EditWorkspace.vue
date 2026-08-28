@@ -46,6 +46,7 @@
       @activate-repair-brush="activateRepairBrush"
       @activate-restore-brush="activateRestoreBrush"
       @apply-and-next="applyAndNext"
+      @pointer-action-complete="focusWorkspaceAfterToolbarPointer"
     />
 
     <EditThumbnailPanel
@@ -93,7 +94,6 @@
       @apply-to-all-style="handleApplyStyleToAllBubbles"
       @ocr-recognize="handleOcrRecognize"
       @re-translate="handleReTranslateBubble"
-      @reset-current="handleResetCurrentBubble"
     />
   </div>
 </template>
@@ -110,6 +110,7 @@ const emit = defineEmits<EditWorkspaceEmit>()
 const {
   workspaceRef,
   imageComparisonRef,
+  focusWorkspaceAfterToolbarPointer,
   images,
   currentImageIndex,
   currentImage,
@@ -172,7 +173,6 @@ const {
   handleApplyStyleToAllBubbles,
   handleExitToolbarAction,
   handleBubbleUpdateWithSync,
-  handleResetCurrentBubble,
   handleOcrRecognize,
   handleReTranslateBubble,
   handleRepairSelectedBubble,

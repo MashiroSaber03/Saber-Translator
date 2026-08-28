@@ -15,6 +15,7 @@ from PIL import Image
 from sqlalchemy import func, insert, select
 
 from src.backend_v2.api.app import ApiSettings, create_api_app
+from src.backend_v2.api.entrypoint import _waitress_server_options
 from src.backend_v2.auth.credential_broker import (
     BROKER_TOKEN_ENV,
     BROKER_URL_ENV,
@@ -136,6 +137,42 @@ def test_public_profile_requires_external_host_configuration_and_loopback_bindin
     assert validate_profile_bind_host(local, "0.0.0.0") == "0.0.0.0"
     with pytest.raises(ValueError, match="loopback"):
         validate_profile_bind_host(public, "0.0.0.0")
+
+
+def test_public_waitress_resolves_the_client_address_at_the_proxy_boundary() -> None:
+    from waitress.proxy_headers import proxy_headers_middleware
+
+    public_options = _waitress_server_options(resolve_runtime_profile("public"))
+    assert public_options == {
+        "threads": 24,
+        "trusted_proxy": "*",
+        "trusted_proxy_count": 1,
+        "trusted_proxy_headers": {"x-forwarded-for"},
+    }
+    assert _waitress_server_options(resolve_runtime_profile("local")) == {
+        "threads": 24
+    }
+
+    observed: dict[str, str] = {}
+
+    def capture_remote_address(environ, start_response):
+        observed["remote"] = str(environ["REMOTE_ADDR"])
+        start_response("200 OK", [("Content-Type", "text/plain")])
+        return [b"ok"]
+
+    wrapped = proxy_headers_middleware(
+        capture_remote_address,
+        trusted_proxy=str(public_options["trusted_proxy"]),
+        trusted_proxy_count=int(public_options["trusted_proxy_count"]),
+        trusted_proxy_headers=set(public_options["trusted_proxy_headers"]),
+    )
+    environ = {
+        "REMOTE_ADDR": "127.0.0.1",
+        "HTTP_X_FORWARDED_FOR": "203.0.113.10",
+    }
+    list(wrapped(environ, lambda _status, _headers: None))
+
+    assert observed["remote"] == "203.0.113.10"
 
 
 def test_public_outbound_guard_is_isolated_from_local_network_behavior(
@@ -300,12 +337,38 @@ def test_public_capabilities_host_filter_and_security_headers(public_platform) -
     )
     assert invalid_host.status_code == 400
 
-    external_health = client.get(
-        "/api/v2/health",
+    health = client.get("/api/v2/health", base_url=PUBLIC_BASE)
+    assert health.get_json() == {"status": "ok"}
+
+
+@pytest.mark.parametrize(
+    "request_kwargs",
+    [
+        {"data": "{", "content_type": "application/json"},
+        {"data": "", "content_type": "application/json"},
+        {"json": []},
+        {
+            "json": {
+                "username": "admin",
+                "password": ADMIN_PASSWORD,
+                "unexpected": True,
+            }
+        },
+    ],
+)
+def test_auth_parameter_errors_are_json_validation_responses(
+    public_platform,
+    request_kwargs: dict[str, object],
+) -> None:
+    response = public_platform["app"].test_client().post(
+        "/api/v2/auth/login",
         base_url=PUBLIC_BASE,
-        headers={"X-Forwarded-For": "203.0.113.10"},
+        **request_kwargs,
     )
-    assert external_health.get_json() == {"status": "ok"}
+
+    assert response.status_code == 422
+    assert response.is_json
+    assert response.get_json()["error"]["code"] == "validation_error"
 
 
 def test_admin_can_update_the_single_global_scheduling_policy(public_platform) -> None:

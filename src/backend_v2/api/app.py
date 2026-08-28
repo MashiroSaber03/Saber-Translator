@@ -100,9 +100,7 @@ def _create_v2_blueprint(settings: ApiSettings) -> Blueprint:
         payload: dict[str, object] = {
             "status": "ok" if healthy else "fenced",
         }
-        if settings.profile.name != "public" or not request.headers.get(
-            "X-Forwarded-For"
-        ):
+        if settings.profile.name != "public":
             payload.update(
                 {
                     "role": "api",

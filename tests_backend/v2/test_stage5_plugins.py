@@ -433,12 +433,43 @@ def test_plugin_versions_are_immutable_and_config_is_revisioned(
             idempotency_key="config-stale",
         )
 
-    second = registry.import_archive(
+    unchanged = registry.import_archive(
         data=archive,
+        base_revision=1,
+        idempotency_key="install-v1-noop",
+    )
+    assert unchanged == {
+        "pluginId": "test_v3",
+        "pluginVersionId": first["pluginVersionId"],
+        "packageVersion": "1.0.0",
+        "currentRevision": 1,
+    }
+    assert registry.import_archive(
+        data=archive,
+        base_revision=1,
+        idempotency_key="install-v1-noop",
+    ) == unchanged
+    unchanged_config = registry.get_config("test_v3")
+    assert unchanged_config["value"] == {
+        "prefix": "new",
+        "strict": True,
+    }
+    assert unchanged_config["configRevision"] == 2
+    assert [path for path in first_path.parent.iterdir() if path.is_dir()] == [
+        first_path
+    ]
+
+    second = registry.import_archive(
+        data=_plugin_archive(package_version="1.0.1"),
         base_revision=1,
         idempotency_key="install-v2-build",
     )
     assert second["pluginVersionId"] != first["pluginVersionId"]
+    assert second["currentRevision"] == 2
+    assert registry.get_config("test_v3")["value"] == {
+        "prefix": "new",
+        "strict": True,
+    }
     assert first_path.is_dir()
     assert (
         data_root
@@ -448,11 +479,11 @@ def test_plugin_versions_are_immutable_and_config_is_revisioned(
         / str(second["pluginVersionId"])
     ).is_dir()
     exported, filename = registry.export_current("test_v3")
-    assert filename == "test_v3-1.0.0.zip"
+    assert filename == "test_v3-1.0.1.zip"
     assert parse_archive(exported).manifest.plugin_id == "test_v3"
 
 
-def test_plugin_upgrade_discards_old_config_and_advances_revision(
+def test_plugin_upgrade_preserves_compatible_config_and_advances_revision(
     plugin_platform,
 ) -> None:
     data_root, engine = plugin_platform
@@ -490,7 +521,7 @@ def test_plugin_upgrade_discards_old_config_and_advances_revision(
 
     config = registry.get_config("schema_v3")
     assert config["value"] == {
-        "strict": False,
+        "strict": True,
         "suffix": "!",
     }
     assert config["configRevision"] == 3
@@ -2587,7 +2618,7 @@ def test_plugin_agent_execution_uses_one_leading_system_message() -> None:
     assert "plugin skill" in messages[0]["content"]
 
 
-def test_plugin_agent_http_rejects_browser_supplied_provider_secret(
+def test_plugin_agent_http_maps_domain_and_request_validation_errors(
     plugin_platform,
 ) -> None:
     data_root, engine = plugin_platform
@@ -2603,6 +2634,14 @@ def test_plugin_agent_http_rejects_browser_supplied_provider_secret(
         )
     )
     client = app.test_client()
+    missing = client.post(
+        "/api/v2/plugin-agent/sessions",
+        json={"mode": "modify", "pluginId": "missing-plugin"},
+    )
+    assert missing.status_code == 404
+    assert missing.is_json
+    assert missing.get_json()["error"]["code"] == "not_found"
+
     created = client.post(
         "/api/v2/plugin-agent/sessions",
         json={"mode": "create"},

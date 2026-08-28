@@ -204,7 +204,6 @@ export function useTextStyleSync() {
       })
       settingsStore.updateTextStyle(pageTextStyle)
       bubbleStore.setBubbles(bubbles, true)
-      bubbleStore.saveAsInitial()
     } finally {
       isSyncingTextStyle.value = false
     }

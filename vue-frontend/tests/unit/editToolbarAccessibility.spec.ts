@@ -46,6 +46,16 @@ describe('EditToolbar accessibility', () => {
     expect(wrapper.emitted('toggle-thumbnails')).toHaveLength(1)
   })
 
+  it('returns keyboard focus ownership after a pointer toolbar action', async () => {
+    const wrapper = mount(EditToolbar, {
+      props: createToolbarProps(),
+    })
+
+    await wrapper.get('button[title="下一张图片 (D)"]').trigger('pointerup')
+
+    expect(wrapper.emitted('pointer-action-complete')).toHaveLength(1)
+  })
+
   it('disables navigation and backend mutations while an edit operation is running', () => {
     const wrapper = mount(EditToolbar, {
       props: {

@@ -24,7 +24,6 @@ export const useBubbleStore = defineStore('bubble', () => {
   const bubbles = ref<BubbleState[]>([])
   const selectedIndex = ref<number>(-1)
   const selectedIndices = ref<number[]>([])
-  const initialStates = ref<BubbleState[]>([])
 
   const selectedBubble = computed<BubbleState | null>(() => {
     if (selectedIndex.value >= 0 && selectedIndex.value < bubbles.value.length) {
@@ -54,7 +53,6 @@ export const useBubbleStore = defineStore('bubble', () => {
       .filter((identity): identity is string => Boolean(identity))
     const ownedBubbles = cloneBubbleStates(newBubbles)
     bubbles.value = ownedBubbles
-    initialStates.value = cloneBubbleStates(ownedBubbles)
     const indexByIdentity = new Map(
       ownedBubbles
         .map((bubble, index) => [bubbleIdentity(bubble), index] as const)
@@ -131,14 +129,12 @@ export const useBubbleStore = defineStore('bubble', () => {
 
   function clearBubbles(): void {
     bubbles.value = []
-    initialStates.value = []
     clearSelection()
     syncToCurrentImage()
   }
 
   function clearBubblesLocal(): void {
     bubbles.value = []
-    initialStates.value = []
     clearSelection()
   }
 
@@ -222,16 +218,10 @@ export const useBubbleStore = defineStore('bubble', () => {
     syncToCurrentImage()
   }
 
-  function saveAsInitial(): void {
-    initialStates.value = cloneBubbleStates(bubbles.value)
-  }
-
   return {
     bubbles,
     selectedIndex,
     selectedIndices,
-    initialStates,
-
     selectedBubble,
     bubbleCount,
     hasBubbles,
@@ -253,6 +243,5 @@ export const useBubbleStore = defineStore('bubble', () => {
     updateBubble,
     updateSelectedBubble,
     updateAllBubbles,
-    saveAsInitial,
   }
 })

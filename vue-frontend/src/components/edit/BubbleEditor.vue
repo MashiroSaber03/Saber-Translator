@@ -431,19 +431,10 @@
           tone="success"
           size="sm"
           block
-          class="bubble-editor__footer-action bubble-editor__footer-action--apply"
+          class="bubble-editor__footer-action"
           @click="applyToAll"
         >
           样式同步到本页全部气泡
-        </UiButton>
-        <UiButton
-          variant="secondary"
-          size="sm"
-          block
-          class="bubble-editor__footer-action"
-          @click="resetBubbleEdit"
-        >
-          重置
         </UiButton>
       </div>
     </div>
@@ -532,7 +523,6 @@ const {
   moveDown,
   resetPosition,
   applyToAll,
-  resetBubbleEdit,
   handleOcrRecognize,
   handleReTranslate,
   toggleJpKeyboard,
@@ -888,19 +878,14 @@ const {
 }
 
 .bubble-editor__footer-actions {
-  display: flex;
-  gap: 10px;
   margin-top: 15px;
   padding-top: 15px;
   border-top: 1px solid var(--color-border-muted);
 }
 
 .bubble-editor__footer-action {
-  flex: 1;
   min-height: 40px;
-}
 
-.bubble-editor__footer-action--apply {
   --ui-button-primary-background: linear-gradient(135deg, var(--color-action-primary) 0%, var(--color-action-primary-soft) 100%);
   --ui-button-primary-hover-background: var(--ui-button-primary-background);
   --ui-button-primary-hover-shadow: 0 4px 12px color-mix(in srgb, var(--color-action-primary) 30%, transparent);

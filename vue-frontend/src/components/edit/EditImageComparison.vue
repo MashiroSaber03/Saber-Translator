@@ -66,7 +66,6 @@ const emit = defineEmits<{
   applyToAllStyle: [updates: Partial<BubbleState>]
   ocrRecognize: [index: number]
   reTranslate: [index: number]
-  resetCurrent: [index: number]
 }>()
 
 const originalViewportRef = ref<HTMLElement | null>(null)
@@ -266,7 +265,6 @@ defineExpose({
         @apply-to-all-style="emit('applyToAllStyle', $event)"
         @ocr-recognize="emit('ocrRecognize', $event)"
         @re-translate="emit('reTranslate', $event)"
-        @reset-current="emit('resetCurrent', $event)"
       />
     </div>
   </div>

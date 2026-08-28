@@ -134,7 +134,6 @@ describe('bubbleStore', () => {
     bubbleStore.deleteSelected()
     bubbleStore.clearBubbles()
     bubbleStore.clearBubblesLocal()
-    bubbleStore.saveAsInitial()
 
     expect(consoleLog).not.toHaveBeenCalled()
   })

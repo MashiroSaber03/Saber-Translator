@@ -61,24 +61,121 @@ def test_local_archive_scan_has_no_public_size_or_entry_caps(tmp_path: Path) -> 
     with zipfile.ZipFile(archive_path, "w") as archive:
         archive.writestr("001.png", _png((255, 0, 0)))
         archive.writestr("002.png", _png((0, 255, 0)))
+        archive.writestr("__MACOSX/._001.png", b"metadata")
 
     worker = object.__new__(TransferWorkerService)
     worker.limits = ImportSafetyLimits()
 
-    assert len(worker._scan_zip(archive_path)) == 2
+    assert [entry["logicalPath"] for entry in worker._scan_zip(archive_path)] == [
+        "001.png",
+        "002.png",
+    ]
 
 
 def test_public_archive_scan_enforces_configured_entry_cap(tmp_path: Path) -> None:
     archive_path = tmp_path / "pages.cbz"
     with zipfile.ZipFile(archive_path, "w") as archive:
         archive.writestr("001.png", _png((255, 0, 0)))
-        archive.writestr("002.png", _png((0, 255, 0)))
+        archive.writestr("__MACOSX/._001.png", b"metadata")
 
     worker = object.__new__(TransferWorkerService)
     worker.limits = ImportSafetyLimits(max_container_entries=1)
 
     with pytest.raises(ValueError, match="too many members"):
         worker._scan_zip(archive_path)
+
+
+def _bmp(size: tuple[int, int], color: tuple[int, int, int]) -> bytes:
+    output = BytesIO()
+    with Image.new("RGB", size, color) as image:
+        image.save(output, format="BMP")
+    return output.getvalue()
+
+
+def test_mobi_scan_uses_extraction_root_filters_deduplicates_and_naturally_sorts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import mobi
+
+    extraction_root = tmp_path / "mobi-extraction"
+    (extraction_root / "part-a").mkdir(parents=True)
+    (extraction_root / "part-b").mkdir()
+    (extraction_root / "part-c").mkdir()
+    (extraction_root / "part-a" / "page10.bmp").write_bytes(
+        _bmp((48, 48), (10, 20, 30))
+    )
+    (extraction_root / "part-a" / "page2.bmp").write_bytes(
+        _bmp((48, 48), (20, 30, 40))
+    )
+    larger_duplicate = _bmp((64, 64), (30, 40, 50))
+    (extraction_root / "part-b" / "page2.bmp").write_bytes(larger_duplicate)
+    (extraction_root / "part-c" / "page1.bmp").write_bytes(
+        _bmp((52, 52), (40, 50, 60))
+    )
+    (extraction_root / "part-c" / "thumbnail.png").write_bytes(_png((1, 2, 3)))
+    extracted_document = extraction_root / "book.html"
+    extracted_document.write_text("<html></html>", encoding="utf-8")
+    monkeypatch.setattr(
+        mobi,
+        "extract",
+        lambda _path: (str(extraction_root), str(extracted_document)),
+    )
+
+    worker = object.__new__(TransferWorkerService)
+    worker.data_root = (tmp_path / "data-v2").resolve()
+    entries = worker._scan_mobi(tmp_path / "book.azw3", "job-1")
+
+    assert [Path(str(entry["logicalPath"])).name for entry in entries] == [
+        "page1.bmp",
+        "page2.bmp",
+        "page10.bmp",
+    ]
+    selected_duplicate = entries[1]
+    assert selected_duplicate["byteSize"] == len(larger_duplicate)
+    assert selected_duplicate["logicalPath"] == "part-b/page2.bmp"
+    copied = worker.data_root / str(selected_duplicate["relativePath"])
+    assert copied.read_bytes() == larger_duplicate
+    assert not extraction_root.exists()
+
+
+def test_pdf_import_renders_pages_at_two_times_the_source_dimensions(
+    tmp_path: Path,
+) -> None:
+    import fitz
+
+    data_root = (tmp_path / "data-v2").resolve()
+    data_root.mkdir()
+    pdf_path = data_root / "sample.pdf"
+    with fitz.open() as document:
+        document.new_page(width=100, height=150)
+        document.save(pdf_path)
+
+    imported_sizes: list[tuple[int, int]] = []
+
+    class CapturingImporter:
+        @staticmethod
+        def publish_standalone_image(source):
+            with Image.open(source) as image:
+                imported_sizes.append(image.size)
+            return object(), object()
+
+    class LocalStorage:
+        @staticmethod
+        def resolve_relative_path(relative: str) -> Path:
+            return data_root / relative
+
+    worker = object.__new__(TransferWorkerService)
+    worker.data_root = data_root
+    worker.importer = CapturingImporter()
+    worker.storage = LocalStorage()
+
+    worker._publish_entry(
+        {"containerRelativePath": "sample.pdf"},
+        {"kind": "pdf", "pageIndex": 0},
+    )
+
+    assert imported_sizes == [(200, 300)]
 
 
 def test_public_container_upload_stops_at_the_current_asset_budget(
