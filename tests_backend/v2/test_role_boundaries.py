@@ -75,7 +75,11 @@ def _clean_role_environment() -> dict[str, str]:
     return environment
 
 
-def _run_probe(role: str, data_root: Path) -> dict[str, object]:
+def _run_probe(
+    role: str,
+    data_root: Path,
+    *extra_args: str,
+) -> dict[str, object]:
     completed = subprocess.run(
         [
             sys.executable,
@@ -86,6 +90,7 @@ def _run_probe(role: str, data_root: Path) -> dict[str, object]:
             str(data_root),
             "--test-mode",
             "--probe",
+            *extra_args,
         ],
         cwd=PROJECT_ROOT,
         env=_clean_role_environment(),
@@ -230,6 +235,57 @@ def test_worker_and_launcher_resolve_the_same_explicit_data_root(tmp_path: Path)
     assert launcher["workerCommand"][0] == sys.executable
 
 
+def test_launcher_probe_propagates_repeated_resident_model_options(
+    tmp_path: Path,
+) -> None:
+    launcher = _run_probe(
+        "launcher",
+        tmp_path / "resident",
+        "--resident-model",
+        "manga_ocr",
+        "--resident-model",
+        "detector_yolo",
+    )
+
+    worker_command = launcher["workerCommand"]
+    assert worker_command[-4:] == [
+        "--resident-model",
+        "detector_yolo",
+        "--resident-model",
+        "manga_ocr",
+    ]
+    assert "--resident-model" not in launcher["apiCommand"]
+
+
+@pytest.mark.parametrize("role", ["api", "desktop"])
+def test_non_worker_roles_reject_resident_model_options(
+    role: str,
+    tmp_path: Path,
+) -> None:
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(ENTRYPOINT),
+            "--role",
+            role,
+            "--data-dir",
+            str(tmp_path / role),
+            "--test-mode",
+            "--probe",
+            "--resident-model",
+            "detector_yolo",
+        ],
+        cwd=PROJECT_ROOT,
+        env=_clean_role_environment(),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert completed.returncode != 0
+    assert "only supported by launcher and worker roles" in completed.stderr
+
+
 @pytest.mark.parametrize("role", ["api", "worker"])
 def test_direct_production_role_startup_requires_launcher_identity(
     role: str,
@@ -366,7 +422,7 @@ def test_launcher_requires_repeated_api_health_failures_before_restart(
     )
     monkeypatch.setattr(
         "src.backend_v2.launcher.entrypoint._api_is_healthy",
-        lambda _port, *, expected_epoch_id: False,
+        lambda _port, *, expected_epoch_id, expected_epoch_token: False,
     )
 
     for failure in range(1, API_HEALTH_FAILURE_LIMIT):

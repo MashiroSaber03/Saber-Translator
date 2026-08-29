@@ -86,12 +86,16 @@ def test_manual_model_release_is_durable_and_worker_fenced(
     released: list[str] = []
     monkeypatch.setattr(
         "src.backend_v2.worker.model_lifecycle.unload_loaded_models",
-        lambda *, release_callbacks: _run_release_callbacks(release_callbacks),
+        lambda *, release_callbacks, resident_models: _run_release_callbacks(
+            release_callbacks,
+            resident_models,
+        ),
     )
     lifecycle = WorkerModelLifecycle(
         repository,
         worker_epoch_id=worker_epoch_id,
         release_callbacks=(lambda: released.append("plugins"),),
+        resident_models=("manga_ocr",),
     )
     assert lifecycle.run_pending_release() is True
     assert released == ["plugins"]
@@ -103,6 +107,9 @@ def test_manual_model_release_is_durable_and_worker_fenced(
         ).mappings().one()
     assert command["model_release_handled_id"] == accepted["commandId"]
     assert '"releasedCount":1' in str(command["model_release_result_json"])
+    assert '"retained":["manga_ocr"]' in str(
+        command["model_release_result_json"]
+    )
 
 
 def test_manual_release_retries_same_epoch_after_busy_completion(
@@ -114,10 +121,10 @@ def test_manual_release_retries_same_epoch_after_busy_completion(
     accepted = repository.request_release()
     release_calls = 0
 
-    def release(*, release_callbacks) -> dict[str, object]:
+    def release(*, release_callbacks, resident_models) -> dict[str, object]:
         nonlocal release_calls
         release_calls += 1
-        return _run_release_callbacks(release_callbacks)
+        return _run_release_callbacks(release_callbacks, resident_models)
 
     monkeypatch.setattr(
         "src.backend_v2.worker.model_lifecycle.unload_loaded_models",
@@ -202,7 +209,10 @@ def test_idle_model_cache_is_released_once_after_ten_minutes(
     released: list[str] = []
     monkeypatch.setattr(
         "src.backend_v2.worker.model_lifecycle.unload_loaded_models",
-        lambda *, release_callbacks: _run_release_callbacks(release_callbacks),
+        lambda *, release_callbacks, resident_models: _run_release_callbacks(
+            release_callbacks,
+            resident_models,
+        ),
     )
     lifecycle = WorkerModelLifecycle(
         WorkerModelControlRepository(engine),
@@ -260,7 +270,10 @@ def test_durable_job_activity_rearms_idle_release_after_models_reload(
     released: list[str] = []
     monkeypatch.setattr(
         "src.backend_v2.worker.model_lifecycle.unload_loaded_models",
-        lambda *, release_callbacks: _run_release_callbacks(release_callbacks),
+        lambda *, release_callbacks, resident_models: _run_release_callbacks(
+            release_callbacks,
+            resident_models,
+        ),
     )
     lifecycle = WorkerModelLifecycle(
         WorkerModelControlRepository(engine),
@@ -323,7 +336,14 @@ def test_durable_job_activity_rearms_idle_release_after_models_reload(
     assert released == ["plugins", "plugins"]
 
 
-def _run_release_callbacks(release_callbacks) -> dict[str, object]:
+def _run_release_callbacks(
+    release_callbacks,
+    resident_models=(),
+) -> dict[str, object]:
     for callback in release_callbacks:
         callback()
-    return {"released": ["runtime_cache_1"], "releasedCount": 1}
+    return {
+        "released": ["runtime_cache_1"],
+        "releasedCount": 1,
+        "retained": list(resident_models),
+    }

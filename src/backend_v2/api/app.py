@@ -7,6 +7,7 @@ from copy import deepcopy
 import json
 import logging
 from pathlib import Path
+import secrets
 import socket
 import time
 from typing import Any, Callable
@@ -18,7 +19,10 @@ import yaml
 
 from src.backend_v2.import_guard import assert_api_import_boundary
 from src.backend_v2.paths import data_root_fingerprint, project_root
-from src.backend_v2.runtime_identity import RuntimeIdentity
+from src.backend_v2.runtime_identity import (
+    INTERNAL_HEALTH_TOKEN_HEADER,
+    RuntimeIdentity,
+)
 from src.backend_v2.runtime_profile import (
     RuntimeProfile,
     resolve_runtime_profile,
@@ -100,7 +104,15 @@ def _create_v2_blueprint(settings: ApiSettings) -> Blueprint:
         payload: dict[str, object] = {
             "status": "ok" if healthy else "fenced",
         }
-        if settings.profile.name != "public":
+        internal_token = request.headers.get(INTERNAL_HEALTH_TOKEN_HEADER, "")
+        include_identity = settings.profile.name != "public" or (
+            bool(internal_token)
+            and secrets.compare_digest(
+                internal_token,
+                settings.identity.epoch_token,
+            )
+        )
+        if include_identity:
             payload.update(
                 {
                     "role": "api",

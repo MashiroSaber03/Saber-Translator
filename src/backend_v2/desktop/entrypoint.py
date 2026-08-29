@@ -151,6 +151,7 @@ class DesktopController(QObject):
                 port=self.settings.port,
                 log_level=self.settings.log_level,
                 open_browser=False,
+                resident_models=self.settings.resident_models,
             ),
             status_callback=self.launcher_status.emit,
             output_callback=self.launcher_output.emit,
@@ -215,6 +216,9 @@ class DesktopController(QObject):
 
     def apply_settings(self, submitted: DesktopSettings) -> None:
         previous_log_level = self.settings.log_level
+        resident_models_changed = (
+            submitted.resident_models != self.settings.resident_models
+        )
         restart_required = (
             submitted.port != self.settings.port
             or submitted.allow_lan != self.settings.allow_lan
@@ -243,6 +247,14 @@ class DesktopController(QObject):
         }:
             self.window.settings.show_auto_save_status("已自动保存 · 正在重启后端")
             self.restart_backend()
+        elif resident_models_changed and self._status.state in {
+            LauncherState.STARTING,
+            LauncherState.RUNNING,
+            LauncherState.DEGRADED,
+        }:
+            self.window.settings.show_auto_save_status(
+                "已自动保存 · 重启后端后生效"
+            )
         else:
             self.window.settings.show_auto_save_status("已自动保存")
 
@@ -485,6 +497,7 @@ def _desktop_probe(data_root: Path, settings: DesktopSettings) -> dict[str, obje
         "dataRootFingerprint": data_root_fingerprint(data_root),
         "port": settings.port,
         "petEnabled": settings.pet_enabled,
+        "residentModels": list(settings.resident_models),
     }
 
 

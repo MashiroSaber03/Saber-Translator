@@ -153,6 +153,21 @@ def test_settings_emit_immediately_without_a_save_button(tmp_path) -> None:
     assert "保存设置" not in [button.text() for button in page.findChildren(QPushButton)]
 
 
+def test_settings_page_emits_resident_models_in_catalog_order(tmp_path) -> None:
+    _app()
+    page = SettingsPage(
+        DesktopSettings(resident_models=("paddle_ocr",)),
+        tmp_path,
+    )
+    changes: list[DesktopSettings] = []
+    page.settings_changed.connect(changes.append)
+
+    assert page.resident_model_switches["paddle_ocr"].isChecked()
+    page.resident_model_switches["detector_yolo"].click()
+
+    assert changes[-1].resident_models == ("detector_yolo", "paddle_ocr")
+
+
 def test_port_field_keeps_native_stepper_buttons(tmp_path) -> None:
     _app()
     page = SettingsPage(DesktopSettings(), tmp_path)
@@ -198,6 +213,40 @@ def test_running_backend_restarts_after_startup_setting_changes(
     assert restarts == [True]
     assert controller.window.settings.auto_save_status.text() == (
         "已自动保存 · 正在重启后端"
+    )
+    controller._pet_timer.stop()
+    controller.tray.hide()
+    controller.pet.close()
+    controller.window.allow_close()
+    controller.deleteLater()
+    app.processEvents()
+
+
+def test_running_backend_saves_resident_models_for_the_next_restart(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    app = _app()
+    controller = DesktopController(
+        app,
+        data_root=tmp_path,
+        settings_store=DesktopSettingsStore(tmp_path),
+        settings=DesktopSettings(),
+        native_icon_path=NATIVE_ICON,
+        brand_logo_path=BRAND_LOGO,
+    )
+    restarts: list[bool] = []
+    monkeypatch.setattr(controller, "restart_backend", lambda: restarts.append(True))
+    controller._status = LauncherStatus(LauncherState.RUNNING, "运行中")
+
+    controller.apply_settings(
+        controller.settings.updated(resident_models=("paddle_ocr",))
+    )
+
+    assert controller.settings.resident_models == ("paddle_ocr",)
+    assert restarts == []
+    assert controller.window.settings.auto_save_status.text() == (
+        "已自动保存 · 重启后端后生效"
     )
     controller._pet_timer.stop()
     controller.tray.hide()
@@ -298,7 +347,10 @@ def test_desktop_backend_supervisor_never_owns_browser_activation(
         app,
         data_root=tmp_path,
         settings_store=DesktopSettingsStore(tmp_path),
-        settings=DesktopSettings(open_browser_on_start=True),
+        settings=DesktopSettings(
+            open_browser_on_start=True,
+            resident_models=("paddle_ocr",),
+        ),
         native_icon_path=NATIVE_ICON,
         brand_logo_path=BRAND_LOGO,
     )
@@ -326,6 +378,7 @@ def test_desktop_backend_supervisor_never_owns_browser_activation(
     assert not controller._supervisor_thread.is_alive()
     assert len(captured_configs) == 1
     assert captured_configs[0].open_browser is False
+    assert captured_configs[0].resident_models == ("paddle_ocr",)
     controller._pet_timer.stop()
     controller.tray.hide()
     controller.pet.close()

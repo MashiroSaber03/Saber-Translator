@@ -25,7 +25,11 @@ from src.backend_v2.auth.credential_broker import (
 )
 from src.backend_v2.auth.constants import LOCAL_USER_ID
 from src.backend_v2.auth.repository import AuthRepository
-from src.backend_v2.runtime_identity import RuntimeIdentity
+from src.backend_v2.paths import data_root_fingerprint
+from src.backend_v2.runtime_identity import (
+    INTERNAL_HEALTH_TOKEN_HEADER,
+    RuntimeIdentity,
+)
 from src.backend_v2.public_policy import (
     DEFAULT_PUBLIC_USER_POLICY,
     PublicUserPolicyAccess,
@@ -339,6 +343,26 @@ def test_public_capabilities_host_filter_and_security_headers(public_platform) -
 
     health = client.get("/api/v2/health", base_url=PUBLIC_BASE)
     assert health.get_json() == {"status": "ok"}
+    wrong_internal_health = client.get(
+        "/api/v2/health",
+        base_url=PUBLIC_BASE,
+        headers={INTERNAL_HEALTH_TOKEN_HEADER: "wrong-token"},
+    )
+    assert wrong_internal_health.get_json() == {"status": "ok"}
+    internal_health = client.get(
+        "/api/v2/health",
+        base_url=PUBLIC_BASE,
+        headers={INTERNAL_HEALTH_TOKEN_HEADER: "public-profile-token"},
+    )
+    assert internal_health.get_json() == {
+        "status": "ok",
+        "role": "api",
+        "schemaVersion": "v2",
+        "epochId": "public-profile-test",
+        "dataRootFingerprint": data_root_fingerprint(
+            public_platform["data_root"]
+        ),
+    }
 
 
 @pytest.mark.parametrize(

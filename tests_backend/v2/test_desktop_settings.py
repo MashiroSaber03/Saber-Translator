@@ -20,6 +20,7 @@ def test_desktop_settings_round_trip(tmp_path: Path) -> None:
         allow_lan=True,
         log_level="DEBUG",
         open_browser_on_start=False,
+        resident_models=("detector_yolo", "manga_ocr", "lama_mpe"),
         pet_enabled=True,
         pet_always_on_top=False,
         pet_scale_percent=125,
@@ -43,8 +44,50 @@ def test_desktop_settings_discards_unknown_schema_without_migration(tmp_path: Pa
     loaded = store.load(defaults)
 
     assert loaded == defaults
-    assert json.loads(store.path.read_text(encoding="utf-8"))["schemaVersion"] == 1
+    assert json.loads(store.path.read_text(encoding="utf-8"))["schemaVersion"] == 2
     assert "legacy" not in store.path.read_text(encoding="utf-8")
+
+
+def test_desktop_settings_migrates_schema_one_without_losing_values(
+    tmp_path: Path,
+) -> None:
+    store = DesktopSettingsStore(tmp_path)
+    store.path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "server": {
+                    "port": 6123,
+                    "allowLan": True,
+                    "logLevel": "DEBUG",
+                    "openBrowserOnStart": False,
+                },
+                "pet": {
+                    "enabled": False,
+                    "alwaysOnTop": False,
+                    "scalePercent": 125,
+                    "screenName": "screen-2",
+                    "positionX": 0.25,
+                    "positionY": 0.75,
+                },
+                "window": {"width": 1200, "height": 800},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    loaded = store.load()
+
+    assert loaded.port == 6123
+    assert loaded.allow_lan is True
+    assert loaded.log_level == "DEBUG"
+    assert loaded.open_browser_on_start is False
+    assert loaded.pet_enabled is False
+    assert loaded.pet_scale_percent == 125
+    assert loaded.resident_models == ()
+    persisted = json.loads(store.path.read_text(encoding="utf-8"))
+    assert persisted["schemaVersion"] == 2
+    assert persisted["models"] == {"residentModels": []}
 
 
 def test_desktop_settings_discards_invalid_values(tmp_path: Path) -> None:

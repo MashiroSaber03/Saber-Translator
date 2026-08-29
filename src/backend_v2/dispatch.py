@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Sequence
 
+from src.backend_v2.local_models import LOCAL_MODEL_IDS
 from src.backend_v2.runtime_profile import PROFILE_NAMES
 
 
@@ -41,12 +42,24 @@ def _parser() -> argparse.ArgumentParser:
         choices=("DEBUG", "INFO", "WARNING", "ERROR"),
         help="Console log level. Detailed DEBUG logs are always kept in log files.",
     )
+    parser.add_argument(
+        "--resident-model",
+        action="append",
+        choices=LOCAL_MODEL_IDS,
+        default=[],
+        help=(
+            "Preload a built-in local model and keep it resident in the Worker. "
+            "Repeat this option to select multiple models."
+        ),
+    )
     return parser
 
 
 def dispatch(argv: Sequence[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
+    if args.resident_model and args.role not in {"launcher", "worker"}:
+        parser.error("--resident-model is only supported by launcher and worker roles")
 
     if args.role == "api":
         from src.backend_v2.api.entrypoint import run_api

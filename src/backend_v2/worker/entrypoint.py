@@ -11,6 +11,10 @@ import threading
 import time
 from typing import Any
 
+from src.backend_v2.local_models import (
+    normalize_resident_models,
+    preload_local_models,
+)
 from src.backend_v2.logging_config import configure_backend_logging
 from src.backend_v2.paths import data_root_fingerprint, ensure_data_root, resolve_data_root
 from src.backend_v2.runtime_heartbeat import EpochHeartbeat
@@ -67,6 +71,9 @@ def _write_ready_marker(data_root: Path, identity: RuntimeIdentity) -> None:
 
 def run_worker(args: object) -> int:
     profile = resolve_runtime_profile(getattr(args, "profile", "local"))
+    resident_models = normalize_resident_models(
+        getattr(args, "resident_model", ())
+    )
     if profile.name == "public" and not getattr(args, "data_dir", None):
         raise ValueError("--data-dir is required for the public profile")
     os.environ[PROFILE_ENV] = profile.name
@@ -105,6 +112,7 @@ def run_worker(args: object) -> int:
                     "status": "ready",
                     "epochId": identity.epoch_id,
                     "dataRootFingerprint": data_root_fingerprint(data_root),
+                    "residentModels": list(resident_models),
                 },
                 sort_keys=True,
             )
@@ -402,7 +410,9 @@ def run_worker(args: object) -> int:
                     plugin_job_runtime.release_cached_instances,
                     plugin_operation_runtime.release_cached_instances,
                 ),
+                resident_models=resident_models,
             )
+            preload_local_models(resident_models)
             maintenance = WorkerMaintenance(
                 data_root=data_root,
                 engine=engine,

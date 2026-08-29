@@ -15,7 +15,7 @@ import threading
 import time
 from typing import Any, Callable
 from urllib.error import URLError
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 import uuid
 import webbrowser
 
@@ -31,6 +31,7 @@ from src.backend_v2.logging_config import (
     STREAM_FRAME_ENV,
     configure_backend_logging,
 )
+from src.backend_v2.local_models import normalize_resident_models
 from src.backend_v2.paths import (
     DATA_ROOT_ENV,
     data_root_fingerprint,
@@ -43,6 +44,7 @@ from src.backend_v2.runtime_identity import (
     API_EPOCH_ID_ENV,
     API_EPOCH_TOKEN_ENV,
     LAUNCHER_PID_ENV,
+    INTERNAL_HEALTH_TOKEN_HEADER,
     WORKER_RECYCLE_EXIT_CODE,
     WORKER_EPOCH_ID_ENV,
     WORKER_EPOCH_TOKEN_ENV,
@@ -77,6 +79,7 @@ RESTART_STABILITY_SECONDS = 30.0
 PREVIOUS_CHILD_EXIT_TIMEOUT_SECONDS = 5.0
 TORCH_CUDNN_V8_API_LRU_CACHE_LIMIT_ENV = "TORCH_CUDNN_V8_API_LRU_CACHE_LIMIT"
 WORKER_CUDNN_V8_API_LRU_CACHE_LIMIT = "1000"
+RESIDENT_MODEL_WORKER_READY_TIMEOUT_SECONDS = 600.0
 LOGGER = logging.getLogger("saber.launcher")
 
 
@@ -102,6 +105,14 @@ class LauncherConfig:
     profile: str = "local"
     log_level: str | None = None
     open_browser: bool = False
+    resident_models: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "resident_models",
+            normalize_resident_models(self.resident_models),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,12 +145,13 @@ def _role_command(
     host: str,
     port: int,
     profile: str,
+    resident_models: tuple[str, ...] = (),
 ) -> list[str]:
     if getattr(sys, "frozen", False):
         command = [sys.executable]
     else:
         command = [sys.executable, str(project_root() / "saber_v2.py")]
-    return [
+    role_command = [
         *command,
         "--role",
         role,
@@ -152,6 +164,10 @@ def _role_command(
         "--profile",
         profile,
     ]
+    if role == "worker":
+        for model_id in normalize_resident_models(resident_models):
+            role_command.extend(("--resident-model", model_id))
+    return role_command
 
 
 def _new_registration(role: str, *, pid: int = 0) -> EpochRegistration:
@@ -289,27 +305,48 @@ def _raise_if_stop_requested(stop_event: threading.Event | None) -> None:
         raise _LauncherStopRequested
 
 
+def _read_api_health(
+    port: int,
+    *,
+    expected_epoch_token: str,
+    timeout_seconds: float,
+) -> tuple[int, object]:
+    request = Request(
+        f"http://127.0.0.1:{port}/api/v2/health",
+        headers={INTERNAL_HEALTH_TOKEN_HEADER: expected_epoch_token},
+    )
+    with urlopen(request, timeout=timeout_seconds) as response:
+        return response.status, json.loads(response.read())
+
+
 def _wait_for_api(
     port: int,
     *,
     expected_epoch_id: str,
+    expected_epoch_token: str,
     child: subprocess.Popen[str],
     timeout_seconds: float = 30.0,
     stop_event: threading.Event | None = None,
 ) -> None:
     deadline = time.monotonic() + timeout_seconds
-    url = f"http://127.0.0.1:{port}/api/v2/health"
     while time.monotonic() < deadline:
         _raise_if_stop_requested(stop_event)
         return_code = child.poll()
         if return_code is not None:
             raise RuntimeError(f"v2 API exited during startup with code {return_code}")
         try:
-            with urlopen(url, timeout=1.0) as response:
-                payload = json.loads(response.read())
-                if response.status == 200 and payload.get("epochId") == expected_epoch_id:
-                    return
-        except (OSError, URLError):
+            status, payload = _read_api_health(
+                port,
+                expected_epoch_token=expected_epoch_token,
+                timeout_seconds=1.0,
+            )
+            if (
+                status == 200
+                and isinstance(payload, dict)
+                and payload.get("epochId") == expected_epoch_id
+            ):
+                return
+        except (OSError, URLError, ValueError):
             if stop_event is None:
                 time.sleep(0.1)
             elif stop_event.wait(0.1):
@@ -317,15 +354,22 @@ def _wait_for_api(
     raise RuntimeError(f"v2 API did not become healthy within {timeout_seconds:.0f}s")
 
 
-def _api_is_healthy(port: int, *, expected_epoch_id: str) -> bool:
-    url = f"http://127.0.0.1:{port}/api/v2/health"
+def _api_is_healthy(
+    port: int,
+    *,
+    expected_epoch_id: str,
+    expected_epoch_token: str,
+) -> bool:
     try:
-        with urlopen(url, timeout=0.5) as response:
-            payload = json.loads(response.read())
+        status, payload = _read_api_health(
+            port,
+            expected_epoch_token=expected_epoch_token,
+            timeout_seconds=0.5,
+        )
     except (OSError, URLError, ValueError):
         return False
     return bool(
-        response.status == 200
+        status == 200
         and isinstance(payload, dict)
         and payload.get("status") == "ok"
         and payload.get("epochId") == expected_epoch_id
@@ -344,6 +388,7 @@ def _api_health_requires_restart(
     if _api_is_healthy(
         port,
         expected_epoch_id=managed.registration.epoch_id,
+        expected_epoch_token=managed.registration.token,
     ):
         managed.health_failures = 0
         return False
@@ -493,6 +538,7 @@ def _probe_payload(
     host: str,
     port: int,
     profile: str = "local",
+    resident_models: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     return {
         "role": "launcher",
@@ -504,7 +550,12 @@ def _probe_payload(
             "api", data_root=data_root, host=host, port=port, profile=profile
         ),
         "workerCommand": _role_command(
-            "worker", data_root=data_root, host=host, port=port, profile=profile
+            "worker",
+            data_root=data_root,
+            host=host,
+            port=port,
+            profile=profile,
+            resident_models=resident_models,
         ),
     }
 
@@ -595,6 +646,7 @@ def _start_child(
     log_level: str | None = None,
     credential_broker_url: str | None = None,
     credential_broker_token: str | None = None,
+    resident_models: tuple[str, ...] = (),
     output_callback: ChildOutputCallback | None = None,
     stop_event: threading.Event | None = None,
 ) -> ManagedChild:
@@ -617,6 +669,7 @@ def _start_child(
                 host=host,
                 port=port,
                 profile=profile,
+                resident_models=resident_models,
             ),
             _child_environment(
                 data_root,
@@ -644,6 +697,7 @@ def _start_child(
             _wait_for_api(
                 port,
                 expected_epoch_id=registration.epoch_id,
+                expected_epoch_token=registration.token,
                 child=process,
                 stop_event=stop_event,
             )
@@ -652,6 +706,11 @@ def _start_child(
                 data_root,
                 expected_epoch_id=registration.epoch_id,
                 child=process,
+                timeout_seconds=(
+                    RESIDENT_MODEL_WORKER_READY_TIMEOUT_SECONDS
+                    if resident_models
+                    else 30.0
+                ),
                 stop_event=stop_event,
             )
     except BaseException as error:
@@ -705,6 +764,7 @@ def _start_child_with_retries(
     log_level: str | None = None,
     credential_broker_url: str | None = None,
     credential_broker_token: str | None = None,
+    resident_models: tuple[str, ...] = (),
     output_callback: ChildOutputCallback | None = None,
     stop_event: threading.Event | None = None,
 ) -> ManagedChild:
@@ -724,6 +784,7 @@ def _start_child_with_retries(
                 log_level=log_level,
                 credential_broker_url=credential_broker_url,
                 credential_broker_token=credential_broker_token,
+                resident_models=resident_models,
                 output_callback=output_callback,
                 stop_event=stop_event,
             )
@@ -863,6 +924,7 @@ class LauncherSupervisor:
                                         if credential_broker is not None
                                         else None
                                     ),
+                                    resident_models=config.resident_models,
                                     output_callback=self._output_callback,
                                     stop_event=self._stop_event,
                                 )
@@ -1023,6 +1085,7 @@ class LauncherSupervisor:
                                             if credential_broker is not None
                                             else None
                                         ),
+                                        resident_models=config.resident_models,
                                         output_callback=self._output_callback,
                                         stop_event=self._stop_event,
                                     )
@@ -1073,6 +1136,9 @@ class LauncherSupervisor:
 
 def run_launcher(args: object) -> int:
     profile = resolve_runtime_profile(getattr(args, "profile", "local"))
+    resident_models = normalize_resident_models(
+        getattr(args, "resident_model", ())
+    )
     explicit_data_root = getattr(args, "data_dir", None)
     if profile.name == "public" and not explicit_data_root:
         raise ValueError("public profile requires an explicit --data-dir")
@@ -1088,7 +1154,13 @@ def run_launcher(args: object) -> int:
     if args.probe:
         print(
             json.dumps(
-                _probe_payload(data_root, host, port, profile.name),
+                _probe_payload(
+                    data_root,
+                    host,
+                    port,
+                    profile.name,
+                    resident_models,
+                ),
                 sort_keys=True,
             )
         )
@@ -1120,5 +1192,6 @@ def run_launcher(args: object) -> int:
             profile=profile.name,
             log_level=log_level,
             open_browser=not args.no_browser,
+            resident_models=resident_models,
         )
     ).run()

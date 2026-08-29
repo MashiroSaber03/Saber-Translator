@@ -48,6 +48,7 @@ from PySide6.QtWidgets import (
 
 from src.backend_v2.desktop.settings import DesktopSettings, LOG_LEVELS, PET_SCALES
 from src.backend_v2.launcher.entrypoint import LauncherState, LauncherStatus
+from src.backend_v2.local_models import LOCAL_MODEL_OPTIONS
 from src.shared.user_logging import CATEGORY_LABELS, STREAM_FRAME_PREFIX, job_label
 
 
@@ -939,6 +940,23 @@ class SettingsPage(QWidget):
         )
         layout.addWidget(server_card)
 
+        selected_resident_models = set(settings.resident_models)
+        self.resident_model_switches: dict[str, ToggleSwitch] = {}
+        resident_rows: list[QWidget] = []
+        for option in LOCAL_MODEL_OPTIONS:
+            control = ToggleSwitch(option.model_id in selected_resident_models)
+            control.setAccessibleName(f"常驻 {option.label}")
+            self.resident_model_switches[option.model_id] = control
+            resident_rows.append(
+                _setting_row(option.label, option.description, control)
+            )
+        resident_card, self.resident_description = _settings_card(
+            "常驻模型",
+            "选中的模型会在后端启动时加载并保持驻留；会增加启动时间和内存或显存占用。",
+            resident_rows,
+        )
+        layout.addWidget(resident_card)
+
         self.pet_enabled = ToggleSwitch(settings.pet_enabled)
         self.pet_enabled.setAccessibleName("显示桌宠")
         self.pet_top = ToggleSwitch(settings.pet_always_on_top)
@@ -967,6 +985,8 @@ class SettingsPage(QWidget):
         self.allow_lan.toggled.connect(self._emit_settings)
         self.log_level.currentTextChanged.connect(self._emit_settings)
         self.open_browser.toggled.connect(self._emit_settings)
+        for control in self.resident_model_switches.values():
+            control.toggled.connect(self._emit_settings)
         self.pet_enabled.toggled.connect(self._emit_settings)
         self.pet_top.toggled.connect(self._emit_settings)
         self.pet_scale.currentTextChanged.connect(self._emit_settings)
@@ -979,6 +999,11 @@ class SettingsPage(QWidget):
             allow_lan=self.allow_lan.isChecked(),
             log_level=self.log_level.currentText(),
             open_browser_on_start=self.open_browser.isChecked(),
+            resident_models=tuple(
+                option.model_id
+                for option in LOCAL_MODEL_OPTIONS
+                if self.resident_model_switches[option.model_id].isChecked()
+            ),
             pet_enabled=self.pet_enabled.isChecked(),
             pet_always_on_top=self.pet_top.isChecked(),
             pet_scale_percent=int(self.pet_scale.currentText().rstrip("%")),
@@ -1001,6 +1026,11 @@ class SettingsPage(QWidget):
             "后端正在运行；调整端口、网络或日志后会自动重启并应用。"
             if running
             else "修改会自动保存；启动后端时直接使用当前设置。"
+        )
+        self.resident_description.setText(
+            "选择会自动保存；后端正在运行时将在下次重启后生效。"
+            if running
+            else "选中的模型会在下次启动后端时加载并保持驻留。"
         )
 
     def show_auto_save_status(self, message: str) -> None:

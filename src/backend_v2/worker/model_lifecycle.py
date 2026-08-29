@@ -12,6 +12,11 @@ import uuid
 
 from sqlalchemy import Engine, exists, select, update
 
+from src.backend_v2.local_models import (
+    LOCAL_MODEL_IDS,
+    normalize_resident_models,
+    release_loaded_local_model,
+)
 from src.backend_v2.serialization import canonical_json as _json
 from src.backend_v2.timestamps import utcnow
 from src.backend_v2.storage.database import immediate_transaction
@@ -266,7 +271,7 @@ class WorkerModelControlRepository:
 
 
 class WorkerModelLifecycle:
-    """Run manual releases and the ten-minute idle eviction policy."""
+    """Run model releases while preserving configured resident models."""
 
     def __init__(
         self,
@@ -276,6 +281,7 @@ class WorkerModelLifecycle:
         idle_timeout_seconds: float = 600,
         idle_timeout_provider: Callable[[], float] | None = None,
         release_callbacks: Sequence[Callable[[], object]] = (),
+        resident_models: Sequence[str] = (),
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self.repository = repository
@@ -283,6 +289,7 @@ class WorkerModelLifecycle:
         self.idle_timeout_seconds = max(0.0, idle_timeout_seconds)
         self.idle_timeout_provider = idle_timeout_provider
         self.release_callbacks = tuple(release_callbacks)
+        self.resident_models = normalize_resident_models(tuple(resident_models))
         self.monotonic = monotonic
         self.last_activity = monotonic()
         self.released_since_activity = False
@@ -305,6 +312,7 @@ class WorkerModelLifecycle:
         try:
             result = unload_loaded_models(
                 release_callbacks=self.release_callbacks,
+                resident_models=self.resident_models,
             )
         except Exception as exc:
             LOGGER.debug("手动模型释放失败：command=%s", command_id[:8], exc_info=True)
@@ -327,7 +335,12 @@ class WorkerModelLifecycle:
             )
             user_log(
                 "system",
-                f"本地模型与缓存已释放｜{_log_list(result.get('released'))}",
+                f"本地模型与缓存已释放｜{_log_list(result.get('released'))}"
+                + (
+                    f"｜常驻模型已保留 {_log_list(result.get('retained'))}"
+                    if result.get("retained")
+                    else ""
+                ),
             )
         self.last_activity = self.monotonic()
         self.released_since_activity = True
@@ -344,13 +357,19 @@ class WorkerModelLifecycle:
         if self.repository.runtime_busy():
             self.note_activity()
             return False
-        unload_loaded_models(
+        result = unload_loaded_models(
             release_callbacks=self.release_callbacks,
+            resident_models=self.resident_models,
         )
         user_log(
             "system",
             f"空闲 {self.monotonic() - self.last_activity:.0f} 秒，"
-            "已自动释放本地模型与缓存",
+            "已自动释放非驻留本地模型与缓存"
+            + (
+                f"｜常驻模型已保留 {_log_list(result.get('retained'))}"
+                if result.get("retained")
+                else ""
+            ),
         )
         self.released_since_activity = True
         return True
@@ -360,10 +379,18 @@ class WorkerModelLifecycle:
 
         if self.released_since_activity or self.repository.model_inference_busy():
             return False
-        unload_loaded_models(release_callbacks=self.release_callbacks)
+        result = unload_loaded_models(
+            release_callbacks=self.release_callbacks,
+            resident_models=self.resident_models,
+        )
         user_log(
             "warning",
-            "可用内存低于安全阈值，已释放本地模型与运行时缓存",
+            "可用内存低于安全阈值，已释放非驻留本地模型与运行时缓存"
+            + (
+                f"｜常驻模型已保留 {_log_list(result.get('retained'))}"
+                if result.get("retained")
+                else ""
+            ),
         )
         self.released_since_activity = True
         return True
@@ -380,61 +407,22 @@ class WorkerModelLifecycle:
 def unload_loaded_models(
     *,
     release_callbacks: Sequence[Callable[[], object]] = (),
+    resident_models: Sequence[str] = (),
 ) -> dict[str, object]:
-    """Unload only modules already imported by this Worker process."""
+    """Unload imported non-resident models and process-local runtime caches."""
 
     released: list[str] = []
     failures: list[str] = []
-    resetters = (
-        (
-            "src.core.detector.registry",
-            "reset_detector",
-            "detectors",
-        ),
-        (
-            "src.interfaces.manga_ocr_interface",
-            "reset_manga_ocr_instance",
-            "manga_ocr",
-        ),
-        (
-            "src.interfaces.ocr_48px.interface",
-            "reset_48px_ocr_handler",
-            "ocr_48px",
-        ),
-        (
-            "src.interfaces.paddleocr_vl_interface",
-            "reset_paddleocr_vl_handler",
-            "paddleocr_vl",
-        ),
-        (
-            "src.interfaces.paddle_ocr_onnx_interface",
-            "reset_paddle_ocr_handler",
-            "paddle_ocr",
-        ),
-        (
-            "src.interfaces.lama_interface",
-            "reset_litelama_inpainter",
-            "litelama",
-        ),
-        (
-            "src.interfaces.lama_mpe_interface",
-            "reset_lama_mpe_inpainter",
-            "lama_mpe",
-        ),
-    )
-    for module_name, function_name, label in resetters:
-        module = sys.modules.get(module_name)
-        resetter = (
-            getattr(module, function_name, None)
-            if module is not None
-            else None
-        )
-        if callable(resetter):
-            try:
-                resetter()
-                released.append(label)
-            except Exception as exc:
-                failures.append(f"{label}: {exc}")
+    retained = normalize_resident_models(tuple(resident_models))
+    retained_set = set(retained)
+    for model_id in LOCAL_MODEL_IDS:
+        if model_id in retained_set:
+            continue
+        try:
+            if release_loaded_local_model(model_id):
+                released.append(model_id)
+        except Exception as exc:
+            failures.append(f"{model_id}: {exc}")
     for index, callback in enumerate(release_callbacks):
         label = f"runtime_cache_{index + 1}"
         try:
@@ -456,4 +444,5 @@ def unload_loaded_models(
     return {
         "released": released,
         "releasedCount": len(released),
+        "retained": list(retained),
     }

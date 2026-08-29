@@ -1,4 +1,4 @@
-"""Small, versioned desktop settings file with no legacy migration path."""
+"""Small, versioned desktop settings file."""
 
 from __future__ import annotations
 
@@ -8,8 +8,10 @@ import os
 from pathlib import Path
 from typing import Any
 
+from src.backend_v2.local_models import normalize_resident_models
 
-SETTINGS_SCHEMA_VERSION = 1
+
+SETTINGS_SCHEMA_VERSION = 2
 PET_SCALES = (75, 100, 125, 150)
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
 MAX_WINDOW_SIZE = 16_777_215
@@ -22,6 +24,7 @@ class DesktopSettings:
     allow_lan: bool = False
     log_level: str = "INFO"
     open_browser_on_start: bool = True
+    resident_models: tuple[str, ...] = ()
     pet_enabled: bool = True
     pet_always_on_top: bool = True
     pet_scale_percent: int = 75
@@ -45,6 +48,7 @@ class DesktopSettingsStore:
             return fallback
         try:
             payload = json.loads(self.path.read_text(encoding="utf-8"))
+            payload, migrated = self._migrate(payload)
             settings = self._decode(payload)
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
             try:
@@ -53,6 +57,11 @@ class DesktopSettingsStore:
             except OSError:
                 pass
             return fallback
+        if migrated:
+            try:
+                self.save(settings)
+            except OSError:
+                pass
         return settings
 
     def save(self, settings: DesktopSettings) -> None:
@@ -64,6 +73,9 @@ class DesktopSettingsStore:
                 "allowLan": settings.allow_lan,
                 "logLevel": settings.log_level,
                 "openBrowserOnStart": settings.open_browser_on_start,
+            },
+            "models": {
+                "residentModels": list(settings.resident_models),
             },
             "pet": {
                 "enabled": settings.pet_enabled,
@@ -87,24 +99,46 @@ class DesktopSettingsStore:
         os.replace(temporary, self.path)
 
     @staticmethod
+    def _migrate(payload: object) -> tuple[object, bool]:
+        if not isinstance(payload, dict) or payload.get("schemaVersion") != 1:
+            return payload, False
+        if set(payload) != {"schemaVersion", "server", "pet", "window"}:
+            raise ValueError("legacy desktop settings fields do not match schema 1")
+        return {
+            **payload,
+            "schemaVersion": SETTINGS_SCHEMA_VERSION,
+            "models": {"residentModels": []},
+        }, True
+
+    @staticmethod
     def _decode(payload: object) -> DesktopSettings:
         if not isinstance(payload, dict):
             raise ValueError("desktop settings must be an object")
-        if set(payload) != {"schemaVersion", "server", "pet", "window"}:
+        if set(payload) != {
+            "schemaVersion",
+            "server",
+            "models",
+            "pet",
+            "window",
+        }:
             raise ValueError("desktop settings fields do not match the current schema")
         if payload.get("schemaVersion") != SETTINGS_SCHEMA_VERSION:
             raise ValueError("unsupported desktop settings schema")
         server = payload.get("server")
+        models = payload.get("models")
         pet = payload.get("pet")
         window = payload.get("window")
         if (
             not isinstance(server, dict)
+            or not isinstance(models, dict)
             or not isinstance(pet, dict)
             or not isinstance(window, dict)
         ):
             raise ValueError("desktop settings sections are missing")
         if set(server) != {"port", "allowLan", "logLevel", "openBrowserOnStart"}:
             raise ValueError("desktop server settings do not match the current schema")
+        if set(models) != {"residentModels"}:
+            raise ValueError("desktop model settings do not match the current schema")
         if set(pet) != {
             "enabled",
             "alwaysOnTop",
@@ -124,10 +158,18 @@ class DesktopSettingsStore:
         position_y = pet.get("positionY")
         width = window.get("width")
         height = window.get("height")
+        resident_models = models.get("residentModels")
         if not isinstance(port, int) or isinstance(port, bool) or not 1 <= port <= 65535:
             raise ValueError("invalid desktop port")
         if not isinstance(log_level, str) or log_level not in LOG_LEVELS:
             raise ValueError("invalid desktop log level")
+        if not isinstance(resident_models, list) or any(
+            not isinstance(model_id, str) for model_id in resident_models
+        ):
+            raise ValueError("invalid resident model list")
+        normalized_resident_models = normalize_resident_models(resident_models)
+        if tuple(resident_models) != normalized_resident_models:
+            raise ValueError("resident model list must be unique and in catalog order")
         if not isinstance(scale, int) or isinstance(scale, bool) or scale not in PET_SCALES:
             raise ValueError("invalid desktop pet scale")
         if (
@@ -172,6 +214,7 @@ class DesktopSettingsStore:
             allow_lan=bool(server["allowLan"]),
             log_level=log_level,
             open_browser_on_start=bool(server["openBrowserOnStart"]),
+            resident_models=normalized_resident_models,
             pet_enabled=bool(pet["enabled"]),
             pet_always_on_top=bool(pet["alwaysOnTop"]),
             pet_scale_percent=scale,
