@@ -51,16 +51,11 @@ def _validate_bubble_geometry(bubble_coords, bubble_polygons=None):
 
 
 def create_bubble_mask(image_size, bubble_coords, bubble_polygons=None):
-    """
-    为气泡创建掩码图像 (黑色区域为修复区)。
-    
-    参考MI-GAN项目的掩码处理方法，更精细地创建文字区域掩码
-    黑色区域（0）表示需要修复的区域
-    白色区域（255）表示保留的区域
-    
+    """创建黑色为修复区域的二值掩膜。
+
     Args:
         image_size: 图像尺寸 (height, width, channels) 或 (height, width)
-        bubble_coords: 气泡 AABB 坐标列表 [(x1, y1, x2, y2), ...]
+        bubble_coords: 当前文本框坐标列表 [(x1, y1, x2, y2), ...]
         bubble_polygons: 可选，气泡多边形坐标列表 [[[x1,y1], [x2,y2], [x3,y3], [x4,y4]], ...]
                         如果提供，将使用多边形而不是矩形来创建掩码
     """
@@ -76,50 +71,16 @@ def create_bubble_mask(image_size, bubble_coords, bubble_polygons=None):
     
     for i, coords in enumerate(bubble_coords):
         x1, y1, x2, y2 = coords
-        # 计算气泡大小
-        width = x2 - x1
-        height = y2 - y1
-        
-        # 使用比例缩放的填充，更灵活地适应不同大小的气泡
-        padding_ratio = 0.02  # 2%的填充比例
-        min_padding = 1
-        
-        padding_w = max(min_padding, int(width * padding_ratio))
-        padding_h = max(min_padding, int(height * padding_ratio))
-        
-        # 创建精确的文字区域掩码
-        # 如果有多边形数据，使用多边形填充；否则使用矩形
+        # 有解析后的当前多边形时，不再混入轴对齐边缘。
         if bubble_polygons is not None:
             polygon = bubble_polygons[i]
             if polygon:
-                # 转换为 numpy 数组，确保是整数
                 pts = np.array(polygon, dtype=np.int32)
                 cv2.fillPoly(mask, [pts], 0)
             else:
-                # 多边形无效，回退到矩形
                 cv2.rectangle(mask, (x1, y1), (x2, y2), 0, -1)
         else:
-            # 没有多边形数据，使用矩形
-            cv2.rectangle(mask, (x1, y1), (x2, y2), 0, -1)  # -1表示填充
-        
-        # 更精确的边缘处理，确保气泡边缘平滑
-        # 外围添加一圈渐变区域，改善与背景的融合
-        edge_mask = np.ones_like(mask) * 255
-        
-        # 对于边缘掩码，仍使用 AABB 来创建渐变区域
-        cv2.rectangle(edge_mask, 
-                     (max(0, x1-padding_w), max(0, y1-padding_h)), 
-                     (min(mask.shape[1]-1, x2+padding_w), min(mask.shape[0]-1, y2+padding_h)), 
-                     0, padding_w)
-        
-        # 使用高斯模糊创建边缘渐变效果，使修复效果更自然
-        blur_size = max(3, padding_w*2+1)
-        if blur_size % 2 == 0:  # 确保大小是奇数
-            blur_size += 1
-        edge_mask = cv2.GaussianBlur(edge_mask, (blur_size, blur_size), 0)
-        
-        # 合并主体掩码和边缘掩码，确保中心区域为0
-        mask = np.minimum(mask, edge_mask)
+            cv2.rectangle(mask, (x1, y1), (x2, y2), 0, -1)
 
     return mask
 
@@ -216,23 +177,23 @@ def inpaint_bubbles(image_pil, bubble_coords, method=constants.DEFAULT_INPAINT_M
         # 只保留标注框内的文字掩膜（只修复框出来的区域）
         # 创建一个标注框区域的掩膜
         box_region_mask = np.ones_like(text_mask) * 255  # 白色表示保留
-        img_h, img_w = text_mask.shape[:2]
         expand_ratio = mask_box_expand_ratio / 100.0  # 转换为小数
         
-        for (x1, y1, x2, y2) in bubble_coords:
-            # 计算扩大后的区域
-            box_w = x2 - x1
-            box_h = y2 - y1
-            expand_w = int(box_w * expand_ratio / 2)
-            expand_h = int(box_h * expand_ratio / 2)
-            
-            # 应用扩大并限制在图像范围内
-            ex1 = max(0, int(x1) - expand_w)
-            ey1 = max(0, int(y1) - expand_h)
-            ex2 = min(img_w, int(x2) + expand_w)
-            ey2 = min(img_h, int(y2) + expand_h)
-            
-            box_region_mask[ey1:ey2, ex1:ex2] = 0  # 标注框内区域设为黑色（需要处理）
+        for index, (x1, y1, x2, y2) in enumerate(bubble_coords):
+            polygon = (
+                bubble_polygons[index]
+                if bubble_polygons is not None and bubble_polygons[index]
+                else [[x1, y1], [x2, y1], [x2, y2], [x1, y2]]
+            )
+            points = np.asarray(polygon, dtype=np.float32)
+            if expand_ratio > 0:
+                center = points.mean(axis=0)
+                points = center + (points - center) * (1.0 + expand_ratio)
+            cv2.fillPoly(
+                box_region_mask,
+                [np.rint(points).astype(np.int32)],
+                0,
+            )
         
         if mask_box_expand_ratio > 0:
             logger.debug(f"标注框扩大 {mask_box_expand_ratio}%")

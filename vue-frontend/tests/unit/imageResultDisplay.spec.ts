@@ -137,6 +137,7 @@ describe('ImageResultDisplay', () => {
         ...createBubbleState(),
         backendBubbleId: 'bubble-1',
         coords: [100, 200, 400, 500],
+        rotationAngle: 27.5,
       }],
     })
 
@@ -153,6 +154,7 @@ describe('ImageResultDisplay', () => {
       y: '200',
       width: '300',
       height: '300',
+      transform: 'rotate(27.5 250 350)',
     })
 
     settingsStore.settings.showDetectionDebug = false

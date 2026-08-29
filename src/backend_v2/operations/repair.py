@@ -30,6 +30,7 @@ from src.backend_v2.storage.schema import (
     page_assets,
     pages,
 )
+from src.core.bubble_geometry import rotated_box_polygon
 from src.core.config_models import validate_bubble_payload
 from src.shared.user_logging import log_result
 
@@ -111,14 +112,14 @@ class PageRepairService:
         mask = Image.new("L", (width, height), 0)
         try:
             draw = ImageDraw.Draw(mask)
-            polygon = payload["polygon"]
-            if polygon:
-                draw.polygon(
-                    [tuple(point) for point in polygon],
-                    fill=255,
-                )
-            else:
-                draw.rectangle(tuple(payload["coords"]), fill=255)
+            polygon = rotated_box_polygon(
+                payload["coords"],
+                payload["rotationAngle"],
+            )
+            draw.polygon(
+                [tuple(point) for point in polygon],
+                fill=255,
+            )
             if mask.getbbox() is None:
                 raise ValueError("bubble repair mask is empty")
             mask_payload = self._mask_payload(mask)

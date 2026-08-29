@@ -247,7 +247,6 @@ def get_bubble_detection_result_with_auto_directions(
         'auto_directions': [],
         'textlines_per_bubble': [],
         'raw_mask': None,  # 模型生成的精确文字掩膜
-        'raw_lines': []  # 原始文本行（合并前的单行框，用于 debug 显示）
     }
     
     try:
@@ -273,8 +272,6 @@ def get_bubble_detection_result_with_auto_directions(
         
         # 保存模型生成的精确文字掩膜
         result['raw_mask'] = detection_result.mask
-        # 保存原始文本行（合并前的单行框，用于 debug 显示）
-        result['raw_lines'] = detection_result.raw_lines
         
         im_w, im_h = image_pil.width, image_pil.height
         

@@ -33,12 +33,18 @@ const overlayHeight = computed(() => (
 const debugRects = computed(() => (props.debugBubbles ?? []).flatMap((bubble, index) => {
   const [x1, y1, x2, y2] = bubble.coords
   if (![x1, y1, x2, y2].every(Number.isFinite) || x2 <= x1 || y2 <= y1) return []
+  const centerX = (x1 + x2) / 2
+  const centerY = (y1 + y2) / 2
+  const rotationAngle = Number.isFinite(bubble.rotationAngle) ? bubble.rotationAngle : 0
   return [{
     key: bubble.backendBubbleId ?? bubble.clientMutationId ?? `${index}-${x1}-${y1}-${x2}-${y2}`,
     x: x1,
     y: y1,
     width: x2 - x1,
     height: y2 - y1,
+    transform: rotationAngle === 0
+      ? undefined
+      : `rotate(${rotationAngle} ${centerX} ${centerY})`,
   }]
 }))
 
@@ -91,6 +97,7 @@ watch(() => props.imageUrl, () => {
             :y="rect.y"
             :width="rect.width"
             :height="rect.height"
+            :transform="rect.transform"
           />
         </svg>
       </div>

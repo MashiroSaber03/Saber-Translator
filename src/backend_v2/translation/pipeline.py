@@ -1383,6 +1383,7 @@ class CoreTranslationAlgorithms:
     ) -> Image.Image:
         import numpy as np
 
+        from src.core.bubble_geometry import rotated_box_polygon
         from src.core.inpainting import inpaint_bubbles
 
         common_fields = {
@@ -1401,7 +1402,10 @@ class CoreTranslationAlgorithms:
         if method not in {"solid", "lama"} or set(config) != required_fields:
             raise ValueError("inpainting configuration fields are invalid")
         coords = [payload["coords"] for payload in bubble_payloads]
-        polygons = [payload["polygon"] for payload in bubble_payloads]
+        polygons = [
+            rotated_box_polygon(payload["coords"], payload["rotationAngle"])
+            for payload in bubble_payloads
+        ]
         repaired = inpaint_bubbles(
             image,
             coords,

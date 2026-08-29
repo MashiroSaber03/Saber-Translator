@@ -6,7 +6,7 @@ from pathlib import Path
 import uuid
 import zipfile
 
-from PIL import Image
+from PIL import Image, ImageDraw
 import pytest
 from sqlalchemy import insert, select, update
 
@@ -1219,6 +1219,87 @@ def test_page_repair_advances_revision_replays_without_new_mask_and_renders(
     with Image.open(platform["data_root"] / clean_path) as repaired:
         assert repaired.getpixel((10, 10)) == (255, 0, 0)
         assert repaired.getpixel((30, 30)) == (12, 34, 56)
+
+
+def test_bubble_repair_uses_current_coords_and_rotation_instead_of_stale_polygon(
+    operation_platform,
+) -> None:
+    from src.core.bubble_geometry import rotated_box_polygon
+
+    platform = operation_platform
+    coords = [20, 26, 44, 38]
+    angle = 45
+    with platform["engine"].begin() as connection:
+        connection.execute(
+            update(bubbles)
+            .where(bubbles.c.id == platform["bubble_id"])
+            .values(
+                payload_json=json.dumps(
+                    _bubble_payload(
+                        coords=coords,
+                        rotationAngle=angle,
+                        polygon=[[4, 4], [20, 4], [20, 20], [4, 20]],
+                    )
+                )
+            )
+        )
+
+    repository = OperationRepository(platform["engine"])
+    service = PageRepairService(
+        data_root=platform["data_root"],
+        engine=platform["engine"],
+        repository=repository,
+    )
+    service.create_for_bubble(
+        page_id=platform["page_id"],
+        bubble_id=platform["bubble_id"],
+        base_revision=1,
+        idempotency_key="rotated-bubble-repair",
+    )
+    claimed = repository.claim_next(
+        executor_role="api",
+        executor_epoch_id=platform["api_epoch_id"],
+        allowed_kinds=("page_repair",),
+    )
+    assert claimed is not None
+    fence, operation = claimed
+    service.handle(fence, operation)
+
+    with platform["engine"].connect() as connection:
+        clean_path = connection.execute(
+            select(assets.c.relative_path)
+            .join(page_assets, page_assets.c.asset_id == assets.c.id)
+            .where(
+                page_assets.c.page_id == platform["page_id"],
+                page_assets.c.role == "clean",
+            )
+        ).scalar_one()
+
+    polygon = rotated_box_polygon(coords, angle)
+    with Image.new("L", (64, 64), 0) as expected_mask:
+        ImageDraw.Draw(expected_mask).polygon(
+            [tuple(point) for point in polygon],
+            fill=255,
+        )
+        x1, y1, x2, y2 = coords
+        rotated_only = next(
+            (x, y)
+            for y in range(64)
+            for x in range(64)
+            if expected_mask.getpixel((x, y)) == 255
+            and not (x1 <= x <= x2 and y1 <= y <= y2)
+        )
+        axis_only = next(
+            (x, y)
+            for y in range(y1, y2 + 1)
+            for x in range(x1, x2 + 1)
+            if expected_mask.getpixel((x, y)) == 0
+        )
+
+    with Image.open(platform["data_root"] / clean_path) as repaired:
+        assert repaired.getpixel(rotated_only) == (255, 0, 0)
+        assert repaired.getpixel(axis_only) == (12, 34, 56)
+        assert repaired.getpixel((10, 10)) == (12, 34, 56)
 
 
 def test_bubble_repair_rejects_incomplete_legacy_payload(

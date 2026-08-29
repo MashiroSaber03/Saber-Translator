@@ -675,6 +675,7 @@ def test_core_color_adapter_accepts_serialized_dictionary_results(
 def test_core_repair_adapter_passes_precise_text_mask(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from src.core.bubble_geometry import rotated_box_polygon
     from src.core import inpainting
 
     captured: dict[str, Any] = {}
@@ -690,7 +691,11 @@ def test_core_repair_adapter_passes_precise_text_mask(
 
     repaired = CoreTranslationAlgorithms().repair(
         image,
-        [{"coords": [0, 0, 3, 2], "polygon": []}],
+        [{
+            "coords": [0, 0, 3, 2],
+            "polygon": [[0, 0], [1, 0], [1, 1], [0, 1]],
+            "rotationAngle": 90,
+        }],
         {
             "disable_resize": True,
             "fill_color": "#FFFFFF",
@@ -705,6 +710,9 @@ def test_core_repair_adapter_passes_precise_text_mask(
     assert captured["precise_mask"].tolist() == [
         [0, 255, 0],
         [0, 0, 0],
+    ]
+    assert captured["bubble_polygons"] == [
+        rotated_box_polygon([0, 0, 3, 2], 90)
     ]
     assert captured["disable_resize"] is True
     repaired.close()
