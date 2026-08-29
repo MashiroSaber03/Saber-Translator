@@ -925,7 +925,11 @@ class SettingsPage(QWidget):
             _setting_row("运行端口", "API 与网页前端使用的监听端口", self.port),
             _setting_row("局域网访问", "关闭时只允许本机连接", self.allow_lan),
             _setting_row("日志等级", "控制 API、Worker 与启动器的日志输出", self.log_level),
-            _setting_row("自动打开网页", "后端每次启动完成后打开默认浏览器", self.open_browser),
+            _setting_row(
+                "自动打开网页",
+                "控制中心本次启动后，首次运行后端时打开默认浏览器",
+                self.open_browser,
+            ),
             _setting_row("数据目录", "当前数据位置，仅供查看", data_path),
         )
         server_card, self.server_description = _settings_card(

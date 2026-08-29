@@ -237,6 +237,103 @@ def test_setting_change_during_explicit_stop_does_not_restart_backend(
     app.processEvents()
 
 
+@pytest.mark.parametrize("auto_open", [True, False])
+def test_desktop_auto_opens_browser_only_once_but_keeps_manual_open(
+    tmp_path,
+    monkeypatch,
+    auto_open,
+) -> None:
+    app = _app()
+    controller = DesktopController(
+        app,
+        data_root=tmp_path,
+        settings_store=DesktopSettingsStore(tmp_path),
+        settings=DesktopSettings(open_browser_on_start=auto_open),
+        native_icon_path=NATIVE_ICON,
+        brand_logo_path=BRAND_LOGO,
+    )
+    opened: list[str] = []
+    task_starts: list[str] = []
+    monkeypatch.setattr("src.backend_v2.desktop.entrypoint.webbrowser.open_new", opened.append)
+    monkeypatch.setattr(controller.tasks, "start", task_starts.append)
+    monkeypatch.setattr(controller.tasks, "stop", lambda: None)
+
+    controller._on_launcher_status(
+        LauncherStatus(LauncherState.RUNNING, "首次启动完成")
+    )
+    controller._on_launcher_status(
+        LauncherStatus(LauncherState.DEGRADED, "正在恢复")
+    )
+    controller._on_launcher_status(
+        LauncherStatus(LauncherState.RUNNING, "恢复完成")
+    )
+    controller._on_launcher_status(
+        LauncherStatus(LauncherState.STOPPED, "已停止")
+    )
+    controller._on_launcher_status(
+        LauncherStatus(LauncherState.RUNNING, "再次启动完成")
+    )
+
+    expected_automatic = ["http://127.0.0.1:5000/"] if auto_open else []
+    assert opened == expected_automatic
+    assert task_starts == ["http://127.0.0.1:5000"] * 3
+
+    controller.open_web()
+
+    assert opened == [*expected_automatic, "http://127.0.0.1:5000/"]
+    controller._pet_timer.stop()
+    controller.tray.hide()
+    controller.pet.close()
+    controller.window.allow_close()
+    controller.deleteLater()
+    app.processEvents()
+
+
+def test_desktop_backend_supervisor_never_owns_browser_activation(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    app = _app()
+    controller = DesktopController(
+        app,
+        data_root=tmp_path,
+        settings_store=DesktopSettingsStore(tmp_path),
+        settings=DesktopSettings(open_browser_on_start=True),
+        native_icon_path=NATIVE_ICON,
+        brand_logo_path=BRAND_LOGO,
+    )
+    captured_configs = []
+
+    class FakeSupervisor:
+        def __init__(self, config, **_kwargs) -> None:
+            captured_configs.append(config)
+
+        def run(self) -> None:
+            return None
+
+        def request_stop(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "src.backend_v2.desktop.entrypoint.LauncherSupervisor",
+        FakeSupervisor,
+    )
+
+    controller.start_backend()
+    assert controller._supervisor_thread is not None
+    controller._supervisor_thread.join(timeout=2)
+
+    assert not controller._supervisor_thread.is_alive()
+    assert len(captured_configs) == 1
+    assert captured_configs[0].open_browser is False
+    controller._pet_timer.stop()
+    controller.tray.hide()
+    controller.pet.close()
+    controller.window.allow_close()
+    controller.deleteLater()
+    app.processEvents()
+
+
 def test_explicit_stop_clears_a_pending_restart(tmp_path) -> None:
     app = _app()
     controller = DesktopController(

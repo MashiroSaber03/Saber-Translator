@@ -97,6 +97,7 @@ class DesktopController(QObject):
         self._supervisor: LauncherSupervisor | None = None
         self._supervisor_thread: threading.Thread | None = None
         self._restart_pending = False
+        self._browser_auto_opened = False
         self._quitting = False
         self._queue_jobs: list[dict[str, object]] = []
         self._history_jobs: list[dict[str, object]] = []
@@ -149,7 +150,7 @@ class DesktopController(QObject):
                 host=host,
                 port=self.settings.port,
                 log_level=self.settings.log_level,
-                open_browser=self.settings.open_browser_on_start,
+                open_browser=False,
             ),
             status_callback=self.launcher_status.emit,
             output_callback=self.launcher_output.emit,
@@ -205,7 +206,12 @@ class DesktopController(QObject):
         if self._status.state != LauncherState.RUNNING:
             self.window.show_notice("请先启动后端。")
             return
-        webbrowser.open_new(f"http://127.0.0.1:{self.settings.port}/")
+        self._open_web_url()
+
+    def _open_web_url(self) -> None:
+        url = f"http://127.0.0.1:{self.settings.port}/"
+        webbrowser.open_new(url)
+        LOGGER.debug("已请求打开浏览器：%s", url)
 
     def apply_settings(self, submitted: DesktopSettings) -> None:
         previous_log_level = self.settings.log_level
@@ -321,6 +327,9 @@ class DesktopController(QObject):
         self.window.settings.set_backend_running(status.state != LauncherState.STOPPED)
         if status.state == LauncherState.RUNNING and previous != LauncherState.RUNNING:
             self.tasks.start(f"http://127.0.0.1:{self.settings.port}")
+            if self.settings.open_browser_on_start and not self._browser_auto_opened:
+                self._browser_auto_opened = True
+                self._open_web_url()
         elif status.state == LauncherState.STOPPED:
             self.tasks.stop()
             self._queue_jobs = []
