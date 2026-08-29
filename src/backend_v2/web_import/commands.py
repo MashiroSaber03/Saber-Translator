@@ -15,6 +15,11 @@ import uuid
 from sqlalchemy import Engine, delete, func, insert, select, update
 from sqlalchemy.engine import Connection
 
+from src.backend_v2.content.page_style import (
+    resolve_new_page_style,
+    validate_text_style_defaults,
+    validate_text_style_payload,
+)
 from src.backend_v2.serialization import canonical_json as _json
 from src.backend_v2.jobs.repository import (
     JobConflict,
@@ -301,6 +306,8 @@ def validate_web_extract_config(value: object) -> dict[str, Any]:
         "options",
         "executionMode",
     }
+    if "textStyle" in config:
+        base.add("textStyle")
     expected = base | {"entries"} if "entries" in config else base
     _web_exact(config, expected, "web extract config")
     _web_id(config, "draftId", "web extract config")
@@ -316,6 +323,13 @@ def validate_web_extract_config(value: object) -> dict[str, Any]:
     elif actual not in ACTUAL_WEB_ENGINES:
         raise WebImportDataInvalid("web extract actual engine is invalid")
     validate_web_import_options(config["options"])
+    if "textStyle" in config:
+        try:
+            validate_text_style_payload(config["textStyle"])
+        except ValueError as exc:
+            raise WebImportDataInvalid(
+                f"web extract text style is invalid: {exc}"
+            ) from exc
     if "entries" in config:
         entries = config["entries"]
         if not isinstance(entries, list) or not entries:
@@ -345,9 +359,18 @@ def validate_web_extract_config(value: object) -> dict[str, Any]:
 
 def validate_web_commit_config(value: object) -> dict[str, Any]:
     config = _web_object(value, "web import commit config")
+    expected = {
+        "draftId",
+        "draftRevision",
+        "chapterId",
+        "entries",
+        "executionMode",
+    }
+    if "textStyle" in config:
+        expected.add("textStyle")
     _web_exact(
         config,
-        {"draftId", "draftRevision", "chapterId", "entries", "executionMode"},
+        expected,
         "web import commit config",
     )
     _web_id(config, "draftId", "web import commit config")
@@ -355,6 +378,13 @@ def validate_web_commit_config(value: object) -> dict[str, Any]:
     _web_integer(config, "draftRevision", "web import commit config", minimum=1)
     if config.get("executionMode") != "sequential":
         raise WebImportDataInvalid("web import commit execution mode is invalid")
+    if "textStyle" in config:
+        try:
+            validate_text_style_payload(config["textStyle"])
+        except ValueError as exc:
+            raise WebImportDataInvalid(
+                f"web import commit text style is invalid: {exc}"
+            ) from exc
     entries = config.get("entries")
     if not isinstance(entries, list):
         raise WebImportDataInvalid("web import commit entries must be an array")
@@ -437,11 +467,24 @@ class WebImportCommandService:
         retry_failed_only: bool = False,
         credential_snapshots: Mapping[str, str] | None = None,
         plugin_snapshots: Mapping[str, Mapping[str, Any]] | None = None,
+        text_style: object | None = None,
     ) -> dict[str, object]:
         normalized_url = _validated_url(source_url)
         if requested_engine not in WEB_ENGINES:
             raise ValueError("engine must be auto, gallery-dl, or ai-agent")
         chapter = self._chapter(chapter_id)
+        with self.engine.connect() as connection:
+            if text_style is None:
+                default_font_id, page_style = resolve_new_page_style(connection)
+            else:
+                default_font_id, page_style = validate_text_style_defaults(
+                    connection,
+                    text_style,
+                )
+        frozen_text_style = {
+            "fontFamily": default_font_id,
+            **page_style,
+        }
         draft_id = str(uuid.uuid4())
         temp_relative = (
             Path("temp") / "web-import" / draft_id
@@ -470,6 +513,7 @@ class WebImportCommandService:
                 "actualEngine": None,
                 "options": frozen_options,
                 "executionMode": "sequential",
+                "textStyle": frozen_text_style,
             }
         )
         now = utcnow()
@@ -537,6 +581,7 @@ class WebImportCommandService:
                 "sourceUrl": normalized_url,
                 "engine": requested_engine,
                 "config": frozen_options,
+                "textStyle": frozen_text_style,
                 **(
                     {
                         "sourceJobId": retry_of_job_id,
@@ -792,6 +837,18 @@ class WebImportCommandService:
                     .order_by(web_import_draft_pages.c.ordinal)
                 ).mappings()
             )
+            draft_config = decode_web_import_draft_config(draft)
+            if "textStyle" in draft_config:
+                default_font_id, page_style = validate_text_style_defaults(
+                    connection,
+                    draft_config["textStyle"],
+                )
+            else:
+                default_font_id, page_style = resolve_new_page_style(connection)
+        frozen_text_style = {
+            "fontFamily": default_font_id,
+            **page_style,
+        }
         chapter = self._chapter(str(draft["chapter_id"]))
         if not rows:
             raise ValueError("select at least one successful draft page")
@@ -815,6 +872,7 @@ class WebImportCommandService:
                 "chapterId": str(draft["chapter_id"]),
                 "entries": entries,
                 "executionMode": "sequential",
+                "textStyle": frozen_text_style,
             }
         )
 
@@ -893,6 +951,7 @@ class WebImportCommandService:
                     "draftPageIds": [
                         entry["draftPageId"] for entry in entries
                     ],
+                    "textStyle": frozen_text_style,
                 },
                 transaction_hook=hook,
             )

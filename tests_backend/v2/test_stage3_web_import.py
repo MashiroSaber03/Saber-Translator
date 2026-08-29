@@ -29,7 +29,10 @@ from src.backend_v2.storage.platform_repositories import (
     SettingsRepository,
 )
 from src.backend_v2.storage.database import create_sqlite_engine
-from src.backend_v2.storage.defaults import DEFAULT_WEB_IMPORT_SETTINGS
+from src.backend_v2.storage.defaults import (
+    DEFAULT_TEXT_STYLE,
+    DEFAULT_WEB_IMPORT_SETTINGS,
+)
 from src.backend_v2.storage.epochs import (
     EpochRegistration,
     ProcessEpochRepository,
@@ -286,11 +289,19 @@ def test_web_extract_draft_selection_and_commit_survive_the_browser(
         return hashlib.sha256(payload).hexdigest()
 
     monkeypatch.setattr(worker, "_download", fake_download)
+    text_style = {
+        **DEFAULT_TEXT_STYLE,
+        "autoFontSize": False,
+        "fontSize": 41,
+        "lineSpacing": 1.7,
+        "textColor": "#123456",
+    }
     accepted = commands.create_draft(
         chapter_id=str(chapter["id"]),
         source_url="https://example.test/chapter",
         requested_engine="auto",
         idempotency_key="web-extract-1",
+        text_style=text_style,
     )
     assert _run_job(repository, worker, epoch_id) == accepted["jobIds"][0]
     draft = commands.get_draft(str(accepted["draftId"]))
@@ -330,10 +341,14 @@ def test_web_extract_draft_selection_and_commit_survive_the_browser(
     with engine.connect() as connection:
         imported = list(
             connection.execute(
-                select(pages.c.logical_source_path)
+                select(
+                    pages.c.logical_source_path,
+                    pages.c.default_font_id,
+                    pages.c.page_style_defaults_json,
+                )
                 .where(pages.c.chapter_id == chapter["id"])
                 .order_by(pages.c.ordinal)
-            ).scalars()
+            )
         )
         page_thumbnail_id = connection.execute(
             select(page_assets.c.asset_id)
@@ -343,7 +358,12 @@ def test_web_extract_draft_selection_and_commit_survive_the_browser(
                 page_assets.c.role == "thumbnail_source",
             )
         ).scalar_one()
-    assert imported == ["20.png"]
+    assert [row.logical_source_path for row in imported] == ["20.png"]
+    assert imported[0].default_font_id == text_style["fontFamily"]
+    imported_style = json.loads(imported[0].page_style_defaults_json)
+    assert imported_style["fontSize"] == 41
+    assert imported_style["lineSpacing"] == 1.7
+    assert imported_style["textColor"] == "#123456"
     assert page_thumbnail_id == draft_thumbnail_id
     assert commands.delete_draft(
         str(accepted["draftId"]),
@@ -541,11 +561,18 @@ def test_web_extract_auto_import_is_created_by_the_backend(
         return hashlib.sha256(payload).hexdigest()
 
     monkeypatch.setattr(worker, "_download", fake_download)
+    text_style = {
+        **DEFAULT_TEXT_STYLE,
+        "autoFontSize": False,
+        "fontSize": 43,
+        "fillColor": "#ABCDEF",
+    }
     accepted = commands.create_draft(
         chapter_id=str(chapter["id"]),
         source_url="https://example.test/auto",
         requested_engine="auto",
         idempotency_key="auto-web-draft",
+        text_style=text_style,
     )
     extract_job_id = _run_job(repository, worker, epoch_id)
     assert extract_job_id == accepted["jobIds"][0]
@@ -564,6 +591,14 @@ def test_web_extract_auto_import_is_created_by_the_backend(
 
     assert _run_job(repository, worker, epoch_id) == commit_jobs[0]["id"]
     assert commands.get_draft(str(accepted["draftId"]))["status"] == "completed"
+    with engine.connect() as connection:
+        stored_style = connection.execute(
+            select(pages.c.page_style_defaults_json).where(
+                pages.c.chapter_id == chapter["id"]
+            )
+        ).scalar_one()
+    assert json.loads(stored_style)["fontSize"] == 43
+    assert json.loads(stored_style)["fillColor"] == "#ABCDEF"
     engine.dispose()
 
 
@@ -1055,16 +1090,6 @@ def test_web_import_routes_validate_numbers_and_report_active_draft_as_locked(
         book_id=str(book["id"]),
         title="Chapter",
     )
-    accepted = WebImportCommandService(
-        data_root=data_root,
-        engine=engine,
-    ).create_draft(
-        chapter_id=str(chapter["id"]),
-        source_url="https://example.test/chapter",
-        requested_engine="auto",
-        idempotency_key="route-web-draft",
-    )
-    draft_id = str(accepted["draftId"])
     app = create_api_app(
         ApiSettings(
             data_root=data_root,
@@ -1077,6 +1102,28 @@ def test_web_import_routes_validate_numbers_and_report_active_draft_as_locked(
         )
     )
     client = app.test_client()
+
+    missing_style = client.post(
+        "/api/v2/web-import/drafts",
+        json={
+            "chapterId": str(chapter["id"]),
+            "sourceUrl": "https://example.test/chapter",
+        },
+        headers={"Idempotency-Key": "missing-web-style"},
+    )
+    assert missing_style.status_code == 422
+    assert missing_style.get_json()["error"]["code"] == "validation_error"
+
+    accepted = WebImportCommandService(
+        data_root=data_root,
+        engine=engine,
+    ).create_draft(
+        chapter_id=str(chapter["id"]),
+        source_url="https://example.test/chapter",
+        requested_engine="auto",
+        idempotency_key="route-web-draft",
+    )
+    draft_id = str(accepted["draftId"])
 
     invalid_cursor = client.get(
         f"/api/v2/web-import/drafts/{draft_id}/pages?cursor=bad"

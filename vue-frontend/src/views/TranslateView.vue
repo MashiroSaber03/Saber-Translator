@@ -42,7 +42,7 @@ import WebImportDisclaimer from '@/components/translate/WebImportDisclaimer.vue'
 import QuickWorkspacePromoteModal from '@/components/translate/QuickWorkspacePromoteModal.vue'
 import { resetQuickWorkspace } from '@/api/v2/content'
 import { ApiClientError } from '@/api/client'
-import { HISTORY_JOB_STATUSES } from '@/api/v2/jobs'
+import { TERMINAL_JOB_STATUSES } from '@/api/v2/jobs'
 import { confirmProductAction } from '@/composables/useProductConfirm'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import { useRuntimeStore } from '@/stores/runtimeStore'
@@ -89,6 +89,7 @@ const currentImage = computed(() => imageStore.currentImage)
 const hasImages = computed(() => imageStore.hasImages)
 const showThumbnailSidebar = computed(() => hasImages.value && !isEditMode.value)
 const isBookshelfMode = computed(() => translateInit.isBookshelfMode.value)
+const isWorkspaceReady = translateInit.isContextReady
 const currentChapterId = computed(() => translateInit.currentChapterId.value || undefined)
 const currentBookTitle = computed(() => translateInit.currentBookTitle.value)
 const currentChapterTitle = computed(() => translateInit.currentChapterTitle.value)
@@ -100,7 +101,7 @@ const pageTitle = computed(() => {
 })
 
 onMounted(async () => {
-  window.addEventListener('keydown', handleKeydown)
+  window.addEventListener('keydown', handleWorkspaceKeydown)
 
   imageStore.clearImages()
   bubbleStore.clearBubbles()
@@ -109,7 +110,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  window.removeEventListener('keydown', handleKeydown)
+  window.removeEventListener('keydown', handleWorkspaceKeydown)
   void flushCurrentPageDocument().catch(() => {
     // Controlled route transitions report failures through their navigation guard.
   })
@@ -153,6 +154,7 @@ watch(
   () => [route.query.book, route.query.chapter],
   async ([newBook, newChapter], [previousBook, previousChapter]) => {
     if (newBook === previousBook && newChapter === previousChapter) return
+    pendingContentImportJobIds.value = new Set()
     imageStore.clearImages()
     bubbleStore.clearBubbles()
     await loadChapterSession()
@@ -236,6 +238,11 @@ const {
   canUseEditMode,
 })
 
+function handleWorkspaceKeydown(event: KeyboardEvent): void {
+  if (!isWorkspaceReady.value) return
+  handleKeydown(event)
+}
+
 watch(
   () => currentImage.value?.id,
   pageId => {
@@ -243,7 +250,7 @@ watch(
   },
 )
 
-function handleWebImportCommitAccepted(jobIds: string[]): void {
+function handleContentImportAccepted(jobIds: string[]): void {
   pendingContentImportJobIds.value = new Set([
     ...pendingContentImportJobIds.value,
     ...jobIds,
@@ -257,7 +264,7 @@ watch(
     if (pendingContentImportJobIds.value.size === 0) return
     const terminal = jobs.filter(job => (
       pendingContentImportJobIds.value.has(job.jobId)
-      && HISTORY_JOB_STATUSES.has(job.status)
+      && TERMINAL_JOB_STATUSES.has(job.status)
     ))
     if (terminal.length === 0) return
 
@@ -436,6 +443,7 @@ async function handleQuickWorkspacePromoted() {
     >
       <template #left>
         <SettingsSidebar
+          :disabled="!isWorkspaceReady"
           @run-workflow="handleRunWorkflow"
           @previous="goToPrevious"
           @next="goToNext"
@@ -453,7 +461,9 @@ async function handleQuickWorkspacePromoted() {
           <div class="translate-upload-card__actions">
             <ImageUpload
               :chapter-id="currentChapterId || null"
+              :disabled="!isWorkspaceReady"
               :text-style="settingsStore.settings.textStyle"
+              @content-import-accepted="handleContentImportAccepted"
               @upload-complete="handleUploadComplete"
             />
           </div>
@@ -508,7 +518,7 @@ async function handleQuickWorkspacePromoted() {
 
     <WebImportModal
       v-if="runtimeStore.capabilities?.features.webImport !== false"
-      @commit-accepted="handleWebImportCommitAccepted"
+      @commit-accepted="handleContentImportAccepted"
     />
   </AppShell>
 </template>

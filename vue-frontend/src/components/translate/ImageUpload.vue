@@ -12,7 +12,6 @@ import { ref, watch } from 'vue'
 import { showToast } from '@/utils/toast'
 import { useWebImportStore } from '@/stores/webImportStore'
 import { useRuntimeStore } from '@/stores/runtimeStore'
-import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import {
   createContainerImportJob,
   importImagesSequentially,
@@ -23,16 +22,19 @@ import {
 } from '@/api/v2/content'
 import type { TextStyleSettings } from '@/types/settings'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   chapterId: string | null
+  disabled?: boolean
   textStyle: TextStyleSettings
-}>()
+}>(), {
+  disabled: false,
+})
 const emit = defineEmits<{
+  (e: 'contentImportAccepted', jobIds: string[]): void
   (e: 'uploadComplete', count: number): void
 }>()
 const webImportStore = useWebImportStore()
 const runtimeStore = useRuntimeStore()
-const taskCenterStore = useTaskCenterStore()
 const folderInputRef = ref<InstanceType<typeof UiFileInput> | null>(null)
 const isLoading = ref(false)
 const errorMessage = ref('')
@@ -138,7 +140,7 @@ function applyImageImportSummary(
 }
 
 async function processFiles(files: File[]) {
-  if (files.length === 0 || isLoading.value) return
+  if (files.length === 0 || props.disabled || isLoading.value) return
   const chapterId = props.chapterId
   if (!chapterId) {
     showToast('后端章节尚未初始化，请稍后重试', 'error')
@@ -168,8 +170,8 @@ async function processFiles(files: File[]) {
       if (props.chapterId === chapterId) {
         currentFileName.value = `上传到后端任务：${file.name}`
       }
-      const accepted = await createContainerImportJob(chapterId, file)
-      for (const jobId of accepted.jobIds) taskCenterStore.trackJob(jobId)
+      const accepted = await createContainerImportJob(chapterId, file, textStyle)
+      emit('contentImportAccepted', accepted.jobIds)
       if (props.chapterId === chapterId) {
         uploadProgress.value = (index + 1) / containers.length * 100
       }
@@ -200,6 +202,7 @@ async function retryFailedImages() {
     || failedChapterId.value !== chapterId
     || failedImports.value.length === 0
     || !failedTextStyle.value
+    || props.disabled
     || isLoading.value
   ) return
   const textStyle = failedTextStyle.value
@@ -246,7 +249,7 @@ watch(() => props.chapterId, () => {
       label="上传翻译源文件"
       accept="image/*,application/pdf,.zip,.cbz,.mobi,.azw,.azw3"
       multiple
-      :disabled="isLoading"
+      :disabled="disabled || isLoading"
       @select="handleFileSelect"
     >
       <template #default>
@@ -265,7 +268,7 @@ watch(() => props.chapterId, () => {
         class="image-upload__inline-action"
         variant="link"
         size="sm"
-        :disabled="isLoading"
+        :disabled="disabled || isLoading"
         aria-label="选择本地图片文件夹"
         @click.stop="triggerFolderSelect"
       >
@@ -278,7 +281,7 @@ watch(() => props.chapterId, () => {
         class="image-upload__inline-action"
         variant="link"
         size="sm"
-        :disabled="isLoading"
+        :disabled="disabled || isLoading"
         aria-label="从网页导入漫画图片"
         @click.stop="triggerWebImport"
       >
@@ -311,7 +314,7 @@ watch(() => props.chapterId, () => {
           v-if="failedImports.length"
           variant="secondary"
           size="sm"
-          :disabled="isLoading"
+          :disabled="disabled || isLoading"
           @click="retryFailedImages"
         >
           仅重试失败项

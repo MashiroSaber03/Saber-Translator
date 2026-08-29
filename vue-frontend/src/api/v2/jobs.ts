@@ -19,11 +19,15 @@ export const NONTERMINAL_JOB_STATUSES: ReadonlySet<V2JobStatus> = new Set([
   'interrupted',
 ])
 
-export const HISTORY_JOB_STATUSES: ReadonlySet<V2JobStatus> = new Set([
+export const TERMINAL_JOB_STATUSES: ReadonlySet<V2JobStatus> = new Set([
   'cancelled',
   'completed',
   'completed_with_errors',
   'failed',
+])
+
+export const HISTORY_JOB_STATUSES: ReadonlySet<V2JobStatus> = new Set([
+  ...TERMINAL_JOB_STATUSES,
   'interrupted',
 ])
 

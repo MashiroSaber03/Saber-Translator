@@ -134,12 +134,37 @@ describe('ImageUpload', () => {
     wrapper.getComponent(ProductFileDropzone).vm.$emit('select', [file])
     await flushPromises()
 
-    expect(mocks.createContainerImportJob).toHaveBeenCalledWith('chapter-1', file)
+    expect(mocks.createContainerImportJob).toHaveBeenCalledWith(
+      'chapter-1',
+      file,
+      textStyle,
+    )
+    expect(wrapper.emitted('contentImportAccepted')).toEqual([[['job-1']]])
     expect(mocks.toast).toHaveBeenCalledWith(
       '已创建 1 个后端解析任务，可安全关闭页面',
       'success',
     )
     expect(wrapper.emitted('uploadComplete')).toBeUndefined()
+  })
+
+  it('does not accept files before the translation context is ready', async () => {
+    const wrapper = mount(ImageUpload, {
+      props: {
+        chapterId: 'chapter-1',
+        disabled: true,
+        textStyle,
+      },
+    })
+
+    expect(wrapper.getComponent(ProductFileDropzone).props('disabled')).toBe(true)
+    wrapper.getComponent(ProductFileDropzone).vm.$emit(
+      'select',
+      [new File(['image'], '001.png', { type: 'image/png' })],
+    )
+    await flushPromises()
+
+    expect(mocks.importImagesSequentially).not.toHaveBeenCalled()
+    expect(mocks.createContainerImportJob).not.toHaveBeenCalled()
   })
 
   it('renders backend upload errors through the product status banner', async () => {

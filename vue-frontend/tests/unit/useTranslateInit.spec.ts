@@ -184,6 +184,7 @@ describe('useTranslateInit', () => {
 
     const imageStore = useImageStore()
     expect(imageStore.currentImage?.bubbleStates).toBeNull()
+    expect(state.isContextReady.value).toBe(false)
 
     resolveDocument({
       bubbles: [],
@@ -214,6 +215,7 @@ describe('useTranslateInit', () => {
       textColor: '#123456',
       useAutoTextColor: true,
     })
+    expect(state.isContextReady.value).toBe(true)
   })
 
   it('requests the selected library chapter through the v2 bootstrap', async () => {

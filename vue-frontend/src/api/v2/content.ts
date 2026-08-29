@@ -299,9 +299,11 @@ export async function retryFailedImageImports(
 export async function createContainerImportJob(
   chapterId: string,
   file: File,
+  textStyle: TextStyleSettings,
 ): Promise<V2ContainerImportAccepted> {
   const body = new FormData()
   body.append('file', file, file.name)
+  body.append('textStyle', JSON.stringify(textStyle))
   return apiClient.upload<V2ContainerImportAccepted>(
     `${API_ROOT}/chapters/${encodeURIComponent(chapterId)}/container-import-jobs`,
     body,

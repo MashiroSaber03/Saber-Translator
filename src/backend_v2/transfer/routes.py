@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
@@ -33,15 +34,27 @@ def create_transfer_blueprint(*, data_root: Path, engine: Engine) -> Blueprint:
 
     @blueprint.post("/chapters/<chapter_id>/container-import-jobs")
     def create_container_import(chapter_id: str):
-        _validate_multipart_fields(allowed_file_keys={"file"})
+        _validate_multipart_fields(
+            allowed_form_keys={"textStyle"},
+            allowed_file_keys={"file"},
+        )
         upload = request.files.get("file")
         if upload is None:
             raise ValueError("multipart field 'file' is required")
+        try:
+            text_style = json.loads(request.form.get("textStyle", ""))
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                "multipart field 'textStyle' must be a JSON object"
+            ) from exc
+        if not isinstance(text_style, dict):
+            raise ValueError("multipart field 'textStyle' must be a JSON object")
         result = service.create_container_import(
             chapter_id=chapter_id,
             upload=upload.stream,
             filename=upload.filename or "container",
             idempotency_key=_require_idempotency_key(),
+            text_style=text_style,
         )
         return jsonify(result), 202
 

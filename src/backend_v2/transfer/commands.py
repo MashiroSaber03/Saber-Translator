@@ -11,6 +11,11 @@ from sqlalchemy import Engine, select
 
 from src.backend_v2.auth.ownership import effective_owner_id
 from src.backend_v2.content.image_import import ImportSafetyLimits
+from src.backend_v2.content.page_style import (
+    resolve_new_page_style,
+    validate_text_style_defaults,
+    validate_text_style_payload,
+)
 from src.backend_v2.jobs.repository import (
     JobItemSpec,
     JobQueueRepository,
@@ -73,6 +78,8 @@ def validate_container_config(value: object) -> dict[str, Any]:
         "checksum",
         "executionMode",
     }
+    if "textStyle" in config:
+        base_fields.add("textStyle")
     scanned_fields = base_fields | {"entries", "entryItemOrdinalBase"}
     container_type = _required_text(config, "containerType")
     expected = (
@@ -91,6 +98,13 @@ def validate_container_config(value: object) -> dict[str, Any]:
     _checksum(config.get("checksum"), "checksum")
     if config.get("executionMode") != "sequential":
         raise TransferDataInvalid("container import execution mode is invalid")
+    if "textStyle" in config:
+        try:
+            validate_text_style_payload(config["textStyle"])
+        except ValueError as exc:
+            raise TransferDataInvalid(
+                f"container import text style is invalid: {exc}"
+            ) from exc
     if "entries" not in config:
         return config
     if container_type in {"mobi", "azw", "azw3"}:
@@ -200,11 +214,24 @@ class TransferCommandService:
         upload: BinaryIO,
         filename: str,
         idempotency_key: str,
+        text_style: object | None = None,
     ) -> dict[str, object]:
         suffix = Path(filename).suffix.lower()
         if suffix not in CONTAINER_SUFFIXES:
             raise ValueError("unsupported container format")
         chapter = self._chapter(chapter_id)
+        with self.engine.connect() as connection:
+            if text_style is None:
+                default_font_id, page_style = resolve_new_page_style(connection)
+            else:
+                default_font_id, page_style = validate_text_style_defaults(
+                    connection,
+                    text_style,
+                )
+        frozen_text_style = {
+            "fontFamily": default_font_id,
+            **page_style,
+        }
         safe_filename = Path(filename).name
         relative = (
             Path("temp")
@@ -237,6 +264,7 @@ class TransferCommandService:
                 "chapterId": chapter_id,
                 "checksum": checksum,
                 "filename": safe_filename,
+                "textStyle": frozen_text_style,
             }
             replay = self.jobs.idempotency_replay(
                 scope=idempotency_scope,
@@ -252,6 +280,7 @@ class TransferCommandService:
                 "filename": safe_filename,
                 "checksum": checksum,
                 "executionMode": "sequential",
+                "textStyle": frozen_text_style,
             }
             validate_container_config(config)
             return self.jobs.create_batch(

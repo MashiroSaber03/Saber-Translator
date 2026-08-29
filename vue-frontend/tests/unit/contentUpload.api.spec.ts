@@ -149,4 +149,22 @@ describe('ordinary image upload API', () => {
     expect(retried.failures).toEqual([])
     expect(mocks.upload.mock.calls[1]?.[2].headers['Idempotency-Key']).toBe(originalKey)
   })
+
+  it('freezes the current text style in a container import command', async () => {
+    const { createContainerImportJob } = await import('@/api/v2/content')
+    mocks.upload.mockResolvedValueOnce({
+      batchId: 'batch-1',
+      jobIds: ['job-1'],
+      status: 'queued',
+    })
+
+    await createContainerImportJob(
+      '00000000-0000-0000-0000-000000000002',
+      new File(['archive'], 'chapter.cbz'),
+      textStyle,
+    )
+
+    const body = mocks.upload.mock.calls[0]?.[1] as FormData
+    expect(JSON.parse(String(body.get('textStyle')))).toEqual(textStyle)
+  })
 })

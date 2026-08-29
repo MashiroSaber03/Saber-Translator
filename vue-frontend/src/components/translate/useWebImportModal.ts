@@ -1,6 +1,7 @@
 import { ref, computed, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useWebImportStore } from '@/stores/webImportStore'
+import { useSettingsStore } from '@/stores/settings'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import { jobsApi, type V2JobEvent } from '@/api/v2/jobs'
 import type { AgentLog, WebImportEngine, WebImportResolvedEngine } from '@/types/webImport'
@@ -38,6 +39,7 @@ class WebImportDraftContractError extends Error {}
 
 export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
   const webImportStore = useWebImportStore()
+  const settingsStore = useSettingsStore()
   const taskCenterStore = useTaskCenterStore()
   const route = useRoute()
 
@@ -355,6 +357,7 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
         chapterId: bootstrap.chapter.id,
         sourceUrl: url,
         engine: selectedEngine.value,
+        textStyle: { ...settingsStore.settings.textStyle },
       })
       if (generation !== draftSyncGeneration) return
       activeDraftId.value = accepted.draftId

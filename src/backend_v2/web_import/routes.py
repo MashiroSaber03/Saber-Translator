@@ -79,16 +79,20 @@ def create_web_import_blueprint(
     @blueprint.post("/drafts")
     def create_draft():
         body = _json_body(
-            allowed_keys={"chapterId", "sourceUrl", "engine"}
+            allowed_keys={"chapterId", "sourceUrl", "engine", "textStyle"}
         )
         requested_engine = body.get("engine", "auto")
         if not isinstance(requested_engine, str):
             raise ValueError("engine must be a string")
+        text_style = body.get("textStyle")
+        if not isinstance(text_style, dict):
+            raise ValueError("textStyle must be an object")
         result = service.create_draft(
             chapter_id=_required_string(body, "chapterId"),
             source_url=_required_string(body, "sourceUrl"),
             requested_engine=requested_engine,
             idempotency_key=_require_idempotency_key(),
+            text_style=text_style,
         )
         return jsonify(result), 202
 

@@ -390,6 +390,7 @@ class JobRetryService:
                 credentials if strategy == "original" else None
             ),
             plugin_snapshots=plugins if strategy == "original" else None,
+            text_style=config.get("textStyle"),
         )
         return {
             key: value
@@ -476,6 +477,11 @@ class JobRetryService:
             "chapterId": chapter_id,
             "entries": retry_entries,
             "executionMode": "sequential",
+            **(
+                {"textStyle": config["textStyle"]}
+                if "textStyle" in config
+                else {}
+            ),
         }
         validate_web_commit_config(retry_config)
         display = _json_object(source.get("target_display_json"))

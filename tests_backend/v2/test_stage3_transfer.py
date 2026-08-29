@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+import json
 from pathlib import Path
 import uuid
 import zipfile
@@ -9,18 +10,22 @@ from PIL import Image
 import pytest
 from sqlalchemy import insert, select, update
 
+from src.backend_v2.api.app import ApiSettings, create_api_app
 from src.backend_v2.content.image_import import ImportSafetyLimits
 from src.backend_v2.content.repository import ContentRepository
 from src.backend_v2.jobs.repository import JobQueueRepository
 from src.backend_v2.runtime_profile import PROFILE_ENV
+from src.backend_v2.runtime_identity import RuntimeIdentity
 from src.backend_v2.storage.assets import AssetQuotaExceeded, AssetStorageService
 from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.epochs import (
     EpochRegistration,
     ProcessEpochRepository,
 )
+from src.backend_v2.storage.defaults import DEFAULT_TEXT_STYLE
 from src.backend_v2.storage.schema import (
     job_artifacts,
+    jobs,
     metadata,
     page_assets,
     pages,
@@ -211,12 +216,70 @@ def test_public_container_upload_stops_at_the_current_asset_budget(
                 upload=source,
                 filename="pages.cbz",
                 idempotency_key="container-over-quota",
+                text_style=dict(DEFAULT_TEXT_STYLE),
             )
 
         assert source.tell() == 256
         assert not list((data_root / "temp" / "container-import").glob("*.cbz"))
     finally:
         engine.dispose()
+
+
+def test_container_route_requires_and_freezes_the_current_text_style(
+    tmp_path: Path,
+) -> None:
+    data_root = tmp_path / "data-v2"
+    data_root.mkdir()
+    engine = create_sqlite_engine(data_root / "saber.sqlite3")
+    metadata.create_all(engine)
+    seed_system_records(engine)
+    content = ContentRepository(engine)
+    book = content.create_book(title="Route Book")
+    chapter = content.create_chapter(book_id=str(book["id"]), title="Chapter")
+    archive_bytes = BytesIO()
+    with zipfile.ZipFile(archive_bytes, "w") as archive:
+        archive.writestr("001.png", _png((1, 2, 3)))
+    payload = archive_bytes.getvalue()
+    app = create_api_app(
+        ApiSettings(
+            data_root=data_root,
+            identity=RuntimeIdentity(
+                epoch_id="transfer-route-api",
+                epoch_token="test-token",
+                test_mode=True,
+            ),
+            engine=engine,
+        )
+    )
+    client = app.test_client()
+
+    missing = client.post(
+        f"/api/v2/chapters/{chapter['id']}/container-import-jobs",
+        data={"file": (BytesIO(payload), "pages.cbz")},
+        headers={"Idempotency-Key": "missing-container-style"},
+    )
+    assert missing.status_code == 422
+    assert missing.get_json()["error"]["code"] == "validation_error"
+
+    text_style = {**DEFAULT_TEXT_STYLE, "fontSize": 41}
+    accepted = client.post(
+        f"/api/v2/chapters/{chapter['id']}/container-import-jobs",
+        data={
+            "file": (BytesIO(payload), "pages.cbz"),
+            "textStyle": json.dumps(text_style),
+        },
+        headers={"Idempotency-Key": "container-style"},
+    )
+    assert accepted.status_code == 202
+    job_id = accepted.get_json()["jobIds"][0]
+    with engine.connect() as connection:
+        config = json.loads(
+            connection.execute(
+                select(jobs.c.config_json).where(jobs.c.id == job_id)
+            ).scalar_one()
+        )
+    assert config["textStyle"]["fontSize"] == 41
+    engine.dispose()
 
 
 def _run_job(
@@ -268,17 +331,26 @@ def test_container_import_and_export_are_worker_owned_and_durable(
     with zipfile.ZipFile(archive_bytes, "w") as archive:
         archive.writestr("chapter/001.png", _png((255, 0, 0)))
         archive.writestr("chapter/002.png", _png((0, 255, 0)))
+    text_style = {
+        **DEFAULT_TEXT_STYLE,
+        "autoFontSize": False,
+        "fontSize": 41,
+        "lineSpacing": 1.7,
+        "textColor": "#123456",
+    }
     accepted = commands.create_container_import(
         chapter_id=str(chapter["id"]),
         upload=BytesIO(archive_bytes.getvalue()),
         filename="pages.cbz",
         idempotency_key="container-1",
+        text_style=text_style,
     )
     replayed = commands.create_container_import(
         chapter_id=str(chapter["id"]),
         upload=BytesIO(archive_bytes.getvalue()),
         filename="pages.cbz",
         idempotency_key="container-1",
+        text_style=text_style,
     )
     assert replayed == accepted
     assert len(list((data_root / "temp" / "container-import").glob("*.cbz"))) == 1
@@ -288,7 +360,12 @@ def test_container_import_and_export_are_worker_owned_and_durable(
     with engine.connect() as connection:
         imported_pages = list(
             connection.execute(
-                select(pages.c.id, pages.c.logical_source_path)
+                select(
+                    pages.c.id,
+                    pages.c.logical_source_path,
+                    pages.c.default_font_id,
+                    pages.c.page_style_defaults_json,
+                )
                 .where(pages.c.chapter_id == chapter["id"])
                 .order_by(pages.c.ordinal)
             )
@@ -306,6 +383,15 @@ def test_container_import_and_export_are_worker_owned_and_durable(
         "chapter/001.png",
         "chapter/002.png",
     ]
+    assert all(row.default_font_id == text_style["fontFamily"] for row in imported_pages)
+    assert all(
+        json.loads(row.page_style_defaults_json)["fontSize"] == 41
+        for row in imported_pages
+    )
+    assert all(
+        json.loads(row.page_style_defaults_json)["textColor"] == "#123456"
+        for row in imported_pages
+    )
     assert roles.count("source") == 2
     assert roles.count("thumbnail_source") == 2
 

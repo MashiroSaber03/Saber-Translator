@@ -28,7 +28,10 @@ from src.backend_v2.content.image_import import (
     ImageImportService,
     ImportSafetyLimits,
 )
-from src.backend_v2.content.page_style import resolve_new_page_style
+from src.backend_v2.content.page_style import (
+    resolve_new_page_style,
+    validate_text_style_payload,
+)
 from src.backend_v2.content.repository import (
     ContentRepository,
     deduplicate_logical_path,
@@ -565,7 +568,12 @@ class WebImportWorkerService:
                     )
                 ).scalar_one()
             ) + 1
-            default_font_id, style_defaults = resolve_new_page_style(connection)
+            if "textStyle" in config:
+                default_font_id, style_defaults = validate_text_style_payload(
+                    config["textStyle"]
+                )
+            else:
+                default_font_id, style_defaults = resolve_new_page_style(connection)
             connection.execute(
                 insert(pages).values(
                     id=page_id,

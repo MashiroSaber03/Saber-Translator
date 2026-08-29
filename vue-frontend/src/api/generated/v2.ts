@@ -3377,6 +3377,12 @@ export interface components {
             /** Format: binary */
             file: string;
         };
+        ContainerImportUploadCommand: {
+            /** Format: binary */
+            file: string;
+            /** @description JSON-encoded complete text style frozen for every imported page. */
+            textStyle: string;
+        };
         /** @enum {string} */
         OperationStatus: "pending" | "running" | "completed" | "failed" | "cancelled";
         /** @enum {string} */
@@ -3620,6 +3626,26 @@ export interface components {
             inlineAlign?: "start" | "center" | "end";
             /** @enum {string} */
             blockAlign?: "start" | "center" | "end";
+        };
+        TextStyleSettings: {
+            fontSize: number;
+            autoFontSize: boolean;
+            fontFamily: components["schemas"]["Uuid"];
+            /** @enum {string} */
+            layoutDirection: "auto" | "vertical" | "horizontal";
+            textColor: string;
+            fillColor: string;
+            /** @enum {string} */
+            inpaintMethod: "solid" | "lama_mpe" | "litelama";
+            useAutoTextColor: boolean;
+            strokeEnabled: boolean;
+            strokeColor: string;
+            strokeWidth: number;
+            lineSpacing: number;
+            /** @enum {string} */
+            inlineAlign: "start" | "center" | "end";
+            /** @enum {string} */
+            blockAlign: "start" | "center" | "end";
         };
         BubbleDocument: {
             bubbleId: components["schemas"]["Uuid"];
@@ -5047,6 +5073,7 @@ export interface components {
             chapterId: components["schemas"]["Uuid"];
             /** Format: uri */
             sourceUrl: string;
+            textStyle: components["schemas"]["TextStyleSettings"];
             /** @enum {string} */
             engine?: "auto" | "gallery-dl" | "ai-agent";
         };
@@ -8223,7 +8250,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "multipart/form-data": components["schemas"]["FileUploadCommand"];
+                "multipart/form-data": components["schemas"]["ContainerImportUploadCommand"];
             };
         };
         responses: {

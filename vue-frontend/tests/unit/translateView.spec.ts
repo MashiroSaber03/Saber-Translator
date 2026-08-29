@@ -8,6 +8,7 @@ import TranslateView from '@/views/TranslateView.vue'
 import ImageUpload from '@/components/translate/ImageUpload.vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useImageStore } from '@/stores/imageStore'
+import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import UiIcon from '@/components/ui/UiIcon.vue'
 
 const {
@@ -15,12 +16,16 @@ const {
   initializeAppMock,
   initializeBookChapterContextMock,
   handleKeydownMock,
+  isContextReadyState,
+  loadChapterSessionMock,
   translateActionOptions,
 } = vi.hoisted(() => ({
   routeState: { query: {} as Record<string, string | undefined> },
   initializeAppMock: vi.fn(),
   initializeBookChapterContextMock: vi.fn(),
   handleKeydownMock: vi.fn(),
+  isContextReadyState: { value: true },
+  loadChapterSessionMock: vi.fn(),
   translateActionOptions: {
     value: null as null | { isEditMode: { value: boolean } },
   },
@@ -59,6 +64,7 @@ vi.mock('@/composables/useTranslateInit', () => ({
     currentChapterTitle: { value: 'Chapter' },
     currentChapterId: { value: 'chapter-1' },
     isBookshelfMode: { value: true },
+    isContextReady: isContextReadyState,
     isSwitchingImage: { value: false },
     initializeApp: initializeAppMock,
     initializeBookChapterContext: initializeBookChapterContextMock,
@@ -84,7 +90,7 @@ vi.mock('@/views/useTranslateViewActions', () => ({
       handleRetryFailed: vi.fn(),
       handleRunWorkflow: vi.fn(),
       handleUploadComplete: vi.fn(),
-      loadChapterSession: vi.fn(),
+      loadChapterSession: loadChapterSessionMock,
       selectImage: vi.fn(),
       toggleEditMode: vi.fn(),
     }
@@ -164,6 +170,9 @@ describe('TranslateView', () => {
     initializeAppMock.mockReset()
     initializeBookChapterContextMock.mockReset()
     handleKeydownMock.mockReset()
+    isContextReadyState.value = true
+    loadChapterSessionMock.mockReset()
+    loadChapterSessionMock.mockResolvedValue(true)
     translateActionOptions.value = null
     initializeAppMock.mockResolvedValue(undefined)
     initializeBookChapterContextMock.mockResolvedValue(undefined)
@@ -173,17 +182,27 @@ describe('TranslateView', () => {
     vi.restoreAllMocks()
   })
 
-  it('registers global keyboard handling before async initialization settles', () => {
+  it('guards global keyboard handling until async initialization settles', () => {
     const addEventListenerSpy = vi.spyOn(window, 'addEventListener')
     const removeEventListenerSpy = vi.spyOn(window, 'removeEventListener')
     initializeAppMock.mockReturnValue(new Promise(() => {}))
+    isContextReadyState.value = false
 
     const wrapper = mountTranslateView()
+    const listener = addEventListenerSpy.mock.calls.find(
+      ([type]) => type === 'keydown',
+    )?.[1] as EventListener
 
-    expect(addEventListenerSpy).toHaveBeenCalledWith('keydown', handleKeydownMock)
+    expect(listener).toBeTypeOf('function')
+    listener(new KeyboardEvent('keydown', { altKey: true, key: 'ArrowUp' }))
+    expect(handleKeydownMock).not.toHaveBeenCalled()
+
+    isContextReadyState.value = true
+    listener(new KeyboardEvent('keydown', { altKey: true, key: 'ArrowUp' }))
+    expect(handleKeydownMock).toHaveBeenCalledOnce()
 
     wrapper.unmount()
-    expect(removeEventListenerSpy).toHaveBeenCalledWith('keydown', handleKeydownMock)
+    expect(removeEventListenerSpy).toHaveBeenCalledWith('keydown', listener)
 
     addEventListenerSpy.mockRestore()
     removeEventListenerSpy.mockRestore()
@@ -255,6 +274,46 @@ describe('TranslateView', () => {
     expect(wrapper.getComponent(ImageUpload).props('textStyle')).toEqual(
       settingsStore.settings.textStyle,
     )
+    expect(wrapper.getComponent(ImageUpload).props('disabled')).toBe(false)
+  })
+
+  it('reloads the chapter when an accepted container import reaches a terminal state', async () => {
+    const wrapper = mountTranslateView()
+    const taskCenterStore = useTaskCenterStore()
+    const trackJob = vi.spyOn(taskCenterStore, 'trackJob').mockImplementation(() => undefined)
+
+    wrapper.getComponent(ImageUpload).vm.$emit('contentImportAccepted', ['container-job'])
+    await nextTick()
+    expect(trackJob).toHaveBeenCalledWith('container-job')
+
+    taskCenterStore.history = [{
+      jobId: 'container-job',
+      status: 'completed',
+    } as unknown as (typeof taskCenterStore.history)[number]]
+    await nextTick()
+
+    expect(loadChapterSessionMock).toHaveBeenCalledOnce()
+  })
+
+  it('waits for an interrupted import to actually finish before reloading', async () => {
+    const wrapper = mountTranslateView()
+    const taskCenterStore = useTaskCenterStore()
+    vi.spyOn(taskCenterStore, 'trackJob').mockImplementation(() => undefined)
+
+    wrapper.getComponent(ImageUpload).vm.$emit('contentImportAccepted', ['container-job'])
+    taskCenterStore.history = [{
+      jobId: 'container-job',
+      status: 'interrupted',
+    } as unknown as (typeof taskCenterStore.history)[number]]
+    await nextTick()
+    expect(loadChapterSessionMock).not.toHaveBeenCalled()
+
+    taskCenterStore.history = [{
+      jobId: 'container-job',
+      status: 'completed',
+    } as unknown as (typeof taskCenterStore.history)[number]]
+    await nextTick()
+    expect(loadChapterSessionMock).toHaveBeenCalledOnce()
   })
 
   it('keeps header actions free of DOM id hooks', () => {

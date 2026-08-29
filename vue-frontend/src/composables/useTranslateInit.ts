@@ -59,6 +59,7 @@ export function useTranslateInit() {
 
   const isInitializing = ref(false)
   const isInitialized = ref(false)
+  const isContextReady = ref(false)
   const fontList = ref<V2Font[]>([])
   const currentBookId = ref<string | null>(null)
   const currentChapterId = ref<string | null>(null)
@@ -87,6 +88,7 @@ export function useTranslateInit() {
   let settingsMemoryWritePromise: Promise<boolean> | null = null
 
   function clearLoadedChapterContext(): void {
+    isContextReady.value = false
     pageDocumentRequestId += 1
     pageDocumentAbortController?.abort()
     pageDocumentAbortController = null
@@ -116,6 +118,7 @@ export function useTranslateInit() {
     }
     void flushChapterWorkState()
     isOwnerAlive = false
+    isContextReady.value = false
     bookContextRequestId += 1
     pageDocumentRequestId += 1
     pageDocumentAbortController?.abort()
@@ -193,6 +196,7 @@ export function useTranslateInit() {
   }
 
   async function initializeBookChapterContext(): Promise<boolean> {
+    isContextReady.value = false
     const requestId = ++bookContextRequestId
     pageDocumentRequestId += 1
     pageDocumentAbortController?.abort()
@@ -314,6 +318,7 @@ export function useTranslateInit() {
       if (typeof document !== 'undefined') {
         document.title = `${bootstrap.chapter.title} - ${bootstrap.book.title} - Saber-Translator`
       }
+      isContextReady.value = true
       return true
     } catch (error) {
       if (!isOwnerAlive || requestId !== bookContextRequestId) return false
@@ -517,6 +522,7 @@ export function useTranslateInit() {
     currentBookTitle,
     currentChapterTitle,
     isBookshelfMode,
+    isContextReady,
     isSwitchingImage,
 
     initializeApp,

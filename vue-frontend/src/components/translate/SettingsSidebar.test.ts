@@ -68,6 +68,28 @@ describe('SettingsSidebar defaults', () => {
     expect(rememberToggle?.props('modelValue')).toBe(false)
   })
 
+  it('disables every sidebar control while the translation context is loading', () => {
+    const wrapper = mount(SettingsSidebar, {
+      props: { disabled: true },
+      global: {
+        plugins: [createPinia()],
+        stubs: {
+          UiCombobox: true,
+          ProductCollapsibleSection: {
+            name: 'ProductCollapsibleSection',
+            props: ['title', 'expanded'],
+            template: '<section><slot /></section>',
+          },
+          PageSelectionModal: true,
+        },
+      },
+    })
+
+    const fieldset = wrapper.get('fieldset.settings-sidebar__card')
+    expect(fieldset.attributes('disabled')).toBe('')
+    expect(fieldset.attributes('aria-busy')).toBe('true')
+  })
+
   it('emits page-style persistence when the inpaint method changes', async () => {
     const wrapper = mount(SettingsSidebar, {
       global: {

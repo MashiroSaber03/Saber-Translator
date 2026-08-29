@@ -5,6 +5,7 @@ import { defineComponent, nextTick } from 'vue'
 
 import { useWebImportModal } from '@/components/translate/useWebImportModal'
 import { useWebImportStore } from '@/stores/webImportStore'
+import { useSettingsStore } from '@/stores/settings'
 
 const {
   checkWebImportSupportMock,
@@ -194,6 +195,8 @@ describe('useWebImportModal', () => {
   it('commits the selected backend draft page ids without loading image payloads', async () => {
     const onCommitAccepted = vi.fn()
     const exposed = mountComposableHost({ onCommitAccepted })
+    const settingsStore = useSettingsStore()
+    settingsStore.updateTextStyle({ fontSize: 41 })
     getTranslationBootstrapMock.mockResolvedValue({
       activeWebImportDraft: null,
       chapter: { id: 'chapter-1' },
@@ -264,6 +267,12 @@ describe('useWebImportModal', () => {
 
     await exposed.api.handleImport()
 
+    expect(createWebImportDraftMock).toHaveBeenCalledWith({
+      chapterId: 'chapter-1',
+      sourceUrl: 'https://example.com/chapter',
+      engine: 'auto',
+      textStyle: expect.objectContaining({ fontSize: 41 }),
+    })
     expect(updateWebImportSelectionMock).toHaveBeenCalledWith('draft-1', 2, ['page-2', 'page-4'])
     expect(commitWebImportDraftMock).toHaveBeenCalledWith('draft-1', 3)
     expect(onCommitAccepted).toHaveBeenCalledWith({

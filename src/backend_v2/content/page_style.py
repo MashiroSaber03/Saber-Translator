@@ -165,8 +165,7 @@ def validate_page_style(
     return result
 
 
-def validate_text_style_defaults(
-    connection: Connection,
+def validate_text_style_payload(
     value: object,
 ) -> tuple[str, dict[str, object]]:
     if not isinstance(value, Mapping):
@@ -185,6 +184,14 @@ def validate_text_style_defaults(
     font_id = payload.pop("fontFamily")
     if not isinstance(font_id, str) or not font_id:
         raise ValueError("fontFamily must be a font ID")
+    return font_id, validate_page_style(payload, partial=False)
+
+
+def validate_text_style_defaults(
+    connection: Connection,
+    value: object,
+) -> tuple[str, dict[str, object]]:
+    font_id, page_style = validate_text_style_payload(value)
     if connection.execute(
         select(fonts.c.id).where(
             fonts.c.id == font_id,
@@ -195,7 +202,7 @@ def validate_text_style_defaults(
         )
     ).scalar_one_or_none() is None:
         raise ValueError("fontFamily does not reference an existing font")
-    return font_id, validate_page_style(payload, partial=False)
+    return font_id, page_style
 
 
 def resolve_new_page_style(

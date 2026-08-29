@@ -9,6 +9,12 @@ import PageSelectionSection from './settings-sidebar/PageSelectionSection.vue'
 import TextStyleSection from './settings-sidebar/TextStyleSection.vue'
 import WorkflowSection from './settings-sidebar/WorkflowSection.vue'
 
+withDefaults(defineProps<{
+  disabled?: boolean
+}>(), {
+  disabled: false,
+})
+
 const emit = defineEmits<SettingsSidebarEmit>()
 
 const {
@@ -80,14 +86,18 @@ function updateApplyOption(key: keyof ApplySettingsOptions, value: boolean): voi
 
 <template>
   <aside class="settings-sidebar">
-    <div class="settings-sidebar__card">
+    <fieldset
+      class="settings-sidebar__card"
+      :disabled="disabled"
+      :aria-busy="disabled"
+    >
       <h2 class="settings-sidebar__title">翻译设置</h2>
 
       <TextStyleSection
         :apply-options="applyOptions"
         :font-select-options="fontSelectOptions"
         :has-images="hasImages"
-        :disabled="hasImages && !isCurrentPageReady"
+        :disabled="disabled || (hasImages && !isCurrentPageReady)"
         :inpaint-method-options="inpaintMethodOptions"
         :layout-direction-options="layoutDirectionOptions"
         :show-apply-options="showApplyOptions"
@@ -159,7 +169,7 @@ function updateApplyOption(key: keyof ApplySettingsOptions, value: boolean): voi
         @next="emit('next')"
         @previous="emit('previous')"
       />
-    </div>
+    </fieldset>
 
     <PageSelectionModal
       :model-value="showPageSelectionModal"
@@ -210,7 +220,8 @@ function updateApplyOption(key: keyof ApplySettingsOptions, value: boolean): voi
 }
 
 .settings-sidebar__card {
-  margin-bottom: 14px;
+  min-width: 0;
+  margin: 0 0 14px;
   padding: 18px;
   border: 1px solid var(--settings-sidebar-card-border);
   border-radius: 14px;
@@ -248,7 +259,7 @@ function updateApplyOption(key: keyof ApplySettingsOptions, value: boolean): voi
   }
 
   .settings-sidebar__card {
-    margin-bottom: 0;
+    margin: 0;
     padding: 14px 16px 30px;
   }
 

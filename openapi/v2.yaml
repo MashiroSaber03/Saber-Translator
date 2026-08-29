@@ -2068,7 +2068,7 @@ paths:
         required: true
         content:
           multipart/form-data:
-            schema: {$ref: "#/components/schemas/FileUploadCommand"}
+            schema: {$ref: "#/components/schemas/ContainerImportUploadCommand"}
       responses:
         "202":
           description: Container import job accepted.
@@ -5255,6 +5255,16 @@ components:
       required: [file]
       properties:
         file: {type: string, format: binary}
+    ContainerImportUploadCommand:
+      type: object
+      additionalProperties: false
+      required: [file, textStyle]
+      properties:
+        file: {type: string, format: binary}
+        textStyle:
+          type: string
+          minLength: 1
+          description: JSON-encoded complete text style frozen for every imported page.
     OperationStatus:
       type: string
       enum: [pending, running, completed, failed, cancelled]
@@ -5774,6 +5784,39 @@ components:
       properties:
         fontSize: {type: integer, minimum: 1}
         autoFontSize: {type: boolean}
+        layoutDirection: {type: string, enum: [auto, vertical, horizontal]}
+        textColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
+        fillColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
+        inpaintMethod: {type: string, enum: [solid, lama_mpe, litelama]}
+        useAutoTextColor: {type: boolean}
+        strokeEnabled: {type: boolean}
+        strokeColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
+        strokeWidth: {type: integer, minimum: 0}
+        lineSpacing: {type: number, exclusiveMinimum: 0}
+        inlineAlign: {type: string, enum: [start, center, end]}
+        blockAlign: {type: string, enum: [start, center, end]}
+    TextStyleSettings:
+      type: object
+      additionalProperties: false
+      required:
+        - fontSize
+        - autoFontSize
+        - fontFamily
+        - layoutDirection
+        - textColor
+        - fillColor
+        - inpaintMethod
+        - useAutoTextColor
+        - strokeEnabled
+        - strokeColor
+        - strokeWidth
+        - lineSpacing
+        - inlineAlign
+        - blockAlign
+      properties:
+        fontSize: {type: integer, minimum: 1}
+        autoFontSize: {type: boolean}
+        fontFamily: {$ref: "#/components/schemas/Uuid"}
         layoutDirection: {type: string, enum: [auto, vertical, horizontal]}
         textColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
         fillColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
@@ -8497,10 +8540,11 @@ components:
     WebImportDraftCreateCommand:
       type: object
       additionalProperties: false
-      required: [chapterId, sourceUrl]
+      required: [chapterId, sourceUrl, textStyle]
       properties:
         chapterId: {$ref: "#/components/schemas/Uuid"}
         sourceUrl: {type: string, format: uri, maxLength: 8000}
+        textStyle: {$ref: "#/components/schemas/TextStyleSettings"}
         engine:
           type: string
           enum: [auto, gallery-dl, ai-agent]
