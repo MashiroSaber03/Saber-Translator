@@ -260,6 +260,7 @@ export function parseCurrentSettings(value: unknown): TranslationSettings | null
   if (!isCurrentProviderForCapability(sanitized.translation.provider, 'translation')) return null
   if (!isCurrentProviderForCapability(sanitized.hqTranslation.provider, 'hqTranslation')) return null
   if (!isCurrentProviderForCapability(sanitized.pluginAgent.provider, 'pluginAgent')) return null
+  if (!isCurrentProviderForCapability(sanitized.browserDomAgent.provider, 'pluginAgent')) return null
   if (!isCurrentProviderForCapability(sanitized.aiVisionOcr.provider, 'visionOcr')) return null
   if (!isTranslationMode(sanitized.translation.translationMode)) return null
   if (!isAiVisionPromptMode(sanitized.aiVisionOcr.promptMode)) return null

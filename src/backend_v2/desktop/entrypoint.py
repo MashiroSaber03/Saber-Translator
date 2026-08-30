@@ -152,6 +152,10 @@ class DesktopController(QObject):
                 log_level=self.settings.log_level,
                 open_browser=False,
                 resident_models=self.settings.resident_models,
+                browser_extension_enabled=(
+                    self.settings.browser_extension_enabled
+                ),
+                browser_extension_token=self.settings.browser_extension_token,
             ),
             status_callback=self.launcher_status.emit,
             output_callback=self.launcher_output.emit,
@@ -219,10 +223,17 @@ class DesktopController(QObject):
         resident_models_changed = (
             submitted.resident_models != self.settings.resident_models
         )
+        browser_extension_changed = (
+            submitted.browser_extension_enabled
+            != self.settings.browser_extension_enabled
+            or submitted.browser_extension_token
+            != self.settings.browser_extension_token
+        )
         restart_required = (
             submitted.port != self.settings.port
             or submitted.allow_lan != self.settings.allow_lan
             or submitted.log_level != self.settings.log_level
+            or browser_extension_changed
         )
         updated = submitted.updated(
             pet_screen_name=self.settings.pet_screen_name,

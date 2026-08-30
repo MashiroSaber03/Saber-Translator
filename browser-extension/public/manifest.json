@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "Saber 漫画翻译",
+  "description": "调用本机 Saber-Translator 翻译网页漫画图片。",
+  "version": "1.0.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA70YATcvt3Udo48n4gVmPoLM28++uVoCclTOHDvp5zKwmDRFel+1cD/d7L/mQg1whQXr2H1JUl/Q33NUj7jbtHf/lsoUlkTPYAwUIW8EPH6Jdo7ifiRVjicV09BtPMz8gIDHt+Cmsk8awhj5iigpb/YAoEMZ625msTnv76DYyO+th4gmdX2wLrm9OwoQKWRKB0QTIQYfqVVx9Po7xDwFpYbop0Oz/Lk/3K5xOCgbsLK7fOUBHMjbCty43cZpK5V3gBIglB09eJV/jbbYTjLEWKo0+YBAlZOyH+LJy+2ttgLB5q4V91EVc7NKTowcHW4wi4ASoNudId6eO04Q/6AdY0wIDAQAB",
+  "permissions": ["storage", "contextMenus"],
+  "host_permissions": ["http://*/*", "https://*/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Saber 漫画翻译",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}

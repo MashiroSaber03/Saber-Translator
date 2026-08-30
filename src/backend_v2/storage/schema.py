@@ -472,7 +472,10 @@ books = Table(
     Column("chapter_order_revision", Integer, nullable=False, server_default="1"),
     Column("cover_asset_id", String(UUID_LENGTH), ForeignKey("assets.id", ondelete="RESTRICT")),
     *_timestamps(),
-    CheckConstraint("kind IN ('library', 'quick_workspace')", name="kind_values"),
+    CheckConstraint(
+        "kind IN ('library', 'quick_workspace', 'browser_session')",
+        name="kind_values",
+    ),
     CheckConstraint("chapter_order_revision >= 1", name="chapter_order_revision_positive"),
 )
 Index(
@@ -875,6 +878,102 @@ job_items = Table(
         name="status_values",
     ),
 )
+
+browser_sessions = Table(
+    "browser_sessions",
+    metadata,
+    Column("id", String(UUID_LENGTH), primary_key=True),
+    Column(
+        "owner_user_id",
+        String(UUID_LENGTH),
+        nullable=False,
+        server_default=LOCAL_USER_ID,
+    ),
+    Column(
+        "book_id",
+        String(UUID_LENGTH),
+        ForeignKey("books.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    ),
+    Column(
+        "chapter_id",
+        String(UUID_LENGTH),
+        ForeignKey("chapters.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    ),
+    Column("page_url", Text, nullable=False),
+    Column("page_title", String(500), nullable=False),
+    Column("mode", String(16), nullable=False, server_default="standard"),
+    Column("status", String(16), nullable=False, server_default="active"),
+    Column("expires_at", DateTime(timezone=True), nullable=False),
+    *_timestamps(),
+    CheckConstraint("mode IN ('standard','hq')", name="mode_values"),
+    CheckConstraint("status IN ('active','cancelled')", name="status_values"),
+)
+Index("ix_browser_sessions_expiry", browser_sessions.c.expires_at)
+
+browser_session_pages = Table(
+    "browser_session_pages",
+    metadata,
+    Column("id", String(UUID_LENGTH), primary_key=True),
+    Column(
+        "session_id",
+        String(UUID_LENGTH),
+        ForeignKey("browser_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("client_page_key", String(200), nullable=False),
+    Column("ordinal", Integer, nullable=False),
+    Column("logical_path", Text, nullable=False),
+    Column("source_url", Text),
+    Column(
+        "source_asset_id",
+        String(UUID_LENGTH),
+        ForeignKey("assets.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column(
+        "thumbnail_asset_id",
+        String(UUID_LENGTH),
+        ForeignKey("assets.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column(
+        "page_id",
+        String(UUID_LENGTH),
+        ForeignKey("pages.id", ondelete="CASCADE"),
+        unique=True,
+    ),
+    Column(
+        "job_id",
+        String(UUID_LENGTH),
+        ForeignKey("jobs.id", ondelete="SET NULL"),
+    ),
+    Column("retry_count", Integer, nullable=False, server_default="0"),
+    Column("error_json", Text),
+    *_timestamps(),
+    UniqueConstraint("session_id", "client_page_key"),
+    UniqueConstraint("session_id", "ordinal"),
+    CheckConstraint("ordinal >= 1", name="ordinal_positive"),
+    CheckConstraint("retry_count >= 0", name="retry_count_nonnegative"),
+)
+Index(
+    "ix_browser_session_pages_pending",
+    browser_session_pages.c.session_id,
+    browser_session_pages.c.page_id,
+    browser_session_pages.c.job_id,
+)
+Index(
+    "ix_browser_session_pages_source_asset",
+    browser_session_pages.c.source_asset_id,
+)
+Index(
+    "ix_browser_session_pages_thumbnail_asset",
+    browser_session_pages.c.thumbnail_asset_id,
+)
+Index("ix_browser_session_pages_job", browser_session_pages.c.job_id)
 
 job_steps = Table(
     "job_steps",

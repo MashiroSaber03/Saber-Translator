@@ -15,7 +15,7 @@ from src.shared.constants import (
 
 
 DEFAULT_FONT_ID = "00000000-0000-0000-0000-000000000010"
-TRANSLATION_SETTINGS_SCHEMA_VERSION = 8
+TRANSLATION_SETTINGS_SCHEMA_VERSION = 9
 TEXT_STYLE_DEFAULTS_SCHEMA_VERSION = 2
 
 DEFAULT_TEXT_STYLE: dict[str, object] = {
@@ -243,6 +243,20 @@ def default_translation_settings() -> dict[str, object]:
                 transport_retries=1,
                 business_retries=0,
             ),
+        },
+        "browserDomAgent": {
+            "provider": "siliconflow",
+            "modelName": "",
+            "customBaseUrl": "",
+            "openaiOptions": {
+                "request": {"forceJsonOutput": True},
+                "execution": {
+                    "useStream": False,
+                    "rpmLimit": 0,
+                    "transportRetries": 1,
+                    "businessRetries": 1,
+                },
+            },
         },
         "proofreading": {
             "enabled": False,

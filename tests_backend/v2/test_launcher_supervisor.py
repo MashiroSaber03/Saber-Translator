@@ -2,6 +2,12 @@ from __future__ import annotations
 
 import sys
 
+import pytest
+
+from src.backend_v2.browser_extension.auth import (
+    BROWSER_EXTENSION_ENABLED_ENV,
+    BROWSER_EXTENSION_TOKEN_ENV,
+)
 from src.backend_v2.launcher.entrypoint import (
     LauncherConfig,
     LauncherState,
@@ -50,6 +56,36 @@ def test_desktop_captured_children_enable_stream_frames(tmp_path) -> None:
 
     assert STREAM_FRAME_ENV not in direct
     assert captured[STREAM_FRAME_ENV] == "1"
+
+
+def test_browser_extension_secret_is_passed_only_to_the_api(tmp_path) -> None:
+    token = "browser-extension-secret"
+    api = _child_environment(
+        tmp_path,
+        "api",
+        _new_registration("api"),
+        browser_extension_enabled=True,
+        browser_extension_token=token,
+    )
+    worker = _child_environment(
+        tmp_path,
+        "worker",
+        _new_registration("worker"),
+        browser_extension_enabled=True,
+        browser_extension_token=token,
+    )
+
+    assert api[BROWSER_EXTENSION_ENABLED_ENV] == "1"
+    assert api[BROWSER_EXTENSION_TOKEN_ENV] == token
+    assert BROWSER_EXTENSION_ENABLED_ENV not in worker
+    assert BROWSER_EXTENSION_TOKEN_ENV not in worker
+    with pytest.raises(ValueError, match="requires a token"):
+        _child_environment(
+            tmp_path,
+            "api",
+            _new_registration("api"),
+            browser_extension_enabled=True,
+        )
 
 
 def test_launcher_authenticates_its_internal_api_health_request(

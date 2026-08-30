@@ -46,6 +46,7 @@ import {
   useDetectionSettings,
   useHqTranslationSettings,
   usePluginAgentSettings,
+  useBrowserDomAgentSettings,
   useProofreadingSettings,
   usePromptsSettings,
   useMiscSettings,
@@ -57,6 +58,7 @@ const PROVIDER_DOMAIN_BY_CACHE: Record<ProviderCacheDomain, string> = {
   translation: 'translation',
   hqTranslation: 'hq',
   pluginAgent: 'plugin_agent',
+  browserDomAgent: 'browser_dom_agent',
   aiVisionOcr: 'ai_vision_ocr',
 }
 
@@ -162,6 +164,7 @@ function emptyProviderConfigs(): ProviderConfigsCache {
     translation: {},
     hqTranslation: {},
     pluginAgent: {},
+    browserDomAgent: {},
     aiVisionOcr: {},
   }
 }
@@ -191,6 +194,7 @@ function sanitizedSettingsPayload(
   delete (payload.translation as Partial<typeof payload.translation>).apiKey
   delete (payload.hqTranslation as Partial<typeof payload.hqTranslation>).apiKey
   delete (payload.pluginAgent as Partial<typeof payload.pluginAgent>).apiKey
+  delete (payload.browserDomAgent as Partial<typeof payload.browserDomAgent>).apiKey
   delete (payload.aiVisionOcr as Partial<typeof payload.aiVisionOcr>).apiKey
   delete (payload.baiduOcr as Partial<typeof payload.baiduOcr>).apiKey
   delete (payload.baiduOcr as Partial<typeof payload.baiduOcr>).secretKey
@@ -215,6 +219,7 @@ function parseBackendTranslationPayload(
     'translation',
     'hqTranslation',
     'pluginAgent',
+    'browserDomAgent',
     'aiVisionOcr',
   ]) {
     const section = payload[key]
@@ -338,6 +343,11 @@ export const useSettingsStore = defineStore('settings', () => {
     providerConfigs,
   )
 
+  const browserDomAgentModule = useBrowserDomAgentSettings(
+    settings,
+    providerConfigs,
+  )
+
   const proofreadingModule = useProofreadingSettings(settings)
   const promptsModule = usePromptsSettings(settings)
   const miscModule = useMiscSettings(settings)
@@ -445,6 +455,9 @@ export const useSettingsStore = defineStore('settings', () => {
     translationModule.restoreTranslationProviderConfig(settings.value.translation.provider)
     hqTranslationModule.restoreHqProviderConfig(settings.value.hqTranslation.provider)
     pluginAgentModule.restorePluginAgentProviderConfig(settings.value.pluginAgent.provider)
+    browserDomAgentModule.restoreBrowserDomAgentProviderConfig(
+      settings.value.browserDomAgent.provider,
+    )
     ocrModule.restoreAiVisionOcrProviderConfig(settings.value.aiVisionOcr.provider)
     applyCredentialSecrets()
     if (activeChapterWorkState && currentChapterWorkState) {
@@ -473,6 +486,7 @@ export const useSettingsStore = defineStore('settings', () => {
     candidate.settingsSchemaVersion = TRANSLATION_SETTINGS_SCHEMA_VERSION
     candidate.textStyle = deepClone(settings.value.textStyle)
     candidate.pluginAgent = deepClone(settings.value.pluginAgent)
+    candidate.browserDomAgent = deepClone(settings.value.browserDomAgent)
     const parsed = parseCurrentSettings(candidate)
     if (!parsed) return false
     settings.value = parsed
@@ -581,6 +595,7 @@ export const useSettingsStore = defineStore('settings', () => {
       ['translation', settings.value.translation, 'api_key'],
       ['hq', settings.value.hqTranslation, 'api_key'],
       ['plugin_agent', settings.value.pluginAgent, 'api_key'],
+      ['browser_dom_agent', settings.value.browserDomAgent, 'api_key'],
       ['ai_vision_ocr', settings.value.aiVisionOcr, 'ai_vision_api_key'],
     ] as const
     providerTargets.forEach(([domain, target, field]) => {
@@ -731,6 +746,9 @@ export const useSettingsStore = defineStore('settings', () => {
     translationModule.saveTranslationProviderConfig(settings.value.translation.provider)
     hqTranslationModule.saveHqProviderConfig(settings.value.hqTranslation.provider)
     pluginAgentModule.savePluginAgentProviderConfig(settings.value.pluginAgent.provider)
+    browserDomAgentModule.saveBrowserDomAgentProviderConfig(
+      settings.value.browserDomAgent.provider,
+    )
     ocrModule.saveAiVisionOcrProviderConfig(settings.value.aiVisionOcr.provider)
 
     const providerSettings: V2ProviderSettingMutation[] = []
@@ -971,6 +989,14 @@ export const useSettingsStore = defineStore('settings', () => {
     updatePluginAgent: pluginAgentModule.updatePluginAgent,
     savePluginAgentProviderConfig: pluginAgentModule.savePluginAgentProviderConfig,
     restorePluginAgentProviderConfig: pluginAgentModule.restorePluginAgentProviderConfig,
+
+    browserDomAgentProvider: browserDomAgentModule.browserDomAgentProvider,
+    setBrowserDomAgentProvider: browserDomAgentModule.setBrowserDomAgentProvider,
+    updateBrowserDomAgent: browserDomAgentModule.updateBrowserDomAgent,
+    saveBrowserDomAgentProviderConfig:
+      browserDomAgentModule.saveBrowserDomAgentProviderConfig,
+    restoreBrowserDomAgentProviderConfig:
+      browserDomAgentModule.restoreBrowserDomAgentProviderConfig,
 
     isProofreadingEnabled: proofreadingModule.isProofreadingEnabled,
     setProofreadingEnabled: proofreadingModule.setProofreadingEnabled,

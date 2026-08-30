@@ -46,6 +46,7 @@ PROVIDER_CAPABILITIES = {
     "translation": TRANSLATION_CAPABILITY,
     "hq": HQ_TRANSLATION_CAPABILITY,
     "plugin_agent": PLUGIN_AGENT_CAPABILITY,
+    "browser_dom_agent": PLUGIN_AGENT_CAPABILITY,
     "ai_vision_ocr": VISION_OCR_CAPABILITY,
     "web_import_agent": WEB_IMPORT_AGENT_CAPABILITY,
     "insight_vlm": VLM_CAPABILITY,
@@ -99,6 +100,9 @@ _PROVIDER_PAYLOAD_FIELDS_BY_DOMAIN = {
         {"modelName", "customBaseUrl", "openaiOptions", "batchSize", "prompt"}
     ),
     "plugin_agent": frozenset(
+        {"modelName", "customBaseUrl", "openaiOptions"}
+    ),
+    "browser_dom_agent": frozenset(
         {"modelName", "customBaseUrl", "openaiOptions"}
     ),
     "ai_vision_ocr": frozenset(
@@ -491,6 +495,11 @@ def _validate_translation(payload: dict[str, Any], schema_version: int) -> None:
         payload["pluginAgent"]["provider"],
         PLUGIN_AGENT_CAPABILITY,
         "translation.pluginAgent.provider",
+    )
+    _require_provider(
+        payload["browserDomAgent"]["provider"],
+        PLUGIN_AGENT_CAPABILITY,
+        "translation.browserDomAgent.provider",
     )
     _require_provider(
         payload["aiVisionOcr"]["provider"],

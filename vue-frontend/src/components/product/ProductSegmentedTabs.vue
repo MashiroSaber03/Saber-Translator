@@ -169,7 +169,7 @@ function selectAdjacentTab(event: KeyboardEvent, tab: ProductSegmentedTab): void
 
 .product-segmented-tabs--appearance-underline .product-segmented-tabs__tab {
   border-radius: 0;
-  padding: 12px 16px;
+  padding: var(--product-segmented-tabs-tab-padding, 12px 16px);
   border-bottom: 3px solid transparent;
   background: transparent;
   box-shadow: none;

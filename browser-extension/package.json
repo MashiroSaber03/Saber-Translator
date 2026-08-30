@@ -1,0 +1,20 @@
+{
+  "name": "saber-translator-browser-extension",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "package": "npm run build && node scripts/package.mjs"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.1.1",
+    "@types/node": "^24.10.1",
+    "jsdom": "^27.3.0",
+    "typescript": "~5.9.3",
+    "vite": "^7.3.6",
+    "vitest": "^4.1.10"
+  }
+}

@@ -93,6 +93,7 @@ jobs:
             - CPU 版本：下载所有 `Saber-Translator-${{ steps.version.outputs.VERSION }}-cpu.7z*` 文件
             - GPU 版本：下载所有 `Saber-Translator-${{ steps.version.outputs.VERSION }}-gpu.7z*` 文件
             - 将所有分卷放在同一目录，使用 **7-Zip** 或 **Bandzip** 解压 `.7z.001` 文件即可
+            - 浏览器漫画翻译：下载 `saber-translator-browser-extension-v1.0.0.zip` 和对应 `.sha256` 文件，按 ZIP 内 README 安装
             
             🔧 **源码部署用户：**
             - 下载 `models.z01` 和 `models.zip`，解压到项目根目录的 `models/` 文件夹
@@ -195,7 +196,9 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: vue-frontend/package-lock.json
+          cache-dependency-path: |
+            vue-frontend/package-lock.json
+            browser-extension/package-lock.json
 
       - name: Build v2 frontend
         working-directory: vue-frontend
@@ -237,6 +240,15 @@ jobs:
         if: matrix.variant == 'cpu'
         working-directory: vue-frontend
         run: npm run lint:ui:audit
+
+      - name: Verify and package browser extension
+        if: matrix.variant == 'cpu'
+        working-directory: browser-extension
+        run: |
+          npm ci
+          npm test
+          npm run typecheck
+          npm run package
 
       # --------------------------------------------------
       # 8. 使用 PyInstaller 打包
@@ -364,6 +376,17 @@ jobs:
           }
           
           Write-Host "Models upload completed!"
+
+      - name: Upload browser extension to Release
+        if: matrix.variant == 'cpu'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tagName = "${{ needs.prepare.outputs.tag_name }}"
+          Get-ChildItem "browser-extension/release/*" | ForEach-Object {
+            Write-Host "Uploading browser extension artifact: $($_.Name)"
+            gh release upload $tagName $_.FullName --clobber
+          }
 
   # ============================================================================
   # 完成 Job - 输出结果

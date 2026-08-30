@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from copy import deepcopy
 import json
 import logging
@@ -44,6 +44,8 @@ class ApiSettings:
     port: int = 5000
     profile: RuntimeProfile = resolve_runtime_profile("local")
     public_host: str | None = None
+    browser_extension_enabled: bool = False
+    browser_extension_token: str = field(default="", repr=False)
 
 
 @dataclass(slots=True)
@@ -434,6 +436,33 @@ def create_api_app(settings: ApiSettings) -> Flask:
             else None
         ),
     )
+    browser_blueprint = None
+    if settings.profile.name == "local":
+        from src.backend_v2.browser_extension.auth import BrowserExtensionAccess
+        from src.backend_v2.browser_extension.routes import (
+            create_browser_extension_blueprint,
+        )
+        from src.backend_v2.browser_extension.dom_agent import BrowserDomAgentService
+        from src.backend_v2.browser_extension.service import BrowserSessionService
+
+        browser_service = BrowserSessionService(
+            data_root=settings.data_root,
+            engine=engine,
+            profile=settings.profile,
+        )
+        browser_access = BrowserExtensionAccess(
+            enabled=settings.browser_extension_enabled,
+            token=settings.browser_extension_token,
+        )
+        browser_blueprint = create_browser_extension_blueprint(
+            service=browser_service,
+            access=browser_access,
+            dom_detector=(
+                BrowserDomAgentService(engine)
+                if browser_access.enabled
+                else None
+            ),
+        )
     app.extensions["saber_v2_runtime"] = ApiRuntimeServices(
         job_events=broadcaster,
         executors=(cpu_operation_executor, render_executor),
@@ -509,6 +538,8 @@ def create_api_app(settings: ApiSettings) -> Flask:
                 engine=engine,
             )
         )
+    if browser_blueprint is not None:
+        app.register_blueprint(browser_blueprint)
     app.register_blueprint(create_web_blueprint())
 
     # Unit tests may share a pytest process with suites that import Torch and

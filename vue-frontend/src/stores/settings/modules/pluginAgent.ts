@@ -20,69 +20,108 @@ import {
   snapshotProviderCredentials,
 } from '../providerConfigCache'
 
-export function usePluginAgentSettings(
+function useAgentProviderSettings(
   settings: Ref<TranslationSettings>,
   providerConfigs: Ref<ProviderConfigsCache>,
+  section: 'pluginAgent' | 'browserDomAgent',
 ) {
-  type PluginAgentUiUpdates = Partial<Omit<PluginAgentSettings, 'provider'>>
+  type AgentUiUpdates = Partial<Omit<PluginAgentSettings, 'provider'>>
     & OpenAiOptionsPatch
 
-  const pluginAgentProvider = computed(() => settings.value.pluginAgent.provider)
-  const getDefaultOpenAiOptions = () => cloneOpenAiOptions(createDefaultSettings().pluginAgent.openaiOptions)
+  const provider = computed(() => settings.value[section].provider)
+  const getDefaultOpenAiOptions = () => cloneOpenAiOptions(
+    createDefaultSettings()[section].openaiOptions,
+  )
 
-  function setPluginAgentProvider(provider: PluginAgentProvider): void {
+  function setProvider(provider: PluginAgentProvider): void {
     provider = normalizeProviderId(provider) as PluginAgentProvider
-    const previousProvider = settings.value.pluginAgent.provider
+    const previousProvider = settings.value[section].provider
     if (previousProvider === provider) return
 
-    savePluginAgentProviderConfig(previousProvider)
-    settings.value.pluginAgent.provider = provider
-    restorePluginAgentProviderConfig(provider)
+    saveProviderConfig(previousProvider)
+    settings.value[section].provider = provider
+    restoreProviderConfig(provider)
   }
 
-  function updatePluginAgent(updates: PluginAgentUiUpdates): void {
-    if (updates.apiKey !== undefined) settings.value.pluginAgent.apiKey = updates.apiKey
-    if (updates.modelName !== undefined) settings.value.pluginAgent.modelName = updates.modelName
-    if (updates.customBaseUrl !== undefined) settings.value.pluginAgent.customBaseUrl = updates.customBaseUrl
+  function updateAgent(updates: AgentUiUpdates): void {
+    if (updates.apiKey !== undefined) settings.value[section].apiKey = updates.apiKey
+    if (updates.modelName !== undefined) settings.value[section].modelName = updates.modelName
+    if (updates.customBaseUrl !== undefined) settings.value[section].customBaseUrl = updates.customBaseUrl
     if (updates.openaiOptions !== undefined) {
-      settings.value.pluginAgent.openaiOptions = cloneOpenAiOptions(updates.openaiOptions)
+      settings.value[section].openaiOptions = cloneOpenAiOptions(updates.openaiOptions)
     }
-    applyOpenAiOptionsPatch(settings.value.pluginAgent.openaiOptions, updates)
+    applyOpenAiOptionsPatch(settings.value[section].openaiOptions, updates)
   }
 
-  function savePluginAgentProviderConfig(provider: string): void {
+  function saveProviderConfig(provider: string): void {
     saveProviderCacheEntry({
       provider,
-      cache: providerConfigs.value.pluginAgent,
+      cache: providerConfigs.value[section],
       buildConfig: (): PluginAgentProviderConfig => ({
-        ...snapshotProviderCredentials(settings.value.pluginAgent),
-        openaiOptions: cloneOpenAiOptions(settings.value.pluginAgent.openaiOptions),
+        ...snapshotProviderCredentials(settings.value[section]),
+        openaiOptions: cloneOpenAiOptions(settings.value[section].openaiOptions),
       }),
     })
   }
 
-  function restorePluginAgentProviderConfig(provider: string): void {
+  function restoreProviderConfig(provider: string): void {
     restoreProviderCacheEntry({
       provider,
-      cache: providerConfigs.value.pluginAgent,
+      cache: providerConfigs.value[section],
       applyCached: (cached) => {
-        applyProviderCredentials(settings.value.pluginAgent, cached)
-        settings.value.pluginAgent.openaiOptions = cached.openaiOptions !== undefined
+        applyProviderCredentials(settings.value[section], cached)
+        settings.value[section].openaiOptions = cached.openaiOptions !== undefined
           ? cloneOpenAiOptions(cached.openaiOptions)
           : getDefaultOpenAiOptions()
       },
       applyMissing: () => {
-        clearProviderCredentials(settings.value.pluginAgent)
-        settings.value.pluginAgent.openaiOptions = getDefaultOpenAiOptions()
+        clearProviderCredentials(settings.value[section])
+        settings.value[section].openaiOptions = getDefaultOpenAiOptions()
       },
     })
   }
 
   return {
-    pluginAgentProvider,
-    setPluginAgentProvider,
-    updatePluginAgent,
-    savePluginAgentProviderConfig,
-    restorePluginAgentProviderConfig,
+    provider,
+    setProvider,
+    updateAgent,
+    saveProviderConfig,
+    restoreProviderConfig,
+  }
+}
+
+export function usePluginAgentSettings(
+  settings: Ref<TranslationSettings>,
+  providerConfigs: Ref<ProviderConfigsCache>,
+) {
+  const agent = useAgentProviderSettings(
+    settings,
+    providerConfigs,
+    'pluginAgent',
+  )
+  return {
+    pluginAgentProvider: agent.provider,
+    setPluginAgentProvider: agent.setProvider,
+    updatePluginAgent: agent.updateAgent,
+    savePluginAgentProviderConfig: agent.saveProviderConfig,
+    restorePluginAgentProviderConfig: agent.restoreProviderConfig,
+  }
+}
+
+export function useBrowserDomAgentSettings(
+  settings: Ref<TranslationSettings>,
+  providerConfigs: Ref<ProviderConfigsCache>,
+) {
+  const agent = useAgentProviderSettings(
+    settings,
+    providerConfigs,
+    'browserDomAgent',
+  )
+  return {
+    browserDomAgentProvider: agent.provider,
+    setBrowserDomAgentProvider: agent.setProvider,
+    updateBrowserDomAgent: agent.updateAgent,
+    saveBrowserDomAgentProviderConfig: agent.saveProviderConfig,
+    restoreBrowserDomAgentProviderConfig: agent.restoreProviderConfig,
   }
 }

@@ -17,7 +17,7 @@ from src.backend_v2.storage.schema import metadata, schema_metadata
 from src.backend_v2.storage.seeding import seed_system_records
 
 
-SCHEMA_REVISION = "backend_v2_simplified_task_system_20260827"
+SCHEMA_REVISION = "backend_v2_browser_extension_sessions_20260830"
 REQUIRED_TABLES = frozenset(metadata.tables)
 
 
@@ -115,14 +115,14 @@ def initialize_database(
     if not created and current_identity is None:
         raise UnsupportedDataRoot(
             "data-v2 不属于当前正式存储架构；旧数据不会被读取或迁移，"
-            "请清空 data-v2 后重新启动"
+            "请先备份数据目录，再手工清空 data-v2 后重新启动"
         )
     if not created:
         current_revision, current_profile = current_identity
         if current_revision != SCHEMA_REVISION:
             raise UnsupportedDataRoot(
                 "data-v2 不属于当前正式存储架构；旧数据不会被读取或迁移，"
-                "请清空 data-v2 后重新启动"
+                "请先备份数据目录，再手工清空 data-v2 后重新启动"
             )
         if current_profile != profile_name:
             raise UnsupportedDataRoot(

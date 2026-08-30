@@ -3083,7 +3083,7 @@ def test_translation_job_rejects_missing_backend_credential_before_admission(
                 domain="translation",
                 payload=payload,
                 base_revision=1,
-                schema_version=8,
+                schema_version=9,
             ),
         ),
         providers=(
@@ -3212,7 +3212,7 @@ def test_failed_item_retry_refreezes_current_backend_settings(
                 domain="translation",
                 payload=settings_payload,
                 base_revision=1,
-                schema_version=8,
+                schema_version=9,
             ),
         ),
         credentials_edits=(
@@ -3305,7 +3305,7 @@ def test_translation_job_resolves_backend_settings_and_reuses_manual_bubbles(
                 domain="translation",
                 payload=payload,
                 base_revision=1,
-                schema_version=8,
+                schema_version=9,
             ),
         ),
         credentials_edits=(
@@ -3424,7 +3424,7 @@ def test_translation_resolver_uses_provider_specific_hq_and_ocr_parameters(
                 domain="translation",
                 payload=payload,
                 base_revision=1,
-                schema_version=8,
+                schema_version=9,
             ),
         ),
         credentials_edits=(
@@ -3596,7 +3596,7 @@ def _configure_hq_and_proofreading(platform: Mapping[str, Any]) -> None:
                 domain="translation",
                 payload=payload,
                 base_revision=1,
-                schema_version=8,
+                schema_version=9,
             ),
         ),
         credentials_edits=tuple(

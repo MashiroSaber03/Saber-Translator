@@ -33,7 +33,9 @@ def test_desktop_settings_round_trip(tmp_path: Path) -> None:
 
     store.save(expected)
 
-    assert store.load() == expected
+    loaded = store.load()
+    assert loaded == expected
+    assert loaded.browser_extension_token == expected.browser_extension_token
 
 
 def test_desktop_settings_discards_unknown_schema_without_migration(tmp_path: Path) -> None:
@@ -44,7 +46,10 @@ def test_desktop_settings_discards_unknown_schema_without_migration(tmp_path: Pa
     loaded = store.load(defaults)
 
     assert loaded == defaults
-    assert json.loads(store.path.read_text(encoding="utf-8"))["schemaVersion"] == 2
+    persisted = json.loads(store.path.read_text(encoding="utf-8"))
+    assert persisted["schemaVersion"] == 3
+    assert persisted["browserExtension"]["enabled"] is False
+    assert len(persisted["browserExtension"]["token"]) >= 32
     assert "legacy" not in store.path.read_text(encoding="utf-8")
 
 
@@ -86,8 +91,29 @@ def test_desktop_settings_migrates_schema_one_without_losing_values(
     assert loaded.pet_scale_percent == 125
     assert loaded.resident_models == ()
     persisted = json.loads(store.path.read_text(encoding="utf-8"))
-    assert persisted["schemaVersion"] == 2
+    assert persisted["schemaVersion"] == 3
+    assert persisted["browserExtension"]["enabled"] is False
+    assert len(persisted["browserExtension"]["token"]) >= 32
     assert persisted["models"] == {"residentModels": []}
+
+
+def test_desktop_settings_migrates_schema_two_with_a_fresh_extension_token(
+    tmp_path: Path,
+) -> None:
+    store = DesktopSettingsStore(tmp_path)
+    original = DesktopSettings()
+    store.save(original)
+    payload = json.loads(store.path.read_text(encoding="utf-8"))
+    payload["schemaVersion"] = 2
+    payload.pop("browserExtension")
+    store.path.write_text(json.dumps(payload), encoding="utf-8")
+
+    loaded = store.load()
+
+    assert loaded.schema_version == 3
+    assert loaded.browser_extension_enabled is False
+    assert len(loaded.browser_extension_token) >= 32
+    assert loaded.browser_extension_token not in repr(loaded)
 
 
 def test_desktop_settings_discards_invalid_values(tmp_path: Path) -> None:

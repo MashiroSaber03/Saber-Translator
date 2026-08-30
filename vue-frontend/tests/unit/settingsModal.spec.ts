@@ -6,7 +6,13 @@ import { defineComponent, h } from 'vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductSegmentedTabs from '@/components/product/ProductSegmentedTabs.vue'
 
-const { loadFromBackendMock, saveToBackendMock, settingsStoreState, translationSettingsSetupMock } =
+const {
+  loadFromBackendMock,
+  saveToBackendMock,
+  settingsStoreState,
+  translationSettingsSetupMock,
+  runtimeStoreState,
+} =
   vi.hoisted(() => ({
     loadFromBackendMock: vi.fn(),
     saveToBackendMock: vi.fn(),
@@ -21,6 +27,9 @@ const { loadFromBackendMock, saveToBackendMock, settingsStoreState, translationS
         fontSize: 16,
       },
       providerConfigs: {},
+    },
+    runtimeStoreState: {
+      capabilities: { profile: 'local', features: { plugins: true } },
     },
   }))
 
@@ -43,9 +52,7 @@ vi.mock('@/stores/settings', async () => {
 })
 
 vi.mock('@/stores/runtimeStore', () => ({
-  useRuntimeStore: () => ({
-    capabilities: { features: { plugins: true } },
-  }),
+  useRuntimeStore: () => runtimeStoreState,
 }))
 
 vi.mock('@/utils/toast', () => ({
@@ -152,6 +159,7 @@ describe('SettingsModal', () => {
     saveToBackendMock.mockReset()
     saveToBackendMock.mockResolvedValue(true)
     translationSettingsSetupMock.mockReset()
+    runtimeStoreState.capabilities.profile = 'local'
     settingsStoreState.settings.textStyle.fontSize = 16
     settingsStoreState.textStyleDefaults.fontSize = 16
   })
@@ -254,6 +262,16 @@ describe('SettingsModal', () => {
     expect(tabTexts).not.toContain('禁翻表')
     expect(wrapper.find('.settings-tabs').exists()).toBe(false)
     expect(wrapper.find('.product-segmented-tabs').exists()).toBe(true)
+  })
+
+  it('only exposes Browser DOM Agent settings in local mode', () => {
+    runtimeStoreState.capabilities.profile = 'public'
+    const wrapper = mount(SettingsModal, {
+      props: { modelValue: true },
+    })
+
+    const tabTexts = wrapper.findAll('[role="tab"]').map(tab => tab.text())
+    expect(tabTexts).not.toContain('网页漫画')
   })
 
   it('uses BaseModal mobile presentation instead of a single-use global stylesheet', () => {

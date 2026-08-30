@@ -366,7 +366,7 @@ function fixtureOpenAiOptions(useStream: boolean, rpmLimit = 0) {
 
 function createFixtureSettings() {
   return {
-    settingsSchemaVersion: 8,
+    settingsSchemaVersion: 9,
     textStyle: { ...fixtureTextStyle },
     ocrEngine: 'manga_ocr',
     textDetector: 'default',
@@ -430,6 +430,13 @@ function createFixtureSettings() {
       customBaseUrl: '',
       openaiOptions: fixtureOpenAiOptions(true),
     },
+    browserDomAgent: {
+      provider: 'siliconflow',
+      apiKey: '',
+      modelName: '',
+      customBaseUrl: '',
+      openaiOptions: fixtureOpenAiOptions(false),
+    },
     proofreading: {
       enabled: false,
       rounds: [],
@@ -464,7 +471,7 @@ function fixtureSettingsDocument() {
         domain: 'translation',
         payload: settings,
         revision: 1,
-        schemaVersion: 8,
+        schemaVersion: 9,
       },
       {
         domain: 'text_style_defaults',
@@ -2133,6 +2140,7 @@ test('translation settings modal keeps every tab layout contract', async ({ page
     { label: 'AI校对', snapshot: 'settings-tab-proofreading.png' },
     { label: '提示词管理', snapshot: 'settings-tab-prompt-library.png' },
     { label: '插件管理', snapshot: 'settings-tab-plugins.png' },
+    { label: '网页漫画', snapshot: 'settings-tab-browser-dom-agent.png' },
     { label: '文本默认值', snapshot: 'settings-tab-text-defaults.png' },
     { label: '更多', snapshot: 'settings-tab-more.png' },
   ]

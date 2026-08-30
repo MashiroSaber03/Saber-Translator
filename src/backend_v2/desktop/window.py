@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import deque
 import json
 import re
+import secrets
 from pathlib import Path
 from typing import Iterable, Mapping
 
@@ -940,6 +941,44 @@ class SettingsPage(QWidget):
         )
         layout.addWidget(server_card)
 
+        self.browser_extension_enabled = ToggleSwitch(
+            settings.browser_extension_enabled
+        )
+        self.browser_extension_enabled.setAccessibleName("允许浏览器扩展连接")
+        self.browser_extension_token = QLineEdit(settings.browser_extension_token)
+        self.browser_extension_token.setReadOnly(True)
+        self.browser_extension_token.setEchoMode(QLineEdit.EchoMode.Password)
+        self.browser_extension_token.setMinimumWidth(280)
+        copy_token = QPushButton("复制令牌")
+        copy_token.setProperty("variant", "secondary")
+        regenerate_token = QPushButton("重新生成")
+        regenerate_token.setProperty("variant", "secondary")
+        token_control = QWidget()
+        token_layout = QHBoxLayout(token_control)
+        token_layout.setContentsMargins(0, 0, 0, 0)
+        token_layout.setSpacing(8)
+        token_layout.addWidget(self.browser_extension_token, 1)
+        token_layout.addWidget(copy_token)
+        token_layout.addWidget(regenerate_token)
+        browser_rows = (
+            _setting_row(
+                "允许连接",
+                "仅允许持有配对令牌的扩展从本机回环地址访问；默认关闭",
+                self.browser_extension_enabled,
+            ),
+            _setting_row(
+                "配对令牌",
+                "复制到浏览器扩展中；重新生成后旧令牌立即失效",
+                token_control,
+            ),
+        )
+        browser_card, self.browser_extension_description = _settings_card(
+            "浏览器漫画翻译",
+            "扩展复用当前后端和翻译设置，不开放公网访问。",
+            browser_rows,
+        )
+        layout.addWidget(browser_card)
+
         selected_resident_models = set(settings.resident_models)
         self.resident_model_switches: dict[str, ToggleSwitch] = {}
         resident_rows: list[QWidget] = []
@@ -985,6 +1024,13 @@ class SettingsPage(QWidget):
         self.allow_lan.toggled.connect(self._emit_settings)
         self.log_level.currentTextChanged.connect(self._emit_settings)
         self.open_browser.toggled.connect(self._emit_settings)
+        self.browser_extension_enabled.toggled.connect(self._emit_settings)
+        copy_token.clicked.connect(
+            lambda: QApplication.clipboard().setText(
+                self.browser_extension_token.text()
+            )
+        )
+        regenerate_token.clicked.connect(self._regenerate_browser_extension_token)
         for control in self.resident_model_switches.values():
             control.toggled.connect(self._emit_settings)
         self.pet_enabled.toggled.connect(self._emit_settings)
@@ -999,6 +1045,8 @@ class SettingsPage(QWidget):
             allow_lan=self.allow_lan.isChecked(),
             log_level=self.log_level.currentText(),
             open_browser_on_start=self.open_browser.isChecked(),
+            browser_extension_enabled=self.browser_extension_enabled.isChecked(),
+            browser_extension_token=self.browser_extension_token.text(),
             resident_models=tuple(
                 option.model_id
                 for option in LOCAL_MODEL_OPTIONS
@@ -1009,6 +1057,10 @@ class SettingsPage(QWidget):
             pet_scale_percent=int(self.pet_scale.currentText().rstrip("%")),
         )
         self.settings_changed.emit(settings)
+
+    def _regenerate_browser_extension_token(self) -> None:
+        self.browser_extension_token.setText(secrets.token_urlsafe(32))
+        self._emit_settings()
 
     def apply_pet_settings(self, settings: DesktopSettings) -> None:
         """Keep tray and pet-menu changes reflected without emitting a duplicate write."""
@@ -1031,6 +1083,11 @@ class SettingsPage(QWidget):
             "选择会自动保存；后端正在运行时将在下次重启后生效。"
             if running
             else "选中的模型会在下次启动后端时加载并保持驻留。"
+        )
+        self.browser_extension_description.setText(
+            "浏览器扩展设置已保存；修改启用状态或令牌时后端会自动重启。"
+            if running
+            else "启用后，扩展可通过当前本机端口连接 Saber。"
         )
 
     def show_auto_save_status(self, message: str) -> None:

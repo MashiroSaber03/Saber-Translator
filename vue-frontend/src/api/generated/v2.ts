@@ -2731,6 +2731,216 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/browser-extension/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getBrowserExtensionStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/library-books": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listBrowserLibraryBooks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createBrowserSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: components["parameters"]["SessionId"];
+            };
+            cookie?: never;
+        };
+        get: operations["getBrowserSession"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["updateBrowserSession"];
+        trace?: never;
+    };
+    "/browser-extension/sessions/{session_id}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["startBrowserSessionBatch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/sessions/{session_id}/pages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["uploadBrowserSessionPage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/sessions/{session_id}/pages/{browser_page_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["retryBrowserSessionPage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/sessions/{session_id}/pages/{browser_page_id}/result-capability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createBrowserResultCapability"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/sessions/{session_id}/terms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getBrowserSessionTerms"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/sessions/{session_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["cancelBrowserSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/sessions/{session_id}/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["importBrowserSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/dom-detection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["detectBrowserComicDomTargets"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/results/{asset_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getBrowserTranslatedResult"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -5131,10 +5341,140 @@ export interface components {
             revision: number;
             selectedPageIds: components["schemas"]["Uuid"][];
         };
+        BrowserExtensionStatus: {
+            /** @enum {string} */
+            status: "ready";
+        };
+        BrowserSessionCreateCommand: {
+            /** Format: uri */
+            pageUrl: string;
+            pageTitle: string;
+            /** @enum {string} */
+            mode: "standard" | "hq";
+            glossaryEnabled: boolean;
+            autoTermsEnabled: boolean;
+        };
+        BrowserSessionPatchCommand: {
+            /** @enum {string} */
+            mode?: "standard" | "hq";
+            glossaryEnabled?: boolean;
+            autoTermsEnabled?: boolean;
+        };
+        BrowserLibraryBook: {
+            id: components["schemas"]["Uuid"];
+            title: string;
+            chapterCount: number;
+        };
+        BrowserSessionImportCommand: {
+            /** @enum {string} */
+            destination: "new" | "existing";
+            bookTitle?: string;
+            targetBookId?: components["schemas"]["Uuid"];
+            chapterTitle: string;
+        };
+        BrowserSessionImportResult: {
+            /** @enum {string} */
+            destination: "new" | "existing";
+            bookId: components["schemas"]["Uuid"];
+            bookTitle: string;
+            chapterId: components["schemas"]["Uuid"];
+            chapterTitle: string;
+            importedPages: number;
+            omittedPages: number;
+            termsAdded: number;
+        };
+        BrowserSessionPage: {
+            id: components["schemas"]["Uuid"];
+            clientPageKey: string;
+            ordinal: number;
+            pageId: components["schemas"]["Uuid"] | null;
+            /** @enum {string} */
+            state: "queued" | "translating" | "completed" | "failed" | "cancelled";
+            resultReady: boolean;
+            retryCount: number;
+            error: {
+                code: string;
+                message: string;
+            } | null;
+        };
+        BrowserSession: {
+            id: components["schemas"]["Uuid"];
+            /** Format: uri */
+            pageUrl: string;
+            pageTitle: string;
+            bookId: components["schemas"]["Uuid"];
+            chapterId: components["schemas"]["Uuid"];
+            /** @enum {string} */
+            mode: "standard" | "hq";
+            glossaryEnabled: boolean;
+            autoTermsEnabled: boolean;
+            /** @enum {string} */
+            state: "idle" | "queued" | "translating" | "completed" | "partial" | "failed" | "cancelled";
+            /** Format: date-time */
+            expiresAt: string | null;
+            counts: {
+                total: number;
+                queued: number;
+                translating: number;
+                completed: number;
+                failed: number;
+                cancelled: number;
+            };
+            pages: components["schemas"]["BrowserSessionPage"][];
+        };
+        BrowserResultCapability: {
+            url: string;
+            assetId: components["schemas"]["Uuid"];
+            expiresAt: number;
+        };
+        BrowserSessionTerms: {
+            revision: number;
+            glossary: {
+                [key: string]: unknown;
+            };
+        };
+        BrowserDomNodeSummary: {
+            id: string;
+            tag: string;
+            classes: string[];
+            parent: string;
+            attributes: {
+                alt?: string;
+                role?: string;
+                "aria-label"?: string;
+                "data-src"?: string;
+                "data-original"?: string;
+                "data-page"?: string;
+                loading?: string;
+            };
+            rect: {
+                width: number;
+                height: number;
+                top: number;
+                left: number;
+            };
+            naturalSize: {
+                width: number;
+                height: number;
+            };
+        };
+        BrowserDomDetectionCommand: {
+            /** Format: uri */
+            pageUrl: string;
+            pageTitle: string;
+            nodes: components["schemas"]["BrowserDomNodeSummary"][];
+        };
+        BrowserDomDetectionResult: {
+            nodeIds: string[];
+            selector: string;
+            confidence: number;
+            reason: string;
+        };
         ErrorDetail: {
             /** @enum {string} */
-            code: "revision_conflict" | "idempotency_conflict" | "operation_active" | "invalid_job_transition" | "chapter_write_pending" | "chapter_locked" | "import_in_progress" | "session_busy" | "validation_error" | "not_found";
+            code: "revision_conflict" | "idempotency_conflict" | "operation_active" | "invalid_job_transition" | "chapter_write_pending" | "chapter_locked" | "import_in_progress" | "session_busy" | "validation_error" | "not_found" | "integration_disabled" | "loopback_required" | "invalid_extension_token" | "unsupported_image" | "asset_quota_exceeded" | "session_conflict" | "dom_agent_unavailable" | "dom_agent_failed" | "browser_http_error" | "browser_internal_error" | "invalid_result_capability" | "result_not_found";
             message: string;
+            retryable?: boolean;
             fieldErrors?: {
                 [key: string]: string;
             };
@@ -5147,6 +5487,33 @@ export interface components {
         };
     };
     responses: {
+        /** @description Browser extension pairing token is missing or invalid. */
+        Unauthorized: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorEnvelope"];
+            };
+        };
+        /** @description Browser extension capability or loopback policy failed. */
+        Forbidden: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorEnvelope"];
+            };
+        };
+        /** @description The browser integration or selected DOM Agent is unavailable. */
+        ServiceUnavailable: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorEnvelope"];
+            };
+        };
         /** @description Revision, idempotency, or active-operation conflict. */
         Conflict: {
             headers: {
@@ -10831,6 +11198,366 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationError"];
+        };
+    };
+    getBrowserExtensionStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Local browser integration is enabled and authenticated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserExtensionStatus"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    listBrowserLibraryBooks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Library books available as chapter import targets. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["BrowserLibraryBook"][];
+                    };
+                };
+            };
+        };
+    };
+    createBrowserSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrowserSessionCreateCommand"];
+            };
+        };
+        responses: {
+            /** @description Independent hidden browser translation session created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserSession"];
+                };
+            };
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    getBrowserSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: components["parameters"]["SessionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Aggregated browser session state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserSession"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateBrowserSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: components["parameters"]["SessionId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrowserSessionPatchCommand"];
+            };
+        };
+        responses: {
+            /** @description Session options updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserSession"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    startBrowserSessionBatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: components["parameters"]["SessionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every currently uploaded, unassigned page was scheduled when the chapter was available. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserSession"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    uploadBrowserSessionPage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: components["parameters"]["SessionId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    clientPageKey: string;
+                    ordinal: number;
+                    logicalPath: string;
+                    sourceUrl?: string;
+                    /** Format: binary */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Image stored as pending browser-session work. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserSessionPage"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    retryBrowserSessionPage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: components["parameters"]["SessionId"];
+                browser_page_id: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Page scheduled for a fresh translation job. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserSessionPage"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    createBrowserResultCapability: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: components["parameters"]["SessionId"];
+                browser_page_id: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Short-lived URL scoped to one translated image. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserResultCapability"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getBrowserSessionTerms: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: components["parameters"]["SessionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current real-time glossary document. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserSessionTerms"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    cancelBrowserSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: components["parameters"]["SessionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active and pending browser work cancelled. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserSession"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    importBrowserSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: components["parameters"]["SessionId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrowserSessionImportCommand"];
+            };
+        };
+        responses: {
+            /** @description Session chapter finalized into the library. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserSessionImportResult"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    detectBrowserComicDomTargets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrowserDomDetectionCommand"];
+            };
+        };
+        responses: {
+            /** @description Validated selector and candidate node proposal. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserDomDetectionResult"];
+                };
+            };
+            422: components["responses"]["ValidationError"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getBrowserTranslatedResult: {
+        parameters: {
+            query: {
+                session: components["schemas"]["Uuid"];
+                page: components["schemas"]["Uuid"];
+                expires: number;
+                signature: string;
+            };
+            header?: never;
+            path: {
+                asset_id: components["parameters"]["AssetId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Translated image bytes. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/*": string;
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
 }

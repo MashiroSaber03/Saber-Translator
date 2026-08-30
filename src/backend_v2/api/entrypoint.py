@@ -9,6 +9,10 @@ import threading
 from collections.abc import Callable
 
 from src.backend_v2.api.app import ApiSettings, create_api_app
+from src.backend_v2.browser_extension.auth import (
+    BROWSER_EXTENSION_ENABLED_ENV,
+    BROWSER_EXTENSION_TOKEN_ENV,
+)
 from src.backend_v2.import_guard import loaded_forbidden_api_modules
 from src.backend_v2.logging_config import configure_backend_logging
 from src.backend_v2.paths import data_root_fingerprint, ensure_data_root, resolve_data_root
@@ -123,6 +127,13 @@ def run_api(args: object) -> int:
                 port=args.port,
                 profile=profile,
                 public_host=public_host,
+                browser_extension_enabled=(
+                    os.environ.get(BROWSER_EXTENSION_ENABLED_ENV, "") == "1"
+                ),
+                browser_extension_token=os.environ.get(
+                    BROWSER_EXTENSION_TOKEN_ENV,
+                    "",
+                ),
             )
         )
         if not args.probe:

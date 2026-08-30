@@ -107,6 +107,14 @@
         </div>
 
         <div
+          v-if="hasVisitedTab('browser-dom-agent')"
+          v-show="activeTab === 'browser-dom-agent'"
+          class="settings-modal__tab-pane"
+        >
+          <BrowserDomAgentSettings />
+        </div>
+
+        <div
           v-if="hasVisitedTab('text-defaults')"
           v-show="activeTab === 'text-defaults'"
           class="settings-modal__tab-pane"
@@ -154,6 +162,7 @@ import PromptLibrary from './PromptLibrary.vue'
 import PluginManager from './PluginManager.vue'
 import MoreSettings from './MoreSettings.vue'
 import TextStyleDefaultsSettings from './TextStyleDefaultsSettings.vue'
+import BrowserDomAgentSettings from './BrowserDomAgentSettings.vue'
 import { showToast } from '@/utils/toast'
 
 const props = defineProps<{
@@ -178,6 +187,7 @@ type SettingsTabId =
   | 'prompt-library'
   | 'plugins'
   | 'text-defaults'
+  | 'browser-dom-agent'
   | 'more'
 
 const activeTab = ref<SettingsTabId>('ocr')
@@ -202,13 +212,16 @@ const allTabs = [
   { id: 'proofreading', label: 'AI校对' },
   { id: 'prompt-library', label: '提示词管理' },
   { id: 'plugins', label: '插件管理' },
+  { id: 'browser-dom-agent', label: '网页漫画' },
   { id: 'text-defaults', label: '文本默认值' },
   { id: 'more', label: '更多' },
 ] satisfies Array<{ id: SettingsTabId; label: string }>
 
 const tabs = computed(() =>
   allTabs.filter(
-    tab => tab.id !== 'plugins' || runtimeStore.capabilities?.features.plugins !== false
+    tab =>
+      (tab.id !== 'plugins' || runtimeStore.capabilities?.features.plugins !== false) &&
+      (tab.id !== 'browser-dom-agent' || runtimeStore.capabilities?.profile === 'local')
   )
 )
 
@@ -348,6 +361,8 @@ async function persistChanges(): Promise<boolean> {
 }
 
 .settings-modal__tabs {
+  --product-segmented-tabs-tab-padding: 12px 10px;
+
   flex: 0 0 auto;
   margin: 14px 15px 0;
 }

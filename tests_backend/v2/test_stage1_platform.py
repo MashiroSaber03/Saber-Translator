@@ -743,7 +743,7 @@ def test_translation_detection_thresholds_use_one_current_unit(
     payload[field] = value
 
     with pytest.raises(ValueError, match=message):
-        validate_setting_payload("translation", payload, schema_version=8)
+        validate_setting_payload("translation", payload, schema_version=9)
 
 
 def test_translation_detection_percentages_accept_decimal_values() -> None:
@@ -765,7 +765,7 @@ def test_translation_detection_percentages_accept_decimal_values() -> None:
     assert validate_setting_payload(
         "translation",
         payload,
-        schema_version=8,
+        schema_version=9,
     ) == payload
 
 
@@ -775,7 +775,7 @@ def test_translation_settings_validate_paddleocr_vl_prompt_language() -> None:
 
     payload["paddleOcrVl"]["sourceLanguage"] = "unsupported"
     with pytest.raises(ValueError, match="paddleOcrVl.sourceLanguage"):
-        validate_setting_payload("translation", payload, schema_version=8)
+        validate_setting_payload("translation", payload, schema_version=9)
 
 
 def test_factory_translation_defaults_match_algorithm_prompt_protocols() -> None:
@@ -805,14 +805,14 @@ def test_translation_settings_reject_nullable_browser_temperature() -> None:
     payload["translation"]["openaiOptions"]["request"]["temperature"] = None
 
     with pytest.raises(ValueError, match="temperature must be from 0 to 2"):
-        validate_setting_payload("translation", payload, schema_version=8)
+        validate_setting_payload("translation", payload, schema_version=9)
 
 
 def test_parallel_deep_learning_concurrency_has_no_arbitrary_upper_gate() -> None:
     payload = default_translation_settings()
     payload["parallel"]["deepLearningLockSize"] = 8
 
-    validated = validate_setting_payload("translation", payload, schema_version=8)
+    validated = validate_setting_payload("translation", payload, schema_version=9)
 
     assert validated["parallel"]["deepLearningLockSize"] == 8
 
@@ -829,7 +829,7 @@ def test_ai_translation_batch_sizes_have_no_fixed_upper_bound() -> None:
         }
     ]
 
-    validated = validate_setting_payload("translation", payload, schema_version=8)
+    validated = validate_setting_payload("translation", payload, schema_version=9)
 
     assert validated["hqTranslation"]["batchSize"] == 128
     assert validated["proofreading"]["rounds"][0]["batchSize"] == 256
@@ -844,21 +844,21 @@ def test_translation_settings_require_unique_proofreading_round_ids() -> None:
     ]
 
     with pytest.raises(ValueError, match="unique IDs"):
-        validate_setting_payload("translation", payload, schema_version=8)
+        validate_setting_payload("translation", payload, schema_version=9)
 
 
 def test_translation_settings_drop_the_unused_global_proofreading_retry() -> None:
     payload = default_translation_settings()
 
-    assert payload["settingsSchemaVersion"] == 8
+    assert payload["settingsSchemaVersion"] == 9
     assert set(payload["proofreading"]) == {"enabled", "rounds"}
 
     retired = deepcopy(payload)
     retired["proofreading"]["maxRetries"] = 2
     with pytest.raises(ValueError, match="invalid fields"):
-        validate_setting_payload("translation", retired, schema_version=8)
+        validate_setting_payload("translation", retired, schema_version=9)
 
-    with pytest.raises(ValueError, match="schema version must be 8"):
+    with pytest.raises(ValueError, match="schema version must be 9"):
         validate_setting_payload("translation", payload, schema_version=5)
 
 
@@ -897,7 +897,7 @@ def test_removing_middle_proofreading_round_prunes_only_current_provider_setting
         ],
     }
     repository.save_transaction(
-        settings=(SettingMutation("translation", payload, 0, 8),),
+        settings=(SettingMutation("translation", payload, 0, 9),),
         credentials_edits=tuple(
             CredentialEdit(
                 domain=domain,
@@ -928,7 +928,7 @@ def test_removing_middle_proofreading_round_prunes_only_current_provider_setting
     updated = deepcopy(payload)
     updated["proofreading"]["rounds"].pop(1)
     repository.save_transaction(
-        settings=(SettingMutation("translation", updated, 1, 8),),
+        settings=(SettingMutation("translation", updated, 1, 9),),
     )
 
     loaded = repository.load()
@@ -958,7 +958,7 @@ def test_settings_load_rejects_noncurrent_persisted_schema_versions(
                 domain="translation",
                 payload=default_translation_settings(),
                 base_revision=0,
-                schema_version=8,
+                schema_version=9,
             ),
         ),
         providers=(
@@ -984,7 +984,7 @@ def test_settings_load_rejects_noncurrent_persisted_schema_versions(
     with engine.begin() as connection:
         connection.execute(
             text(
-                "UPDATE app_settings SET schema_version = 8 "
+                "UPDATE app_settings SET schema_version = 9 "
                 "WHERE domain = 'translation'"
             )
         )
@@ -1042,7 +1042,7 @@ def test_settings_load_uses_one_consistent_read_snapshot(platform) -> None:
                 domain="translation",
                 payload=payload,
                 base_revision=0,
-                schema_version=8,
+                schema_version=9,
             ),
         ),
         providers=(
@@ -2118,7 +2118,7 @@ def test_settings_credentials_plugins_fonts_and_shared_limiter(platform) -> None
                 domain="translation",
                 payload=translation_payload,
                 base_revision=0,
-                schema_version=8,
+                schema_version=9,
             ),
         ),
         credentials_edits=(
@@ -2238,7 +2238,7 @@ def test_settings_credentials_plugins_fonts_and_shared_limiter(platform) -> None
                     domain="translation",
                     payload=translation_payload,
                     base_revision=0,
-                    schema_version=8,
+                    schema_version=9,
                 ),
             ),
             credentials_edits=(

@@ -20,7 +20,7 @@ vi.mock('@/stores/settings', () => ({
 
 vi.mock('@/stores/runtimeStore', () => ({
   useRuntimeStore: () => ({
-    capabilities: { features: { plugins: true } },
+    capabilities: { profile: 'local', features: { plugins: true } },
   }),
 }))
 

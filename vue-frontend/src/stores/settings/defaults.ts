@@ -30,7 +30,7 @@ import {
 import { createDefaultOpenAiOptions } from '@/utils/openaiOptions'
 import { deepClone } from '@/utils/deepClone'
 
-export const TRANSLATION_SETTINGS_SCHEMA_VERSION = 8
+export const TRANSLATION_SETTINGS_SCHEMA_VERSION = 9
 export const TEXT_STYLE_DEFAULTS_SCHEMA_VERSION = 2
 
 export function createDefaultTextStyle(): TextStyleSettings {
@@ -125,6 +125,24 @@ export const DEFAULT_PLUGIN_AGENT: PluginAgentSettings = {
   })
 }
 
+export const DEFAULT_BROWSER_DOM_AGENT: PluginAgentSettings = {
+  provider: 'siliconflow',
+  apiKey: '',
+  modelName: '',
+  customBaseUrl: '',
+  openaiOptions: createDefaultOpenAiOptions({
+    request: {
+      forceJsonOutput: true
+    },
+    execution: {
+      useStream: false,
+      rpmLimit: 0,
+      transportRetries: 1,
+      businessRetries: 1
+    }
+  })
+}
+
 export const DEFAULT_PROOFREADING: ProofreadingSettings = {
   enabled: false,
   rounds: []
@@ -171,6 +189,7 @@ export function createDefaultSettings(): TranslationSettings {
     textboxPrompt: '',
     hqTranslation: deepClone(DEFAULT_HQ_TRANSLATION),
     pluginAgent: deepClone(DEFAULT_PLUGIN_AGENT),
+    browserDomAgent: deepClone(DEFAULT_BROWSER_DOM_AGENT),
     proofreading: deepClone(DEFAULT_PROOFREADING),
     boxExpand: deepClone(DEFAULT_BOX_EXPAND),
     preciseMask: deepClone(DEFAULT_PRECISE_MASK),

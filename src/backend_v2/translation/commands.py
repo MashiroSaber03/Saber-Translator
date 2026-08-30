@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 import json
 import math
 from typing import Any
@@ -162,6 +162,9 @@ class TranslationJobCommandService:
         retry_of_job_id: str | None = None,
         retry_mode: str | None = None,
         idempotency_scope: str | None = None,
+        transaction_hook: (
+            Callable[[Connection, str, Sequence[str]], None] | None
+        ) = None,
     ) -> dict[str, object]:
         command = normalize_translation_command(config)
         self.public_access.enforce_translation_command(command)
@@ -204,6 +207,7 @@ class TranslationJobCommandService:
             transaction_initializer=lambda connection, _batch_id: (
                 self._materialize_text_styles(connection, (spec,))
             ),
+            transaction_hook=transaction_hook,
         )
 
     def create_batch(

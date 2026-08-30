@@ -74,6 +74,8 @@ Thumbs.db
 
 # --- 根目录工具依赖与缓存 ---
 /node_modules/
+/browser-extension/node_modules/
+/browser-extension/release/
 
 # --- Jupyter Notebook ---
 .ipynb_checkpoints/

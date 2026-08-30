@@ -104,6 +104,7 @@ export interface TranslationSettings {
   textboxPrompt: string
   hqTranslation: HqTranslationSettings
   pluginAgent: PluginAgentSettings
+  browserDomAgent: PluginAgentSettings
   proofreading: ProofreadingSettings
   boxExpand: BoxExpandSettings
   preciseMask: PreciseMaskSettings

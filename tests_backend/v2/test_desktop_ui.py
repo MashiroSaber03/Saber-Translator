@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QApplication,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QPushButton,
 )
@@ -153,6 +154,36 @@ def test_settings_emit_immediately_without_a_save_button(tmp_path) -> None:
     assert "保存设置" not in [button.text() for button in page.findChildren(QPushButton)]
 
 
+def test_browser_extension_controls_emit_and_regenerate_a_masked_token(tmp_path) -> None:
+    app = _app()
+    original_token = "browser-extension-token-0123456789abcdef"
+    page = SettingsPage(
+        DesktopSettings(browser_extension_token=original_token),
+        tmp_path,
+    )
+    changes: list[DesktopSettings] = []
+    page.settings_changed.connect(changes.append)
+
+    assert page.browser_extension_token.isReadOnly()
+    assert page.browser_extension_token.echoMode() == QLineEdit.EchoMode.Password
+    page.browser_extension_enabled.click()
+    assert changes[-1].browser_extension_enabled is True
+
+    copy_button = next(
+        button
+        for button in page.findChildren(QPushButton)
+        if button.text() == "复制令牌"
+    )
+    copy_button.click()
+    assert app.clipboard().text() == original_token
+
+    page._regenerate_browser_extension_token()
+    regenerated = page.browser_extension_token.text()
+    assert regenerated != original_token
+    assert len(regenerated) >= 32
+    assert changes[-1].browser_extension_token == regenerated
+
+
 def test_settings_page_emits_resident_models_in_catalog_order(tmp_path) -> None:
     _app()
     page = SettingsPage(
@@ -187,6 +218,7 @@ def test_backend_startup_controls_remain_editable_while_service_is_running(
     assert page.allow_lan.isEnabled()
     assert page.log_level.isEnabled()
     assert page.open_browser.isEnabled()
+    assert page.browser_extension_enabled.isEnabled()
     assert page.pet_enabled.isEnabled()
 
 

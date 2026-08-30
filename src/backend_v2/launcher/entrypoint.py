@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 import json
 import logging
@@ -32,6 +32,10 @@ from src.backend_v2.logging_config import (
     configure_backend_logging,
 )
 from src.backend_v2.local_models import normalize_resident_models
+from src.backend_v2.browser_extension.auth import (
+    BROWSER_EXTENSION_ENABLED_ENV,
+    BROWSER_EXTENSION_TOKEN_ENV,
+)
 from src.backend_v2.paths import (
     DATA_ROOT_ENV,
     data_root_fingerprint,
@@ -106,6 +110,8 @@ class LauncherConfig:
     log_level: str | None = None
     open_browser: bool = False
     resident_models: tuple[str, ...] = ()
+    browser_extension_enabled: bool = False
+    browser_extension_token: str = field(default="", repr=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -191,6 +197,8 @@ def _child_environment(
     credential_broker_url: str | None = None,
     credential_broker_token: str | None = None,
     stream_frames: bool = False,
+    browser_extension_enabled: bool = False,
+    browser_extension_token: str = "",
 ) -> dict[str, str]:
     environment = os.environ.copy()
     # The desktop supervisor decodes the captured pipe as UTF-8.  Windows can
@@ -215,6 +223,14 @@ def _child_environment(
         environment.pop(BROKER_TOKEN_ENV, None)
     if registration.role != role:
         raise ValueError("child role and epoch registration role differ")
+    if role == "api" and browser_extension_enabled:
+        if not browser_extension_token:
+            raise ValueError("enabled browser extension integration requires a token")
+        environment[BROWSER_EXTENSION_ENABLED_ENV] = "1"
+        environment[BROWSER_EXTENSION_TOKEN_ENV] = browser_extension_token
+    else:
+        environment.pop(BROWSER_EXTENSION_ENABLED_ENV, None)
+        environment.pop(BROWSER_EXTENSION_TOKEN_ENV, None)
     if role == "api":
         environment.update(
             {
@@ -649,6 +665,8 @@ def _start_child(
     resident_models: tuple[str, ...] = (),
     output_callback: ChildOutputCallback | None = None,
     stop_event: threading.Event | None = None,
+    browser_extension_enabled: bool = False,
+    browser_extension_token: str = "",
 ) -> ManagedChild:
     _raise_if_stop_requested(stop_event)
     registration = _new_registration(role)
@@ -680,6 +698,8 @@ def _start_child(
                 credential_broker_url=credential_broker_url,
                 credential_broker_token=credential_broker_token,
                 stream_frames=output_callback is not None,
+                browser_extension_enabled=browser_extension_enabled,
+                browser_extension_token=browser_extension_token,
             ),
             capture_output=output_callback is not None,
         )
@@ -767,6 +787,8 @@ def _start_child_with_retries(
     resident_models: tuple[str, ...] = (),
     output_callback: ChildOutputCallback | None = None,
     stop_event: threading.Event | None = None,
+    browser_extension_enabled: bool = False,
+    browser_extension_token: str = "",
 ) -> ManagedChild:
     current_restart_count = restart_count
     while current_restart_count <= MAX_CONSECUTIVE_RESTARTS:
@@ -787,6 +809,8 @@ def _start_child_with_retries(
                 resident_models=resident_models,
                 output_callback=output_callback,
                 stop_event=stop_event,
+                browser_extension_enabled=browser_extension_enabled,
+                browser_extension_token=browser_extension_token,
             )
         except _LauncherStopRequested:
             raise
@@ -927,6 +951,12 @@ class LauncherSupervisor:
                                     resident_models=config.resident_models,
                                     output_callback=self._output_callback,
                                     stop_event=self._stop_event,
+                                    browser_extension_enabled=(
+                                        config.browser_extension_enabled
+                                    ),
+                                    browser_extension_token=(
+                                        config.browser_extension_token
+                                    ),
                                 )
 
                             _raise_if_stop_requested(self._stop_event)
@@ -1088,6 +1118,12 @@ class LauncherSupervisor:
                                         resident_models=config.resident_models,
                                         output_callback=self._output_callback,
                                         stop_event=self._stop_event,
+                                        browser_extension_enabled=(
+                                            config.browser_extension_enabled
+                                        ),
+                                        browser_extension_token=(
+                                            config.browser_extension_token
+                                        ),
                                     )
                                     self._publish(
                                         LauncherState.RUNNING,

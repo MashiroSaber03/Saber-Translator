@@ -38,5 +38,6 @@ export interface ProviderConfigsCache {
   translation: Record<string, TranslationProviderConfig>
   hqTranslation: Record<string, HqTranslationProviderConfig>
   pluginAgent: Record<string, PluginAgentProviderConfig>
+  browserDomAgent: Record<string, PluginAgentProviderConfig>
   aiVisionOcr: Record<string, AiVisionOcrProviderConfig>
 }

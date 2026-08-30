@@ -11,6 +11,7 @@ from typing import Callable
 
 from sqlalchemy import Engine, delete, exists, func, or_, select, tuple_
 
+from src.backend_v2.browser_extension.retention import cleanup_expired_browser_sessions
 from src.backend_v2.insight.derived import InsightVectorStore
 from src.backend_v2.insight.gc import InsightReachabilityGarbageCollector
 from src.backend_v2.insight.qa import TransientRequestRepository
@@ -73,6 +74,7 @@ class WorkerMaintenance:
             ("清理导入临时文件", self._prune_import_temp),
             ("清理插件任务临时目录", self._prune_plugin_worktrees),
             ("清理任务历史", self.jobs.prune_history),
+            ("清理过期网页漫画任务", self._prune_browser_sessions),
             ("清理过期下载文件", self._prune_expired_artifacts),
             ("清理已结束即时操作", self._prune_terminal_operations),
             ("清理幂等请求记录", self._prune_idempotency_records),
@@ -109,6 +111,9 @@ class WorkerMaintenance:
                 time.monotonic() - started_at,
             )
         return True
+
+    def _prune_browser_sessions(self) -> int:
+        return cleanup_expired_browser_sessions(self.engine)
 
     def _prune_expired_artifacts(self) -> dict[str, int]:
         now = utcnow()

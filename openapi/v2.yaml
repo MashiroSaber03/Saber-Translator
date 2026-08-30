@@ -18,6 +18,7 @@ tags:
   - name: jobs
   - name: insight
   - name: web-import
+  - name: browser-extension
   - name: transfer
   - name: studio
   - name: plugins
@@ -3790,6 +3791,249 @@ paths:
         "404": {$ref: "#/components/responses/NotFound"}
         "409": {$ref: "#/components/responses/Conflict"}
         "422": {$ref: "#/components/responses/ValidationError"}
+  /browser-extension/status:
+    get:
+      tags: [browser-extension]
+      operationId: getBrowserExtensionStatus
+      responses:
+        "200":
+          description: Local browser integration is enabled and authenticated.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/BrowserExtensionStatus"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "503": {$ref: "#/components/responses/ServiceUnavailable"}
+  /browser-extension/library-books:
+    get:
+      tags: [browser-extension]
+      operationId: listBrowserLibraryBooks
+      responses:
+        "200":
+          description: Library books available as chapter import targets.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: "#/components/schemas/BrowserLibraryBook"}
+  /browser-extension/sessions:
+    post:
+      tags: [browser-extension]
+      operationId: createBrowserSession
+      x-command-mode: transient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/BrowserSessionCreateCommand"}
+      responses:
+        "201":
+          description: Independent hidden browser translation session created.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/BrowserSession"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /browser-extension/sessions/{session_id}:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    get:
+      tags: [browser-extension]
+      operationId: getBrowserSession
+      responses:
+        "200":
+          description: Aggregated browser session state.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/BrowserSession"}
+        "404": {$ref: "#/components/responses/NotFound"}
+    patch:
+      tags: [browser-extension]
+      operationId: updateBrowserSession
+      x-command-mode: transient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/BrowserSessionPatchCommand"}
+      responses:
+        "200":
+          description: Session options updated.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/BrowserSession"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /browser-extension/sessions/{session_id}/start:
+    post:
+      tags: [browser-extension]
+      operationId: startBrowserSessionBatch
+      x-command-mode: transient
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "202":
+          description: Every currently uploaded, unassigned page was scheduled when the chapter was available.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/BrowserSession"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /browser-extension/sessions/{session_id}/pages:
+    post:
+      tags: [browser-extension]
+      operationId: uploadBrowserSessionPage
+      x-command-mode: transient
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [clientPageKey, ordinal, logicalPath, file]
+              properties:
+                clientPageKey: {type: string, minLength: 1, maxLength: 200}
+                ordinal: {type: integer, minimum: 1, maximum: 1000000}
+                logicalPath: {type: string, minLength: 1, maxLength: 2000}
+                sourceUrl: {type: string}
+                file: {type: string, format: binary}
+      responses:
+        "201":
+          description: Image stored as pending browser-session work.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/BrowserSessionPage"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /browser-extension/sessions/{session_id}/pages/{browser_page_id}/retry:
+    post:
+      tags: [browser-extension]
+      operationId: retryBrowserSessionPage
+      x-command-mode: transient
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - name: browser_page_id
+          in: path
+          required: true
+          schema: {$ref: "#/components/schemas/Uuid"}
+      responses:
+        "202":
+          description: Page scheduled for a fresh translation job.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/BrowserSessionPage"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+  /browser-extension/sessions/{session_id}/pages/{browser_page_id}/result-capability:
+    post:
+      tags: [browser-extension]
+      operationId: createBrowserResultCapability
+      x-command-mode: transient
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - name: browser_page_id
+          in: path
+          required: true
+          schema: {$ref: "#/components/schemas/Uuid"}
+      responses:
+        "200":
+          description: Short-lived URL scoped to one translated image.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/BrowserResultCapability"}
+        "404": {$ref: "#/components/responses/NotFound"}
+  /browser-extension/sessions/{session_id}/terms:
+    get:
+      tags: [browser-extension]
+      operationId: getBrowserSessionTerms
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Current real-time glossary document.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/BrowserSessionTerms"}
+        "404": {$ref: "#/components/responses/NotFound"}
+  /browser-extension/sessions/{session_id}/cancel:
+    post:
+      tags: [browser-extension]
+      operationId: cancelBrowserSession
+      x-command-mode: transient
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Active and pending browser work cancelled.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/BrowserSession"}
+        "404": {$ref: "#/components/responses/NotFound"}
+  /browser-extension/sessions/{session_id}/import:
+    post:
+      tags: [browser-extension]
+      operationId: importBrowserSession
+      x-command-mode: transient
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/BrowserSessionImportCommand"}
+      responses:
+        "200":
+          description: Session chapter finalized into the library.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/BrowserSessionImportResult"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /browser-extension/dom-detection:
+    post:
+      tags: [browser-extension]
+      operationId: detectBrowserComicDomTargets
+      x-command-mode: transient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/BrowserDomDetectionCommand"}
+      responses:
+        "200":
+          description: Validated selector and candidate node proposal.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/BrowserDomDetectionResult"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+        "503": {$ref: "#/components/responses/ServiceUnavailable"}
+  /browser-extension/results/{asset_id}:
+    get:
+      tags: [browser-extension]
+      operationId: getBrowserTranslatedResult
+      parameters:
+        - $ref: "#/components/parameters/AssetId"
+        - {name: session, in: query, required: true, schema: {$ref: "#/components/schemas/Uuid"}}
+        - {name: page, in: query, required: true, schema: {$ref: "#/components/schemas/Uuid"}}
+        - {name: expires, in: query, required: true, schema: {type: integer, minimum: 1}}
+        - {name: signature, in: query, required: true, schema: {type: string, minLength: 1}}
+      responses:
+        "200":
+          description: Translated image bytes.
+          content:
+            image/*:
+              schema: {type: string, format: binary}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
 components:
   parameters:
     PageId:
@@ -3944,6 +4188,24 @@ components:
         minLength: 16
         maxLength: 200
   responses:
+    Unauthorized:
+      description: Browser extension pairing token is missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    Forbidden:
+      description: Browser extension capability or loopback policy failed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    ServiceUnavailable:
+      description: The browser integration or selected DOM Agent is unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
     Conflict:
       description: Revision, idempotency, or active-operation conflict.
       content:
@@ -8653,6 +8915,191 @@ components:
           type: array
           uniqueItems: true
           items: {$ref: "#/components/schemas/Uuid"}
+    BrowserExtensionStatus:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: {type: string, enum: [ready]}
+    BrowserSessionCreateCommand:
+      type: object
+      additionalProperties: false
+      required: [pageUrl, pageTitle, mode, glossaryEnabled, autoTermsEnabled]
+      properties:
+        pageUrl: {type: string, format: uri, maxLength: 20000}
+        pageTitle: {type: string, minLength: 1, maxLength: 500}
+        mode: {type: string, enum: [standard, hq]}
+        glossaryEnabled: {type: boolean}
+        autoTermsEnabled: {type: boolean}
+    BrowserSessionPatchCommand:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        mode: {type: string, enum: [standard, hq]}
+        glossaryEnabled: {type: boolean}
+        autoTermsEnabled: {type: boolean}
+    BrowserLibraryBook:
+      type: object
+      additionalProperties: false
+      required: [id, title, chapterCount]
+      properties:
+        id: {$ref: "#/components/schemas/Uuid"}
+        title: {type: string, minLength: 1, maxLength: 500}
+        chapterCount: {type: integer, minimum: 0}
+    BrowserSessionImportCommand:
+      type: object
+      additionalProperties: false
+      required: [destination, chapterTitle]
+      properties:
+        destination: {type: string, enum: [new, existing]}
+        bookTitle: {type: string, minLength: 1, maxLength: 500}
+        targetBookId: {$ref: "#/components/schemas/Uuid"}
+        chapterTitle: {type: string, minLength: 1, maxLength: 500}
+    BrowserSessionImportResult:
+      type: object
+      additionalProperties: false
+      required: [destination, bookId, bookTitle, chapterId, chapterTitle, importedPages, omittedPages, termsAdded]
+      properties:
+        destination: {type: string, enum: [new, existing]}
+        bookId: {$ref: "#/components/schemas/Uuid"}
+        bookTitle: {type: string, minLength: 1, maxLength: 500}
+        chapterId: {$ref: "#/components/schemas/Uuid"}
+        chapterTitle: {type: string, minLength: 1, maxLength: 500}
+        importedPages: {type: integer, minimum: 1}
+        omittedPages: {type: integer, minimum: 0}
+        termsAdded: {type: integer, minimum: 0}
+    BrowserSessionPage:
+      type: object
+      additionalProperties: false
+      required: [id, clientPageKey, ordinal, pageId, state, resultReady, retryCount, error]
+      properties:
+        id: {$ref: "#/components/schemas/Uuid"}
+        clientPageKey: {type: string, minLength: 1, maxLength: 200}
+        ordinal: {type: integer, minimum: 1}
+        pageId:
+          oneOf:
+            - {$ref: "#/components/schemas/Uuid"}
+            - {type: "null"}
+        state: {type: string, enum: [queued, translating, completed, failed, cancelled]}
+        resultReady: {type: boolean}
+        retryCount: {type: integer, minimum: 0}
+        error:
+          type: [object, "null"]
+          additionalProperties: false
+          required: [code, message]
+          properties:
+            code: {type: string}
+            message: {type: string}
+    BrowserSession:
+      type: object
+      additionalProperties: false
+      required: [id, pageUrl, pageTitle, bookId, chapterId, mode, glossaryEnabled, autoTermsEnabled, state, expiresAt, counts, pages]
+      properties:
+        id: {$ref: "#/components/schemas/Uuid"}
+        pageUrl: {type: string, format: uri}
+        pageTitle: {type: string}
+        bookId: {$ref: "#/components/schemas/Uuid"}
+        chapterId: {$ref: "#/components/schemas/Uuid"}
+        mode: {type: string, enum: [standard, hq]}
+        glossaryEnabled: {type: boolean}
+        autoTermsEnabled: {type: boolean}
+        state: {type: string, enum: [idle, queued, translating, completed, partial, failed, cancelled]}
+        expiresAt: {type: [string, "null"], format: date-time}
+        counts:
+          type: object
+          additionalProperties: false
+          required: [total, queued, translating, completed, failed, cancelled]
+          properties:
+            total: {type: integer, minimum: 0}
+            queued: {type: integer, minimum: 0}
+            translating: {type: integer, minimum: 0}
+            completed: {type: integer, minimum: 0}
+            failed: {type: integer, minimum: 0}
+            cancelled: {type: integer, minimum: 0}
+        pages:
+          type: array
+          items: {$ref: "#/components/schemas/BrowserSessionPage"}
+    BrowserResultCapability:
+      type: object
+      additionalProperties: false
+      required: [url, assetId, expiresAt]
+      properties:
+        url: {type: string}
+        assetId: {$ref: "#/components/schemas/Uuid"}
+        expiresAt: {type: integer, minimum: 1}
+    BrowserSessionTerms:
+      type: object
+      additionalProperties: false
+      required: [revision, glossary]
+      properties:
+        revision: {type: integer, minimum: 1}
+        glossary:
+          type: object
+          additionalProperties: true
+    BrowserDomNodeSummary:
+      type: object
+      additionalProperties: false
+      required: [id, tag, classes, parent, attributes, rect, naturalSize]
+      properties:
+        id: {type: string, minLength: 1, maxLength: 100}
+        tag: {type: string, maxLength: 32}
+        classes:
+          type: array
+          maxItems: 20
+          items: {type: string, maxLength: 100}
+        parent: {type: string, maxLength: 500}
+        attributes:
+          type: object
+          additionalProperties: false
+          properties:
+            alt: {type: string, maxLength: 500}
+            role: {type: string, maxLength: 500}
+            aria-label: {type: string, maxLength: 500}
+            data-src: {type: string, maxLength: 500}
+            data-original: {type: string, maxLength: 500}
+            data-page: {type: string, maxLength: 500}
+            loading: {type: string, maxLength: 500}
+        rect:
+          type: object
+          additionalProperties: false
+          required: [width, height, top, left]
+          properties:
+            width: {type: number}
+            height: {type: number}
+            top: {type: number}
+            left: {type: number}
+        naturalSize:
+          type: object
+          additionalProperties: false
+          required: [width, height]
+          properties:
+            width: {type: number}
+            height: {type: number}
+    BrowserDomDetectionCommand:
+      type: object
+      additionalProperties: false
+      required: [pageUrl, pageTitle, nodes]
+      properties:
+        pageUrl: {type: string, format: uri}
+        pageTitle: {type: string, maxLength: 500}
+        nodes:
+          type: array
+          minItems: 1
+          maxItems: 600
+          items: {$ref: "#/components/schemas/BrowserDomNodeSummary"}
+    BrowserDomDetectionResult:
+      type: object
+      additionalProperties: false
+      required: [nodeIds, selector, confidence, reason]
+      properties:
+        nodeIds:
+          type: array
+          uniqueItems: true
+          items: {type: string}
+        selector: {type: string, maxLength: 1000}
+        confidence: {type: number, minimum: 0, maximum: 1}
+        reason: {type: string, maxLength: 500}
     ErrorDetail:
       type: object
       additionalProperties: false
@@ -8671,8 +9118,22 @@ components:
             - session_busy
             - validation_error
             - not_found
+            - integration_disabled
+            - loopback_required
+            - invalid_extension_token
+            - unsupported_image
+            - asset_quota_exceeded
+            - session_conflict
+            - dom_agent_unavailable
+            - dom_agent_failed
+            - browser_http_error
+            - browser_internal_error
+            - invalid_result_capability
+            - result_not_found
         message:
           type: string
+        retryable:
+          type: boolean
         fieldErrors:
           type: object
           additionalProperties:
