@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Saber 漫画翻译 · 原创演示章节</title>
+    <style>
+      * { box-sizing: border-box; }
+      :root { color-scheme: light; font-family: "Microsoft YaHei", system-ui, sans-serif; }
+      body { margin: 0; color: #2b222a; background: linear-gradient(135deg, #fff8fb, #f5eef8); }
+      header { position: sticky; top: 0; z-index: 2; height: 68px; display: flex; align-items: center; justify-content: space-between; padding: 0 36px 0 max(36px, calc(100vw - 1244px)); background: rgba(255,255,255,.94); border-bottom: 1px solid #f2d4e1; backdrop-filter: blur(14px); }
+      .brand { display: flex; align-items: center; gap: 13px; font-weight: 800; font-size: 20px; }
+      .mark { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 12px; color: #fff; background: linear-gradient(145deg,#ff5aa5,#e7257e); box-shadow: 0 8px 20px rgba(231,37,126,.25); }
+      .chapter { color: #8b7581; font-size: 14px; }
+      main { width: 760px; margin: 0 0 80px max(36px, calc(100vw - 1244px)); }
+      .intro { padding: 34px 10px 25px; }
+      .eyebrow { color: #e42b80; font-size: 13px; font-weight: 800; letter-spacing: .16em; }
+      h1 { margin: 8px 0 8px; font-size: 31px; }
+      .intro p { margin: 0; color: #806d78; }
+      .pages { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; align-items: start; }
+      .page-card { margin: 0; padding: 9px; background: #fff; border: 1px solid #f0d8e2; border-radius: 18px; box-shadow: 0 16px 40px rgba(83,45,66,.09); }
+      .page-card img { display: block; width: 100%; height: auto; border-radius: 11px; }
+      figcaption { display: flex; justify-content: space-between; padding: 10px 4px 2px; color: #8f7a85; font-size: 12px; }
+      .notice { margin-top: 20px; padding: 15px 18px; border-radius: 15px; color: #7e6874; background: #fff; border: 1px solid #f1d6e2; font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand"><span class="mark">S</span><span>Saber Demo Manga</span></div>
+      <div class="chapter">原创演示章节 · Chapter 01</div>
+    </header>
+    <main>
+      <section class="intro">
+        <div class="eyebrow">WEB MANGA TRANSLATION</div>
+        <h1>把网页漫画交给本机 Saber</h1>
+        <p>识别、确认、翻译，并在原位置逐张显示译图。</p>
+      </section>
+      <section class="pages">
+        <figure class="page-card"><img src="panel-1.png" alt="原创测试漫画第 1 页" /><figcaption><span>PAGE 01</span><span>640 × 900</span></figcaption></figure>
+        <figure class="page-card"><img src="panel-2.png" alt="原创测试漫画第 2 页" /><figcaption><span>PAGE 02</span><span>640 × 900</span></figcaption></figure>
+      </section>
+      <div class="notice">本页面及漫画图像仅用于 Saber 漫画翻译商店展示，全部为项目自有原创素材。</div>
+    </main>
+  </body>
+</html>

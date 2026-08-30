@@ -29,6 +29,7 @@ const initialDefaults = {
 }
 
 const factoryDefaults = getTextStyleDefaults()
+const v2FactoryDefaults = { ...factoryDefaults, fontFamily: 'font-default' }
 
 const {
   getV2SettingsMock,
@@ -111,7 +112,7 @@ describe('TextStyleDefaultsSettings', () => {
       id: 'font-default',
       displayName: '思源黑体',
       kind: 'builtin',
-      builtinKey: 'source-han-sans',
+      builtinKey: 'default',
       assetUrl: null,
     }])
     useSettingsStore().textStyleDefaults = { ...initialDefaults }
@@ -148,7 +149,7 @@ describe('TextStyleDefaultsSettings', () => {
     expect((wrapper.get('#textDefaultsFontSize').element as HTMLInputElement).value).toBe(
       String(factoryDefaults.fontSize),
     )
-    expect(useSettingsStore().textStyleDefaults).toEqual(factoryDefaults)
+    expect(useSettingsStore().textStyleDefaults).toEqual(v2FactoryDefaults)
   })
 
   it('publishes modified defaults directly into the parent settings draft', async () => {
@@ -163,7 +164,7 @@ describe('TextStyleDefaultsSettings', () => {
     await flushPromises()
     await wrapper.get('[data-testid="reset-text-style-defaults"]').trigger('click')
 
-    expect(useSettingsStore().textStyleDefaults).toEqual(factoryDefaults)
+    expect(useSettingsStore().textStyleDefaults).toEqual(v2FactoryDefaults)
     expect(saveV2SettingsTransactionMock).not.toHaveBeenCalled()
     expect(wrapper.emitted('save-complete')).toBeUndefined()
   })
@@ -356,7 +357,7 @@ describe('TextStyleDefaultsSettings', () => {
     await wrapper.get('#textDefaultsFontSize').setValue('35')
 
     expect(useSettingsStore().textStyleDefaults).toEqual({
-      ...factoryDefaults,
+      ...v2FactoryDefaults,
       autoFontSize: false,
       fontSize: 35,
     })

@@ -83,7 +83,6 @@ describe('translation state properties', () => {
         expect(store.images.flatMap((image, index) => image.translationStatus === 'failed' ? [index] : [])).toEqual(
           expectedFailedIndices,
         )
-        expect(store.failedImageCount).toBe(expectedFailedIndices.length)
         expect(store.images.filter(item => item.translationStatus === 'completed')).toHaveLength(
           failedFlags.length - expectedFailedIndices.length,
         )

@@ -36,7 +36,6 @@ function createOptions() {
     imageStore: {
       currentImage: image,
       currentImageIndex: 0,
-      failedImageCount: 0,
       hasImages: true,
       images: [image],
       clearImages: vi.fn(),
@@ -49,6 +48,9 @@ function createOptions() {
         },
       },
       updateTextStyle: vi.fn(),
+    },
+    taskCenterStore: {
+      retryableFailedItemCount: vi.fn(() => 0),
     },
     translation: {
       translateCurrentImage: vi.fn(),
@@ -64,6 +66,7 @@ function createOptions() {
     translateInit: {
       initializeBookChapterContext: vi.fn().mockResolvedValue(true),
       flushChapterWorkState: vi.fn().mockResolvedValue(true),
+      forgetReplacedChapter: vi.fn(),
       isBookshelfMode: ref(true),
       switchImage: vi.fn(),
       goToPrevious: vi.fn(),
@@ -102,6 +105,34 @@ describe('useTranslateViewActions', () => {
 
     expect(options.translateInit.initializeBookChapterContext).toHaveBeenCalled()
     expect(options.translateInit.switchImage).not.toHaveBeenCalled()
+  })
+
+  it('uses the durable task history to enable failed-item retry', async () => {
+    const options = createOptions()
+    options.taskCenterStore.retryableFailedItemCount.mockReturnValue(2)
+    const actions = useTranslateViewActions(
+      options as unknown as Parameters<typeof useTranslateViewActions>[0],
+    )
+
+    await actions.handleRetryFailed()
+
+    expect(options.taskCenterStore.retryableFailedItemCount).toHaveBeenCalledWith('chapter-1')
+    expect(options.translation.retryFailedImages).toHaveBeenCalledOnce()
+  })
+
+  it('does not retry when the latest durable translation has no failed items', async () => {
+    const options = createOptions()
+    const actions = useTranslateViewActions(
+      options as unknown as Parameters<typeof useTranslateViewActions>[0],
+    )
+
+    await actions.handleRetryFailed()
+
+    expect(options.translation.retryFailedImages).not.toHaveBeenCalled()
+    expect(mocks.showToast).toHaveBeenCalledWith(
+      '没有失败的图片需要重新翻译',
+      'info',
+    )
   })
 
   it('uses backend deletion APIs after product confirmation', async () => {
@@ -144,7 +175,29 @@ describe('useTranslateViewActions', () => {
 
     await actions.clearAllImages()
 
+    expect(options.translateInit.flushChapterWorkState).toHaveBeenCalledBefore(
+      mocks.resetQuickWorkspace,
+    )
     expect(mocks.resetQuickWorkspace).toHaveBeenCalled()
+    expect(options.translateInit.forgetReplacedChapter).toHaveBeenCalledWith('chapter-1')
+  })
+
+  it('does not reset the quick workspace when its chapter settings cannot be flushed', async () => {
+    const options = createOptions()
+    options.translateInit.isBookshelfMode.value = false
+    options.translateInit.flushChapterWorkState.mockResolvedValue(false)
+    const actions = useTranslateViewActions(
+      options as unknown as Parameters<typeof useTranslateViewActions>[0],
+    )
+
+    await actions.clearAllImages()
+
+    expect(mocks.resetQuickWorkspace).not.toHaveBeenCalled()
+    expect(options.translateInit.forgetReplacedChapter).not.toHaveBeenCalled()
+    expect(mocks.showToast).toHaveBeenCalledWith(
+      '章节工作态设置尚未写入后端，无法新建快速工作区',
+      'error',
+    )
   })
 
   it('does not delete a different page when the selection changes during confirmation', async () => {

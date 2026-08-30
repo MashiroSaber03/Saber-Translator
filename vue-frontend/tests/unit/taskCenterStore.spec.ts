@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   snapshot: vi.fn(),
   reorder: vi.fn(),
   retry: vi.fn(),
+  retryFailed: vi.fn(),
   cancel: vi.fn(),
   pauseQueue: vi.fn(),
   resumeQueue: vi.fn(),
@@ -38,6 +39,7 @@ vi.mock('@/api/v2/jobs', () => ({
     snapshot: mocks.snapshot,
     reorder: mocks.reorder,
     retry: mocks.retry,
+    retryFailed: mocks.retryFailed,
     cancel: mocks.cancel,
     pauseQueue: mocks.pauseQueue,
     resumeQueue: mocks.resumeQueue,
@@ -164,6 +166,14 @@ describe('taskCenterStore snapshot reconciliation', () => {
       sourceJobId: 'source-job',
       retryMode: 'current',
       failedOnly: false,
+    })
+    mocks.retryFailed.mockResolvedValue({
+      batchId: 'batch-retry-failed',
+      jobIds: ['retry-failed-1'],
+      status: 'queued',
+      sourceJobId: 'source-failed-job',
+      retryMode: 'current',
+      failedOnly: true,
     })
     mocks.cancel.mockResolvedValue({ jobId: 'job-1', status: 'cancelled' })
     mocks.pauseQueue.mockResolvedValue({ queuePaused: true })
@@ -653,6 +663,81 @@ describe('taskCenterStore snapshot reconciliation', () => {
     expect(store.activeCount).toBe(1)
     expect(store.queuedCount).toBe(1)
     expect(store.interruptedCount).toBe(1)
+  })
+
+  it('derives retryable failed items from the latest durable chapter job', async () => {
+    const failed = makeJob({
+      jobId: 'source-failed-job',
+      status: 'completed_with_errors',
+      chapterId: 'chapter-1',
+      createdAt: '2026-08-23T04:00:00Z',
+      progress: {
+        executionMode: 'sequential',
+        jobStatus: 'completed_with_errors',
+        totalItems: 3,
+        completedItems: 1,
+        failedItems: 2,
+        skippedItems: 0,
+        cancelledItems: 0,
+        pools: [],
+      },
+    })
+    mocks.list.mockResolvedValue({ items: [failed] })
+    const store = useTaskCenterStore()
+
+    await store.refresh()
+
+    expect(store.retryableFailedItemCount('chapter-1')).toBe(2)
+    await expect(store.retryLatestFailed('chapter-1', ['translation'])).resolves.toMatchObject({
+      sourceJobId: 'source-failed-job',
+      failedItemCount: 2,
+    })
+    expect(mocks.retryFailed).toHaveBeenCalledWith('source-failed-job', 'current')
+
+    const unrelatedSuccess = makeJob({
+      jobId: 'unrelated-success',
+      status: 'completed',
+      chapterId: 'chapter-1',
+      createdAt: '2026-08-23T04:01:00Z',
+    })
+    mocks.list.mockResolvedValue({ items: [failed, unrelatedSuccess] })
+    await store.refresh()
+
+    expect(store.retryableFailedItemCount('chapter-1')).toBe(2)
+
+    mocks.list.mockResolvedValue({
+      items: [
+        failed,
+        unrelatedSuccess,
+        makeJob({
+          jobId: 'successful-retry',
+          status: 'completed',
+          chapterId: 'chapter-1',
+          retryOfJobId: 'source-failed-job',
+          createdAt: '2026-08-23T04:02:00Z',
+        }),
+      ],
+    })
+    await store.refresh()
+
+    expect(store.retryableFailedItemCount('chapter-1')).toBe(0)
+
+    mocks.list.mockResolvedValue({
+      items: [
+        failed,
+        unrelatedSuccess,
+        makeJob({
+          jobId: 'failed-retry',
+          status: 'failed',
+          chapterId: 'chapter-1',
+          retryOfJobId: 'source-failed-job',
+          createdAt: '2026-08-23T04:02:00Z',
+        }),
+      ],
+    })
+    await store.refresh()
+
+    expect(store.retryableFailedItemCount('chapter-1')).toBe(2)
   })
 
   it('keeps the durable history snapshot complete while deriving filters locally', async () => {

@@ -350,7 +350,17 @@ function updateStrokeWidth(value: number | null): void {
 }
 
 function resetDraftToFactory(): void {
-  settingsStore.textStyleDefaults = getTextStyleDefaults()
+  const defaultFont = fontList.value.find(
+    font => font.kind === 'builtin' && font.builtinKey === 'default',
+  )
+  if (!defaultFont) {
+    errorMessage.value = '未找到内置默认字体，请刷新字体列表后重试'
+    return
+  }
+  settingsStore.textStyleDefaults = {
+    ...getTextStyleDefaults(),
+    fontFamily: defaultFont.id,
+  }
   errorMessage.value = ''
 }
 

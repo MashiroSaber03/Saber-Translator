@@ -152,6 +152,8 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
         return 'Gallery-DL'
       case 'ai-agent':
         return 'AI Agent'
+      case 'html':
+        return 'HTML'
       default:
         return ''
     }
@@ -512,7 +514,7 @@ export function useWebImportModal(callbacks: WebImportModalCallbacks = {}) {
   }
 
   function requireResolvedEngine(value: string | null): WebImportResolvedEngine {
-    if (value === 'gallery-dl' || value === 'ai-agent') return value
+    if (value === 'gallery-dl' || value === 'ai-agent' || value === 'html') return value
     throw new WebImportDraftContractError('网页导入草稿缺少有效的实际提取引擎')
   }
 

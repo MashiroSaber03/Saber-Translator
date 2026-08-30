@@ -387,6 +387,19 @@ export function useTranslateInit() {
     return flushSettingsMemoryWrite()
   }
 
+  function forgetReplacedChapter(chapterId: string | null | undefined): void {
+    if (!chapterId || settingsMemoryChapterId !== chapterId) return
+    if (settingsMemoryWriteTimer) {
+      clearTimeout(settingsMemoryWriteTimer)
+      settingsMemoryWriteTimer = null
+    }
+    pendingSettingsMemoryWrite = null
+    settingsStore.clearChapterWorkState(chapterId)
+    settingsMemoryChapterId = null
+    settingsMemoryRevision = 0
+    lastSettingsMemoryFingerprint = ''
+  }
+
   function queueLastVisitedPageWrite(chapterId: string, pageId: string): void {
     navigationWriteChain = navigationWriteChain
       .then(async () => {
@@ -528,6 +541,7 @@ export function useTranslateInit() {
     initializeApp,
     initializeBookChapterContext,
     flushChapterWorkState,
+    forgetReplacedChapter,
 
     switchImage,
     goToPrevious,

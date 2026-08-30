@@ -3,6 +3,7 @@ import type UiFileInput from '@/components/ui/UiFileInput.vue'
 import { useBookTranslationConstraintsStore } from '@/stores/bookTranslationConstraintsStore'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settings'
+import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import {
   uploadV2Font,
   type V2WorkflowPreferences,
@@ -61,6 +62,7 @@ export type SettingsSidebarEmit = {
 export function useSettingsSidebar(emit: SettingsSidebarEmit) {
   const imageStore = useImageStore()
   const settingsStore = useSettingsStore()
+  const taskCenterStore = useTaskCenterStore()
   const bookTranslationConstraintsStore = useBookTranslationConstraintsStore()
   const publicAccess = usePublicUserAccess()
 
@@ -158,7 +160,9 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
 
   const textStyle = computed(() => settingsStore.textStyle)
 
-  const failedImageCount = computed(() => imageStore.failedImageCount)
+  const failedImageCount = computed(() => taskCenterStore.retryableFailedItemCount(
+    currentImage.value?.chapterId ?? imageStore.images[0]?.chapterId,
+  ))
 
   const hasFailedImages = computed(() => failedImageCount.value > 0)
 

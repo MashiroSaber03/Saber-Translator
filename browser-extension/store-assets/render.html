@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Saber 原创测试漫画</title>
+    <style>
+      * { box-sizing: border-box; }
+      html, body { width: 640px; height: 900px; margin: 0; overflow: hidden; background: #fff; }
+      body { font-family: "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; }
+      svg { display: none; width: 640px; height: 900px; }
+      body[data-page="1"] .page-1,
+      body[data-page="2"] .page-2,
+      body[data-page="3"] .page-3 { display: block; }
+      .line { fill: none; stroke: #281f27; stroke-width: 7; stroke-linecap: round; stroke-linejoin: round; }
+      .thin { fill: none; stroke: #281f27; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+      .bubble { fill: #fff; stroke: #281f27; stroke-width: 5; }
+      .ink { fill: #281f27; }
+      .pink { fill: #f9c6dc; }
+      .soft { fill: #fdf0f6; }
+      .dialogue { fill: #281f27; font-size: 25px; font-weight: 700; text-anchor: middle; }
+      .small { fill: #5e5059; font-size: 18px; font-weight: 600; }
+      .caption { fill: #fff; font-size: 20px; font-weight: 700; letter-spacing: 2px; }
+    </style>
+  </head>
+  <body data-page="1">
+    <svg class="page-1" viewBox="0 0 640 900" xmlns="http://www.w3.org/2000/svg">
+      <rect width="640" height="900" fill="#fff" />
+      <rect x="22" y="22" width="596" height="856" rx="10" class="soft" stroke="#281f27" stroke-width="7" />
+      <path d="M25 535L615 195V875H25Z" class="pink" />
+      <circle cx="450" cy="500" r="150" fill="#fff" stroke="#281f27" stroke-width="8" />
+      <path d="M360 465Q370 340 450 326Q545 344 553 468" class="line" />
+      <path d="M366 421Q412 370 450 405Q495 365 548 420" class="line" />
+      <path d="M391 493Q415 475 436 496M473 496Q494 474 520 493" class="thin" />
+      <path d="M440 548Q465 566 492 546" class="thin" />
+      <path d="M335 730Q360 568 450 565Q545 580 573 730" fill="#fff" stroke="#281f27" stroke-width="8" />
+      <path d="M405 610L450 665L495 610" class="line" />
+      <ellipse cx="183" cy="225" rx="136" ry="101" class="bubble" />
+      <path d="M260 292L318 353L233 313" class="bubble" />
+      <text x="183" y="204" class="dialogue"><tspan x="183" dy="0">今日は</tspan><tspan x="183" dy="36">いい天気だね</tspan></text>
+      <rect x="48" y="742" width="252" height="84" rx="8" class="ink" />
+      <text x="174" y="793" class="caption" text-anchor="middle">SABER DEMO · 01</text>
+      <path d="M65 430L255 350M77 476L280 391M86 519L276 450" class="thin" opacity=".48" />
+    </svg>
+
+    <svg class="page-2" viewBox="0 0 640 900" xmlns="http://www.w3.org/2000/svg">
+      <rect width="640" height="900" fill="#fff" />
+      <rect x="22" y="22" width="596" height="856" rx="10" fill="#fff" stroke="#281f27" stroke-width="7" />
+      <rect x="25" y="25" width="590" height="300" class="pink" />
+      <path d="M26 323L615 82M26 400L615 160M26 477L615 237" class="thin" opacity=".25" />
+      <circle cx="214" cy="500" r="128" class="soft" stroke="#281f27" stroke-width="8" />
+      <path d="M112 490Q120 375 215 365Q300 382 316 493" class="line" />
+      <path d="M145 443Q178 410 208 439Q244 400 287 442" class="line" />
+      <path d="M151 510L187 506M237 506L277 510" class="thin" />
+      <path d="M186 557Q215 578 246 555" class="thin" />
+      <path d="M76 755Q105 617 215 614Q319 622 349 755" class="line" />
+      <path d="M170 650L213 701L257 650" class="line" />
+      <ellipse cx="454" cy="260" rx="134" ry="93" class="bubble" />
+      <path d="M386 332L334 399L420 349" class="bubble" />
+      <text x="454" y="242" class="dialogue"><tspan x="454" dy="0">準備は</tspan><tspan x="454" dy="36">できた？</tspan></text>
+      <path d="M383 545L421 507M421 545L459 507M459 545L497 507M497 545L535 507" class="line" />
+      <rect x="356" y="672" width="222" height="111" rx="12" class="ink" />
+      <text x="467" y="720" class="caption" text-anchor="middle"><tspan x="467" dy="0">WEB MANGA</tspan><tspan x="467" dy="30">TRANSLATION</tspan></text>
+      <text x="48" y="845" class="small">原创演示页面 · 不包含第三方作品</text>
+    </svg>
+
+    <svg class="page-3" viewBox="0 0 640 900" xmlns="http://www.w3.org/2000/svg">
+      <rect width="640" height="900" fill="#fff" />
+      <rect x="22" y="22" width="596" height="856" rx="10" class="soft" stroke="#281f27" stroke-width="7" />
+      <circle cx="320" cy="340" r="228" fill="#fff" stroke="#281f27" stroke-width="8" />
+      <path d="M150 358Q164 150 319 140Q480 162 493 360" class="line" />
+      <path d="M168 289Q226 214 310 285Q382 208 474 292" class="line" />
+      <path d="M216 364Q246 338 277 365M365 365Q399 336 432 364" class="thin" />
+      <circle cx="247" cy="367" r="8" class="ink" /><circle cx="400" cy="367" r="8" class="ink" />
+      <path d="M283 441Q324 471 366 439" class="thin" />
+      <path d="M105 775Q142 559 320 559Q499 571 535 775" fill="#fff" stroke="#281f27" stroke-width="8" />
+      <path d="M240 606L320 706L402 606" class="line" />
+      <ellipse cx="477" cy="151" rx="111" ry="79" class="bubble" />
+      <path d="M427 216L391 275L459 227" class="bubble" />
+      <text x="477" y="143" class="dialogue"><tspan x="477" dy="0">行こう！</tspan></text>
+      <rect x="48" y="723" width="166" height="91" rx="10" class="pink" stroke="#281f27" stroke-width="5" />
+      <text x="131" y="761" class="dialogue" style="font-size:20px"><tspan x="131" dy="0">翻訳を</tspan><tspan x="131" dy="28">はじめよう</tspan></text>
+      <path d="M492 418L567 388M482 461L577 454M470 503L556 532" class="line" />
+      <text x="48" y="850" class="small">Saber Translator · Original Store Demo</text>
+    </svg>
+
+    <script>
+      document.body.dataset.page = new URLSearchParams(location.search).get('page') || '1'
+      document.getElementById('saber-translator-extension-root')?.remove()
+    </script>
+  </body>
+</html>

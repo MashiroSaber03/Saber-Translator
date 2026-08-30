@@ -201,6 +201,7 @@ describe('BookshelfView', () => {
   it('exposes accessible header actions and safe external links', async () => {
     const wrapper = mountView()
     const settingsStore = useSettingsStore()
+    await flushPromises()
 
     expect(wrapper.get('.product-page-header--brand').exists()).toBe(true)
     expect(wrapper.get('nav[aria-label="书架外部链接"]').exists()).toBe(true)
@@ -216,6 +217,21 @@ describe('BookshelfView', () => {
     const githubLink = wrapper.get('.bookshelf-header__github-link')
     expect(githubLink.attributes('rel')).toBe('noopener noreferrer')
     expect(githubLink.getComponent(UiIcon).props('name')).toBe('github')
+  })
+
+  it('hides local network metadata when LAN access is disabled', async () => {
+    getServerInfoMock.mockResolvedValue({
+      hostname: 'desktop',
+      host: '127.0.0.1',
+      port: 5000,
+      lanUrl: null,
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('[aria-label="复制局域网地址"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('局域网访问')
   })
 
   it('hides local network metadata in the public profile', async () => {

@@ -2,7 +2,7 @@ export type WebImportAgentProvider = string
 
 export type WebImportEngine = 'auto' | 'gallery-dl' | 'ai-agent'
 
-export type WebImportResolvedEngine = Exclude<WebImportEngine, 'auto'>
+export type WebImportResolvedEngine = Exclude<WebImportEngine, 'auto'> | 'html'
 
 export type WebImportStatus =
   | 'idle'

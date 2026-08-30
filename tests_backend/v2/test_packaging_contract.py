@@ -38,12 +38,25 @@ def test_production_spec_uses_only_the_backend_first_entrypoint() -> None:
     assert "accelerate" not in spec
     assert "required packaging dependency is missing" in spec
     assert "shutil.ignore_patterns('__pycache__', '*.pyc', '*.pyo')" in spec
+    assert "os.stat(bundle_plugins_path).st_mode | stat.S_IWRITE" in spec
     assert "'plugin.json'" in spec
     assert "collect_all({pkg}) FAILED" not in spec
     assert "except:" not in spec
     assert "'app.py'" not in spec
     assert "'src.app" not in spec
     assert not (PROJECT_ROOT / "saber_v2.spec").exists()
+
+
+def test_production_spec_imports_its_dependency_probe() -> None:
+    spec = (PROJECT_ROOT / "app.spec").read_text(encoding="utf-8")
+
+    assert "from importlib.util import find_spec" in spec
+
+
+def test_production_spec_does_not_bundle_foreign_windows_icu() -> None:
+    spec = (PROJECT_ROOT / "app.spec").read_text(encoding="utf-8")
+
+    assert "os.path.basename(entry[0]).lower() != 'icuuc.dll'" in spec
 
 
 def test_production_spec_has_no_missing_project_hidden_imports() -> None:

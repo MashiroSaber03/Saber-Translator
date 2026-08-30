@@ -760,6 +760,22 @@ describe('WebImport panels', () => {
     expect(footerWrapper.find('.loading-spinner').exists()).toBe(false)
   })
 
+  it('hides the pre-extraction engine recommendation once results are ready', () => {
+    const wrapper = mount(WebImportExtractBar, {
+      props: {
+        checkingSupport: false,
+        galleryDLAvailable: true,
+        galleryDLSupported: false,
+        isProcessing: false,
+        selectedEngine: 'auto',
+        status: 'extracted',
+        urlInput: 'https://example.com/chapter',
+      },
+    })
+
+    expect(wrapper.find('.web-import-extract-bar__support-status').exists()).toBe(false)
+  })
+
   it('keeps the extract form responsive to modal width instead of fixed columns', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/translate/web-import/WebImportExtractBar.vue'),

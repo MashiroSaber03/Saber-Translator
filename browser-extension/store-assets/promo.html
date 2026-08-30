@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Saber 漫画翻译宣传图</title>
+    <style>
+      * { box-sizing: border-box; }
+      html, body { width: 440px; height: 280px; margin: 0; overflow: hidden; }
+      body { position: relative; display: flex; align-items: center; padding: 34px; color: #2c2028; font-family: "Microsoft YaHei", system-ui, sans-serif; background: linear-gradient(135deg,#fff9fc 0%,#ffe8f2 55%,#f7d7eb 100%); }
+      body::before, body::after { content: ""; position: absolute; border-radius: 999px; background: rgba(255,255,255,.62); box-shadow: 0 18px 55px rgba(225,45,128,.12); }
+      body::before { width: 210px; height: 210px; right: -45px; top: -55px; }
+      body::after { width: 125px; height: 125px; left: -45px; bottom: -50px; }
+      .content { position: relative; z-index: 1; width: 100%; }
+      .top { display: flex; align-items: center; gap: 16px; }
+      img { width: 68px; height: 68px; border-radius: 20px; box-shadow: 0 14px 30px rgba(224,39,124,.28); }
+      h1 { margin: 0; font-size: 28px; letter-spacing: -.04em; }
+      .tag { margin-top: 7px; color: #a76d89; font-size: 14px; font-weight: 600; }
+      .features { display: flex; gap: 8px; margin-top: 28px; }
+      .chip { padding: 9px 13px; color: #b51e63; font-size: 13px; font-weight: 800; background: rgba(255,255,255,.78); border: 1px solid rgba(225,64,137,.16); border-radius: 999px; }
+      .accent { position: absolute; right: 24px; bottom: 23px; color: #e52c7e; font-size: 12px; font-weight: 900; letter-spacing: .15em; }
+    </style>
+  </head>
+  <body>
+    <div class="content">
+      <div class="top">
+        <img src="../public/icons/icon-128.png" alt="Saber" />
+        <div><h1>Saber 漫画翻译</h1><div class="tag">网页漫画，交给本机 Saber</div></div>
+      </div>
+      <div class="features"><span class="chip">自动识别</span><span class="chip">逐张替换</span><span class="chip">实时进度</span></div>
+    </div>
+    <div class="accent">LOCAL · PRIVATE · FAST</div>
+  </body>
+</html>

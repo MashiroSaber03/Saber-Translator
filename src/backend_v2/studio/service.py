@@ -119,6 +119,7 @@ class DefaultStudioAlgorithms:
                     '"content":"原作事实","constant":false,'
                     '"selective":false,"enabled":true,'
                     '"position":"before_char","priority":100,'
+                    '"depth":4,"children":[],'
                     '"probability":100,"prevent_recursion":true}]}}'
                 ),
                 "regex": '{"regexScripts":[]}',
@@ -162,12 +163,19 @@ class DefaultStudioAlgorithms:
                 if section == "full"
                 else ""
             )
+            lorebook_requirement = (
+                "世界书 entries 中的每个条目都必须包含非负整数 depth 和数组 children；"
+                "没有子条目时 children 必须返回空数组。"
+                if section in {"lorebook", "full"}
+                else ""
+            )
             prompt = (
                 f"请{instruction}。目标角色是当前文档的角色名或 source_character，"
                 "不要混入其他角色的设定。漫画分析压缩上下文是生成事实依据，"
                 "必须实际使用；当前文档已有的非空内容应在不冲突时保留。"
                 f"只输出 JSON 对象，顶层结构必须为：{contracts[section]}。"
                 f"{full_requirement}"
+                f"{lorebook_requirement}"
                 "不要回传数据库元数据、revision、status、meta 或解释文字。\n\n"
                 f"漫画分析压缩上下文：\n{context_json}\n\n"
                 f"当前角色文档：\n{document_json}"

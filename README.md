@@ -82,7 +82,7 @@ Saber-Translator 提供了一站式的漫画翻译与管理解决方案，集成
 
 ### 🌸 网页漫画翻译扩展
 
-桌面版 Chrome/Edge 扩展可识别网页中的漫画图片，经用户确认后调用本机 Saber 翻译，并在原位置逐张显示译图。扩展支持站点适配、DOM Agent、手选同类图片、懒加载继续发现、全局/单页原图切换、单页重翻，以及把当前独立章节新建为书籍或导入已有书籍；默认关闭本机接口，需在桌面控制中心复制配对令牌后启用。安装与使用说明见 [browser-extension/README.md](browser-extension/README.md)。
+桌面版 Chrome/Edge 扩展可识别网页中的漫画图片，经用户确认后调用本机 Saber 翻译，并在原位置逐张显示译图。扩展支持站点适配、DOM Agent、手选同类图片、懒加载继续发现、全局/单页原图切换、单页重翻，以及把当前独立章节新建为书籍或导入已有书籍；默认关闭本机接口，需在桌面控制中心复制配对令牌后启用。安装与使用说明见 [browser-extension/README.md](browser-extension/README.md)，数据处理方式见 [浏览器扩展隐私政策](browser-extension/PRIVACY.md)。
 
 ### 🛠️ 编辑与管理功能
 

@@ -246,6 +246,16 @@ def test_running_backend_restarts_after_startup_setting_changes(
     assert controller.window.settings.auto_save_status.text() == (
         "已自动保存 · 正在重启后端"
     )
+    monkeypatch.setattr(controller.tasks, "start", lambda _url: None)
+    controller._browser_auto_opened = True
+    controller._on_launcher_status(
+        LauncherStatus(LauncherState.STARTING, "正在重新启动")
+    )
+    controller._on_launcher_status(
+        LauncherStatus(LauncherState.RUNNING, "重新启动完成")
+    )
+    assert controller.window.settings.auto_save_status.text() == "已自动保存"
+    assert controller._settings_restart_pending is False
     controller._pet_timer.stop()
     controller.tray.hide()
     controller.pet.close()
