@@ -47,7 +47,7 @@ const sourceUrlInputRef = ref<{ focus: () => void } | null>(null)
 
 const canExtract = computed(() => !props.isProcessing && props.urlInput.trim().length > 0)
 const supportStatus = computed<SupportStatus | null>(() => {
-  if (!props.urlInput.trim() || props.isProcessing) return null
+  if (!props.urlInput.trim() || props.isProcessing || props.status === 'extracted') return null
   if (props.selectedEngine === 'ai-agent') {
     return {
       message: '将使用 AI Agent 模式',

@@ -270,6 +270,32 @@ def test_server_info_uses_the_configured_v2_api_port(content_platform) -> None:
     assert payload["lanUrl"].endswith(":5123")
 
 
+def test_server_info_does_not_advertise_lan_when_bound_to_loopback(
+    content_platform,
+) -> None:
+    data_root, engine, *_rest = content_platform
+    app = create_api_app(
+        ApiSettings(
+            data_root=data_root,
+            identity=RuntimeIdentity(
+                epoch_id="loopback-server-info-api",
+                epoch_token="test-token",
+                test_mode=True,
+            ),
+            engine=engine,
+            host="127.0.0.1",
+            port=5123,
+        )
+    )
+    try:
+        response = app.test_client().get("/api/v2/system/server-info")
+    finally:
+        app.extensions["saber_v2_runtime"].close()
+
+    assert response.status_code == 200
+    assert response.get_json()["lanUrl"] is None
+
+
 def test_book_creation_rejects_retired_request_fields(content_platform) -> None:
     data_root, engine, *_rest = content_platform
     app = create_api_app(

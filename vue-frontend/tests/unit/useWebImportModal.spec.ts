@@ -468,6 +468,47 @@ describe('useWebImportModal', () => {
     expect(exposed.api.extractResult.value).toBeNull()
   })
 
+  it('loads candidates produced by the native HTML fallback', async () => {
+    const exposed = mountComposableHost()
+    getTranslationBootstrapMock.mockResolvedValue({
+      activeWebImportDraft: null,
+      chapter: { id: 'chapter-1' },
+    })
+    createWebImportDraftMock.mockResolvedValue({
+      draftId: 'draft-html',
+      status: 'queued',
+      batchId: 'batch-html',
+      jobIds: ['job-html'],
+    })
+    getWebImportDraftMock.mockResolvedValue({
+      id: 'draft-html',
+      sourceUrl: 'https://example.com/chapter',
+      status: 'ready',
+      revision: 2,
+      autoImport: false,
+      candidateCount: 1,
+      selectedCount: 1,
+      failedCount: 0,
+      requestedEngine: 'auto',
+      actualEngine: 'html',
+      jobs: [{ id: 'job-html', kind: 'web_extract', status: 'completed' }],
+    })
+    listWebImportDraftPagesMock.mockResolvedValue({
+      items: [{ id: 'page-1', selected: true, error: null, thumbnailUrl: '/thumb/1' }],
+      nextCursor: null,
+    })
+
+    exposed.api.urlInput.value = 'https://example.com/chapter'
+    await exposed.api.handleExtract()
+
+    expect(exposed.api.status.value).toBe('extracted')
+    expect(exposed.api.extractResult.value).toMatchObject({
+      engine: 'html',
+      totalPages: 1,
+    })
+    expect(exposed.api.engineDisplayName.value).toBe('HTML')
+  })
+
   it('does not let a commit from a closed session close a later modal session', async () => {
     const acceptedCommit = deferred<{
       status: 'queued'

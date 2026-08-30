@@ -224,6 +224,36 @@ def test_studio_generation_prompt_consumes_analysis_context(
     assert "当前角色文档" in captured["prompt"]
 
 
+@pytest.mark.parametrize("section", ("lorebook", "full"))
+def test_studio_generation_prompt_declares_nested_lorebook_contract(
+    monkeypatch,
+    section: str,
+) -> None:
+    captured: dict[str, str] = {}
+
+    def chat_json(
+        self,
+        prompt: str,
+        *,
+        config: Mapping[str, Any],
+        on_chunk=None,
+    ) -> object:
+        captured["prompt"] = prompt
+        return {}
+
+    monkeypatch.setattr(DefaultStudioAlgorithms, "_chat_json", chat_json)
+
+    DefaultStudioAlgorithms().generate(
+        {"title": "Darmil", "origin": {"source_character": "Darmil"}},
+        section=section,
+        config={},
+    )
+
+    assert "depth" in captured["prompt"]
+    assert "children" in captured["prompt"]
+    assert "没有子条目时 children 必须返回空数组" in captured["prompt"]
+
+
 def test_studio_complete_respects_saved_nonstream_setting(
     monkeypatch,
 ) -> None:

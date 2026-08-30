@@ -97,6 +97,7 @@ class DesktopController(QObject):
         self._supervisor: LauncherSupervisor | None = None
         self._supervisor_thread: threading.Thread | None = None
         self._restart_pending = False
+        self._settings_restart_pending = False
         self._browser_auto_opened = False
         self._quitting = False
         self._queue_jobs: list[dict[str, object]] = []
@@ -177,6 +178,9 @@ class DesktopController(QObject):
 
     def stop_backend(self) -> None:
         self._restart_pending = False
+        if self._settings_restart_pending:
+            self._settings_restart_pending = False
+            self.window.settings.show_auto_save_status("已自动保存")
         if self._supervisor is not None:
             self._supervisor.request_stop()
 
@@ -256,6 +260,7 @@ class DesktopController(QObject):
             LauncherState.RUNNING,
             LauncherState.DEGRADED,
         }:
+            self._settings_restart_pending = True
             self.window.settings.show_auto_save_status("已自动保存 · 正在重启后端")
             self.restart_backend()
         elif resident_models_changed and self._status.state in {
@@ -350,6 +355,9 @@ class DesktopController(QObject):
         self.window.settings.set_backend_running(status.state != LauncherState.STOPPED)
         if status.state == LauncherState.RUNNING and previous != LauncherState.RUNNING:
             self.tasks.start(f"http://127.0.0.1:{self.settings.port}")
+            if self._settings_restart_pending:
+                self._settings_restart_pending = False
+                self.window.settings.show_auto_save_status("已自动保存")
             if self.settings.open_browser_on_start and not self._browser_auto_opened:
                 self._browser_auto_opened = True
                 self._open_web_url()
@@ -375,6 +383,11 @@ class DesktopController(QObject):
         self._supervisor = None
         self.window.settings.set_backend_running(False)
         if error is not None and not self._quitting:
+            if self._settings_restart_pending:
+                self._settings_restart_pending = False
+                self.window.settings.show_auto_save_status(
+                    "已自动保存 · 后端重启失败"
+                )
             self.window.show_error(f"后端启动或运行失败：{error}")
         if self._quitting:
             self._finish_quit()

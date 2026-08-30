@@ -123,6 +123,39 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
   )
   const historyBatches = computed(() => groupJobsByBatch(filteredHistory.value))
 
+  function latestRetryableFailedJob(
+    chapterId: string,
+    kinds: readonly V2Job['kind'][],
+  ): V2Job | null {
+    const matching = [...queue.value, ...history.value]
+      .filter(job => job.chapterId === chapterId && kinds.includes(job.kind))
+    const retriedJobIds = new Set(
+      matching.flatMap(job => (
+        job.retryOfJobId && !['cancelled', 'failed'].includes(job.status)
+          ? [job.retryOfJobId]
+          : []
+      )),
+    )
+    return matching
+      .filter(job => (
+        job.status === 'completed_with_errors' && !retriedJobIds.has(job.jobId)
+      ))
+      .reduce<V2Job | null>(
+        (latest, job) => (
+          !latest || job.createdAt > latest.createdAt ? job : latest
+        ),
+        null,
+      )
+  }
+
+  function retryableFailedItemCount(
+    chapterId: string | null | undefined,
+    kinds: readonly V2Job['kind'][] = ['translation'],
+  ): number {
+    if (!chapterId) return 0
+    return latestRetryableFailedJob(chapterId, kinds)?.progress.failedItems ?? 0
+  }
+
   function refresh(): Promise<void> {
     if (refreshPromise) return refreshPromise
     const generation = lifecycleGeneration
@@ -659,15 +692,14 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     chapterId: string,
     kinds: V2Job['kind'][],
     strategy: 'current' | 'original' = 'current'
-  ): Promise<JobRetryAccepted | null> {
+  ): Promise<(JobRetryAccepted & { failedItemCount: number }) | null> {
     await refresh()
-    const source = history.value.find(
-      job =>
-        job.chapterId === chapterId &&
-        job.status === 'completed_with_errors' &&
-        kinds.includes(job.kind)
-    )
-    return source ? retryFailed(source.jobId, strategy) : null
+    const source = latestRetryableFailedJob(chapterId, kinds)
+    if (!source) return null
+    return {
+      ...await retryFailed(source.jobId, strategy),
+      failedItemCount: source.progress.failedItems,
+    }
   }
 
   async function moveQueued(jobId: string, delta: -1 | 1): Promise<void> {
@@ -729,6 +761,7 @@ export const useTaskCenterStore = defineStore('taskCenter', () => {
     currentJobs,
     waitingBatches,
     historyBatches,
+    retryableFailedItemCount,
     initialize,
     disconnect,
     subscribeEvents,

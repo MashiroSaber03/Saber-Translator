@@ -3151,7 +3151,7 @@ export interface components {
             host: string;
             port: number;
             /** Format: uri */
-            lanUrl: string;
+            lanUrl: string | null;
         };
         WorkerCommandAccepted: {
             commandId: components["schemas"]["Uuid"];

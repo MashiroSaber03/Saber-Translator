@@ -191,7 +191,7 @@ describe('image store properties', () => {
     )
   })
 
-  it('derives failed images from the single translation status field', () => {
+  it('tracks the transient translation status for each image', () => {
     fc.assert(
       fc.property(
         fc.array(imageInputArbitrary, { minLength: 1, maxLength: 10 }),
@@ -202,11 +202,9 @@ describe('image store properties', () => {
           const failedIndex = failedIndexSeed % store.imageCount
 
           store.setTranslationStatus(failedIndex, 'failed')
-          expect(store.failedImageCount).toBe(1)
           expect(store.images.findIndex(image => image.translationStatus === 'failed')).toBe(failedIndex)
 
           store.setTranslationStatus(failedIndex, 'processing')
-          expect(store.failedImageCount).toBe(0)
           expect(store.images[failedIndex]?.translationStatus).toBe('processing')
         },
       ),

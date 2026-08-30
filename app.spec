@@ -8,6 +8,8 @@ same isolated API and Worker lifecycle used by the terminal Launcher role.
 
 import os
 import shutil
+import stat
+from importlib.util import find_spec
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules, collect_all, copy_metadata
 
 block_cipher = None
@@ -242,6 +244,17 @@ a = Analysis(
     module_collection_mode=module_collection_mode,
 )
 
+# Qt 6 on Windows links against the operating system ICU shim.  PyInstaller
+# can otherwise pick up an unrelated ``icuuc.dll`` from the build machine's
+# PATH (for example Poppler's ICU), which shadows System32 and makes QtCore fail
+# with ERROR_PROC_NOT_FOUND in the packaged desktop role.
+if os.name == 'nt':
+    a.binaries = [
+        entry
+        for entry in a.binaries
+        if os.path.basename(entry[0]).lower() != 'icuuc.dll'
+    ]
+
 # ===================== 打包 =====================
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
@@ -285,6 +298,11 @@ if os.path.exists(plugins_path):
         bundle_plugins_path,
         ignore=shutil.ignore_patterns('__pycache__', '*.pyc', '*.pyo'),
     )
+    if os.name == 'nt':
+        os.chmod(
+            bundle_plugins_path,
+            os.stat(bundle_plugins_path).st_mode | stat.S_IWRITE,
+        )
     for name in os.listdir(bundle_plugins_path):
         candidate = os.path.join(bundle_plugins_path, name)
         if (

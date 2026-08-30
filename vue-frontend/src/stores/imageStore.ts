@@ -20,10 +20,6 @@ export const useImageStore = defineStore('image', () => {
   const hasImages = computed<boolean>(() => images.value.length > 0)
   const canGoPrevious = computed<boolean>(() => currentImageIndex.value > 0)
   const canGoNext = computed<boolean>(() => currentImageIndex.value < images.value.length - 1)
-  const failedImageCount = computed<number>(
-    () => images.value.filter(image => image.translationStatus === 'failed').length,
-  )
-
   function setImages(newImages: ImageDataLoadInput[]): void {
     images.value = newImages.map(img => ({
       ...img,
@@ -165,8 +161,6 @@ export const useImageStore = defineStore('image', () => {
     hasImages,
     canGoPrevious,
     canGoNext,
-    failedImageCount,
-
     setImages,
     deleteCurrentImage,
     clearImages,

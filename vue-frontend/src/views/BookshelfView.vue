@@ -47,8 +47,11 @@ const toast = useToast()
 
 const PUBLIC_TRIAL_NOTICE_DISMISSED_KEY = 'saber_public_trial_notice_dismissed'
 
-const lanUrl = ref<string>('获取中...')
-const showLanAccess = computed(() => runtimeStore.capabilities?.profile === 'local')
+const lanUrl = ref<string | null>(null)
+const isLocalProfile = computed(() => runtimeStore.capabilities?.profile === 'local')
+const showLanAccess = computed(
+  () => isLocalProfile.value && Boolean(lanUrl.value),
+)
 const isPublicProfile = computed(() => runtimeStore.capabilities?.profile === 'public')
 const publicTrialNoticeDismissed = ref(
   window.localStorage.getItem(PUBLIC_TRIAL_NOTICE_DISMISSED_KEY) === 'true',
@@ -121,11 +124,9 @@ function handlePageShow(event: PageTransitionEvent) {
 async function loadServerInfo(): Promise<void> {
   try {
     const response = await getV2ServerInfo()
-    if (response.lanUrl) {
-      lanUrl.value = response.lanUrl
-    }
+    lanUrl.value = response.lanUrl
   } catch {
-    lanUrl.value = '获取失败'
+    lanUrl.value = null
   }
 }
 
@@ -136,7 +137,7 @@ onMounted(async () => {
     bookshelfStore.loadBooks(),
     bookshelfStore.loadTags(),
   ]
-  if (showLanAccess.value) startupRequests.push(loadServerInfo())
+  if (isLocalProfile.value) startupRequests.push(loadServerInfo())
   await Promise.all(startupRequests)
 })
 
@@ -146,6 +147,7 @@ onUnmounted(() => {
 })
 
 async function copyLanUrl() {
+  if (!lanUrl.value) return
   const copied = await copyTextToClipboard(lanUrl.value)
   showToast(copied ? '局域网地址已复制！' : '复制局域网地址失败', copied ? 'success' : 'error')
 }
@@ -331,7 +333,7 @@ async function applyBatchTags() {
       <template v-if="showLanAccess" #meta>
         <ProductHeaderMetaPill
           label="局域网访问"
-          :value="lanUrl"
+          :value="lanUrl || ''"
           title="其他设备可通过此地址访问"
         >
           <template #actions>

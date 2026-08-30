@@ -231,6 +231,7 @@ const {
   imageStore,
   bubbleStore,
   settingsStore,
+  taskCenterStore,
   translation,
   translateInit,
   validateBeforeTranslation,
@@ -298,6 +299,7 @@ function handleQuickWorkspaceLocked(error: unknown) {
 }
 
 async function createNewQuickWorkspace() {
+  const replacedChapterId = translateInit.currentChapterId.value
   const confirmed = await confirmProductAction({
     title: '新建快速翻译',
     message: '这会永久清空当前快速工作区的页面、翻译结果和术语约束。确定继续吗？',
@@ -308,6 +310,7 @@ async function createNewQuickWorkspace() {
   const pageIds = imageStore.images.map(image => image.id)
   try {
     await resetQuickWorkspace()
+    translateInit.forgetReplacedChapter(replacedChapterId)
   } catch (error) {
     if (
       error

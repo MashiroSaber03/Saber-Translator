@@ -11,6 +11,8 @@ import {
   WORKFLOW_MODE_CONFIGS,
 } from '@/components/translate/workflowModeConfig'
 import { useImageStore } from '@/stores/imageStore'
+import { useTaskCenterStore } from '@/stores/taskCenterStore'
+import type { V2Job } from '@/api/v2/jobs'
 import type { WorkflowMode, WorkflowRunRequest } from '@/types/workflow'
 import type { TranslationStatus } from '@/types/image'
 import { setTestImages } from '../helpers/imageFixtures'
@@ -83,6 +85,7 @@ function createSidebarHarness(scenario: SidebarScenario): SidebarHarness {
       fileName: `page-${index + 1}.png`,
       sourceAssetUrl: `/api/v2/assets/source-${index + 1}`,
       overrides: {
+        chapterId: 'chapter-1',
         translationStatus: status,
       },
     }
@@ -92,6 +95,37 @@ function createSidebarHarness(scenario: SidebarScenario): SidebarHarness {
     imageStore.updateCurrentImage({ bubbleStates: [] })
   }
   imageStore.setTranslationInProgress(scenario.isTranslationInProgress ?? false)
+  const failedCount = scenario.images.filter(image => image.failed).length
+  const jobStatus = failedCount > 0 ? 'completed_with_errors' : 'completed'
+  useTaskCenterStore().history = [{
+    jobId: 'translation-job',
+    batchId: null,
+    batchDisplayName: null,
+    kind: 'translation',
+    retryOfJobId: null,
+    retryMode: null,
+    status: jobStatus,
+    queueRank: null,
+    bookId: 'book-1',
+    chapterId: 'chapter-1',
+    pageId: null,
+    blockedReason: null,
+    blockedByJobId: null,
+    progress: {
+      executionMode: 'sequential',
+      jobStatus,
+      totalItems: scenario.images.length,
+      completedItems: scenario.images.length - failedCount,
+      failedItems: failedCount,
+      skippedItems: 0,
+      cancelledItems: 0,
+      pools: [],
+    },
+    target: {},
+    createdAt: '2026-08-23T04:00:00Z',
+    startedAt: null,
+    finishedAt: '2026-08-23T04:01:00Z',
+  } satisfies V2Job]
 
   let sidebar: SidebarApi | null = null
   const emitted: SidebarHarness['emitted'] = []
@@ -217,7 +251,7 @@ describe('settings sidebar workflow properties', () => {
     )
   })
 
-  it('enables failed retry only when a failed image exists and no translation is running', () => {
+  it('enables failed retry only when the durable task has failures and no translation is running', () => {
     fc.assert(
       fc.property(
         fc.array(generatedImageArb, { minLength: 1, maxLength: 8 }),

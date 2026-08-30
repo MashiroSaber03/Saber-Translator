@@ -10,6 +10,7 @@ import {
 } from '@/composables/useExportImport'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settings'
+import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import { computed, ref } from 'vue'
 
 interface Props {
@@ -29,6 +30,7 @@ const emit = defineEmits<{
 
 const imageStore = useImageStore()
 const settingsStore = useSettingsStore()
+const taskCenterStore = useTaskCenterStore()
 const exportImport = useExportImport()
 
 const imageSize = ref(100)
@@ -75,8 +77,10 @@ const displayImageUrl = computed(() => {
   return processedImageUrl.value || currentImage.value.sourceAssetUrl
 })
 
-const hasFailedImages = computed(() => imageStore.failedImageCount > 0)
-const failedImageCount = computed(() => imageStore.failedImageCount)
+const failedImageCount = computed(() => taskCenterStore.retryableFailedItemCount(
+  currentImage.value?.chapterId ?? imageStore.images[0]?.chapterId,
+))
+const hasFailedImages = computed(() => failedImageCount.value > 0)
 
 const displayImageAlt = computed(() => {
   const fileName = currentImage.value?.fileName || '当前图片'

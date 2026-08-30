@@ -586,4 +586,27 @@ describe('useTranslateInit', () => {
       2,
     )
   })
+
+  it('does not write to a quick chapter after that chapter has been replaced', async () => {
+    const state = useTranslateInit()
+    await state.initializeApp()
+    const settingsStore = useSettingsStore()
+    settingsStore.settings.targetLanguage = 'ja'
+    expect(await state.flushChapterWorkState()).toBe(true)
+
+    state.forgetReplacedChapter('quick-chapter')
+    mocks.updateChapterSettingsMemory.mockClear()
+    const replacement = bootstrap('quick', 'replacement-chapter', 'quick_workspace')
+    replacement.pages.items = []
+    mocks.getTranslationBootstrap.mockResolvedValueOnce(replacement)
+
+    await expect(state.initializeBookChapterContext()).resolves.toBe(true)
+
+    expect(state.currentChapterId.value).toBe('replacement-chapter')
+    expect(
+      mocks.updateChapterSettingsMemory.mock.calls.some(([chapterId]) => (
+        chapterId === 'quick-chapter'
+      )),
+    ).toBe(false)
+  })
 })

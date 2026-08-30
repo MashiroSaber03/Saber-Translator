@@ -4622,7 +4622,9 @@ components:
         hostname: {type: string}
         host: {type: string}
         port: {type: integer, minimum: 1, maximum: 65535}
-        lanUrl: {type: string, format: uri}
+        lanUrl:
+          type: [string, "null"]
+          format: uri
     WorkerCommandAccepted:
       type: object
       additionalProperties: false

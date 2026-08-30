@@ -614,13 +614,10 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
       }
       const jobId = accepted.jobIds[0]
       if (!jobId) throw new Error('后端没有返回重试任务')
-      const durableFailedPages = imageStore.images
-        .filter(image => image.translationStatus === 'failed')
-        .map(image => image.id)
       activeJobId.value = jobId
       progress.value = {
         current: 0,
-        total: durableFailedPages.length,
+        total: accepted.failedItemCount,
         completed: 0,
         failed: 0,
         isInProgress: true,

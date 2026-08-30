@@ -161,16 +161,23 @@ def _create_v2_blueprint(settings: ApiSettings) -> Blueprint:
         if settings.profile.name == "public":
             return jsonify({"error": {"code": "not_found", "message": "not found"}}), 404
         hostname = socket.gethostname()
-        try:
-            lan_address = socket.gethostbyname(hostname)
-        except OSError:
-            lan_address = "127.0.0.1"
+        lan_url: str | None = None
+        if settings.host.lower().rstrip(".") not in {
+            "127.0.0.1",
+            "::1",
+            "localhost",
+        }:
+            try:
+                lan_address = socket.gethostbyname(hostname)
+            except OSError:
+                lan_address = "127.0.0.1"
+            lan_url = f"http://{lan_address}:{settings.port}"
         return jsonify(
             {
                 "hostname": hostname,
                 "host": settings.host,
                 "port": settings.port,
-                "lanUrl": f"http://{lan_address}:{settings.port}",
+                "lanUrl": lan_url,
             }
         )
 
@@ -271,6 +278,14 @@ def create_api_app(settings: ApiSettings) -> Flask:
         return jsonify(
             {"error": {"code": "forbidden", "message": str(error)}}
         ), 403
+
+    @app.errorhandler(404)
+    def not_found(error: object):
+        if request.path == "/api/v2" or request.path.startswith("/api/v2/"):
+            return jsonify(
+                {"error": {"code": "not_found", "message": "not found"}}
+            ), 404
+        return error
 
     if settings.profile.name == "public":
         validate_profile_bind_host(settings.profile, settings.host)

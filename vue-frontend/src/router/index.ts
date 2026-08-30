@@ -26,7 +26,7 @@ const routes: RouteRecordRaw[] = [
     path: APP_ROUTE_PATHS.account,
     name: 'account',
     component: () => import('@/views/AccountView.vue'),
-    meta: { title: '账户', standalone: true },
+    meta: { title: '账户', requiresAuth: true, standalone: true },
   },
   {
     path: APP_ROUTE_PATHS.admin,
@@ -124,7 +124,7 @@ router.beforeEach(async (to, _from, next) => {
         })
         return
       }
-    } else if (to.meta.guestOnly || to.meta.requiresAdmin) {
+    } else if (to.meta.guestOnly || to.meta.requiresAuth || to.meta.requiresAdmin) {
       next({ name: 'bookshelf' })
       return
     }

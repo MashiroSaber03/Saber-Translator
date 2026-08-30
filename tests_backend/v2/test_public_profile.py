@@ -365,6 +365,23 @@ def test_public_capabilities_host_filter_and_security_headers(public_platform) -
     }
 
 
+def test_authenticated_unknown_api_route_uses_the_json_error_contract(
+    public_platform,
+) -> None:
+    client, _csrf = _login(public_platform["app"], "alice", ALICE_PASSWORD)
+
+    response = client.get(
+        "/api/v2/definitely-missing",
+        base_url=PUBLIC_BASE,
+    )
+
+    assert response.status_code == 404
+    assert response.content_type.startswith("application/json")
+    assert response.get_json() == {
+        "error": {"code": "not_found", "message": "not found"}
+    }
+
+
 @pytest.mark.parametrize(
     "request_kwargs",
     [
