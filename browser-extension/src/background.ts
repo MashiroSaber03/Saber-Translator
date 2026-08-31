@@ -3,6 +3,7 @@ import {
   preferenceFor,
   saveSettings,
 } from './storage'
+import { normalizedTaskPageUrl } from './pageIdentity'
 import type {
   BackgroundRequest,
   BackgroundResponse,
@@ -353,8 +354,7 @@ function normalizedContentPageUrl(value: string): string {
   if (!['http:', 'https:'].includes(url.protocol)) {
     throw new RequestFailure('invalid_page_url', '网页地址必须使用 HTTP(S)', false)
   }
-  url.hash = ''
-  return url.toString()
+  return normalizedTaskPageUrl(url.toString())
 }
 
 function contentTabId(sender: chrome.runtime.MessageSender, pageUrl: string): number {

@@ -13,6 +13,7 @@ import {
   type ImageCandidate,
 } from './discovery'
 import { ReplacementManager } from './replacement'
+import { normalizedTaskPageUrl, stablePageTitle } from './pageIdentity'
 import type {
   BackgroundRequest,
   BackgroundResponse,
@@ -55,18 +56,12 @@ async function send<T>(request: BackgroundRequest): Promise<T> {
   return response.data
 }
 
-function normalizedPageUrlFrom(value: string): string {
-  const url = new URL(value)
-  url.hash = ''
-  return url.toString()
-}
-
 function normalizedPageUrl(): string {
-  return normalizedPageUrlFrom(location.href)
+  return normalizedTaskPageUrl(location.href)
 }
 
 function domAgentPageUrl(): string {
-  const url = new URL(location.href)
+  const url = new URL(normalizedPageUrl())
   url.username = ''
   url.password = ''
   url.search = ''
@@ -232,6 +227,11 @@ interface UploadBatchResult {
 export class PageController {
   private readonly pageUrl = normalizedPageUrl()
   private readonly hostname = location.hostname
+  private readonly pageTitle = stablePageTitle(
+    location.href,
+    document.title,
+    this.hostname,
+  )
   private preference!: DomainPreference
   private ui: ExtensionUi | null = null
   private readonly replacement = new ReplacementManager()
@@ -335,7 +335,7 @@ export class PageController {
         onCopyDiagnostics: () => void this.copyDiagnostics(),
       },
       this.preference,
-      document.title || this.hostname,
+      this.pageTitle,
       isKnownComicHost(this.hostname),
     )
     await this.restoreActiveSession()
@@ -407,7 +407,7 @@ export class PageController {
         sessionId: remembered.sessionId,
       })
       if (
-        normalizedPageUrlFrom(session.pageUrl) !== this.pageUrl
+        normalizedTaskPageUrl(session.pageUrl) !== this.pageUrl
         || session.state === 'cancelled'
         || session.pages.length === 0
       ) {
@@ -570,7 +570,7 @@ export class PageController {
           type: 'dom-detection',
           payload: {
             pageUrl: domAgentPageUrl(),
-            pageTitle: document.title,
+            pageTitle: this.pageTitle,
             nodes: domSummary(generic),
           },
         })
@@ -711,7 +711,7 @@ export class PageController {
       type: 'create-session',
       payload: {
         pageUrl: this.pageUrl,
-        pageTitle: document.title || this.hostname,
+        pageTitle: this.pageTitle,
         mode: this.preference.mode,
         glossaryEnabled: this.preference.glossaryEnabled,
         autoTermsEnabled: this.preference.autoTermsEnabled,
