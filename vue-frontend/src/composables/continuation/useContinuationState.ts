@@ -15,6 +15,7 @@ export interface ContinuationState {
     pageCount: Ref<number>
     styleRefPages: Ref<number>
     continuationDirection: Ref<string>
+    initialReferenceTokens: Ref<string[]>
 
     characters: Ref<CharacterProfile[]>
     hasMoreCharacterForms: Readonly<Ref<boolean>>
@@ -48,6 +49,7 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
     const pageCount = ref(10)
     const styleRefPages = ref(3)
     const continuationDirection = ref('')
+    const initialReferenceTokens = ref<string[]>([])
 
     const characters = ref<CharacterProfile[]>([])
     const hasMoreCharacterForms = ref(false)
@@ -75,6 +77,7 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
         pageCount.value = 10
         styleRefPages.value = 3
         continuationDirection.value = ''
+        initialReferenceTokens.value = []
         lastAnalysisSyncAt.value = ''
         isGeneratingPages.value = false
         imageRefreshKey.value = Date.now()
@@ -195,9 +198,11 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
             style_reference_pages?: number
             continuation_direction?: string
         } | null
+        reference_tokens?: string[]
     }): void {
         chapterScript.value = data.script
         pages.value = data.pages || []
+        initialReferenceTokens.value = [...(data.reference_tokens ?? [])]
 
         if (data.config) {
             pageCount.value = data.config.page_count ?? 10
@@ -347,6 +352,7 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
         pageCount,
         styleRefPages,
         continuationDirection,
+        initialReferenceTokens,
 
         characters,
         hasMoreCharacterForms: readonly(hasMoreCharacterForms),

@@ -153,7 +153,7 @@ class InsightAnalysisCommandService:
                 *(
                     JobItemSpec(
                         page_id=target.page_id,
-                        step_kinds=("insight_analyze_page",),
+                        step_kinds=("insight_analyze_batch",),
                         asset_inputs={"source": target.source_asset_id},
                     )
                     for target in targets

@@ -3234,7 +3234,10 @@ class ContinuationWorkerService:
                     fence,
                     item_id=str(step["itemId"]),
                     assets_by_role={
-                        f"continuation_reference_{index:03d}": asset_id
+                        (
+                            f"continuation_reference_{target_ordinal:06d}_"
+                            f"{index:03d}"
+                        ): asset_id
                         for index, asset_id in enumerate(
                             reference_asset_ids,
                             start=1,

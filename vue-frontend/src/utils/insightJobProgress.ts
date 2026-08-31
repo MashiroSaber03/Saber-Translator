@@ -1,4 +1,5 @@
 import type { V2Job } from '@/api/v2/jobs'
+import { isInsightAnalysisStepKind } from '@/utils/taskDisplay'
 
 export interface InsightPageProgress {
   current: number
@@ -9,7 +10,7 @@ export interface InsightPageProgress {
 export type InsightTerminalEventType = 'job_finished' | 'job_failed' | 'job_cancelled'
 
 export function projectInsightPageProgress(progress: V2Job['progress']): InsightPageProgress {
-  const pagePool = progress.pools?.find(pool => pool.kind === 'insight_analyze_page')
+  const pagePool = progress.pools?.find(pool => isInsightAnalysisStepKind(pool.kind))
   const currentStepKind = progress.currentStep?.kind ?? ''
 
   if (!pagePool) {

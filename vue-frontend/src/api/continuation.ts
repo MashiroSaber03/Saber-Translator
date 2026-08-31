@@ -75,6 +75,7 @@ interface SavedContinuationData {
     style_reference_pages?: number
     continuation_direction?: string
   } | null
+  reference_tokens: string[]
   has_data: boolean
 }
 
@@ -186,6 +187,7 @@ function savedData(project: V2ContinuationProject | null): SavedContinuationData
           continuation_direction: project.config.direction,
         }
       : null,
+    reference_tokens: project?.referenceAssets.map(asset => asset.assetId) ?? [],
     has_data: Boolean(project),
   }
 }
@@ -693,6 +695,12 @@ export async function setContinuationReferenceTokens(
   assetIds: string[]
 ): Promise<void> {
   const project = await ensureProject(bookId)
+  if (
+    project.referenceAssets.length === assetIds.length
+    && project.referenceAssets.every(
+      (asset, index) => asset.assetId === assetIds[index]
+    )
+  ) return
   await setV2ContinuationReferences(project.projectId, project.revision, assetIds)
 }
 

@@ -4,6 +4,10 @@ import * as continuationApi from '@/api/continuation'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import type { ContinuationState } from './useContinuationState'
 import {
+  assertContinuationJobCompleted,
+  continuationJobOutcome,
+} from './continuationActionRunner'
+import {
   hasUsableStoryContent,
   isUsableImagePrompt,
   normalizeImagePrompt,
@@ -66,7 +70,7 @@ export function useImageGeneration(
     generationProgress.value = 5
     try {
       await continuationApi.savePages(activeBookId, pages)
-      if (initialStyleReferenceTokens?.length) {
+      if (initialStyleReferenceTokens !== undefined) {
         await continuationApi.setContinuationReferenceTokens(
           activeBookId,
           initialStyleReferenceTokens
@@ -77,7 +81,7 @@ export function useImageGeneration(
         pending.map(page => page.page_number)
       )
       state.showMessage('批量生图任务已进入任务中心，关闭浏览器也会继续运行', 'info')
-      await taskCenterStore.waitForJob(jobId, {
+      const job = await taskCenterStore.waitForJob(jobId, {
         onProgress: progress => {
           if (isCurrent(id, activeBookId)) {
             generationProgress.value = progressPercent(progress as Record<string, unknown>)
@@ -87,7 +91,21 @@ export function useImageGeneration(
       if (!isCurrent(id, activeBookId)) return
       await state.initializeData()
       if (!isCurrent(id, activeBookId)) return
-      state.showMessage(`图片生成完成 (${pending.length} 页)`, 'success')
+      const outcome = continuationJobOutcome(job)
+      if (
+        job.status !== 'completed'
+        || outcome.failed > 0
+        || outcome.skipped > 0
+        || outcome.completed !== outcome.total
+      ) {
+        state.showMessage(
+          `图片生成未完整完成（成功 ${outcome.completed} 页，失败 ${outcome.failed} 页，跳过 ${outcome.skipped} 页）`
+            + (outcome.firstError ? `：${outcome.firstError}` : ''),
+          'error'
+        )
+        return
+      }
+      state.showMessage(`图片生成完成 (${outcome.completed} 页)`, 'success')
     } catch (error) {
       if (isCurrent(id, activeBookId)) {
         state.showMessage(
@@ -118,7 +136,7 @@ export function useImageGeneration(
     try {
       const jobId = await continuationApi.regeneratePageImage(activeBookId, pageNumber, page)
       state.showMessage('重新生图任务已进入任务中心', 'info')
-      await taskCenterStore.waitForJob(jobId, {
+      const job = await taskCenterStore.waitForJob(jobId, {
         onProgress: progress => {
           if (isCurrent(id, activeBookId)) {
             generationProgress.value = progressPercent(progress as Record<string, unknown>)
@@ -128,6 +146,7 @@ export function useImageGeneration(
       if (!isCurrent(id, activeBookId)) return
       await state.initializeData()
       if (!isCurrent(id, activeBookId)) return
+      assertContinuationJobCompleted(job, `第 ${pageNumber} 页图片生成`)
       state.showMessage(`第 ${pageNumber} 页图片已重新生成`, 'success')
     } catch (error) {
       if (isCurrent(id, activeBookId)) {

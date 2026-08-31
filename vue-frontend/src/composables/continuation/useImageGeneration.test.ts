@@ -65,6 +65,7 @@ function createState(pages: Ref<PageContent[]>): ContinuationState {
     pageCount: ref(10),
     styleRefPages: ref(2),
     continuationDirection: ref(''),
+    initialReferenceTokens: ref([]),
     characters: ref([]),
     chapterScript: ref(null),
     pages,
@@ -81,16 +82,45 @@ function createState(pages: Ref<PageContent[]>): ContinuationState {
   }
 }
 
+function completedJob() {
+  return {
+    status: 'completed' as const,
+    counts: {
+      total: 1,
+      pending: 0,
+      running: 0,
+      completed: 1,
+      failed: 0,
+      skipped: 0,
+      cancelled: 0,
+    },
+    failedItems: [],
+  }
+}
+
 describe('useImageGeneration backend job ownership', () => {
   beforeEach(() => {
     generateAllPageImagesMock.mockReset().mockResolvedValue('job-1')
     regeneratePageImageMock.mockReset()
     savePagesMock.mockReset().mockResolvedValue(undefined)
     setContinuationReferenceTokensMock.mockReset().mockResolvedValue(undefined)
-    waitForJobMock.mockReset().mockResolvedValue({ status: 'completed' })
+    waitForJobMock.mockReset().mockResolvedValue(completedJob())
   })
 
   it('submits one durable batch job instead of generating pages in the browser loop', async () => {
+    waitForJobMock.mockResolvedValueOnce({
+      status: 'completed',
+      counts: {
+        total: 2,
+        pending: 0,
+        running: 0,
+        completed: 2,
+        failed: 0,
+        skipped: 0,
+        cancelled: 0,
+      },
+      failedItems: [],
+    })
     const pages = ref([page(1), page(2)])
     const state = createState(pages)
     const composable = useImageGeneration(ref('book-1'), state)
@@ -114,6 +144,36 @@ describe('useImageGeneration backend job ownership', () => {
     )
   })
 
+  it('reports completed-with-errors as a failure instead of a success', async () => {
+    waitForJobMock.mockResolvedValueOnce({
+      status: 'completed_with_errors',
+      counts: {
+        total: 2,
+        pending: 0,
+        running: 0,
+        completed: 0,
+        failed: 2,
+        skipped: 0,
+        cancelled: 0,
+      },
+      failedItems: [{ error: { message: '参考图格式不受支持' } }],
+    })
+    const pages = ref([page(1), page(2)])
+    const state = createState(pages)
+
+    await useImageGeneration(ref('book-1'), state).batchGenerateImages(pages.value)
+
+    expect(state.initializeData).toHaveBeenCalledOnce()
+    expect(state.showMessage).toHaveBeenCalledWith(
+      expect.stringContaining('成功 0 页，失败 2 页'),
+      'error'
+    )
+    expect(state.showMessage).not.toHaveBeenCalledWith(
+      expect.stringContaining('图片生成完成'),
+      'success'
+    )
+  })
+
   it('accepts complete story content even when the optional final prompt is empty', async () => {
     const pages = ref([page(1, '')])
     const state = createState(pages)
@@ -123,8 +183,17 @@ describe('useImageGeneration backend job ownership', () => {
     expect(generateAllPageImagesMock).toHaveBeenCalledWith('book-1', [1])
   })
 
+  it('persists an empty selection so automatic references replace old explicit ones', async () => {
+    const pages = ref([page(1)])
+    const state = createState(pages)
+
+    await useImageGeneration(ref('book-1'), state).batchGenerateImages(pages.value, [])
+
+    expect(setContinuationReferenceTokensMock).toHaveBeenCalledWith('book-1', [])
+  })
+
   it('keeps small non-zero progress visible for large image jobs', async () => {
-    const pending = deferred<{ status: string }>()
+    const pending = deferred<ReturnType<typeof completedJob>>()
     waitForJobMock.mockImplementationOnce((
       _jobId: string,
       options: { onProgress?: (progress: Record<string, unknown>) => void },
@@ -142,12 +211,12 @@ describe('useImageGeneration backend job ownership', () => {
     })
     expect(composable.generationProgress.value).toBeGreaterThan(0)
 
-    pending.resolve({ status: 'completed' })
+    pending.resolve(completedJob())
     await generation
   })
 
   it('does not refresh stale UI state after the selected book changes', async () => {
-    const pending = deferred<{ status: string }>()
+    const pending = deferred<ReturnType<typeof completedJob>>()
     waitForJobMock.mockReturnValueOnce(pending.promise)
     const pages = ref([page(1)])
     const state = createState(pages)
@@ -157,7 +226,7 @@ describe('useImageGeneration backend job ownership', () => {
     const generation = composable.batchGenerateImages(pages.value)
     await vi.waitFor(() => expect(waitForJobMock).toHaveBeenCalled())
     bookId.value = 'book-2'
-    pending.resolve({ status: 'completed' })
+    pending.resolve(completedJob())
     await generation
 
     expect(state.initializeData).not.toHaveBeenCalled()

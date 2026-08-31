@@ -138,6 +138,9 @@ export type BackgroundRequest =
   | { type: 'get-popup-state' }
   | { type: 'save-connection'; token: string; serverPort: number }
   | { type: 'status' }
+  | { type: 'get-active-session'; pageUrl: string }
+  | { type: 'set-active-session'; pageUrl: string; sessionId: string }
+  | { type: 'clear-active-session'; pageUrl: string; sessionId?: string }
   | { type: 'create-session'; payload: Record<string, unknown> }
   | { type: 'get-session'; sessionId: string }
   | { type: 'patch-session'; sessionId: string; payload: Record<string, unknown> }

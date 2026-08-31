@@ -238,7 +238,7 @@ describe('continuation character controls', () => {
     const dropzone = wrapper.getComponent(ProductFileDropzone)
     expect(dropzone.props()).toMatchObject({
       inputId: 'formTileUpload-form_1',
-      accept: 'image/*',
+      accept: '.png,.jpg,.jpeg,.webp,.gif,.bmp,.tif,.tiff',
       label: '上传 Saber 常服 参考图',
     })
     expect(readFileSync(formTileSourcePath, 'utf8')).not.toContain("import UiFileInput from '@/components/ui/UiFileInput.vue'")

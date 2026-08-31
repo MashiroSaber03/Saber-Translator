@@ -183,7 +183,7 @@ describe('OrthographicDialog', () => {
 
     expect(dropzone.props()).toMatchObject({
       inputId: 'orthographicSourceImages',
-      accept: 'image/*',
+      accept: '.png,.jpg,.jpeg,.webp,.gif,.bmp,.tif,.tiff',
       multiple: false,
       label: '上传 主角 默认 三视图源图',
     })

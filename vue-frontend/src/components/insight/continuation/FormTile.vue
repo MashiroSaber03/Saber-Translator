@@ -19,7 +19,7 @@
         :input-id="`formTileUpload-${form.form_id}`"
         class="form-tile__upload-overlay"
         :label="`上传 ${characterName} ${form.form_name} 参考图`"
-        accept="image/*"
+        accept=".png,.jpg,.jpeg,.webp,.gif,.bmp,.tif,.tiff"
         @select="handleUpload"
       >
         <span class="form-tile__upload-text">{{ form.reference_image ? '更换图片' : '上传图片' }}</span>

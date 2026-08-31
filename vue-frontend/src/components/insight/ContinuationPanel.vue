@@ -208,6 +208,7 @@ import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import { useContinuationState } from '@/composables/continuation/useContinuationState'
 import { useCharacterManagement } from '@/composables/continuation/useCharacterManagement'
 import { useImageGeneration } from '@/composables/continuation/useImageGeneration'
+import { assertContinuationJobCompleted } from '@/composables/continuation/continuationActionRunner'
 import CharacterManagementPanel from './continuation/CharacterManagementPanel.vue'
 import ScriptGenerationPanel from './continuation/ScriptGenerationPanel.vue'
 import PageDetailsPanel from './continuation/PageDetailsPanel.vue'
@@ -441,10 +442,11 @@ async function handleGenerateScript(payload: {
     )
     if (!isCurrentBookContext(context)) return
     state.showMessage('脚本生成任务已进入任务中心，关闭浏览器也会继续运行', 'info')
-    await taskCenterStore.waitForJob(jobId)
+    const job = await taskCenterStore.waitForJob(jobId)
     if (!isCurrentBookContext(context)) return
     await state.initializeData()
     if (!isCurrentBookContext(context)) return
+    assertContinuationJobCompleted(job, '脚本生成')
     lastSavedScriptText.value = state.chapterScript.value?.script_text ?? ''
     scriptDirty.value = false
     state.showMessage('脚本生成成功，旧页面剧情已标记为需要重新生成', 'success')
@@ -551,11 +553,12 @@ async function handleGeneratePageDetails() {
     const jobId = await continuationApi.generateAllPageDetails(context.bookId)
     if (!isCurrentBookContext(context)) return
     state.showMessage('页面剧情任务已整体进入任务中心，关闭浏览器也会继续运行', 'info')
-    await taskCenterStore.waitForJob(jobId)
+    const job = await taskCenterStore.waitForJob(jobId)
     if (!isCurrentBookContext(context)) return
     await state.initializeData()
     if (!isCurrentBookContext(context)) return
-    state.showMessage(`页面剧情生成完成 (${state.pages.value.length} 页)`, 'success')
+    const outcome = assertContinuationJobCompleted(job, '页面剧情生成')
+    state.showMessage(`页面剧情生成完成 (${outcome.completed} 页)`, 'success')
   } catch (error) {
     if (isCurrentBookContext(context)) {
       state.showMessage('生成失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
@@ -580,7 +583,7 @@ async function handleSavePageChanges() {
     if (isCurrentBookContext(context)) isSavingPages.value = false
   }
 }
-async function handleBatchGenerate(initialStyleReferenceTokens: string[] | null) {
+async function handleBatchGenerate(initialStyleReferenceTokens: string[]) {
   const context = currentBookContext()
   if (!context || imageGen.isGenerating.value) return
   try {

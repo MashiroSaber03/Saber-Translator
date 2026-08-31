@@ -88,6 +88,7 @@ function createStateStub(currentStep = 0) {
     pageCount: ref(10),
     styleRefPages: ref(3),
     continuationDirection: ref(''),
+    initialReferenceTokens: ref([]),
     characters: ref([
       {
         name: '主角',
@@ -176,7 +177,19 @@ describe('ContinuationPanel', () => {
     mocks.confirmProductAction.mockReset().mockResolvedValue(true)
     mocks.clearContinuationData.mockReset().mockResolvedValue(undefined)
     mocks.generateScriptWithRefs.mockReset().mockResolvedValue('job-1')
-    mocks.waitForJob.mockReset().mockResolvedValue({ status: 'completed' })
+    mocks.waitForJob.mockReset().mockResolvedValue({
+      status: 'completed',
+      counts: {
+        total: 1,
+        pending: 0,
+        running: 0,
+        completed: 1,
+        failed: 0,
+        skipped: 0,
+        cancelled: 0,
+      },
+      failedItems: [],
+    })
     mocks.saveConfig.mockReset().mockResolvedValue(undefined)
     mocks.saveScript.mockReset().mockImplementation(async (_bookId, script) => script)
     mocks.savePages.mockReset().mockResolvedValue(undefined)

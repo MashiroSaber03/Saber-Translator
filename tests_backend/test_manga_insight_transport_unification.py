@@ -431,6 +431,42 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
             {"thinking": {"type": "disabled"}},
         )
 
+    async def test_vlm_client_sends_a_real_multi_image_batch(self) -> None:
+        from src.core.manga_insight.config_models import VLMConfig
+        from src.core.manga_insight.vlm_client import VLMClient
+
+        config = VLMConfig(
+            provider="custom",
+            api_key="test-key",
+            model="vlm-model",
+            base_url="https://example.com/v1",
+            image_max_size=0,
+        )
+        with mock.patch(
+            "src.core.manga_insight.vlm_client.AsyncOpenAICompatibleTransport.complete",
+            new=mock.AsyncMock(
+                return_value=(
+                    '{"pages":[{"page_number":5},{"page_number":2}]}'
+                )
+            ),
+        ) as complete_mock:
+            client = VLMClient(config)
+            result = await client.analyze_batch(
+                [_png_bytes(), _png_bytes()],
+                [2, 5],
+                "批量分析",
+            )
+
+        self.assertEqual(
+            [page["page_number"] for page in result["pages"]],
+            [2, 5],
+        )
+        content = complete_mock.call_args.args[0].messages[0]["content"]
+        self.assertEqual(
+            [item["type"] for item in content],
+            ["image_url", "image_url", "text"],
+        )
+
     async def test_vlm_client_reads_nested_openai_options_from_config(self) -> None:
         from src.core.manga_insight.config_models import VLMConfig
         from src.core.manga_insight.vlm_client import VLMClient

@@ -41,6 +41,7 @@ const STEP_KIND_LABELS: Readonly<Record<string, string>> = {
   web_extract_auto_commit: '自动写入章节',
   web_import_commit_page: '导入网页页面',
   web_import_commit_finalize: '完成网页入库',
+  insight_analyze_batch: '批量分析漫画页面',
   insight_analyze_page: '分析漫画页面',
   insight_validate_run: '校验分析结果',
   insight_stage_compressed_context: '生成压缩上下文',
@@ -114,6 +115,10 @@ export function stepKindLabel(kind: string): string {
   const layer = /^insight_build_layer_(\d+)$/.exec(kind)
   if (layer) return `构建分析层 ${Number(layer[1]) + 1}`
   return STEP_KIND_LABELS[kind] ?? unknownLabel('步骤', kind)
+}
+
+export function isInsightAnalysisStepKind(kind: string): boolean {
+  return kind === 'insight_analyze_batch' || kind === 'insight_analyze_page'
 }
 
 export function eventTypeLabel(type: string): string {

@@ -176,6 +176,7 @@ describe('continuation v2 api facade', () => {
         style_reference_pages: 2,
         continuation_direction: 'forward',
       },
+      reference_tokens: ['reference-1'],
     })
     expect(characters.items[0]).toMatchObject({
       name: '阿尔托莉雅',

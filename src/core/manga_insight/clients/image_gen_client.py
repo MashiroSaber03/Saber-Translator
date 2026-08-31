@@ -16,12 +16,14 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import io
 import logging
 import os
 from typing import Any
 from urllib.parse import urlparse, urlunparse
 
 import httpx
+from PIL import Image, ImageOps
 
 from src.shared.ai_providers import (
     IMAGE_GEN_CAPABILITY,
@@ -93,10 +95,10 @@ class ImageGenClient:
         await self.close()
 
     def _get_headers(self) -> dict[str, str]:
-        return {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
+        headers = {"Content-Type": "application/json"}
+        if self.api_key.strip():
+            headers["Authorization"] = f"Bearer {self.api_key.strip()}"
+        return headers
 
     async def generate(
         self,
@@ -267,9 +269,9 @@ class ImageGenClient:
         return files
 
     def _build_multipart_headers(self) -> dict[str, str]:
-        return {
-            "Authorization": f"Bearer {self.api_key}",
-        }
+        if not self.api_key.strip():
+            return {}
+        return {"Authorization": f"Bearer {self.api_key.strip()}"}
 
     def _prepare_reference_images(
         self,
@@ -299,6 +301,14 @@ class ImageGenClient:
         filename = os.path.basename(image_path)
         if not filename:
             raise ValueError("reference image filename is invalid")
+        expected_extensions = {
+            "image/png": ({".png"}, ".png"),
+            "image/jpeg": ({".jpg", ".jpeg"}, ".jpg"),
+            "image/gif": ({".gif"}, ".gif"),
+            "image/webp": ({".webp"}, ".webp"),
+        }[media_type]
+        if os.path.splitext(filename)[1].lower() not in expected_extensions[0]:
+            filename = f"{os.path.splitext(filename)[0]}{expected_extensions[1]}"
         logger.debug("已加载风格参考图：%s", filename)
         return {
             "filename": filename,
@@ -319,7 +329,22 @@ class ImageGenClient:
             return data, "image/gif"
         if data.startswith(b"RIFF") and data[8:12] == b"WEBP":
             return data, "image/webp"
-        raise ValueError("reference image format is unsupported")
+        try:
+            with Image.open(io.BytesIO(data)) as image:
+                normalized = ImageOps.exif_transpose(image)
+                normalized.load()
+                if "A" in normalized.getbands():
+                    normalized = normalized.convert("RGBA")
+                else:
+                    normalized = normalized.convert("RGB")
+                output = io.BytesIO()
+                normalized.save(output, format="PNG")
+        except (OSError, ValueError) as exc:
+            raise ValueError("reference image format is unsupported") from exc
+        converted = output.getvalue()
+        if not converted:
+            raise ValueError("reference image conversion produced an empty image")
+        return converted, "image/png"
 
     def _build_api_url(self, route: str) -> str:
         parsed = urlparse(self.base_url.rstrip("/"))

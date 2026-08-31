@@ -94,6 +94,86 @@ afterEach(() => {
 })
 
 describe('page task lifecycle', () => {
+  it('restores the active tab session and its completed image after reload', async () => {
+    const image = document.createElement('img')
+    image.src = 'https://cdn.example.test/restored-page.webp'
+    Object.defineProperties(image, {
+      naturalWidth: { configurable: true, value: 1_200 },
+      naturalHeight: { configurable: true, value: 1_800 },
+    })
+    document.body.append(image)
+    const candidate = elementCandidate(image)!
+    const digest = await crypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode(candidate.sourceIdentity),
+    )
+    const clientPageKey = [...new Uint8Array(digest)]
+      .map(byte => byte.toString(16).padStart(2, '0'))
+      .join('')
+    class LoadableImage {
+      decoding = ''
+      onload: (() => void) | null = null
+      set src(_value: string) {
+        queueMicrotask(() => this.onload?.())
+      }
+    }
+    vi.stubGlobal('Image', LoadableImage)
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:restored-result')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
+
+    const completedPage: BrowserPageDto = {
+      id: 'restored-page',
+      clientPageKey,
+      ordinal: 1,
+      pageId: crypto.randomUUID(),
+      state: 'completed',
+      resultReady: true,
+      retryCount: 0,
+      error: null,
+    }
+    const restoredSession = {
+      ...session('restored-session', [completedPage]),
+      pageUrl: location.href,
+      state: 'completed' as const,
+      counts: {
+        total: 1,
+        queued: 0,
+        translating: 0,
+        completed: 1,
+        failed: 0,
+        cancelled: 0,
+      },
+    }
+    sendMessage.mockImplementation(async (request: { type: string }) => {
+      if (request.type === 'get-preference') {
+        return successful(structuredClone(DEFAULT_PREFERENCE))
+      }
+      if (request.type === 'get-active-session') {
+        return successful({ sessionId: 'restored-session' })
+      }
+      if (request.type === 'get-session') return successful(restoredSession)
+      if (request.type === 'fetch-result') {
+        return successful({ base64: 'cmVzdG9yZWQ=', mimeType: 'image/png' })
+      }
+      throw new Error(`unexpected request: ${request.type}`)
+    })
+
+    const controller = new PageController() as unknown as TestController
+    await controller.initialize()
+
+    expect(controller.currentTask()).toEqual({
+      generation: 1,
+      sessionId: 'restored-session',
+    })
+    expect(controller.session?.id).toBe('restored-session')
+    expect(image.src).toBe('blob:restored-result')
+    expect(image.dataset.saberTranslated).toBe('true')
+    expect(sendMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'create-session' })
+    )
+    await controller.dispose()
+  })
+
   it('ignores a previous session response after a newer task has started', async () => {
     const firstResponse = deferred<{ ok: true; data: BrowserSessionDto }>()
     const secondResponse = deferred<{ ok: true; data: BrowserSessionDto }>()

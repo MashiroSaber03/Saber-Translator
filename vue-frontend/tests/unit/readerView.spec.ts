@@ -155,6 +155,27 @@ describe('ReaderView', () => {
     expect(wrapper.get('[aria-label="阅读设置"]').exists()).toBe(true)
   })
 
+  it('shows a truthful zero page position while the chapter is empty', async () => {
+    const wrapper = mount(ReaderView, {
+      props: {
+        bookId: 'book-1',
+        chapterId: 'chapter-1',
+      },
+      global: {
+        stubs: {
+          AppShell: AppShellStub,
+          ProductPageHeader: ProductPageHeaderStub,
+          ReaderCanvas: true,
+          ReaderControls: true,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.get('.reader-header__page-info').text()).toBe('0 / 0')
+  })
+
   it('shows the persisted translated-page count from chapter metadata', async () => {
     listChapterPagesMock.mockResolvedValueOnce({
       items: [

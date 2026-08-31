@@ -54,10 +54,14 @@ async function send<T>(request: BackgroundRequest): Promise<T> {
   return response.data
 }
 
-function normalizedPageUrl(): string {
-  const url = new URL(location.href)
+function normalizedPageUrlFrom(value: string): string {
+  const url = new URL(value)
   url.hash = ''
   return url.toString()
+}
+
+function normalizedPageUrl(): string {
+  return normalizedPageUrlFrom(location.href)
 }
 
 function domAgentPageUrl(): string {
@@ -334,6 +338,122 @@ export class PageController {
       document.title || this.hostname,
       isKnownComicHost(this.hostname),
     )
+    await this.restoreActiveSession()
+  }
+
+  private async rememberActiveSession(sessionId: string): Promise<void> {
+    try {
+      await send<{ saved: boolean }>({
+        type: 'set-active-session',
+        pageUrl: this.pageUrl,
+        sessionId,
+      })
+    } catch (error) {
+      console.warn('Saber extension could not remember the active session', error)
+    }
+  }
+
+  private async forgetActiveSession(sessionId?: string): Promise<void> {
+    try {
+      await send<{ cleared: boolean }>({
+        type: 'clear-active-session',
+        pageUrl: this.pageUrl,
+        ...(sessionId ? { sessionId } : {}),
+      })
+    } catch (error) {
+      console.warn('Saber extension could not clear the active session', error)
+    }
+  }
+
+  private async restoreCandidates(): Promise<ImageCandidate[]> {
+    if (this.activeRule) {
+      const ruled = scanRule(this.activeRule)
+      if (ruled.length) {
+        this.usingAdapter = false
+        return ruled
+      }
+      this.activeRule = null
+      delete this.preference.rule
+      this.ui?.setAdaptationSaved(false)
+      try {
+        await this.persistPreference()
+      } catch (error) {
+        console.warn('Saber extension could not remove a stale adaptation rule', error)
+      }
+    }
+    const adapter = adapterFor(this.hostname)
+    if (this.activeMethod === 'adapter' && adapter) {
+      const adapted = scanAdapter(adapter)
+      if (adapted.length) {
+        this.usingAdapter = true
+        return adapted
+      }
+    }
+    this.usingAdapter = false
+    return scanGeneric()
+  }
+
+  private async restoreActiveSession(): Promise<void> {
+    let remembered: { sessionId: string } | null
+    let session: BrowserSessionDto
+    try {
+      remembered = await send<{ sessionId: string } | null>({
+        type: 'get-active-session',
+        pageUrl: this.pageUrl,
+      })
+      if (!remembered) return
+      session = await send<BrowserSessionDto>({
+        type: 'get-session',
+        sessionId: remembered.sessionId,
+      })
+      if (
+        normalizedPageUrlFrom(session.pageUrl) !== this.pageUrl
+        || session.state === 'cancelled'
+        || session.pages.length === 0
+      ) {
+        await this.forgetActiveSession(remembered.sessionId)
+        return
+      }
+    } catch (error) {
+      if (error instanceof ExtensionRequestError && !error.retryable) {
+        await this.forgetActiveSession()
+      }
+      return
+    }
+
+    try {
+      const generation = ++this.taskGeneration
+      this.session = session
+      this.imported = false
+      this.cancelled = false
+      this.discoveryStopped = false
+      this.nextOrdinal = Math.max(...session.pages.map(page => page.ordinal)) + 1
+      const candidates = await this.restoreCandidates()
+      this.candidates = candidates
+      this.registerCandidates(candidates)
+      const pagesByClientKey = new Map(
+        session.pages.map(page => [page.clientPageKey, page])
+      )
+      for (const page of session.pages) {
+        this.pageIdsByClientKey.set(page.clientPageKey, page.id)
+      }
+      for (const candidate of candidates) {
+        const clientPageKey = await this.clientKey(candidate)
+        if (this.disposed || generation !== this.taskGeneration) return
+        const page = pagesByClientKey.get(clientPageKey)
+        if (!page) continue
+        this.candidatesByClientKey.set(clientPageKey, candidate)
+        this.ordinalsByIdentity.set(candidate.sourceIdentity, page.ordinal)
+      }
+      const task = { generation, sessionId: session.id }
+      this.showSession(session)
+      await this.applyCompletedPages(session, task)
+      if (!this.isCurrentTask(task)) return
+      this.startObserver()
+      this.startPolling(250, task)
+    } catch (error) {
+      this.ui?.showError(errorDetails(error))
+    }
   }
 
   private ordinalFor(candidate: ImageCandidate): number {
@@ -574,6 +694,7 @@ export class PageController {
     if (this.pollTimer !== null) window.clearTimeout(this.pollTimer)
     this.pollTimer = null
     this.disconnectObserver()
+    await this.forgetActiveSession(this.session?.id)
     this.session = null
     this.imported = false
     await this.queueReplacement(null, () => this.replacement.restoreAll())
@@ -605,6 +726,8 @@ export class PageController {
     })
     if (this.disposed || generation !== this.taskGeneration) return null
     this.session = session
+    await this.rememberActiveSession(session.id)
+    if (this.disposed || generation !== this.taskGeneration) return null
     this.ui?.showTerms([])
     this.showSession(session)
     return { generation, sessionId: session.id }
@@ -869,6 +992,9 @@ export class PageController {
         if (!this.isCurrentTask(task)) return
       }
       this.session = session
+      if (session.state === 'cancelled') {
+        await this.forgetActiveSession(session.id)
+      }
       for (const page of session.pages) {
         this.pageIdsByClientKey.set(page.clientPageKey, page.id)
       }
@@ -891,6 +1017,9 @@ export class PageController {
       if (busy) this.startPolling(1_500, task)
     } catch (error) {
       if (!this.isCurrentTask(task)) return
+      if (error instanceof ExtensionRequestError && !error.retryable) {
+        await this.forgetActiveSession(task.sessionId)
+      }
       this.ui?.showError(errorDetails(error))
       if (!(error instanceof ExtensionRequestError) || error.retryable) {
         this.startPolling(5_000, task)
@@ -1159,6 +1288,7 @@ export class PageController {
       if (!this.isCurrentTask(task)) return
       this.session = session
       this.showSession(this.session)
+      await this.forgetActiveSession(session.id)
     } catch (error) {
       this.ui?.showError(errorDetails(error))
     }
@@ -1194,6 +1324,7 @@ export class PageController {
       this.taskGeneration += 1
       if (this.pollTimer !== null) window.clearTimeout(this.pollTimer)
       this.pollTimer = null
+      await this.forgetActiveSession(task.sessionId)
       return result
     } catch (error) {
       this.ui?.showError(errorDetails(error))
@@ -1210,6 +1341,7 @@ export class PageController {
       this.ui?.showError(errorDetails(error))
       return
     }
+    await this.forgetActiveSession(this.session?.id)
     await this.dispose()
   }
 

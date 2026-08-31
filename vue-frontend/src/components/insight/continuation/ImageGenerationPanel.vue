@@ -197,7 +197,7 @@
             @click="$emit('use-previous', page.page_number)"
           >
             <UiIcon class="image-generation-panel__previous-icon" name="chevron-right" size="14" />
-            <span>上一版本</span>
+            <span>切换版本</span>
           </UiButton>
         </ProductActionRow>
       </ProductRecordCard>
@@ -253,7 +253,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  'batch-generate': [initialStyleReferenceTokens: string[] | null]
+  'batch-generate': [initialStyleReferenceTokens: string[]]
   'regenerate': [pageNumber: number]
   'use-previous': [pageNumber: number]
   'prompt-change': [pageNumber: number, prompt: string]
@@ -263,7 +263,7 @@ const state = props.state
 const editingPromptPage = ref<number | null>(null)
 const expandedStorySections = ref<Record<string, boolean>>({})
 const refCount = ref(state.styleRefPages?.value || 3)
-const batchInitialReferenceTokens = ref<string[]>([])
+const batchInitialReferenceTokens = state.initialReferenceTokens
 const selectorVisible = ref(false)
 const availableOriginalImages = ref<MangaImageInfo[]>([])
 const availableContinuationImages = ref<MangaImageInfo[]>([])
@@ -474,8 +474,7 @@ function handleSelectorConfirm(tokens: string[]) {
 }
 
 function handleBatchGenerate() {
-  const tokens = batchInitialReferenceTokens.value.length > 0 ? batchInitialReferenceTokens.value : null
-  emit('batch-generate', tokens)
+  emit('batch-generate', [...batchInitialReferenceTokens.value])
 }
 
 onMounted(() => {
@@ -500,7 +499,6 @@ watch(() => props.bookId, () => {
   invalidateAvailableImages()
   editingPromptPage.value = null
   expandedStorySections.value = {}
-  batchInitialReferenceTokens.value = []
   selectorVisible.value = false
   availableOriginalImages.value = []
   availableContinuationImages.value = []
@@ -516,7 +514,6 @@ watch(() => props.bookId, () => {
 
 watch(() => props.pages.length, (pageCount) => {
   if (pageCount === 0) {
-    batchInitialReferenceTokens.value = []
     expandedStorySections.value = {}
   }
 })

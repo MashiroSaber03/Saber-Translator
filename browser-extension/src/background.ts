@@ -21,6 +21,7 @@ const CONTEXT_MENU_ID = 'saber-translate-image'
 const MAX_RESULT_BYTES = 45 * 1024 * 1024
 const API_REQUEST_TIMEOUT_MS = 30_000
 const IMAGE_TRANSFER_TIMEOUT_MS = 120_000
+const ACTIVE_SESSION_KEY_PREFIX = 'saber-active-browser-session-v1:'
 const FRIENDLY_API_ERRORS: Record<string, string> = {
   integration_disabled: '请先在 Saber GUI 中启用浏览器扩展连接',
   invalid_extension_token: '配对令牌无效，请从 Saber GUI 重新复制',
@@ -35,6 +36,9 @@ const FRIENDLY_API_ERRORS: Record<string, string> = {
 void chrome.storage.local.setAccessLevel({
   accessLevel: 'TRUSTED_CONTEXTS',
 }).catch(error => console.warn('Saber extension storage isolation failed', error))
+void chrome.storage.session.setAccessLevel({
+  accessLevel: 'TRUSTED_CONTEXTS',
+}).catch(error => console.warn('Saber extension session isolation failed', error))
 
 class RequestFailure extends Error {
   constructor(
@@ -340,7 +344,63 @@ chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
   }
 })
 
-async function handleRequest(request: BackgroundRequest): Promise<unknown> {
+chrome.tabs.onRemoved.addListener(tabId => {
+  void chrome.storage.session.remove(`${ACTIVE_SESSION_KEY_PREFIX}${tabId}`)
+})
+
+function normalizedContentPageUrl(value: string): string {
+  const url = new URL(value)
+  if (!['http:', 'https:'].includes(url.protocol)) {
+    throw new RequestFailure('invalid_page_url', '网页地址必须使用 HTTP(S)', false)
+  }
+  url.hash = ''
+  return url.toString()
+}
+
+function contentTabId(sender: chrome.runtime.MessageSender, pageUrl: string): number {
+  const tabId = sender.tab?.id
+  const senderUrl = sender.url ?? sender.tab?.url
+  if (tabId === undefined || !senderUrl) {
+    throw new RequestFailure('content_tab_required', '该操作只能从网页标签页执行', false)
+  }
+  const normalizedPageUrl = normalizedContentPageUrl(pageUrl)
+  if (
+    normalizedContentPageUrl(senderUrl) !== normalizedPageUrl
+    || (
+      sender.tab?.url
+      && normalizedContentPageUrl(sender.tab.url) !== normalizedPageUrl
+    )
+  ) {
+    throw new RequestFailure('stale_page_context', '网页已经切换，忽略过期会话操作', false)
+  }
+  return tabId
+}
+
+async function activeSessionForTab(
+  sender: chrome.runtime.MessageSender,
+  pageUrl: string,
+): Promise<{ sessionId: string } | null> {
+  const tabId = contentTabId(sender, pageUrl)
+  const key = `${ACTIVE_SESSION_KEY_PREFIX}${tabId}`
+  const stored = (await chrome.storage.session.get(key))[key]
+  if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return null
+  const value = stored as { pageUrl?: unknown; sessionId?: unknown }
+  if (
+    typeof value.pageUrl !== 'string'
+    || typeof value.sessionId !== 'string'
+    || !value.sessionId
+    || normalizedContentPageUrl(value.pageUrl) !== normalizedContentPageUrl(pageUrl)
+  ) {
+    await chrome.storage.session.remove(key)
+    return null
+  }
+  return { sessionId: value.sessionId }
+}
+
+async function handleRequest(
+  request: BackgroundRequest,
+  sender: chrome.runtime.MessageSender,
+): Promise<unknown> {
   if (request.type === 'get-preference') {
     const settings = await loadSettings()
     return preferenceFor(settings, request.hostname)
@@ -385,6 +445,32 @@ async function handleRequest(request: BackgroundRequest): Promise<unknown> {
   }
   if (request.type === 'status') {
     return await saberRequest<Record<string, unknown>>('/status')
+  }
+  if (request.type === 'get-active-session') {
+    return await activeSessionForTab(sender, request.pageUrl)
+  }
+  if (request.type === 'set-active-session') {
+    const tabId = contentTabId(sender, request.pageUrl)
+    if (!request.sessionId) {
+      throw new RequestFailure('invalid_session_id', '网页会话 ID 无效', false)
+    }
+    await chrome.storage.session.set({
+      [`${ACTIVE_SESSION_KEY_PREFIX}${tabId}`]: {
+        pageUrl: normalizedContentPageUrl(request.pageUrl),
+        sessionId: request.sessionId,
+      },
+    })
+    return { saved: true }
+  }
+  if (request.type === 'clear-active-session') {
+    const tabId = contentTabId(sender, request.pageUrl)
+    const key = `${ACTIVE_SESSION_KEY_PREFIX}${tabId}`
+    if (request.sessionId) {
+      const active = await activeSessionForTab(sender, request.pageUrl)
+      if (active?.sessionId !== request.sessionId) return { cleared: false }
+    }
+    await chrome.storage.session.remove(key)
+    return { cleared: true }
   }
   if (request.type === 'create-session') {
     return await saberRequest<BrowserSessionDto>('/sessions', {
@@ -465,7 +551,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
     )))
     return false
   }
-  void handleRequest(request)
+  void handleRequest(request, sender)
     .then((data) => {
       const response: BackgroundResponse<unknown> = { ok: true, data }
       sendResponse(response)

@@ -314,6 +314,7 @@ def run_worker(args: object) -> int:
             )
             job_handlers.update(
                 {
+                    "insight_analyze_batch": insight.handle,
                     "insight_analyze_page": insight.handle,
                     "insight_validate_run": insight.handle,
                     "insight_publish_run": insight.handle,

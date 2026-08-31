@@ -11,7 +11,7 @@
           input-id="orthographicSourceImages"
           class="orthographic-dialog__dropzone"
           :label="`上传 ${characterName} ${formName} 三视图源图`"
-          accept="image/*"
+          accept=".png,.jpg,.jpeg,.webp,.gif,.bmp,.tif,.tiff"
           @select="selectImages"
         >
           <template #default="{ isDragging }">
@@ -175,7 +175,7 @@ function scheduleProgressMessage(delay: number, message: string): void {
 }
 
 function selectImages(selectedFiles: File[]) {
-  const file = selectedFiles.find(item => item.type.startsWith('image/')) ?? null
+  const file = selectedFiles[0] ?? null
   setSourceImage(file)
 }
 

@@ -95,6 +95,7 @@ describe('useContinuationState', () => {
     state.pageCount.value = 22
     state.styleRefPages.value = 7
     state.continuationDirection.value = '保留旧方向'
+    state.initialReferenceTokens.value = ['old-reference']
     state.chapterScript.value = {
       chapter_title: '旧脚本',
       page_count: 8,
@@ -118,6 +119,7 @@ describe('useContinuationState', () => {
     await state.initializeData()
 
     expect(state.isDataReady.value).toBe(true)
+    expect(state.initialReferenceTokens.value).toEqual([])
     expect(state.pageCount.value).toBe(10)
     expect(state.styleRefPages.value).toBe(3)
     expect(state.continuationDirection.value).toBe('')

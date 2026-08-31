@@ -35,6 +35,7 @@ vi.mock('@/api/continuation', () => ({
 
 const stateStub = {
   styleRefPages: ref(3),
+  initialReferenceTokens: ref<string[]>([]),
   showMessage: vi.fn(),
 }
 
@@ -86,6 +87,7 @@ describe('ImageGenerationPanel', () => {
     })
     vi.mocked(loadMoreAvailableCharacterForms).mockReset()
     stateStub.styleRefPages.value = 3
+    stateStub.initialReferenceTokens.value = []
     stateStub.showMessage.mockClear()
   })
 
@@ -134,6 +136,26 @@ describe('ImageGenerationPanel', () => {
         )
     ).toBe(true)
     expect(wrapper.findAllComponents(ProductActionRow).length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('labels the alternate image action as a version switch', () => {
+    const wrapper = mount(ImageGenerationPanel, {
+      props: {
+        pages: [createPage({ previous_url: '/tmp/alternate.png' })],
+        isGenerating: false,
+        progress: 0,
+        bookId: 'book-1',
+        state: stateStub,
+      },
+      global: {
+        stubs: {
+          ReferenceImageSelector: referenceSelectorStub,
+        },
+      },
+    })
+
+    expect(getButtonByText(wrapper, '切换版本').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('上一版本')
   })
 
   it('shows story sections as collapsed previews by default and expands them independently', async () => {

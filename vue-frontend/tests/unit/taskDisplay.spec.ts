@@ -13,6 +13,7 @@ describe('task display labels', () => {
     expect(jobKindLabel('insight_analysis')).toBe('漫画分析')
     expect(stepKindLabel('translate')).toBe('文本翻译')
     expect(stepKindLabel('insight_analyze_page')).toBe('分析漫画页面')
+    expect(stepKindLabel('insight_analyze_batch')).toBe('批量分析漫画页面')
     expect(stepKindLabel('insight_build_layer_3')).toBe('构建分析层 4')
     expect(eventTypeLabel('job_finished')).toBe('任务已完成')
     expect(TASK_EVENT_TYPES).toContain('job_yielded')

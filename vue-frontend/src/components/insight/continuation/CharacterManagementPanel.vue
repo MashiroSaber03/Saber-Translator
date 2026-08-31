@@ -147,6 +147,7 @@ import EditFormDialog from './EditFormDialog.vue'
 import OrthographicDialog from './OrthographicDialog.vue'
 import type { CharacterProfile, CharacterForm } from '@/api/continuation'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
+import { assertContinuationJobCompleted } from '@/composables/continuation/continuationActionRunner'
 
 const props = defineProps<{
   bookId: string
@@ -428,10 +429,11 @@ async function handleGenerateOrtho(sourceImage: File) {
 
     if (requestId !== orthoRequestId || props.bookId !== bookId) return
     state.showMessage('三视图任务已进入任务中心，关闭浏览器也会继续运行', 'info')
-    await taskCenterStore.waitForJob(jobId)
+    const job = await taskCenterStore.waitForJob(jobId)
     if (requestId !== orthoRequestId || props.bookId !== bookId) return
     await state.initializeData()
     if (requestId !== orthoRequestId || props.bookId !== bookId) return
+    assertContinuationJobCompleted(job, '三视图生成')
     const form = state.characters.value
       .find(character => character.name === characterName)
       ?.forms.find(item => item.form_id === formId)

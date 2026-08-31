@@ -1,7 +1,10 @@
 import unittest
 from unittest import mock
+from pathlib import Path
+import tempfile
 
 import httpx
+from PIL import Image
 
 
 class FakeResponse:
@@ -40,6 +43,76 @@ class SharedProviderRegistryImageGenTests(unittest.TestCase):
 
 
 class MangaInsightImageGenClientTests(unittest.IsolatedAsyncioTestCase):
+    async def test_local_custom_provider_omits_empty_authorization_header(self) -> None:
+        from src.core.manga_insight.clients.image_gen_client import ImageGenClient
+        from src.core.manga_insight.config_models import ImageGenConfig
+
+        client = ImageGenClient(
+            ImageGenConfig(
+                provider="custom",
+                api_key="",
+                model="local-image-model",
+                base_url="http://127.0.0.1:5300/v1",
+            )
+        )
+        try:
+            self.assertEqual(client._get_headers(), {"Content-Type": "application/json"})
+            self.assertEqual(client._build_multipart_headers(), {})
+        finally:
+            await client.close()
+
+    async def test_reference_images_normalize_tiff_and_bmp_to_png(self) -> None:
+        from src.core.manga_insight.clients.image_gen_client import ImageGenClient
+        from src.core.manga_insight.config_models import ImageGenConfig
+
+        client = ImageGenClient(
+            ImageGenConfig(
+                provider="gpt2api",
+                api_key="test-key",
+                model="gpt-image-2",
+                base_url="https://gateway.example.com",
+            )
+        )
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                for filename, image_format in (
+                    ("reference.tiff", "TIFF"),
+                    ("reference.bmp", "BMP"),
+                ):
+                    with self.subTest(image_format=image_format):
+                        path = Path(directory, filename)
+                        with Image.new("RGB", (12, 8), (20, 40, 60)) as image:
+                            image.save(path, format=image_format)
+                        encoded = client._encode_reference_image(
+                            {"path": str(path), "type": "style"}
+                        )
+                        self.assertEqual(encoded["mime"], "image/png")
+                        self.assertTrue(str(encoded["filename"]).endswith(".png"))
+                        self.assertTrue(bytes(encoded["bytes"]).startswith(b"\x89PNG"))
+        finally:
+            await client.close()
+
+    async def test_reference_image_rejects_non_image_data(self) -> None:
+        from src.core.manga_insight.clients.image_gen_client import ImageGenClient
+        from src.core.manga_insight.config_models import ImageGenConfig
+
+        client = ImageGenClient(
+            ImageGenConfig(
+                provider="gpt2api",
+                api_key="test-key",
+                model="gpt-image-2",
+                base_url="https://gateway.example.com",
+            )
+        )
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory, "invalid.tiff")
+                path.write_bytes(b"not an image")
+                with self.assertRaisesRegex(ValueError, "format is unsupported"):
+                    client._read_image_bytes(str(path))
+        finally:
+            await client.close()
+
     async def test_image_gen_client_uses_configured_unlimited_timeout(self) -> None:
         from src.core.manga_insight.clients.image_gen_client import ImageGenClient
         from src.core.manga_insight.config_models import ImageGenConfig

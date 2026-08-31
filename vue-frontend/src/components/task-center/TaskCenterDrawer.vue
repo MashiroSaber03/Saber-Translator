@@ -33,6 +33,7 @@ import {
   formatTaskDuration,
   jobKindLabel,
   stepKindLabel,
+  isInsightAnalysisStepKind,
 } from '@/utils/taskDisplay'
 
 const store = useTaskCenterStore()
@@ -241,7 +242,7 @@ function detailProgress(job: V2Job) {
     }
   }
 
-  const pagePool = job.progress.pools.find(pool => pool.kind === 'insight_analyze_page')
+  const pagePool = job.progress.pools.find(pool => isInsightAnalysisStepKind(pool.kind))
   if (!pagePool) {
     return {
       label: '页进度',

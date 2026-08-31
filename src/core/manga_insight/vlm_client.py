@@ -119,41 +119,61 @@ class VLMClient:
         page_number: int,
         prompt: str,
     ) -> dict[str, Any]:
-        if (
+        return await self.analyze_batch([image_bytes], [page_number], prompt)
+
+    async def analyze_batch(
+        self,
+        image_bytes: list[bytes],
+        page_numbers: list[int],
+        prompt: str,
+    ) -> dict[str, Any]:
+        if not image_bytes or len(image_bytes) != len(page_numbers):
+            raise ValueError("VLM batch images and page numbers must have equal length")
+        if any(
             isinstance(page_number, bool)
             or not isinstance(page_number, int)
             or page_number < 1
+            for page_number in page_numbers
         ):
-            raise ValueError("page_number must be a positive integer")
+            raise ValueError("VLM batch page numbers must be positive integers")
+        if len(set(page_numbers)) != len(page_numbers):
+            raise ValueError("VLM batch page numbers must be unique")
+        if not isinstance(prompt, str) or not prompt.strip():
+            raise ValueError("VLM prompt must be a non-empty string")
+
+        expected_page_numbers = tuple(page_numbers)
 
         def parser(response_text: str) -> dict[str, Any]:
             try:
-                return self._parse_page_analysis(response_text, page_number)
+                return self._parse_batch_analysis(
+                    response_text,
+                    expected_page_numbers,
+                )
             except (TypeError, ValueError) as exc:
+                page_label = ",".join(str(value) for value in expected_page_numbers)
                 raise OpenAICompatibleBusinessRetryableError(
-                    f"第{page_number}页 JSON 解析失败"
+                    f"第{page_label}页批量 JSON 解析失败"
                 ) from exc
 
-        if not isinstance(prompt, str) or not prompt.strip():
-            raise ValueError("VLM prompt must be a non-empty string")
         provider = self.provider
         base_url = self._base_url
-
-        prepared, media_type = _prepare_image(
-            image_bytes,
-            self.config.image_max_size,
-        )
-        content: list[dict[str, Any]] = [
-            {
-                "type": "image_url",
-                "image_url": {
-                    "url": (
-                        f"data:{media_type};base64,"
-                        f"{base64.b64encode(prepared).decode('ascii')}"
-                    )
-                },
-            }
-        ]
+        content: list[dict[str, Any]] = []
+        for image in image_bytes:
+            prepared, media_type = _prepare_image(
+                image,
+                self.config.image_max_size,
+            )
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": (
+                            f"data:{media_type};base64,"
+                            f"{base64.b64encode(prepared).decode('ascii')}"
+                        )
+                    },
+                }
+            )
         content.append({"type": "text", "text": prompt})
 
         if not base_url:
@@ -189,6 +209,13 @@ class VLMClient:
         response_text: str,
         page_number: int,
     ) -> dict[str, Any]:
+        return self._parse_batch_analysis(response_text, (page_number,))
+
+    def _parse_batch_analysis(
+        self,
+        response_text: str,
+        page_numbers: tuple[int, ...],
+    ) -> dict[str, Any]:
         result = parse_json_block_from_text(response_text)
         if not isinstance(result, dict) or set(result) != {"pages"}:
             raise ValueError("模型结果必须是只包含 pages 的对象")
@@ -196,15 +223,21 @@ class VLMClient:
         pages = result["pages"]
         if not isinstance(pages, list):
             raise ValueError("pages 必须是数组")
-        if len(pages) != 1 or not isinstance(pages[0], dict):
-            raise ValueError("pages 必须只包含一个页面对象")
-        actual_page_number = pages[0].get("page_number")
-        if (
-            isinstance(actual_page_number, bool)
-            or not isinstance(actual_page_number, int)
-            or actual_page_number != page_number
+        if len(pages) != len(page_numbers) or any(
+            not isinstance(page, dict) for page in pages
         ):
-            raise ValueError(
-                f"page_number 必须为 {page_number}，实际为 {actual_page_number}"
-            )
-        return {"pages": pages}
+            raise ValueError(f"pages 必须包含 {len(page_numbers)} 个页面对象")
+        by_number: dict[int, dict[str, Any]] = {}
+        for page in pages:
+            actual_page_number = page.get("page_number")
+            if (
+                isinstance(actual_page_number, bool)
+                or not isinstance(actual_page_number, int)
+                or actual_page_number not in page_numbers
+                or actual_page_number in by_number
+            ):
+                raise ValueError("pages 中的 page_number 与请求页码不一致")
+            by_number[actual_page_number] = page
+        if set(by_number) != set(page_numbers):
+            raise ValueError("pages 没有完整覆盖请求页码")
+        return {"pages": [by_number[value] for value in page_numbers]}

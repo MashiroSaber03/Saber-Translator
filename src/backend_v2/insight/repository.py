@@ -542,6 +542,15 @@ class InsightRepository:
             ).mappings().one_or_none()
         if row is None:
             raise InsightNotFound("analysis run target not found")
+        return self._run_target_dict(row, run_id=run_id, page_id=page_id)
+
+    @staticmethod
+    def _run_target_dict(
+        row: Mapping[str, Any],
+        *,
+        run_id: str,
+        page_id: str,
+    ) -> dict[str, Any]:
         stored_run_id = _required_string(
             row["run_id"],
             "analysis run target run id",
@@ -591,7 +600,368 @@ class InsightRepository:
                 minimum=1,
             ),
             "status": status,
+            "error": _optional_json_object(
+                row["error_json"],
+                "analysis run target error",
+            ),
         }
+
+    @staticmethod
+    def _batch_group_value(
+        row: Mapping[str, Any],
+        grouping: str,
+    ) -> str | int | None:
+        if grouping == "global":
+            return None
+        if grouping == "chapter":
+            return _optional_string(
+                row["chapter_id"],
+                "analysis run target current chapter id",
+            )
+        if grouping == "contiguous":
+            page_number = _required_integer(
+                row["page_number_snapshot"],
+                "analysis run target page number snapshot",
+                minimum=1,
+            )
+            ordinal = _required_integer(
+                row["ordinal"],
+                "analysis run target ordinal",
+                minimum=1,
+            )
+            return page_number - ordinal
+        raise ValueError("Insight batch grouping is invalid")
+
+    @staticmethod
+    def _batch_group_starts(
+        connection: Connection,
+        *,
+        run_id: str,
+        grouping: str,
+    ) -> dict[str | int | None, int]:
+        if grouping == "global":
+            first = connection.execute(
+                select(func.min(analysis_run_targets.c.ordinal)).where(
+                    analysis_run_targets.c.run_id == run_id
+                )
+            ).scalar_one()
+            return {
+                None: _required_integer(
+                    first,
+                    "analysis run first target ordinal",
+                    minimum=1,
+                )
+            }
+        if grouping == "chapter":
+            rows = connection.execute(
+                select(
+                    analysis_run_targets.c.chapter_id,
+                    func.min(analysis_run_targets.c.ordinal),
+                )
+                .where(analysis_run_targets.c.run_id == run_id)
+                .group_by(analysis_run_targets.c.chapter_id)
+            )
+            return {
+                _optional_string(chapter_id, "analysis run target chapter id"):
+                _required_integer(
+                    first_ordinal,
+                    "analysis run chapter first ordinal",
+                    minimum=1,
+                )
+                for chapter_id, first_ordinal in rows
+            }
+        if grouping == "contiguous":
+            group_key = (
+                analysis_run_targets.c.page_number_snapshot
+                - analysis_run_targets.c.ordinal
+            ).label("group_key")
+            rows = connection.execute(
+                select(
+                    group_key,
+                    func.min(analysis_run_targets.c.ordinal),
+                )
+                .where(analysis_run_targets.c.run_id == run_id)
+                .group_by(group_key)
+            )
+            return {
+                int(key): _required_integer(
+                    first_ordinal,
+                    "analysis run contiguous range first ordinal",
+                    minimum=1,
+                )
+                for key, first_ordinal in rows
+            }
+        raise ValueError("Insight batch grouping is invalid")
+
+    @classmethod
+    def _batch_start_ordinal(
+        cls,
+        row: Mapping[str, Any],
+        *,
+        grouping: str,
+        group_starts: Mapping[str | int | None, int],
+        pages_per_batch: int,
+    ) -> int:
+        ordinal = _required_integer(
+            row["ordinal"],
+            "analysis run target ordinal",
+            minimum=1,
+        )
+        group = cls._batch_group_value(row, grouping)
+        first_ordinal = group_starts.get(group)
+        if first_ordinal is None or ordinal < first_ordinal:
+            raise InsightConflict(
+                "stored analysis run batch grouping is invalid; "
+                "clear current Insight data"
+            )
+        return (
+            first_ordinal
+            + ((ordinal - first_ordinal) // pages_per_batch) * pages_per_batch
+        )
+
+    def batch_window(
+        self,
+        *,
+        run_id: str,
+        target: Mapping[str, Any],
+        pages_per_batch: int,
+        grouping: str,
+    ) -> tuple[int, list[dict[str, Any]]]:
+        """Return the target's frozen batch without crossing its group."""
+
+        with self.engine.connect() as connection:
+            group_starts = self._batch_group_starts(
+                connection,
+                run_id=run_id,
+                grouping=grouping,
+            )
+            first_ordinal = self._batch_start_ordinal(
+                target,
+                grouping=grouping,
+                group_starts=group_starts,
+                pages_per_batch=pages_per_batch,
+            )
+            group = self._batch_group_value(target, grouping)
+            conditions = [
+                analysis_run_targets.c.run_id == run_id,
+                analysis_run_targets.c.ordinal >= first_ordinal,
+                analysis_run_targets.c.ordinal
+                < first_ordinal + pages_per_batch,
+            ]
+            if grouping == "chapter":
+                conditions.append(
+                    analysis_run_targets.c.chapter_id.is_(None)
+                    if group is None
+                    else analysis_run_targets.c.chapter_id == group
+                )
+            elif grouping == "contiguous":
+                conditions.append(
+                    analysis_run_targets.c.page_number_snapshot
+                    - analysis_run_targets.c.ordinal
+                    == group
+                )
+            rows = list(
+                connection.execute(
+                    select(analysis_run_targets)
+                    .where(*conditions)
+                    .order_by(analysis_run_targets.c.ordinal)
+                ).mappings()
+            )
+        return (
+            first_ordinal,
+            [
+                self._run_target_dict(
+                    row,
+                    run_id=run_id,
+                    page_id=str(row["page_id_snapshot"]),
+                )
+                for row in rows
+            ],
+        )
+
+    def previous_successful_batches(
+        self,
+        *,
+        run_id: str,
+        before_ordinal: int,
+        pages_per_batch: int,
+        batch_count: int,
+        grouping: str,
+        context_chapter_id: str | None = None,
+    ) -> list[list[dict[str, Any]]]:
+        if batch_count == 0:
+            return []
+        batches: dict[int, list[tuple[int, dict[str, Any]]]] = {}
+        with self.engine.connect() as connection:
+            group_starts = self._batch_group_starts(
+                connection,
+                run_id=run_id,
+                grouping=grouping,
+            )
+            conditions = [
+                analysis_run_targets.c.run_id == run_id,
+                analysis_run_targets.c.ordinal < before_ordinal,
+            ]
+            if context_chapter_id is not None:
+                conditions.append(
+                    analysis_run_targets.c.chapter_id == context_chapter_id
+                )
+            rows = connection.execute(
+                select(
+                    analysis_run_targets.c.ordinal,
+                    analysis_run_targets.c.chapter_id,
+                    analysis_run_targets.c.page_number_snapshot,
+                    analysis_page_results.c.payload_json,
+                )
+                .join(
+                    analysis_page_results,
+                    (
+                        analysis_page_results.c.run_id
+                        == analysis_run_targets.c.run_id
+                    )
+                    & (
+                        analysis_page_results.c.page_id_snapshot
+                        == analysis_run_targets.c.page_id_snapshot
+                    ),
+                )
+                .where(*conditions)
+                .order_by(analysis_run_targets.c.ordinal.desc())
+            ).mappings()
+            for row in rows:
+                ordinal = _required_integer(
+                    row["ordinal"],
+                    "analysis run target ordinal",
+                    minimum=1,
+                )
+                batch_start = self._batch_start_ordinal(
+                    row,
+                    grouping=grouping,
+                    group_starts=group_starts,
+                    pages_per_batch=pages_per_batch,
+                )
+                if batch_start not in batches and len(batches) == batch_count:
+                    break
+                batches.setdefault(batch_start, []).append(
+                    (
+                        ordinal,
+                        _json_object(
+                            row["payload_json"],
+                            "analysis page payload",
+                        ),
+                    )
+                )
+        return [
+            [
+                payload
+                for _ordinal, payload in sorted(batches[batch_index])
+            ]
+            for batch_index in sorted(batches)
+        ]
+
+    def previous_active_batches(
+        self,
+        *,
+        book_id: str,
+        before_page_number: int,
+        pages_per_batch: int,
+        batch_count: int,
+        align_to_chapter: bool,
+    ) -> list[list[dict[str, Any]]]:
+        """Rebuild prior published batches for an incremental run's context."""
+
+        if batch_count == 0:
+            return []
+        source_pointer = page_assets.alias("insight_context_source")
+        page_head = analysis_heads.alias("insight_context_head")
+        active_result = analysis_page_results.alias("insight_context_result")
+        with self.engine.connect() as connection:
+            rows = list(
+                connection.execute(
+                    select(
+                        pages.c.chapter_id,
+                        assets.c.checksum.label("current_source_checksum"),
+                        active_result.c.source_checksum.label(
+                            "analysis_source_checksum"
+                        ),
+                        active_result.c.status.label("analysis_status"),
+                        active_result.c.payload_json,
+                    )
+                    .join(chapters, chapters.c.id == pages.c.chapter_id)
+                    .join(
+                        source_pointer,
+                        (source_pointer.c.page_id == pages.c.id)
+                        & (source_pointer.c.role == "source"),
+                    )
+                    .join(assets, assets.c.id == source_pointer.c.asset_id)
+                    .join(
+                        page_head,
+                        page_head.c.page_id == pages.c.id,
+                        isouter=True,
+                    )
+                    .join(
+                        active_result,
+                        active_result.c.id == page_head.c.active_result_id,
+                        isouter=True,
+                    )
+                    .where(chapters.c.book_id == book_id)
+                    .order_by(chapters.c.ordinal, pages.c.ordinal)
+                ).mappings()
+            )
+
+        numbered = [
+            {**dict(row), "page_number_snapshot": page_number}
+            for page_number, row in enumerate(rows, start=1)
+        ]
+        grouped: list[list[dict[str, Any]]] = []
+        if align_to_chapter:
+            chapter_rows: dict[str, list[dict[str, Any]]] = {}
+            chapter_order: list[str] = []
+            for row in numbered:
+                chapter_id = _required_string(
+                    row["chapter_id"],
+                    "active analysis chapter id",
+                )
+                if chapter_id not in chapter_rows:
+                    chapter_order.append(chapter_id)
+                    chapter_rows[chapter_id] = []
+                chapter_rows[chapter_id].append(row)
+            for chapter_id in chapter_order:
+                values = chapter_rows[chapter_id]
+                grouped.extend(
+                    values[offset : offset + pages_per_batch]
+                    for offset in range(0, len(values), pages_per_batch)
+                )
+        else:
+            grouped = [
+                numbered[offset : offset + pages_per_batch]
+                for offset in range(0, len(numbered), pages_per_batch)
+            ]
+
+        valid: list[list[dict[str, Any]]] = []
+        for batch in grouped:
+            if not batch or int(batch[-1]["page_number_snapshot"]) >= before_page_number:
+                continue
+            payloads: list[dict[str, Any]] = []
+            for row in batch:
+                if (
+                    row["analysis_status"] != "published"
+                    or row["analysis_source_checksum"]
+                    != row["current_source_checksum"]
+                    or row["payload_json"] is None
+                ):
+                    payloads = []
+                    break
+                payload = _json_object(
+                    row["payload_json"],
+                    "active analysis page payload",
+                )
+                payload["page_number_snapshot"] = int(
+                    row["page_number_snapshot"]
+                )
+                payloads.append(payload)
+            if payloads:
+                valid.append(payloads)
+        return valid[-batch_count:]
 
     @staticmethod
     def publish_page_success(

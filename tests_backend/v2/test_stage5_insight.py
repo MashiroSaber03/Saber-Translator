@@ -92,6 +92,7 @@ from src.backend_v2.storage.schema import (
     jobs,
     metadata,
     page_assets,
+    pages,
     provider_settings,
     timeline_versions,
     transient_requests,
@@ -122,18 +123,27 @@ class FakeInsightAlgorithms:
     def __init__(self, *, fail_page: int | None = None) -> None:
         self.fail_page = fail_page
         self.calls: list[int] = []
+        self.batches: list[tuple[int, ...]] = []
+        self.previous_batches: list[tuple[tuple[int, ...], ...]] = []
 
-    def analyze_page(
+    def analyze_batch(
         self,
-        _image_bytes: bytes,
+        image_bytes: Sequence[bytes],
         *,
-        page_number: int,
+        page_numbers: Sequence[int],
+        previous_batches: Sequence[Sequence[Mapping[str, Any]]],
         config: Mapping[str, Any],
     ) -> Mapping[str, Any]:
-        self.calls.append(page_number)
+        assert len(image_bytes) == len(page_numbers)
+        self.calls.extend(page_numbers)
+        self.batches.append(tuple(page_numbers))
+        self.previous_batches.append(
+            tuple(
+                tuple(int(page["page_number_snapshot"]) for page in batch)
+                for batch in previous_batches
+            )
+        )
         assert config["runId"]
-        if page_number == self.fail_page:
-            raise RuntimeError("injected page failure")
         return {
             "pages": [
                 {
@@ -149,6 +159,8 @@ class FakeInsightAlgorithms:
                     "continuity_notes": "与前页连续",
                     "warnings": [],
                 }
+                for page_number in page_numbers
+                if page_number != self.fail_page
             ]
         }
 
@@ -486,6 +498,34 @@ def insight_platform(tmp_path: Path):
         engine.dispose()
 
 
+def _import_insight_test_page(
+    platform,
+    *,
+    chapter_id: str,
+    logical_path: str,
+    color: tuple[int, int, int],
+    idempotency_key: str,
+) -> str:
+    payload = BytesIO()
+    with Image.new("RGB", (64, 64), color) as image:
+        image.save(payload, format="PNG")
+    imported, _ = ImageImportService(
+        data_root=platform["data_root"],
+        repository=ContentRepository(platform["engine"]),
+        storage=AssetStorageService(
+            platform["data_root"],
+            platform["engine"],
+        ),
+    ).import_page(
+        chapter_id=chapter_id,
+        logical_path=logical_path,
+        text_style=dict(DEFAULT_TEXT_STYLE),
+        upload=BytesIO(payload.getvalue()),
+        idempotency_key=idempotency_key,
+    )
+    return str(imported["page"]["id"])
+
+
 def _run_job(platform, algorithms: FakeInsightAlgorithms) -> str:
     queue = JobQueueRepository(platform["engine"])
     service = InsightAnalysisWorkerService(
@@ -605,7 +645,7 @@ def test_validation_failure_persists_failed_run_state(
     while True:
         validate_step = queue.next_step(fence)
         assert validate_step is not None
-        if validate_step["stepKind"] != "insight_analyze_page":
+        if validate_step["stepKind"] != "insight_analyze_batch":
             break
         service.handle(fence, validate_step)
     assert validate_step["stepKind"] == "insight_validate_run"
@@ -761,7 +801,10 @@ def test_full_analysis_freezes_assets_and_publishes_canonical_results(
         idempotency_key="full-1",
     )
     assert replay == accepted
-    assert _run_job(platform, FakeInsightAlgorithms()) == "completed"
+    algorithms = FakeInsightAlgorithms()
+    assert _run_job(platform, algorithms) == "completed"
+    assert algorithms.batches == [(1, 2)]
+    assert algorithms.previous_batches == [()]
 
     validation_statements: list[str] = []
 
@@ -865,6 +908,267 @@ def test_full_analysis_freezes_assets_and_publishes_canonical_results(
     assert all('"scene"' not in payload for payload in payloads)
     assert all('"dialogues"' not in payload for payload in payloads)
     assert all('"characters"' not in payload for payload in payloads)
+
+
+def test_full_analysis_passes_previous_batch_context_to_vlm(
+    insight_platform,
+) -> None:
+    platform = insight_platform
+    content = ContentRepository(platform["engine"])
+    importer = ImageImportService(
+        data_root=platform["data_root"],
+        repository=content,
+        storage=AssetStorageService(platform["data_root"], platform["engine"]),
+    )
+    for index, color in enumerate(((220, 220, 220), (200, 200, 200)), 3):
+        payload = BytesIO()
+        with Image.new("RGB", (64, 64), color) as image:
+            image.save(payload, format="PNG")
+        importer.import_page(
+            chapter_id=str(platform["chapter"]["id"]),
+            logical_path=f"page-{index}.png",
+            text_style=dict(DEFAULT_TEXT_STYLE),
+            upload=BytesIO(payload.getvalue()),
+            idempotency_key=f"context-page-{index}",
+        )
+    with platform["engine"].begin() as connection:
+        row = connection.execute(
+            select(
+                app_settings.c.payload_json,
+                app_settings.c.revision,
+            ).where(app_settings.c.domain == "insight")
+        ).mappings().one()
+        payload = json.loads(row["payload_json"])
+        batch = payload.setdefault("analysis", {}).setdefault("batch", {})
+        batch["pagesPerBatch"] = 1
+        batch["contextBatchCount"] = 2
+        connection.execute(
+            update(app_settings)
+            .where(app_settings.c.domain == "insight")
+            .values(
+                payload_json=json.dumps(payload, separators=(",", ":")),
+                revision=int(row["revision"]) + 1,
+            )
+        )
+
+    InsightAnalysisCommandService(platform["engine"]).create_analysis_job(
+        command={
+            "bookId": str(platform["book"]["id"]),
+            "scope": "full",
+        },
+        idempotency_key="batch-context",
+    )
+    algorithms = FakeInsightAlgorithms(fail_page=2)
+    assert _run_job(platform, algorithms) == "completed_with_errors"
+    assert algorithms.batches == [(1,), (2,), (3,), (4,)]
+    assert algorithms.previous_batches == [
+        (),
+        ((1,),),
+        ((1,),),
+        ((1,), (3,)),
+    ]
+
+
+def test_full_analysis_respects_first_layer_chapter_alignment(
+    insight_platform,
+) -> None:
+    platform = insight_platform
+    second_chapter = ContentRepository(platform["engine"]).create_chapter(
+        book_id=str(platform["book"]["id"]),
+        title="Second Chapter",
+    )
+    for index, color in enumerate(((210, 190, 190), (190, 210, 190)), 3):
+        _import_insight_test_page(
+            platform,
+            chapter_id=str(second_chapter["id"]),
+            logical_path=f"aligned-page-{index}.png",
+            color=color,
+            idempotency_key=f"aligned-page-{index}",
+        )
+    with platform["engine"].begin() as connection:
+        row = connection.execute(
+            select(
+                app_settings.c.payload_json,
+                app_settings.c.revision,
+            ).where(app_settings.c.domain == "insight")
+        ).mappings().one()
+        payload = json.loads(row["payload_json"])
+        batch = payload.setdefault("analysis", {}).setdefault("batch", {})
+        batch["pagesPerBatch"] = 3
+        batch["architecturePreset"] = "chapter_based"
+        connection.execute(
+            update(app_settings)
+            .where(app_settings.c.domain == "insight")
+            .values(
+                payload_json=json.dumps(payload, separators=(",", ":")),
+                revision=int(row["revision"]) + 1,
+            )
+        )
+
+    InsightAnalysisCommandService(platform["engine"]).create_analysis_job(
+        command={"bookId": str(platform["book"]["id"]), "scope": "full"},
+        idempotency_key="chapter-aligned-full-analysis",
+    )
+    algorithms = FakeInsightAlgorithms()
+    assert _run_job(platform, algorithms) == "completed"
+    assert algorithms.batches == [(1, 2), (3, 4)]
+    assert algorithms.previous_batches == [(), ((1, 2),)]
+
+
+def test_chapter_analysis_keeps_batches_and_context_inside_each_chapter(
+    insight_platform,
+) -> None:
+    platform = insight_platform
+    second_chapter = ContentRepository(platform["engine"]).create_chapter(
+        book_id=str(platform["book"]["id"]),
+        title="Second Chapter",
+    )
+    for index, color in enumerate(((180, 180, 220), (170, 170, 210)), 3):
+        _import_insight_test_page(
+            platform,
+            chapter_id=str(second_chapter["id"]),
+            logical_path=f"chapter-page-{index}.png",
+            color=color,
+            idempotency_key=f"chapter-page-{index}",
+        )
+
+    InsightAnalysisCommandService(platform["engine"]).create_analysis_job(
+        command={
+            "bookId": str(platform["book"]["id"]),
+            "scope": "chapter",
+            "chapterIds": [
+                str(platform["chapter"]["id"]),
+                str(second_chapter["id"]),
+            ],
+        },
+        idempotency_key="separate-chapter-analysis",
+    )
+    algorithms = FakeInsightAlgorithms()
+    assert _run_job(platform, algorithms) == "completed"
+    assert algorithms.batches == [(1, 2), (3, 4)]
+    assert algorithms.previous_batches == [(), ()]
+
+
+def test_page_analysis_does_not_merge_noncontiguous_targets_or_add_context(
+    insight_platform,
+) -> None:
+    platform = insight_platform
+    third_page_id = _import_insight_test_page(
+        platform,
+        chapter_id=str(platform["chapter"]["id"]),
+        logical_path="noncontiguous-page-3.png",
+        color=(160, 170, 180),
+        idempotency_key="noncontiguous-page-3",
+    )
+    fourth_page_id = _import_insight_test_page(
+        platform,
+        chapter_id=str(platform["chapter"]["id"]),
+        logical_path="noncontiguous-page-4.png",
+        color=(150, 160, 170),
+        idempotency_key="noncontiguous-page-4",
+    )
+    assert third_page_id != fourth_page_id
+
+    InsightAnalysisCommandService(platform["engine"]).create_analysis_job(
+        command={
+            "bookId": str(platform["book"]["id"]),
+            "scope": "page",
+            "pageIds": [platform["page_ids"][0], fourth_page_id],
+        },
+        idempotency_key="noncontiguous-page-analysis",
+    )
+    algorithms = FakeInsightAlgorithms()
+    assert _run_job(platform, algorithms) == "completed"
+    assert algorithms.batches == [(1,), (4,)]
+    assert algorithms.previous_batches == [(), ()]
+
+
+def test_incremental_analysis_uses_prior_published_batches_as_initial_context(
+    insight_platform,
+) -> None:
+    platform = insight_platform
+    for index, color in enumerate(((145, 155, 165), (135, 145, 155)), 3):
+        _import_insight_test_page(
+            platform,
+            chapter_id=str(platform["chapter"]["id"]),
+            logical_path=f"incremental-context-{index}.png",
+            color=color,
+            idempotency_key=f"incremental-context-{index}",
+        )
+    with platform["engine"].begin() as connection:
+        row = connection.execute(
+            select(
+                app_settings.c.payload_json,
+                app_settings.c.revision,
+            ).where(app_settings.c.domain == "insight")
+        ).mappings().one()
+        payload = json.loads(row["payload_json"])
+        batch = payload.setdefault("analysis", {}).setdefault("batch", {})
+        batch["pagesPerBatch"] = 1
+        batch["contextBatchCount"] = 2
+        connection.execute(
+            update(app_settings)
+            .where(app_settings.c.domain == "insight")
+            .values(
+                payload_json=json.dumps(payload, separators=(",", ":")),
+                revision=int(row["revision"]) + 1,
+            )
+        )
+
+    InsightAnalysisCommandService(platform["engine"]).create_analysis_job(
+        command={"bookId": str(platform["book"]["id"]), "scope": "full"},
+        idempotency_key="incremental-context-baseline",
+    )
+    assert _run_job(platform, FakeInsightAlgorithms()) == "completed"
+
+    with platform["engine"].connect() as connection:
+        ordered_page_ids = [
+            str(value)
+            for value in connection.execute(
+                select(pages.c.id)
+                .where(pages.c.chapter_id == str(platform["chapter"]["id"]))
+                .order_by(pages.c.ordinal)
+            ).scalars()
+        ]
+    assert len(ordered_page_ids) == 4
+
+    def replace_source(page_id: str, color: tuple[int, int, int]) -> None:
+        replacement = BytesIO()
+        with Image.new("RGB", (64, 64), color) as image:
+            image.save(replacement, format="PNG")
+        AssetStorageService(
+            platform["data_root"],
+            platform["engine"],
+        ).publish_bytes(
+            replacement.getvalue(),
+            extension="png",
+            mime_type="image/png",
+            width=64,
+            height=64,
+            bind=lambda connection, asset_id: connection.execute(
+                update(page_assets)
+                .where(
+                    page_assets.c.page_id == page_id,
+                    page_assets.c.role == "source",
+                )
+                .values(asset_id=asset_id)
+            ),
+        )
+
+    replace_source(ordered_page_ids[1], (20, 40, 60))
+    replace_source(ordered_page_ids[3], (30, 50, 70))
+
+    InsightAnalysisCommandService(platform["engine"]).create_analysis_job(
+        command={
+            "bookId": str(platform["book"]["id"]),
+            "scope": "incremental",
+        },
+        idempotency_key="incremental-context-run",
+    )
+    algorithms = FakeInsightAlgorithms()
+    assert _run_job(platform, algorithms) == "completed"
+    assert algorithms.batches == [(2,), (4,)]
+    assert algorithms.previous_batches == [((1,),), ((2,), (3,))]
 
 
 def test_full_analysis_degraded_publish_keeps_failed_page_missing(
@@ -976,9 +1280,9 @@ def test_full_analysis_failed_item_retry_refreshes_settings_and_republishes(
             ).where(app_settings.c.domain == "insight")
         ).mappings().one()
         payload = json.loads(settings_row["payload_json"])
-        payload.setdefault("analysis", {}).setdefault("batch", {})[
-            "pagesPerBatch"
-        ] = 7
+        batch = payload.setdefault("analysis", {}).setdefault("batch", {})
+        batch["pagesPerBatch"] = 1
+        batch["contextBatchCount"] = 1
         connection.execute(
             update(app_settings)
             .where(app_settings.c.domain == "insight")
@@ -1005,14 +1309,17 @@ def test_full_analysis_failed_item_retry_refreshes_settings_and_republishes(
     assert retried["retryMode"] == "current"
     assert config["runId"] == retried["runId"]
     assert retried["runId"] != accepted["runId"]
-    assert config["analysis"]["pagesPerBatch"] == 7
+    assert config["analysis"]["pagesPerBatch"] == 1
     retry_detail = JobQueueRepository(platform["engine"]).get_job(
         retry_job_id
     )
     assert retry_detail["counts"]["total"] == 2
     assert retry_detail["target"]["pageCount"] == 1
     assert retry_detail["target"]["retryItemCount"] == 1
-    assert _run_job(platform, FakeInsightAlgorithms()) == "completed"
+    retry_algorithms = FakeInsightAlgorithms()
+    assert _run_job(platform, retry_algorithms) == "completed"
+    assert retry_algorithms.batches == [(2,)]
+    assert retry_algorithms.previous_batches == [((1,),)]
 
     run = InsightRepository(platform["engine"]).get_run(
         str(retried["runId"])
@@ -3606,6 +3913,42 @@ def test_continuation_script_and_page_loops_are_worker_owned(
     }
     updated_page = repository.update_page(**page_update_input)
     assert repository.update_page(**page_update_input) == updated_page
+
+    original_generate_image = algorithms.generate_image
+    image_attempt = 0
+
+    def fail_first_image(**kwargs):
+        nonlocal image_attempt
+        image_attempt += 1
+        if image_attempt == 1:
+            raise RuntimeError("injected first image failure")
+        return original_generate_image(**kwargs)
+
+    monkeypatch.setattr(algorithms, "generate_image", fail_first_image)
+    failed_images_job = commands.create_images_job(
+        book_id=str(platform["book"]["id"]),
+        ordinals=None,
+        idempotency_key="continuation-images-first-fails",
+    )
+    fence = queue.claim_next(worker_epoch_id=platform["epoch_id"])
+    assert fence is not None
+    while (step := queue.next_step(fence)) is not None:
+        try:
+            assert worker.handle(fence, step)["__already_published__"]
+        except RuntimeError as exc:
+            assert str(exc) == "injected first image failure"
+            queue.fail_step(
+                fence,
+                step_id=str(step["stepId"]),
+                code="INJECTED_IMAGE_FAILURE",
+                message=str(exc),
+            )
+    assert queue.finish_if_complete(fence) == "completed_with_errors"
+    failed_detail = queue.get_job(str(failed_images_job["jobIds"][0]))
+    assert failed_detail["counts"]["failed"] == 1
+    assert failed_detail["counts"]["completed"] == 1
+    monkeypatch.setattr(algorithms, "generate_image", original_generate_image)
+
     images_job = commands.create_images_job(
         book_id=str(platform["book"]["id"]),
         ordinals=None,
@@ -3638,7 +3981,7 @@ def test_continuation_script_and_page_loops_are_worker_owned(
     )
     assert len(candidate_ids) == 2
     reference_roles = {
-        f"continuation_reference_{index:03d}": asset_id
+        f"continuation_reference_{int(second_target['ordinal']):06d}_{index:03d}": asset_id
         for index, asset_id in enumerate(candidate_ids, start=1)
     }
     frozen = queue.bind_explicit_item_inputs(

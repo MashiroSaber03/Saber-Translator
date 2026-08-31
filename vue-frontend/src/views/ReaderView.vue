@@ -208,7 +208,7 @@ watch(
         </template>
 
         <template #meta>
-          <span class="reader-header__page-info">{{ currentPage }} / {{ imagesData.length || '-' }}</span>
+          <span class="reader-header__page-info">{{ imagesData.length ? currentPage : 0 }} / {{ imagesData.length }}</span>
         </template>
 
         <template #actions>

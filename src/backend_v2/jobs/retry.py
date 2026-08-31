@@ -874,7 +874,7 @@ class JobRetryService:
             [
                 JobItemSpec(
                     page_id=page_id,
-                    step_kinds=("insight_analyze_page",),
+                    step_kinds=("insight_analyze_batch",),
                     asset_inputs={
                         "source": str(target_by_page[page_id]["source_asset_id"])
                     },
