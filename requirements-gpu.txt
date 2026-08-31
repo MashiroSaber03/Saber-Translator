@@ -45,7 +45,7 @@ reportlab
 
 # AI/OCR
 openai
-manga-ocr
+manga-ocr==0.1.16  # Transformers 5 tokenizer compatibility
 rapidocr==3.9.2  # PP-OCRv6 ONNX runtime wrapper
 onnxruntime-gpu>=1.27,<2  # CUDA 13 ONNX runtime; also includes CPU fallback
 sentencepiece  # for PaddleOCR-VL

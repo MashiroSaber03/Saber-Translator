@@ -141,3 +141,13 @@ def test_direct_runtime_dependencies_are_declared() -> None:
 
     for import_name in direct_dependencies.values():
         assert importlib.util.find_spec(import_name) is not None
+
+
+def test_manga_ocr_is_pinned_to_the_transformers_5_compatible_release() -> None:
+    for filename in ("requirements-cpu.txt", "requirements-gpu.txt"):
+        requirements = {
+            line.strip().split("#", 1)[0].strip().lower()
+            for line in (PROJECT_ROOT / filename).read_text(encoding="utf-8").splitlines()
+        }
+        assert "manga-ocr==0.1.16" in requirements
+        assert "transformers==5.15.0" in requirements
