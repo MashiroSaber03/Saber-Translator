@@ -23,6 +23,7 @@ import type {
   BrowserSessionImportResult,
   ContextTranslateMessage,
   DetectionMethod,
+  DomDetectionResult,
   DomainPreference,
   LearnedRule,
   PanelPosition,
@@ -265,7 +266,6 @@ export class PageController {
   private taskGeneration = 0
   private readonly pollsInFlight = new Set<number>()
   private replacementQueue: Promise<void> = Promise.resolve()
-  private showTranslatedGlobally = true
   private readonly imageLoadListener = (event: Event) => {
     if (event.target instanceof HTMLImageElement) this.scheduleLazyScan()
   }
@@ -530,7 +530,6 @@ export class PageController {
     for (const url of this.resultUrls.values()) URL.revokeObjectURL(url)
     this.resultUrls.clear()
     this.originalPageIds.clear()
-    this.showTranslatedGlobally = true
     this.ui?.remove()
     this.ui = null
   }
@@ -567,12 +566,7 @@ export class PageController {
           this.ui.showCandidates([])
           return
         }
-        const result = await send<{
-          nodeIds: string[]
-          selector: string
-          confidence: number
-          reason: string
-        }>({
+        const result = await send<DomDetectionResult>({
           type: 'dom-detection',
           payload: {
             pageUrl: domAgentPageUrl(),
@@ -702,7 +696,6 @@ export class PageController {
     for (const url of this.resultUrls.values()) URL.revokeObjectURL(url)
     this.resultUrls.clear()
     this.originalPageIds.clear()
-    this.showTranslatedGlobally = true
     this.candidatesByClientKey.clear()
     this.pageIdsByClientKey.clear()
     this.appliedRetries.clear()
@@ -1050,17 +1043,16 @@ export class PageController {
         return
       }
       try {
-        const applied = await this.queueReplacement(
+        const showingTranslated = await this.queueReplacement(
           task,
-          async () => {
-            await this.replacement.apply(candidate, resultUrl)
-            return true
-          },
+          () => this.replacement.apply(candidate, resultUrl),
         )
-        if (!applied) {
+        if (showingTranslated === null) {
           URL.revokeObjectURL(resultUrl)
           return
         }
+        if (showingTranslated) this.originalPageIds.delete(page.id)
+        else this.originalPageIds.add(page.id)
       } catch (error) {
         URL.revokeObjectURL(resultUrl)
         if (candidate.element instanceof HTMLCanvasElement) {
@@ -1076,7 +1068,6 @@ export class PageController {
       this.resultUrls.set(page.id, resultUrl)
       if (previousUrl) URL.revokeObjectURL(previousUrl)
       this.appliedRetries.set(page.id, page.retryCount)
-      if (!this.showTranslatedGlobally) this.originalPageIds.add(page.id)
     }
   }
 
@@ -1113,7 +1104,6 @@ export class PageController {
           }
         }
       }
-      this.showTranslatedGlobally = showingTranslated
       if (this.session && !this.imported) this.showSession(this.session)
       return showingTranslated
     } catch (error) {

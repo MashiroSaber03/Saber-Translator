@@ -12,7 +12,6 @@ function candidate(element: HTMLImageElement, identity = 'image:original'): Imag
     element,
     bindings: [element],
     sourceUrl: element.src,
-    previewUrl: element.src,
     sourceIdentity: identity,
     width: 800,
     height: 1_200,
@@ -74,6 +73,20 @@ describe('progressive image replacement', () => {
     await manager.restoreAll()
     expect(first.getAttribute('src')).toBe('/original.webp')
     expect(second.getAttribute('src')).toBe('/original.webp')
+  })
+
+  it('owns the display state for results added after a global toggle', async () => {
+    const image = document.createElement('img')
+    image.src = '/original.webp'
+    document.body.append(image)
+    const manager = new ReplacementManager()
+    const item = candidate(image)
+
+    expect(await manager.toggleGlobal()).toBe(false)
+    expect(await manager.apply(item, 'http://127.0.0.1:5000/result.webp')).toBe(false)
+    expect(image.getAttribute('src')).toBe('/original.webp')
+    expect(await manager.toggle(item)).toBe(true)
+    expect(image.src).toBe('http://127.0.0.1:5000/result.webp')
   })
 
   it('toggles one completed page without changing another translated page', async () => {
@@ -183,7 +196,6 @@ describe('progressive image replacement', () => {
       element: canvas,
       bindings: [canvas],
       sourceUrl: null,
-      previewUrl: null,
       sourceIdentity: 'canvas:canvas-1',
       width: canvas.width,
       height: canvas.height,

@@ -807,6 +807,39 @@ def test_browser_failed_page_retry_and_cancel(browser_platform, monkeypatch) -> 
     assert cancelled.get_json()["state"] == "cancelled"
 
 
+def test_cancelled_browser_session_rejects_late_page_upload(browser_platform) -> None:
+    _data_root, engine, app = browser_platform
+    client = app.test_client()
+    session = _create_session(client).get_json()
+    cancelled = client.post(
+        f"/api/v2/browser-extension/sessions/{session['id']}/cancel",
+        headers=HEADERS,
+    )
+    assert cancelled.status_code == 200
+
+    late_upload = client.post(
+        f"/api/v2/browser-extension/sessions/{session['id']}/pages",
+        headers=HEADERS,
+        data={
+            "clientPageKey": "a" * 64,
+            "ordinal": "1",
+            "logicalPath": "00001.png",
+            "file": (BytesIO(_png()), "page.png"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert late_upload.status_code == 409
+    assert late_upload.get_json()["error"]["code"] == "session_conflict"
+    with engine.connect() as connection:
+        page_count = connection.execute(
+            select(func.count()).select_from(browser_session_pages).where(
+                browser_session_pages.c.session_id == session["id"]
+            )
+        ).scalar_one()
+    assert page_count == 0
+
+
 def test_cancelled_browser_job_stays_cancelled_until_explicit_page_retry(
     browser_platform,
 ) -> None:
@@ -1060,9 +1093,19 @@ def test_periodic_cleanup_only_deletes_expired_browser_sessions(browser_platform
 def test_dom_agent_rejects_fabricated_node_ids() -> None:
     with pytest.raises(Exception, match="nodeIds"):
         BrowserDomAgentService._parse_result(
-            '{"nodeIds":["missing"],"selector":"img","confidence":0.9,"reason":"x"}',
+            '{"nodeIds":["missing"],"selector":"img"}',
             allowed_ids={"node-1"},
         )
+
+
+def test_dom_agent_parses_only_the_fields_used_for_detection() -> None:
+    assert BrowserDomAgentService._parse_result(
+        '{"nodeIds":["node-1"],"selector":"main img"}',
+        allowed_ids={"node-1"},
+    ) == {
+        "nodeIds": ["node-1"],
+        "selector": "main img",
+    }
 
 
 def test_dom_agent_redacts_urls_and_requires_sanitized_nodes() -> None:

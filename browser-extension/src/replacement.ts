@@ -175,7 +175,7 @@ export class ReplacementManager {
   private readonly resultLoads = new Map<string, Promise<void>>()
   private showTranslatedGlobally = true
 
-  async apply(candidate: ImageCandidate, resultUrl: string): Promise<void> {
+  async apply(candidate: ImageCandidate, resultUrl: string): Promise<boolean> {
     await this.loadResult(resultUrl)
     let record = this.records.get(candidate.sourceIdentity)
     if (!record) {
@@ -201,6 +201,7 @@ export class ReplacementManager {
     if (record.showTranslated) {
       await Promise.all(record.originals.map(binding => applyBinding(binding, resultUrl)))
     }
+    return record.showTranslated
   }
 
   async syncBindings(candidate: ImageCandidate): Promise<void> {

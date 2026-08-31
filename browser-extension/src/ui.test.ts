@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ImageCandidate } from './discovery'
 import { DEFAULT_PREFERENCE } from './storage'
 import type { BrowserSessionDto } from './types'
 import { ExtensionUi, type UiCallbacks } from './ui'
@@ -101,6 +102,32 @@ describe('isolated extension UI', () => {
     expect(progressActions?.closest('.saber-progress-section')).toBe(progressSection)
     expect(UI_STYLES).toContain('.saber-progress-section { flex: 0 0 auto; }')
     expect(UI_STYLES).toContain('.saber-progress-actions { margin-top: 10px; }')
+  })
+
+  it('previews blob-backed candidates and falls back only after a load error', () => {
+    const ui = mountUi(callbacks())
+    const source = document.createElement('img')
+    const candidate: ImageCandidate = {
+      id: 'blob-page',
+      kind: 'image',
+      element: source,
+      bindings: [source],
+      sourceUrl: 'blob:https://mangadex.org/page-1',
+      sourceIdentity: 'image:blob:https://mangadex.org/page-1',
+      width: 1_444,
+      height: 2_048,
+    }
+
+    ui.showCandidates([candidate])
+
+    const preview = ui.shadow.querySelector<HTMLImageElement>('.saber-candidate img')
+    expect(preview?.src).toBe(candidate.sourceUrl)
+    expect(ui.shadow.querySelector('.saber-candidate__fallback')).toBeNull()
+
+    preview?.dispatchEvent(new Event('error'))
+    expect(ui.shadow.querySelector('.saber-candidate img')).toBeNull()
+    expect(ui.shadow.querySelector('.saber-candidate__fallback')?.textContent)
+      .toBe('页面图片')
   })
 
   it('shows count-based image preparation progress and clears it for translation', () => {

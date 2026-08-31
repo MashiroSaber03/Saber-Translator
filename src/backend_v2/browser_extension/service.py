@@ -211,16 +211,20 @@ class BrowserSessionService:
                 raise ValueError("sourceUrl must be an HTTP(S) URL")
             normalized_source_url = source_url
         with self.engine.connect() as connection:
+            session = self._require_session(connection, session_id)
             existing = self._page_by_client_key(
                 connection,
                 session_id=session_id,
                 client_page_key=client_key,
             )
-            self._require_session(connection, session_id)
         if existing is not None:
             return self.get_page(
                 session_id=session_id,
                 browser_page_id=str(existing["id"]),
+            )
+        if session["status"] == "cancelled":
+            raise BrowserSessionConflict(
+                "cancelled browser session does not accept new pages"
             )
 
         source, thumbnail = self.importer.publish_standalone_image(upload)
@@ -238,6 +242,10 @@ class BrowserSessionService:
                     return self.get_page(
                         session_id=session_id,
                         browser_page_id=str(existing["id"]),
+                    )
+                if session["status"] == "cancelled":
+                    raise BrowserSessionConflict(
+                        "cancelled browser session does not accept new pages"
                     )
                 used_ordinal = connection.execute(
                     select(browser_session_pages.c.id).where(

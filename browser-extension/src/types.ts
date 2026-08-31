@@ -99,8 +99,6 @@ export interface DomNodeSummary {
 export interface DomDetectionResult {
   nodeIds: string[]
   selector: string
-  confidence: number
-  reason: string
 }
 
 export interface UploadSource {

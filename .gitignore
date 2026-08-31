@@ -77,6 +77,13 @@ Thumbs.db
 /browser-extension/node_modules/
 /browser-extension/release/
 
+# --- 浏览器商店截图中间产物 ---
+/browser-extension/store-assets/00-demo-*.png
+/browser-extension/store-assets/01-extension-ready.png
+/browser-extension/store-assets/02-candidate-*.png
+/browser-extension/store-assets/small-promo-440x280.png
+/browser-extension/store-assets/crop.html
+
 # --- Jupyter Notebook ---
 .ipynb_checkpoints/
 

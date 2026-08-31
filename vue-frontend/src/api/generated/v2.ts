@@ -5467,8 +5467,6 @@ export interface components {
         BrowserDomDetectionResult: {
             nodeIds: string[];
             selector: string;
-            confidence: number;
-            reason: string;
         };
         ErrorDetail: {
             /** @enum {string} */

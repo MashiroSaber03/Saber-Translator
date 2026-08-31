@@ -195,9 +195,8 @@ class BrowserDomAgentService:
                     "你负责从已经脱敏的网页图片节点摘要中选择漫画正文图片。"
                     "排除头像、图标、广告、导航、封面推荐和重复缩略图。"
                     "优先选择尺寸大、连续出现、父级结构相似的漫画页。"
-                    "只能返回 JSON 对象，字段必须严格为 nodeIds、selector、"
-                    "confidence、reason。nodeIds 只能使用输入中的 id；selector"
-                    "可以为空字符串；confidence 为 0 到 1。"
+                    "只能返回 JSON 对象，字段必须严格为 nodeIds、selector。"
+                    "nodeIds 只能使用输入中的 id；selector 可以为空字符串。"
                 ),
             },
             {
@@ -354,16 +353,12 @@ class BrowserDomAgentService:
         if not isinstance(parsed, Mapping) or set(parsed) != {
             "nodeIds",
             "selector",
-            "confidence",
-            "reason",
         }:
             raise OpenAICompatibleBusinessRetryableError(
                 "Browser DOM Agent 返回字段无效"
             )
         node_ids = parsed["nodeIds"]
         selector = parsed["selector"]
-        confidence = parsed["confidence"]
-        reason = parsed["reason"]
         if (
             not isinstance(node_ids, list)
             or any(not isinstance(value, str) or value not in allowed_ids for value in node_ids)
@@ -376,21 +371,7 @@ class BrowserDomAgentService:
             raise OpenAICompatibleBusinessRetryableError(
                 "Browser DOM Agent selector 无效"
             )
-        if (
-            isinstance(confidence, bool)
-            or not isinstance(confidence, (int, float))
-            or not 0 <= float(confidence) <= 1
-        ):
-            raise OpenAICompatibleBusinessRetryableError(
-                "Browser DOM Agent confidence 无效"
-            )
-        if not isinstance(reason, str) or len(reason) > 500:
-            raise OpenAICompatibleBusinessRetryableError(
-                "Browser DOM Agent reason 无效"
-            )
         return {
             "nodeIds": node_ids,
             "selector": selector,
-            "confidence": float(confidence),
-            "reason": reason,
         }

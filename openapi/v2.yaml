@@ -9093,15 +9093,13 @@ components:
     BrowserDomDetectionResult:
       type: object
       additionalProperties: false
-      required: [nodeIds, selector, confidence, reason]
+      required: [nodeIds, selector]
       properties:
         nodeIds:
           type: array
           uniqueItems: true
           items: {type: string}
         selector: {type: string, maxLength: 1000}
-        confidence: {type: number, minimum: 0, maximum: 1}
-        reason: {type: string, maxLength: 500}
     ErrorDetail:
       type: object
       additionalProperties: false

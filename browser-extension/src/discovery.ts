@@ -8,7 +8,6 @@ export interface ImageCandidate {
   element: HTMLElement
   bindings: HTMLElement[]
   sourceUrl: string | null
-  previewUrl: string | null
   sourceIdentity: string
   width: number
   height: number
@@ -173,7 +172,6 @@ function candidateFromElement(
     element,
     bindings: [element],
     sourceUrl,
-    previewUrl: sourceUrl,
     sourceIdentity: identity,
     width,
     height,

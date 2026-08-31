@@ -864,17 +864,21 @@ export class ExtensionUi {
     this.candidatesGrid.replaceChildren()
     for (const candidate of candidates) {
       const card = element('label', 'saber-candidate')
-      if (candidate.previewUrl && !candidate.previewUrl.startsWith('blob:')) {
+      const fallback = (): HTMLDivElement => {
+        const result = element('div', 'saber-candidate__fallback')
+        result.textContent = candidate.kind === 'canvas' ? 'Canvas 漫画页' : '页面图片'
+        return result
+      }
+      if (candidate.sourceUrl) {
         const image = element('img')
-        image.src = candidate.previewUrl
+        image.src = candidate.sourceUrl
         image.loading = 'lazy'
         image.decoding = 'async'
         image.alt = ''
+        image.addEventListener('error', () => image.replaceWith(fallback()), { once: true })
         card.append(image)
       } else {
-        const fallback = element('div', 'saber-candidate__fallback')
-        fallback.textContent = candidate.kind === 'canvas' ? 'Canvas 漫画页' : '页面图片'
-        card.append(fallback)
+        card.append(fallback())
       }
       const input = element('input')
       input.type = 'checkbox'

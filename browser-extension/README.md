@@ -1,6 +1,6 @@
 # Saber 漫画翻译浏览器扩展
 
-该扩展调用本机运行的 Saber-Translator，把网页漫画图片逐张送入现有翻译流程，并在原位置显示译图。首版支持桌面版 Chrome 和 Edge，以 ZIP 包分发，不依赖扩展商店。
+该扩展调用本机运行的 Saber-Translator，把网页漫画图片逐张送入现有翻译流程，并在原位置显示译图。当前支持桌面版 Chrome 和 Edge，可通过浏览器扩展商店或本地 ZIP 包分发。数据处理方式见[隐私政策](PRIVACY.md)。
 
 ## 安装
 
@@ -52,4 +52,10 @@ npm run typecheck
 npm run package
 ```
 
-发布物生成在 `release/`，包含 ZIP 和对应的 SHA-256 文件。
+发布物生成在 `release/`，每个 ZIP 都带有对应的 SHA-256 文件：
+
+- `saber-translator-browser-extension-v<version>.zip`：开发者模式安装包，保留固定扩展 ID。
+- `saber-translator-chrome-web-store-v<version>.zip`：Chrome Web Store 上传包。
+- `saber-translator-edge-addons-v<version>.zip`：Microsoft Edge Add-ons 上传包。
+
+两个商店包使用同一份构建结果并移除仅供开发期固定 ID 的 `key`，不需要维护两套扩展源码。
