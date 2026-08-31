@@ -65,9 +65,8 @@ describe('useEditRender backend-first orchestration', () => {
   })
 
   it('persists the page and polls only that page until backend rendering is ready', async () => {
-    const onRenderSuccess = vi.fn()
     const { useEditRender } = await import('@/composables/useEditRender')
-    const { reRenderFullImage } = useEditRender({ onRenderSuccess })
+    const { reRenderFullImage } = useEditRender()
 
     await expect(reRenderFullImage()).resolves.toBe(true)
     expect(queuePageDocumentSaveMock).toHaveBeenCalledWith(
@@ -78,7 +77,6 @@ describe('useEditRender backend-first orchestration', () => {
     expect(flushPageDocumentMock).toHaveBeenCalledWith('page-1')
     expect(getPageRenderStatusMock).toHaveBeenCalledTimes(1)
     expect(getPageRenderStatusMock).toHaveBeenCalledWith('page-1', expect.any(AbortSignal))
-    expect(onRenderSuccess).toHaveBeenCalledWith('/api/v2/assets/translated-1')
     expect(useImageStore().currentImage).toMatchObject({
       documentRevision: 4,
       renderedRevision: 4,
@@ -121,11 +119,10 @@ describe('useEditRender backend-first orchestration', () => {
     getPageRenderStatusMock.mockReturnValue(new Promise(resolve => {
       resolveStatus = resolve
     }))
-    const onRenderSuccess = vi.fn()
     const { useEditRender } = await import('@/composables/useEditRender')
     const Harness = defineComponent({
       setup() {
-        const render = useEditRender({ onRenderSuccess })
+        const render = useEditRender()
         return { start: render.reRenderFullImage }
       },
       render: () => h('div'),
@@ -137,7 +134,6 @@ describe('useEditRender backend-first orchestration', () => {
     resolveStatus(readyStatus())
 
     await expect(pending).resolves.toBe(false)
-    expect(onRenderSuccess).not.toHaveBeenCalled()
     expect(useImageStore().currentImage).toMatchObject({
       documentRevision: 3,
       translatedAssetUrl: null,
@@ -157,9 +153,8 @@ describe('useEditRender backend-first orchestration', () => {
         renderedRevision: 5,
         translatedUrl: '/api/v2/assets/translated-latest',
       })
-    const onRenderSuccess = vi.fn()
     const { useEditRender } = await import('@/composables/useEditRender')
-    const render = useEditRender({ onRenderSuccess })
+    const render = useEditRender()
 
     const first = render.reRenderFullImage()
     await vi.waitFor(() => expect(getPageRenderStatusMock).toHaveBeenCalledTimes(1))
@@ -177,7 +172,5 @@ describe('useEditRender backend-first orchestration', () => {
       renderedRevision: 5,
       translatedAssetUrl: '/api/v2/assets/translated-latest',
     })
-    expect(onRenderSuccess).toHaveBeenCalledTimes(1)
-    expect(onRenderSuccess).toHaveBeenCalledWith('/api/v2/assets/translated-latest')
   })
 })

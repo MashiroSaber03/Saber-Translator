@@ -258,15 +258,11 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
     ])
   }
 
-  async function prepareForNavigation(): Promise<void> {
-    await persistCurrentDocument()
-  }
-
   async function navigateAfterPersist(navigate: () => void): Promise<void> {
     if (isBusy.value || brushMode.value) return
     isNavigationPending.value = true
     try {
-      await prepareForNavigation()
+      await persistCurrentDocument()
       navigate()
     } catch (error) {
       showToast(
@@ -804,26 +800,13 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
 
 
   async function applyAndNext(): Promise<void> {
-    if (isBusy.value || brushMode.value) return
-    isNavigationPending.value = true
-    try {
-      saveBubbleStatesToImage()
-
-      // 等待渲染完成后再切图，避免下一张读取到未落盘的画面。
-      const renderSucceeded = await reRenderFullImage()
-      if (!renderSucceeded) {
-        showToast('应用失败，已停留在当前图片，请重试', 'warning')
-        return
-      }
-
+    await navigateAfterPersist(() => {
       if (canGoNext.value) {
         imageStore.goToNext()
       } else {
         showToast('已是最后一张图片', 'info')
       }
-    } finally {
-      isNavigationPending.value = false
-    }
+    })
   }
 
 

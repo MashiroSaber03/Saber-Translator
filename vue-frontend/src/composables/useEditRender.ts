@@ -9,10 +9,7 @@ import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
 
 export interface EditRenderCallbacks {
-  onRenderStart?: () => void
-  onRenderSuccess?: (translatedUrl: string) => void
   onRenderError?: (error: string) => void
-  onRenderEnd?: () => void
 }
 
 export function useEditRender(callbacks?: EditRenderCallbacks) {
@@ -58,11 +55,11 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
     minimumRevision: number,
     token: symbol,
     signal: AbortSignal,
-  ): Promise<string | null> {
+  ): Promise<void> {
     const deadline = Date.now() + 30_000
     while (!signal.aborted && !isOwnerDisposed && currentRenderToken === token) {
       const status = await getPageRenderStatus(pageId, signal)
-      if (isOwnerDisposed || currentRenderToken !== token) return null
+      if (isOwnerDisposed || currentRenderToken !== token) return
       if (status.pageId !== pageId) {
         throw new Error(`页面 ${pageId} 的渲染状态身份不匹配`)
       }
@@ -71,7 +68,7 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
         (status.renderedRevision ?? 0) >= minimumRevision
         && status.renderStatus === 'ready'
       ) {
-        return status.translatedUrl ?? null
+        return
       }
       if (status.renderStatus === 'render_failed' || status.renderStatus === 'repair_failed') {
         throw new Error('后端渲染失败')
@@ -80,17 +77,16 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
         status.renderStatus === 'not_rendered'
         && !bubbles.value.some(bubble => bubble.translatedText.trim())
       ) {
-        return status.translatedUrl ?? null
+        return
       }
       if (Date.now() >= deadline) {
         throw new Error('后端渲染仍在继续，可稍后刷新查看结果')
       }
       await new Promise(resolve => setTimeout(resolve, 500))
     }
-    return null
   }
 
-  async function reRenderFullImage(silentMode = false): Promise<boolean> {
+  async function reRenderFullImage(): Promise<boolean> {
     const image = currentImage.value
     if (
       !image
@@ -104,7 +100,6 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
     const controller = new AbortController()
     currentRenderController = controller
     currentRenderToken = token
-    if (!silentMode) callbacks?.onRenderStart?.()
 
     try {
       await Promise.all([
@@ -116,23 +111,21 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
       if (!committed || committed.documentRevision === undefined) {
         throw new Error('当前页文档版本不可用')
       }
-      const url = await refreshUntilRendered(
+      await refreshUntilRendered(
         image.id,
         committed.documentRevision,
         token,
         controller.signal,
       )
       if (currentRenderToken !== token || isOwnerDisposed) return false
-      if (!silentMode) callbacks?.onRenderSuccess?.(url ?? image.sourceAssetUrl)
       return true
     } catch (error) {
       if (currentRenderToken !== token || isOwnerDisposed) return false
       const message = error instanceof Error ? error.message : '后端渲染请求失败'
-      if (!silentMode) callbacks?.onRenderError?.(message)
+      callbacks?.onRenderError?.(message)
       return false
     } finally {
       if (currentRenderToken === token) {
-        if (!silentMode) callbacks?.onRenderEnd?.()
         currentRenderController = null
         currentRenderToken = null
       }
