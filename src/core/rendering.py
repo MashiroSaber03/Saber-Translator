@@ -1618,6 +1618,116 @@ def draw_multiline_text_horizontal(draw, text, font, x, y, max_width, max_height
 # 统一渲染函数（使用 BubbleState）
 # ============================================================
 
+def _draw_bubble_text_pass(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    font: ImageFont.FreeTypeFont,
+    state: "BubbleState",
+    x: float,
+    y: float,
+    max_text_width: int,
+    max_text_height: int,
+    *,
+    bubble_index: int,
+    fill: str,
+    stroke_width: int,
+) -> None:
+    common = {
+        "fill": fill,
+        "stroke_enabled": stroke_width > 0,
+        "stroke_color": fill,
+        "stroke_width": stroke_width,
+        "font_family_path": state.font_family,
+        "line_spacing": state.line_spacing,
+        "inline_align": state.inline_align,
+        "block_align": state.block_align,
+    }
+    if state.text_direction == "vertical":
+        draw_multiline_text_vertical(
+            draw,
+            text,
+            font,
+            x + max_text_width,
+            y,
+            max_text_width,
+            max_text_height,
+            **common,
+        )
+        return
+    if state.text_direction == "horizontal":
+        draw_multiline_text_horizontal(
+            draw,
+            text,
+            font,
+            x,
+            y,
+            max_text_width,
+            max_text_height,
+            **common,
+        )
+        return
+    raise ValueError(
+        f"气泡 {bubble_index}: unsupported text direction {state.text_direction!r}"
+    )
+
+
+def _render_bubble_text_layer(
+    text: str,
+    font: ImageFont.FreeTypeFont,
+    state: "BubbleState",
+    *,
+    bubble_index: int,
+    layer_size: tuple[int, int],
+    text_origin: tuple[float, float],
+    max_text_width: int,
+    max_text_height: int,
+) -> Image.Image:
+    """先绘制整个气泡的描边层，再绘制整个气泡的正文层。
+
+    排版函数为了处理竖排标点和字体回退，仍需逐字符定位。如果每个字符都在
+    同一次绘制中完成描边与正文，后绘制字符的描边会覆盖相邻字符的正文。
+    分两遍合成可以保持原排版逻辑，同时让一个气泡中的所有文字共享同一组
+    描边与正文图层。
+    """
+
+    layer = Image.new("RGBA", layer_size, (0, 0, 0, 0))
+    try:
+        draw = ImageDraw.Draw(layer)
+        x, y = text_origin
+        stroke_active = state.stroke_enabled and state.stroke_width > 0
+        if stroke_active:
+            _draw_bubble_text_pass(
+                draw,
+                text,
+                font,
+                state,
+                x,
+                y,
+                max_text_width,
+                max_text_height,
+                bubble_index=bubble_index,
+                fill=state.stroke_color,
+                stroke_width=state.stroke_width,
+            )
+        _draw_bubble_text_pass(
+            draw,
+            text,
+            font,
+            state,
+            x,
+            y,
+            max_text_width,
+            max_text_height,
+            bubble_index=bubble_index,
+            fill=state.text_color,
+            stroke_width=0,
+        )
+        return layer
+    except Exception:
+        layer.close()
+        raise
+
+
 def render_bubbles_unified(
     image: Image.Image,
     bubble_states: List["BubbleState"]
@@ -1670,54 +1780,23 @@ def render_bubbles_unified(
             if state.rotation_angle != 0:
                 # === 旋转渲染：使用外接圆方案 ===
                 diagonal = int(math.ceil(math.sqrt(bubble_width**2 + bubble_height**2)))
-                padding = max(10, int(state.stroke_width * 2) if state.stroke_enabled else 0)
+                stroke_active = state.stroke_enabled and state.stroke_width > 0
+                padding = max(10, int(state.stroke_width * 2) if stroke_active else 0)
                 temp_size = diagonal + padding * 2
-                
-                temp_img = Image.new(
-                    'RGBA',
-                    (temp_size, temp_size),
-                    (0, 0, 0, 0),
+                temp_offset_x = (temp_size - bubble_width) // 2
+                temp_offset_y = (temp_size - bubble_height) // 2
+                temp_img = _render_bubble_text_layer(
+                    text,
+                    font,
+                    state,
+                    bubble_index=i,
+                    layer_size=(temp_size, temp_size),
+                    text_origin=(temp_offset_x, temp_offset_y),
+                    max_text_width=max_text_width,
+                    max_text_height=max_text_height,
                 )
                 rotated_img = None
                 try:
-                    temp_draw = ImageDraw.Draw(temp_img)
-                    temp_offset_x = (temp_size - bubble_width) // 2
-                    temp_offset_y = (temp_size - bubble_height) // 2
-
-                    if state.text_direction == 'vertical':
-                        temp_vertical_x = temp_offset_x + bubble_width
-                        draw_multiline_text_vertical(
-                            temp_draw, text, font,
-                            temp_vertical_x, temp_offset_y,
-                            max_text_width, max_text_height,
-                            fill=state.text_color,
-                            stroke_enabled=state.stroke_enabled,
-                            stroke_color=state.stroke_color,
-                            stroke_width=state.stroke_width,
-                            font_family_path=state.font_family,
-                            line_spacing=state.line_spacing,
-                            inline_align=state.inline_align,
-                            block_align=state.block_align,
-                        )
-                    elif state.text_direction == 'horizontal':
-                        draw_multiline_text_horizontal(
-                            temp_draw, text, font,
-                            temp_offset_x, temp_offset_y,
-                            max_text_width, max_text_height,
-                            fill=state.text_color,
-                            stroke_enabled=state.stroke_enabled,
-                            stroke_color=state.stroke_color,
-                            stroke_width=state.stroke_width,
-                            font_family_path=state.font_family,
-                            line_spacing=state.line_spacing,
-                            inline_align=state.inline_align,
-                            block_align=state.block_align,
-                        )
-                    else:
-                        raise ValueError(
-                            f"气泡 {i}: unsupported text direction {state.text_direction!r}"
-                        )
-
                     temp_center = temp_size // 2
                     rotated_img = temp_img.rotate(
                         -state.rotation_angle,
@@ -1733,43 +1812,56 @@ def render_bubbles_unified(
                     image.paste(rotated_img, (paste_x, paste_y), rotated_img)
                 finally:
                     _close_images(rotated_img, temp_img)
-                
+            elif state.stroke_enabled and state.stroke_width > 0:
+                # 描边气泡先在独立图层上完成整段描边，再统一覆盖整段正文。
+                # 整数位移通过粘贴位置实现，小数位移保留在 Pillow 绘制坐标中。
+                padding = max(10, int(state.stroke_width * 2))
+                integer_offset_x = math.floor(offset_x)
+                integer_offset_y = math.floor(offset_y)
+                fractional_offset_x = offset_x - integer_offset_x
+                fractional_offset_y = offset_y - integer_offset_y
+                layer = _render_bubble_text_layer(
+                    text,
+                    font,
+                    state,
+                    bubble_index=i,
+                    layer_size=(
+                        bubble_width + padding * 2,
+                        bubble_height + padding * 2,
+                    ),
+                    text_origin=(
+                        padding + fractional_offset_x,
+                        padding + fractional_offset_y,
+                    ),
+                    max_text_width=max_text_width,
+                    max_text_height=max_text_height,
+                )
+                try:
+                    _paste_with_alpha(
+                        image,
+                        layer,
+                        x1 - padding + integer_offset_x,
+                        y1 - padding + integer_offset_y,
+                    )
+                finally:
+                    layer.close()
             else:
                 # === 无旋转：直接绘制 ===
                 draw_x = x1 + offset_x
                 draw_y = y1 + offset_y
-                vertical_draw_x = x2 + offset_x
-                
-                if state.text_direction == 'vertical':
-                    draw_multiline_text_vertical(
-                        draw, text, font, vertical_draw_x, draw_y,
-                        max_text_width, max_text_height,
-                        fill=state.text_color,
-                        stroke_enabled=state.stroke_enabled,
-                        stroke_color=state.stroke_color,
-                        stroke_width=state.stroke_width,
-                        font_family_path=state.font_family,
-                        line_spacing=state.line_spacing,
-                        inline_align=state.inline_align,
-                        block_align=state.block_align,
-                    )
-                elif state.text_direction == 'horizontal':
-                    draw_multiline_text_horizontal(
-                        draw, text, font, draw_x, draw_y,
-                        max_text_width, max_text_height,
-                        fill=state.text_color,
-                        stroke_enabled=state.stroke_enabled,
-                        stroke_color=state.stroke_color,
-                        stroke_width=state.stroke_width,
-                        font_family_path=state.font_family,
-                        line_spacing=state.line_spacing,
-                        inline_align=state.inline_align,
-                        block_align=state.block_align,
-                    )
-                else:
-                    raise ValueError(
-                        f"气泡 {i}: unsupported text direction {state.text_direction!r}"
-                    )
+                _draw_bubble_text_pass(
+                    draw,
+                    text,
+                    font,
+                    state,
+                    draw_x,
+                    draw_y,
+                    max_text_width,
+                    max_text_height,
+                    bubble_index=i,
+                    fill=state.text_color,
+                    stroke_width=0,
+                )
                     
         except Exception as render_e:
             logger.error(f"渲染气泡 {i} 时出错: {render_e}", exc_info=True)
