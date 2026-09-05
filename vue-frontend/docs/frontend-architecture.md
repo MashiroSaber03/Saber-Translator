@@ -26,7 +26,12 @@ prop/event plumbing. File size is a review signal, never the reason to split.
   details at the API boundary.
 - Books, chapters, pages, documents, jobs, analyses, studio documents and
   plugin revisions are backend facts. Pinia never becomes their durable owner.
-- The browser may persist only non-business UI preferences.
+- The browser persists UI preferences. In `public` mode, provider credentials
+  are also stored per user in IndexedDB by `src/services/browserCredentials.ts`
+  and uploaded to the Launcher-owned memory broker. This exception does not
+  make the browser the durable owner of documents, tasks, or results.
+- In `local` mode, the backend stores versioned credentials and returns the
+  current secrets in the settings document for form editing.
 - Translation, analysis, PDF parsing, export and plugin loops run in the
   backend. The frontend creates commands and projects REST/SSE state.
 - Thumbnail collections are lazy. Full assets are limited to the active page
