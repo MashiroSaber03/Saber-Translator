@@ -1,10 +1,12 @@
 import {
   loadSettings,
   preferenceFor,
-  saveSettings,
+  serializeStorageWrite,
+  updateSettings,
 } from './storage'
 import { normalizedTaskPageUrl } from './pageIdentity'
 import type {
+  ActiveBrowserSession,
   BackgroundRequest,
   BackgroundResponse,
   BrowserLibraryBook,
@@ -340,13 +342,13 @@ chrome.tabs.onActivated.addListener(() => {
 })
 
 chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
-  if (changeInfo.url || changeInfo.status === 'complete') {
+  if (tab.active && (changeInfo.url || changeInfo.status === 'complete')) {
     void updateContextMenu(tab)
   }
 })
 
 chrome.tabs.onRemoved.addListener(tabId => {
-  void chrome.storage.session.remove(`${ACTIVE_SESSION_KEY_PREFIX}${tabId}`)
+  void serializeStorageWrite(() => chrome.storage.session.remove(`${ACTIVE_SESSION_KEY_PREFIX}${tabId}`))
 })
 
 function normalizedContentPageUrl(value: string): string {
@@ -379,12 +381,12 @@ function contentTabId(sender: chrome.runtime.MessageSender, pageUrl: string): nu
 async function activeSessionForTab(
   sender: chrome.runtime.MessageSender,
   pageUrl: string,
-): Promise<{ sessionId: string } | null> {
+): Promise<ActiveBrowserSession | null> {
   const tabId = contentTabId(sender, pageUrl)
   const key = `${ACTIVE_SESSION_KEY_PREFIX}${tabId}`
   const stored = (await chrome.storage.session.get(key))[key]
   if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return null
-  const value = stored as { pageUrl?: unknown; sessionId?: unknown }
+  const value = stored as Partial<ActiveBrowserSession> & { pageUrl?: unknown }
   if (
     typeof value.pageUrl !== 'string'
     || typeof value.sessionId !== 'string'
@@ -394,7 +396,10 @@ async function activeSessionForTab(
     await chrome.storage.session.remove(key)
     return null
   }
-  return { sessionId: value.sessionId }
+  return {
+    sessionId: value.sessionId,
+    discovery: value.discovery ?? { stopped: true, usingAdapter: false, rule: null },
+  }
 }
 
 async function handleRequest(
@@ -406,9 +411,9 @@ async function handleRequest(
     return preferenceFor(settings, request.hostname)
   }
   if (request.type === 'set-preference') {
-    const settings = await loadSettings()
-    settings.domains[request.hostname] = request.preference
-    await saveSettings(settings)
+    await updateSettings(settings => {
+      settings.domains[request.hostname] = request.preference
+    })
     await updateContextMenu()
     return request.preference
   }
@@ -437,40 +442,47 @@ async function handleRequest(
         false,
       )
     }
-    const settings = await loadSettings()
-    settings.token = token
-    settings.serverPort = request.serverPort
-    await saveSettings(settings)
+    await updateSettings(settings => {
+      settings.token = token
+      settings.serverPort = request.serverPort
+    })
     return { saved: true }
   }
   if (request.type === 'status') {
     return await saberRequest<Record<string, unknown>>('/status')
   }
+  if (request.type === 'hash-source') {
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(request.value))
+    return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')
+  }
   if (request.type === 'get-active-session') {
-    return await activeSessionForTab(sender, request.pageUrl)
+    return await serializeStorageWrite(() => activeSessionForTab(sender, request.pageUrl))
   }
   if (request.type === 'set-active-session') {
     const tabId = contentTabId(sender, request.pageUrl)
     if (!request.sessionId) {
       throw new RequestFailure('invalid_session_id', '网页会话 ID 无效', false)
     }
-    await chrome.storage.session.set({
+    await serializeStorageWrite(() => chrome.storage.session.set({
       [`${ACTIVE_SESSION_KEY_PREFIX}${tabId}`]: {
         pageUrl: normalizedContentPageUrl(request.pageUrl),
         sessionId: request.sessionId,
+        discovery: request.discovery,
       },
-    })
+    }))
     return { saved: true }
   }
   if (request.type === 'clear-active-session') {
     const tabId = contentTabId(sender, request.pageUrl)
     const key = `${ACTIVE_SESSION_KEY_PREFIX}${tabId}`
-    if (request.sessionId) {
-      const active = await activeSessionForTab(sender, request.pageUrl)
-      if (active?.sessionId !== request.sessionId) return { cleared: false }
-    }
-    await chrome.storage.session.remove(key)
-    return { cleared: true }
+    return await serializeStorageWrite(async () => {
+      if (request.sessionId) {
+        const active = await activeSessionForTab(sender, request.pageUrl)
+        if (active?.sessionId !== request.sessionId) return { cleared: false }
+      }
+      await chrome.storage.session.remove(key)
+      return { cleared: true }
+    })
   }
   if (request.type === 'create-session') {
     return await saberRequest<BrowserSessionDto>('/sessions', {
@@ -480,7 +492,7 @@ async function handleRequest(
   }
   if (request.type === 'get-session') {
     return await saberRequest<BrowserSessionDto>(
-      `/sessions/${encodeURIComponent(request.sessionId)}`,
+      `/sessions/${encodeURIComponent(request.sessionId)}${request.touch ? '?touch=true' : ''}`,
     )
   }
   if (request.type === 'patch-session') {

@@ -12,6 +12,7 @@ import type {
 import { UI_STYLES } from './uiStyles'
 
 export interface UiCallbacks {
+  onActivity(): void
   onDiscover(method: DetectionMethod): void
   onConfirm(candidateIds: string[]): void
   onPreferenceChange(preference: DomainPreference): void
@@ -22,6 +23,7 @@ export interface UiCallbacks {
   onTogglePage(browserPageId: string): Promise<boolean | null>
   onRetryPage(browserPageId: string): void
   onRetryUploads(): void
+  onRetryStart(): void
   onStopDiscovery(): void
   onCancel(): void
   onLoadLibraryBooks(): Promise<BrowserLibraryBook[]>
@@ -64,6 +66,7 @@ export class ExtensionUi {
   private readonly bannerMessage: HTMLElement
   private readonly errorActions: HTMLElement
   private readonly retryUploadsButton: HTMLButtonElement
+  private readonly retryStartButton: HTMLButtonElement
   private readonly settingsDetails: HTMLDetailsElement
   private readonly idleActions: HTMLElement
   private readonly discoverButton: HTMLButtonElement
@@ -106,6 +109,7 @@ export class ExtensionUi {
   private readonly importConfirmButton: HTMLButtonElement
   private latestSession: BrowserSessionDto | null = null
   private libraryBooks: BrowserLibraryBook[] = []
+  private importing = false
   private preference: DomainPreference
   private dragState: DragState | null = null
   private fabDragState: DragState | null = null
@@ -138,7 +142,17 @@ export class ExtensionUi {
     this.preference = { ...preference }
     this.host = element('div')
     this.host.id = 'saber-translator-extension-root'
-    this.shadow = this.host.attachShadow({ mode: 'open' })
+    this.shadow = this.host.attachShadow({ mode: 'closed' })
+    for (const type of ['click', 'input', 'change']) {
+      this.shadow.addEventListener(type, event => {
+        if (!event.isTrusted) {
+          event.preventDefault()
+          event.stopImmediatePropagation()
+          return
+        }
+        if (type === 'click') this.callbacks.onActivity()
+      }, true)
+    }
     const style = element('style')
     style.textContent = UI_STYLES
     this.shadow.append(style)
@@ -201,8 +215,10 @@ export class ExtensionUi {
     this.errorActions.hidden = true
     this.retryUploadsButton = this.button('重试上传', 'saber-button--primary')
     this.retryUploadsButton.hidden = true
+    this.retryStartButton = this.button('重试启动', 'saber-button--primary')
+    this.retryStartButton.hidden = true
     const diagnostics = this.button('复制诊断', 'saber-button--quiet')
-    this.errorActions.append(this.retryUploadsButton, diagnostics)
+    this.errorActions.append(this.retryUploadsButton, this.retryStartButton, diagnostics)
     body.append(this.errorActions)
 
     this.settingsDetails = element('details', 'saber-settings')
@@ -429,6 +445,10 @@ export class ExtensionUi {
     )
     diagnostics.addEventListener('click', () => this.callbacks.onCopyDiagnostics())
     this.retryUploadsButton.addEventListener('click', () => this.callbacks.onRetryUploads())
+    this.retryStartButton.addEventListener('click', () => {
+      this.retryStartButton.disabled = true
+      this.callbacks.onRetryStart()
+    })
     this.confirmButton.addEventListener('click', () => {
       const selected = [...this.candidatesGrid.querySelectorAll<HTMLInputElement>('input')]
         .filter(input => input.checked)
@@ -587,7 +607,7 @@ export class ExtensionUi {
 
   private async openImportDialog(): Promise<void> {
     const session = this.latestSession
-    if (!session || this.importButton.disabled) return
+    if (!session || this.importButton.disabled || this.importing) return
     this.importButton.disabled = true
     try {
       this.libraryBooks = await this.callbacks.onLoadLibraryBooks()
@@ -654,7 +674,7 @@ export class ExtensionUi {
     const destinationValid = this.importExistingInput.checked
       ? Boolean(this.importBookSelect.value) && !this.importBookSelect.disabled
       : this.importBookTitleInput.value.trim().length > 0
-    this.importConfirmButton.disabled = !chapterValid || !destinationValid
+    this.importConfirmButton.disabled = this.importing || !chapterValid || !destinationValid
   }
 
   private async confirmImport(): Promise<void> {
@@ -671,6 +691,7 @@ export class ExtensionUi {
           bookTitle: this.importBookTitleInput.value.trim(),
           chapterTitle,
         }
+    this.importing = true
     this.importConfirmButton.disabled = true
     this.importConfirmButton.textContent = '正在导入…'
     try {
@@ -680,7 +701,9 @@ export class ExtensionUi {
     } catch {
       this.closeImportDialog()
     } finally {
+      this.importing = false
       this.importConfirmButton.textContent = '确认导入'
+      this.validateImport()
     }
   }
 
@@ -907,8 +930,10 @@ export class ExtensionUi {
     originalPageIds: ReadonlySet<string> = new Set(),
   ): void {
     this.latestSession = session
+    this.retryStartButton.hidden = true
     this.preparationSection.hidden = true
     this.setView('progress')
+    if (session.state === 'cancelled' && session.pages.length === 0) this.setView('idle')
     this.toggleButton.hidden = false
     this.stopButton.hidden = false
     this.cancelButton.hidden = false
@@ -957,6 +982,7 @@ export class ExtensionUi {
         actions.append(toggle)
       }
       const retry = this.button(page.state === 'completed' ? '重翻' : '重试')
+      retry.disabled = session.pages.some(item => item.state === 'queued' || item.state === 'translating')
       retry.addEventListener('click', () => this.callbacks.onRetryPage(page.id))
       actions.append(retry)
       row.append(message, actions)
@@ -985,9 +1011,14 @@ export class ExtensionUi {
         failed: '图片翻译失败',
         cancelled: '任务已取消',
       }[session.state],
-      '关闭标签页不会中断后端任务。',
+      session.state === 'cancelled'
+        ? busy ? '正在等待后端任务停止。' : '可在单页操作中重试已取消的图片。'
+        : '关闭标签页不会中断已提交的后端任务。',
       hasFailure ? 'error' : busy ? 'busy' : 'ready',
     )
+    if (session.pendingStart) {
+      this.showStartError({ code: 'pending_start', message: '图片已准备好，等待启动翻译' })
+    }
   }
 
   showPreparationProgress(processed: number, total: number, failed: number): void {
@@ -1073,8 +1104,15 @@ export class ExtensionUi {
       source_timeout: '源站响应过慢，可确认网页图片已经加载后重试上传。',
     }
     this.retryUploadsButton.hidden = true
+    this.retryStartButton.hidden = true
     this.setStatus(error.message, hints[error.code] ?? '可重试或切换另一种图片识别方式。', 'error')
     this.setOpen(true)
+  }
+
+  showStartError(error: { code: string; message: string }): void {
+    this.showError(error)
+    this.retryStartButton.hidden = false
+    this.retryStartButton.disabled = false
   }
 
   showUploadError(

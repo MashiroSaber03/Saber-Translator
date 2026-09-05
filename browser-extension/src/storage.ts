@@ -37,8 +37,20 @@ export async function loadSettings(): Promise<ExtensionSettings> {
   }
 }
 
-export async function saveSettings(settings: ExtensionSettings): Promise<void> {
-  await chrome.storage.local.set({ [STORAGE_KEY]: settings })
+let storageWrite: Promise<unknown> = Promise.resolve()
+
+export function serializeStorageWrite<T>(operation: () => Promise<T>): Promise<T> {
+  const pending = storageWrite.then(operation)
+  storageWrite = pending.catch(() => undefined)
+  return pending
+}
+
+export function updateSettings(change: (settings: ExtensionSettings) => void): Promise<void> {
+  return serializeStorageWrite(async () => {
+    const settings = await loadSettings()
+    change(settings)
+    await chrome.storage.local.set({ [STORAGE_KEY]: settings })
+  })
 }
 
 export function preferenceFor(

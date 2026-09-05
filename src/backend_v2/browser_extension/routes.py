@@ -232,7 +232,10 @@ def create_browser_extension_blueprint(
 
     @blueprint.get("/sessions/<session_id>")
     def get_session(session_id: str) -> Response:
-        return jsonify(service.get(session_id))
+        touch = request.args.get("touch", "false")
+        if touch not in {"true", "false"}:
+            raise ValueError("touch must be true or false")
+        return jsonify(service.get(session_id, touch=touch == "true"))
 
     @blueprint.patch("/sessions/<session_id>")
     def patch_session(session_id: str) -> Response:

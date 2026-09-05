@@ -298,10 +298,24 @@ class BrowserSessionService:
             )
         return self.get_page(session_id=session_id, browser_page_id=page_record_id)
 
-    def get(self, session_id: str) -> dict[str, object]:
+    def get(self, session_id: str, *, touch: bool = False) -> dict[str, object]:
+        if touch:
+            return self.update(session_id)
         with self.engine.connect() as connection:
             session = self._require_session(connection, session_id)
             rows = self._session_page_rows(connection, session_id)
+            pending_start = (
+                session["status"] != "cancelled"
+                and any(
+                    row["job_id"] is None
+                    and row["error_json"] is None
+                    and row["translated_asset_id"] is None
+                    for row in rows
+                )
+                and not self._has_active_translation_job(
+                    connection, chapter_id=str(session["chapter_id"])
+                )
+            )
             glossary_enabled, auto_terms_enabled = self._glossary_flags(
                 connection,
                 book_id=str(session["book_id"]),
@@ -345,6 +359,7 @@ class BrowserSessionService:
             "glossaryEnabled": glossary_enabled,
             "autoTermsEnabled": auto_terms_enabled,
             "state": state,
+            "pendingStart": pending_start,
             "expiresAt": (
                 session["expires_at"].isoformat()
                 if session["expires_at"] is not None
@@ -380,7 +395,7 @@ class BrowserSessionService:
         auto_terms_enabled: bool | None = None,
     ) -> dict[str, object]:
         now = utcnow()
-        values: dict[str, object] = {"updated_at": now}
+        values: dict[str, object] = {"updated_at": now, "expires_at": now + SESSION_TTL}
         if mode is not None:
             values["mode"] = self._mode(mode)
         for value, label in (
@@ -419,6 +434,7 @@ class BrowserSessionService:
                 return self.get(session_id)
             if session["status"] == "cancelled":
                 return self.get(session_id)
+            self.update(session_id)
             if not self._materialize_pending(session_id):
                 return self.get(session_id)
             self._create_pending_job(session_id)
@@ -439,6 +455,7 @@ class BrowserSessionService:
         }
 
     def cancel(self, session_id: str) -> dict[str, object]:
+        now = utcnow()
         with self._lock:
             with immediate_transaction(self.engine) as connection:
                 self._require_session(connection, session_id)
@@ -459,8 +476,24 @@ class BrowserSessionService:
                     .where(browser_sessions.c.id == session_id)
                     .values(
                         status="cancelled",
-                        updated_at=utcnow(),
+                        updated_at=now,
+                        expires_at=now + SESSION_TTL,
                     )
+                )
+                # Preserve cancellation per page when one page is later retried.
+                translated_exists = select(page_assets.c.asset_id).where(
+                    page_assets.c.page_id == browser_session_pages.c.page_id,
+                    page_assets.c.role == "translated",
+                ).exists()
+                connection.execute(
+                    update(browser_session_pages)
+                    .where(
+                        browser_session_pages.c.session_id == session_id,
+                        browser_session_pages.c.job_id.is_(None),
+                        browser_session_pages.c.error_json.is_(None),
+                        ~translated_exists,
+                    )
+                    .values(error_json=_error_payload("page cancelled", "cancelled"), updated_at=now)
                 )
             for job_id in job_ids:
                 try:
@@ -470,6 +503,7 @@ class BrowserSessionService:
         return self.get(session_id)
 
     def retry(self, *, session_id: str, browser_page_id: str) -> dict[str, object]:
+        now = utcnow()
         with self._lock:
             with immediate_transaction(self.engine) as connection:
                 session = self._require_session(connection, session_id)
@@ -532,7 +566,8 @@ class BrowserSessionService:
                     .where(browser_sessions.c.id == session_id)
                     .values(
                         status="active",
-                        updated_at=utcnow(),
+                        updated_at=now,
+                        expires_at=now + SESSION_TTL,
                     )
                 )
             if not self._materialize_pending(session_id):
@@ -1082,8 +1117,10 @@ class BrowserSessionService:
         item_status = row.get("item_status")
         translated_asset_id = row.get("translated_asset_id")
         if row.get("error_json"):
-            state = "failed"
             error = _decode_error(row.get("error_json"))
+            state = "cancelled" if error and error["code"] == "cancelled" else "failed"
+            if state == "cancelled":
+                error = None
         elif row.get("page_id") is None:
             state = "queued"
             error = None

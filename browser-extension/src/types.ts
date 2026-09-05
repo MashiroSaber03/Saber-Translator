@@ -31,6 +31,15 @@ export interface ExtensionSettings {
   domains: Record<string, DomainPreference>
 }
 
+export interface ActiveBrowserSession {
+  sessionId: string
+  discovery: {
+    stopped: boolean
+    usingAdapter: boolean
+    rule: LearnedRule | null
+  }
+}
+
 export interface BrowserPageDto {
   id: string
   clientPageKey: string
@@ -52,6 +61,7 @@ export interface BrowserSessionDto {
   glossaryEnabled: boolean
   autoTermsEnabled: boolean
   state: 'idle' | 'queued' | 'translating' | 'completed' | 'partial' | 'failed' | 'cancelled'
+  pendingStart: boolean
   expiresAt: string | null
   counts: Record<PageState | 'total', number>
   pages: BrowserPageDto[]
@@ -136,11 +146,12 @@ export type BackgroundRequest =
   | { type: 'get-popup-state' }
   | { type: 'save-connection'; token: string; serverPort: number }
   | { type: 'status' }
+  | { type: 'hash-source'; value: string }
   | { type: 'get-active-session'; pageUrl: string }
-  | { type: 'set-active-session'; pageUrl: string; sessionId: string }
+  | ({ type: 'set-active-session'; pageUrl: string } & ActiveBrowserSession)
   | { type: 'clear-active-session'; pageUrl: string; sessionId?: string }
   | { type: 'create-session'; payload: Record<string, unknown> }
-  | { type: 'get-session'; sessionId: string }
+  | { type: 'get-session'; sessionId: string; touch?: boolean }
   | { type: 'patch-session'; sessionId: string; payload: Record<string, unknown> }
   | { type: 'start-session'; sessionId: string }
   | { type: 'upload-page'; payload: UploadPageRequest }

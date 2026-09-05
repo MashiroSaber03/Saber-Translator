@@ -1090,6 +1090,109 @@ def test_periodic_cleanup_only_deletes_expired_browser_sessions(browser_platform
     assert current["id"] in ids
 
 
+def test_browser_start_failure_remains_explicitly_startable(browser_platform) -> None:
+    _data_root, engine, app = browser_platform
+    client = app.test_client()
+    session = _create_session(client).get_json()
+    route = f"/api/v2/browser-extension/sessions/{session['id']}"
+    client.post(route + "/pages", headers=HEADERS, data={
+        "clientPageKey": "start-recovery", "ordinal": "1", "logicalPath": "00001.png",
+        "file": (BytesIO(_png()), "page.png"),
+    }, content_type="multipart/form-data")
+    with engine.begin() as connection:
+        original = connection.execute(select(app_settings.c.payload_json).where(
+            app_settings.c.domain == "translation"
+        )).scalar_one()
+        config = json.loads(original)
+        config["translation"]["modelName"] = ""
+        connection.execute(update(app_settings).where(app_settings.c.domain == "translation").values(
+            payload_json=json.dumps(config)
+        ))
+        provider_original = connection.execute(select(provider_settings.c.payload_json).where(
+            provider_settings.c.domain == "translation", provider_settings.c.provider == "ollama"
+        )).scalar_one()
+        provider = json.loads(provider_original)
+        provider["modelName"] = ""
+        connection.execute(update(provider_settings).where(
+            provider_settings.c.domain == "translation", provider_settings.c.provider == "ollama"
+        ).values(payload_json=json.dumps(provider)))
+    assert client.post(route + "/start", headers=HEADERS).status_code == 422
+    pending = client.get(route, headers=HEADERS).get_json()
+    assert pending["pendingStart"] is True
+    assert pending["pages"][0]["pageId"] is not None
+    with engine.begin() as connection:
+        assert connection.execute(select(func.count()).select_from(jobs)).scalar_one() == 0
+        connection.execute(update(app_settings).where(app_settings.c.domain == "translation").values(payload_json=original))
+        connection.execute(update(provider_settings).where(
+            provider_settings.c.domain == "translation", provider_settings.c.provider == "ollama"
+        ).values(payload_json=provider_original))
+    started = client.post(route + "/start", headers=HEADERS)
+    assert started.status_code == 202
+    assert started.get_json()["pendingStart"] is False
+
+
+def test_cancelled_pending_pages_can_be_retried_individually(browser_platform) -> None:
+    _data_root, engine, app = browser_platform
+    client = app.test_client()
+    session = _create_session(client).get_json()
+    route = f"/api/v2/browser-extension/sessions/{session['id']}"
+    uploaded = []
+    for ordinal in (1, 2):
+        uploaded.append(client.post(route + "/pages", headers=HEADERS, data={
+            "clientPageKey": f"cancel-{ordinal}", "ordinal": str(ordinal), "logicalPath": f"{ordinal}.png",
+            "file": (BytesIO(_png()), "page.png"),
+        }, content_type="multipart/form-data").get_json())
+    cancelled = client.post(route + "/cancel", headers=HEADERS).get_json()
+    assert cancelled["counts"]["queued"] == 0
+    assert cancelled["counts"]["cancelled"] == 2
+    assert cancelled["pendingStart"] is False
+    retried = client.post(route + f"/pages/{uploaded[0]['id']}/retry", headers=HEADERS)
+    assert retried.status_code == 202
+    with engine.begin() as connection:
+        connection.execute(update(job_items).values(status="failed"))
+        connection.execute(update(jobs).values(status="failed"))
+    after = client.post(route + "/start", headers=HEADERS).get_json()
+    assert after["pages"][1]["state"] == "cancelled"
+    assert after["pages"][1]["pageId"] is None
+    imported = client.post(route + "/import", headers=HEADERS, json={
+        "destination": "new", "bookTitle": "Partial chapter", "chapterTitle": "Recovered page",
+    })
+    assert imported.status_code == 200
+    assert imported.get_json()["importedPages"] == 1
+    assert imported.get_json()["omittedPages"] == 1
+
+
+@pytest.mark.parametrize("action", ["patch", "start", "retry", "cancel", "touch"])
+def test_browser_activity_renews_retention_but_polling_does_not(browser_platform, action) -> None:
+    data_root, engine, app = browser_platform
+    client = app.test_client()
+    session = _create_session(client).get_json()
+    route = f"/api/v2/browser-extension/sessions/{session['id']}"
+    uploaded = client.post(route + "/pages", headers=HEADERS, data={
+        "clientPageKey": "retention", "ordinal": "1", "logicalPath": "page.png",
+        "file": (BytesIO(_png()), "page.png"),
+    }, content_type="multipart/form-data").get_json()
+    if action == "retry":
+        client.post(route + "/cancel", headers=HEADERS)
+    with engine.begin() as connection:
+        connection.execute(update(browser_sessions).where(browser_sessions.c.id == session["id"]).values(
+            expires_at=datetime(2000, 1, 1, tzinfo=timezone.utc)
+        ))
+    assert client.get(route, headers=HEADERS).get_json()["expiresAt"].startswith("2000-")
+    if action == "patch":
+        response = client.patch(route, headers=HEADERS, json={"glossaryEnabled": False})
+    elif action == "touch":
+        response = client.get(route + "?touch=true", headers=HEADERS)
+    else:
+        suffix = f"/pages/{uploaded['id']}/retry" if action == "retry" else f"/{action}"
+        response = client.post(route + suffix, headers=HEADERS)
+    assert response.status_code in (200, 202)
+    renewed = client.get(route, headers=HEADERS).get_json()
+    expiry = datetime.fromisoformat(renewed["expiresAt"]).replace(tzinfo=timezone.utc)
+    assert (expiry - datetime.now(timezone.utc)).total_seconds() > 23 * 60 * 60
+    assert WorkerMaintenance(data_root=data_root, engine=engine)._prune_browser_sessions() == 0
+
+
 def test_dom_agent_rejects_fabricated_node_ids() -> None:
     with pytest.raises(Exception, match="nodeIds"):
         BrowserDomAgentService._parse_result(

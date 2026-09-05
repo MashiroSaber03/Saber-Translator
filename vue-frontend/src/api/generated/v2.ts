@@ -5410,6 +5410,8 @@ export interface components {
             autoTermsEnabled: boolean;
             /** @enum {string} */
             state: "idle" | "queued" | "translating" | "completed" | "partial" | "failed" | "cancelled";
+            /** @description Uploaded pages await a job and no translation job is active. */
+            pendingStart: boolean;
             /** Format: date-time */
             expiresAt: string | null;
             counts: {
@@ -11270,7 +11272,10 @@ export interface operations {
     };
     getBrowserSession: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Renew retention for an explicit user visit or interaction; omit for polling. */
+                touch?: boolean;
+            };
             header?: never;
             path: {
                 session_id: components["parameters"]["SessionId"];

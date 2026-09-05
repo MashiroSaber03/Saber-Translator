@@ -42,6 +42,7 @@ await build({
 })
 await Promise.all([
   copyFile(resolve(root, 'README.md'), resolve(dist, 'README.md')),
+  copyFile(resolve(root, 'PRIVACY.md'), resolve(dist, 'PRIVACY.md')),
   copyFile(resolve(root, '..', 'LICENSE'), resolve(dist, 'LICENSE')),
   copyFile(
     resolve(root, 'THIRD_PARTY_NOTICES.md'),

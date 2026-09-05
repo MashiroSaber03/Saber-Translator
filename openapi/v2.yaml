@@ -3844,6 +3844,11 @@ paths:
     get:
       tags: [browser-extension]
       operationId: getBrowserSession
+      parameters:
+        - name: touch
+          in: query
+          description: Renew retention for an explicit user visit or interaction; omit for polling.
+          schema: {type: boolean, default: false}
       responses:
         "200":
           description: Aggregated browser session state.
@@ -8996,7 +9001,7 @@ components:
     BrowserSession:
       type: object
       additionalProperties: false
-      required: [id, pageUrl, pageTitle, bookId, chapterId, mode, glossaryEnabled, autoTermsEnabled, state, expiresAt, counts, pages]
+      required: [id, pageUrl, pageTitle, bookId, chapterId, mode, glossaryEnabled, autoTermsEnabled, state, pendingStart, expiresAt, counts, pages]
       properties:
         id: {$ref: "#/components/schemas/Uuid"}
         pageUrl: {type: string, format: uri}
@@ -9007,6 +9012,7 @@ components:
         glossaryEnabled: {type: boolean}
         autoTermsEnabled: {type: boolean}
         state: {type: string, enum: [idle, queued, translating, completed, partial, failed, cancelled]}
+        pendingStart: {type: boolean, description: Uploaded pages await a job and no translation job is active.}
         expiresAt: {type: [string, "null"], format: date-time}
         counts:
           type: object

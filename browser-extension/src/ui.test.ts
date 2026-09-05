@@ -9,6 +9,7 @@ import { UI_STYLES } from './uiStyles'
 
 function callbacks(): UiCallbacks {
   return {
+    onActivity: vi.fn(),
     onDiscover: vi.fn(),
     onConfirm: vi.fn(),
     onPreferenceChange: vi.fn(),
@@ -19,6 +20,7 @@ function callbacks(): UiCallbacks {
     onTogglePage: vi.fn().mockResolvedValue(true),
     onRetryPage: vi.fn(),
     onRetryUploads: vi.fn(),
+    onRetryStart: vi.fn(),
     onStopDiscovery: vi.fn(),
     onCancel: vi.fn(),
     onLoadLibraryBooks: vi.fn().mockResolvedValue([]),
@@ -46,12 +48,40 @@ function mountUi(handlers: UiCallbacks): ExtensionUi {
   return ui
 }
 
-beforeEach(() => document.documentElement.replaceChildren(document.createElement('body')))
+let trustedEvents = true
+beforeEach(() => {
+  document.documentElement.replaceChildren(document.createElement('body'))
+  trustedEvents = true
+  const addListener = ShadowRoot.prototype.addEventListener
+  // jsdom cannot create trusted input. Native event behavior is covered in Chromium.
+  vi.spyOn(ShadowRoot.prototype, 'addEventListener').mockImplementation(function (
+    this: ShadowRoot, type, listener, options,
+  ) {
+    addListener.call(this, type, event => {
+      const input = trustedEvents ? { isTrusted: true } as Event : event
+      if (typeof listener === 'function') listener.call(this, input)
+      else listener?.handleEvent(input)
+    }, options)
+  })
+})
 afterEach(() => {
   for (const ui of mounted.splice(0)) ui.remove()
+  vi.restoreAllMocks()
 })
 
 describe('isolated extension UI', () => {
+  it('hides local data from the host page and rejects synthetic actions', () => {
+    trustedEvents = false
+    const handlers = callbacks()
+    const ui = mountUi(handlers)
+    expect(ui.host.shadowRoot).toBeNull()
+    const buttons = [...ui.shadow.querySelectorAll<HTMLButtonElement>('button')]
+    buttons.find(button => button.textContent === '识别漫画图片')!.click()
+    ui.shadow.querySelector('select')!.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(handlers.onDiscover).not.toHaveBeenCalled()
+    expect(handlers.onPreferenceChange).not.toHaveBeenCalled()
+    expect(handlers.onActivity).not.toHaveBeenCalled()
+  })
   it('uses a Shadow DOM and retains settings while the panel is closed and reopened', () => {
     const handlers = callbacks()
     const ui = mountUi(handlers)
@@ -165,6 +195,7 @@ describe('isolated extension UI', () => {
       glossaryEnabled: false,
       autoTermsEnabled: false,
       state: 'partial',
+      pendingStart: false,
       expiresAt: null,
       counts: { total: 2, queued: 0, translating: 0, completed: 1, failed: 1, cancelled: 0 },
       pages: [
@@ -206,8 +237,17 @@ describe('isolated extension UI', () => {
     expect(handlers.onRetryPage).toHaveBeenCalledWith('failed-page')
   })
 
-  it('imports a terminal task as a new book or into an existing book', async () => {
+  it('imports a terminal task once even if fields change while awaiting import', async () => {
     const handlers = callbacks()
+    let finish!: () => void
+    vi.mocked(handlers.onImport).mockImplementation(async () => {
+      await new Promise<void>(resolve => { finish = resolve })
+      return {
+        destination: 'existing', bookId: 'existing-book', bookTitle: 'My series',
+        chapterId: 'chapter', chapterTitle: 'Chapter 5', importedPages: 1,
+        omittedPages: 0, termsAdded: 0,
+      }
+    })
     vi.mocked(handlers.onLoadLibraryBooks).mockResolvedValue([
       { id: 'existing-book', title: 'My series', chapterCount: 4 },
     ])
@@ -222,6 +262,7 @@ describe('isolated extension UI', () => {
       glossaryEnabled: false,
       autoTermsEnabled: false,
       state: 'completed',
+      pendingStart: false,
       expiresAt: null,
       counts: { total: 1, queued: 0, translating: 0, completed: 1, failed: 0, cancelled: 0 },
       pages: [{
@@ -254,6 +295,11 @@ describe('isolated extension UI', () => {
     const confirm = [...ui.shadow.querySelectorAll<HTMLButtonElement>('button')]
       .find(button => button.textContent === '确认导入')!
     confirm.click()
+    chapterTitle.value = 'Chapter 6'
+    chapterTitle.dispatchEvent(new Event('input'))
+    confirm.click()
+    expect(handlers.onImport).toHaveBeenCalledOnce()
+    finish()
     await vi.waitFor(() => {
       expect(handlers.onImport).toHaveBeenCalledWith({
         destination: 'existing',
