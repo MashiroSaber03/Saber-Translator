@@ -64,3 +64,5 @@ export interface BubbleState {
 export type BubbleStateOverrides = Partial<BubbleState>
 
 export type BubbleStateUpdates = Partial<BubbleState>
+
+export type BubbleColorField = 'textColor' | 'fillColor' | 'strokeColor'

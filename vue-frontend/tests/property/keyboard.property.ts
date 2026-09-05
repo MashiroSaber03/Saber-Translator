@@ -29,6 +29,8 @@ const brushModeArb = fc.constantFrom<BrushMode>(null, 'repair', 'restore')
 
 function createShortcutHarness(overrides: Partial<ShortcutOptions> = {}) {
   const options: ShortcutOptions = {
+    isPickingColor: ref(false),
+    cancelColorPick: vi.fn(),
     brushMode: ref<BrushMode>(null),
     hasSelection: ref(true),
     isBrushKeyDown: ref(false),
@@ -69,6 +71,38 @@ function expectCallback(options: ShortcutOptions, callback: ShortcutCallback, ti
 }
 
 describe('edit keyboard shortcut properties', () => {
+  it('gives color picking priority over editing shortcuts and cancels without exiting', () => {
+    const { options, handleKeyDown } = createShortcutHarness({ isPickingColor: ref(true) })
+    for (const key of ['a', 'd', 'Delete', 'r', 'u', 'Enter']) handleKeyDown(createKeyEvent(key, { ctrlKey: true }))
+    expect(options.goToNextImage).not.toHaveBeenCalled()
+    expect(options.goToPreviousImage).not.toHaveBeenCalled()
+    expect(options.deleteSelectedBubbles).not.toHaveBeenCalled()
+    expect(options.toggleBrushMode).not.toHaveBeenCalled()
+    expect(options.applyAndNext).not.toHaveBeenCalled()
+    handleKeyDown(createKeyEvent('Escape'))
+    expect(options.cancelColorPick).toHaveBeenCalledOnce()
+    expect(options.exitEditMode).not.toHaveBeenCalled()
+  })
+
+  it('allows Tab and button activation while picking, and leaves modal Escape to the dialog', () => {
+    const { options, handleKeyDown } = createShortcutHarness({ isPickingColor: ref(true) })
+    const button = document.createElement('button')
+    const tab = createKeyEvent('Tab', { target: button })
+    handleKeyDown(tab)
+    expect(tab.defaultPrevented).toBe(false)
+    expect(options.cancelColorPick).not.toHaveBeenCalled()
+    const enter = createKeyEvent('Enter', { target: button })
+    handleKeyDown(enter)
+    expect(enter.defaultPrevented).toBe(false)
+    expect(options.cancelColorPick).toHaveBeenCalledOnce()
+
+    const modal = document.createElement('div')
+    modal.setAttribute('role', 'dialog')
+    const normal = createShortcutHarness()
+    normal.handleKeyDown(createKeyEvent('Escape', { target: modal }))
+    expect(normal.options.exitEditMode).not.toHaveBeenCalled()
+  })
+
   it('routes single-key edit actions through the current composable contract', () => {
     const cases = [
       { key: 'a', callback: 'goToPreviousImage' },

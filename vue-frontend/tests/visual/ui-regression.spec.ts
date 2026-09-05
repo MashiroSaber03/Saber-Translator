@@ -2043,20 +2043,8 @@ test('translate edit workspace selected bubble keeps editor panel contract', asy
   await expect(page.locator('.bubble-editor__textarea--translated')).toBeVisible()
   await expect(page.locator('.bubble-editor')).toBeVisible()
   const colorPicker = page.locator('.bubble-editor__toolbar-color-picker').first()
-  const colorInput = colorPicker.locator('input[type="color"]')
-  const colorPickerBounds = await colorPicker.boundingBox()
-  const colorInputBounds = await colorInput.boundingBox()
-  expect(await colorInput.getAttribute('hidden')).toBeNull()
-  expect(colorInputBounds).not.toBeNull()
-  expect(colorPickerBounds).not.toBeNull()
-  expect(colorInputBounds!.x).toBeGreaterThanOrEqual(colorPickerBounds!.x)
-  expect(colorInputBounds!.x).toBeLessThanOrEqual(
-    colorPickerBounds!.x + colorPickerBounds!.width,
-  )
-  expect(colorInputBounds!.y).toBeGreaterThanOrEqual(colorPickerBounds!.y)
-  expect(colorInputBounds!.y).toBeLessThanOrEqual(
-    colorPickerBounds!.y + colorPickerBounds!.height,
-  )
+  await expect(colorPicker.getByRole('button', { name: '文字颜色', exact: true })).toBeVisible()
+  await expect(workspace.locator('input[type="color"]')).toHaveCount(0)
   const workspaceBackground = await workspace.evaluate(
     element => getComputedStyle(element).backgroundColor
   )
@@ -2065,6 +2053,148 @@ test('translate edit workspace selected bubble keeps editor panel contract', asy
   await expect(page).toHaveScreenshot('translate-edit-workspace-selected-bubble.png', {
     fullPage: true,
     animations: 'disabled',
+  })
+})
+
+async function prepareEditorColorPage(page: Page) {
+  await page.unroute('**/*')
+  await prepareVisualPage(page, { editBubbles: true })
+  const document = {
+    pageId: 'demo-page-1', chapterId: 'demo-chapter', documentRevision: 1,
+    defaultFontId: 'font-source-han', pageStyleDefaults: fixtureTextStyle,
+    pageStyleSchemaVersion: 2, renderStatus: 'ready',
+    bubbles: [0, 1].map(index => ({
+      bubbleId: `demo-bubble-${index + 1}`, ordinal: index + 1, fontId: 'font-source-han',
+      payload: { ...demoBubbleState, coords: index ? [150, 800, 410, 930] : demoBubbleState.coords,
+        textColor: '#abcdef', fillColor: '#abcdef', strokeColor: '#abcdef' },
+    })),
+  }
+  const mutations: Array<{ op: string; bubbleId?: string; fields?: Record<string, unknown> }> = []
+  await page.route('**/api/v2/assets/*', route => route.fulfill({
+    contentType: 'image/svg+xml',
+    body: `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="1280"><rect width="900" height="1280" fill="white"/><rect x="200" y="600" width="80" height="80" fill="${route.request().url().includes('rendered') ? '#224466' : '#000000'}"/><rect x="350" y="650" width="1" height="1" fill="#887766"/></svg>`,
+  }))
+  await page.route('**/api/v2/pages/demo-page-1/document', async route => {
+    if (route.request().method() === 'PATCH') {
+      const command = route.request().postDataJSON()
+      mutations.push(...command.mutations)
+      for (const mutation of command.mutations) {
+        const bubble = document.bubbles.find(item => item.bubbleId === mutation.bubbleId)
+        if (bubble && mutation.fields) Object.assign(bubble.payload, mutation.fields)
+      }
+      document.documentRevision += 1
+      await route.fulfill({ json: { document, mutationResults: command.mutations.map((mutation: { bubbleId: string; clientMutationId: string; op: string }) => ({
+        bubbleId: mutation.bubbleId, clientMutationId: mutation.clientMutationId, op: mutation.op,
+      })) } })
+    } else await route.fulfill({ json: document })
+  })
+  await page.route('**/api/v2/pages/demo-page-1/render-status', route => route.fulfill({ json: {
+    pageId: document.pageId, documentRevision: document.documentRevision, renderedRevision: document.documentRevision,
+    renderStatus: 'ready', translatedUrl: '/api/v2/assets/demo-rendered-1',
+  } }))
+  await page.goto('/translate?book=demo-book&chapter=demo-chapter')
+  await expect(page.getByTestId('translation-result-display')).toBeVisible()
+  await page.getByRole('button', { name: '切换编辑模式' }).click()
+  await expect(page.locator('.bubble-overlay__highlight-box')).toHaveCount(4)
+  await expect(page.getByRole('button', { name: '文字颜色', exact: true })).toBeEnabled()
+  return { document, mutations }
+}
+
+test.describe('editor image color picking', () => {
+  test.use({ deviceScaleFactor: 2 })
+
+  test('a fractional pointer position samples a single image pixel without a compatibility drag', async ({ page }) => {
+    const fixture = await prepareEditorColorPage(page)
+    await page.getByRole('button', { name: '缩小', exact: true }).click()
+    await page.getByRole('button', { name: '文字颜色', exact: true }).click()
+    await page.getByRole('dialog').getByRole('button', { name: '从图片取色', exact: true }).click()
+    const image = page.locator('.edit-image-comparison__image-panel--original img')
+    await expect.poll(() => image.evaluate(im => im.complete && im.naturalWidth === 900)).toBe(true)
+    const bounds = (await image.boundingBox())!
+    const transform = await page.locator('.edit-image-comparison__image-panel--original .edit-image-comparison__canvas-wrapper').getAttribute('style')
+    await page.mouse.move(bounds.x + 350.5 / 900 * bounds.width, bounds.y + 650.5 / 1280 * bounds.height)
+    await page.mouse.down()
+    await page.mouse.move(bounds.x + 30, bounds.y + 30)
+    await page.mouse.up()
+    await expect.poll(() => fixture.document.bubbles[0]!.payload.textColor).toBe('#887766')
+    expect(fixture.mutations).toHaveLength(1)
+    expect(fixture.document.bubbles[0]!.payload.coords).toEqual(demoBubbleState.coords)
+    await expect(page.locator('.edit-image-comparison__image-panel--original .edit-image-comparison__canvas-wrapper')).toHaveAttribute('style', transform!)
+  })
+
+  for (const sample of [
+    { label: '文字颜色', field: 'textColor', panel: 'original', x: 240, color: '#000000', zoom: '放大' },
+    { label: '背景填充颜色', field: 'fillColor', panel: 'translated', x: 370, color: '#ffffff', zoom: '缩小' },
+    { label: '描边颜色', field: 'strokeColor', panel: 'translated', x: 240, color: '#224466', zoom: '放大' },
+  ] as const) {
+    test(`${sample.field} samples decoded pixels and persists to the selected bubble`, async ({ page }, testInfo) => {
+      const fixture = await prepareEditorColorPage(page)
+      await page.getByRole('button', { name: sample.zoom, exact: true }).click()
+      await page.getByRole('button', { name: sample.label, exact: true }).click()
+      const dialog = page.getByRole('dialog', { name: sample.label, exact: true })
+      await expect(dialog).toBeVisible()
+      if (sample.field === 'textColor') await dialog.screenshot({ path: testInfo.outputPath('color-dialog.png') })
+      await dialog.getByRole('button', { name: '从图片取色', exact: true }).click()
+      await expect(dialog).toBeHidden()
+      await expect(page.getByRole('button', { name: '取消取色', exact: true })).toBeVisible()
+      for (const overlay of await page.locator('.bubble-overlay').all()) await expect(overlay).toBeHidden()
+
+      const image = page.locator(`.edit-image-comparison__image-panel--${sample.panel} img`)
+      await expect.poll(() => image.evaluate(image => image.complete && image.naturalWidth === 900)).toBe(true)
+      const bounds = (await image.boundingBox())!
+      await page.mouse.click(bounds.x + (sample.x + 0.5) / 900 * bounds.width, bounds.y + 640.5 / 1280 * bounds.height)
+      await expect(page.getByRole('button', { name: '取消取色', exact: true })).toBeHidden()
+      await expect.poll(() => fixture.mutations.length).toBe(1)
+      expect(fixture.mutations[0]).toMatchObject({ op: 'reset', bubbleId: 'demo-bubble-1', fields: { [sample.field]: sample.color, coords: demoBubbleState.coords } })
+      expect(fixture.document.bubbles[1]!.payload[sample.field]).toBe('#abcdef')
+      await expect(page.locator('.bubble-overlay__highlight-box--selected').first()).toBeVisible()
+      await page.getByRole('button', { name: sample.label, exact: true }).click()
+      await expect(page.getByRole('dialog').getByRole('textbox', { name: 'HEX 色值' })).toHaveValue(sample.color)
+    })
+  }
+
+  test('cancel, bubble changes and page navigation restore editor controls without color writes', async ({ page }) => {
+    const fixture = await prepareEditorColorPage(page)
+    const start = async () => {
+      await page.getByRole('button', { name: '文字颜色', exact: true }).click()
+      await page.getByRole('dialog').getByRole('button', { name: '从图片取色', exact: true }).click()
+      await expect(page.getByRole('button', { name: '取消取色', exact: true })).toBeVisible()
+    }
+    await page.getByRole('button', { name: '文字颜色', exact: true }).click()
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog')).toBeHidden()
+    await expect(page.locator('.edit-workspace')).toBeVisible()
+
+    await start()
+    await page.keyboard.press('Delete')
+    await page.keyboard.press('d')
+    await page.keyboard.press('r')
+    await expect(page.getByRole('button', { name: '取消取色', exact: true })).toBeVisible()
+    await expect(page.locator('.bubble-overlay__highlight-box')).toHaveCount(4)
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('button', { name: '取消取色', exact: true })).toBeHidden()
+    await expect(page.locator('.edit-workspace')).toBeVisible()
+
+    await start()
+    await page.getByRole('button', { name: '取消取色', exact: true }).click()
+    await expect(page.getByRole('button', { name: '取消取色', exact: true })).toBeHidden()
+    await expect(page.locator('.bubble-overlay__highlight-box--selected').first()).toHaveAttribute('data-index', '0')
+
+    await start()
+    await page.getByRole('button', { name: '取消取色', exact: true }).focus()
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('button', { name: '取消取色', exact: true })).toBeHidden()
+
+    await start()
+    await page.getByRole('button', { name: '下一个气泡', exact: true }).click()
+    await expect(page.getByRole('button', { name: '取消取色', exact: true })).toBeHidden()
+    await expect(page.locator('.bubble-overlay__highlight-box--selected').first()).toHaveAttribute('data-index', '1')
+
+    await start()
+    await page.getByRole('button', { name: '下一张图片', exact: true }).click()
+    await expect(page.getByRole('button', { name: '取消取色', exact: true })).toBeHidden()
+    await expect(page.locator('.bubble-overlay__highlight-box')).toHaveCount(0)
+    expect(fixture.mutations).toHaveLength(0)
   })
 })
 

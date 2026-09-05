@@ -6,6 +6,7 @@ import {
 } from '@/constants'
 import type {
   BubbleState,
+  BubbleColorField,
   ResolvedTextDirection,
   InpaintMethod,
   LogicalAlign,
@@ -30,16 +31,13 @@ export type BubbleEditorEmit = {
   (e: 'applyToAllStyle', updates: Partial<BubbleState>): void
   (e: 'ocrRecognize', index: number): void
   (e: 'reTranslate', index: number): void
+  (e: 'pickColor', field: BubbleColorField): void
 }
 
 type TextareaFieldRef = {
   focus: () => void
   selectionStart: number | null
   selectionEnd: number | null
-}
-
-type ColorInputRef = {
-  click: () => void
 }
 
 export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit) {
@@ -78,9 +76,15 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
   const originalTextInput = ref<TextareaFieldRef | null>(null)
   const translatedTextInput = ref<TextareaFieldRef | null>(null)
 
-  const textColorInput = ref<ColorInputRef | null>(null)
-  const fillColorInput = ref<ColorInputRef | null>(null)
-  const strokeColorInput = ref<ColorInputRef | null>(null)
+  const activeColorField = ref<BubbleColorField | null>(null)
+  const colorValues = { textColor: localTextColor, fillColor: localFillColor, strokeColor: localStrokeColor }
+  const activeColorValue = computed(() => colorValues[activeColorField.value ?? 'textColor'].value)
+
+  function closeColorDialog(): void {
+    activeColorField.value = null
+  }
+
+  watch([() => props.bubble, () => props.bubbleIndex, () => props.disabled], closeColorDialog, { flush: 'sync' })
 
   const showJpKeyboard = ref(false)
   const jpKeyboardTarget = ref<'original' | 'translated'>('original')
@@ -196,31 +200,21 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     emit('update', { textDirection: direction })
   }
 
-  function triggerTextColorPicker(): void {
-    textColorInput.value?.click()
+  function openColorDialog(field: BubbleColorField): void {
+    if (!props.disabled && props.bubble) activeColorField.value = field
   }
 
-  function handleTextColorChange(value: string): void {
-    localTextColor.value = value
-    emit('update', { textColor: localTextColor.value })
+  function applyColor(field: BubbleColorField, value: string): void {
+    if (props.disabled || !props.bubble || activeColorField.value !== field) return
+    closeColorDialog()
+    colorValues[field].value = value
+    emit('update', { [field]: value })
   }
 
-  function triggerFillColorPicker(): void {
-    fillColorInput.value?.click()
-  }
-
-  function handleFillColorChange(value: string): void {
-    localFillColor.value = value
-    emit('update', { fillColor: localFillColor.value })
-  }
-
-  function triggerStrokeColorPicker(): void {
-    strokeColorInput.value?.click()
-  }
-
-  function handleStrokeColorChange(value: string): void {
-    localStrokeColor.value = value
-    emit('update', { strokeColor: localStrokeColor.value })
+  function requestImageColor(field: BubbleColorField): void {
+    if (props.disabled || !props.bubble || activeColorField.value !== field) return
+    closeColorDialog()
+    emit('pickColor', field)
   }
 
   function toggleStroke(): void {
@@ -442,16 +436,16 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     localStrokeWidth,
     localRotationAngle,
     localInpaintMethod,
-    localPositionX,
-    localPositionY,
     localLineSpacing,
     localInlineAlign,
     localBlockAlign,
     originalTextInput,
     translatedTextInput,
-    textColorInput,
-    fillColorInput,
-    strokeColorInput,
+    activeColorField,
+    activeColorValue,
+    closeColorDialog,
+    applyColor,
+    requestImageColor,
     showJpKeyboard,
     jpKeyboardTarget,
     positionX,
@@ -466,12 +460,7 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     setFontSize,
     handleFontFamilyChange,
     setTextDirection,
-    triggerTextColorPicker,
-    handleTextColorChange,
-    triggerFillColorPicker,
-    handleFillColorChange,
-    triggerStrokeColorPicker,
-    handleStrokeColorChange,
+    openColorDialog,
     toggleStroke,
     handleStrokeWidthChange,
     handleInpaintMethodChange,

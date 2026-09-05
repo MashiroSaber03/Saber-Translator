@@ -2,6 +2,8 @@ import type { Ref } from 'vue'
 import type { BrushMode } from '@/composables/useBrush'
 
 interface UseEditWorkspaceKeyboardShortcutsOptions {
+  isPickingColor: Readonly<Ref<boolean>>
+  cancelColorPick: () => void
   brushMode: Ref<BrushMode>
   hasSelection: Ref<boolean>
   isBrushKeyDown: Ref<boolean>
@@ -21,11 +23,23 @@ export function useEditWorkspaceKeyboardShortcuts(options: UseEditWorkspaceKeybo
   function isEditableTarget(target: EventTarget | null): boolean {
     if (!(target instanceof Element)) return false
     return Boolean(target.closest(
-      'input, textarea, select, button, [contenteditable]:not([contenteditable="false"])',
+      'input, textarea, select, button, [role="dialog"], [contenteditable]:not([contenteditable="false"])',
     ))
   }
 
   function handleKeyDown(event: KeyboardEvent): void {
+    if (event.defaultPrevented) return
+    if (options.isPickingColor.value) {
+      if (event.key === 'Escape') {
+        options.cancelColorPick()
+        event.preventDefault()
+        event.stopPropagation()
+      } else if (event.key !== 'Tab') {
+        if (isEditableTarget(event.target)) options.cancelColorPick()
+        else event.preventDefault()
+      }
+      return
+    }
     if (isEditableTarget(event.target)) return
 
     switch (event.key) {
@@ -95,6 +109,7 @@ export function useEditWorkspaceKeyboardShortcuts(options: UseEditWorkspaceKeybo
   }
 
   function handleKeyUp(event: KeyboardEvent): void {
+    if (options.isPickingColor.value) return
     if (isEditableTarget(event.target)) return
     if (event.key === 'r' || event.key === 'R' || event.key === 'u' || event.key === 'U') {
       options.exitBrushMode()

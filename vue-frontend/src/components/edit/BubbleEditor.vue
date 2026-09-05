@@ -159,18 +159,10 @@
 
           <div class="bubble-editor__toolbar-color-group">
             <div class="bubble-editor__toolbar-color-picker" title="文字颜色">
-              <UiIconButton variant="soft" size="sm" class="bubble-editor__toolbar-action bubble-editor__toolbar-color-action" label="文字颜色" title="文字颜色" @click="triggerTextColorPicker">
+              <UiIconButton variant="soft" size="sm" class="bubble-editor__toolbar-action bubble-editor__toolbar-color-action" label="文字颜色" title="文字颜色" @click="openColorDialog('textColor')">
                 <UiIcon name="type" size="16" />
                 <span class="bubble-editor__color-indicator" :style="{ background: localTextColor }"></span>
               </UiIconButton>
-              <UiColorInput
-                ref="textColorInput"
-                :model-value="localTextColor"
-                hidden
-                aria-label="文字颜色"
-                title="文字颜色"
-                @update:model-value="handleTextColorChange"
-              />
             </div>
           </div>
 
@@ -188,18 +180,10 @@
               v-if="localInpaintMethod === 'solid'"
               class="bubble-editor__toolbar-color-picker bubble-editor__toolbar-solid-color-options"
             >
-              <UiIconButton variant="soft" size="sm" class="bubble-editor__toolbar-action bubble-editor__toolbar-color-action" label="背景填充颜色" title="背景填充颜色" @click="triggerFillColorPicker">
+              <UiIconButton variant="soft" size="sm" class="bubble-editor__toolbar-action bubble-editor__toolbar-color-action" label="背景填充颜色" title="背景填充颜色" @click="openColorDialog('fillColor')">
                 <UiIcon name="square" size="16" />
                 <span class="bubble-editor__color-indicator" :style="{ background: localFillColor }"></span>
               </UiIconButton>
-              <UiColorInput
-                ref="fillColorInput"
-                :model-value="localFillColor"
-                hidden
-                aria-label="背景填充颜色"
-                title="背景填充颜色"
-                @update:model-value="handleFillColorChange"
-              />
             </div>
           </div>
 
@@ -224,18 +208,10 @@
               class="bubble-editor__toolbar-color-picker bubble-editor__toolbar-stroke-options"
               title="描边颜色"
             >
-              <UiIconButton variant="soft" size="sm" class="bubble-editor__toolbar-action bubble-editor__toolbar-color-action" label="描边颜色" title="描边颜色" @click="triggerStrokeColorPicker">
+              <UiIconButton variant="soft" size="sm" class="bubble-editor__toolbar-action bubble-editor__toolbar-color-action" label="描边颜色" title="描边颜色" @click="openColorDialog('strokeColor')">
                 <UiIcon name="circle" size="16" />
                 <span class="bubble-editor__color-indicator" :style="{ background: localStrokeColor }"></span>
               </UiIconButton>
-              <UiColorInput
-                ref="strokeColorInput"
-                :model-value="localStrokeColor"
-                hidden
-                aria-label="描边颜色"
-                title="描边颜色"
-                @update:model-value="handleStrokeColorChange"
-              />
             </div>
 
             <div
@@ -443,12 +419,20 @@
     <UiIcon name="mouse-pointer" size="24" aria-hidden="true" />
     <span>请选择一个气泡进行编辑</span>
   </div>
+  <EditColorDialog
+    v-if="activeColorField"
+    :field="activeColorField"
+    :color="activeColorValue"
+    @apply="applyColor"
+    @pick="requestImageColor"
+    @close="closeColorDialog"
+  />
 </template>
 
 <script setup lang="ts">
 
 import UiTextarea from '@/components/ui/UiTextarea.vue'
-import UiColorInput from '@/components/ui/UiColorInput.vue'
+import EditColorDialog from './EditColorDialog.vue'
 
 import UiButton from '@/components/ui/UiButton.vue'
 import UiField from '@/components/ui/UiField.vue'
@@ -484,9 +468,11 @@ const {
   localBlockAlign,
   originalTextInput,
   translatedTextInput,
-  textColorInput,
-  fillColorInput,
-  strokeColorInput,
+  activeColorField,
+  activeColorValue,
+  closeColorDialog,
+  applyColor,
+  requestImageColor,
   showJpKeyboard,
   jpKeyboardTarget,
   positionX,
@@ -501,12 +487,7 @@ const {
   setFontSize,
   handleFontFamilyChange,
   setTextDirection,
-  triggerTextColorPicker,
-  handleTextColorChange,
-  triggerFillColorPicker,
-  handleFillColorChange,
-  triggerStrokeColorPicker,
-  handleStrokeColorChange,
+  openColorDialog,
   toggleStroke,
   handleStrokeWidthChange,
   handleInpaintMethodChange,
@@ -764,7 +745,6 @@ const {
 }
 
 .bubble-editor__toolbar-color-picker {
-  position: relative;
   display: inline-flex;
 }
 

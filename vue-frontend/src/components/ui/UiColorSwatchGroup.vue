@@ -60,7 +60,7 @@ button.ui-color-swatch-group__swatch {
   height: var(--ui-button-icon-height);
   padding: var(--ui-button-padding);
   background: var(--ui-swatch-background);
-  border: 2px solid transparent;
+  border: 2px solid var(--ui-swatch-border-color, transparent);
   border-radius: 6px;
   box-shadow: none;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
@@ -70,7 +70,7 @@ button.ui-color-swatch-group__swatch {
   transform: scale(1.08);
 }
 
-.ui-color-swatch-group__swatch--selected {
+button.ui-color-swatch-group__swatch--selected {
   border-color: var(--color-border-brand-gradient);
   box-shadow: 0 0 0 2px var(--color-focus-brand-subtle);
 }

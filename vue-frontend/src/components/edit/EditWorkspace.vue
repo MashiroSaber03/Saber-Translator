@@ -3,6 +3,7 @@
     class="edit-workspace"
     tabindex="0"
     ref="workspaceRef"
+    @pointerdown.capture="handleWorkspacePointerDown"
   >
     <EditToolbar
       :current-image-index="currentImageIndex"
@@ -49,6 +50,11 @@
       @pointer-action-complete="focusWorkspaceAfterToolbarPointer"
     />
 
+    <div v-if="colorPickField" class="edit-workspace__color-pick-status" role="status">
+      <span>设置{{ BUBBLE_COLOR_LABELS[colorPickField] }}：点击原图或结果图中的可见像素取色，按 Esc 取消。</span>
+      <UiButton size="sm" variant="secondary" @click="cancelColorPick">取消取色</UiButton>
+    </div>
+
     <EditThumbnailPanel
       :visible="showThumbnails"
       :images="images"
@@ -79,6 +85,7 @@
       :is-ocr-loading="isOcrLoading"
       :is-translate-loading="isTranslateLoading"
       :is-busy="isBusy"
+      :is-picking-color="isPickingColor"
       @wheel-panel="handleWheel"
       @mouse-down-panel="handleMouseDown"
       @image-load="handleImageLoad"
@@ -94,6 +101,7 @@
       @apply-to-all-style="handleApplyStyleToAllBubbles"
       @ocr-recognize="handleOcrRecognize"
       @re-translate="handleReTranslateBubble"
+      @pick-color="startImageColorPick"
     />
   </div>
 </template>
@@ -104,11 +112,18 @@ import EditImageComparison from './EditImageComparison.vue'
 import EditToolbar from './EditToolbar.vue'
 import EditThumbnailPanel from './EditThumbnailPanel.vue'
 import { useEditWorkspace, type EditWorkspaceEmit } from './useEditWorkspace'
+import UiButton from '@/components/ui/UiButton.vue'
+import { BUBBLE_COLOR_LABELS } from './bubbleColorFields'
 
 const emit = defineEmits<EditWorkspaceEmit>()
 
 const {
   workspaceRef,
+  colorPickField,
+  isPickingColor,
+  startImageColorPick,
+  cancelColorPick,
+  handleWorkspacePointerDown,
   imageComparisonRef,
   focusWorkspaceAfterToolbarPointer,
   images,
@@ -203,6 +218,24 @@ const {
   border-radius: 0;
   flex-shrink: 0;
   transition: none;
+}
+
+.edit-workspace__color-pick-status {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  left: 16px;
+  z-index: var(--z-local-panel);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 16px;
+  background: var(--color-surface-card);
+  color: var(--color-text-default);
+  border: 1px solid var(--color-border-muted);
+  border-radius: 8px;
+  font-size: 13px;
 }
 
 </style>

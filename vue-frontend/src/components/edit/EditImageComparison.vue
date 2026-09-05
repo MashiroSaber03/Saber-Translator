@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
-import type { BubbleCoords, BubbleState } from '@/types/bubble'
+import type { BubbleColorField, BubbleCoords, BubbleState } from '@/types/bubble'
 import type { ImageData } from '@/types/image'
 import type { BrushMode } from '@/composables/useBrush'
 import BubbleEditor from './BubbleEditor.vue'
@@ -33,6 +33,7 @@ const props = defineProps<{
   isOcrLoading: boolean
   isTranslateLoading: boolean
   isBusy: boolean
+  isPickingColor?: boolean
 }>()
 
 const processedImageUrl = computed(
@@ -66,6 +67,7 @@ const emit = defineEmits<{
   applyToAllStyle: [updates: Partial<BubbleState>]
   ocrRecognize: [index: number]
   reTranslate: [index: number]
+  pickColor: [field: BubbleColorField]
 }>()
 
 const originalViewportRef = ref<HTMLElement | null>(null)
@@ -100,6 +102,7 @@ defineExpose({
       `edit-image-comparison--layout-${layoutMode}`,
       { 'edit-image-comparison--drawing': isDrawingMode },
       { 'edit-image-comparison--brush-active': !!brushMode },
+      { 'edit-image-comparison--color-picking': isPickingColor },
     ]"
     :data-brush-mode="brushMode || undefined"
   >
@@ -148,11 +151,12 @@ defineExpose({
             >
             <BubbleOverlay
               v-if="currentImage?.sourceAssetUrl"
+              v-show="!isPickingColor"
               :bubbles="bubbles"
               :selected-index="selectedBubbleIndex"
               :selected-indices="selectedIndices"
               :scale="originalScale"
-              :disabled="isBusy"
+              :disabled="isBusy || isPickingColor"
               :is-brush-mode="!!brushMode"
               :image-width="currentImageWidth"
               :image-height="currentImageHeight"
@@ -163,7 +167,7 @@ defineExpose({
               @rotate-end="(index, angle) => emit('bubbleRotateEnd', index, angle)"
             />
             <div
-              v-if="currentDrawingRect"
+              v-if="currentDrawingRect && !isPickingColor"
               class="edit-image-comparison__drawing-rect"
               :style="drawingRectStyle"
             ></div>
@@ -224,11 +228,12 @@ defineExpose({
             >
             <BubbleOverlay
               v-if="processedImageUrl"
+              v-show="!isPickingColor"
               :bubbles="bubbles"
               :selected-index="selectedBubbleIndex"
               :selected-indices="selectedIndices"
               :scale="scale"
-              :disabled="isBusy"
+              :disabled="isBusy || isPickingColor"
               :is-brush-mode="!!brushMode"
               :image-width="currentImageWidth"
               :image-height="currentImageHeight"
@@ -239,7 +244,7 @@ defineExpose({
               @rotate-end="(index, angle) => emit('bubbleRotateEnd', index, angle)"
             />
             <div
-              v-if="currentDrawingRect"
+              v-if="currentDrawingRect && !isPickingColor"
               class="edit-image-comparison__drawing-rect edit-image-comparison__drawing-rect--translated"
               :style="drawingRectStyle"
             ></div>
@@ -265,6 +270,7 @@ defineExpose({
         @apply-to-all-style="emit('applyToAllStyle', $event)"
         @ocr-recognize="emit('ocrRecognize', $event)"
         @re-translate="emit('reTranslate', $event)"
+        @pick-color="emit('pickColor', $event)"
       />
     </div>
   </div>
@@ -388,6 +394,10 @@ defineExpose({
 
 .edit-image-comparison__viewport:active {
   cursor: grabbing;
+}
+
+.edit-image-comparison--color-picking .edit-image-comparison__viewport {
+  cursor: crosshair;
 }
 
 .edit-image-comparison__viewport:focus {

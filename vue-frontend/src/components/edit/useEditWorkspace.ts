@@ -8,6 +8,7 @@ import { useBrush, type BrushSurface } from '@/composables/useBrush'
 import { useBubbleActions } from '@/composables/useBubbleActions'
 import { useEditRender } from '@/composables/useEditRender'
 import { useEditWorkspaceKeyboardShortcuts } from '@/composables/edit/useEditWorkspaceKeyboardShortcuts'
+import { useImageColorPicker } from '@/composables/edit/useImageColorPicker'
 import { useEditWorkspaceProcessingActions } from '@/composables/edit/useEditWorkspaceProcessingActions'
 import { useEditWorkspaceResizeActions } from '@/composables/edit/useEditWorkspaceResizeActions'
 import {
@@ -20,7 +21,7 @@ import { showToast } from '@/utils/toast'
 import { isRequestCanceled } from '@/api/client'
 import type EditImageComparison from './EditImageComparison.vue'
 import { LAYOUT_MODE_KEY } from '@/constants'
-import type { BubbleState, InpaintMethod } from '@/types/bubble'
+import type { BubbleState, BubbleColorField, InpaintMethod } from '@/types/bubble'
 import {
   parseCompleteTextStyleSettings,
   TEXT_STYLE_DEFAULTS,
@@ -313,25 +314,6 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
     }
   }
 
-  const {
-    handleKeyDown,
-    handleKeyUp,
-  } = useEditWorkspaceKeyboardShortcuts({
-    brushMode,
-    hasSelection,
-    isBrushKeyDown,
-    exitEditMode: handleExitToolbarAction,
-    deleteSelectedBubbles: deleteSelectedBubblesWhenIdle,
-    goToPreviousImage,
-    goToNextImage,
-    applyAndNext,
-    toggleBrushMode: activateBrushShortcut,
-    exitBrushMode,
-    zoomIn,
-    zoomOut,
-    resetZoom,
-  })
-
   let pageDocumentRequest = 0
   let pageDocumentAbortController: AbortController | null = null
 
@@ -415,6 +397,62 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
     || isNavigationPending.value
   ))
 
+  const { colorPickField, isPickingColor, startColorPick, cancelColorPick, pickImageColor } = useImageColorPicker({
+    pageId: computed(() => currentImage.value?.id),
+    bubble: selectedBubble,
+    bubbleIndex: selectedBubbleIndex,
+    disabled: isBusy,
+    onPick: (field, color) => handleBubbleUpdateWithSync({ [field]: color }),
+    onError: message => showToast(message, 'error'),
+  })
+
+  function startImageColorPick(field: BubbleColorField): void {
+    if (isDrawingBox.value || !startColorPick(field)) return
+    exitBrushMode()
+    isDrawingMode.value = false
+    handleDragEnd()
+    nextTick(() => {
+      if (isOwnerActive && isPickingColor.value) workspaceRef.value?.focus({ preventScroll: true })
+    })
+  }
+
+  function handleWorkspacePointerDown(event: PointerEvent): void {
+    if (!isPickingColor.value || !(event.target instanceof Node)) return
+    // Let the cancel button complete its click before removing its DOM target.
+    if (event.target instanceof Element && event.target.closest('.edit-workspace__color-pick-status')) return
+    const inOriginal = originalViewportRef.value?.contains(event.target)
+    const inTranslated = translatedViewportRef.value?.contains(event.target)
+    if (!inOriginal && !inTranslated) {
+      cancelColorPick()
+      return
+    }
+    // PointerEvent preserves fractional CSS coordinates at small zoom levels.
+    // Cancelling it also suppresses the compatibility mousedown that would drag the image.
+    event.preventDefault()
+    event.stopPropagation()
+    if (event.button === 0) {
+      pickImageColor(inOriginal ? originalImageRef.value : translatedImageRef.value, event)
+    }
+  }
+
+  const { handleKeyDown, handleKeyUp } = useEditWorkspaceKeyboardShortcuts({
+    isPickingColor,
+    cancelColorPick,
+    brushMode,
+    hasSelection,
+    isBrushKeyDown,
+    exitEditMode: handleExitToolbarAction,
+    deleteSelectedBubbles: deleteSelectedBubblesWhenIdle,
+    goToPreviousImage,
+    goToNextImage,
+    applyAndNext,
+    toggleBrushMode: activateBrushShortcut,
+    exitBrushMode,
+    zoomIn,
+    zoomOut,
+    resetZoom,
+  })
+
 
   function selectPreviousBubble(): void {
     if (isBusy.value) return
@@ -491,6 +529,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
 
 
   function handleWheel(event: WheelEvent, viewport: 'original' | 'translated'): void {
+    if (isPickingColor.value) return
     if (brushMode.value) {
       const delta = event.deltaY > 0 ? -5 : 5
       adjustBrushSize(delta)
@@ -513,6 +552,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
   }
 
   function handleMouseDown(event: MouseEvent, viewport: 'original' | 'translated'): void {
+    if (isPickingColor.value) return
     if (brushMode.value) {
       if (isBrushSubmitting.value) return
       const surface = getBrushSurface(viewport)
@@ -877,6 +917,11 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
 
   return {
     workspaceRef,
+    colorPickField,
+    isPickingColor,
+    startImageColorPick,
+    cancelColorPick,
+    handleWorkspacePointerDown,
     imageComparisonRef,
     focusWorkspaceAfterToolbarPointer,
     images,
