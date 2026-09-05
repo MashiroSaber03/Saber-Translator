@@ -362,17 +362,6 @@ async function handleQuickWorkspacePromoted() {
           <template #icon>📚</template>
         </ProductHeaderAction>
         <ProductHeaderAction
-          v-if="isBookshelfMode"
-          as="span"
-          variant="solid"
-          class="translate-header__autosave-indicator"
-          title="自动保存已启用"
-          aria-label="自动保存已启用"
-          icon-only
-        >
-          <template #icon>💾</template>
-        </ProductHeaderAction>
-        <ProductHeaderAction
           v-if="!isBookshelfMode && hasImages"
           label="新建快速翻译"
           icon-name="plus"
@@ -601,29 +590,10 @@ async function handleQuickWorkspacePromoted() {
   --product-header-action-min-height: 42px;
 }
 
-.translate-header__autosave-indicator {
-  --product-header-action-icon-only-width: 44px;
-  --product-header-action-min-height: 42px;
-  --product-header-action-icon-font-size: 1rem;
-}
-
 .translate-header__link--tutorial,
 .translate-header__link--github {
   --product-header-action-font-size: 1rem;
   --product-header-action-font-weight: 400;
-}
-
-.translate-header__autosave-indicator {
-  --product-header-action-solid-surface: linear-gradient(
-    135deg,
-    var(--color-action-success) 0%,
-    var(--color-action-success-strong) 100%
-  );
-  --product-header-action-solid-shadow-color: color-mix(
-    in srgb,
-    var(--color-action-success) 35%,
-    transparent
-  );
 }
 
 @keyframes settingsBtnPulse {
