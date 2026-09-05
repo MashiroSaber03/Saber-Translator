@@ -42,12 +42,13 @@ function updatePosition(): void {
   const below = Math.max(0, bottomEdge - anchor.bottom - gap)
   const above = Math.max(0, anchor.top - topEdge - gap)
   const openAbove = below < desiredHeight && above > below
-  const height = Math.min(desiredHeight, openAbove ? above : below)
+  const maxHeight = openAbove ? above : below
+  const height = Math.min(desiredHeight, maxHeight)
   position.value = {
     width: `${width}px`,
     left: `${Math.max(leftEdge, Math.min(anchor.left, rightEdge - width))}px`,
     top: `${openAbove ? anchor.top - gap - height : anchor.bottom + gap}px`,
-    maxHeight: `${height}px`,
+    maxHeight: `${maxHeight}px`,
   }
 }
 

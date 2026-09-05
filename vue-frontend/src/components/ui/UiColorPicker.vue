@@ -87,7 +87,7 @@ function dragSpectrum(event: PointerEvent): void {
 function endSpectrum(event: PointerEvent): void {
   const target = event.currentTarget as HTMLElement
   if (!target.hasPointerCapture(event.pointerId)) return
-  updateSpectrum(event)
+  // Down/move already sampled the pointer; layout may have shifted before release.
   target.releasePointerCapture(event.pointerId)
 }
 
@@ -111,11 +111,9 @@ function updateHex(value: string | number): void {
   if (valid.value) setColor(`#${hex.value.trim().replace('#', '').toLowerCase()}`)
 }
 
-function updateChannel(shift: number, value: string | number | null): void {
+function updateChannel(shift: number, value: number | null): void {
   if (value === null) return
-  const number = Number(value)
-  if (!Number.isFinite(number)) return
-  const channel = Math.max(0, Math.min(255, Math.round(number)))
+  const channel = Math.round(value)
   const color = (rgb.value & ~(255 << shift)) | (channel << shift)
   setColor(`#${color.toString(16).padStart(6, '0')}`)
 }

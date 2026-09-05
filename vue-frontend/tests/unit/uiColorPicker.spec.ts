@@ -40,6 +40,7 @@ describe('continuous color picker', () => {
     expect(hex()).toBe('#404080')
     await pointer('pointermove', { pointerId: 1, clientX: 250, clientY: 180 })
     expect(hex()).toBe('#000000')
+    await pointer('pointermove', { pointerId: 1, clientX: 210, clientY: 20 })
     await pointer('pointerup', { pointerId: 1, clientX: 210, clientY: 20 })
     expect(hex()).toBe('#0000ff')
     await pointer('pointermove', { pointerId: 1, clientX: 10, clientY: 20 })
@@ -68,6 +69,7 @@ describe('continuous color picker', () => {
     await pointer('pointerdown', { button: 0, isPrimary: true, pointerId: 1, clientX: 210, clientY: 20 })
     expect(hex()).toBe('#ff00ff')
     await wrapper.get('input[aria-label="HEX 色值"]').setValue('#oops')
+    await pointer('pointermove', { pointerId: 1, clientX: 10, clientY: 20 })
     await pointer('pointerup', { pointerId: 1, clientX: 10, clientY: 20 })
     expect(hex()).toBe('#ffffff')
     expect(wrapper.get('input[aria-label="HEX 色值"]').attributes('aria-invalid')).toBeUndefined()
@@ -85,5 +87,27 @@ describe('continuous color picker', () => {
     expect(hex()).toBe('#0000e6')
     await pointer('pointerdown', { button: 0, isPrimary: true, pointerId: 1, clientX: 121, clientY: 63 })
     expect(spectrum.attributes('aria-valuetext')).toBe('饱和度 56%，明度 64%')
+  })
+
+  it('keeps the sampled color when validation changes the palette position before pointer release', async () => {
+    const { wrapper, spectrum, pointer, hex } = picker('#ff0000')
+    await wrapper.get('input[aria-label="HEX 色值"]').setValue('#oops')
+    await pointer('pointerdown', { button: 0, isPrimary: true, pointerId: 1, clientX: 160, clientY: 50 })
+    expect(hex()).toBe('#bf3030')
+    Object.assign(spectrum.element, { getBoundingClientRect: () => new DOMRect(10, 60, 200, 120) })
+    const updates = wrapper.getComponent(UiColorPicker).emitted('update:modelValue')!.length
+    await pointer('pointerup', { pointerId: 1, clientX: 160, clientY: 50 })
+    expect(hex()).toBe('#bf3030')
+    expect(wrapper.getComponent(UiColorPicker).emitted('update:modelValue')).toHaveLength(updates)
+  })
+
+  it('uses the number fields to clamp channels and rounds fractional input to an RGB byte', async () => {
+    const { wrapper, hex } = picker('#123456')
+    await wrapper.get('input[aria-label="红（R）"]').setValue('999')
+    expect(hex()).toBe('#ff3456')
+    await wrapper.get('input[aria-label="绿（G）"]').setValue('-10')
+    expect(hex()).toBe('#ff0056')
+    await wrapper.get('input[aria-label="蓝（B）"]').setValue('20.6')
+    expect(hex()).toBe('#ff0015')
   })
 })

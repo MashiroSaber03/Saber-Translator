@@ -2230,6 +2230,32 @@ test.describe('editor image color picking', () => {
     expect(fixture.mutations).toHaveLength(0)
   })
 
+  test('clearing a HEX error does not resample a shifted palette on pointer release', async ({ page }) => {
+    const fixture = await prepareEditorColorPage(page)
+    await page.setViewportSize({ width: 1500, height: 1000 })
+    await page.getByRole('button', { name: '文字颜色', exact: true }).click()
+    const popover = page.getByRole('dialog', { name: '文字颜色', exact: true })
+    const hex = popover.getByRole('textbox', { name: 'HEX 色值' })
+    const palette = popover.getByRole('slider', { name: '色盘', exact: true })
+    await hex.fill('#ff0000')
+    const original = (await palette.boundingBox())!
+    await hex.fill('#oops')
+    await expect(popover.getByRole('button', { name: '应用颜色', exact: true })).toBeDisabled()
+    await expect.poll(async () => (await palette.boundingBox())!.y).not.toBe(original.y)
+    const before = (await palette.boundingBox())!
+    await page.mouse.move(before.x + before.width * 0.75, before.y + before.height * 0.25)
+    await page.mouse.down()
+    await expect(hex).toHaveValue('#bf3030')
+    await expect.poll(async () => (await palette.boundingBox())!.y).not.toBe(before.y)
+    await page.mouse.up()
+    await expect(hex).toHaveValue('#bf3030')
+    await popover.getByRole('button', { name: '应用颜色', exact: true }).click()
+    await expect.poll(() => fixture.document.bubbles[0]!.payload.textColor).toBe('#bf3030')
+    expect(fixture.document.bubbles[0]!.payload.coords).toEqual(demoBubbleState.coords)
+    expect(fixture.document.bubbles[1]!.payload.textColor).toBe('#abcdef')
+    expect(fixture.mutations).toHaveLength(1)
+  })
+
   test('a fractional pointer position samples a single image pixel without a compatibility drag', async ({ page }) => {
     const fixture = await prepareEditorColorPage(page)
     await page.getByRole('button', { name: '缩小', exact: true }).click()
