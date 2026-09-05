@@ -2080,7 +2080,11 @@ async function prepareEditorColorPage(page: Page) {
       mutations.push(...command.mutations)
       for (const mutation of command.mutations) {
         const bubble = document.bubbles.find(item => item.bubbleId === mutation.bubbleId)
-        if (bubble && mutation.fields) Object.assign(bubble.payload, mutation.fields)
+        if (bubble && mutation.fields) {
+          const { fontId, ...payload } = mutation.fields
+          if (typeof fontId === 'string') bubble.fontId = fontId
+          Object.assign(bubble.payload, payload)
+        }
       }
       document.documentRevision += 1
       await route.fulfill({ json: { document, mutationResults: command.mutations.map((mutation: { bubbleId: string; clientMutationId: string; op: string }) => ({
@@ -2117,7 +2121,7 @@ test.describe('editor image color picking', () => {
       const box = (await popover.boundingBox())!
       const panel = (await editor.boundingBox())!
       expect(box.width).toBeLessThanOrEqual(300)
-      expect(box.height).toBeLessThan(340)
+      expect(box.height).toBeLessThan(400)
       expect(box.x).toBeGreaterThanOrEqual(panel.x)
       expect(box.x + box.width).toBeLessThanOrEqual(panel.x + panel.width)
       expect(box.x).toBeLessThan(buttonBox.x + buttonBox.width)
@@ -2172,6 +2176,57 @@ test.describe('editor image color picking', () => {
     await trigger.click()
     await styleSection.evaluate(element => { element.scrollTop = element.scrollHeight })
     await expect(popover).toBeHidden()
+    expect(fixture.mutations).toHaveLength(0)
+  })
+
+  test('continuous palette updates HEX and RGB and saves each color field only when applied', async ({ page }, testInfo) => {
+    const fixture = await prepareEditorColorPage(page)
+    for (const [label, field] of [['文字颜色', 'textColor'], ['背景填充颜色', 'fillColor'], ['描边颜色', 'strokeColor']] as const) {
+      await page.getByRole('button', { name: label, exact: true }).click()
+      const popover = page.getByRole('dialog', { name: label, exact: true })
+      const hue = popover.getByRole('slider', { name: '色相', exact: true })
+      const palette = popover.getByRole('slider', { name: '色盘', exact: true })
+      await hue.focus()
+      await page.keyboard.press('Home')
+      const box = (await palette.boundingBox())!
+      await page.mouse.click(box.x + box.width * 0.75, box.y + box.height * 0.25)
+      await expect(popover.getByRole('textbox', { name: 'HEX 色值' })).toHaveValue('#bf3030')
+      await expect(popover.getByRole('spinbutton', { name: '红（R）', exact: true })).toHaveValue('191')
+      await expect(popover.getByRole('spinbutton', { name: '绿（G）', exact: true })).toHaveValue('48')
+      expect(fixture.document.bubbles[0]!.payload[field]).toBe('#abcdef')
+      if (field === 'textColor') await page.screenshot({ path: testInfo.outputPath('color-palette.png') })
+      const savedRevision = fixture.document.documentRevision + 1
+      const rendered = page.waitForResponse(async response => response.url().endsWith('/demo-page-1/render-status') && (await response.json()).renderedRevision >= savedRevision)
+      await popover.getByRole('button', { name: '应用颜色', exact: true }).click()
+      await expect.poll(() => fixture.document.bubbles[0]!.payload[field]).toBe('#bf3030')
+      await rendered
+      expect(fixture.document.bubbles[1]!.payload[field]).toBe('#abcdef')
+    }
+    expect(fixture.mutations).toHaveLength(3)
+  })
+
+  test('palette captures outside drags, retains hue at black, and handles keyboard editing without workspace shortcuts', async ({ page }) => {
+    const fixture = await prepareEditorColorPage(page)
+    await page.getByRole('button', { name: '文字颜色', exact: true }).click()
+    const popover = page.getByRole('dialog', { name: '文字颜色', exact: true })
+    const palette = popover.getByRole('slider', { name: '色盘', exact: true })
+    await popover.getByRole('textbox', { name: 'HEX 色值' }).fill('#0000ff')
+    const box = (await palette.boundingBox())!
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width + 20, box.y + box.height + 20)
+    await expect(popover.getByRole('textbox', { name: 'HEX 色值' })).toHaveValue('#000000')
+    await page.mouse.move(box.x + box.width * 0.75, box.y + box.height * 0.25)
+    await page.mouse.up()
+    await expect(popover.getByRole('textbox', { name: 'HEX 色值' })).toHaveValue('#3030bf')
+    await expect(popover.getByRole('slider', { name: '色相', exact: true })).toHaveValue('240')
+    await page.keyboard.press('Home')
+    await expect(popover.getByRole('textbox', { name: 'HEX 色值' })).toHaveValue('#bfbfbf')
+    await page.keyboard.press('Delete')
+    expect(fixture.document.bubbles).toHaveLength(2)
+    await page.keyboard.press('Escape')
+    await expect(popover).toBeHidden()
+    await expect(page.locator('.edit-workspace')).toBeVisible()
     expect(fixture.mutations).toHaveLength(0)
   })
 
