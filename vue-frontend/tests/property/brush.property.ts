@@ -105,11 +105,9 @@ describe('brush composable property contracts', () => {
 
         brush.toggleBrushMode(mode)
         expect(brush.brushMode.value).toBe(mode)
-        expect(brush.isBrushKeyDown.value).toBe(true)
 
         brush.toggleBrushMode(mode)
         expect(brush.brushMode.value).toBeNull()
-        expect(brush.isBrushKeyDown.value).toBe(false)
       }),
       { numRuns: 20 },
     )
@@ -122,11 +120,9 @@ describe('brush composable property contracts', () => {
     brush.toggleBrushMode('restore')
 
     expect(brush.brushMode.value).toBe('restore')
-    expect(brush.isBrushKeyDown.value).toBe(true)
 
     brush.exitBrushMode()
 
     expect(brush.brushMode.value).toBeNull()
-    expect(brush.isBrushKeyDown.value).toBe(false)
   })
 })

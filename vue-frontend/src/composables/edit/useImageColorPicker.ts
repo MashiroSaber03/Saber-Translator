@@ -42,8 +42,13 @@ export function useImageColorPicker(options: Options) {
     options.onPick(field, color)
   }
 
-  // Sampling is synchronous; invalidate immediately when the editing target changes.
-  watch([options.pageId, options.bubble, options.bubbleIndex, options.disabled], cancelColorPick, { flush: 'sync' })
+  // Saving can replace the bubble object without changing the editing target.
+  watch([
+    () => options.pageId.value,
+    () => options.bubble.value?.backendBubbleId ?? options.bubble.value?.clientMutationId ?? options.bubble.value,
+    () => options.bubbleIndex.value,
+    () => options.disabled.value,
+  ], cancelColorPick, { flush: 'sync' })
   onUnmounted(cancelColorPick)
 
   return { colorPickField, isPickingColor, startColorPick, cancelColorPick, pickImageColor }

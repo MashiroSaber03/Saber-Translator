@@ -33,14 +33,13 @@ function createShortcutHarness(overrides: Partial<ShortcutOptions> = {}) {
     cancelColorPick: vi.fn(),
     brushMode: ref<BrushMode>(null),
     hasSelection: ref(true),
-    isBrushKeyDown: ref(false),
     exitEditMode: vi.fn(),
     deleteSelectedBubbles: vi.fn(),
     goToPreviousImage: vi.fn(),
     goToNextImage: vi.fn(),
     applyAndNext: vi.fn(),
-    toggleBrushMode: vi.fn(),
-    exitBrushMode: vi.fn(),
+    toggleBrushMode: vi.fn((mode: 'repair' | 'restore') => { options.brushMode.value = mode }),
+    exitBrushMode: vi.fn(() => { options.brushMode.value = null }),
     zoomIn: vi.fn(),
     zoomOut: vi.fn(),
     resetZoom: vi.fn(),
@@ -209,6 +208,28 @@ describe('edit keyboard shortcut properties', () => {
     expectCallback(enterHarness.options, 'applyAndNext', 0)
   })
 
+  it.each(['input', 'button', 'dialog', 'slider'])(
+    'releases a held brush shortcut after focus moves into a %s',
+    targetType => {
+      const { options, handleKeyDown, handleKeyUp } = createShortcutHarness()
+      const target = document.createElement(['input', 'button'].includes(targetType) ? targetType : 'div')
+      if (targetType === 'dialog') target.setAttribute('role', 'dialog')
+      if (targetType === 'slider') {
+        const dialog = document.createElement('div')
+        dialog.setAttribute('role', 'dialog')
+        target.setAttribute('role', 'slider')
+        dialog.append(target)
+      }
+      handleKeyDown(createKeyEvent('r'))
+      const release = createKeyEvent('r', { target, type: 'keyup' })
+
+      handleKeyUp(release)
+
+      expectCallback(options, 'exitBrushMode', 1)
+      expect(release.defaultPrevented).toBe(true)
+    },
+  )
+
   it('uses Escape to leave brush mode before leaving the edit workspace', () => {
     const { options, handleKeyDown } = createShortcutHarness({
       brushMode: ref<BrushMode>('repair'),
@@ -231,27 +252,76 @@ describe('edit keyboard shortcut properties', () => {
     ] as const
 
     fc.assert(
-      fc.property(fc.constantFrom(...cases), fc.boolean(), ({ key, mode }, isBrushKeyDown) => {
+      fc.property(fc.constantFrom(...cases), brushModeArb, ({ key, mode }, activeMode) => {
         const { options, handleKeyDown, handleKeyUp } = createShortcutHarness({
-          isBrushKeyDown: ref(isBrushKeyDown),
+          brushMode: ref(activeMode),
         })
         const keydownEvent = createKeyEvent(key)
 
         handleKeyDown(keydownEvent)
 
-        expect(options.toggleBrushMode).toHaveBeenCalledTimes(isBrushKeyDown ? 0 : 1)
-        if (!isBrushKeyDown) {
+        expect(options.toggleBrushMode).toHaveBeenCalledTimes(activeMode ? 0 : 1)
+        if (!activeMode) {
           expect(options.toggleBrushMode).toHaveBeenCalledWith(mode)
         }
-        expect(keydownEvent.defaultPrevented).toBe(!isBrushKeyDown)
+        expect(keydownEvent.defaultPrevented).toBe(!activeMode)
 
         const keyupEvent = createKeyEvent(key, { type: 'keyup' })
         handleKeyUp(keyupEvent)
 
-        expectCallback(options, 'exitBrushMode', 1)
-        expect(keyupEvent.defaultPrevented).toBe(true)
+        expectCallback(options, 'exitBrushMode', activeMode ? 0 : 1)
+        expect(keyupEvent.defaultPrevented).toBe(!activeMode)
       }),
       { numRuns: 100 },
     )
+  })
+
+  it('keeps the active shortcut until its own key is released', () => {
+    const { options, handleKeyDown, handleKeyUp } = createShortcutHarness()
+    handleKeyDown(createKeyEvent('r'))
+    handleKeyDown(createKeyEvent('r'))
+    handleKeyDown(createKeyEvent('u'))
+    handleKeyUp(createKeyEvent('u', { type: 'keyup' }))
+    expect(options.toggleBrushMode).toHaveBeenCalledOnce()
+    expect(options.brushMode.value).toBe('repair')
+
+    handleKeyUp(createKeyEvent('R', { type: 'keyup' }))
+    expect(options.brushMode.value).toBeNull()
+    handleKeyDown(createKeyEvent('u'))
+    expect(options.brushMode.value).toBe('restore')
+  })
+
+  it('leaves a manually activated brush alone when typing in controls', () => {
+    const { options, handleKeyDown, handleKeyUp, cancelBrushShortcut } = createShortcutHarness({
+      brushMode: ref('repair'),
+    })
+    handleKeyDown(createKeyEvent('r', { target: document.createElement('input') }))
+    handleKeyUp(createKeyEvent('r', { type: 'keyup' }))
+    cancelBrushShortcut()
+    expect(options.brushMode.value).toBe('repair')
+    expect(options.exitBrushMode).not.toHaveBeenCalled()
+  })
+
+  it('releases a held shortcut on window blur and allows the next shortcut', () => {
+    const { options, handleKeyDown, cancelBrushShortcut } = createShortcutHarness()
+    handleKeyDown(createKeyEvent('r'))
+    cancelBrushShortcut()
+    expect(options.brushMode.value).toBeNull()
+    handleKeyDown(createKeyEvent('u'))
+    expect(options.brushMode.value).toBe('restore')
+  })
+
+  it('does not claim a blocked brush activation or close a different brush mode', () => {
+    const blocked = createShortcutHarness({ toggleBrushMode: vi.fn() })
+    blocked.handleKeyDown(createKeyEvent('r'))
+    blocked.options.brushMode.value = 'repair'
+    blocked.handleKeyUp(createKeyEvent('r', { type: 'keyup' }))
+    expect(blocked.options.exitBrushMode).not.toHaveBeenCalled()
+
+    const changed = createShortcutHarness()
+    changed.handleKeyDown(createKeyEvent('r'))
+    changed.options.brushMode.value = 'restore'
+    changed.handleKeyUp(createKeyEvent('r', { type: 'keyup' }))
+    expect(changed.options.brushMode.value).toBe('restore')
   })
 })

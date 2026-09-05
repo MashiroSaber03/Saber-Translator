@@ -65,6 +65,18 @@ describe('image color picking sessions', () => {
     expect(options.onError).toHaveBeenCalledOnce()
   })
 
+  it.each(['backend', 'client'])('keeps picking when a save replaces the same %s bubble', identity => {
+    const { picker, options } = setupPicker()
+    if (identity === 'client') {
+      options.bubble.value = createBubbleState({ clientMutationId: 'create-1' })
+    }
+    picker.startColorPick('strokeColor')
+    options.bubble.value = { ...options.bubble.value, strokeWidth: 0.5 }
+    expect(picker.isPickingColor.value).toBe(true)
+    picker.pickImageColor(image, point)
+    expect(options.onPick).toHaveBeenCalledExactlyOnceWith('strokeColor', '#123456')
+  })
+
   it('does not misreport a failed update as an image read error', () => {
     const { picker, options } = setupPicker()
     options.onPick.mockImplementation(() => { throw new Error('update failed') })

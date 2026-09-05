@@ -73,7 +73,6 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
     isBrushSubmitting,
     mouseX,
     mouseY,
-    isBrushKeyDown,
     toggleBrushMode,
     exitBrushMode,
     startBrushPainting,
@@ -435,12 +434,11 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
     }
   }
 
-  const { handleKeyDown, handleKeyUp } = useEditWorkspaceKeyboardShortcuts({
+  const { handleKeyDown, handleKeyUp, cancelBrushShortcut } = useEditWorkspaceKeyboardShortcuts({
     isPickingColor,
     cancelColorPick,
     brushMode,
     hasSelection,
-    isBrushKeyDown,
     exitEditMode: handleExitToolbarAction,
     deleteSelectedBubbles: deleteSelectedBubblesWhenIdle,
     goToPreviousImage,
@@ -872,6 +870,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
     // 键盘快捷键需要在编辑工作区获得焦点之外仍然可用。
     document.addEventListener('keydown', handleKeyDown)
     document.addEventListener('keyup', handleKeyUp)
+    window.addEventListener('blur', cancelBrushShortcut)
     document.addEventListener('mousemove', handleGlobalMouseMove)
     document.addEventListener('mouseup', handleGlobalMouseUp)
 
@@ -891,6 +890,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
     isOwnerActive = false
     document.removeEventListener('keydown', handleKeyDown)
     document.removeEventListener('keyup', handleKeyUp)
+    window.removeEventListener('blur', cancelBrushShortcut)
     document.removeEventListener('mousemove', handleGlobalMouseMove)
     document.removeEventListener('mouseup', handleGlobalMouseUp)
     document.removeEventListener('mousemove', handleDrawingMove)

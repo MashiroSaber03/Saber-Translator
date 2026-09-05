@@ -2127,6 +2127,62 @@ test('editor preserves decimal stroke widths through keyboard steps and reload',
   await expect.poll(() => document.bubbles[0]!.payload.strokeWidth).toBe(0)
 })
 
+test('brush shortcuts release after focus moves into stroke and color controls', async ({ page }) => {
+  await prepareEditorColorPage(page)
+  for (const [key, label] of [['r', '修复笔刷'], ['u', '还原笔刷']] as const) {
+    const brush = page.getByRole('button', { name: label, exact: true })
+    for (const target of ['input', 'popover', 'slider']) {
+      await page.locator('.edit-workspace').focus()
+      await page.keyboard.down(key)
+      await expect(brush).toHaveAttribute('aria-pressed', 'true')
+      if (target === 'input') await page.getByRole('spinbutton', { name: '描边宽度', exact: true }).click()
+      else {
+        await page.getByRole('button', { name: '描边颜色', exact: true }).click()
+        if (target === 'slider') await page.getByRole('slider', { name: '色盘', exact: true }).focus()
+      }
+      await page.keyboard.up(key)
+      await expect(brush).toHaveAttribute('aria-pressed', 'false')
+      if (target !== 'input') {
+        await expect(page.getByRole('dialog', { name: '描边颜色', exact: true })).toBeVisible()
+        await page.keyboard.press('Escape')
+      }
+    }
+    await brush.click()
+    await page.getByRole('spinbutton', { name: '描边宽度', exact: true }).focus()
+    await page.keyboard.down(key)
+    await page.locator('.edit-workspace').focus()
+    await page.keyboard.up(key)
+    await expect(brush).toHaveAttribute('aria-pressed', 'true')
+    await brush.click()
+  }
+})
+
+for (const target of ['palette', 'image picker']) {
+  test(`saving a stroke width keeps the active ${target} open`, async ({ page }) => {
+    const { document } = await prepareEditorColorPage(page)
+    let releaseSave!: () => void
+    const saving = new Promise<void>(resolve => { releaseSave = resolve })
+    await page.route('**/api/v2/pages/demo-page-1/document', async route => {
+      if (route.request().method() === 'PATCH') await saving
+      await route.fallback()
+    })
+    const saved = page.waitForResponse(response => response.request().method() === 'PATCH'
+      && response.url().endsWith('/api/v2/pages/demo-page-1/document'))
+    await page.getByRole('spinbutton', { name: '描边宽度', exact: true }).fill('0.5')
+    await page.getByRole('button', { name: '描边颜色', exact: true }).click()
+    const popover = page.getByRole('dialog', { name: '描边颜色', exact: true })
+    await expect(popover).toBeVisible()
+    if (target === 'image picker') await popover.getByRole('button', { name: '从图片取色' }).click()
+    const rendered = page.waitForResponse(response => response.url().endsWith('/api/v2/pages/demo-page-1/render-status'))
+    releaseSave()
+    await saved
+    await rendered
+    await expect.poll(() => document.bubbles[0]!.payload.strokeWidth).toBe(0.5)
+    if (target === 'palette') await expect(popover).toBeVisible()
+    else await expect(page.getByRole('button', { name: '取消取色', exact: true })).toBeVisible()
+  })
+}
+
 test.describe('editor image color picking', () => {
   test.use({ deviceScaleFactor: 2 })
 

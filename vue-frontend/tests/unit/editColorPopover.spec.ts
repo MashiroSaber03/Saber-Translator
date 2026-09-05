@@ -83,6 +83,23 @@ describe('editor color popover', () => {
     expect(wrapper.emitted('update')).toBeUndefined()
   })
 
+  it.each(['backend', 'client'])('keeps the draft when saving replaces the same %s bubble', async identity => {
+    const wrapper = editor()
+    const bubble = createBubbleState(identity === 'backend'
+      ? { backendBubbleId: 'saved-bubble' }
+      : { clientMutationId: 'new-bubble' })
+    await wrapper.setProps({ bubble })
+    await wrapper.get('button[aria-label="描边颜色"]').trigger('click')
+    await wrapper.getComponent(EditColorPopover).get('input[aria-label="HEX 色值"]').setValue('#123456')
+
+    await wrapper.setProps({ bubble: { ...bubble, strokeWidth: 0.5 } })
+
+    const dialog = wrapper.getComponent(EditColorPopover)
+    expect(dialog.get('input[aria-label="HEX 色值"]').element).toHaveProperty('value', '#123456')
+    await dialog.findAll('button').find(button => button.text() === '应用颜色')!.trigger('click')
+    expect(wrapper.emitted('update')).toEqual([[{ strokeColor: '#123456' }]])
+  })
+
   it('anchors to the clicked button, toggles closed and resets drafts when switching fields', async () => {
     const wrapper = editor()
     const text = wrapper.get('button[aria-label="文字颜色"]')

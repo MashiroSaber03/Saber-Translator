@@ -54,7 +54,6 @@ export function useBrush(callbacks?: BrushCallbacks) {
   const imageStore = useImageStore()
   const brushMode = ref<BrushMode>(null)
   const brushSize = ref(BRUSH_DEFAULT_SIZE)
-  const isBrushKeyDown = ref(false)
   const isBrushPainting = ref(false)
   const isBrushSubmitting = ref(false)
   const brushPath = ref<BrushPosition[]>([])
@@ -82,14 +81,12 @@ export function useBrush(callbacks?: BrushCallbacks) {
   function enterBrushMode(mode: 'repair' | 'restore'): void {
     if (brushMode.value === mode) return
     brushMode.value = mode
-    isBrushKeyDown.value = true
     brushPath.value = []
   }
 
   function exitBrushMode(): void {
     if (isBrushPainting.value) finishBrushPainting()
     brushMode.value = null
-    isBrushKeyDown.value = false
     isBrushPainting.value = false
     brushPath.value = []
     activeSurface = null
@@ -346,7 +343,6 @@ export function useBrush(callbacks?: BrushCallbacks) {
     abortController.abort()
     isBrushPainting.value = false
     brushMode.value = null
-    isBrushKeyDown.value = false
     isBrushSubmitting.value = false
     brushPath.value = []
     activeSurface = null
@@ -356,7 +352,6 @@ export function useBrush(callbacks?: BrushCallbacks) {
   return {
     brushMode,
     brushSize,
-    isBrushKeyDown,
     isBrushSubmitting,
     mouseX,
     mouseY,

@@ -84,7 +84,11 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     colorPopover.value = null
   }
 
-  watch([() => props.bubble, () => props.bubbleIndex, () => props.disabled], closeColorPopover, { flush: 'sync' })
+  watch([
+    () => props.bubble?.backendBubbleId ?? props.bubble?.clientMutationId ?? props.bubble,
+    () => props.bubbleIndex,
+    () => props.disabled,
+  ], closeColorPopover, { flush: 'sync' })
 
   const showJpKeyboard = ref(false)
   const jpKeyboardTarget = ref<'original' | 'translated'>('original')

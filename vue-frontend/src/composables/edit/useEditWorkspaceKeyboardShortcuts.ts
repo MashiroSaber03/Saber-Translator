@@ -6,7 +6,6 @@ interface UseEditWorkspaceKeyboardShortcutsOptions {
   cancelColorPick: () => void
   brushMode: Ref<BrushMode>
   hasSelection: Ref<boolean>
-  isBrushKeyDown: Ref<boolean>
   exitEditMode: () => Promise<void> | void
   deleteSelectedBubbles: () => void
   goToPreviousImage: () => void
@@ -20,6 +19,15 @@ interface UseEditWorkspaceKeyboardShortcutsOptions {
 }
 
 export function useEditWorkspaceKeyboardShortcuts(options: UseEditWorkspaceKeyboardShortcutsOptions) {
+  let heldBrushKey: 'r' | 'u' | null = null
+
+  function cancelBrushShortcut(): void {
+    if (!heldBrushKey) return
+    const mode = heldBrushKey === 'r' ? 'repair' : 'restore'
+    heldBrushKey = null
+    if (options.brushMode.value === mode) options.exitBrushMode()
+  }
+
   function isEditableTarget(target: EventTarget | null): boolean {
     if (!(target instanceof Element)) return false
     return Boolean(target.closest(
@@ -80,18 +88,17 @@ export function useEditWorkspaceKeyboardShortcuts(options: UseEditWorkspaceKeybo
         break
       case 'r':
       case 'R':
-        if (!options.isBrushKeyDown.value) {
-          options.toggleBrushMode('repair')
-          event.preventDefault()
-        }
-        break
       case 'u':
-      case 'U':
-        if (!options.isBrushKeyDown.value) {
-          options.toggleBrushMode('restore')
+      case 'U': {
+        if (!heldBrushKey && !options.brushMode.value) {
+          const key = event.key.toLowerCase() === 'r' ? 'r' : 'u'
+          const mode = key === 'r' ? 'repair' : 'restore'
+          options.toggleBrushMode(mode)
+          if (options.brushMode.value === mode) heldBrushKey = key
           event.preventDefault()
         }
         break
+      }
       case '+':
       case '=':
         options.zoomIn()
@@ -109,15 +116,14 @@ export function useEditWorkspaceKeyboardShortcuts(options: UseEditWorkspaceKeybo
   }
 
   function handleKeyUp(event: KeyboardEvent): void {
-    if (options.isPickingColor.value) return
-    if (isEditableTarget(event.target)) return
-    if (event.key === 'r' || event.key === 'R' || event.key === 'u' || event.key === 'U') {
-      options.exitBrushMode()
-      event.preventDefault()
-    }
+    if (event.key.toLowerCase() !== heldBrushKey) return
+    // Release the shortcut even if focus moved into an input or color popover.
+    cancelBrushShortcut()
+    event.preventDefault()
   }
 
   return {
+    cancelBrushShortcut,
     handleKeyDown,
     handleKeyUp,
   }
