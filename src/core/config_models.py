@@ -292,11 +292,12 @@ def validate_bubble_payload(
             field_name="strokeEnabled",
         )
     if "strokeWidth" in result:
-        result["strokeWidth"] = _integer(
+        result["strokeWidth"] = _finite_number(
             result["strokeWidth"],
             field_name="strokeWidth",
-            minimum=0,
         )
+        if result["strokeWidth"] < 0:
+            raise ValueError("strokeWidth must be at least zero")
     if "lineSpacing" in result:
         line_spacing = _finite_number(
             result["lineSpacing"],
@@ -352,7 +353,7 @@ class BubbleState:
     )
     stroke_enabled: bool = constants.DEFAULT_STROKE_ENABLED
     stroke_color: str = constants.DEFAULT_STROKE_COLOR
-    stroke_width: int = constants.DEFAULT_STROKE_WIDTH
+    stroke_width: float = constants.DEFAULT_STROKE_WIDTH
     line_spacing: float = constants.DEFAULT_LINE_SPACING
     inline_align: str = constants.DEFAULT_INLINE_ALIGN
     block_align: str = constants.DEFAULT_BLOCK_ALIGN

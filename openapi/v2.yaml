@@ -5789,7 +5789,7 @@ components:
             y: {type: number}
         strokeEnabled: {type: boolean}
         strokeColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
-        strokeWidth: {type: integer, minimum: 0}
+        strokeWidth: {type: number, minimum: 0}
         lineSpacing: {type: number, exclusiveMinimum: 0}
         inlineAlign: {type: string, enum: [start, center, end]}
         blockAlign: {type: string, enum: [start, center, end]}
@@ -5838,7 +5838,7 @@ components:
             y: {type: number}
         strokeEnabled: {type: boolean}
         strokeColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
-        strokeWidth: {type: integer, minimum: 0}
+        strokeWidth: {type: number, minimum: 0}
         lineSpacing: {type: number, exclusiveMinimum: 0}
         inlineAlign: {type: string, enum: [start, center, end]}
         blockAlign: {type: string, enum: [start, center, end]}
@@ -5914,7 +5914,7 @@ components:
             y: {type: number}
         strokeEnabled: {type: boolean}
         strokeColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
-        strokeWidth: {type: integer, minimum: 0}
+        strokeWidth: {type: number, minimum: 0}
         lineSpacing: {type: number, exclusiveMinimum: 0}
         inlineAlign: {type: string, enum: [start, center, end]}
         blockAlign: {type: string, enum: [start, center, end]}
@@ -6055,7 +6055,7 @@ components:
         useAutoTextColor: {type: boolean}
         strokeEnabled: {type: boolean}
         strokeColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
-        strokeWidth: {type: integer, minimum: 0}
+        strokeWidth: {type: number, minimum: 0}
         lineSpacing: {type: number, exclusiveMinimum: 0}
         inlineAlign: {type: string, enum: [start, center, end]}
         blockAlign: {type: string, enum: [start, center, end]}
@@ -6088,7 +6088,7 @@ components:
         useAutoTextColor: {type: boolean}
         strokeEnabled: {type: boolean}
         strokeColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
-        strokeWidth: {type: integer, minimum: 0}
+        strokeWidth: {type: number, minimum: 0}
         lineSpacing: {type: number, exclusiveMinimum: 0}
         inlineAlign: {type: string, enum: [start, center, end]}
         blockAlign: {type: string, enum: [start, center, end]}

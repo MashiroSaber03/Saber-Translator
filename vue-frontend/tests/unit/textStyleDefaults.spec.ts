@@ -55,4 +55,17 @@ describe('textStyleDefaults factory fallback', () => {
       'fontSize must be a positive integer',
     )
   })
+
+  it.each([0, 0.1, 0.5, 1.2, 1.25, 3])('preserves a stroke width of %s', strokeWidth => {
+    expect(normalizeTextStyleSettings({ strokeWidth }).strokeWidth).toBe(strokeWidth)
+    expect(normalizeImageTextStyleFields({ strokeWidth }).strokeWidth).toBe(strokeWidth)
+  })
+
+  it.each([-0.1, NaN, Infinity, true, '1.2'])(
+    'rejects invalid stroke width %s',
+    strokeWidth => {
+      expect(() => normalizeTextStyleSettings({ strokeWidth } as never)).toThrow('strokeWidth')
+      expect(() => normalizeImageTextStyleFields({ strokeWidth } as never)).toThrow('strokeWidth')
+    },
+  )
 })

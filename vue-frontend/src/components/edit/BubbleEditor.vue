@@ -221,9 +221,10 @@
             >
               <UiNumberField
                 v-model="localStrokeWidth"
-                class="bubble-editor__number-field bubble-editor__number-field--compact"
+                class="bubble-editor__number-field bubble-editor__number-field--stroke"
                 variant="editor"
                 :min="0"
+                :step="0.1"
                 aria-label="描边宽度"
                 @change="handleStrokeWidthChange"
               />
@@ -782,6 +783,10 @@ const {
 
 .bubble-editor__number-field--compact {
   --ui-number-field-input-width: 48px;
+}
+
+.bubble-editor__number-field--stroke {
+  --ui-number-field-input-width: 64px;
 }
 
 .bubble-editor__number-field--rotation {

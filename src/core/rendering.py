@@ -466,7 +466,7 @@ def render_combined_upright_symbol(symbol: str, font: ImageFont.FreeTypeFont,
 
         text_params = {'font': font, 'fill': fill}
         if stroke_enabled:
-            text_params['stroke_width'] = int(stroke_width)
+            text_params['stroke_width'] = stroke_width
             text_params['stroke_fill'] = stroke_color
 
         pen_x = padding
@@ -726,7 +726,7 @@ def calculate_auto_font_size(text, bubble_width, bubble_height, text_direction='
 
 
 def render_horizontal_block(content: str, font,
-                           fill, stroke_enabled: bool, stroke_color, stroke_width: int,
+                           fill, stroke_enabled: bool, stroke_color, stroke_width: float,
                            canvas_image: Image.Image, current_x_col: int, current_y: int,
                            line_width: int, line_height_unit: int = None) -> int:
     """
@@ -776,7 +776,7 @@ def render_horizontal_block(content: str, font,
 
         text_params = {"font": font, "fill": fill}
         if stroke_enabled:
-            text_params["stroke_width"] = int(stroke_width)
+            text_params["stroke_width"] = stroke_width
             text_params["stroke_fill"] = stroke_color
 
         for char in content:
@@ -887,7 +887,7 @@ def render_ellipsis_block(content: str, font,
         # 3) 绘制横向串；把 bbox 的左上角对齐到 (padding, padding)
         text_params = {'font': font, 'fill': fill}
         if stroke_enabled:
-            text_params['stroke_width'] = int(stroke_width)
+            text_params['stroke_width'] = stroke_width
             text_params['stroke_fill'] = stroke_color
         draw_x = padding - full_bbox[0]
         draw_y = padding - full_bbox[1]
@@ -1323,7 +1323,7 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_width, max_height,
                         "fill": fill
                     }
                     if stroke_enabled:
-                        text_draw_params["stroke_width"] = int(stroke_width)
+                        text_draw_params["stroke_width"] = stroke_width
                         text_draw_params["stroke_fill"] = stroke_color
                     
                     # 获取字符尺寸
@@ -1357,9 +1357,7 @@ def draw_multiline_text_vertical(draw, text, font, x, y, max_width, max_height,
                                 "fill": fill,
                             }
                             if stroke_enabled:
-                                temp_text_params["stroke_width"] = int(
-                                    stroke_width
-                                )
+                                temp_text_params["stroke_width"] = stroke_width
                                 temp_text_params["stroke_fill"] = stroke_color
 
                             temp_draw.text(
@@ -1601,7 +1599,7 @@ def draw_multiline_text_horizontal(draw, text, font, x, y, max_width, max_height
                 "fill": fill
             }
             if stroke_enabled:
-                text_draw_params["stroke_width"] = int(stroke_width)
+                text_draw_params["stroke_width"] = stroke_width
                 text_draw_params["stroke_fill"] = stroke_color
             
             # 直接绘制（旋转在外层处理）
@@ -1630,7 +1628,7 @@ def _draw_bubble_text_pass(
     *,
     bubble_index: int,
     fill: str,
-    stroke_width: int,
+    stroke_width: float,
 ) -> None:
     common = {
         "fill": fill,

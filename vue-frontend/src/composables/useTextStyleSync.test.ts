@@ -94,7 +94,7 @@ describe('useTextStyleSync page defaults', () => {
     ['fillColor', '#abcdef'],
     ['strokeEnabled', false],
     ['strokeColor', '#654321'],
-    ['strokeWidth', 5],
+    ['strokeWidth', 1.2],
     ['lineSpacing', 1.6],
     ['inlineAlign', 'center'],
     ['blockAlign', 'end'],

@@ -2104,6 +2104,29 @@ async function prepareEditorColorPage(page: Page) {
   return { document, mutations }
 }
 
+test('editor preserves decimal stroke widths through keyboard steps and reload', async ({ page }) => {
+  const { document } = await prepareEditorColorPage(page)
+  const width = page.getByRole('spinbutton', { name: '描边宽度', exact: true })
+  await expect(width).toHaveAttribute('step', '0.1')
+  await width.fill('')
+  await width.pressSequentially('1.2')
+  await expect.poll(() => document.bubbles[0]!.payload.strokeWidth).toBe(1.2)
+  await width.press('ArrowUp')
+  await expect(width).toHaveValue('1.3')
+  await expect.poll(() => document.bubbles[0]!.payload.strokeWidth).toBe(1.3)
+  await width.press('ArrowDown')
+  await expect(width).toHaveValue('1.2')
+  await expect.poll(() => document.bubbles[0]!.payload.strokeWidth).toBe(1.2)
+
+  await page.reload()
+  await page.getByRole('button', { name: '切换编辑模式' }).click()
+  await expect(width).toHaveValue('1.2')
+  await width.fill('0')
+  await width.press('ArrowDown')
+  await expect(width).toHaveValue('0')
+  await expect.poll(() => document.bubbles[0]!.payload.strokeWidth).toBe(0)
+})
+
 test.describe('editor image color picking', () => {
   test.use({ deviceScaleFactor: 2 })
 

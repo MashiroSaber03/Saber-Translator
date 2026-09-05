@@ -97,11 +97,12 @@ describe('TextStyleSection', () => {
 
     numberFields[0]!.vm.$emit('update:modelValue', 24)
     numberFields[1]!.vm.$emit('update:modelValue', 1.4)
-    numberFields[2]!.vm.$emit('update:modelValue', 3)
+    numberFields[2]!.vm.$emit('update:modelValue', 1.2)
 
     expect(wrapper.emitted('updateFontSize')?.[0]).toEqual([24])
     expect(wrapper.emitted('updateLineSpacing')?.[0]).toEqual([1.4])
-    expect(wrapper.emitted('updateStrokeWidth')?.[0]).toEqual([3])
+    expect(wrapper.emitted('updateStrokeWidth')?.[0]).toEqual([1.2])
+    expect(numberFields[2]!.props('step')).toBe(0.1)
     expect(wrapper.find('.compact-number-input').exists()).toBe(false)
     expect(numberFields.map(field => field.props('max'))).toEqual([
       undefined,

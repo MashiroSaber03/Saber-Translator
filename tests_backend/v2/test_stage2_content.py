@@ -908,6 +908,10 @@ def test_page_import_materializes_the_submitted_font_as_a_foreign_key(
         ({"textColor": "black"}, "textColor"),
         ({"layoutDirection": "diagonal"}, "layoutDirection"),
         ({"lineSpacing": float("inf")}, "lineSpacing"),
+        ({"strokeWidth": -0.1}, "strokeWidth"),
+        ({"strokeWidth": float("inf")}, "strokeWidth"),
+        ({"strokeWidth": True}, "strokeWidth"),
+        ({"strokeWidth": "1.2"}, "strokeWidth"),
         ({"inpaintMethod": "auto"}, "inpaintMethod"),
         ({"fontFamily": DEFAULT_FONT_ID}, "unknown page style fields"),
     ],
@@ -2093,15 +2097,16 @@ def test_page_document_command_is_idempotent_and_propagates_style(
             {
                 "op": "create",
                 "clientMutationId": "document-command-create",
-                "fields": _bubble_fields(translatedText="hello"),
+                "fields": _bubble_fields(translatedText="hello", strokeWidth=0.1),
             }
         ],
         "idempotency_key": "document-command",
         "page_style_defaults_patch": {
             "autoFontSize": False,
             "fontSize": 30,
+            "strokeWidth": 1.2,
         },
-        "propagate_style_fields": ["fontSize"],
+        "propagate_style_fields": ["fontSize", "strokeWidth"],
     }
     first, replayed = repository.mutate_page_document(**command)
     assert replayed is False
@@ -2109,6 +2114,9 @@ def test_page_document_command_is_idempotent_and_propagates_style(
     assert first_document["documentRevision"] == 2
     assert first_document["pageStyleDefaults"]["fontSize"] == 30
     assert first_document["bubbles"][0]["payload"]["fontSize"] == 30
+    assert first_document["pageStyleDefaults"]["strokeWidth"] == 1.2
+    assert first_document["bubbles"][0]["payload"]["strokeWidth"] == 1.2
+    assert repository.get_page_document(page_id)["bubbles"][0]["payload"]["strokeWidth"] == 1.2
     assert first["mutationResults"][0]["clientMutationId"] == (
         "document-command-create"
     )

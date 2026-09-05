@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -28,7 +29,7 @@ _REQUIRED_FIELDS: dict[str, type | tuple[type, ...]] = {
     "useAutoTextColor": bool,
     "strokeEnabled": bool,
     "strokeColor": str,
-    "strokeWidth": int,
+    "strokeWidth": (int, float),
     "lineSpacing": (int, float),
     "inlineAlign": str,
     "blockAlign": str,
@@ -78,8 +79,8 @@ def _validate_text_style_defaults(data: dict[str, Any]) -> dict[str, Any]:
             )
     if data["fontSize"] <= 0:
         raise RuntimeError("text_style_defaults_factory.json 的 fontSize 必须大于 0")
-    if data["strokeWidth"] < 0:
-        raise RuntimeError("text_style_defaults_factory.json 的 strokeWidth 不能小于 0")
+    if not math.isfinite(data["strokeWidth"]) or data["strokeWidth"] < 0:
+        raise RuntimeError("text_style_defaults_factory.json 的 strokeWidth 必须为不小于 0 的有限数字")
     if float(data["lineSpacing"]) <= 0:
         raise RuntimeError("text_style_defaults_factory.json 的 lineSpacing 必须大于 0")
 

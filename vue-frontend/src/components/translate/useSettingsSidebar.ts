@@ -427,7 +427,7 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
   }
 
   function updateStrokeWidth(value: number) {
-    if (Number.isInteger(value) && value >= 0) {
+    if (Number.isFinite(value) && value >= 0) {
       settingsStore.updateTextStyle({ strokeWidth: value })
       emit('textStyleChanged', 'strokeWidth', value)
     }

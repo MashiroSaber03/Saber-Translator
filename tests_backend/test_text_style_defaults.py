@@ -14,6 +14,16 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 class TextStyleFactoryDefaultsTests(unittest.TestCase):
+    def test_factory_defaults_preserve_finite_decimal_stroke_widths(self) -> None:
+        defaults = get_text_style_factory_defaults()
+        for width in (0, 0.1, 1.25, 3):
+            with self.subTest(width=width):
+                validated = _validate_text_style_defaults({**defaults, "strokeWidth": width})
+                self.assertEqual(validated["strokeWidth"], width)
+        for width in (-0.1, float("nan"), float("inf")):
+            with self.subTest(width=width), self.assertRaisesRegex(RuntimeError, "strokeWidth"):
+                _validate_text_style_defaults({**defaults, "strokeWidth": width})
+
     def test_loader_returns_exact_bundled_factory_defaults(self) -> None:
         defaults_path = (
             PROJECT_ROOT / "src" / "shared" / "text_style_defaults_factory.json"
@@ -48,6 +58,17 @@ class TextStyleFactoryDefaultsTests(unittest.TestCase):
 
 
 class BubbleStateDefaultsTests(unittest.TestCase):
+    def test_bubble_stroke_width_round_trip_preserves_decimals(self) -> None:
+        payload = BubbleState().to_dict()
+        for width in (0, 0.1, 1.25, 3):
+            with self.subTest(width=width):
+                state = BubbleState.from_dict({**payload, "strokeWidth": width})
+                self.assertEqual(state.stroke_width, width)
+                self.assertEqual(state.to_dict()["strokeWidth"], width)
+        for width in (-0.1, float("nan"), float("inf"), True, "1.2"):
+            with self.subTest(width=width), self.assertRaisesRegex(ValueError, "strokeWidth"):
+                BubbleState.from_dict({**payload, "strokeWidth": width})
+
     def test_bubble_state_defaults_match_factory_fallbacks(self) -> None:
         defaults = get_text_style_factory_defaults()
         state = BubbleState()

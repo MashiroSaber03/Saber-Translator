@@ -211,7 +211,8 @@ describe('TextStyleDefaultsSettings', () => {
     const field = (inputId: string) => numberFields.find(item => item.props('inputId') === inputId)!
     field('textDefaultsFontSize').vm.$emit('change', 1.5)
     field('textDefaultsLineSpacing').vm.$emit('change', 0)
-    field('textDefaultsStrokeWidth').vm.$emit('change', 1.5)
+    field('textDefaultsStrokeWidth').vm.$emit('change', -0.1)
+    field('textDefaultsStrokeWidth').vm.$emit('change', Infinity)
     await flushPromises()
 
     expect(store.textStyleDefaults).toEqual(before)
@@ -233,17 +234,18 @@ describe('TextStyleDefaultsSettings', () => {
     )!
     field('textDefaultsFontSize').vm.$emit('change', 1024)
     field('textDefaultsLineSpacing').vm.$emit('change', 12.5)
-    field('textDefaultsStrokeWidth').vm.$emit('change', 80)
+    await wrapper.get('#textDefaultsStrokeWidth').setValue('80.2')
     await flushPromises()
 
     expect(useSettingsStore().textStyleDefaults).toMatchObject({
       fontSize: 1024,
       lineSpacing: 12.5,
-      strokeWidth: 80,
+      strokeWidth: 80.2,
     })
     expect(field('textDefaultsFontSize').props('max')).toBeUndefined()
     expect(field('textDefaultsLineSpacing').props('max')).toBeUndefined()
     expect(field('textDefaultsStrokeWidth').props('max')).toBeUndefined()
+    expect(field('textDefaultsStrokeWidth').props('step')).toBe(0.1)
   })
 
   it('routes text-style default labels and feedback through typed settings primitives', async () => {

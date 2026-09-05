@@ -75,11 +75,11 @@ function expectPositiveInt(value: unknown, fieldName: string): number {
   return failInvalidConfig(`${fieldName} must be a positive integer`)
 }
 
-function expectNonNegativeInt(value: unknown, fieldName: string): number {
-  if (typeof value === 'number' && Number.isInteger(value) && value >= 0) {
+function expectNonNegativeNumber(value: unknown, fieldName: string): number {
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
     return value
   }
-  return failInvalidConfig(`${fieldName} must be a non-negative integer`)
+  return failInvalidConfig(`${fieldName} must be a non-negative number`)
 }
 
 function expectPositiveFloat(value: unknown, fieldName: string): number {
@@ -133,7 +133,7 @@ function buildTextStyleFields(
     fillColor: readTextStyleField(fields, 'fillColor', expectNonEmptyString, base),
     strokeEnabled: readTextStyleField(fields, 'strokeEnabled', expectBoolean, base),
     strokeColor: readTextStyleField(fields, 'strokeColor', expectNonEmptyString, base),
-    strokeWidth: readTextStyleField(fields, 'strokeWidth', expectNonNegativeInt, base),
+    strokeWidth: readTextStyleField(fields, 'strokeWidth', expectNonNegativeNumber, base),
     inpaintMethod: readTextStyleField(fields, 'inpaintMethod', expectInpaintMethod, base),
     useAutoTextColor: readTextStyleField(fields, 'useAutoTextColor', expectBoolean, base),
     lineSpacing: readTextStyleField(fields, 'lineSpacing', expectPositiveFloat, base),

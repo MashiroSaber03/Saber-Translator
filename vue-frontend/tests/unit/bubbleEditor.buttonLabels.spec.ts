@@ -201,6 +201,10 @@ describe('BubbleEditor button labels', () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined)
 
     try {
+      const strokeWidth = wrapper.get('input[aria-label="描边宽度"]')
+      expect(strokeWidth.attributes('step')).toBe('0.1')
+      await strokeWidth.setValue('1.2')
+      expect(wrapper.emitted('update')?.at(-1)).toEqual([{ strokeWidth: 1.2 }])
       await applyButton?.trigger('click')
       expect(logSpy).not.toHaveBeenCalled()
       expect(wrapper.emitted('reRender')).toBeUndefined()
@@ -213,7 +217,7 @@ describe('BubbleEditor button labels', () => {
           fillColor: '#FFFFFF',
           strokeEnabled: true,
           strokeColor: '#FFFFFF',
-          strokeWidth: 3,
+          strokeWidth: 1.2,
           inpaintMethod: 'solid',
           lineSpacing: 1.2,
           inlineAlign: 'center',

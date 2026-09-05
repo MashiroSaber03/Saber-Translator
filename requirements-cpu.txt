@@ -13,7 +13,7 @@ PySide6-Essentials>=6.8,<7
 
 # Base tools
 pyyaml
-pillow
+pillow>=11.0.0
 numpy
 opencv-python
 requests

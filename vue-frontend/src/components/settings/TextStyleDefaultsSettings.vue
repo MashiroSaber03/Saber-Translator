@@ -194,6 +194,7 @@
             input-id="textDefaultsStrokeWidth"
             :model-value="draftDefaults.strokeWidth"
             :min="0"
+            :step="0.1"
             size="sm"
             @change="updateStrokeWidth"
           />
@@ -344,7 +345,7 @@ function updateStrokeColor(value: string): void {
 }
 
 function updateStrokeWidth(value: number | null): void {
-  if (value !== null && Number.isInteger(value) && value >= 0) {
+  if (value !== null && Number.isFinite(value) && value >= 0) {
     updateDraft({ strokeWidth: value })
   }
 }

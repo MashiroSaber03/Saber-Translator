@@ -82,6 +82,20 @@ function documentWithFont(options: {
 }
 
 describe('v2 content adapter', () => {
+  it.each([0, 0.1, 1.25, 3])('preserves persisted stroke width %s', strokeWidth => {
+    const document = documentWithFont({ defaultFontId: 'font-page-default', fontId: null })
+    document.bubbles[0]!.payload.strokeWidth = strokeWidth
+
+    expect(pageDocumentToBubbles(document)[0]?.strokeWidth).toBe(strokeWidth)
+  })
+
+  it.each([-0.1, NaN, Infinity, true, '1.2'])('rejects invalid stroke width %s', strokeWidth => {
+    const document = documentWithFont({ defaultFontId: 'font-page-default', fontId: null })
+    document.bubbles[0]!.payload.strokeWidth = strokeWidth as number
+
+    expect(() => pageDocumentToBubbles(document)).toThrow('strokeWidth')
+  })
+
   it.each(['render_failed', 'repair_failed'] as const)(
     'maps the current %s render state to a failed image',
     (renderStatus) => {

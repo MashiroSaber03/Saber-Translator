@@ -56,12 +56,17 @@ def _number(
     value: object,
     *,
     field: str,
-    exclusive_minimum: float,
+    minimum: float | None = None,
+    exclusive_minimum: float | None = None,
 ) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ValueError(f"{field} must be greater than {exclusive_minimum}")
+        raise ValueError(f"{field} must be a finite number")
     normalized = float(value)
-    if not math.isfinite(normalized) or normalized <= exclusive_minimum:
+    if not math.isfinite(normalized):
+        raise ValueError(f"{field} must be a finite number")
+    if minimum is not None and normalized < minimum:
+        raise ValueError(f"{field} must be at least {minimum}")
+    if exclusive_minimum is not None and normalized <= exclusive_minimum:
         raise ValueError(f"{field} must be greater than {exclusive_minimum}")
     return normalized
 
@@ -144,7 +149,7 @@ def validate_page_style(
         if field in result:
             result[field] = _boolean(result[field], field=field)
     if "strokeWidth" in result:
-        result["strokeWidth"] = _integer(
+        result["strokeWidth"] = _number(
             result["strokeWidth"],
             field="strokeWidth",
             minimum=0,

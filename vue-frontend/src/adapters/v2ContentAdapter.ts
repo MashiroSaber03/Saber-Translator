@@ -197,7 +197,8 @@ function currentBubblePayload(value: unknown, label: string): PersistedBubbleSta
   const payload = exactObject(value, BUBBLE_PAYLOAD_KEYS, label)
   const position = exactObject(payload.position, ['x', 'y'], `${label}.position`)
   const fontSize = integerValue(payload.fontSize, `${label}.fontSize`, 1)
-  const strokeWidth = integerValue(payload.strokeWidth, `${label}.strokeWidth`, 0)
+  const strokeWidth = finiteNumber(payload.strokeWidth, `${label}.strokeWidth`)
+  if (strokeWidth < 0) throw new Error(`${label}.strokeWidth 必须不小于 0`)
   const lineSpacing = finiteNumber(payload.lineSpacing, `${label}.lineSpacing`)
   if (lineSpacing <= 0) throw new Error(`${label}.lineSpacing 必须大于 0`)
   const colorConfidence = confidenceValue(

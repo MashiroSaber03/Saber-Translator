@@ -1534,7 +1534,7 @@ def test_translation_uses_current_page_layout_and_inpainting_defaults(
         "useAutoTextColor": False,
         "strokeEnabled": False,
         "strokeColor": "#AABBCC",
-        "strokeWidth": 7,
+        "strokeWidth": 1.2,
         "lineSpacing": 1.4,
         "inlineAlign": "end",
         "blockAlign": "center",
@@ -1573,7 +1573,7 @@ def test_translation_uses_current_page_layout_and_inpainting_defaults(
     assert payload["fontSize"] == 37
     assert payload["strokeEnabled"] is False
     assert payload["strokeColor"] == "#AABBCC"
-    assert payload["strokeWidth"] == 7
+    assert payload["strokeWidth"] == 1.2
     assert payload["lineSpacing"] == 1.4
     assert payload["inlineAlign"] == "end"
     assert payload["blockAlign"] == "center"
@@ -1584,7 +1584,7 @@ def test_translation_uses_current_page_layout_and_inpainting_defaults(
     assert algorithms.render_payloads[0][0]["fontSize"] == 37
     assert algorithms.render_payloads[0][0]["strokeEnabled"] is False
     assert algorithms.render_payloads[0][0]["strokeColor"] == "#AABBCC"
-    assert algorithms.render_payloads[0][0]["strokeWidth"] == 7
+    assert algorithms.render_payloads[0][0]["strokeWidth"] == 1.2
     assert algorithms.render_payloads[0][0]["lineSpacing"] == 1.4
     assert algorithms.render_payloads[0][0]["inlineAlign"] == "end"
     assert algorithms.render_payloads[0][0]["blockAlign"] == "center"

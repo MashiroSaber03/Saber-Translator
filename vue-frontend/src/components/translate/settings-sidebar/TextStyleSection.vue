@@ -275,6 +275,7 @@ const isTextStyleExpanded = ref(true)
                   input-id="strokeWidth"
                   :model-value="textStyle.strokeWidth"
                   :min="0"
+                  :step="0.1"
                   :disabled="disabled"
                   aria-label="描边宽度"
                   @update:model-value="$event !== null && $emit('updateStrokeWidth', $event)"
