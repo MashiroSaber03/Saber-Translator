@@ -54,14 +54,17 @@ function updateChannel(shift: number, value: string | number | null): void {
 
 <template>
   <div class="ui-color-picker">
-    <div class="ui-color-picker__preview" :style="{ background: modelValue }" role="img" :aria-label="`颜色预览 ${modelValue}`"></div>
-    <UiField label="HEX 色值" :error="valid ? undefined : '请输入六位十六进制色值，例如 #123456'">
-      <UiInput :model-value="hex" aria-label="HEX 色值" :error="!valid" spellcheck="false" @update:model-value="updateHex" />
-    </UiField>
+    <div class="ui-color-picker__hex-row">
+      <div class="ui-color-picker__preview" :style="{ background: modelValue }" role="img" :aria-label="`颜色预览 ${modelValue}`"></div>
+      <UiField variant="editor" label="HEX 色值" :error="valid ? undefined : '请输入六位十六进制色值，例如 #123456'">
+        <UiInput size="sm" :model-value="hex" aria-label="HEX 色值" :error="!valid" spellcheck="false" @update:model-value="updateHex" />
+      </UiField>
+    </div>
     <div v-for="channel in channels" :key="channel.shift" class="ui-color-picker__channel">
       <span>{{ channel.label }}</span>
       <UiInput
         type="range"
+        size="xs"
         class="ui-color-picker__range"
         :model-value="(rgb >> channel.shift) & 255"
         :min="0"
@@ -71,6 +74,7 @@ function updateChannel(shift: number, value: string | number | null): void {
         @update:model-value="updateChannel(channel.shift, $event)"
       />
       <UiNumberField
+        size="xs"
         :model-value="(rgb >> channel.shift) & 255"
         :min="0"
         :max="255"
@@ -87,20 +91,29 @@ function updateChannel(shift: number, value: string | number | null): void {
 .ui-color-picker {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.ui-color-picker__hex-row {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
 }
 
 .ui-color-picker__preview {
-  height: 48px;
+  height: 32px;
+  margin-top: 19px;
   border: 1px solid var(--color-border-muted);
   border-radius: 8px;
 }
 
 .ui-color-picker__channel {
   display: grid;
-  grid-template-columns: 54px minmax(60px, 1fr) 94px;
+  grid-template-columns: 50px minmax(0, 1fr) 72px;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   color: var(--color-text-default);
   font-size: 13px;
 }
@@ -112,5 +125,6 @@ function updateChannel(shift: number, value: string | number | null): void {
 
 .ui-color-picker__swatches {
   --ui-swatch-border-color: var(--color-border-muted);
+  --ui-swatch-size: 24px;
 }
 </style>

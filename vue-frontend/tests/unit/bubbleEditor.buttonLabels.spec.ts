@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
@@ -10,7 +10,7 @@ import UiField from '@/components/ui/UiField.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import UiNumberField from '@/components/ui/UiNumberField.vue'
-import EditColorDialog from '@/components/edit/EditColorDialog.vue'
+import EditColorPopover from '@/components/edit/EditColorPopover.vue'
 import type { BubbleState } from '@/types/bubble'
 
 vi.mock('@/api/v2/settings', async importOriginal => ({
@@ -46,7 +46,12 @@ function makeBubble(): BubbleState {
 }
 
 describe('BubbleEditor button labels', () => {
+  afterEach(() => vi.unstubAllGlobals())
   beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', class {
+      observe = vi.fn()
+      disconnect = vi.fn()
+    })
     setActivePinia(createPinia())
 
     Object.defineProperty(globalThis.navigator, 'clipboard', {
@@ -768,13 +773,13 @@ describe('BubbleEditor button labels', () => {
     expect(source).toContain('--bubble-editor-translated-title-text: var(--color-surface-success)')
   })
 
-  it('uses typed model updates and an editor color dialog for text and color controls', async () => {
+  it('uses typed model updates and an anchored color popover for text and color controls', async () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/components/edit/BubbleEditor.vue'),
       'utf8',
     )
 
-    expect(source).toContain("import EditColorDialog from './EditColorDialog.vue'")
+    expect(source).toContain("import EditColorPopover from './EditColorPopover.vue'")
     expect(source).not.toContain("import UiInput from '@/components/ui/UiInput.vue'")
     expect(source).not.toMatch(/@input="handle(OriginalText|Text|TextColor)Change"/)
     expect(source).not.toMatch(/<UiInput[\s\S]*type="color"/)
@@ -807,7 +812,7 @@ describe('BubbleEditor button labels', () => {
 
     expect(wrapper.find('input[type="color"]').exists()).toBe(false)
     await wrapper.get('button[aria-label="文字颜色"]').trigger('click')
-    wrapper.getComponent(EditColorDialog).vm.$emit('apply', 'textColor', '#123456')
+    wrapper.getComponent(EditColorPopover).vm.$emit('apply', 'textColor', '#123456')
     expect(wrapper.emitted('update')?.at(-1)).toEqual([{ textColor: '#123456' }])
     wrapper.unmount()
   })

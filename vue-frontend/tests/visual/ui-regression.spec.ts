@@ -2103,6 +2103,78 @@ async function prepareEditorColorPage(page: Page) {
 test.describe('editor image color picking', () => {
   test.use({ deviceScaleFactor: 2 })
 
+  test('color popovers stay beside their buttons without covering either image', async ({ page }, testInfo) => {
+    const fixture = await prepareEditorColorPage(page)
+    const editor = page.locator('.bubble-editor').first()
+    for (const label of ['文字颜色', '背景填充颜色', '描边颜色']) {
+      const trigger = page.getByRole('button', { name: label, exact: true })
+      await trigger.click()
+      const popover = page.getByRole('dialog', { name: label, exact: true })
+      await expect(popover).toBeVisible()
+      await expect(trigger).toHaveAttribute('aria-expanded', 'true')
+      await expect(popover).not.toHaveAttribute('aria-modal', 'true')
+      const buttonBox = (await trigger.boundingBox())!
+      const box = (await popover.boundingBox())!
+      const panel = (await editor.boundingBox())!
+      expect(box.width).toBeLessThanOrEqual(300)
+      expect(box.height).toBeLessThan(340)
+      expect(box.x).toBeGreaterThanOrEqual(panel.x)
+      expect(box.x + box.width).toBeLessThanOrEqual(panel.x + panel.width)
+      expect(box.x).toBeLessThan(buttonBox.x + buttonBox.width)
+      expect(box.x + box.width).toBeGreaterThan(buttonBox.x)
+      const gap = Math.min(Math.abs(box.y - buttonBox.y - buttonBox.height), Math.abs(buttonBox.y - box.y - box.height))
+      expect(gap).toBeLessThanOrEqual(8)
+      for (const imagePanel of await page.locator('.edit-image-comparison__image-panel').all()) {
+        const image = (await imagePanel.boundingBox())!
+        const overlapX = Math.min(box.x + box.width, image.x + image.width) - Math.max(box.x, image.x)
+        const overlapY = Math.min(box.y + box.height, image.y + image.height) - Math.max(box.y, image.y)
+        expect(overlapX <= 0 || overlapY <= 0).toBe(true)
+      }
+      if (label === '文字颜色') await page.screenshot({ path: testInfo.outputPath('anchored-color-popover.png') })
+      await trigger.click()
+      await expect(popover).toBeHidden()
+    }
+    expect(fixture.mutations).toHaveLength(0)
+  })
+
+  test('color popovers follow panel scrolling and viewport resizing, then dismiss without blocking the editor', async ({ page }) => {
+    const fixture = await prepareEditorColorPage(page)
+    await page.setViewportSize({ width: 1440, height: 660 })
+    await page.getByText('字号预设', { exact: true }).click()
+    const editor = page.locator('.bubble-editor').first()
+    const styleSection = page.locator('.bubble-editor__style-section')
+    await styleSection.evaluate(element => { element.scrollTop = 0 })
+    const trigger = page.getByRole('button', { name: '文字颜色', exact: true })
+    await trigger.click()
+    const popover = page.getByRole('dialog', { name: '文字颜色', exact: true })
+    await expect(popover).toBeVisible()
+    const initial = (await popover.boundingBox())!
+    expect(await styleSection.evaluate(element => element.scrollHeight - element.clientHeight)).toBeGreaterThan(30)
+    await styleSection.evaluate(element => { element.scrollTop += 30 })
+    await expect.poll(async () => (await popover.boundingBox())!.y).toBeLessThan(initial.y - 20)
+    await page.setViewportSize({ width: 1280, height: 660 })
+    await expect.poll(async () => {
+      const box = (await popover.boundingBox())!
+      const panel = (await editor.boundingBox())!
+      return box.x >= panel.x && box.x + box.width <= panel.x + panel.width && box.y >= panel.y && box.y + box.height <= panel.y + panel.height
+    }).toBe(true)
+    await popover.getByRole('textbox', { name: 'HEX 色值' }).fill('#123456')
+    const image = (await page.locator('.edit-image-comparison__image-panel--original').boundingBox())!
+    await page.mouse.click(image.x + 20, image.y + 70)
+    await expect(popover).toBeHidden()
+    await expect(page.locator('.edit-workspace')).toBeVisible()
+    expect(fixture.mutations).toHaveLength(0)
+    await trigger.click()
+    await expect(popover.getByRole('textbox', { name: 'HEX 色值' })).toHaveValue('#abcdef')
+    await popover.getByRole('button', { name: '应用颜色', exact: true }).focus()
+    await page.keyboard.press('Tab')
+    await expect(popover).toBeHidden()
+    await trigger.click()
+    await styleSection.evaluate(element => { element.scrollTop = element.scrollHeight })
+    await expect(popover).toBeHidden()
+    expect(fixture.mutations).toHaveLength(0)
+  })
+
   test('a fractional pointer position samples a single image pixel without a compatibility drag', async ({ page }) => {
     const fixture = await prepareEditorColorPage(page)
     await page.getByRole('button', { name: '缩小', exact: true }).click()
@@ -2133,7 +2205,7 @@ test.describe('editor image color picking', () => {
       await page.getByRole('button', { name: sample.label, exact: true }).click()
       const dialog = page.getByRole('dialog', { name: sample.label, exact: true })
       await expect(dialog).toBeVisible()
-      if (sample.field === 'textColor') await dialog.screenshot({ path: testInfo.outputPath('color-dialog.png') })
+      if (sample.field === 'textColor') await dialog.screenshot({ path: testInfo.outputPath('color-popover.png') })
       await dialog.getByRole('button', { name: '从图片取色', exact: true }).click()
       await expect(dialog).toBeHidden()
       await expect(page.getByRole('button', { name: '取消取色', exact: true })).toBeVisible()

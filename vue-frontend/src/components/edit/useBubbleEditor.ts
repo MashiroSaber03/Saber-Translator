@@ -1,4 +1,4 @@
-import { ref, watch, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, shallowRef, watch, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import {
   FONT_SIZE_PRESETS,
   FONT_SIZE_MIN,
@@ -76,15 +76,15 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
   const originalTextInput = ref<TextareaFieldRef | null>(null)
   const translatedTextInput = ref<TextareaFieldRef | null>(null)
 
-  const activeColorField = ref<BubbleColorField | null>(null)
+  const colorPopover = shallowRef<{ field: BubbleColorField; anchor: HTMLElement } | null>(null)
   const colorValues = { textColor: localTextColor, fillColor: localFillColor, strokeColor: localStrokeColor }
-  const activeColorValue = computed(() => colorValues[activeColorField.value ?? 'textColor'].value)
+  const activeColorValue = computed(() => colorValues[colorPopover.value?.field ?? 'textColor'].value)
 
-  function closeColorDialog(): void {
-    activeColorField.value = null
+  function closeColorPopover(): void {
+    colorPopover.value = null
   }
 
-  watch([() => props.bubble, () => props.bubbleIndex, () => props.disabled], closeColorDialog, { flush: 'sync' })
+  watch([() => props.bubble, () => props.bubbleIndex, () => props.disabled], closeColorPopover, { flush: 'sync' })
 
   const showJpKeyboard = ref(false)
   const jpKeyboardTarget = ref<'original' | 'translated'>('original')
@@ -200,20 +200,21 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     emit('update', { textDirection: direction })
   }
 
-  function openColorDialog(field: BubbleColorField): void {
-    if (!props.disabled && props.bubble) activeColorField.value = field
+  function openColorPopover(field: BubbleColorField, event: MouseEvent): void {
+    if (props.disabled || !props.bubble || !(event.currentTarget instanceof HTMLElement)) return
+    colorPopover.value = colorPopover.value?.field === field ? null : { field, anchor: event.currentTarget }
   }
 
   function applyColor(field: BubbleColorField, value: string): void {
-    if (props.disabled || !props.bubble || activeColorField.value !== field) return
-    closeColorDialog()
+    if (props.disabled || !props.bubble || colorPopover.value?.field !== field) return
+    closeColorPopover()
     colorValues[field].value = value
     emit('update', { [field]: value })
   }
 
   function requestImageColor(field: BubbleColorField): void {
-    if (props.disabled || !props.bubble || activeColorField.value !== field) return
-    closeColorDialog()
+    if (props.disabled || !props.bubble || colorPopover.value?.field !== field) return
+    closeColorPopover()
     emit('pickColor', field)
   }
 
@@ -441,9 +442,9 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     localBlockAlign,
     originalTextInput,
     translatedTextInput,
-    activeColorField,
+    colorPopover,
     activeColorValue,
-    closeColorDialog,
+    closeColorPopover,
     applyColor,
     requestImageColor,
     showJpKeyboard,
@@ -460,7 +461,7 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     setFontSize,
     handleFontFamilyChange,
     setTextDirection,
-    openColorDialog,
+    openColorPopover,
     toggleStroke,
     handleStrokeWidthChange,
     handleInpaintMethodChange,

@@ -159,7 +159,7 @@
 
           <div class="bubble-editor__toolbar-color-group">
             <div class="bubble-editor__toolbar-color-picker" title="文字颜色">
-              <UiIconButton variant="soft" size="sm" class="bubble-editor__toolbar-action bubble-editor__toolbar-color-action" label="文字颜色" title="文字颜色" @click="openColorDialog('textColor')">
+              <UiIconButton variant="soft" size="sm" class="bubble-editor__toolbar-action bubble-editor__toolbar-color-action" label="文字颜色" title="文字颜色" aria-haspopup="dialog" :aria-expanded="colorPopover?.field === 'textColor'" @click="openColorPopover('textColor', $event)">
                 <UiIcon name="type" size="16" />
                 <span class="bubble-editor__color-indicator" :style="{ background: localTextColor }"></span>
               </UiIconButton>
@@ -180,7 +180,7 @@
               v-if="localInpaintMethod === 'solid'"
               class="bubble-editor__toolbar-color-picker bubble-editor__toolbar-solid-color-options"
             >
-              <UiIconButton variant="soft" size="sm" class="bubble-editor__toolbar-action bubble-editor__toolbar-color-action" label="背景填充颜色" title="背景填充颜色" @click="openColorDialog('fillColor')">
+              <UiIconButton variant="soft" size="sm" class="bubble-editor__toolbar-action bubble-editor__toolbar-color-action" label="背景填充颜色" title="背景填充颜色" aria-haspopup="dialog" :aria-expanded="colorPopover?.field === 'fillColor'" @click="openColorPopover('fillColor', $event)">
                 <UiIcon name="square" size="16" />
                 <span class="bubble-editor__color-indicator" :style="{ background: localFillColor }"></span>
               </UiIconButton>
@@ -208,7 +208,7 @@
               class="bubble-editor__toolbar-color-picker bubble-editor__toolbar-stroke-options"
               title="描边颜色"
             >
-              <UiIconButton variant="soft" size="sm" class="bubble-editor__toolbar-action bubble-editor__toolbar-color-action" label="描边颜色" title="描边颜色" @click="openColorDialog('strokeColor')">
+              <UiIconButton variant="soft" size="sm" class="bubble-editor__toolbar-action bubble-editor__toolbar-color-action" label="描边颜色" title="描边颜色" aria-haspopup="dialog" :aria-expanded="colorPopover?.field === 'strokeColor'" @click="openColorPopover('strokeColor', $event)">
                 <UiIcon name="circle" size="16" />
                 <span class="bubble-editor__color-indicator" :style="{ background: localStrokeColor }"></span>
               </UiIconButton>
@@ -419,20 +419,22 @@
     <UiIcon name="mouse-pointer" size="24" aria-hidden="true" />
     <span>请选择一个气泡进行编辑</span>
   </div>
-  <EditColorDialog
-    v-if="activeColorField"
-    :field="activeColorField"
+  <EditColorPopover
+    v-if="colorPopover"
+    :key="colorPopover.field"
+    :field="colorPopover.field"
+    :anchor="colorPopover.anchor"
     :color="activeColorValue"
     @apply="applyColor"
     @pick="requestImageColor"
-    @close="closeColorDialog"
+    @close="closeColorPopover"
   />
 </template>
 
 <script setup lang="ts">
 
 import UiTextarea from '@/components/ui/UiTextarea.vue'
-import EditColorDialog from './EditColorDialog.vue'
+import EditColorPopover from './EditColorPopover.vue'
 
 import UiButton from '@/components/ui/UiButton.vue'
 import UiField from '@/components/ui/UiField.vue'
@@ -468,9 +470,9 @@ const {
   localBlockAlign,
   originalTextInput,
   translatedTextInput,
-  activeColorField,
+  colorPopover,
   activeColorValue,
-  closeColorDialog,
+  closeColorPopover,
   applyColor,
   requestImageColor,
   showJpKeyboard,
@@ -487,7 +489,7 @@ const {
   setFontSize,
   handleFontFamilyChange,
   setTextDirection,
-  openColorDialog,
+  openColorPopover,
   toggleStroke,
   handleStrokeWidthChange,
   handleInpaintMethodChange,

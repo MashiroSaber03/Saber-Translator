@@ -52,8 +52,8 @@ function selectColor(value: string): void {
 }
 
 button.ui-color-swatch-group__swatch {
-  --ui-button-icon-width: 32px;
-  --ui-button-icon-height: 32px;
+  --ui-button-icon-width: var(--ui-swatch-size, 32px);
+  --ui-button-icon-height: var(--ui-swatch-size, 32px);
   --ui-button-padding: 0;
 
   width: var(--ui-button-icon-width);
