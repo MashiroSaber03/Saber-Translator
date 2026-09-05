@@ -12,7 +12,6 @@ from src.core.ocr_types import OcrResult
 from src.shared import constants
 
 
-BUBBLE_PAYLOAD_SCHEMA_VERSION = 2
 STORED_BUBBLE_FIELDS = frozenset(
     {
         "originalText",
