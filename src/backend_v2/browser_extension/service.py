@@ -17,9 +17,6 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
 
 from src.backend_v2.auth.ownership import effective_owner_id
-from src.backend_v2.browser_extension.retention import (
-    cleanup_expired_browser_sessions,
-)
 from src.backend_v2.content.image_import import ImageImportService
 from src.backend_v2.content.page_style import resolve_new_page_style
 from src.backend_v2.content.repository import (
@@ -132,7 +129,6 @@ class BrowserSessionService:
             bool,
         ):
             raise ValueError("glossary flags must be booleans")
-        self.cleanup_expired()
         owner = effective_owner_id()
         now = utcnow()
         session_id = str(uuid.uuid4())
@@ -829,10 +825,6 @@ class BrowserSessionService:
         if asset.id != asset_id:
             raise BrowserSessionNotFound("translated result is stale")
         return asset
-
-    def cleanup_expired(self) -> int:
-        with self._lock:
-            return cleanup_expired_browser_sessions(self.engine)
 
     def _create_pending_job(
         self,

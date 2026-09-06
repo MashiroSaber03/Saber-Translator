@@ -1751,7 +1751,7 @@ class JobQueueRepository:
             }
             if not candidates:
                 return 0
-            return self._delete_history_jobs(
+            return self.delete_history_jobs(
                 connection,
                 candidates=candidates,
                 now=now,
@@ -1768,12 +1768,13 @@ class JobQueueRepository:
             )
 
     @staticmethod
-    def _delete_history_jobs(
-        connection: Any,
+    def delete_history_jobs(
+        connection: Connection,
         *,
         candidates: set[str],
         now: datetime,
     ) -> int:
+        """Delete history candidates in the caller's transaction, preserving live references."""
         if not candidates:
             return 0
         protected = {
@@ -1964,7 +1965,7 @@ class JobQueueRepository:
             candidates = next_candidates
             if not candidates:
                 return 0
-        return JobQueueRepository._delete_history_jobs(
+        return JobQueueRepository.delete_history_jobs(
             connection,
             candidates=candidates,
             now=now,

@@ -1,9 +1,10 @@
-"""Retention cleanup shared by the local API and worker maintenance."""
+"""Worker-owned retention cleanup for browser sessions."""
 
 from __future__ import annotations
 
 from sqlalchemy import Engine, delete, select
 
+from src.backend_v2.jobs.repository import JobQueueRepository
 from src.backend_v2.storage.database import immediate_transaction
 from src.backend_v2.storage.schema import (
     NONTERMINAL_JOB_STATUSES,
@@ -19,21 +20,26 @@ def cleanup_expired_browser_sessions(engine: Engine) -> int:
 
     now = utcnow()
     with immediate_transaction(engine) as connection:
-        expired = list(
+        book_ids = list(
             connection.execute(
-                select(browser_sessions.c.id, browser_sessions.c.book_id).where(
+                select(browser_sessions.c.book_id).where(
                     browser_sessions.c.expires_at <= now,
-                    ~browser_sessions.c.chapter_id.in_(
-                        select(jobs.c.chapter_id).where(
-                            jobs.c.chapter_id.is_not(None),
+                    ~browser_sessions.c.book_id.in_(
+                        select(jobs.c.book_id).where(
+                            jobs.c.book_id.is_not(None),
                             jobs.c.status.in_(NONTERMINAL_JOB_STATUSES),
                         )
                     ),
                 )
-            ).mappings()
+            ).scalars()
         )
-        if expired:
-            book_ids = [row["book_id"] for row in expired]
-            connection.execute(delete(jobs).where(jobs.c.book_id.in_(book_ids)))
-            connection.execute(delete(books).where(books.c.id.in_(book_ids)))
-    return len(expired)
+        if not book_ids:
+            return 0
+        job_ids = set(
+            connection.execute(
+                select(jobs.c.id).where(jobs.c.book_id.in_(book_ids))
+            ).scalars()
+        )
+        JobQueueRepository.delete_history_jobs(connection, candidates=job_ids, now=now)
+        connection.execute(delete(books).where(books.c.id.in_(book_ids)))
+    return len(book_ids)

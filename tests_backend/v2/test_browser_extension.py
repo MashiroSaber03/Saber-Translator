@@ -10,7 +10,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from PIL import Image
 import pytest
-from sqlalchemy import func, insert, select, update
+from sqlalchemy import event, func, insert, select, update
 
 from src.backend_v2.api.app import ApiSettings, create_api_app
 from src.backend_v2.browser_extension.auth import BrowserExtensionAccess
@@ -22,6 +22,7 @@ from src.backend_v2.browser_extension.service import BrowserSessionService
 from src.backend_v2.content.repository import ContentRepository
 from src.backend_v2.content.translation_constraints import empty_translation_constraints
 from src.backend_v2.jobs.repository import JobQueueRepository
+from src.backend_v2.jobs.retry import JobRetryService
 from src.backend_v2.runtime_identity import RuntimeIdentity
 from src.backend_v2.runtime_profile import resolve_runtime_profile
 from src.backend_v2.storage.assets import AssetStorageService
@@ -32,6 +33,8 @@ from src.backend_v2.storage.schema import (
     browser_session_pages,
     browser_sessions,
     chapters,
+    job_artifacts,
+    job_batches,
     job_items,
     jobs,
     metadata,
@@ -125,6 +128,51 @@ def _create_session(client):
             "autoTermsEnabled": True,
         },
     )
+
+
+@pytest.fixture()
+def expired_browser_retry_chain(browser_platform):
+    _data_root, engine, app = browser_platform
+    client = app.test_client()
+    session = _create_session(client).get_json()
+    route = f"/api/v2/browser-extension/sessions/{session['id']}"
+    uploaded = client.post(
+        route + "/pages",
+        headers=HEADERS,
+        data={
+            "clientPageKey": "expired-retry-page",
+            "ordinal": "1",
+            "logicalPath": "00001.png",
+            "file": (BytesIO(_png()), "page.png"),
+        },
+        content_type="multipart/form-data",
+    )
+    assert uploaded.status_code == 201
+    assert client.post(route + "/start", headers=HEADERS).status_code == 202
+    with engine.connect() as connection:
+        job_id = str(connection.execute(
+            select(jobs.c.id).where(jobs.c.book_id == session["bookId"])
+        ).scalar_one())
+    retry_service = JobRetryService(engine, profile=resolve_runtime_profile("local"))
+    job_ids = []
+    for attempt in range(3):
+        job_ids.append(job_id)
+        with engine.begin() as connection:
+            connection.execute(update(jobs).where(jobs.c.id == job_id).values(status="failed"))
+            connection.execute(update(job_items).where(job_items.c.job_id == job_id).values(status="failed"))
+        if attempt < 2:
+            retried = retry_service.retry(
+                job_id=job_id,
+                failed_only=False,
+                strategy="current",
+                idempotency_key=f"expired-browser-retry-{attempt}",
+            )
+            job_id = str(retried["jobIds"][0])
+    with engine.begin() as connection:
+        connection.execute(update(browser_sessions).where(
+            browser_sessions.c.id == session["id"]
+        ).values(expires_at=datetime(2000, 1, 1, tzinfo=timezone.utc)))
+    return session, job_ids
 
 
 def test_browser_extension_auth_loopback_and_disabled_json(browser_platform) -> None:
@@ -1088,6 +1136,126 @@ def test_periodic_cleanup_only_deletes_expired_browser_sessions(browser_platform
         ids = set(connection.execute(select(browser_sessions.c.id)).scalars())
     assert expired["id"] not in ids
     assert current["id"] in ids
+
+
+def test_new_browser_session_leaves_expired_retry_cleanup_to_worker(
+    browser_platform, expired_browser_retry_chain,
+) -> None:
+    _data_root, engine, app = browser_platform
+    expired, _job_ids = expired_browser_retry_chain
+    created = _create_session(app.test_client())
+    assert created.status_code == 201
+    assert created.get_json()["id"] != expired["id"]
+    with engine.connect() as connection:
+        assert connection.execute(select(browser_sessions.c.id).where(
+            browser_sessions.c.id == expired["id"]
+        )).scalar_one() == expired["id"]
+
+
+def test_periodic_cleanup_removes_expired_retry_chain_and_related_data(
+    browser_platform, expired_browser_retry_chain,
+) -> None:
+    data_root, engine, app = browser_platform
+    expired, job_ids = expired_browser_retry_chain
+    with engine.connect() as connection:
+        batch_ids = list(connection.execute(select(jobs.c.batch_id).where(
+            jobs.c.id.in_(job_ids)
+        )).scalars())
+    maintenance = WorkerMaintenance(data_root=data_root, engine=engine)
+    assert maintenance._prune_browser_sessions() == 1
+    assert maintenance._prune_browser_sessions() == 0
+    with engine.connect() as connection:
+        for table, condition in (
+            (jobs, jobs.c.id.in_(job_ids)),
+            (job_batches, job_batches.c.id.in_(batch_ids)),
+            (books, books.c.id == expired["bookId"]),
+            (chapters, chapters.c.id == expired["chapterId"]),
+            (pages, pages.c.chapter_id == expired["chapterId"]),
+            (browser_sessions, browser_sessions.c.id == expired["id"]),
+            (browser_session_pages, browser_session_pages.c.session_id == expired["id"]),
+        ):
+            assert connection.execute(select(func.count()).select_from(table).where(condition)).scalar_one() == 0
+        assert connection.exec_driver_sql("PRAGMA foreign_key_check").all() == []
+    assert _create_session(app.test_client()).status_code == 201
+
+
+def test_failed_browser_cleanup_rolls_back_without_blocking_new_sessions(
+    browser_platform, expired_browser_retry_chain,
+) -> None:
+    data_root, engine, app = browser_platform
+    expired, job_ids = expired_browser_retry_chain
+    maintenance = WorkerMaintenance(data_root=data_root, engine=engine)
+
+    def fail_book_deletion(_connection, _cursor, statement, _parameters, _context, _many):
+        if statement.startswith("DELETE FROM books"):
+            raise RuntimeError("injected cleanup failure after job deletion")
+
+    event.listen(engine, "before_cursor_execute", fail_book_deletion)
+    try:
+        with pytest.raises(RuntimeError, match="injected cleanup failure"):
+            maintenance._prune_browser_sessions()
+        with engine.connect() as connection:
+            assert set(connection.execute(select(jobs.c.id).where(
+                jobs.c.id.in_(job_ids)
+            )).scalars()) == set(job_ids)
+            assert connection.execute(select(browser_sessions.c.id).where(
+                browser_sessions.c.id == expired["id"]
+            )).scalar_one() == expired["id"]
+            assert connection.exec_driver_sql("PRAGMA foreign_key_check").all() == []
+        created = _create_session(app.test_client())
+        assert created.status_code == 201
+    finally:
+        event.remove(engine, "before_cursor_execute", fail_book_deletion)
+
+    assert maintenance._prune_browser_sessions() == 1
+    with engine.connect() as connection:
+        assert connection.execute(select(browser_sessions.c.id).where(
+            browser_sessions.c.id == created.get_json()["id"]
+        )).scalar_one() == created.get_json()["id"]
+
+
+@pytest.mark.parametrize("book_scoped", [False, True])
+def test_periodic_cleanup_preserves_active_browser_retry(
+    browser_platform, expired_browser_retry_chain, book_scoped,
+) -> None:
+    data_root, engine, _app = browser_platform
+    expired, job_ids = expired_browser_retry_chain
+    with engine.begin() as connection:
+        connection.execute(update(jobs).where(jobs.c.id == job_ids[-1]).values(
+            status="queued", chapter_id=None if book_scoped else expired["chapterId"],
+        ))
+    assert WorkerMaintenance(data_root=data_root, engine=engine)._prune_browser_sessions() == 0
+    with engine.connect() as connection:
+        assert connection.execute(select(func.count()).select_from(jobs).where(jobs.c.id.in_(job_ids))).scalar_one() == 3
+        assert connection.execute(select(browser_sessions.c.id).where(browser_sessions.c.id == expired["id"])).scalar_one() == expired["id"]
+
+
+def test_periodic_cleanup_preserves_download_and_its_retry_history(
+    browser_platform, expired_browser_retry_chain,
+) -> None:
+    data_root, engine, _app = browser_platform
+    expired, job_ids = expired_browser_retry_chain
+    with engine.begin() as connection:
+        asset_id = connection.execute(select(browser_session_pages.c.source_asset_id).where(
+            browser_session_pages.c.session_id == expired["id"]
+        )).scalar_one()
+        connection.execute(insert(job_artifacts).values(
+            job_id=job_ids[-1], kind="download", asset_id=asset_id,
+            expires_at=datetime(2100, 1, 1, tzinfo=timezone.utc),
+        ))
+    maintenance = WorkerMaintenance(data_root=data_root, engine=engine)
+    assert maintenance._prune_browser_sessions() == 1
+    assert JobQueueRepository(engine).clear_history() == 0
+    with engine.begin() as connection:
+        assert connection.execute(select(func.count()).select_from(jobs).where(jobs.c.id.in_(job_ids))).scalar_one() == 3
+        assert connection.execute(select(browser_sessions.c.id).where(browser_sessions.c.id == expired["id"])).scalar_one_or_none() is None
+        assert connection.execute(select(job_artifacts.c.asset_id).where(job_artifacts.c.job_id == job_ids[-1])).scalar_one() == asset_id
+        assert connection.exec_driver_sql("PRAGMA foreign_key_check").all() == []
+        connection.execute(update(job_artifacts).where(job_artifacts.c.job_id == job_ids[-1]).values(
+            expires_at=datetime(2000, 1, 1, tzinfo=timezone.utc),
+        ))
+    assert maintenance._prune_browser_sessions() == 0
+    assert JobQueueRepository(engine).clear_history() == 3
 
 
 def test_browser_start_failure_remains_explicitly_startable(browser_platform) -> None:
