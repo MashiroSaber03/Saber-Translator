@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
+import BaseModal from '@/components/common/BaseModal.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductSegmentedTabs from '@/components/product/ProductSegmentedTabs.vue'
 
@@ -32,6 +33,16 @@ const {
       capabilities: { profile: 'local', features: { plugins: true } },
     },
   }))
+
+const pluginSaveMock = vi.hoisted(() => vi.fn())
+vi.mock('@/components/settings/BrowserExtensionSettings.vue', () => ({
+  default: defineComponent({
+    setup(_, { expose }) {
+      expose({ save: pluginSaveMock })
+      return () => h('div', 'Independent plugin configuration')
+    },
+  }),
+}))
 
 vi.mock('@/stores/settings', async () => {
   const { reactive } = await import('vue')
@@ -444,4 +455,39 @@ describe('SettingsModal', () => {
     expect(actionRow.props('variant')).toBe('dialog')
     expect(actionRow.props('ariaLabel')).toBe('设置状态')
   })
+  it('saves the plugin draft on Done and keeps the dialog open on conflict', async () => {
+    pluginSaveMock.mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+    const wrapper = mount(SettingsModal, {
+      props: { modelValue: true, initialTab: 'browser-extension' },
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('Independent plugin configuration')
+    const done = wrapper.findAll('button').find(button => button.text() === '完成')!
+    await done.trigger('click')
+    await flushPromises()
+    expect(pluginSaveMock).toHaveBeenCalledTimes(1)
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    await done.trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')).toContainEqual([false])
+  })
+
+  it('waits for a successful plugin save before applying a modal dismiss event', async () => {
+    pluginSaveMock.mockReset().mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+    const wrapper = mount(SettingsModal, {
+      props: { modelValue: true, initialTab: 'browser-extension' },
+    })
+    await flushPromises()
+    const modal = wrapper.getComponent(BaseModal)
+    modal.vm.$emit('update:modelValue', false)
+    modal.vm.$emit('close')
+    await flushPromises()
+    expect(modal.props('modelValue')).toBe(true)
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    modal.vm.$emit('update:modelValue', false)
+    modal.vm.$emit('close')
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')).toContainEqual([false])
+  })
+
 })

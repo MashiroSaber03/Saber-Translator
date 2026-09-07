@@ -1,4 +1,4 @@
-"""Durable browser-page sessions backed by the existing translation pipeline."""
+"""Disposable browser-page sessions backed by the existing translation pipeline."""
 
 from __future__ import annotations
 
@@ -18,7 +18,10 @@ from sqlalchemy.exc import IntegrityError
 
 from src.backend_v2.auth.ownership import effective_owner_id
 from src.backend_v2.content.image_import import ImageImportService
-from src.backend_v2.content.page_style import resolve_new_page_style
+from src.backend_v2.content.page_style import validate_text_style_defaults
+from src.backend_v2.browser_extension.settings import (
+    SNAPSHOT_DOMAIN, capture_session_settings, session_settings,
+)
 from src.backend_v2.content.repository import (
     ContentConflict,
     ContentLocked,
@@ -37,12 +40,11 @@ from src.backend_v2.jobs.repository import (
 )
 from src.backend_v2.runtime_profile import RuntimeProfile
 from src.backend_v2.serialization import canonical_json
-from src.backend_v2.settings.validation import validate_setting_payload
 from src.backend_v2.storage.assets import AssetRecord, AssetStorageService
 from src.backend_v2.storage.database import immediate_transaction
 from src.backend_v2.storage.schema import (
     NONTERMINAL_JOB_STATUSES,
-    app_settings,
+    book_settings,
     assets,
     books,
     browser_session_pages,
@@ -58,7 +60,7 @@ from src.backend_v2.timestamps import utcnow
 from src.backend_v2.translation.commands import TranslationJobCommandService
 
 
-SESSION_TTL = timedelta(hours=24)
+SESSION_TTL = timedelta(minutes=10)
 
 
 class BrowserSessionNotFound(LookupError):
@@ -279,6 +281,12 @@ class BrowserSessionService:
                     .where(browser_sessions.c.id == session_id)
                     .values(updated_at=now, expires_at=now + SESSION_TTL)
                 )
+        except (BrowserSessionNotFound, BrowserSessionConflict):
+            # An upload can finish decoding after its page has already exited.
+            asset_ids = {source.id, thumbnail.id}
+            self.storage.collect_garbage(grace_seconds=0, asset_ids=asset_ids)
+            self.storage.collect_garbage(grace_seconds=0, asset_ids=asset_ids)
+            raise
         except IntegrityError:
             with self.engine.connect() as connection:
                 existing = self._page_by_client_key(
@@ -300,6 +308,10 @@ class BrowserSessionService:
         with self.engine.connect() as connection:
             session = self._require_session(connection, session_id)
             rows = self._session_page_rows(connection, session_id)
+            task_statuses = set(connection.execute(select(jobs.c.status).where(
+                jobs.c.book_id == session["book_id"],
+                jobs.c.status.in_(NONTERMINAL_JOB_STATUSES),
+            )).scalars())
             pending_start = (
                 session["status"] != "cancelled"
                 and any(
@@ -356,6 +368,8 @@ class BrowserSessionService:
             "autoTermsEnabled": auto_terms_enabled,
             "state": state,
             "pendingStart": pending_start,
+            "taskState": next((status for status in ("running", "paused", "interrupted", "queued")
+                               if status in task_statuses), None),
             "expiresAt": (
                 session["expires_at"].isoformat()
                 if session["expires_at"] is not None
@@ -450,6 +464,21 @@ class BrowserSessionService:
             "glossary": payload["glossary"],
         }
 
+    def discard(self, session_id: str) -> None:
+        """Retire a page; running workers release their inputs before GC."""
+        from src.backend_v2.browser_extension.retention import cleanup_expired_browser_sessions
+
+        with self._lock:
+            try:
+                self.cancel(session_id)
+            except BrowserSessionNotFound:
+                pass
+            with immediate_transaction(self.engine) as connection:
+                connection.execute(update(browser_sessions).where(
+                    browser_sessions.c.id == session_id
+                ).values(expires_at=utcnow()))
+            cleanup_expired_browser_sessions(self.engine, data_root=self.data_root)
+
     def cancel(self, session_id: str) -> dict[str, object]:
         now = utcnow()
         with self._lock:
@@ -457,11 +486,11 @@ class BrowserSessionService:
                 self._require_session(connection, session_id)
                 job_ids = list(
                     connection.execute(
-                        select(browser_session_pages.c.job_id)
-                        .join(jobs, jobs.c.id == browser_session_pages.c.job_id)
+                        select(jobs.c.id)
                         .where(
-                            browser_session_pages.c.session_id == session_id,
-                            browser_session_pages.c.job_id.is_not(None),
+                            jobs.c.book_id == select(browser_sessions.c.book_id).where(
+                                browser_sessions.c.id == session_id
+                            ).scalar_subquery(),
                             jobs.c.status.in_(NONTERMINAL_JOB_STATUSES),
                         )
                         .distinct()
@@ -755,6 +784,10 @@ class BrowserSessionService:
                     now=now,
                 )
 
+            connection.execute(delete(book_settings).where(
+                book_settings.c.book_id == source_book_id,
+                book_settings.c.domain == SNAPSHOT_DOMAIN,
+            ))
             connection.execute(
                 delete(browser_sessions)
                 .where(browser_sessions.c.id == session_id)
@@ -859,11 +892,6 @@ class BrowserSessionService:
                     statement.order_by(browser_session_pages.c.ordinal)
                 ).mappings()
             )
-            execution_mode = (
-                self._translation_execution_mode(connection)
-                if page_rows
-                else "sequential"
-            )
         if not page_rows:
             return None
         page_ids = [str(row["page_id"]) for row in page_rows]
@@ -899,7 +927,6 @@ class BrowserSessionService:
             chapter_id=str(session["chapter_id"]),
             config={
                 "mode": str(session["mode"]),
-                "executionMode": execution_mode,
                 "skipCompleted": False,
             },
             page_ids=page_ids,
@@ -911,26 +938,6 @@ class BrowserSessionService:
         if not isinstance(raw_ids, list) or len(raw_ids) != 1:
             raise RuntimeError("browser translation did not create exactly one job")
         return str(raw_ids[0])
-
-    @staticmethod
-    def _translation_execution_mode(connection: Connection) -> str:
-        row = connection.execute(
-            select(
-                app_settings.c.payload_json,
-                app_settings.c.schema_version,
-            ).where(
-                app_settings.c.domain == "translation",
-                app_settings.c.owner_user_id == effective_owner_id(),
-            )
-        ).mappings().one_or_none()
-        if row is None:
-            raise ValueError("translation settings are missing")
-        settings = validate_setting_payload(
-            "translation",
-            json.loads(row["payload_json"]),
-            schema_version=int(row["schema_version"]),
-        )
-        return "parallel" if settings["parallel"]["enabled"] else "sequential"
 
     @staticmethod
     def _has_active_translation_job(
@@ -950,8 +957,17 @@ class BrowserSessionService:
         return value is not None
 
     def _materialize_pending(self, session_id: str) -> bool:
-        with self.engine.connect() as connection:
+        with immediate_transaction(self.engine) as connection:
             session = self._require_session(connection, session_id)
+            refresh_settings = connection.execute(select(jobs.c.id).where(
+                jobs.c.book_id == session["book_id"],
+            ).limit(1)).scalar_one_or_none() is None
+            if refresh_settings:
+                connection.execute(delete(book_settings).where(
+                    book_settings.c.book_id == session["book_id"],
+                    book_settings.c.domain == SNAPSHOT_DOMAIN,
+                ))
+                capture_session_settings(connection, str(session["book_id"]))
             pending = list(
                 connection.execute(
                     select(browser_session_pages).where(
@@ -961,7 +977,23 @@ class BrowserSessionService:
                     ).order_by(browser_session_pages.c.ordinal)
                 ).mappings()
             )
-            font_id, page_style = resolve_new_page_style(connection)
+            snapshot = session_settings(connection, str(session["book_id"]))
+            style = next(row["payload"] for row in snapshot["settings"]
+                         if row["domain"] == "text_style_defaults")
+            font_id, page_style = validate_text_style_defaults(connection, style)
+            if refresh_settings:
+                # A failed initial start may already have materialized pages.
+                # Their styles must follow the corrected configuration too.
+                connection.execute(
+                    update(pages)
+                    .where(pages.c.chapter_id == session["chapter_id"])
+                    .values(
+                        default_font_id=font_id,
+                        page_style_defaults_json=canonical_json(page_style),
+                        document_revision=pages.c.document_revision + 1,
+                        updated_at=utcnow(),
+                    )
+                )
         text_style: dict[str, object] = {
             "fontFamily": font_id,
             **page_style,
@@ -1152,6 +1184,7 @@ class BrowserSessionService:
             "state": state,
             "resultReady": bool(translated_asset_id and state == "completed"),
             "retryCount": int(row["retry_count"]),
+            "resultAssetId": str(translated_asset_id) if translated_asset_id else None,
             "error": error,
         }
 
@@ -1180,7 +1213,7 @@ class BrowserSessionService:
                 browser_sessions.c.owner_user_id == effective_owner_id(),
             )
         ).mappings().one_or_none()
-        if row is None:
+        if row is None or row["expires_at"] <= utcnow():
             raise BrowserSessionNotFound("browser session not found")
         return row
 

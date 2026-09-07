@@ -205,6 +205,11 @@ def create_browser_extension_blueprint(
     def status() -> Response:
         return jsonify({"status": "ready"})
 
+    @blueprint.post("/sessions/<session_id>/discard")
+    def discard_session(session_id: str) -> Response:
+        service.discard(session_id)
+        return Response(status=204)
+
     @blueprint.get("/library-books")
     def library_books() -> Response:
         return jsonify({"items": service.library_books()})

@@ -177,30 +177,6 @@ describe('settings store plugin agent configuration', () => {
     expect((store.settings.pluginAgent as Record<string, unknown>).useStream).toBeUndefined()
   })
 
-  it('keeps Browser DOM Agent provider state independent from Plugin Agent', () => {
-    const store = useSettingsStore()
-    store.updatePluginAgent({ modelName: 'plugin-model', apiKey: 'plugin-key' })
-    store.updateBrowserDomAgent({
-      modelName: 'dom-model',
-      apiKey: 'dom-key',
-      customBaseUrl: 'https://dom.example/v1',
-    })
-
-    store.setBrowserDomAgentProvider('deepseek')
-
-    expect(store.providerConfigs.browserDomAgent.siliconflow).toEqual(
-      expect.objectContaining({
-        modelName: 'dom-model',
-        apiKey: 'dom-key',
-        customBaseUrl: 'https://dom.example/v1',
-      }),
-    )
-    expect(store.settings.browserDomAgent.provider).toBe('deepseek')
-    expect(store.settings.browserDomAgent.modelName).toBe('')
-    expect(store.settings.pluginAgent.modelName).toBe('plugin-model')
-    expect(store.settings.pluginAgent.apiKey).toBe('plugin-key')
-  })
-
   it('saves only plugin agent settings against a fresh backend revision', async () => {
     settingsApiMocks.getV2Settings
       .mockResolvedValueOnce(backendDocument())

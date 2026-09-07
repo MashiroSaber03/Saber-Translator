@@ -81,8 +81,7 @@ let sendMessage: ReturnType<typeof vi.fn>
 
 function defaultResponse(request: { type: string; value?: string }) {
   if (request.type === 'get-preference') return successful(structuredClone(DEFAULT_PREFERENCE))
-  if (request.type === 'get-active-session') return successful(null)
-  if (request.type === 'set-active-session' || request.type === 'clear-active-session') return successful({})
+  if (['page-opened', 'page-closed', 'discard-session'].includes(request.type)) return successful({})
   if (request.type === 'hash-source') return successful(createHash('sha256').update(request.value!).digest('hex'))
   throw new Error(`unexpected request: ${request.type}`)
 }
@@ -111,24 +110,13 @@ afterEach(() => {
 })
 
 describe('overlapping page operations', () => {
-  it('does not restore an old session over a task started during initialization', async () => {
-    const restored = deferred<ReturnType<typeof successful<BrowserSessionDto>>>()
-    sendMessage.mockImplementation(async (request: { type: string }) => {
-      if (request.type === 'get-active-session') return successful({
-        sessionId: 'old', discovery: { stopped: true, usingAdapter: false, rule: null },
-      })
-      if (request.type === 'get-session') return restored.promise
-      if (request.type === 'create-session') return successful(session('new'))
-      return defaultResponse(request)
-    })
+  it('starts a fresh page and releases it on exit without requesting history', async () => {
     const controller = new PageController() as unknown as TestController
-    const initialization = controller.initialize()
-    await vi.waitFor(() => expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'get-session' })))
-    await controller.createSession()
-    restored.resolve(successful({ ...session('old', [{ id: 'old-page' } as BrowserPageDto]), pageUrl: location.href }))
-    await initialization
-    expect(controller.session?.id).toBe('new')
+    await controller.initialize()
+    expect(controller.currentTask()).toBeNull()
+    expect(sendMessage).toHaveBeenCalledWith({ type: 'page-opened', pageUrl: location.href })
     await controller.dispose()
+    expect(sendMessage).toHaveBeenCalledWith({ type: 'page-closed', pageUrl: location.href })
   })
 
   it('does not create a panel when disposed while preferences are loading', async () => {
@@ -146,12 +134,13 @@ describe('overlapping page operations', () => {
     const cleanup = deferred<ReturnType<typeof successful<object>>>()
     let clears = 0
     sendMessage.mockImplementation(async (request: { type: string }) => {
-      if (request.type === 'clear-active-session' && ++clears === 1) return cleanup.promise
+      if (request.type === 'discard-session' && ++clears === 1) return cleanup.promise
       if (request.type === 'create-session') return successful(session('new'))
       return defaultResponse(request)
     })
     const controller = new PageController() as unknown as TestController
     await controller.initialize()
+    controller.session = session('old')
     const old = controller.createSession()
     await controller.createSession()
     cleanup.resolve(successful({}))
@@ -185,91 +174,6 @@ describe('overlapping page operations', () => {
 })
 
 describe('page task lifecycle', () => {
-  it.each([false, true])('restores completed images and the saved stopped=%s scope', async (stopped) => {
-    const image = document.createElement('img')
-    image.src = 'https://cdn.example.test/restored-page.webp'
-    Object.defineProperties(image, {
-      naturalWidth: { configurable: true, value: 1_200 },
-      naturalHeight: { configurable: true, value: 1_800 },
-    })
-    document.body.append(image)
-    const candidate = elementCandidate(image)!
-    const digest = await crypto.subtle.digest(
-      'SHA-256',
-      new TextEncoder().encode(candidate.sourceIdentity),
-    )
-    const clientPageKey = [...new Uint8Array(digest)]
-      .map(byte => byte.toString(16).padStart(2, '0'))
-      .join('')
-    class LoadableImage {
-      decoding = ''
-      onload: (() => void) | null = null
-      set src(_value: string) {
-        queueMicrotask(() => this.onload?.())
-      }
-    }
-    vi.stubGlobal('Image', LoadableImage)
-    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:restored-result')
-    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
-
-    const completedPage: BrowserPageDto = {
-      id: 'restored-page',
-      clientPageKey,
-      ordinal: 1,
-      pageId: crypto.randomUUID(),
-      state: 'completed',
-      resultReady: true,
-      retryCount: 0,
-      error: null,
-    }
-    const restoredSession = {
-      ...session('restored-session', [completedPage]),
-      pageUrl: location.href,
-      state: 'completed' as const,
-      counts: {
-        total: 1,
-        queued: 0,
-        translating: 0,
-        completed: 1,
-        failed: 0,
-        cancelled: 0,
-      },
-    }
-    sendMessage.mockImplementation(async (request: { type: string }) => {
-      if (request.type === 'get-preference') {
-        return successful(structuredClone(DEFAULT_PREFERENCE))
-      }
-      if (request.type === 'get-active-session') {
-        return successful({
-          sessionId: 'restored-session',
-          discovery: { stopped, usingAdapter: false, rule: null },
-        })
-      }
-      if (request.type === 'get-session') return successful(restoredSession)
-      if (request.type === 'fetch-result') {
-        return successful({ base64: 'cmVzdG9yZWQ=', mimeType: 'image/png' })
-      }
-      return defaultResponse(request)
-    })
-
-    const controller = new PageController() as unknown as TestController
-    await controller.initialize()
-
-    expect(controller.currentTask()).toEqual({
-      generation: 1,
-      sessionId: 'restored-session',
-    })
-    expect(controller.session?.id).toBe('restored-session')
-    expect(controller.discoveryStopped).toBe(stopped)
-    expect(controller.observer === null).toBe(stopped)
-    expect(image.src).toBe('blob:restored-result')
-    expect(image.dataset.saberTranslated).toBe('true')
-    expect(sendMessage).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'create-session' })
-    )
-    await controller.dispose()
-  })
-
   it('ignores a previous session response after a newer task has started', async () => {
     const firstResponse = deferred<{ ok: true; data: BrowserSessionDto }>()
     const secondResponse = deferred<{ ok: true; data: BrowserSessionDto }>()

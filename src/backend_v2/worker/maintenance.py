@@ -39,7 +39,7 @@ MAINTENANCE_DELETE_LIMIT = 500
 
 
 class WorkerMaintenance:
-    """Run bounded maintenance only while durable job admission is idle."""
+    """Run idle maintenance and lightweight browser cleanup at worker safe points."""
 
     def __init__(
         self,
@@ -61,6 +61,14 @@ class WorkerMaintenance:
         self.interval_seconds = interval_seconds
         self.clock = clock
         self._next_run = 0.0
+        self._next_browser_cleanup = 0.0
+
+    def run_browser_cleanup_if_due(self) -> bool:
+        now = self.clock()
+        if now < self._next_browser_cleanup:
+            return False
+        self._next_browser_cleanup = now + 5
+        return bool(self._prune_browser_sessions())
 
     def run_if_due(self, *, force: bool = False) -> bool:
         now = self.clock()
@@ -113,7 +121,7 @@ class WorkerMaintenance:
         return True
 
     def _prune_browser_sessions(self) -> int:
-        return cleanup_expired_browser_sessions(self.engine)
+        return cleanup_expired_browser_sessions(self.engine, data_root=self.data_root)
 
     def _prune_expired_artifacts(self) -> dict[str, int]:
         now = utcnow()

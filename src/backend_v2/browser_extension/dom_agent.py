@@ -10,15 +10,12 @@ import re
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine
 
-from src.backend_v2.auth.ownership import effective_owner_id
 from src.backend_v2.settings.validation import (
     validate_provider_setting_payload,
-    validate_setting_payload,
 )
 from src.backend_v2.storage.platform_repositories import SettingsRepository
-from src.backend_v2.storage.schema import app_settings, provider_settings
 from src.shared.ai_providers import (
     PLUGIN_AGENT_CAPABILITY,
     get_provider_manifest,
@@ -96,50 +93,28 @@ def _openai_options(value: object) -> OpenAICompatibleOptions:
 
 class BrowserDomAgentProviderResolver:
     def __init__(self, engine: Engine) -> None:
-        self.engine = engine
-        self.settings = SettingsRepository(engine)
+        self.settings = SettingsRepository(engine, browser_extension=True)
 
     def runtime_config(self) -> dict[str, Any]:
-        owner = effective_owner_id()
-        with self.engine.connect() as connection:
-            app_row = connection.execute(
-                select(
-                    app_settings.c.payload_json,
-                    app_settings.c.schema_version,
-                ).where(
-                    app_settings.c.domain == "translation",
-                    app_settings.c.owner_user_id == owner,
-                )
-            ).mappings().one_or_none()
-            if app_row is None:
-                raise ValueError("translation settings are missing")
-            translation = validate_setting_payload(
-                "translation",
-                json.loads(app_row["payload_json"]),
-                schema_version=int(app_row["schema_version"]),
-            )
-            selected_settings = dict(translation["browserDomAgent"])
-            selected = str(selected_settings["provider"])
-            provider_row = connection.execute(
-                select(provider_settings).where(
-                    provider_settings.c.owner_user_id == owner,
-                    provider_settings.c.domain == "browser_dom_agent",
-                    provider_settings.c.provider == selected,
-                )
-            ).mappings().one_or_none()
+        document = self.settings.load(domains=("translation", "browser_dom_agent"))
+        translation = next(row["payload"] for row in document["settings"] if row["domain"] == "translation")
+        selected_settings = dict(translation["browserDomAgent"])
+        selected = str(selected_settings["provider"])
+        provider_row = next((row for row in document["providerSettings"]
+                             if row["domain"] == "browser_dom_agent" and row["provider"] == selected), None)
         if provider_row is None:
             raise BrowserDomAgentUnavailable(
-                "请先在设置的“网页漫画”中保存 Browser DOM Agent 配置"
+                "请先在插件的“翻译配置”中保存网页识别助手配置"
             )
         payload = validate_provider_setting_payload(
             "browser_dom_agent",
             selected,
-            json.loads(provider_row["payload_json"]),
-            schema_version=int(provider_row["schema_version"]),
+            provider_row["payload"],
+            schema_version=int(provider_row["schemaVersion"]),
         )
         selected_settings.update(payload)
         api_key = ""
-        credential_version_id = provider_row["credential_version_id"]
+        credential_version_id = provider_row["credentialVersionId"]
         if credential_version_id is not None:
             secret = self.settings.resolve_secret(str(credential_version_id))
             if set(secret) != {"api_key"} or not isinstance(secret["api_key"], str):

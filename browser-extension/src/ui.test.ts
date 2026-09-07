@@ -9,7 +9,7 @@ import { UI_STYLES } from './uiStyles'
 
 function callbacks(): UiCallbacks {
   return {
-    onActivity: vi.fn(),
+    onOpenManagement: vi.fn(),
     onDiscover: vi.fn(),
     onConfirm: vi.fn(),
     onPreferenceChange: vi.fn(),
@@ -80,7 +80,7 @@ describe('isolated extension UI', () => {
     ui.shadow.querySelector('select')!.dispatchEvent(new Event('change', { bubbles: true }))
     expect(handlers.onDiscover).not.toHaveBeenCalled()
     expect(handlers.onPreferenceChange).not.toHaveBeenCalled()
-    expect(handlers.onActivity).not.toHaveBeenCalled()
+    expect(handlers.onOpenManagement).not.toHaveBeenCalled()
   })
   it('uses a Shadow DOM and retains settings while the panel is closed and reopened', () => {
     const handlers = callbacks()

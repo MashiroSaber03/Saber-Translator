@@ -6,7 +6,6 @@ import {
 } from './storage'
 import { normalizedTaskPageUrl } from './pageIdentity'
 import type {
-  ActiveBrowserSession,
   BackgroundRequest,
   BackgroundResponse,
   BrowserLibraryBook,
@@ -348,7 +347,7 @@ chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
 })
 
 chrome.tabs.onRemoved.addListener(tabId => {
-  void serializeStorageWrite(() => chrome.storage.session.remove(`${ACTIVE_SESSION_KEY_PREFIX}${tabId}`))
+  void closeTabPage(tabId).catch(() => undefined)
 })
 
 function normalizedContentPageUrl(value: string): string {
@@ -378,29 +377,42 @@ function contentTabId(sender: chrome.runtime.MessageSender, pageUrl: string): nu
   return tabId
 }
 
-async function activeSessionForTab(
-  sender: chrome.runtime.MessageSender,
-  pageUrl: string,
-): Promise<ActiveBrowserSession | null> {
-  const tabId = contentTabId(sender, pageUrl)
-  const key = `${ACTIVE_SESSION_KEY_PREFIX}${tabId}`
-  const stored = (await chrome.storage.session.get(key))[key]
-  if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return null
-  const value = stored as Partial<ActiveBrowserSession> & { pageUrl?: unknown }
-  if (
-    typeof value.pageUrl !== 'string'
-    || typeof value.sessionId !== 'string'
-    || !value.sessionId
-    || normalizedContentPageUrl(value.pageUrl) !== normalizedContentPageUrl(pageUrl)
-  ) {
-    await chrome.storage.session.remove(key)
-    return null
-  }
-  return {
-    sessionId: value.sessionId,
-    discovery: value.discovery ?? { stopped: true, usingAdapter: false, rule: null },
-  }
+interface LivePage { pageUrl: string; documentId?: string; sessionId?: string; requestId?: string }
+
+async function discard(sessionId: string): Promise<void> {
+  await saberRequest(`/sessions/${encodeURIComponent(sessionId)}/discard`, { method: 'POST' })
 }
+
+async function closeTabPage(tabId: number, pageUrl?: string, documentId?: string): Promise<void> {
+  const sessionId = await serializeStorageWrite(async () => {
+    const key = `${ACTIVE_SESSION_KEY_PREFIX}${tabId}`
+    const page = (await chrome.storage.session.get(key))[key] as LivePage | undefined
+    if (!page || (pageUrl && page.pageUrl !== pageUrl)
+      || (documentId && page.documentId !== documentId)) return
+    await chrome.storage.session.remove(key)
+    return page.sessionId
+  })
+  if (sessionId) await discard(sessionId)
+}
+
+chrome.alarms.create('saber-live-pages', { periodInMinutes: 1 })
+chrome.alarms.onAlarm.addListener(alarm => {
+  if (alarm.name !== 'saber-live-pages') return
+  void (async () => {
+    const values = await chrome.storage.session.get(null)
+    for (const [key, value] of Object.entries(values)) {
+      if (!key.startsWith(ACTIVE_SESSION_KEY_PREFIX)) continue
+      const page = value as LivePage
+      const tabId = Number(key.slice(ACTIVE_SESSION_KEY_PREFIX.length))
+      const tab = await chrome.tabs.get(tabId).catch(() => null)
+      if (!tab || tab.discarded || !tab.url || normalizedTaskPageUrl(tab.url) !== page.pageUrl) {
+        await closeTabPage(tabId, page.pageUrl, page.documentId).catch(() => undefined)
+      } else if (page.sessionId) {
+        await saberRequest(`/sessions/${encodeURIComponent(page.sessionId)}?touch=true`).catch(() => undefined)
+      }
+    }
+  })()
+})
 
 async function handleRequest(
   request: BackgroundRequest,
@@ -455,40 +467,63 @@ async function handleRequest(
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(request.value))
     return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')
   }
-  if (request.type === 'get-active-session') {
-    return await serializeStorageWrite(() => activeSessionForTab(sender, request.pageUrl))
+  if (request.type === 'open-management') {
+    const tab = sender.tab ?? await activeTab()
+    if (!tab?.id) throw new Error('请先打开普通网页')
+    await chrome.sidePanel.setOptions({ tabId: tab.id, path: `panel.html#${request.section}`, enabled: true })
+    await chrome.sidePanel.open({ tabId: tab.id })
+    return { opened: true }
   }
-  if (request.type === 'set-active-session') {
+  if (request.type === 'page-opened') {
     const tabId = contentTabId(sender, request.pageUrl)
-    if (!request.sessionId) {
-      throw new RequestFailure('invalid_session_id', '网页会话 ID 无效', false)
-    }
-    await serializeStorageWrite(() => chrome.storage.session.set({
-      [`${ACTIVE_SESSION_KEY_PREFIX}${tabId}`]: {
-        pageUrl: normalizedContentPageUrl(request.pageUrl),
-        sessionId: request.sessionId,
-        discovery: request.discovery,
-      },
-    }))
-    return { saved: true }
-  }
-  if (request.type === 'clear-active-session') {
-    const tabId = contentTabId(sender, request.pageUrl)
-    const key = `${ACTIVE_SESSION_KEY_PREFIX}${tabId}`
-    return await serializeStorageWrite(async () => {
-      if (request.sessionId) {
-        const active = await activeSessionForTab(sender, request.pageUrl)
-        if (active?.sessionId !== request.sessionId) return { cleared: false }
-      }
-      await chrome.storage.session.remove(key)
-      return { cleared: true }
+    const previous = await serializeStorageWrite(async () => {
+      const key = `${ACTIVE_SESSION_KEY_PREFIX}${tabId}`
+      const previous = (await chrome.storage.session.get(key))[key] as LivePage | undefined
+      await chrome.storage.session.set({ [key]: {
+        pageUrl: normalizedContentPageUrl(request.pageUrl), documentId: sender.documentId,
+      } })
+      return previous?.sessionId
     })
+    if (previous) void discard(previous).catch(() => undefined)
+    return { opened: true }
+  }
+  if (request.type === 'page-closed') {
+    if (sender.tab?.id !== undefined) {
+      await closeTabPage(sender.tab.id, normalizedContentPageUrl(request.pageUrl), sender.documentId)
+    }
+    return { closed: true }
+  }
+  if (request.type === 'discard-session') {
+    await discard(request.sessionId)
+    return { discarded: true }
   }
   if (request.type === 'create-session') {
-    return await saberRequest<BrowserSessionDto>('/sessions', {
-      method: 'POST',
-      body: JSON.stringify(request.payload),
+    const pageUrl = normalizedContentPageUrl(String(request.payload.pageUrl))
+    const tabId = contentTabId(sender, pageUrl)
+    const requestId = crypto.randomUUID()
+    await serializeStorageWrite(async () => {
+      const key = `${ACTIVE_SESSION_KEY_PREFIX}${tabId}`
+      const page = (await chrome.storage.session.get(key))[key] as LivePage | undefined
+      if (!page || page.documentId !== sender.documentId || page.pageUrl !== pageUrl) {
+        throw new RequestFailure('page_closed', '漫画页面已退出', false)
+      }
+      await chrome.storage.session.set({ [key]: { ...page, requestId } })
     })
+    const session = await saberRequest<BrowserSessionDto>('/sessions', {
+      method: 'POST', body: JSON.stringify(request.payload),
+    })
+    const kept = await serializeStorageWrite(async () => {
+      const key = `${ACTIVE_SESSION_KEY_PREFIX}${tabId}`
+      const page = (await chrome.storage.session.get(key))[key] as LivePage | undefined
+      if (!page || page.pageUrl !== pageUrl || page.documentId !== sender.documentId || page.requestId !== requestId) return false
+      await chrome.storage.session.set({ [key]: { ...page, sessionId: session.id } })
+      return true
+    })
+    if (!kept) {
+      await discard(session.id)
+      throw new RequestFailure('page_closed', '漫画页面已退出', false)
+    }
+    return session
   }
   if (request.type === 'get-session') {
     return await saberRequest<BrowserSessionDto>(
@@ -533,10 +568,20 @@ async function handleRequest(
     return await saberRequest<{ items: BrowserLibraryBook[] }>('/library-books')
   }
   if (request.type === 'import-session') {
-    return await saberRequest<BrowserSessionImportResult>(
+    const result = await saberRequest<BrowserSessionImportResult>(
       `/sessions/${encodeURIComponent(request.sessionId)}/import`,
       { method: 'POST', body: JSON.stringify(request.payload) },
     )
+    await serializeStorageWrite(async () => {
+      const values = await chrome.storage.session.get(null)
+      for (const [key, page] of Object.entries(values)) {
+        if (key.startsWith(ACTIVE_SESSION_KEY_PREFIX) && (page as LivePage).sessionId === request.sessionId) {
+          const { sessionId: _id, ...live } = page as LivePage
+          await chrome.storage.session.set({ [key]: live })
+        }
+      }
+    })
+    return result
   }
   if (request.type === 'dom-detection') {
     return await saberRequest<DomDetectionResult>('/dom-detection', {

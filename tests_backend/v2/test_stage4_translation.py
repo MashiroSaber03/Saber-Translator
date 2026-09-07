@@ -1111,10 +1111,10 @@ def test_translation_render_closes_image_when_asset_publication_fails(
     algorithms = RenderCloseTrackingAlgorithms()
     publish_png = pipeline_module.publish_png_asset
 
-    def fail_translated_publication(storage, image, *, mode):
+    def fail_translated_publication(storage, image, *, mode, bind=None):
         if image is algorithms.rendered_image:
             raise RuntimeError("translated publication failed")
-        return publish_png(storage, image, mode=mode)
+        return publish_png(storage, image, mode=mode, bind=bind)
 
     monkeypatch.setattr(
         pipeline_module,
@@ -1149,10 +1149,10 @@ def test_translation_repair_closes_image_when_asset_publication_fails(
     algorithms = RepairCloseTrackingAlgorithms()
     publish_png = pipeline_module.publish_png_asset
 
-    def fail_repaired_publication(storage, image, *, mode):
+    def fail_repaired_publication(storage, image, *, mode, bind=None):
         if image is algorithms.repaired_image:
             raise RuntimeError("repair publication failed")
-        return publish_png(storage, image, mode=mode)
+        return publish_png(storage, image, mode=mode, bind=bind)
 
     monkeypatch.setattr(
         pipeline_module,

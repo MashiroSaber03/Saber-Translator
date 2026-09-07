@@ -2941,6 +2941,521 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/browser-extension/manage/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Plugin settings and credentials are independent from translator defaults. Unsaved settings use factory values with revision 0. */
+        get: operations["browserManageGetSettings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/manage/credentials/{credential_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["browserManageDeleteCredential"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/manage/settings/transactions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["browserManageSaveSettingsTransaction"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/manage/settings/workflow-preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["browserManageUpdateWorkflowPreferences"];
+        trace?: never;
+    };
+    "/browser-extension/manage/model-catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["browserManageFetchModelCatalog"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/manage/connection-tests/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["browserManageRunConnectionTest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/manage/prompts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["browserManageListPrompts"];
+        put?: never;
+        post: operations["browserManageCreatePrompt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/manage/prompts/{prompt_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["browserManageUpdatePrompt"];
+        post?: never;
+        delete: operations["browserManageDeletePrompt"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/manage/prompts/{prompt_id}/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["browserManageResetPrompt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/manage/fonts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["browserManageListFonts"];
+        put?: never;
+        post: operations["browserManageUploadFont"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/manage/fonts/{font_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["browserManageDeleteFont"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/manage/maintenance/clean-temp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["browserManageCleanTemporaryAssets"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/manage/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["browserManageListJobs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/manage/jobs/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["browserManageStreamJobEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/manage/jobs/snapshot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read the current UI projection for a bounded set of jobs. */
+        get: operations["browserManageGetJobSnapshot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/manage/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["browserManageGetJob"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/manage/jobs/{job_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["browserManageListJobEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/manage/jobs/{job_id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["browserManagePauseRunningJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/manage/jobs/{job_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["browserManageResumePausedJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/manage/jobs/{job_id}/continue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["browserManageContinueInterruptedJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/manage/jobs/{job_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["browserManageCancelJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/manage/jobs/{job_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["browserManageRetryFailedJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/manage/jobs/{job_id}/retry-failed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["browserManageRetryFailedJobItems"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/manage/jobs/reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["browserManageReorderJobs"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/manage/jobs/queue/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Stop admitting queued jobs. The current job and immediate operations continue. */
+        post: operations["browserManagePauseJobQueue"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/manage/jobs/queue/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["browserManageResumeJobQueue"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/manage/jobs/cancel-queued": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["browserManageCancelQueuedJobs"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/manage/jobs/history/clear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["browserManageClearJobHistory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/manage/job-batches/{batch_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["browserManageCancelQueuedJobBatchMembers"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/manage/job-batches/{batch_id}/prioritize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["browserManagePrioritizeQueuedJobBatchMembers"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/manage/job-batches/{batch_id}/continue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["browserManageContinueJobBatchMembers"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/browser-extension/sessions/{session_id}/discard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["discardBrowserSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3165,6 +3680,7 @@ export interface components {
             payload: {
                 [key: string]: unknown;
             };
+            /** @description 0 denotes an unsaved factory default. */
             revision: number;
             schemaVersion: number;
         };
@@ -5390,6 +5906,7 @@ export interface components {
             pageId: components["schemas"]["Uuid"] | null;
             /** @enum {string} */
             state: "queued" | "translating" | "completed" | "failed" | "cancelled";
+            resultAssetId?: string | null;
             resultReady: boolean;
             retryCount: number;
             error: {
@@ -5412,6 +5929,8 @@ export interface components {
             state: "idle" | "queued" | "translating" | "completed" | "partial" | "failed" | "cancelled";
             /** @description Uploaded pages await a job and no translation job is active. */
             pendingStart: boolean;
+            /** @enum {string|null} */
+            taskState?: "running" | "paused" | "interrupted" | "queued" | null;
             /** Format: date-time */
             expiresAt: string | null;
             counts: {
@@ -6201,6 +6720,8 @@ export interface operations {
     getSettings: {
         parameters: {
             query?: {
+                /** @description Local profile only. Select the independent browser extension configuration; omitted uses translator defaults. */
+                scope?: "browser_extension";
                 domains?: string;
                 book_id?: string;
             };
@@ -6223,7 +6744,10 @@ export interface operations {
     };
     deleteCredential: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Local profile only. Select the independent browser extension configuration; omitted uses translator defaults. */
+                scope?: "browser_extension";
+            };
             header: {
                 /** @description Stable key for this normalized command and target scope. */
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
@@ -6250,7 +6774,10 @@ export interface operations {
     };
     saveSettingsTransaction: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Local profile only. Select the independent browser extension configuration; omitted uses translator defaults. */
+                scope?: "browser_extension";
+            };
             header: {
                 /** @description Stable key for this normalized command and target scope. */
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
@@ -6455,7 +6982,10 @@ export interface operations {
     };
     fetchModelCatalog: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Local profile only. Select the independent browser extension configuration; omitted uses translator defaults. */
+                scope?: "browser_extension";
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -6481,7 +7011,10 @@ export interface operations {
     };
     runConnectionTest: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Local profile only. Select the independent browser extension configuration; omitted uses translator defaults. */
+                scope?: "browser_extension";
+            };
             header?: never;
             path: {
                 kind: "ollama" | "sakura" | "lama_repair" | "baidu_ocr" | "ai_vision_ocr" | "baidu_translate" | "youdao_translate" | "ai_translate" | "firecrawl" | "web_import_agent" | "vlm" | "llm" | "embedding" | "reranker";
@@ -11561,6 +12094,900 @@ export interface operations {
             };
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    browserManageGetSettings: {
+        parameters: {
+            query?: {
+                domains?: string;
+                book_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Backend-authoritative settings and credential summaries. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsDocument"];
+                };
+            };
+        };
+    };
+    browserManageDeleteCredential: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                credential_id: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Credential deleted when no history references it. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedResponse"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    browserManageSaveSettingsTransaction: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SettingsTransaction"];
+            };
+        };
+        responses: {
+            /** @description All settings, provider memories, credentials, and prompt edits committed atomically. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsTransactionResult"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    browserManageUpdateWorkflowPreferences: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    payload: components["schemas"]["WorkflowPreferences"];
+                    baseRevision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Workflow preference setting after revision CAS. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingEntry"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
+    browserManageFetchModelCatalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderDiagnosticRequest"];
+            };
+        };
+        responses: {
+            /** @description Provider model catalog; result is not persisted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelCatalogResponse"];
+                };
+            };
+            422: components["responses"]["ValidationError"];
+            502: components["responses"]["ProviderUnavailable"];
+        };
+    };
+    browserManageRunConnectionTest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: "ollama" | "sakura" | "lama_repair" | "baidu_ocr" | "ai_vision_ocr" | "baidu_translate" | "youdao_translate" | "ai_translate" | "firecrawl" | "web_import_agent" | "vlm" | "llm" | "embedding" | "reranker";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderDiagnosticRequest"];
+            };
+        };
+        responses: {
+            /** @description Transient connection result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionTestResponse"];
+                };
+            };
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    browserManageListPrompts: {
+        parameters: {
+            query?: {
+                type?: components["schemas"]["PromptType"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Unified prompt library. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptList"];
+                };
+            };
+        };
+    };
+    browserManageCreatePrompt: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    type: components["schemas"]["PromptType"];
+                    name: string;
+                    content: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Prompt created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptResource"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
+    browserManageUpdatePrompt: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                prompt_id: components["parameters"]["PromptId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                    content: string;
+                    baseRevision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Prompt updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptResource"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
+    browserManageDeletePrompt: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                prompt_id: components["parameters"]["PromptId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Non-factory prompt deleted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedResponse"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
+    browserManageResetPrompt: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                prompt_id: components["parameters"]["PromptId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    baseRevision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Factory prompt reset. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptResource"];
+                };
+            };
+        };
+    };
+    browserManageListFonts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Built-in and uploaded backend fonts. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FontList"];
+                };
+            };
+        };
+    };
+    browserManageUploadFont: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                    displayName?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Immutable font asset registered. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FontResource"];
+                };
+            };
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    browserManageDeleteFont: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                font_id: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Unreferenced uploaded font deleted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedResponse"];
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
+    browserManageCleanTemporaryAssets: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Asset journal recovery result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        recovered: number;
+                    };
+                };
+            };
+        };
+    };
+    browserManageListJobs: {
+        parameters: {
+            query?: {
+                scope?: "queue" | "history" | "all";
+                status?: components["schemas"]["JobStatus"];
+                type?: components["schemas"]["JobKind"];
+                book_id?: components["schemas"]["Uuid"];
+                /** @description Maximum retained history batches; the live queue snapshot is always complete. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Durable queue or retained history snapshot. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobList"];
+                };
+            };
+        };
+    };
+    browserManageStreamJobEvents: {
+        parameters: {
+            query?: {
+                after?: number;
+                /** @description Return the preceding event page in ascending display order. */
+                before?: number;
+            };
+            header?: {
+                "Last-Event-ID"?: number;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One global resumable SSE stream for all job consumers. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+        };
+    };
+    browserManageGetJobSnapshot: {
+        parameters: {
+            query: {
+                job_id: components["schemas"]["Uuid"][];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current job rows, independent from the audit event stream. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobSnapshot"];
+                };
+            };
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    browserManageGetJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Job, item, step, checkpoint and error details. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobDetail"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    browserManageListJobEvents: {
+        parameters: {
+            query?: {
+                after?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                job_id: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Durable key-event page. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobEventList"];
+                };
+            };
+        };
+    };
+    browserManagePauseRunningJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Job paused immediately; active steps return to pending for resume. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobCommandResult"];
+                };
+            };
+            409: components["responses"]["InvalidTransition"];
+        };
+    };
+    browserManageResumePausedJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A paused job was returned to queued. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobCommandResult"];
+                };
+            };
+            409: components["responses"]["InvalidTransition"];
+        };
+    };
+    browserManageContinueInterruptedJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description An interrupted job was returned to queued. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobCommandResult"];
+                };
+            };
+            409: components["responses"]["InvalidTransition"];
+        };
+    };
+    browserManageCancelJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The job and its unfinished graph were atomically cancelled. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobCommandResult"];
+                };
+            };
+            409: components["responses"]["InvalidTransition"];
+        };
+    };
+    browserManageRetryFailedJob: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                job_id: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["JobRetryCommand"];
+            };
+        };
+        responses: {
+            /** @description A failed whole job was recreated as a related replacement job. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRetryAccepted"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    browserManageRetryFailedJobItems: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                job_id: components["parameters"]["JobId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["JobRetryCommand"];
+            };
+        };
+        responses: {
+            /** @description Failed items from a partially successful job were recreated. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRetryAccepted"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    browserManageReorderJobs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JobReorderCommand"];
+            };
+        };
+        responses: {
+            /** @description Queue order updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "reordered";
+                    };
+                };
+            };
+            409: components["responses"]["Conflict"];
+        };
+    };
+    browserManagePauseJobQueue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Persistent queue admission state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueControlState"];
+                };
+            };
+        };
+    };
+    browserManageResumeJobQueue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Persistent queue admission state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueControlState"];
+                };
+            };
+        };
+    };
+    browserManageCancelQueuedJobs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description All currently queued jobs were atomically cancelled. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CancelledCount"];
+                };
+            };
+        };
+    };
+    browserManageClearJobHistory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Terminal history removed; interrupted jobs are retained. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemovedCount"];
+                };
+            };
+        };
+    };
+    browserManageCancelQueuedJobBatchMembers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: components["parameters"]["BatchId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description All queued members of the batch were atomically cancelled. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CancelledCount"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    browserManagePrioritizeQueuedJobBatchMembers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: components["parameters"]["BatchId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Queued ordinary members moved to the front in batch order. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "prioritized";
+                    };
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    browserManageContinueJobBatchMembers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: components["parameters"]["BatchId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Paused and interrupted members returned to queued in batch order. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchContinueResult"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    discardBrowserSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Page retired; running work cancels before its temporary assets are removed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
 }

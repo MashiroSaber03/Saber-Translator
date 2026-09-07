@@ -36,7 +36,7 @@ await build({
     outDir: dist,
     emptyOutDir: false,
     rollupOptions: {
-      input: resolve(root, 'popup.html'),
+      input: [resolve(root, 'popup.html'), resolve(root, 'panel.html')],
     },
   },
 })

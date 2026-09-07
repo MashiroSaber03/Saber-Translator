@@ -478,6 +478,16 @@ def create_api_app(settings: ApiSettings) -> Flask:
                 else None
             ),
         )
+        # Reuse the local control plane under the extension token gate.
+        browser_blueprint.register_blueprint(
+            create_settings_blueprint(data_root=settings.data_root, engine=engine,
+                                      profile=settings.profile, browser_extension=True),
+            url_prefix="/manage",
+        )
+        browser_blueprint.register_blueprint(
+            create_jobs_blueprint(engine=engine, broadcaster=broadcaster, profile=settings.profile),
+            url_prefix="/manage",
+        )
     app.extensions["saber_v2_runtime"] = ApiRuntimeServices(
         job_events=broadcaster,
         executors=(cpu_operation_executor, render_executor),

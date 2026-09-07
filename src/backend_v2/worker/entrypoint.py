@@ -437,6 +437,7 @@ def run_worker(args: object) -> int:
 
             def run_immediate_work() -> bool:
                 try:
+                    maintenance.run_browser_cleanup_if_due()
                     if model_lifecycle.run_pending_release():
                         return True
                     if not memory_admitted():
@@ -455,7 +456,8 @@ def run_worker(args: object) -> int:
 
             def run_idle_work() -> bool:
                 try:
-                    return maintenance.run_if_due()
+                    cleaned = maintenance.run_browser_cleanup_if_due()
+                    return maintenance.run_if_due() or cleaned
                 except Exception as exc:
                     if not is_sqlite_busy_error(exc):
                         raise

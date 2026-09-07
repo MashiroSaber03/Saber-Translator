@@ -2502,7 +2502,6 @@ test('translation settings modal keeps every tab layout contract', async ({ page
     { label: 'AI校对', snapshot: 'settings-tab-proofreading.png' },
     { label: '提示词管理', snapshot: 'settings-tab-prompt-library.png' },
     { label: '插件管理', snapshot: 'settings-tab-plugins.png' },
-    { label: '网页漫画', snapshot: 'settings-tab-browser-dom-agent.png' },
     { label: '文本默认值', snapshot: 'settings-tab-text-defaults.png' },
     { label: '更多', snapshot: 'settings-tab-more.png' },
   ]

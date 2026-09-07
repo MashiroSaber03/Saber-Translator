@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from io import BytesIO
 from pathlib import Path
 
@@ -26,6 +27,7 @@ def publish_png_asset(
     image: Image.Image,
     *,
     mode: str | None = None,
+    bind: Callable[[Connection, str], None] | None = None,
 ) -> AssetRecord:
     converted = image if mode is None or image.mode == mode else image.convert(mode)
     try:
@@ -41,6 +43,7 @@ def publish_png_asset(
         mime_type="image/png",
         width=image.width,
         height=image.height,
+        bind=bind,
     )
 
 

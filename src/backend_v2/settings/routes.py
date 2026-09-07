@@ -77,14 +77,24 @@ def create_settings_blueprint(
     data_root: Path,
     engine: Engine,
     profile: RuntimeProfile,
+    browser_extension: bool = False,
 ) -> Blueprint:
     blueprint = Blueprint("settings_v2", __name__, url_prefix="/api/v2")
-    settings = SettingsRepository(engine)
+    settings = SettingsRepository(engine, browser_extension=browser_extension)
     prompt_repository = PromptRepository(engine)
     font_repository = FontRepository(engine)
     storage = AssetStorageService(data_root, engine)
-    diagnostics = ProviderDiagnostics(settings)
     public_access = PublicUserPolicyAccess(engine, profile)
+
+    def settings_repository() -> SettingsRepository:
+        scope = request.args.get("scope")
+        if scope not in (None, "browser_extension"):
+            raise ValueError("unsupported settings scope")
+        if scope == "browser_extension":
+            if profile.name != "local":
+                raise ValueError("浏览器插件设置仅支持本地模式")
+            return SettingsRepository(engine, browser_extension=True)
+        return settings
 
     @blueprint.errorhandler(RevisionConflict)
     def conflict(error: RevisionConflict):
@@ -113,7 +123,7 @@ def create_settings_blueprint(
             for value in request.args.get("domains", "").split(",")
             if value
         )
-        document = settings.load(
+        document = settings_repository().load(
             domains=domains,
             book_id=request.args.get("book_id"),
         )
@@ -128,7 +138,7 @@ def create_settings_blueprint(
     def delete_credential(credential_id: str) -> Response:
         if profile.browser_credentials:
             raise ValueError("公开模式的密钥只保存在当前浏览器中")
-        result, replayed = settings.delete_credential_idempotent(
+        result, replayed = settings_repository().delete_credential_idempotent(
             idempotency_key=_require_idempotency_key(),
             credential_id=credential_id,
         )
@@ -221,7 +231,7 @@ def create_settings_blueprint(
             )
         ):
             raise ValueError("settings transaction must contain at least one mutation")
-        result, replayed = settings.save_transaction_idempotent(
+        result, replayed = settings_repository().save_transaction_idempotent(
             idempotency_key=idempotency_key,
             request_body=body,
             settings=tuple(
@@ -319,7 +329,7 @@ def create_settings_blueprint(
     def update_workflow_preferences() -> Response:
         idempotency_key = _require_idempotency_key()
         body = _json_body(allowed_keys={"payload", "baseRevision"})
-        result, replayed = settings.save_transaction_idempotent(
+        result, replayed = settings_repository().save_transaction_idempotent(
             idempotency_key=idempotency_key,
             request_body=body,
             settings=(
@@ -341,7 +351,7 @@ def create_settings_blueprint(
         body = _json_body(allowed_keys=_DIAGNOSTIC_FIELDS)
         if not profile.allow_local_providers and _uses_local_provider(body):
             raise ValueError("公开模式不支持本机模型服务")
-        return jsonify(diagnostics.model_catalog(body))
+        return jsonify(ProviderDiagnostics(settings_repository()).model_catalog(body))
 
     @blueprint.post("/connection-tests/<kind>")
     def connection_test(kind: str) -> Response:
@@ -350,7 +360,7 @@ def create_settings_blueprint(
         body = _json_body(allowed_keys=_DIAGNOSTIC_FIELDS)
         if not profile.allow_local_providers and _uses_local_provider(body):
             raise ValueError("公开模式不支持本机模型服务")
-        return jsonify(diagnostics.connection_test(kind, body))
+        return jsonify(ProviderDiagnostics(settings_repository()).connection_test(kind, body))
 
     @blueprint.get("/prompts")
     def list_prompts() -> Response:
@@ -515,7 +525,7 @@ def create_settings_blueprint(
     def clean_temp() -> Response:
         idempotency_key = _require_idempotency_key()
         scope = "POST:cleanTemporaryAssets"
-        replay = settings.replay_idempotent_command(
+        replay = settings_repository().replay_idempotent_command(
             scope=scope,
             idempotency_key=idempotency_key,
             request_body={},
@@ -525,7 +535,7 @@ def create_settings_blueprint(
             response.headers["Idempotency-Replayed"] = "true"
             return response
         recovered = storage.recover_journal()
-        result, replayed = settings.record_idempotent_command(
+        result, replayed = settings_repository().record_idempotent_command(
             scope=scope,
             idempotency_key=idempotency_key,
             request_body={},

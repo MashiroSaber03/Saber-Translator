@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mount, type VueWrapper } from '@vue/test-utils'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 
 const { loadFromBackendMock, saveToBackendMock, saveDefaultsMock } = vi.hoisted(() => ({
   loadFromBackendMock: vi.fn().mockResolvedValue(true),
@@ -114,7 +114,7 @@ describe('SettingsModal integration', () => {
     dispatchMouseEvent(overlay, 'mouseup')
     dispatchMouseEvent(overlay, 'click')
 
-    await wrapper.vm.$nextTick()
+    await flushPromises()
 
     expect(wrapper.emitted('update:modelValue')).toBeTruthy()
     expect(wrapper.emitted('update:modelValue')?.some(([value]) => value === false)).toBe(true)

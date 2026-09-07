@@ -55,6 +55,8 @@ from src.backend_v2.storage.schema import (
     chapter_write_locks,
     chapters,
     books,
+    browser_sessions,
+    browser_session_pages,
     continuation_projects,
     credentials,
     credential_versions,
@@ -832,6 +834,11 @@ class JobQueueRepository:
                     else {}
                 )
                 for spec in specs:
+                    if spec.book_id and connection.execute(select(browser_sessions.c.id).where(
+                        browser_sessions.c.book_id == spec.book_id,
+                        browser_sessions.c.expires_at <= now,
+                    )).first():
+                        raise JobConflict("网页已退出，不能继续创建翻译任务")
                     next_rank += 1
                     job_id = str(uuid.uuid4())
                     created_ids.append(job_id)
@@ -982,6 +989,19 @@ class JobQueueRepository:
                         },
                         now=now,
                     )
+                    if spec.retry_of_job_id:
+                        connection.execute(update(browser_sessions).where(
+                            browser_sessions.c.id.in_(select(browser_session_pages.c.session_id).where(
+                                browser_session_pages.c.job_id == spec.retry_of_job_id
+                            )),
+                        ).values(status="active"))
+                        connection.execute(update(browser_session_pages).where(
+                            browser_session_pages.c.job_id == spec.retry_of_job_id,
+                            browser_session_pages.c.page_id.in_([
+                                item.page_id for item in spec.items if item.page_id
+                            ]),
+                        ).values(job_id=job_id, error_json=None,
+                            retry_count=browser_session_pages.c.retry_count + 1, updated_at=now))
                 if transaction_hook is not None:
                     transaction_hook(
                         connection,

@@ -97,6 +97,18 @@ async function main(): Promise<void> {
   const footer = create('div', 'footer')
   footer.textContent = '图片只发送到你本机运行的 Saber-Translator'
   root.append(footer)
+  const managementActions = create('div', 'site-card')
+  for (const [section, title] of [['settings', '翻译配置'], ['tasks', '任务中心']] as const) {
+    const button = create('button')
+    button.textContent = title
+    button.addEventListener('click', () => {
+      void send({ type: 'open-management', section }).then(() => window.close()).catch(error => {
+        statusText.textContent = error instanceof Error ? error.message : '打开失败'
+      })
+    })
+    managementActions.append(button)
+  }
+  root.append(managementActions)
   app.append(root)
 
   let state = await send<PopupState>({ type: 'get-popup-state' })

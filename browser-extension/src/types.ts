@@ -31,15 +31,6 @@ export interface ExtensionSettings {
   domains: Record<string, DomainPreference>
 }
 
-export interface ActiveBrowserSession {
-  sessionId: string
-  discovery: {
-    stopped: boolean
-    usingAdapter: boolean
-    rule: LearnedRule | null
-  }
-}
-
 export interface BrowserPageDto {
   id: string
   clientPageKey: string
@@ -47,6 +38,7 @@ export interface BrowserPageDto {
   pageId: string | null
   state: PageState
   resultReady: boolean
+  resultAssetId?: string | null
   retryCount: number
   error: { code: string; message: string } | null
 }
@@ -62,6 +54,7 @@ export interface BrowserSessionDto {
   autoTermsEnabled: boolean
   state: 'idle' | 'queued' | 'translating' | 'completed' | 'partial' | 'failed' | 'cancelled'
   pendingStart: boolean
+  taskState?: 'running' | 'paused' | 'interrupted' | 'queued' | null
   expiresAt: string | null
   counts: Record<PageState | 'total', number>
   pages: BrowserPageDto[]
@@ -147,9 +140,10 @@ export type BackgroundRequest =
   | { type: 'save-connection'; token: string; serverPort: number }
   | { type: 'status' }
   | { type: 'hash-source'; value: string }
-  | { type: 'get-active-session'; pageUrl: string }
-  | ({ type: 'set-active-session'; pageUrl: string } & ActiveBrowserSession)
-  | { type: 'clear-active-session'; pageUrl: string; sessionId?: string }
+  | { type: 'page-opened'; pageUrl: string }
+  | { type: 'page-closed'; pageUrl: string }
+  | { type: 'discard-session'; sessionId: string }
+  | { type: 'open-management'; section: 'settings' | 'tasks' }
   | { type: 'create-session'; payload: Record<string, unknown> }
   | { type: 'get-session'; sessionId: string; touch?: boolean }
   | { type: 'patch-session'; sessionId: string; payload: Record<string, unknown> }

@@ -1,6 +1,6 @@
 <template>
   <BaseModal
-    v-model="isOpen"
+    :model-value="isOpen"
     title="设置"
     size="large"
     custom-class="settings-modal-wrapper"
@@ -107,11 +107,11 @@
         </div>
 
         <div
-          v-if="hasVisitedTab('browser-dom-agent')"
-          v-show="activeTab === 'browser-dom-agent'"
+          v-if="hasVisitedTab('browser-extension')"
+          v-show="activeTab === 'browser-extension'"
           class="settings-modal__tab-pane"
         >
-          <BrowserDomAgentSettings />
+          <BrowserExtensionSettings ref="browserExtensionSettings" @saving="pluginSaving = $event" />
         </div>
 
         <div
@@ -136,7 +136,7 @@
     <template #footer>
       <ProductActionRow aria-label="设置状态" variant="dialog">
         <span class="settings-modal__save-status">
-          {{ isSaving ? '正在保存…' : '修改后自动保存' }}
+          {{ isSaving ? '正在保存…' : activeTab === 'browser-extension' ? '插件配置独立保存，点击完成也会保存' : '修改后自动保存' }}
         </span>
         <UiButton variant="primary" :disabled="isSaving" @click="handleClose">完成</UiButton>
       </ProductActionRow>
@@ -162,7 +162,7 @@ import PromptLibrary from './PromptLibrary.vue'
 import PluginManager from './PluginManager.vue'
 import MoreSettings from './MoreSettings.vue'
 import TextStyleDefaultsSettings from './TextStyleDefaultsSettings.vue'
-import BrowserDomAgentSettings from './BrowserDomAgentSettings.vue'
+import BrowserExtensionSettings from './BrowserExtensionSettings.vue'
 import { showToast } from '@/utils/toast'
 
 const props = defineProps<{
@@ -186,14 +186,17 @@ type SettingsTabId =
   | 'proofreading'
   | 'prompt-library'
   | 'plugins'
+  | 'browser-extension'
   | 'text-defaults'
-  | 'browser-dom-agent'
   | 'more'
 
 const activeTab = ref<SettingsTabId>('ocr')
 const visitedTabs = ref<Set<SettingsTabId>>(new Set(['ocr']))
 const contentReady = ref(false)
-const isSaving = ref(false)
+const globalSaving = ref(false)
+const pluginSaving = ref(false)
+const isSaving = computed(() => globalSaving.value || pluginSaving.value)
+const browserExtensionSettings = ref<InstanceType<typeof BrowserExtensionSettings>>()
 const backendUnavailableMessage = computed(
   () =>
     settingsStore.backendError || '正在读取后端设置；完成前不展示或写入配置，也不调用 Provider。'
@@ -212,7 +215,7 @@ const allTabs = [
   { id: 'proofreading', label: 'AI校对' },
   { id: 'prompt-library', label: '提示词管理' },
   { id: 'plugins', label: '插件管理' },
-  { id: 'browser-dom-agent', label: '网页漫画' },
+  { id: 'browser-extension', label: '浏览器插件' },
   { id: 'text-defaults', label: '文本默认值' },
   { id: 'more', label: '更多' },
 ] satisfies Array<{ id: SettingsTabId; label: string }>
@@ -221,7 +224,7 @@ const tabs = computed(() =>
   allTabs.filter(
     tab =>
       (tab.id !== 'plugins' || runtimeStore.capabilities?.features.plugins !== false) &&
-      (tab.id !== 'browser-dom-agent' || runtimeStore.capabilities?.profile === 'local')
+      (tab.id !== 'browser-extension' || runtimeStore.capabilities?.profile === 'local')
   )
 )
 
@@ -297,6 +300,7 @@ function closeModal(notifyParent: boolean) {
 }
 
 async function handleClose(): Promise<void> {
+  if (browserExtensionSettings.value && !(await browserExtensionSettings.value.save())) return
   if (!(await persistChanges())) return
   closeModal(true)
 }
@@ -325,7 +329,7 @@ async function persistChanges(): Promise<boolean> {
   if (!contentReady.value || !hasUnsavedChanges) return true
 
   hasUnsavedChanges = false
-  isSaving.value = true
+  globalSaving.value = true
   applyingPersistence = true
   savePromise = (async () => {
     try {
@@ -342,7 +346,7 @@ async function persistChanges(): Promise<boolean> {
       return false
     } finally {
       applyingPersistence = false
-      isSaving.value = false
+      globalSaving.value = false
     }
   })()
   try {

@@ -528,6 +528,7 @@ class AssetStorageService:
         self,
         *,
         grace_seconds: int = 3600,
+        asset_ids: set[str] | None = None,
         now: datetime | None = None,
         batch_limit: int = ASSET_GC_BATCH_LIMIT,
     ) -> GarbageCollectionResult:
@@ -538,6 +539,7 @@ class AssetStorageService:
         current_time = now or _utcnow()
         cutoff = current_time - timedelta(seconds=grace_seconds)
         referenced = self._asset_is_referenced()
+        selected = assets.c.id.in_(asset_ids) if asset_ids is not None else True
 
         # Reference discovery can scan a large asset catalog. Keep that work out
         # of SQLite's single-writer transaction, then recheck only the selected
@@ -548,6 +550,7 @@ class AssetStorageService:
                     connection.execute(
                         select(assets.c.id)
                         .where(
+                            selected,
                             assets.c.gc_marked_at.is_not(None),
                             referenced,
                         )
@@ -576,6 +579,7 @@ class AssetStorageService:
                         assets.c.relative_path,
                         assets.c.gc_marked_at,
                     ).where(
+                        selected,
                         assets.c.gc_marked_at <= cutoff,
                         ~referenced,
                     )
@@ -630,6 +634,7 @@ class AssetStorageService:
                 connection.execute(
                     select(assets.c.id)
                     .where(
+                        selected,
                         assets.c.gc_marked_at.is_(None),
                         ~referenced,
                     )
@@ -645,6 +650,7 @@ class AssetStorageService:
                         update(assets)
                         .where(
                             assets.c.id.in_(unmarked_ids),
+                            selected,
                             assets.c.gc_marked_at.is_(None),
                             ~referenced,
                         )

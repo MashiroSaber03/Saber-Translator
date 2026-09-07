@@ -1,4 +1,5 @@
-import type { V2Job } from '@/api/v2/jobs'
+import type { components } from '../api/generated/v2'
+type V2Job = components['schemas']['Job']
 
 const JOB_KIND_LABELS = {
   translation: '翻译',

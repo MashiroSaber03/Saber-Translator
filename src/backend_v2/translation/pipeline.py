@@ -38,6 +38,7 @@ from src.backend_v2.storage.platform_repositories import SettingsRepository
 from src.backend_v2.storage.schema import (
     assets,
     bubbles,
+    browser_sessions,
     job_items,
     jobs,
     job_steps,
@@ -1948,7 +1949,7 @@ class TranslationPipelineService:
             try:
                 if mask.size != source_size:
                     raise JobConflict("detection mask size does not match source image")
-                mask_record = publish_png_asset(self.storage, mask, mode="L")
+                mask_record = self._publish_working_image(step, mask, mode="L")
             finally:
                 mask.close()
         elif mask is not None:
@@ -1956,7 +1957,7 @@ class TranslationPipelineService:
             try:
                 if mask_image.size != source_size:
                     raise JobConflict("detection mask size does not match source image")
-                mask_record = publish_png_asset(self.storage, mask_image, mode="L")
+                mask_record = self._publish_working_image(step, mask_image, mode="L")
             finally:
                 mask_image.close()
         after = self._atomic_hook(
@@ -2787,7 +2788,7 @@ class TranslationPipelineService:
                 raise JobConflict(
                     "inpainting result size does not match source image"
                 )
-            record = publish_png_asset(self.storage, repaired, mode="RGB")
+            record = self._publish_working_image(step, repaired, mode="RGB")
         finally:
             repaired.close()
         after = self._atomic_hook(
@@ -2975,7 +2976,7 @@ class TranslationPipelineService:
         try:
             if rendered.size != clean_size:
                 raise JobConflict("render result size does not match input image")
-            translated = publish_png_asset(self.storage, rendered, mode="RGB")
+            translated = self._publish_working_image(step, rendered, mode="RGB")
         finally:
             rendered.close()
         after = self._atomic_hook(
@@ -3562,6 +3563,24 @@ class TranslationPipelineService:
                     f"{textbox_prompt}\n\n{instruction}"
                 )
         return result
+
+    def _publish_working_image(
+        self, step: Mapping[str, Any], image: Image.Image, *, mode: str,
+    ) -> AssetRecord:
+        def bind(connection: Connection, asset_id: str) -> None:
+            browser_page = connection.execute(
+                select(browser_sessions.c.id)
+                .join(jobs, jobs.c.book_id == browser_sessions.c.book_id)
+                .where(jobs.c.id == step["jobId"])
+            ).first()
+            if browser_page is not None:
+                # Pausing can interrupt publication after an image is produced.
+                # Keep every attempt's temporary image owned until page cleanup.
+                connection.execute(insert(job_step_asset_outputs).values(
+                    job_step_id=step["stepId"], role=f"prepared:{asset_id}", asset_id=asset_id,
+                ))
+
+        return publish_png_asset(self.storage, image, mode=mode, bind=bind)
 
     def _with_credential(self, section: object) -> dict[str, Any]:
         if not isinstance(section, Mapping):

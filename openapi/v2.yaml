@@ -394,6 +394,11 @@ paths:
       tags: [settings]
       operationId: getSettings
       parameters:
+        - in: query
+          name: scope
+          required: false
+          description: Local profile only. Select the independent browser extension configuration; omitted uses translator defaults.
+          schema: {type: string, enum: [browser_extension]}
         - name: domains
           in: query
           schema: {type: string}
@@ -411,6 +416,11 @@ paths:
       tags: [settings]
       operationId: deleteCredential
       parameters:
+        - in: query
+          name: scope
+          required: false
+          description: Local profile only. Select the independent browser extension configuration; omitted uses translator defaults.
+          schema: {type: string, enum: [browser_extension]}
         - name: credential_id
           in: path
           required: true
@@ -429,6 +439,11 @@ paths:
       tags: [settings]
       operationId: saveSettingsTransaction
       parameters:
+        - in: query
+          name: scope
+          required: false
+          description: Local profile only. Select the independent browser extension configuration; omitted uses translator defaults.
+          schema: {type: string, enum: [browser_extension]}
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
@@ -569,6 +584,12 @@ paths:
               schema: {$ref: "#/components/schemas/PromptResource"}
   /model-catalog:
     post:
+      parameters:
+        - in: query
+          name: scope
+          required: false
+          description: Local profile only. Select the independent browser extension configuration; omitted uses translator defaults.
+          schema: {type: string, enum: [browser_extension]}
       tags: [settings]
       operationId: fetchModelCatalog
       x-command-mode: transient
@@ -591,6 +612,11 @@ paths:
       operationId: runConnectionTest
       x-command-mode: transient
       parameters:
+        - in: query
+          name: scope
+          required: false
+          description: Local profile only. Select the independent browser extension configuration; omitted uses translator defaults.
+          schema: {type: string, enum: [browser_extension]}
         - name: kind
           in: path
           required: true
@@ -4039,6 +4065,812 @@ paths:
               schema: {type: string, format: binary}
         "403": {$ref: "#/components/responses/Forbidden"}
         "404": {$ref: "#/components/responses/NotFound"}
+  /browser-extension/manage/settings:
+    get:
+      description: Plugin settings and credentials are independent from translator defaults. Unsaved settings use factory values with revision 0.
+      tags:
+      - browser-extension
+      operationId: browserManageGetSettings
+      parameters:
+      - name: domains
+        in: query
+        schema:
+          type: string
+      - name: book_id
+        in: query
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Backend-authoritative settings and credential summaries.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettingsDocument'
+  /browser-extension/manage/credentials/{credential_id}:
+    delete:
+      tags:
+      - browser-extension
+      operationId: browserManageDeleteCredential
+      parameters:
+      - name: credential_id
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Uuid'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Credential deleted when no history references it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeletedResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /browser-extension/manage/settings/transactions:
+    put:
+      tags:
+      - browser-extension
+      operationId: browserManageSaveSettingsTransaction
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SettingsTransaction'
+      responses:
+        '200':
+          description: All settings, provider memories, credentials, and prompt edits committed atomically.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettingsTransactionResult'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /browser-extension/manage/settings/workflow-preferences:
+    patch:
+      tags:
+      - browser-extension
+      operationId: browserManageUpdateWorkflowPreferences
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - payload
+              - baseRevision
+              properties:
+                payload:
+                  $ref: '#/components/schemas/WorkflowPreferences'
+                baseRevision:
+                  type: integer
+                  minimum: 0
+      responses:
+        '200':
+          description: Workflow preference setting after revision CAS.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettingEntry'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /browser-extension/manage/model-catalog:
+    post:
+      tags:
+      - browser-extension
+      operationId: browserManageFetchModelCatalog
+      x-command-mode: transient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProviderDiagnosticRequest'
+      responses:
+        '200':
+          description: Provider model catalog; result is not persisted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelCatalogResponse'
+        '502':
+          $ref: '#/components/responses/ProviderUnavailable'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /browser-extension/manage/connection-tests/{kind}:
+    post:
+      tags:
+      - browser-extension
+      operationId: browserManageRunConnectionTest
+      x-command-mode: transient
+      parameters:
+      - name: kind
+        in: path
+        required: true
+        schema:
+          type: string
+          enum:
+          - ollama
+          - sakura
+          - lama_repair
+          - baidu_ocr
+          - ai_vision_ocr
+          - baidu_translate
+          - youdao_translate
+          - ai_translate
+          - firecrawl
+          - web_import_agent
+          - vlm
+          - llm
+          - embedding
+          - reranker
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProviderDiagnosticRequest'
+      responses:
+        '200':
+          description: Transient connection result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectionTestResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /browser-extension/manage/prompts:
+    get:
+      tags:
+      - browser-extension
+      operationId: browserManageListPrompts
+      parameters:
+      - name: type
+        in: query
+        schema:
+          $ref: '#/components/schemas/PromptType'
+      responses:
+        '200':
+          description: Unified prompt library.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PromptList'
+    post:
+      tags:
+      - browser-extension
+      operationId: browserManageCreatePrompt
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - type
+              - name
+              - content
+              properties:
+                type:
+                  $ref: '#/components/schemas/PromptType'
+                name:
+                  type: string
+                  minLength: 1
+                content:
+                  type: string
+      responses:
+        '201':
+          description: Prompt created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PromptResource'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /browser-extension/manage/prompts/{prompt_id}:
+    put:
+      tags:
+      - browser-extension
+      operationId: browserManageUpdatePrompt
+      parameters:
+      - $ref: '#/components/parameters/PromptId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - name
+              - content
+              - baseRevision
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                content:
+                  type: string
+                baseRevision:
+                  type: integer
+                  minimum: 1
+      responses:
+        '200':
+          description: Prompt updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PromptResource'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      tags:
+      - browser-extension
+      operationId: browserManageDeletePrompt
+      parameters:
+      - $ref: '#/components/parameters/PromptId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Non-factory prompt deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeletedResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /browser-extension/manage/prompts/{prompt_id}/reset:
+    post:
+      tags:
+      - browser-extension
+      operationId: browserManageResetPrompt
+      parameters:
+      - $ref: '#/components/parameters/PromptId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - baseRevision
+              properties:
+                baseRevision:
+                  type: integer
+                  minimum: 1
+      responses:
+        '200':
+          description: Factory prompt reset.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PromptResource'
+  /browser-extension/manage/fonts:
+    get:
+      tags:
+      - browser-extension
+      operationId: browserManageListFonts
+      responses:
+        '200':
+          description: Built-in and uploaded backend fonts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FontList'
+    post:
+      tags:
+      - browser-extension
+      operationId: browserManageUploadFont
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                displayName:
+                  type: string
+      responses:
+        '201':
+          description: Immutable font asset registered.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FontResource'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /browser-extension/manage/fonts/{font_id}:
+    delete:
+      tags:
+      - browser-extension
+      operationId: browserManageDeleteFont
+      parameters:
+      - name: font_id
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Uuid'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Unreferenced uploaded font deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeletedResponse'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /browser-extension/manage/maintenance/clean-temp:
+    post:
+      tags:
+      - browser-extension
+      operationId: browserManageCleanTemporaryAssets
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Asset journal recovery result.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                - recovered
+                properties:
+                  recovered:
+                    type: integer
+                    minimum: 0
+  /browser-extension/manage/jobs:
+    get:
+      tags:
+      - browser-extension
+      operationId: browserManageListJobs
+      parameters:
+      - name: scope
+        in: query
+        schema:
+          type: string
+          enum:
+          - queue
+          - history
+          - all
+          default: queue
+      - name: status
+        in: query
+        schema:
+          $ref: '#/components/schemas/JobStatus'
+      - name: type
+        in: query
+        schema:
+          $ref: '#/components/schemas/JobKind'
+      - name: book_id
+        in: query
+        schema:
+          $ref: '#/components/schemas/Uuid'
+      - name: limit
+        in: query
+        description: Maximum retained history batches; the live queue snapshot is always complete.
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 200
+      responses:
+        '200':
+          description: Durable queue or retained history snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobList'
+  /browser-extension/manage/jobs/events:
+    get:
+      tags:
+      - browser-extension
+      operationId: browserManageStreamJobEvents
+      parameters:
+      - name: Last-Event-ID
+        in: header
+        schema:
+          type: integer
+          minimum: 0
+      - name: after
+        in: query
+        schema:
+          type: integer
+          minimum: 0
+      - name: before
+        in: query
+        description: Return the preceding event page in ascending display order.
+        schema:
+          type: integer
+          minimum: 1
+      responses:
+        '200':
+          description: One global resumable SSE stream for all job consumers.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+  /browser-extension/manage/jobs/snapshot:
+    get:
+      tags:
+      - browser-extension
+      operationId: browserManageGetJobSnapshot
+      description: Read the current UI projection for a bounded set of jobs.
+      parameters:
+      - name: job_id
+        in: query
+        required: true
+        style: form
+        explode: true
+        schema:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/Uuid'
+      responses:
+        '200':
+          description: Current job rows, independent from the audit event stream.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobSnapshot'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /browser-extension/manage/jobs/{job_id}:
+    get:
+      tags:
+      - browser-extension
+      operationId: browserManageGetJob
+      parameters:
+      - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Job, item, step, checkpoint and error details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /browser-extension/manage/jobs/{job_id}/events:
+    get:
+      tags:
+      - browser-extension
+      operationId: browserManageListJobEvents
+      parameters:
+      - $ref: '#/components/parameters/JobId'
+      - name: after
+        in: query
+        schema:
+          type: integer
+          minimum: 0
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 200
+      responses:
+        '200':
+          description: Durable key-event page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobEventList'
+  /browser-extension/manage/jobs/{job_id}/pause:
+    post:
+      tags:
+      - browser-extension
+      operationId: browserManagePauseRunningJob
+      parameters:
+      - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Job paused immediately; active steps return to pending for resume.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobCommandResult'
+        '409':
+          $ref: '#/components/responses/InvalidTransition'
+      x-command-mode: transient
+  /browser-extension/manage/jobs/{job_id}/resume:
+    post:
+      tags:
+      - browser-extension
+      operationId: browserManageResumePausedJob
+      parameters:
+      - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: A paused job was returned to queued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobCommandResult'
+        '409':
+          $ref: '#/components/responses/InvalidTransition'
+      x-command-mode: transient
+  /browser-extension/manage/jobs/{job_id}/continue:
+    post:
+      tags:
+      - browser-extension
+      operationId: browserManageContinueInterruptedJob
+      parameters:
+      - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: An interrupted job was returned to queued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobCommandResult'
+        '409':
+          $ref: '#/components/responses/InvalidTransition'
+      x-command-mode: transient
+  /browser-extension/manage/jobs/{job_id}/cancel:
+    post:
+      tags:
+      - browser-extension
+      operationId: browserManageCancelJob
+      parameters:
+      - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: The job and its unfinished graph were atomically cancelled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobCommandResult'
+        '409':
+          $ref: '#/components/responses/InvalidTransition'
+      x-command-mode: transient
+  /browser-extension/manage/jobs/{job_id}/retry:
+    post:
+      tags:
+      - browser-extension
+      operationId: browserManageRetryFailedJob
+      parameters:
+      - $ref: '#/components/parameters/JobId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JobRetryCommand'
+      responses:
+        '202':
+          description: A failed whole job was recreated as a related replacement job.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobRetryAccepted'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /browser-extension/manage/jobs/{job_id}/retry-failed:
+    post:
+      tags:
+      - browser-extension
+      operationId: browserManageRetryFailedJobItems
+      parameters:
+      - $ref: '#/components/parameters/JobId'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JobRetryCommand'
+      responses:
+        '202':
+          description: Failed items from a partially successful job were recreated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobRetryAccepted'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /browser-extension/manage/jobs/reorder:
+    post:
+      tags:
+      - browser-extension
+      operationId: browserManageReorderJobs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JobReorderCommand'
+      responses:
+        '200':
+          description: Queue order updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                - status
+                properties:
+                  status:
+                    type: string
+                    enum:
+                    - reordered
+        '409':
+          $ref: '#/components/responses/Conflict'
+      x-command-mode: transient
+  /browser-extension/manage/jobs/queue/pause:
+    post:
+      tags:
+      - browser-extension
+      operationId: browserManagePauseJobQueue
+      description: Stop admitting queued jobs. The current job and immediate operations continue.
+      responses:
+        '200':
+          description: Persistent queue admission state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueueControlState'
+      x-command-mode: transient
+  /browser-extension/manage/jobs/queue/resume:
+    post:
+      tags:
+      - browser-extension
+      operationId: browserManageResumeJobQueue
+      responses:
+        '200':
+          description: Persistent queue admission state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueueControlState'
+      x-command-mode: transient
+  /browser-extension/manage/jobs/cancel-queued:
+    post:
+      tags:
+      - browser-extension
+      operationId: browserManageCancelQueuedJobs
+      responses:
+        '200':
+          description: All currently queued jobs were atomically cancelled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancelledCount'
+      x-command-mode: transient
+  /browser-extension/manage/jobs/history/clear:
+    post:
+      tags:
+      - browser-extension
+      operationId: browserManageClearJobHistory
+      responses:
+        '200':
+          description: Terminal history removed; interrupted jobs are retained.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RemovedCount'
+      x-command-mode: transient
+  /browser-extension/manage/job-batches/{batch_id}/cancel:
+    post:
+      tags:
+      - browser-extension
+      operationId: browserManageCancelQueuedJobBatchMembers
+      parameters:
+      - $ref: '#/components/parameters/BatchId'
+      responses:
+        '200':
+          description: All queued members of the batch were atomically cancelled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancelledCount'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      x-command-mode: transient
+  /browser-extension/manage/job-batches/{batch_id}/prioritize:
+    post:
+      tags:
+      - browser-extension
+      operationId: browserManagePrioritizeQueuedJobBatchMembers
+      parameters:
+      - $ref: '#/components/parameters/BatchId'
+      responses:
+        '200':
+          description: Queued ordinary members moved to the front in batch order.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                - status
+                properties:
+                  status:
+                    type: string
+                    enum:
+                    - prioritized
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+      x-command-mode: transient
+  /browser-extension/manage/job-batches/{batch_id}/continue:
+    post:
+      tags:
+      - browser-extension
+      operationId: browserManageContinueJobBatchMembers
+      parameters:
+      - $ref: '#/components/parameters/BatchId'
+      responses:
+        '200':
+          description: Paused and interrupted members returned to queued in batch order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchContinueResult'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      x-command-mode: transient
+  /browser-extension/sessions/{session_id}/discard:
+    post:
+      tags:
+      - browser-extension
+      operationId: discardBrowserSession
+      x-command-mode: transient
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '204':
+          description: Page retired; running work cancels before its temporary assets are removed.
 components:
   parameters:
     PageId:
@@ -4649,7 +5481,7 @@ components:
       properties:
         domain: {type: string}
         payload: {type: object, additionalProperties: true}
-        revision: {type: integer, minimum: 1}
+        revision: {type: integer, minimum: 0, description: "0 denotes an unsaved factory default."}
         schemaVersion: {type: integer, minimum: 1}
     BookSettingEntry:
       allOf:
@@ -8989,6 +9821,7 @@ components:
             - {$ref: "#/components/schemas/Uuid"}
             - {type: "null"}
         state: {type: string, enum: [queued, translating, completed, failed, cancelled]}
+        resultAssetId: {type: [string, "null"]}
         resultReady: {type: boolean}
         retryCount: {type: integer, minimum: 0}
         error:
@@ -9013,6 +9846,7 @@ components:
         autoTermsEnabled: {type: boolean}
         state: {type: string, enum: [idle, queued, translating, completed, partial, failed, cancelled]}
         pendingStart: {type: boolean, description: Uploaded pages await a job and no translation job is active.}
+        taskState: {type: [string, "null"], enum: [running, paused, interrupted, queued, null]}
         expiresAt: {type: [string, "null"], format: date-time}
         counts:
           type: object

@@ -12,7 +12,7 @@ import type {
 import { UI_STYLES } from './uiStyles'
 
 export interface UiCallbacks {
-  onActivity(): void
+  onOpenManagement(section: 'settings' | 'tasks'): void
   onDiscover(method: DetectionMethod): void
   onConfirm(candidateIds: string[]): void
   onPreferenceChange(preference: DomainPreference): void
@@ -150,7 +150,6 @@ export class ExtensionUi {
           event.stopImmediatePropagation()
           return
         }
-        if (type === 'click') this.callbacks.onActivity()
       }, true)
     }
     const style = element('style')
@@ -210,6 +209,13 @@ export class ExtensionUi {
     bannerText.append(this.bannerTitle, this.bannerMessage)
     this.banner.append(bannerDot, bannerText)
     body.append(this.banner)
+    const management = element('div', 'saber-actions')
+    for (const [section, label] of [['settings', '翻译配置'], ['tasks', '任务中心']] as const) {
+      const button = this.button(label, 'saber-button--quiet')
+      button.addEventListener('click', () => this.callbacks.onOpenManagement(section))
+      management.append(button)
+    }
+    body.append(management)
 
     this.errorActions = element('div', 'saber-error-actions')
     this.errorActions.hidden = true
@@ -1002,7 +1008,9 @@ export class ExtensionUi {
         : '将当前独立章节导入书架'
     this.fab.dataset.state = hasFailure ? 'error' : busy ? 'busy' : 'ready'
     this.setStatus(
-      {
+      session.taskState === 'paused' ? '任务已暂停，可在任务中心恢复'
+        : session.taskState === 'interrupted' ? '任务已中断，可在任务中心继续'
+        : {
         idle: '等待图片',
         queued: '任务已进入 Saber 队列',
         translating: '正在逐张生成译图',
@@ -1013,7 +1021,7 @@ export class ExtensionUi {
       }[session.state],
       session.state === 'cancelled'
         ? busy ? '正在等待后端任务停止。' : '可在单页操作中重试已取消的图片。'
-        : '关闭标签页不会中断已提交的后端任务。',
+        : '退出漫画页面后将取消任务并清理临时译图；需要保留请先导入书架。',
       hasFailure ? 'error' : busy ? 'busy' : 'ready',
     )
     if (session.pendingStart) {

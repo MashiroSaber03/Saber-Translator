@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import base64
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import hashlib
 from io import BytesIO
 import json
@@ -61,10 +61,16 @@ def browser_platform(tmp_path: Path):
     metadata.create_all(engine)
     seed_system_records(engine, profile_name="local")
     with engine.begin() as connection:
+        from src.backend_v2.storage.defaults import default_translation_settings, TRANSLATION_SETTINGS_SCHEMA_VERSION
+        connection.execute(insert(app_settings).values(
+            domain="browser_extension:translation",
+            payload_json=json.dumps(default_translation_settings()),
+            schema_version=TRANSLATION_SETTINGS_SCHEMA_VERSION,
+        ))
         payload = json.loads(
             connection.execute(
                 select(app_settings.c.payload_json).where(
-                    app_settings.c.domain == "translation"
+                    app_settings.c.domain == "browser_extension:translation"
                 )
             ).scalar_one()
         )
@@ -72,12 +78,12 @@ def browser_platform(tmp_path: Path):
         payload["translation"]["modelName"] = "test-model"
         connection.execute(
             update(app_settings)
-            .where(app_settings.c.domain == "translation")
+            .where(app_settings.c.domain == "browser_extension:translation")
             .values(payload_json=json.dumps(payload, ensure_ascii=False))
         )
         connection.execute(
             insert(provider_settings).values(
-                domain="translation",
+                domain="browser_extension:translation",
                 provider="ollama",
                 payload_json=json.dumps(
                     {
@@ -717,7 +723,7 @@ def test_browser_translation_reuses_saved_parallel_setting(
         payload = json.loads(
             connection.execute(
                 select(app_settings.c.payload_json).where(
-                    app_settings.c.domain == "translation"
+                    app_settings.c.domain == "browser_extension:translation"
                 )
             ).scalar_one()
         )
@@ -725,7 +731,7 @@ def test_browser_translation_reuses_saved_parallel_setting(
         payload["parallel"]["deepLearningLockSize"] = 2
         connection.execute(
             update(app_settings)
-            .where(app_settings.c.domain == "translation")
+            .where(app_settings.c.domain == "browser_extension:translation")
             .values(payload_json=json.dumps(payload, ensure_ascii=False))
         )
 
@@ -1215,7 +1221,7 @@ def test_failed_browser_cleanup_rolls_back_without_blocking_new_sessions(
 
 
 @pytest.mark.parametrize("book_scoped", [False, True])
-def test_periodic_cleanup_preserves_active_browser_retry(
+def test_periodic_cleanup_cancels_abandoned_browser_retry(
     browser_platform, expired_browser_retry_chain, book_scoped,
 ) -> None:
     data_root, engine, _app = browser_platform
@@ -1224,10 +1230,10 @@ def test_periodic_cleanup_preserves_active_browser_retry(
         connection.execute(update(jobs).where(jobs.c.id == job_ids[-1]).values(
             status="queued", chapter_id=None if book_scoped else expired["chapterId"],
         ))
-    assert WorkerMaintenance(data_root=data_root, engine=engine)._prune_browser_sessions() == 0
+    assert WorkerMaintenance(data_root=data_root, engine=engine)._prune_browser_sessions() == 1
     with engine.connect() as connection:
-        assert connection.execute(select(func.count()).select_from(jobs).where(jobs.c.id.in_(job_ids))).scalar_one() == 3
-        assert connection.execute(select(browser_sessions.c.id).where(browser_sessions.c.id == expired["id"])).scalar_one() == expired["id"]
+        assert connection.execute(select(func.count()).select_from(jobs).where(jobs.c.id.in_(job_ids))).scalar_one() == 0
+        assert connection.execute(select(browser_sessions.c.id).where(browser_sessions.c.id == expired["id"])).scalar_one_or_none() is None
 
 
 def test_periodic_cleanup_preserves_download_and_its_retry_history(
@@ -1269,20 +1275,20 @@ def test_browser_start_failure_remains_explicitly_startable(browser_platform) ->
     }, content_type="multipart/form-data")
     with engine.begin() as connection:
         original = connection.execute(select(app_settings.c.payload_json).where(
-            app_settings.c.domain == "translation"
+            app_settings.c.domain == "browser_extension:translation"
         )).scalar_one()
         config = json.loads(original)
         config["translation"]["modelName"] = ""
-        connection.execute(update(app_settings).where(app_settings.c.domain == "translation").values(
+        connection.execute(update(app_settings).where(app_settings.c.domain == "browser_extension:translation").values(
             payload_json=json.dumps(config)
         ))
         provider_original = connection.execute(select(provider_settings.c.payload_json).where(
-            provider_settings.c.domain == "translation", provider_settings.c.provider == "ollama"
+            provider_settings.c.domain == "browser_extension:translation", provider_settings.c.provider == "ollama"
         )).scalar_one()
         provider = json.loads(provider_original)
         provider["modelName"] = ""
         connection.execute(update(provider_settings).where(
-            provider_settings.c.domain == "translation", provider_settings.c.provider == "ollama"
+            provider_settings.c.domain == "browser_extension:translation", provider_settings.c.provider == "ollama"
         ).values(payload_json=json.dumps(provider)))
     assert client.post(route + "/start", headers=HEADERS).status_code == 422
     pending = client.get(route, headers=HEADERS).get_json()
@@ -1290,13 +1296,23 @@ def test_browser_start_failure_remains_explicitly_startable(browser_platform) ->
     assert pending["pages"][0]["pageId"] is not None
     with engine.begin() as connection:
         assert connection.execute(select(func.count()).select_from(jobs)).scalar_one() == 0
-        connection.execute(update(app_settings).where(app_settings.c.domain == "translation").values(payload_json=original))
+        connection.execute(update(app_settings).where(app_settings.c.domain == "browser_extension:translation").values(payload_json=original))
         connection.execute(update(provider_settings).where(
-            provider_settings.c.domain == "translation", provider_settings.c.provider == "ollama"
+            provider_settings.c.domain == "browser_extension:translation", provider_settings.c.provider == "ollama"
         ).values(payload_json=provider_original))
+    from src.backend_v2.storage.platform_repositories import SettingsRepository, SettingMutation
+    settings = SettingsRepository(engine, browser_extension=True)
+    style = settings.load(domains=("text_style_defaults",))["settings"][0]
+    style["payload"]["strokeWidth"] = 1.7
+    settings.save_transaction(settings=(SettingMutation(domain="text_style_defaults",
+        payload=style["payload"], base_revision=0, schema_version=style["schemaVersion"]),))
     started = client.post(route + "/start", headers=HEADERS)
     assert started.status_code == 202
     assert started.get_json()["pendingStart"] is False
+    with engine.connect() as connection:
+        payload = connection.execute(select(pages.c.page_style_defaults_json).where(
+            pages.c.id == pending["pages"][0]["pageId"])).scalar_one()
+    assert json.loads(payload)["strokeWidth"] == 1.7
 
 
 def test_cancelled_pending_pages_can_be_retried_individually(browser_platform) -> None:
@@ -1342,11 +1358,12 @@ def test_browser_activity_renews_retention_but_polling_does_not(browser_platform
     }, content_type="multipart/form-data").get_json()
     if action == "retry":
         client.post(route + "/cancel", headers=HEADERS)
+    expiry = datetime.now(timezone.utc) + timedelta(minutes=1)
     with engine.begin() as connection:
         connection.execute(update(browser_sessions).where(browser_sessions.c.id == session["id"]).values(
-            expires_at=datetime(2000, 1, 1, tzinfo=timezone.utc)
+            expires_at=expiry
         ))
-    assert client.get(route, headers=HEADERS).get_json()["expiresAt"].startswith("2000-")
+    assert datetime.fromisoformat(client.get(route, headers=HEADERS).get_json()["expiresAt"]).replace(tzinfo=timezone.utc) == expiry
     if action == "patch":
         response = client.patch(route, headers=HEADERS, json={"glossaryEnabled": False})
     elif action == "touch":
@@ -1357,7 +1374,7 @@ def test_browser_activity_renews_retention_but_polling_does_not(browser_platform
     assert response.status_code in (200, 202)
     renewed = client.get(route, headers=HEADERS).get_json()
     expiry = datetime.fromisoformat(renewed["expiresAt"]).replace(tzinfo=timezone.utc)
-    assert (expiry - datetime.now(timezone.utc)).total_seconds() > 23 * 60 * 60
+    assert (expiry - datetime.now(timezone.utc)).total_seconds() > 9 * 60
     assert WorkerMaintenance(data_root=data_root, engine=engine)._prune_browser_sessions() == 0
 
 
@@ -1413,7 +1430,7 @@ def test_dom_agent_uses_its_independent_provider_settings(
     with engine.begin() as connection:
         row = connection.execute(
             select(app_settings.c.payload_json).where(
-                app_settings.c.domain == "translation"
+                app_settings.c.domain == "browser_extension:translation"
             )
         ).scalar_one()
         payload = json.loads(row)
@@ -1423,12 +1440,12 @@ def test_dom_agent_uses_its_independent_provider_settings(
         payload["browserDomAgent"]["modelName"] = "dom-model"
         connection.execute(
             update(app_settings)
-            .where(app_settings.c.domain == "translation")
+            .where(app_settings.c.domain == "browser_extension:translation")
             .values(payload_json=json.dumps(payload, ensure_ascii=False))
         )
         connection.execute(
             insert(provider_settings).values(
-                domain="browser_dom_agent",
+                domain="browser_extension:browser_dom_agent",
                 provider="ollama",
                 payload_json=json.dumps(
                     {
@@ -1533,3 +1550,300 @@ def test_manifest_key_keeps_the_packaged_extension_id_stable() -> None:
         for nibble in (byte >> 4, byte & 0x0F)
     )
     assert extension_id == "opijdmjbhcjkgbakbpjebgbikfhdhibb"
+
+
+def test_extension_management_reuses_settings_transactions_and_auth(browser_platform):
+    _root, _engine, app = browser_platform
+    client = app.test_client()
+    base = "/api/v2/browser-extension/manage"
+    assert client.get(base + "/settings").status_code == 401
+    assert client.get(base + "/jobs").status_code == 401
+    document = client.get(base + "/settings?domains=translation", headers=HEADERS).get_json()
+    entry = document["settings"][0]
+    entry["payload"]["targetLanguage"] = "en"
+    body = {"settings": [{"domain": entry["domain"], "payload": entry["payload"],
+        "baseRevision": entry["revision"], "schemaVersion": entry["schemaVersion"]}]}
+    saved = client.put(base + "/settings/transactions", headers={**HEADERS, "Idempotency-Key": "extension-save"}, json=body)
+    assert saved.status_code == 200
+    assert client.get("/api/v2/settings?domains=translation").get_json()["settings"][0]["payload"]["targetLanguage"] == "zh"
+    assert client.get(base + "/settings?domains=translation", headers=HEADERS).get_json()["settings"][0]["payload"]["targetLanguage"] == "en"
+    assert client.put(base + "/settings/transactions", headers={**HEADERS, "Idempotency-Key": "extension-stale"}, json=body).status_code == 409
+
+
+def test_discard_removes_page_files_but_keeps_other_assets(browser_platform):
+    data_root, engine, app = browser_platform
+    client = app.test_client()
+    session = _create_session(client).get_json()
+    route = f"/api/v2/browser-extension/sessions/{session['id']}"
+    client.post(route + "/pages", headers=HEADERS, data={
+        "clientPageKey": "discard", "ordinal": "1", "logicalPath": "page.png",
+        "file": (BytesIO(_png()), "page.png"),
+    }, content_type="multipart/form-data")
+    assert client.post(route + "/start", headers=HEADERS).status_code == 202
+    storage = AssetStorageService(data_root, engine)
+    unrelated = storage.publish_bytes(b"unrelated asset", extension="txt", mime_type="text/plain")
+    with engine.connect() as connection:
+        source_id = connection.execute(select(browser_session_pages.c.source_asset_id).where(
+            browser_session_pages.c.session_id == session["id"])).scalar_one()
+    source = storage.get_record(source_id)
+    assert source is not None
+    assert client.post(route + "/discard", headers=HEADERS).status_code == 204
+    assert client.get(route + "?touch=true", headers=HEADERS).status_code == 404
+    assert client.post(route + "/discard", headers=HEADERS).status_code == 204
+    assert storage.get_record(source_id) is None
+    assert storage.get_record(unrelated.id) is not None
+    with engine.connect() as connection:
+        assert connection.execute(select(jobs.c.id).where(jobs.c.book_id == session["bookId"])).first() is None
+        assert connection.execute(select(books.c.id).where(books.c.id == session["bookId"])).first() is None
+        assert connection.exec_driver_sql("PRAGMA foreign_key_check").all() == []
+
+
+def test_generic_retry_updates_live_browser_page_and_result(browser_platform):
+    _root, engine, app = browser_platform
+    client = app.test_client()
+    session = _create_session(client).get_json()
+    route = f"/api/v2/browser-extension/sessions/{session['id']}"
+    client.post(route + "/pages", headers=HEADERS, data={
+        "clientPageKey": "retry", "ordinal": "1", "logicalPath": "page.png",
+        "file": (BytesIO(_png()), "page.png"),
+    }, content_type="multipart/form-data")
+    assert client.post(route + "/start", headers=HEADERS).status_code == 202
+    with engine.begin() as connection:
+        source_job = connection.execute(select(browser_session_pages.c.job_id).where(
+            browser_session_pages.c.session_id == session["id"])).scalar_one()
+        connection.execute(update(jobs).where(jobs.c.id == source_job).values(status="completed_with_errors"))
+        connection.execute(update(job_items).where(job_items.c.job_id == source_job).values(status="failed"))
+    retried = client.post(f"/api/v2/browser-extension/manage/jobs/{source_job}/retry-failed", json={"strategy": "current"},
+        headers={**HEADERS, "Idempotency-Key": "live-browser-retry"})
+    assert retried.status_code == 202, retried.get_json()
+    new_id = retried.get_json()["jobIds"][0]
+    with engine.connect() as connection:
+        page = connection.execute(select(browser_session_pages).where(browser_session_pages.c.session_id == session["id"])).mappings().one()
+        assert page["job_id"] == new_id
+        assert page["retry_count"] == 1
+    assert client.get(route, headers=HEADERS).get_json()["pages"][0]["state"] == "queued"
+    assert client.post("/api/v2/browser-extension/manage/jobs/queue/pause", headers=HEADERS).status_code == 200
+    assert client.get("/api/v2/jobs").get_json()["queuePaused"] is True
+    assert client.post("/api/v2/browser-extension/manage/jobs/queue/resume", headers=HEADERS).status_code == 200
+    assert client.post(route + "/discard", headers=HEADERS).status_code == 204
+
+
+def test_expired_page_cannot_be_revived_by_activity(browser_platform):
+    _root, engine, app = browser_platform
+    client = app.test_client()
+    session = _create_session(client).get_json()
+    with engine.begin() as connection:
+        connection.execute(update(browser_sessions).where(browser_sessions.c.id == session["id"]).values(
+            expires_at=datetime(2000, 1, 1, tzinfo=timezone.utc)))
+    route = f"/api/v2/browser-extension/sessions/{session['id']}"
+    assert client.get(route + "?touch=true", headers=HEADERS).status_code == 404
+    assert client.post(route + "/start", headers=HEADERS).status_code == 404
+
+
+def test_upload_finishing_after_discard_does_not_leave_image_assets(browser_platform, monkeypatch):
+    from src.backend_v2.storage.schema import assets
+    _root, engine, app = browser_platform
+    client = app.test_client()
+    session = _create_session(client).get_json()
+    service = BrowserSessionService(data_root=_root, engine=engine, profile=resolve_runtime_profile("local"))
+    publish = service.importer.publish_standalone_image
+    def finish_after_close(upload):
+        result = publish(upload)
+        service.discard(session["id"])
+        return result
+    monkeypatch.setattr(service.importer, "publish_standalone_image", finish_after_close)
+    from src.backend_v2.browser_extension.service import BrowserSessionNotFound
+    with pytest.raises(BrowserSessionNotFound):
+        service.add_page(session_id=session["id"], client_page_key="late", ordinal=1, logical_path="late.png", source_url=None, upload=BytesIO(_png()))
+    with engine.connect() as connection:
+        assert connection.execute(select(func.count()).select_from(assets)).scalar_one() == 0
+
+
+def test_extension_settings_and_secrets_are_isolated(browser_platform):
+    from src.backend_v2.storage.platform_repositories import (
+        SettingsRepository, CredentialEdit, ProviderSettingMutation, SettingMutation,
+    )
+
+    _root, engine, app = browser_platform
+    global_settings = SettingsRepository(engine)
+    plugin_settings = SettingsRepository(engine, browser_extension=True)
+    global_before = global_settings.load()
+    entry = plugin_settings.load(domains=("translation",))["settings"][0]
+    payload = entry["payload"]
+    payload["targetLanguage"] = "en"
+    provider_payload = {"modelName": "independent-model", "customBaseUrl": "",
+                        "openaiOptions": payload["translation"]["openaiOptions"],
+                        "translationMode": "batch"}
+    for repository, secret in ((global_settings, "global-key"), (plugin_settings, "plugin-key")):
+        repository.save_transaction(
+            credentials_edits=(CredentialEdit(domain="translation", provider="siliconflow",
+                secret={"api_key": secret}, base_revision=0, client_ref="key"),),
+            providers=(ProviderSettingMutation(domain="translation", provider="siliconflow",
+                payload=provider_payload, base_revision=0, schema_version=1, credential_edit_ref="key"),),
+        )
+    plugin_settings.save_transaction(settings=(SettingMutation(
+        domain="translation", payload=payload, base_revision=entry["revision"],
+        schema_version=entry["schemaVersion"],
+    ),))
+    assert global_settings.load()["settings"] == global_before["settings"]
+    assert global_settings.resolve_provider_secret(domain="translation", provider="siliconflow") == {"api_key": "global-key"}
+    assert plugin_settings.resolve_provider_secret(domain="translation", provider="siliconflow") == {"api_key": "plugin-key"}
+    assert {row["secret"]["api_key"] for row in global_settings.credential_summaries()} == {"global-key"}
+    assert {row["secret"]["api_key"] for row in plugin_settings.credential_summaries()} == {"plugin-key"}
+    global_credential = global_settings.credential_summaries()[0]
+    with pytest.raises(LookupError):
+        plugin_settings.delete_credential(global_credential["credentialId"])
+    with pytest.raises(ValueError, match="domain/provider"):
+        plugin_settings.save_transaction(providers=(ProviderSettingMutation(
+            domain="translation", provider="ollama", payload=provider_payload,
+            base_revision=1, schema_version=1,
+            credential_version_id=global_credential["credentialVersionId"],
+        ),))
+    client = app.test_client()
+    assert client.get("/api/v2/settings?domains=browser_extension:translation").status_code == 422
+    assert client.get("/api/v2/browser-extension/manage/settings?domains=insight", headers=HEADERS).status_code == 422
+    # A first-use plugin style comes from factory values, never a changed global style.
+    global_style = next(row for row in global_settings.load()["settings"] if row["domain"] == "text_style_defaults")
+    global_style["payload"]["strokeWidth"] = 8.5
+    global_settings.save_transaction(settings=(SettingMutation(domain="text_style_defaults",
+        payload=global_style["payload"], base_revision=global_style["revision"], schema_version=global_style["schemaVersion"]),))
+    style = plugin_settings.load(domains=("text_style_defaults",))["settings"][0]
+    assert style["revision"] == 0
+    assert style["payload"]["strokeWidth"] == 3
+
+
+def test_browser_batches_and_retry_keep_session_configuration(browser_platform):
+    from src.backend_v2.storage.platform_repositories import SettingsRepository, SettingMutation, ProviderSettingMutation
+    from src.backend_v2.storage.schema import book_settings
+    from src.backend_v2.settings.resolver import SettingsResolver
+
+    root, engine, app = browser_platform
+    client = app.test_client()
+    settings = SettingsRepository(engine, browser_extension=True)
+
+    def save_language(language):
+        entry = settings.load(domains=("translation",))["settings"][0]
+        entry["payload"]["targetLanguage"] = language
+        entry["payload"]["parallel"]["enabled"] = language == "en"
+        settings.save_transaction(settings=(SettingMutation(domain="translation",
+            payload=entry["payload"], base_revision=entry["revision"], schema_version=entry["schemaVersion"]),))
+
+    def upload(session, key):
+        response = client.post(f"/api/v2/browser-extension/sessions/{session['id']}/pages", headers=HEADERS,
+            data={"clientPageKey": key, "ordinal": "1", "logicalPath": key + ".png",
+                  "file": (BytesIO(_png()), key + ".png")}, content_type="multipart/form-data")
+        assert response.status_code == 201
+
+    session = _create_session(client).get_json()
+    save_language("en")  # Settings are captured at start, not page/session creation.
+    style = settings.load(domains=("text_style_defaults",))["settings"][0]
+    style["payload"]["strokeWidth"] = 1.2
+    settings.save_transaction(settings=(SettingMutation(domain="text_style_defaults",
+        payload=style["payload"], base_revision=0, schema_version=style["schemaVersion"]),))
+    upload(session, "first")
+    route = f"/api/v2/browser-extension/sessions/{session['id']}"
+    assert client.post(route + "/start", headers=HEADERS).status_code == 202
+    with engine.connect() as connection:
+        first_job = connection.execute(select(jobs.c.id).where(jobs.c.book_id == session["bookId"])).scalar_one()
+    save_language("ja")
+    style["payload"]["strokeWidth"] = 2.5
+    settings.save_transaction(settings=(SettingMutation(domain="text_style_defaults",
+        payload=style["payload"], base_revision=1, schema_version=style["schemaVersion"]),))
+    provider = settings.load(domains=("translation",))["providerSettings"][0]
+    provider["payload"]["modelName"] = "new-plugin-model"
+    settings.save_transaction(providers=(ProviderSettingMutation(domain="translation",
+        provider="ollama", payload=provider["payload"], base_revision=provider["revision"], schema_version=1),))
+    resolved = SettingsResolver(engine).resolve_translation(chapter_id=session["chapterId"],
+        command={"mode": "standard", "executionMode": "sequential", "skipCompleted": False})
+    assert resolved["translation"]["model_name"] == "test-model"
+    assert resolved["targetLanguage"] == "en"
+    assert resolved["executionMode"] == "parallel"
+    with engine.begin() as connection:
+        connection.execute(update(jobs).where(jobs.c.id == first_job).values(status="failed"))
+        connection.execute(update(job_items).where(job_items.c.job_id == first_job).values(status="failed"))
+    retried = JobRetryService(engine, profile=resolve_runtime_profile("local")).retry(
+        job_id=first_job, failed_only=False, strategy="current", idempotency_key="isolated-retry")
+    with engine.connect() as connection:
+        config = json.loads(connection.execute(select(jobs.c.config_json).where(jobs.c.id == retried["jobIds"][0])).scalar_one())
+    assert config["targetLanguage"] == "en"
+    JobQueueRepository(engine).request_cancel(retried["jobIds"][0])
+    upload(session, "second")
+    assert client.post(route + "/start", headers=HEADERS).status_code == 202
+    with engine.connect() as connection:
+        configs = [json.loads(value) for value in connection.execute(select(jobs.c.config_json).where(jobs.c.book_id == session["bookId"])).scalars()]
+    assert all(config["targetLanguage"] == "en" for config in configs)
+    with engine.connect() as connection:
+        styles = [json.loads(value) for value in connection.execute(select(pages.c.page_style_defaults_json).where(pages.c.chapter_id == session["chapterId"])).scalars()]
+    assert len(styles) == 2
+    assert all(style["strokeWidth"] == 1.2 for style in styles)
+    fresh = _create_session(client).get_json()
+    upload(fresh, "fresh")
+    assert client.post(f"/api/v2/browser-extension/sessions/{fresh['id']}/start", headers=HEADERS).status_code == 202
+    with engine.connect() as connection:
+        config = json.loads(connection.execute(select(jobs.c.config_json).where(jobs.c.book_id == fresh["bookId"])).scalar_one())
+    assert config["translation"]["model_name"] == "new-plugin-model"
+    assert config["targetLanguage"] == "ja"
+    assert config["executionMode"] == "sequential"
+    assert client.post(route + "/discard", headers=HEADERS).status_code == 204
+    with engine.connect() as connection:
+        assert connection.execute(select(book_settings.c.book_id).where(book_settings.c.book_id == session["bookId"])).first() is None
+    assert settings.load(domains=("translation",))["settings"][0]["payload"]["targetLanguage"] == "ja"
+
+
+def test_web_and_extension_edit_the_same_plugin_settings(browser_platform):
+    _root, _engine, app = browser_platform
+    client = app.test_client()
+    plugin_url = "/api/v2/browser-extension/manage/settings"
+    web_url = "/api/v2/settings?scope=browser_extension"
+    global_before = client.get("/api/v2/settings").get_json()
+    document = client.get(web_url).get_json()
+    assert document == client.get(plugin_url, headers=HEADERS).get_json()
+    entry = next(row for row in document["settings"] if row["domain"] == "translation")
+    entry["payload"]["targetLanguage"] = "en"
+    body = {"settings": [{"domain": "translation", "payload": entry["payload"],
+        "schemaVersion": entry["schemaVersion"], "baseRevision": entry["revision"]}]}
+    assert client.put("/api/v2/settings/transactions?scope=browser_extension",
+        json=body, headers={"Idempotency-Key": "web-plugin-save"}).status_code == 200
+    updated = client.get(plugin_url, headers=HEADERS).get_json()
+    saved = next(row for row in updated["settings"] if row["domain"] == "translation")
+    assert saved["payload"]["targetLanguage"] == "en"
+    assert client.put(plugin_url + "/transactions", json=body,
+        headers={**HEADERS, "Idempotency-Key": "stale-plugin-save"}).status_code == 409
+    body["settings"][0]["baseRevision"] = saved["revision"]
+    body["settings"][0]["payload"]["targetLanguage"] = "ja"
+    assert client.put(plugin_url + "/transactions", json=body,
+        headers={**HEADERS, "Idempotency-Key": "extension-plugin-save"}).status_code == 200
+    latest = client.get(web_url).get_json()
+    assert next(row for row in latest["settings"] if row["domain"] == "translation")["payload"]["targetLanguage"] == "ja"
+    assert client.get("/api/v2/settings").get_json() == global_before
+    assert client.get("/api/v2/settings?scope=unknown").status_code == 422
+
+
+def test_plugin_snapshot_keeps_credentials_until_page_is_discarded(browser_platform):
+    from src.backend_v2.browser_extension.settings import capture_session_settings
+    from src.backend_v2.storage.platform_repositories import (
+        SettingsRepository, CredentialEdit, ProviderSettingMutation, RevisionConflict,
+    )
+    _root, engine, app = browser_platform
+    settings = SettingsRepository(engine, browser_extension=True)
+    settings.save_transaction(credentials_edits=(CredentialEdit(
+        domain="translation", provider="siliconflow", secret={"api_key": "snapshot-test-key"},
+        base_revision=0, client_ref="key",
+    ),), providers=(ProviderSettingMutation(
+        domain="translation", provider="siliconflow", payload={}, schema_version=1,
+        base_revision=0, credential_edit_ref="key",
+    ),))
+    client = app.test_client()
+    session = _create_session(client).get_json()
+    with engine.begin() as connection:
+        capture_session_settings(connection, session["bookId"])
+    credential = settings.credential_summaries()[0]
+    settings.save_transaction(providers=(ProviderSettingMutation(
+        domain="translation", provider="siliconflow", payload={}, schema_version=1,
+        base_revision=1, credential_version_id=None,
+    ),))
+    with pytest.raises(RevisionConflict, match="browser session"):
+        settings.delete_credential(credential["credentialId"])
+    assert client.post(f"/api/v2/browser-extension/sessions/{session['id']}/discard", headers=HEADERS).status_code == 204
+    settings.delete_credential(credential["credentialId"])
+    assert settings.credential_summaries() == []

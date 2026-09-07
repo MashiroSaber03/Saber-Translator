@@ -15,7 +15,6 @@ import {
 import { ReplacementManager } from './replacement'
 import { normalizedTaskPageUrl, stablePageTitle } from './pageIdentity'
 import type {
-  ActiveBrowserSession,
   BackgroundRequest,
   BackgroundResponse,
   BrowserLibraryBook,
@@ -230,7 +229,7 @@ export class PageController {
   private readonly candidatesByClientKey = new Map<string, ImageCandidate>()
   private readonly clientKeys = new Map<string, string>()
   private readonly pageIdsByClientKey = new Map<string, string>()
-  private readonly appliedRetries = new Map<string, number>()
+  private readonly appliedResults = new Map<string, string>()
   private readonly resultUrls = new Map<string, string>()
   private readonly originalPageIds = new Set<string>()
   private readonly uploadFailures = new Map<string, UploadFailure>()
@@ -244,7 +243,6 @@ export class PageController {
   private observerTimer: number | null = null
   private pollTimer: number | null = null
   private termsPollTick = 0
-  private lastActivityAt = 0
   private disposed = false
   private discoveryStopped = false
   private cancelled = false
@@ -297,6 +295,7 @@ export class PageController {
   }
 
   private async initializeOnce(): Promise<void> {
+    await send({ type: 'page-opened', pageUrl: this.pageUrl })
     this.preference = await send<DomainPreference>({
       type: 'get-preference',
       hostname: this.hostname,
@@ -306,7 +305,6 @@ export class PageController {
     this.activeRule = this.preference.rule ?? null
     this.ui = new ExtensionUi(
       {
-        onActivity: () => this.noteActivity(),
         onDiscover: method => void this.discover(method),
         onConfirm: ids => void this.confirm(ids),
         onPreferenceChange: preference => void this.updatePreference(preference),
@@ -327,116 +325,21 @@ export class PageController {
         onImport: command => this.importToLibrary(command),
         onDisableSite: () => void this.disableSite(),
         onDeleteAdaptation: () => void this.deleteAdaptation(),
+        onOpenManagement: section => { void send({ type: 'open-management', section }) },
         onCopyDiagnostics: () => void this.copyDiagnostics(),
       },
       this.preference,
       this.pageTitle,
       isKnownComicHost(this.hostname),
     )
-    await this.restoreActiveSession()
+
   }
 
-  private async rememberActiveSession(sessionId: string): Promise<void> {
-    try {
-      await send<{ saved: boolean }>({
-        type: 'set-active-session',
-        pageUrl: this.pageUrl,
-        sessionId,
-        discovery: {
-          stopped: this.discoveryStopped,
-          usingAdapter: this.usingAdapter,
-          rule: this.activeRule,
-        },
-      })
-    } catch (error) {
-      console.warn('Saber extension could not remember the active session', error)
-    }
-  }
-
-  private async forgetActiveSession(sessionId?: string): Promise<void> {
-    try {
-      await send<{ cleared: boolean }>({
-        type: 'clear-active-session',
-        pageUrl: this.pageUrl,
-        ...(sessionId ? { sessionId } : {}),
-      })
-    } catch (error) {
-      console.warn('Saber extension could not clear the active session', error)
-    }
-  }
-
-  private restoreCandidates(): ImageCandidate[] {
-    if (this.activeRule) return scanRule(this.activeRule)
-    const adapter = this.usingAdapter ? adapterFor(this.hostname) : null
-    if (adapter) return scanAdapter(adapter)
-    return scanGeneric()
-  }
-
-  private async restoreActiveSession(): Promise<void> {
-    const initialGeneration = this.taskGeneration
-    const isCurrent = () => !this.disposed && initialGeneration === this.taskGeneration
-    let remembered: ActiveBrowserSession | null = null
-    let session: BrowserSessionDto
-    try {
-      remembered = await send<ActiveBrowserSession | null>({
-        type: 'get-active-session',
-        pageUrl: this.pageUrl,
-      })
-      if (!remembered || !isCurrent()) return
-      session = await send<BrowserSessionDto>({
-        type: 'get-session',
-        sessionId: remembered.sessionId,
-        touch: true,
-      })
-      if (!isCurrent()) return
-      if (
-        normalizedTaskPageUrl(session.pageUrl) !== this.pageUrl
-        || session.state === 'cancelled'
-        || session.pages.length === 0
-      ) {
-        await this.forgetActiveSession(remembered.sessionId)
-        return
-      }
-    } catch (error) {
-      if (isCurrent() && remembered && error instanceof ExtensionRequestError && error.code === 'not_found') {
-        await this.forgetActiveSession(remembered.sessionId)
-      }
-      return
-    }
-
-    try {
-      const generation = ++this.taskGeneration
-      this.session = session
-      this.imported = false
-      this.cancelled = false
-      this.discoveryStopped = remembered.discovery.stopped
-      this.usingAdapter = remembered.discovery.usingAdapter
-      this.activeRule = remembered.discovery.rule
-      this.nextOrdinal = Math.max(...session.pages.map(page => page.ordinal)) + 1
-      const candidates = this.restoreCandidates()
-      this.candidates = candidates
-      this.registerCandidates(candidates)
-      const pagesByClientKey = new Map(
-        session.pages.map(page => [page.clientPageKey, page])
-      )
-      for (const page of session.pages) {
-        this.pageIdsByClientKey.set(page.clientPageKey, page.id)
-      }
-      for (const candidate of candidates) {
-        const clientPageKey = await this.clientKey(candidate)
-        if (this.disposed || generation !== this.taskGeneration) return
-        const page = pagesByClientKey.get(clientPageKey)
-        if (!page) continue
-        this.candidatesByClientKey.set(clientPageKey, candidate)
-        this.ordinalsByIdentity.set(candidate.sourceIdentity, page.ordinal)
-      }
-      const task = { generation, sessionId: session.id }
-      this.showSession(session)
-      if (!this.discoveryStopped) this.startObserver()
-      await this.poll(task)
-    } catch (error) {
-      this.ui?.showError(errorDetails(error))
-    }
+  private async discardSession(sessionId?: string): Promise<void> {
+    if (!sessionId) return
+    await send({ type: 'discard-session', sessionId }).catch(error => {
+      console.warn('Saber page cleanup will be retried by the backend', error)
+    })
   }
 
   private ordinalFor(candidate: ImageCandidate): number {
@@ -501,7 +404,9 @@ export class PageController {
   }
 
   async dispose(): Promise<void> {
+    if (this.disposed) return
     this.disposed = true
+    void send({ type: 'page-closed', pageUrl: this.pageUrl }).catch(() => undefined)
     this.taskGeneration += 1
     this.disconnectObserver()
     if (this.pollTimer !== null) window.clearTimeout(this.pollTimer)
@@ -671,7 +576,7 @@ export class PageController {
     if (this.pollTimer !== null) window.clearTimeout(this.pollTimer)
     this.pollTimer = null
     this.disconnectObserver()
-    await this.forgetActiveSession(this.session?.id)
+    await this.discardSession(this.session?.id)
     if (this.disposed || generation !== this.taskGeneration) return null
     this.session = null
     this.imported = false
@@ -683,7 +588,7 @@ export class PageController {
     this.originalPageIds.clear()
     this.candidatesByClientKey.clear()
     this.pageIdsByClientKey.clear()
-    this.appliedRetries.clear()
+    this.appliedResults.clear()
     this.uploadFailures.clear()
     this.uploadsInFlight.clear()
     this.retryingUploadsFor = null
@@ -704,7 +609,6 @@ export class PageController {
     })
     if (this.disposed || generation !== this.taskGeneration) return null
     this.session = session
-    await this.rememberActiveSession(session.id)
     if (this.disposed || generation !== this.taskGeneration) return null
     this.ui?.showTerms([])
     this.showSession(session)
@@ -992,9 +896,6 @@ export class PageController {
         starting = false
       }
       this.session = session
-      if (session.state === 'cancelled') {
-        await this.forgetActiveSession(session.id)
-      }
       for (const page of session.pages) {
         this.pageIdsByClientKey.set(page.clientPageKey, page.id)
       }
@@ -1014,11 +915,12 @@ export class PageController {
         if (!this.isCurrentTask(task)) return
         this.ui?.showTerms(terms.glossary?.entries ?? [])
       }
-      if (busy) this.startPolling(1_500, task)
+      // Commands can also originate in the side panel, Web or desktop task center.
+      this.startPolling(busy ? 1_500 : 3_000, task)
     } catch (error) {
       if (!this.isCurrentTask(task)) return
       if (!loaded && error instanceof ExtensionRequestError && error.code === 'not_found') {
-        await this.forgetActiveSession(task.sessionId)
+        await this.discardSession(task.sessionId)
       }
       if (starting) this.ui?.showStartError(errorDetails(error))
       else this.ui?.showError(errorDetails(error))
@@ -1052,7 +954,7 @@ export class PageController {
     if (!page.resultReady || page.state !== 'completed') return
     const candidate = this.candidatesByClientKey.get(page.clientPageKey)
     if (!candidate) return
-    if (this.appliedRetries.get(page.id) === page.retryCount) return
+    if (this.appliedResults.get(page.id) === (page.resultAssetId ?? String(page.retryCount))) return
     const result = await send<ResultImagePayload>({
       type: 'fetch-result',
       sessionId: task.sessionId,
@@ -1088,7 +990,7 @@ export class PageController {
     const previousUrl = this.resultUrls.get(page.id)
     this.resultUrls.set(page.id, resultUrl)
     if (previousUrl) URL.revokeObjectURL(previousUrl)
-    this.appliedRetries.set(page.id, page.retryCount)
+    this.appliedResults.set(page.id, page.resultAssetId ?? String(page.retryCount))
   }
 
   private async retry(browserPageId: string): Promise<void> {
@@ -1102,8 +1004,7 @@ export class PageController {
       })
       if (!this.isCurrentTask(task)) return
       this.cancelled = false
-      await this.rememberActiveSession(task.sessionId)
-      this.appliedRetries.delete(page.id)
+      this.appliedResults.delete(page.id)
       this.startPolling(250, task)
     } catch (error) {
       this.ui?.showError(errorDetails(error))
@@ -1239,14 +1140,6 @@ export class PageController {
     }
   }
 
-  private noteActivity(): void {
-    const task = this.currentTask()
-    if (!task || Date.now() - this.lastActivityAt < 5 * 60_000) return
-    this.lastActivityAt = Date.now()
-    void send({ type: 'get-session', sessionId: task.sessionId, touch: true })
-      .catch(error => console.warn('Saber extension could not record session activity', error))
-  }
-
   private async persistPreference(): Promise<void> {
     await send<DomainPreference>({
       type: 'set-preference',
@@ -1284,7 +1177,6 @@ export class PageController {
   private stopDiscovery(): void {
     this.discoveryStopped = true
     this.disconnectObserver()
-    if (this.session && !this.imported) void this.rememberActiveSession(this.session.id)
     this.ui?.setStatus('已停止继续发现', '已排队和正在处理的图片不会受到影响。')
   }
 
@@ -1316,7 +1208,6 @@ export class PageController {
       if (!this.isCurrentTask(task)) return
       this.session = session
       this.showSession(this.session)
-      await this.forgetActiveSession(session.id)
       this.startPolling(250, task)
     } catch (error) {
       this.ui?.showError(errorDetails(error))
@@ -1358,7 +1249,6 @@ export class PageController {
       this.taskGeneration += 1
       if (this.pollTimer !== null) window.clearTimeout(this.pollTimer)
       this.pollTimer = null
-      await this.forgetActiveSession(task.sessionId)
       return result
     } catch (error) {
       this.ui?.showError(errorDetails(error))
@@ -1375,7 +1265,7 @@ export class PageController {
       this.ui?.showError(errorDetails(error))
       return
     }
-    await this.forgetActiveSession(this.session?.id)
+    await this.discardSession(this.session?.id)
     await this.dispose()
   }
 
@@ -1427,6 +1317,10 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.id) {
     }
   })
 
+  window.addEventListener('pagehide', () => { void controller?.dispose() })
+  window.addEventListener('pageshow', event => {
+    if (event.persisted) void startController()
+  })
   void startController()
 
   window.setInterval(() => {
