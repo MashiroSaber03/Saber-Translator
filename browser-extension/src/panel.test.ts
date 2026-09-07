@@ -1,70 +1,52 @@
 // @vitest-environment jsdom
+import { nextTick } from 'vue'
 import { afterEach, expect, it, vi } from 'vitest'
+import factoryStyle from '../../src/shared/text_style_defaults_factory.json'
+
+vi.mock('@/components/ui/UiIcon.vue', () => ({ default: { render: () => null } }))
 
 afterEach(() => vi.unstubAllGlobals())
 
-it('preserves an unsaved draft across task navigation and saves provider credentials atomically', async () => {
+it('edits only plugin text style and the optional DOM assistant, preserving drafts across tabs', async () => {
   document.body.innerHTML =
-    '<button id="tasks-tab"></button><button id="settings-tab"></button><p id="notice"></p><main id="content"></main>'
+    '<div id="app"></div>'
   location.hash = 'settings'
-  const provider = () => ({
-    provider: 'ollama',
-    modelName: 'existing-model',
-    customBaseUrl: '',
-    openaiOptions: {
-      execution: {
-        useStream: false,
-        rpmLimit: 0,
-        businessRetries: 1,
-        transportRetries: 1,
-      },
-      request: { forceJsonOutput: false },
-    },
-  })
   const settings = {
     settings: [
-      {
-        domain: 'translation',
-        revision: 3,
-        schemaVersion: 9,
-        payload: {
-          targetLanguage: 'zh',
-          ocrEngine: 'manga_ocr',
-          textDetector: 'default',
-          translation: { ...provider(), translationMode: 'batch' },
-          hqTranslation: { ...provider(), prompt: 'hq', batchSize: 3 },
-          aiVisionOcr: {
-            ...provider(),
-            prompt: 'ocr',
-            promptMode: 'normal',
-            minImageSize: 32,
-          },
-          browserDomAgent: provider(),
-          baiduOcr: { version: 'standard', sourceLanguage: 'JAP' },
-          hybridOcr: { enabled: false },
-          parallel: { enabled: false, deepLearningLockSize: 1 },
-        },
-      },
       {
         domain: 'text_style_defaults',
         revision: 1,
         schemaVersion: 2,
-        payload: { fontFamily: 'font', strokeWidth: 1.2 },
+        payload: {
+          ...factoryStyle,
+          fontFamily: 'font',
+          autoFontSize: true,
+          useAutoTextColor: false,
+          inpaintMethod: 'solid',
+          strokeEnabled: true,
+        },
       },
-    ],
-    credentials: [
       {
-        domain: 'ocr',
-        provider: 'baidu',
-        credentialId: 'baidu-key',
-        credentialVersionId: 'baidu-version',
-        revision: 2,
-        secret: {
-          baidu_api_key: 'old-key',
-          baidu_secret_key: 'keep-this-secret',
+        domain: 'browser_dom_agent',
+        revision: 0,
+        schemaVersion: 1,
+        payload: {
+          provider: 'ollama',
+          modelName: 'agent-model',
+          customBaseUrl: '',
+          openaiOptions: {
+            request: { forceJsonOutput: false },
+            execution: {
+              useStream: false,
+              rpmLimit: 0,
+              businessRetries: 1,
+              transportRetries: 1,
+            },
+          },
         },
       },
     ],
+    credentials: [],
     providerSettings: [],
     bookSettings: [],
   }
@@ -86,12 +68,20 @@ it('preserves an unsaved draft across task navigation and saves provider credent
     'fetch',
     vi.fn(async (url: string, init: RequestInit) => {
       if (url.endsWith('/settings/transactions')) {
-        transactions.push(JSON.parse(String(init.body)))
-        return Response.json({ saved: true })
+        const transaction = JSON.parse(String(init.body))
+        transactions.push(transaction)
+        return Response.json({
+          settings: transaction.settings.map((row: { domain: string; baseRevision: number }) => ({ domain: row.domain, revision: row.baseRevision + 1 })),
+          providerSettings: transaction.providerSettings.map((row: { domain: string; provider: string; baseRevision: number }) => ({ domain: row.domain, provider: row.provider, revision: row.baseRevision + 1 })),
+          credentials: transaction.credentialEdits.map((row: { domain: string; provider: string; secret: unknown }) => ({ ...row, credentialId: 'key', credentialVersionId: 'version', revision: 1, currentVersion: 1, hasKey: true })),
+          bookSettings: [], prompts: [],
+        })
       }
       if (url.includes('/settings?')) {
-        const domains = new URL(url).searchParams.get('domains')!.split(',')
-        return Response.json({ ...settings, credentials: settings.credentials.filter(row => domains.includes(row.domain)) })
+        expect(new URL(url).searchParams.get('domains')).toBe(
+          'text_style_defaults,browser_dom_agent',
+        )
+        return Response.json(settings)
       }
       if (url.endsWith('/fonts'))
         return Response.json({
@@ -106,72 +96,100 @@ it('preserves an unsaved draft across task navigation and saves provider credent
       throw new Error(`Unexpected endpoint ${url}`)
     }),
   )
+  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn() }))
+  vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} })
   await import('./panel')
-  const input = (label: string) =>
-    document.querySelector<HTMLInputElement | HTMLSelectElement>(
-      `[aria-label="${label}"]`,
-    )!
-  const edit = (node: HTMLInputElement | HTMLSelectElement, value: string) => {
+  const input = (label: string) => {
+    const node = document.querySelector<HTMLInputElement | HTMLSelectElement>(`[aria-label="${label}"]`)
+    const fieldLabel = [...document.querySelectorAll('label')].find(node => node.textContent?.trim() === label)
+    return node ?? (fieldLabel?.htmlFor ? document.getElementById(fieldLabel.htmlFor) as HTMLInputElement : null)!
+  }
+  const edit = async (label: string, value: string) => {
+    const node = input(label)
+    if (node.tagName === 'BUTTON') {
+      node.click()
+      await nextTick()
+      document.querySelector<HTMLElement>(`[data-ui-select-value="${value}"]`)!.click()
+      await nextTick()
+      return
+    }
     node.value = value
     node.dispatchEvent(new Event('input'))
+    node.dispatchEvent(new Event('change'))
+    await nextTick()
   }
-  await vi.waitFor(() => expect(input('目标语言')).not.toBeNull())
-  edit(input('目标语言'), 'en')
+  const toggle = async (label: string, checked: boolean) => {
+    const node = input(label) as HTMLInputElement
+    node.checked = checked
+    node.dispatchEvent(new Event('change'))
+    await nextTick()
+  }
+  await vi.waitFor(() => expect(input('文本字体')).not.toBeNull())
+  expect(transactions).toHaveLength(0)
+  expect(document.body.textContent).not.toContain('保存插件配置')
+  expect(document.body.textContent).not.toContain('重新读取')
+  for (const label of [
+    '目标语言',
+    'OCR 引擎',
+    '文本检测',
+    '并行翻译',
+    '普通翻译提示词',
+  ])
+    expect(input(label)).toBeNull()
+  expect(input('字号').disabled).toBe(true)
+  await toggle('自动计算初始字号', false)
+  expect(input('字号').disabled).toBe(false)
+  await toggle('自动识别文字颜色', true)
+  expect(input('文字颜色').disabled).toBe(true)
+  await edit('气泡填充方式', 'lama_mpe')
+  expect(input('填充颜色')).toBeNull()
+  await toggle('启用描边', false)
+  expect(input('描边颜色')).toBeNull()
+  await toggle('启用描边', true)
+  await edit('描边宽度 (px)', '1.2')
+  await edit('行内对齐', 'center')
+  await edit('文本块对齐', 'end')
   location.hash = 'tasks'
   await vi.waitFor(() =>
     expect(document.body.textContent).toContain('暂无任务'),
   )
   location.hash = 'settings'
-  await vi.waitFor(() => expect(input('目标语言')?.value).toBe('en'))
-  edit(input('服务商'), 'siliconflow')
-  edit(input('模型名称'), 'new-model')
-  edit(input('API Key'), 'test-only-secret')
-  edit(input('API Key（已配置时留空保持）'), 'new-baidu-key')
-  const save = [...document.querySelectorAll('button')].find(
-    (node) => node.textContent === '保存插件配置',
-  )!
-  save.click()
+  await vi.waitFor(() => expect(input('描边宽度 (px)')?.value).toBe('1.2'))
+  await edit('识别助手服务商', 'siliconflow')
+  await edit('模型名称', 'new-agent-model')
+  await edit('API Key', 'test-agent-only-secret')
   await vi.waitFor(() => expect(transactions).toHaveLength(1))
   expect(transactions[0]).toMatchObject({
     settings: [
       {
-        domain: 'translation',
-        baseRevision: 3,
-        payload: {
-          targetLanguage: 'en',
-          translation: { provider: 'siliconflow' },
-        },
+        domain: 'text_style_defaults',
+        baseRevision: 1,
+        payload: { strokeWidth: 1.2, inlineAlign: 'center', blockAlign: 'end' },
+      },
+      {
+        domain: 'browser_dom_agent',
+        baseRevision: 0,
+        payload: { provider: 'siliconflow' },
       },
     ],
     providerSettings: [
       {
-        domain: 'translation',
+        domain: 'browser_dom_agent',
         provider: 'siliconflow',
-        payload: { modelName: 'new-model' },
-        credentialEditRef: 'translation:siliconflow',
+        payload: { modelName: 'new-agent-model' },
+        credentialEditRef: 'siliconflow',
       },
-      { domain: 'ocr', provider: 'baidu', credentialEditRef: 'ocr:baidu' },
     ],
     credentialEdits: [
       {
-        domain: 'translation',
+        domain: 'browser_dom_agent',
         provider: 'siliconflow',
-        secret: { api_key: 'test-only-secret' },
-      },
-      {
-        domain: 'ocr',
-        provider: 'baidu',
-        baseRevision: 2,
-        secret: {
-          baidu_api_key: 'new-baidu-key',
-          baidu_secret_key: 'keep-this-secret',
-        },
+        secret: { api_key: 'test-agent-only-secret' },
       },
     ],
   })
-  await vi.waitFor(() =>
-    expect(document.getElementById('notice')?.textContent).toContain(
-      '插件配置已保存',
-    ),
-  )
+  await vi.waitFor(() => expect(input('API Key · 已配置，留空保持')?.value).toBe(''))
+  await edit('模型名称', 'updated-model')
+  await vi.waitFor(() => expect(transactions).toHaveLength(2))
+  expect(transactions[1]).toMatchObject({ settings: [], credentialEdits: [], providerSettings: [{ baseRevision: 1, credentialVersionId: 'version', payload: { modelName: 'updated-model' } }] })
 })

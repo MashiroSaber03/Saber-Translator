@@ -1,89 +1,13 @@
+@import '../../vue-frontend/src/styles/tokens/foundation.css';
+@import '../../vue-frontend/src/styles/tokens/semantic.css';
+@import '../../vue-frontend/src/styles/tokens/component.css';
+
 * {
   box-sizing: border-box;
 }
 body {
   margin: 0;
-  background: #faf8fa;
-  color: #292431;
-  font:
-    14px/1.55 system-ui,
-    'Microsoft YaHei',
-    sans-serif;
-}
-header {
-  padding: 18px 18px 12px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-header strong {
-  font-size: 23px;
-  color: #cb487e;
-}
-header span,
-.hint {
-  color: #77717d;
-  font-size: 12px;
-}
-nav {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  display: flex;
-  background: #faf8fa;
-  padding: 0 14px 12px;
-  gap: 8px;
-}
-nav button {
-  flex: 1;
-}
-main {
-  padding: 0 14px 22px;
-}
-#notice {
-  margin: 0 14px 12px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-#notice:empty {
-  display: none;
-}
-#notice[data-error='true'] {
-  color: #ad2542;
-}
-h3 {
-  font-size: 14px;
-  margin: 4px 0 8px;
-  overflow-wrap: anywhere;
-}
-.job-progress {
-  color: #655d6a;
-  font-size: 12px;
-  margin: 8px 0;
-}
-progress {
-  width: 100%;
-  height: 8px;
-  accent-color: #ce4c80;
-}
-.error {
-  color: #ad2542;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.empty {
-  padding: 32px 8px;
-  text-align: center;
-  color: #777;
-}
-small {
-  color: #777;
-}
-.job-detail {
-  font-size: 12px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.connection {
-  padding: 20px;
+  font: 14px/1.6 var(--font-sans);
+  background: var(--color-surface-app);
+  color: var(--color-text-default);
 }

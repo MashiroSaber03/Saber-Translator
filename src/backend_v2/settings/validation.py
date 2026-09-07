@@ -31,6 +31,7 @@ from src.shared.paddleocr_vl import PADDLEOCR_VL_LANGUAGE_NAMES
 
 
 APP_SETTING_SCHEMA_VERSIONS = {
+    "browser_dom_agent": 1,
     "translation": TRANSLATION_SETTINGS_SCHEMA_VERSION,
     "text_style_defaults": TEXT_STYLE_DEFAULTS_SCHEMA_VERSION,
     "workflow_preferences": 1,
@@ -793,6 +794,13 @@ def validate_setting_payload(
     _reject_secret_fields(result, domain)
     if domain == "translation":
         _validate_translation(result, schema_version)
+    elif domain == "browser_dom_agent":
+        provider = result.get("provider")
+        _require_provider(provider, PLUGIN_AGENT_CAPABILITY, "browser_dom_agent.provider")
+        validate_provider_setting_payload(
+            domain, provider, {key: value for key, value in result.items() if key != "provider"},
+            schema_version=1,
+        )
     elif domain == "workflow_preferences":
         _validate_workflow_preferences(result)
     elif domain == "export_preferences":

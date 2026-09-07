@@ -7,7 +7,6 @@
   "permissions": [
     "storage",
     "contextMenus",
-    "sidePanel",
     "alarms"
   ],
   "host_permissions": [
@@ -48,7 +47,10 @@
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
   },
-  "side_panel": {
-    "default_path": "panel.html"
-  }
+  "web_accessible_resources": [
+    {
+      "resources": ["panel.html", "assets/*"],
+      "matches": ["http://*/*", "https://*/*"]
+    }
+  ]
 }

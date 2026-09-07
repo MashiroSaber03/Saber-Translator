@@ -30,7 +30,7 @@ beforeEach(async () => {
     },
     alarms: { create: vi.fn(), onAlarm: event() },
     contextMenus: { onClicked: event(), update: vi.fn().mockResolvedValue(undefined) },
-    tabs: { query: vi.fn().mockResolvedValue([]), onActivated: event(), onUpdated: event(), onRemoved: event() },
+    tabs: { sendMessage: vi.fn().mockResolvedValue({ ok: true, data: { opened: true } }), query: vi.fn().mockResolvedValue([{ id: 4 }]), onActivated: event(), onUpdated: event(), onRemoved: event() },
   })
   await import('./background')
 })
@@ -44,6 +44,23 @@ function request<T>(message: BackgroundRequest, sender: chrome.runtime.MessageSe
 }
 
 describe('extension background boundary', () => {
+  it.each(['settings', 'tasks'] as const)('opens %s in the existing page floating window', async section => {
+    expect(await request({ type: 'open-management', section })).toEqual({ ok: true, data: { opened: true } })
+    expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(4, { type: 'open-management', section })
+  })
+
+  it('rejects a host page trying to invoke the toolbar management route', async () => {
+    expect(await request({ type: 'open-management', section: 'tasks' }, {
+      id, url: 'https://comic.example', tab: { id: 4 },
+    } as chrome.runtime.MessageSender)).toMatchObject({ ok: false })
+    expect(chrome.tabs.sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('returns the floating-window error to the toolbar popup', async () => {
+    vi.mocked(chrome.tabs.sendMessage).mockImplementationOnce(async () => ({ ok: false, error: { message: '请先启用插件' } }))
+    expect(await request({ type: 'open-management', section: 'settings' })).toMatchObject({ ok: false, error: { message: '请先启用插件' } })
+  })
+
   it('discards a session whose page closes before creation finishes', async () => {
     local['saber-extension-settings-v1'] = { token: 'test-token-with-at-least-32-characters', serverPort: 5000, domains: {} }
     const pageUrl = 'https://comic.example/chapter'

@@ -3,14 +3,31 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["chrome", "node", "vitest/globals"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "chrome",
+      "node",
+      "vitest/globals"
+    ],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "useDefineForClassFields": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "paths": {
+      "@/*": [
+        "../vue-frontend/src/*"
+      ]
+    }
   },
-  "include": ["src", "scripts", "vite.config.ts"]
+  "include": [
+    "src",
+    "scripts",
+    "vite.config.ts"
+  ]
 }

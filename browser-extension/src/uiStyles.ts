@@ -75,6 +75,9 @@ button, input, select { font: inherit; }
 .saber-icon-button { width: 30px; height: 30px; padding: 0; border: 0; border-radius: 9px; color: var(--saber-muted); background: transparent; cursor: pointer; }
 .saber-icon-button:hover { color: var(--saber-text); background: var(--saber-pink-soft); }
 .saber-body { min-height: 0; display: flex; flex-direction: column; gap: 11px; overflow: auto; padding: 12px 13px 14px; }
+.saber-management { display: flex; flex-direction: column; min-height: 0; height: min(500px, calc(100vh - 150px)); }
+.saber-management-toolbar { padding: 8px 12px; border-bottom: 1px solid var(--saber-border); }
+.saber-management-frame { display: block; flex: 1; min-height: 0; width: 100%; border: 0; }
 .saber-panel[data-view="candidates"] .saber-body { overflow: hidden; }
 .saber-banner { display: flex; gap: 9px; padding: 10px 11px; flex: 0 0 auto; border: 1px solid var(--saber-border); border-radius: 13px; background: var(--saber-pink-soft); }
 .saber-banner__dot { width: 8px; height: 8px; margin-top: 5px; flex: 0 0 auto; border-radius: 50%; background: var(--saber-pink); }

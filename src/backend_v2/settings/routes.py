@@ -96,6 +96,12 @@ def create_settings_blueprint(
             return SettingsRepository(engine, browser_extension=True)
         return settings
 
+    def provider_diagnostics(body: dict) -> ProviderDiagnostics:
+        repository = settings_repository()
+        if repository.scope.browser_extension and body.get("domain") != "browser_dom_agent":
+            raise ValueError("插件配置仅支持网页识别助手的服务商诊断")
+        return ProviderDiagnostics(repository)
+
     @blueprint.errorhandler(RevisionConflict)
     def conflict(error: RevisionConflict):
         LOGGER.warning("设置保存发生版本冲突：%s", error)
@@ -351,7 +357,7 @@ def create_settings_blueprint(
         body = _json_body(allowed_keys=_DIAGNOSTIC_FIELDS)
         if not profile.allow_local_providers and _uses_local_provider(body):
             raise ValueError("公开模式不支持本机模型服务")
-        return jsonify(ProviderDiagnostics(settings_repository()).model_catalog(body))
+        return jsonify(provider_diagnostics(body).model_catalog(body))
 
     @blueprint.post("/connection-tests/<kind>")
     def connection_test(kind: str) -> Response:
@@ -360,7 +366,7 @@ def create_settings_blueprint(
         body = _json_body(allowed_keys=_DIAGNOSTIC_FIELDS)
         if not profile.allow_local_providers and _uses_local_provider(body):
             raise ValueError("公开模式不支持本机模型服务")
-        return jsonify(ProviderDiagnostics(settings_repository()).connection_test(kind, body))
+        return jsonify(provider_diagnostics(body).connection_test(kind, body))
 
     @blueprint.get("/prompts")
     def list_prompts() -> Response:

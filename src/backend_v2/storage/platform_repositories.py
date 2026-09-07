@@ -650,6 +650,18 @@ class SettingsRepository:
             "credentials": credential_rows,
         }
 
+        if self.scope.browser_extension and (not domains or "browser_dom_agent" in domains):
+            if not any(row["domain"] == "browser_dom_agent" for row in document["settings"]):
+                with self.engine.connect() as connection:
+                    legacy = connection.execute(select(app_settings.c.payload_json).where(
+                        app_settings.c.owner_user_id == effective_owner_id(),
+                        app_settings.c.domain == "browser_extension:translation",
+                    )).scalar_one_or_none()
+                if legacy is not None:
+                    document["settings"].append({
+                        "domain": "browser_dom_agent", "revision": 0, "schemaVersion": 1,
+                        "payload": json.loads(legacy)["browserDomAgent"],
+                    })
         self.scope.add_factory_defaults(document, domains)
         return document
 
@@ -1212,26 +1224,25 @@ class SettingsRepository:
         connection: Connection,
         credential_id: str,
     ) -> None:
-        if self.scope.browser_extension:
-            versions = set(connection.execute(
-                select(credential_versions.c.id).where(
-                    credential_versions.c.credential_id == credential_id,
-                )
-            ).scalars())
-            snapshots = connection.execute(
-                select(book_settings.c.payload_json)
-                .join(books, books.c.id == book_settings.c.book_id)
-                .where(
-                    books.c.owner_user_id == effective_owner_id(),
-                    book_settings.c.domain == "browser_extension_snapshot",
-                )
-            ).scalars()
-            if any(
-                row["credentialVersionId"] in versions
-                for payload in snapshots
-                for row in json.loads(payload)["providerSettings"]
-            ):
-                raise RevisionConflict("credential is still referenced by a browser session")
+        versions = set(connection.execute(
+            select(credential_versions.c.id).where(
+                credential_versions.c.credential_id == credential_id,
+            )
+        ).scalars())
+        snapshots = connection.execute(
+            select(book_settings.c.payload_json)
+            .join(books, books.c.id == book_settings.c.book_id)
+            .where(
+                books.c.owner_user_id == effective_owner_id(),
+                book_settings.c.domain == "browser_extension_snapshot",
+            )
+        ).scalars()
+        if any(
+            row["credentialVersionId"] in versions
+            for payload in snapshots
+            for row in json.loads(payload)["providerSettings"]
+        ):
+            raise RevisionConflict("credential is still referenced by a browser session")
         removed = connection.execute(
             delete(credentials).where(
                 credentials.c.id == credential_id,

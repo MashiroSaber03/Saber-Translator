@@ -96,9 +96,8 @@ class BrowserDomAgentProviderResolver:
         self.settings = SettingsRepository(engine, browser_extension=True)
 
     def runtime_config(self) -> dict[str, Any]:
-        document = self.settings.load(domains=("translation", "browser_dom_agent"))
-        translation = next(row["payload"] for row in document["settings"] if row["domain"] == "translation")
-        selected_settings = dict(translation["browserDomAgent"])
+        document = self.settings.load(domains=("browser_dom_agent",))
+        selected_settings = dict(document["settings"][0]["payload"])
         selected = str(selected_settings["provider"])
         provider_row = next((row for row in document["providerSettings"]
                              if row["domain"] == "browser_dom_agent" and row["provider"] == selected), None)

@@ -9,7 +9,6 @@ import { UI_STYLES } from './uiStyles'
 
 function callbacks(): UiCallbacks {
   return {
-    onOpenManagement: vi.fn(),
     onDiscover: vi.fn(),
     onConfirm: vi.fn(),
     onPreferenceChange: vi.fn(),
@@ -50,6 +49,7 @@ function mountUi(handlers: UiCallbacks): ExtensionUi {
 
 let trustedEvents = true
 beforeEach(() => {
+  vi.stubGlobal('chrome', { runtime: { getURL: (path: string) => `chrome-extension://test-extension/${path}` } })
   document.documentElement.replaceChildren(document.createElement('body'))
   trustedEvents = true
   const addListener = ShadowRoot.prototype.addEventListener
@@ -65,6 +65,7 @@ beforeEach(() => {
   })
 })
 afterEach(() => {
+  vi.unstubAllGlobals()
   for (const ui of mounted.splice(0)) ui.remove()
   vi.restoreAllMocks()
 })
@@ -78,9 +79,30 @@ describe('isolated extension UI', () => {
     const buttons = [...ui.shadow.querySelectorAll<HTMLButtonElement>('button')]
     buttons.find(button => button.textContent === '识别漫画图片')!.click()
     ui.shadow.querySelector('select')!.dispatchEvent(new Event('change', { bubbles: true }))
+    buttons.find(button => button.textContent === '翻译配置')!.click()
     expect(handlers.onDiscover).not.toHaveBeenCalled()
     expect(handlers.onPreferenceChange).not.toHaveBeenCalled()
-    expect(handlers.onOpenManagement).not.toHaveBeenCalled()
+    expect(ui.shadow.querySelector('iframe')).toBeNull()
+  })
+  it('opens configuration and tasks inside the same floating window and returns without discarding the frame', () => {
+    const ui = mountUi(callbacks())
+    const click = (label: string) => [...ui.shadow.querySelectorAll('button')].find(button => button.textContent === label)!.click()
+    click('翻译配置')
+    const frame = ui.shadow.querySelector('iframe')!
+    expect(frame.src).toBe('chrome-extension://test-extension/panel.html#settings')
+    expect(ui.shadow.querySelector<HTMLElement>('.saber-body')!.hidden).toBe(true)
+    click('返回漫画翻译')
+    expect(ui.shadow.querySelector<HTMLElement>('.saber-body')!.hidden).toBe(false)
+    expect(ui.shadow.querySelector<HTMLElement>('.saber-management')!.hidden).toBe(true)
+    const postMessage = vi.fn()
+    Object.defineProperty(frame, 'contentWindow', { value: { postMessage }, configurable: true })
+    click('任务中心')
+    expect(ui.shadow.querySelector('iframe')).toBe(frame)
+    expect(frame.src).toBe('chrome-extension://test-extension/panel.html#settings')
+    expect(postMessage).toHaveBeenCalledWith({ type: 'saber-open-management', section: 'tasks' }, 'chrome-extension://test-extension')
+    ui.setOpen(false)
+    ui.setOpen(true)
+    expect(ui.shadow.querySelector('iframe')).toBe(frame)
   })
   it('uses a Shadow DOM and retains settings while the panel is closed and reopened', () => {
     const handlers = callbacks()

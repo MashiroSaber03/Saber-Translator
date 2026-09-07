@@ -1,24 +1,14 @@
 <template>
-  <div>
-    <p v-if="notice" role="status" :class="{ 'browser-settings-error': hasError }">{{ notice }}</p>
-    <div ref="container" />
-  </div>
+  <BrowserExtensionSettingsForm ref="editor" :api="api" @saving="emit('saving', $event)" />
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { ref } from 'vue'
 import { apiClient } from '@/api/client'
-import {
-  createPluginSettingsEditor,
-  type PluginSettingsApi,
-} from '../../../../src/shared/browserExtensionSettings'
-
+import BrowserExtensionSettingsForm from './BrowserExtensionSettingsForm.vue'
+import type { PluginSettingsApi } from '@/types/browserExtensionSettings'
 const emit = defineEmits<{ (event: 'saving', value: boolean): void }>()
-const container = ref<HTMLElement>()
-const notice = ref('正在读取插件配置…')
-const hasError = ref(false)
-let editor: ReturnType<typeof createPluginSettingsEditor> | undefined
-
+const editor = ref<InstanceType<typeof BrowserExtensionSettingsForm>>()
 const api: PluginSettingsApi = async <T,>(path: string, method = 'GET', body?: unknown) => {
   const url = `/api/v2${path}`
   const config = {
@@ -36,31 +26,5 @@ const api: PluginSettingsApi = async <T,>(path: string, method = 'GET', body?: u
   }
 }
 
-onMounted(async () => {
-  editor = createPluginSettingsEditor(
-    container.value!,
-    api,
-    (text, error = false) => {
-      notice.value = text
-      hasError.value = error
-    },
-    saving => emit('saving', saving)
-  )
-  try {
-    await editor.load()
-    notice.value = ''
-  } catch (error) {
-    notice.value = error instanceof Error ? error.message : '读取插件配置失败'
-    hasError.value = true
-  }
-})
-
-onBeforeUnmount(() => editor?.dispose())
-defineExpose({ save: () => editor?.save() ?? Promise.resolve(true) })
+defineExpose({ save: () => editor.value?.save() ?? Promise.resolve(true) })
 </script>
-
-<style scoped>
-.browser-settings-error {
-  color: var(--color-text-danger, #ad2542);
-}
-</style>

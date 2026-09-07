@@ -8,13 +8,12 @@ from sqlalchemy.sql.elements import ColumnElement
 from src.backend_v2.storage.defaults import (
     DEFAULT_TEXT_STYLE,
     TEXT_STYLE_DEFAULTS_SCHEMA_VERSION,
-    TRANSLATION_SETTINGS_SCHEMA_VERSION,
     default_translation_settings,
 )
 
 EXTENSION_PREFIX = "browser_extension:"
 EXTENSION_DOMAINS = frozenset(
-    {"translation", "text_style_defaults", "hq", "ai_vision_ocr", "browser_dom_agent", "ocr"}
+    {"text_style_defaults", "browser_dom_agent"}
 )
 
 
@@ -35,7 +34,7 @@ class SettingsScope:
 
     def condition(self, column: ColumnElement[str]) -> ColumnElement[bool]:
         extension = column.startswith(EXTENSION_PREFIX, autoescape=True)
-        return extension if self.browser_extension else ~extension
+        return column.in_([self.prefix + domain for domain in EXTENSION_DOMAINS]) if self.browser_extension else ~extension
 
     def add_factory_defaults(
         self, document: dict[str, Any], domains: tuple[str, ...]
@@ -44,7 +43,7 @@ class SettingsScope:
             return
         existing = {row["domain"] for row in document["settings"]}
         for domain, payload, version in (
-            ("translation", default_translation_settings(), TRANSLATION_SETTINGS_SCHEMA_VERSION),
+            ("browser_dom_agent", default_translation_settings()["browserDomAgent"], 1),
             ("text_style_defaults", DEFAULT_TEXT_STYLE, TEXT_STYLE_DEFAULTS_SCHEMA_VERSION),
         ):
             if domain not in existing and (not domains or domain in domains):

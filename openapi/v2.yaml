@@ -397,7 +397,7 @@ paths:
         - in: query
           name: scope
           required: false
-          description: Local profile only. Select the independent browser extension configuration; omitted uses translator defaults.
+          description: Local profile only. Select plugin text_style_defaults and optional browser_dom_agent settings; omitted uses translator settings.
           schema: {type: string, enum: [browser_extension]}
         - name: domains
           in: query
@@ -419,7 +419,7 @@ paths:
         - in: query
           name: scope
           required: false
-          description: Local profile only. Select the independent browser extension configuration; omitted uses translator defaults.
+          description: Local profile only. Select plugin text_style_defaults and optional browser_dom_agent settings; omitted uses translator settings.
           schema: {type: string, enum: [browser_extension]}
         - name: credential_id
           in: path
@@ -442,7 +442,7 @@ paths:
         - in: query
           name: scope
           required: false
-          description: Local profile only. Select the independent browser extension configuration; omitted uses translator defaults.
+          description: Local profile only. Select plugin text_style_defaults and optional browser_dom_agent settings; omitted uses translator settings.
           schema: {type: string, enum: [browser_extension]}
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -588,7 +588,7 @@ paths:
         - in: query
           name: scope
           required: false
-          description: Local profile only. Select the independent browser extension configuration; omitted uses translator defaults.
+          description: Local profile only. Select plugin text_style_defaults and optional browser_dom_agent settings; omitted uses translator settings.
           schema: {type: string, enum: [browser_extension]}
       tags: [settings]
       operationId: fetchModelCatalog
@@ -615,7 +615,7 @@ paths:
         - in: query
           name: scope
           required: false
-          description: Local profile only. Select the independent browser extension configuration; omitted uses translator defaults.
+          description: Local profile only. Select plugin text_style_defaults and optional browser_dom_agent settings; omitted uses translator settings.
           schema: {type: string, enum: [browser_extension]}
         - name: kind
           in: path
@@ -4067,7 +4067,7 @@ paths:
         "404": {$ref: "#/components/responses/NotFound"}
   /browser-extension/manage/settings:
     get:
-      description: Plugin settings and credentials are independent from translator defaults. Unsaved settings use factory values with revision 0.
+      description: Plugin settings include only independent text_style_defaults and the optional browser_dom_agent. OCR and translation services reuse translator settings. Unsaved settings use factory values with revision 0.
       tags:
       - browser-extension
       operationId: browserManageGetSettings

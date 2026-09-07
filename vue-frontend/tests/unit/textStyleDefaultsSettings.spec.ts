@@ -295,7 +295,7 @@ describe('TextStyleDefaultsSettings', () => {
   })
 
   it('uses the shared color input primitive for default color fields', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/components/settings/TextStyleDefaultsSettings.vue'), 'utf8')
+    const source = readFileSync(resolve(process.cwd(), 'src/components/settings/TextStyleForm.vue'), 'utf8')
 
     expect(source).toContain("import UiColorInput from '@/components/ui/UiColorInput.vue'")
     expect(source).not.toContain('type="color"')

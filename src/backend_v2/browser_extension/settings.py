@@ -29,11 +29,15 @@ def session_settings(connection: Connection, book_id: str) -> dict[str, Any]:
 def capture_session_settings(connection: Connection, book_id: str) -> None:
     scope = SettingsScope(browser_extension=True)
     document: dict[str, Any] = {"settings": [], "providerSettings": []}
-    for table, key in ((app_settings, "settings"), (provider_settings, "providerSettings")):
+    # Translation services are shared with the translator; only page style is plugin-owned.
+    for table, key, domains in (
+        (app_settings, "settings", ("translation", "browser_extension:text_style_defaults")),
+        (provider_settings, "providerSettings", ("translation", "hq", "ai_vision_ocr", "ocr")),
+    ):
         for row in connection.execute(
             select(table).where(
                 table.c.owner_user_id == effective_owner_id(),
-                scope.condition(table.c.domain),
+                table.c.domain.in_(domains),
             )
         ).mappings():
             value = {
@@ -48,7 +52,7 @@ def capture_session_settings(connection: Connection, book_id: str) -> None:
                     credentialVersionId=row["credential_version_id"],
                 )
             document[key].append(value)
-    scope.add_factory_defaults(document, ())
+    scope.add_factory_defaults(document, ("text_style_defaults",))
     connection.execute(
         insert(book_settings).values(
             book_id=book_id,

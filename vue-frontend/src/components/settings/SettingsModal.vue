@@ -38,7 +38,7 @@
 
     <fieldset
       class="settings-modal__fieldset"
-      :disabled="!settingsStore.isBackendReady || isSaving"
+      :disabled="!settingsStore.isBackendReady || globalSaving"
     >
       <ProductSegmentedTabs
         :tabs="tabs"
@@ -136,7 +136,7 @@
     <template #footer>
       <ProductActionRow aria-label="设置状态" variant="dialog">
         <span class="settings-modal__save-status">
-          {{ isSaving ? '正在保存…' : activeTab === 'browser-extension' ? '插件配置独立保存，点击完成也会保存' : '修改后自动保存' }}
+          {{ isSaving ? '正在保存…' : '修改后自动保存' }}
         </span>
         <UiButton variant="primary" :disabled="isSaving" @click="handleClose">完成</UiButton>
       </ProductActionRow>

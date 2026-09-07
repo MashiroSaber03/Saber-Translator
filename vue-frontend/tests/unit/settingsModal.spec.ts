@@ -440,7 +440,7 @@ describe('SettingsModal', () => {
     )
 
     expect(source).toContain('title="设置加载失败"')
-    expect(source).toContain(':disabled="!settingsStore.isBackendReady || isSaving"')
+    expect(source).toContain(':disabled="!settingsStore.isBackendReady || globalSaving"')
     expect(source).toContain('settingsStore.backendError ||')
   })
 

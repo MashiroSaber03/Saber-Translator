@@ -372,7 +372,7 @@ describe('settings provider select contracts', () => {
   it('passes stable ids and accessible names into searchable combobox fields', () => {
     const files = [
       'src/components/settings/OcrSettings.vue',
-      'src/components/settings/TextStyleDefaultsSettings.vue',
+      'src/components/settings/TextStyleForm.vue',
       'src/components/translate/settings-sidebar/TextStyleSection.vue',
       'src/components/product/ProductBookSelector.vue',
     ]

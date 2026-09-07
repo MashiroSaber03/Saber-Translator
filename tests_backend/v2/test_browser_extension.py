@@ -61,16 +61,10 @@ def browser_platform(tmp_path: Path):
     metadata.create_all(engine)
     seed_system_records(engine, profile_name="local")
     with engine.begin() as connection:
-        from src.backend_v2.storage.defaults import default_translation_settings, TRANSLATION_SETTINGS_SCHEMA_VERSION
-        connection.execute(insert(app_settings).values(
-            domain="browser_extension:translation",
-            payload_json=json.dumps(default_translation_settings()),
-            schema_version=TRANSLATION_SETTINGS_SCHEMA_VERSION,
-        ))
         payload = json.loads(
             connection.execute(
                 select(app_settings.c.payload_json).where(
-                    app_settings.c.domain == "browser_extension:translation"
+                    app_settings.c.domain == "translation"
                 )
             ).scalar_one()
         )
@@ -78,12 +72,12 @@ def browser_platform(tmp_path: Path):
         payload["translation"]["modelName"] = "test-model"
         connection.execute(
             update(app_settings)
-            .where(app_settings.c.domain == "browser_extension:translation")
+            .where(app_settings.c.domain == "translation")
             .values(payload_json=json.dumps(payload, ensure_ascii=False))
         )
         connection.execute(
             insert(provider_settings).values(
-                domain="browser_extension:translation",
+                domain="translation",
                 provider="ollama",
                 payload_json=json.dumps(
                     {
@@ -723,7 +717,7 @@ def test_browser_translation_reuses_saved_parallel_setting(
         payload = json.loads(
             connection.execute(
                 select(app_settings.c.payload_json).where(
-                    app_settings.c.domain == "browser_extension:translation"
+                    app_settings.c.domain == "translation"
                 )
             ).scalar_one()
         )
@@ -731,7 +725,7 @@ def test_browser_translation_reuses_saved_parallel_setting(
         payload["parallel"]["deepLearningLockSize"] = 2
         connection.execute(
             update(app_settings)
-            .where(app_settings.c.domain == "browser_extension:translation")
+            .where(app_settings.c.domain == "translation")
             .values(payload_json=json.dumps(payload, ensure_ascii=False))
         )
 
@@ -1275,20 +1269,20 @@ def test_browser_start_failure_remains_explicitly_startable(browser_platform) ->
     }, content_type="multipart/form-data")
     with engine.begin() as connection:
         original = connection.execute(select(app_settings.c.payload_json).where(
-            app_settings.c.domain == "browser_extension:translation"
+            app_settings.c.domain == "translation"
         )).scalar_one()
         config = json.loads(original)
         config["translation"]["modelName"] = ""
-        connection.execute(update(app_settings).where(app_settings.c.domain == "browser_extension:translation").values(
+        connection.execute(update(app_settings).where(app_settings.c.domain == "translation").values(
             payload_json=json.dumps(config)
         ))
         provider_original = connection.execute(select(provider_settings.c.payload_json).where(
-            provider_settings.c.domain == "browser_extension:translation", provider_settings.c.provider == "ollama"
+            provider_settings.c.domain == "translation", provider_settings.c.provider == "ollama"
         )).scalar_one()
         provider = json.loads(provider_original)
         provider["modelName"] = ""
         connection.execute(update(provider_settings).where(
-            provider_settings.c.domain == "browser_extension:translation", provider_settings.c.provider == "ollama"
+            provider_settings.c.domain == "translation", provider_settings.c.provider == "ollama"
         ).values(payload_json=json.dumps(provider)))
     assert client.post(route + "/start", headers=HEADERS).status_code == 422
     pending = client.get(route, headers=HEADERS).get_json()
@@ -1296,9 +1290,9 @@ def test_browser_start_failure_remains_explicitly_startable(browser_platform) ->
     assert pending["pages"][0]["pageId"] is not None
     with engine.begin() as connection:
         assert connection.execute(select(func.count()).select_from(jobs)).scalar_one() == 0
-        connection.execute(update(app_settings).where(app_settings.c.domain == "browser_extension:translation").values(payload_json=original))
+        connection.execute(update(app_settings).where(app_settings.c.domain == "translation").values(payload_json=original))
         connection.execute(update(provider_settings).where(
-            provider_settings.c.domain == "browser_extension:translation", provider_settings.c.provider == "ollama"
+            provider_settings.c.domain == "translation", provider_settings.c.provider == "ollama"
         ).values(payload_json=provider_original))
     from src.backend_v2.storage.platform_repositories import SettingsRepository, SettingMutation
     settings = SettingsRepository(engine, browser_extension=True)
@@ -1430,7 +1424,7 @@ def test_dom_agent_uses_its_independent_provider_settings(
     with engine.begin() as connection:
         row = connection.execute(
             select(app_settings.c.payload_json).where(
-                app_settings.c.domain == "browser_extension:translation"
+                app_settings.c.domain == "translation"
             )
         ).scalar_one()
         payload = json.loads(row)
@@ -1440,7 +1434,7 @@ def test_dom_agent_uses_its_independent_provider_settings(
         payload["browserDomAgent"]["modelName"] = "dom-model"
         connection.execute(
             update(app_settings)
-            .where(app_settings.c.domain == "browser_extension:translation")
+            .where(app_settings.c.domain == "translation")
             .values(payload_json=json.dumps(payload, ensure_ascii=False))
         )
         connection.execute(
@@ -1460,6 +1454,11 @@ def test_dom_agent_uses_its_independent_provider_settings(
                 schema_version=1,
             )
         )
+        connection.execute(insert(app_settings).values(
+            domain="browser_extension:browser_dom_agent",
+            payload_json=json.dumps(payload["browserDomAgent"]), schema_version=1,
+        ))
+
 
     resolver = BrowserDomAgentProviderResolver(engine)
 
@@ -1558,15 +1557,15 @@ def test_extension_management_reuses_settings_transactions_and_auth(browser_plat
     base = "/api/v2/browser-extension/manage"
     assert client.get(base + "/settings").status_code == 401
     assert client.get(base + "/jobs").status_code == 401
-    document = client.get(base + "/settings?domains=translation", headers=HEADERS).get_json()
+    document = client.get(base + "/settings?domains=text_style_defaults", headers=HEADERS).get_json()
     entry = document["settings"][0]
-    entry["payload"]["targetLanguage"] = "en"
+    entry["payload"]["strokeWidth"] = 1.2
     body = {"settings": [{"domain": entry["domain"], "payload": entry["payload"],
         "baseRevision": entry["revision"], "schemaVersion": entry["schemaVersion"]}]}
     saved = client.put(base + "/settings/transactions", headers={**HEADERS, "Idempotency-Key": "extension-save"}, json=body)
     assert saved.status_code == 200
-    assert client.get("/api/v2/settings?domains=translation").get_json()["settings"][0]["payload"]["targetLanguage"] == "zh"
-    assert client.get(base + "/settings?domains=translation", headers=HEADERS).get_json()["settings"][0]["payload"]["targetLanguage"] == "en"
+    assert client.get("/api/v2/settings?domains=text_style_defaults").get_json()["settings"][0]["payload"]["strokeWidth"] == 3
+    assert client.get(base + "/settings?domains=text_style_defaults", headers=HEADERS).get_json()["settings"][0]["payload"]["strokeWidth"] == 1.2
     assert client.put(base + "/settings/transactions", headers={**HEADERS, "Idempotency-Key": "extension-stale"}, json=body).status_code == 409
 
 
@@ -1659,57 +1658,27 @@ def test_upload_finishing_after_discard_does_not_leave_image_assets(browser_plat
         assert connection.execute(select(func.count()).select_from(assets)).scalar_one() == 0
 
 
-def test_extension_settings_and_secrets_are_isolated(browser_platform):
-    from src.backend_v2.storage.platform_repositories import (
-        SettingsRepository, CredentialEdit, ProviderSettingMutation, SettingMutation,
-    )
-
+def test_extension_only_exposes_style_and_optional_agent(browser_platform):
+    from src.backend_v2.storage.platform_repositories import SettingsRepository, SettingMutation
     _root, engine, app = browser_platform
-    global_settings = SettingsRepository(engine)
-    plugin_settings = SettingsRepository(engine, browser_extension=True)
-    global_before = global_settings.load()
-    entry = plugin_settings.load(domains=("translation",))["settings"][0]
-    payload = entry["payload"]
-    payload["targetLanguage"] = "en"
-    provider_payload = {"modelName": "independent-model", "customBaseUrl": "",
-                        "openaiOptions": payload["translation"]["openaiOptions"],
-                        "translationMode": "batch"}
-    for repository, secret in ((global_settings, "global-key"), (plugin_settings, "plugin-key")):
-        repository.save_transaction(
-            credentials_edits=(CredentialEdit(domain="translation", provider="siliconflow",
-                secret={"api_key": secret}, base_revision=0, client_ref="key"),),
-            providers=(ProviderSettingMutation(domain="translation", provider="siliconflow",
-                payload=provider_payload, base_revision=0, schema_version=1, credential_edit_ref="key"),),
-        )
-    plugin_settings.save_transaction(settings=(SettingMutation(
-        domain="translation", payload=payload, base_revision=entry["revision"],
-        schema_version=entry["schemaVersion"],
-    ),))
-    assert global_settings.load()["settings"] == global_before["settings"]
-    assert global_settings.resolve_provider_secret(domain="translation", provider="siliconflow") == {"api_key": "global-key"}
-    assert plugin_settings.resolve_provider_secret(domain="translation", provider="siliconflow") == {"api_key": "plugin-key"}
-    assert {row["secret"]["api_key"] for row in global_settings.credential_summaries()} == {"global-key"}
-    assert {row["secret"]["api_key"] for row in plugin_settings.credential_summaries()} == {"plugin-key"}
-    global_credential = global_settings.credential_summaries()[0]
-    with pytest.raises(LookupError):
-        plugin_settings.delete_credential(global_credential["credentialId"])
-    with pytest.raises(ValueError, match="domain/provider"):
-        plugin_settings.save_transaction(providers=(ProviderSettingMutation(
-            domain="translation", provider="ollama", payload=provider_payload,
-            base_revision=1, schema_version=1,
-            credential_version_id=global_credential["credentialVersionId"],
-        ),))
+    repository = SettingsRepository(engine, browser_extension=True)
     client = app.test_client()
-    assert client.get("/api/v2/settings?domains=browser_extension:translation").status_code == 422
-    assert client.get("/api/v2/browser-extension/manage/settings?domains=insight", headers=HEADERS).status_code == 422
-    # A first-use plugin style comes from factory values, never a changed global style.
-    global_style = next(row for row in global_settings.load()["settings"] if row["domain"] == "text_style_defaults")
-    global_style["payload"]["strokeWidth"] = 8.5
-    global_settings.save_transaction(settings=(SettingMutation(domain="text_style_defaults",
-        payload=global_style["payload"], base_revision=global_style["revision"], schema_version=global_style["schemaVersion"]),))
-    style = plugin_settings.load(domains=("text_style_defaults",))["settings"][0]
-    assert style["revision"] == 0
-    assert style["payload"]["strokeWidth"] == 3
+    global_before = client.get("/api/v2/settings").get_json()
+    document = repository.load()
+    assert {row["domain"] for row in document["settings"]} == {"text_style_defaults", "browser_dom_agent"}
+    assert document["providerSettings"] == []
+    for domain in ("translation", "hq", "ocr", "ai_vision_ocr"):
+        assert client.get(f"/api/v2/settings?scope=browser_extension&domains={domain}").status_code == 422
+        response = client.put("/api/v2/settings/transactions?scope=browser_extension",
+            headers={"Idempotency-Key": "reject-" + domain}, json={"settings": [{
+                "domain": domain, "payload": {}, "baseRevision": 0, "schemaVersion": 1,
+            }]})
+        assert response.status_code == 422
+    style = next(row for row in document["settings"] if row["domain"] == "text_style_defaults")
+    style["payload"]["strokeWidth"] = 1.2
+    repository.save_transaction(settings=(SettingMutation(domain="text_style_defaults",
+        payload=style["payload"], base_revision=0, schema_version=style["schemaVersion"]),))
+    assert client.get("/api/v2/settings").get_json() == global_before
 
 
 def test_browser_batches_and_retry_keep_session_configuration(browser_platform):
@@ -1719,7 +1688,8 @@ def test_browser_batches_and_retry_keep_session_configuration(browser_platform):
 
     root, engine, app = browser_platform
     client = app.test_client()
-    settings = SettingsRepository(engine, browser_extension=True)
+    settings = SettingsRepository(engine)
+    style_settings = SettingsRepository(engine, browser_extension=True)
 
     def save_language(language):
         entry = settings.load(domains=("translation",))["settings"][0]
@@ -1734,11 +1704,24 @@ def test_browser_batches_and_retry_keep_session_configuration(browser_platform):
                   "file": (BytesIO(_png()), key + ".png")}, content_type="multipart/form-data")
         assert response.status_code == 201
 
+    # Old plugin service settings must not override the translator after convergence.
+    global_entry = settings.load(domains=("translation",))["settings"][0]
+    legacy = json.loads(json.dumps(global_entry["payload"]))
+    legacy["targetLanguage"] = "de"
+    with engine.begin() as connection:
+        connection.execute(insert(app_settings).values(
+            domain="browser_extension:translation", payload_json=json.dumps(legacy),
+            schema_version=global_entry["schemaVersion"],
+        ))
+        connection.execute(insert(provider_settings).values(
+            domain="browser_extension:translation", provider="ollama",
+            payload_json=json.dumps({"modelName": "obsolete-plugin-model"}), schema_version=1,
+        ))
     session = _create_session(client).get_json()
     save_language("en")  # Settings are captured at start, not page/session creation.
-    style = settings.load(domains=("text_style_defaults",))["settings"][0]
+    style = style_settings.load(domains=("text_style_defaults",))["settings"][0]
     style["payload"]["strokeWidth"] = 1.2
-    settings.save_transaction(settings=(SettingMutation(domain="text_style_defaults",
+    style_settings.save_transaction(settings=(SettingMutation(domain="text_style_defaults",
         payload=style["payload"], base_revision=0, schema_version=style["schemaVersion"]),))
     upload(session, "first")
     route = f"/api/v2/browser-extension/sessions/{session['id']}"
@@ -1747,7 +1730,7 @@ def test_browser_batches_and_retry_keep_session_configuration(browser_platform):
         first_job = connection.execute(select(jobs.c.id).where(jobs.c.book_id == session["bookId"])).scalar_one()
     save_language("ja")
     style["payload"]["strokeWidth"] = 2.5
-    settings.save_transaction(settings=(SettingMutation(domain="text_style_defaults",
+    style_settings.save_transaction(settings=(SettingMutation(domain="text_style_defaults",
         payload=style["payload"], base_revision=1, schema_version=style["schemaVersion"]),))
     provider = settings.load(domains=("translation",))["providerSettings"][0]
     provider["payload"]["modelName"] = "new-plugin-model"
@@ -1798,23 +1781,23 @@ def test_web_and_extension_edit_the_same_plugin_settings(browser_platform):
     global_before = client.get("/api/v2/settings").get_json()
     document = client.get(web_url).get_json()
     assert document == client.get(plugin_url, headers=HEADERS).get_json()
-    entry = next(row for row in document["settings"] if row["domain"] == "translation")
-    entry["payload"]["targetLanguage"] = "en"
-    body = {"settings": [{"domain": "translation", "payload": entry["payload"],
+    entry = next(row for row in document["settings"] if row["domain"] == "text_style_defaults")
+    entry["payload"]["strokeWidth"] = 1.2
+    body = {"settings": [{"domain": "text_style_defaults", "payload": entry["payload"],
         "schemaVersion": entry["schemaVersion"], "baseRevision": entry["revision"]}]}
     assert client.put("/api/v2/settings/transactions?scope=browser_extension",
         json=body, headers={"Idempotency-Key": "web-plugin-save"}).status_code == 200
     updated = client.get(plugin_url, headers=HEADERS).get_json()
-    saved = next(row for row in updated["settings"] if row["domain"] == "translation")
-    assert saved["payload"]["targetLanguage"] == "en"
+    saved = next(row for row in updated["settings"] if row["domain"] == "text_style_defaults")
+    assert saved["payload"]["strokeWidth"] == 1.2
     assert client.put(plugin_url + "/transactions", json=body,
         headers={**HEADERS, "Idempotency-Key": "stale-plugin-save"}).status_code == 409
     body["settings"][0]["baseRevision"] = saved["revision"]
-    body["settings"][0]["payload"]["targetLanguage"] = "ja"
+    body["settings"][0]["payload"]["strokeWidth"] = 2.5
     assert client.put(plugin_url + "/transactions", json=body,
         headers={**HEADERS, "Idempotency-Key": "extension-plugin-save"}).status_code == 200
     latest = client.get(web_url).get_json()
-    assert next(row for row in latest["settings"] if row["domain"] == "translation")["payload"]["targetLanguage"] == "ja"
+    assert next(row for row in latest["settings"] if row["domain"] == "text_style_defaults")["payload"]["strokeWidth"] == 2.5
     assert client.get("/api/v2/settings").get_json() == global_before
     assert client.get("/api/v2/settings?scope=unknown").status_code == 422
 
@@ -1825,7 +1808,7 @@ def test_plugin_snapshot_keeps_credentials_until_page_is_discarded(browser_platf
         SettingsRepository, CredentialEdit, ProviderSettingMutation, RevisionConflict,
     )
     _root, engine, app = browser_platform
-    settings = SettingsRepository(engine, browser_extension=True)
+    settings = SettingsRepository(engine)
     settings.save_transaction(credentials_edits=(CredentialEdit(
         domain="translation", provider="siliconflow", secret={"api_key": "snapshot-test-key"},
         base_revision=0, client_ref="key",

@@ -12,7 +12,6 @@ import type {
 import { UI_STYLES } from './uiStyles'
 
 export interface UiCallbacks {
-  onOpenManagement(section: 'settings' | 'tasks'): void
   onDiscover(method: DetectionMethod): void
   onConfirm(candidateIds: string[]): void
   onPreferenceChange(preference: DomainPreference): void
@@ -60,6 +59,9 @@ export class ExtensionUi {
   readonly host: HTMLDivElement
   readonly shadow: ShadowRoot
   private readonly panel: HTMLDivElement
+  private readonly body: HTMLDivElement
+  private readonly management: HTMLDivElement
+  private managementFrame: HTMLIFrameElement | null = null
   private readonly fab: HTMLButtonElement
   private readonly banner: HTMLDivElement
   private readonly bannerTitle: HTMLElement
@@ -194,7 +196,20 @@ export class ExtensionUi {
     this.panel.append(header)
 
     const body = element('div', 'saber-body')
+    this.body = body
     this.panel.append(body)
+    this.management = element('div', 'saber-management')
+    this.management.hidden = true
+    const backToTranslation = this.button('返回漫画翻译', 'saber-button--quiet')
+    backToTranslation.addEventListener('click', () => {
+      this.management.hidden = true
+      this.body.hidden = false
+      this.reclampPanel()
+    })
+    const managementToolbar = element('div', 'saber-management-toolbar')
+    managementToolbar.append(backToTranslation)
+    this.management.append(managementToolbar)
+    this.panel.append(this.management)
     this.banner = element('div', 'saber-banner')
     this.banner.setAttribute('role', 'status')
     this.banner.setAttribute('aria-live', 'polite')
@@ -212,7 +227,7 @@ export class ExtensionUi {
     const management = element('div', 'saber-actions')
     for (const [section, label] of [['settings', '翻译配置'], ['tasks', '任务中心']] as const) {
       const button = this.button(label, 'saber-button--quiet')
-      button.addEventListener('click', () => this.callbacks.onOpenManagement(section))
+      button.addEventListener('click', () => this.openManagement(section))
       management.append(button)
     }
     body.append(management)
@@ -1083,6 +1098,27 @@ export class ExtensionUi {
     }
   }
 
+  openManagement(section: 'settings' | 'tasks'): void {
+    if (!this.managementFrame) {
+      this.managementFrame = element('iframe', 'saber-management-frame')
+      this.managementFrame.title = 'Saber 插件配置与任务中心'
+      this.managementFrame.src = chrome.runtime.getURL(`panel.html#${section}`)
+      this.management.append(this.managementFrame)
+    }
+    const frame = this.managementFrame
+    const openSection = () => frame.contentWindow?.postMessage(
+      { type: 'saber-open-management', section },
+      chrome.runtime.getURL('').replace(/\/$/, ''),
+    )
+    // Reuse the loaded document and its unsaved input; its current hash may differ from src.
+    frame.onload = openSection
+    openSection()
+    this.body.hidden = true
+    this.management.hidden = false
+    this.setOpen(true)
+    this.reclampPanel()
+  }
+
   setStatus(
     title: string,
     message: string,
@@ -1104,7 +1140,7 @@ export class ExtensionUi {
       integration_disabled: '请在 Saber GUI 中打开“允许浏览器扩展连接”。',
       source_forbidden: '先在当前网页完成登录或 Cloudflare 验证，然后重试。',
       canvas_unreadable: '该 Canvas 受跨域保护，当前版本无法读取。',
-      dom_agent_unavailable: '请先在 Saber 设置的“网页漫画”中保存 Agent 配置。',
+      dom_agent_unavailable: '请在悬浮窗的“翻译配置”中填写网页识别助手配置。',
       result_expired: '扩展会自动申请新凭证并重新读取译图。',
       result_fetch_failed: '请确认 Saber 仍在运行，然后重试该图片。',
       result_too_large: '可将该章节导入书架后，在 Saber 中查看这张译图。',

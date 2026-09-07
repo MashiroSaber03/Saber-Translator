@@ -2948,7 +2948,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Plugin settings and credentials are independent from translator defaults. Unsaved settings use factory values with revision 0. */
+        /** @description Plugin settings include only independent text_style_defaults and the optional browser_dom_agent. OCR and translation services reuse translator settings. Unsaved settings use factory values with revision 0. */
         get: operations["browserManageGetSettings"];
         put?: never;
         post?: never;
@@ -6720,7 +6720,7 @@ export interface operations {
     getSettings: {
         parameters: {
             query?: {
-                /** @description Local profile only. Select the independent browser extension configuration; omitted uses translator defaults. */
+                /** @description Local profile only. Select plugin text_style_defaults and optional browser_dom_agent settings; omitted uses translator settings. */
                 scope?: "browser_extension";
                 domains?: string;
                 book_id?: string;
@@ -6745,7 +6745,7 @@ export interface operations {
     deleteCredential: {
         parameters: {
             query?: {
-                /** @description Local profile only. Select the independent browser extension configuration; omitted uses translator defaults. */
+                /** @description Local profile only. Select plugin text_style_defaults and optional browser_dom_agent settings; omitted uses translator settings. */
                 scope?: "browser_extension";
             };
             header: {
@@ -6775,7 +6775,7 @@ export interface operations {
     saveSettingsTransaction: {
         parameters: {
             query?: {
-                /** @description Local profile only. Select the independent browser extension configuration; omitted uses translator defaults. */
+                /** @description Local profile only. Select plugin text_style_defaults and optional browser_dom_agent settings; omitted uses translator settings. */
                 scope?: "browser_extension";
             };
             header: {
@@ -6983,7 +6983,7 @@ export interface operations {
     fetchModelCatalog: {
         parameters: {
             query?: {
-                /** @description Local profile only. Select the independent browser extension configuration; omitted uses translator defaults. */
+                /** @description Local profile only. Select plugin text_style_defaults and optional browser_dom_agent settings; omitted uses translator settings. */
                 scope?: "browser_extension";
             };
             header?: never;
@@ -7012,7 +7012,7 @@ export interface operations {
     runConnectionTest: {
         parameters: {
             query?: {
-                /** @description Local profile only. Select the independent browser extension configuration; omitted uses translator defaults. */
+                /** @description Local profile only. Select plugin text_style_defaults and optional browser_dom_agent settings; omitted uses translator settings. */
                 scope?: "browser_extension";
             };
             header?: never;

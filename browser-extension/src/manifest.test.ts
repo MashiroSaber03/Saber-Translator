@@ -23,7 +23,9 @@ describe('extension manifest', () => {
   it('keeps the fixed MV3 identity and only the required named permissions', () => {
     expect(manifest.manifest_version).toBe(3)
     expect(manifest.key).toMatch(/^MIIB/)
-    expect(manifest.permissions).toEqual(['storage', 'contextMenus', 'sidePanel', 'alarms'])
+    expect(manifest.permissions).toEqual(['storage', 'contextMenus', 'alarms'])
+    expect(manifest).not.toHaveProperty('side_panel')
+    expect(manifest).toHaveProperty('web_accessible_resources', [{ resources: ['panel.html', 'assets/*'], matches: ['http://*/*', 'https://*/*'] }])
     expect(manifest.host_permissions).toEqual(['http://*/*', 'https://*/*'])
     expect(manifest.content_scripts[0]?.matches).toEqual([
       'http://*/*',
