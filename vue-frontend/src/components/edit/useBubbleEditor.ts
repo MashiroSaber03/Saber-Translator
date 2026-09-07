@@ -211,7 +211,6 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
 
   function applyColor(field: BubbleColorField, value: string): void {
     if (props.disabled || !props.bubble || colorPopover.value?.field !== field) return
-    closeColorPopover()
     colorValues[field].value = value
     emit('update', { [field]: value })
   }

@@ -2246,19 +2246,19 @@ test.describe('editor image color picking', () => {
     await page.mouse.click(image.x + 20, image.y + 70)
     await expect(popover).toBeHidden()
     await expect(page.locator('.edit-workspace')).toBeVisible()
-    expect(fixture.mutations).toHaveLength(0)
+    await expect.poll(() => fixture.document.bubbles[0]!.payload.textColor).toBe('#123456')
     await trigger.click()
-    await expect(popover.getByRole('textbox', { name: 'HEX 色值' })).toHaveValue('#abcdef')
-    await popover.getByRole('button', { name: '应用颜色', exact: true }).focus()
+    await expect(popover.getByRole('textbox', { name: 'HEX 色值' })).toHaveValue('#123456')
+    await popover.getByRole('button', { name: '关闭', exact: true }).focus()
     await page.keyboard.press('Tab')
     await expect(popover).toBeHidden()
     await trigger.click()
     await styleSection.evaluate(element => { element.scrollTop = element.scrollHeight })
     await expect(popover).toBeHidden()
-    expect(fixture.mutations).toHaveLength(0)
+    await expect.poll(() => fixture.document.bubbles[0]!.payload.textColor).toBe('#123456')
   })
 
-  test('continuous palette updates HEX and RGB and saves each color field only when applied', async ({ page }, testInfo) => {
+  test('continuous palette updates HEX and RGB and saves each color field without confirmation', async ({ page }, testInfo) => {
     const fixture = await prepareEditorColorPage(page)
     for (const [label, field] of [['文字颜色', 'textColor'], ['背景填充颜色', 'fillColor'], ['描边颜色', 'strokeColor']] as const) {
       await page.getByRole('button', { name: label, exact: true }).click()
@@ -2272,16 +2272,14 @@ test.describe('editor image color picking', () => {
       await expect(popover.getByRole('textbox', { name: 'HEX 色值' })).toHaveValue('#bf3030')
       await expect(popover.getByRole('spinbutton', { name: '红（R）', exact: true })).toHaveValue('191')
       await expect(popover.getByRole('spinbutton', { name: '绿（G）', exact: true })).toHaveValue('48')
-      expect(fixture.document.bubbles[0]!.payload[field]).toBe('#abcdef')
-      if (field === 'textColor') await page.screenshot({ path: testInfo.outputPath('color-palette.png') })
-      const savedRevision = fixture.document.documentRevision + 1
-      const rendered = page.waitForResponse(async response => response.url().endsWith('/demo-page-1/render-status') && (await response.json()).renderedRevision >= savedRevision)
-      await popover.getByRole('button', { name: '应用颜色', exact: true }).click()
       await expect.poll(() => fixture.document.bubbles[0]!.payload[field]).toBe('#bf3030')
-      await rendered
+      if (field === 'textColor') await page.screenshot({ path: testInfo.outputPath('color-palette.png') })
+      await expect(popover).toBeVisible()
+      await page.keyboard.press('Escape')
+      await expect.poll(() => fixture.document.bubbles[0]!.payload[field]).toBe('#bf3030')
       expect(fixture.document.bubbles[1]!.payload[field]).toBe('#abcdef')
     }
-    expect(fixture.mutations).toHaveLength(3)
+    expect(fixture.mutations.length).toBeGreaterThanOrEqual(3)
   })
 
   test('palette captures outside drags, retains hue at black, and handles keyboard editing without workspace shortcuts', async ({ page }) => {
@@ -2306,7 +2304,7 @@ test.describe('editor image color picking', () => {
     await page.keyboard.press('Escape')
     await expect(popover).toBeHidden()
     await expect(page.locator('.edit-workspace')).toBeVisible()
-    expect(fixture.mutations).toHaveLength(0)
+    await expect.poll(() => fixture.document.bubbles[0]!.payload.textColor).toBe('#bfbfbf')
   })
 
   test('clearing a HEX error does not resample a shifted palette on pointer release', async ({ page }) => {
@@ -2319,7 +2317,7 @@ test.describe('editor image color picking', () => {
     await hex.fill('#ff0000')
     const original = (await palette.boundingBox())!
     await hex.fill('#oops')
-    await expect(popover.getByRole('button', { name: '应用颜色', exact: true })).toBeDisabled()
+    await expect(hex).toHaveAttribute('aria-invalid', 'true')
     await expect.poll(async () => (await palette.boundingBox())!.y).not.toBe(original.y)
     const before = (await palette.boundingBox())!
     await page.mouse.move(before.x + before.width * 0.75, before.y + before.height * 0.25)
@@ -2328,11 +2326,11 @@ test.describe('editor image color picking', () => {
     await expect.poll(async () => (await palette.boundingBox())!.y).not.toBe(before.y)
     await page.mouse.up()
     await expect(hex).toHaveValue('#bf3030')
-    await popover.getByRole('button', { name: '应用颜色', exact: true }).click()
+    await expect(popover).toBeVisible()
     await expect.poll(() => fixture.document.bubbles[0]!.payload.textColor).toBe('#bf3030')
     expect(fixture.document.bubbles[0]!.payload.coords).toEqual(demoBubbleState.coords)
     expect(fixture.document.bubbles[1]!.payload.textColor).toBe('#abcdef')
-    expect(fixture.mutations).toHaveLength(1)
+    expect(fixture.mutations.length).toBeGreaterThan(0)
   })
 
   test('a fractional pointer position samples a single image pixel without a compatibility drag', async ({ page }) => {

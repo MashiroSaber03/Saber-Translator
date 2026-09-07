@@ -12,8 +12,6 @@ const emit = defineEmits<{
   pick: [field: BubbleColorField]
   close: []
 }>()
-const draft = ref(props.color)
-const valid = ref(true)
 const popover = ref<HTMLElement | null>(null)
 const position = ref<CSSProperties>({ visibility: 'hidden' })
 const editor = props.anchor.closest('.bubble-editor')
@@ -55,11 +53,6 @@ function updatePosition(): void {
 function close(): void {
   props.anchor.focus({ preventScroll: true })
   emit('close')
-}
-
-function apply(): void {
-  props.anchor.focus({ preventScroll: true })
-  emit('apply', props.field, draft.value)
 }
 
 function contains(target: EventTarget | null): boolean {
@@ -111,11 +104,10 @@ onUnmounted(() => {
         @keydown.esc.prevent.stop="close"
       >
         <span class="edit-color-popover__title">{{ BUBBLE_COLOR_LABELS[field] }}</span>
-        <UiColorPicker v-model="draft" @validity-change="valid = $event" />
+        <UiColorPicker :model-value="color" @update:model-value="emit('apply', field, $event)" />
         <div class="edit-color-popover__actions">
           <UiButton variant="secondary" size="sm" @click="emit('pick', field)">从图片取色</UiButton>
-          <UiButton variant="secondary" size="sm" @click="close">取消</UiButton>
-          <UiButton variant="primary" size="sm" :disabled="!valid" @click="apply">应用颜色</UiButton>
+          <UiButton variant="secondary" size="sm" @click="close">关闭</UiButton>
         </div>
       </div>
     </OverlayLayer>

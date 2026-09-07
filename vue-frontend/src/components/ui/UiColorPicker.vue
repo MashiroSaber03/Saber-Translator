@@ -9,7 +9,6 @@ import UiNumberField from './UiNumberField.vue'
 const props = defineProps<{ modelValue: string }>()
 const emit = defineEmits<{
   'update:modelValue': [value: string]
-  validityChange: [valid: boolean]
 }>()
 const hex = ref(props.modelValue)
 const hsv = ref(hexToHsv(props.modelValue))
@@ -36,7 +35,6 @@ watch(() => props.modelValue, value => {
   // A HEX round-trip must not move the cursor or erase hue at white/black.
   if (value.toLowerCase() !== hsvToHex(hsv.value)) syncSpectrum(value)
 })
-watch(valid, value => emit('validityChange', value), { immediate: true })
 
 function setColor(value: string): void {
   hex.value = value

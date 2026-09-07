@@ -43,17 +43,18 @@ describe('editor color popover', () => {
     expect(wrapper.findComponent(EditColorPopover).exists()).toBe(false)
   })
 
-  it('validates manual HEX entry and commits only when applied', async () => {
+  it('applies valid HEX immediately and keeps the popover open', async () => {
     const wrapper = editor()
     await wrapper.get('button[aria-label="文字颜色"]').trigger('click')
     const dialog = wrapper.getComponent(EditColorPopover)
-    const apply = () => dialog.findAll('button').find(button => button.text() === '应用颜色')!
     await dialog.get('input[aria-label="HEX 色值"]').setValue('#oops')
-    expect(apply().attributes('disabled')).toBeDefined()
-    await dialog.get('input[aria-label="HEX 色值"]').setValue('12AB56')
     expect(wrapper.emitted('update')).toBeUndefined()
-    await apply().trigger('click')
+    await dialog.get('input[aria-label="HEX 色值"]').setValue('12AB56')
     expect(wrapper.emitted('update')).toEqual([[{ textColor: '#12ab56' }]])
+    expect(wrapper.findComponent(EditColorPopover).exists()).toBe(true)
+    expect(dialog.text()).not.toContain('应用颜色')
+    await dialog.get('input[aria-label="HEX 色值"]').setValue('#234567')
+    expect(wrapper.emitted('update')?.at(-1)).toEqual([{ textColor: '#234567' }])
   })
 
   it('supports RGB adjustments and recovers invalid HEX input through a color swatch', async () => {
@@ -64,26 +65,24 @@ describe('editor color popover', () => {
     expect(dialog.get('input[aria-label="HEX 色值"]').element).toHaveProperty('value', '#110000')
     await dialog.get('input[aria-label="HEX 色值"]').setValue('#oops')
     await dialog.get('button[aria-label="白色"]').trigger('click')
-    await dialog.findAll('button').find(button => button.text() === '应用颜色')!.trigger('click')
-    expect(wrapper.emitted('update')).toEqual([[{ textColor: '#ffffff' }]])
+    expect(wrapper.emitted('update')).toEqual([[{ textColor: '#110000' }], [{ textColor: '#ffffff' }]])
   })
 
-  it('discards draft colors when cancelled or the selected bubble changes', async () => {
+  it('keeps the applied color when closed and closes when selection changes', async () => {
     const wrapper = editor()
     await wrapper.get('button[aria-label="文字颜色"]').trigger('click')
-    let dialog = wrapper.getComponent(EditColorPopover)
+    const dialog = wrapper.getComponent(EditColorPopover)
     await dialog.get('input[aria-label="HEX 色值"]').setValue('#123456')
-    await dialog.findAll('button').find(button => button.text() === '取消')!.trigger('click')
-    expect(wrapper.emitted('update')).toBeUndefined()
+    await dialog.findAll('button').find(button => button.text() === '关闭')!.trigger('click')
+    expect(wrapper.emitted('update')).toEqual([[{ textColor: '#123456' }]])
     await wrapper.get('button[aria-label="文字颜色"]').trigger('click')
-    dialog = wrapper.getComponent(EditColorPopover)
-    expect(dialog.get('input[aria-label="HEX 色值"]').element).toHaveProperty('value', '#000000')
+    expect(wrapper.get('input[aria-label="HEX 色值"]').element).toHaveProperty('value', '#123456')
     await wrapper.setProps({ bubble: createBubbleState({ backendBubbleId: 'new' }) })
     expect(wrapper.findComponent(EditColorPopover).exists()).toBe(false)
-    expect(wrapper.emitted('update')).toBeUndefined()
+    expect(wrapper.emitted('update')).toHaveLength(1)
   })
 
-  it.each(['backend', 'client'])('keeps the draft when saving replaces the same %s bubble', async identity => {
+  it.each(['backend', 'client'])('keeps the color picker open when saving replaces the same %s bubble', async identity => {
     const wrapper = editor()
     const bubble = createBubbleState(identity === 'backend'
       ? { backendBubbleId: 'saved-bubble' }
@@ -92,15 +91,14 @@ describe('editor color popover', () => {
     await wrapper.get('button[aria-label="描边颜色"]').trigger('click')
     await wrapper.getComponent(EditColorPopover).get('input[aria-label="HEX 色值"]').setValue('#123456')
 
-    await wrapper.setProps({ bubble: { ...bubble, strokeWidth: 0.5 } })
+    await wrapper.setProps({ bubble: { ...bubble, strokeColor: '#123456', strokeWidth: 0.5 } })
 
     const dialog = wrapper.getComponent(EditColorPopover)
     expect(dialog.get('input[aria-label="HEX 色值"]').element).toHaveProperty('value', '#123456')
-    await dialog.findAll('button').find(button => button.text() === '应用颜色')!.trigger('click')
     expect(wrapper.emitted('update')).toEqual([[{ strokeColor: '#123456' }]])
   })
 
-  it('anchors to the clicked button, toggles closed and resets drafts when switching fields', async () => {
+  it('anchors to the clicked button, toggles closed and switches fields without reverting applied colors', async () => {
     const wrapper = editor()
     const text = wrapper.get('button[aria-label="文字颜色"]')
     await text.trigger('click')
@@ -119,7 +117,7 @@ describe('editor color popover', () => {
     await fill.trigger('pointerdown')
     await fill.trigger('click')
     expect(wrapper.findComponent(EditColorPopover).exists()).toBe(false)
-    expect(wrapper.emitted('update')).toBeUndefined()
+    expect(wrapper.emitted('update')).toEqual([[{ textColor: '#123456' }]])
   })
 
   it('dismisses on an outside pointer press without blocking its target', async () => {
