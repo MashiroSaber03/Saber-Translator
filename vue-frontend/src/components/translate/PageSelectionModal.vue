@@ -201,7 +201,7 @@ function buildThumbnailItem(image: ImageData, index: number): ProductThumbnailGr
     height="90vh"
     header-padding="20px"
     footer-padding="14px 20px"
-    scroll-mode="contained"
+    scroll-mode="auto"
     @close="closeModal"
   >
     <div class="page-selection-shell">
