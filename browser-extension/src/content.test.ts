@@ -2,6 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
+import type { StudioState } from './studio/protocol'
 import type { ExtensionUi } from './ui'
 import { PageController } from './content'
 import { elementCandidate, type ImageCandidate } from './discovery'
@@ -12,6 +13,8 @@ import type {
   BrowserSessionImportCommand,
   BrowserSessionImportResult,
 } from './types'
+
+function uiState(ui: ExtensionUi): StudioState { return (ui as unknown as { state: StudioState }).state }
 
 interface TestController {
   ui: ExtensionUi
@@ -97,6 +100,7 @@ beforeEach(() => {
   sendMessage = vi.fn(defaultResponse)
   vi.stubGlobal('chrome', {
     runtime: {
+      getURL: (path: string) => `chrome-extension://test-extension/${path}`,
       id: '',
       sendMessage,
       getManifest: () => ({ version: '1.0.0' }),
@@ -308,25 +312,16 @@ describe('page task lifecycle', () => {
     expect(task).not.toBeNull()
 
     await expect(controller.uploadCandidates([candidate!], task!, true)).resolves.toBe(0)
-    const preparation = controller.ui.shadow.querySelector<HTMLElement>('.saber-preparation')!
-    const meter = controller.ui.shadow.querySelector<HTMLProgressElement>(
-      '.saber-preparation__meter',
-    )!
-    expect(preparation.hidden).toBe(false)
-    expect(meter.max).toBe(1)
-    expect(meter.value).toBe(1)
-    expect(preparation.textContent).toContain('成功 0 · 失败 1')
-    const retry = [...controller.ui.shadow.querySelectorAll<HTMLButtonElement>('button')]
-      .find(button => button.textContent === '重试上传')
-    expect(retry?.hidden).toBe(false)
+    expect(uiState(controller.ui).preparation).toEqual({ processed: 1, total: 1, failed: 1 })
+    expect(uiState(controller.ui).uploadError?.count).toBe(1)
 
     uploadFails = false
     await controller.retryFailedUploads()
     expect(controller.observer).not.toBeNull()
     await vi.waitFor(() => {
       expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'start-session' }))
-      expect(retry?.hidden).toBe(true)
-      expect(preparation.hidden).toBe(true)
+      expect(uiState(controller.ui).uploadError).toBeNull()
+      expect(uiState(controller.ui).preparation).toBeNull()
     })
     await controller.dispose()
   })
@@ -424,12 +419,11 @@ describe('page task lifecycle', () => {
     await controller.initialize()
     const task = (await controller.createSession())!
     await controller.poll(task)
-    const retry = [...controller.ui.shadow.querySelectorAll('button')].find(button => button.textContent === '重试启动')!
-    expect(retry.hidden).toBe(false)
+    expect(uiState(controller.ui).retryStart).toBe(true)
     expect(sendMessage).toHaveBeenCalledWith({ type: 'start-session', sessionId: 'pending' })
     broken = false
     await controller.startUploadedPages(task)
-    expect(retry.hidden).toBe(true)
+    expect(uiState(controller.ui).retryStart).toBe(false)
     expect(controller.observer).not.toBeNull()
     await controller.dispose()
   })
@@ -455,8 +449,8 @@ describe('page task lifecycle', () => {
     await controller.cancel()
     upload.resolve({ ok: false, error: { code: 'session_conflict', message: 'cancelled', retryable: true } })
     expect(await pending).toBe(0)
-    expect(controller.ui.shadow.querySelector<HTMLElement>('.saber-preparation')!.hidden).toBe(true)
-    expect(controller.ui.shadow.textContent).not.toContain('张图片尚未导入')
+    expect(uiState(controller.ui).preparation).toBeNull()
+    expect(uiState(controller.ui).uploadError).toBeNull()
     await controller.dispose()
   })
 

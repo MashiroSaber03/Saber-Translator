@@ -4,12 +4,13 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import PanelApp from './PanelApp.vue'
 import type { PluginSettingsApi } from '../../vue-frontend/src/types/browserExtensionSettings'
 
-vi.mock('@/components/ui/UiIcon.vue', () => ({ default: { render: () => null } }))
-vi.mock('@/components/settings/BrowserExtensionSettingsForm.vue', () => ({
+vi.mock('./studio/TranslationView.vue', () => ({
+  default: { render: () => null },
+}))
+vi.mock('./studio/SettingsView.vue', () => ({
   default: { render: () => null },
 }))
 let app: App
-let visibility: IntersectionObserverCallback
 const flush = async () => {
   await new Promise(resolve => setImmediate(resolve))
   await nextTick()
@@ -18,16 +19,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
   location.hash = 'tasks'
   document.body.innerHTML = '<div id="app"></div>'
-  vi.stubGlobal(
-    'IntersectionObserver',
-    class {
-      constructor(callback: IntersectionObserverCallback) {
-        visibility = callback
-      }
-      observe() {}
-      disconnect() {}
-    }
-  )
+  Element.prototype.scrollTo = vi.fn()
 })
 afterEach(() => {
   app.unmount()
@@ -53,9 +45,19 @@ function mount(api: ReturnType<typeof vi.fn>) {
 }
 const list = () => ({ items: [job], queuePaused: false, workerOnline: true })
 const button = (label: string) =>
-  [...document.querySelectorAll('button')].find(node => node.textContent?.trim() === label)!
-const observe = (visible: boolean) =>
-  visibility([{ isIntersecting: visible } as IntersectionObserverEntry], {} as IntersectionObserver)
+  [...document.querySelectorAll('button')].find(
+    node => (node.getAttribute('aria-label') || node.textContent?.trim()) === label
+  )!
+const observe = (open: boolean) =>
+  window.dispatchEvent(
+    new MessageEvent('message', {
+      source: window.parent,
+      data: {
+        channel: 'saber:state',
+        state: { open, tab: location.hash.slice(1) },
+      },
+    })
+  )
 
 it('pauses refresh while the floating window is hidden and refreshes when reopened', async () => {
   const api = vi.fn().mockResolvedValue(list())
@@ -82,13 +84,13 @@ it('updates expand/collapse controls without rebuilding unchanged task cards', a
   )
   mount(api)
   await flush()
-  const card = document.querySelectorAll('.task-card')[1]
+  const card = document.querySelector('.job-card')
   button('查看详情').click()
   await flush()
   expect(button('收起详情')).toBeDefined()
   expect(document.body.textContent).toContain('任务 test-job')
   await vi.advanceTimersByTimeAsync(3000)
-  expect(document.querySelectorAll('.task-card')[1]).toBe(card)
+  expect(document.querySelector('.job-card')).toBe(card)
   button('收起详情').click()
   await flush()
   expect(button('查看详情')).toBeDefined()
@@ -98,9 +100,13 @@ it('updates expand/collapse controls without rebuilding unchanged task cards', a
 it('honors the outer entry after internal tab navigation without reloading', async () => {
   mount(vi.fn().mockResolvedValue(list()))
   await flush()
-  const open = (section: string) => window.dispatchEvent(new MessageEvent('message', {
-    source: window.parent, data: { type: 'saber-open-management', section },
-  }))
+  const open = (section: string) =>
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        source: window.parent,
+        data: { channel: 'saber:state', state: { tab: section } },
+      })
+    )
   open('settings')
   await nextTick()
   expect(location.hash).toBe('#settings')
@@ -110,8 +116,6 @@ it('honors the outer entry after internal tab navigation without reloading', asy
   open('settings')
   await nextTick()
   expect(button('翻译配置').getAttribute('aria-selected')).toBe('true')
-  open('unknown')
-  expect(location.hash).toBe('#settings')
 })
 
 it('clears recovered load errors and displays command failures until retried', async () => {

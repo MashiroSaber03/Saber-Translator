@@ -11,7 +11,6 @@ describe('domain preferences', () => {
       glossaryEnabled: true,
       autoTermsEnabled: true,
       panelOpen: true,
-      panelPosition: { x: 120, y: 80 },
       fabPosition: { x: 24, y: 360 },
     }
 
@@ -20,7 +19,6 @@ describe('domain preferences', () => {
       method: 'similar',
       mode: 'hq',
       panelOpen: true,
-      panelPosition: { x: 120, y: 80 },
       fabPosition: { x: 24, y: 360 },
     })
     expect(preferenceFor(settings, 'other.example')).toMatchObject({

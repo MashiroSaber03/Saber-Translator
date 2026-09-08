@@ -309,7 +309,6 @@ export class PageController {
         onConfirm: ids => void this.confirm(ids),
         onPreferenceChange: preference => void this.updatePreference(preference),
         onPanelOpenChange: panelOpen => void this.updatePanelPreference({ panelOpen }),
-        onPanelPositionChange: panelPosition => void this.updatePanelPreference({ panelPosition }),
         onFabPositionChange: fabPosition => void this.updatePanelPreference({ fabPosition }),
         onToggleGlobal: () => this.toggleAllPages(),
         onTogglePage: browserPageId => this.togglePage(browserPageId),
@@ -444,7 +443,7 @@ export class PageController {
         this.activeRule = null
         delete this.preference.rule
         await this.persistPreference()
-        this.ui.setAdaptationSaved(false)
+        this.ui.setAdaptation(null)
       }
       if (method === 'similar') {
         this.activeMethod = method
@@ -557,7 +556,7 @@ export class PageController {
     try {
       await this.persistPreference()
       if (this.taskStarting !== starting) return
-      this.ui.setAdaptationSaved(Boolean(this.activeRule))
+      this.ui.setAdaptation(this.activeRule)
       this.ui.setStatus('正在导入漫画图片', '图片会按网页顺序进入当前隐藏会话。', 'busy')
       const task = await this.createSession()
       if (!task) return
@@ -1107,7 +1106,7 @@ export class PageController {
     }
     try {
       await this.persistPreference()
-      if (methodChanged) this.ui?.setAdaptationSaved(false)
+      if (methodChanged) this.ui?.setAdaptation(null)
       const task = this.currentTask()
       if (task) {
         const session = await send<BrowserSessionDto>({
@@ -1132,7 +1131,6 @@ export class PageController {
   private async updatePanelPreference(
     patch: {
       panelOpen?: boolean
-      panelPosition?: PanelPosition
       fabPosition?: PanelPosition
     },
   ): Promise<void> {
@@ -1168,7 +1166,7 @@ export class PageController {
       this.usingAdapter = false
       this.candidates = []
       this.stopDiscovery()
-      this.ui?.setAdaptationSaved(false)
+      this.ui?.setAdaptation(null)
       this.ui?.setStatus('已删除当前网站的适配', '正在按当前识别方式重新检测。', 'busy')
       await this.discover(this.preference.method)
     } catch (error) {

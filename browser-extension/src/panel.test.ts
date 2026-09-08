@@ -3,13 +3,14 @@ import { nextTick } from 'vue'
 import { afterEach, expect, it, vi } from 'vitest'
 import factoryStyle from '../../src/shared/text_style_defaults_factory.json'
 
-vi.mock('@/components/ui/UiIcon.vue', () => ({ default: { render: () => null } }))
+
 
 afterEach(() => vi.unstubAllGlobals())
 
 it('edits only plugin text style and the optional DOM assistant, preserving drafts across tabs', async () => {
   document.body.innerHTML =
     '<div id="app"></div>'
+  Element.prototype.scrollTo = vi.fn()
   location.hash = 'settings'
   const settings = {
     settings: [
@@ -102,14 +103,14 @@ it('edits only plugin text style and the optional DOM assistant, preserving draf
   const input = (label: string) => {
     const node = document.querySelector<HTMLInputElement | HTMLSelectElement>(`[aria-label="${label}"]`)
     const fieldLabel = [...document.querySelectorAll('label')].find(node => node.textContent?.trim() === label)
-    return node ?? (fieldLabel?.htmlFor ? document.getElementById(fieldLabel.htmlFor) as HTMLInputElement : null)!
+    return (node ?? fieldLabel?.querySelector<HTMLInputElement>('input') ?? null)!
   }
   const edit = async (label: string, value: string) => {
     const node = input(label)
     if (node.tagName === 'BUTTON') {
       node.click()
       await nextTick()
-      document.querySelector<HTMLElement>(`[data-ui-select-value="${value}"]`)!.click()
+      document.querySelector<HTMLElement>(`[data-value="${value}"]`)!.click()
       await nextTick()
       return
     }

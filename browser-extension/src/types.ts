@@ -20,7 +20,6 @@ export interface DomainPreference {
   glossaryEnabled: boolean
   autoTermsEnabled: boolean
   panelOpen: boolean
-  panelPosition?: PanelPosition
   fabPosition?: PanelPosition
   rule?: LearnedRule
 }
