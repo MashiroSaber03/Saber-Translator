@@ -407,10 +407,6 @@ export class ExtensionUi {
     this.state.terms = entries
     this.publish()
   }
-  openManagement(section: 'settings' | 'tasks'): void {
-    this.state.tab = section
-    this.setOpen(true)
-  }
   setStatus(title: string, message: string, tone: 'ready' | 'busy' | 'error' = 'ready'): void {
     this.state.notice = { title, message, tone }
     this.fab.dataset.state = tone

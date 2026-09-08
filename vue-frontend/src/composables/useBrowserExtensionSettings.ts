@@ -176,13 +176,14 @@ export function useBrowserExtensionSettings(api: PluginSettingsApi) {
         row => row.domain === 'browser_dom_agent' && row.provider === value
       )
       const secret = secretDrafts.value[value]?.trim()
-      if (!secret && JSON.stringify(stored?.payload) === JSON.stringify(drafts.value[value]))
+      const secretChanged = Boolean(secret) && secret !== String(key?.secret?.api_key ?? '')
+      if (!secretChanged && JSON.stringify(stored?.payload) === JSON.stringify(drafts.value[value]))
         continue
-      if (secret)
+      if (secretChanged)
         transaction.credentialEdits!.push({
           domain: 'browser_dom_agent',
           provider: value,
-          secret: { api_key: secret },
+          secret: { api_key: secret! },
           clientRef: value,
           baseRevision: key?.revision ?? 0,
           ...(key ? { credentialId: key.credentialId } : {}),
@@ -194,7 +195,7 @@ export function useBrowserExtensionSettings(api: PluginSettingsApi) {
         payload: { ...drafts.value[value]! },
         schemaVersion: 1,
         baseRevision: stored?.revision ?? 0,
-        ...(secret
+        ...(secretChanged
           ? { credentialEditRef: value }
           : credentialVersionId
             ? { credentialVersionId }

@@ -333,11 +333,6 @@ export class PageController {
 
   }
 
-  openManagement(section: 'settings' | 'tasks'): void {
-    if (!this.ui) throw new Error('请先在当前网页启用 Saber 插件，再打开配置或任务中心。')
-    this.ui.openManagement(section)
-  }
-
   private async discardSession(sessionId?: string): Promise<void> {
     if (!sessionId) return
     await send({ type: 'discard-session', sessionId }).catch(error => {
@@ -1312,19 +1307,8 @@ async function startController(): Promise<void> {
 }
 
 if (typeof chrome !== 'undefined' && chrome.runtime?.id) {
-  chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
+  chrome.runtime.onMessage.addListener((message: unknown, sender) => {
     if (sender.id !== chrome.runtime.id) return
-    const management = message as Partial<Extract<BackgroundRequest, { type: 'open-management' }>>
-    if (management?.type === 'open-management' && (management.section === 'settings' || management.section === 'tasks')) {
-      try {
-        if (!controller) throw new Error('网页尚未准备好，请刷新后重试。')
-        controller.openManagement(management.section)
-        sendResponse({ ok: true, data: { opened: true } })
-      } catch (error) {
-        sendResponse({ ok: false, error: errorDetails(error) })
-      }
-      return
-    }
     const candidate = message as Partial<ContextTranslateMessage>
     if (candidate?.type === 'context-translate-image' && typeof candidate.srcUrl === 'string') {
       void controller?.translateContextImage(candidate.srcUrl)

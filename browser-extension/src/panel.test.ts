@@ -189,7 +189,7 @@ it('edits only plugin text style and the optional DOM assistant, preserving draf
       },
     ],
   })
-  await vi.waitFor(() => expect(input('API Key · 已配置，留空保持')?.value).toBe(''))
+  await vi.waitFor(() => expect(input('API Key')?.value).toBe('test-agent-only-secret'))
   await edit('模型名称', 'updated-model')
   await vi.waitFor(() => expect(transactions).toHaveLength(2))
   expect(transactions[1]).toMatchObject({ settings: [], credentialEdits: [], providerSettings: [{ baseRevision: 1, credentialVersionId: 'version', payload: { modelName: 'updated-model' } }] })

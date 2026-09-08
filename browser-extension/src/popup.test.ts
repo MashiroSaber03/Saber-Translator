@@ -49,6 +49,8 @@ describe('extension popup', () => {
     const port = document.querySelector<HTMLInputElement>('#saber-server-port')!
     expect(form.querySelectorAll('button')).toHaveLength(1)
     expect(document.body.textContent).not.toContain('重新检测')
+    expect(document.body.textContent).not.toContain('翻译配置')
+    expect(document.body.textContent).not.toContain('任务中心')
 
     token.value = 'fresh-token-with-more-than-thirty-two-characters'
     port.value = '5100'

@@ -47,6 +47,9 @@ export function useTranslatorSettings(api: PluginSettingsApi, active: Ref<boolea
   const entry = computed(() => document.value!.settings.find(row => row.domain === 'translation')!)
   const credential = (domain: string, provider: string) =>
     document.value?.credentials.find(row => row.domain === domain && row.provider === provider)
+  const secretValue = (domain: string, provider: string, field: string) =>
+    secrets.value[identity(domain, provider)]?.[field] ??
+    String(credential(domain, provider)?.secret?.[field] ?? '')
   const pick = (domain: string, source: object) =>
     Object.fromEntries(
       fields[domain]!.map(key => [key, clone((source as Record<string, unknown>)[key])])
@@ -149,16 +152,12 @@ export function useTranslatorSettings(api: PluginSettingsApi, active: Ref<boolea
             row => row.domain === draft.domain && row.provider === draft.provider
           )
           const key = credential(draft.domain, draft.provider)
-          const secret = Object.fromEntries(
-            Object.entries(secrets.value[id] ?? {})
-              .filter(([, value]) => value.trim())
-              .map(([field, value]) => [field, value.trim()])
-          )
-          if (
-            draft.domain === 'ocr' &&
-            Boolean(secret.baidu_api_key) !== Boolean(secret.baidu_secret_key)
-          )
-            throw new Error('更换百度 OCR 密钥时，请同时填写 API Key 和 Secret Key')
+          const changes = Object.entries(secrets.value[id] ?? {})
+            .map(([field, value]) => [field, value.trim()] as const)
+            .filter(([field, value]) => value && value !== String(key?.secret?.[field] ?? ''))
+          const secret = changes.length
+            ? { ...key?.secret, ...Object.fromEntries(changes) }
+            : {}
           if (
             JSON.stringify(stored?.payload) === JSON.stringify(draft.payload) &&
             !Object.keys(secret).length
@@ -261,8 +260,7 @@ export function useTranslatorSettings(api: PluginSettingsApi, active: Ref<boolea
     loading,
     saving,
     dirty,
-    secrets,
-    credential,
+    secretValue,
     globalApi,
     change,
     selectProvider,

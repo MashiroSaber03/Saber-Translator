@@ -242,12 +242,11 @@ function number(event: Event, field: 'fontSize' | 'strokeWidth' | 'lineSpacing')
             @update:model-value="changeProvider"
         /></label>
         <label v-if="providerMetadata?.requiresApiKey" class="field"
-          >{{ credential ? 'API Key · 已配置，留空保持' : 'API Key'
-          }}<span class="password-field"
+          >API Key<span class="password-field"
             ><input
               :type="reveal ? 'text' : 'password'"
-              :aria-label="credential ? 'API Key · 已配置，留空保持' : 'API Key'"
-              :value="secretDrafts[provider] ?? ''"
+              aria-label="API Key"
+              :value="secretDrafts[provider] ?? String(credential?.secret?.api_key ?? '')"
               autocomplete="new-password"
               @input="updateKey(($event.target as HTMLInputElement).value)"
             /><button
@@ -260,7 +259,7 @@ function number(event: Event, field: 'fontSize' | 'strokeWidth' | 'lineSpacing')
             </button></span
           ></label
         >
-        <label class="field"
+        <label v-if="providerMetadata?.requiresBaseUrl" class="field"
           >API 地址<input
             :value="draft.customBaseUrl"
             @input="updateBaseUrl(($event.target as HTMLInputElement).value)"

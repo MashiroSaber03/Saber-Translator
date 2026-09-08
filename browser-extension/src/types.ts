@@ -142,7 +142,6 @@ export type BackgroundRequest =
   | { type: 'page-opened'; pageUrl: string }
   | { type: 'page-closed'; pageUrl: string }
   | { type: 'discard-session'; sessionId: string }
-  | { type: 'open-management'; section: 'settings' | 'tasks' }
   | { type: 'create-session'; payload: Record<string, unknown> }
   | { type: 'get-session'; sessionId: string; touch?: boolean }
   | { type: 'patch-session'; sessionId: string; payload: Record<string, unknown> }

@@ -379,13 +379,6 @@ async function handleRequest(
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(request.value))
     return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')
   }
-  if (request.type === 'open-management') {
-    const tabId = (await activeTab())?.id
-    if (tabId === undefined) throw new Error('请先打开普通网页')
-    const response = await chrome.tabs.sendMessage(tabId, { type: 'open-management', section: request.section }) as BackgroundResponse<unknown>
-    if (!response?.ok) throw new Error(response?.error.message ?? '无法打开网页悬浮窗，请刷新网页后重试。')
-    return response.data
-  }
   if (request.type === 'page-opened') {
     const tabId = contentTabId(sender, request.pageUrl)
     const previous = await serializeStorageWrite(async () => {
@@ -510,7 +503,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
   }
   const request = message as BackgroundRequest
   if (
-    ['get-popup-state', 'save-connection', 'open-management'].includes(request.type)
+    ['get-popup-state', 'save-connection'].includes(request.type)
     && !sender.url?.startsWith(`chrome-extension://${chrome.runtime.id}/`)
   ) {
     sendResponse(errorResponse(new RequestFailure(

@@ -77,9 +77,11 @@ function snapshot(): StudioState {
 }
 it('uses one closed host and one extension document for all three views', async () => {
   expect(ui.host.shadowRoot).toBeNull()
-  ui.openManagement('settings')
+  await send('tab', 'settings')
+  await send('ready')
   expect(snapshot().tab).toBe('settings')
-  ui.openManagement('tasks')
+  await send('tab', 'tasks')
+  await send('ready')
   expect(snapshot().tab).toBe('tasks')
   expect(ui.shadow.querySelectorAll('iframe')).toHaveLength(1)
   await send('close')
@@ -180,7 +182,7 @@ it('anchors each opening to the FAB but preserves manual placement while open', 
   expect(panel.style.top).toBe('196px')
   panel.style.left = '250px'
   panel.style.top = '80px'
-  ui.openManagement('tasks')
+  ui.setOpen(true)
   expect(panel.style.left).toBe('250px')
   expect(panel.style.top).toBe('80px')
   ui.setOpen(false)

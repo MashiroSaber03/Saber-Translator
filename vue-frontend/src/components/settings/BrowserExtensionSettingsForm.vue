@@ -36,13 +36,13 @@
               />
             </UiField>
             <AiProviderCredentialFields
-              :api-key="secretDrafts[provider] ?? ''"
+              :api-key="secretDrafts[provider] ?? String(credential?.secret?.api_key ?? '')"
               :api-key-input-id="idPrefix + 'Key'"
-              :api-key-label="credential ? 'API Key · 已配置，留空保持' : 'API Key'"
+              api-key-label="API Key"
               :base-url="draft.customBaseUrl"
               :base-url-input-id="idPrefix + 'BaseUrl'"
               :include-api-key="Boolean(providerMetadata?.requiresApiKey)"
-              show-base-url
+              :show-base-url="Boolean(providerMetadata?.requiresBaseUrl)"
               @update:api-key="updateKey"
               @update:base-url="updateBaseUrl"
             />

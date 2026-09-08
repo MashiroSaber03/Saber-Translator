@@ -23,8 +23,6 @@ const props = defineProps<{
   capability: string
   api: PluginSettingsApi
   secret: string
-  configured: boolean
-  savedSecret?: string
 }>()
 const emit = defineEmits<{
   change: [patch: Partial<ServiceConfig>]
@@ -108,7 +106,7 @@ async function diagnose(kind: 'models' | 'connection') {
     provider,
     domain: props.domain,
     baseUrl: props.config.customBaseUrl,
-    ...(props.secret.trim()
+    ...(metadata.value?.requiresApiKey || props.secret.trim()
       ? {
           secret: {
             [props.domain === 'ai_vision_ocr' ? 'ai_vision_api_key' : 'api_key']:
@@ -134,7 +132,7 @@ async function diagnose(kind: 'models' | 'connection') {
         : props.domain === 'ai_vision_ocr'
           ? 'ai_vision_ocr'
           : 'ai_translate'
-      const key = props.secret.trim() || props.savedSecret || ''
+      const key = props.secret.trim()
       const request = traditional
         ? {
             domain: props.domain,
@@ -175,11 +173,10 @@ async function diagnose(kind: 'models' | 'connection') {
       @update:model-value="value => emit('provider', String(value))"
   /></label>
   <label v-if="metadata?.requiresApiKey" class="field"
-    >{{ configured ? `${keyLabel} · 已配置，留空保持` : keyLabel
-    }}<span class="password-field"
+    >{{ keyLabel }}<span class="password-field"
       ><input
         :type="reveal ? 'text' : 'password'"
-        :aria-label="configured ? `${keyLabel} · 已配置，留空保持` : keyLabel"
+        :aria-label="keyLabel"
         :value="secret"
         autocomplete="new-password"
         @input="emit('secret', ($event.target as HTMLInputElement).value)"
@@ -193,13 +190,13 @@ async function diagnose(kind: 'models' | 'connection') {
       </button></span
     ></label
   >
-  <label class="field"
+  <label v-if="metadata?.requiresBaseUrl" class="field"
     >API 地址<input
       :value="config.customBaseUrl"
       :placeholder="metadata?.defaultBaseUrl"
       @input="emit('change', { customBaseUrl: ($event.target as HTMLInputElement).value })"
   /></label>
-  <label class="field"
+  <label v-if="metadata?.requiresModel" class="field"
     >{{ modelLabel
     }}<input
       :value="config.modelName"
@@ -230,6 +227,7 @@ async function diagnose(kind: 'models' | 'connection') {
   <details class="disclosure">
     <summary>请求参数<span class="chevron" /></summary>
     <NumberControl
+      v-if="metadata?.kind === 'openai_compatible'"
       :model-value="config.openaiOptions.execution.rpmLimit"
       label="RPM 限制"
       :min="0"
@@ -251,14 +249,14 @@ async function diagnose(kind: 'models' | 'connection') {
         @update:model-value="transportRetries => execution({ transportRetries })"
       />
     </div>
-    <label class="switch-field"
+    <label v-if="metadata?.supportsStream" class="switch-field"
       >流式调用<input
         class="switch"
         type="checkbox"
         :checked="config.openaiOptions.execution.useStream"
         @change="execution({ useStream: ($event.target as HTMLInputElement).checked })"
     /></label>
-    <label class="field"
+    <label v-if="metadata?.kind === 'openai_compatible'" class="field"
       >附加请求参数（JSON）<textarea
         v-model="extra"
         rows="4"

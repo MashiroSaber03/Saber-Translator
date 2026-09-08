@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import SelectControl from './SelectControl.vue'
 import NumberControl from './NumberControl.vue'
+import { getProviderManifest } from '../../../vue-frontend/src/config/aiProviders'
 import ServiceFields, { type ServiceConfig } from './ServiceFields.vue'
 import { serviceDomains, useTranslatorSettings, type ServiceKey } from './useTranslatorSettings'
 import type { PluginSettingsApi } from '../../../vue-frontend/src/types/browserExtensionSettings'
@@ -29,8 +30,7 @@ const {
   saving,
   dirty,
   error,
-  secrets,
-  credential,
+  secretValue,
   globalApi,
   change,
   selectProvider,
@@ -50,7 +50,10 @@ const baiduChecking = ref(false)
 const baiduMessage = ref('')
 async function testBaidu() {
   baiduChecking.value = true
-  const secret = secrets.value['ocr:baidu']
+  const secret = {
+    baidu_api_key: secretValue('ocr', 'baidu', 'baidu_api_key'),
+    baidu_secret_key: secretValue('ocr', 'baidu', 'baidu_secret_key'),
+  }
   try {
     if (Boolean(secret?.baidu_api_key?.trim()) !== Boolean(secret?.baidu_secret_key?.trim()))
       throw new Error('请同时填写百度 API Key 和 Secret Key')
@@ -87,12 +90,13 @@ const serviceKey = computed<ServiceKey>(() =>
   props.section === 'hq' ? 'hqTranslation' : props.section === 'ocr' ? 'aiVisionOcr' : 'translation'
 )
 const service = computed(() => s.value![serviceKey.value])
+const serviceMetadata = computed(() => getProviderManifest(service.value.provider))
 const domain = computed(() => serviceDomains[serviceKey.value])
 const secretKey = computed(() =>
   serviceKey.value === 'aiVisionOcr' ? 'ai_vision_api_key' : 'api_key'
 )
 const keyValue = computed(
-  () => secrets.value[`${domain.value}:${service.value.provider}`]?.[secretKey.value] ?? ''
+  () => secretValue(domain.value, service.value.provider, secretKey.value)
 )
 const promptKey = computed(() => {
   const t = s.value!.translation
@@ -264,17 +268,10 @@ const expansions = [
               label="百度 OCR 源语言"
               @update:model-value="change('baiduOcr')"
           /></label>
-          <p class="footnote">
-            {{
-              credential('ocr', 'baidu')
-                ? '已配置密钥，留空保持不变。'
-                : '填写密钥以启用百度 OCR。'
-            }}更换时需同时填写两项。
-          </p>
           <label class="field"
             >百度 API Key<input
               :type="reveal ? 'text' : 'password'"
-              :value="secrets['ocr:baidu']?.baidu_api_key ?? ''"
+              :value="secretValue('ocr', 'baidu', 'baidu_api_key')"
               autocomplete="new-password"
               @input="
                 updateSecret('baiduOcr', 'baidu_api_key', ($event.target as HTMLInputElement).value)
@@ -282,7 +279,7 @@ const expansions = [
           ><label class="field"
             >百度 Secret Key<input
               :type="reveal ? 'text' : 'password'"
-              :value="secrets['ocr:baidu']?.baidu_secret_key ?? ''"
+              :value="secretValue('ocr', 'baidu', 'baidu_secret_key')"
               autocomplete="new-password"
               @input="
                 updateSecret(
@@ -318,8 +315,6 @@ const expansions = [
           "
           :api="globalApi"
           :secret="keyValue"
-          :configured="Boolean(credential(domain, service.provider))"
-          :saved-secret="String(credential(domain, service.provider)?.secret?.[secretKey] ?? '')"
           @provider="provider"
           @change="patchService"
           @secret="value => updateSecret(serviceKey, secretKey, value)"
@@ -368,7 +363,7 @@ const expansions = [
           :max="100"
           @update:model-value="change('hqTranslation')"
         />
-        <label v-if="section !== 'ocr'" class="switch-field"
+        <label v-if="section !== 'ocr' && serviceMetadata?.supportsJsonResponse" class="switch-field"
           >强制 JSON 输出<input
             class="switch"
             type="checkbox"
@@ -376,7 +371,7 @@ const expansions = [
             @change="jsonOutput(($event.target as HTMLInputElement).checked)"
         /></label>
       </section>
-      <section v-if="section === 'translation' || section === 'hq'" class="setting-group">
+      <section v-if="(section === 'translation' || section === 'hq') && serviceMetadata?.kind !== 'adapter'" class="setting-group">
         <h3>提示词</h3>
         <label v-if="section === 'translation'" class="field"
           >翻译提示词<textarea
@@ -454,7 +449,7 @@ const expansions = [
             label="SaberYOLO 拆分阈值 (%)"
             :min="0"
             :max="100"
-            :step="1"
+            :step="0.1"
             @update:model-value="change()"
           />
         </section>

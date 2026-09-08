@@ -21,7 +21,6 @@ async function mount(overrides: Record<string, unknown> = {}) {
     capability: 'translation',
     api,
     secret: '',
-    configured: true,
     ...overrides,
   })
   app.mount('#app')
@@ -31,7 +30,43 @@ async function mount(overrides: Record<string, unknown> = {}) {
 const click = (text: string) =>
   [...document.querySelectorAll('button')].find(b => b.textContent?.trim() === text)!.click()
 afterEach(() => app.unmount())
-it('sends only model-catalog fields, letting the backend use the saved key', async () => {
+it('hides unsupported controls for traditional translators while retaining retry settings', async () => {
+  const draft = reactive({ ...config, provider: 'caiyun' })
+  await mount({ config: draft })
+  expect(document.body.textContent).not.toContain('模型名称')
+  expect(document.body.textContent).not.toContain('源语言 (可选)')
+  expect(document.body.textContent).not.toContain('RPM 限制')
+  expect(document.body.textContent).not.toContain('流式调用')
+  expect(document.body.textContent).not.toContain('附加请求参数')
+  expect(document.body.textContent).toContain('业务重试次数')
+  draft.provider = 'baidu_translate'
+  await nextTick()
+  expect(document.body.textContent).toContain('App Key')
+  draft.provider = 'siliconflow'
+  await nextTick()
+  expect(document.body.textContent).toContain('模型名称')
+  expect(document.body.textContent).toContain('流式调用')
+  expect(document.body.textContent).toContain('附加请求参数')
+})
+it('shows the current key and only exposes the URL for a custom provider', async () => {
+  const draft = reactive({ ...config, provider: 'deepseek' })
+  await mount({ config: draft, secret: 'test-current-key' })
+  const input = document.querySelector<HTMLInputElement>('input[aria-label="API Key"]')!
+  expect(input.value).toBe('test-current-key')
+  expect(input.type).toBe('password')
+  click('显示')
+  await nextTick()
+  expect(input.type).toBe('text')
+  expect(document.body.textContent).not.toContain('留空')
+  expect(document.body.textContent).not.toContain('API 地址')
+  draft.provider = 'custom'
+  await nextTick()
+  expect(document.body.textContent).toContain('API 地址')
+  draft.provider = 'gemini'
+  await nextTick()
+  expect(document.body.textContent).not.toContain('API 地址')
+})
+it('sends only model-catalog fields with the current key', async () => {
   const api = await mount()
   click('获取模型列表')
   await nextTick()
@@ -39,6 +74,7 @@ it('sends only model-catalog fields, letting the backend use the saved key', asy
     provider: 'siliconflow',
     domain: 'translation',
     baseUrl: 'https://example.invalid/v1',
+    secret: { api_key: '' },
   })
 })
 it('uses the OCR diagnostic and the OCR credential field', async () => {
@@ -64,7 +100,7 @@ it('uses the OCR diagnostic and the OCR credential field', async () => {
 it('maps saved traditional translation credentials to the corresponding diagnostic', async () => {
   const api = await mount({
     config: { ...config, provider: 'baidu_translate', modelName: 'app-secret' },
-    savedSecret: 'app-id',
+    secret: 'app-id',
   })
   click('测试连接')
   await nextTick()

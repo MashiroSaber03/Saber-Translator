@@ -188,3 +188,28 @@ it('does not create provider drafts or save when selecting the current provider'
   expect(await state.save()).toBe(true)
   expect(api).toHaveBeenCalledTimes(1)
 })
+
+it('reads existing keys and changes one field without losing the other', async () => {
+  const doc = document() as any
+  doc.credentials = [{ domain: 'ocr', provider: 'baidu', revision: 1,
+    credentialId: 'ocr-key', credentialVersionId: 'ocr-v1',
+    secret: { baidu_api_key: 'existing-id', baidu_secret_key: 'existing-secret' } }]
+  const api = vi.fn(async (_path, method, body) => method === 'PUT' ? {
+    ...result(body), credentials: body.credentialEdits.map((row: any) => ({
+      ...row, credentialId: 'ocr-key', credentialVersionId: 'ocr-v2', revision: 2,
+    })),
+  } : doc)
+  await mount(api)
+  expect(state.secretValue('ocr', 'baidu', 'baidu_api_key')).toBe('existing-id')
+  state.updateSecret('baiduOcr', 'baidu_api_key', 'new-id')
+  expect(await state.save()).toBe(true)
+  expect(api.mock.calls.at(-1)![2].credentialEdits[0].secret).toEqual({
+    baidu_api_key: 'new-id', baidu_secret_key: 'existing-secret',
+  })
+  expect(state.secretValue('ocr', 'baidu', 'baidu_api_key')).toBe('new-id')
+  expect(state.secretValue('ocr', 'baidu', 'baidu_secret_key')).toBe('existing-secret')
+  state.change('baiduOcr')
+  const count = api.mock.calls.length
+  expect(await state.save()).toBe(true)
+  expect(api.mock.calls.length).toBe(count)
+})
