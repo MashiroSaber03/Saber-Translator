@@ -164,6 +164,7 @@
           <UiNumberField
             :input-id="id('StrokeWidth')"
             :model-value="draftDefaults.strokeWidth"
+            :spin-step="1"
             :min="0"
             :step="0.1"
             size="sm"

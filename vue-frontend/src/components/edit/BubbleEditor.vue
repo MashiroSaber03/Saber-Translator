@@ -221,6 +221,7 @@
             >
               <UiNumberField
                 v-model="localStrokeWidth"
+                :spin-step="1"
                 class="bubble-editor__number-field bubble-editor__number-field--stroke"
                 variant="editor"
                 :min="0"

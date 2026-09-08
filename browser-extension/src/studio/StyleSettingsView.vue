@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useBrowserExtensionSettings } from '../../../vue-frontend/src/composables/useBrowserExtensionSettings'
 import SelectControl from './SelectControl.vue'
 import ColorControl from './ColorControl.vue'
+import NumberControl from './NumberControl.vue'
 import type { PluginSettingsApi } from '../../../vue-frontend/src/types/browserExtensionSettings'
 const props = defineProps<{ api: PluginSettingsApi }>()
 const {
@@ -52,7 +53,7 @@ const fills = [
   { value: 'lama_mpe', label: 'LAMA 修复' },
   { value: 'litelama', label: 'LiteLAMA 修复' },
 ]
-function number(event: Event, field: 'fontSize' | 'strokeWidth' | 'lineSpacing') {
+function number(event: Event, field: 'fontSize' | 'lineSpacing') {
   const input = event.target as HTMLInputElement
   if (input.validity.valid && Number.isFinite(input.valueAsNumber))
     changeStyle({ [field]: input.valueAsNumber })
@@ -220,15 +221,14 @@ function number(event: Event, field: 'fontSize' | 'strokeWidth' | 'lineSpacing')
               :model-value="style.strokeColor"
               label="描边颜色"
               @update:model-value="strokeColor => changeStyle({ strokeColor })" /></label
-          ><label class="field"
-            >描边宽度 (px)<input
-              type="number"
-              aria-label="描边宽度 (px)"
-              :value="style.strokeWidth"
-              min="0"
-              step="0.1"
-              @input="number($event, 'strokeWidth')"
-          /></label>
+          ><NumberControl
+            label="描边宽度 (px)"
+            :model-value="style.strokeWidth"
+            :min="0"
+            :step="0.1"
+            :spin-step="1"
+            @update:model-value="strokeWidth => changeStyle({ strokeWidth })"
+          />
         </div>
       </section>
       <details class="disclosure">

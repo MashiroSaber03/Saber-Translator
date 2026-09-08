@@ -21,6 +21,7 @@ const props = withDefaults(defineProps<{
   nullable?: boolean
   size?: 'lg' | 'md' | 'sm' | 'xs'
   step?: number
+  spinStep?: number
   title?: string
   variant?: 'default' | 'editor' | 'studio'
 }>(), {
@@ -90,7 +91,12 @@ function stepBy(direction: -1 | 1): void {
     commitValue(props.min ?? 0)
     return
   }
-  commitValue(Number((props.modelValue + props.step * direction).toPrecision(12)))
+  commitValue(Number((props.modelValue + (props.spinStep ?? props.step) * direction).toPrecision(12)))
+}
+function handleArrow(event: KeyboardEvent): void {
+  if (props.spinStep === undefined || !['ArrowUp', 'ArrowDown'].includes(event.key)) return
+  event.preventDefault()
+  stepBy(event.key === 'ArrowUp' ? 1 : -1)
 }
 </script>
 
@@ -99,7 +105,7 @@ function stepBy(direction: -1 | 1): void {
     class="ui-number-field"
     :class="[
       `ui-number-field--${size}`,
-      { 'ui-number-field--with-controls': controls },
+      { 'ui-number-field--with-controls': controls, 'ui-number-field--custom-spin': spinStep !== undefined },
     ]"
   >
     <UiButton
@@ -130,7 +136,12 @@ function stepBy(direction: -1 | 1): void {
       :title="title || undefined"
       @update:model-value="handleInputValue"
       @blur="restoreEmptyInput"
+      @keydown="handleArrow"
     />
+    <span v-if="spinStep !== undefined && !controls" class="ui-number-field__arrows">
+      <UiButton variant="ghost" size="xs" :aria-label="incrementLabel" :disabled="!canIncrement" @click="stepBy(1)">▴</UiButton>
+      <UiButton variant="ghost" size="xs" :aria-label="decrementLabel" :disabled="!canDecrement" @click="stepBy(-1)">▾</UiButton>
+    </span>
 
     <UiButton
       v-if="controls"
@@ -193,5 +204,14 @@ function stepBy(direction: -1 | 1): void {
   font-weight: 600;
   line-height: 1;
 }
+
+.ui-number-field--custom-spin { position: relative; }
+.ui-number-field--custom-spin .ui-number-field__input { appearance: textfield; padding-right: 24px; }
+.ui-number-field--custom-spin .ui-number-field__input::-webkit-inner-spin-button,
+.ui-number-field--custom-spin .ui-number-field__input::-webkit-outer-spin-button { appearance: none; margin: 0; }
+.ui-number-field__arrows { position: absolute; right: 3px; top: 3px; bottom: 3px; display: flex; flex-direction: column; width: 20px; }
+.ui-number-field__arrows button { flex: 1; min-height: 0; height: auto; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--color-text-supporting); font-size: 12px; line-height: 1; cursor: pointer; }
+.ui-number-field__arrows button:hover:not(:disabled) { background: var(--color-surface-muted); color: var(--color-text-heading); }
+.ui-number-field__arrows button:disabled { opacity: 0.4; cursor: default; }
 
 </style>

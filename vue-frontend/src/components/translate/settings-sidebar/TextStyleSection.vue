@@ -274,6 +274,7 @@ const isTextStyleExpanded = ref(true)
                 <UiNumberField
                   input-id="strokeWidth"
                   :model-value="textStyle.strokeWidth"
+                  :spin-step="1"
                   :min="0"
                   :step="0.1"
                   :disabled="disabled"
