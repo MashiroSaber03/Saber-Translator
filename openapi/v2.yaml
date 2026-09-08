@@ -397,8 +397,8 @@ paths:
         - in: query
           name: scope
           required: false
-          description: Local profile only. Select plugin text_style_defaults and optional browser_dom_agent settings; omitted uses translator settings.
-          schema: {type: string, enum: [browser_extension]}
+          description: Select global translator settings (the default), or independent plugin text_style_defaults and browser_dom_agent settings (local profile only).
+          schema: {type: string, enum: [global, browser_extension]}
         - name: domains
           in: query
           schema: {type: string}
@@ -419,8 +419,8 @@ paths:
         - in: query
           name: scope
           required: false
-          description: Local profile only. Select plugin text_style_defaults and optional browser_dom_agent settings; omitted uses translator settings.
-          schema: {type: string, enum: [browser_extension]}
+          description: Select global translator settings (the default), or independent plugin text_style_defaults and browser_dom_agent settings (local profile only).
+          schema: {type: string, enum: [global, browser_extension]}
         - name: credential_id
           in: path
           required: true
@@ -442,8 +442,8 @@ paths:
         - in: query
           name: scope
           required: false
-          description: Local profile only. Select plugin text_style_defaults and optional browser_dom_agent settings; omitted uses translator settings.
-          schema: {type: string, enum: [browser_extension]}
+          description: Select global translator settings (the default), or independent plugin text_style_defaults and browser_dom_agent settings (local profile only).
+          schema: {type: string, enum: [global, browser_extension]}
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
@@ -588,8 +588,8 @@ paths:
         - in: query
           name: scope
           required: false
-          description: Local profile only. Select plugin text_style_defaults and optional browser_dom_agent settings; omitted uses translator settings.
-          schema: {type: string, enum: [browser_extension]}
+          description: Select global translator settings (the default), or independent plugin text_style_defaults and browser_dom_agent settings (local profile only).
+          schema: {type: string, enum: [global, browser_extension]}
       tags: [settings]
       operationId: fetchModelCatalog
       x-command-mode: transient
@@ -615,8 +615,8 @@ paths:
         - in: query
           name: scope
           required: false
-          description: Local profile only. Select plugin text_style_defaults and optional browser_dom_agent settings; omitted uses translator settings.
-          schema: {type: string, enum: [browser_extension]}
+          description: Select global translator settings (the default), or independent plugin text_style_defaults and browser_dom_agent settings (local profile only).
+          schema: {type: string, enum: [global, browser_extension]}
         - name: kind
           in: path
           required: true
@@ -4067,11 +4067,15 @@ paths:
         "404": {$ref: "#/components/responses/NotFound"}
   /browser-extension/manage/settings:
     get:
-      description: Plugin settings include only independent text_style_defaults and the optional browser_dom_agent. OCR and translation services reuse translator settings. Unsaved settings use factory values with revision 0.
+      description: Without scope, reads independent plugin text_style_defaults and browser_dom_agent. With scope=global, reads the same translator settings and provider credentials used by the Web settings menu; no plugin copy is created.
       tags:
       - browser-extension
       operationId: browserManageGetSettings
       parameters:
+      - name: scope
+        in: query
+        description: Use global to read or edit the existing translator configuration. Omit for plugin-specific settings.
+        schema: {type: string, enum: [global, browser_extension]}
       - name: domains
         in: query
         schema:
@@ -4117,6 +4121,10 @@ paths:
       - browser-extension
       operationId: browserManageSaveSettingsTransaction
       parameters:
+      - name: scope
+        in: query
+        description: Use global to read or edit the existing translator configuration. Omit for plugin-specific settings.
+        schema: {type: string, enum: [global, browser_extension]}
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
@@ -4173,6 +4181,11 @@ paths:
       - browser-extension
       operationId: browserManageFetchModelCatalog
       x-command-mode: transient
+      parameters:
+      - name: scope
+        in: query
+        description: Use global to read or edit the existing translator configuration. Omit for plugin-specific settings.
+        schema: {type: string, enum: [global, browser_extension]}
       requestBody:
         required: true
         content:
@@ -4197,6 +4210,10 @@ paths:
       operationId: browserManageRunConnectionTest
       x-command-mode: transient
       parameters:
+      - name: scope
+        in: query
+        description: Use global to read or edit the existing translator configuration. Omit for plugin-specific settings.
+        schema: {type: string, enum: [global, browser_extension]}
       - name: kind
         in: path
         required: true

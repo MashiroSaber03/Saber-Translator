@@ -2948,7 +2948,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Plugin settings include only independent text_style_defaults and the optional browser_dom_agent. OCR and translation services reuse translator settings. Unsaved settings use factory values with revision 0. */
+        /** @description Without scope, reads independent plugin text_style_defaults and browser_dom_agent. With scope=global, reads the same translator settings and provider credentials used by the Web settings menu; no plugin copy is created. */
         get: operations["browserManageGetSettings"];
         put?: never;
         post?: never;
@@ -6720,8 +6720,8 @@ export interface operations {
     getSettings: {
         parameters: {
             query?: {
-                /** @description Local profile only. Select plugin text_style_defaults and optional browser_dom_agent settings; omitted uses translator settings. */
-                scope?: "browser_extension";
+                /** @description Select global translator settings (the default), or independent plugin text_style_defaults and browser_dom_agent settings (local profile only). */
+                scope?: "global" | "browser_extension";
                 domains?: string;
                 book_id?: string;
             };
@@ -6745,8 +6745,8 @@ export interface operations {
     deleteCredential: {
         parameters: {
             query?: {
-                /** @description Local profile only. Select plugin text_style_defaults and optional browser_dom_agent settings; omitted uses translator settings. */
-                scope?: "browser_extension";
+                /** @description Select global translator settings (the default), or independent plugin text_style_defaults and browser_dom_agent settings (local profile only). */
+                scope?: "global" | "browser_extension";
             };
             header: {
                 /** @description Stable key for this normalized command and target scope. */
@@ -6775,8 +6775,8 @@ export interface operations {
     saveSettingsTransaction: {
         parameters: {
             query?: {
-                /** @description Local profile only. Select plugin text_style_defaults and optional browser_dom_agent settings; omitted uses translator settings. */
-                scope?: "browser_extension";
+                /** @description Select global translator settings (the default), or independent plugin text_style_defaults and browser_dom_agent settings (local profile only). */
+                scope?: "global" | "browser_extension";
             };
             header: {
                 /** @description Stable key for this normalized command and target scope. */
@@ -6983,8 +6983,8 @@ export interface operations {
     fetchModelCatalog: {
         parameters: {
             query?: {
-                /** @description Local profile only. Select plugin text_style_defaults and optional browser_dom_agent settings; omitted uses translator settings. */
-                scope?: "browser_extension";
+                /** @description Select global translator settings (the default), or independent plugin text_style_defaults and browser_dom_agent settings (local profile only). */
+                scope?: "global" | "browser_extension";
             };
             header?: never;
             path?: never;
@@ -7012,8 +7012,8 @@ export interface operations {
     runConnectionTest: {
         parameters: {
             query?: {
-                /** @description Local profile only. Select plugin text_style_defaults and optional browser_dom_agent settings; omitted uses translator settings. */
-                scope?: "browser_extension";
+                /** @description Select global translator settings (the default), or independent plugin text_style_defaults and browser_dom_agent settings (local profile only). */
+                scope?: "global" | "browser_extension";
             };
             header?: never;
             path: {
@@ -12099,6 +12099,8 @@ export interface operations {
     browserManageGetSettings: {
         parameters: {
             query?: {
+                /** @description Use global to read or edit the existing translator configuration. Omit for plugin-specific settings. */
+                scope?: "global" | "browser_extension";
                 domains?: string;
                 book_id?: string;
             };
@@ -12148,7 +12150,10 @@ export interface operations {
     };
     browserManageSaveSettingsTransaction: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Use global to read or edit the existing translator configuration. Omit for plugin-specific settings. */
+                scope?: "global" | "browser_extension";
+            };
             header: {
                 /** @description Stable key for this normalized command and target scope. */
                 "Idempotency-Key": components["parameters"]["IdempotencyKey"];
@@ -12208,7 +12213,10 @@ export interface operations {
     };
     browserManageFetchModelCatalog: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Use global to read or edit the existing translator configuration. Omit for plugin-specific settings. */
+                scope?: "global" | "browser_extension";
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -12234,7 +12242,10 @@ export interface operations {
     };
     browserManageRunConnectionTest: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Use global to read or edit the existing translator configuration. Omit for plugin-specific settings. */
+                scope?: "global" | "browser_extension";
+            };
             header?: never;
             path: {
                 kind: "ollama" | "sakura" | "lama_repair" | "baidu_ocr" | "ai_vision_ocr" | "baidu_translate" | "youdao_translate" | "ai_translate" | "firecrawl" | "web_import_agent" | "vlm" | "llm" | "embedding" | "reranker";

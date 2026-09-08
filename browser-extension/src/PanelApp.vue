@@ -130,7 +130,10 @@ onBeforeUnmount(() => {
         v-if="settingsVisited"
         v-show="tab === 'settings'"
       >
-        <SettingsView :api="props.api" />
+        <SettingsView
+          :api="props.api"
+          :active="visible && (state?.open ?? true) && tab === 'settings'"
+        />
       </div>
       <div
         id="view-tasks"

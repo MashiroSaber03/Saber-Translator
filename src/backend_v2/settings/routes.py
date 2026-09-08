@@ -88,8 +88,10 @@ def create_settings_blueprint(
 
     def settings_repository() -> SettingsRepository:
         scope = request.args.get("scope")
-        if scope not in (None, "browser_extension"):
+        if scope not in (None, "global", "browser_extension"):
             raise ValueError("unsupported settings scope")
+        if scope == "global":
+            return SettingsRepository(engine)
         if scope == "browser_extension":
             if profile.name != "local":
                 raise ValueError("浏览器插件设置仅支持本地模式")

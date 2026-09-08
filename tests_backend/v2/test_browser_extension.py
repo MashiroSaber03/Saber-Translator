@@ -1830,3 +1830,38 @@ def test_plugin_snapshot_keeps_credentials_until_page_is_discarded(browser_platf
     assert client.post(f"/api/v2/browser-extension/sessions/{session['id']}/discard", headers=HEADERS).status_code == 204
     settings.delete_credential(credential["credentialId"])
     assert settings.credential_summaries() == []
+
+
+def test_extension_edits_existing_global_translation_settings(browser_platform):
+    _root, engine, app = browser_platform
+    client = app.test_client()
+    url = "/api/v2/browser-extension/manage/settings"
+    assert client.get(url + "?scope=global").status_code == 401
+    plugin_before = client.get(url, headers=HEADERS).get_json()
+    document = client.get(url + "?scope=global", headers=HEADERS).get_json()
+    assert document == client.get("/api/v2/settings").get_json()
+    entry = next(row for row in document["settings"] if row["domain"] == "translation")
+    entry["payload"]["ocrEngine"] = "paddleocr_vl"
+    entry["payload"]["textDetector"] = "ctd"
+    entry["payload"]["hqTranslation"]["batchSize"] = 4
+    body = {"settings": [{"domain": "translation", "payload": entry["payload"],
+        "schemaVersion": entry["schemaVersion"], "baseRevision": entry["revision"]}]}
+    saved = client.put(url + "/transactions?scope=global", json=body,
+        headers={**HEADERS, "Idempotency-Key": "plugin-global-edit"})
+    assert saved.status_code == 200, saved.get_json()
+    latest = next(row for row in client.get("/api/v2/settings").get_json()["settings"] if row["domain"] == "translation")
+    assert latest["payload"]["ocrEngine"] == "paddleocr_vl"
+    assert latest["payload"]["textDetector"] == "ctd"
+    assert latest["payload"]["hqTranslation"]["batchSize"] == 4
+    assert client.get(url, headers=HEADERS).get_json() == plugin_before
+    stale = client.put(url + "/transactions?scope=global", json=body,
+        headers={**HEADERS, "Idempotency-Key": "plugin-global-stale"})
+    assert stale.status_code == 409
+    body["settings"][0]["baseRevision"] = latest["revision"]
+    body["settings"][0]["payload"]["textDetector"] = "yolo"
+    assert client.put("/api/v2/settings/transactions", json=body,
+        headers={"Idempotency-Key": "web-global-edit"}).status_code == 200
+    updated = client.get(url + "?scope=global&domains=translation", headers=HEADERS).get_json()
+    assert updated["settings"][0]["payload"]["textDetector"] == "yolo"
+    with engine.connect() as connection:
+        assert connection.execute(select(app_settings.c.domain).where(app_settings.c.domain == "browser_extension:translation")).first() is None

@@ -1001,3 +1001,20 @@ progress::-webkit-progress-value {
     transition: none !important;
   }
 }
+
+.field textarea {
+  width: 100%;
+  min-height: 80px;
+  resize: vertical;
+  border: 1px solid var(--s-line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font: inherit;
+  line-height: 1.6;
+  color: var(--s-text);
+  background: var(--s-surface);
+}
+.field textarea:focus-visible {
+  outline: 2px solid var(--s-accent);
+  outline-offset: 2px;
+}
