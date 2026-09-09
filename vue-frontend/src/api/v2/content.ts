@@ -1,4 +1,5 @@
 import { apiClient, ApiClientError } from '@/api/client'
+import { createUuid } from '@/utils/uuid'
 import type { components } from '@/api/generated/v2'
 import type { TextStyleSettings } from '@/types/settings'
 
@@ -78,7 +79,7 @@ const RETRYABLE_UPLOAD_CODES = new Set([
 const RETRYABLE_UPLOAD_STATUSES = new Set([408, 425, 429, 502, 503, 504])
 
 export function newIdempotencyKey(): string {
-  return crypto.randomUUID()
+  return createUuid()
 }
 
 function browserImportFiles(files: FileList | File[]): BrowserImportFile[] {

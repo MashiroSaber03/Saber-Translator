@@ -1,4 +1,5 @@
 import { computed, ref } from 'vue'
+import { createUuid } from '@/utils/uuid'
 import { defineStore } from 'pinia'
 
 import type {
@@ -264,7 +265,7 @@ export const useCustomAiProfileStore = defineStore('customAiProfiles', () => {
   }
 
   async function create(profile: Omit<CustomAiProfile, 'id'>): Promise<CustomAiProfile | null> {
-    const created = normalizedProfile({ ...profile, id: crypto.randomUUID() })
+    const created = normalizedProfile({ ...profile, id: createUuid() })
     if (!created.apiKey) {
       error.value = 'API Key 不能为空'
       return null

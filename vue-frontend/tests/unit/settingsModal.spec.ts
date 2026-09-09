@@ -472,6 +472,42 @@ describe('SettingsModal', () => {
     expect(wrapper.emitted('update:modelValue')).toContainEqual([false])
   })
 
+  it('retains a failed global draft across closing and retries on reopening', async () => {
+    saveToBackendMock.mockResolvedValue(false)
+    const wrapper = mount(SettingsModal, { props: { modelValue: true } })
+    await flushPromises()
+    settingsStoreState.settings.textStyle.fontSize += 1
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === '完成')!.trigger('click')
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === '仍然关闭')!.trigger('click')
+    await wrapper.setProps({ modelValue: false })
+    await flushPromises()
+    const loadCount = loadFromBackendMock.mock.calls.length
+    await wrapper.setProps({ modelValue: true })
+    await flushPromises()
+    expect(loadFromBackendMock).toHaveBeenCalledTimes(loadCount)
+    saveToBackendMock.mockResolvedValue(true)
+    const saveCount = saveToBackendMock.mock.calls.length
+    await wrapper.findAll('button').find(button => button.text() === '完成')!.trigger('click')
+    await flushPromises()
+    expect(saveToBackendMock).toHaveBeenCalledTimes(saveCount + 1)
+  })
+
+  it('allows an explicit close after warning about a failed save', async () => {
+    pluginSaveMock.mockReset().mockResolvedValue(false)
+    const wrapper = mount(SettingsModal, { props: { modelValue: true, initialTab: 'browser-extension' } })
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === '完成')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(wrapper.text()).toContain('可能丢失未保存的修改')
+    await wrapper.findAll('button').find(button => button.text() === '仍然关闭')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')).toContainEqual([false])
+    expect(pluginSaveMock).toHaveBeenCalledTimes(1)
+  })
+
   it('waits for a successful plugin save before applying a modal dismiss event', async () => {
     pluginSaveMock.mockReset().mockResolvedValueOnce(false).mockResolvedValueOnce(true)
     const wrapper = mount(SettingsModal, {

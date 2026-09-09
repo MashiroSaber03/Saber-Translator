@@ -4,6 +4,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import { createUuid } from '@/utils/uuid'
 import { apiClient } from '@/api/client'
 import BrowserExtensionSettingsForm from './BrowserExtensionSettingsForm.vue'
 import type { PluginSettingsApi } from '@/types/browserExtensionSettings'
@@ -13,7 +14,7 @@ const api: PluginSettingsApi = async <T,>(path: string, method = 'GET', body?: u
   const url = `/api/v2${path}`
   const config = {
     params: path === '/fonts' ? {} : { scope: 'browser_extension' },
-    headers: method === 'GET' ? {} : { 'Idempotency-Key': crypto.randomUUID() },
+    headers: method === 'GET' ? {} : { 'Idempotency-Key': createUuid() },
   }
   try {
     if (method === 'GET') return await apiClient.get<T>(url, config)

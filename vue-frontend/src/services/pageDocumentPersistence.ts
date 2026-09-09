@@ -1,3 +1,4 @@
+import { createUuid } from '@/utils/uuid'
 import {
   mutatePageDocument,
   type V2PageDocument,
@@ -79,7 +80,7 @@ function bubbleFields(bubble: BubbleState): V2CompleteBubbleMutationFields {
 function ensureClientMutationIds(bubbles: BubbleState[]): void {
   for (const bubble of bubbles) {
     if (!bubble.backendBubbleId && !bubble.clientMutationId) {
-      bubble.clientMutationId = crypto.randomUUID()
+      bubble.clientMutationId = createUuid()
     }
   }
 }
@@ -123,7 +124,7 @@ function mutationsFor(
     if (id && !currentIds.has(id)) {
       mutations.push({
         bubbleId: id,
-        clientMutationId: crypto.randomUUID(),
+        clientMutationId: createUuid(),
         op: 'delete',
       })
     }
@@ -143,7 +144,7 @@ function mutationsFor(
     if (old && canonical(bubbleFields(old)) !== canonical(fields)) {
       mutations.push({
         bubbleId: id,
-        clientMutationId: crypto.randomUUID(),
+        clientMutationId: createUuid(),
         fields,
         op: 'reset',
       })
@@ -186,7 +187,7 @@ async function mutateWithTransportReplay(
   pageId: string,
   command: V2PageDocumentBatchMutation,
 ): Promise<V2PageDocumentMutationResponse> {
-  const idempotencyKey = crypto.randomUUID()
+  const idempotencyKey = createUuid()
   try {
     return await mutatePageDocument(pageId, command, idempotencyKey)
   } catch (error) {

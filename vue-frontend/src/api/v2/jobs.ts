@@ -1,4 +1,5 @@
 import { apiClient } from '@/api/client'
+import { createUuid } from '@/utils/uuid'
 import type { components } from '@/api/generated/v2'
 
 export type V2Job = components['schemas']['Job']
@@ -37,7 +38,7 @@ export const CURRENT_JOB_STATUSES: ReadonlySet<V2JobStatus> = new Set([
 ])
 
 function replayHeaders(): Record<string, string> {
-  return { 'Idempotency-Key': crypto.randomUUID() }
+  return { 'Idempotency-Key': createUuid() }
 }
 
 export const jobsApi = {
