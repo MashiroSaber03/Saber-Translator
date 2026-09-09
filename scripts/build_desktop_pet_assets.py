@@ -113,7 +113,9 @@ def _extract_subjects_by_clusters(
     return frames
 
 
-def _normalize_row(frames: list[Image.Image]) -> list[Image.Image]:
+def _normalize_row(
+    frames: list[Image.Image], *, align_head: bool = False
+) -> list[Image.Image]:
     bounds = [frame.getbbox() for frame in frames]
     if any(bounds_item is None for bounds_item in bounds):
         raise ValueError("generated strip contains an empty frame")
@@ -137,6 +139,21 @@ def _normalize_row(frames: list[Image.Image]) -> list[Image.Image]:
         top = CELL_HEIGHT - 5 - sprite.height
         cell.alpha_composite(sprite, (left, top))
         normalized.append(cell)
+    if align_head:
+        # Foot reach changes the full-body bounds during walking. Register the
+        # head instead so each step does not shift the entire body sideways.
+        head_centers = []
+        for cell in normalized:
+            head = cell.getchannel("A").crop((0, 0, CELL_WIDTH, CELL_HEIGHT // 3))
+            left, _top, right, _bottom = head.getbbox()
+            head_centers.append((left + right) / 2)
+        target = sum(head_centers) / len(head_centers)
+        aligned = []
+        for cell, center in zip(normalized, head_centers):
+            canvas = Image.new("RGBA", cell.size, (0, 0, 0, 0))
+            canvas.alpha_composite(cell, (round(target - center), 0))
+            aligned.append(canvas)
+        normalized = aligned
     return normalized
 
 
@@ -163,7 +180,9 @@ def _load_rows(source_dir: Path) -> dict[str, list[Image.Image]]:
         with Image.open(path) as opened:
             transparent = remove_chroma(opened)
         try:
-            output[state] = _normalize_row(_extract_subjects(transparent))
+            output[state] = _normalize_row(
+                _extract_subjects(transparent), align_head=state == "drag_right"
+            )
         except ValueError as error:
             raise ValueError(f"{state}: {error}") from error
     output["drag_left"] = [
@@ -250,8 +269,8 @@ def _write_animation_previews(
             save_all=True,
             append_images=previews[1:],
             duration=durations,
-            loop=0,
             disposal=2,
+            **({"loop": 0} if row["loop"] else {}),
         )
 
 
