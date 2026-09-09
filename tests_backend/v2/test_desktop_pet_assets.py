@@ -8,7 +8,8 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtGui import QImage
+from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
+from PySide6.QtGui import QImage, QMouseEvent
 from PySide6.QtWidgets import QApplication
 
 from src.backend_v2.desktop.pet import PetManifest, PetWindow
@@ -95,6 +96,72 @@ def test_hidden_pet_does_not_keep_animating() -> None:
     pet.hide()
     assert not pet._timer.isActive()
     pet.close()
+
+
+@pytest.mark.parametrize("sign", [-1, 1])
+def test_drag_ignores_jitter_but_accumulates_slow_reversal(sign: int) -> None:
+    app = _app()
+    pet = PetWindow(PET_ROOT / "pet.json", fallback_logo=PROJECT_ROOT / "pic/logo.png")
+    pet.move(100, 100)
+    origin = QPoint(150, 150)
+    threshold = QApplication.startDragDistance()
+
+    def send(kind: QEvent.Type, dx: int, dy: int = 0) -> None:
+        position = origin + QPoint(dx, dy)
+        button = (
+            Qt.MouseButton.NoButton
+            if kind == QEvent.Type.MouseMove else Qt.MouseButton.LeftButton
+        )
+        buttons = (
+            Qt.MouseButton.NoButton
+            if kind == QEvent.Type.MouseButtonRelease else Qt.MouseButton.LeftButton
+        )
+        event = QMouseEvent(
+            kind, QPointF(pet.mapFromGlobal(position)), QPointF(position),
+            button, buttons, Qt.KeyboardModifier.NoModifier,
+        )
+        app.sendEvent(pet, event)
+
+    try:
+        send(QEvent.Type.MouseButtonPress, 0)
+        send(QEvent.Type.MouseMove, sign * threshold * 2)
+        direction = PetState.DRAG_RIGHT if sign > 0 else PetState.DRAG_LEFT
+        assert pet._visible_state == direction
+        pet._advance_frame()
+        frame = pet._frame_index
+        send(QEvent.Type.MouseMove, sign * threshold * 3)
+        assert pet._frame_index == frame
+        # Start a fresh drag to check that release resets the direction anchor.
+        send(QEvent.Type.MouseButtonRelease, sign * threshold * 3)
+        send(QEvent.Type.MouseButtonPress, 0)
+        start = pet.pos()
+        send(QEvent.Type.MouseMove, sign * threshold * 2)
+        pet._advance_frame()
+        frame = pet._frame_index
+        for dx in [sign * (threshold * 2 - 1), sign * threshold * 2] * 5:
+            send(QEvent.Type.MouseMove, dx, 20)
+            assert pet._visible_state == direction
+            assert pet._frame_index == frame
+            assert pet.pos() == start + QPoint(dx, 20)
+        for offset in range(1, threshold):
+            send(QEvent.Type.MouseMove, sign * (threshold * 2 - offset), 30)
+            assert pet._visible_state == direction
+        send(QEvent.Type.MouseMove, sign * threshold, 30)
+        assert pet._visible_state == (PetState.DRAG_LEFT if sign > 0 else PetState.DRAG_RIGHT)
+        send(QEvent.Type.MouseMove, sign * threshold, 40)
+        assert pet._visible_state != direction
+        send(QEvent.Type.MouseButtonRelease, sign * threshold, 40)
+        assert pet._visible_state == PetState.IDLE
+        send(QEvent.Type.MouseButtonPress, 0)
+        send(QEvent.Type.MouseMove, 0, threshold * 2)
+        assert pet._visible_state == PetState.IDLE
+        assert pet._dragged
+        send(QEvent.Type.MouseButtonRelease, 0, threshold * 2)
+        send(QEvent.Type.MouseButtonPress, 0)
+        send(QEvent.Type.MouseButtonRelease, 0)
+        assert pet._visible_state == PetState.GREETING
+    finally:
+        pet.close()
 
 
 def test_pet_manifest_rejects_unknown_current_schema_fields(tmp_path: Path) -> None:

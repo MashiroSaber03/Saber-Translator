@@ -187,7 +187,7 @@ class PetWindow(QWidget):
         self._drag_origin: QPoint | None = None
         self._window_origin: QPoint | None = None
         self._dragged = False
-        self._last_drag_x = 0
+        self._drag_direction_anchor_x = 0
         self._scale_percent = scale_percent if scale_percent in PET_SCALES else 75
         self._always_on_top = always_on_top
         self._timer = QTimer(self)
@@ -300,7 +300,7 @@ class PetWindow(QWidget):
         if event.button() == Qt.MouseButton.LeftButton:
             self._drag_origin = event.globalPosition().toPoint()
             self._window_origin = self.pos()
-            self._last_drag_x = self._drag_origin.x()
+            self._drag_direction_anchor_x = self._drag_origin.x()
             self._dragged = False
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
             event.accept()
@@ -314,15 +314,20 @@ class PetWindow(QWidget):
             self._dragged = True
         if self._dragged:
             self.move(self._window_origin + delta)
-            direction = (
-                PetState.DRAG_RIGHT
-                if current.x() >= self._last_drag_x
-                else PetState.DRAG_LEFT
-            )
-            if self._visible_state != direction:
+            horizontal_delta = current.x() - self._drag_direction_anchor_x
+            if abs(horizontal_delta) >= QApplication.startDragDistance():
+                direction = (
+                    PetState.DRAG_RIGHT if horizontal_delta > 0 else PetState.DRAG_LEFT
+                )
                 self._transient = False
-                self._play(direction, force=True)
-            self._last_drag_x = current.x()
+                self._play(direction)
+                self._drag_direction_anchor_x = current.x()
+            # Track the furthest point in the current direction so slow reversals
+            # accumulate, while small jitter and vertical moves keep the animation.
+            if self._visible_state == PetState.DRAG_RIGHT:
+                self._drag_direction_anchor_x = max(self._drag_direction_anchor_x, current.x())
+            elif self._visible_state == PetState.DRAG_LEFT:
+                self._drag_direction_anchor_x = min(self._drag_direction_anchor_x, current.x())
         event.accept()
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
