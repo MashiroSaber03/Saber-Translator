@@ -75,6 +75,7 @@ const inpaintMethodOptions = computed(() => publicAccess.modelOptions(
   {
     lama_mpe: 'lama_mpe',
     litelama: 'litelama',
+    lama_manga: 'lama_manga',
   },
 ))
 const draftDefaults = computed(() => settingsStore.textStyleDefaults)

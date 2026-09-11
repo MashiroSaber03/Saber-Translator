@@ -1520,8 +1520,10 @@ def test_translation_rejects_plugin_string_instead_of_text_array(
     )
 
 
+@pytest.mark.parametrize("method", ["lama_mpe", "litelama", "lama_manga"])
 def test_translation_uses_current_page_layout_and_inpainting_defaults(
     translation_platform,
+    method: str,
 ) -> None:
     platform = translation_platform
     page_style = {
@@ -1530,7 +1532,7 @@ def test_translation_uses_current_page_layout_and_inpainting_defaults(
         "layoutDirection": "horizontal",
         "textColor": "#000000",
         "fillColor": "#123456",
-        "inpaintMethod": "litelama",
+        "inpaintMethod": method,
         "useAutoTextColor": False,
         "strokeEnabled": False,
         "strokeColor": "#AABBCC",
@@ -1577,7 +1579,7 @@ def test_translation_uses_current_page_layout_and_inpainting_defaults(
     assert payload["lineSpacing"] == 1.4
     assert payload["inlineAlign"] == "end"
     assert payload["blockAlign"] == "center"
-    assert payload["inpaintMethod"] == "litelama"
+    assert payload["inpaintMethod"] == method
     assert algorithms.render_payloads[0][0]["textColor"] == "#000000"
     assert algorithms.render_payloads[0][0]["fillColor"] == "#123456"
     assert algorithms.render_payloads[0][0]["textDirection"] == "horizontal"
@@ -1591,8 +1593,9 @@ def test_translation_uses_current_page_layout_and_inpainting_defaults(
     assert algorithms.repair_configs == [
         {
             "disable_resize": False,
+            "regional_inpainting": False,
             "method": "lama",
-            "lama_model": "litelama",
+            "lama_model": method,
             "mask_dilate_size": 10,
             "mask_box_expand_ratio": 20,
         }
@@ -3297,6 +3300,7 @@ def test_translation_job_resolves_backend_settings_and_reuses_manual_bubbles(
         "translationMode": "single",
     }
     payload["lamaDisableResize"] = True
+    payload["lamaRegionalInpainting"] = True
     payload["textboxPrompt"] = "backend textbox prompt"
     payload["useTextboxPrompt"] = True
     settings.save_transaction(
@@ -3387,6 +3391,7 @@ def test_translation_job_resolves_backend_settings_and_reuses_manual_bubbles(
     assert frozen["translation"]["translation_mode"] == "batch"
     assert frozen["translation"]["use_textbox_prompt"] is True
     assert frozen["inpainting"]["disable_resize"] is True
+    assert frozen["inpainting"]["regional_inpainting"] is True
     assert frozen["deepLearningConcurrency"] == 3
     assert "backend-only-secret" not in json.dumps(frozen)
     assert steps[0] == "ocr"

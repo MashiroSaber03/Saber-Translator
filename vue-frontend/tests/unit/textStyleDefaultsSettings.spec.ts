@@ -186,7 +186,7 @@ describe('TextStyleDefaultsSettings', () => {
 
     expect(optionValues).toContainEqual(expect.arrayContaining(['auto', 'vertical', 'horizontal']))
     expect(optionValues).toContainEqual(expect.arrayContaining(['start', 'center', 'end']))
-    expect(optionValues).toContainEqual(expect.arrayContaining(['solid', 'lama_mpe', 'litelama']))
+    expect(optionValues).toContainEqual(expect.arrayContaining(['solid', 'lama_mpe', 'litelama', 'lama_manga']))
   })
 
   it('ignores values outside the backend text-style contracts', async () => {

@@ -52,6 +52,7 @@ const fills = [
   { value: 'solid', label: '纯色填充' },
   { value: 'lama_mpe', label: 'LAMA 修复' },
   { value: 'litelama', label: 'LiteLAMA 修复' },
+  { value: 'lama_manga', label: 'LAMA 漫画修复' },
 ]
 function number(event: Event, field: 'fontSize' | 'lineSpacing') {
   const input = event.target as HTMLInputElement
@@ -190,7 +191,7 @@ function number(event: Event, field: 'fontSize' | 'lineSpacing') {
               @update:model-value="
                 value =>
                   changeStyle({
-                    inpaintMethod: value as 'solid' | 'lama_mpe' | 'litelama',
+                    inpaintMethod: value as 'solid' | 'lama_mpe' | 'litelama' | 'lama_manga',
                   })
               "
           /></label>

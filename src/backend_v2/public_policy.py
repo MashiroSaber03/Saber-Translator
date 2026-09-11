@@ -35,6 +35,7 @@ MODEL_LABELS = {
     "paddleocr_vl": "PaddleOCR-VL",
     "lama_mpe": "LAMA 修复（速度优化）",
     "litelama": "LAMA 修复（通用）",
+    "lama_manga": "LAMA 修复（漫画）",
 }
 
 DEFAULT_PUBLIC_USER_POLICY: dict[str, Any] = {
@@ -60,6 +61,7 @@ _OCR_MODELS = {
 _INPAINT_MODELS = {
     "lama_mpe": "lama_mpe",
     "litelama": "litelama",
+    "lama_manga": "lama_manga",
 }
 
 
@@ -164,6 +166,9 @@ class PublicUserPolicyRepository:
             value = json.loads(str(payload))
         except json.JSONDecodeError as exc:
             raise RuntimeError("公网用户策略不是有效 JSON") from exc
+        # Older saved policies predate the manga model; retain their other limits.
+        if isinstance(value, dict) and isinstance(value.get("models"), dict):
+            value["models"].setdefault("lama_manga", True)
         return validate_public_user_policy(value)
 
     def save(self, value: object) -> dict[str, Any]:

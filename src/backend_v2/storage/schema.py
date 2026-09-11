@@ -143,7 +143,7 @@ DEFAULT_PUBLIC_USER_POLICY_JSON = (
     '"insight":true,"translation":true},"models":{'
     '"aux_ysg_yolo":true,"detector_ctd":true,'
     '"detector_default":true,"detector_yolo":true,'
-    '"lama_mpe":true,"litelama":true,"manga_ocr":true,'
+    '"lama_mpe":true,"litelama":true,"lama_manga":true,"manga_ocr":true,'
     '"ocr_48px":true,"paddle_ocr":true,"paddleocr_vl":true,'
     '"saber_yolo":true},"settings":{"lamaDisableResize":{'
     '"editable":false,"value":false},"parallel":{'

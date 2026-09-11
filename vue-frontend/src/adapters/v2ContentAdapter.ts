@@ -257,7 +257,7 @@ function currentBubblePayload(value: unknown, label: string): PersistedBubbleSta
     ),
     inpaintMethod: enumValue<InpaintMethod>(
       payload.inpaintMethod,
-      ['solid', 'lama_mpe', 'litelama'],
+      ['solid', 'lama_mpe', 'litelama', 'lama_manga'],
       `${label}.inpaintMethod`,
     ),
     autoFgColor: rgbValue(payload.autoFgColor, `${label}.autoFgColor`),

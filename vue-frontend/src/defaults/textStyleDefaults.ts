@@ -62,10 +62,10 @@ function expectLogicalAlign(value: unknown, fieldName: string): TextStyleSetting
 }
 
 function expectInpaintMethod(value: unknown, fieldName: string): TextStyleSettings['inpaintMethod'] {
-  if (value === 'solid' || value === 'lama_mpe' || value === 'litelama') {
+  if (value === 'solid' || value === 'lama_mpe' || value === 'litelama' || value === 'lama_manga') {
     return value
   }
-  return failInvalidConfig(`${fieldName} must be one of solid/lama_mpe/litelama`)
+  return failInvalidConfig(`${fieldName} must be one of solid/lama_mpe/litelama/lama_manga`)
 }
 
 function expectPositiveInt(value: unknown, fieldName: string): number {

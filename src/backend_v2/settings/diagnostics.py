@@ -580,6 +580,7 @@ class ProviderDiagnostics:
         candidates = (
             model_root / "inpainting_lama_mpe.ckpt",
             model_root / "big-lama.safetensors",
+            model_root.parent / "lama-manga" / "lama-manga.safetensors",
         )
         available = [path.name for path in candidates if path.is_file()]
         if not available:

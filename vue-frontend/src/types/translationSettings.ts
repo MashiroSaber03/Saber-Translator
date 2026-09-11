@@ -113,6 +113,7 @@ export interface TranslationSettings {
   removeTextWithOcr: boolean
   compressVisionImages: boolean
   lamaDisableResize: boolean
+  lamaRegionalInpainting: boolean
 }
 
 export type TranslationSettingsUpdates = Partial<TranslationSettings>

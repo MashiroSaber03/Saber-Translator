@@ -16,7 +16,7 @@ export type ResolvedTextDirection = Exclude<TextDirection, 'auto'>
 
 export type LogicalAlign = 'start' | 'center' | 'end'
 
-export type InpaintMethod = 'solid' | 'lama_mpe' | 'litelama'
+export type InpaintMethod = 'solid' | 'lama_mpe' | 'litelama' | 'lama_manga'
 
 export interface BubblePosition {
   x: number

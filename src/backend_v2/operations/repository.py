@@ -302,6 +302,7 @@ class OperationRepository:
         mask_asset_id: str,
         mask_checksum: str,
         idempotency_key: str,
+        regional_inpainting: bool = False,
     ) -> tuple[dict[str, object], bool]:
         self.validate_page_repair_identity(
             base_revision=base_revision,
@@ -325,14 +326,17 @@ class OperationRepository:
             mask_checksum=mask_checksum,
         )
         payload = dict(request_identity)
-        if method in {"lama_mpe", "litelama"}:
+        if method in {"lama_mpe", "litelama", "lama_manga"}:
             if not isinstance(disable_resize, bool):
                 raise ValueError("disableResize must be boolean")
+            if not isinstance(regional_inpainting, bool):
+                raise ValueError("regionalInpainting must be boolean")
             if not isinstance(settings_snapshot, Mapping):
                 raise ValueError("settingsSnapshot must be an object")
             payload.update(
                 {
                     "disableResize": disable_resize,
+                    "regionalInpainting": regional_inpainting,
                     "settingsSnapshot": dict(settings_snapshot),
                 }
             )
@@ -784,6 +788,7 @@ class OperationRepository:
             "solid",
             "lama_mpe",
             "litelama",
+            "lama_manga",
             "restore_source",
         }:
             raise ValueError("unsupported page repair method")

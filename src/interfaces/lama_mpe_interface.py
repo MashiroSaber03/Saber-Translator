@@ -680,101 +680,108 @@ class LamaMPEInpainter:
         if model is None or not isinstance(device, str):
             raise RuntimeError("LAMA MPE 模型未加载")
 
-        img_original = image.copy()
-        mask_original = (mask >= 127)[:, :, None]
-        height, width = image.shape[:2]
-        processed_image = image
-        processed_mask = mask
-
-        if not disable_resize and max(height, width) > inpainting_size:
-            processed_image = resize_keep_aspect(
-                image,
-                inpainting_size,
-                interpolation=cv2.INTER_LINEAR,
-            )
-            processed_mask = resize_keep_aspect(
-                mask,
-                inpainting_size,
-                interpolation=cv2.INTER_NEAREST,
-            )
-        elif disable_resize:
-            logger.debug(
-                "LAMA MPE: 禁用缩放模式，使用原图尺寸 %sx%s",
-                width,
-                height,
-            )
-
-        processed_height, processed_width = processed_image.shape[:2]
-        padded_height = ((processed_height + 7) // 8) * 8
-        padded_width = ((processed_width + 7) // 8) * 8
-        pad_bottom = padded_height - processed_height
-        pad_right = padded_width - processed_width
-        if pad_bottom or pad_right:
-            processed_image = cv2.copyMakeBorder(
-                processed_image,
-                0,
-                pad_bottom,
-                0,
-                pad_right,
-                cv2.BORDER_REPLICATE,
-            )
-            processed_mask = cv2.copyMakeBorder(
-                processed_mask,
-                0,
-                pad_bottom,
-                0,
-                pad_right,
-                cv2.BORDER_CONSTANT,
-                value=0,
-            )
-
-        logger.debug("Inpainting resolution: %sx%s", padded_width, padded_height)
-        img_torch = (
-            torch.from_numpy(np.ascontiguousarray(processed_image))
-            .permute(2, 0, 1)
-            .unsqueeze(0)
-            .float()
-            / 255.0
+        return inpaint_with_model(
+            model, device, image, mask, inpainting_size, disable_resize,
+            use_bf16=True,
         )
-        mask_torch = (
-            torch.from_numpy(np.ascontiguousarray(processed_mask))
-            .unsqueeze(0)
-            .unsqueeze(0)
-            .float()
-            / 255.0
-        )
-        mask_torch = (mask_torch >= 0.5).to(torch.float32)
-        if device.startswith('cuda') or device == 'mps':
-            img_torch = img_torch.to(device)
-            mask_torch = mask_torch.to(device)
 
-        with torch.no_grad():
-            masked_image = img_torch * (1 - mask_torch)
-            if device.startswith('cuda') and torch.cuda.is_bf16_supported():
-                with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-                    predicted = model(masked_image, mask_torch)
-            else:
+def inpaint_with_model(model, device, image, mask, inpainting_size=1024, disable_resize=False, *, use_bf16=False):
+    """Shared LaMA resize, padding, inference and original-pixel compositing."""
+    img_original = image.copy()
+    mask_original = (mask >= 127)[:, :, None]
+    height, width = image.shape[:2]
+    processed_image = image
+    processed_mask = mask
+
+    if not disable_resize and max(height, width) > inpainting_size:
+        processed_image = resize_keep_aspect(
+            image,
+            inpainting_size,
+            interpolation=cv2.INTER_LINEAR,
+        )
+        processed_mask = resize_keep_aspect(
+            mask,
+            inpainting_size,
+            interpolation=cv2.INTER_NEAREST,
+        )
+    elif disable_resize:
+        logger.debug(
+            "LaMA: 禁用缩放模式，使用原图尺寸 %sx%s",
+            width,
+            height,
+        )
+
+    processed_height, processed_width = processed_image.shape[:2]
+    padded_height = ((processed_height + 7) // 8) * 8
+    padded_width = ((processed_width + 7) // 8) * 8
+    pad_bottom = padded_height - processed_height
+    pad_right = padded_width - processed_width
+    if pad_bottom or pad_right:
+        processed_image = cv2.copyMakeBorder(
+            processed_image,
+            0,
+            pad_bottom,
+            0,
+            pad_right,
+            cv2.BORDER_REPLICATE,
+        )
+        processed_mask = cv2.copyMakeBorder(
+            processed_mask,
+            0,
+            pad_bottom,
+            0,
+            pad_right,
+            cv2.BORDER_CONSTANT,
+            value=0,
+        )
+
+    logger.debug("Inpainting resolution: %sx%s", padded_width, padded_height)
+    img_torch = (
+        torch.from_numpy(np.ascontiguousarray(processed_image))
+        .permute(2, 0, 1)
+        .unsqueeze(0)
+        .float()
+        / 255.0
+    )
+    mask_torch = (
+        torch.from_numpy(np.ascontiguousarray(processed_mask))
+        .unsqueeze(0)
+        .unsqueeze(0)
+        .float()
+        / 255.0
+    )
+    mask_torch = (mask_torch >= 0.5).to(torch.float32)
+    if device.startswith('cuda') or device == 'mps':
+        img_torch = img_torch.to(device)
+        mask_torch = mask_torch.to(device)
+
+    with torch.no_grad():
+        masked_image = img_torch * (1 - mask_torch)
+        if use_bf16 and device.startswith('cuda') and torch.cuda.is_bf16_supported():
+            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
                 predicted = model(masked_image, mask_torch)
-        if (
-            not isinstance(predicted, Tensor)
-            or predicted.shape != img_torch.shape
-            or not bool(torch.isfinite(predicted).all().item())
-        ):
-            raise RuntimeError("LAMA MPE 返回了无效张量")
-        predicted = predicted.to(torch.float32).clamp(0, 1)
-        img_inpainted = (
-            predicted.cpu().squeeze(0).permute(1, 2, 0).numpy() * 255.0
-        ).astype(np.uint8)
-        img_inpainted = img_inpainted[:processed_height, :processed_width]
-        if (processed_height, processed_width) != (height, width):
-            img_inpainted = cv2.resize(
-                img_inpainted,
-                (width, height),
-                interpolation=cv2.INTER_LINEAR,
-            )
-        if img_inpainted.shape != img_original.shape:
-            raise RuntimeError("LAMA MPE 最终结果尺寸与原图不一致")
-        return np.where(mask_original, img_inpainted, img_original).astype(np.uint8)
+        else:
+            predicted = model(masked_image, mask_torch)
+    if (
+        not isinstance(predicted, Tensor)
+        or predicted.shape != img_torch.shape
+        or not bool(torch.isfinite(predicted).all().item())
+    ):
+        raise RuntimeError("LaMA 返回了无效张量")
+    predicted = predicted.to(torch.float32).clamp(0, 1)
+    img_inpainted = (
+        predicted.cpu().squeeze(0).permute(1, 2, 0).numpy() * 255.0
+    ).astype(np.uint8)
+    img_inpainted = img_inpainted[:processed_height, :processed_width]
+    if (processed_height, processed_width) != (height, width):
+        img_inpainted = cv2.resize(
+            img_inpainted,
+            (width, height),
+            interpolation=cv2.INTER_LINEAR,
+        )
+    if img_inpainted.shape != img_original.shape:
+        raise RuntimeError("LaMA 最终结果尺寸与原图不一致")
+    return np.where(mask_original, img_inpainted, img_original).astype(np.uint8)
 
 
 # ============================================================

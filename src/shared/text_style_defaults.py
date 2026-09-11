@@ -66,10 +66,10 @@ def _validate_text_style_defaults(data: dict[str, Any]) -> dict[str, Any]:
             "text_style_defaults_factory.json 的 layoutDirection 必须是 "
             "auto/vertical/horizontal"
         )
-    if data["inpaintMethod"] not in {"solid", "lama_mpe", "litelama"}:
+    if data["inpaintMethod"] not in {"solid", "lama_mpe", "litelama", "lama_manga"}:
         raise RuntimeError(
             "text_style_defaults_factory.json 的 inpaintMethod 必须是 "
-            "solid/lama_mpe/litelama"
+            "solid/lama_mpe/litelama/lama_manga"
         )
     for field in ("inlineAlign", "blockAlign"):
         if data[field] not in {"start", "center", "end"}:

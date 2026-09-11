@@ -48,6 +48,7 @@ const publicUserPolicy: PublicUserPolicy = {
     paddleocr_vl: true,
     lama_mpe: true,
     litelama: true,
+    lama_manga: true,
   },
   settings: {
     lamaDisableResize: { editable: true, value: false },

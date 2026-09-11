@@ -403,7 +403,7 @@ export async function createMaskRepair(
     method: 'solid'
   } | {
     baseRevision: number
-    method: 'lama_mpe' | 'litelama' | 'restore_source'
+    method: 'lama_mpe' | 'litelama' | 'lama_manga' | 'restore_source'
   },
 ): Promise<V2OperationAccepted> {
   const body = new FormData()

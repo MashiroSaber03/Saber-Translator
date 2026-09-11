@@ -748,6 +748,7 @@ async function mockApi(route: Route, options: VisualFixtureOptions = {}) {
           paddleocr_vl: true,
           lama_mpe: true,
           litelama: true,
+          lama_manga: true,
         },
         settings: {
           lamaDisableResize: { editable: true, value: false },

@@ -247,7 +247,7 @@ function handleBlockAlignChange(value: string | number): void {
 }
 
 function handleInpaintMethodChange(value: string | number): void {
-  if (value !== 'solid' && value !== 'lama_mpe' && value !== 'litelama') return
+  if (value !== 'solid' && value !== 'lama_mpe' && value !== 'litelama' && value !== 'lama_manga') return
   updateDraft({ inpaintMethod: value })
 }
 

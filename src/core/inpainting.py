@@ -84,7 +84,7 @@ def create_bubble_mask(image_size, bubble_coords, bubble_polygons=None):
 
     return mask
 
-def inpaint_bubbles(image_pil, bubble_coords, method=constants.DEFAULT_INPAINT_METHOD, fill_color=None, bubble_polygons=None, precise_mask=None, user_mask=None, mask_dilate_size=0, mask_box_expand_ratio=0, lama_model='lama_mpe', disable_resize=False):
+def inpaint_bubbles(image_pil, bubble_coords, method=constants.DEFAULT_INPAINT_METHOD, fill_color=None, bubble_polygons=None, precise_mask=None, user_mask=None, mask_dilate_size=0, mask_box_expand_ratio=0, lama_model='lama_mpe', disable_resize=False, regional_inpainting=False):
     """
     根据指定方法修复或填充图像中的气泡区域。
 
@@ -104,8 +104,9 @@ def inpaint_bubbles(image_pil, bubble_coords, method=constants.DEFAULT_INPAINT_M
                                 灰色(127)=未修改，使用自动检测结果
         mask_dilate_size (int): 掩膜膨胀大小（像素），用于扩大修复区域。
         mask_box_expand_ratio (int): 标注框区域扩大比例（%），用于扩大标注框的收录范围。
-        lama_model (str): LAMA 模型选择 'lama_mpe' (速度优化) 或 'litelama' (通用)
+        lama_model (str): 'lama_mpe' (速度优化)、'litelama' (通用) 或 'lama_manga' (漫画)
         disable_resize (bool): 是否禁止 LaMA 自动缩放。
+        regional_inpainting (bool): 是否按局部区域保留上下文并分别修复。
 
     Returns:
         PIL.Image.Image: 处理后的 PIL 图像。
@@ -134,10 +135,12 @@ def inpaint_bubbles(image_pil, bubble_coords, method=constants.DEFAULT_INPAINT_M
             raise ValueError("填充颜色必须是 #RRGGBB")
     elif fill_color is not None:
         raise ValueError("LaMA 修复不接受填充颜色")
-    if method == "lama" and lama_model not in {"lama_mpe", "litelama"}:
-        raise ValueError("LaMA 模型必须是 lama_mpe 或 litelama")
+    if method == "lama" and lama_model not in {"lama_mpe", "litelama", "lama_manga"}:
+        raise ValueError("LaMA 模型必须是 lama_mpe、litelama 或 lama_manga")
     if not isinstance(disable_resize, bool):
         raise ValueError("disable_resize 必须是布尔值")
+    if not isinstance(regional_inpainting, bool):
+        raise ValueError("regional_inpainting 必须是布尔值")
     if isinstance(mask_dilate_size, bool) or not isinstance(mask_dilate_size, int) or mask_dilate_size < 0:
         raise ValueError("mask_dilate_size 必须是非负整数")
     if (
@@ -217,6 +220,16 @@ def inpaint_bubbles(image_pil, bubble_coords, method=constants.DEFAULT_INPAINT_M
         # 使用坐标/多边形生成掩膜
         bubble_mask_np = create_bubble_mask(image_size, bubble_coords, bubble_polygons)
     
+    if method == 'lama' and regional_inpainting and precise_mask is not None:
+        # Close tiny automatic-mask holes before applying user repair/protection strokes.
+        radius = max(1, round(2 * min(image_size[:2]) / 1024))
+        repair_mask = np.pad(255 - bubble_mask_np, radius)
+        repair_mask = cv2.morphologyEx(
+            repair_mask, cv2.MORPH_CLOSE,
+            cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2*radius+1, 2*radius+1)),
+        )
+        bubble_mask_np = 255 - repair_mask[radius:-radius, radius:-radius]
+
     # ✅ 2. 叠加用户掩膜（不受标注框限制）
     if user_mask is not None:
         logger.debug("叠加用户笔刷掩膜")
@@ -264,6 +277,7 @@ def inpaint_bubbles(image_pil, bubble_coords, method=constants.DEFAULT_INPAINT_M
                 bubble_mask_pil,
                 lama_model=lama_model,
                 disable_resize=disable_resize,
+                regional_inpainting=regional_inpainting,
             )
             if not isinstance(result_img, Image.Image):
                 raise RuntimeError("LaMA 修复未返回图像")

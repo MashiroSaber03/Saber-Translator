@@ -102,6 +102,7 @@ _CHAPTER_WORK_STATE_KEYS = frozenset(
         "parallel",
         "removeTextWithOcr",
         "lamaDisableResize",
+        "lamaRegionalInpainting",
     }
 )
 

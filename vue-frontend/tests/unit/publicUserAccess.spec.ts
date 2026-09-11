@@ -26,6 +26,7 @@ function policy(): PublicUserPolicy {
       paddleocr_vl: false,
       lama_mpe: false,
       litelama: true,
+      lama_manga: true,
     },
     settings: {
       lamaDisableResize: { editable: false, value: true },

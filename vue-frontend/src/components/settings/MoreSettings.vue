@@ -65,7 +65,18 @@
       <UiField
         variant="settings"
         control="checkbox"
-        hint="开启后，LAMA 修复将使用原图尺寸进行处理（不缩放到1024px），可获得更高画质。需要更强的 GPU 和更多显存，处理速度会变慢。推荐 RTX 4060 或更高配置使用。适用于两种LAMA修复方法（速度优化和通用）。"
+        hint="将邻近文字分组，保留周围背景并按局部原尺寸优先修复。适用于三种 LAMA 模型，通常更耗时；不同图片的改善程度不同。"
+      >
+        <UiCheckbox
+          :model-value="settingsStore.settings.lamaRegionalInpainting"
+          label="分区域高质量修复"
+          @change="settingsStore.settings.lamaRegionalInpainting = $event"
+        />
+      </UiField>
+      <UiField
+        variant="settings"
+        control="checkbox"
+        hint="开启后，三种 LAMA 模型均按原尺寸处理；分区域修复时也不缩小局部裁块。需要更多显存，处理可能变慢。关闭时，整页最长边限制为1024px，分区域模式使用较高的局部尺寸预算。"
       >
         <UiCheckbox
           :model-value="lamaDisableResizeValue"

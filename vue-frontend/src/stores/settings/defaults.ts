@@ -197,6 +197,7 @@ export function createDefaultSettings(): TranslationSettings {
     parallel: deepClone(DEFAULT_PARALLEL),
     removeTextWithOcr: false,
     compressVisionImages: true,
-    lamaDisableResize: false
+    lamaDisableResize: false,
+    lamaRegionalInpainting: false
   }
 }

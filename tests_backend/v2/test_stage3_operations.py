@@ -1431,7 +1431,7 @@ def test_page_repair_rejects_non_contract_fill_color_before_image_work(
         )
 
 
-@pytest.mark.parametrize("method", ["lama_mpe", "litelama", "restore_source"])
+@pytest.mark.parametrize("method", ["lama_mpe", "litelama", "lama_manga", "restore_source"])
 def test_non_solid_page_repair_rejects_unused_fill_color(
     operation_platform,
     method: str,
@@ -1454,9 +1454,11 @@ def test_non_solid_page_repair_rejects_unused_fill_color(
         )
 
 
+@pytest.mark.parametrize("method", ["lama_mpe", "litelama", "lama_manga"])
 def test_lama_page_repair_freezes_and_consumes_disable_resize(
     operation_platform,
     monkeypatch: pytest.MonkeyPatch,
+    method: str,
 ) -> None:
     platform = operation_platform
     with platform["engine"].begin() as connection:
@@ -1468,6 +1470,7 @@ def test_lama_page_repair_freezes_and_consumes_disable_resize(
             ).scalar_one()
         )
         settings_payload["lamaDisableResize"] = True
+        settings_payload["lamaRegionalInpainting"] = True
         connection.execute(
             update(app_settings)
             .where(app_settings.c.domain == "translation")
@@ -1480,7 +1483,7 @@ def test_lama_page_repair_freezes_and_consumes_disable_resize(
                 )
             ).scalar_one()
         )
-        bubble_payload["inpaintMethod"] = "lama_mpe"
+        bubble_payload["inpaintMethod"] = method
         connection.execute(
             update(bubbles)
             .where(bubbles.c.id == platform["bubble_id"])
@@ -1518,12 +1521,15 @@ def test_lama_page_repair_freezes_and_consumes_disable_resize(
     assert claimed is not None
     fence, operation = claimed
     assert operation["request"]["disableResize"] is True
+    assert operation["request"]["regionalInpainting"] is True
     assert operation["request"]["settingsSnapshot"]["appRevision"] == 1
     assert "fillColor" not in operation["request"]
     result = service.handle(fence, operation)
 
     assert result["documentRevision"] == accepted["documentRevision"]
     assert captured["disable_resize"] is True
+    assert captured["regional_inpainting"] is True
+    assert captured["lama_model"] == method
 
 
 def test_failed_page_repair_sets_explicit_page_state(operation_platform) -> None:

@@ -140,7 +140,7 @@ class PageRepairService:
             raise OperationConflict("page document revision changed")
         repair_settings = (
             self.settings.resolve_page_repair(page_id=page_id)
-            if method in {"lama_mpe", "litelama"}
+            if method in {"lama_mpe", "litelama", "lama_manga"}
             else {"disableResize": False, "settingsSnapshot": {}}
         )
         if self.settings_transformer is not None:
@@ -159,6 +159,7 @@ class PageRepairService:
             method=method,
             fill_color=fill_color,
             disable_resize=disable_resize,
+            regional_inpainting=repair_settings.get("regionalInpainting", False),
             settings_snapshot=repair_settings["settingsSnapshot"],
             mask_asset_id=mask_asset.id,
             mask_checksum=mask_checksum,
@@ -248,7 +249,7 @@ class PageRepairService:
             raise OperationConflict("page document revision changed")
         repair_settings = (
             self.settings.resolve_page_repair(page_id=page_id)
-            if method in {"lama_mpe", "litelama"}
+            if method in {"lama_mpe", "litelama", "lama_manga"}
             else {"disableResize": False, "settingsSnapshot": {}}
         )
         if self.settings_transformer is not None:
@@ -267,6 +268,7 @@ class PageRepairService:
             method=method,
             fill_color=fill_color,
             disable_resize=disable_resize,
+            regional_inpainting=repair_settings.get("regionalInpainting", False),
             settings_snapshot=repair_settings["settingsSnapshot"],
             mask_asset_id=mask_asset.id,
             mask_checksum=mask_checksum,
@@ -292,7 +294,7 @@ class PageRepairService:
             )
         )
         frozen_method = method
-        if method in {"lama_mpe", "litelama"} and not isinstance(
+        if method in {"lama_mpe", "litelama", "lama_manga"} and not isinstance(
             request.get("disableResize"),
             bool,
         ):
@@ -387,7 +389,7 @@ class PageRepairService:
             elif method == "restore_source":
                 repaired = parent.copy()
                 repaired.paste(source, mask=mask)
-            elif method in {"lama_mpe", "litelama"}:
+            elif method in {"lama_mpe", "litelama", "lama_manga"}:
                 import numpy as np
                 from src.core.inpainting import inpaint_bubbles
 
@@ -398,6 +400,7 @@ class PageRepairService:
                     user_mask=np.array(mask),
                     lama_model=method,
                     disable_resize=request["disableResize"],
+                    regional_inpainting=request.get("regionalInpainting", False),
                 )
             else:
                 raise RuntimeError(f"unsupported repair method: {method}")
@@ -494,6 +497,7 @@ class PageRepairService:
             "restore_source": "恢复原图",
             "lama_mpe": "LaMA MPE",
             "litelama": "LiteLaMA",
+            "lama_manga": "LaMA Manga",
         }
         log_result(
             "当前页文字修复完成",

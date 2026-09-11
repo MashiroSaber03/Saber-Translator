@@ -47,6 +47,7 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
     {
       lama_mpe: 'lama_mpe',
       litelama: 'litelama',
+      lama_manga: 'lama_manga',
     },
   ))
   const defaultBubble: BubbleState = createBubbleState({

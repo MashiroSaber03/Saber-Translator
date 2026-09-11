@@ -129,6 +129,7 @@ const modelControls: Array<{
   { key: 'paddleocr_vl', label: 'PaddleOCR-VL' },
   { key: 'lama_mpe', label: 'LAMA（速度优化）' },
   { key: 'litelama', label: 'LAMA（通用）' },
+  { key: 'lama_manga', label: 'LAMA（漫画）' },
 ]
 
 function formatBytes(value: number): string {

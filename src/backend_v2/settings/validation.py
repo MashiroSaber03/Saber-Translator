@@ -793,6 +793,8 @@ def validate_setting_payload(
     result = _object(payload, f"{domain} setting")
     _reject_secret_fields(result, domain)
     if domain == "translation":
+        # Additive option: existing saved settings retain whole-page repair.
+        result.setdefault("lamaRegionalInpainting", False)
         _validate_translation(result, schema_version)
     elif domain == "browser_dom_agent":
         provider = result.get("provider")

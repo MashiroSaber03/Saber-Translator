@@ -5247,6 +5247,7 @@ components:
             - paddleocr_vl
             - lama_mpe
             - litelama
+            - lama_manga
           properties:
             detector_default: {type: boolean}
             detector_ctd: {type: boolean}
@@ -5259,6 +5260,7 @@ components:
             paddleocr_vl: {type: boolean}
             lama_mpe: {type: boolean}
             litelama: {type: boolean}
+            lama_manga: {type: boolean}
         settings:
           type: object
           additionalProperties: false
@@ -6647,7 +6649,7 @@ components:
         lineSpacing: {type: number, exclusiveMinimum: 0}
         inlineAlign: {type: string, enum: [start, center, end]}
         blockAlign: {type: string, enum: [start, center, end]}
-        inpaintMethod: {type: string, enum: [solid, lama_mpe, litelama]}
+        inpaintMethod: {type: string, enum: [solid, lama_mpe, litelama, lama_manga]}
         autoFgColor:
           oneOf:
             - $ref: "#/components/schemas/BubbleRgb"
@@ -6696,7 +6698,7 @@ components:
         lineSpacing: {type: number, exclusiveMinimum: 0}
         inlineAlign: {type: string, enum: [start, center, end]}
         blockAlign: {type: string, enum: [start, center, end]}
-        inpaintMethod: {type: string, enum: [solid, lama_mpe, litelama]}
+        inpaintMethod: {type: string, enum: [solid, lama_mpe, litelama, lama_manga]}
         autoFgColor:
           oneOf:
             - $ref: "#/components/schemas/BubbleRgb"
@@ -6772,7 +6774,7 @@ components:
         lineSpacing: {type: number, exclusiveMinimum: 0}
         inlineAlign: {type: string, enum: [start, center, end]}
         blockAlign: {type: string, enum: [start, center, end]}
-        inpaintMethod: {type: string, enum: [solid, lama_mpe, litelama]}
+        inpaintMethod: {type: string, enum: [solid, lama_mpe, litelama, lama_manga]}
         autoFgColor:
           oneOf:
             - $ref: "#/components/schemas/BubbleRgb"
@@ -6905,7 +6907,7 @@ components:
         layoutDirection: {type: string, enum: [auto, vertical, horizontal]}
         textColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
         fillColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
-        inpaintMethod: {type: string, enum: [solid, lama_mpe, litelama]}
+        inpaintMethod: {type: string, enum: [solid, lama_mpe, litelama, lama_manga]}
         useAutoTextColor: {type: boolean}
         strokeEnabled: {type: boolean}
         strokeColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
@@ -6938,7 +6940,7 @@ components:
         layoutDirection: {type: string, enum: [auto, vertical, horizontal]}
         textColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
         fillColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
-        inpaintMethod: {type: string, enum: [solid, lama_mpe, litelama]}
+        inpaintMethod: {type: string, enum: [solid, lama_mpe, litelama, lama_manga]}
         useAutoTextColor: {type: boolean}
         strokeEnabled: {type: boolean}
         strokeColor: {type: string, pattern: "^#[0-9A-Fa-f]{6}$"}
@@ -7104,7 +7106,7 @@ components:
           minimum: 1
         method:
           type: string
-          enum: [lama_mpe, litelama]
+          enum: [lama_mpe, litelama, lama_manga]
     MaskRestoreCommand:
       type: object
       additionalProperties: false

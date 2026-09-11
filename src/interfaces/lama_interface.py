@@ -1,5 +1,6 @@
 import os
 import logging
+import math
 from contextlib import ExitStack
 import numpy as np
 import cv2
@@ -13,11 +14,12 @@ from src.shared.user_logging import user_log
 logger = logging.getLogger("LAMAInterface")
 
 # ============================================================
-# LAMA 可用性检查 - 两个模型都检查，用户可以选择
+# LAMA 可用性检查
 # ============================================================
 
 LAMA_MPE_AVAILABLE = False
 LAMA_LITELAMA_AVAILABLE = False
+LAMA_MANGA_AVAILABLE = os.path.isfile(resource_path("models/lama-manga/lama-manga.safetensors"))
 
 # --- 检查 LAMA MPE ---
 try:
@@ -64,12 +66,14 @@ except Exception as e:
     logger.debug("litelama 可用性检查失败: %s", e, exc_info=True)
 
 # 最终状态日志
-if LAMA_MPE_AVAILABLE or LAMA_LITELAMA_AVAILABLE:
+if LAMA_MPE_AVAILABLE or LAMA_LITELAMA_AVAILABLE or LAMA_MANGA_AVAILABLE:
     available_models = []
     if LAMA_MPE_AVAILABLE:
         available_models.append("lama_mpe (速度优化)")
     if LAMA_LITELAMA_AVAILABLE:
         available_models.append("litelama (通用)")
+    if LAMA_MANGA_AVAILABLE:
+        available_models.append("lama_manga (漫画)")
     logger.debug(f"LAMA 功能已启用，可用模型: {', '.join(available_models)}")
 else:
     logger.debug("LAMA 功能不可用：未找到可用模型")
@@ -319,6 +323,79 @@ def _clean_with_litelama(image, mask, disable_resize=False):
     return inpainter.inpaint(image, mask, disable_resize=disable_resize)
 
 
+class LamaMangaInpainter:
+    """漫画版 LaMA；与其他本地模型一样按需加载、由 Worker 释放。"""
+
+    def __init__(self):
+        self.model_path = resource_path("models/lama-manga/lama-manga.safetensors")
+        self._model = None
+        self._device = None
+
+    def load(self, device=None):
+        import torch
+        from safetensors.torch import load_file
+        from src.interfaces.lama_mpe_interface import FFCResNetGenerator
+
+        device = device or ("cuda:0" if torch.cuda.is_available() else "cpu")
+        if self._model is not None:
+            if device != self._device:
+                self._model.to(device)
+                self._device = device
+            return
+        if not os.path.isfile(self.model_path):
+            raise FileNotFoundError(
+                f"漫画版 LaMA 模型文件不存在: {self.model_path}\n"
+                "请从 https://huggingface.co/mayocream/lama-manga 下载 "
+                "lama-manga.safetensors 并放入 models/lama-manga/"
+            )
+        model = FFCResNetGenerator(
+            4, 3, n_blocks=18, add_out_act="sigmoid",
+            init_conv_kwargs=dict(ratio_gin=0, ratio_gout=0, enable_lfu=False),
+            downsample_conv_kwargs=dict(ratio_gin=0, ratio_gout=0, enable_lfu=False),
+            resnet_conv_kwargs=dict(ratio_gin=0.75, ratio_gout=0.75, enable_lfu=False),
+        )
+        model.load_state_dict(load_file(self.model_path), strict=True)
+        self._model = model.eval().to(device)
+        self._device = device
+        user_log("system", f"LaMA Manga 文字修复模型已加载｜设备 {device.upper()}")
+
+    def unload(self):
+        import torch
+        self._model = None
+        self._device = None
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+    def inpaint(self, image, mask, disable_resize=False):
+        from src.interfaces.lama_mpe_interface import inpaint_with_model
+
+        if self._model is None:
+            self.load()
+        with image.convert("RGB") as rgb, mask.convert("L") as gray:
+            result = inpaint_with_model(
+                self._model, self._device, np.array(rgb), np.array(gray),
+                disable_resize=disable_resize,
+            )
+        return Image.fromarray(result)
+
+
+_lama_manga_inpainter = None
+
+
+def get_lama_manga_inpainter():
+    global _lama_manga_inpainter
+    if _lama_manga_inpainter is None:
+        _lama_manga_inpainter = LamaMangaInpainter()
+    return _lama_manga_inpainter
+
+
+def reset_lama_manga_inpainter():
+    global _lama_manga_inpainter
+    if _lama_manga_inpainter is not None:
+        _lama_manga_inpainter.unload()
+    _lama_manga_inpainter = None
+
+
 # ============================================================
 # 统一的公开接口
 # ============================================================
@@ -330,7 +407,7 @@ def lama_clean_object(image, mask, lama_model='lama_mpe', disable_resize=False):
     参数:
         image (PIL.Image): 原始图像
         mask (PIL.Image): 遮罩图像，白色区域为需要清除的部分
-        lama_model (str): 选择使用的模型 'lama_mpe' 或 'litelama'
+        lama_model (str): 'lama_mpe'、'litelama' 或 'lama_manga'
         disable_resize (bool): 是否禁用缩放，True=使用原图尺寸修复
     
     返回:
@@ -352,18 +429,78 @@ def lama_clean_object(image, mask, lama_model='lama_mpe', disable_resize=False):
             raise RuntimeError("litelama 模型不可用")
         logger.debug("使用 litelama 进行修复")
         return _clean_with_litelama(image, mask, disable_resize=disable_resize)
+    if lama_model == 'lama_manga':
+        return get_lama_manga_inpainter().inpaint(image, mask, disable_resize=disable_resize)
     raise ValueError(f"未知的 LaMA 模型: {lama_model}")
 
 
-def clean_image_with_lama(image, mask, lama_model='lama_mpe', disable_resize=False):
+def _clean_lama_regions(image, mask, lama_model, disable_resize):
+    """Repair independent local targets from the same source, in FP32."""
+    import torch
+    from src.interfaces.lama_mpe_interface import get_lama_mpe_inpainter, inpaint_with_model
+
+    source = np.array(image)
+    target = np.array(mask) >= 128
+    grouped = cv2.dilate(target.astype(np.uint8), np.ones((15, 25), np.uint8))
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(grouped, 8)
+    output = source.copy()
+    height, width = target.shape
+    if count == 1:
+        return Image.fromarray(output)
+    loaders = {
+        'lama_mpe': get_lama_mpe_inpainter,
+        'litelama': get_litelama_inpainter,
+        'lama_manga': get_lama_manga_inpainter,
+    }
+    inpainter = loaders[lama_model]()
+    inpainter.load()
+    cuda = str(inpainter._device).startswith('cuda')
+    # Different crop shapes otherwise retain large CUDA/FFT caches for a whole page.
+    if cuda:
+        fft_cache = torch.backends.cuda.cufft_plan_cache
+        previous_cache_limit = fft_cache.max_size
+        fft_cache.max_size = min(previous_cache_limit, 32)
+    try:
+        for label in range(1, count):
+            x, y, w, h = stats[label, :4]
+            local = target[y:y+h, x:x+w] & (labels[y:y+h, x:x+w] == label)
+            dx, dy, tw, th = cv2.boundingRect(local.astype(np.uint8))
+            left, top = max(0, x+dx-128), max(0, y+dy-128)
+            right, bottom = min(width, x+dx+tw+128), min(height, y+dy+th+128)
+            local = target[top:bottom, left:right] & (labels[top:bottom, left:right] == label)
+            crop = source[top:bottom, left:right]
+            crop_mask = local.astype(np.uint8) * 255
+            ch, cw = local.shape
+            scale = min(1, 2048 / max(ch, cw), math.sqrt(2_250_000 / (ch*cw)))
+            limit = max(8, int(max(ch, cw) * scale))
+            if cuda:
+                torch.cuda.empty_cache()
+            if lama_model == 'litelama':
+                with Image.fromarray(crop) as ci, Image.fromarray(crop_mask) as cm:
+                    with inpainter.inpaint(ci, cm, inpainting_size=limit, disable_resize=disable_resize) as result:
+                        repaired = np.array(result)
+            else:
+                repaired = inpaint_with_model(
+                    inpainter._model, inpainter._device, crop, crop_mask,
+                    inpainting_size=limit, disable_resize=disable_resize, use_bf16=False,
+                )
+            output[top:bottom, left:right][local] = repaired[local]
+    finally:
+        if cuda:
+            fft_cache.max_size = previous_cache_limit
+    return Image.fromarray(output)
+
+
+def clean_image_with_lama(image, mask, lama_model='lama_mpe', disable_resize=False, regional_inpainting=False):
     """
     使用 LAMA 模型清除图像中的文本。
 
     Args:
         image (PIL.Image.Image): 原始图像。
         mask (PIL.Image.Image): 蒙版图像，黑色(0)区域为需要清除的部分（内部会自动反转）。
-        lama_model (str): 选择使用的模型 'lama_mpe' (速度优化) 或 'litelama' (通用)
+        lama_model (str): 'lama_mpe' (速度优化)、'litelama' (通用) 或 'lama_manga' (漫画)
         disable_resize (bool): 是否禁用缩放。True=使用原图尺寸修复（需要更多显存），False=自动缩放
+        regional_inpainting (bool): 按局部目标分组，保留上下文并逐区修复。
 
     Returns:
         PIL.Image.Image: 修复后的图像。
@@ -372,13 +509,18 @@ def clean_image_with_lama(image, mask, lama_model='lama_mpe', disable_resize=Fal
         raise ValueError("LaMA 图像和掩膜必须是 PIL 图像")
     if image.size != mask.size:
         raise ValueError("LaMA 掩膜尺寸与图像不一致")
+    if not isinstance(regional_inpainting, bool) or not isinstance(disable_resize, bool):
+        raise ValueError("LaMA 缩放与分区域选项必须是布尔值")
+    if lama_model not in {'lama_mpe', 'litelama', 'lama_manga'}:
+        raise ValueError(f"未知的 LaMA 模型: {lama_model}")
     logger.debug(f"LAMA 图像修复开始 (模型: {lama_model}, 禁用缩放: {disable_resize})")
     with ExitStack() as opened:
         converted_image = opened.enter_context(image.convert("RGB"))
         converted_mask = opened.enter_context(mask.convert("L"))
         mask_np = 255 - np.array(converted_mask, dtype=np.uint8)
         inverted_mask = opened.enter_context(Image.fromarray(mask_np))
-        result = lama_clean_object(
+        repair = _clean_lama_regions if regional_inpainting else lama_clean_object
+        result = repair(
             converted_image,
             inverted_mask,
             lama_model=lama_model,

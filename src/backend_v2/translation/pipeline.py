@@ -1389,11 +1389,13 @@ class CoreTranslationAlgorithms:
 
         common_fields = {
             "disable_resize",
+            "regional_inpainting",
             "lama_model",
             "mask_box_expand_ratio",
             "mask_dilate_size",
             "method",
         }
+        config = {"regional_inpainting": False, **config}
         method = config.get("method")
         required_fields = (
             common_fields | {"fill_color"}
@@ -1422,6 +1424,7 @@ class CoreTranslationAlgorithms:
             mask_box_expand_ratio=config["mask_box_expand_ratio"],
             lama_model=config["lama_model"],
             disable_resize=config["disable_resize"],
+            regional_inpainting=config["regional_inpainting"],
         )
         return repaired
 
@@ -2760,11 +2763,11 @@ class TranslationPipelineService:
                 raise JobConflict("inpainting configuration is invalid")
             inpainting = dict(raw_inpainting)
             method = before["method"]
-            if method not in {"solid", "lama_mpe", "litelama"}:
+            if method not in {"solid", "lama_mpe", "litelama", "lama_manga"}:
                 raise JobConflict("inpainting method is invalid")
             inpainting["method"] = "solid" if method == "solid" else "lama"
             inpainting["lama_model"] = (
-                "litelama" if method == "litelama" else "lama_mpe"
+                method if method != "solid" else "lama_mpe"
             )
             if method == "solid":
                 inpainting["fill_color"] = validate_page_style(

@@ -317,7 +317,7 @@ def validate_bubble_payload(
         result["inpaintMethod"] = _choice(
             result["inpaintMethod"],
             field_name="inpaintMethod",
-            choices=frozenset({"lama_mpe", "litelama", "solid"}),
+            choices=frozenset({"lama_mpe", "litelama", "lama_manga", "solid"}),
         )
     for name in ("autoFgColor", "autoBgColor"):
         if name in result:

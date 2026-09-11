@@ -64,6 +64,11 @@ LOCAL_MODEL_OPTIONS = (
         "LiteLaMA",
         "LiteLaMA 文字背景修复模型",
     ),
+    LocalModelOption(
+        "lama_manga",
+        "LaMA Manga",
+        "漫画版 LaMA 文字背景修复模型",
+    ),
 )
 LOCAL_MODEL_IDS = tuple(option.model_id for option in LOCAL_MODEL_OPTIONS)
 LOCAL_MODEL_LABELS = {
@@ -77,6 +82,11 @@ _DETECTOR_TYPES = {
     "saber_yolo": "saber_yolo",
 }
 _SINGLETON_RESETTERS = {
+    "lama_manga": (
+        "src.interfaces.lama_interface",
+        "_lama_manga_inpainter",
+        "reset_lama_manga_inpainter",
+    ),
     "manga_ocr": (
         "src.interfaces.manga_ocr_interface",
         "_manga_ocr_instance",
@@ -203,6 +213,11 @@ def _load_local_model(model_id: str) -> None:
         from src.interfaces.lama_interface import get_litelama_inpainter
 
         get_litelama_inpainter().load()
+        return
+    if model_id == "lama_manga":
+        from src.interfaces.lama_interface import get_lama_manga_inpainter
+
+        get_lama_manga_inpainter().load()
         return
     raise ValueError(f"unsupported local model: {model_id}")
 

@@ -20,4 +20,5 @@ export const inpaintMethodOptions = [
   { label: '纯色填充', value: 'solid' },
   { label: 'LAMA修复 (速度优化)', value: 'lama_mpe' },
   { label: 'LAMA修复 (通用)', value: 'litelama' },
+  { label: 'LAMA修复 (漫画)', value: 'lama_manga' },
 ]

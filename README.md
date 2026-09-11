@@ -344,6 +344,8 @@ Worker 进程（翻译、分析、导入、导出、插件、模型）
 # 将随发行版单独提供的 OCR 模型包解压到项目根目录
 # models/paddle_ocr_onnx_v6：det.onnx、rec.onnx、ppocrv6_dict.txt
 # models/paddleocr_vl_1_6：PaddleOCR-VL-1.6 的完整 Transformers 模型文件
+# 可选漫画背景修复：https://huggingface.co/mayocream/lama-manga
+# 将 lama-manga.safetensors 放入 models/lama-manga/，即可选择「LAMA修复 (漫画)」
 
 # 桌面控制中心（项目根目录，默认入口）
 .\venv\Scripts\python.exe saber_v2.py
@@ -419,7 +421,7 @@ npm run dev
 *   **后端:** Python 3.12, Flask, Waitress, SQLAlchemy, SQLite, PyTorch, MangaOCR/RapidOCR, Pillow, OpenCV, `openai`, LiteLAMA/LAMA-MPE, PyMuPDF.
 *   **前端:** **Vue 3**, **Vite**, **TypeScript**, **Pinia**, Axios；只承担交互、展示和媒体窗口加载。
 *   **文本检测:** Default (DBNet ResNet34), CTD (Comic Text Detector), YSGYolo.
-*   **图像修复:** LAMA-MPE, LiteLAMA.
+*   **图像修复:** LAMA-MPE、LiteLAMA、LaMA Manga。「设置 → 更多 → LAMA 修复设置」提供「分区域高质量修复」开关，默认关闭、修改后自动保存。开启后保留局部上下文并逐区修复，适用于翻译消字和手动背景修复，通常更耗时；不同图片的改善程度不同。
 *   **向量检索:** Embedding, Reranker (用于 Manga Insight).
 *   **打包:** PyInstaller.
 

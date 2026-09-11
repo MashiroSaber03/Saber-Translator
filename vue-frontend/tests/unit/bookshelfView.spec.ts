@@ -135,6 +135,7 @@ function mountView(profile: 'local' | 'public' = 'local') {
           paddleocr_vl: true,
           lama_mpe: true,
           litelama: true,
+          lama_manga: true,
         },
         settings: {
           lamaDisableResize: { editable: false, value: false },

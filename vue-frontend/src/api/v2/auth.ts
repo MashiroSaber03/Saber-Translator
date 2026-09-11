@@ -13,6 +13,7 @@ export type PublicModelKey =
   | 'paddleocr_vl'
   | 'lama_mpe'
   | 'litelama'
+  | 'lama_manga'
 
 export interface PublicUserPolicy {
   features: Record<PublicFeatureKey, boolean>

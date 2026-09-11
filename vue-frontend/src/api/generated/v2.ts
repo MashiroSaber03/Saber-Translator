@@ -3551,6 +3551,7 @@ export interface components {
                 paddleocr_vl: boolean;
                 lama_mpe: boolean;
                 litelama: boolean;
+                lama_manga: boolean;
             };
             settings: {
                 lamaDisableResize: {
@@ -4219,7 +4220,7 @@ export interface components {
             /** @enum {string} */
             blockAlign: "start" | "center" | "end";
             /** @enum {string} */
-            inpaintMethod: "solid" | "lama_mpe" | "litelama";
+            inpaintMethod: "solid" | "lama_mpe" | "litelama" | "lama_manga";
             autoFgColor: components["schemas"]["BubbleRgb"] | null;
             autoBgColor: components["schemas"]["BubbleRgb"] | null;
             colorConfidence: number;
@@ -4251,7 +4252,7 @@ export interface components {
             /** @enum {string} */
             blockAlign?: "start" | "center" | "end";
             /** @enum {string} */
-            inpaintMethod?: "solid" | "lama_mpe" | "litelama";
+            inpaintMethod?: "solid" | "lama_mpe" | "litelama" | "lama_manga";
             autoFgColor?: components["schemas"]["BubbleRgb"] | null;
             autoBgColor?: components["schemas"]["BubbleRgb"] | null;
             colorConfidence?: number;
@@ -4284,7 +4285,7 @@ export interface components {
             /** @enum {string} */
             blockAlign: "start" | "center" | "end";
             /** @enum {string} */
-            inpaintMethod: "solid" | "lama_mpe" | "litelama";
+            inpaintMethod: "solid" | "lama_mpe" | "litelama" | "lama_manga";
             autoFgColor: components["schemas"]["BubbleRgb"] | null;
             autoBgColor: components["schemas"]["BubbleRgb"] | null;
             colorConfidence: number;
@@ -4342,7 +4343,7 @@ export interface components {
             textColor?: string;
             fillColor?: string;
             /** @enum {string} */
-            inpaintMethod?: "solid" | "lama_mpe" | "litelama";
+            inpaintMethod?: "solid" | "lama_mpe" | "litelama" | "lama_manga";
             useAutoTextColor?: boolean;
             strokeEnabled?: boolean;
             strokeColor?: string;
@@ -4362,7 +4363,7 @@ export interface components {
             textColor: string;
             fillColor: string;
             /** @enum {string} */
-            inpaintMethod: "solid" | "lama_mpe" | "litelama";
+            inpaintMethod: "solid" | "lama_mpe" | "litelama" | "lama_manga";
             useAutoTextColor: boolean;
             strokeEnabled: boolean;
             strokeColor: string;
@@ -4426,7 +4427,7 @@ export interface components {
             mask: string;
             base_revision: number;
             /** @enum {string} */
-            method: "lama_mpe" | "litelama";
+            method: "lama_mpe" | "litelama" | "lama_manga";
         };
         MaskRestoreCommand: {
             /** @constant */

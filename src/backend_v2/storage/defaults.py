@@ -275,4 +275,5 @@ def default_translation_settings() -> dict[str, object]:
         "removeTextWithOcr": False,
         "compressVisionImages": True,
         "lamaDisableResize": False,
+        "lamaRegionalInpainting": False,
     }

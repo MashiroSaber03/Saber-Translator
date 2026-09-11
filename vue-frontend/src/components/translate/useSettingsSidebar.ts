@@ -71,6 +71,7 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
     {
       lama_mpe: 'lama_mpe',
       litelama: 'litelama',
+      lama_manga: 'lama_manga',
     },
   ))
 
@@ -383,7 +384,7 @@ export function useSettingsSidebar(emit: SettingsSidebarEmit) {
   }
 
   function handleInpaintMethodChange(value: string | number) {
-    if (value !== 'solid' && value !== 'lama_mpe' && value !== 'litelama') return
+    if (value !== 'solid' && value !== 'lama_mpe' && value !== 'litelama' && value !== 'lama_manga') return
     settingsStore.updateTextStyle({ inpaintMethod: value })
     emit('textStyleChanged', 'inpaintMethod', value)
   }

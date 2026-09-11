@@ -10,6 +10,43 @@ import torch
 from src.interfaces import lama_interface, lama_mpe_interface
 
 
+@pytest.mark.parametrize("disable_resize", [False, True])
+def test_manga_routes_masks_and_preserves_original_pixels(monkeypatch, disable_resize):
+    class WhiteModel:
+        def __call__(self, image, mask):
+            assert image.shape[-1] % 8 == image.shape[-2] % 8 == 0
+            assert set(mask.unique().tolist()) <= {0.0, 1.0}
+            return torch.ones_like(image)
+
+    inpainter = lama_interface.LamaMangaInpainter()
+    inpainter._model = WhiteModel()
+    inpainter._device = "cpu"
+    monkeypatch.setattr(lama_interface, "_lama_manga_inpainter", inpainter)
+    source = np.zeros((1031, 67, 3), dtype=np.uint8)
+    keep = np.full(source.shape[:2], 255, dtype=np.uint8)
+    keep[100:400, 15:50] = 0
+    result = lama_interface.clean_image_with_lama(
+        Image.fromarray(source), Image.fromarray(keep),
+        lama_model="lama_manga", disable_resize=disable_resize,
+    )
+    actual = np.array(result)
+    assert actual.shape == source.shape
+    assert np.all(actual[keep == 255] == 0)
+    assert np.all(actual[keep == 0] == 255)
+
+
+def test_manga_missing_weights_does_not_fall_back(monkeypatch, tmp_path):
+    inpainter = lama_interface.LamaMangaInpainter()
+    inpainter.model_path = str(tmp_path / "missing.safetensors")
+    monkeypatch.setattr(lama_interface, "_lama_manga_inpainter", inpainter)
+    with pytest.raises(FileNotFoundError, match="lama-manga"):
+        lama_interface.lama_clean_object(
+            Image.new("RGB", (8, 8)), Image.new("L", (8, 8), 255),
+            lama_model="lama_manga",
+        )
+    assert inpainter._model is None
+
+
 def test_lama_mpe_preserves_unmasked_pixels_and_original_size(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

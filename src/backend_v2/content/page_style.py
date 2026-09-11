@@ -143,7 +143,7 @@ def validate_page_style(
         result["inpaintMethod"] = _choice(
             result["inpaintMethod"],
             field="inpaintMethod",
-            choices=frozenset({"solid", "lama_mpe", "litelama"}),
+            choices=frozenset({"solid", "lama_mpe", "litelama", "lama_manga"}),
         )
     for field in ("useAutoTextColor", "strokeEnabled"):
         if field in result:

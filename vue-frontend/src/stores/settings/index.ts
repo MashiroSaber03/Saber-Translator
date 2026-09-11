@@ -90,6 +90,7 @@ const CHAPTER_WORK_STATE_KEYS = [
   'parallel',
   'removeTextWithOcr',
   'lamaDisableResize',
+  'lamaRegionalInpainting',
 ] as const satisfies readonly (keyof TranslationSettings)[]
 const CHAPTER_WORK_STATE_KEY_SET = new Set<string>(CHAPTER_WORK_STATE_KEYS)
 
