@@ -8,6 +8,20 @@ defineProps<{ api: PluginSettingsApi; active?: boolean }>()
 const section = ref('style')
 const sharedVisited = ref(false)
 const sharedSection = ref('ocr')
+const styleEditor = ref<InstanceType<typeof StyleSettingsView>>()
+const sharedEditor = ref<InstanceType<typeof TranslatorSettingsView>>()
+async function save(): Promise<boolean> {
+  if (styleEditor.value && !(await styleEditor.value.save(false))) {
+    section.value = 'style'
+    return false
+  }
+  if (sharedEditor.value && !(await sharedEditor.value.save())) {
+    section.value = sharedSection.value
+    return false
+  }
+  return true
+}
+defineExpose({ save })
 watch(section, value => {
   if (value !== 'style') {
     sharedVisited.value = true
@@ -26,9 +40,10 @@ const options = [
   <label class="field"
     >配置分类<SelectControl v-model="section" :options="options" label="配置分类"
   /></label>
-  <div v-show="section === 'style'"><StyleSettingsView :api="api" /></div>
+  <div v-show="section === 'style'"><StyleSettingsView ref="styleEditor" :api="api" :active="(active ?? true) && section === 'style'" /></div>
   <div v-if="sharedVisited" v-show="section !== 'style'" class="translator-settings">
     <TranslatorSettingsView
+      ref="sharedEditor"
       :api="api"
       :section="sharedSection"
       :active="(active ?? true) && section !== 'style'"

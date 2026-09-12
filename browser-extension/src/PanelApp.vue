@@ -5,10 +5,23 @@ import TasksView from './studio/TasksView.vue'
 import TranslationView from './studio/TranslationView.vue'
 import StudioIcon from './studio/StudioIcon.vue'
 import { usePageBridge } from './studio/pageBridge'
-import type { StudioTab } from './studio/protocol'
+import type { StudioAction, StudioTab } from './studio/protocol'
 import type { PluginSettingsApi } from '../../vue-frontend/src/types/browserExtensionSettings'
 const props = defineProps<{ api: PluginSettingsApi }>()
-const { state, request, notify } = usePageBridge()
+const { state, request: pageRequest, notify } = usePageBridge()
+const settingsEditor = ref<InstanceType<typeof SettingsView>>()
+const startError = ref('')
+async function request<T = void>(action: StudioAction, payload?: unknown): Promise<T> {
+  if (['confirm', 'retry-start', 'restart'].includes(action)) {
+    startError.value = ''
+    if (settingsEditor.value && !(await settingsEditor.value.save())) {
+      startError.value = '配置尚未保存，请检查配置中的错误后再开始翻译。'
+      selectTab('settings')
+      throw new Error(startError.value)
+    }
+  }
+  return pageRequest<T>(action, payload)
+}
 const currentHash = () =>
   location.hash === '#settings' ? 'settings' : location.hash === '#tasks' ? 'tasks' : 'translate'
 const tab = ref<StudioTab>(currentHash())
@@ -130,7 +143,9 @@ onBeforeUnmount(() => {
         v-if="settingsVisited"
         v-show="tab === 'settings'"
       >
+        <div v-if="startError" class="notice error" role="alert">{{ startError }}</div>
         <SettingsView
+          ref="settingsEditor"
           :api="props.api"
           :active="visible && (state?.open ?? true) && tab === 'settings'"
         />
@@ -146,7 +161,7 @@ onBeforeUnmount(() => {
       </div>
     </main>
     <footer class="studio-footer">
-      <span class="status-dot" />连接本机 Saber<span class="footer-separator">·</span
+      本机 Saber 处理<span class="footer-separator">·</span
       >页面退出后清理临时数据
     </footer>
   </div>

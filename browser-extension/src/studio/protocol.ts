@@ -36,6 +36,7 @@ export type StudioAction =
   | 'retry-page'
   | 'retry-uploads'
   | 'retry-start'
+  | 'restart'
   | 'stop-discovery'
   | 'cancel'
   | 'books'

@@ -42,6 +42,7 @@ const {
   props.api,
   computed(() => props.active)
 )
+defineExpose({ save })
 function bindForm(node: unknown) {
   form.value = node as HTMLFormElement | undefined
 }

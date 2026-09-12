@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useBrowserExtensionSettings } from '../../../vue-frontend/src/composables/useBrowserExtensionSettings'
 import SelectControl from './SelectControl.vue'
 import ColorControl from './ColorControl.vue'
 import NumberControl from './NumberControl.vue'
 import type { PluginSettingsApi } from '../../../vue-frontend/src/types/browserExtensionSettings'
-const props = defineProps<{ api: PluginSettingsApi }>()
+const props = defineProps<{ api: PluginSettingsApi; active?: boolean }>()
 const {
   style,
   fontOptions,
@@ -30,10 +30,13 @@ const {
   updateBaseUrl,
   updateKey,
   load,
+  refresh,
   save,
   fetchModels,
   testConnection,
 } = useBrowserExtensionSettings(props.api)
+watch(() => props.active, active => { if (active) void refresh() })
+defineExpose({ save })
 function bindForm(element: unknown) {
   settingsForm.value = element as HTMLFormElement | undefined
 }

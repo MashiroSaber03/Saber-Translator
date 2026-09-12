@@ -314,6 +314,7 @@ export class PageController {
         onTogglePage: browserPageId => this.togglePage(browserPageId),
         onRetryPage: browserPageId => void this.retry(browserPageId),
         onRetryUploads: () => void this.retryFailedUploads(),
+        onRestart: () => void this.restart(),
         onRetryStart: () => {
           const task = this.currentTask()
           if (task) void this.startUploadedPages(task)
@@ -567,6 +568,18 @@ export class PageController {
     } finally {
       if (this.taskStarting === starting) this.taskStarting = null
     }
+  }
+
+  private async restart(): Promise<void> {
+    if (!this.session || this.taskStarting) return
+    const candidates = this.session.pages
+      .map(page => this.candidatesByClientKey.get(page.clientPageKey))
+      .filter((candidate): candidate is ImageCandidate => Boolean(candidate))
+    for (const failed of this.uploadFailures.values()) {
+      if (!candidates.includes(failed.candidate)) candidates.push(failed.candidate)
+    }
+    this.candidates = candidates
+    await this.confirm(candidates.map(candidate => candidate.id))
   }
 
   private async createSession(): Promise<TaskContext | null> {

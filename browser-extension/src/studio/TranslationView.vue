@@ -16,7 +16,8 @@ const props = defineProps<{
 const selected = ref<string[]>([])
 const importOpen = ref(false)
 const error = ref('')
-const busy = computed(() => props.state.notice.tone === 'busy')
+const actionPending = ref(false)
+const busy = computed(() => props.state.notice.tone === 'busy' || actionPending.value)
 const session = computed(() => props.state.session)
 const processing = computed(() =>
   session.value?.pages.some(page => page.state === 'queued' || page.state === 'translating')
@@ -34,11 +35,15 @@ watch(
   { immediate: true }
 )
 async function act(action: StudioAction, payload?: unknown) {
+  if (actionPending.value) return
+  actionPending.value = true
   error.value = ''
   try {
     await props.request(action, payload)
   } catch (e) {
     error.value = (e as Error).message
+  } finally {
+    actionPending.value = false
   }
 }
 function preference(patch: Partial<DomainPreference>) {
@@ -238,6 +243,8 @@ const submitImport = (command: BrowserSessionImportCommand) =>
           取消任务
         </button>
       </div>
+      <button class="button" :disabled="processing || busy" @click="act('restart')">按新配置重新翻译</button>
+      <p class="footnote">重新翻译会替换当前页面的临时结果，使用已保存的新配置；已导入书架的内容不受影响。</p>
       <details v-if="!state.imported" class="disclosure">
         <summary>
           逐页查看<span class="badge">{{ session.pages.length }}</span

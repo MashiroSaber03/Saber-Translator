@@ -16,6 +16,7 @@ function callbacks(): UiCallbacks {
     onRetryPage: vi.fn(),
     onRetryUploads: vi.fn(),
     onRetryStart: vi.fn(),
+    onRestart: vi.fn(),
     onStopDiscovery: vi.fn(),
     onCancel: vi.fn(),
     onLoadLibraryBooks: vi.fn().mockResolvedValue([]),

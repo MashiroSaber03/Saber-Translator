@@ -1,14 +1,15 @@
 // @vitest-environment jsdom
-import { createApp, nextTick, type App } from 'vue'
+import { createApp, nextTick, h, type App } from 'vue'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import PanelApp from './PanelApp.vue'
 import type { PluginSettingsApi } from '../../vue-frontend/src/types/browserExtensionSettings'
 
+const saveSettings = vi.hoisted(() => vi.fn(async () => true))
 vi.mock('./studio/TranslationView.vue', () => ({
-  default: { render: () => null },
+  default: { props: ['request'], setup: (props: any) => () => h('button', { onClick: () => props.request('confirm', ['page']).catch(() => {}) }, 'Test start') },
 }))
 vi.mock('./studio/SettingsView.vue', () => ({
-  default: { render: () => null },
+  default: { setup: (_props: unknown, { expose }: any) => { expose({ save: saveSettings }); return () => null } },
 }))
 let app: App
 const flush = async () => {
@@ -16,6 +17,7 @@ const flush = async () => {
   await nextTick()
 }
 beforeEach(() => {
+  saveSettings.mockReset().mockResolvedValue(true)
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
   location.hash = 'tasks'
   document.body.innerHTML = '<div id="app"></div>'
@@ -44,6 +46,40 @@ function mount(api: ReturnType<typeof vi.fn>) {
   app.mount('#app')
 }
 const list = () => ({ items: [job], queuePaused: false, workerOnline: true })
+it('waits for pending configuration before submitting a translation', async () => {
+  location.hash = 'settings'
+  let finish!: (value: boolean) => void
+  saveSettings.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  const post = vi.spyOn(window.parent, 'postMessage')
+  mount(vi.fn(async () => list()))
+  observe(true)
+  await flush()
+  button('漫画翻译').click()
+  await flush()
+  button('Test start').click()
+  await flush()
+  expect(post.mock.calls.some(([data]) => data.action === 'confirm')).toBe(false)
+  finish(true)
+  await flush()
+  expect(post.mock.calls.some(([data]) => data.action === 'confirm')).toBe(true)
+  post.mockRestore()
+})
+it('returns to settings instead of starting when configuration cannot be saved', async () => {
+  location.hash = 'settings'
+  saveSettings.mockResolvedValue(false)
+  const post = vi.spyOn(window.parent, 'postMessage')
+  mount(vi.fn(async () => list()))
+  observe(true)
+  await flush()
+  button('漫画翻译').click()
+  await flush()
+  button('Test start').click()
+  await flush()
+  expect(post.mock.calls.some(([data]) => data.action === 'confirm')).toBe(false)
+  expect(document.body.textContent).toContain('配置尚未保存')
+  expect(button('翻译配置').getAttribute('aria-selected')).toBe('true')
+  post.mockRestore()
+})
 const button = (label: string) =>
   [...document.querySelectorAll('button')].find(
     node => (node.getAttribute('aria-label') || node.textContent?.trim()) === label

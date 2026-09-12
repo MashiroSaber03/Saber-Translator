@@ -310,6 +310,14 @@ export function useBrowserExtensionSettings(api: PluginSettingsApi) {
     })
     return savePromise
   }
+  async function refresh() {
+    if (busy.value || saving.value || saveError.value || (form.value && !form.value.checkValidity())) return
+    if (document.value) {
+      const transaction = buildTransaction()
+      if (transaction.settings!.length || transaction.providerSettings!.length) return
+    }
+    await load()
+  }
   onMounted(load)
   onBeforeUnmount(() => {
     void save(false)
@@ -339,6 +347,7 @@ export function useBrowserExtensionSettings(api: PluginSettingsApi) {
     updateBaseUrl,
     updateKey,
     load,
+    refresh,
     save,
     fetchModels,
     testConnection,

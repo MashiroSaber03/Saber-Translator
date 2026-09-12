@@ -23,6 +23,7 @@ export interface UiCallbacks {
   onRetryPage(browserPageId: string): void
   onRetryUploads(): void
   onRetryStart(): void
+  onRestart(): void
   onStopDiscovery(): void
   onCancel(): void
   onLoadLibraryBooks(): Promise<BrowserLibraryBook[]>
@@ -210,6 +211,9 @@ export class ExtensionUi {
         return
       case 'retry-start':
         this.callbacks.onRetryStart()
+        return
+      case 'restart':
+        this.callbacks.onRestart()
         return
       case 'stop-discovery':
         this.callbacks.onStopDiscovery()

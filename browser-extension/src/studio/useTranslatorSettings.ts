@@ -237,6 +237,7 @@ export function useTranslatorSettings(api: PluginSettingsApi, active: Ref<boolea
   function save(): Promise<boolean> {
     clearTimeout(timer)
     if (pending) return pending
+    if (form.value && !form.value.checkValidity()) return Promise.resolve(false)
     if (!dirty.value || !settings.value) return Promise.resolve(true)
     pending = persist().finally(() => {
       pending = null
