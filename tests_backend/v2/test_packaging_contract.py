@@ -112,7 +112,9 @@ def test_release_workflow_builds_the_triggering_revision() -> None:
 
     assert "github.event.inputs.branch" not in workflow
     assert "default: 'release'" not in workflow
-    assert "target_commitish: ${{ github.sha }}" in workflow
+    # The guard creates/verifies the tag at github.sha before creating the release.
+    assert "prepare_release.cjs" in workflow
+    assert "if: steps.release_target.outputs.create_release == 'true'" in workflow
     assert "EVENT_NAME: ${{ github.event_name }}" in workflow
     assert 'echo "PRERELEASE=true" >> "$GITHUB_OUTPUT"' in workflow
     assert "prerelease: ${{ steps.version.outputs.PRERELEASE == 'true' }}" in workflow

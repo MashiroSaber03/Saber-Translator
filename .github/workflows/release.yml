@@ -24,11 +24,18 @@ on:
       version:
         description: '版本号 (不带v前缀，如 3.3.0)'
         required: true
-        default: '3.3.0'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event.inputs.version && format('v{0}', github.event.inputs.version) || github.ref_name }}
+  cancel-in-progress: false
 
 env:
   MODELS_RELEASE_TAG: models-storage
   PYTHON_VERSION: '3.12'
+  PIP_NO_CACHE_DIR: '1'
 
 jobs:
   # ============================================================================
@@ -43,6 +50,17 @@ jobs:
       tag_name: ${{ steps.version.outputs.TAG_NAME }}
     
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify release guard
+        run: node --test .github/scripts/prepare_release.test.cjs
+
+      - name: Get extension version
+        id: extension
+        run: |
+          version=$(jq -er .version browser-extension/package.json)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       - name: Get version
         id: version
         env:
@@ -70,11 +88,20 @@ jobs:
           fi
           echo "Version: $VERSION, Tag: $TAG_NAME"
 
+      - name: Verify release target
+        id: release_target
+        uses: actions/github-script@v7
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.TAG_NAME }}
+        with:
+          script: |
+            await require('./.github/scripts/prepare_release.cjs')({github, context, core});
+
       - name: Create Draft Release
+        if: steps.release_target.outputs.create_release == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.TAG_NAME }}
-          target_commitish: ${{ github.sha }}
           name: v${{ steps.version.outputs.VERSION }}
           body: |
             ## Saber-Translator v${{ steps.version.outputs.VERSION }}
@@ -93,12 +120,12 @@ jobs:
             - CPU 版本：下载所有 `Saber-Translator-${{ steps.version.outputs.VERSION }}-cpu.7z*` 文件
             - GPU 版本：下载所有 `Saber-Translator-${{ steps.version.outputs.VERSION }}-gpu.7z*` 文件
             - 将所有分卷放在同一目录，使用 **7-Zip** 或 **Bandzip** 解压 `.7z.001` 文件即可
-            - 浏览器漫画翻译：下载 `saber-translator-browser-extension-v1.0.0.zip` 和对应 `.sha256` 文件，按 ZIP 内 README 安装
+            - 浏览器漫画翻译：下载 `saber-translator-browser-extension-v${{ steps.extension.outputs.version }}.zip` 和对应 `.sha256` 文件，按 ZIP 内 README 安装
             
             🔧 **源码部署用户：**
-            - 下载 `models.z01` 和 `models.zip`，解压到项目根目录的 `models/` 文件夹
+            - 下载所有 `models.z*` 分卷并放在同一目录，从 `models.zip` 解压到项目根目录，得到 `models/` 文件夹
             
-            > ⚠️ 采用 7z 分卷压缩格式，请使用 [7-Zip](https://www.7-zip.org/) 或 [Bandzip](https://www.bandisoft.com/bandizip/) 解压，Windows 内置解压和 WinRAR 可能无法正确识别
+            > ⚠️ 程序包采用 7z 分卷压缩格式，请使用 [7-Zip](https://www.7-zip.org/) 或 [Bandzip](https://www.bandisoft.com/bandizip/) 解压，Windows 内置解压和 WinRAR 可能无法正确识别
           draft: true
           prerelease: ${{ steps.version.outputs.PRERELEASE == 'true' }}
         env:
@@ -131,26 +158,55 @@ jobs:
       # --------------------------------------------------
       # 2. 从 models-storage Release 下载模型文件
       # --------------------------------------------------
+      - name: Prepare build disk
+        run: |
+          # This hosted runner does not need the preinstalled Android SDK.
+          $androidSdk = 'C:\Android\android-sdk'
+          if (Test-Path -LiteralPath $androidSdk) {
+            $resolvedSdk = (Resolve-Path -LiteralPath $androidSdk).Path
+            if ($resolvedSdk -ne $androidSdk) { throw 'Unexpected Android SDK path' }
+            Remove-Item -LiteralPath $resolvedSdk -Recurse -Force
+          }
+          $drive = Get-PSDrive -Name ([IO.Path]::GetPathRoot($env:GITHUB_WORKSPACE).Substring(0, 1))
+          Write-Host ("Available disk: {0:N1} GiB" -f ($drive.Free / 1GB))
+          if ($drive.Free -lt 25GB) { throw 'Packaging needs at least 25 GiB free disk space.' }
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
       - name: Download models from storage release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          $PSNativeCommandUseErrorActionPreference = $true
           Write-Host "Downloading models from release: ${{ env.MODELS_RELEASE_TAG }}"
-          gh release download ${{ env.MODELS_RELEASE_TAG }} --pattern "models.*" --dir .
+          gh release download ${{ env.MODELS_RELEASE_TAG }} --pattern "models.z*" --dir .
           
           Write-Host "Downloaded files:"
-          Get-ChildItem -Filter "models.*" | Format-Table Name, @{N='SizeMB';E={[math]::Round($_.Length/1MB, 2)}}
+          Get-ChildItem -Filter "models.z*" | Format-Table Name, @{N='SizeMB';E={[math]::Round($_.Length/1MB, 2)}}
 
       # --------------------------------------------------
       # 3. 解压模型文件
       # --------------------------------------------------
       - name: Extract models
         run: |
+          $PSNativeCommandUseErrorActionPreference = $true
           Write-Host "Extracting models..."
           7z x models.zip -y
           
           Write-Host "Models extracted. Directory contents:"
           Get-ChildItem -Path models/ | Select-Object Name, @{N='SizeMB';E={[math]::Round($_.Length/1MB, 2)}}
+
+      - name: Verify required model files
+        run: python .github/scripts/check_models.py models
+
+      - name: Upload models to draft
+        if: matrix.variant == 'cpu'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python .github/scripts/upload_release_assets.py "${{ needs.prepare.outputs.tag_name }}" . "models.z*"
 
       # --------------------------------------------------
       # 4. 清理模型压缩包（节省磁盘空间）
@@ -158,35 +214,24 @@ jobs:
       - name: Clean up model archives
         run: |
           Write-Host "Cleaning up model archives to save disk space..."
-          Remove-Item models.z01 -Force -ErrorAction SilentlyContinue
-          Remove-Item models.zip -Force -ErrorAction SilentlyContinue
-
-      # --------------------------------------------------
-      # 5. 设置 Python 环境
-      # --------------------------------------------------
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          $workspace = (Resolve-Path -LiteralPath $env:GITHUB_WORKSPACE).Path
+          Get-ChildItem -LiteralPath $workspace -Filter 'models.z*' -File | Remove-Item -Force
 
       # --------------------------------------------------
       # 6. 安装依赖 (CPU 和 GPU 流程不同)
       # --------------------------------------------------
-      - name: Install dependencies (CPU)
-        if: matrix.variant == 'cpu'
+      - name: Install dependencies
+        env:
+          TORCH_VARIANT: ${{ matrix.variant == 'gpu' && 'cu130' || 'cpu' }}
         run: |
-          Write-Host "Installing CPU dependencies..."
+          $PSNativeCommandUseErrorActionPreference = $true
           python -m pip install --upgrade pip
-          pip install -r ${{ matrix.requirements }}
-
-      - name: Install dependencies (GPU)
-        if: matrix.variant == 'gpu'
-        run: |
-          Write-Host "Installing GPU dependencies..."
-          python -m pip install --upgrade pip
-          pip install -r ${{ matrix.requirements }}
-          pip install torch==2.11.0 torchvision==0.26.0 --index-url https://download.pytorch.org/whl/cu130
-          pip install --force-reinstall --no-deps "onnxruntime-gpu>=1.27,<2"
+          python -m pip install "torch==2.11.0+$env:TORCH_VARIANT" "torchvision==0.26.0+$env:TORCH_VARIANT" --index-url "https://download.pytorch.org/whl/$env:TORCH_VARIANT"
+          python -m pip install -r ${{ matrix.requirements }}
+          if ($env:TORCH_VARIANT -eq 'cu130') {
+            python -m pip install --force-reinstall --no-deps "onnxruntime-gpu>=1.27,<2"
+          }
+          python -c "import os, torch, torchvision; variant = os.environ['TORCH_VARIANT']; assert torch.__version__ == '2.11.0+' + variant, torch.__version__; assert torchvision.__version__ == '0.26.0+' + variant, torchvision.__version__; assert torch.version.cuda == ('13.0' if variant == 'cu130' else None); print('Verified PyTorch:', torch.__version__)"
 
       # --------------------------------------------------
       # 7. 构建并校验 v2 Web 前端
@@ -203,12 +248,14 @@ jobs:
       - name: Build v2 frontend
         working-directory: vue-frontend
         run: |
+          $PSNativeCommandUseErrorActionPreference = $true
           npm ci
           npm run check:api
           npm run build:check
 
       - name: Verify generated frontend is current
         run: |
+          $PSNativeCommandUseErrorActionPreference = $true
           $changes = @(git status --porcelain -- src/backend_v2/static/vue)
           if ($changes.Count -ne 0) {
             $changes | Write-Host
@@ -218,6 +265,7 @@ jobs:
       - name: Verify backend contracts
         if: matrix.variant == 'cpu'
         run: |
+          $PSNativeCommandUseErrorActionPreference = $true
           python -m pip install "pytest>=8.4,<9"
           python -m pytest tests_backend -q
 
@@ -245,6 +293,7 @@ jobs:
         if: matrix.variant == 'cpu'
         working-directory: browser-extension
         run: |
+          $PSNativeCommandUseErrorActionPreference = $true
           npm ci
           npm test
           npm run typecheck
@@ -254,7 +303,10 @@ jobs:
       # 8. 使用 PyInstaller 打包
       # --------------------------------------------------
       - name: Build with PyInstaller
+        env:
+          SABER_BUILD_MOVE_MODELS: '1'
         run: |
+          $PSNativeCommandUseErrorActionPreference = $true
           Write-Host "Building with PyInstaller..."
           pyinstaller app.spec --noconfirm
           
@@ -279,11 +331,18 @@ jobs:
             Write-Host "Verified source file: $file"
           }
 
+      - name: Probe packaged runtime
+        run: python .github/scripts/probe_package.py dist/Saber-Translator/Saber-Translator.exe
+
+      - name: Verify bundled model files
+        run: python .github/scripts/check_models.py dist/Saber-Translator/_internal/models
+
       # --------------------------------------------------
       # 10. 7z 分卷压缩（最高压缩率）
       # --------------------------------------------------
       - name: Package with 7z split (ultra compression)
         run: |
+          $PSNativeCommandUseErrorActionPreference = $true
           $version = "${{ needs.prepare.outputs.version }}"
           $variant = "${{ matrix.variant }}"
           $outputName = "Saber-Translator-$version-$variant"
@@ -308,6 +367,7 @@ jobs:
       # --------------------------------------------------
       - name: Verify compressed archives
         run: |
+          $PSNativeCommandUseErrorActionPreference = $true
           $version = "${{ needs.prepare.outputs.version }}"
           $variant = "${{ matrix.variant }}"
           $baseName = "Saber-Translator-$version-$variant"
@@ -325,12 +385,7 @@ jobs:
           Write-Host "Testing archive integrity: $($firstFile.Name)"
           7z t $firstFile.FullName
           
-          if ($LASTEXITCODE -eq 0) {
-            Write-Host "Archive verification passed!"
-          } else {
-            Write-Host "Archive verification failed!"
-            exit 1
-          }
+          Write-Host "Archive verification passed!"
 
       # --------------------------------------------------
       # 12. 直接上传到 Release（不通过 artifacts）
@@ -338,55 +393,13 @@ jobs:
       - name: Upload to Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $version = "${{ needs.prepare.outputs.version }}"
-          $variant = "${{ matrix.variant }}"
-          $tagName = "${{ needs.prepare.outputs.tag_name }}"
-          $baseName = "Saber-Translator-$version-$variant"
-          
-          Write-Host "Uploading $variant version to Release $tagName..."
-          
-          # Get all 7z split files
-          $files = Get-ChildItem "$baseName.7z*"
-          
-          foreach ($file in $files) {
-            Write-Host "Uploading: $($file.Name) ($([math]::Round($file.Length/1MB, 0)) MB)"
-            gh release upload $tagName $file.FullName --clobber
-          }
-          
-          Write-Host "Upload completed for $variant version!"
-
-      # --------------------------------------------------
-      # 13. 上传模型文件到 Release（仅 CPU 构建执行）
-      # --------------------------------------------------
-      - name: Upload models to Release
-        if: matrix.variant == 'cpu'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $tagName = "${{ needs.prepare.outputs.tag_name }}"
-          
-          Write-Host "Downloading models for upload to Release..."
-          gh release download ${{ env.MODELS_RELEASE_TAG }} --pattern "models.*" --dir .
-          
-          Write-Host "Uploading models to Release $tagName..."
-          Get-ChildItem "models.*" | ForEach-Object {
-            Write-Host "Uploading: $($_.Name) ($([math]::Round($_.Length/1MB, 0)) MB)"
-            gh release upload $tagName $_.FullName --clobber
-          }
-          
-          Write-Host "Models upload completed!"
+        run: python .github/scripts/upload_release_assets.py "${{ needs.prepare.outputs.tag_name }}" . "Saber-Translator-${{ needs.prepare.outputs.version }}-${{ matrix.variant }}.7z*"
 
       - name: Upload browser extension to Release
         if: matrix.variant == 'cpu'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $tagName = "${{ needs.prepare.outputs.tag_name }}"
-          Get-ChildItem "browser-extension/release/*" | ForEach-Object {
-            Write-Host "Uploading browser extension artifact: $($_.Name)"
-            gh release upload $tagName $_.FullName --clobber
-          }
+        run: python .github/scripts/upload_release_assets.py "${{ needs.prepare.outputs.tag_name }}" browser-extension/release "saber-translator-*.zip*"
 
   # ============================================================================
   # 完成 Job - 输出结果

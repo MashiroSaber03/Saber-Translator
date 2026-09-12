@@ -207,6 +207,7 @@ function handleArrow(event: KeyboardEvent): void {
 
 .ui-number-field--custom-spin { position: relative; }
 .ui-number-field--custom-spin .ui-number-field__input { appearance: textfield; padding-right: 24px; }
+
 .ui-number-field--custom-spin .ui-number-field__input::-webkit-inner-spin-button,
 .ui-number-field--custom-spin .ui-number-field__input::-webkit-outer-spin-button { appearance: none; margin: 0; }
 .ui-number-field__arrows { position: absolute; right: 3px; top: 3px; bottom: 3px; display: flex; flex-direction: column; width: 20px; }

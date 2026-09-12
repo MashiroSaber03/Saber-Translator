@@ -34,7 +34,10 @@ class PackagingTorchscriptSourceTests(unittest.TestCase):
         self.assertIn("Verify TorchScript source files", workflow_text)
         self.assertIn("dist\\Saber-Translator\\_internal\\litelama\\litelama.py", workflow_text)
         self.assertIn("dist\\Saber-Translator\\_internal\\kornia\\geometry\\epipolar\\_metrics.py", workflow_text)
-        self.assertIn("pip install torch==2.11.0 torchvision==0.26.0 --index-url https://download.pytorch.org/whl/cu130", workflow_text)
+        self.assertIn("TORCH_VARIANT: ${{ matrix.variant == 'gpu' && 'cu130' || 'cpu' }}", workflow_text)
+        self.assertIn('"torch==2.11.0+$env:TORCH_VARIANT"', workflow_text)
+        self.assertIn('"torchvision==0.26.0+$env:TORCH_VARIANT"', workflow_text)
+        self.assertIn('"https://download.pytorch.org/whl/$env:TORCH_VARIANT"', workflow_text)
 
 
 if __name__ == "__main__":

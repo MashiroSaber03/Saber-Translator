@@ -43,7 +43,10 @@ datas.append((os.path.join(PROJECT_ROOT, 'openapi', 'v2.yaml'), 'openapi'))
 
 # 3. 模型文件 - 包含所有模型
 models_path = os.path.join(PROJECT_ROOT, 'models')
-if os.path.exists(models_path):
+# Release runners can move models into the finished bundle to avoid a second copy.
+# Ordinary local builds keep the source models directory unchanged.
+move_models = os.environ.get('SABER_BUILD_MOVE_MODELS') == '1'
+if os.path.exists(models_path) and not move_models:
     datas.append((models_path, 'models'))
 
 # 4. 插件目录
@@ -290,6 +293,9 @@ coll = COLLECT(
 )
 
 bundle_plugins_path = os.path.join(coll.name, 'plugins')
+if move_models:
+    shutil.move(models_path, os.path.join(coll.name, '_internal', 'models'))
+
 if os.path.exists(bundle_plugins_path):
     shutil.rmtree(bundle_plugins_path)
 if os.path.exists(plugins_path):

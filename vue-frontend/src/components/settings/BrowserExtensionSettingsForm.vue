@@ -145,15 +145,18 @@ defineExpose({ save })
   margin: 0;
   min-width: 0;
 }
+
 .browser-extension-settings__intro {
   color: var(--color-text-supporting);
   font-size: 13px;
   line-height: 1.6;
   margin: 0 0 14px;
 }
+
 .browser-extension-settings__agent {
   margin-top: 25px;
 }
+
 .browser-extension-settings__agent > summary {
   cursor: pointer;
   color: var(--color-action-primary);

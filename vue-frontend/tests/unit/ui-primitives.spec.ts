@@ -456,7 +456,7 @@ describe('UI primitives architecture contracts', () => {
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([1])
   })
 
-  it('keeps native number steppers when explicit controls are present', () => {
+  it('keeps ordinary number inputs outside custom spin mode', () => {
     const plain = mount(UiNumberField, {
       props: { modelValue: 2 },
     })
@@ -467,11 +467,12 @@ describe('UI primitives architecture contracts', () => {
     expect(plain.classes()).not.toContain('ui-number-field--with-controls')
     expect(controlled.classes()).toContain('ui-number-field--with-controls')
 
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/components/ui/UiNumberField.vue'),
-      'utf8',
-    )
-    expect(source).not.toMatch(/::-webkit-(?:inner|outer)-spin-button/)
+    for (const wrapper of [plain, controlled]) {
+      expect(wrapper.classes()).not.toContain('ui-number-field--custom-spin')
+      expect(wrapper.find('.ui-number-field__arrows').exists()).toBe(false)
+      expect(wrapper.get('input').attributes('type')).toBe('number')
+      expect(wrapper.get('input').attributes('step')).toBe('1')
+    }
   })
 
   it('preserves nullable number fields when the input is cleared', async () => {

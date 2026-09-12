@@ -18,7 +18,6 @@ describe('jobs v2 api contracts', () => {
   beforeEach(() => {
     getMock.mockReset()
     postMock.mockReset()
-    vi.spyOn(crypto, 'randomUUID').mockReturnValue('00000000-0000-4000-8000-000000000001')
   })
 
   it('supports one combined queue and history snapshot', async () => {
@@ -56,7 +55,9 @@ describe('jobs v2 api contracts', () => {
       { strategy: 'current' },
       {
         headers: {
-          'Idempotency-Key': '00000000-0000-4000-8000-000000000001',
+          'Idempotency-Key': expect.stringMatching(
+            /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+          ),
         },
       },
     )
