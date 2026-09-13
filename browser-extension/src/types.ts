@@ -19,7 +19,6 @@ export interface DomainPreference {
   mode: TranslationMode
   glossaryEnabled: boolean
   autoTermsEnabled: boolean
-  panelOpen: boolean
   fabPosition?: PanelPosition
   rule?: LearnedRule
 }
@@ -132,10 +131,12 @@ export type BackgroundResponse<T> =
   | { ok: true; data: T }
   | { ok: false; error: BackgroundError }
 
+export type DomainPreferencePatch = Partial<Omit<DomainPreference, 'rule'>> & { rule?: LearnedRule | null }
+
 export type BackgroundRequest =
   | { type: 'get-preference'; hostname: string }
-  | { type: 'set-preference'; hostname: string; preference: DomainPreference }
-  | { type: 'get-popup-state' }
+  | { type: 'set-preference'; hostname: string; preference: DomainPreferencePatch }
+  | { type: 'get-connection-state' }
   | { type: 'save-connection'; token: string; serverPort: number }
   | { type: 'status' }
   | { type: 'hash-source'; value: string }

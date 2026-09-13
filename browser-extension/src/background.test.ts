@@ -30,7 +30,8 @@ beforeEach(async () => {
     },
     alarms: { create: vi.fn(), onAlarm: event() },
     contextMenus: { onClicked: event(), update: vi.fn().mockResolvedValue(undefined) },
-    tabs: { sendMessage: vi.fn().mockResolvedValue({ ok: true, data: { opened: true } }), query: vi.fn().mockResolvedValue([{ id: 4 }]), onActivated: event(), onUpdated: event(), onRemoved: event() },
+    action: { onClicked: event(), setBadgeText: vi.fn(), setTitle: vi.fn() },
+    tabs: { sendMessage: vi.fn().mockResolvedValue({ opened: true }), query: vi.fn().mockResolvedValue([{ id: 4 }]), onActivated: event(), onUpdated: event(), onRemoved: event() },
   })
   await import('./background')
 })
@@ -38,12 +39,51 @@ beforeEach(async () => {
 afterEach(() => vi.unstubAllGlobals())
 
 function request<T>(message: BackgroundRequest, sender: chrome.runtime.MessageSender = {
-  id, url: `chrome-extension://${id}/popup.html`,
+  id, url: `chrome-extension://${id}/panel.html`,
 }): Promise<BackgroundResponse<T>> {
   return new Promise(resolve => listener(message, sender, value => resolve(value as BackgroundResponse<T>)))
 }
 
 describe('extension background boundary', () => {
+  it('accepts the current SPA URL even when sender.url retains the title page', async () => {
+    const pageUrl = 'https://mangadex.org/chapter/chapter-id'
+    const response = await request({ type: 'page-opened', pageUrl }, {
+      id, url: 'https://mangadex.org/title/title-id', documentId: 'same-document',
+      tab: { id: 4, url: pageUrl },
+    } as chrome.runtime.MessageSender)
+    expect(response).toEqual({ ok: true, data: { opened: true } })
+    expect(session['saber-active-browser-session-v1:4']).toMatchObject({ pageUrl, documentId: 'same-document' })
+  })
+
+  it('still rejects an old page request after the tab navigates elsewhere', async () => {
+    const oldUrl = 'https://comic.example/old'
+    const response = await request({ type: 'page-opened', pageUrl: oldUrl }, {
+      id, url: oldUrl, tab: { id: 4, url: 'https://comic.example/new' },
+    } as chrome.runtime.MessageSender)
+    expect(response).toMatchObject({ ok: false, error: { code: 'stale_page_context' } })
+    expect(session).toEqual({})
+  })
+  it('opens the existing floating panel from the toolbar without another page', async () => {
+    const click = vi.mocked(chrome.action.onClicked.addListener).mock.calls[0]![0]
+    click({ id: 4, url: 'https://comic.example/chapter' } as chrome.tabs.Tab)
+    await vi.waitFor(() => expect(chrome.action.setBadgeText).toHaveBeenCalledWith({ tabId: 4, text: '' }))
+    expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(4, { type: 'open-panel' }, { frameId: 0 })
+  })
+
+  it('explains restricted pages through the toolbar instead of opening a fallback page', async () => {
+    const click = vi.mocked(chrome.action.onClicked.addListener).mock.calls[0]![0]
+    click({ id: 4, url: 'chrome://extensions' } as chrome.tabs.Tab)
+    await vi.waitFor(() => expect(chrome.action.setTitle).toHaveBeenCalledWith({ tabId: 4, title: expect.stringContaining('普通网页') }))
+    expect(chrome.tabs.sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('uses the hosting tab rather than the currently active tab for connection settings', async () => {
+    const response = await request({ type: 'get-connection-state' }, {
+      id, url: `chrome-extension://${id}/panel.html`,
+      tab: { id: 7, url: 'https://reader.example/chapter' },
+    } as chrome.runtime.MessageSender)
+    expect(response).toMatchObject({ ok: true, data: { hostname: 'reader.example' } })
+  })
   it('discards a session whose page closes before creation finishes', async () => {
     local['saber-extension-settings-v1'] = { token: 'test-token-with-at-least-32-characters', serverPort: 5000, domains: {} }
     const pageUrl = 'https://comic.example/chapter'
@@ -102,7 +142,41 @@ describe('extension background boundary', () => {
   })
 
   it('does not expose pairing settings to a content script', async () => {
-    const response = await request({ type: 'get-popup-state' }, { id, url: 'https://comic.example' })
+    const response = await request({ type: 'get-connection-state' }, { id, url: 'https://comic.example' })
     expect(response).toMatchObject({ ok: false, error: { code: 'extension_page_required' } })
+  })
+
+  it('merges concurrent preference fields without undoing a disabled site', async () => {
+    await request({ type: 'set-preference', hostname: 'comic.example', preference: { disabled: true, mode: 'hq' } })
+    await Promise.all([
+      request({ type: 'set-preference', hostname: 'comic.example', preference: { glossaryEnabled: true } }),
+      request({ type: 'set-preference', hostname: 'comic.example', preference: { fabPosition: { x: 30, y: 60 } } }),
+    ])
+    expect((local['saber-extension-settings-v1'] as ExtensionSettings).domains['comic.example'])
+      .toMatchObject({ disabled: true, mode: 'hq', glossaryEnabled: true, fabPosition: { x: 30, y: 60 } })
+  })
+
+  it('only removes a learned rule when explicitly cleared', async () => {
+    const rule = { selector: 'main img', kind: 'image' as const, confirmedAt: 1 }
+    await request({ type: 'set-preference', hostname: 'comic.example', preference: { rule } })
+    await request({ type: 'set-preference', hostname: 'comic.example', preference: { glossaryEnabled: true } })
+    expect((local['saber-extension-settings-v1'] as ExtensionSettings).domains['comic.example']?.rule).toEqual(rule)
+    await request({ type: 'set-preference', hostname: 'comic.example', preference: { rule: null } })
+    expect((local['saber-extension-settings-v1'] as ExtensionSettings).domains['comic.example']?.rule).toBeUndefined()
+  })
+
+  it('notifies other tabs on the same hostname only when enabled state changes', async () => {
+    chrome.tabs.query = vi.fn().mockResolvedValue([
+      { id: 4, url: 'https://comic.example/a' },
+      { id: 5, url: 'https://comic.example/b' },
+      { id: 6, url: 'https://other.example/c' },
+    ])
+    await request({ type: 'set-preference', hostname: 'comic.example', preference: { disabled: true } },
+      { id, url: 'https://comic.example/a', tab: { id: 4 } } as chrome.runtime.MessageSender)
+    expect(chrome.tabs.sendMessage).toHaveBeenCalledTimes(1)
+    expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(5,
+      { type: 'site-enabled-changed', hostname: 'comic.example', disabled: true }, { frameId: 0 })
+    await request({ type: 'set-preference', hostname: 'comic.example', preference: { glossaryEnabled: true } })
+    expect(chrome.tabs.sendMessage).toHaveBeenCalledTimes(1)
   })
 })

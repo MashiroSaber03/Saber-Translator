@@ -1,6 +1,7 @@
 import { createApp } from 'vue'
 import PanelApp from './PanelApp.vue'
 import { saberRequest } from './api'
+import { loadSettings } from './storage'
 import type { PluginSettingsApi } from '../../vue-frontend/src/types/browserExtensionSettings'
 import './panel.css'
 
@@ -22,4 +23,6 @@ const api: PluginSettingsApi = (path, method = 'GET', body) =>
     undefined,
     120_000
   )
-createApp(PanelApp, { api }).mount('#app')
+void loadSettings().then(settings => {
+  createApp(PanelApp, { api, needsConnection: !settings.token }).mount('#app')
+})

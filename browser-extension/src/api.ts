@@ -63,7 +63,7 @@ export async function saberRequest<T>(
     }
     throw new RequestFailure(
       'saber_unreachable',
-      `无法连接本机 Saber（端口 ${settings.serverPort}）`,
+      `无法连接本机 Saber（端口 ${settings.serverPort}）。请在 GUI「概览」中点击「启动后端」，等待就绪后重试；若已启动，请核对端口。`,
       true
     )
   }

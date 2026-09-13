@@ -26,6 +26,7 @@ import type {
   DetectionMethod,
   DomDetectionResult,
   DomainPreference,
+  DomainPreferencePatch,
   LearnedRule,
   PanelPosition,
   ResultImagePayload,
@@ -301,6 +302,11 @@ export class PageController {
       hostname: this.hostname,
     })
     if (this.disposed || this.preference.disabled) return
+    this.createUi()
+  }
+
+  private createUi(): void {
+    if (this.ui) return
     this.activeMethod = this.preference.method
     this.activeRule = this.preference.rule ?? null
     this.ui = new ExtensionUi(
@@ -308,13 +314,16 @@ export class PageController {
         onDiscover: method => void this.discover(method),
         onConfirm: ids => void this.confirm(ids),
         onPreferenceChange: preference => void this.updatePreference(preference),
-        onPanelOpenChange: panelOpen => void this.updatePanelPreference({ panelOpen }),
-        onFabPositionChange: fabPosition => void this.updatePanelPreference({ fabPosition }),
+        onFabPositionChange: position => void this.saveFabPosition(position),
         onToggleGlobal: () => this.toggleAllPages(),
         onTogglePage: browserPageId => this.togglePage(browserPageId),
         onRetryPage: browserPageId => void this.retry(browserPageId),
         onRetryUploads: () => void this.retryFailedUploads(),
         onRestart: () => void this.restart(),
+        onEnableSite: async () => {
+          await this.persistPreference({ disabled: false })
+          await this.applySiteEnabled(true)
+        },
         onRetryStart: () => {
           const task = this.currentTask()
           if (task) void this.startUploadedPages(task)
@@ -367,6 +376,7 @@ export class PageController {
     if (this.preference?.disabled) return
     if (!this.ui) await this.initialize()
     if (!this.ui) return
+    this.ui.setOpen(true)
     const all = scanGeneric()
     const candidate = candidateForSource(all, srcUrl)
       ?? [...document.querySelectorAll('img')]
@@ -382,7 +392,6 @@ export class PageController {
     this.taskStarting = starting
     this.registerCandidates([candidate])
     this.cancelled = false
-    this.ui.setOpen(true)
     this.ui.setStatus('正在提交单张图片', '右键操作已经视为确认，无需再次选择。', 'busy')
     try {
       this.discoveryStopped = true
@@ -438,7 +447,7 @@ export class PageController {
         }
         this.activeRule = null
         delete this.preference.rule
-        await this.persistPreference()
+        await this.persistPreference({ rule: null })
         this.ui.setAdaptation(null)
       }
       if (method === 'similar') {
@@ -550,7 +559,7 @@ export class PageController {
     else delete confirmedPreference.rule
     this.preference = confirmedPreference
     try {
-      await this.persistPreference()
+      await this.persistPreference({ method: this.activeMethod, rule: this.activeRule })
       if (this.taskStarting !== starting) return
       this.ui.setAdaptation(this.activeRule)
       this.ui.setStatus('正在导入漫画图片', '图片会按网页顺序进入当前隐藏会话。', 'busy')
@@ -580,6 +589,13 @@ export class PageController {
     }
     this.candidates = candidates
     await this.confirm(candidates.map(candidate => candidate.id))
+  }
+
+  async openPanel(): Promise<void> {
+    await this.initialize()
+    if (this.disposed) return
+    this.createUi()
+    this.ui?.setOpen(true)
   }
 
   private async createSession(): Promise<TaskContext | null> {
@@ -620,7 +636,6 @@ export class PageController {
     })
     if (this.disposed || generation !== this.taskGeneration) return null
     this.session = session
-    if (this.disposed || generation !== this.taskGeneration) return null
     this.ui?.showTerms([])
     this.showSession(session)
     return { generation, sessionId: session.id }
@@ -1099,7 +1114,8 @@ export class PageController {
     }
   }
 
-  private async updatePreference(preference: DomainPreference): Promise<void> {
+  private async updatePreference(patch: Partial<DomainPreference>): Promise<void> {
+    const preference = { ...this.preference, ...patch }
     const methodChanged = preference.method !== this.preference.method
     if (methodChanged && this.currentTask()) this.stopDiscovery()
     this.activeMethod = preference.method
@@ -1113,7 +1129,7 @@ export class PageController {
       else delete this.preference.rule
     }
     try {
-      await this.persistPreference()
+      await this.persistPreference(methodChanged ? { ...patch, rule: null } : patch)
       if (methodChanged) this.ui?.setAdaptation(null)
       const task = this.currentTask()
       if (task) {
@@ -1136,25 +1152,20 @@ export class PageController {
     }
   }
 
-  private async updatePanelPreference(
-    patch: {
-      panelOpen?: boolean
-      fabPosition?: PanelPosition
-    },
-  ): Promise<void> {
-    this.preference = { ...this.preference, ...patch }
+  private async saveFabPosition(fabPosition: PanelPosition): Promise<void> {
+    this.preference.fabPosition = fabPosition
     try {
-      await this.persistPreference()
+      await this.persistPreference({ fabPosition })
     } catch (error) {
       this.ui?.showError(errorDetails(error))
     }
   }
 
-  private async persistPreference(): Promise<void> {
-    await send<DomainPreference>({
+  private async persistPreference(patch: DomainPreferencePatch): Promise<void> {
+    await send<DomainPreferencePatch>({
       type: 'set-preference',
       hostname: this.hostname,
-      preference: this.preference,
+      preference: patch,
     })
   }
 
@@ -1164,11 +1175,7 @@ export class PageController {
     const preference = { ...this.preference }
     delete preference.rule
     try {
-      await send<DomainPreference>({
-        type: 'set-preference',
-        hostname: this.hostname,
-        preference,
-      })
+      await this.persistPreference({ rule: null })
       this.preference = preference
       this.activeRule = null
       this.usingAdapter = false
@@ -1269,14 +1276,27 @@ export class PageController {
   private async disableSite(): Promise<void> {
     this.preference = { ...this.preference, disabled: true }
     try {
-      await this.persistPreference()
+      await this.persistPreference({ disabled: true })
     } catch (error) {
       this.preference = { ...this.preference, disabled: false }
       this.ui?.showError(errorDetails(error))
       return
     }
-    await this.discardSession(this.session?.id)
-    await this.dispose()
+    await this.applySiteEnabled(false)
+  }
+
+  async applySiteEnabled(enabled: boolean): Promise<void> {
+    await this.initialize()
+    if (this.disposed) return
+    this.preference.disabled = !enabled
+    this.ui?.setSiteEnabled(enabled)
+    if (enabled) {
+      this.createUi()
+    } else {
+      await this.discardSession(this.session?.id)
+      await this.dispose()
+      if (controller === this) await startController()
+    }
   }
 
   private async copyDiagnostics(): Promise<void> {
@@ -1320,8 +1340,23 @@ async function startController(): Promise<void> {
 }
 
 if (typeof chrome !== 'undefined' && chrome.runtime?.id) {
-  chrome.runtime.onMessage.addListener((message: unknown, sender) => {
+  chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
     if (sender.id !== chrome.runtime.id) return
+    const change = message as { type?: string; hostname?: string; disabled?: boolean }
+    if (change?.type === 'site-enabled-changed' && change.hostname === location.hostname
+      && typeof change.disabled === 'boolean') {
+      void controller?.applySiteEnabled(!change.disabled).catch(error => {
+        console.warn('Saber site state synchronization failed', error)
+      })
+      return
+    }
+    if ((message as { type?: string })?.type === 'open-panel') {
+      void controller?.openPanel().then(
+        () => sendResponse({ opened: true }),
+        error => sendResponse({ opened: false, error: String(error) }),
+      )
+      return true
+    }
     const candidate = message as Partial<ContextTranslateMessage>
     if (candidate?.type === 'context-translate-image' && typeof candidate.srcUrl === 'string') {
       void controller?.translateContextImage(candidate.srcUrl)

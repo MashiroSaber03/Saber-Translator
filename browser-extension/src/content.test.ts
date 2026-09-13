@@ -114,6 +114,20 @@ afterEach(() => {
 })
 
 describe('overlapping page operations', () => {
+  it('keeps disabled sites hidden until the toolbar explicitly opens the panel', async () => {
+    sendMessage.mockImplementation(async (request: { type: string }) => request.type === 'get-preference'
+      ? successful({ ...DEFAULT_PREFERENCE, disabled: true }) : defaultResponse(request))
+    const controller = new PageController()
+    await controller.initialize()
+    expect(document.getElementById('saber-translator-extension-root')).toBeNull()
+    await controller.openPanel()
+    expect(document.getElementById('saber-translator-extension-root')).not.toBeNull()
+    const state = uiState((controller as unknown as TestController).ui)
+    expect(state.tab).toBe('settings')
+    expect(state.preference.disabled).toBe(true)
+    expect(state.open).toBe(true)
+    await controller.dispose()
+  })
   it('starts a fresh page and releases it on exit without requesting history', async () => {
     const controller = new PageController() as unknown as TestController
     await controller.initialize()

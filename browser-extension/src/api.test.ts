@@ -19,7 +19,7 @@ it('reports a useful connection error for both page and management requests', as
   for (const path of ['/status', '/manage/jobs?scope=all']) {
     await expect(saberRequest(path)).rejects.toMatchObject({
       code: 'saber_unreachable',
-      message: '无法连接本机 Saber（端口 5000）',
+      message: '无法连接本机 Saber（端口 5000）。请在 GUI「概览」中点击「启动后端」，等待就绪后重试；若已启动，请核对端口。',
     })
   }
 })

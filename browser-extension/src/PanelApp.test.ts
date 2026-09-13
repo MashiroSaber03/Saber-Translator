@@ -12,6 +12,7 @@ vi.mock('./studio/SettingsView.vue', () => ({
   default: { setup: (_props: unknown, { expose }: any) => { expose({ save: saveSettings }); return () => null } },
 }))
 let app: App
+let initialView: 'settings' | 'tasks'
 const flush = async () => {
   await new Promise(resolve => setImmediate(resolve))
   await nextTick()
@@ -19,7 +20,7 @@ const flush = async () => {
 beforeEach(() => {
   saveSettings.mockReset().mockResolvedValue(true)
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-  location.hash = 'tasks'
+  initialView = 'tasks'
   document.body.innerHTML = '<div id="app"></div>'
   Element.prototype.scrollTo = vi.fn()
 })
@@ -44,10 +45,11 @@ const job = {
 function mount(api: ReturnType<typeof vi.fn>) {
   app = createApp(PanelApp, { api: api as PluginSettingsApi })
   app.mount('#app')
+  button(initialView === 'tasks' ? '任务中心' : '翻译配置').click()
 }
 const list = () => ({ items: [job], queuePaused: false, workerOnline: true })
 it('waits for pending configuration before submitting a translation', async () => {
-  location.hash = 'settings'
+  initialView = 'settings'
   let finish!: (value: boolean) => void
   saveSettings.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
   const post = vi.spyOn(window.parent, 'postMessage')
@@ -65,7 +67,7 @@ it('waits for pending configuration before submitting a translation', async () =
   post.mockRestore()
 })
 it('returns to settings instead of starting when configuration cannot be saved', async () => {
-  location.hash = 'settings'
+  initialView = 'settings'
   saveSettings.mockResolvedValue(false)
   const post = vi.spyOn(window.parent, 'postMessage')
   mount(vi.fn(async () => list()))
@@ -76,8 +78,14 @@ it('returns to settings instead of starting when configuration cannot be saved',
   button('Test start').click()
   await flush()
   expect(post.mock.calls.some(([data]) => data.action === 'confirm')).toBe(false)
-  expect(document.body.textContent).toContain('配置尚未保存')
   expect(button('翻译配置').getAttribute('aria-selected')).toBe('true')
+  expect(document.body.textContent).not.toContain('配置尚未保存')
+  saveSettings.mockResolvedValue(true)
+  button('漫画翻译').click()
+  await flush()
+  button('Test start').click()
+  await flush()
+  expect(post.mock.calls.some(([data]) => data.action === 'confirm')).toBe(true)
   post.mockRestore()
 })
 const button = (label: string) =>
@@ -90,7 +98,7 @@ const observe = (open: boolean) =>
       source: window.parent,
       data: {
         channel: 'saber:state',
-        state: { open, tab: location.hash.slice(1) },
+        state: { open, tab: initialView, preference: { disabled: false } },
       },
     })
   )
@@ -107,8 +115,7 @@ it('pauses refresh while the floating window is hidden and refreshes when reopen
   observe(true)
   await flush()
   expect(api).toHaveBeenCalledTimes(2)
-  location.hash = 'settings'
-  window.dispatchEvent(new HashChangeEvent('hashchange'))
+  button('翻译配置').click()
   await flush()
   await vi.advanceTimersByTimeAsync(9000)
   expect(api).toHaveBeenCalledTimes(2)
@@ -140,17 +147,30 @@ it('honors the outer entry after internal tab navigation without reloading', asy
     window.dispatchEvent(
       new MessageEvent('message', {
         source: window.parent,
-        data: { channel: 'saber:state', state: { tab: section } },
+        data: { channel: 'saber:state', state: { tab: section, preference: { disabled: false } } },
       })
     )
   open('settings')
   await nextTick()
-  expect(location.hash).toBe('#settings')
+  expect(button('翻译配置').getAttribute('aria-selected')).toBe('true')
   button('任务中心').click()
   await nextTick()
-  expect(location.hash).toBe('#tasks')
+  expect(button('任务中心').getAttribute('aria-selected')).toBe('true')
+  open('tasks')
+  await nextTick()
   open('settings')
   await nextTick()
+  expect(button('翻译配置').getAttribute('aria-selected')).toBe('true')
+})
+
+it('does not treat a repeated progress snapshot as a new tab selection', async () => {
+  mount(vi.fn().mockResolvedValue(list()))
+  observe(true)
+  await flush()
+  button('翻译配置').click()
+  await flush()
+  observe(true)
+  await flush()
   expect(button('翻译配置').getAttribute('aria-selected')).toBe('true')
 })
 

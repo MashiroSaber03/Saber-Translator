@@ -10,7 +10,6 @@ describe('domain preferences', () => {
       mode: 'hq',
       glossaryEnabled: true,
       autoTermsEnabled: true,
-      panelOpen: true,
       fabPosition: { x: 24, y: 360 },
     }
 
@@ -18,14 +17,12 @@ describe('domain preferences', () => {
       disabled: true,
       method: 'similar',
       mode: 'hq',
-      panelOpen: true,
       fabPosition: { x: 24, y: 360 },
     })
     expect(preferenceFor(settings, 'other.example')).toMatchObject({
       disabled: false,
       method: 'adapter',
       mode: 'standard',
-      panelOpen: false,
     })
   })
 })

@@ -1,6 +1,6 @@
 import type { DomainPreference, ExtensionSettings } from './types'
 
-const STORAGE_KEY = 'saber-extension-settings-v1'
+export const STORAGE_KEY = 'saber-extension-settings-v1'
 
 export const DEFAULT_PREFERENCE: DomainPreference = {
   disabled: false,
@@ -8,7 +8,6 @@ export const DEFAULT_PREFERENCE: DomainPreference = {
   mode: 'standard',
   glossaryEnabled: false,
   autoTermsEnabled: false,
-  panelOpen: false,
 }
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {

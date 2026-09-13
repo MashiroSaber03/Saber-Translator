@@ -1,0 +1,8 @@
+{
+  "extensionName": {
+    "message": "Saber 漫画翻译"
+  },
+  "extensionDescription": {
+    "message": "调用本机 Saber-Translator 翻译网页漫画图片。"
+  }
+}

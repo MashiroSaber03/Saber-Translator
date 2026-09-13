@@ -11,7 +11,6 @@ it('edits only plugin text style and the optional DOM assistant, preserving draf
   document.body.innerHTML =
     '<div id="app"></div>'
   Element.prototype.scrollTo = vi.fn()
-  location.hash = 'settings'
   const settings = {
     settings: [
       {
@@ -53,6 +52,7 @@ it('edits only plugin text style and the optional DOM assistant, preserving draf
   }
   vi.stubGlobal('chrome', {
     storage: {
+      onChanged: { addListener: vi.fn(), removeListener: vi.fn() },
       local: {
         get: async () => ({
           'saber-extension-settings-v1': {
@@ -100,6 +100,8 @@ it('edits only plugin text style and the optional DOM assistant, preserving draf
   vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn() }))
   vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} })
   await import('./panel')
+  await vi.waitFor(() => expect(document.querySelector('[aria-label="翻译配置"]')).not.toBeNull())
+  document.querySelector<HTMLButtonElement>('[aria-label="翻译配置"]')!.click()
   const input = (label: string) => {
     const node = document.querySelector<HTMLInputElement | HTMLSelectElement>(`[aria-label="${label}"]`)
     const fieldLabel = [...document.querySelectorAll('label')].find(node => node.textContent?.trim() === label)
@@ -125,6 +127,8 @@ it('edits only plugin text style and the optional DOM assistant, preserving draf
     node.dispatchEvent(new Event('change'))
     await nextTick()
   }
+  await vi.waitFor(() => expect(input('配置分类')).not.toBeNull())
+  await edit('配置分类', 'style')
   await vi.waitFor(() => expect(input('文本字体')).not.toBeNull())
   expect(transactions).toHaveLength(0)
   expect(document.body.textContent).not.toContain('保存插件配置')
@@ -150,11 +154,11 @@ it('edits only plugin text style and the optional DOM assistant, preserving draf
   await edit('描边宽度 (px)', '1.2')
   await edit('行内对齐', 'center')
   await edit('文本块对齐', 'end')
-  location.hash = 'tasks'
+  document.querySelector<HTMLButtonElement>('[aria-label="任务中心"]')!.click()
   await vi.waitFor(() =>
     expect(document.body.textContent).toContain('暂无任务'),
   )
-  location.hash = 'settings'
+  document.querySelector<HTMLButtonElement>('[aria-label="翻译配置"]')!.click()
   await vi.waitFor(() => expect(input('描边宽度 (px)')?.value).toBe('1.2'))
   await edit('识别助手服务商', 'siliconflow')
   await edit('模型名称', 'new-agent-model')

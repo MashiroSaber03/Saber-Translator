@@ -9,7 +9,6 @@ function callbacks(): UiCallbacks {
     onDiscover: vi.fn(),
     onConfirm: vi.fn(),
     onPreferenceChange: vi.fn(),
-    onPanelOpenChange: vi.fn(),
     onFabPositionChange: vi.fn(),
     onToggleGlobal: vi.fn().mockResolvedValue(true),
     onTogglePage: vi.fn().mockResolvedValue(true),
@@ -31,6 +30,7 @@ function callbacks(): UiCallbacks {
       termsAdded: 0,
     }),
     onDisableSite: vi.fn(),
+    onEnableSite: vi.fn().mockResolvedValue(undefined),
     onDeleteAdaptation: vi.fn(),
     onCopyDiagnostics: vi.fn(),
   }
@@ -41,7 +41,7 @@ let handlers: UiCallbacks
 let receive: EventListener
 let post: ReturnType<typeof vi.spyOn>
 const origin = 'chrome-extension://test-extension'
-beforeEach(() => {
+beforeEach(async () => {
   vi.stubGlobal('chrome', {
     runtime: { getURL: (path: string) => `${origin}/${path}` },
   })
@@ -57,6 +57,8 @@ beforeEach(() => {
     value: frameWindow,
   })
   post = frameWindow.postMessage
+  await send('ready')
+  post.mockClear()
 })
 afterEach(() => {
   ui.remove()
@@ -86,7 +88,7 @@ it('uses one closed host and one extension document for all three views', async 
   expect(snapshot().tab).toBe('tasks')
   expect(ui.shadow.querySelectorAll('iframe')).toHaveLength(1)
   await send('close')
-  expect(handlers.onPanelOpenChange).toHaveBeenCalledWith(false)
+  expect(snapshot().open).toBe(false)
 })
 it('rejects messages from webpage scripts, other frames and synthetic events', async () => {
   await send('confirm', ['page'], { source: window })
@@ -99,6 +101,29 @@ it('rejects messages from webpage scripts, other frames and synthetic events', a
     { channel: 'saber:response', id: 1, ok: true, result: undefined },
     origin
   )
+})
+
+it('keeps progress, candidates and errors from reopening a closed window', async () => {
+  ui.setOpen(true)
+  await send('close')
+  for (const update of [
+    () => ui.showPreparationProgress(1, 4, 0),
+    () => ui.showCandidates([]),
+    () => ui.showError({ code: 'saber_unreachable', message: '连接中断' }),
+    () => ui.showStartError({ code: 'start_failed', message: '启动失败' }),
+    () => ui.showUploadError(1, { code: 'upload_failed', message: '上传失败' }),
+  ]) {
+    update()
+    expect(snapshot().open).toBe(false)
+  }
+  ui.togglePanel()
+  expect(snapshot()).toMatchObject({ open: true, uploadError: { count: 1 } })
+})
+
+it('starts closed even when legacy stored settings contain panelOpen=true', () => {
+  ui.remove()
+  ui = new ExtensionUi(handlers, { ...DEFAULT_PREFERENCE, ...{ panelOpen: true } }, 'Example chapter', true)
+  expect(ui.shadow.querySelector<HTMLElement>('.saber-panel')!.dataset.open).toBe('false')
 })
 it('returns actionable RPC failures and does not invoke arbitrary methods', async () => {
   vi.mocked(handlers.onLoadLibraryBooks).mockRejectedValueOnce(new Error('连接已断开'))

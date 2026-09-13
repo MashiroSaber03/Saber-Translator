@@ -702,6 +702,7 @@ class ProviderDiagnostics:
         capability = {
             "ai_vision_ocr": VISION_OCR_CAPABILITY,
             "plugin_agent": PLUGIN_AGENT_CAPABILITY,
+            "browser_dom_agent": PLUGIN_AGENT_CAPABILITY,
             "web_import_agent": WEB_IMPORT_AGENT_CAPABILITY,
             "insight_vlm": VLM_CAPABILITY,
             "insight_chat": CHAT_CAPABILITY,

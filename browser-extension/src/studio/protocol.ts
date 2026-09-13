@@ -42,5 +42,6 @@ export type StudioAction =
   | 'books'
   | 'import'
   | 'disable'
+  | 'enable'
   | 'delete-adaptation'
   | 'diagnostics'

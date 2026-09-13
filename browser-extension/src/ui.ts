@@ -15,8 +15,7 @@ import { HOST_STYLES } from './hostStyles'
 export interface UiCallbacks {
   onDiscover(method: DetectionMethod): void
   onConfirm(candidateIds: string[]): void
-  onPreferenceChange(preference: DomainPreference): void
-  onPanelOpenChange(open: boolean): void
+  onPreferenceChange(preference: Partial<DomainPreference>): void
   onFabPositionChange(position: PanelPosition): void
   onToggleGlobal(): Promise<boolean>
   onTogglePage(browserPageId: string): Promise<boolean | null>
@@ -29,6 +28,7 @@ export interface UiCallbacks {
   onLoadLibraryBooks(): Promise<BrowserLibraryBook[]>
   onImport(command: BrowserSessionImportCommand): Promise<BrowserSessionImportResult>
   onDisableSite(): void
+  onEnableSite(): Promise<void>
   onDeleteAdaptation(): void
   onCopyDiagnostics(): void
 }
@@ -53,6 +53,7 @@ export class ExtensionUi {
   private panelDrag: Drag | null = null
   private fabDrag: Drag | null = null
   private suppressFabClick = false
+  private frameReady = false
 
   constructor(
     private readonly callbacks: UiCallbacks,
@@ -61,10 +62,10 @@ export class ExtensionUi {
     knownSite: boolean
   ) {
     this.state = {
-      open: preference.panelOpen,
+      open: false,
       title,
       preference: { ...preference },
-      tab: 'translate',
+      tab: preference.disabled ? 'settings' : 'translate',
       view: 'idle',
       notice: {
         title: knownSite ? '已识别漫画站点' : '准备好开始阅读',
@@ -86,6 +87,7 @@ export class ExtensionUi {
     const style = document.createElement('style')
     style.textContent = HOST_STYLES
     this.fab.className = 'saber-fab'
+    this.fab.style.visibility = preference.disabled ? 'hidden' : ''
     this.fab.type = 'button'
     this.fab.textContent = 'S'
     this.fab.setAttribute('aria-label', 'Saber 漫画翻译')
@@ -93,7 +95,6 @@ export class ExtensionUi {
     this.panel.className = 'saber-panel'
     this.frame.title = 'Saber 漫画翻译'
     this.frame.src = chrome.runtime.getURL('panel.html')
-    this.frame.addEventListener('load', () => this.publish())
     this.panel.append(this.frame)
     this.pickMask.className = 'saber-pick-mask'
     const tip = document.createElement('span')
@@ -121,10 +122,11 @@ export class ExtensionUi {
     })
     document.documentElement.append(this.host)
     if (preference.fabPosition) this.place(this.fab, preference.fabPosition)
-    this.setOpen(preference.panelOpen)
+    this.setOpen(false)
   }
 
   private publish(): void {
+    if (!this.frameReady) return
     this.frame.contentWindow?.postMessage(
       { channel: 'saber:state', state: this.state },
       this.origin
@@ -164,12 +166,13 @@ export class ExtensionUi {
   private async command(action: StudioAction, payload: any): Promise<unknown> {
     switch (action) {
       case 'ready':
+        this.frameReady = true
         return this.publish()
       case 'tab':
         this.state.tab = payload
         return
       case 'close':
-        this.setOpen(false, true)
+        this.setOpen(false)
         this.fab.focus()
         return
       case 'drag-start':
@@ -178,7 +181,7 @@ export class ExtensionUi {
         return
       case 'preference':
         this.state.preference = { ...this.state.preference, ...payload }
-        this.callbacks.onPreferenceChange(this.state.preference)
+        this.callbacks.onPreferenceChange(payload)
         return this.publish()
       case 'discover':
         this.callbacks.onDiscover(payload)
@@ -231,6 +234,8 @@ export class ExtensionUi {
       case 'disable':
         this.callbacks.onDisableSite()
         return
+      case 'enable':
+        return this.callbacks.onEnableSite()
       case 'delete-adaptation':
         this.callbacks.onDeleteAdaptation()
         return
@@ -319,20 +324,22 @@ export class ExtensionUi {
     this.place(this.fab, this.position(this.fab))
     if (this.state.open) this.placePanelNearFab()
   }
-  setOpen(open: boolean, persist = false): void {
+  setOpen(open: boolean): void {
     const opening = open && !this.state.open
     this.state.open = open
     this.panel.dataset.open = String(open)
     this.fab.setAttribute('aria-expanded', String(open))
     if (open && (opening || !this.panel.style.left)) this.placePanelNearFab()
-    if (persist) {
-      this.state.preference.panelOpen = open
-      this.callbacks.onPanelOpenChange(open)
-    }
+    this.publish()
+  }
+
+  setSiteEnabled(enabled: boolean): void {
+    this.state.preference.disabled = !enabled
+    this.fab.style.visibility = enabled ? '' : 'hidden'
     this.publish()
   }
   togglePanel(): void {
-    this.setOpen(this.panel.dataset.open !== 'true', true)
+    this.setOpen(!this.state.open)
   }
   setAdaptation(rule: LearnedRule | null): void {
     if (rule) this.state.preference.rule = rule
@@ -348,7 +355,6 @@ export class ExtensionUi {
     }))
     this.state.view = candidates.length ? 'candidates' : 'idle'
     this.state.tab = 'translate'
-    this.setOpen(true)
     this.setStatus(
       candidates.length ? `找到 ${candidates.length} 张图片` : '未找到漫画图片',
       candidates.length
@@ -393,7 +399,6 @@ export class ExtensionUi {
   showPreparationProgress(processed: number, total: number, failed: number): void {
     this.state.preparation = { processed, total, failed }
     this.state.view = 'progress'
-    this.setOpen(true)
     this.setStatus('正在准备漫画图片', '正在读取图片并发送到本机 Saber。', 'busy')
   }
   hidePreparationProgress(): void {
@@ -419,13 +424,12 @@ export class ExtensionUi {
   showError(error: { code: string; message: string }): void {
     this.state.retryStart = false
     const hints: Record<string, string> = {
-      not_paired: '请点击浏览器工具栏中的扩展图标完成配对。',
-      saber_unreachable: '请启动 Saber，并确认扩展端口与 GUI 一致。',
+      not_paired: '请在悬浮窗「配置 → 连接与站点」中粘贴令牌并连接。',
+      saber_unreachable: '请在 Saber GUI「概览」启动后端，并确认扩展端口与 GUI 一致。',
       invalid_extension_token: '令牌已失效，请重新配对。',
       integration_disabled: '请在 Saber GUI 中允许浏览器扩展连接。',
       dom_agent_unavailable: '请在配置中填写网页识别助手配置。',
     }
-    this.setOpen(true)
     this.setStatus(
       error.message,
       hints[error.code] ?? '请重试，或切换另一种图片识别方式。',
@@ -439,7 +443,6 @@ export class ExtensionUi {
   }
   showUploadError(count: number, error: { code: string; message: string }): void {
     this.state.uploadError = { count, message: error.message }
-    this.setOpen(true)
     this.setStatus(`${count} 张图片尚未导入`, '其他已成功导入的图片会继续处理。', 'error')
   }
   clearUploadError(): void {

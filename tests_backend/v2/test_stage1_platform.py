@@ -2965,6 +2965,28 @@ def test_provider_diagnostics_allow_uncredentialed_local_ai_vision(
     assert "连接成功：Saber OCR test 123" in messages
 
 
+def test_browser_dom_agent_model_catalog(platform, monkeypatch: pytest.MonkeyPatch) -> None:
+    _data_root, engine = platform
+    diagnostics = ProviderDiagnostics(SettingsRepository(engine))
+    captured = []
+
+    def list_models(request):
+        captured.append(request)
+        return [{"id": "browser-vision", "name": "browser-vision"}]
+
+    monkeypatch.setattr(diagnostics.chat, "list_models", list_models)
+    result = diagnostics.model_catalog({
+        "domain": "browser_dom_agent",
+        "provider": "custom",
+        "baseUrl": "http://localhost:8000/v1",
+        "secret": {"api_key": "fixture-key"},
+    })
+    assert result == {"models": [{"id": "browser-vision", "name": "browser-vision"}]}
+    assert len(captured) == 1
+    assert captured[0].api_key == "fixture-key"
+    assert captured[0].base_url == "http://localhost:8000/v1"
+
+
 def test_model_catalog_reports_provider_transport_failure(
     platform,
     monkeypatch: pytest.MonkeyPatch,

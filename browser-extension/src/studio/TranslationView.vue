@@ -305,8 +305,7 @@ const submitImport = (command: BrowserSessionImportCommand) =>
     <div class="actions">
       <button v-if="state.preference.rule" class="text-button" @click="act('delete-adaptation')">
         删除已保存适配</button
-      ><button class="text-button" @click="act('diagnostics')">复制诊断</button
-      ><button class="text-button danger" @click="act('disable')">停用当前网站</button>
+      ><button class="text-button" @click="act('diagnostics')">复制诊断</button>
     </div>
   </details>
   <ImportDialog

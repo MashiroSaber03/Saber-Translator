@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import SettingsView from './studio/SettingsView.vue'
 import TasksView from './studio/TasksView.vue'
 import TranslationView from './studio/TranslationView.vue'
@@ -7,24 +7,22 @@ import StudioIcon from './studio/StudioIcon.vue'
 import { usePageBridge } from './studio/pageBridge'
 import type { StudioAction, StudioTab } from './studio/protocol'
 import type { PluginSettingsApi } from '../../vue-frontend/src/types/browserExtensionSettings'
-const props = defineProps<{ api: PluginSettingsApi }>()
+const props = defineProps<{ api: PluginSettingsApi; needsConnection?: boolean }>()
 const { state, request: pageRequest, notify } = usePageBridge()
 const settingsEditor = ref<InstanceType<typeof SettingsView>>()
-const startError = ref('')
 async function request<T = void>(action: StudioAction, payload?: unknown): Promise<T> {
   if (['confirm', 'retry-start', 'restart'].includes(action)) {
-    startError.value = ''
     if (settingsEditor.value && !(await settingsEditor.value.save())) {
-      startError.value = '配置尚未保存，请检查配置中的错误后再开始翻译。'
       selectTab('settings')
-      throw new Error(startError.value)
+      await nextTick()
+      Array.from(document.querySelectorAll<HTMLInputElement>('#view-settings input:invalid, #view-settings select:invalid, #view-settings textarea:invalid'))
+        .find(input => input.getClientRects().length > 0)?.reportValidity()
+      return undefined as T
     }
   }
   return pageRequest<T>(action, payload)
 }
-const currentHash = () =>
-  location.hash === '#settings' ? 'settings' : location.hash === '#tasks' ? 'tasks' : 'translate'
-const tab = ref<StudioTab>(currentHash())
+const tab = ref<StudioTab>(props.needsConnection ? 'settings' : 'translate')
 const settingsVisited = ref(tab.value === 'settings')
 const tasksVisited = ref(tab.value === 'tasks')
 const visible = ref(!document.hidden)
@@ -39,17 +37,19 @@ const tabs = [
 function selectTab(value: StudioTab) {
   if (tab.value === value) return
   tab.value = value
-  if (state.value) state.value.tab = value
   document.querySelector('.studio-content')?.scrollTo({ top: 0 })
   if (value === 'settings') settingsVisited.value = true
   if (value === 'tasks') tasksVisited.value = true
-  if (location.hash !== `#${value}`) history.replaceState(null, '', `#${value}`)
   notify('tab', value)
 }
+let firstPageState = true
 watch(
   () => state.value?.tab,
   value => {
-    if (value) selectTab(value)
+    if (value) {
+      selectTab(firstPageState && props.needsConnection ? 'settings' : value)
+      firstPageState = false
+    }
   }
 )
 function tabKey(event: KeyboardEvent, current: number) {
@@ -68,9 +68,6 @@ function tabKey(event: KeyboardEvent, current: number) {
   selectTab(tabs[next]!.id)
   document.querySelectorAll<HTMLButtonElement>('[role=tab]')[next]?.focus()
 }
-function hashChange() {
-  selectTab(currentHash())
-}
 function visibilityChange() {
   visible.value = !document.hidden
 }
@@ -81,11 +78,9 @@ function dragStart(event: PointerEvent) {
 }
 onMounted(() => {
   document.addEventListener('visibilitychange', visibilityChange)
-  window.addEventListener('hashchange', hashChange)
 })
 onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', visibilityChange)
-  window.removeEventListener('hashchange', hashChange)
 })
 </script>
 <template>
@@ -129,7 +124,11 @@ onBeforeUnmount(() => {
         aria-labelledby="tab-translate"
         v-show="tab === 'translate'"
       >
-        <TranslationView v-if="state" :state="state" :request="request" />
+        <div v-if="state?.preference.disabled" class="empty-state">
+          <h3>当前网站已停用</h3>
+          <button class="button" @click="selectTab('settings')">前往配置重新启用</button>
+        </div>
+        <TranslationView v-else-if="state" :state="state" :request="request" />
         <div v-else class="empty-state">
           <span class="empty-icon">✦</span>
           <h3>打开一页漫画</h3>
@@ -143,10 +142,11 @@ onBeforeUnmount(() => {
         v-if="settingsVisited"
         v-show="tab === 'settings'"
       >
-        <div v-if="startError" class="notice error" role="alert">{{ startError }}</div>
         <SettingsView
           ref="settingsEditor"
           :api="props.api"
+          :state="state"
+          :request="request"
           :active="visible && (state?.open ?? true) && tab === 'settings'"
         />
       </div>

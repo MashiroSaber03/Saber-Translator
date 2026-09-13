@@ -248,6 +248,23 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   void chrome.tabs.sendMessage(tab.id, message).catch(() => undefined)
 })
 
+chrome.action.onClicked.addListener(tab => {
+  if (tab.id === undefined) return
+  const tabId = tab.id
+  void (async () => {
+    try {
+      if (!hostnameFromUrl(tab.url)) throw new Error('请打开普通 HTTP(S) 网页后使用 Saber')
+      const result = await chrome.tabs.sendMessage(tabId, { type: 'open-panel' }, { frameId: 0 })
+      if (!result?.opened) throw new Error('悬浮窗未能打开')
+      await chrome.action.setBadgeText({ tabId, text: '' })
+      await chrome.action.setTitle({ tabId, title: 'Saber 漫画翻译' })
+    } catch {
+      await chrome.action.setBadgeText({ tabId, text: '!' })
+      await chrome.action.setTitle({ tabId, title: '无法在此页打开 Saber，请打开普通网页；已打开的网页请刷新后重试' })
+    }
+  })()
+})
+
 chrome.tabs.onActivated.addListener(() => {
   void updateContextMenu()
 })
@@ -272,18 +289,12 @@ function normalizedContentPageUrl(value: string): string {
 
 function contentTabId(sender: chrome.runtime.MessageSender, pageUrl: string): number {
   const tabId = sender.tab?.id
-  const senderUrl = sender.url ?? sender.tab?.url
-  if (tabId === undefined || !senderUrl) {
+  const tabUrl = sender.tab?.url
+  if (tabId === undefined || !tabUrl) {
     throw new RequestFailure('content_tab_required', '该操作只能从网页标签页执行', false)
   }
-  const normalizedPageUrl = normalizedContentPageUrl(pageUrl)
-  if (
-    normalizedContentPageUrl(senderUrl) !== normalizedPageUrl
-    || (
-      sender.tab?.url
-      && normalizedContentPageUrl(sender.tab.url) !== normalizedPageUrl
-    )
-  ) {
+  // sender.url retains the original document URL after an SPA navigation.
+  if (normalizedContentPageUrl(tabUrl) !== normalizedContentPageUrl(pageUrl)) {
     throw new RequestFailure('stale_page_context', '网页已经切换，忽略过期会话操作', false)
   }
   return tabId
@@ -335,21 +346,36 @@ async function handleRequest(
     return preferenceFor(settings, request.hostname)
   }
   if (request.type === 'set-preference') {
+    let disabledChanged = false
     await updateSettings(settings => {
-      settings.domains[request.hostname] = request.preference
+      const previous = preferenceFor(settings, request.hostname)
+      const { rule, ...patch } = request.preference
+      const preference = { ...previous, ...patch }
+      if (rule === null) delete preference.rule
+      else if (rule !== undefined) preference.rule = rule
+      disabledChanged = previous.disabled !== preference.disabled
+      settings.domains[request.hostname] = preference
     })
+    if (disabledChanged) {
+      const tabs = await chrome.tabs.query({})
+      await Promise.all(tabs
+        .filter(tab => tab.id !== undefined && tab.id !== sender.tab?.id
+          && hostnameFromUrl(tab.url) === request.hostname)
+        .map(tab => chrome.tabs.sendMessage(tab.id!, {
+          type: 'site-enabled-changed', hostname: request.hostname,
+          disabled: request.preference.disabled,
+        }, { frameId: 0 }).catch(() => undefined)))
+    }
     await updateContextMenu()
     return request.preference
   }
-  if (request.type === 'get-popup-state') {
+  if (request.type === 'get-connection-state') {
     const settings = await loadSettings()
-    const tab = await activeTab()
-    const hostname = hostnameFromUrl(tab?.url)
+    const hostname = hostnameFromUrl(sender.tab?.url)
     return {
       token: settings.token,
       serverPort: settings.serverPort,
       hostname,
-      preference: hostname ? preferenceFor(settings, hostname) : null,
     }
   }
   if (request.type === 'save-connection') {
@@ -503,12 +529,12 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
   }
   const request = message as BackgroundRequest
   if (
-    ['get-popup-state', 'save-connection'].includes(request.type)
+    ['get-connection-state', 'save-connection'].includes(request.type)
     && !sender.url?.startsWith(`chrome-extension://${chrome.runtime.id}/`)
   ) {
     sendResponse(errorResponse(new RequestFailure(
       'extension_page_required',
-      '该操作只能从扩展弹窗执行',
+      '该操作只能从扩展界面执行',
       false,
     )))
     return false
