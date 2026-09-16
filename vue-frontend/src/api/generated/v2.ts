@@ -3657,8 +3657,6 @@ export interface components {
             status: "ok" | "fenced";
             /** @constant */
             role?: "api";
-            /** @constant */
-            schemaVersion?: "v2";
             epochId?: string;
             dataRootFingerprint?: string;
         };
@@ -3683,7 +3681,6 @@ export interface components {
             };
             /** @description 0 denotes an unsaved factory default. */
             revision: number;
-            schemaVersion: number;
         };
         BookSettingEntry: components["schemas"]["SettingEntry"] & {
             bookId: components["schemas"]["Uuid"];
@@ -3717,7 +3714,6 @@ export interface components {
                 [key: string]: unknown;
             };
             baseRevision: number;
-            schemaVersion: number;
         };
         BookSettingMutation: {
             bookId: components["schemas"]["Uuid"];
@@ -3726,7 +3722,6 @@ export interface components {
                 [key: string]: unknown;
             };
             baseRevision: number;
-            schemaVersion: number;
         };
         ProviderSettingMutation: {
             domain: string;
@@ -3737,7 +3732,6 @@ export interface components {
             baseRevision: number;
             credentialVersionId?: components["schemas"]["Uuid"];
             credentialEditRef?: string;
-            schemaVersion: number;
         };
         CredentialEdit: {
             domain: string;
@@ -4388,8 +4382,6 @@ export interface components {
             renderStatus: "not_rendered" | "ready" | "stale" | "rendering" | "render_failed" | "awaiting_repair" | "repair_failed";
             defaultFontId: components["schemas"]["Uuid"] | null;
             pageStyleDefaults: WithRequired<components["schemas"]["PageStyleDefaultsPatch"], "fontSize" | "autoFontSize" | "layoutDirection" | "textColor" | "fillColor" | "inpaintMethod" | "useAutoTextColor" | "strokeEnabled" | "strokeColor" | "strokeWidth" | "lineSpacing" | "inlineAlign" | "blockAlign">;
-            /** @constant */
-            pageStyleSchemaVersion: 2;
             bubbles: components["schemas"]["BubbleDocument"][];
         };
         PageDocumentMutationResponse: {
@@ -5131,13 +5123,10 @@ export interface components {
                 settingsMemory: {
                     [key: string]: unknown;
                 };
-                settingsMemorySchemaVersion: number;
                 settingsMemoryRevision: number;
             };
             constraints: {
                 payload: components["schemas"]["TranslationConstraintPayload"];
-                /** @constant */
-                schemaVersion: 2;
                 revision: number;
             };
             navigation: {
@@ -5217,7 +5206,6 @@ export interface components {
         TranslationConstraintDocument: {
             bookId: components["schemas"]["Uuid"];
             revision: number;
-            schemaVersion: number;
             payload: components["schemas"]["TranslationConstraintPayload"];
         };
         TranslationConstraintUpdateCommand: {
@@ -5239,8 +5227,6 @@ export interface components {
             bubbles: components["schemas"]["ChapterTextExportBubble"][];
         };
         ChapterTextExport: {
-            /** @constant */
-            schema_version: 1;
             book_id: components["schemas"]["Uuid"];
             chapter_id: components["schemas"]["Uuid"];
             /** Format: date-time */
@@ -5271,8 +5257,6 @@ export interface components {
             changes: components["schemas"]["TextImportChange"][];
         };
         TextImportPreview: {
-            /** @constant */
-            schemaVersion: 1;
             chapterId: components["schemas"]["Uuid"];
             pages: components["schemas"]["TextImportPreviewPage"][];
             matchedPages: number;
@@ -5375,8 +5359,6 @@ export interface components {
             message: string;
         };
         InsightPageAnalysis: {
-            /** @constant */
-            schema_version: 2;
             page_id: components["schemas"]["Uuid"];
             source_asset_id: components["schemas"]["Uuid"];
             source_checksum: string;

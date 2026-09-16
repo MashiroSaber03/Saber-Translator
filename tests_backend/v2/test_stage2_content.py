@@ -37,7 +37,6 @@ from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.defaults import (
     DEFAULT_FONT_ID,
     DEFAULT_TEXT_STYLE,
-    TEXT_STYLE_DEFAULTS_SCHEMA_VERSION,
 )
 from src.backend_v2.storage.schema import (
     app_settings,
@@ -580,10 +579,7 @@ def test_translation_bootstrap_includes_backend_owned_runtime_configuration(
         "export_preferences",
     } <= settings_by_domain.keys()
     translation = settings_by_domain["translation"]
-    assert translation["schemaVersion"] == 9
     assert translation["revision"] == 1
-    assert translation["payload"]["settingsSchemaVersion"] == 9
-    assert settings_by_domain["text_style_defaults"]["schemaVersion"] == 2
     assert translation["payload"]["translation"]["provider"]
     assert "textStyle" not in translation["payload"]
     assert translation["payload"]["pluginAgent"]["provider"]
@@ -614,7 +610,7 @@ def test_translation_bootstrap_includes_backend_owned_runtime_configuration(
     assert all(item["isFactoryDefault"] for item in payload["prompts"])
 
 
-def test_new_page_style_rejects_an_old_setting_schema(content_platform) -> None:
+def test_new_page_style_rejects_invalid_setting_values(content_platform) -> None:
     _root, engine, _repository, _storage, _importer, _book, _chapter = (
         content_platform
     )
@@ -622,14 +618,11 @@ def test_new_page_style_rejects_an_old_setting_schema(content_platform) -> None:
         connection.execute(
             update(app_settings)
             .where(app_settings.c.domain == "text_style_defaults")
-            .values(schema_version=TEXT_STYLE_DEFAULTS_SCHEMA_VERSION - 1)
+            .values(payload_json='{"fontFamily": false}')
         )
 
     with engine.connect() as connection:
-        with pytest.raises(
-            ValueError,
-            match="text_style_defaults schema version is not current",
-        ):
+        with pytest.raises(ValueError):
             resolve_new_page_style(connection)
 
 

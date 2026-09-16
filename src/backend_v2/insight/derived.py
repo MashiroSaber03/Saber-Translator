@@ -78,12 +78,12 @@ FINAL_ANALYSIS_RUN_STATUSES = frozenset(
 
 def _json_object(value: object, field: str) -> dict[str, Any]:
     if not isinstance(value, str):
-        raise InsightConflict(f"stored {field} is missing; clear current Insight data")
+        raise InsightConflict(f"stored {field} is missing")
     try:
         parsed = json.loads(value)
     except (TypeError, ValueError) as exc:
         raise InsightConflict(
-            f"stored {field} is invalid; clear current Insight data"
+            f"stored {field} is invalid"
         ) from exc
     if not isinstance(parsed, Mapping):
         raise InsightConflict(f"stored {field} must be an object")
@@ -177,7 +177,7 @@ def _persisted_page_analysis(
         )
     except InvalidPageAnalysis as exc:
         raise InsightConflict(
-            "stored analysis page payload is invalid; clear current Insight data"
+            "stored analysis page payload is invalid"
         ) from exc
     if (
         payload["page_id"] != page_id
@@ -186,8 +186,7 @@ def _persisted_page_analysis(
         or payload["source_checksum"] != source_checksum
     ):
         raise InsightConflict(
-            "stored analysis page payload identity is invalid; "
-            "clear current Insight data"
+            "stored analysis page payload identity is invalid"
         )
     return payload
 
@@ -570,7 +569,7 @@ def _timeline_thumbnail_page_numbers(
             return
         if isinstance(value, bool) or not isinstance(value, int) or value < 1:
             raise InsightConflict(
-                f"stored timeline {field} is invalid; clear current Insight data"
+                f"stored timeline {field} is invalid"
             )
         numbers.add(value)
 
@@ -578,8 +577,7 @@ def _timeline_thumbnail_page_numbers(
         page_numbers = event.get("page_numbers", [])
         if not isinstance(page_numbers, list):
             raise InsightConflict(
-                "stored timeline event page_numbers are invalid; "
-                "clear current Insight data"
+                "stored timeline event page_numbers are invalid"
             )
         for value in page_numbers:
             add(value, "event page number")
@@ -588,47 +586,43 @@ def _timeline_thumbnail_page_numbers(
         related_pages = character.get("related_page_numbers", [])
         if not isinstance(related_pages, list):
             raise InsightConflict(
-                "stored timeline character page numbers are invalid; "
-                "clear current Insight data"
+                "stored timeline character page numbers are invalid"
             )
         for value in related_pages:
             add(value, "character related page")
         key_moments = character.get("key_moments", [])
         if not isinstance(key_moments, list):
             raise InsightConflict(
-                "stored timeline character moments are invalid; "
-                "clear current Insight data"
+                "stored timeline character moments are invalid"
             )
         for moment in key_moments:
             if not isinstance(moment, Mapping):
                 raise InsightConflict(
-                    "stored timeline character moment is invalid; "
-                    "clear current Insight data"
+                    "stored timeline character moment is invalid"
                 )
             add(moment.get("page"), "character moment page")
     plot_arcs = content.get("plot_arcs", [])
     if not isinstance(plot_arcs, list):
-        raise InsightConflict("stored timeline plot_arcs are invalid; clear current Insight data")
+        raise InsightConflict("stored timeline plot_arcs are invalid")
     for arc in plot_arcs:
         if not isinstance(arc, Mapping):
-            raise InsightConflict("stored timeline plot arc is invalid; clear current Insight data")
+            raise InsightConflict("stored timeline plot arc is invalid")
         page_range = arc.get("page_range")
         if page_range is not None:
             if not isinstance(page_range, Mapping):
                 raise InsightConflict(
-                    "stored timeline plot arc page range is invalid; "
-                    "clear current Insight data"
+                    "stored timeline plot arc page range is invalid"
                 )
             add(page_range.get("start"), "plot arc start page")
     plot_threads = content.get("plot_threads", [])
     if not isinstance(plot_threads, list):
         raise InsightConflict(
-            "stored timeline plot_threads are invalid; clear current Insight data"
+            "stored timeline plot_threads are invalid"
         )
     for thread in plot_threads:
         if not isinstance(thread, Mapping):
             raise InsightConflict(
-                "stored timeline plot thread is invalid; clear current Insight data"
+                "stored timeline plot thread is invalid"
             )
         add(thread.get("introduced_at"), "plot thread introduced page")
         add(thread.get("resolved_at"), "plot thread resolved page")
@@ -1437,21 +1431,15 @@ class InsightDerivedRepository:
             )
             if target_ordinal <= previous_ordinal:
                 raise InsightConflict(
-                    "stored analysis target order is invalid; "
-                    "clear current Insight data"
+                    "stored analysis target order is invalid"
                 )
             previous_ordinal = target_ordinal
             if _required_string(
                 row["status"],
                 "analysis page result status",
-            ) != "staging" or _required_integer(
-                row["schema_version"],
-                "analysis page result schema version",
-                minimum=1,
-            ) != 2:
+            ) != "staging":
                 raise InsightConflict(
-                    "stored staging page analysis is invalid; "
-                    "clear current Insight data"
+                    "stored staging page analysis is invalid"
                 )
             page_id = _required_string(
                 row["page_id_snapshot"],
@@ -1459,8 +1447,7 @@ class InsightDerivedRepository:
             )
             if page_id in seen_page_ids:
                 raise InsightConflict(
-                    "stored analysis page results are duplicated; "
-                    "clear current Insight data"
+                    "stored analysis page results are duplicated"
                 )
             seen_page_ids.add(page_id)
             if _required_string(
@@ -1468,8 +1455,7 @@ class InsightDerivedRepository:
                 "analysis page result current pageId",
             ) != page_id:
                 raise InsightConflict(
-                    "stored analysis page identity is invalid; "
-                    "clear current Insight data"
+                    "stored analysis page identity is invalid"
                 )
             page_number = _required_integer(
                 row["page_number_snapshot"],
@@ -1592,8 +1578,7 @@ class InsightDerivedRepository:
                 )
                 if active_run_status not in FINAL_ANALYSIS_RUN_STATUSES:
                     raise InsightConflict(
-                        "active Insight run status is invalid; "
-                        "clear current Insight data"
+                        "active Insight run status is invalid"
                     )
                 for target in connection.execute(
                     select(
@@ -1617,8 +1602,7 @@ class InsightDerivedRepository:
                         not in {"completed", "failed", "conflict"}
                     ):
                         raise InsightConflict(
-                            "active Insight run targets are invalid; "
-                            "clear current Insight data"
+                            "active Insight run targets are invalid"
                         )
                     active_target_statuses[target_page_id] = target_status
             rows = list(
@@ -1661,8 +1645,7 @@ class InsightDerivedRepository:
             if active_run_id is not None:
                 if active_head_updated_at is None:
                     raise InsightConflict(
-                        "active Insight book head timestamp is missing; "
-                        "clear current Insight data"
+                        "active Insight book head timestamp is missing"
                     )
                 current_rows: list[Mapping[str, Any]] = []
                 for row in rows:
@@ -1699,8 +1682,7 @@ class InsightDerivedRepository:
             ]
             if len(set(current_page_ids)) != len(current_page_ids):
                 raise InsightConflict(
-                    "current Insight pages are duplicated; "
-                    "clear current Insight data"
+                    "current Insight pages are duplicated"
                 )
             analyzed_page_ids = {
                 _required_string(
@@ -1839,8 +1821,7 @@ class InsightDerivedRepository:
                 )
                 if current_page_id in current_by_page:
                     raise InsightConflict(
-                        "current frozen analysis pages are duplicated; "
-                        "clear current Insight data"
+                        "current frozen analysis pages are duplicated"
                     )
                 current_by_page[current_page_id] = row
             if set(current_by_page) != set(frozen_page_ids):
@@ -1880,8 +1861,7 @@ class InsightDerivedRepository:
                 )
                 if result_id in by_id:
                     raise InsightConflict(
-                        "frozen analysis results are duplicated; "
-                        "clear current Insight data"
+                        "frozen analysis results are duplicated"
                     )
                 by_id[result_id] = row
             if set(by_id) != set(result_ids):
@@ -1929,7 +1909,7 @@ class InsightDerivedRepository:
                 or page_number in seen_page_numbers
             ):
                 raise InsightConflict(
-                    "analysis inputs are duplicated; clear current Insight data"
+                    "analysis inputs are duplicated"
                 )
             seen_result_ids.add(result_id)
             seen_page_ids.add(page_id)
@@ -1940,12 +1920,6 @@ class InsightDerivedRepository:
                     "analysis page result status",
                 )
                 != "published"
-                or _required_integer(
-                    row["schema_version"],
-                    "analysis page result schema version",
-                    minimum=1,
-                )
-                != 2
                 or _required_string(
                     row["page_id"],
                     "analysis page current page id",
@@ -1959,8 +1933,7 @@ class InsightDerivedRepository:
                 or source_checksum != frozen_input["currentSourceChecksum"]
             ):
                 raise InsightConflict(
-                    "published page analysis identity is invalid; "
-                    "clear current Insight data"
+                    "published page analysis identity is invalid"
                 )
             page_payloads.append(
                 {
@@ -1995,7 +1968,7 @@ class InsightDerivedRepository:
             )
             if active_run_status not in FINAL_ANALYSIS_RUN_STATUSES:
                 raise InsightConflict(
-                    "active Insight run status is invalid; clear current Insight data"
+                    "active Insight run status is invalid"
                 )
             selected_run_ids = {
                 _required_string(row["run_id"], "analysis page result run id")
@@ -2473,7 +2446,7 @@ class InsightDerivedRepository:
                 ]
                 if not page_ids:
                     raise InsightConflict(
-                        "analysis layer has no covered pages; clear current Insight data"
+                        "analysis layer has no covered pages"
                     )
                 inputs.append(
                     {
@@ -2983,7 +2956,7 @@ class InsightDerivedRepository:
         )
         if artifact_kind not in {"overview", "compressed_context"}:
             raise InsightConflict(
-                "active Insight artifact kind is invalid; clear current Insight data"
+                "active Insight artifact kind is invalid"
             )
         if (
             artifact_kind == "overview"
@@ -2993,12 +2966,12 @@ class InsightDerivedRepository:
             and artifact_template != "default"
         ):
             raise InsightConflict(
-                "active Insight artifact template is invalid; clear current Insight data"
+                "active Insight artifact template is invalid"
             )
         status = _required_string(row["status"], "Insight artifact status")
         if status not in {"ready", "degraded", "stale"}:
             raise InsightConflict(
-                "active Insight artifact status is invalid; clear current Insight data"
+                "active Insight artifact status is invalid"
             )
         try:
             payload = validate_artifact_payload(
@@ -3011,8 +2984,7 @@ class InsightDerivedRepository:
             )
         except InsightConflict as exc:
             raise InsightConflict(
-                "active Insight artifact payload is invalid; "
-                "clear current Insight data"
+                "active Insight artifact payload is invalid"
             ) from exc
         return {
             "artifactId": _required_string(row["id"], "Insight artifact id"),
@@ -3068,12 +3040,12 @@ class InsightDerivedRepository:
             mode = _required_string(row["mode"], "stored timeline mode")
             if mode not in {"enhanced", "compressed", "simple"}:
                 raise InsightConflict(
-                    "stored timeline mode is invalid; clear current Insight data"
+                    "stored timeline mode is invalid"
                 )
             status = _required_string(row["status"], "stored timeline status")
             if status not in {"ready", "degraded", "stale"}:
                 raise InsightConflict(
-                    "stored timeline status is invalid; clear current Insight data"
+                    "stored timeline status is invalid"
                 )
             event_rows = list(
                 connection.execute(
@@ -3145,8 +3117,7 @@ class InsightDerivedRepository:
                 event_payload = _json_object(value, "timeline event payload")
                 if "eventId" in event_payload:
                     raise InsightConflict(
-                        "stored timeline event contains a reserved id; "
-                        "clear current Insight data"
+                        "stored timeline event contains a reserved id"
                     )
                 event_payloads.append(
                     {
@@ -3165,8 +3136,7 @@ class InsightDerivedRepository:
                 )
                 if "characterId" in character_payload:
                     raise InsightConflict(
-                        "stored timeline character contains a reserved id; "
-                        "clear current Insight data"
+                        "stored timeline character contains a reserved id"
                     )
                 character_payloads.append(
                     {
@@ -3190,7 +3160,7 @@ class InsightDerivedRepository:
                 )
             except ValueError as exc:
                 raise InsightConflict(
-                    "stored timeline payload is invalid; clear current Insight data"
+                    "stored timeline payload is invalid"
                 ) from exc
             referenced_page_ids: set[str] = set()
             for payload in event_payloads:
@@ -3201,7 +3171,7 @@ class InsightDerivedRepository:
                     for page_id in page_ids
                 ):
                     raise InsightConflict(
-                        "stored timeline event page_ids are invalid; clear current Insight data"
+                        "stored timeline event page_ids are invalid"
                     )
                 if (
                     not isinstance(page_numbers, list)
@@ -3209,8 +3179,7 @@ class InsightDerivedRepository:
                     or len(page_numbers) != len(page_ids)
                 ):
                     raise InsightConflict(
-                        "stored timeline event page references are incomplete; "
-                        "clear current Insight data"
+                        "stored timeline event page references are incomplete"
                     )
                 referenced_page_ids.update(page_ids)
             referenced_page_numbers = _timeline_thumbnail_page_numbers(
@@ -3280,8 +3249,7 @@ class InsightDerivedRepository:
                     )
                     if page_id in page_numbers_by_id:
                         raise InsightConflict(
-                            "stored timeline page reference is duplicated; "
-                            "clear current Insight data"
+                            "stored timeline page reference is duplicated"
                         )
                     page_numbers_by_id[page_id] = page_number
                     thumbnail_asset_id = page["thumbnail_asset_id"]
@@ -3299,8 +3267,7 @@ class InsightDerivedRepository:
                         for page_id in payload["page_ids"]
                     ] != payload["page_numbers"]:
                         raise InsightConflict(
-                            "stored timeline page references are stale or invalid; "
-                            "clear current Insight data"
+                            "stored timeline page references are stale or invalid"
                         )
         return {
             "timelineVersionId": timeline_id,
@@ -3364,12 +3331,12 @@ class InsightDerivedRepository:
         mode = _required_string(row["mode"], "stored timeline mode")
         if mode not in {"enhanced", "compressed", "simple"}:
             raise InsightConflict(
-                "stored timeline mode is invalid; clear current Insight data"
+                "stored timeline mode is invalid"
             )
         status = _required_string(row["status"], "stored timeline status")
         if status not in {"ready", "degraded", "stale"}:
             raise InsightConflict(
-                "stored timeline status is invalid; clear current Insight data"
+                "stored timeline status is invalid"
             )
         return {
             "timelineVersionId": _required_string(
@@ -3417,8 +3384,7 @@ class InsightDerivedRepository:
                 )
                 if "characterId" in payload:
                     raise InsightConflict(
-                        "stored timeline character contains a reserved id; "
-                        "clear current Insight data"
+                        "stored timeline character contains a reserved id"
                     )
                 characters.append(
                     {
@@ -3432,12 +3398,12 @@ class InsightDerivedRepository:
         mode = _required_string(timeline["mode"], "stored timeline mode")
         if mode not in {"enhanced", "compressed", "simple"}:
             raise InsightConflict(
-                "stored timeline mode is invalid; clear current Insight data"
+                "stored timeline mode is invalid"
             )
         status = _required_string(timeline["status"], "stored timeline status")
         if status not in {"ready", "degraded", "stale"}:
             raise InsightConflict(
-                "stored timeline status is invalid; clear current Insight data"
+                "stored timeline status is invalid"
             )
         try:
             _validate_timeline_parts(
@@ -3448,8 +3414,7 @@ class InsightDerivedRepository:
             )
         except ValueError as exc:
             raise InsightConflict(
-                "stored timeline character payload is invalid; "
-                "clear current Insight data"
+                "stored timeline character payload is invalid"
             ) from exc
         return {
             "timelineVersionId": _required_string(
@@ -3492,12 +3457,12 @@ class InsightDerivedRepository:
         mode = _required_string(row["mode"], "stored timeline mode")
         if mode not in {"enhanced", "compressed", "simple"}:
             raise InsightConflict(
-                "stored timeline mode is invalid; clear current Insight data"
+                "stored timeline mode is invalid"
             )
         status = _required_string(row["status"], "stored timeline status")
         if status not in {"ready", "degraded", "stale"}:
             raise InsightConflict(
-                "stored timeline status is invalid; clear current Insight data"
+                "stored timeline status is invalid"
             )
         payload = _json_object(
             row["payload_json"],
@@ -3505,8 +3470,7 @@ class InsightDerivedRepository:
         )
         if "characterId" in payload:
             raise InsightConflict(
-                "stored timeline character contains a reserved id; "
-                "clear current Insight data"
+                "stored timeline character contains a reserved id"
             )
         character = {
             **payload,
@@ -3524,8 +3488,7 @@ class InsightDerivedRepository:
             )
         except ValueError as exc:
             raise InsightConflict(
-                "stored timeline character payload is invalid; "
-                "clear current Insight data"
+                "stored timeline character payload is invalid"
             ) from exc
         return {
             "timelineVersionId": _required_string(
@@ -3578,7 +3541,7 @@ class InsightDerivedRepository:
                 )
                 if key in artifacts:
                     raise InsightConflict(
-                        "multiple active Insight artifacts conflict; clear current Insight data"
+                        "multiple active Insight artifacts conflict"
                     )
                 artifacts[key] = row
             required = (
@@ -3609,8 +3572,7 @@ class InsightDerivedRepository:
                 )
                 if status not in {"ready", "degraded", "stale"}:
                     raise InsightConflict(
-                        "active Insight artifact status is invalid; "
-                        "clear current Insight data"
+                        "active Insight artifact status is invalid"
                     )
                 dependency_fingerprint = _required_sha256(
                     row["dependency_fingerprint"],
@@ -3645,7 +3607,7 @@ class InsightDerivedRepository:
         vector_status = _required_string(vector["status"], "vector status")
         if vector_status not in {"ready", "degraded", "stale"}:
             raise InsightConflict(
-                "active vector status is invalid; clear current Insight data"
+                "active vector status is invalid"
             )
         dependency_fingerprint = _required_sha256(
             vector["dependency_fingerprint"],
@@ -4480,27 +4442,27 @@ class InsightDerivedWorkerService:
             page_refs = pages_by_layer.get(layer_id, [])
             if not page_refs:
                 raise InsightConflict(
-                    "analysis layer has no covered pages; clear current Insight data"
+                    "analysis layer has no covered pages"
                 )
             raw_events = content.get("key_events", [])
             if not isinstance(raw_events, list):
                 raise InsightConflict(
-                    "analysis layer key_events must be an array; clear current Insight data"
+                    "analysis layer key_events must be an array"
                 )
             for index, event in enumerate(raw_events, start=1):
                 if not isinstance(event, Mapping):
                     raise InsightConflict(
-                        "analysis layer event must be an object; clear current Insight data"
+                        "analysis layer event must be an object"
                     )
                 summary = event.get("summary")
                 importance = event.get("importance", "normal")
                 if not isinstance(summary, str) or not summary.strip():
                     raise InsightConflict(
-                        "analysis layer event summary is invalid; clear current Insight data"
+                        "analysis layer event summary is invalid"
                     )
                 if not isinstance(importance, str):
                     raise InsightConflict(
-                        "analysis layer event importance is invalid; clear current Insight data"
+                        "analysis layer event importance is invalid"
                     )
                 text = summary.strip()
                 records.append(

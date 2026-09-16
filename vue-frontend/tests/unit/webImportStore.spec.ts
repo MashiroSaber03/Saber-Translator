@@ -57,7 +57,6 @@ function settingsDocument(provider = 'openai', modelName = 'gpt-4o-mini') {
         domain: 'web_import',
         payload: backendSettings,
         revision: 2,
-        schemaVersion: 1,
       },
     ],
   }
@@ -157,7 +156,6 @@ describe('webImportStore backend settings workflow', () => {
           domain: 'web_import',
           payload: {},
           revision: 1,
-          schemaVersion: 1,
         },
       ],
     })

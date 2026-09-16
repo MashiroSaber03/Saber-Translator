@@ -1,14 +1,13 @@
 """Storage isolation for the extension's single configuration."""
 
-from copy import deepcopy
 from typing import Any
 
 from sqlalchemy.sql.elements import ColumnElement
 
+from src.backend_v2.settings.validation import setting_storage_payload
 from src.backend_v2.storage.defaults import (
     DEFAULT_TEXT_STYLE,
-    TEXT_STYLE_DEFAULTS_SCHEMA_VERSION,
-    default_translation_settings,
+    DEFAULT_BROWSER_DOM_AGENT,
 )
 
 EXTENSION_PREFIX = "browser_extension:"
@@ -42,16 +41,15 @@ class SettingsScope:
         if not self.browser_extension:
             return
         existing = {row["domain"] for row in document["settings"]}
-        for domain, payload, version in (
-            ("browser_dom_agent", default_translation_settings()["browserDomAgent"], 1),
-            ("text_style_defaults", DEFAULT_TEXT_STYLE, TEXT_STYLE_DEFAULTS_SCHEMA_VERSION),
+        for domain, payload in (
+            ("browser_dom_agent", DEFAULT_BROWSER_DOM_AGENT),
+            ("text_style_defaults", DEFAULT_TEXT_STYLE),
         ):
             if domain not in existing and (not domains or domain in domains):
                 document["settings"].append(
                     {
                         "domain": domain,
-                        "payload": deepcopy(payload),
+                        "payload": setting_storage_payload(domain, payload),
                         "revision": 0,
-                        "schemaVersion": version,
                     }
                 )

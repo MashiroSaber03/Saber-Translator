@@ -60,7 +60,7 @@ TEXT_IMPORT_FIELDS = {
     "text_direction": "textDirection",
 }
 TEXT_EXPORT_ROOT_FIELDS = frozenset(
-    {"schema_version", "book_id", "chapter_id", "exported_at", "pages"}
+    {"book_id", "chapter_id", "exported_at", "pages"}
 )
 TEXT_EXPORT_PAGE_FIELDS = frozenset(
     {
@@ -405,7 +405,6 @@ class AuxiliaryTranslationCommands:
         from datetime import datetime, timezone
 
         return {
-            "schema_version": 1,
             "book_id": chapter["book_id"],
             "chapter_id": chapter_id,
             "exported_at": datetime.now(timezone.utc).isoformat(),
@@ -518,8 +517,6 @@ class AuxiliaryTranslationCommands:
             TEXT_EXPORT_ROOT_FIELDS,
             label="text import root",
         )
-        if document.get("schema_version") != 1:
-            raise ValueError("text import schema_version must be 1")
         if document.get("chapter_id") != chapter_id:
             raise ValueError("text import belongs to a different chapter")
         _require_non_empty_text(
@@ -707,7 +704,6 @@ class AuxiliaryTranslationCommands:
                 }
             )
         return {
-            "schemaVersion": 1,
             "chapterId": chapter_id,
             "pages": results,
             "matchedPages": sum(

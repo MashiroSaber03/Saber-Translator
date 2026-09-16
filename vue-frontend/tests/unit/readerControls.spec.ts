@@ -109,7 +109,6 @@ describe('ReaderControls', () => {
     localStorage.setItem(
       'readerSettings',
       JSON.stringify({
-        readerSettingsSchemaVersion: 1,
         imageWidth: 80,
         imageGap: 12,
         bgColor: '#ffffff',

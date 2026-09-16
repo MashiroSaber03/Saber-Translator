@@ -36,7 +36,7 @@ DEFAULT_INSIGHT_GC_LIMIT = 200
 def _stored_id(value: object, field: str) -> str:
     if not isinstance(value, str) or not value:
         raise RuntimeError(
-            f"stored {field} is invalid; clear current Insight data"
+            f"stored {field} is invalid"
         )
     return value
 

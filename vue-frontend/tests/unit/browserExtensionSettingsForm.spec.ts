@@ -15,8 +15,8 @@ afterEach(() => vi.useRealTimers())
 async function setup() {
   const settings: Schema['SettingsDocument'] = {
     settings: [
-      { domain: 'text_style_defaults', revision: 1, schemaVersion: 2, payload: { ...getTextStyleDefaults(), fontFamily: 'font' } },
-      { domain: 'browser_dom_agent', revision: 0, schemaVersion: 1, payload: { provider: 'ollama', modelName: 'agent', customBaseUrl: '', openaiOptions: {} } },
+      { domain: 'text_style_defaults', revision: 1, payload: { ...getTextStyleDefaults(), fontFamily: 'font' } },
+      { domain: 'browser_dom_agent', revision: 0, payload: { provider: 'ollama', modelName: 'agent', customBaseUrl: '', openaiOptions: {} } },
     ],
     providerSettings: [], credentials: [], bookSettings: [],
   }

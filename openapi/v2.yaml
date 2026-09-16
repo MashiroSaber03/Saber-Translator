@@ -5462,9 +5462,6 @@ components:
         role:
           type: string
           const: api
-        schemaVersion:
-          type: string
-          const: v2
         epochId:
           type: string
         dataRootFingerprint:
@@ -5496,12 +5493,11 @@ components:
     SettingEntry:
       type: object
       additionalProperties: false
-      required: [domain, payload, revision, schemaVersion]
+      required: [domain, payload, revision]
       properties:
         domain: {type: string}
         payload: {type: object, additionalProperties: true}
         revision: {type: integer, minimum: 0, description: "0 denotes an unsaved factory default."}
-        schemaVersion: {type: integer, minimum: 1}
     BookSettingEntry:
       allOf:
         - $ref: "#/components/schemas/SettingEntry"
@@ -5564,26 +5560,24 @@ components:
     SettingMutation:
       type: object
       additionalProperties: false
-      required: [domain, payload, baseRevision, schemaVersion]
+      required: [domain, payload, baseRevision]
       properties:
         domain: {type: string}
         payload: {type: object, additionalProperties: true}
         baseRevision: {type: integer, minimum: 0}
-        schemaVersion: {type: integer, minimum: 1}
     BookSettingMutation:
       type: object
       additionalProperties: false
-      required: [bookId, domain, payload, baseRevision, schemaVersion]
+      required: [bookId, domain, payload, baseRevision]
       properties:
         bookId: {$ref: "#/components/schemas/Uuid"}
         domain: {type: string}
         payload: {type: object, additionalProperties: true}
         baseRevision: {type: integer, minimum: 0}
-        schemaVersion: {type: integer, minimum: 1}
     ProviderSettingMutation:
       type: object
       additionalProperties: false
-      required: [domain, provider, payload, baseRevision, schemaVersion]
+      required: [domain, provider, payload, baseRevision]
       properties:
         domain: {type: string}
         provider: {type: string}
@@ -5591,7 +5585,6 @@ components:
         baseRevision: {type: integer, minimum: 0}
         credentialVersionId: {$ref: "#/components/schemas/Uuid"}
         credentialEditRef: {type: string}
-        schemaVersion: {type: integer, minimum: 1}
     CredentialEdit:
       type: object
       additionalProperties: false
@@ -6974,7 +6967,6 @@ components:
         - renderStatus
         - defaultFontId
         - pageStyleDefaults
-        - pageStyleSchemaVersion
         - bubbles
       properties:
         pageId:
@@ -7017,9 +7009,6 @@ components:
             - blockAlign
           allOf:
             - $ref: "#/components/schemas/PageStyleDefaultsPatch"
-        pageStyleSchemaVersion:
-          type: integer
-          const: 2
         bubbles:
           type: array
           items:
@@ -8424,22 +8413,19 @@ components:
             - title
             - pageOrderRevision
             - settingsMemory
-            - settingsMemorySchemaVersion
             - settingsMemoryRevision
           properties:
             id: {$ref: "#/components/schemas/Uuid"}
             title: {type: string}
             pageOrderRevision: {type: integer, minimum: 1}
             settingsMemory: {type: object, additionalProperties: true}
-            settingsMemorySchemaVersion: {type: integer, minimum: 1}
             settingsMemoryRevision: {type: integer, minimum: 1}
         constraints:
           type: object
           additionalProperties: false
-          required: [payload, schemaVersion, revision]
+          required: [payload, revision]
           properties:
             payload: {$ref: "#/components/schemas/TranslationConstraintPayload"}
-            schemaVersion: {type: integer, const: 2}
             revision: {type: integer, minimum: 1}
         navigation:
           type: object
@@ -8577,11 +8563,10 @@ components:
     TranslationConstraintDocument:
       type: object
       additionalProperties: false
-      required: [bookId, revision, schemaVersion, payload]
+      required: [bookId, revision, payload]
       properties:
         bookId: {$ref: "#/components/schemas/Uuid"}
         revision: {type: integer, minimum: 1}
-        schemaVersion: {type: integer, minimum: 2}
         payload: {$ref: "#/components/schemas/TranslationConstraintPayload"}
     TranslationConstraintUpdateCommand:
       type: object
@@ -8617,9 +8602,8 @@ components:
     ChapterTextExport:
       type: object
       additionalProperties: false
-      required: [schema_version, book_id, chapter_id, exported_at, pages]
+      required: [book_id, chapter_id, exported_at, pages]
       properties:
-        schema_version: {type: integer, const: 1}
         book_id: {$ref: "#/components/schemas/Uuid"}
         chapter_id: {$ref: "#/components/schemas/Uuid"}
         exported_at: {type: string, format: date-time}
@@ -8676,9 +8660,8 @@ components:
       type: object
       additionalProperties: false
       required:
-        [schemaVersion, chapterId, pages, matchedPages, conflictedPages]
+        [chapterId, pages, matchedPages, conflictedPages]
       properties:
-        schemaVersion: {type: integer, const: 1}
         chapterId: {$ref: "#/components/schemas/Uuid"}
         pages:
           type: array
@@ -8885,7 +8868,6 @@ components:
       type: object
       additionalProperties: false
       required:
-        - schema_version
         - page_id
         - source_asset_id
         - source_checksum
@@ -8895,7 +8877,6 @@ components:
         - continuity_notes
         - warnings
       properties:
-        schema_version: {type: integer, const: 2}
         page_id: {$ref: "#/components/schemas/Uuid"}
         source_asset_id: {$ref: "#/components/schemas/Uuid"}
         source_checksum: {type: string, pattern: "^[0-9a-f]{64}$"}

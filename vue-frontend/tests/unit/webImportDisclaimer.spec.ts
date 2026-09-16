@@ -58,7 +58,6 @@ describe('WebImportDisclaimer', () => {
           domain: 'web_import',
           payload: createDefaultWebImportSettings(),
           revision: 1,
-          schemaVersion: 1,
         },
       ],
       bookSettings: [],

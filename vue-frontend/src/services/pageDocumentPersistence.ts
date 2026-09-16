@@ -94,28 +94,22 @@ function evictSettledStates(protectedPageId: string): void {
   if (states.size <= PAGE_DOCUMENT_CACHE_SIZE) return
   for (const [pageId, state] of states) {
     if (states.size <= PAGE_DOCUMENT_CACHE_SIZE) return
-    if (
-      pageId === protectedPageId
-      || state.promise
-      || state.saving
-    ) continue
+    if (pageId === protectedPageId || state.promise || state.saving) continue
     states.delete(pageId)
   }
 }
 
 function mutationsFor(
   persisted: BubbleState[],
-  desired: BubbleState[],
+  desired: BubbleState[]
 ): V2PageDocumentBatchMutation['mutations'] {
   const previous = new Map(
     persisted
       .filter(bubble => bubble.backendBubbleId)
-      .map(bubble => [bubble.backendBubbleId!, bubble]),
+      .map(bubble => [bubble.backendBubbleId!, bubble])
   )
   const currentIds = new Set(
-    desired
-      .map(bubble => bubble.backendBubbleId)
-      .filter((id): id is string => Boolean(id)),
+    desired.map(bubble => bubble.backendBubbleId).filter((id): id is string => Boolean(id))
   )
   const mutations: V2PageDocumentBatchMutation['mutations'] = []
 
@@ -155,12 +149,12 @@ function mutationsFor(
 
 function applyCreatedBubbleIds(
   bubbles: BubbleState[],
-  results: V2PageDocumentMutationResponse['mutationResults'],
+  results: V2PageDocumentMutationResponse['mutationResults']
 ): void {
   const createdIds = new Map(
     results
       .filter(result => result.op === 'create')
-      .map(result => [result.clientMutationId, result.bubbleId]),
+      .map(result => [result.clientMutationId, result.bubbleId])
   )
   for (const bubble of bubbles) {
     if (!bubble.clientMutationId) continue
@@ -172,20 +166,18 @@ function applyCreatedBubbleIds(
 }
 
 function isAmbiguousTransportError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false
-  const code = (error as Error & { code?: unknown }).code
-  return typeof code === 'string' && [
-    'ECONNABORTED',
-    'ECONNRESET',
-    'EPIPE',
-    'ERR_NETWORK',
-    'ETIMEDOUT',
-  ].includes(code)
+  return (
+    error instanceof Error &&
+    'code' in error &&
+    error.code === 'network_error' &&
+    'status' in error &&
+    error.status === 0
+  )
 }
 
 async function mutateWithTransportReplay(
   pageId: string,
-  command: V2PageDocumentBatchMutation,
+  command: V2PageDocumentBatchMutation
 ): Promise<V2PageDocumentMutationResponse> {
   const idempotencyKey = createUuid()
   try {
@@ -200,15 +192,10 @@ export function registerPageDocument(document: V2PageDocument): BubbleState[] {
   const bubbles = pageDocumentToBubbles(document)
   const existing = states.get(document.pageId)
   if (
-    !existing
-    || (
-      !existing.saving
-      && !existing.promise
-      && (
-        existing.lastError
-        || canonical(existing.desired) === canonical(existing.persisted)
-      )
-    )
+    !existing ||
+    (!existing.saving &&
+      !existing.promise &&
+      (existing.lastError || canonical(existing.desired) === canonical(existing.persisted)))
   ) {
     const state: PersistedPageState = {
       debounceResolve: null,
@@ -239,7 +226,7 @@ export function registerPageDocument(document: V2PageDocument): BubbleState[] {
 export function queuePageDocumentSave(
   pageId: string,
   documentRevision: number,
-  bubbles: BubbleState[],
+  bubbles: BubbleState[]
 ): Promise<void> {
   return queuePageDocumentMutation(pageId, documentRevision, bubbles)
 }
@@ -254,19 +241,19 @@ export function queuePageDocumentMutation(
   pageId: string,
   documentRevision: number,
   bubbles: BubbleState[],
-  style: PageDocumentStyleMutation = {},
+  style: PageDocumentStyleMutation = {}
 ): Promise<void> {
   const state = states.get(pageId)
   if (!state) {
     throw new Error(`页面文档 ${pageId} 尚未从后端注册`)
   }
   if (
-    !Number.isSafeInteger(documentRevision)
-    || documentRevision < 1
-    || documentRevision !== state.documentRevision
+    !Number.isSafeInteger(documentRevision) ||
+    documentRevision < 1 ||
+    documentRevision !== state.documentRevision
   ) {
     throw new Error(
-      `页面文档 ${pageId} 版本已变化：当前为 ${state.documentRevision}，提交版本为 ${documentRevision}`,
+      `页面文档 ${pageId} 版本已变化：当前为 ${state.documentRevision}，提交版本为 ${documentRevision}`
     )
   }
   ensureClientMutationIds(bubbles)
@@ -292,10 +279,7 @@ export function queuePageDocumentMutation(
   return state.promise
 }
 
-async function persistLoop(
-  pageId: string,
-  state: PersistedPageState,
-): Promise<void> {
+async function persistLoop(pageId: string, state: PersistedPageState): Promise<void> {
   state.saving = true
   try {
     while (true) {
@@ -307,15 +291,11 @@ async function persistLoop(
       const sentPropagation = [...state.desiredPropagateStyleFields]
       const sentDefaultFont = state.desiredDefaultFontId
       const sentDefaultFontChanged = state.defaultFontChanged
-      const hasStyleCommand = (
-        Object.keys(sentStylePatch).length > 0
-        || sentDefaultFontChanged
-        || sentPropagation.length > 0
-      )
-      if (
-        mutations.length === 0
-        && !hasStyleCommand
-      ) return
+      const hasStyleCommand =
+        Object.keys(sentStylePatch).length > 0 ||
+        sentDefaultFontChanged ||
+        sentPropagation.length > 0
+      if (mutations.length === 0 && !hasStyleCommand) return
       // A sidebar propagation and editor bubble delta are separate domain
       // commands. Flush the bubble delta first so the backend never has to
       // guess an overwrite order for the same bubble field.
@@ -323,9 +303,7 @@ async function persistLoop(
       const command: V2PageDocumentBatchMutation = {
         baseRevision: state.documentRevision,
         mutations,
-        ...(sendStyleCommand && sentDefaultFontChanged
-          ? { defaultFontId: sentDefaultFont }
-          : {}),
+        ...(sendStyleCommand && sentDefaultFontChanged ? { defaultFontId: sentDefaultFont } : {}),
         ...(sendStyleCommand && Object.keys(sentStylePatch).length > 0
           ? {
               pageStyleDefaultsPatch: sentStylePatch,
@@ -333,7 +311,8 @@ async function persistLoop(
           : {}),
         ...(sendStyleCommand && sentPropagation.length > 0
           ? {
-              propagateStyleFields: sentPropagation as V2PageDocumentBatchMutation['propagateStyleFields'],
+              propagateStyleFields:
+                sentPropagation as V2PageDocumentBatchMutation['propagateStyleFields'],
             }
           : {}),
       }
@@ -358,9 +337,9 @@ async function persistLoop(
           }
         }
         if (
-          sentDefaultFontChanged
-          && state.defaultFontChanged
-          && state.desiredDefaultFontId === sentDefaultFont
+          sentDefaultFontChanged &&
+          state.defaultFontChanged &&
+          state.desiredDefaultFontId === sentDefaultFont
         ) {
           state.defaultFontChanged = false
         }
@@ -372,9 +351,10 @@ async function persistLoop(
       if (imageIndex >= 0) {
         imageStore.updateImageByIndex(imageIndex, {
           documentRevision: document.documentRevision,
-          bubbleStates: sentVersion === state.desiredVersion
-            ? cloneBubbles(state.persisted)
-            : cloneBubbles(state.desired),
+          bubbleStates:
+            sentVersion === state.desiredVersion
+              ? cloneBubbles(state.persisted)
+              : cloneBubbles(state.desired),
           hasUnsavedChanges: sentVersion !== state.desiredVersion,
         })
       }
@@ -384,10 +364,11 @@ async function persistLoop(
           bubbleStore.setBubbles(cloneBubbles(state.persisted), true)
         }
         if (
-          Object.keys(state.desiredStylePatch).length === 0
-          && !state.defaultFontChanged
-          && state.desiredPropagateStyleFields.size === 0
-        ) return
+          Object.keys(state.desiredStylePatch).length === 0 &&
+          !state.defaultFontChanged &&
+          state.desiredPropagateStyleFields.size === 0
+        )
+          return
       }
     }
   } catch (error) {
@@ -406,7 +387,7 @@ async function waitForTrailingWindow(state: PersistedPageState): Promise<void> {
   while (!state.flushRequested) {
     const remaining = PAGE_DOCUMENT_TRAILING_MS - (Date.now() - state.lastQueuedAt)
     if (remaining <= 0) return
-    await new Promise<void>((resolve) => {
+    await new Promise<void>(resolve => {
       let settled = false
       const finish = () => {
         if (settled) return

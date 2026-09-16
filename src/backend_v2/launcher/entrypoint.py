@@ -893,8 +893,7 @@ class LauncherSupervisor:
                     profile_name=config.profile,
                 )
                 LOGGER.debug(
-                    "数据库初始化与完整性检查完成：revision=%s，新建=%s",
-                    storage.schema_revision,
+                    "数据库初始化与完整性检查完成：新建=%s",
                     "是" if storage.created else "否",
                 )
                 engine = create_sqlite_engine(database_path_for(config.data_root))
@@ -909,6 +908,8 @@ class LauncherSupervisor:
                         stop_event=self._stop_event,
                     )
                     _reconcile_all_previous_epochs(repository)
+                    from src.backend_v2.storage.seeding import begin_runtime
+                    begin_runtime(engine, profile_name=config.profile)
                     LOGGER.debug("已完成历史进程租约与中断任务恢复")
                     recovered = object_storage.recover_journal()
                     integrity = object_storage.scan_integrity()

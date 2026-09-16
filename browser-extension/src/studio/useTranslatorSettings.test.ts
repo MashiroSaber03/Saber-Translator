@@ -15,7 +15,6 @@ function document() {
     settings: [
       {
         domain: 'translation',
-        schemaVersion: 9,
         revision: 3,
         payload: {
           textDetector: 'default',
@@ -55,7 +54,6 @@ function document() {
         domain: 'translation',
         provider: 'ollama',
         revision: 1,
-        schemaVersion: 1,
         credentialVersionId: null,
         payload: {
           modelName: 'cached-model',

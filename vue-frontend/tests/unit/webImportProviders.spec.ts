@@ -9,7 +9,6 @@ import {
 } from '@/stores/settings/modules/webImport'
 import {
   parseWebImportSettingsPayload,
-  WEB_IMPORT_SETTINGS_SCHEMA_VERSION,
 } from '@/stores/webImportSettingsPayload'
 
 describe('web import provider settings', () => {
@@ -63,20 +62,11 @@ describe('web import provider settings', () => {
 
   it('accepts only the current web-import payload schema and providers', () => {
     const current = {
-      webImportSettingsSchemaVersion: WEB_IMPORT_SETTINGS_SCHEMA_VERSION,
       settings: createDefaultWebImportSettings(),
       providerConfigs: createDefaultWebImportProviderConfigs(),
     }
     expect(parseWebImportSettingsPayload(current)).not.toBeNull()
 
-    expect(parseWebImportSettingsPayload({
-      settings: current.settings,
-      providerConfigs: current.providerConfigs,
-    })).toBeNull()
-    expect(parseWebImportSettingsPayload({
-      ...current,
-      webImportSettingsSchemaVersion: 0,
-    })).toBeNull()
     expect(parseWebImportSettingsPayload({
       ...current,
       removedField: true,
@@ -100,7 +90,6 @@ describe('web import provider settings', () => {
     const fractional = createDefaultWebImportSettings()
     fractional.download.concurrency = 1.5
     expect(parseWebImportSettingsPayload({
-      webImportSettingsSchemaVersion: WEB_IMPORT_SETTINGS_SCHEMA_VERSION,
       settings: fractional,
       providerConfigs,
     })).toBeNull()
@@ -108,7 +97,6 @@ describe('web import provider settings', () => {
     const negative = createDefaultWebImportSettings()
     negative.download.retries = -1
     expect(parseWebImportSettingsPayload({
-      webImportSettingsSchemaVersion: WEB_IMPORT_SETTINGS_SCHEMA_VERSION,
       settings: negative,
       providerConfigs,
     })).toBeNull()
@@ -117,7 +105,6 @@ describe('web import provider settings', () => {
     fractionalTimeouts.agent.timeout = 120.5
     fractionalTimeouts.download.timeout = 30.25
     expect(parseWebImportSettingsPayload({
-      webImportSettingsSchemaVersion: WEB_IMPORT_SETTINGS_SCHEMA_VERSION,
       settings: fractionalTimeouts,
       providerConfigs,
     })).not.toBeNull()
@@ -126,7 +113,6 @@ describe('web import provider settings', () => {
     largeDimensions.imagePreprocess.compression.maxWidth = 1_000_000
     largeDimensions.imagePreprocess.compression.maxHeight = 1_000_000
     expect(parseWebImportSettingsPayload({
-      webImportSettingsSchemaVersion: WEB_IMPORT_SETTINGS_SCHEMA_VERSION,
       settings: largeDimensions,
       providerConfigs,
     })).not.toBeNull()

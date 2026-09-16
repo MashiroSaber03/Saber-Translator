@@ -68,13 +68,13 @@ def test_automatic_mask_closes_holes_before_user_protection(monkeypatch):
     assert captured[1][20, 19] == 0  # Existing automatic expansion remains active.
 
 
-def test_existing_settings_default_to_whole_page_without_resetting_values():
+def test_saved_settings_require_regional_inpainting_option():
     from src.backend_v2.storage.defaults import default_translation_settings
     from src.backend_v2.settings.validation import validate_setting_payload
     payload = default_translation_settings()
     del payload['lamaRegionalInpainting']
     payload['lamaDisableResize'] = True
-    result = validate_setting_payload('translation', payload, schema_version=9)
-    assert result['lamaRegionalInpainting'] is False
-    assert result['lamaDisableResize'] is True
+    with pytest.raises(ValueError, match='missing=lamaRegionalInpainting'):
+        validate_setting_payload('translation', payload)
+    assert payload['lamaDisableResize'] is True
     assert 'lamaRegionalInpainting' not in payload

@@ -26,7 +26,9 @@ from src.backend_v2.serialization import canonical_json as _canonical_json
 from src.backend_v2.timestamps import utcnow as _utcnow
 from src.backend_v2.content.page_style import validate_text_style_defaults
 from src.backend_v2.settings.validation import (
+    compose_editable_settings,
     is_proofreading_provider_domain,
+    setting_storage_payload,
     validate_book_setting_payload,
     validate_credential_secret,
     validate_provider_setting_payload,
@@ -153,7 +155,6 @@ class SettingMutation:
     domain: str
     payload: dict[str, Any]
     base_revision: int
-    schema_version: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,7 +163,6 @@ class ProviderSettingMutation:
     provider: str
     payload: dict[str, Any]
     base_revision: int
-    schema_version: int
     credential_version_id: str | None = None
     credential_edit_ref: str | None = None
 
@@ -183,7 +183,6 @@ class BookSettingMutation:
     domain: str
     payload: dict[str, Any]
     base_revision: int
-    schema_version: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -559,7 +558,8 @@ class SettingsRepository:
                 connection.execute(
                     select(provider_settings)
                     .where(
-                        provider_condition,
+                        provider_condition if not {"translation", "web_import"}.intersection(row["domain"] for row in setting_rows)
+                        else self.scope.condition(provider_settings.c.domain),
                         provider_settings.c.owner_user_id == effective_owner_id(),
                     )
                     .order_by(
@@ -574,7 +574,6 @@ class SettingsRepository:
                         select(book_settings)
                         .where(
                             book_settings.c.book_id == book_id,
-                            book_settings.c.domain != "browser_extension_snapshot",
                             (
                                 book_settings.c.domain.in_(domains)
                                 if domains
@@ -596,14 +595,9 @@ class SettingsRepository:
                 {
                     "domain": self.scope.public_domain(row["domain"]),
                     "revision": row["revision"],
-                    "schemaVersion": row["schema_version"],
-                    "payload": validate_setting_payload(
-                        self.scope.public_domain(str(row["domain"])),
-                        _require_object(
-                            json.loads(row["payload_json"]),
-                            f"{row['domain']} setting",
-                        ),
-                        schema_version=int(row["schema_version"]),
+                    "payload": _require_object(
+                        json.loads(row["payload_json"]),
+                        f"{row['domain']} setting",
                     ),
                 }
                 for row in setting_rows
@@ -613,14 +607,12 @@ class SettingsRepository:
                     "bookId": row["book_id"],
                     "domain": self.scope.public_domain(row["domain"]),
                     "revision": row["revision"],
-                    "schemaVersion": row["schema_version"],
                     "payload": validate_book_setting_payload(
                         self.scope.public_domain(str(row["domain"])),
                         _require_object(
                             json.loads(row["payload_json"]),
                             f"book {row['domain']} setting",
                         ),
-                        schema_version=int(row["schema_version"]),
                     ),
                 }
                 for row in book_rows
@@ -630,7 +622,6 @@ class SettingsRepository:
                     "domain": self.scope.public_domain(row["domain"]),
                     "provider": row["provider"],
                     "revision": row["revision"],
-                    "schemaVersion": row["schema_version"],
                     "credentialVersionId": row["credential_version_id"],
                     "payload": validate_provider_setting_payload(
                         self.scope.public_domain(str(row["domain"])),
@@ -642,7 +633,6 @@ class SettingsRepository:
                                 "provider setting"
                             ),
                         ),
-                        schema_version=int(row["schema_version"]),
                     ),
                 }
                 for row in provider_rows
@@ -650,29 +640,26 @@ class SettingsRepository:
             "credentials": credential_rows,
         }
 
-        if self.scope.browser_extension and (not domains or "browser_dom_agent" in domains):
-            if not any(row["domain"] == "browser_dom_agent" for row in document["settings"]):
-                with self.engine.connect() as connection:
-                    legacy = connection.execute(select(app_settings.c.payload_json).where(
-                        app_settings.c.owner_user_id == effective_owner_id(),
-                        app_settings.c.domain == "browser_extension:translation",
-                    )).scalar_one_or_none()
-                if legacy is not None:
-                    document["settings"].append({
-                        "domain": "browser_dom_agent", "revision": 0, "schemaVersion": 1,
-                        "payload": json.loads(legacy)["browserDomAgent"],
-                    })
         self.scope.add_factory_defaults(document, domains)
+        provider_payloads = {
+            (row["domain"], row["provider"]): row["payload"]
+            for row in document["providerSettings"]
+        }
+        for row in document["settings"]:
+            row["payload"] = compose_editable_settings(row["domain"], row["payload"], provider_payloads)
+        if domains:
+            document["providerSettings"] = [
+                row for row in document["providerSettings"] if row["domain"] in domains
+            ]
         return document
 
     def _save_setting(self, connection: object, mutation: SettingMutation) -> dict[str, object]:
         storage_domain = self.scope.storage_domain(mutation.domain)
-        if mutation.base_revision < 0 or mutation.schema_version < 1:
+        if mutation.base_revision < 0:
             raise ValueError("setting revisions must be non-negative")
         payload = validate_setting_payload(
             mutation.domain,
             mutation.payload,
-            schema_version=mutation.schema_version,
         )
         if mutation.domain == "text_style_defaults":
             font_id, page_style = validate_text_style_defaults(  # type: ignore[arg-type]
@@ -680,7 +667,9 @@ class SettingsRepository:
                 payload,
             )
             payload = {**page_style, "fontFamily": font_id}
-        payload_json = _canonical_json(payload)
+        payload_json = _canonical_json(
+            setting_storage_payload(mutation.domain, payload)
+        )
         current = connection.execute(  # type: ignore[attr-defined]
             select(app_settings.c.revision).where(
                 app_settings.c.domain == storage_domain,
@@ -696,7 +685,6 @@ class SettingsRepository:
                     domain=storage_domain,
                     revision=1,
                     payload_json=payload_json,
-                    schema_version=mutation.schema_version,
                 )
             )
             return {"domain": mutation.domain, "revision": 1}
@@ -712,7 +700,6 @@ class SettingsRepository:
             .values(
                 revision=mutation.base_revision + 1,
                 payload_json=payload_json,
-                schema_version=mutation.schema_version,
                 updated_at=_utcnow(),
             )
         )
@@ -728,14 +715,13 @@ class SettingsRepository:
         credential_version_id: str | None = None,
     ) -> dict[str, object]:
         storage_domain = self.scope.storage_domain(mutation.domain)
-        if mutation.base_revision < 0 or mutation.schema_version < 1:
+        if mutation.base_revision < 0:
             raise ValueError("provider setting revisions must be non-negative")
         payload_json = _canonical_json(
             validate_provider_setting_payload(
                 mutation.domain,
                 mutation.provider,
                 mutation.payload,
-                schema_version=mutation.schema_version,
             )
         )
         key = and_(
@@ -767,7 +753,6 @@ class SettingsRepository:
                 )
         values = {
             "payload_json": payload_json,
-            "schema_version": mutation.schema_version,
             "credential_version_id": credential_version_id,
         }
         if current is None:
@@ -809,7 +794,7 @@ class SettingsRepository:
         connection: object,
         mutation: BookSettingMutation,
     ) -> dict[str, object]:
-        if mutation.base_revision < 0 or mutation.schema_version < 1:
+        if mutation.base_revision < 0:
             raise ValueError("book setting revisions must be non-negative")
         if connection.execute(  # type: ignore[attr-defined]
             select(books.c.id).where(
@@ -830,10 +815,8 @@ class SettingsRepository:
                 validate_book_setting_payload(
                     mutation.domain,
                     mutation.payload,
-                    schema_version=mutation.schema_version,
                 )
             ),
-            "schema_version": mutation.schema_version,
         }
         if current is None:
             if mutation.base_revision != 0:
@@ -1224,25 +1207,6 @@ class SettingsRepository:
         connection: Connection,
         credential_id: str,
     ) -> None:
-        versions = set(connection.execute(
-            select(credential_versions.c.id).where(
-                credential_versions.c.credential_id == credential_id,
-            )
-        ).scalars())
-        snapshots = connection.execute(
-            select(book_settings.c.payload_json)
-            .join(books, books.c.id == book_settings.c.book_id)
-            .where(
-                books.c.owner_user_id == effective_owner_id(),
-                book_settings.c.domain == "browser_extension_snapshot",
-            )
-        ).scalars()
-        if any(
-            row["credentialVersionId"] in versions
-            for payload in snapshots
-            for row in json.loads(payload)["providerSettings"]
-        ):
-            raise RevisionConflict("credential is still referenced by a browser session")
         removed = connection.execute(
             delete(credentials).where(
                 credentials.c.id == credential_id,

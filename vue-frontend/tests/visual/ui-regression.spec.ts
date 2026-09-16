@@ -366,7 +366,6 @@ function fixtureOpenAiOptions(useStream: boolean, rpmLimit = 0) {
 
 function createFixtureSettings() {
   return {
-    settingsSchemaVersion: 9,
     textStyle: { ...fixtureTextStyle },
     ocrEngine: 'manga_ocr',
     textDetector: 'default',
@@ -471,13 +470,11 @@ function fixtureSettingsDocument() {
         domain: 'translation',
         payload: settings,
         revision: 1,
-        schemaVersion: 9,
       },
       {
         domain: 'text_style_defaults',
         payload: settings.textStyle,
         revision: 1,
-        schemaVersion: 2,
       },
       {
         domain: 'workflow_preferences',
@@ -486,13 +483,11 @@ function fixtureSettingsDocument() {
           lastWorkflowMode: 'translate-current',
         },
         revision: 1,
-        schemaVersion: 1,
       },
       {
         domain: 'export_preferences',
         payload: { preserveOriginalFilenames: false },
         revision: 1,
-        schemaVersion: 1,
       },
       {
         domain: 'web_import',
@@ -541,7 +536,6 @@ function fixtureSettingsDocument() {
           },
         },
         revision: 1,
-        schemaVersion: 1,
       },
     ],
     bookSettings: [],
@@ -566,12 +560,10 @@ function fixtureTranslationBootstrap(loaded: boolean, pages = demoV2Pages) {
       title: loaded ? 'Chapter 1' : '快速翻译',
       pageOrderRevision: 1,
       settingsMemory: {},
-      settingsMemorySchemaVersion: 1,
       settingsMemoryRevision: 1,
     },
     constraints: {
       payload: { glossary: {}, nonTranslate: {} },
-      schemaVersion: 1,
       revision: 1,
     },
     navigation: {
@@ -806,7 +798,6 @@ async function mockApi(route: Route, options: VisualFixtureOptions = {}) {
       documentRevision: 1,
       defaultFontId: 'font-source-han',
       pageStyleDefaults: fixtureTextStyle,
-      pageStyleSchemaVersion: 2,
       renderStatus: 'not_rendered',
       bubbles: bubble,
     }
@@ -889,7 +880,6 @@ async function mockApi(route: Route, options: VisualFixtureOptions = {}) {
       domain: 'workflow_preferences',
       payload: body.payload ?? {},
       revision: 2,
-      schemaVersion: 1,
     })
     return
   }
@@ -2063,7 +2053,6 @@ async function prepareEditorColorPage(page: Page) {
   const document = {
     pageId: 'demo-page-1', chapterId: 'demo-chapter', documentRevision: 1,
     defaultFontId: 'font-source-han', pageStyleDefaults: fixtureTextStyle,
-    pageStyleSchemaVersion: 2, renderStatus: 'ready',
     bubbles: [0, 1].map(index => ({
       bubbleId: `demo-bubble-${index + 1}`, ordinal: index + 1, fontId: 'font-source-han',
       payload: { ...demoBubbleState, coords: index ? [150, 800, 410, 930] : demoBubbleState.coords,

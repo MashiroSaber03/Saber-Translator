@@ -904,7 +904,7 @@ def test_full_analysis_freezes_assets_and_publishes_canonical_results(
     }
     assert active_timeline == accepted["runId"]
     assert active_vector == accepted["runId"]
-    assert all('"schema_version":2' in payload for payload in payloads)
+    assert all("schema_version" not in json.loads(payload) for payload in payloads)
     assert all('"scene"' not in payload for payload in payloads)
     assert all('"dialogues"' not in payload for payload in payloads)
     assert all('"characters"' not in payload for payload in payloads)

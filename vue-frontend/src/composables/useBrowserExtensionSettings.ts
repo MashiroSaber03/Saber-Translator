@@ -193,7 +193,6 @@ export function useBrowserExtensionSettings(api: PluginSettingsApi) {
         domain: 'browser_dom_agent',
         provider: value,
         payload: { ...drafts.value[value]! },
-        schemaVersion: 1,
         baseRevision: stored?.revision ?? 0,
         ...(secretChanged
           ? { credentialEditRef: value }
@@ -211,7 +210,6 @@ export function useBrowserExtensionSettings(api: PluginSettingsApi) {
           domain: entry.domain,
           payload: entry.payload,
           baseRevision: entry.revision,
-          schemaVersion: entry.schemaVersion,
         })
     }
     // Freeze the submitted values so edits during the request stay in the form.
@@ -251,7 +249,6 @@ export function useBrowserExtensionSettings(api: PluginSettingsApi) {
         domain: change.domain,
         provider: change.provider,
         payload: change.payload,
-        schemaVersion: change.schemaVersion,
         revision,
         credentialVersionId: key?.credentialVersionId ?? change.credentialVersionId ?? null,
       }

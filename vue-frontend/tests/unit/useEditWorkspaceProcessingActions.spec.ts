@@ -98,7 +98,6 @@ describe('useEditWorkspaceProcessingActions', () => {
       documentRevision: 4,
       pageId: 'page-1',
       pageStyleDefaults: {},
-      pageStyleSchemaVersion: 2,
       renderStatus: 'not_rendered',
     })
     mocks.registerPageDocument.mockReturnValue([])
@@ -154,7 +153,6 @@ describe('useEditWorkspaceProcessingActions', () => {
       documentRevision: 4,
       pageId: 'page-1',
       pageStyleDefaults: {},
-      pageStyleSchemaVersion: 2,
       renderStatus: 'not_rendered',
     })
     const { actions } = createActions()

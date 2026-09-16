@@ -60,17 +60,17 @@ def _json(value: object) -> str:
 def _load_object(value: object, field: str) -> dict[str, Any]:
     if not isinstance(value, str):
         raise InsightConflict(
-            f"stored {field} is missing; clear current Insight data"
+            f"stored {field} is missing"
         )
     try:
         parsed = json.loads(value)
     except (TypeError, ValueError) as exc:
         raise InsightConflict(
-            f"stored {field} is invalid; clear current Insight data"
+            f"stored {field} is invalid"
         ) from exc
     if not isinstance(parsed, Mapping):
         raise InsightConflict(
-            f"stored {field} must be an object; clear current Insight data"
+            f"stored {field} must be an object"
         )
     return dict(parsed)
 
@@ -148,8 +148,7 @@ class InsightExportCommandService:
         run_id = _required_string(run["id"], "active Insight run id")
         if _required_string(run["book_id"], "active Insight run book id") != book_id:
             raise InsightConflict(
-                "active Insight run belongs to another book; "
-                "clear current Insight data"
+                "active Insight run belongs to another book"
             )
         run_status = _required_string(run["status"], "active Insight run status")
         if (
@@ -158,8 +157,7 @@ class InsightExportCommandService:
             != "full"
         ):
             raise InsightConflict(
-                "active Insight run is not a published full run; "
-                "clear current Insight data"
+                "active Insight run is not a published full run"
             )
         snapshot = self.derived.snapshot(book_id=book_id)
         config = {
@@ -479,7 +477,7 @@ class InsightExportWorkerService:
             != book_id
         ):
             raise InsightConflict(
-                "frozen Insight run identity is invalid; clear current Insight data"
+                "frozen Insight run identity is invalid"
             )
         run_status = _required_string(run["status"], "export source run status")
         if (
@@ -488,14 +486,6 @@ class InsightExportWorkerService:
             != "full"
         ):
             raise InsightConflict("frozen Insight run is not a published full run")
-        if _required_integer(
-            run["schema_version"],
-            "export source run schema version",
-            minimum=1,
-        ) != 2:
-            raise InsightConflict(
-                "frozen Insight run schema is obsolete; clear current Insight data"
-            )
 
         pages_by_id: dict[str, Mapping[str, Any]] = {}
         for row in page_rows:
@@ -537,12 +527,6 @@ class InsightExportWorkerService:
                     "export page result status",
                 )
                 != "published"
-                or _required_integer(
-                    row["schema_version"],
-                    "export page result schema version",
-                    minimum=1,
-                )
-                != 2
                 or _required_string(
                     row["page_id"],
                     "export page current id",
@@ -551,8 +535,7 @@ class InsightExportWorkerService:
                 or page_id != frozen_page["pageId"]
             ):
                 raise InsightConflict(
-                    "frozen export page result is invalid; "
-                    "clear current Insight data"
+                    "frozen export page result is invalid"
                 )
             try:
                 analysis = validate_persisted_page_analysis(
@@ -560,8 +543,7 @@ class InsightExportWorkerService:
                 )
             except InvalidPageAnalysis as exc:
                 raise InsightConflict(
-                    "frozen export page analysis is invalid; "
-                    "clear current Insight data"
+                    "frozen export page analysis is invalid"
                 ) from exc
             if (
                 analysis["page_id"] != page_id
@@ -571,8 +553,7 @@ class InsightExportWorkerService:
                 or analysis["source_checksum"] != source_checksum
             ):
                 raise InsightConflict(
-                    "frozen export page identity is invalid; "
-                    "clear current Insight data"
+                    "frozen export page identity is invalid"
                 )
             page_documents.append(
                 {
@@ -817,7 +798,6 @@ class InsightExportWorkerService:
                 compression=zipfile.ZIP_DEFLATED,
             ) as archive:
                 manifest = {
-                    "schemaVersion": 2,
                     "bookId": book_id,
                     "sourceRunId": run_id,
                     "runStatus": run_status,
@@ -922,7 +902,7 @@ def build_report_markdown(
         summary = payload.get("page_summary")
         if not isinstance(summary, str) or not summary.strip():
             raise InsightConflict(
-                "export page summary is invalid; clear current Insight data"
+                "export page summary is invalid"
             )
         lines.append(
             f"- 第 {page_number} 页：{summary}"

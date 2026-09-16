@@ -54,10 +54,9 @@ function bootstrap(
       pageOrderRevision: 1,
       settingsMemory: {},
       settingsMemoryRevision: 1,
-      settingsMemorySchemaVersion: 1,
       title: `Chapter ${chapterId}`,
     },
-    constraints: { payload: {}, revision: 1, schemaVersion: 1 },
+    constraints: { payload: {}, revision: 1 },
     navigation: { lastVisitedPageId: null, revision: 1 },
     settings: {
       settings: [
@@ -65,13 +64,11 @@ function bootstrap(
           domain: 'translation',
           payload: createDefaultSettings() as unknown as Record<string, unknown>,
           revision: 1,
-          schemaVersion: 9,
         },
         {
           domain: 'text_style_defaults',
           payload: createDefaultSettings().textStyle as unknown as Record<string, unknown>,
           revision: 1,
-          schemaVersion: 2,
         },
         {
           domain: 'workflow_preferences',
@@ -80,13 +77,11 @@ function bootstrap(
             lastWorkflowMode: 'translate-current',
           },
           revision: 1,
-          schemaVersion: 1,
         },
         {
           domain: 'export_preferences',
           payload: { preserveOriginalFilenames: false },
           revision: 1,
-          schemaVersion: 1,
         },
       ],
       bookSettings: [],
@@ -137,7 +132,6 @@ describe('useTranslateInit', () => {
       documentRevision: 1,
       pageId,
       pageStyleDefaults,
-      pageStyleSchemaVersion: 2,
       renderStatus: 'not_rendered',
     }))
     mocks.updateLastVisitedPage.mockImplementation(
@@ -198,7 +192,6 @@ describe('useTranslateInit', () => {
         textColor: '#123456',
         useAutoTextColor: true,
       },
-      pageStyleSchemaVersion: 2,
       renderStatus: 'not_rendered',
     })
     await initialization
@@ -429,7 +422,6 @@ describe('useTranslateInit', () => {
       documentRevision: 1,
       pageId: 'page-2',
       pageStyleDefaults: createDefaultSettings().textStyle,
-      pageStyleSchemaVersion: 2,
       renderStatus: 'not_rendered',
     })
     await expect(staleSwitch).resolves.toBe(false)

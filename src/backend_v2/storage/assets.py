@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import hashlib
 import os
 from pathlib import Path, PurePosixPath
@@ -421,7 +421,7 @@ class AssetStorageService:
         }
         cutoff_timestamp = (
             now - timedelta(seconds=orphan_grace_seconds)
-        ).timestamp()
+        ).replace(tzinfo=timezone.utc).timestamp()
         for staging_path in self.staging_root.glob("*.part"):
             relative_path = staging_path.relative_to(self.data_root).as_posix()
             if relative_path in referenced_staging:
@@ -481,7 +481,7 @@ class AssetStorageService:
         current_time = _utcnow()
         cutoff_timestamp = (
             current_time - timedelta(seconds=grace_seconds)
-        ).timestamp()
+        ).replace(tzinfo=timezone.utc).timestamp()
         with self.engine.connect() as connection:
             asset_paths = {
                 str(value)

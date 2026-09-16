@@ -437,7 +437,6 @@ def test_web_import_ai_agent_config_is_resolved_and_frozen_server_side(
                     },
                 },
                 base_revision=1,
-                schema_version=1,
             ),
         ),
         credentials_edits=(
@@ -465,7 +464,6 @@ def test_web_import_ai_agent_config_is_resolved_and_frozen_server_side(
                     "customBaseUrl": "https://agent.example/v1",
                 },
                 base_revision=0,
-                schema_version=1,
                 credential_edit_ref="agent",
             ),
             ProviderSettingMutation(
@@ -473,7 +471,6 @@ def test_web_import_ai_agent_config_is_resolved_and_frozen_server_side(
                 provider="firecrawl",
                 payload={},
                 base_revision=0,
-                schema_version=1,
                 credential_edit_ref="firecrawl",
             ),
         ),
@@ -534,7 +531,6 @@ def test_web_extract_auto_import_is_created_by_the_backend(
                 domain="web_import",
                 payload=settings_payload,
                 base_revision=1,
-                schema_version=1,
             ),
         ),
     )

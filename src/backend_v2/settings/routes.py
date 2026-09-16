@@ -170,7 +170,7 @@ def create_settings_blueprint(
         setting_rows = _object_array(
             body,
             "settings",
-            allowed_keys={"domain", "payload", "baseRevision", "schemaVersion"},
+            allowed_keys={"domain", "payload", "baseRevision"},
         )
         book_setting_rows = _object_array(
             body,
@@ -180,7 +180,6 @@ def create_settings_blueprint(
                 "domain",
                 "payload",
                 "baseRevision",
-                "schemaVersion",
             },
         )
         provider_rows = _object_array(
@@ -193,7 +192,6 @@ def create_settings_blueprint(
                 "baseRevision",
                 "credentialVersionId",
                 "credentialEditRef",
-                "schemaVersion",
             },
         )
         credential_rows = _object_array(
@@ -247,7 +245,6 @@ def create_settings_blueprint(
                     domain=_required_string(row, "domain"),
                     payload=_required_object(row, "payload"),
                     base_revision=_required_integer(row, "baseRevision", minimum=0),
-                    schema_version=_required_integer(row, "schemaVersion", minimum=1),
                 )
                 for row in setting_rows
             ),
@@ -257,7 +254,6 @@ def create_settings_blueprint(
                     domain=_required_string(row, "domain"),
                     payload=_required_object(row, "payload"),
                     base_revision=_required_integer(row, "baseRevision", minimum=0),
-                    schema_version=_required_integer(row, "schemaVersion", minimum=1),
                 )
                 for row in book_setting_rows
             ),
@@ -277,7 +273,6 @@ def create_settings_blueprint(
                         if row.get("credentialEditRef") is not None
                         else None
                     ),
-                    schema_version=_required_integer(row, "schemaVersion", minimum=1),
                 )
                 for row in provider_rows
             ),
@@ -345,7 +340,6 @@ def create_settings_blueprint(
                     domain="workflow_preferences",
                     payload=_required_object(body, "payload"),
                     base_revision=_required_integer(body, "baseRevision", minimum=0),
-                    schema_version=1,
                 ),
             )
         )

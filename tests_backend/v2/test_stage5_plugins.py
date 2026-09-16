@@ -539,7 +539,8 @@ def test_runtime_default_snapshot_and_reference_lock(
     )
     registry.set_runtime_enabled(plugin_id="test_v3", enabled=False)
     assert _enabled_snapshots(engine) == {}
-    seed_system_records(engine)
+    from src.backend_v2.storage.seeding import begin_runtime
+    begin_runtime(engine, profile_name="local")
     snapshots = _enabled_snapshots(engine)
     version_id = str(installed["pluginVersionId"])
     assert snapshots[version_id]["pluginId"] == "test_v3"

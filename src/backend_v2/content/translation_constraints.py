@@ -10,7 +10,6 @@ from typing import Any
 from src.shared.prompt_defaults import get_prompt_factory_defaults
 
 
-TRANSLATION_CONSTRAINTS_SCHEMA_VERSION = 2
 DEFAULT_AUTO_GLOSSARY_PROMPT = get_prompt_factory_defaults()["autoGlossary"]
 
 _MATCH_MODES = frozenset({"text", "regex"})

@@ -6,11 +6,10 @@ import {
   loadReaderSettings,
   parseReaderSettingsPayload,
   saveReaderSettings,
-  toStoredReaderSettings,
   type ReaderSettings,
 } from '@/components/reader/readerSettings'
 
-const readerBgColorValues = READER_BG_COLOR_PRESETS.map((preset) => preset.value)
+const readerBgColorValues = READER_BG_COLOR_PRESETS.map(preset => preset.value)
 const validImageWidthArb = fc.integer({ min: 50, max: 100 })
 const validImageGapArb = fc.integer({ min: 0, max: 50 })
 const validBgColorArb = fc.constantFrom(readerBgColorValues[0]!, ...readerBgColorValues.slice(1))
@@ -25,7 +24,9 @@ describe('reader settings persistence properties', () => {
 
   beforeEach(() => {
     localStorageMock = {}
-    vi.spyOn(Storage.prototype, 'getItem').mockImplementation((key: string) => localStorageMock[key] ?? null)
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(
+      (key: string) => localStorageMock[key] ?? null
+    )
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation((key: string, value: string) => {
       localStorageMock[key] = value
     })
@@ -40,11 +41,11 @@ describe('reader settings persistence properties', () => {
 
   it('loads the same current-schema settings after saving', () => {
     fc.assert(
-      fc.property(validReaderSettingsArb, (settings) => {
+      fc.property(validReaderSettingsArb, settings => {
         localStorageMock = {}
 
         expect(saveReaderSettings(settings)).toBe(true)
-        expect(localStorageMock[READER_SETTINGS_KEY]).toBe(JSON.stringify(toStoredReaderSettings(settings)))
+        expect(localStorageMock[READER_SETTINGS_KEY]).toBe(JSON.stringify(settings))
         expect(loadReaderSettings()).toEqual(settings)
       }),
       { numRuns: 100 }
@@ -53,22 +54,25 @@ describe('reader settings persistence properties', () => {
 
   it('loads the last saved reader settings payload', () => {
     fc.assert(
-      fc.property(fc.array(validReaderSettingsArb, { minLength: 2, maxLength: 10 }), (settingsArray) => {
-        localStorageMock = {}
+      fc.property(
+        fc.array(validReaderSettingsArb, { minLength: 2, maxLength: 10 }),
+        settingsArray => {
+          localStorageMock = {}
 
-        for (const settings of settingsArray) {
-          saveReaderSettings(settings)
+          for (const settings of settingsArray) {
+            saveReaderSettings(settings)
+          }
+
+          expect(loadReaderSettings()).toEqual(settingsArray.at(-1))
         }
-
-        expect(loadReaderSettings()).toEqual(settingsArray.at(-1))
-      }),
+      ),
       { numRuns: 100 }
     )
   })
 
   it('rejects incomplete settings payloads', () => {
     fc.assert(
-      fc.property(validImageWidthArb, (imageWidth) => {
+      fc.property(validImageWidthArb, imageWidth => {
         localStorageMock = {
           [READER_SETTINGS_KEY]: JSON.stringify({ imageWidth }),
         }
@@ -84,14 +88,17 @@ describe('reader settings persistence properties', () => {
       fc.property(
         fc.oneof(fc.integer({ max: 49 }), fc.integer({ min: 101 })),
         fc.oneof(fc.integer({ max: -1 }), fc.integer({ min: 51 })),
-        fc.string().filter((value) => !readerBgColorValues.includes(value)),
+        fc.string().filter(value => !readerBgColorValues.includes(value)),
         (imageWidth, imageGap, bgColor) => {
-          expect(parseReaderSettingsPayload(JSON.stringify({
-            readerSettingsSchemaVersion: 1,
-            imageWidth,
-            imageGap,
-            bgColor,
-          }))).toBeNull()
+          expect(
+            parseReaderSettingsPayload(
+              JSON.stringify({
+                imageWidth,
+                imageGap,
+                bgColor,
+              })
+            )
+          ).toBeNull()
         }
       ),
       { numRuns: 100 }
@@ -100,9 +107,8 @@ describe('reader settings persistence properties', () => {
 
   it('round-trips stored current-schema payloads through JSON', () => {
     fc.assert(
-      fc.property(validReaderSettingsArb, (settings) => {
-        const stored = toStoredReaderSettings(settings)
-        const parsed = parseReaderSettingsPayload(JSON.stringify(stored))
+      fc.property(validReaderSettingsArb, settings => {
+        const parsed = parseReaderSettingsPayload(JSON.stringify(settings))
 
         expect(parsed).toEqual(settings)
       }),

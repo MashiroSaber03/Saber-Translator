@@ -76,7 +76,6 @@ function documentWithFont(options: {
     documentRevision: 1,
     pageId: 'page-1',
     pageStyleDefaults: {},
-    pageStyleSchemaVersion: 2,
     renderStatus: 'not_rendered',
   }
 }

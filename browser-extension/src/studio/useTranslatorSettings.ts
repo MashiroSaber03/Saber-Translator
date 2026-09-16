@@ -145,7 +145,6 @@ export function useTranslatorSettings(api: PluginSettingsApi, active: Ref<boolea
             domain: 'translation',
             payload,
             baseRevision: entry.value.revision,
-            schemaVersion: entry.value.schemaVersion,
           })
         for (const [id, draft] of Object.entries(drafts)) {
           const stored = document.value!.providerSettings.find(
@@ -166,7 +165,6 @@ export function useTranslatorSettings(api: PluginSettingsApi, active: Ref<boolea
           const row: Schema['ProviderSettingMutation'] = {
             ...clone(draft),
             baseRevision: stored?.revision ?? 0,
-            schemaVersion: stored?.schemaVersion ?? 1,
           }
           if (Object.keys(secret).length) {
             transaction.credentialEdits!.push({
@@ -209,7 +207,6 @@ export function useTranslatorSettings(api: PluginSettingsApi, active: Ref<boolea
               provider: row.provider,
               payload: row.payload,
               revision,
-              schemaVersion: row.schemaVersion,
               credentialVersionId:
                 credential(row.domain, row.provider)?.credentialVersionId ?? null,
             }

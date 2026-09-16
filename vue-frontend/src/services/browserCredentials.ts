@@ -37,7 +37,7 @@ function openDatabase(): Promise<IDBDatabase> {
     return Promise.reject(new Error('当前浏览器不支持本地密钥存储'))
   }
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DATABASE_NAME, 1)
+    const request = indexedDB.open(DATABASE_NAME)
     request.onupgradeneeded = () => {
       const database = request.result
       if (!database.objectStoreNames.contains(STORE_NAME)) {
@@ -58,8 +58,9 @@ async function transact<T>(
     return await new Promise<T>((resolve, reject) => {
       const transaction = database.transaction(STORE_NAME, mode)
       const request = operation(transaction.objectStore(STORE_NAME))
-      request.onsuccess = () => resolve(request.result)
+      transaction.oncomplete = () => resolve(request.result)
       request.onerror = () => reject(request.error ?? new Error('浏览器密钥库操作失败'))
+      transaction.onerror = () => reject(transaction.error ?? new Error('浏览器密钥库事务失败'))
       transaction.onabort = () => reject(transaction.error ?? new Error('浏览器密钥库事务失败'))
     })
   } finally {

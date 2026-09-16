@@ -37,7 +37,6 @@ const settingsDocument = {
         imageGen: { provider: 'gpt2api' },
       },
       revision: 3,
-      schemaVersion: 1,
     },
   ],
   bookSettings: [],
@@ -64,7 +63,6 @@ const settingsDocument = {
         imageMaxSize: 0,
       },
       revision: 4,
-      schemaVersion: 1,
       credentialVersionId: 'credential-version-1',
     },
   ],
@@ -245,7 +243,6 @@ describe('insight v2 settings ownership', () => {
               domain: 'insight',
               payload: {},
               revision: 3,
-              schemaVersion: 1,
             },
           ],
         })

@@ -109,7 +109,6 @@ class BrowserDomAgentProviderResolver:
             "browser_dom_agent",
             selected,
             provider_row["payload"],
-            schema_version=int(provider_row["schemaVersion"]),
         )
         selected_settings.update(payload)
         api_key = ""

@@ -21,7 +21,6 @@ EVENT_FIELDS = frozenset({"summary", "importance", "event_type"})
 WARNING_FIELDS = frozenset({"code", "message"})
 PERSISTED_FIELDS = frozenset(
     {
-        "schema_version",
         "page_id",
         "source_asset_id",
         "source_checksum",
@@ -115,7 +114,6 @@ def normalize_page_analysis(
         warnings.append({"code": code, "message": message})
 
     return {
-        "schema_version": 2,
         "page_id": page_id,
         "source_asset_id": source_asset_id,
         "source_checksum": source_checksum,
@@ -132,10 +130,8 @@ def validate_persisted_page_analysis(raw: object) -> dict[str, Any]:
 
     if not isinstance(raw, Mapping) or set(raw) != PERSISTED_FIELDS:
         raise InvalidPageAnalysis(
-            "persisted page analysis must contain exactly the current fields"
+            "persisted page analysis fields do not match the current schema"
         )
-    if raw["schema_version"] != 2:
-        raise InvalidPageAnalysis("persisted page analysis schema_version must be 2")
     normalized = normalize_page_analysis(
         {
             "pages": [

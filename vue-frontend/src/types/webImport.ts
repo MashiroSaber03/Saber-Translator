@@ -93,7 +93,6 @@ export interface WebImportProviderConfigs {
 }
 
 export interface WebImportSettingsPayload {
-  webImportSettingsSchemaVersion: number
   settings: WebImportSettings
   providerConfigs: WebImportProviderConfigs
 }

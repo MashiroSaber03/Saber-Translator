@@ -102,7 +102,6 @@ describe('EditWorkspace backend-owned navigation', () => {
       documentRevision: 3,
       pageId,
       pageStyleDefaults: { ...TEXT_STYLE_DEFAULTS },
-      pageStyleSchemaVersion: 2,
       renderStatus: 'stale',
     }))
   })

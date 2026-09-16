@@ -29,7 +29,6 @@ const book = {
 const constraints = {
   bookId: book.id,
   revision: 2,
-  schemaVersion: 2,
   payload: {
     glossary: {
       enabled: true,

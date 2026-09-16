@@ -7,6 +7,7 @@ import uuid
 from sqlalchemy import Engine, case, insert, select, update
 
 from src.backend_v2.serialization import canonical_json
+from src.backend_v2.settings.validation import setting_storage_payload
 from src.backend_v2.storage.builtin_fonts import discover_bundled_fonts
 from src.backend_v2.content.translation_constraints import (
     empty_translation_constraints,
@@ -19,8 +20,6 @@ from src.backend_v2.storage.defaults import (
     DEFAULT_WEB_IMPORT_SETTINGS,
     DEFAULT_WORKFLOW_PREFERENCES,
     FACTORY_PROMPTS,
-    TEXT_STYLE_DEFAULTS_SCHEMA_VERSION,
-    TRANSLATION_SETTINGS_SCHEMA_VERSION,
     default_translation_settings,
 )
 from src.backend_v2.storage.schema import (
@@ -78,22 +77,6 @@ def seed_system_records(engine: Engine, *, profile_name: str = "local") -> None:
 
         if profile_name == "local":
             seed_user_records_in_connection(connection, LOCAL_USER_ID)
-
-            # Runtime enablement exists only in the local profile.  Reset it
-            # once before the local API and Worker are spawned.
-            connection.execute(
-                update(plugins).values(
-                    runtime_enabled=plugins.c.default_enabled,
-                    state=case(
-                        (plugins.c.state == "error", "error"),
-                        (
-                            plugins.c.default_enabled.is_(True),
-                            "enabled",
-                        ),
-                        else_="disabled",
-                    ),
-                )
-            )
 
         _seed_shared_records(connection)
 
@@ -170,10 +153,6 @@ def seed_user_records_in_connection(connection: object, user_id: str) -> None:
             "insight": DEFAULT_INSIGHT_SETTINGS,
             "web_import": DEFAULT_WEB_IMPORT_SETTINGS,
         }
-        default_schema_versions = {
-            "translation": TRANSLATION_SETTINGS_SCHEMA_VERSION,
-            "text_style_defaults": TEXT_STYLE_DEFAULTS_SCHEMA_VERSION,
-        }
         existing_domains = set(
             connection.execute(
                 select(app_settings.c.domain).where(
@@ -187,8 +166,7 @@ def seed_user_records_in_connection(connection: object, user_id: str) -> None:
                     insert(app_settings).values(
                         owner_user_id=user_id,
                         domain=domain,
-                        payload_json=canonical_json(payload),
-                        schema_version=default_schema_versions.get(domain, 1),
+                        payload_json=canonical_json(setting_storage_payload(domain, payload)),
                     )
                 )
         existing_factory_types = set(
@@ -255,3 +233,25 @@ def _seed_shared_records(connection: object) -> None:
                     "bundled font catalog display name mismatch for "
                     f"{bundled_font.builtin_key}"
                 )
+
+
+def begin_runtime(engine: Engine, *, profile_name: str) -> None:
+    """Reset local runtime switches without creating or repairing stored data."""
+    if profile_name != "local":
+        return
+    with engine.begin() as connection:
+        # Runtime enablement exists only in the local profile.  Reset it
+        # once before the local API and Worker are spawned.
+        connection.execute(
+            update(plugins).values(
+                runtime_enabled=plugins.c.default_enabled,
+                state=case(
+                    (plugins.c.state == "error", "error"),
+                    (
+                        plugins.c.default_enabled.is_(True),
+                        "enabled",
+                    ),
+                    else_="disabled",
+                ),
+            )
+        )

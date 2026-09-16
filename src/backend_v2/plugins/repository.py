@@ -338,7 +338,6 @@ class PluginRegistry:
                             parsed.manifest.to_dict()
                         ),
                         config_schema_json=_json(schema),
-                        manifest_schema_version=3,
                         created_at=now,
                         updated_at=now,
                     )

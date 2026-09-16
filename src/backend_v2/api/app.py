@@ -118,7 +118,6 @@ def _create_v2_blueprint(settings: ApiSettings) -> Blueprint:
             payload.update(
                 {
                     "role": "api",
-                    "schemaVersion": "v2",
                     "epochId": settings.identity.epoch_id,
                     "dataRootFingerprint": data_root_fingerprint(settings.data_root),
                 }

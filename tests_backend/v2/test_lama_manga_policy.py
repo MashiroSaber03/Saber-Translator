@@ -1,5 +1,6 @@
 from copy import deepcopy
 import json
+import pytest
 
 from sqlalchemy import update
 
@@ -9,7 +10,7 @@ from src.backend_v2.storage.schema import metadata, platform_config
 from src.backend_v2.storage.seeding import seed_system_records
 
 
-def test_existing_policy_gains_manga_without_changing_other_limits(tmp_path):
+def test_incomplete_stored_policy_is_rejected_without_upgrading(tmp_path):
     engine = create_sqlite_engine(tmp_path / "policy.sqlite3")
     try:
         metadata.create_all(engine)
@@ -20,11 +21,7 @@ def test_existing_policy_gains_manga_without_changing_other_limits(tmp_path):
         with engine.begin() as connection:
             connection.execute(update(platform_config).values(public_user_policy_json=json.dumps(previous)))
         repository = PublicUserPolicyRepository(engine)
-        upgraded = repository.load()
-        assert upgraded["models"].pop("lama_manga") is True
-        assert upgraded == previous
-        upgraded["models"]["lama_manga"] = False
-        repository.save(upgraded)
-        assert repository.load()["models"]["lama_manga"] is False
+        with pytest.raises(ValueError):
+            repository.load()
     finally:
         engine.dispose()

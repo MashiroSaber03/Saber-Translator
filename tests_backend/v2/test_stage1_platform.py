@@ -27,8 +27,10 @@ from src.backend_v2.storage.database import (
     immediate_transaction,
 )
 from src.backend_v2.storage.defaults import (
+    DEFAULT_BROWSER_DOM_AGENT,
     DEFAULT_INSIGHT_SETTINGS,
     DEFAULT_TEXT_STYLE,
+    DEFAULT_WEB_IMPORT_SETTINGS,
     default_translation_settings,
 )
 from src.backend_v2.storage.epochs import (
@@ -38,7 +40,6 @@ from src.backend_v2.storage.epochs import (
     utcnow,
 )
 from src.backend_v2.storage.lifecycle import (
-    SCHEMA_REVISION,
     UnsupportedDataRoot,
     initialize_database,
     schema_smoke_test,
@@ -90,6 +91,8 @@ from src.backend_v2.storage.single_instance import (
     DataRootLock,
 )
 from src.backend_v2.settings.validation import (
+    compose_editable_settings,
+    setting_storage_payload,
     validate_credential_secret,
     validate_provider_setting_payload,
     validate_setting_payload,
@@ -131,15 +134,101 @@ def platform(tmp_path: Path):
         engine.dispose()
 
 
+def test_provider_parameters_have_one_persistent_owner(platform) -> None:
+    _root, engine = platform
+    repository = SettingsRepository(engine)
+    payload = default_translation_settings()
+    payload["translation"]["provider"] = "custom"
+    repository.save_transaction(
+        settings=(SettingMutation("translation", payload, 0),),
+        providers=(ProviderSettingMutation(
+            domain="translation", provider="custom", base_revision=0,
+            payload={"modelName": "first-model", "customBaseUrl": "https://example.com/v1"},
+        ),),
+    )
+    with engine.connect() as connection:
+        stored = json.loads(connection.execute(
+            select(app_settings.c.payload_json).where(app_settings.c.domain == "translation")
+        ).scalar_one())
+    assert stored["translation"]["provider"] == "custom"
+    assert "modelName" not in stored["translation"]
+    repository.save_transaction(providers=(ProviderSettingMutation(
+        domain="translation", provider="custom", base_revision=1,
+        payload={"modelName": "second-model", "customBaseUrl": "https://example.com/v1"},
+    ),))
+    document = repository.load(domains=("translation",))
+    selected = document["settings"][0]
+    assert selected["revision"] == 1
+    assert selected["payload"]["translation"]["modelName"] == "second-model"
+    assert document["providerSettings"][0]["revision"] == 2
+
+
+@pytest.mark.parametrize("domain,editable,section,provider_domain", [
+    ("translation", default_translation_settings(), "translation", "translation"),
+    ("translation", default_translation_settings(), "hqTranslation", "hq"),
+    ("translation", default_translation_settings(), "pluginAgent", "plugin_agent"),
+    ("translation", default_translation_settings(), "aiVisionOcr", "ai_vision_ocr"),
+    ("browser_dom_agent", DEFAULT_BROWSER_DOM_AGENT, None, "browser_dom_agent"),
+    ("web_import", DEFAULT_WEB_IMPORT_SETTINGS, "agent", "web_import_agent"),
+])
+def test_provider_parameters_are_read_only_from_the_provider_source(
+    domain, editable, section, provider_domain,
+) -> None:
+    stored = setting_storage_payload(domain, editable)
+    expected = compose_editable_settings(domain, stored)
+    embedded = deepcopy(stored)
+    selected = embedded[section] if section else embedded
+    selected["modelName"] = "must-not-be-read-from-main-settings"
+    with pytest.raises(ValueError):
+        compose_editable_settings(domain, embedded)
+
+    composed = compose_editable_settings(domain, stored, {
+        (provider_domain, selected["provider"]): {"modelName": "provider-model"},
+    })
+    assert (composed[section] if section else composed)["modelName"] == "provider-model"
+    assert selected["modelName"] == "must-not-be-read-from-main-settings"
+    assert compose_editable_settings(domain, stored) == expected
+
+
+def test_settings_load_uses_the_page_style_contract(platform) -> None:
+    _root, engine = platform
+    seed_system_records(engine)
+    repository = SettingsRepository(engine)
+    assert repository.load(domains=("text_style_defaults",))["settings"][0]["payload"]["fontFamily"]
+    with engine.begin() as connection:
+        connection.execute(
+            update(app_settings)
+            .where(app_settings.c.domain == "text_style_defaults")
+            .values(payload_json="{}")
+        )
+    with pytest.raises(ValueError, match="text_style_defaults is missing"):
+        repository.load(domains=("text_style_defaults",))
+
+
+def test_failed_initialization_does_not_publish_a_runtime_profile(tmp_path, monkeypatch) -> None:
+    import src.backend_v2.storage.lifecycle as lifecycle
+
+    data_root = tmp_path / "failed-bootstrap"
+    def fail_seed(*args, **kwargs):
+        raise RuntimeError("initial defaults could not be saved")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(lifecycle, "seed_system_records", fail_seed)
+        with pytest.raises(RuntimeError, match="initial defaults"):
+            initialize_database(data_root)
+
+    with pytest.raises(lifecycle.UnsupportedDataRoot, match="未完成初始化"):
+        initialize_database(data_root)
+
+
 def test_launcher_initialization_seeds_one_persistent_quick_workspace(
     tmp_path: Path,
 ) -> None:
     data_root = tmp_path / "data-v2"
     (data_root / "runtime").mkdir(parents=True)
     first = initialize_database(data_root)
-    assert first.schema_revision == SCHEMA_REVISION
     assert first.created is True
-    assert schema_smoke_test(first.database_path) == SCHEMA_REVISION
+    schema_smoke_test(first.database_path)
 
     engine = create_sqlite_engine(first.database_path)
     with engine.connect() as connection:
@@ -222,7 +311,7 @@ def test_bundled_font_catalog_uses_an_available_font_when_preferred_is_absent(
         discover_bundled_fonts.cache_clear()
 
 
-def test_storage_initialization_rejects_conflicting_builtin_font_metadata(
+def test_storage_initialization_does_not_reseed_builtin_font_metadata(
     tmp_path: Path,
 ) -> None:
     data_root = tmp_path / "data-v2"
@@ -237,62 +326,34 @@ def test_storage_initialization_rejects_conflicting_builtin_font_metadata(
         )
     engine.dispose()
 
-    with pytest.raises(RuntimeError, match="display name mismatch"):
-        initialize_database(data_root)
+    assert initialize_database(data_root).created is False
+    engine = create_sqlite_engine(initialized.database_path)
+    try:
+        with engine.connect() as connection:
+            assert connection.execute(
+                select(fonts.c.display_name).where(fonts.c.builtin_key == "default")
+            ).scalar_one() == "默认字体"
+    finally:
+        engine.dispose()
 
 
-@pytest.mark.parametrize(
-    "retired_revision",
-    [None, "0017", "v2_foundation_20260810"],
-)
-def test_storage_initialization_rejects_nonformal_database_without_rewriting_it(
+def test_storage_initialization_rejects_invalid_database_without_rewriting_it(
     tmp_path: Path,
-    retired_revision: str | None,
 ) -> None:
     data_root = tmp_path / "data-v2"
-    (data_root / "runtime").mkdir(parents=True)
+    data_root.mkdir()
     database_path = data_root / "saber.sqlite3"
     with sqlite3.connect(database_path) as connection:
         connection.execute("CREATE TABLE sentinel(value TEXT NOT NULL)")
         connection.execute("INSERT INTO sentinel VALUES ('untouched')")
-        if retired_revision is not None:
-            connection.execute(
-                "CREATE TABLE schema_metadata("
-                "singleton_id INTEGER PRIMARY KEY, revision VARCHAR(64) NOT NULL)"
-            )
-            connection.execute(
-                "INSERT INTO schema_metadata VALUES (1, ?)",
-                (retired_revision,),
-            )
 
-    with pytest.raises(UnsupportedDataRoot, match="旧数据不会被读取或迁移"):
+    with pytest.raises(UnsupportedDataRoot, match="数据库缺少有效的运行模式信息"):
         initialize_database(data_root)
 
     with sqlite3.connect(database_path) as connection:
         assert connection.execute("SELECT value FROM sentinel").fetchall() == [
             ("untouched",)
         ]
-
-
-def test_storage_initialization_rejects_a_retired_revision_without_rewriting_it(
-    tmp_path: Path,
-) -> None:
-    data_root = tmp_path / "data-v2"
-    initialized = initialize_database(data_root)
-    retired_revision = "retired_task_schema"
-    with sqlite3.connect(initialized.database_path) as connection:
-        connection.execute(
-            "UPDATE schema_metadata SET revision = ? WHERE singleton_id = 1",
-            (retired_revision,),
-        )
-
-    with pytest.raises(UnsupportedDataRoot, match="旧数据不会被读取或迁移"):
-        initialize_database(data_root)
-
-    with sqlite3.connect(initialized.database_path) as connection:
-        assert connection.execute(
-            "SELECT revision FROM schema_metadata WHERE singleton_id = 1"
-        ).fetchone() == (retired_revision,)
 
 
 def test_storage_data_root_cannot_be_reused_by_the_other_profile(
@@ -329,7 +390,7 @@ def test_custom_insight_architecture_requires_at_least_two_layers() -> None:
     payload["analysis"]["batch"]["customLayers"] = []
 
     with pytest.raises(ValueError, match="must contain at least 2 layers"):
-        validate_setting_payload("insight", payload, schema_version=1)
+        validate_setting_payload("insight", payload)
 
 
 def test_custom_insight_architecture_has_no_arbitrary_size_gate() -> None:
@@ -350,7 +411,7 @@ def test_custom_insight_architecture_has_no_arbitrary_size_gate() -> None:
         }
     )
 
-    validated = validate_setting_payload("insight", payload, schema_version=1)
+    validated = validate_setting_payload("insight", payload)
 
     assert len(validated["analysis"]["batch"]["customLayers"]) == 9
 
@@ -360,13 +421,11 @@ def test_export_preferences_accept_only_the_current_boolean_contract() -> None:
     assert validate_setting_payload(
         "export_preferences",
         payload,
-        schema_version=1,
     ) == payload
     with pytest.raises(ValueError, match="must be boolean"):
         validate_setting_payload(
             "export_preferences",
             {"preserveOriginalFilenames": "true"},
-            schema_version=1,
         )
 
 
@@ -393,7 +452,6 @@ def test_custom_ai_profiles_validate_reusable_service_metadata() -> None:
     assert validate_setting_payload(
         "custom_ai_profiles",
         payload,
-        schema_version=1,
     ) == payload
 
     duplicate_name = deepcopy(payload)
@@ -402,7 +460,6 @@ def test_custom_ai_profiles_validate_reusable_service_metadata() -> None:
         validate_setting_payload(
             "custom_ai_profiles",
             duplicate_name,
-            schema_version=1,
         )
 
     retired_kind = deepcopy(payload)
@@ -411,7 +468,6 @@ def test_custom_ai_profiles_validate_reusable_service_metadata() -> None:
         validate_setting_payload(
             "custom_ai_profiles",
             retired_kind,
-            schema_version=1,
         )
 
     invalid_url = deepcopy(payload)
@@ -420,7 +476,6 @@ def test_custom_ai_profiles_validate_reusable_service_metadata() -> None:
         validate_setting_payload(
             "custom_ai_profiles",
             invalid_url,
-            schema_version=1,
         )
 
 
@@ -499,17 +554,17 @@ def _current_web_import_settings() -> dict[str, object]:
 
 def test_web_import_settings_reject_noncurrent_field_types() -> None:
     valid = _current_web_import_settings()
-    assert validate_setting_payload("web_import", valid, schema_version=1) == valid
+    assert validate_setting_payload("web_import", valid) == valid
 
     invalid_boolean = deepcopy(valid)
     invalid_boolean["download"]["useReferer"] = "true"
     with pytest.raises(ValueError, match="download.useReferer must be boolean"):
-        validate_setting_payload("web_import", invalid_boolean, schema_version=1)
+        validate_setting_payload("web_import", invalid_boolean)
 
     invalid_string = deepcopy(valid)
     invalid_string["agent"]["modelName"] = None
     with pytest.raises(ValueError, match="agent.modelName must be a string"):
-        validate_setting_payload("web_import", invalid_string, schema_version=1)
+        validate_setting_payload("web_import", invalid_string)
 
 
 def test_web_import_settings_have_no_arbitrary_numeric_upper_gates() -> None:
@@ -529,7 +584,7 @@ def test_web_import_settings_have_no_arbitrary_numeric_upper_gates() -> None:
         {"maxWidth": 100_001, "maxHeight": 100_001}
     )
 
-    assert validate_setting_payload("web_import", payload, schema_version=1) == payload
+    assert validate_setting_payload("web_import", payload) == payload
 
 
 def test_web_import_timeouts_accept_fractional_seconds() -> None:
@@ -537,7 +592,7 @@ def test_web_import_timeouts_accept_fractional_seconds() -> None:
     payload["agent"]["timeout"] = 120.5
     payload["download"]["timeout"] = 30.25
 
-    assert validate_setting_payload("web_import", payload, schema_version=1) == payload
+    assert validate_setting_payload("web_import", payload) == payload
 
 
 def test_web_import_provider_setting_accepts_only_current_fields() -> None:
@@ -549,7 +604,6 @@ def test_web_import_provider_setting_accepts_only_current_fields() -> None:
         "web_import_agent",
         "custom",
         valid,
-        schema_version=1,
     ) == valid
 
     with pytest.raises(ValueError, match="invalid fields"):
@@ -557,7 +611,6 @@ def test_web_import_provider_setting_accepts_only_current_fields() -> None:
             "web_import_agent",
             "custom",
             {**valid, "openaiOptions": {}},
-            schema_version=1,
         )
 
 
@@ -567,7 +620,6 @@ def test_provider_settings_reject_fields_owned_by_other_domains() -> None:
             "translation",
             "custom",
             {"batchSize": 3},
-            schema_version=1,
         )
 
 
@@ -576,14 +628,12 @@ def test_ai_batch_provider_settings_have_no_fixed_upper_bound() -> None:
         "hq",
         "custom",
         {"batchSize": 128},
-        schema_version=1,
     ) == {"batchSize": 128}
 
     assert validate_provider_setting_payload(
         "proofreading_11111111-1111-4111-8111-111111111111",
         "custom",
         {"batchSize": 256},
-        schema_version=1,
     ) == {"batchSize": 256}
 
 
@@ -645,7 +695,6 @@ def test_removed_custom_ai_profile_credential_can_be_deleted(platform) -> None:
                     ]
                 },
                 base_revision=0,
-                schema_version=1,
             ),
         ),
         credentials_edits=(
@@ -664,7 +713,6 @@ def test_removed_custom_ai_profile_credential_can_be_deleted(platform) -> None:
                 domain="custom_ai_profiles",
                 payload={"profiles": []},
                 base_revision=1,
-                schema_version=1,
             ),
         ),
     )
@@ -702,7 +750,6 @@ def test_provider_numeric_settings_reject_invalid_values(
             domain,
             provider,
             payload,
-            schema_version=1,
         )
 
 
@@ -718,7 +765,6 @@ def test_provider_timeouts_accept_fractional_seconds() -> None:
             domain,
             provider,
             payload,
-            schema_version=1,
         ) == payload
 
 
@@ -743,7 +789,7 @@ def test_translation_detection_thresholds_use_one_current_unit(
     payload[field] = value
 
     with pytest.raises(ValueError, match=message):
-        validate_setting_payload("translation", payload, schema_version=9)
+        validate_setting_payload("translation", payload)
 
 
 def test_translation_detection_percentages_accept_decimal_values() -> None:
@@ -765,7 +811,6 @@ def test_translation_detection_percentages_accept_decimal_values() -> None:
     assert validate_setting_payload(
         "translation",
         payload,
-        schema_version=9,
     ) == payload
 
 
@@ -775,7 +820,7 @@ def test_translation_settings_validate_paddleocr_vl_prompt_language() -> None:
 
     payload["paddleOcrVl"]["sourceLanguage"] = "unsupported"
     with pytest.raises(ValueError, match="paddleOcrVl.sourceLanguage"):
-        validate_setting_payload("translation", payload, schema_version=9)
+        validate_setting_payload("translation", payload)
 
 
 def test_factory_translation_defaults_match_algorithm_prompt_protocols() -> None:
@@ -805,14 +850,14 @@ def test_translation_settings_reject_nullable_browser_temperature() -> None:
     payload["translation"]["openaiOptions"]["request"]["temperature"] = None
 
     with pytest.raises(ValueError, match="temperature must be from 0 to 2"):
-        validate_setting_payload("translation", payload, schema_version=9)
+        validate_setting_payload("translation", payload)
 
 
 def test_parallel_deep_learning_concurrency_has_no_arbitrary_upper_gate() -> None:
     payload = default_translation_settings()
     payload["parallel"]["deepLearningLockSize"] = 8
 
-    validated = validate_setting_payload("translation", payload, schema_version=9)
+    validated = validate_setting_payload("translation", payload)
 
     assert validated["parallel"]["deepLearningLockSize"] == 8
 
@@ -829,7 +874,7 @@ def test_ai_translation_batch_sizes_have_no_fixed_upper_bound() -> None:
         }
     ]
 
-    validated = validate_setting_payload("translation", payload, schema_version=9)
+    validated = validate_setting_payload("translation", payload)
 
     assert validated["hqTranslation"]["batchSize"] == 128
     assert validated["proofreading"]["rounds"][0]["batchSize"] == 256
@@ -844,31 +889,19 @@ def test_translation_settings_require_unique_proofreading_round_ids() -> None:
     ]
 
     with pytest.raises(ValueError, match="unique IDs"):
-        validate_setting_payload("translation", payload, schema_version=9)
+        validate_setting_payload("translation", payload)
 
 
 def test_translation_settings_drop_the_unused_global_proofreading_retry() -> None:
     payload = default_translation_settings()
 
-    assert payload["settingsSchemaVersion"] == 9
     assert set(payload["proofreading"]) == {"enabled", "rounds"}
 
     retired = deepcopy(payload)
     retired["proofreading"]["maxRetries"] = 2
     with pytest.raises(ValueError, match="invalid fields"):
-        validate_setting_payload("translation", retired, schema_version=9)
+        validate_setting_payload("translation", retired)
 
-    with pytest.raises(ValueError, match="schema version must be 9"):
-        validate_setting_payload("translation", payload, schema_version=5)
-
-
-def test_text_style_defaults_reject_the_legacy_schema_version() -> None:
-    with pytest.raises(ValueError, match="schema version must be 2"):
-        validate_setting_payload(
-            "text_style_defaults",
-            DEFAULT_TEXT_STYLE,
-            schema_version=1,
-        )
 
 
 def test_removing_middle_proofreading_round_prunes_only_current_provider_setting(
@@ -897,7 +930,7 @@ def test_removing_middle_proofreading_round_prunes_only_current_provider_setting
         ],
     }
     repository.save_transaction(
-        settings=(SettingMutation("translation", payload, 0, 9),),
+        settings=(SettingMutation("translation", payload, 0),),
         credentials_edits=tuple(
             CredentialEdit(
                 domain=domain,
@@ -914,7 +947,6 @@ def test_removing_middle_proofreading_round_prunes_only_current_provider_setting
                 provider="custom",
                 payload={"modelName": f"proof-model-{index + 1}"},
                 base_revision=0,
-                schema_version=1,
                 credential_edit_ref=domain,
             )
             for index, domain in enumerate(domains)
@@ -928,7 +960,7 @@ def test_removing_middle_proofreading_round_prunes_only_current_provider_setting
     updated = deepcopy(payload)
     updated["proofreading"]["rounds"].pop(1)
     repository.save_transaction(
-        settings=(SettingMutation("translation", updated, 1, 9),),
+        settings=(SettingMutation("translation", updated, 1),),
     )
 
     loaded = repository.load()
@@ -947,90 +979,6 @@ def test_removing_middle_proofreading_round_prunes_only_current_provider_setting
     ) == {"api_key": "secret-2"}
 
 
-def test_settings_load_rejects_noncurrent_persisted_schema_versions(
-    platform,
-) -> None:
-    _data_root, engine = platform
-    repository = SettingsRepository(engine)
-    repository.save_transaction(
-        settings=(
-            SettingMutation(
-                domain="translation",
-                payload=default_translation_settings(),
-                base_revision=0,
-                schema_version=9,
-            ),
-        ),
-        providers=(
-            ProviderSettingMutation(
-                domain="translation",
-                provider="custom",
-                payload={"modelName": "current-model"},
-                base_revision=0,
-                schema_version=1,
-            ),
-        ),
-    )
-    with engine.begin() as connection:
-        connection.execute(
-            text(
-                "UPDATE app_settings SET schema_version = 2 "
-                "WHERE domain = 'translation'"
-            )
-        )
-    with pytest.raises(ValueError, match="translation settings schema version"):
-        repository.load(domains=("translation",))
-
-    with engine.begin() as connection:
-        connection.execute(
-            text(
-                "UPDATE app_settings SET schema_version = 9 "
-                "WHERE domain = 'translation'"
-            )
-        )
-        connection.execute(
-            text(
-                "UPDATE provider_settings SET schema_version = 2 "
-                "WHERE domain = 'translation' AND provider = 'custom'"
-            )
-        )
-    with pytest.raises(ValueError, match="provider setting schema version"):
-        repository.load(domains=("translation",))
-
-    book_id = "current-schema-book"
-    with engine.begin() as connection:
-        connection.execute(
-            insert(books).values(id=book_id, kind="library", title="Book")
-        )
-        connection.execute(
-            text(
-                "UPDATE provider_settings SET schema_version = 1 "
-                "WHERE domain = 'translation' AND provider = 'custom'"
-            )
-        )
-    repository.save_transaction(
-        book_settings_edits=(
-            BookSettingMutation(
-                book_id=book_id,
-                domain="insight",
-                payload=deepcopy(DEFAULT_INSIGHT_SETTINGS),
-                base_revision=0,
-                schema_version=1,
-            ),
-        ),
-    )
-    with engine.begin() as connection:
-        connection.execute(
-            text(
-                "UPDATE book_settings SET schema_version = 2 "
-                "WHERE book_id = :book_id AND domain = 'insight'"
-            ),
-            {"book_id": book_id},
-        )
-    with pytest.raises(ValueError, match="book setting schema version"):
-        repository.load(domains=("insight",), book_id=book_id)
-
-
 def test_settings_load_uses_one_consistent_read_snapshot(platform) -> None:
     data_root, engine = platform
     repository = SettingsRepository(engine)
@@ -1042,7 +990,6 @@ def test_settings_load_uses_one_consistent_read_snapshot(platform) -> None:
                 domain="translation",
                 payload=payload,
                 base_revision=0,
-                schema_version=9,
             ),
         ),
         providers=(
@@ -1051,7 +998,6 @@ def test_settings_load_uses_one_consistent_read_snapshot(platform) -> None:
                 provider="custom",
                 payload={"modelName": "old-model"},
                 base_revision=0,
-                schema_version=1,
             ),
         ),
     )
@@ -2118,7 +2064,6 @@ def test_settings_credentials_plugins_fonts_and_shared_limiter(platform) -> None
                 domain="translation",
                 payload=translation_payload,
                 base_revision=0,
-                schema_version=9,
             ),
         ),
         credentials_edits=(
@@ -2136,7 +2081,6 @@ def test_settings_credentials_plugins_fonts_and_shared_limiter(platform) -> None
                 provider="custom",
                 payload={"modelName": "fake-model"},
                 base_revision=0,
-                schema_version=1,
                 credential_edit_ref="translation-fake",
             ),
         ),
@@ -2179,7 +2123,6 @@ def test_settings_credentials_plugins_fonts_and_shared_limiter(platform) -> None
             "domain": "translation",
             "provider": "custom",
             "revision": 1,
-            "schemaVersion": 1,
             "credentialVersionId": version_id,
             "payload": {"modelName": "fake-model"},
         }
@@ -2208,7 +2151,6 @@ def test_settings_credentials_plugins_fonts_and_shared_limiter(platform) -> None
                     "lastWorkflowMode": "hq-batch",
                 },
                 base_revision=0,
-                schema_version=1,
             ),
         ),
     )
@@ -2223,7 +2165,6 @@ def test_settings_credentials_plugins_fonts_and_shared_limiter(platform) -> None
                     "lastWorkflowMode": "hq-batch",
                 },
                 base_revision=0,
-                schema_version=1,
             ),
         ),
     )
@@ -2238,7 +2179,6 @@ def test_settings_credentials_plugins_fonts_and_shared_limiter(platform) -> None
                     domain="translation",
                     payload=translation_payload,
                     base_revision=0,
-                    schema_version=9,
                 ),
             ),
             credentials_edits=(
@@ -2375,7 +2315,6 @@ def test_settings_http_rejects_unknown_transaction_fields(platform) -> None:
                         "lastWorkflowMode": "hq-batch",
                     },
                     "baseRevision": 0,
-                    "schemaVersion": 1,
                     "legacyPayload": {},
                 }
             ],
@@ -2399,7 +2338,6 @@ def test_expired_settings_idempotency_key_can_be_reused(platform) -> None:
                 "lastWorkflowMode": "hq-batch",
             },
             "baseRevision": 0,
-            "schemaVersion": 1,
         }],
     }
     first, replayed = settings.save_transaction_idempotent(
@@ -2409,7 +2347,6 @@ def test_expired_settings_idempotency_key_can_be_reused(platform) -> None:
             domain="workflow_preferences",
             payload=first_body["settings"][0]["payload"],
             base_revision=0,
-            schema_version=1,
         ),),
     )
     assert replayed is False
@@ -2433,7 +2370,6 @@ def test_expired_settings_idempotency_key_can_be_reused(platform) -> None:
                 "lastWorkflowMode": "translate-current",
             },
             "baseRevision": 1,
-            "schemaVersion": 1,
         }],
     }
     second, replayed = settings.save_transaction_idempotent(
@@ -2443,7 +2379,6 @@ def test_expired_settings_idempotency_key_can_be_reused(platform) -> None:
             domain="workflow_preferences",
             payload=second_body["settings"][0]["payload"],
             base_revision=1,
-            schema_version=1,
         ),),
     )
     assert replayed is False
@@ -2501,7 +2436,6 @@ def test_settings_transaction_rolls_back_settings_when_prompt_cas_fails(
                     "lastWorkflowMode": "hq-batch",
                 },
                 base_revision=0,
-                schema_version=1,
             ),
         ),
     )["settings"][0]
@@ -2521,7 +2455,6 @@ def test_settings_transaction_rolls_back_settings_when_prompt_cas_fails(
                         "lastWorkflowMode": "translate-current",
                     },
                     base_revision=int(initial_setting["revision"]),
-                    schema_version=1,
                 ),
             ),
             prompt_edits=(
@@ -2815,7 +2748,6 @@ def test_insight_provider_accepts_its_snake_case_openai_wire_contract(
                     },
                 },
                 base_revision=0,
-                schema_version=1,
             ),
         ),
     )
@@ -2851,7 +2783,6 @@ def test_v2_provider_diagnostics_resolve_backend_credentials_and_routes(
                     "customBaseUrl": "https://example.test/v1",
                 },
                 base_revision=0,
-                schema_version=1,
                 credential_edit_ref="openai-key",
             ),
         ),
@@ -3143,7 +3074,6 @@ def test_settings_http_transaction_returns_the_saved_secret_to_the_settings_ui(
                 "provider": "deepseek",
                     "payload": {"modelName": "deepseek-chat"},
                     "baseRevision": 0,
-                    "schemaVersion": 1,
                     "credentialEditRef": "translation-deepseek",
                 }],
             "credentialEdits": [{

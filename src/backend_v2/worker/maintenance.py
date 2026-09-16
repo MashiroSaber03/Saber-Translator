@@ -265,7 +265,11 @@ class WorkerMaintenance:
             )
             keys = list(
                 connection.execute(
-                    select(idempotency_records.c.scope, idempotency_records.c.key)
+                    select(
+                        idempotency_records.c.owner_user_id,
+                        idempotency_records.c.scope,
+                        idempotency_records.c.key,
+                    )
                     .where(
                         idempotency_records.c.expires_at <= now,
                         ~protected,
@@ -278,9 +282,12 @@ class WorkerMaintenance:
                 connection.execute(
                     delete(idempotency_records).where(
                         tuple_(
+                            idempotency_records.c.owner_user_id,
                             idempotency_records.c.scope,
                             idempotency_records.c.key,
-                        ).in_(keys)
+                        ).in_(keys),
+                        idempotency_records.c.expires_at <= now,
+                        ~protected,
                     )
                 )
         return len(keys)

@@ -10,7 +10,6 @@ from sqlalchemy.exc import IntegrityError
 
 from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.lifecycle import (
-    SCHEMA_REVISION,
     initialize_database,
     schema_smoke_test,
 )
@@ -739,15 +738,14 @@ def test_current_foundation_builds_the_exact_schema(
     database_path = initialized.database_path
 
     assert initialized.created is True
-    assert initialized.schema_revision == SCHEMA_REVISION
-    assert schema_smoke_test(database_path) == SCHEMA_REVISION
+    schema_smoke_test(database_path)
 
     engine = create_sqlite_engine(database_path)
     with engine.connect() as connection:
         assert connection.execute(text("PRAGMA foreign_key_check")).all() == []
         assert connection.execute(
-            text("SELECT revision FROM schema_metadata WHERE singleton_id = 1")
-        ).scalar_one() == SCHEMA_REVISION
+            text("SELECT runtime_profile FROM schema_metadata WHERE singleton_id = 1")
+        ).scalar_one() == "local"
         actual_tables = {
             str(row[0])
             for row in connection.execute(

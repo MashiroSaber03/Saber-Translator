@@ -120,9 +120,11 @@ it('keeps progress, candidates and errors from reopening a closed window', async
   expect(snapshot()).toMatchObject({ open: true, uploadError: { count: 1 } })
 })
 
-it('starts closed even when legacy stored settings contain panelOpen=true', () => {
+it('starts closed when the UI is recreated after opening the panel', () => {
+  ui.togglePanel()
+  expect(snapshot().open).toBe(true)
   ui.remove()
-  ui = new ExtensionUi(handlers, { ...DEFAULT_PREFERENCE, ...{ panelOpen: true } }, 'Example chapter', true)
+  ui = new ExtensionUi(handlers, { ...DEFAULT_PREFERENCE }, 'Example chapter', true)
   expect(ui.shadow.querySelector<HTMLElement>('.saber-panel')!.dataset.open).toBe('false')
 })
 it('returns actionable RPC failures and does not invoke arbitrary methods', async () => {

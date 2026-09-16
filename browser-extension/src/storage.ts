@@ -18,22 +18,18 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
 
 export async function loadSettings(): Promise<ExtensionSettings> {
   const stored = await chrome.storage.local.get(STORAGE_KEY)
-  const value = stored[STORAGE_KEY]
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+  const value = stored[STORAGE_KEY] as Partial<ExtensionSettings> | undefined
+  if (value === undefined) {
     return structuredClone(DEFAULT_SETTINGS)
   }
-  const candidate = value as Partial<ExtensionSettings>
-  return {
-    token: typeof candidate.token === 'string' ? candidate.token : '',
-    serverPort: Number.isInteger(candidate.serverPort)
-      && Number(candidate.serverPort) >= 1
-      && Number(candidate.serverPort) <= 65535
-      ? Number(candidate.serverPort)
-      : 5000,
-    domains: candidate.domains && typeof candidate.domains === 'object'
-      ? candidate.domains
-      : {},
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+    || typeof value.token !== 'string'
+    || typeof value.serverPort !== 'number'
+    || !Number.isInteger(value.serverPort) || value.serverPort < 1 || value.serverPort > 65535
+    || !value.domains || typeof value.domains !== 'object' || Array.isArray(value.domains)) {
+    throw new Error('扩展设置格式无效')
   }
+  return value as ExtensionSettings
 }
 
 let storageWrite: Promise<unknown> = Promise.resolve()
@@ -56,8 +52,15 @@ export function preferenceFor(
   settings: ExtensionSettings,
   hostname: string,
 ): DomainPreference {
-  return {
-    ...DEFAULT_PREFERENCE,
-    ...(settings.domains[hostname] ?? {}),
+  const preference = settings.domains[hostname]
+  if (preference === undefined) return structuredClone(DEFAULT_PREFERENCE)
+  if (!preference || typeof preference !== 'object'
+    || typeof preference.disabled !== 'boolean'
+    || typeof preference.glossaryEnabled !== 'boolean'
+    || typeof preference.autoTermsEnabled !== 'boolean'
+    || !['adapter', 'dom-agent', 'similar'].includes(preference.method)
+    || !['standard', 'hq'].includes(preference.mode)) {
+    throw new Error('站点设置格式无效')
   }
+  return structuredClone(preference)
 }

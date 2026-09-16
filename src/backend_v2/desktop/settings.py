@@ -1,4 +1,4 @@
-"""Small, versioned desktop settings file."""
+"""Desktop settings stored as a JSON file."""
 
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ from typing import Any
 from src.backend_v2.local_models import normalize_resident_models
 
 
-SETTINGS_SCHEMA_VERSION = 3
 PET_SCALES = (75, 100, 125, 150)
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
 MAX_WINDOW_SIZE = 16_777_215
@@ -20,7 +19,6 @@ MAX_WINDOW_SIZE = 16_777_215
 
 @dataclass(frozen=True, slots=True)
 class DesktopSettings:
-    schema_version: int = SETTINGS_SCHEMA_VERSION
     port: int = 5000
     allow_lan: bool = False
     log_level: str = "INFO"
@@ -53,28 +51,12 @@ class DesktopSettingsStore:
         fallback = defaults or DesktopSettings()
         if not self.path.exists():
             return fallback
-        try:
-            payload = json.loads(self.path.read_text(encoding="utf-8"))
-            payload, migrated = self._migrate(payload)
-            settings = self._decode(payload)
-        except (OSError, ValueError, TypeError, json.JSONDecodeError):
-            try:
-                self.path.unlink(missing_ok=True)
-                self.save(fallback)
-            except OSError:
-                pass
-            return fallback
-        if migrated:
-            try:
-                self.save(settings)
-            except OSError:
-                pass
-        return settings
+        payload = json.loads(self.path.read_text(encoding="utf-8"))
+        return self._decode(payload)
 
     def save(self, settings: DesktopSettings) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
-            "schemaVersion": settings.schema_version,
             "server": {
                 "port": settings.port,
                 "allowLan": settings.allow_lan,
@@ -110,55 +92,11 @@ class DesktopSettingsStore:
         os.replace(temporary, self.path)
 
     @staticmethod
-    def _migrate(payload: object) -> tuple[object, bool]:
-        if not isinstance(payload, dict):
-            return payload, False
-        migrated = False
-        current = dict(payload)
-        if current.get("schemaVersion") == 1:
-            if set(current) != {"schemaVersion", "server", "pet", "window"}:
-                raise ValueError("legacy desktop settings fields do not match schema 1")
-            current = {
-                **current,
-                "schemaVersion": 2,
-                "models": {"residentModels": []},
-            }
-            migrated = True
-        if current.get("schemaVersion") == 2:
-            if set(current) != {
-                "schemaVersion",
-                "server",
-                "models",
-                "pet",
-                "window",
-            }:
-                raise ValueError("legacy desktop settings fields do not match schema 2")
-            current = {
-                **current,
-                "schemaVersion": SETTINGS_SCHEMA_VERSION,
-                "browserExtension": {
-                    "enabled": False,
-                    "token": secrets.token_urlsafe(32),
-                },
-            }
-            migrated = True
-        return current, migrated
-
-    @staticmethod
     def _decode(payload: object) -> DesktopSettings:
         if not isinstance(payload, dict):
             raise ValueError("desktop settings must be an object")
-        if set(payload) != {
-            "schemaVersion",
-            "server",
-            "models",
-            "browserExtension",
-            "pet",
-            "window",
-        }:
-            raise ValueError("desktop settings fields do not match the current schema")
-        if payload.get("schemaVersion") != SETTINGS_SCHEMA_VERSION:
-            raise ValueError("unsupported desktop settings schema")
+        if set(payload) != {"server", "models", "browserExtension", "pet", "window"}:
+            raise ValueError("desktop settings sections do not match the current schema")
         server = payload.get("server")
         models = payload.get("models")
         browser_extension = payload.get("browserExtension")

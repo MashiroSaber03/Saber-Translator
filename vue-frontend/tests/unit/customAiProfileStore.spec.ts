@@ -55,7 +55,6 @@ describe('useCustomAiProfileStore', () => {
       settings: [{
         domain: 'custom_ai_profiles',
         revision: 2,
-        schemaVersion: 1,
         payload: {
           profiles: [{
             id: PROFILE_ID,
@@ -141,7 +140,6 @@ describe('useCustomAiProfileStore', () => {
       settings: [{
         domain: 'custom_ai_profiles',
         revision: 1,
-        schemaVersion: 1,
         payload: { profiles: [] },
       }],
       bookSettings: [],
@@ -181,7 +179,6 @@ describe('useCustomAiProfileStore', () => {
         settings: [{
           domain: 'custom_ai_profiles',
           revision: 2,
-          schemaVersion: 1,
           payload: {
             profiles: [{
               id: PROFILE_ID,
@@ -200,7 +197,6 @@ describe('useCustomAiProfileStore', () => {
         settings: [{
           domain: 'custom_ai_profiles',
           revision: 5,
-          schemaVersion: 1,
           payload: {
             profiles: [
               {
@@ -256,7 +252,6 @@ describe('useCustomAiProfileStore', () => {
       settings: [{
         domain: 'custom_ai_profiles',
         revision: 2,
-        schemaVersion: 1,
         payload: {
           profiles: [
             {

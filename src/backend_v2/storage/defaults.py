@@ -15,8 +15,6 @@ from src.shared.constants import (
 
 
 DEFAULT_FONT_ID = "00000000-0000-0000-0000-000000000010"
-TRANSLATION_SETTINGS_SCHEMA_VERSION = 9
-TEXT_STYLE_DEFAULTS_SCHEMA_VERSION = 2
 
 DEFAULT_TEXT_STYLE: dict[str, object] = {
     "fontSize": 26,
@@ -46,6 +44,19 @@ DEFAULT_EXPORT_PREFERENCES: dict[str, object] = {
 
 DEFAULT_CUSTOM_AI_PROFILES: dict[str, object] = {
     "profiles": [],
+}
+
+DEFAULT_BROWSER_DOM_AGENT = {
+    "provider": "siliconflow",
+    "modelName": "",
+    "customBaseUrl": "",
+    "openaiOptions": {
+        "request": {"forceJsonOutput": True},
+        "execution": {
+            "useStream": False, "rpmLimit": 0,
+            "transportRetries": 1, "businessRetries": 1,
+        },
+    },
 }
 
 DEFAULT_WEB_IMPORT_SETTINGS: dict[str, object] = {
@@ -167,7 +178,6 @@ def default_translation_settings() -> dict[str, object]:
         }
 
     return {
-        "settingsSchemaVersion": TRANSLATION_SETTINGS_SCHEMA_VERSION,
         "ocrEngine": "manga_ocr",
         "textDetector": "default",
         "minTextBlockAreaPercent": 0.05,
@@ -243,20 +253,6 @@ def default_translation_settings() -> dict[str, object]:
                 transport_retries=1,
                 business_retries=0,
             ),
-        },
-        "browserDomAgent": {
-            "provider": "siliconflow",
-            "modelName": "",
-            "customBaseUrl": "",
-            "openaiOptions": {
-                "request": {"forceJsonOutput": True},
-                "execution": {
-                    "useStream": False,
-                    "rpmLimit": 0,
-                    "transportRetries": 1,
-                    "businessRetries": 1,
-                },
-            },
         },
         "proofreading": {
             "enabled": False,

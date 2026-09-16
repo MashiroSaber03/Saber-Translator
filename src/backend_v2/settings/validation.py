@@ -8,9 +8,10 @@ import re
 from typing import Any, Mapping
 from urllib.parse import urlsplit
 
+from src.backend_v2.content.page_style import validate_text_style_payload
 from src.backend_v2.storage.defaults import (
-    TEXT_STYLE_DEFAULTS_SCHEMA_VERSION,
-    TRANSLATION_SETTINGS_SCHEMA_VERSION,
+    DEFAULT_BROWSER_DOM_AGENT,
+    DEFAULT_WEB_IMPORT_SETTINGS,
     default_translation_settings,
 )
 from src.shared.ai_providers import (
@@ -30,19 +31,11 @@ from src.shared.ai_providers import (
 from src.shared.paddleocr_vl import PADDLEOCR_VL_LANGUAGE_NAMES
 
 
-APP_SETTING_SCHEMA_VERSIONS = {
-    "browser_dom_agent": 1,
-    "translation": TRANSLATION_SETTINGS_SCHEMA_VERSION,
-    "text_style_defaults": TEXT_STYLE_DEFAULTS_SCHEMA_VERSION,
-    "workflow_preferences": 1,
-    "export_preferences": 1,
-    "custom_ai_profiles": 1,
-    "web_import": 1,
-    "insight": 1,
-}
-APP_SETTING_DOMAINS = frozenset(APP_SETTING_SCHEMA_VERSIONS)
-PROVIDER_SETTING_SCHEMA_VERSION = 1
-BOOK_SETTING_SCHEMA_VERSION = 1
+APP_SETTING_DOMAINS = frozenset({
+    "browser_dom_agent", "translation", "text_style_defaults",
+    "workflow_preferences", "export_preferences", "custom_ai_profiles",
+    "web_import", "insight",
+})
 PROVIDER_CAPABILITIES = {
     "translation": TRANSLATION_CAPABILITY,
     "hq": HQ_TRANSLATION_CAPABILITY,
@@ -94,6 +87,7 @@ _WORKFLOW_MODES = frozenset(
     }
 )
 _PROVIDER_PAYLOAD_FIELDS_BY_DOMAIN = {
+    "ocr": frozenset({"version", "sourceLanguage"}),
     "translation": frozenset(
         {"modelName", "customBaseUrl", "openaiOptions", "translationMode"}
     ),
@@ -120,6 +114,15 @@ _PROVIDER_PAYLOAD_FIELDS_BY_DOMAIN = {
 _PROOFREADING_PROVIDER_PAYLOAD_FIELDS = frozenset(
     {"modelName", "customBaseUrl", "openaiOptions", "batchSize", "prompt"}
 )
+TRANSLATION_PROVIDER_SECTIONS = {
+    "translation": "translation",
+    "hqTranslation": "hq",
+    "pluginAgent": "plugin_agent",
+    "aiVisionOcr": "ai_vision_ocr",
+    "baiduOcr": "ocr",
+}
+
+
 _INSIGHT_PROVIDER_PAYLOAD_FIELDS = {
     "insight_vlm": frozenset(
         {"modelName", "customBaseUrl", "openaiOptions", "imageMaxSize"}
@@ -378,12 +381,7 @@ def _validate_proofreading_rounds(payload: Mapping[str, object]) -> None:
         _integer(round_config["batchSize"], f"{path}.batchSize", minimum=1)
 
 
-def _validate_translation(payload: dict[str, Any], schema_version: int) -> None:
-    if payload.get("settingsSchemaVersion") != schema_version:
-        raise ValueError(
-            "translation settings schema version must be "
-            f"{TRANSLATION_SETTINGS_SCHEMA_VERSION}"
-        )
+def _validate_translation(payload: dict[str, Any]) -> None:
     _validate_shape(payload, default_translation_settings(), "translation")
     _validate_proofreading_rounds(payload)
     if payload["ocrEngine"] not in {
@@ -496,11 +494,6 @@ def _validate_translation(payload: dict[str, Any], schema_version: int) -> None:
         payload["pluginAgent"]["provider"],
         PLUGIN_AGENT_CAPABILITY,
         "translation.pluginAgent.provider",
-    )
-    _require_provider(
-        payload["browserDomAgent"]["provider"],
-        PLUGIN_AGENT_CAPABILITY,
-        "translation.browserDomAgent.provider",
     )
     _require_provider(
         payload["aiVisionOcr"]["provider"],
@@ -779,29 +772,18 @@ def _validate_insight(payload: dict[str, Any]) -> None:
 def validate_setting_payload(
     domain: str,
     payload: object,
-    *,
-    schema_version: int,
 ) -> dict[str, Any]:
     if domain not in APP_SETTING_DOMAINS:
         raise ValueError(f"unsupported setting domain: {domain}")
-    expected_schema_version = APP_SETTING_SCHEMA_VERSIONS[domain]
-    if schema_version != expected_schema_version:
-        raise ValueError(
-            f"{domain} settings schema version must be "
-            f"{expected_schema_version}"
-        )
     result = _object(payload, f"{domain} setting")
     _reject_secret_fields(result, domain)
     if domain == "translation":
-        # Additive option: existing saved settings retain whole-page repair.
-        result.setdefault("lamaRegionalInpainting", False)
-        _validate_translation(result, schema_version)
+        _validate_translation(result)
     elif domain == "browser_dom_agent":
         provider = result.get("provider")
         _require_provider(provider, PLUGIN_AGENT_CAPABILITY, "browser_dom_agent.provider")
         validate_provider_setting_payload(
             domain, provider, {key: value for key, value in result.items() if key != "provider"},
-            schema_version=1,
         )
     elif domain == "workflow_preferences":
         _validate_workflow_preferences(result)
@@ -813,6 +795,9 @@ def validate_setting_payload(
         _validate_web_import(result)
     elif domain == "insight":
         _validate_insight(result)
+    elif domain == "text_style_defaults":
+        font_id, style = validate_text_style_payload(result)
+        result = {**style, "fontFamily": font_id}
     return result
 
 
@@ -820,14 +805,7 @@ def validate_provider_setting_payload(
     domain: str,
     provider: str,
     payload: object,
-    *,
-    schema_version: int,
 ) -> dict[str, Any]:
-    if schema_version != PROVIDER_SETTING_SCHEMA_VERSION:
-        raise ValueError(
-            "provider setting schema version must be "
-            f"{PROVIDER_SETTING_SCHEMA_VERSION}"
-        )
     result = _object(payload, "provider setting payload")
     _reject_secret_fields(result, f"provider_settings.{domain}.{provider}")
     if domain in {"web_import_firecrawl", "web_import_http"}:
@@ -1028,17 +1006,83 @@ def validate_credential_secret(
 def validate_book_setting_payload(
     domain: str,
     payload: object,
-    *,
-    schema_version: int,
 ) -> dict[str, Any]:
-    if schema_version != BOOK_SETTING_SCHEMA_VERSION:
-        raise ValueError(
-            "book setting schema version must be "
-            f"{BOOK_SETTING_SCHEMA_VERSION}"
-        )
     if domain != "insight":
         raise ValueError(f"unsupported book setting domain: {domain}")
     result = _object(payload, "book setting payload")
     _reject_secret_fields(result, f"book_settings.{domain}")
     _validate_insight(result)
     return result
+
+
+def setting_storage_payload(domain: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Keep provider parameters in provider_settings only."""
+    result = deepcopy(dict(payload))
+    if domain == "browser_dom_agent":
+        return {"provider": result["provider"]}
+    if domain == "web_import":
+        result["agent"] = {
+            k: v for k, v in result["agent"].items()
+            if k not in {"modelName", "customBaseUrl"}
+        }
+    if domain == "translation":
+        for section, provider_domain in TRANSLATION_PROVIDER_SECTIONS.items():
+            fields = _PROVIDER_PAYLOAD_FIELDS_BY_DOMAIN[provider_domain]
+            result[section] = {k: v for k, v in result[section].items() if k not in fields}
+        result["proofreading"]["rounds"] = [
+            {k: v for k, v in row.items() if k not in _PROOFREADING_PROVIDER_PAYLOAD_FIELDS}
+            for row in result["proofreading"]["rounds"]
+        ]
+    return result
+
+
+def compose_editable_settings(
+    domain: str, payload: object, providers: Mapping | None = None,
+) -> dict[str, Any]:
+    """Compose the UI document from stored selections and provider parameters."""
+    result = deepcopy(_object(payload, "setting payload"))
+    providers = providers or {}
+    if domain == "browser_dom_agent":
+        _exact_keys(result, {"provider"}, "browser_dom_agent")
+        result = {
+            **deepcopy(DEFAULT_BROWSER_DOM_AGENT), **result,
+            **deepcopy(dict(providers.get((domain, result["provider"]), {}))),
+        }
+    if domain == "web_import":
+        agent = _object(result["agent"], "web_import.agent")
+        _exact_keys(
+            agent,
+            set(DEFAULT_WEB_IMPORT_SETTINGS["agent"]) - {"modelName", "customBaseUrl"},
+            "web_import.agent",
+        )
+        result["agent"] = {
+            **{key: DEFAULT_WEB_IMPORT_SETTINGS["agent"][key]
+               for key in ("modelName", "customBaseUrl")},
+            **agent,
+            **deepcopy(dict(providers.get(("web_import_agent", agent["provider"]), {}))),
+        }
+    if domain == "translation":
+        defaults = default_translation_settings()
+        for section, provider_domain in TRANSLATION_PROVIDER_SECTIONS.items():
+            selected = _object(result[section], f"translation.{section}")
+            fields = _PROVIDER_PAYLOAD_FIELDS_BY_DOMAIN[provider_domain]
+            _exact_keys(selected, set(defaults[section]) - fields, f"translation.{section}")
+            provider = "baidu" if provider_domain == "ocr" else selected["provider"]
+            result[section] = {
+                **{key: deepcopy(defaults[section][key]) for key in fields},
+                **selected,
+                **deepcopy(dict(providers.get((provider_domain, provider), {}))),
+            }
+        rounds = result["proofreading"]["rounds"]
+        for row in rounds:
+            _exact_keys(_object(row, "proofreading round"), {"id", "name", "provider"}, "proofreading round")
+        result["proofreading"]["rounds"] = [
+            {
+                **{key: deepcopy(defaults["hqTranslation"][key])
+                   for key in _PROOFREADING_PROVIDER_PAYLOAD_FIELDS},
+                **row,
+                **deepcopy(dict(providers.get((f"proofreading_{row['id']}", row["provider"]), {}))),
+            }
+            for row in rounds
+        ]
+    return validate_setting_payload(domain, result)

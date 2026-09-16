@@ -1395,7 +1395,6 @@ class CoreTranslationAlgorithms:
             "mask_dilate_size",
             "method",
         }
-        config = {"regional_inpainting": False, **config}
         method = config.get("method")
         required_fields = (
             common_fields | {"fill_color"}

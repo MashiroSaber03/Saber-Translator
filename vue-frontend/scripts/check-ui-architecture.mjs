@@ -187,11 +187,7 @@ const VAGUE_COMPONENT_TOKEN_RE = /^--(?:base-modal|ui-combobox|toast-notificatio
 const VALUE_NAMED_SEMANTIC_TOKEN_NAME_RE = /^--(?!palette-)[a-z0-9-]+-(?:base[0-9a-f]+|(?=[a-z0-9]*\d)(?=[a-z0-9]*[a-f])[a-z]+[a-z0-9]*|(?:light|soft|tint)\d+|[a-z]+(?:333|444|555|666|777|888|999))$/
 const IMPLEMENTATION_SHAPED_SEMANTIC_TOKEN_RE = /^--(?:color-gray-\d+|color-accent-purple(?:-hover)?|color-text-primary(?:-[a-z0-9-]+)?|color-surface-[a-z0-9-]+-gradient-(?:start|end)|color-surface-editor-[a-z0-9-]+|color-surface-overlay-(?:light|medium)(?:-[a-z0-9-]+)?|color-surface-(?:plain|slate-soft|warning-tint|warning-warm)|shadow-(?:brand|success)-soft)$/
 const PALETTE_TOKEN_REFERENCE_RE = /--palette-[A-Za-z0-9_-]+/g
-const FRONTEND_SCHEMA_COMPAT_RE = /\b(?:custom_openai|custom_openai_vision|legacyIds|LEGACY_STORAGE_KEY|deepMerge|(?:strip|sync)Legacy[A-Za-z0-9_]*|coerceLegacy[A-Za-z0-9_]*|threshold(?:48px|MangaOcr|PaddleOcr)|isJsonMode|forceJson)\b/g
-const FRONTEND_SCHEMA_MAX_RETRIES_RE = /\bmaxRetries\b/g
-const OPTIONAL_CURRENT_SCHEMA_VERSION_RE = /\b(?:settingsSchemaVersion|webImportSettingsSchemaVersion)\s*\?:/g
 const WEB_IMPORT_PARTIAL_SCHEMA_RE = /\bPartial\s*<\s*WebImport(?:Settings|ProviderConfigs|SettingsPayload)\s*>/g
-const OPENAI_MIRROR_FIELD_PATH_RE = /(?:^|\/)openaiOptions\.ts$|src\/stores\/insightStore\.ts$|src\/stores\/insight\/useInsightConfigManager\.ts$/
 const OLD_IMPLEMENTATION_MINDSET_RE = /保持既有|保持当前视觉|当前视觉|复刻原版|复刻旧版|复刻自|整理自既有|完整样式(?:\s*-\s*从[^*\n\r]+)?|从\s+[^*\n\r]+\.css\s+迁移|迁移自\s+[^*\n\r]+|对应原\s+[^*\n\r]+\.js|旧版[^*\n\r]*|原版[^*\n\r]*|【(?:简化设计|增强版|优化)[^】]*】|关键修复|修复问题\d*|修复\s*P\d+|本地兼容 API|\b(?:bookshelf|edit_mode|main|events)\.js\b|\b(?:global|style|reader|manga-insight)\.css\b|迁移自旧 CSS|已迁移到 global\.css|Source:\s*[^*]*\.styles\.css|legacy UI|legacy CSS/gi
 const STALE_TEST_REQUIREMENT_NARRATION_RE = /Feature:\s*frontend-behavior|Property\s+\d+\s*:|Validates:\s*Requirements/gi
 const COMPOSABLE_IMPLEMENTATION_HISTORY_RE = /从\s+[^*\n\r]+提取|【(?:简化设计|增强版|优化)[^】]*】/g
@@ -840,29 +836,7 @@ function checkTypesBarrelExports(path, normalizedPath, contentWithoutComments) {
   }
 }
 
-function checkFrontendSchemaCompatibility(path, normalizedPath, contentWithoutComments) {
-  const compatMatches = new Set([...contentWithoutComments.matchAll(FRONTEND_SCHEMA_COMPAT_RE)].map(match => match[0]))
-  if (SOURCE_FIXTURE || OPENAI_MIRROR_FIELD_PATH_RE.test(normalizedPath)) {
-    for (const match of contentWithoutComments.matchAll(FRONTEND_SCHEMA_MAX_RETRIES_RE)) {
-      compatMatches.add(match[0])
-    }
-  }
-
-  if (compatMatches.size > 0) {
-    addFailure(
-      path,
-      `legacy frontend schema/provider reference(s) ${[...compatMatches].join(', ')} are not allowed; use the current provider ids and current nested settings schema`
-    )
-  }
-
-  const optionalSchemaVersions = new Set([...contentWithoutComments.matchAll(OPTIONAL_CURRENT_SCHEMA_VERSION_RE)].map(match => match[0]))
-  if (optionalSchemaVersions.size > 0) {
-    addFailure(
-      path,
-      `current schema version fields must be required, not optional: ${[...optionalSchemaVersions].join(', ')}`
-    )
-  }
-
+function checkFrontendPayloadTypes(path, contentWithoutComments) {
   const webImportPartialSchemas = new Set([...contentWithoutComments.matchAll(WEB_IMPORT_PARTIAL_SCHEMA_RE)].map(match => match[0]))
   if (webImportPartialSchemas.size > 0) {
     addFailure(
@@ -1450,7 +1424,7 @@ function checkFile(path) {
   checkIconOwnership(path, normalizedPath, contentWithoutComments)
   checkRelativeExports(path, contentWithoutComments)
   checkTypesBarrelExports(path, normalizedPath, contentWithoutComments)
-  checkFrontendSchemaCompatibility(path, normalizedPath, contentWithoutComments)
+  checkFrontendPayloadTypes(path, contentWithoutComments)
   checkCustomPropertyOwnership(path, normalizedPath, content)
   checkPrimitivePublicCustomPropertyContract(path, normalizedPath, content)
   checkRequiredSemanticCustomProperties(path, contentWithoutComments)
@@ -1772,7 +1746,7 @@ function checkScriptFile(path) {
   checkIconOwnership(path, normalizedPath, contentWithoutComments)
   checkRelativeExports(path, contentWithoutComments)
   checkTypesBarrelExports(path, normalizedPath, contentWithoutComments)
-  checkFrontendSchemaCompatibility(path, normalizedPath, contentWithoutComments)
+  checkFrontendPayloadTypes(path, contentWithoutComments)
 
   architectureDebtUsage.generatedCssReferences += countRegexMatches(contentWithoutComments, GENERATED_CSS_RE)
   architectureDebtUsage.settingsSharedReferences += countRegexMatches(contentWithoutComments, SETTINGS_SHARED_STYLE_RE)

@@ -1,8 +1,7 @@
-"""Phase-0 SQLAlchemy Core metadata for the v2 fact model.
+"""SQLAlchemy Core metadata for the current storage contract.
 
 The metadata intentionally encodes constraints that must be enforced by SQLite
-rather than by handler-level prechecks. Incompatible schema changes require a
-clean data root and a replacement foundation; old databases are not migrated.
+rather than by handler-level prechecks.
 """
 
 from __future__ import annotations
@@ -49,7 +48,6 @@ schema_metadata = Table(
     "schema_metadata",
     metadata,
     Column("singleton_id", Integer, primary_key=True, server_default="1"),
-    Column("revision", String(64), nullable=False),
     Column("runtime_profile", String(16), nullable=False),
     CheckConstraint("singleton_id = 1", name="single_row"),
     CheckConstraint(
@@ -339,7 +337,6 @@ credential_versions = Table(
     Column("version", Integer, nullable=False),
     Column("secret_json", Text, nullable=False),
     Column("key_fingerprint", String(HASH_LENGTH), nullable=False),
-    Column("retired_at", DateTime(timezone=True)),
     *_timestamps(),
     UniqueConstraint("credential_id", "version"),
     CheckConstraint("version >= 1", name="version_positive"),
@@ -399,12 +396,7 @@ plugin_versions = Table(
     Column("checksum", String(HASH_LENGTH), nullable=False),
     Column("manifest_json", Text, nullable=False),
     Column("config_schema_json", Text, nullable=False, server_default="{}"),
-    Column("manifest_schema_version", Integer, nullable=False, server_default="3"),
     *_timestamps(),
-    CheckConstraint(
-        "manifest_schema_version >= 1",
-        name="manifest_schema_version_positive",
-    ),
 )
 
 plugin_current_versions = Table(
@@ -631,10 +623,8 @@ app_settings = Table(
     Column("domain", String(64), primary_key=True),
     Column("revision", Integer, nullable=False, server_default="1"),
     Column("payload_json", Text, nullable=False),
-    Column("schema_version", Integer, nullable=False, server_default="1"),
     *_timestamps(),
     CheckConstraint("revision >= 1", name="revision_positive"),
-    CheckConstraint("schema_version >= 1", name="schema_version_positive"),
 )
 
 book_settings = Table(
@@ -644,10 +634,8 @@ book_settings = Table(
     Column("domain", String(64), primary_key=True),
     Column("revision", Integer, nullable=False, server_default="1"),
     Column("payload_json", Text, nullable=False),
-    Column("schema_version", Integer, nullable=False, server_default="1"),
     *_timestamps(),
     CheckConstraint("revision >= 1", name="revision_positive"),
-    CheckConstraint("schema_version >= 1", name="schema_version_positive"),
 )
 
 provider_settings = Table(
@@ -664,7 +652,6 @@ provider_settings = Table(
     Column("provider", String(64), primary_key=True),
     Column("revision", Integer, nullable=False, server_default="1"),
     Column("payload_json", Text, nullable=False),
-    Column("schema_version", Integer, nullable=False, server_default="1"),
     Column(
         "credential_version_id",
         String(UUID_LENGTH),
@@ -672,7 +659,6 @@ provider_settings = Table(
     ),
     *_timestamps(),
     CheckConstraint("revision >= 1", name="revision_positive"),
-    CheckConstraint("schema_version >= 1", name="schema_version_positive"),
 )
 
 prompts = Table(
@@ -905,6 +891,7 @@ browser_sessions = Table(
     ),
     Column("page_url", Text, nullable=False),
     Column("page_title", String(500), nullable=False),
+    Column("settings_json", Text),
     Column("mode", String(16), nullable=False, server_default="standard"),
     Column("status", String(16), nullable=False, server_default="active"),
     Column("expires_at", DateTime(timezone=True), nullable=False),
@@ -913,6 +900,14 @@ browser_sessions = Table(
     CheckConstraint("status IN ('active','cancelled')", name="status_values"),
 )
 Index("ix_browser_sessions_expiry", browser_sessions.c.expires_at)
+
+browser_session_credentials = Table(
+    "browser_session_credentials",
+    metadata,
+    Column("session_id", String(UUID_LENGTH), ForeignKey("browser_sessions.id", ondelete="CASCADE"), primary_key=True),
+    Column("credential_version_id", String(UUID_LENGTH), ForeignKey("credential_versions.id", ondelete="RESTRICT"), primary_key=True),
+)
+Index("ix_browser_session_credentials_version", browser_session_credentials.c.credential_version_id)
 
 browser_session_pages = Table(
     "browser_session_pages",
@@ -1275,7 +1270,6 @@ analysis_runs = Table(
     Column("scope", String(16), nullable=False),
     Column("status", String(32), nullable=False, server_default="staging"),
     Column("config_json", Text, nullable=False),
-    Column("schema_version", Integer, nullable=False, server_default="2"),
     Column("missing_page_ids_json", Text, nullable=False, server_default="[]"),
     Column("target_count", Integer, nullable=False, server_default="0"),
     Column("success_count", Integer, nullable=False, server_default="0"),
@@ -1294,7 +1288,6 @@ analysis_runs = Table(
         "target_count >= 0 AND success_count >= 0 AND failed_count >= 0",
         name="counts_nonnegative",
     ),
-    CheckConstraint("schema_version >= 1", name="schema_version_positive"),
 )
 Index("ix_analysis_runs_book_created", analysis_runs.c.book_id, analysis_runs.c.created_at)
 
@@ -1368,7 +1361,6 @@ analysis_page_results = Table(
     Column("page_id_snapshot", String(UUID_LENGTH), nullable=False),
     Column("page_number_snapshot", Integer, nullable=False),
     Column("payload_json", Text, nullable=False),
-    Column("schema_version", Integer, nullable=False, server_default="2"),
     Column("status", String(16), nullable=False, server_default="staging"),
     *_timestamps(),
     UniqueConstraint("run_id", "page_id_snapshot"),
@@ -1380,7 +1372,6 @@ analysis_page_results = Table(
         "page_number_snapshot >= 1",
         name="page_number_positive",
     ),
-    CheckConstraint("schema_version >= 1", name="schema_version_positive"),
 )
 Index(
     "ix_analysis_page_results_page_created",
@@ -2250,7 +2241,7 @@ object_commit_journal = Table(
     Column("state", String(24), nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP")),
     CheckConstraint(
-        "state IN ('staged','file_published','database_committed')",
+        "state IN ('staged','file_published')",
         name="state_values",
     ),
 )

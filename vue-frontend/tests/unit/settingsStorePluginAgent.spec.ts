@@ -30,13 +30,11 @@ function backendDocument(
         domain: 'translation',
         payload: settings as unknown as Record<string, unknown>,
         revision,
-        schemaVersion: 9,
       },
       {
         domain: 'text_style_defaults',
         payload: settings.textStyle as unknown as Record<string, unknown>,
         revision,
-        schemaVersion: 2,
       },
       {
         domain: 'workflow_preferences',
@@ -45,13 +43,11 @@ function backendDocument(
           lastWorkflowMode: 'translate-current',
         },
         revision,
-        schemaVersion: 1,
       },
       {
         domain: 'export_preferences',
         payload: { preserveOriginalFilenames: false },
         revision,
-        schemaVersion: 1,
       },
     ],
     bookSettings: [],
@@ -64,7 +60,6 @@ function backendDocument(
         openaiOptions: settings.pluginAgent.openaiOptions,
       },
       revision: providerRevision,
-      schemaVersion: 1,
       credentialVersionId: 'credential-version-1',
     }],
     credentials: [{
@@ -205,7 +200,6 @@ describe('settings store plugin agent configuration', () => {
     expect(transaction.settings?.[0]).toMatchObject({
       domain: 'translation',
       baseRevision: 5,
-      schemaVersion: 9,
     })
     expect(transaction.settings?.[0]?.payload).toMatchObject({
       translation: { modelName: 'backend-translation-model' },

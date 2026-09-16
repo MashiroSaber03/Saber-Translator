@@ -145,7 +145,6 @@ describe('backend-owned export/import contracts', () => {
           status: 'conflict',
         },
       ],
-      schemaVersion: 2,
     })
     mocks.commitChapterTextImport.mockResolvedValue({
       batchId: 'batch-1',
@@ -197,7 +196,6 @@ describe('backend-owned export/import contracts', () => {
         sourceChecksum: 'sha256:source-1',
         status: 'match',
       }],
-      schemaVersion: 2,
     })
     mocks.commitChapterTextImport.mockResolvedValue({
       batchId: 'batch-1',
@@ -222,7 +220,6 @@ describe('backend-owned export/import contracts', () => {
       conflictedPages: number
       matchedPages: number
       pages: never[]
-      schemaVersion: number
     }) => void
     mocks.previewChapterTextImport.mockReturnValueOnce(new Promise(resolve => {
       resolvePreview = resolve
@@ -240,7 +237,6 @@ describe('backend-owned export/import contracts', () => {
       conflictedPages: 0,
       matchedPages: 0,
       pages: [],
-      schemaVersion: 2,
     })
     await first
   })

@@ -114,7 +114,6 @@ describe('useTranslationPipeline', () => {
       documentRevision: 2,
       defaultFontId: fontFamily,
       pageStyleDefaults,
-      pageStyleSchemaVersion: 2,
       renderStatus: 'not_rendered',
       bubbles: [],
     })
@@ -498,7 +497,6 @@ describe('useTranslationPipeline', () => {
         textColor: '#123456',
         useAutoTextColor: false,
       },
-      pageStyleSchemaVersion: 2,
       renderStatus: 'ready',
       bubbles: [{
         bubbleId: 'bubble-1',
@@ -649,7 +647,6 @@ describe('useTranslationPipeline', () => {
         documentRevision: 2,
         defaultFontId: fontFamily,
         pageStyleDefaults,
-        pageStyleSchemaVersion: 2,
         renderStatus: 'ready',
         bubbles: [],
       }

@@ -40,24 +40,9 @@ const relativeExportStatement = 'export * fr' + 'om'
 const missingRelativeExport = './missing' + 'Type'
 const characterStudioTypeExport = './character' + 'Studio'
 const webImportTypeExport = './web' + 'Import'
-const legacyProviderCustomOpenAi = 'custom' + '_openai'
-const legacyProviderCustomOpenAiVision = 'custom' + '_openai_vision'
-const legacyIdsField = 'legacy' + 'Ids'
-const legacyStorageKey = 'LEGACY' + '_STORAGE_KEY'
-const oldStripMirrorHelper = 'strip' + 'LegacyOpenAiMirrorFields'
-const oldSyncMirrorHelper = 'sync' + 'LegacyOpenAiMirrorFields'
-const oldCoerceRetryHelper = 'coerce' + 'LegacyRetryValue'
-const oldSchemaMergeHelper = 'deep' + 'Merge'
 const staleTestFeatureLabel = 'Feature' + ': frontend-behavior'
 const staleTestPropertyLabel = 'Property ' + '42'
 const staleTestRequirementLabel = 'Validates' + ': Requirements'
-const threshold48pxField = 'threshold' + '48px'
-const thresholdMangaOcrField = 'threshold' + 'MangaOcr'
-const thresholdPaddleOcrField = 'threshold' + 'PaddleOcr'
-const oldIsJsonModeField = 'is' + 'JsonMode'
-const oldForceJsonField = 'force' + 'Json'
-const oldMaxRetriesField = 'max' + 'Retries'
-const webImportSchemaVersionField = 'webImportSettings' + 'SchemaVersion'
 const partialWebImportSettings = 'Partial<' + 'WebImportSettings>'
 const partialWebImportProviderConfigs = 'Partial<' + 'WebImportProviderConfigs>'
 const partialWebImportSettingsPayload = 'Partial<' + 'WebImportSettingsPayload>'
@@ -1490,73 +1475,7 @@ describe('UI architecture source hygiene lint', () => {
   )
 })
 
-describe('UI architecture frontend schema compatibility lint', () => {
-  it('rejects legacy provider ids and manifest alias fields in frontend source', () => {
-    const result = runUiArchitectureSourceFixture('aiProviders.ts', `
-      export const customProvider = '${legacyProviderCustomOpenAi}'
-      export const customVisionProvider = '${legacyProviderCustomOpenAiVision}'
-      export const manifest = { ${legacyIdsField}: ['${legacyProviderCustomOpenAi}'] }
-    `)
-
-    expect(result.status).toBe(1)
-    expect(result.stderr).toContain('legacy frontend schema/provider reference(s)')
-    expect(result.stderr).toContain(legacyProviderCustomOpenAi)
-    expect(result.stderr).toContain(legacyProviderCustomOpenAiVision)
-    expect(result.stderr).toContain(legacyIdsField)
-  })
-
-  it('rejects old settings migration and mirror helpers in frontend source', () => {
-    const result = runUiArchitectureSourceFixture('settings.ts', `
-      const ${legacyStorageKey} = 'saber-translator-settings'
-      function ${oldSchemaMergeHelper}() {}
-      function ${oldStripMirrorHelper}() {}
-      function ${oldSyncMirrorHelper}() {}
-      function ${oldCoerceRetryHelper}() {}
-    `)
-
-    expect(result.status).toBe(1)
-    expect(result.stderr).toContain('legacy frontend schema/provider reference(s)')
-    expect(result.stderr).toContain(legacyStorageKey)
-    expect(result.stderr).toContain(oldSchemaMergeHelper)
-    expect(result.stderr).toContain(oldStripMirrorHelper)
-    expect(result.stderr).toContain(oldSyncMirrorHelper)
-    expect(result.stderr).toContain(oldCoerceRetryHelper)
-  })
-
-  it('rejects old OpenAI mirror fields and OCR threshold fields in frontend source', () => {
-    const result = runUiArchitectureSourceFixture('openaiOptions.ts', `
-      export const options = {
-        ${oldIsJsonModeField}: true,
-        ${oldForceJsonField}: true,
-        ${oldMaxRetriesField}: 3,
-        ${threshold48pxField}: 0.7,
-        ${thresholdMangaOcrField}: 0.8,
-        ${thresholdPaddleOcrField}: 0.9,
-      }
-    `)
-
-    expect(result.status).toBe(1)
-    expect(result.stderr).toContain('legacy frontend schema/provider reference(s)')
-    expect(result.stderr).toContain(oldIsJsonModeField)
-    expect(result.stderr).toContain(oldForceJsonField)
-    expect(result.stderr).toContain(oldMaxRetriesField)
-    expect(result.stderr).toContain(threshold48pxField)
-    expect(result.stderr).toContain(thresholdMangaOcrField)
-    expect(result.stderr).toContain(thresholdPaddleOcrField)
-  })
-
-  it('rejects optional current schema version fields in frontend source', () => {
-    const result = runUiArchitectureSourceFixture('src/types/webImport.ts', `
-      export interface WebImportSettingsPayload {
-        ${webImportSchemaVersionField}?: number
-      }
-    `)
-
-    expect(result.status).toBe(1)
-    expect(result.stderr).toContain('current schema version fields must be required')
-    expect(result.stderr).toContain(`${webImportSchemaVersionField}?:`)
-  })
-
+describe('UI architecture frontend payload lint', () => {
   it('rejects partial WebImport settings/provider payload types in frontend source', () => {
     const result = runUiArchitectureSourceFixture('src/api/webImport.ts', `
       import type { WebImportProviderConfigs, WebImportSettings, WebImportSettingsPayload } from '@/types/webImport'

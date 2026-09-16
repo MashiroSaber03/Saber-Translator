@@ -198,7 +198,6 @@ describe('useTextStyleSync backend ownership', () => {
       documentRevision: 8,
       pageId: imageStore.currentImage?.id,
       pageStyleDefaults: { ...pageStyleDefaults, fontSize: 19 },
-      pageStyleSchemaVersion: 2,
       renderStatus: 'ready',
     })
     registerPageDocumentMock.mockReturnValue([authoritativeBubble])

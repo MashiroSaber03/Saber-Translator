@@ -73,13 +73,11 @@ describe('TextStyleDefaultsSettings', () => {
           domain: 'translation',
           payload: settings,
           revision: 1,
-          schemaVersion: 9,
         },
         {
           domain: 'text_style_defaults',
           payload: initialDefaults,
           revision: 1,
-          schemaVersion: 2,
         },
         {
           domain: 'workflow_preferences',
@@ -88,13 +86,11 @@ describe('TextStyleDefaultsSettings', () => {
             lastWorkflowMode: 'translate-current',
           },
           revision: 1,
-          schemaVersion: 1,
         },
         {
           domain: 'export_preferences',
           payload: { preserveOriginalFilenames: false },
           revision: 1,
-          schemaVersion: 1,
         },
       ],
       bookSettings: [],

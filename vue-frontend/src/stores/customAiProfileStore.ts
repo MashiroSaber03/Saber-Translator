@@ -228,7 +228,6 @@ export const useCustomAiProfileStore = defineStore('customAiProfiles', () => {
             profiles: normalized.map(({ apiKey: _apiKey, ...profile }) => profile),
           },
           baseRevision: authority.revision,
-          schemaVersion: 1,
         }],
         credentialEdits,
       }

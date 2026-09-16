@@ -1729,7 +1729,6 @@ export async function saveGlobalConfig(
         provider,
         payload: serialize(draft, `${domain}.${provider}`),
         baseRevision: existingRow?.revision ?? 0,
-        schemaVersion: 1,
         ...(existingRow?.credentialVersionId
           ? { credentialVersionId: existingRow.credentialVersionId }
           : {}),
@@ -1817,7 +1816,6 @@ export async function saveGlobalConfig(
         domain: 'insight',
         payload: appPayload,
         baseRevision: currentApp.revision,
-        schemaVersion: 1,
       },
     ],
     providerSettings,

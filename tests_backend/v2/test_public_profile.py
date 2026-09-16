@@ -357,7 +357,6 @@ def test_public_capabilities_host_filter_and_security_headers(public_platform) -
     assert internal_health.get_json() == {
         "status": "ok",
         "role": "api",
-        "schemaVersion": "v2",
         "epochId": "public-profile-test",
         "dataRootFingerprint": data_root_fingerprint(
             public_platform["data_root"]
@@ -1075,7 +1074,6 @@ def test_public_policy_forces_locked_settings_on_read_and_write(
                     "domain": "translation",
                     "payload": submitted,
                     "baseRevision": translation["revision"],
-                    "schemaVersion": translation["schemaVersion"],
                 }
             ],
             "bookSettings": [],
@@ -1158,7 +1156,6 @@ def test_disabled_local_model_is_rejected_before_job_creation(
                     "domain": "translation",
                     "payload": translation_payload,
                     "baseRevision": translation["revision"],
-                    "schemaVersion": translation["schemaVersion"],
                 }
             ],
             "bookSettings": [],

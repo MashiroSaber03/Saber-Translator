@@ -23,11 +23,9 @@ import {
 import {
   parseWebImportSettingsPayload,
   serializeWebImportSettingsValue,
-  WEB_IMPORT_SETTINGS_SCHEMA_VERSION,
 } from './webImportSettingsPayload'
 
 const STORAGE_KEY_DISCLAIMER_ACCEPTED = 'webImportDisclaimerAccepted'
-export { WEB_IMPORT_SETTINGS_SCHEMA_VERSION } from './webImportSettingsPayload'
 
 function parseCustomHeaders(value: string): Record<string, string> | undefined {
   const trimmed = value.trim()
@@ -201,7 +199,6 @@ export const useWebImportStore = defineStore('webImport', () => {
       const loadedSettings = hydrateBackendWebImportSettings(entry.payload)
       if (
         !applyLoadedPayload({
-          webImportSettingsSchemaVersion: WEB_IMPORT_SETTINGS_SCHEMA_VERSION,
           settings: loadedSettings,
           providerConfigs: { agent: loadedAgentProviderConfigs },
         })
@@ -264,7 +261,6 @@ export const useWebImportStore = defineStore('webImport', () => {
           provider,
           payload,
           baseRevision: providerRevisions.get(identity) ?? 0,
-          schemaVersion: 1,
         }
         if (
           Object.keys(nonEmptySecret).length > 0
@@ -324,7 +320,6 @@ export const useWebImportStore = defineStore('webImport', () => {
             domain: 'web_import',
             payload: payload as unknown as Record<string, unknown>,
             baseRevision: settingsRevision,
-            schemaVersion: 1,
           },
         ],
         providerSettings,
@@ -388,7 +383,6 @@ export const useWebImportStore = defineStore('webImport', () => {
     const previousProviderConfigs = deepClone(providerConfigs.value)
 
     const parsedDraft = parseWebImportSettingsPayload({
-      webImportSettingsSchemaVersion: WEB_IMPORT_SETTINGS_SCHEMA_VERSION,
       settings: draftSettings.value,
       providerConfigs: draftProviderConfigs.value,
     })

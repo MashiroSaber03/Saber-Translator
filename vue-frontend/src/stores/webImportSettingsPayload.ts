@@ -9,7 +9,6 @@ import {
   isWebImportAgentProvider,
 } from './settings/modules/webImport'
 
-export const WEB_IMPORT_SETTINGS_SCHEMA_VERSION = 1
 
 type PlainRecord = Record<string, unknown>
 
@@ -254,7 +253,6 @@ function buildWebImportSettingsPayload(
   providerConfigs: WebImportProviderConfigs
 ): WebImportSettingsPayload {
   return {
-    webImportSettingsSchemaVersion: WEB_IMPORT_SETTINGS_SCHEMA_VERSION,
     settings: deepClone(settings),
     providerConfigs: deepClone(providerConfigs),
   }
@@ -264,11 +262,9 @@ export function parseWebImportSettingsPayload(value: unknown): WebImportSettings
   if (
     !isPlainRecord(value)
     || !hasExactKeys(value, [
-      'webImportSettingsSchemaVersion',
       'settings',
       'providerConfigs',
     ])
-    || value.webImportSettingsSchemaVersion !== WEB_IMPORT_SETTINGS_SCHEMA_VERSION
   ) {
     return null
   }

@@ -28,8 +28,8 @@ from src.backend_v2.plugins.repository import (
     PluginRegistry,
 )
 from src.backend_v2.settings.validation import (
+    compose_editable_settings,
     validate_provider_setting_payload,
-    validate_setting_payload,
 )
 from src.backend_v2.storage.platform_repositories import SettingsRepository
 from src.backend_v2.storage.schema import (
@@ -64,7 +64,6 @@ class PluginAgentProviderResolver:
                 select(
                     app_settings.c.payload_json,
                     app_settings.c.revision,
-                    app_settings.c.schema_version,
                 ).where(app_settings.c.domain == "translation")
             ).mappings().one_or_none()
             rows = list(
@@ -74,7 +73,6 @@ class PluginAgentProviderResolver:
                         provider_settings.c.payload_json,
                         provider_settings.c.credential_version_id,
                         provider_settings.c.revision,
-                        provider_settings.c.schema_version,
                     ).where(
                         provider_settings.c.domain == "plugin_agent"
                     )
@@ -82,10 +80,9 @@ class PluginAgentProviderResolver:
             )
         if app_row is None:
             raise ValueError("translation settings are missing")
-        translation_payload = validate_setting_payload(
+        translation_payload = compose_editable_settings(
             "translation",
             _json_object(app_row["payload_json"]),
-            schema_version=int(app_row["schema_version"]),
         )
         app_payload = dict(translation_payload["pluginAgent"])
         selected = app_payload["provider"]
@@ -105,7 +102,6 @@ class PluginAgentProviderResolver:
             "plugin_agent",
             selected,
             _json_object(row["payload_json"]),
-            schema_version=int(row["schema_version"]),
         )
         payload = {
             **app_payload,

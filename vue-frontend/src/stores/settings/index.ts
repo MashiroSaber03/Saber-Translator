@@ -29,8 +29,6 @@ import {
 
 import type { ProviderConfigsCache } from './types'
 import {
-  TEXT_STYLE_DEFAULTS_SCHEMA_VERSION,
-  TRANSLATION_SETTINGS_SCHEMA_VERSION,
   createDefaultSettings,
 } from './defaults'
 import {
@@ -192,14 +190,12 @@ function sanitizedSettingsPayload(
   delete (payload.translation as Partial<typeof payload.translation>).apiKey
   delete (payload.hqTranslation as Partial<typeof payload.hqTranslation>).apiKey
   delete (payload.pluginAgent as Partial<typeof payload.pluginAgent>).apiKey
-  delete (payload.browserDomAgent as Partial<typeof payload.browserDomAgent>).apiKey
   delete (payload.aiVisionOcr as Partial<typeof payload.aiVisionOcr>).apiKey
   delete (payload.baiduOcr as Partial<typeof payload.baiduOcr>).apiKey
   delete (payload.baiduOcr as Partial<typeof payload.baiduOcr>).secretKey
   payload.proofreading.rounds.forEach((round) => {
     delete (round as Partial<typeof round>).apiKey
   })
-  payload.settingsSchemaVersion = TRANSLATION_SETTINGS_SCHEMA_VERSION
   const backendPayload = payload as unknown as Record<string, unknown>
   delete backendPayload.textStyle
   return backendPayload
@@ -217,7 +213,6 @@ function parseBackendTranslationPayload(
     'translation',
     'hqTranslation',
     'pluginAgent',
-    'browserDomAgent',
     'aiVisionOcr',
   ]) {
     const section = payload[key]
@@ -376,14 +371,11 @@ export const useSettingsStore = defineStore('settings', () => {
     if (!textStyleDefaultsEntry) {
       throw new Error('后端文字样式默认设置缺失')
     }
-    if (textStyleDefaultsEntry.schemaVersion !== TEXT_STYLE_DEFAULTS_SCHEMA_VERSION) {
-      throw new Error('后端文字样式默认设置版本无效')
-    }
     if (!workflowPreferencesEntry) {
       throw new Error('后端工作流偏好设置缺失')
     }
-    if (!exportPreferencesEntry || exportPreferencesEntry.schemaVersion !== 1) {
-      throw new Error('后端导出偏好设置缺失或版本无效')
+    if (!exportPreferencesEntry) {
+      throw new Error('后端导出偏好设置缺失')
     }
     let parsedTextStyleDefaults: TextStyleSettings
     try {
@@ -473,10 +465,8 @@ export const useSettingsStore = defineStore('settings', () => {
     if (unknown.length > 0) return false
     const current = settings.value as unknown as Record<string, unknown>
     const candidate = mergeObjects(current, scrubChapterWorkState(payload) as Record<string, unknown>)
-    candidate.settingsSchemaVersion = TRANSLATION_SETTINGS_SCHEMA_VERSION
     candidate.textStyle = deepClone(settings.value.textStyle)
     candidate.pluginAgent = deepClone(settings.value.pluginAgent)
-    candidate.browserDomAgent = deepClone(settings.value.browserDomAgent)
     const parsed = parseCurrentSettings(candidate)
     if (!parsed) return false
     settings.value = parsed
@@ -710,7 +700,6 @@ export const useSettingsStore = defineStore('settings', () => {
       provider,
       payload: withoutApiKey(rawPayload),
       baseRevision: revisions.get(credentialIdentity(domain, provider)) ?? 0,
-      schemaVersion: 1,
     }
     if (
       Object.keys(nonEmptySecret).length > 0
@@ -789,19 +778,16 @@ export const useSettingsStore = defineStore('settings', () => {
           domain: 'translation',
           payload: sanitizedSettingsPayload(settings.value),
           baseRevision: settingsRevision,
-          schemaVersion: TRANSLATION_SETTINGS_SCHEMA_VERSION,
         },
         {
           domain: 'text_style_defaults',
           payload: deepClone(textStyleDefaults.value) as unknown as Record<string, unknown>,
           baseRevision: textStyleDefaultsRevision,
-          schemaVersion: TEXT_STYLE_DEFAULTS_SCHEMA_VERSION,
         },
         {
           domain: 'export_preferences',
           payload: deepClone(exportPreferences.value) as unknown as Record<string, unknown>,
           baseRevision: exportPreferencesRevision,
-          schemaVersion: 1,
         },
       ],
       providerSettings,
@@ -853,7 +839,6 @@ export const useSettingsStore = defineStore('settings', () => {
       translationPayload.pluginAgent = withoutApiKey(
         deepClone(settings.value.pluginAgent) as unknown as Record<string, unknown>,
       )
-      translationPayload.settingsSchemaVersion = TRANSLATION_SETTINGS_SCHEMA_VERSION
 
       const freshRevisions = new Map(
         authoritative.providerSettings.map(row => [
@@ -888,7 +873,6 @@ export const useSettingsStore = defineStore('settings', () => {
           domain: 'translation',
           payload: translationPayload,
           baseRevision: translationEntry.revision,
-          schemaVersion: TRANSLATION_SETTINGS_SCHEMA_VERSION,
         }],
         providerSettings,
         credentialEdits,

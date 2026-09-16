@@ -97,12 +97,12 @@ _QUESTION_WORDS = frozenset(
 
 def _json_object(value: object, field: str) -> dict[str, Any]:
     if not isinstance(value, str):
-        raise QAConflict(f"stored {field} is missing; clear current Insight data")
+        raise QAConflict(f"stored {field} is missing")
     try:
         parsed = json.loads(value)
     except (TypeError, ValueError) as exc:
         raise QAConflict(
-            f"stored {field} is invalid; clear current Insight data"
+            f"stored {field} is invalid"
         ) from exc
     if not isinstance(parsed, Mapping):
         raise QAConflict(f"stored {field} must be an object")

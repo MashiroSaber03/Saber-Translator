@@ -27,13 +27,11 @@ function settingsDocument(
         domain: 'translation',
         payload: settings as unknown as Record<string, unknown>,
         revision,
-        schemaVersion: 9,
       },
       {
         domain: 'text_style_defaults',
         payload: settings.textStyle as unknown as Record<string, unknown>,
         revision,
-        schemaVersion: 2,
       },
       {
         domain: 'workflow_preferences',
@@ -42,13 +40,11 @@ function settingsDocument(
           lastWorkflowMode: 'translate-current',
         },
         revision,
-        schemaVersion: 1,
       },
       {
         domain: 'export_preferences',
         payload: { preserveOriginalFilenames: false },
         revision,
-        schemaVersion: 1,
       },
     ],
     bookSettings: [],
@@ -391,7 +387,6 @@ describe('settings store current schema boundaries', () => {
 
   it('rejects malformed authoritative backend settings', async () => {
     settingsApiMocks.getV2Settings.mockResolvedValue(settingsDocument({
-      settingsSchemaVersion: 9,
       translation: { provider: 'custom' },
     } as unknown as ReturnType<typeof createDefaultSettings>))
     const store = useSettingsStore()

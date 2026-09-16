@@ -54,6 +54,7 @@ from src.backend_v2.storage.schema import (
     render_requests,
     translation_constraints,
 )
+from src.backend_v2.settings.validation import setting_storage_payload
 from src.backend_v2.storage.seeding import seed_system_records
 from src.backend_v2.settings.resolver import SettingsResolver
 from src.backend_v2.translation.commands import (
@@ -698,6 +699,7 @@ def test_core_repair_adapter_passes_precise_text_mask(
         }],
         {
             "disable_resize": True,
+            "regional_inpainting": False,
             "fill_color": "#FFFFFF",
             "lama_model": "lama_mpe",
             "mask_box_expand_ratio": 0,
@@ -853,7 +855,7 @@ def translation_platform(tmp_path: Path):
             .where(app_settings.c.domain == "translation")
             .values(
                 payload_json=json.dumps(
-                    settings_payload,
+                    setting_storage_payload("translation", settings_payload),
                     ensure_ascii=False,
                     separators=(",", ":"),
                 )
@@ -875,7 +877,6 @@ def translation_platform(tmp_path: Path):
                 provider=DETERMINISTIC_FAKE_PROVIDER_ID,
                 payload={"modelName": "fixture-model"},
                 base_revision=0,
-                schema_version=1,
                 credential_edit_ref="fixture-translation",
             ),
         ),
@@ -3086,7 +3087,6 @@ def test_translation_job_rejects_missing_backend_credential_before_admission(
                 domain="translation",
                 payload=payload,
                 base_revision=1,
-                schema_version=9,
             ),
         ),
         providers=(
@@ -3098,7 +3098,6 @@ def test_translation_job_rejects_missing_backend_credential_before_admission(
                     "customBaseUrl": "https://custom.example/v1",
                 },
                 base_revision=0,
-                schema_version=1,
             ),
         ),
     )
@@ -3215,7 +3214,6 @@ def test_failed_item_retry_refreezes_current_backend_settings(
                 domain="translation",
                 payload=settings_payload,
                 base_revision=1,
-                schema_version=9,
             ),
         ),
         credentials_edits=(
@@ -3236,7 +3234,6 @@ def test_failed_item_retry_refreezes_current_backend_settings(
                     "customBaseUrl": "https://retry.example/v1",
                 },
                 base_revision=0,
-                schema_version=1,
                 credential_edit_ref="retry-custom",
             ),
         ),
@@ -3309,7 +3306,6 @@ def test_translation_job_resolves_backend_settings_and_reuses_manual_bubbles(
                 domain="translation",
                 payload=payload,
                 base_revision=1,
-                schema_version=9,
             ),
         ),
         credentials_edits=(
@@ -3331,7 +3327,6 @@ def test_translation_job_resolves_backend_settings_and_reuses_manual_bubbles(
                     "translationMode": "batch",
                 },
                 base_revision=0,
-                schema_version=1,
                 credential_edit_ref="translation",
             ),
         ),
@@ -3429,7 +3424,6 @@ def test_translation_resolver_uses_provider_specific_hq_and_ocr_parameters(
                 domain="translation",
                 payload=payload,
                 base_revision=1,
-                schema_version=9,
             ),
         ),
         credentials_edits=(
@@ -3458,7 +3452,6 @@ def test_translation_resolver_uses_provider_specific_hq_and_ocr_parameters(
                     "prompt": "provider hq prompt",
                 },
                 base_revision=0,
-                schema_version=1,
                 credential_edit_ref="hq",
             ),
             ProviderSettingMutation(
@@ -3471,7 +3464,6 @@ def test_translation_resolver_uses_provider_specific_hq_and_ocr_parameters(
                     "promptMode": "json",
                 },
                 base_revision=0,
-                schema_version=1,
                 credential_edit_ref="ocr",
             ),
         ),
@@ -3601,7 +3593,6 @@ def _configure_hq_and_proofreading(platform: Mapping[str, Any]) -> None:
                 domain="translation",
                 payload=payload,
                 base_revision=1,
-                schema_version=9,
             ),
         ),
         credentials_edits=tuple(
@@ -3621,15 +3612,15 @@ def _configure_hq_and_proofreading(platform: Mapping[str, Any]) -> None:
             ProviderSettingMutation(
                 domain=domain,
                 provider=DETERMINISTIC_FAKE_PROVIDER_ID,
-                payload={"modelName": model},
+                payload={key: value for key, value in selected.items()
+                         if key not in {"provider", "id", "name"}},
                 base_revision=0,
-                schema_version=1,
                 credential_edit_ref=domain,
             )
-            for domain, model in (
-                ("hq", "hq-model"),
-                (f"proofreading_{proofreading_round_ids[0]}", "proof-model-1"),
-                (f"proofreading_{proofreading_round_ids[1]}", "proof-model-2"),
+            for domain, selected in (
+                ("hq", payload["hqTranslation"]),
+                (f"proofreading_{proofreading_round_ids[0]}", payload["proofreading"]["rounds"][0]),
+                (f"proofreading_{proofreading_round_ids[1]}", payload["proofreading"]["rounds"][1]),
             )
         ),
     )

@@ -121,7 +121,6 @@ describe('SettingsSidebar workflow preferences', () => {
       domain: 'workflow_preferences',
       payload: {},
       revision: 1,
-      schemaVersion: 1,
     })
   })
 
@@ -207,14 +206,12 @@ describe('SettingsSidebar workflow preferences', () => {
           domain: 'workflow_preferences',
           payload: {},
           revision: 1,
-          schemaVersion: 1,
         })
       }))
       .mockResolvedValueOnce({
         domain: 'workflow_preferences',
         payload: {},
         revision: 2,
-        schemaVersion: 1,
       })
 
     const wrapper = mount(SettingsSidebar)

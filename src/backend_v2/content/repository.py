@@ -17,12 +17,10 @@ from src.backend_v2.auth.ownership import effective_owner_id
 from src.backend_v2.serialization import canonical_json as _json
 from src.backend_v2.timestamps import utcnow as _utcnow
 from src.backend_v2.content.translation_constraints import (
-    TRANSLATION_CONSTRAINTS_SCHEMA_VERSION,
     empty_translation_constraints,
     validate_translation_constraints,
 )
 from src.backend_v2.content.page_style import (
-    PAGE_STYLE_SCHEMA_VERSION,
     rgb_to_hex,
     validate_page_style,
     validate_text_style_defaults,
@@ -36,7 +34,6 @@ from src.backend_v2.settings.validation import validate_setting_payload
 from src.backend_v2.storage.assets import AssetRecord, AssetStorageService
 from src.backend_v2.storage.database import immediate_transaction
 from src.backend_v2.storage.defaults import (
-    TRANSLATION_SETTINGS_SCHEMA_VERSION,
     default_translation_settings,
 )
 from src.backend_v2.storage.schema import (
@@ -70,7 +67,6 @@ from src.core.config_models import (
 )
 
 
-CHAPTER_SETTINGS_MEMORY_SCHEMA_VERSION = 1
 _MISSING = object()
 _CLIENT_BUBBLE_MUTATION_FIELDS = (
     STORED_BUBBLE_FIELDS - {"autoTextDirection"}
@@ -203,7 +199,6 @@ def _validate_chapter_settings_memory(payload: dict[str, object]) -> None:
     validate_setting_payload(
         "translation",
         merge(default_translation_settings(), payload),
-        schema_version=TRANSLATION_SETTINGS_SCHEMA_VERSION,
     )
 
 
@@ -840,7 +835,6 @@ class ContentRepository:
         return {
             "bookId": book_id,
             "revision": row["revision"],
-            "schemaVersion": TRANSLATION_CONSTRAINTS_SCHEMA_VERSION,
             "payload": validate_translation_constraints(
                 json.loads(row["payload_json"])
             ),
@@ -885,7 +879,6 @@ class ContentRepository:
         return {
             "bookId": book_id,
             "revision": base_revision + 1,
-            "schemaVersion": TRANSLATION_CONSTRAINTS_SCHEMA_VERSION,
             "payload": normalized,
         }
 
@@ -1052,7 +1045,6 @@ class ContentRepository:
                 "title": row["chapter_title"],
                 "pageOrderRevision": row["page_order_revision"],
                 "settingsMemory": settings_memory,
-                "settingsMemorySchemaVersion": CHAPTER_SETTINGS_MEMORY_SCHEMA_VERSION,
                 "settingsMemoryRevision": row["settings_memory_revision"],
             },
             "pages": self.list_pages(
@@ -1069,7 +1061,6 @@ class ContentRepository:
             },
             "constraints": {
                 "payload": constraint_payload,
-                "schemaVersion": TRANSLATION_CONSTRAINTS_SCHEMA_VERSION,
                 "revision": constraints["revision"],
             },
             "activeJobs": [
@@ -2494,7 +2485,6 @@ class ContentRepository:
             "renderStatus": page["render_status"],
             "defaultFontId": page["default_font_id"],
             "pageStyleDefaults": page_style,
-            "pageStyleSchemaVersion": PAGE_STYLE_SCHEMA_VERSION,
             "bubbles": bubble_documents,
         }
 

@@ -20,7 +20,7 @@ from src.backend_v2.auth.ownership import effective_owner_id
 from src.backend_v2.content.image_import import ImageImportService
 from src.backend_v2.content.page_style import validate_text_style_defaults
 from src.backend_v2.browser_extension.settings import (
-    SNAPSHOT_DOMAIN, capture_session_settings, session_settings,
+    capture_session_settings, session_settings,
 )
 from src.backend_v2.content.repository import (
     ContentConflict,
@@ -44,7 +44,6 @@ from src.backend_v2.storage.assets import AssetRecord, AssetStorageService
 from src.backend_v2.storage.database import immediate_transaction
 from src.backend_v2.storage.schema import (
     NONTERMINAL_JOB_STATUSES,
-    book_settings,
     assets,
     books,
     browser_session_pages,
@@ -784,10 +783,6 @@ class BrowserSessionService:
                     now=now,
                 )
 
-            connection.execute(delete(book_settings).where(
-                book_settings.c.book_id == source_book_id,
-                book_settings.c.domain == SNAPSHOT_DOMAIN,
-            ))
             connection.execute(
                 delete(browser_sessions)
                 .where(browser_sessions.c.id == session_id)
@@ -963,10 +958,6 @@ class BrowserSessionService:
                 jobs.c.book_id == session["book_id"],
             ).limit(1)).scalar_one_or_none() is None
             if refresh_settings:
-                connection.execute(delete(book_settings).where(
-                    book_settings.c.book_id == session["book_id"],
-                    book_settings.c.domain == SNAPSHOT_DOMAIN,
-                ))
                 capture_session_settings(connection, str(session["book_id"]))
             pending = list(
                 connection.execute(

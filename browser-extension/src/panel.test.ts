@@ -16,7 +16,6 @@ it('edits only plugin text style and the optional DOM assistant, preserving draf
       {
         domain: 'text_style_defaults',
         revision: 1,
-        schemaVersion: 2,
         payload: {
           ...factoryStyle,
           fontFamily: 'font',
@@ -29,7 +28,6 @@ it('edits only plugin text style and the optional DOM assistant, preserving draf
       {
         domain: 'browser_dom_agent',
         revision: 0,
-        schemaVersion: 1,
         payload: {
           provider: 'ollama',
           modelName: 'agent-model',

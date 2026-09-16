@@ -16,6 +16,7 @@ from src.backend_v2.content.translation_constraints import (
     validate_translation_constraints,
 )
 from src.backend_v2.settings.validation import (
+    compose_editable_settings,
     validate_book_setting_payload,
     validate_provider_setting_payload,
     validate_setting_payload,
@@ -58,10 +59,9 @@ def _effective_translation_settings(
     app_row: Mapping[str, Any],
     chapter_row: Mapping[str, Any],
 ) -> dict[str, Any]:
-    global_settings = validate_setting_payload(
+    global_settings = compose_editable_settings(
         "translation",
         json.loads(app_row["payload_json"]),
-        schema_version=int(app_row["schema_version"]),
     )
     chapter_memory_value = json.loads(chapter_row["settings_memory_json"])
     if not isinstance(chapter_memory_value, Mapping):
@@ -69,7 +69,6 @@ def _effective_translation_settings(
     return validate_setting_payload(
         "translation",
         _deep_merge(global_settings, dict(chapter_memory_value)),
-        schema_version=int(app_row["schema_version"]),
     )
 
 
@@ -100,7 +99,6 @@ def _validated_provider_row(row: Mapping[str, Any]) -> dict[str, Any]:
         domain,
         provider,
         json.loads(row["payload_json"]),
-        schema_version=int(row["schema_version"]),
     )
     return {
         "payload": payload,
@@ -371,14 +369,13 @@ class SettingsResolver:
                 selected = next(row for row in snapshot["settings"] if row["domain"] == "translation")
                 app_row = {
                     "payload_json": json.dumps(selected["payload"]),
-                    "revision": selected["revision"], "schema_version": selected["schemaVersion"],
+                    "revision": selected["revision"],
                 }
                 chapter_row = {**chapter_row, "settings_memory_json": "{}"}
                 provider_rows = {
                     (row["domain"], row["provider"]): {
                         "payload": validate_provider_setting_payload(
                             row["domain"], row["provider"], row["payload"],
-                            schema_version=row["schemaVersion"],
                         ),
                         "credentialVersionId": row["credentialVersionId"],
                         "revision": row["revision"],
@@ -394,7 +391,6 @@ class SettingsResolver:
                     select(
                         app_settings.c.payload_json,
                         app_settings.c.revision,
-                        app_settings.c.schema_version,
                     ).where(
                         app_settings.c.domain == "translation",
                         app_settings.c.owner_user_id == effective_owner_id(),
@@ -407,7 +403,6 @@ class SettingsResolver:
                         provider_settings.c.payload_json,
                         provider_settings.c.credential_version_id,
                         provider_settings.c.revision,
-                        provider_settings.c.schema_version,
                     ).where(
                         provider_settings.c.owner_user_id == effective_owner_id(),
                         or_(
@@ -569,7 +564,6 @@ class SettingsResolver:
                 select(
                     app_settings.c.payload_json,
                     app_settings.c.revision,
-                    app_settings.c.schema_version,
                     chapters.c.settings_memory_json,
                     chapters.c.settings_memory_revision,
                 )
@@ -588,10 +582,9 @@ class SettingsResolver:
             ).mappings().one_or_none()
         if row is None:
             raise ValueError("page or translation settings not found")
-        global_settings = validate_setting_payload(
+        global_settings = compose_editable_settings(
             "translation",
             json.loads(row["payload_json"]),
-            schema_version=int(row["schema_version"]),
         )
         chapter_memory = json.loads(row["settings_memory_json"])
         if not isinstance(chapter_memory, Mapping):
@@ -599,7 +592,6 @@ class SettingsResolver:
         effective = validate_setting_payload(
             "translation",
             _deep_merge(global_settings, chapter_memory),
-            schema_version=int(row["schema_version"]),
         )
         return {
             "disableResize": effective["lamaDisableResize"],
@@ -635,7 +627,6 @@ class SettingsResolver:
                 select(
                     app_settings.c.payload_json,
                     app_settings.c.revision,
-                    app_settings.c.schema_version,
                     chapters.c.settings_memory_json,
                     chapters.c.settings_memory_revision,
                 )
@@ -681,7 +672,6 @@ class SettingsResolver:
                         provider_settings.c.payload_json,
                         provider_settings.c.credential_version_id,
                         provider_settings.c.revision,
-                        provider_settings.c.schema_version,
                     ).where(
                         provider_settings.c.domain == provider_key[0],
                         provider_settings.c.provider == provider_key[1],
@@ -746,7 +736,6 @@ class SettingsResolver:
                 select(
                     app_settings.c.payload_json,
                     app_settings.c.revision,
-                    app_settings.c.schema_version,
                 ).where(
                     app_settings.c.domain == "web_import",
                     app_settings.c.owner_user_id == effective_owner_id(),
@@ -759,7 +748,6 @@ class SettingsResolver:
                     provider_settings.c.payload_json,
                     provider_settings.c.credential_version_id,
                     provider_settings.c.revision,
-                    provider_settings.c.schema_version,
                 ).where(
                     provider_settings.c.owner_user_id == effective_owner_id(),
                     provider_settings.c.domain.in_(
@@ -779,10 +767,9 @@ class SettingsResolver:
 
         if app_row is None:
             raise ValueError("web_import settings are missing")
-        effective = validate_setting_payload(
+        effective = compose_editable_settings(
             "web_import",
             json.loads(app_row["payload_json"]),
-            schema_version=int(app_row["schema_version"]),
         )
         download = dict(effective["download"])
         extraction = dict(effective["extraction"])
@@ -876,7 +863,6 @@ class SettingsResolver:
                 select(
                     app_settings.c.payload_json,
                     app_settings.c.revision,
-                    app_settings.c.schema_version,
                 ).where(
                     app_settings.c.domain == "insight",
                     app_settings.c.owner_user_id == effective_owner_id(),
@@ -886,7 +872,6 @@ class SettingsResolver:
                 select(
                     book_settings.c.payload_json,
                     book_settings.c.revision,
-                    book_settings.c.schema_version,
                 ).where(
                     book_settings.c.book_id == book_id,
                     book_settings.c.domain == "insight",
@@ -905,7 +890,6 @@ class SettingsResolver:
                     provider_settings.c.payload_json,
                     provider_settings.c.credential_version_id,
                     provider_settings.c.revision,
-                    provider_settings.c.schema_version,
                 ).where(
                     provider_settings.c.domain.in_(provider_domains),
                     provider_settings.c.owner_user_id == effective_owner_id(),
@@ -933,21 +917,20 @@ class SettingsResolver:
 
         if app_row is None:
             raise ValueError("insight settings are missing")
-        global_settings = validate_setting_payload(
+        global_settings = compose_editable_settings(
             "insight",
             json.loads(app_row["payload_json"]),
-            schema_version=int(app_row["schema_version"]),
         )
         per_book = (
             validate_book_setting_payload(
                 "insight",
                 json.loads(book_row["payload_json"]),
-                schema_version=int(book_row["schema_version"]),
             )
             if book_row
             else {}
         )
-        effective = _deep_merge(global_settings, per_book)
+        # Book settings are a complete current profile, not a sparse patch.
+        effective = per_book if book_row is not None else global_settings
         factory_by_type: dict[str, Mapping[str, Any]] = {}
         for row in prompt_rows:
             if not row["is_factory_default"]:
