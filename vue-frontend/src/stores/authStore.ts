@@ -82,13 +82,8 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function logout(): Promise<void> {
-    try {
-      await logoutRequest()
-    } finally {
-      user.value = null
-      restored.value = true
-      configureBrowserCredentials(false)
-    }
+    await logoutRequest()
+    markUnauthenticated()
   }
 
   function markUnauthenticated(): void {

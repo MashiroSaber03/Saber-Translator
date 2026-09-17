@@ -354,7 +354,8 @@ export function useTranslateInit() {
         )
         if (pending.chapterId === settingsMemoryChapterId) {
           settingsMemoryRevision = updated.revision
-          lastSettingsMemoryFingerprint = JSON.stringify(updated.payload)
+          // The backend stores this payload unchanged, but JSON key order may differ.
+          lastSettingsMemoryFingerprint = pending.fingerprint
         }
       } catch (error) {
         if (

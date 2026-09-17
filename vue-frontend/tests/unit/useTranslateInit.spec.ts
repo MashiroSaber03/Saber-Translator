@@ -530,6 +530,23 @@ describe('useTranslateInit', () => {
     )
   })
 
+  it('does not resave unchanged settings when the server changes JSON key order', async () => {
+    const state = useTranslateInit()
+    await state.initializeApp()
+    mocks.updateChapterSettingsMemory.mockClear()
+    mocks.updateChapterSettingsMemory.mockImplementation(async (
+      chapterId: string, payload: Record<string, unknown>, baseRevision: number,
+    ) => ({
+      chapterId,
+      payload: Object.fromEntries(Object.entries(payload).reverse()),
+      revision: baseRevision + 1,
+    }))
+    useSettingsStore().settings.targetLanguage = 'ja'
+    expect(await state.flushChapterWorkState()).toBe(true)
+    expect(await state.flushChapterWorkState()).toBe(true)
+    expect(mocks.updateChapterSettingsMemory).toHaveBeenCalledTimes(1)
+  })
+
   it('persists a value restored while the previous value is still in flight', async () => {
     const state = useTranslateInit()
     await state.initializeApp()
