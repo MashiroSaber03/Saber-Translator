@@ -1,28 +1,23 @@
-"""Launcher-owned initialization and integrity checks for the v2 data root."""
-
-from __future__ import annotations
+"""Initialize fresh storage atomically; accept only the current storage contract."""
 
 from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
-import sqlite3
+import os
+import shutil
+import json
 
 from sqlalchemy import insert
 
-from src.backend_v2.storage.database import (
-    create_sqlite_engine,
-    database_path_for,
+from src.version import APP_VERSION
+from src.storage_migrator.contracts import (
+    StorageError, contract_sql, read_database, read_identity, validate_schema,
 )
+from src.storage_migrator.control import control_root, is_empty_root, reject_links, atomic_json
+from src.backend_v2.storage.database import create_sqlite_engine, database_path_for
 from src.backend_v2.runtime_profile import PROFILE_NAMES
 from src.backend_v2.storage.schema import metadata, schema_metadata
 from src.backend_v2.storage.seeding import seed_system_records
-
-
-REQUIRED_TABLES = frozenset(metadata.tables)
-
-
-class UnsupportedDataRoot(RuntimeError):
-    """The database is invalid or belongs to another runtime profile."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,88 +26,72 @@ class StorageInitializationResult:
     created: bool
 
 
-def _database_profile(database_path: Path) -> str | None:
-    try:
-        with closing(sqlite3.connect(database_path)) as connection:
-            rows = connection.execute(
-                "SELECT runtime_profile FROM schema_metadata WHERE singleton_id = 1"
-            ).fetchall()
-    except sqlite3.OperationalError:
-        return None
-    except sqlite3.DatabaseError as exc:
-        raise UnsupportedDataRoot(
-            "data-v2/saber.sqlite3 不是当前架构的有效 SQLite 数据库"
-        ) from exc
-    if len(rows) != 1 or not isinstance(rows[0][0], str):
-        return None
-    return str(rows[0][0])
-
-
 def schema_smoke_test(database_path: Path) -> None:
-    with closing(sqlite3.connect(database_path.resolve().as_uri() + "?mode=ro", uri=True)) as connection:
-        connection.execute("PRAGMA query_only=ON")
+    with closing(read_database(database_path)) as connection:
         connection.execute("BEGIN")
-        integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
-        if integrity != "ok":
-            raise RuntimeError(f"SQLite integrity_check failed: {integrity}")
-        foreign_key_errors = connection.execute("PRAGMA foreign_key_check").fetchall()
-        if foreign_key_errors:
-            raise RuntimeError(f"SQLite foreign_key_check failed: {foreign_key_errors!r}")
-        tables = {
-            str(row[0])
-            for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
-            if not str(row[0]).startswith("sqlite_")
-        }
-        missing = REQUIRED_TABLES - tables
-        unexpected = tables - REQUIRED_TABLES
-        if missing or unexpected:
-            raise RuntimeError(
-                "v2 schema table mismatch: "
-                f"missing={sorted(missing)}, unexpected={sorted(unexpected)}"
-            )
+        validate_schema(connection, contract_sql(APP_VERSION))
 
-def initialize_database(
-    data_root: Path,
-    *,
-    profile_name: str = "local",
-) -> StorageInitializationResult:
-    """Create the database or check its integrity and runtime profile.
 
-    Databases are never migrated, and a data root is permanently owned by the
-    profile that created it.
-    """
+def _clear_initialization(data_root: Path) -> None:
+    control = control_root(data_root)
+    staging = control / "initialization"
+    reject_links(staging)
+    if not staging.exists():
+        return
+    marker = staging / "owner.json"
+    for path in staging.rglob("*"):
+        reject_links(path)
+    if any(staging.iterdir()) and (not marker.is_file() or json.loads(marker.read_text(encoding="utf-8")) != {"root": str(data_root.resolve())}):
+        raise StorageError("无法核验初始化临时目录，拒绝清理")
+    if not staging.resolve().is_relative_to(control.resolve()):
+        raise StorageError("初始化清理路径越界")
+    for path in staging.iterdir():
+        if path != marker:
+            shutil.rmtree(path) if path.is_dir() else path.unlink()
+    marker.unlink(missing_ok=True)
+    staging.rmdir()
 
+
+def initialize_database(data_root: Path, *, profile_name: str = "local") -> StorageInitializationResult:
     if profile_name not in PROFILE_NAMES:
         raise ValueError(f"unsupported runtime profile: {profile_name!r}")
-    data_root.mkdir(parents=True, exist_ok=True)
     database_path = database_path_for(data_root)
-    created = not database_path.exists() or database_path.stat().st_size == 0
-    if not created:
-        current_profile = _database_profile(database_path)
-        if current_profile is None:
-            raise UnsupportedDataRoot("数据库缺少有效的运行模式信息，可能尚未完成初始化")
-        if current_profile != profile_name:
-            raise UnsupportedDataRoot(
-                f"该数据目录属于 {current_profile} 模式，不能由 {profile_name} 模式使用"
-            )
-
-    if created:
-        engine = create_sqlite_engine(database_path)
-        try:
-            metadata.create_all(engine)
-            seed_system_records(engine, profile_name=profile_name)
-            # Publish the profile only after the initial records are committed.
-            with engine.begin() as connection:
-                connection.execute(
-                    insert(schema_metadata).values(
-                        singleton_id=1,
-                        runtime_profile=profile_name,
-                    )
-                )
-        finally:
-            engine.dispose()
-    schema_smoke_test(database_path)
-    return StorageInitializationResult(
-        database_path=database_path,
-        created=created,
-    )
+    if database_path.exists():
+        version, profile = read_identity(data_root)
+        if profile != profile_name:
+            raise StorageError(f"该数据目录属于 {profile} 模式，不能由 {profile_name} 模式使用")
+        if version != APP_VERSION:
+            raise StorageError(f"存储版本 {version} 与程序 {APP_VERSION} 不一致，请先运行存储转换器")
+        schema_smoke_test(database_path)
+        _clear_initialization(data_root)
+        return StorageInitializationResult(database_path, False)
+    if not is_empty_root(data_root):
+        raise StorageError("数据库缺失但目录仍有旧数据；请选择新的数据目录")
+    control = control_root(data_root)
+    control.mkdir(parents=True, exist_ok=True)
+    # All seed writes happen outside the published root. Even a killed process
+    # cannot leave a half-created production database.
+    staging = control / "initialization"
+    _clear_initialization(data_root)
+    marker = staging / "owner.json"
+    staging.mkdir()
+    atomic_json(marker, {"root": str(data_root.resolve())})
+    candidate = database_path_for(staging)
+    engine = create_sqlite_engine(candidate)
+    try:
+        metadata.create_all(engine)
+        seed_system_records(engine, profile_name=profile_name)
+        with engine.begin() as connection:
+            connection.execute(insert(schema_metadata).values(
+                singleton_id=1, runtime_profile=profile_name, storage_version=APP_VERSION,
+            ))
+        with engine.connect() as connection:
+            connection.exec_driver_sql("PRAGMA wal_checkpoint(TRUNCATE)")
+        engine.dispose()
+        schema_smoke_test(candidate)
+        data_root.mkdir(parents=True, exist_ok=True)
+        os.replace(candidate, database_path)
+    finally:
+        engine.dispose()
+        _clear_initialization(data_root)
+    return StorageInitializationResult(database_path, True)

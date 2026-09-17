@@ -3653,6 +3653,7 @@ export interface components {
             recoveryCode: string;
         };
         HealthResponse: {
+            storageVersion?: string;
             /** @enum {string} */
             status: "ok" | "fenced";
             /** @constant */

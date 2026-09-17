@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
+from src.storage_migrator.runner import StorageManager
+from src.storage_migrator.control import business_ready, control_root
+from src.version import APP_VERSION
+
 from dataclasses import dataclass, field
 from enum import Enum
 import json
@@ -72,7 +77,6 @@ from src.backend_v2.storage.epochs import (
     ProcessEpochRepository,
 )
 from src.backend_v2.storage.lifecycle import initialize_database
-from src.backend_v2.storage.single_instance import DataRootLock
 from src.shared.user_logging import STREAM_FRAME_PREFIX, inline_log_text, user_log
 
 
@@ -360,6 +364,8 @@ def _wait_for_api(
                 status == 200
                 and isinstance(payload, dict)
                 and payload.get("epochId") == expected_epoch_id
+                and payload.get("storageVersion") == APP_VERSION
+                and payload.get("status") == "ok"
             ):
                 return
         except (OSError, URLError, ValueError):
@@ -503,7 +509,9 @@ def _wait_for_worker(
             elif stop_event.wait(0.1):
                 raise _LauncherStopRequested
             continue
-        if payload.get("epochId") == expected_epoch_id:
+        if (payload.get("epochId") == expected_epoch_id
+                and payload.get("storageVersion") == APP_VERSION
+                and payload.get("dataRootFingerprint") == data_root_fingerprint(data_root)):
             return
         if stop_event is None:
             time.sleep(0.1)
@@ -842,7 +850,9 @@ class LauncherSupervisor:
         *,
         status_callback: StatusCallback | None = None,
         output_callback: ChildOutputCallback | None = None,
+        storage_manager: StorageManager | None = None,
     ) -> None:
+        self.storage_manager = storage_manager
         self.config = config
         self._status_callback = status_callback
         self._output_callback = output_callback
@@ -886,40 +896,37 @@ class LauncherSupervisor:
         try:
             self._publish(LauncherState.STARTING, "正在初始化后端")
             _raise_if_stop_requested(self._stop_event)
-            with DataRootLock(config.data_root):
-                LOGGER.debug("已取得数据目录单实例锁")
-                storage = initialize_database(
-                    config.data_root,
-                    profile_name=config.profile,
-                )
-                LOGGER.debug(
-                    "数据库初始化与完整性检查完成：新建=%s",
-                    "是" if storage.created else "否",
-                )
+            owner = (nullcontext(self.storage_manager) if self.storage_manager is not None
+                     else StorageManager(config.data_root, config.profile))
+            with owner as storage_manager, storage_manager.startup_guard():
+                storage_manager.prepare(initialize_database)
+                ensure_data_root(config.data_root)
+                storage_manager.before_start()
                 engine = create_sqlite_engine(database_path_for(config.data_root))
                 repository = ProcessEpochRepository(engine)
-                object_storage = AssetStorageService(config.data_root, engine)
                 launcher_registration = _new_registration("launcher", pid=os.getpid())
-                repository.register(launcher_registration)
                 try:
+                    object_storage = AssetStorageService(config.data_root, engine)
+                    repository.register(launcher_registration)
                     _wait_for_previous_children_to_exit(
                         repository,
                         data_root=config.data_root,
                         stop_event=self._stop_event,
                     )
-                    _reconcile_all_previous_epochs(repository)
-                    from src.backend_v2.storage.seeding import begin_runtime
-                    begin_runtime(engine, profile_name=config.profile)
-                    LOGGER.debug("已完成历史进程租约与中断任务恢复")
-                    recovered = object_storage.recover_journal()
-                    integrity = object_storage.scan_integrity()
-                    LOGGER.debug(
-                        "对象存储检查完成：恢复日志=%s，检查对象=%s，缺失=%s，恢复=%s",
-                        recovered,
-                        integrity.checked,
-                        integrity.missing,
-                        integrity.restored,
-                    )
+                    if business_ready(config.data_root):
+                        _reconcile_all_previous_epochs(repository)
+                        from src.backend_v2.storage.seeding import begin_runtime
+                        begin_runtime(engine, profile_name=config.profile)
+                        LOGGER.debug("已完成历史进程租约与中断任务恢复")
+                        recovered = object_storage.recover_journal()
+                        integrity = object_storage.scan_integrity()
+                        LOGGER.debug(
+                            "对象存储检查完成：恢复日志=%s，检查对象=%s，缺失=%s，恢复=%s",
+                            recovered,
+                            integrity.checked,
+                            integrity.missing,
+                            integrity.restored,
+                        )
 
                     if resolve_runtime_profile(config.profile).browser_credentials:
                         credential_broker = CredentialLeaseBroker()
@@ -961,6 +968,15 @@ class LauncherSupervisor:
                                 )
 
                             _raise_if_stop_requested(self._stop_event)
+                            if not business_ready(config.data_root):
+                                api = children["api"]
+                                _wait_for_api(config.port,
+                                    expected_epoch_id=api.registration.epoch_id,
+                                    expected_epoch_token=api.registration.token,
+                                    child=api.process, stop_event=self._stop_event)
+                                if children["worker"].process.poll() is not None:
+                                    raise RuntimeError("Worker 在升级提交前退出")
+                            storage_manager.confirm_ready()
                             if config.open_browser:
                                 webbrowser.open_new(f"http://127.0.0.1:{config.port}/")
                                 LOGGER.debug(
@@ -1150,8 +1166,10 @@ class LauncherSupervisor:
                     if credential_broker is not None:
                         credential_broker.close()
                         LOGGER.debug("浏览器密钥内存服务已清空并停止")
-                    repository.close(launcher_registration)
-                    engine.dispose()
+                    try:
+                        repository.close(launcher_registration)
+                    finally:
+                        engine.dispose()
                     user_log("system", "后端已关闭")
         except _LauncherStopRequested:
             clean_exit = True
@@ -1184,11 +1202,13 @@ def run_launcher(args: object) -> int:
     if public_host is not None:
         os.environ[PUBLIC_HOST_ENV] = public_host
     os.environ[PROFILE_ENV] = profile.name
-    data_root = ensure_data_root(resolve_data_root(explicit_data_root))
+    data_root = resolve_data_root(explicit_data_root)
     host = args.host
     port = args.port
 
     if args.probe:
+        with StorageManager(data_root, profile.name) as manager:
+            manager.prepare(initialize_database)
         print(
             json.dumps(
                 _probe_payload(
@@ -1206,7 +1226,7 @@ def run_launcher(args: object) -> int:
     log_level = args.log_level
     log_path = configure_backend_logging(
         role="launcher",
-        data_root=data_root,
+        data_root=control_root(data_root),
         console_level=log_level,
     )
     user_log(

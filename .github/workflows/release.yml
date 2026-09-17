@@ -75,17 +75,18 @@ jobs:
             TAG_NAME="$REF_NAME"
             VERSION="${TAG_NAME#v}"
           fi
-          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]; then
+          if [[ ! "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
             echo "Invalid release version: $VERSION" >&2
             exit 1
           fi
+          MANIFEST_VERSION=$(jq -er .version version.json)
+          if [[ "$VERSION" != "$MANIFEST_VERSION" ]]; then
+            echo "Release version differs from version.json: $VERSION != $MANIFEST_VERSION" >&2
+            exit 1
+          fi
+          test -f "src/storage_migrator/schemas/$VERSION.sql"
           echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
           echo "TAG_NAME=$TAG_NAME" >> "$GITHUB_OUTPUT"
-          if [[ "$VERSION" == *-* ]]; then
-            echo "PRERELEASE=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "PRERELEASE=false" >> "$GITHUB_OUTPUT"
-          fi
           echo "Version: $VERSION, Tag: $TAG_NAME"
 
       - name: Verify release target
@@ -127,7 +128,7 @@ jobs:
             
             > ⚠️ 程序包采用 7z 分卷压缩格式，请使用 [7-Zip](https://www.7-zip.org/) 或 [Bandzip](https://www.bandisoft.com/bandizip/) 解压，Windows 内置解压和 WinRAR 可能无法正确识别
           draft: true
-          prerelease: ${{ steps.version.outputs.PRERELEASE == 'true' }}
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

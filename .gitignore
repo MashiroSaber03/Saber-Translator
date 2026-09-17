@@ -89,6 +89,8 @@ Thumbs.db
 
 # --- 文档 ---
 docs/*
+!docs/storage-migrations.md
+!docs/storage-audit-report.md
 !docs/refactor/
 !docs/refactor/**
 !vue-frontend/docs/

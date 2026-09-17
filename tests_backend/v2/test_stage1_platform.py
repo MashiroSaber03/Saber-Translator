@@ -40,7 +40,6 @@ from src.backend_v2.storage.epochs import (
     utcnow,
 )
 from src.backend_v2.storage.lifecycle import (
-    UnsupportedDataRoot,
     initialize_database,
     schema_smoke_test,
 )
@@ -86,7 +85,8 @@ from src.backend_v2.storage.seeding import (
     QUICK_WORKSPACE_CHAPTER_ID,
     seed_system_records,
 )
-from src.backend_v2.storage.single_instance import (
+from src.storage_migrator.contracts import StorageError
+from src.storage_migrator.control import (
     DataRootAlreadyLocked,
     DataRootLock,
 )
@@ -217,8 +217,8 @@ def test_failed_initialization_does_not_publish_a_runtime_profile(tmp_path, monk
         with pytest.raises(RuntimeError, match="initial defaults"):
             initialize_database(data_root)
 
-    with pytest.raises(lifecycle.UnsupportedDataRoot, match="未完成初始化"):
-        initialize_database(data_root)
+    assert not (data_root / "saber.sqlite3").exists()
+    assert initialize_database(data_root).created
 
 
 def test_launcher_initialization_seeds_one_persistent_quick_workspace(
@@ -347,7 +347,7 @@ def test_storage_initialization_rejects_invalid_database_without_rewriting_it(
         connection.execute("CREATE TABLE sentinel(value TEXT NOT NULL)")
         connection.execute("INSERT INTO sentinel VALUES ('untouched')")
 
-    with pytest.raises(UnsupportedDataRoot, match="数据库缺少有效的运行模式信息"):
+    with pytest.raises(StorageError, match="数据库缺少有效的运行模式信息"):
         initialize_database(data_root)
 
     with sqlite3.connect(database_path) as connection:
@@ -363,7 +363,7 @@ def test_storage_data_root_cannot_be_reused_by_the_other_profile(
     data_root.mkdir()
     initialized = initialize_database(data_root, profile_name="public")
 
-    with pytest.raises(UnsupportedDataRoot, match="属于 public 模式"):
+    with pytest.raises(StorageError, match="属于 public 模式"):
         initialize_database(data_root, profile_name="local")
 
     reopened = initialize_database(data_root, profile_name="public")

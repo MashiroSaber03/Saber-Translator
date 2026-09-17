@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.storage_migrator.runner import StorageManager
+from src.storage_migrator.control import business_ready, control_root
+from src.backend_v2.storage.lifecycle import initialize_database
+
 import json
 import logging
 import os
@@ -11,7 +15,7 @@ import webbrowser
 
 from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtGui import QAction, QFont, QFontDatabase, QIcon
-from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon
+from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon, QProgressDialog
 
 from src.backend_v2.desktop.pet import PetWindow
 from src.backend_v2.desktop.pet_state import PetStateMachine
@@ -86,8 +90,10 @@ class DesktopController(QObject):
         settings: DesktopSettings,
         native_icon_path: Path,
         brand_logo_path: Path,
+        storage_manager: StorageManager | None = None,
     ) -> None:
         super().__init__()
+        self.storage_manager = storage_manager
         self.app = app
         self.app.setStyleSheet(WINDOW_STYLESHEET)
         self.data_root = data_root
@@ -160,6 +166,7 @@ class DesktopController(QObject):
             ),
             status_callback=self.launcher_status.emit,
             output_callback=self.launcher_output.emit,
+            storage_manager=self.storage_manager,
         )
         self._supervisor = supervisor
 
@@ -382,6 +389,10 @@ class DesktopController(QObject):
         self._supervisor_thread = None
         self._supervisor = None
         self.window.settings.set_backend_running(False)
+        if self.storage_manager is not None and self.storage_manager.rolled_back:
+            self.window.show_error("新版启动失败，已恢复旧数据。请退出后重新启动；当前窗口不会保存设置。")
+            self._finish_quit()
+            return
         if error is not None and not self._quitting:
             if self._settings_restart_pending:
                 self._settings_restart_pending = False
@@ -482,6 +493,8 @@ class DesktopController(QObject):
         *,
         show_error: bool = True,
     ) -> bool:
+        if self.storage_manager is not None and (self.storage_manager.rolled_back or not business_ready(self.data_root)):
+            return False
         try:
             self.settings_store.save(updated)
         except OSError as error:
@@ -537,7 +550,41 @@ def _configure_windows_app_identity() -> None:
 
 
 def run_desktop(args: object) -> int:
-    data_root = ensure_data_root(resolve_data_root(args.data_dir))
+    data_root = resolve_data_root(args.data_dir)
+    app = None if args.probe else (QApplication.instance() or QApplication([]))
+    progress = None
+    if app is not None:
+        progress = QProgressDialog("正在检查存储版本", "", 0, 0)
+        progress.setWindowTitle("Saber-Translator 存储准备")
+        progress.setCancelButton(None)
+        progress.setMinimumDuration(0)
+        progress.show()
+        app.processEvents()
+
+    def report(message):
+        if progress is not None:
+            progress.setLabelText(message)
+            app.processEvents()
+
+    manager = StorageManager(data_root, "local", progress=report)
+    try:
+        with manager, manager.startup_guard():
+            manager.prepare(initialize_database)
+            ensure_data_root(data_root)
+            if progress is not None:
+                progress.close()
+            # Later status changes originate from the Launcher thread.
+            manager.progress = LOGGER.info
+            return _run_prepared_desktop(args, data_root, manager)
+    except Exception as error:
+        if progress is not None:
+            progress.close()
+            QMessageBox.critical(None, "存储准备或启动失败", f"{error}\n诊断目录：{manager.control}")
+            return 1
+        raise
+
+
+def _run_prepared_desktop(args: object, data_root: Path, manager: StorageManager) -> int:
     store = DesktopSettingsStore(data_root)
     defaults = DesktopSettings(
         port=args.port,
@@ -550,7 +597,7 @@ def run_desktop(args: object) -> int:
 
     log_path = configure_backend_logging(
         role="launcher",
-        data_root=data_root,
+        data_root=control_root(data_root),
         console_level=settings.log_level,
     )
     _configure_windows_app_identity()
@@ -578,6 +625,7 @@ def run_desktop(args: object) -> int:
         settings=settings,
         native_icon_path=native_icon_path,
         brand_logo_path=brand_logo_path,
+        storage_manager=manager,
     )
     bridge = DesktopLogBridge()
     bridge.line.connect(controller.window.add_log)
@@ -595,3 +643,6 @@ def run_desktop(args: object) -> int:
     finally:
         logging.getLogger().removeHandler(handler)
         handler.close()
+        controller.stop_backend()
+        if controller._supervisor_thread is not None:
+            controller._supervisor_thread.join()

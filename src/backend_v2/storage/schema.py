@@ -49,6 +49,7 @@ schema_metadata = Table(
     metadata,
     Column("singleton_id", Integer, primary_key=True, server_default="1"),
     Column("runtime_profile", String(16), nullable=False),
+    Column("storage_version", String(32), nullable=False),
     CheckConstraint("singleton_id = 1", name="single_row"),
     CheckConstraint(
         "runtime_profile IN ('local','public')",

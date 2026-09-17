@@ -18,7 +18,8 @@ block_cipher = None
 PROJECT_ROOT = os.path.abspath(os.path.dirname(SPEC))
 
 # ===================== 初始化收集列表 =====================
-datas = []
+datas = [(os.path.join(PROJECT_ROOT, "version.json"), "."),
+         (os.path.join(PROJECT_ROOT, "src", "storage_migrator", "schemas"), "src/storage_migrator/schemas")]
 binaries = []
 hiddenimports = []
 module_collection_mode = {

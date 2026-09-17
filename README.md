@@ -213,6 +213,8 @@ Saber-Translator 提供了一站式的漫画翻译与管理解决方案，集成
 
 ## 开发文档
 
+- [存储版本与升级维护](docs/storage-migrations.md)：3.5.0 版本基线、独立转换器、失败恢复及成功后自动清理备份。
+
 如果你要修改项目实现，推荐从这些文档开始：
 
 - `docs/refactor/backend-first-architecture-plan.md`：完整的后端优先架构与功能裁决。

@@ -205,6 +205,8 @@ def test_api_epoch_heartbeat_starts_before_application_initialization(
     monkeypatch.setattr(entrypoint, "loaded_forbidden_api_modules", lambda: [])
     monkeypatch.setattr(entrypoint, "start_launcher_parent_monitor", lambda *_args, **_kwargs: None)
 
+    from src.backend_v2.storage.lifecycle import initialize_database
+    initialize_database(tmp_path / "api-heartbeat")
     result = entrypoint.run_api(
         SimpleNamespace(
             data_dir=str(tmp_path / "api-heartbeat"),

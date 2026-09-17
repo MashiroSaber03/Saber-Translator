@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from src.backend_v2.storage.startup import current_storage_process
+from src.storage_migrator.control import business_ready
+from src.version import APP_VERSION
+
 import json
 import logging
 import os
@@ -58,6 +62,7 @@ def _write_ready_marker(data_root: Path, identity: RuntimeIdentity) -> None:
     temporary.write_text(
         json.dumps(
             {
+                "storageVersion": APP_VERSION,
                 "pid": os.getpid(),
                 "epochId": identity.epoch_id,
                 "dataRootFingerprint": data_root_fingerprint(data_root),
@@ -69,6 +74,7 @@ def _write_ready_marker(data_root: Path, identity: RuntimeIdentity) -> None:
     temporary.replace(marker)
 
 
+@current_storage_process("worker")
 def run_worker(args: object) -> int:
     profile = resolve_runtime_profile(getattr(args, "profile", "local"))
     resident_models = normalize_resident_models(
@@ -568,7 +574,11 @@ def run_worker(args: object) -> int:
                 len(job_handlers),
             )
             user_log("system", "任务执行器已就绪")
-            job_loop.run(stop_event)
+            while not business_ready(data_root):
+                if stop_event.wait(0.1):
+                    break
+            if not stop_event.is_set():
+                job_loop.run(stop_event)
     except BaseException as exc:
         LOGGER.exception("Worker 运行失败")
         user_log(

@@ -13,10 +13,13 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Saber Translator backend-first v2")
     parser.add_argument(
         "--role",
-        choices=("desktop", "launcher", "api", "worker"),
+        choices=("desktop", "launcher", "api", "worker", "storage-migrator"),
         default="desktop",
         help="Process role. The packaged executable defaults to the desktop shell.",
     )
+    from src.version import APP_VERSION
+    parser.add_argument("--version", action="version", version=APP_VERSION)
+    parser.add_argument("--action", choices=("check", "upgrade"), default="check")
     parser.add_argument("--data-dir", help="Explicit v2 data root.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=5000)
@@ -60,6 +63,10 @@ def dispatch(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.resident_model and args.role not in {"launcher", "worker"}:
         parser.error("--resident-model is only supported by launcher and worker roles")
+
+    if args.role == "storage-migrator":
+        from src.storage_migrator.entrypoint import run_migrator
+        return run_migrator(args)
 
     if args.role == "api":
         from src.backend_v2.api.entrypoint import run_api

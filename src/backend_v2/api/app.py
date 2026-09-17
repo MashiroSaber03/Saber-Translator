@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from src.version import APP_VERSION
+from src.storage_migrator.control import business_ready
+
 from dataclasses import dataclass, field
 from copy import deepcopy
 import json
@@ -117,6 +120,7 @@ def _create_v2_blueprint(settings: ApiSettings) -> Blueprint:
         if include_identity:
             payload.update(
                 {
+                    "storageVersion": APP_VERSION,
                     "role": "api",
                     "epochId": settings.identity.epoch_id,
                     "dataRootFingerprint": data_root_fingerprint(settings.data_root),
@@ -243,6 +247,12 @@ def _install_request_logging(app: Flask) -> None:
 
 def create_api_app(settings: ApiSettings) -> Flask:
     app = Flask("saber_translator_v2", static_folder=None)
+    @app.before_request
+    def storage_admission():
+        if request.path != "/api/v2/health" and not business_ready(settings.data_root):
+            return jsonify({"error": {"code": "storage_upgrade_pending", "message": "存储升级正在等待服务就绪"}}), 503
+        return None
+
     app.config.update(
         JSON_SORT_KEYS=False,
         SABER_V2_DATA_ROOT=str(settings.data_root),

@@ -355,6 +355,7 @@ def test_public_capabilities_host_filter_and_security_headers(public_platform) -
         headers={INTERNAL_HEALTH_TOKEN_HEADER: "public-profile-token"},
     )
     assert internal_health.get_json() == {
+        "storageVersion": "3.5.0",
         "status": "ok",
         "role": "api",
         "epochId": "public-profile-test",

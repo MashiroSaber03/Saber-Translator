@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from src.backend_v2.storage.startup import current_storage_process
+from src.storage_migrator.control import business_ready
+
 import json
 import logging
 import os
@@ -48,6 +51,7 @@ def _waitress_server_options(profile: RuntimeProfile) -> dict[str, object]:
     return options
 
 
+@current_storage_process("api")
 def run_api(args: object) -> int:
     profile = resolve_runtime_profile(getattr(args, "profile", "local"))
     if profile.name == "public" and not getattr(args, "data_dir", None):
@@ -116,6 +120,8 @@ def run_api(args: object) -> int:
 
     app = None
     server = None
+    runtime_stop = threading.Event()
+    runtime_start_thread = None
     try:
         app = create_api_app(
             ApiSettings(
@@ -168,13 +174,27 @@ def run_api(args: object) -> int:
         close_server = server.close
         if fenced.is_set():
             return CHILD_LEASE_LOST_EXIT_CODE
-        app.extensions["saber_v2_runtime"].start()
+        def start_when_committed():
+            while not business_ready(data_root):
+                if runtime_stop.wait(0.1):
+                    return
+            if not runtime_stop.is_set():
+                app.extensions["saber_v2_runtime"].start()
+
+        if business_ready(data_root):
+            app.extensions["saber_v2_runtime"].start()
+        else:
+            runtime_start_thread = threading.Thread(target=start_when_committed, name="storage-admission", daemon=True)
+            runtime_start_thread.start()
         user_log(
             "system",
             f"API 服务已就绪｜{args.host}:{args.port}｜24 个请求线程",
         )
         server.run()
     finally:
+        runtime_stop.set()
+        if runtime_start_thread is not None:
+            runtime_start_thread.join()
         if server is not None:
             LOGGER.debug("API 服务正在关闭")
         if heartbeat is not None:
