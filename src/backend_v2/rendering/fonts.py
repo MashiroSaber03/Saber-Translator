@@ -13,8 +13,10 @@ from src.backend_v2.content.page_style import (
     validate_page_style,
 )
 from src.backend_v2.storage.assets import AssetStorageService
-from src.backend_v2.storage.builtin_fonts import resolve_bundled_font_path
-from src.backend_v2.storage.schema import assets, bubbles, fonts, pages
+from src.backend_v2.storage.font_files import font_path, prepare_font_directory
+from src.backend_v2.storage.defaults import DEFAULT_FONT_ID
+from src.backend_v2.auth.ownership import effective_owner_id
+from src.backend_v2.storage.schema import bubbles, fonts, pages
 from src.core.config_models import validate_bubble_payload
 
 
@@ -23,26 +25,16 @@ def resolve_font_path(
     storage: AssetStorageService,
     font_id: str | None,
 ) -> str:
-    if not font_id:
-        return resolve_bundled_font_path("default")
     row = connection.execute(
-        select(
-            fonts.c.kind,
-            fonts.c.builtin_key,
-            assets.c.relative_path,
-        )
-        .outerjoin(assets, assets.c.id == fonts.c.asset_id)
-        .where(fonts.c.id == font_id)
+        select(fonts).where(fonts.c.id == (font_id or DEFAULT_FONT_ID))
     ).mappings().one_or_none()
-    if row is None:
+    if row is None or row["owner_user_id"] not in (None, effective_owner_id()):
         raise LookupError("font not found")
-    if row["kind"] == "uploaded":
-        if not row["relative_path"]:
-            raise RuntimeError("uploaded font asset is missing")
-        return str(storage.resolve_relative_path(str(row["relative_path"])))
-    if row["kind"] == "builtin":
-        return resolve_bundled_font_path(str(row["builtin_key"]))
-    raise RuntimeError("unsupported builtin font")
+    prepare_font_directory(storage.data_root)
+    path = font_path(storage.data_root, row["relative_path"], row["owner_user_id"])
+    if not path.is_file():
+        raise LookupError(f"字体文件已移除：{path.name}")
+    return str(path)
 
 
 def materialize_render_payloads(

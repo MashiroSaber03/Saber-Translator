@@ -100,16 +100,14 @@ describe('TextStyleDefaultsSettings', () => {
     uploadV2FontMock.mockResolvedValue({
       id: 'font-uploaded',
       displayName: 'UploadedFont',
-      kind: 'uploaded',
-      builtinKey: null,
-      assetUrl: '/api/v2/assets/font-uploaded',
+      scope: 'private',
+      isDefault: false,
     })
     listV2FontsMock.mockResolvedValue([{
       id: 'font-default',
       displayName: '思源黑体',
-      kind: 'builtin',
-      builtinKey: 'default',
-      assetUrl: null,
+      scope: 'shared',
+      isDefault: true,
     }])
     useSettingsStore().textStyleDefaults = { ...initialDefaults }
   })
@@ -330,9 +328,8 @@ describe('TextStyleDefaultsSettings', () => {
     expect(useSettingsStore().fontCatalog).toContainEqual({
       id: 'font-uploaded',
       displayName: 'UploadedFont',
-      kind: 'uploaded',
-      builtinKey: null,
-      assetUrl: '/api/v2/assets/font-uploaded',
+      scope: 'private',
+      isDefault: false,
     })
     expect(wrapper.get('.ui-combobox-stub').attributes('data-value')).toBe('font-uploaded')
     expect(useSettingsStore().textStyleDefaults.fontFamily).toBe('font-uploaded')

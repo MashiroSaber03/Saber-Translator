@@ -655,7 +655,7 @@ paths:
       operationId: listFonts
       responses:
         "200":
-          description: Built-in and uploaded backend fonts.
+          description: Shared and private directory fonts.
           content:
             application/json:
               schema: {$ref: "#/components/schemas/FontList"}
@@ -4388,7 +4388,7 @@ paths:
       operationId: browserManageListFonts
       responses:
         '200':
-          description: Built-in and uploaded backend fonts.
+          description: Shared and private directory fonts.
           content:
             application/json:
               schema:
@@ -5752,13 +5752,12 @@ components:
     FontResource:
       type: object
       additionalProperties: false
-      required: [id, kind, displayName, builtinKey, assetUrl]
+      required: [id, displayName, scope, isDefault]
       properties:
         id: {$ref: "#/components/schemas/Uuid"}
-        kind: {type: string, enum: [builtin, uploaded]}
         displayName: {type: string}
-        builtinKey: {type: [string, "null"]}
-        assetUrl: {type: [string, "null"]}
+        scope: {type: string, enum: [shared, private]}
+        isDefault: {type: boolean}
     FontList:
       type: object
       additionalProperties: false

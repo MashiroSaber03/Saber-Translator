@@ -31,10 +31,9 @@ describe('SettingsSidebar defaults', () => {
     apiMocks.saveTranslateWorkflowPreferences.mockResolvedValue({ success: true })
     apiMocks.uploadFont.mockResolvedValue({
       id: 'font-custom',
-      kind: 'uploaded',
+      scope: 'private',
       displayName: 'custom',
-      builtinKey: null,
-      assetUrl: '/api/v2/assets/font',
+      isDefault: false,
     })
     vi.spyOn(console, 'warn').mockImplementation(() => undefined)
   })
@@ -122,7 +121,7 @@ describe('SettingsSidebar defaults', () => {
     apiMocks.getFontList.mockResolvedValue([{
       id: 'font-custom',
       displayName: 'Custom',
-      kind: 'uploaded',
+      scope: 'private',
     }])
     const wrapper = mount(SettingsSidebar, {
       global: {
@@ -158,16 +157,14 @@ describe('SettingsSidebar defaults', () => {
       {
         id: 'font-default',
         displayName: '思源黑体',
-        kind: 'builtin',
-        builtinKey: 'default',
-        assetUrl: null,
+        scope: 'shared',
+        isDefault: true,
       },
       {
         id: 'font-kaiti',
         displayName: '楷体',
-        kind: 'builtin',
-        builtinKey: 'resource:STKAITI.TTF',
-        assetUrl: null,
+        scope: 'shared',
+        isDefault: false,
       },
     ], [])
     const wrapper = mount(SettingsSidebar, {

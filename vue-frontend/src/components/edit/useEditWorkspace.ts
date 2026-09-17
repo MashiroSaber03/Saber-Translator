@@ -60,8 +60,8 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
     repairSelectedBubble: bubbleRepairSelectedBubble,
     handleOcrRecognize: bubbleOcrRecognize
   } = useBubbleActions({
-    onReRender: () => reRenderFullImage(),
-    onDelayedPreview: () => reRenderFullImage()
+    onReRender: () => isNavigationPending.value ? undefined : reRenderFullImage(),
+    onDelayedPreview: () => isNavigationPending.value ? undefined : reRenderFullImage()
   })
 
   const drawStartX = ref(0)
@@ -756,6 +756,8 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
     isNavigationPending.value = true
     try {
       await persistCurrentDocument()
+      // Unmounting cancels editor polling, so refresh the result before leaving.
+      await reRenderFullImage()
       emit('exit')
     } catch (error) {
       showToast(

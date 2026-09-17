@@ -2081,7 +2081,7 @@ class ContentRepository:
                     select(fonts.c.id).where(
                         fonts.c.id == value,
                         or_(
-                            fonts.c.kind == "builtin",
+                            fonts.c.owner_user_id.is_(None),
                             fonts.c.owner_user_id == effective_owner_id(),
                         ),
                     )

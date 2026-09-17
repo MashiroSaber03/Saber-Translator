@@ -77,6 +77,7 @@ from src.backend_v2.storage.epochs import (
     ProcessEpochRepository,
 )
 from src.backend_v2.storage.lifecycle import initialize_database
+from src.backend_v2.storage.font_files import prepare_font_directory
 from src.shared.user_logging import STREAM_FRAME_PREFIX, inline_log_text, user_log
 
 
@@ -901,6 +902,7 @@ class LauncherSupervisor:
             with owner as storage_manager, storage_manager.startup_guard():
                 storage_manager.prepare(initialize_database)
                 ensure_data_root(config.data_root)
+                prepare_font_directory(config.data_root)
                 storage_manager.before_start()
                 engine = create_sqlite_engine(database_path_for(config.data_root))
                 repository = ProcessEpochRepository(engine)

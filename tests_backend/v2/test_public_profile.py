@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from src.version import APP_VERSION
+
+from src.backend_v2.storage.defaults import DEFAULT_FONT_ID
+
 from datetime import timedelta
 from copy import deepcopy
 from io import BytesIO
@@ -42,7 +46,7 @@ from src.backend_v2.runtime_profile import (
     validate_profile_bind_host,
 )
 from src.backend_v2.scheduling_policy import DEFAULT_SCHEDULING_POLICY
-from src.backend_v2.storage.builtin_fonts import discover_bundled_fonts
+from src.backend_v2.storage.font_files import bundled_font_files
 from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.defaults import DEFAULT_TEXT_STYLE
 from src.backend_v2.storage.lifecycle import initialize_database
@@ -355,7 +359,7 @@ def test_public_capabilities_host_filter_and_security_headers(public_platform) -
         headers={INTERNAL_HEALTH_TOKEN_HEADER: "public-profile-token"},
     )
     assert internal_health.get_json() == {
-        "storageVersion": "3.5.0",
+        "storageVersion": APP_VERSION,
         "status": "ok",
         "role": "api",
         "epochId": "public-profile-test",
@@ -759,7 +763,7 @@ def test_page_document_cannot_reference_another_users_uploaded_font(
 ) -> None:
     app = public_platform["app"]
     alice_client, alice_csrf = _login(app, "alice", ALICE_PASSWORD)
-    bundled_font = discover_bundled_fonts()[0]
+    bundled_font = bundled_font_files()[0]
     uploaded = alice_client.post(
         "/api/v2/fonts",
         base_url=PUBLIC_BASE,
@@ -770,7 +774,7 @@ def test_page_document_cannot_reference_another_users_uploaded_font(
         data={
             "file": (
                 BytesIO(bundled_font.path.read_bytes()),
-                bundled_font.file_name,
+                bundled_font.path.name,
             )
         },
         content_type="multipart/form-data",

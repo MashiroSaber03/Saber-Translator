@@ -64,10 +64,9 @@ function createSidebarHarness(scenario: SidebarScenario): SidebarHarness {
   getFontListMock.mockResolvedValue([])
   uploadFontMock.mockResolvedValue({
     id: 'font-uploaded',
-    kind: 'uploaded',
+    scope: 'private',
     displayName: 'UploadedFont',
-    builtinKey: null,
-    assetUrl: '/api/v2/assets/font',
+    isDefault: false,
   })
   getPreferencesMock.mockResolvedValue({
     success: true,

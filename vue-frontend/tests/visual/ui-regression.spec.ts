@@ -580,9 +580,8 @@ function fixtureTranslationBootstrap(loaded: boolean, pages = demoV2Pages) {
       {
         id: 'font-source-han',
         displayName: '思源黑体',
-        kind: 'builtin',
-        builtinKey: 'source-han-sans-k-bold',
-        assetUrl: null,
+        scope: 'shared',
+        isDefault: true,
       },
     ],
     prompts: [],
@@ -890,9 +889,8 @@ async function mockApi(route: Route, options: VisualFixtureOptions = {}) {
         {
           id: 'font-source-han',
           displayName: '思源黑体',
-          kind: 'builtin',
-          builtinKey: 'source-han-sans-k-bold',
-          assetUrl: null,
+          scope: 'shared',
+          isDefault: true,
         },
       ],
     })

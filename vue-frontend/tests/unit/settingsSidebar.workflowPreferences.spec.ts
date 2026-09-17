@@ -112,10 +112,9 @@ describe('SettingsSidebar workflow preferences', () => {
     getFontListMock.mockResolvedValue([])
     uploadFontMock.mockResolvedValue({
       id: 'font-uploaded',
-      kind: 'uploaded',
+      scope: 'private',
       displayName: 'UploadedFont',
-      builtinKey: null,
-      assetUrl: '/api/v2/assets/font',
+      isDefault: false,
     })
     savePreferencesMock.mockResolvedValue({
       domain: 'workflow_preferences',
@@ -340,10 +339,9 @@ describe('SettingsSidebar workflow preferences', () => {
     expect(uploadFontMock).toHaveBeenCalledWith(file)
     expect(useSettingsStore().fontCatalog).toContainEqual({
       id: 'font-uploaded',
-      kind: 'uploaded',
+      scope: 'private',
       displayName: 'UploadedFont',
-      builtinKey: null,
-      assetUrl: '/api/v2/assets/font',
+      isDefault: false,
     })
     expect(getFontListMock).not.toHaveBeenCalled()
   })

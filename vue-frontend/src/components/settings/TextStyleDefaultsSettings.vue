@@ -119,7 +119,7 @@ function updateDraft(updates: Partial<TextStyleSettings>): void {
 
 function resetDraftToFactory(): void {
   const defaultFont = fontList.value.find(
-    font => font.kind === 'builtin' && font.builtinKey === 'default',
+    font => font.isDefault,
   )
   if (!defaultFont) {
     errorMessage.value = '未找到内置默认字体，请刷新字体列表后重试'

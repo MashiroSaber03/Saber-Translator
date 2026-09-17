@@ -689,7 +689,7 @@ class JobQueueRepository:
                     select(fonts.c.id).where(
                         fonts.c.id == font_id,
                         or_(
-                            fonts.c.kind == "builtin",
+                            fonts.c.owner_user_id.is_(None),
                             fonts.c.owner_user_id == owner_user_id,
                         ),
                     ),

@@ -20,6 +20,7 @@ from src.backend_v2.auth.ownership import effective_owner_id
 from src.backend_v2.runtime_profile import resolve_runtime_profile
 from src.backend_v2.timestamps import utcnow as _utcnow
 from src.backend_v2.storage.database import immediate_transaction
+from src.backend_v2.storage.font_files import private_font_bytes
 from src.backend_v2.storage.schema import (
     assets,
     metadata,
@@ -328,6 +329,7 @@ class AssetStorageService:
                 )
             ).scalar_one()
         )
+        used_bytes += private_font_bytes(Path(connection.engine.url.database).parent, owner_user_id)
         return quota_bytes, used_bytes
 
     @staticmethod

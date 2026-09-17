@@ -95,8 +95,8 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
   const jpKeyboardTarget = ref<'original' | 'translated'>('original')
   let isOwnerMounted = true
 
-  const systemFonts = ref<{ name: string; id: string }[]>([])
-  const customFonts = ref<{ name: string; id: string }[]>([])
+  const sharedFonts = ref<{ name: string; id: string }[]>([])
+  const privateFonts = ref<{ name: string; id: string }[]>([])
 
   const positionX = computed(() => {
     if (!props.bubble) return 0
@@ -110,27 +110,27 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
 
   const fontSelectGroups = computed(() => {
     const knownFontIds = new Set([
-      ...systemFonts.value.map(font => font.id),
-      ...customFonts.value.map(font => font.id),
+      ...sharedFonts.value.map(font => font.id),
+      ...privateFonts.value.map(font => font.id),
     ])
     const currentFontId = localFontFamily.value
     const currentOptions = currentFontId && !knownFontIds.has(currentFontId)
       ? [{ label: `当前字体 (${currentFontId})`, value: currentFontId }]
       : []
     const groups = []
-    if (systemFonts.value.length > 0 || currentOptions.length > 0) {
+    if (sharedFonts.value.length > 0 || currentOptions.length > 0) {
       groups.push({
-        label: '系统字体',
+        label: '共享字体',
         options: [
           ...currentOptions,
-          ...systemFonts.value.map(font => ({ label: font.name, value: font.id })),
+          ...sharedFonts.value.map(font => ({ label: font.name, value: font.id })),
         ],
       })
     }
-    if (customFonts.value.length > 0) {
+    if (privateFonts.value.length > 0) {
       groups.push({
-        label: '自定义字体',
-        options: customFonts.value.map(font => ({ label: font.name, value: font.id })),
+        label: '我的字体',
+        options: privateFonts.value.map(font => ({ label: font.name, value: font.id })),
       })
     }
     return groups
@@ -400,19 +400,19 @@ export function useBubbleEditor(props: BubbleEditorProps, emit: BubbleEditorEmit
           name: font.displayName,
           id: font.id,
         }
-        if (font.kind === 'builtin') {
+        if (font.scope === 'shared') {
           system.push(fontItem)
         } else {
           custom.push(fontItem)
         }
       }
 
-      systemFonts.value = system
-      customFonts.value = custom
+      sharedFonts.value = system
+      privateFonts.value = custom
     } catch {
       if (isOwnerMounted) {
-        systemFonts.value = []
-        customFonts.value = []
+        sharedFonts.value = []
+        privateFonts.value = []
       }
     }
   }

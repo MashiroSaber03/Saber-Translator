@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 from io import BytesIO
 import logging
 from pathlib import Path
@@ -22,7 +21,7 @@ from src.backend_v2.api.request_helpers import (
 from src.backend_v2.runtime_profile import RuntimeProfile
 from src.backend_v2.public_policy import PublicUserPolicyAccess
 from src.backend_v2.storage.assets import AssetStorageService
-from src.backend_v2.storage.builtin_fonts import SUPPORTED_FONT_SUFFIXES
+from src.backend_v2.storage.font_files import SUPPORTED_FONT_SUFFIXES
 from src.backend_v2.settings.diagnostics import (
     CONNECTION_TEST_KINDS,
     ProviderDiagnosticUnavailable,
@@ -464,20 +463,6 @@ def create_settings_blueprint(
         )
         if not display_name:
             raise ValueError("font displayName must not be empty")
-        idempotency_body = {
-            "checksum": hashlib.sha256(payload).hexdigest(),
-            "byteSize": len(payload),
-            "extension": suffix,
-            "displayName": display_name,
-        }
-        replay = font_repository.replay_upload(
-            idempotency_key=idempotency_key,
-            request_body=idempotency_body,
-        )
-        if replay is not None:
-            response = jsonify(replay)
-            response.headers["Idempotency-Replayed"] = "true"
-            return response, 201
         try:
             font = (
                 TTCollection(BytesIO(payload), lazy=True)
@@ -489,23 +474,9 @@ def create_settings_blueprint(
             if is_memory_allocation_error(exc):
                 raise
             raise ValueError("uploaded file is not a valid font") from exc
-        mime_types = {
-            ".ttf": "font/ttf",
-            ".ttc": "font/collection",
-            ".otf": "font/otf",
-            ".woff": "font/woff",
-            ".woff2": "font/woff2",
-        }
-        asset = storage.publish_bytes(
-            payload,
-            extension=suffix[1:],
-            mime_type=mime_types[suffix],
-        )
-        result, replayed = font_repository.register_uploaded_idempotent(
-            idempotency_key=idempotency_key,
-            request_body=idempotency_body,
-            asset_id=asset.id,
-            display_name=display_name,
+        result, replayed = font_repository.upload(
+            filename=upload.filename or "font", payload=payload,
+            display_name=display_name, idempotency_key=idempotency_key,
         )
         response = jsonify(result)
         if replayed:
@@ -514,7 +485,7 @@ def create_settings_blueprint(
 
     @blueprint.delete("/fonts/<font_id>")
     def delete_font(font_id: str) -> Response:
-        result, replayed = font_repository.delete_uploaded_idempotent(
+        result, replayed = font_repository.delete(
             idempotency_key=_require_idempotency_key(),
             font_id=font_id,
         )

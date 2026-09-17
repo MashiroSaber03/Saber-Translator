@@ -3816,11 +3816,10 @@ export interface components {
         };
         FontResource: {
             id: components["schemas"]["Uuid"];
-            /** @enum {string} */
-            kind: "builtin" | "uploaded";
             displayName: string;
-            builtinKey: string | null;
-            assetUrl: string | null;
+            /** @enum {string} */
+            scope: "shared" | "private";
+            isDefault: boolean;
         };
         FontList: {
             items: components["schemas"]["FontResource"][];
@@ -7032,7 +7031,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Built-in and uploaded backend fonts. */
+            /** @description Shared and private directory fonts. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -12408,7 +12407,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Built-in and uploaded backend fonts. */
+            /** @description Shared and private directory fonts. */
             200: {
                 headers: {
                     [name: string]: unknown;

@@ -8,11 +8,13 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 import hashlib
 import json
+import os
+from pathlib import Path, PureWindowsPath
 import time
 import uuid
 from typing import Any, cast
 
-from sqlalchemy import Engine, and_, case, delete, func, insert, or_, select, update
+from sqlalchemy import Engine, and_, delete, func, insert, or_, select, update
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
 
@@ -34,7 +36,8 @@ from src.backend_v2.settings.validation import (
     validate_provider_setting_payload,
     validate_setting_payload,
 )
-from src.backend_v2.storage.defaults import FACTORY_PROMPTS
+from src.backend_v2.storage.defaults import FACTORY_PROMPTS, DEFAULT_FONT_ID
+from src.backend_v2.storage.font_files import DISPLAY_NAMES, FONT_NAMESPACE, font_path, scan_font_files
 from src.backend_v2.settings.scope import SettingsScope
 from src.backend_v2.storage.schema import (
     PROMPT_TYPES,
@@ -1545,198 +1548,107 @@ class PromptRepository:
 
 
 class FontRepository:
+    """Directory-driven catalog; SQL only keeps stable content references."""
+
     def __init__(self, engine: Engine) -> None:
         self.engine = engine
-
-    def register_uploaded(self, *, asset_id: str, display_name: str) -> str:
-        font_id = str(uuid.uuid4())
-        with self.engine.begin() as connection:
-            self._register_uploaded(
-                connection,
-                font_id=font_id,
-                asset_id=asset_id,
-                display_name=display_name,
-            )
-        return font_id
-
-    def replay_upload(
-        self,
-        *,
-        idempotency_key: str,
-        request_body: Mapping[str, Any],
-    ) -> dict[str, Any] | None:
-        with immediate_transaction(self.engine) as connection:
-            _request_hash, replay = _idempotency_replay(
-                connection,
-                scope="POST:uploadFont",
-                key=idempotency_key,
-                request_body=request_body,
-                now=_utcnow(),
-            )
-            return replay
-
-    def register_uploaded_idempotent(
-        self,
-        *,
-        idempotency_key: str,
-        request_body: Mapping[str, Any],
-        asset_id: str,
-        display_name: str,
-    ) -> tuple[dict[str, object], bool]:
-        now = _utcnow()
-        with immediate_transaction(self.engine) as connection:
-            request_hash, replay = _idempotency_replay(
-                connection,
-                scope="POST:uploadFont",
-                key=idempotency_key,
-                request_body=request_body,
-                now=now,
-            )
-            if replay is not None:
-                return replay, True
-            font_id = str(uuid.uuid4())
-            self._register_uploaded(
-                connection,
-                font_id=font_id,
-                asset_id=asset_id,
-                display_name=display_name,
-            )
-            result = {
-                "id": font_id,
-                "kind": "uploaded",
-                "displayName": display_name,
-                "builtinKey": None,
-                "assetUrl": f"/api/v2/assets/{asset_id}",
-            }
-            _record_idempotency(
-                connection,
-                scope="POST:uploadFont",
-                key=idempotency_key,
-                request_hash=request_hash,
-                response=result,
-                http_status=201,
-                resource_type="font",
-                resource_id=font_id,
-                now=now,
-            )
-            return result, False
+        self.root = Path(engine.url.database).parent
 
     @staticmethod
-    def _register_uploaded(
-        connection: Connection,
-        *,
-        font_id: str,
-        asset_id: str,
-        display_name: str,
-    ) -> None:
-        connection.execute(
-            insert(fonts).values(
-                id=font_id,
-                owner_user_id=effective_owner_id(),
-                kind="uploaded",
-                asset_id=asset_id,
-                display_name=display_name,
-            )
-        )
+    def _dto(row) -> dict[str, object]:
+        return {"id": row["id"], "displayName": row["display_name"],
+                "scope": "shared" if row["owner_user_id"] is None else "private",
+                "isDefault": row["id"] == DEFAULT_FONT_ID}
+
+    @staticmethod
+    def _register(connection, relative: str, owner: str | None, display_name=None):
+        row = connection.execute(select(fonts).where(fonts.c.relative_path == relative)).mappings().one_or_none()
+        if row is None:
+            # Shared IDs stay stable when a data root is moved. Existing migrated
+            # records retain their IDs because the relative path is checked first.
+            font_id = str(uuid.uuid5(FONT_NAMESPACE, relative))
+            name = Path(relative).name
+            connection.execute(insert(fonts).values(
+                id=font_id, owner_user_id=owner, relative_path=relative,
+                display_name=display_name or DISPLAY_NAMES.get(name.casefold(), Path(name).stem),
+            ))
+            row = connection.execute(select(fonts).where(fonts.c.id == font_id)).mappings().one()
+        return row
 
     def list(self) -> list[dict[str, object]]:
-        with self.engine.connect() as connection:
-            rows = connection.execute(
-                select(fonts)
-                .where(
-                    or_(
-                        fonts.c.kind == "builtin",
-                        fonts.c.owner_user_id == effective_owner_id(),
-                    )
-                )
-                .order_by(
-                    case((fonts.c.builtin_key == "default", 0), else_=1),
-                    fonts.c.kind,
-                    func.lower(fonts.c.display_name),
-                )
-            ).mappings()
-            return [
-                {
-                    "id": row["id"],
-                    "kind": row["kind"],
-                    "displayName": row["display_name"],
-                    "assetUrl": (
-                        f"/api/v2/assets/{row['asset_id']}"
-                        if row["asset_id"]
-                        else None
-                    ),
-                    "builtinKey": row["builtin_key"],
-                }
-                for row in rows
-            ]
+        # No process cache: refresh sees manually added and removed files.
+        files = scan_font_files(self.root, effective_owner_id())
+        with immediate_transaction(self.engine) as connection:
+            items = [self._dto(self._register(connection, relative, owner)) for relative, owner in files
+                     if font_path(self.root, relative, owner).is_file()]
+        return sorted(items, key=lambda item: (not item["isDefault"], str(item["displayName"]).casefold(), item["id"]))
 
-    def delete_uploaded(self, font_id: str) -> str:
-        try:
-            with immediate_transaction(self.engine) as connection:
-                asset_id = self._delete_uploaded(connection, font_id)
-        except IntegrityError as exc:
-            raise RevisionConflict(
-                "font is still referenced by content or history"
-            ) from exc
-        return asset_id
+    def upload(self, *, filename: str, payload: bytes, display_name: str,
+               idempotency_key: str) -> tuple[dict[str, object], bool]:
+        if not filename or Path(filename).name != filename or PureWindowsPath(filename).name != filename:
+            raise ValueError("上传字体必须使用文件名，不能包含路径")
+        if PureWindowsPath(filename).is_reserved() or len(filename) > 200:
+            raise ValueError("字体文件名无效或过长")
+        owner = effective_owner_id()
+        relative = f"fonts/users/{owner}/{filename}"
+        destination = font_path(self.root, relative, owner)
+        body = {"filename": filename, "checksum": hashlib.sha256(payload).hexdigest(), "displayName": display_name}
+        now = _utcnow()
+        with immediate_transaction(self.engine) as connection:
+            request_hash, replay = _idempotency_replay(connection, scope="POST:uploadFont", key=idempotency_key, request_body=body, now=now)
+            if replay is not None:
+                return replay, True
+            if destination.exists():
+                raise RevisionConflict("同名字体已存在，请更换文件名后上传")
+            from src.backend_v2.storage.assets import AssetQuotaExceeded, AssetStorageService, _quota_is_enforced
+            if _quota_is_enforced():
+                quota, used = AssetStorageService._quota_state(connection, owner)
+                if used + len(payload) > quota:
+                    raise AssetQuotaExceeded(used_bytes=used, quota_bytes=quota, incoming_bytes=len(payload))
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            # Recheck the complete path after mkdir; never follow user-created links.
+            font_path(self.root, relative, owner)
+            created = False
+            try:
+                with destination.open("xb") as handle:
+                    created = True
+                    handle.write(payload)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                row = self._register(connection, relative, owner, display_name)
+                result = self._dto(row)
+                _record_idempotency(connection, scope="POST:uploadFont", key=idempotency_key,
+                    request_hash=request_hash, response=result, http_status=201,
+                    resource_type="font", resource_id=str(row["id"]), now=now)
+            except BaseException:
+                if created:
+                    destination.unlink(missing_ok=True)
+                raise
+        return result, False
 
-    def delete_uploaded_idempotent(
-        self,
-        *,
-        idempotency_key: str,
-        font_id: str,
-    ) -> tuple[dict[str, object], bool]:
+    def delete(self, *, idempotency_key: str, font_id: str) -> tuple[dict[str, object], bool]:
         scope = f"DELETE:deleteFont:{font_id}"
         now = _utcnow()
         try:
             with immediate_transaction(self.engine) as connection:
-                request_hash, replay = _idempotency_replay(
-                    connection,
-                    scope=scope,
-                    key=idempotency_key,
-                    request_body={},
-                    now=now,
-                )
+                request_hash, replay = _idempotency_replay(connection, scope=scope, key=idempotency_key, request_body={}, now=now)
                 if replay is not None:
                     return replay, True
-                self._delete_uploaded(connection, font_id)
+                row = connection.execute(select(fonts).where(fonts.c.id == font_id)).mappings().one_or_none()
+                if row is None or row["owner_user_id"] not in (None, effective_owner_id()):
+                    raise LookupError("font not found")
+                if row["owner_user_id"] is None:
+                    raise ValueError("共享字体由管理员在字体目录中管理")
+                path = font_path(self.root, row["relative_path"], row["owner_user_id"])
+                connection.execute(delete(fonts).where(fonts.c.id == font_id))
+                path.unlink(missing_ok=True)
                 result = {"deleted": True}
-                _record_idempotency(
-                    connection,
-                    scope=scope,
-                    key=idempotency_key,
-                    request_hash=request_hash,
-                    response=result,
-                    http_status=200,
-                    resource_type="font",
-                    resource_id=font_id,
-                    now=now,
-                )
+                _record_idempotency(connection, scope=scope, key=idempotency_key,
+                    request_hash=request_hash, response=result, http_status=200,
+                    resource_type="font", resource_id=font_id, now=now)
                 return result, False
         except IntegrityError as exc:
-            raise RevisionConflict(
-                "font is still referenced by content or history"
-            ) from exc
-
-    @staticmethod
-    def _delete_uploaded(connection: Connection, font_id: str) -> str:
-        row = connection.execute(
-            select(fonts.c.kind, fonts.c.asset_id).where(
-                fonts.c.id == font_id,
-                fonts.c.owner_user_id == effective_owner_id(),
-            )
-        ).one_or_none()
-        if row is None:
-            raise LookupError("font not found")
-        if row.kind != "uploaded":
-            raise ValueError("built-in fonts cannot be deleted")
-        connection.execute(
-            delete(fonts).where(
-                fonts.c.id == font_id,
-                fonts.c.owner_user_id == effective_owner_id(),
-            )
-        )
-        return str(row.asset_id)
+            raise RevisionConflict("font is still referenced by content or history") from exc
 
 
 class ProviderRateLimiter:

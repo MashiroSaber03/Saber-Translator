@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from src.backend_v2.storage.defaults import DEFAULT_FONT_ID
+
 from datetime import timedelta
 from io import BytesIO
 import json
@@ -19,8 +21,8 @@ from sqlalchemy import event, insert, select, text, update
 
 from src.backend_v2.runtime_profile import PROFILE_ENV, resolve_runtime_profile
 from src.backend_v2.storage.assets import AssetQuotaExceeded, AssetStorageService
-from src.backend_v2.storage import builtin_fonts
-from src.backend_v2.storage.builtin_fonts import discover_bundled_fonts
+from src.backend_v2.storage import font_files
+from src.backend_v2.storage.font_files import bundled_font_files
 from src.backend_v2.storage.consistency import ConsistencyChecker
 from src.backend_v2.storage.database import (
     create_sqlite_engine,
@@ -72,6 +74,7 @@ from src.backend_v2.storage.schema import (
     operation_events,
     operations,
     pages,
+    page_assets,
     platform_config,
     process_epochs,
     render_requests,
@@ -241,9 +244,9 @@ def test_launcher_initialization_seeds_one_persistent_quick_workspace(
         seeded_fonts = connection.execute(
             select(
                 fonts.c.id,
-                fonts.c.builtin_key,
+                fonts.c.relative_path,
                 fonts.c.display_name,
-            ).where(fonts.c.kind == "builtin")
+            ).where(fonts.c.owner_user_id.is_(None))
         ).mappings().all()
         seeded_setting_domains = set(
             connection.execute(select(app_settings.c.domain)).scalars()
@@ -261,16 +264,16 @@ def test_launcher_initialization_seeds_one_persistent_quick_workspace(
         "workflow_preferences",
     }
     default_font = next(
-        font for font in discover_bundled_fonts() if font.builtin_key == "default"
+        font for font in bundled_font_files() if font.id == DEFAULT_FONT_ID
     )
-    assert default_font.file_name == "思源黑体SourceHanSansK-Bold.TTF"
+    assert default_font.path.name == "思源黑体SourceHanSansK-Bold.TTF"
     assert default_font.display_name == "思源黑体"
     assert {
-        (str(row["id"]), str(row["builtin_key"]), str(row["display_name"]))
+        (str(row["id"]), str(row["relative_path"]), str(row["display_name"]))
         for row in seeded_fonts
     } == {
-        (font.id, font.builtin_key, font.display_name)
-        for font in discover_bundled_fonts()
+        (font.id, font.relative_path, font.display_name)
+        for font in bundled_font_files()
     }
 
     second = initialize_database(data_root)
@@ -279,8 +282,8 @@ def test_launcher_initialization_seeds_one_persistent_quick_workspace(
     engine = create_sqlite_engine(second.database_path)
     try:
         listed_fonts = FontRepository(engine).list()
-        assert len(listed_fonts) == len(discover_bundled_fonts())
-        assert listed_fonts[0]["builtinKey"] == "default"
+        assert len(listed_fonts) == len(bundled_font_files())
+        assert listed_fonts[0]["isDefault"] is True
         assert listed_fonts[0]["displayName"] == "思源黑体"
     finally:
         engine.dispose()
@@ -295,20 +298,11 @@ def test_bundled_font_catalog_uses_an_available_font_when_preferred_is_absent(
     fallback = font_root / "CustomDefault.ttf"
     fallback.write_bytes(b"custom-font")
     (font_root / "OtherFont.otf").write_bytes(b"other-font")
-    monkeypatch.setattr(builtin_fonts, "_font_resource_root", lambda: font_root)
-    discover_bundled_fonts.cache_clear()
-
-    try:
-        catalog = discover_bundled_fonts()
-        default_font = next(font for font in catalog if font.builtin_key == "default")
-
-        assert default_font.file_name == fallback.name
-        assert builtin_fonts.resolve_bundled_font_path("default") == str(fallback.resolve())
-        data_root = tmp_path / "data-v2"
-        data_root.mkdir()
-        assert initialize_database(data_root).created is True
-    finally:
-        discover_bundled_fonts.cache_clear()
+    monkeypatch.setattr(font_files, "resource_path", lambda _: str(font_root))
+    catalog = bundled_font_files()
+    default_font = next(font for font in catalog if font.id == DEFAULT_FONT_ID)
+    assert default_font.path == fallback
+    assert initialize_database(tmp_path / "data-v2").created is True
 
 
 def test_storage_initialization_does_not_reseed_builtin_font_metadata(
@@ -321,7 +315,7 @@ def test_storage_initialization_does_not_reseed_builtin_font_metadata(
     with engine.begin() as connection:
         connection.execute(
             update(fonts)
-            .where(fonts.c.builtin_key == "default")
+            .where(fonts.c.id == DEFAULT_FONT_ID)
             .values(display_name="默认字体")
         )
     engine.dispose()
@@ -331,7 +325,7 @@ def test_storage_initialization_does_not_reseed_builtin_font_metadata(
     try:
         with engine.connect() as connection:
             assert connection.execute(
-                select(fonts.c.display_name).where(fonts.c.builtin_key == "default")
+                select(fonts.c.display_name).where(fonts.c.id == DEFAULT_FONT_ID)
             ).scalar_one() == "默认字体"
     finally:
         engine.dispose()
@@ -1783,10 +1777,10 @@ def test_integrity_scan_and_two_pass_gc_never_delete_referenced_assets(
     referenced = storage.publish_bytes(
         b"font", extension="ttf", mime_type="font/ttf"
     )
-    FontRepository(engine).register_uploaded(
-        asset_id=referenced.id,
-        display_name="Uploaded",
-    )
+    seed_system_records(engine)
+    with engine.begin() as connection:
+        connection.execute(insert(pages).values(id="gc-page", chapter_id=QUICK_WORKSPACE_CHAPTER_ID, ordinal=1, logical_source_path="gc.png"))
+        connection.execute(insert(page_assets).values(page_id="gc-page", role="source", asset_id=referenced.id))
     storage.resolve_relative_path(referenced.relative_path).unlink()
     scan = storage.scan_integrity()
     assert scan.missing == 1
@@ -1861,10 +1855,10 @@ def test_asset_gc_does_not_request_a_write_lock_when_nothing_can_change(
         extension="ttf",
         mime_type="font/ttf",
     )
-    FontRepository(engine).register_uploaded(
-        asset_id=referenced.id,
-        display_name="Referenced",
-    )
+    seed_system_records(engine)
+    with engine.begin() as connection:
+        connection.execute(insert(pages).values(id="gc-page", chapter_id=QUICK_WORKSPACE_CHAPTER_ID, ordinal=1, logical_source_path="gc.png"))
+        connection.execute(insert(page_assets).values(page_id="gc-page", role="source", asset_id=referenced.id))
 
     with immediate_transaction(engine):
         result = storage.collect_garbage(batch_limit=1)
@@ -2669,7 +2663,7 @@ def test_settings_http_transaction_updates_prompts_idempotently(platform) -> Non
 def test_settings_http_accepts_true_type_collections(platform) -> None:
     data_root, engine = platform
     source_path = next(
-        font.path for font in discover_bundled_fonts() if font.file_name == "ALGER.TTF"
+        font.path for font in bundled_font_files() if font.path.name == "ALGER.TTF"
     )
     source_font = TTFont(source_path)
     collection = TTCollection()
@@ -2703,20 +2697,19 @@ def test_settings_http_accepts_true_type_collections(platform) -> None:
     uploaded = response.get_json()
     assert uploaded == {
         "id": uploaded["id"],
-        "kind": "uploaded",
+        "scope": "private",
         "displayName": "custom",
-        "builtinKey": None,
-        "assetUrl": uploaded["assetUrl"],
+        "isDefault": False,
     }
     uploaded_id = uploaded["id"]
     listed = client.get("/api/v2/fonts").get_json()["items"]
     assert any(
         item["id"] == uploaded_id
-        and item["kind"] == "uploaded"
+        and item["scope"] == "private"
         and item["displayName"] == "custom"
         for item in listed
     )
-    assert sum(item["kind"] == "uploaded" for item in listed) == 1
+    assert sum(item["scope"] == "private" for item in listed) == 1
 
 
 def test_insight_provider_accepts_its_snake_case_openai_wire_contract(

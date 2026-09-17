@@ -9,6 +9,7 @@ import secrets
 import string
 from typing import Any
 import uuid
+from pathlib import Path
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerifyMismatchError
@@ -16,6 +17,7 @@ from sqlalchemy import Engine, case, delete, func, insert, select, update
 
 from src.backend_v2.auth.identity import SessionIdentity
 from src.backend_v2.storage.database import immediate_transaction
+from src.backend_v2.storage.font_files import private_font_bytes
 from src.backend_v2.storage.schema import (
     CURRENT_JOB_STATUSES,
     EXECUTING_JOB_STATUSES,
@@ -425,7 +427,7 @@ class AuthRepository:
                 ).scalar_one()
             )
         return {
-            "assetUsageBytes": used,
+            "assetUsageBytes": used + private_font_bytes(Path(self.engine.url.database).parent, user_id),
             "assetQuotaBytes": quota_bytes or DEFAULT_ASSET_QUOTA_BYTES,
         }
 
@@ -527,7 +529,7 @@ class AuthRepository:
                     "username": str(row["username"]),
                     "role": str(row["role"]),
                     "status": str(row["status"]),
-                    "assetUsageBytes": int(row["usage"]),
+                    "assetUsageBytes": int(row["usage"]) + private_font_bytes(Path(self.engine.url.database).parent, str(row["id"])),
                     "assetQuotaBytes": asset_quota,
                     "createdAt": iso_utc(row["created_at"]),
                     "taskStatus": (

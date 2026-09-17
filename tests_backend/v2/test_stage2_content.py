@@ -29,9 +29,9 @@ from src.backend_v2.rendering.fonts import (
 )
 from src.backend_v2.runtime_profile import PROFILE_ENV
 from src.backend_v2.storage.assets import AssetQuotaExceeded, AssetStorageService
-from src.backend_v2.storage.builtin_fonts import (
-    discover_bundled_fonts,
-    resolve_bundled_font_path,
+from src.backend_v2.storage.font_files import (
+    bundled_font_files,
+    font_path,
 )
 from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.defaults import (
@@ -207,18 +207,18 @@ def test_bundled_font_id_resolves_to_a_renderable_resource(content_platform) -> 
         content_platform
     )
     bundled = next(
-        font for font in discover_bundled_fonts() if font.file_name == "ALGER.TTF"
+        font for font in bundled_font_files() if font.path.name == "ALGER.TTF"
     )
     with engine.connect() as connection:
         resolved = resolve_font_path(connection, storage, bundled.id)
 
-    assert Path(resolved) == bundled.path
+    assert Path(resolved) == storage.data_root / bundled.relative_path
     assert ImageFont.truetype(resolved, 16).getbbox("A") is not None
 
 
-def test_bundled_font_resolver_rejects_non_catalog_paths() -> None:
-    with pytest.raises(RuntimeError, match="unsupported builtin font"):
-        resolve_bundled_font_path("resource:../outside.ttf")
+def test_font_resolver_rejects_non_catalog_paths(tmp_path) -> None:
+    with pytest.raises(ValueError):
+        font_path(tmp_path, "fonts/shared/../outside.ttf", None)
 
 
 def _import(
@@ -595,13 +595,12 @@ def test_translation_bootstrap_includes_backend_owned_runtime_configuration(
     }
     assert payload["fonts"] == [
         {
-            "assetUrl": None,
-            "builtinKey": font.builtin_key,
+            "isDefault": font.id == DEFAULT_FONT_ID,
             "displayName": font.display_name,
             "id": font.id,
-            "kind": "builtin",
+            "scope": "shared",
         }
-        for font in discover_bundled_fonts()
+        for font in bundled_font_files()
     ]
     assert {item["type"] for item in payload["prompts"]} == {
         "translate",
@@ -854,8 +853,8 @@ def test_page_import_materializes_the_submitted_font_as_a_foreign_key(
             insert(fonts).values(
                 id=font_id,
                 display_name="测试字体",
-                kind="builtin",
-                builtin_key="test-font",
+                owner_user_id=None,
+                relative_path="fonts/shared/test-font.ttf",
             )
         )
         style = json.loads(

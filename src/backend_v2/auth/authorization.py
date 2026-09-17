@@ -36,7 +36,7 @@ def _owner_query(argument_name: str, resource_id: str):
         owner_id = effective_owner_id()
         return select(literal(owner_id)).where(
             fonts.c.id == resource_id,
-            or_(fonts.c.kind == "builtin", fonts.c.owner_user_id == owner_id),
+            or_(fonts.c.owner_user_id.is_(None), fonts.c.owner_user_id == owner_id),
         )
     direct = {
         "book_id": books,

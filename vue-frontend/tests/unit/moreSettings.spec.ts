@@ -87,17 +87,16 @@ describe('MoreSettings backend controls', () => {
       ]
     })
     mocks.listFonts.mockResolvedValue([{
-      builtinKey: null,
+      isDefault: false,
       displayName: 'Test Font',
       id: 'font-1',
-      kind: 'uploaded',
+      scope: 'private',
     }])
     mocks.uploadFont.mockResolvedValue({
       id: 'font-1',
-      kind: 'uploaded',
+      scope: 'private',
       displayName: 'custom',
-      builtinKey: null,
-      assetUrl: '/api/v2/assets/font-1',
+      isDefault: false,
     })
     mocks.cleanTemp.mockResolvedValue({ recovered: 2 })
   })
@@ -112,10 +111,9 @@ describe('MoreSettings backend controls', () => {
     expect(mocks.uploadFont).toHaveBeenCalledWith(file)
     expect(mocks.settings.fontCatalog).toContainEqual({
       id: 'font-1',
-      kind: 'uploaded',
+      scope: 'private',
       displayName: 'custom',
-      builtinKey: null,
-      assetUrl: '/api/v2/assets/font-1',
+      isDefault: false,
     })
     expect(mocks.listFonts).not.toHaveBeenCalled()
     expect(mocks.toast.success).toHaveBeenCalledWith('字体 "custom.ttf" 上传成功')

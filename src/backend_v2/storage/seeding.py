@@ -8,7 +8,7 @@ from sqlalchemy import Engine, case, insert, select, update
 
 from src.backend_v2.serialization import canonical_json
 from src.backend_v2.settings.validation import setting_storage_payload
-from src.backend_v2.storage.builtin_fonts import discover_bundled_fonts
+from src.backend_v2.storage.font_files import bundled_font_files
 from src.backend_v2.content.translation_constraints import (
     empty_translation_constraints,
 )
@@ -192,47 +192,13 @@ def seed_user_records_in_connection(connection: object, user_id: str) -> None:
 
 
 def _seed_shared_records(connection: object) -> None:
-        bundled_fonts = {
-            font.builtin_key: font for font in discover_bundled_fonts()
-        }
-        existing_builtin_fonts = {
-            str(row["builtin_key"]): row
-            for row in connection.execute(
-                select(
-                    fonts.c.id,
-                    fonts.c.builtin_key,
-                    fonts.c.display_name,
-                ).where(fonts.c.kind == "builtin")
-            ).mappings()
-        }
-        unexpected_builtin_keys = existing_builtin_fonts.keys() - bundled_fonts.keys()
-        if unexpected_builtin_keys:
-            raise RuntimeError(
-                "bundled font catalog contains unsupported keys: "
-                f"{sorted(unexpected_builtin_keys)}"
-            )
-        for bundled_font in bundled_fonts.values():
-            existing = existing_builtin_fonts.get(bundled_font.builtin_key)
-            if existing is None:
-                connection.execute(
-                    insert(fonts).values(
-                        id=bundled_font.id,
-                        kind="builtin",
-                        display_name=bundled_font.display_name,
-                        builtin_key=bundled_font.builtin_key,
-                    )
-                )
-                continue
-            if str(existing["id"]) != bundled_font.id:
-                raise RuntimeError(
-                    "bundled font catalog id mismatch for "
-                    f"{bundled_font.builtin_key}"
-                )
-            if str(existing["display_name"]) != bundled_font.display_name:
-                raise RuntimeError(
-                    "bundled font catalog display name mismatch for "
-                    f"{bundled_font.builtin_key}"
-                )
+    existing = set(connection.execute(select(fonts.c.id)).scalars())
+    for font in bundled_font_files():
+        if font.id not in existing:
+            connection.execute(insert(fonts).values(
+                id=font.id, owner_user_id=None, relative_path=font.relative_path,
+                display_name=font.display_name,
+            ))
 
 
 def begin_runtime(engine: Engine, *, profile_name: str) -> None:

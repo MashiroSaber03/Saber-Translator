@@ -92,7 +92,7 @@
 
     <ProductFormSection>
       <template #title>字体设置</template>
-      <UiField variant="settings" label="系统字体列表">
+      <UiField variant="settings" label="可用字体">
         <UiButton variant="secondary" @click="refreshFontList" :disabled="isLoadingFonts">
           {{ isLoadingFonts ? '加载中...' : '刷新字体列表' }}
         </UiButton>

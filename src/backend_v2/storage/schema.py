@@ -425,30 +425,12 @@ fonts = Table(
     "fonts",
     metadata,
     Column("id", String(UUID_LENGTH), primary_key=True),
-    Column(
-        "owner_user_id",
-        String(UUID_LENGTH),
-        nullable=False,
-        server_default=LOCAL_USER_ID,
-    ),
-    Column("kind", String(16), nullable=False),
+    Column("owner_user_id", String(UUID_LENGTH)),
+    Column("relative_path", String(512), nullable=False),
     Column("display_name", String(200), nullable=False),
-    Column("asset_id", String(UUID_LENGTH), ForeignKey("assets.id", ondelete="RESTRICT")),
-    Column("builtin_key", String(200)),
     *_timestamps(),
-    CheckConstraint("kind IN ('builtin', 'uploaded')", name="kind_values"),
-    CheckConstraint(
-        "(kind = 'builtin' AND builtin_key IS NOT NULL AND asset_id IS NULL) OR "
-        "(kind = 'uploaded' AND builtin_key IS NULL AND asset_id IS NOT NULL)",
-        name="source_shape",
-    ),
 )
-Index(
-    "uq_fonts_builtin_key",
-    fonts.c.builtin_key,
-    unique=True,
-    sqlite_where=fonts.c.builtin_key.is_not(None),
-)
+Index("uq_fonts_relative_path", fonts.c.relative_path, unique=True)
 
 books = Table(
     "books",
@@ -2295,7 +2277,6 @@ Index("ix_idempotency_records_expires_at", idempotency_records.c.expires_at)
 # when the foreign-key column is its leading column.
 _FOREIGN_KEY_LOOKUP_INDEXES = (
     ("ix_plugin_versions_plugin_id", plugin_versions.c.plugin_id),
-    ("ix_fonts_asset_id", fonts.c.asset_id),
     ("ix_books_cover_asset_id", books.c.cover_asset_id),
     ("ix_pages_default_font_id", pages.c.default_font_id),
     ("ix_chapter_navigation_state_last_page", chapter_navigation_state.c.last_visited_page_id),
