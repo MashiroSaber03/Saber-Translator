@@ -13,13 +13,18 @@ export interface PanelPosition {
   y: number
 }
 
+export interface FabPosition {
+  side: 'left' | 'right'
+  yRatio: number
+}
+
 export interface DomainPreference {
   disabled: boolean
   method: DetectionMethod
   mode: TranslationMode
   glossaryEnabled: boolean
   autoTermsEnabled: boolean
-  fabPosition?: PanelPosition
+  fabPosition?: FabPosition
   rule?: LearnedRule
 }
 

@@ -62,5 +62,12 @@ export function preferenceFor(
     || !['standard', 'hq'].includes(preference.mode)) {
     throw new Error('站点设置格式无效')
   }
-  return structuredClone(preference)
+  const result = structuredClone(preference)
+  const position = result.fabPosition
+  // Old pixel coordinates cannot be restored across different viewport sizes.
+  if (position && (!['left', 'right'].includes(position.side)
+    || !Number.isFinite(position.yRatio) || position.yRatio < 0 || position.yRatio > 1)) {
+    delete result.fabPosition
+  }
+  return result
 }

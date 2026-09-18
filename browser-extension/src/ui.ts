@@ -7,6 +7,7 @@ import type {
   DetectionMethod,
   DomainPreference,
   PanelPosition,
+  FabPosition,
   LearnedRule,
 } from './types'
 import type { StudioAction, StudioState } from './studio/protocol'
@@ -16,7 +17,7 @@ export interface UiCallbacks {
   onDiscover(method: DetectionMethod): void
   onConfirm(candidateIds: string[]): void
   onPreferenceChange(preference: Partial<DomainPreference>): void
-  onFabPositionChange(position: PanelPosition): void
+  onFabPositionChange(position: FabPosition): void
   onToggleGlobal(): Promise<boolean>
   onTogglePage(browserPageId: string): Promise<boolean | null>
   onRetryPage(browserPageId: string): void
@@ -121,7 +122,7 @@ export class ExtensionUi {
       if (event.isTrusted && !this.suppressFabClick) this.togglePanel()
     })
     document.documentElement.append(this.host)
-    if (preference.fabPosition) this.place(this.fab, preference.fabPosition)
+    this.placeFab()
     this.setOpen(false)
   }
 
@@ -264,6 +265,17 @@ export class ExtensionUi {
     })
     return result
   }
+  private placeFab(): void {
+    const position = this.state.preference.fabPosition
+    if (!position) return
+    const availableHeight = Math.max(0, innerHeight - this.fab.getBoundingClientRect().height - 16)
+    Object.assign(this.fab.style, {
+      left: position.side === 'left' ? '22px' : 'auto',
+      right: position.side === 'right' ? '22px' : 'auto',
+      top: `${8 + position.yRatio * availableHeight}px`,
+      bottom: 'auto',
+    })
+  }
   private placePanelNearFab(): void {
     const gap = 12
     const fab = this.fab.getBoundingClientRect()
@@ -313,15 +325,20 @@ export class ExtensionUi {
     this.dragMask.dataset.open = 'false'
     if (this.fabDrag?.moved) {
       this.suppressFabClick = true
-      const position = this.position(this.fab)
+      const rect = this.fab.getBoundingClientRect()
+      const position: FabPosition = {
+        side: rect.left + rect.width / 2 < innerWidth / 2 ? 'left' : 'right',
+        yRatio: Math.max(0, Math.min(1, (rect.top - 8) / Math.max(1, innerHeight - rect.height - 16))),
+      }
       this.state.preference.fabPosition = position
+      this.placeFab()
       this.callbacks.onFabPositionChange(position)
       if (this.state.open) this.placePanelNearFab()
     }
     this.fabDrag = null
   }
   private reclamp = (): void => {
-    this.place(this.fab, this.position(this.fab))
+    if (!this.fabDrag) this.placeFab()
     if (this.state.open) this.placePanelNearFab()
   }
   setOpen(open: boolean): void {

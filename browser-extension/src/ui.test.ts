@@ -78,6 +78,33 @@ async function send(action: string, payload?: unknown, overrides = {}) {
 function snapshot(): StudioState {
   return post.mock.calls.filter((call: any[]) => call[0].channel === 'saber:state').at(-1)![0].state
 }
+it('keeps default edge positioning through resize without saving a new position', () => {
+  for (const [width, height] of [[1600, 1000], [800, 600], [1600, 1000]]) {
+    vi.stubGlobal('innerWidth', width)
+    vi.stubGlobal('innerHeight', height)
+    window.dispatchEvent(new Event('resize'))
+    const fab = ui.shadow.querySelector('button')!
+    expect(fab.style.left).toBe('')
+    expect(fab.style.top).toBe('')
+    expect(fab.style.right).toBe('')
+    expect(fab.style.bottom).toBe('')
+  }
+  expect(handlers.onFabPositionChange).not.toHaveBeenCalled()
+})
+it.each(['left', 'right'] as const)('restores the %s edge and vertical ratio after resizing', side => {
+  ui.remove()
+  ui = new ExtensionUi(handlers, { ...DEFAULT_PREFERENCE, fabPosition: { side, yRatio: 0.4 } }, 'Example', false)
+  const fab = ui.shadow.querySelector('button')!
+  vi.spyOn(fab, 'getBoundingClientRect').mockReturnValue({ height: 48 } as DOMRect)
+  for (const height of [600, 1000, 100, 600]) {
+    vi.stubGlobal('innerHeight', height)
+    window.dispatchEvent(new Event('resize'))
+    expect(fab.style[side]).toBe('22px')
+    expect(fab.style[side === 'left' ? 'right' : 'left']).toBe('auto')
+    expect(parseFloat(fab.style.top)).toBeCloseTo(8 + (height - 64) * 0.4)
+  }
+  expect(handlers.onFabPositionChange).not.toHaveBeenCalled()
+})
 it('uses one closed host and one extension document for all three views', async () => {
   expect(ui.host.shadowRoot).toBeNull()
   await send('tab', 'settings')

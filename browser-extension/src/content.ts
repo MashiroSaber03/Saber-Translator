@@ -28,7 +28,7 @@ import type {
   DomainPreference,
   DomainPreferencePatch,
   LearnedRule,
-  PanelPosition,
+  FabPosition,
   ResultImagePayload,
   UploadSource,
 } from './types'
@@ -1152,7 +1152,7 @@ export class PageController {
     }
   }
 
-  private async saveFabPosition(fabPosition: PanelPosition): Promise<void> {
+  private async saveFabPosition(fabPosition: FabPosition): Promise<void> {
     this.preference.fabPosition = fabPosition
     try {
       await this.persistPreference({ fabPosition })

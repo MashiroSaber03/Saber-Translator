@@ -150,10 +150,10 @@ describe('extension background boundary', () => {
     await request({ type: 'set-preference', hostname: 'comic.example', preference: { disabled: true, mode: 'hq' } })
     await Promise.all([
       request({ type: 'set-preference', hostname: 'comic.example', preference: { glossaryEnabled: true } }),
-      request({ type: 'set-preference', hostname: 'comic.example', preference: { fabPosition: { x: 30, y: 60 } } }),
+      request({ type: 'set-preference', hostname: 'comic.example', preference: { fabPosition: { side: 'right', yRatio: 0.6 } } }),
     ])
     expect((local['saber-extension-settings-v1'] as ExtensionSettings).domains['comic.example'])
-      .toMatchObject({ disabled: true, mode: 'hq', glossaryEnabled: true, fabPosition: { x: 30, y: 60 } })
+      .toMatchObject({ disabled: true, mode: 'hq', glossaryEnabled: true, fabPosition: { side: 'right', yRatio: 0.6 } })
   })
 
   it('only removes a learned rule when explicitly cleared', async () => {

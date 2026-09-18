@@ -18,6 +18,18 @@ it('does not fill in an incomplete saved domain preference', () => {
 })
 
 describe('domain preferences', () => {
+  it('discards old pixel positions without changing other preferences', () => {
+    const settings = structuredClone(DEFAULT_SETTINGS)
+    settings.domains['reader.example'] = {
+      disabled: false, method: 'similar', mode: 'standard', glossaryEnabled: true,
+      autoTermsEnabled: false,
+      ...JSON.parse('{"fabPosition":{"x":730,"y":528}}'),
+    }
+    expect(preferenceFor(settings, 'reader.example')).toEqual({
+      disabled: false, method: 'similar', mode: 'standard', glossaryEnabled: true,
+      autoTermsEnabled: false,
+    })
+  })
   it('keeps defaults isolated and overlays only the current domain', () => {
     const settings = structuredClone(DEFAULT_SETTINGS)
     settings.domains['reader.example'] = {
@@ -26,14 +38,14 @@ describe('domain preferences', () => {
       mode: 'hq',
       glossaryEnabled: true,
       autoTermsEnabled: true,
-      fabPosition: { x: 24, y: 360 },
+      fabPosition: { side: 'left', yRatio: 0.6 },
     }
 
     expect(preferenceFor(settings, 'reader.example')).toMatchObject({
       disabled: true,
       method: 'similar',
       mode: 'hq',
-      fabPosition: { x: 24, y: 360 },
+      fabPosition: { side: 'left', yRatio: 0.6 },
     })
     expect(preferenceFor(settings, 'other.example')).toMatchObject({
       disabled: false,
