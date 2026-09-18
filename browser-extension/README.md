@@ -4,7 +4,7 @@
 
 ## 安装
 
-1. 解压 `saber-translator-browser-extension-v1.1.1.zip`。ZIP 不能直接拖入浏览器安装。
+1. 解压 `saber-translator-browser-extension-v1.1.2.zip`。ZIP 不能直接拖入浏览器安装。
 2. Chrome 打开 `chrome://extensions`，Edge 打开 `edge://extensions`。
 3. 开启“开发者模式”，点击“加载已解压的扩展程序”，选择刚解压且直接包含 `manifest.json` 的目录。
 4. 更新时，先关闭正在使用扩展的漫画页，把新 ZIP 解压并覆盖原扩展目录，再在扩展管理页点击该扩展的“重新加载”。这样会保留配对令牌和按域名设置；若改用新目录重新安装，则需要重新配对。
