@@ -61,10 +61,6 @@ class PluginIdempotencyConflict(PluginConflict):
     pass
 
 
-class PluginLocked(PluginConflict):
-    pass
-
-
 def _load(value: str) -> object:
     return json.loads(value)
 
@@ -294,9 +290,17 @@ class PluginRegistry:
                         )
                     )
                 else:
-                    config = _upgrade_config(
-                        schema,
-                        _load(str(plugin["config_json"])),
+                    config = (
+                        default_config(schema) if current is None
+                        else _upgrade_config(schema, _load(str(plugin["config_json"])))
+                    )
+                    runtime_enabled = (
+                        parsed.manifest.default_enabled if current is None
+                        else plugin["runtime_enabled"]
+                    )
+                    default_enabled = (
+                        parsed.manifest.default_enabled if current is None
+                        else plugin["default_enabled"]
                     )
                     connection.execute(
                         update(plugins)
@@ -310,9 +314,11 @@ class PluginRegistry:
                                 plugins.c.config_revision + 1
                             ),
                             error_message=None,
+                            runtime_enabled=runtime_enabled,
+                            default_enabled=default_enabled,
                             state=(
                                 "enabled"
-                                if plugin["runtime_enabled"]
+                                if runtime_enabled
                                 else "disabled"
                             ),
                             updated_at=now,
@@ -342,7 +348,11 @@ class PluginRegistry:
                         updated_at=now,
                     )
                 )
-                next_revision = current_revision + 1
+                next_revision = (
+                    int(plugin["config_revision"])
+                    if current is None and plugin is not None
+                    else current_revision
+                ) + 1
                 if current is None:
                     connection.execute(
                         insert(plugin_current_versions).values(
@@ -406,7 +416,7 @@ class PluginRegistry:
     ) -> dict[str, Any]:
         with immediate_transaction(self.engine) as connection:
             row = connection.execute(
-                select(plugins).where(plugins.c.id == plugin_id)
+                select(plugins).join(plugin_current_versions).where(plugins.c.id == plugin_id)
             ).mappings().one_or_none()
             if row is None:
                 raise PluginNotFound("plugin not found")
@@ -588,7 +598,9 @@ class PluginRegistry:
         # Package hashing can traverse many files. Keep it outside SQLite's
         # single-writer transaction so a refresh cannot stall task heartbeats.
         with self.engine.connect() as connection:
-            rows = list(connection.execute(select(plugin_versions)).mappings())
+            rows = list(connection.execute(
+                select(plugin_versions).join(plugin_current_versions)
+            ).mappings())
         failed_plugins: dict[str, str] = {}
         for row in rows:
             checked += 1
@@ -676,9 +688,11 @@ class PluginRegistry:
                         plugin_current_versions.c.plugin_id == plugin_id
                     )
                 ).scalar_one_or_none()
-                if current is None:
+                if current is None and connection.execute(
+                    select(plugins.c.id).where(plugins.c.id == plugin_id)
+                ).scalar_one_or_none() is None:
                     raise PluginNotFound("plugin not found")
-                if int(current) != base_revision:
+                if int(current or 0) != base_revision:
                     raise PluginConflict(
                         "plugin current version revision changed"
                     )
@@ -689,6 +703,7 @@ class PluginRegistry:
                         )
                     ).scalars()
                 )
+                referenced = False
                 if version_ids:
                     job_reference = connection.execute(
                         select(job_plugin_snapshots.c.job_id)
@@ -708,16 +723,13 @@ class PluginRegistry:
                         )
                         .limit(1)
                     ).scalar_one_or_none()
-                    if (
+                    referenced = (
                         job_reference is not None
                         or operation_reference is not None
-                    ):
-                        raise PluginLocked(
-                            "plugin version is referenced by task history"
-                        )
+                    )
                 # Do not make package code disappear before all database
                 # revision/reference checks have succeeded.
-                if plugin_root.exists():
+                if not referenced and plugin_root.exists():
                     os.replace(plugin_root, trash)
                     moved = True
                 connection.execute(
@@ -725,14 +737,18 @@ class PluginRegistry:
                         plugin_current_versions.c.plugin_id == plugin_id
                     )
                 )
-                connection.execute(
-                    delete(plugin_versions).where(
-                        plugin_versions.c.plugin_id == plugin_id
+                if referenced:
+                    connection.execute(
+                        update(plugins).where(plugins.c.id == plugin_id).values(
+                            runtime_enabled=False, default_enabled=False,
+                            state="disabled", error_message=None, updated_at=now,
+                        )
                     )
-                )
-                connection.execute(
-                    delete(plugins).where(plugins.c.id == plugin_id)
-                )
+                else:
+                    connection.execute(
+                        delete(plugin_versions).where(plugin_versions.c.plugin_id == plugin_id)
+                    )
+                    connection.execute(delete(plugins).where(plugins.c.id == plugin_id))
                 response = {"deleted": True, "pluginId": plugin_id}
                 self._record_idempotency_in_connection(
                     connection,
@@ -759,6 +775,37 @@ class PluginRegistry:
                 plugin_root.parent.mkdir(parents=True, exist_ok=True)
                 os.replace(trash, plugin_root)
             raise
+
+    def collect_uninstalled_plugins(self) -> int:
+        """Remove retained packages once task history no longer needs them."""
+        with self.engine.connect() as connection:
+            candidates = list(connection.execute(
+                select(plugins.c.id).where(
+                    ~select(plugin_current_versions.c.plugin_id).where(
+                        plugin_current_versions.c.plugin_id == plugins.c.id
+                    ).exists(),
+                    ~select(plugin_versions.c.id).where(
+                        plugin_versions.c.plugin_id == plugins.c.id,
+                        plugin_versions.c.id.in_(select(job_plugin_snapshots.c.plugin_version_id)),
+                    ).exists(),
+                    ~select(plugin_versions.c.id).where(
+                        plugin_versions.c.plugin_id == plugins.c.id,
+                        plugin_versions.c.id.in_(select(operation_plugin_snapshots.c.plugin_version_id)),
+                    ).exists(),
+                )
+            ).scalars())
+        removed = 0
+        for plugin_id in candidates:
+            try:
+                self.delete_plugin(
+                    plugin_id=plugin_id, base_revision=0,
+                    idempotency_key=str(uuid.uuid4()),
+                )
+                removed += 1
+            except (PluginConflict, PluginNotFound):
+                # A concurrent reinstall owns the package again.
+                continue
+        return removed
 
     def _managed_path(self, relative: str) -> Path:
         path = (self.data_root / Path(relative)).resolve()

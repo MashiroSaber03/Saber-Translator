@@ -26,7 +26,7 @@ from .models import PluginAgentSession
 
 logger = logging.getLogger("PluginAgent.Controller")
 _ASSISTANT_MESSAGE_PATTERN = re.compile(r'"assistant_message"\s*:\s*"')
-_PLANNING_FIELDS = {"assistant_message", "target_proposal"}
+_PLANNING_FIELDS = {"assistant_message", "can_execute", "target_proposal"}
 _EXECUTION_FIELDS = {"assistant_message", "action"}
 _ACTION_FIELDS = {"tool", "args"}
 _TARGET_FIELDS = {
@@ -216,10 +216,6 @@ class PluginAgentController:
             tool_name = action["tool"]
 
             if tool_name == "finish":
-                if action["args"]:
-                    raise OpenAICompatibleBusinessRetryableError(
-                        "Agent finish 动作不能包含参数"
-                    )
                 final_validation = last_validation or tool_executor.validate_plugin()
                 self._validate_tool_result("validate_plugin", final_validation)
                 if not final_validation["success"]:
@@ -301,6 +297,30 @@ class PluginAgentController:
         if manifest.requires_base_url and not custom_base_url:
             raise ValueError(f"{manifest.display_name} 需要 Base URL")
 
+        retry_messages = list(messages)
+
+        def parse_response(content: str) -> dict[str, Any]:
+            try:
+                return self._parse_agent_envelope(content, require_action=require_action)
+            except OpenAICompatibleBusinessRetryableError as error:
+                if require_action:
+                    # The existing executor retries this request. Keep only the
+                    # latest rejected action and feedback, without altering session history.
+                    retry_messages[:] = [
+                        *messages,
+                        {"role": "assistant", "content": content if content.strip() else "（空响应）"},
+                        {
+                            "role": "user",
+                            "content": (
+                                f"上一条动作未执行，返回结果校验失败：{error}。"
+                                "请修正该动作，按工具参数约定重新返回完整 JSON。"
+                                "不要重做已经成功的文件修改或校验；若需求已完成且最后一次修改已通过校验，"
+                                '返回 action={"tool":"finish","args":{}}，完成说明放在 assistant_message。'
+                            ),
+                        },
+                    ]
+                raise
+
         result = self.executor.execute(
             UnifiedChatRequest(
                 provider=provider,
@@ -315,13 +335,10 @@ class PluginAgentController:
                     stream_output_label=label,
                     on_stream_chunk=on_stream_chunk,
                 ),
-                messages=messages,
+                messages=retry_messages,
             ),
             capability=PLUGIN_AGENT_CAPABILITY,
-            parser=lambda content: self._parse_agent_envelope(
-                content,
-                require_action=require_action,
-            ),
+            parser=parse_response,
             logger_instance=logger,
             before_request=before_request,
         )
@@ -354,7 +371,15 @@ class PluginAgentController:
                 "Agent assistant_message 必须是字符串"
             )
         if not require_action:
+            if not isinstance(parsed["can_execute"], bool):
+                raise OpenAICompatibleBusinessRetryableError(
+                    "Agent can_execute 必须是布尔值"
+                )
             target = parsed["target_proposal"]
+            if not parsed["can_execute"] and target is not None:
+                raise OpenAICompatibleBusinessRetryableError(
+                    "不可执行的需求不能返回 target_proposal"
+                )
             if target is not None and (
                 not isinstance(target, dict) or set(target) != _TARGET_FIELDS
             ):
@@ -529,8 +554,11 @@ class PluginAgentController:
             "finish": (set(),),
         }[tool_name]
         if set(args) not in expected_fields:
+            allowed = " 或 ".join(
+                "{" + ", ".join(sorted(fields)) + "}" for fields in expected_fields
+            )
             raise OpenAICompatibleBusinessRetryableError(
-                f"Agent {tool_name} 工具参数字段无效"
+                f"Agent {tool_name} 工具参数字段无效；args 字段必须为 {allowed}"
             )
         if "path" in args and (
             not isinstance(args["path"], str) or not args["path"].strip()
@@ -554,6 +582,7 @@ class PluginAgentController:
             "请只返回 JSON 对象，结构如下：\n"
             "{\n"
             '  "assistant_message": "给用户看的简洁中文回复，可用 Markdown",\n'
+            '  "can_execute": false,\n'
             '  "target_proposal": null 或 {\n'
             '    "plugin_id": "snake_case_id",\n'
             '    "display_name": "显示名称",\n'
@@ -568,7 +597,10 @@ class PluginAgentController:
             "- 不要输出“下面是 JSON”“好的”之类的文字。\n"
             '- assistant_message 必须放在返回 JSON 的第一个字段。\n'
             "- modify 模式下不要重新选择其他插件。\n"
-            "- create 模式下，若信息不足可让用户补充；若信息足够则给出一个明确 target_proposal。\n"
+            "- 先按 skill 判断需求是否能通过现有插件接口实现；需求描述完整不代表接口支持。\n"
+            "- can_execute 仅在最新需求可实现、信息充分且用户已接受当前范围时为 true；不支持、信息不足或缩减方案尚未接受时为 false，target_proposal 必须为 null。\n"
+            "- can_execute 为 true 时，未锁定目标的 create 会话必须给出 target_proposal；modify 或已锁定目标的会话保持原插件身份，target_proposal 返回 null。\n"
+            "- modify 模式或已锁定目标也要重新判断新需求，不得因已有插件而承诺不支持的能力。\n"
             "- assistant_message 要指出插件将作用于哪些步骤、预计做什么、缺什么信息。\n"
         )
 
@@ -615,6 +647,12 @@ class PluginAgentController:
             f"会话模式: {session.mode}\n"
             f"完整工具历史: {history_json}\n\n"
             "可用工具：list_files, read_file, write_file, delete_file, read_skill, validate_plugin, finish\n"
+            "工具 args 参数约定（禁止额外字段）：\n"
+            '- list_files: {} 或 {"path":"相对目录"}\n'
+            '- read_file / delete_file: {"path":"相对文件路径"}\n'
+            '- write_file: {"path":"相对文件路径","content":"完整文件内容"}\n'
+            '- read_skill / validate_plugin / finish: {}\n'
+            '完成示例：{"assistant_message":"修改完成，插件校验通过。","action":{"tool":"finish","args":{}}}\n'
             "请只返回 JSON 对象，结构如下：\n"
             "{\n"
             '  "assistant_message": "给用户看的当前动作说明",\n'
@@ -631,6 +669,7 @@ class PluginAgentController:
             '- assistant_message 必须放在返回 JSON 的第一个字段，action 必须紧随其后。\n'
             "- 修改文件时必须提供完整文件内容，不要只给 diff。\n"
             "- finish 前至少应完成一次 validate_plugin 并确保成功。\n"
+            "- 需求已实现且最后一次修改已通过校验时，立即调用 finish；不要重复读写相同内容或重复校验。\n"
             "- 优先保持实现简单、符合项目插件规范。\n"
         )
 

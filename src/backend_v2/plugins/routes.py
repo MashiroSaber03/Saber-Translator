@@ -18,7 +18,6 @@ from src.backend_v2.plugins.package import MAX_ARCHIVE_BYTES
 from src.backend_v2.plugins.repository import (
     PluginConflict,
     PluginIdempotencyConflict,
-    PluginLocked,
     PluginNotFound,
     PluginRegistry,
 )
@@ -39,10 +38,6 @@ def create_plugins_blueprint(
     @blueprint.errorhandler(PluginNotFound)
     def not_found(error: PluginNotFound):
         return _error("not_found", str(error), 404)
-
-    @blueprint.errorhandler(PluginLocked)
-    def locked(error: PluginLocked):
-        return _error("plugin_version_referenced", str(error), 423)
 
     @blueprint.errorhandler(PluginConflict)
     def conflict(error: PluginConflict):

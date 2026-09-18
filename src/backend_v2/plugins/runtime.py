@@ -7,6 +7,7 @@ execute its entrypoint, and that execution belongs exclusively to Worker.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from copy import deepcopy
 from dataclasses import dataclass
 import importlib.util
 import json
@@ -880,7 +881,8 @@ def _execute_hooks(
             logger=logger,
         )
         try:
-            current = validator(callback(context, current))
+            # A failed hook must not poison the input used by the next hook/core.
+            current = validator(callback(context, deepcopy(current)))
         except Exception as exc:
             if is_memory_allocation_error(exc):
                 raise

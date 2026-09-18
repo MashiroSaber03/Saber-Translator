@@ -152,7 +152,7 @@ def _frozen_detector_config(detector_type: str = "default") -> dict[str, object]
 def test_core_translation_detect_rejects_incomplete_configuration() -> None:
     image = Image.new("RGB", (16, 16), "white")
     try:
-        with pytest.raises(ValueError, match="detector configuration fields"):
+        with pytest.raises(ValueError, match="detectorConfig 字段不符合要求"):
             CoreTranslationAlgorithms().detect(image, {})
     finally:
         image.close()

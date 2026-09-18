@@ -228,7 +228,6 @@ class PluginAgentSessionService:
                 plugin = self.registry.get_plugin(plugin_id)
                 target = self._target_from_plugin(plugin)
                 session.locked_target = _locked_target(target)
-                session.run_state = "ready"
                 self._targets[session.session_id] = target
             self._append_state(session)
             self._sessions[session.session_id] = session
@@ -276,15 +275,17 @@ class PluginAgentSessionService:
         self._cleanup()
         with self._lock:
             session = self._require(session_id)
-            if session.run_state in {
-                "running",
-                "paused",
-            }:
+            if session_id in self._job_ids:
                 raise ValueError(
-                    "execution already started; follow the durable job"
+                    "execution already started; follow the durable job or create a new session for new requirements"
                 )
             if session_id in self._planning_sessions:
                 raise ValueError("a Plugin Agent planning request is already running")
+            if session_id in self._starting_sessions:
+                raise ValueError("Plugin Agent execution is already being queued")
+            # A new message invalidates the old plan, even if planning fails.
+            session.pending_target = None
+            session.run_state = "drafting"
             session.messages.append(
                 PluginAgentMessage(
                     id=f"user_{uuid.uuid4().hex[:12]}",
@@ -294,6 +295,7 @@ class PluginAgentSessionService:
             )
             session.touch()
             self._planning_sessions.add(session_id)
+            self._append_state(session)
         try:
             runtime_config = self.provider_resolver.runtime_config()
             result = self.controller.plan_turn(
@@ -301,55 +303,43 @@ class PluginAgentSessionService:
                 self.skill_markdown,
                 runtime_config,
             )
+            with self._lock:
+                session = self._require(session_id)
+                if not isinstance(result, Mapping) or set(result) != {
+                    "assistant_message", "can_execute", "target_proposal",
+                }:
+                    raise TypeError("Plugin Agent planning result is invalid")
+                assistant = result["assistant_message"]
+                can_execute = result["can_execute"]
+                if not isinstance(assistant, str) or not isinstance(can_execute, bool):
+                    raise TypeError("Plugin Agent planning message or feasibility is invalid")
+                proposal_raw = result["target_proposal"]
+                proposal = _proposal(proposal_raw) if proposal_raw is not None else None
+                if proposal is not None and (not can_execute or session.locked_target is not None):
+                    raise ValueError("Plugin Agent target proposal does not match planning state")
+                if can_execute and session.locked_target is None and proposal is None:
+                    raise ValueError("an executable creation plan requires a target proposal")
+                assistant = assistant.strip()
+                if assistant:
+                    session.messages.append(
+                        PluginAgentMessage(
+                            id=f"assistant_{uuid.uuid4().hex[:12]}",
+                            role="assistant",
+                            content=assistant,
+                        )
+                    )
+                    self._append_event(session, "assistant", {
+                        "phase": "planning", "message": assistant,
+                    })
+                if can_execute:
+                    session.pending_target = proposal
+                    session.run_state = "ready" if session.locked_target else "awaiting_target_lock"
+                session.touch()
+                self._append_state(session)
+                return self._dto(session)
         finally:
             with self._lock:
                 self._planning_sessions.discard(session_id)
-        with self._lock:
-            session = self._require(session_id)
-            if not isinstance(result, Mapping) or set(result) != {
-                "assistant_message",
-                "target_proposal",
-            }:
-                raise TypeError("Plugin Agent planning result is invalid")
-            assistant = result["assistant_message"]
-            if not isinstance(assistant, str):
-                raise TypeError("Plugin Agent assistant message must be text")
-            assistant = assistant.strip()
-            if assistant:
-                session.messages.append(
-                    PluginAgentMessage(
-                        id=f"assistant_{uuid.uuid4().hex[:12]}",
-                        role="assistant",
-                        content=assistant,
-                    )
-                )
-                self._append_event(
-                    session,
-                    "assistant",
-                    {
-                        "phase": "planning",
-                        "message": assistant,
-                    },
-                )
-            proposal_raw = result["target_proposal"]
-            if proposal_raw is not None and not isinstance(
-                proposal_raw,
-                Mapping,
-            ):
-                raise TypeError("Plugin Agent target proposal is invalid")
-            if (
-                session.mode == "create"
-                and session.locked_target is None
-                and isinstance(proposal_raw, Mapping)
-            ):
-                proposal = _proposal(proposal_raw)
-                session.pending_target = proposal
-                session.run_state = "awaiting_target_lock"
-            elif session.locked_target is not None:
-                session.run_state = "ready"
-            session.touch()
-            self._append_state(session)
-            return self._dto(session)
 
     def lock_target(
         self,
@@ -366,7 +356,11 @@ class PluginAgentSessionService:
                 )
             if session.locked_target is not None:
                 raise ValueError("plugin target is already locked")
+            if session_id in self._planning_sessions:
+                raise ValueError("finish the active planning request before locking a target")
             normalized = _proposal(proposal)
+            if session.run_state != "awaiting_target_lock" or normalized != session.pending_target:
+                raise ValueError("target proposal is no longer the current executable plan")
             try:
                 self.registry.get_plugin(normalized.plugin_id)
             except PluginNotFound:
@@ -418,6 +412,8 @@ class PluginAgentSessionService:
                 raise ValueError("finish the active planning request before starting")
             if session_id in self._starting_sessions:
                 raise ValueError("Plugin Agent execution is already being queued")
+            if session.run_state != "ready":
+                raise ValueError("latest plugin requirement is not ready for execution")
             messages = [
                 message.to_dict() for message in session.messages
             ]

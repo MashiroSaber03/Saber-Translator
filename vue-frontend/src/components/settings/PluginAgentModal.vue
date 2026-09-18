@@ -318,12 +318,15 @@
 
           <div class="plugin-agent-block plugin-agent-composer-panel">
             <h3 class="plugin-agent-modal__block-title">输入</h3>
+            <ProductStatusBanner v-if="hasExecution" title="本会话已提交任务" tone="neutral" role="note">
+              本会话仅用于查看过程和结果。继续修改请先“结束会话”，再通过“修改现有插件”开启新会话；失败任务请在任务中心重试。
+            </ProductStatusBanner>
             <div class="plugin-agent-composer">
               <UiTextarea
                 v-model="messageInput"
                 class="plugin-agent-input"
                 variant="panel"
-                :disabled="unref(isConversationPending)"
+                :disabled="unref(isConversationPending) || unref(hasExecution)"
                 :rows="4"
                 placeholder="例如：做一个 after_translate 插件，把译文里的敏感词替换成更自然的说法。"
               />
@@ -444,6 +447,7 @@ const {
   canStartExecution,
   isRunning,
   isConversationPending,
+  hasExecution,
   currentRunStateLabel,
   lockedTargetLabel,
   handleModeChange,

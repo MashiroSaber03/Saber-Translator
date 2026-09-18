@@ -709,22 +709,22 @@ describe('PluginManager', () => {
     const wrapper = mount(PluginManager)
     await flushPromises()
 
-    const deleteButton = wrapper.find('button[aria-label="删除插件 Plugin One"]')
+    const deleteButton = wrapper.find('button[aria-label="卸载插件 Plugin One"]')
     expect(deleteButton.exists()).toBe(true)
 
     await deleteButton.trigger('click')
     await flushPromises()
 
     expect(confirmProductActionMock).toHaveBeenCalledWith({
-      title: '删除插件',
-      message: '确定要删除插件 "Plugin One" 吗？',
-      confirmText: '删除',
+      title: '卸载插件',
+      message: '确定要卸载插件 "Plugin One" 吗？新任务将不再使用此插件，已有任务需要的版本会自动保留。',
+      confirmText: '卸载',
       cancelText: '取消',
       tone: 'danger',
     })
     expect(confirmSpy).not.toHaveBeenCalled()
     expect(deletePluginMock).toHaveBeenCalledWith('plugin_one')
-    expect(toastSuccessMock).toHaveBeenCalledWith('插件删除成功')
+    expect(toastSuccessMock).toHaveBeenCalledWith('插件卸载成功')
   })
 
   it('uses icon-button primitives instead of root button skins for plugin row icon actions', async () => {
@@ -743,8 +743,8 @@ describe('PluginManager', () => {
       variant: 'soft',
       size: 'sm',
     })
-    expect(wrapper.get('button[aria-label="删除插件 Plugin One"]').getComponent(UiIconButton).props()).toMatchObject({
-      label: '删除插件 Plugin One',
+    expect(wrapper.get('button[aria-label="卸载插件 Plugin One"]').getComponent(UiIconButton).props()).toMatchObject({
+      label: '卸载插件 Plugin One',
       variant: 'danger',
       size: 'sm',
     })

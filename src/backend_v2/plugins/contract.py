@@ -9,6 +9,11 @@ import math
 import re
 from typing import Any
 
+from src.backend_v2.translation.detector_config import (
+    DETECTOR_CONFIG_FIELDS,
+    validate_detector_config,
+)
+
 
 PLUGIN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$")
 PACKAGE_VERSION_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$")
@@ -535,6 +540,10 @@ def validate_atomic_hook_data(
         if phase == "before":
             _require_text(data, "sourceAssetId")
             _require_mapping(data, "detectorConfig")
+            try:
+                validate_detector_config(data["detectorConfig"])
+            except ValueError as exc:
+                raise PluginContractError(str(exc)) from exc
         else:
             _require_mapping_list(data, "bubbles")
             _require_optional_text(data, "textMaskAssetId")
@@ -733,6 +742,8 @@ def validate_hook_source_contract(
                         aliases.add(target.id)
                         changed = True
         allowed = ATOMIC_PAYLOAD_FIELDS[(step, phase)]
+        if hook == "before_detect":
+            _validate_detector_source(callback, aliases)
         for node in ast.walk(callback):
             if (
                 not isinstance(node, ast.Subscript)
@@ -779,6 +790,61 @@ def _validate_method_call_shape(
         raise PluginContractError(
             f"{label} must be callable as {label}(context, data)"
         )
+
+
+def _validate_detector_source(callback: ast.AST, payload_aliases: set[str]) -> None:
+    """Catch literal unsupported detector keys; runtime validates dynamic data."""
+    config_aliases: set[str] = set()
+
+    def is_config(node: ast.expr) -> bool:
+        if isinstance(node, ast.Name):
+            return node.id in config_aliases
+        if isinstance(node, ast.Subscript):
+            return (
+                isinstance(node.value, ast.Name)
+                and node.value.id in payload_aliases
+                and _literal_subscript_key(node.slice) == "detectorConfig"
+            )
+        if isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name) and node.func.id in {"dict", "deepcopy"} and node.args:
+                return is_config(node.args[0])
+            if isinstance(node.func, ast.Attribute) and node.func.attr == "copy":
+                return is_config(node.func.value)
+        return False
+
+    def check(key: str | None) -> None:
+        if key is not None and key not in DETECTOR_CONFIG_FIELDS:
+            raise PluginContractError(f"before_detect uses unsupported detectorConfig field: {key}")
+
+    assignments = [node for node in ast.walk(callback) if isinstance(node, (ast.Assign, ast.AnnAssign))]
+    changed = True
+    while changed:
+        changed = False
+        for node in assignments:
+            if node.value is None or not is_config(node.value):
+                continue
+            for target in node.targets if isinstance(node, ast.Assign) else [node.target]:
+                if isinstance(target, ast.Name) and target.id not in config_aliases:
+                    config_aliases.add(target.id)
+                    changed = True
+    for node in ast.walk(callback):
+        if isinstance(node, ast.Subscript) and is_config(node.value):
+            check(_literal_subscript_key(node.slice))
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and is_config(node.func.value):
+            if node.func.attr == "update":
+                for keyword in node.keywords:
+                    check(keyword.arg)
+                for argument in node.args:
+                    if isinstance(argument, ast.Dict):
+                        for key in argument.keys:
+                            if key is not None:
+                                check(_literal_subscript_key(key))
+    for node in assignments:
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        if isinstance(node.value, ast.Dict) and any(is_config(target) for target in targets):
+            for key in node.value.keys:
+                if key is not None:
+                    check(_literal_subscript_key(key))
 
 
 def _copies_hook_mapping(

@@ -175,21 +175,23 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
   const isConversationPending = computed(
     () => isRunning.value || isAwaitingPlanningReply.value || isSessionCommandPending.value,
   )
+  const hasExecution = computed(() => Boolean(session.value?.job_id))
   const canBeginConversation = computed(() => {
-    if (isConversationPending.value) return false
+    if (isConversationPending.value || hasExecution.value) return false
     if (mode.value === 'modify') {
       return Boolean(selectedPluginId.value && messageInput.value.trim())
     }
     return Boolean(messageInput.value.trim())
   })
   const canLockTarget = computed(
-    () => !isSessionCommandPending.value
+    () => !isConversationPending.value && !hasExecution.value
       && mode.value === 'create'
+      && session.value?.run_state === 'awaiting_target_lock'
       && Boolean(session.value?.pending_target)
   )
   const canStartExecution = computed(
     () =>
-      !isSessionCommandPending.value &&
+      !isConversationPending.value && !hasExecution.value &&
       Boolean(session.value?.locked_target && session.value?.run_state === 'ready') &&
       messages.value.some(message => message.role === 'user')
   )
@@ -478,6 +480,8 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
       }
 
       activeSessionId = activeSession.session_id
+      activeSession.pending_target = null
+      activeSession.run_state = 'drafting'
 
       const result = await sendPluginAgentMessage(activeSession.session_id, {
         content: userContent,
@@ -504,7 +508,7 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
   }
 
   async function lockTarget(): Promise<void> {
-    if (isSessionCommandPending.value || !session.value?.pending_target) return
+    if (!canLockTarget.value || !session.value?.pending_target) return
     isSessionCommandPending.value = true
     try {
       const result = await lockPluginAgentTarget(
@@ -836,6 +840,7 @@ export function usePluginAgentModal(props: PluginAgentModalProps, emit: PluginAg
     canStartExecution,
     isRunning,
     isConversationPending,
+    hasExecution,
     currentRunStateLabel,
     lockedTargetLabel,
     handleModeChange,

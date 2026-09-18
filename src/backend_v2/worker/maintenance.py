@@ -16,6 +16,7 @@ from src.backend_v2.insight.derived import InsightVectorStore
 from src.backend_v2.insight.gc import InsightReachabilityGarbageCollector
 from src.backend_v2.insight.qa import TransientRequestRepository
 from src.backend_v2.jobs.repository import JobQueueRepository, decode_job_config
+from src.backend_v2.plugins.repository import PluginRegistry
 from src.backend_v2.storage.assets import AssetStorageService
 from src.backend_v2.storage.database import immediate_transaction
 from src.backend_v2.storage.schema import (
@@ -57,6 +58,7 @@ class WorkerMaintenance:
         self.insight_gc = InsightReachabilityGarbageCollector(engine)
         self.transient_requests = TransientRequestRepository(engine)
         self.jobs = JobQueueRepository(engine)
+        self.plugins = PluginRegistry(data_root=data_root, engine=engine)
         self.engine = engine
         self.interval_seconds = interval_seconds
         self.clock = clock
@@ -85,6 +87,7 @@ class WorkerMaintenance:
             ("清理过期网页漫画任务", self._prune_browser_sessions),
             ("清理过期下载文件", self._prune_expired_artifacts),
             ("清理已结束即时操作", self._prune_terminal_operations),
+            ("清理已卸载插件", self.plugins.collect_uninstalled_plugins),
             ("清理幂等请求记录", self._prune_idempotency_records),
             ("清理漫画分析数据", self.insight_gc.collect),
             ("清理未引用资源", self.storage.collect_garbage),

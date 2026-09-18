@@ -437,6 +437,33 @@ describe('PluginAgentModal', () => {
     vi.restoreAllMocks()
   })
 
+  it.each(['completed', 'failed', 'cancelled'])(
+    'keeps a %s execution session read-only and permits a new modify session',
+    async runState => {
+      const settings = modifySessionSettings()
+      getPluginAgentSettingsMock.mockResolvedValue({
+        ...settings,
+        session: { ...settings.session, run_state: runState, job_id: 'finished-job' },
+      })
+      const wrapper = mount(PluginAgentModal, { props: { modelValue: true } })
+      await flushPromises()
+      expect(wrapper.find('.plugin-agent-input').attributes('disabled')).toBeDefined()
+      expect(wrapper.find('.plugin-agent-submit-message-action').attributes('disabled')).toBeDefined()
+      expect(wrapper.find('.plugin-agent-start-execution-action').attributes('disabled')).toBeDefined()
+      expect(wrapper.text()).toContain('本会话仅用于查看过程和结果')
+      expect(sendPluginAgentMessageMock).not.toHaveBeenCalled()
+      getPluginAgentSettingsMock.mockResolvedValue({ ...settings, session: null })
+      await getButtonByText(wrapper, '结束会话').trigger('click')
+      await flushPromises()
+      await getButtonByText(wrapper, '修改现有插件').trigger('click')
+      await flushPromises()
+      await wrapper.find('.ui-combobox-stub').setValue('existing_plugin')
+      await wrapper.find('.plugin-agent-input').setValue('修改插件描述')
+      expect(wrapper.find('.plugin-agent-input').attributes('disabled')).toBeUndefined()
+      expect(wrapper.find('.plugin-agent-submit-message-action').attributes('disabled')).toBeUndefined()
+    },
+  )
+
   it('requires selecting an existing plugin before starting a modify session', async () => {
     const wrapper = mount(PluginAgentModal, {
       props: {
@@ -720,6 +747,59 @@ describe('PluginAgentModal', () => {
       'utf8'
     )
     expect(source).not.toMatch(/UiInput[^>]+type="number"|type="number"[^>]+UiInput/)
+  })
+
+  it.each([
+    { locked: false, failure: false },
+    { locked: true, failure: false },
+    { locked: false, failure: true },
+    { locked: true, failure: true },
+  ])('invalidates the old plan while replanning (locked=$locked, failure=$failure)', async ({ locked, failure }) => {
+    const wrapper = mount(PluginAgentModal, { props: { modelValue: true } })
+    await flushPromises()
+    await wrapper.find('.plugin-agent-input').setValue('做一个 OCR 插件')
+    await wrapper.find('.plugin-agent-submit-message-action').trigger('click')
+    await flushPromises()
+    if (locked) {
+      await wrapper.find('.plugin-agent-lock-target-action').trigger('click')
+      await flushPromises()
+      expect(wrapper.find('.plugin-agent-start-execution-action').attributes('disabled')).toBeUndefined()
+    }
+    const previous = JSON.parse(JSON.stringify(await (locked
+      ? lockPluginAgentTargetMock.mock.results[0]?.value
+      : sendPluginAgentMessageMock.mock.results[0]?.value)))
+    let resolvePlanning!: (value: unknown) => void
+    let rejectPlanning!: (error: Error) => void
+    sendPluginAgentMessageMock.mockImplementationOnce(() => new Promise((resolve, reject) => {
+      resolvePlanning = resolve
+      rejectPlanning = reject
+    }))
+    await wrapper.find('.plugin-agent-input').setValue('改成不支持的检测批大小')
+    await wrapper.find('.plugin-agent-submit-message-action').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.plugin-agent-start-execution-action').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('.plugin-agent-lock-target-action').exists()).toBe(false)
+    if (failure) {
+      // Even an unsuccessful status refresh must not restore the old local plan.
+      getPluginAgentSessionMock.mockRejectedValueOnce(new Error('status unavailable'))
+      rejectPlanning(new Error('planning failed'))
+    } else {
+      resolvePlanning({ ...previous, run_state: 'drafting', pending_target: null, events: [] })
+    }
+    await flushPromises()
+    expect(wrapper.find('.plugin-agent-start-execution-action').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('.plugin-agent-lock-target-action').exists()).toBe(false)
+    expect(startPluginAgentExecutionMock).not.toHaveBeenCalled()
+
+    sendPluginAgentMessageMock.mockResolvedValueOnce(previous)
+    await wrapper.find('.plugin-agent-input').setValue('恢复原来可实现的需求')
+    await wrapper.find('.plugin-agent-submit-message-action').trigger('click')
+    await flushPromises()
+    if (locked) {
+      expect(wrapper.find('.plugin-agent-start-execution-action').attributes('disabled')).toBeUndefined()
+    } else {
+      expect(wrapper.find('.plugin-agent-lock-target-action').exists()).toBe(true)
+    }
   })
 
   it('renders conversation history through shared scroll and message primitives', async () => {

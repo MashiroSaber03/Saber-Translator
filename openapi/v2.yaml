@@ -3679,13 +3679,12 @@ paths:
           schema: {type: integer, minimum: 1}
       responses:
         "200":
-          description: Unreferenced plugin versions were removed.
+          description: Plugin uninstalled. Versions referenced by existing tasks are retained until their history is removed.
           content:
             application/json:
               schema: {$ref: "#/components/schemas/PluginDeleteResult"}
         "404": {$ref: "#/components/responses/NotFound"}
         "409": {$ref: "#/components/responses/Conflict"}
-        "423": {$ref: "#/components/responses/Locked"}
         "422": {$ref: "#/components/responses/ValidationError"}
   /plugin-agent/sessions:
     post:

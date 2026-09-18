@@ -4,12 +4,14 @@ from io import BytesIO
 import json
 import logging
 from pathlib import Path
+import re
 import threading
+from types import SimpleNamespace
 import uuid
 import zipfile
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 import src.backend_v2.plugins.repository as plugin_repository_module
 from src.backend_v2.api.app import ApiSettings, create_api_app
@@ -32,7 +34,6 @@ from src.backend_v2.plugins.contract import (
 from src.backend_v2.plugins.package import build_archive, parse_archive
 from src.backend_v2.plugins.repository import (
     PluginConflict,
-    PluginLocked,
     PluginNotFound,
     PluginRegistry,
 )
@@ -65,11 +66,14 @@ from src.backend_v2.storage.schema import (
     job_plugin_snapshots,
     metadata,
     operation_plugin_snapshots,
+    operations,
     page_assets,
     pages,
     jobs as jobs_table,
 )
 from src.backend_v2.storage.seeding import seed_system_records
+from src.backend_v2.storage.defaults import default_translation_settings
+from src.backend_v2.settings.resolver import _detector_section
 from src.core.plugin_agent.controller import (
     PluginAgentControlRequested,
     PluginAgentController,
@@ -527,7 +531,7 @@ def test_plugin_upgrade_preserves_compatible_config_and_advances_revision(
     assert config["configRevision"] == 3
 
 
-def test_runtime_default_snapshot_and_reference_lock(
+def test_uninstall_retains_history_then_collects_unreferenced_package(
     plugin_platform,
 ) -> None:
     data_root, engine = plugin_platform
@@ -565,13 +569,25 @@ def test_runtime_default_snapshot_and_reference_lock(
             )
         ],
     )
-    with pytest.raises(PluginLocked, match="task history"):
-        registry.delete_plugin(
-            plugin_id="test_v3",
-            base_revision=1,
-            idempotency_key="delete-locked-test-v3",
-        )
+    response, replayed = registry.delete_plugin(
+        plugin_id="test_v3",
+        base_revision=1,
+        idempotency_key="uninstall-test-v3",
+    )
+    assert response["deleted"] and not replayed
+    assert registry.list_plugins()["items"] == []
+    assert _enabled_snapshots(engine) == {}
+    begin_runtime(engine, profile_name="local")
+    assert _enabled_snapshots(engine) == {}
+    with pytest.raises(PluginNotFound):
+        registry.set_runtime_enabled(plugin_id="test_v3", enabled=True)
     assert (data_root / "plugins" / "test_v3").is_dir()
+    assert registry.collect_uninstalled_plugins() == 0
+    with engine.begin() as connection:
+        connection.execute(delete(jobs_table))
+    assert registry.collect_uninstalled_plugins() == 1
+    assert not (data_root / "plugins" / "test_v3").exists()
+    assert registry.collect_uninstalled_plugins() == 0
 
 
 def test_refresh_detects_tampering_and_safe_archive_rejects_traversal(
@@ -933,6 +949,18 @@ def test_api_import_does_not_execute_plugin_and_worker_uses_frozen_snapshot(
         config={"prefix": "changed", "strict": False},
         idempotency_key="frozen-config-v1",
     )
+    registry.delete_plugin(
+        plugin_id="frozen_v3", base_revision=1,
+        idempotency_key="uninstall-frozen-v1",
+    )
+    reinstalled = registry.import_archive(
+        data=_plugin_archive(plugin_id="frozen_v3"),
+        base_revision=0, idempotency_key="reinstall-frozen-v1",
+    )
+    assert reinstalled["currentRevision"] > 1
+    assert registry.get_config("frozen_v3")["value"]["prefix"] == "[v3]"
+    assert registry.get_plugin("frozen_v3")["runtimeEnabled"] is True
+    assert registry.collect_uninstalled_plugins() == 0
     epoch_id = str(uuid.uuid4())
     ProcessEpochRepository(engine).register(
         EpochRegistration(
@@ -1122,6 +1150,18 @@ def test_worker_operation_snapshots_plugins_and_fail_policy_is_enforced(
                 "translationConfig": {},
             },
         )
+
+
+    with engine.begin() as connection:
+        connection.execute(delete(jobs_table))
+    registry.delete_plugin(
+        plugin_id="strict_v3", base_revision=1, idempotency_key="uninstall-operation-plugin",
+    )
+    assert registry.list_plugins()["items"] == []
+    assert registry.collect_uninstalled_plugins() == 0
+    with engine.begin() as connection:
+        connection.execute(delete(operations))
+    assert registry.collect_uninstalled_plugins() == 1
 
 
 def test_continue_plugin_cannot_swallow_memory_failure(plugin_platform) -> None:
@@ -1453,7 +1493,8 @@ class _FakeAgentController:
     def plan_turn(self, _session, _skill, _config):
         return {
             "assistant_message": "方案已明确。",
-            "target_proposal": {
+            "can_execute": True,
+            "target_proposal": None if _session.locked_target else {
                 "plugin_id": "agent_v3",
                 "display_name": "Agent v3",
                 "supported_steps": ["translate"],
@@ -1529,6 +1570,7 @@ class _BlockingPlanningAgentController:
         assert self.release.wait(timeout=5)
         return {
             "assistant_message": "规划完成。",
+            "can_execute": True,
             "target_proposal": {
                 "plugin_id": "blocking_v3",
                 "display_name": "Blocking v3",
@@ -1593,6 +1635,10 @@ def test_plugin_agent_session_cannot_be_deleted_during_planning(
     assert controller.entered.wait(timeout=5)
     with pytest.raises(ValueError, match="planning request"):
         sessions.delete(session_id)
+    with pytest.raises(ValueError, match="planning request"):
+        sessions.lock_target(session_id=session_id, proposal={})
+    with pytest.raises(ValueError, match="planning request"):
+        sessions.send_message(session_id=session_id, content="并发新需求")
     controller.release.set()
     thread.join(timeout=5)
 
@@ -1629,12 +1675,96 @@ def test_plugin_agent_session_cannot_be_deleted_while_job_is_queued(
     assert jobs.entered.wait(timeout=5)
     with pytest.raises(ValueError, match="execution"):
         sessions.delete(session_id)
+    with pytest.raises(ValueError, match="being queued"):
+        sessions.send_message(session_id=session_id, content="排队时改变需求")
+    with pytest.raises(ValueError, match="being queued"):
+        sessions.start(session_id=session_id, idempotency_key="concurrent-start")
     jobs.release.set()
     thread.join(timeout=5)
 
     assert not thread.is_alive()
     assert result[0]["jobId"] == "job-1"
     assert result[0]["session"]["run_state"] == "running"
+
+
+@pytest.mark.parametrize("locked", [False, True])
+@pytest.mark.parametrize("outcome", ["reject", "model_error", "invalid_result"])
+def test_new_requirement_invalidates_old_plan_and_can_recover(plugin_platform, locked, outcome):
+    data_root, engine = plugin_platform
+    controller = _FakeAgentController()
+    sessions = PluginAgentSessionService(
+        data_root=data_root, engine=engine, controller=controller,
+        provider_resolver=_FakeAgentProvider(),
+    )
+    session_id = sessions.create(mode="create", plugin_id=None)["session_id"]
+    old = sessions.send_message(session_id=session_id, content="创建术语替换插件")["pending_target"]
+    with pytest.raises(ValueError, match="current executable plan"):
+        sessions.lock_target(session_id=session_id, proposal={**old, "plugin_id": "forged_target"})
+    if locked:
+        sessions.lock_target(session_id=session_id, proposal=old)
+
+    class Replanning:
+        def plan_turn(self, *_args):
+            current = sessions.get(session_id)
+            assert current["run_state"] == "drafting"
+            assert current["pending_target"] is None
+            with pytest.raises(ValueError):
+                sessions.start(session_id=session_id, idempotency_key="planning-start")
+            if outcome == "model_error":
+                raise RuntimeError("provider unavailable")
+            return {
+                "assistant_message": "当前接口不支持。",
+                "can_execute": False if outcome == "reject" else "false",
+                "target_proposal": None,
+            }
+
+    sessions.controller = Replanning()
+    if outcome == "reject":
+        sessions.send_message(session_id=session_id, content="改成检测batch size")
+    else:
+        with pytest.raises((RuntimeError, TypeError)):
+            sessions.send_message(session_id=session_id, content="改成检测batch size")
+    current = sessions.get(session_id)
+    assert current["run_state"] == "drafting" and current["pending_target"] is None
+    assert bool(current["locked_target"]) == locked
+    with pytest.raises(ValueError):
+        sessions.lock_target(session_id=session_id, proposal=old)
+    with pytest.raises(ValueError):
+        sessions.start(session_id=session_id, idempotency_key="rejected-start")
+    with engine.connect() as connection:
+        assert connection.execute(select(jobs_table.c.id)).all() == []
+    sessions.controller = controller
+    recovered = sessions.send_message(session_id=session_id, content="恢复原本支持的术语替换需求")
+    if not locked:
+        sessions.lock_target(session_id=session_id, proposal=recovered["pending_target"])
+    started = sessions.start(session_id=session_id, idempotency_key="recovered-start")
+    assert started["session"]["run_state"] == "running"
+
+
+def test_modify_requirement_requires_explicit_feasibility(plugin_platform):
+    data_root, engine = plugin_platform
+    PluginRegistry(data_root=data_root, engine=engine).import_archive(
+        data=_plugin_archive(), base_revision=0, idempotency_key="modify-gate-plugin",
+    )
+    sessions = PluginAgentSessionService(
+        data_root=data_root, engine=engine, controller=_FakeAgentController(),
+        provider_resolver=_FakeAgentProvider(),
+    )
+    session = sessions.create(mode="modify", plugin_id="test_v3")
+    session_id = session["session_id"]
+    assert session["run_state"] == "drafting"
+    sessions.controller = SimpleNamespace(plan_turn=lambda *_args: {
+        "assistant_message": "不能新增编辑器按钮。", "can_execute": False, "target_proposal": None,
+    })
+    rejected = sessions.send_message(session_id=session_id, content="新增编辑器按钮")
+    assert rejected["run_state"] == "drafting"
+    assert rejected["locked_target"]["plugin_id"] == "test_v3"
+    with pytest.raises(ValueError, match="not ready"):
+        sessions.start(session_id=session_id, idempotency_key="modify-rejected")
+    sessions.controller = _FakeAgentController()
+    accepted = sessions.send_message(session_id=session_id, content="仅修改术语替换")
+    assert accepted["run_state"] == "ready" and accepted["pending_target"] is None
+    assert sessions.start(session_id=session_id, idempotency_key="modify-accepted")["jobId"]
 
 
 def test_plugin_agent_create_session_rejects_non_current_mode_payload(
@@ -1652,6 +1782,29 @@ def test_plugin_agent_create_session_rejects_non_current_mode_payload(
         sessions.create(mode=" CREATE ", plugin_id=None)
     with pytest.raises(ValueError, match="does not accept"):
         sessions.create(mode="create", plugin_id="unused_v3")
+
+
+@pytest.mark.parametrize("run_state", ["running", "paused", "completed", "failed", "cancelled"])
+def test_plugin_agent_submitted_session_rejects_new_requirements(
+    plugin_platform, run_state,
+) -> None:
+    data_root, engine = plugin_platform
+    sessions = PluginAgentSessionService(
+        data_root=data_root, engine=engine,
+        controller=_FakeAgentController(), provider_resolver=_FakeAgentProvider(),
+    )
+    session_id = sessions.create(mode="create", plugin_id=None)["session_id"]
+    planned = sessions.send_message(session_id=session_id, content="创建翻译后处理插件")
+    sessions.lock_target(session_id=session_id, proposal=planned["pending_target"])
+    started = sessions.start(session_id=session_id, idempotency_key="first-start")
+    session = sessions._sessions[session_id]
+    session.run_state = run_state
+    before = session.to_dict()
+    with pytest.raises(ValueError, match="create a new session"):
+        sessions.send_message(session_id=session_id, content="修改插件描述")
+    assert session.to_dict() == before
+    replay = sessions.start(session_id=session_id, idempotency_key="another-start")
+    assert replay["jobId"] == started["jobId"]
 
 
 def test_plugin_agent_planning_hands_off_to_durable_worker_job(
@@ -1763,6 +1916,12 @@ def test_plugin_agent_planning_hands_off_to_durable_worker_job(
         engine=engine,
     ).get_plugin("agent_v3")
     assert plugin["packageVersion"] == "1.0.0"
+    with pytest.raises(ValueError, match="create a new session"):
+        sessions.send_message(session_id=session_id, content="继续修改插件描述")
+    modify_id = sessions.create(mode="modify", plugin_id="agent_v3")["session_id"]
+    sessions.send_message(session_id=modify_id, content="修改插件描述")
+    next_job = sessions.start(session_id=modify_id, idempotency_key="new-modify")
+    assert next_job["jobId"] != job_id
     assert not (
         data_root
         / "temp"
@@ -1951,12 +2110,13 @@ def test_modify_agent_job_protects_disabled_target_version(
         "pluginId": "disabled_target_v3",
         "protectOnly": True,
     }
-    with pytest.raises(PluginLocked, match="task history"):
-        registry.delete_plugin(
-            plugin_id="disabled_target_v3",
-            base_revision=1,
-            idempotency_key="delete-disabled-target-v1",
-        )
+    registry.delete_plugin(
+        plugin_id="disabled_target_v3",
+        base_revision=1,
+        idempotency_key="delete-disabled-target-v1",
+    )
+    assert registry.list_plugins()["items"] == []
+    assert (data_root / "plugins" / "disabled_target_v3" / "versions" / installed["pluginVersionId"]).is_dir()
 
 
 @pytest.mark.parametrize(
@@ -2016,6 +2176,31 @@ def test_plugin_builder_skill_states_the_actual_v3_manifest_contract() -> None:
     assert "`originalTexts`, `translations`, `textboxTexts`" in skill
     assert "translated_text" in skill
 
+    # Exercise the copyable example against the real manifest/hook contracts.
+    manifest_source = re.search(r"```json\n(.*?)\n```", skill, re.S)
+    plugin_source = re.search(r"```python\n(.*?)\n```", skill, re.S)
+    assert manifest_source is not None and plugin_source is not None
+    manifest = parse_manifest(json.loads(manifest_source.group(1)))
+    validate_hook_source_contract(manifest, plugin_source.group(1), filename="plugin.py")
+    namespace = {}
+    exec(compile(plugin_source.group(1), "skill-example.py", "exec"), namespace)
+    plugin = namespace["Plugin"]()
+    context = SimpleNamespace(config={"source_text": "老师", "target_text": "导师"})
+    for textbox in ([], ["老师来了"]):
+        data = {
+            "pageId": str(uuid.uuid4()), "originalTexts": ["先生"],
+            "translations": ["老师来了"], "textboxTexts": textbox,
+        }
+        result = _validate_atomic_page(
+            "translate", "after", data["pageId"], plugin.after_translate(context, data),
+            expected_shape={name: len(value) for name, value in data.items() if isinstance(value, list)},
+        )
+        assert result["translations"] == ["导师来了"]
+        assert result["textboxTexts"] == (["导师来了"] if textbox else [])
+        assert data["translations"] == ["老师来了"]
+    context.config["source_text"] = ""
+    assert plugin.after_translate(context, data) == data
+
 
 def test_bundled_plugins_match_current_manifests_and_hook_payloads() -> None:
     plugin_root = PROJECT_ROOT / "plugins"
@@ -2030,7 +2215,7 @@ def test_bundled_plugins_match_current_manifests_and_hook_payloads() -> None:
         "before_detect": {
             "pageId": page_id,
             "sourceAssetId": str(uuid.uuid4()),
-            "detectorConfig": {"detector_type": "default"},
+            "detectorConfig": _detector_section(default_translation_settings()),
         },
         "after_ocr": {
             "pageId": page_id,
@@ -2147,6 +2332,82 @@ def test_atomic_plugin_schema_rejects_silent_invented_fields() -> None:
                 "translated_text": "导师",
             },
         )
+
+
+@pytest.mark.parametrize("body", [
+    "data['detectorConfig']['batch_size'] = 16",
+    "config = dict(data['detectorConfig'])\n        config['batch_size'] = 16",
+    "data['detectorConfig'].update(batch_size=16)",
+    "data['detectorConfig'].update({'batch_size': 16})",
+    "data['detectorConfig'] = {'batch_size': 16}",
+])
+def test_agent_rejects_unsupported_detector_fields(tmp_path, body) -> None:
+    archive = _plugin_archive(
+        hooks=["before_detect"],
+        source=f"class Plugin:\n    def before_detect(self, context, data):\n        {body}\n        return data\n",
+    )
+    with zipfile.ZipFile(BytesIO(archive)) as package:
+        package.extractall(tmp_path)
+    tools = PluginAgentWorktreeTools(
+        worktree=tmp_path, skill_markdown="", control_requested=lambda: False,
+    )
+    result = tools.run_tool("validate_plugin", {})
+    assert result["success"] is False
+    assert "batch_size" in result["error"]
+
+
+@pytest.mark.parametrize("policy", ["continue", "fail"])
+@pytest.mark.parametrize("mutation", [
+    "data['detectorConfig']['batch_size'] = 16",
+    "data['detectorConfig']['expand_ratio'] = 'invalid'",
+    "del data['detectorConfig']['expand_ratio']",
+    "data['detectorConfig']['expand_ratio'] = 99\n        raise ValueError('bad plugin')",
+])
+def test_invalid_detector_hook_does_not_poison_core_input(plugin_platform, policy, mutation) -> None:
+    data_root, engine = plugin_platform
+    registry = PluginRegistry(data_root=data_root, engine=engine)
+    registry.import_archive(
+        data=_plugin_archive(
+            hooks=["before_detect"], failure_policy=policy,
+            source=f"class Plugin:\n    def before_detect(self, context, data):\n        {mutation}\n        return data\n",
+        ),
+        base_revision=0, idempotency_key="invalid-detector",
+    )
+    repository = JobQueueRepository(engine)
+    repository.create_batch(
+        display_name="invalid detector plugin",
+        specs=[JobSpec(
+            kind="export", config={"mode": "standard"},
+            items=(JobItemSpec(page_id=None, step_kinds=("export_package",)),),
+        )],
+    )
+    epoch_id = str(uuid.uuid4())
+    ProcessEpochRepository(engine).register(EpochRegistration(
+        role="worker", epoch_id=epoch_id, token="test-worker", pid=1234,
+    ))
+    fence = repository.claim_next(worker_epoch_id=epoch_id)
+    assert fence is not None
+    runtime = PluginJobRuntime(data_root=data_root, engine=engine, repository=repository)
+    page_id = str(uuid.uuid4())
+    data = {
+        "pageId": page_id, "sourceAssetId": str(uuid.uuid4()),
+        "detectorConfig": _detector_section(default_translation_settings()),
+    }
+    original = json.loads(json.dumps(data))
+    def run():
+        return runtime.run_atomic(fence, phase="before", step="detect", page_id=page_id, data=data)
+    if policy == "fail":
+        with pytest.raises(PluginHookFailure, match="test_v3.before_detect"):
+            run()
+    else:
+        assert run() == original
+    assert data == original
+    with engine.connect() as connection:
+        events = connection.execute(select(job_events.c.payload_json).where(
+            job_events.c.event_type == "plugin_hook_failed",
+        )).scalars().all()
+    assert len(events) == 1
+    assert json.loads(events[0])["continued"] == (policy == "continue")
 
 
 def test_plugin_agent_source_validation_rejects_invented_hook_field() -> None:
@@ -2366,14 +2627,17 @@ def test_plugin_agent_invalid_execution_action_is_business_retryable(
     [
         '```json\n{"assistant_message":"ok","target_proposal":null}\n```',
         '{"assistant_message":"ok","target_proposal":null,"legacy":true}',
-        '{"assistant_message":1,"target_proposal":null}',
+        '{"assistant_message":1,"can_execute":false,"target_proposal":null}',
+        '{"assistant_message":"ok","target_proposal":null}',
+        '{"assistant_message":"ok","can_execute":"false","target_proposal":null}',
+        '{"assistant_message":"ok","can_execute":1,"target_proposal":null}',
         (
-            '{"assistant_message":"ok","target_proposal":'
+            '{"assistant_message":"ok","can_execute":true,"target_proposal":'
             '{"plugin_id":"demo","display_name":"Demo",'
             '"supported_steps":[],"supported_modes":[],"extra":true}}'
         ),
         (
-            '{"assistant_message":"ok","target_proposal":'
+            '{"assistant_message":"ok","can_execute":true,"target_proposal":'
             '{"plugin_id":"demo","display_name":"Demo",'
             '"supported_steps":["legacy"],"supported_modes":["standard"]}}'
         ),
@@ -2384,6 +2648,20 @@ def test_plugin_agent_planning_requires_the_exact_current_envelope(
 ) -> None:
     with pytest.raises(OpenAICompatibleBusinessRetryableError):
         PluginAgentController._parse_agent_envelope(content)
+
+
+def test_plugin_agent_planning_parses_feasibility_without_guessing_reply_text():
+    envelope = {"assistant_message": "这是说明文字", "can_execute": False, "target_proposal": None}
+    assert PluginAgentController._parse_agent_envelope(json.dumps(envelope)) == envelope
+    envelope["can_execute"] = True
+    assert PluginAgentController._parse_agent_envelope(json.dumps(envelope)) == envelope
+    envelope["can_execute"] = False
+    envelope["target_proposal"] = {
+        "plugin_id": "demo", "display_name": "Demo",
+        "supported_steps": ["translate"], "supported_modes": ["standard"],
+    }
+    with pytest.raises(OpenAICompatibleBusinessRetryableError, match="不可执行"):
+        PluginAgentController._parse_agent_envelope(json.dumps(envelope))
 
 
 @pytest.mark.parametrize(
@@ -2489,6 +2767,67 @@ def test_plugin_agent_persists_the_full_tool_result() -> None:
     )
 
     assert payload["debug_result"]["content"] == content
+
+
+@pytest.mark.parametrize("recovers", [True, False])
+def test_plugin_agent_finish_retry_corrects_args_without_repeating_tools(recovers) -> None:
+    from src.shared.openai_execution import OpenAICompatibleBusinessRetriesExhaustedError
+
+    class Transport:
+        requests = []
+
+        def complete(self, request, **kwargs):
+            self.requests.append(json.loads(json.dumps(request.messages)))
+            if len(self.requests) == 1:
+                action = {"tool": "validate_plugin", "args": {}}
+            elif recovers and len(self.requests) == 4:
+                action = {"tool": "finish", "args": {}}
+            else:
+                action = {"tool": "finish", "args": {"summary": "完成"}}
+            return json.dumps({"assistant_message": "完成", "action": action})
+
+    class Tools:
+        calls = []
+
+        def is_control_requested(self):
+            return False
+
+        def run_tool(self, name, args):
+            self.calls.append((name, args))
+            return {"success": True, "plugin_id": "retry_test", "package_version": "1.0.0",
+                    "hooks": ["after_translate"], "python_files": 1}
+
+    transport, tools = Transport(), Tools()
+    controller = PluginAgentController(transport=transport)
+    session = PluginAgentSession(
+        session_id="retry-finish", mode="create",
+        locked_target=LockedPluginTarget(mode="create", plugin_id="retry_test",
+                                         display_name="Retry", plugin_dir="worktree://retry_test"),
+        messages=[PluginAgentMessage(id="user-1", role="user", content="创建插件")],
+    )
+    original = session.to_dict()
+    config = {
+        "provider": "custom", "api_key": "key", "model_name": "model",
+        "custom_base_url": "https://example.com/v1", "credential_version_id": None,
+        "openai_options": OpenAICompatibleOptions.from_dict({
+            "request": {"force_json_output": True, "temperature": None, "extra_body": {}},
+            "execution": {"business_retries": 2, "transport_retries": 0, "use_stream": False, "rpm_limit": 0},
+        }),
+    }
+    if recovers:
+        result = controller.execute(session, "skill", config, tools, lambda *_: None)
+        assert result["validation"]["success"] is True
+    else:
+        with pytest.raises(OpenAICompatibleBusinessRetriesExhaustedError):
+            controller.execute(session, "skill", config, tools, lambda *_: None)
+    assert len(transport.requests) == 4  # one validation + original finish + two retries
+    assert tools.calls == [("validate_plugin", {})]
+    assert session.to_dict() == original
+    for messages in transport.requests[2:]:
+        assert len(messages) == len(transport.requests[1]) + 2
+        assert json.loads(messages[-2]["content"])["action"]["args"] == {"summary": "完成"}
+        assert "args 字段必须为 {}" in messages[-1]["content"]
+        assert '"tool":"finish","args":{}' in messages[-1]["content"]
 
 
 def test_plugin_agent_stream_callback_observes_job_control() -> None:

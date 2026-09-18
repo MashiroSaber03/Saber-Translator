@@ -11536,7 +11536,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Unreferenced plugin versions were removed. */
+            /** @description Plugin uninstalled. Versions referenced by existing tasks are retained until their history is removed. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -11548,7 +11548,6 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationError"];
-            423: components["responses"]["Locked"];
         };
     };
     createPluginAgentSession: {

@@ -934,45 +934,8 @@ def _validate_ocr_section(value: object) -> None:
 
 
 def _validate_detector_section(value: object) -> None:
+    from src.backend_v2.translation.detector_config import validate_detector_config
+
     if not isinstance(value, Mapping):
         raise ValueError("检测配置必须是对象")
-    section = dict(value)
-    required_fields = {
-        "detector_type",
-        "expand_ratio",
-        "expand_top",
-        "expand_bottom",
-        "expand_left",
-        "expand_right",
-        "enable_aux_yolo_detection",
-        "aux_yolo_conf_threshold",
-        "aux_yolo_overlap_threshold",
-        "enable_saber_yolo_refine",
-        "saber_yolo_refine_overlap_threshold",
-        "min_text_block_area_percent",
-    }
-    if set(section) != required_fields:
-        raise ValueError("检测配置字段无效")
-    if section["detector_type"] not in {"default", "ctd", "yolo"}:
-        raise ValueError("文本检测器无效")
-    for field in ("enable_aux_yolo_detection", "enable_saber_yolo_refine"):
-        if not isinstance(section[field], bool):
-            raise ValueError(f"检测配置 {field} 必须是布尔值")
-    for field in (
-        "expand_ratio",
-        "expand_top",
-        "expand_bottom",
-        "expand_left",
-        "expand_right",
-        "aux_yolo_conf_threshold",
-        "aux_yolo_overlap_threshold",
-        "saber_yolo_refine_overlap_threshold",
-        "min_text_block_area_percent",
-    ):
-        field_value = section[field]
-        if (
-            isinstance(field_value, bool)
-            or not isinstance(field_value, (int, float))
-            or not math.isfinite(float(field_value))
-        ):
-            raise ValueError(f"检测配置 {field} 必须是有限数字")
+    validate_detector_config(value)

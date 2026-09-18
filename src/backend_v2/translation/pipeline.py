@@ -823,61 +823,13 @@ class CoreTranslationAlgorithms:
     """Worker-side adapters around the current core algorithms."""
 
     def detect(self, image: Image.Image, config: Mapping[str, Any]) -> Mapping[str, Any]:
+        from src.backend_v2.translation.detector_config import validate_detector_config
+
+        validate_detector_config(config)
+
         from src.core.detection import (
             get_bubble_detection_result_with_auto_directions,
         )
-
-        required_fields = {
-            "detector_type",
-            "expand_ratio",
-            "expand_top",
-            "expand_bottom",
-            "expand_left",
-            "expand_right",
-            "enable_aux_yolo_detection",
-            "aux_yolo_conf_threshold",
-            "aux_yolo_overlap_threshold",
-            "enable_saber_yolo_refine",
-            "saber_yolo_refine_overlap_threshold",
-            "min_text_block_area_percent",
-        }
-        if set(config) != required_fields:
-            raise ValueError("detector configuration fields are invalid")
-        if config["detector_type"] not in {"default", "ctd", "yolo"}:
-            raise ValueError("detector type is invalid")
-        for field in (
-            "enable_aux_yolo_detection",
-            "enable_saber_yolo_refine",
-        ):
-            if not isinstance(config[field], bool):
-                raise ValueError(f"detector configuration {field} must be boolean")
-        for field in (
-            "expand_ratio",
-            "expand_top",
-            "expand_bottom",
-            "expand_left",
-            "expand_right",
-            "aux_yolo_conf_threshold",
-            "aux_yolo_overlap_threshold",
-            "saber_yolo_refine_overlap_threshold",
-            "min_text_block_area_percent",
-        ):
-            value = config[field]
-            if (
-                isinstance(value, bool)
-                or not isinstance(value, (int, float))
-                or not math.isfinite(float(value))
-            ):
-                raise ValueError(f"detector configuration {field} must be finite")
-        for field in (
-            "aux_yolo_conf_threshold",
-            "aux_yolo_overlap_threshold",
-            "saber_yolo_refine_overlap_threshold",
-        ):
-            if not 0 <= config[field] <= 1:
-                raise ValueError(f"detector configuration {field} must be from 0 to 1")
-        if config["min_text_block_area_percent"] < 0:
-            raise ValueError("minimum text block area cannot be negative")
 
         primary_result = get_bubble_detection_result_with_auto_directions(
             image,

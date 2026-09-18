@@ -89,7 +89,7 @@
               <UiIconButton
                 variant="danger"
                 size="sm"
-                :label="`删除插件 ${plugin.displayName}`"
+                :label="`卸载插件 ${plugin.displayName}`"
                 :disabled="pendingPluginCommands.has(plugin.pluginId)"
                 @click="deletePlugin(plugin)"
               >
@@ -441,9 +441,9 @@ async function savePluginConfig() {
 async function deletePlugin(plugin: Plugin) {
   if (pendingPluginCommands.value.has(plugin.pluginId)) return
   const confirmed = await confirmProductAction({
-    title: '删除插件',
-    message: `确定要删除插件 "${plugin.displayName}" 吗？`,
-    confirmText: '删除',
+    title: '卸载插件',
+    message: `确定要卸载插件 "${plugin.displayName}" 吗？新任务将不再使用此插件，已有任务需要的版本会自动保留。`,
+    confirmText: '卸载',
     cancelText: '取消',
     tone: 'danger',
   })
@@ -452,9 +452,9 @@ async function deletePlugin(plugin: Plugin) {
   try {
     await pluginApi.deletePlugin(plugin.pluginId)
     plugins.value = plugins.value.filter(item => item.pluginId !== plugin.pluginId)
-    toast.success('插件删除成功')
+    toast.success('插件卸载成功')
   } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : '删除插件失败'
+    const errorMessage = error instanceof Error ? error.message : '卸载插件失败'
     toast.error(errorMessage)
   } finally {
     finishPluginCommand(plugin.pluginId)
