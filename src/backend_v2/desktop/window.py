@@ -139,6 +139,7 @@ class TitleBar(QFrame):
         minimize = QPushButton("—")
         maximize = QPushButton("□")
         close = QPushButton("×")
+        self.close_button = close
         for button in (minimize, maximize, close):
             button.setObjectName("windowControl")
         close.setProperty("danger", True)
@@ -1106,19 +1107,22 @@ class DesktopWindow(QMainWindow):
 
     def __init__(
         self,
-        settings: DesktopSettings,
+        settings: DesktopSettings | None,
         *,
         native_icon_path: Path,
         brand_logo_path: Path,
         data_root: Path,
     ) -> None:
         super().__init__()
+        self._preparing = settings is None
+        self._preparation_failed = False
         self._allow_close = False
         self._close_to_tray_enabled = True
         self.setWindowTitle("Saber-Translator")
         self.setWindowIcon(QIcon(str(native_icon_path)))
         self.setMinimumSize(920, 640)
-        self.resize(settings.window_width, settings.window_height)
+        initial_settings = settings or DesktopSettings()
+        self.resize(initial_settings.window_width, initial_settings.window_height)
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         root = QWidget()
@@ -1141,16 +1145,51 @@ class DesktopWindow(QMainWindow):
         self.title_bar = TitleBar(self)
         content_layout.addWidget(self.title_bar)
         self.stack = QStackedWidget()
+        content_layout.addWidget(self.stack, 1)
+        shell_layout.addWidget(content, 1)
+        self._resize_zones = self._create_resize_zones()
+        self.sidebar.page_selected.connect(self._select_page)
+        self.preparation_page = QWidget(self.stack)
+        preparation_layout = QVBoxLayout(self.preparation_page)
+        preparation_layout.setContentsMargins(32, 32, 32, 32)
+        preparation_layout.addStretch()
+        self.preparation_title = _label("正在准备数据", "pageTitle")
+        preparation_layout.addWidget(self.preparation_title)
+        self.preparation_message = _label("正在检查存储版本", "muted")
+        self.preparation_message.setWordWrap(True)
+        self.preparation_message.setTextFormat(Qt.TextFormat.PlainText)
+        preparation_layout.addWidget(self.preparation_message)
+        self.preparation_progress = QProgressBar()
+        self.preparation_progress.setRange(0, 0)
+        preparation_layout.addWidget(self.preparation_progress)
+        preparation_layout.addStretch()
+        if settings is None:
+            self.show_storage_preparation("正在检查存储版本")
+        else:
+            self.initialize_pages(settings, data_root)
+
+    def show_storage_preparation(self, message: str, *, failed: bool = False) -> None:
+        self._preparing = True
+        self._preparation_failed = failed
+        self.sidebar.setEnabled(False)
+        self.title_bar.close_button.setEnabled(failed)
+        self.title_bar.close_button.setToolTip("" if failed else "数据准备完成后可关闭")
+        self.title_bar.title.setText("存储准备失败" if failed else "正在准备数据")
+        self.preparation_title.setText("数据准备未完成" if failed else "正在准备数据")
+        self.preparation_message.setText(message)
+        self.preparation_progress.setVisible(not failed)
+        if self.stack.indexOf(self.preparation_page) < 0:
+            self.stack.addWidget(self.preparation_page)
+        self.stack.setCurrentWidget(self.preparation_page)
+
+    def initialize_pages(self, settings: DesktopSettings, data_root: Path) -> None:
+        self.stack.removeWidget(self.preparation_page)
         self.overview = OverviewPage()
         self.tasks = TaskCenterPage()
         self.logs = LogPage()
         self.settings = SettingsPage(settings, data_root)
         for page in (self.overview, self.tasks, self.logs, self.settings):
             self.stack.addWidget(page)
-        content_layout.addWidget(self.stack, 1)
-        shell_layout.addWidget(content, 1)
-        self._resize_zones = self._create_resize_zones()
-        self.sidebar.page_selected.connect(self._select_page)
         self.overview.start_requested.connect(self.start_requested)
         self.overview.stop_requested.connect(self.stop_requested)
         self.overview.restart_requested.connect(self.restart_requested)
@@ -1158,6 +1197,12 @@ class DesktopWindow(QMainWindow):
         self.tasks.command_requested.connect(self.job_command_requested)
         self.tasks.queue_pause_requested.connect(self.queue_pause_requested)
         self.settings.settings_changed.connect(self.settings_changed)
+        self.resize(settings.window_width, settings.window_height)
+        self._preparing = False
+        self.title_bar.close_button.setEnabled(True)
+        self.title_bar.close_button.setToolTip("")
+        self.sidebar.setEnabled(True)
+        self.sidebar.select(0, "概览")
 
     def _select_page(self, index: int, title: str) -> None:
         self.stack.setCurrentIndex(index)
@@ -1170,6 +1215,10 @@ class DesktopWindow(QMainWindow):
             self.showMaximized()
 
     def request_close_to_tray(self) -> None:
+        if self._preparing:
+            if self._preparation_failed:
+                self.quit_requested.emit()
+            return
         if self._close_to_tray_enabled:
             self.hide()
         else:
@@ -1186,7 +1235,10 @@ class DesktopWindow(QMainWindow):
         if self._allow_close:
             event.accept()
         else:
-            self.hide()
+            if self._preparing:
+                self.request_close_to_tray()
+            else:
+                self.hide()
             event.ignore()
 
     def show_error(self, message: str) -> None:

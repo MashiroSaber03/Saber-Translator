@@ -15,7 +15,7 @@ import webbrowser
 
 from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtGui import QAction, QFont, QFontDatabase, QIcon
-from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon, QProgressDialog
+from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon
 
 from src.backend_v2.desktop.pet import PetWindow
 from src.backend_v2.desktop.pet_state import PetStateMachine
@@ -91,6 +91,7 @@ class DesktopController(QObject):
         native_icon_path: Path,
         brand_logo_path: Path,
         storage_manager: StorageManager | None = None,
+        window: DesktopWindow | None = None,
     ) -> None:
         super().__init__()
         self.storage_manager = storage_manager
@@ -114,12 +115,14 @@ class DesktopController(QObject):
         self._waiting_reason: str | None = None
         self._pet_state = PetStateMachine()
 
-        self.window = DesktopWindow(
+        self.window = window or DesktopWindow(
             settings,
             native_icon_path=native_icon_path,
             brand_logo_path=brand_logo_path,
             data_root=data_root,
         )
+        if window is not None:
+            window.initialize_pages(settings, data_root)
         pet_root = Path(__file__).resolve().parent / "assets" / "pet" / "saber_chan"
         self.pet = PetWindow(
             pet_root / "pet.json",
@@ -549,57 +552,56 @@ def _configure_windows_app_identity() -> None:
         LOGGER.debug("无法设置 Windows AppUserModelID", exc_info=True)
 
 
+class DesktopStoragePreparation(QObject):
+    """Prepare off the GUI thread and retain the storage lock until desktop exit."""
+
+    progress = Signal(str)
+    prepared = Signal(object, object)
+    failed = Signal(str)
+
+    def __init__(self, manager: StorageManager, defaults: DesktopSettings) -> None:
+        super().__init__()
+        self.manager = manager
+        self.defaults = defaults
+        self.error: Exception | None = None
+        self._startup_error: Exception | None = None
+        self._release = threading.Event()
+        self.thread = threading.Thread(target=self._run, name="saber-storage-preparation")
+        self.manager.progress = self.progress.emit
+
+    def _run(self) -> None:
+        try:
+            with self.manager, self.manager.startup_guard():
+                result = self.manager.prepare(initialize_database)
+                ensure_data_root(self.manager.root)
+                settings = DesktopSettingsStore(self.manager.root).load(self.defaults)
+                self.manager.progress = LOGGER.info
+                self.prepared.emit(settings, result)
+                self._release.wait()
+                if self._startup_error is not None:
+                    raise self._startup_error
+        except Exception as error:
+            self.error = error
+            self.failed.emit(f"{error}\n\n诊断目录：{self.manager.control}")
+
+    def release(self, error: Exception | None = None) -> None:
+        if error is not None:
+            self._startup_error = error
+        self._release.set()
+
+
 def run_desktop(args: object) -> int:
     data_root = resolve_data_root(args.data_dir)
-    app = None if args.probe else (QApplication.instance() or QApplication([]))
-    progress = None
-    if app is not None:
-        progress = QProgressDialog("正在检查存储版本", "", 0, 0)
-        progress.setWindowTitle("Saber-Translator 存储准备")
-        progress.setCancelButton(None)
-        progress.setMinimumDuration(0)
-        progress.show()
-        app.processEvents()
-
-    def report(message):
-        if progress is not None:
-            progress.setLabelText(message)
-            app.processEvents()
-
-    manager = StorageManager(data_root, "local", progress=report)
-    try:
+    defaults = DesktopSettings(port=args.port, open_browser_on_start=not args.no_browser)
+    manager = StorageManager(data_root, "local")
+    if args.probe:
         with manager, manager.startup_guard():
             manager.prepare(initialize_database)
             ensure_data_root(data_root)
-            if progress is not None:
-                progress.close()
-            # Later status changes originate from the Launcher thread.
-            manager.progress = LOGGER.info
-            return _run_prepared_desktop(args, data_root, manager)
-    except Exception as error:
-        if progress is not None:
-            progress.close()
-            QMessageBox.critical(None, "存储准备或启动失败", f"{error}\n诊断目录：{manager.control}")
-            return 1
-        raise
+            settings = DesktopSettingsStore(data_root).load(defaults)
+            print(json.dumps(_desktop_probe(data_root, settings), sort_keys=True))
+            return 0
 
-
-def _run_prepared_desktop(args: object, data_root: Path, manager: StorageManager) -> int:
-    store = DesktopSettingsStore(data_root)
-    defaults = DesktopSettings(
-        port=args.port,
-        open_browser_on_start=not args.no_browser,
-    )
-    settings = store.load(defaults)
-    if args.probe:
-        print(json.dumps(_desktop_probe(data_root, settings), sort_keys=True))
-        return 0
-
-    log_path = configure_backend_logging(
-        role="launcher",
-        data_root=control_root(data_root),
-        console_level=settings.log_level,
-    )
     _configure_windows_app_identity()
     app = QApplication.instance() or QApplication([])
     app.setApplicationName("Saber-Translator")
@@ -618,31 +620,69 @@ def _run_prepared_desktop(args: object, data_root: Path, manager: StorageManager
     if native_icon.isNull():
         raise RuntimeError(f"桌面应用图标不可用：{native_icon_path}")
     app.setWindowIcon(native_icon)
-    controller = DesktopController(
-        app,
-        data_root=data_root,
-        settings_store=store,
-        settings=settings,
-        native_icon_path=native_icon_path,
-        brand_logo_path=brand_logo_path,
-        storage_manager=manager,
+    app.setStyleSheet(WINDOW_STYLESHEET)
+    window = DesktopWindow(
+        None, native_icon_path=native_icon_path,
+        brand_logo_path=brand_logo_path, data_root=data_root,
     )
+    preparation = DesktopStoragePreparation(manager, defaults)
+    controller: DesktopController | None = None
+    handler: DesktopLogHandler | None = None
     bridge = DesktopLogBridge()
-    bridge.line.connect(controller.window.add_log)
-    handler = DesktopLogHandler(bridge, level=settings.log_level)
-    controller.log_level_changed.connect(handler.set_log_level)
-    logging.getLogger().addHandler(handler)
-    LOGGER.debug(
-        "桌面控制中心运行参数：pid=%s data_root=%s log=%s",
-        os.getpid(), data_root, log_path,
-    )
-    user_log("system", "桌面控制中心已启动")
-    controller.show()
+    bridge.line.connect(window.add_log)
+
+    def report(message: str) -> None:
+        stages = {
+            "copying": "正在备份数据", "converting": "正在转换数据格式",
+            "validated": "数据校验完成", "old_moved": "正在切换数据目录",
+            "installed": "转换完成，正在准备控制中心", "rolled_back": "已恢复原数据",
+        }
+        stage = message.removeprefix("存储升级：")
+        window.show_storage_preparation(stages.get(stage, message))
+
+    def ready(settings: DesktopSettings, result: dict) -> None:
+        nonlocal controller, handler
+        try:
+            log_path = configure_backend_logging(
+                role="launcher", data_root=control_root(data_root),
+                console_level=settings.log_level,
+            )
+            controller = DesktopController(
+                app, data_root=data_root, settings_store=DesktopSettingsStore(data_root),
+                settings=settings, native_icon_path=native_icon_path,
+                brand_logo_path=brand_logo_path, storage_manager=manager, window=window,
+            )
+            handler = DesktopLogHandler(bridge, level=settings.log_level)
+            controller.log_level_changed.connect(handler.set_log_level)
+            logging.getLogger().addHandler(handler)
+            LOGGER.debug("桌面控制中心运行参数：pid=%s data_root=%s log=%s", os.getpid(), data_root, log_path)
+            user_log("system", "桌面控制中心已启动")
+            if result["status"] == "awaiting_health":
+                window.overview.update_status(LauncherStatus(
+                    LauncherState.STOPPED, "数据转换完成，启动后端验证成功后自动清理备份",
+                ))
+            controller.show()
+        except Exception as error:
+            # Roll back the installed candidate before displaying the startup failure.
+            window.show_storage_preparation("启动失败，正在确认数据恢复状态…")
+            preparation.release(error)
+
+    preparation.progress.connect(report)
+    preparation.prepared.connect(ready)
+    preparation.failed.connect(lambda message: window.show_storage_preparation(message, failed=True))
+    window.quit_requested.connect(lambda: app.quit() if controller is None else None)
+    window.show()
+    preparation.thread.start()
     try:
-        return app.exec()
+        exit_code = app.exec()
     finally:
-        logging.getLogger().removeHandler(handler)
-        handler.close()
-        controller.stop_backend()
-        if controller._supervisor_thread is not None:
-            controller._supervisor_thread.join()
+        if controller is not None:
+            controller.stop_backend()
+            if controller._supervisor_thread is not None:
+                controller._supervisor_thread.join()
+        if handler is not None:
+            logging.getLogger().removeHandler(handler)
+            handler.close()
+        preparation.release()
+        preparation.thread.join()
+    return 1 if preparation.error is not None else exit_code
