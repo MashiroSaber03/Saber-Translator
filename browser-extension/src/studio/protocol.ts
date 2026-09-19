@@ -19,6 +19,7 @@ export interface StudioState {
   preparation: { processed: number; total: number; failed: number } | null
   uploadError: { count: number; message: string } | null
   retryStart: boolean
+  discoveryStopped: boolean
   terms: { source?: string; target?: string }[]
   imported: BrowserSessionImportResult | null
 }
@@ -29,7 +30,11 @@ export type StudioAction =
   | 'drag-start'
   | 'preference'
   | 'discover'
+  | 'discover-saved'
   | 'confirm'
+  | 'import-selected'
+  | 'prepare-download'
+  | 'finish-download'
   | 'back'
   | 'toggle-global'
   | 'toggle-page'
@@ -38,6 +43,8 @@ export type StudioAction =
   | 'retry-start'
   | 'restart'
   | 'stop-discovery'
+  | 'resume-discovery'
+  | 'reselect'
   | 'cancel'
   | 'books'
   | 'import'

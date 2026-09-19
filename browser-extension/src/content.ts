@@ -249,6 +249,8 @@ export class PageController {
   private cancelled = false
   private imported = false
   private deletingAdaptation = false
+  private discovering = false
+  private pickerCleanup: (() => void) | null = null
   private taskStarting: symbol | null = null
   private retryingUploadsFor: number | null = null
   private nextOrdinal = 1
@@ -308,28 +310,34 @@ export class PageController {
   private createUi(): void {
     if (this.ui) return
     this.activeMethod = this.preference.method
-    this.activeRule = this.preference.rule ?? null
+    this.activeRule = null
     this.ui = new ExtensionUi(
       {
-        onDiscover: method => void this.discover(method),
-        onConfirm: ids => void this.confirm(ids),
-        onPreferenceChange: preference => void this.updatePreference(preference),
+        onDiscover: method => this.discover(method),
+        onDiscoverSaved: () => this.discoverSavedRule(),
+        onConfirm: ids => this.confirm(ids),
+        onImportSelected: (ids, command) => this.importSelected(ids, command),
+        onPrepareDownload: ids => this.prepareSelected(ids),
+        onFinishDownload: message => this.finishSelected(message),
+        onPreferenceChange: preference => this.updatePreference(preference),
         onFabPositionChange: position => void this.saveFabPosition(position),
         onToggleGlobal: () => this.toggleAllPages(),
         onTogglePage: browserPageId => this.togglePage(browserPageId),
-        onRetryPage: browserPageId => void this.retry(browserPageId),
-        onRetryUploads: () => void this.retryFailedUploads(),
-        onRestart: () => void this.restart(),
+        onRetryPage: browserPageId => this.retry(browserPageId),
+        onRetryUploads: () => this.retryFailedUploads(),
+        onRestart: () => this.restart(),
+        onReselect: () => this.reselect(),
+        onResumeDiscovery: () => this.resumeDiscovery(),
         onEnableSite: async () => {
           await this.persistPreference({ disabled: false })
           await this.applySiteEnabled(true)
         },
         onRetryStart: () => {
           const task = this.currentTask()
-          if (task) void this.startUploadedPages(task)
+          if (task) return this.startUploadedPages(task)
         },
         onStopDiscovery: () => this.stopDiscovery(),
-        onCancel: () => void this.cancel(),
+        onCancel: () => this.cancel(),
         onLoadLibraryBooks: () => this.loadLibraryBooks(),
         onImport: command => this.importToLibrary(command),
         onDisableSite: () => void this.disableSite(),
@@ -377,6 +385,10 @@ export class PageController {
     if (!this.ui) await this.initialize()
     if (!this.ui) return
     this.ui.setOpen(true)
+    if ([...this.resultUrls.values()].includes(srcUrl)) {
+      this.ui.setStatus('这张图片已完成翻译', '可在逐页查看中切换原图或按原配置重翻。')
+      return
+    }
     const all = scanGeneric()
     const candidate = candidateForSource(all, srcUrl)
       ?? [...document.querySelectorAll('img')]
@@ -387,16 +399,31 @@ export class PageController {
       this.ui.showError({ code: 'image_not_found', message: '没有找到右键选择的图片元素' })
       return
     }
-    if (this.taskStarting) return
+    if (this.taskStarting || this.discovering) return
+    if (this.session?.state === 'cancelled' && !this.imported) {
+      this.ui.setStatus('当前任务已取消', '请先点击“重新选图”，再翻译新的图片。')
+      return
+    }
     const starting = Symbol()
     this.taskStarting = starting
     this.registerCandidates([candidate])
     this.cancelled = false
     this.ui.setStatus('正在提交单张图片', '右键操作已经视为确认，无需再次选择。', 'busy')
     try {
-      this.discoveryStopped = true
-      const task = await this.createSession()
+      let task = this.currentTask()
+      if (!task) {
+        this.activeRule = ruleFromCandidate(candidate)
+        this.usingAdapter = false
+        this.stopDiscovery()
+        task = await this.createSession()
+      }
       if (!task) return
+      const existingKey = this.clientKeys.get(candidate.sourceIdentity)
+      if (existingKey && this.pageIdsByClientKey.has(existingKey)) {
+        this.showSession(this.session!)
+        this.ui.setStatus('这张图片已在当前任务中', '可在逐页查看中查看进度或按原配置重试。')
+        return
+      }
       const uploaded = await this.uploadCandidates([candidate], task, true)
       if (!this.isCurrentTask(task)) return
       if (uploaded === 0) {
@@ -414,6 +441,7 @@ export class PageController {
   async dispose(): Promise<void> {
     if (this.disposed) return
     this.disposed = true
+    this.pickerCleanup?.()
     void send({ type: 'page-closed', pageUrl: this.pageUrl }).catch(() => undefined)
     this.taskGeneration += 1
     this.disconnectObserver()
@@ -431,28 +459,15 @@ export class PageController {
   }
 
   private async discover(method: DetectionMethod): Promise<void> {
-    if (!this.ui) return
+    if (!this.ui || this.discovering || this.taskStarting) return
+    this.discovering = true
+    this.activeRule = null
+    this.usingAdapter = false
     this.ui.setStatus('正在识别页面图片', '只读取图片节点和尺寸，不会自动上传。', 'busy')
     try {
       let found: ImageCandidate[]
-      if (this.activeRule) {
-        const ruled = scanRule(this.activeRule)
-        if (ruled.length) {
-          this.activeMethod = method
-          this.usingAdapter = false
-          this.candidates = ruled
-          this.registerCandidates(ruled)
-          this.ui.showCandidates(ruled)
-          return
-        }
-        this.activeRule = null
-        delete this.preference.rule
-        await this.persistPreference({ rule: null })
-        this.ui.setAdaptation(null)
-      }
       if (method === 'similar') {
         this.activeMethod = method
-        this.usingAdapter = false
         this.startSimilarPicker()
         return
       }
@@ -471,29 +486,47 @@ export class PageController {
           },
         })
         const selected = new Set(result.nodeIds)
+        if (this.disposed) return
         const selectedCandidates = generic.filter(candidate => selected.has(candidate.id))
         const suggested = validateSuggestedRule(result.selector, selectedCandidates)
         if (suggested) {
           this.activeRule = suggested.rule
           found = suggested.candidates
         } else {
-          this.activeRule = null
           found = selectedCandidates
         }
-        this.usingAdapter = false
       } else {
         const adapter = adapterFor(this.hostname)
         if (adapter) {
           const adapted = scanAdapter(adapter)
           this.usingAdapter = adapted.length > 0
-          this.activeRule = null
           found = this.usingAdapter ? adapted : scanGeneric()
         } else {
-          this.usingAdapter = false
           found = scanGeneric()
         }
       }
       this.activeMethod = method
+      this.candidates = found
+      this.registerCandidates(found)
+      this.ui.showCandidates(found)
+    } catch (error) {
+      this.ui?.showError(errorDetails(error))
+    } finally {
+      this.discovering = false
+    }
+  }
+
+  private discoverSavedRule(): void {
+    if (!this.ui || !this.preference.rule || this.discovering || this.taskStarting) return
+    try {
+      const found = scanRule(this.preference.rule)
+      if (!found.length) {
+        this.ui.setStatus('上次规则未找到图片', '请使用下方的识别方式重新识别。')
+        return
+      }
+      this.activeMethod = this.preference.method
+      this.activeRule = this.preference.rule
+      this.usingAdapter = false
       this.candidates = found
       this.registerCandidates(found)
       this.ui.showCandidates(found)
@@ -504,12 +537,14 @@ export class PageController {
 
   private startSimilarPicker(): void {
     if (!this.ui) return
+    this.pickerCleanup?.()
     const mask = this.ui.pickingMask()
     this.ui.startPicking()
     const cleanup = () => {
       mask.removeEventListener('click', choose)
       document.removeEventListener('keydown', keydown, true)
       this.ui?.stopPicking()
+      this.pickerCleanup = null
     }
     const choose = (event: MouseEvent) => {
       event.preventDefault()
@@ -534,6 +569,7 @@ export class PageController {
     }
     mask.addEventListener('click', choose)
     document.addEventListener('keydown', keydown, true)
+    this.pickerCleanup = cleanup
   }
 
   private async confirm(ids: string[]): Promise<void> {
@@ -548,6 +584,7 @@ export class PageController {
     this.taskStarting = starting
     this.cancelled = false
     this.discoveryStopped = false
+    this.ui.setDiscoveryStopped(false)
     if (!this.activeRule && !this.usingAdapter) {
       this.activeRule = ruleFromCandidate(selected[0]!)
     }
@@ -556,12 +593,11 @@ export class PageController {
       method: this.activeMethod,
     }
     if (this.activeRule) confirmedPreference.rule = this.activeRule
-    else delete confirmedPreference.rule
     this.preference = confirmedPreference
     try {
-      await this.persistPreference({ method: this.activeMethod, rule: this.activeRule })
+      await this.persistPreference({ method: this.activeMethod, ...(this.activeRule ? { rule: this.activeRule } : {}) })
       if (this.taskStarting !== starting) return
-      this.ui.setAdaptation(this.activeRule)
+      this.ui.setAdaptation(this.preference.rule ?? null)
       this.ui.setStatus('正在导入漫画图片', '图片会按网页顺序进入当前隐藏会话。', 'busy')
       const task = await this.createSession()
       if (!task) return
@@ -598,12 +634,12 @@ export class PageController {
     this.ui?.setOpen(true)
   }
 
-  private async createSession(): Promise<TaskContext | null> {
+  private async clearSession(): Promise<number | null> {
     const generation = ++this.taskGeneration
     if (this.pollTimer !== null) window.clearTimeout(this.pollTimer)
     this.pollTimer = null
     this.disconnectObserver()
-    await this.discardSession(this.session?.id)
+    if (!this.imported) await this.discardSession(this.session?.id)
     if (this.disposed || generation !== this.taskGeneration) return null
     this.session = null
     this.imported = false
@@ -624,6 +660,23 @@ export class PageController {
     this.ui?.hidePreparationProgress()
     this.nextOrdinal = 1
     this.termsPollTick = 0
+    return generation
+  }
+
+  private async reselect(): Promise<void> {
+    if (this.taskStarting || this.session?.pages.some(page => ['queued', 'translating'].includes(page.state))) return
+    this.stopDiscovery()
+    if (await this.clearSession() === null) return
+    this.candidates = []
+    this.candidatesByIdentity.clear()
+    this.activeRule = null
+    this.usingAdapter = false
+    this.ui?.resetSelection()
+  }
+
+  private async createSession(present = true): Promise<TaskContext | null> {
+    const generation = await this.clearSession()
+    if (generation === null) return null
     const session = await send<BrowserSessionDto>({
       type: 'create-session',
       payload: {
@@ -637,14 +690,65 @@ export class PageController {
     if (this.disposed || generation !== this.taskGeneration) return null
     this.session = session
     this.ui?.showTerms([])
-    this.showSession(session)
+    if (present) this.showSession(session)
     return { generation, sessionId: session.id }
+  }
+
+  private async prepareSelected(ids: string[]): Promise<string> {
+    if (this.taskStarting) throw new Error('请等待当前图片操作完成')
+    const selected = this.candidates.filter(candidate => ids.includes(candidate.id))
+    if (!selected.length) throw new Error('请至少选择一张图片')
+    this.taskStarting = Symbol()
+    this.cancelled = false
+    this.stopDiscovery()
+    this.ui?.setStatus('正在准备所选图片', `共 ${selected.length} 张，不会启动翻译。`, 'busy')
+    try {
+      const task = await this.createSession(false)
+      if (!task) throw new Error('漫画页面已退出')
+      const uploaded = await this.uploadCandidates(selected, task, false, (processed, total) => {
+        this.ui?.setStatus(`正在准备原图 ${processed} / ${total}`, '图片按顺序收集到本机，不会启动翻译。', 'busy')
+      })
+      if (!this.isCurrentTask(task)) throw new Error('图片操作已取消')
+      if (uploaded !== selected.length) throw new Error('部分图片读取失败，请重试；本次不会保存不完整的图片集合。')
+      this.ui?.setStatus('正在处理所选图片', '图片已准备完成，请稍候。', 'busy')
+      return task.sessionId
+    } catch (error) {
+      await this.finishSelected()
+      throw error
+    }
+  }
+
+  private async finishSelected(message?: string): Promise<void> {
+    try {
+      await this.clearSession()
+      if (!this.disposed) {
+        this.ui?.resetSelection(this.candidates)
+        if (message) this.ui?.setStatus(message, '当前勾选保持不变，可以继续选择其他操作。')
+      }
+    } finally {
+      this.taskStarting = null
+    }
+  }
+
+  private async importSelected(ids: string[], command: BrowserSessionImportCommand): Promise<BrowserSessionImportResult> {
+    const sessionId = await this.prepareSelected(ids)
+    let result: BrowserSessionImportResult | undefined
+    try {
+      result = await send<BrowserSessionImportResult>({
+        type: 'import-session', sessionId, payload: { ...command, originalsOnly: true },
+      })
+      this.imported = true
+      return result
+    } finally {
+      await this.finishSelected(result ? `已将 ${result.importedPages} 张原图导入《${result.bookTitle}》` : undefined)
+    }
   }
 
   private async uploadCandidates(
     candidates: ImageCandidate[],
     task: TaskContext,
     reportProgress = false,
+    onProgress?: (processed: number, total: number) => void,
   ): Promise<number> {
     const queued = candidates.map(candidate => ({
       candidate,
@@ -669,9 +773,10 @@ export class PageController {
         if (!item) continue
         const uploadKey = `${task.generation}:${item.candidate.sourceIdentity}`
         if (this.uploadsInFlight.has(uploadKey)) {
-          if (reportProgress && this.isCurrentTask(task)) {
+          if (this.isCurrentTask(task)) {
             processed += 1
-            this.ui?.showPreparationProgress(processed, queued.length, batchFailed)
+            if (reportProgress) this.ui?.showPreparationProgress(processed, queued.length, batchFailed)
+            onProgress?.(processed, queued.length)
           }
           continue
         }
@@ -691,9 +796,10 @@ export class PageController {
           }
         } finally {
           this.uploadsInFlight.delete(uploadKey)
-          if (reportProgress && this.isCurrentTask(task)) {
+          if (this.isCurrentTask(task)) {
             processed += 1
-            this.ui?.showPreparationProgress(processed, queued.length, batchFailed)
+            if (reportProgress) this.ui?.showPreparationProgress(processed, queued.length, batchFailed)
+            onProgress?.(processed, queued.length)
           }
         }
       }
@@ -908,6 +1014,11 @@ export class PageController {
       })
       if (!this.isCurrentTask(task)) return
       loaded = true
+      if (!this.cancelled && (session.state === 'cancelled'
+        || (session.counts.cancelled > 0 && !session.taskState))) {
+        this.cancelled = true
+        this.stopDiscovery()
+      }
       if (
         !this.cancelled
         && session.state !== 'cancelled'
@@ -1115,22 +1226,18 @@ export class PageController {
   }
 
   private async updatePreference(patch: Partial<DomainPreference>): Promise<void> {
+    if (this.discovering) return
     const preference = { ...this.preference, ...patch }
     const methodChanged = preference.method !== this.preference.method
     if (methodChanged && this.currentTask()) this.stopDiscovery()
     this.activeMethod = preference.method
     if (methodChanged) {
       this.activeRule = null
-      this.preference = { ...preference }
-      delete this.preference.rule
-    } else {
-      this.preference = { ...preference }
-      if (this.activeRule) this.preference.rule = this.activeRule
-      else delete this.preference.rule
+      this.usingAdapter = false
     }
+    this.preference = preference
     try {
-      await this.persistPreference(methodChanged ? { ...patch, rule: null } : patch)
-      if (methodChanged) this.ui?.setAdaptation(null)
+      await this.persistPreference(patch)
       const task = this.currentTask()
       if (task) {
         const session = await send<BrowserSessionDto>({
@@ -1177,13 +1284,8 @@ export class PageController {
     try {
       await this.persistPreference({ rule: null })
       this.preference = preference
-      this.activeRule = null
-      this.usingAdapter = false
-      this.candidates = []
-      this.stopDiscovery()
       this.ui?.setAdaptation(null)
-      this.ui?.setStatus('已删除当前网站的适配', '正在按当前识别方式重新检测。', 'busy')
-      await this.discover(this.preference.method)
+      this.ui?.setStatus('已删除保存的规则', '下次可使用所选识别方式重新识别。')
     } catch (error) {
       this.ui?.showError(errorDetails(error))
     } finally {
@@ -1193,8 +1295,21 @@ export class PageController {
 
   private stopDiscovery(): void {
     this.discoveryStopped = true
+    this.ui?.setDiscoveryStopped(true)
     this.disconnectObserver()
     this.ui?.setStatus('已停止继续发现', '已排队和正在处理的图片不会受到影响。')
+  }
+
+  private async resumeDiscovery(): Promise<void> {
+    if (!this.currentTask() || this.cancelled || this.session?.state === 'cancelled') return
+    this.discoveryStopped = false
+    this.ui?.setDiscoveryStopped(false)
+    this.startObserver()
+    try {
+      await this.discoverLazyImages()
+    } catch (error) {
+      this.ui?.showError(errorDetails(error))
+    }
   }
 
   private disconnectObserver(): void {
@@ -1228,11 +1343,11 @@ export class PageController {
       this.startPolling(250, task)
     } catch (error) {
       this.ui?.showError(errorDetails(error))
+      this.startPolling(1_500, task)
     }
   }
 
   private async loadLibraryBooks(): Promise<BrowserLibraryBook[]> {
-    if (!this.currentTask()) return []
     try {
       const response = await send<{ items: BrowserLibraryBook[] }>({
         type: 'list-library-books',
@@ -1249,6 +1364,7 @@ export class PageController {
   ): Promise<BrowserSessionImportResult> {
     const task = this.currentTask()
     if (!task) throw new Error('当前网页任务已经结束')
+    const wasStopped = this.discoveryStopped
     this.stopDiscovery()
     try {
       // Import removes the browser session, so finish reading its results first.
@@ -1268,6 +1384,15 @@ export class PageController {
       this.pollTimer = null
       return result
     } catch (error) {
+      if (this.isCurrentTask(task)) {
+        this.discoveryStopped = wasStopped
+        this.ui?.setDiscoveryStopped(wasStopped)
+        if (!wasStopped) {
+          this.startObserver()
+          this.scheduleLazyScan()
+        }
+        this.startPolling(1_500, task)
+      }
       this.ui?.showError(errorDetails(error))
       throw error
     }

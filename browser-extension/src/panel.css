@@ -937,6 +937,11 @@ progress::-webkit-progress-value {
   background: var(--s-bg);
   z-index: 3;
 }
+.selection-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
 .page-row {
   display: flex;
   justify-content: space-between;

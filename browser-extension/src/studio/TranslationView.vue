@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import SelectControl from './SelectControl.vue'
 import ImportDialog from './ImportDialog.vue'
+import { downloadOriginals } from './downloadOriginals'
 import type { StudioState, StudioAction } from './protocol'
 import type {
   BrowserLibraryBook,
@@ -15,8 +16,11 @@ const props = defineProps<{
 }>()
 const selected = ref<string[]>([])
 const importOpen = ref(false)
+const importIds = ref<string[] | null>(null)
 const error = ref('')
 const actionPending = ref(false)
+const downloadStage = ref('')
+let actionSequence = 0
 const busy = computed(() => props.state.notice.tone === 'busy' || actionPending.value)
 const session = computed(() => props.state.session)
 const processing = computed(() =>
@@ -35,23 +39,56 @@ watch(
   { immediate: true }
 )
 async function act(action: StudioAction, payload?: unknown) {
-  if (actionPending.value) return
+  if (actionPending.value && action !== 'cancel') return
+  const sequence = ++actionSequence
   actionPending.value = true
   error.value = ''
   try {
     await props.request(action, payload)
   } catch (e) {
-    error.value = (e as Error).message
+    if (sequence === actionSequence) error.value = (e as Error).message
   } finally {
-    actionPending.value = false
+    if (sequence === actionSequence) actionPending.value = false
   }
 }
 function preference(patch: Partial<DomainPreference>) {
   void act('preference', patch)
 }
 const loadBooks = () => props.request<BrowserLibraryBook[]>('books')
-const submitImport = (command: BrowserSessionImportCommand) =>
-  props.request<BrowserSessionImportResult>('import', command)
+async function submitImport(command: BrowserSessionImportCommand) {
+  error.value = ''
+  if (importIds.value === null) return props.request<BrowserSessionImportResult>('import', command)
+  actionPending.value = true
+  try {
+    return await props.request<BrowserSessionImportResult>('import-selected', { ids: [...importIds.value], command })
+  } finally {
+    actionPending.value = false
+  }
+}
+async function downloadSelected() {
+  if (busy.value || !selected.value.length) return
+  actionPending.value = true
+  error.value = ''
+  downloadStage.value = '正在准备原图…'
+  let sessionId: string | undefined
+  let downloaded = false
+  try {
+    sessionId = await props.request<string>('prepare-download', [...selected.value])
+    downloadStage.value = '正在下载 ZIP…'
+    await downloadOriginals(sessionId, props.state.title)
+    downloaded = true
+  } catch (e) {
+    error.value = (e as Error).message
+  } finally {
+    try {
+      if (sessionId) await props.request('finish-download', downloaded ? '已发起原图 ZIP 下载' : undefined)
+    } catch (e) {
+      error.value = (e as Error).message
+    }
+    downloadStage.value = ''
+    actionPending.value = false
+  }
+}
 </script>
 <template>
   <div class="page-intro">
@@ -80,6 +117,12 @@ const submitImport = (command: BrowserSessionImportCommand) =>
     ><button class="text-button" @click="act('diagnostics')">复制诊断</button>
   </div>
   <template v-if="state.view === 'idle'">
+    <div v-if="state.preference.rule" class="notice" role="note">
+      <div>
+        <p>此网站有已保存的图片识别规则</p>
+        <button class="text-button" :disabled="busy" @click="act('discover-saved')">使用上次规则</button>
+      </div>
+    </div>
     <section class="setting-group">
       <h3>识别与翻译</h3>
       <label class="field"
@@ -87,6 +130,7 @@ const submitImport = (command: BrowserSessionImportCommand) =>
           :model-value="state.preference.method"
           :options="methods"
           label="识别方式"
+          :disabled="busy"
           @update:model-value="
             value => preference({ method: value as DomainPreference['method'] })
           "
@@ -97,12 +141,14 @@ const submitImport = (command: BrowserSessionImportCommand) =>
           <button
             :class="{ active: state.preference.mode === 'standard' }"
             :aria-pressed="state.preference.mode === 'standard'"
+            :disabled="busy"
             @click="preference({ mode: 'standard' })"
           >
             标准翻译</button
           ><button
             :class="{ active: state.preference.mode === 'hq' }"
             :aria-pressed="state.preference.mode === 'hq'"
+            :disabled="busy"
             @click="preference({ mode: 'hq' })"
           >
             高质量翻译
@@ -114,6 +160,7 @@ const submitImport = (command: BrowserSessionImportCommand) =>
           type="checkbox"
           class="switch"
           :checked="state.preference.glossaryEnabled"
+          :disabled="busy"
           @change="
             preference({
               glossaryEnabled: ($event.target as HTMLInputElement).checked,
@@ -124,6 +171,7 @@ const submitImport = (command: BrowserSessionImportCommand) =>
           type="checkbox"
           class="switch"
           :checked="state.preference.autoTermsEnabled"
+          :disabled="busy"
           @change="
             preference({
               autoTermsEnabled: ($event.target as HTMLInputElement).checked,
@@ -144,13 +192,13 @@ const submitImport = (command: BrowserSessionImportCommand) =>
   <template v-if="state.view === 'candidates'"
     ><div class="section-heading">
       <h3>
-        待翻译图片
+        已选图片
         <span class="badge">{{ selected.length }} / {{ state.candidates.length }}</span>
       </h3>
       <div>
-        <button class="text-button" @click="selected = state.candidates.map(item => item.id)">
+        <button class="text-button" :disabled="busy" @click="selected = state.candidates.map(item => item.id)">
           全选</button
-        ><button class="text-button" @click="selected = []">清空</button>
+        ><button class="text-button" :disabled="busy" @click="selected = []">清空</button>
       </div>
     </div>
     <div class="candidate-grid">
@@ -168,21 +216,28 @@ const submitImport = (command: BrowserSessionImportCommand) =>
         /><span class="candidate-fallback">{{ String(index + 1).padStart(2, '0') }}</span
         ><input
           v-model="selected"
+          :disabled="busy"
           type="checkbox"
           :value="item.id"
           :aria-label="`选择第 ${index + 1} 张图片`"
         /><span class="candidate-meta">{{ item.width }} × {{ item.height }}</span></label
       >
     </div>
-    <div class="actions sticky-actions">
-      <button class="button" @click="act('back')">重新选择</button
+    <div class="sticky-actions">
+      <div class="selection-actions">
+        <button class="button" :disabled="busy || !selected.length" @click="importIds = [...selected]; importOpen = true">仅导入书架</button>
+        <button class="button" title="将勾选原图按网页顺序打包为 ZIP，需连接本机 Saber" :disabled="busy || !selected.length" @click="downloadSelected">{{ downloadStage || '下载原图（ZIP）' }}</button>
+      <button class="button" :disabled="busy" @click="act('back')">重新选择</button
       ><button
-        class="button primary grow"
+        class="button primary"
         :disabled="!selected.length || busy"
         @click="act('confirm', selected)"
       >
         开始翻译 · {{ selected.length }} 张
       </button>
+      </div>
+      <p v-if="downloadStage" class="notice" role="status">{{ downloadStage }} {{ state.notice.title }} {{ state.notice.message }}</p>
+      <p v-if="error" class="notice error" role="alert">{{ error }}</p>
     </div></template
   >
   <template v-if="state.view === 'progress'">
@@ -227,14 +282,14 @@ const submitImport = (command: BrowserSessionImportCommand) =>
         ><button
           v-if="!state.imported"
           class="button primary grow"
-          :disabled="processing || !session.pages.some(page => page.pageId)"
-          @click="importOpen = true"
+          :disabled="processing || busy || !session.pages.some(page => page.pageId)"
+          @click="importIds = null; importOpen = true"
         >
           导入到书架
         </button>
       </div>
       <div v-if="!state.imported" class="actions">
-        <button class="text-button" @click="act('stop-discovery')">停止继续发现</button
+        <button class="text-button" :disabled="actionPending || session.state === 'cancelled'" @click="act(state.discoveryStopped ? 'resume-discovery' : 'stop-discovery')">{{ state.discoveryStopped ? '继续发现' : '停止继续发现' }}</button
         ><button
           class="text-button danger"
           :disabled="!processing && session.state !== 'idle'"
@@ -243,6 +298,9 @@ const submitImport = (command: BrowserSessionImportCommand) =>
           取消任务
         </button>
       </div>
+      <p v-if="!state.imported" class="muted">{{ state.discoveryStopped ? '继续发现已停止' : '正在自动发现后续图片' }}</p>
+      <button class="button" :disabled="processing || busy" @click="act('reselect')">重新选图</button>
+      <p class="footnote">重新选图会清除当前页面的临时结果；需要保留请先导入书架。</p>
       <button class="button" :disabled="processing || busy" @click="act('restart')">按新配置重新翻译</button>
       <p class="footnote">重新翻译会替换当前页面的临时结果，使用已保存的新配置；已导入书架的内容不受影响。</p>
       <details v-if="!state.imported" class="disclosure">
@@ -276,10 +334,10 @@ const submitImport = (command: BrowserSessionImportCommand) =>
             ><button
               v-if="['completed', 'failed', 'cancelled'].includes(page.state)"
               class="text-button"
-              :disabled="processing"
+              :disabled="processing || actionPending"
               @click="act('retry-page', page.id)"
             >
-              {{ page.state === 'completed' ? '重翻' : '重试' }}
+              {{ page.state === 'completed' ? '按原配置重翻' : '按原配置重试' }}
             </button>
           </div>
         </div>

@@ -357,6 +357,7 @@ def create_browser_extension_blueprint(
                 "bookTitle",
                 "targetBookId",
                 "chapterTitle",
+                "originalsOnly",
             }
         )
         return jsonify(
@@ -374,8 +375,21 @@ def create_browser_extension_blueprint(
                     else None
                 ),
                 chapter_title=required_string(body, "chapterTitle"),
+                originals_only=required_boolean(body, "originalsOnly") if "originalsOnly" in body else False,
             )
         )
+
+    @blueprint.get("/sessions/<session_id>/originals.zip")
+    def download_originals(session_id: str) -> Response:
+        archive = service.original_archive(session_id)
+        try:
+            response = send_file(archive, mimetype="application/zip", as_attachment=True,
+                                 download_name="originals.zip")
+        except BaseException:
+            archive.close()
+            raise
+        response.call_on_close(archive.close)
+        return response
 
     @blueprint.post("/dom-detection")
     def detect_dom() -> Response:

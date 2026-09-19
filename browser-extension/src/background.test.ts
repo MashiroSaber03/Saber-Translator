@@ -45,6 +45,16 @@ function request<T>(message: BackgroundRequest, sender: chrome.runtime.MessageSe
 }
 
 describe('extension background boundary', () => {
+  it.each(['discard-session', 'import-session'] as const)('detaches a finished session after %s without losing the page binding', async type => {
+    local['saber-extension-settings-v1'] = { token: 'test-token-with-at-least-32-characters', serverPort: 5000, domains: {} }
+    session['saber-active-browser-session-v1:4'] = { pageUrl: 'https://comic.example/chapter', documentId: 'doc', sessionId: 'finished' }
+    vi.stubGlobal('fetch', vi.fn(async () => type === 'discard-session' ? new Response(null, { status: 204 }) : Response.json({ importedPages: 1 })))
+    const response = await request(type === 'discard-session' ? { type, sessionId: 'finished' } : {
+      type, sessionId: 'finished', payload: { destination: 'new', bookTitle: 'Book', chapterTitle: 'Chapter' },
+    })
+    expect(response.ok).toBe(true)
+    expect(session['saber-active-browser-session-v1:4']).toEqual({ pageUrl: 'https://comic.example/chapter', documentId: 'doc' })
+  })
   it('accepts the current SPA URL even when sender.url retains the title page', async () => {
     const pageUrl = 'https://mangadex.org/chapter/chapter-id'
     const response = await request({ type: 'page-opened', pageUrl }, {

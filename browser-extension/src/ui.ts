@@ -14,18 +14,24 @@ import type { StudioAction, StudioState } from './studio/protocol'
 import { HOST_STYLES } from './hostStyles'
 
 export interface UiCallbacks {
-  onDiscover(method: DetectionMethod): void
-  onConfirm(candidateIds: string[]): void
-  onPreferenceChange(preference: Partial<DomainPreference>): void
+  onDiscover(method: DetectionMethod): void | Promise<void>
+  onDiscoverSaved(): void
+  onConfirm(candidateIds: string[]): void | Promise<void>
+  onImportSelected(candidateIds: string[], command: BrowserSessionImportCommand): Promise<BrowserSessionImportResult>
+  onPrepareDownload(candidateIds: string[]): Promise<string>
+  onFinishDownload(message?: string): Promise<void>
+  onPreferenceChange(preference: Partial<DomainPreference>): void | Promise<void>
   onFabPositionChange(position: FabPosition): void
   onToggleGlobal(): Promise<boolean>
   onTogglePage(browserPageId: string): Promise<boolean | null>
-  onRetryPage(browserPageId: string): void
-  onRetryUploads(): void
-  onRetryStart(): void
-  onRestart(): void
+  onRetryPage(browserPageId: string): void | Promise<void>
+  onRetryUploads(): void | Promise<void>
+  onRetryStart(): void | Promise<void>
+  onRestart(): void | Promise<void>
   onStopDiscovery(): void
-  onCancel(): void
+  onResumeDiscovery(): void | Promise<void>
+  onReselect(): void | Promise<void>
+  onCancel(): void | Promise<void>
   onLoadLibraryBooks(): Promise<BrowserLibraryBook[]>
   onImport(command: BrowserSessionImportCommand): Promise<BrowserSessionImportResult>
   onDisableSite(): void
@@ -80,6 +86,7 @@ export class ExtensionUi {
       preparation: null,
       uploadError: null,
       retryStart: false,
+      discoveryStopped: false,
       terms: [],
       imported: null,
     }
@@ -182,18 +189,25 @@ export class ExtensionUi {
         return
       case 'preference':
         this.state.preference = { ...this.state.preference, ...payload }
-        this.callbacks.onPreferenceChange(payload)
+        await this.callbacks.onPreferenceChange(payload)
         return this.publish()
       case 'discover':
-        this.callbacks.onDiscover(payload)
+        return this.callbacks.onDiscover(payload)
+      case 'discover-saved':
+        this.callbacks.onDiscoverSaved()
         return
       case 'confirm':
-        this.callbacks.onConfirm(payload)
-        return
+        return this.callbacks.onConfirm(payload)
+      case 'import-selected':
+        return this.callbacks.onImportSelected(payload.ids, payload.command)
+      case 'prepare-download':
+        return this.callbacks.onPrepareDownload(payload)
+      case 'finish-download':
+        return this.callbacks.onFinishDownload(payload)
       case 'back':
         this.state.view = 'idle'
         this.state.candidates = []
-        return this.publish()
+        return this.setStatus('准备重新识别', '选择识别方式，或主动使用上次保存的规则。')
       case 'toggle-global':
         this.state.translated = await this.callbacks.onToggleGlobal()
         this.publish()
@@ -208,23 +222,22 @@ export class ExtensionUi {
         return translated
       }
       case 'retry-page':
-        this.callbacks.onRetryPage(payload)
-        return
+        return this.callbacks.onRetryPage(payload)
       case 'retry-uploads':
-        this.callbacks.onRetryUploads()
-        return
+        return this.callbacks.onRetryUploads()
       case 'retry-start':
-        this.callbacks.onRetryStart()
-        return
+        return this.callbacks.onRetryStart()
       case 'restart':
-        this.callbacks.onRestart()
-        return
+        return this.callbacks.onRestart()
+      case 'reselect':
+        return this.callbacks.onReselect()
+      case 'resume-discovery':
+        return this.callbacks.onResumeDiscovery()
       case 'stop-discovery':
         this.callbacks.onStopDiscovery()
         return
       case 'cancel':
-        this.callbacks.onCancel()
-        return
+        return this.callbacks.onCancel()
       case 'books':
         return this.callbacks.onLoadLibraryBooks()
       case 'import': {
@@ -375,10 +388,26 @@ export class ExtensionUi {
     this.setStatus(
       candidates.length ? `找到 ${candidates.length} 张图片` : '未找到漫画图片',
       candidates.length
-        ? '取消勾选不需要的图片，然后开始翻译。'
+        ? '勾选需要的图片，可翻译、仅导入书架或下载原图。'
         : '可切换为点选同类图片，再试一次。',
       candidates.length ? 'ready' : 'error'
     )
+  }
+  setDiscoveryStopped(stopped: boolean): void {
+    this.state.discoveryStopped = stopped
+    this.publish()
+  }
+  resetSelection(candidates?: ImageCandidate[]): void {
+    this.state.session = null
+    this.state.imported = null
+    this.state.originalPageIds = []
+    this.state.translated = true
+    this.state.terms = []
+    this.state.retryStart = false
+    this.state.candidates = []
+    this.state.view = 'idle'
+    if (candidates) this.showCandidates(candidates)
+    else this.setStatus('准备重新识别', '选择识别方式，或主动使用上次保存的规则。')
   }
   showSession(session: BrowserSessionDto, originals: ReadonlySet<string> = new Set()): void {
     if (this.state.session?.id !== session.id) {

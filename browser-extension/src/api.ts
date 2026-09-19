@@ -35,6 +35,17 @@ export async function saberRequest<T>(
   settingsOverride?: ExtensionSettings,
   timeoutMs = API_REQUEST_TIMEOUT_MS
 ): Promise<T> {
+  const response = await saberResponse(path, init, settingsOverride, timeoutMs)
+  if (response.status === 204) return undefined as T
+  return (await response.json()) as T
+}
+
+export async function saberResponse(
+  path: string,
+  init: RequestInit = {},
+  settingsOverride?: ExtensionSettings,
+  timeoutMs = API_REQUEST_TIMEOUT_MS
+): Promise<Response> {
   const settings = settingsOverride ?? (await loadSettings())
   if (!settings.token) {
     throw new RequestFailure('not_paired', '请先粘贴 Saber 配对令牌', false)
@@ -89,6 +100,5 @@ export async function saberRequest<T>(
     }
     throw new RequestFailure(code, message, retryable)
   }
-  if (response.status === 204) return undefined as T
-  return (await response.json()) as T
+  return response
 }

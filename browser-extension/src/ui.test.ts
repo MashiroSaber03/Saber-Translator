@@ -7,7 +7,11 @@ import type { StudioState } from './studio/protocol'
 function callbacks(): UiCallbacks {
   return {
     onDiscover: vi.fn(),
+    onDiscoverSaved: vi.fn(),
     onConfirm: vi.fn(),
+    onImportSelected: vi.fn(),
+    onPrepareDownload: vi.fn(),
+    onFinishDownload: vi.fn(),
     onPreferenceChange: vi.fn(),
     onFabPositionChange: vi.fn(),
     onToggleGlobal: vi.fn().mockResolvedValue(true),
@@ -17,6 +21,8 @@ function callbacks(): UiCallbacks {
     onRetryStart: vi.fn(),
     onRestart: vi.fn(),
     onStopDiscovery: vi.fn(),
+    onResumeDiscovery: vi.fn(),
+    onReselect: vi.fn(),
     onCancel: vi.fn(),
     onLoadLibraryBooks: vi.fn().mockResolvedValue([]),
     onImport: vi.fn().mockResolvedValue({
@@ -78,6 +84,24 @@ async function send(action: string, payload?: unknown, overrides = {}) {
 function snapshot(): StudioState {
   return post.mock.calls.filter((call: any[]) => call[0].channel === 'saber:state').at(-1)![0].state
 }
+it('acknowledges asynchronous discovery only when it finishes', async () => {
+  let finish!: () => void
+  handlers.onDiscover = vi.fn(() => new Promise<void>(resolve => { finish = resolve }))
+  await send('discover', 'dom-agent')
+  expect(post.mock.calls.some(([data]: any[]) => data.channel === 'saber:response')).toBe(false)
+  finish()
+  await new Promise(resolve => setTimeout(resolve, 0))
+  expect(post.mock.calls.some(([data]: any[]) => data.channel === 'saber:response' && data.ok)).toBe(true)
+})
+it('returns to collected candidates with one update, without briefly clearing the selection', () => {
+  const candidates = [{ id: 'one', sourceUrl: 'https://example.test/one.png', width: 640, height: 960 }] as any
+  ui.showCandidates(candidates)
+  post.mockClear()
+  ui.resetSelection(candidates)
+  const states = post.mock.calls.filter(([data]: any[]) => data.channel === 'saber:state')
+  expect(states).toHaveLength(1)
+  expect(states[0]![0].state.candidates.map((candidate: any) => candidate.id)).toEqual(['one'])
+})
 it('keeps default edge positioning through resize without saving a new position', () => {
   for (const [width, height] of [[1600, 1000], [800, 600], [1600, 1000]]) {
     vi.stubGlobal('innerWidth', width)
@@ -128,6 +152,19 @@ it('rejects messages from webpage scripts, other frames and synthetic events', a
     { channel: 'saber:response', id: 1, ok: true, result: undefined },
     origin
   )
+})
+
+it('routes saved-rule discovery separately from selected-method discovery', async () => {
+  await send('discover', 'similar')
+  expect(handlers.onDiscover).toHaveBeenCalledWith('similar')
+  expect(handlers.onDiscoverSaved).not.toHaveBeenCalled()
+  await send('discover-saved')
+  expect(handlers.onDiscoverSaved).toHaveBeenCalledOnce()
+  expect(handlers.onDiscover).toHaveBeenCalledTimes(1)
+  ui.setStatus('找到 25 张图片', '上一次的结果')
+  await send('back')
+  expect(snapshot().view).toBe('idle')
+  expect(snapshot().notice.title).toBe('准备重新识别')
 })
 
 it('keeps progress, candidates and errors from reopening a closed window', async () => {

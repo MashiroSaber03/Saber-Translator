@@ -161,7 +161,7 @@ export type BackgroundRequest =
   | {
       type: 'import-session'
       sessionId: string
-      payload: BrowserSessionImportCommand
+      payload: BrowserSessionImportCommand & { originalsOnly?: boolean }
     }
   | { type: 'dom-detection'; payload: Record<string, unknown> }
 

@@ -6,6 +6,8 @@ from collections.abc import Mapping, Sequence
 from datetime import timedelta
 import hashlib
 import json
+import tempfile
+import zipfile
 from pathlib import Path
 import threading
 from typing import Any, BinaryIO
@@ -621,6 +623,29 @@ class BrowserSessionService:
             )
         ]
 
+    def original_archive(self, session_id: str) -> BinaryIO:
+        output = tempfile.TemporaryFile()
+        try:
+            with self._lock, self.engine.connect() as connection:
+                self._require_session(connection, session_id)
+                rows = list(connection.execute(select(browser_session_pages).where(
+                    browser_session_pages.c.session_id == session_id,
+                ).order_by(browser_session_pages.c.ordinal)).mappings())
+                if not rows:
+                    raise ValueError("请先选择并上传图片")
+                with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_STORED) as archive:
+                    for index, row in enumerate(rows, 1):
+                        asset = self.storage.get_record(str(row["source_asset_id"]))
+                        if asset is None:
+                            raise BrowserSessionNotFound("原图已失效，请重新选择图片")
+                        path = self.storage.resolve_relative_path(asset.relative_path)
+                        archive.write(path, f"{index:05}{path.suffix}")
+            output.seek(0)
+            return output
+        except BaseException:
+            output.close()
+            raise
+
     def import_to_library(
         self,
         session_id: str,
@@ -629,6 +654,7 @@ class BrowserSessionService:
         book_title: str | None,
         target_book_id: str | None,
         chapter_title: str,
+        originals_only: bool = False,
     ) -> dict[str, object]:
         if destination not in {"new", "existing"}:
             raise ValueError("destination must be new or existing")
@@ -648,6 +674,16 @@ class BrowserSessionService:
             "chapterTitle",
         )
         now = utcnow()
+        if originals_only:
+            with self._lock:
+                with self.engine.connect() as connection:
+                    session = self._require_session(connection, session_id)
+                    if connection.execute(select(jobs.c.id).where(
+                        jobs.c.chapter_id == session["chapter_id"],
+                    ).limit(1)).scalar_one_or_none():
+                        raise BrowserSessionConflict("仅导入书架不能用于已启动翻译的会话")
+                if not self._materialize_pending(session_id):
+                    raise BrowserSessionConflict("图片尚未准备完成，请重试")
         with self._lock, immediate_transaction(self.engine) as connection:
             session = self._require_session(connection, session_id)
             chapter_id = str(session["chapter_id"])
@@ -666,10 +702,12 @@ class BrowserSessionService:
                 raise BrowserSessionConflict(
                     "at least one imported page is required before adding to the library"
                 )
-            if any(
+            if originals_only and any(page["pageId"] is None for page in page_dtos):
+                raise BrowserSessionConflict("部分图片未能准备完成，请重新选择后导入")
+            if (not originals_only and any(
                 page["state"] in {"queued", "translating"}
                 for page in page_dtos
-            ) or self._has_active_translation_job(
+            )) or self._has_active_translation_job(
                 connection,
                 chapter_id=chapter_id,
             ):

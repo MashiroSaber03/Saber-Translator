@@ -12,6 +12,8 @@ import type {
   BrowserSessionDto,
   BrowserSessionImportCommand,
   BrowserSessionImportResult,
+  DetectionMethod,
+  DomainPreference,
 } from './types'
 
 function uiState(ui: ExtensionUi): StudioState { return (ui as unknown as { state: StudioState }).state }
@@ -40,6 +42,13 @@ interface TestController {
   scheduleLazyScan(): void
   discoverLazyImages(): Promise<void>
   session: BrowserSessionDto | null
+  discover(method: DetectionMethod): Promise<void>
+  discoverSavedRule(): void
+  updatePreference(patch: Partial<DomainPreference>): Promise<void>
+  deleteAdaptation(): Promise<void>
+  reselect(): Promise<void>
+  stopDiscovery(): void
+  resumeDiscovery(): Promise<void>
 }
 
 function session(id: string, pages: BrowserPageDto[] = []): BrowserSessionDto {
@@ -90,6 +99,7 @@ function defaultResponse(request: { type: string; value?: string }) {
 }
 
 beforeEach(() => {
+  vi.stubGlobal('CSS', { escape: (value: string) => value })
   document.documentElement.replaceChildren(document.createElement('body'))
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
     drawImage: vi.fn(),
@@ -111,6 +121,78 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
+})
+
+describe('explicit discovery choices', () => {
+  const rule = { selector: 'img.old-rule', kind: 'image' as const, confirmedAt: 1 }
+  async function setup() {
+    vi.stubGlobal('CSS', { escape: (value: string) => value })
+    sendMessage.mockImplementation((request: { type: string }) => {
+      if (request.type === 'get-preference') return successful({ ...DEFAULT_PREFERENCE, method: 'similar', rule })
+      if (request.type === 'set-preference') return successful({})
+      if (request.type === 'dom-detection') return successful({ nodeIds: [], selector: '' })
+      return defaultResponse(request)
+    })
+    for (const className of ['old-rule', 'new-choice']) {
+      const image = document.createElement('img')
+      image.className = className
+      image.src = `https://cdn.example.test/${className}.png`
+      image.width = 600
+      image.height = 900
+      document.body.append(image)
+    }
+    const controller = new PageController() as unknown as TestController
+    await controller.initialize()
+    return controller
+  }
+  it('always waits for an explicit image pick despite a matching saved rule', async () => {
+    const controller = await setup()
+    await controller.discover('similar')
+    expect(controller.ui.pickingMask().dataset.open).toBe('true')
+    expect(uiState(controller.ui).candidates).toHaveLength(0)
+    const image = document.querySelector('img.new-choice')!
+    Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: () => image })
+    controller.ui.pickingMask().dispatchEvent(new MouseEvent('click', { clientX: 10, clientY: 10 }))
+    expect(uiState(controller.ui).candidates.map(item => item.sourceUrl)).toEqual([image.getAttribute('src')])
+    expect(uiState(controller.ui).preference.rule).toEqual(rule)
+    expect(sendMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'create-session' }))
+    await controller.dispose()
+  })
+  it('runs generic scanning and DOM Agent independently of saved rules', async () => {
+    const controller = await setup()
+    await controller.discover('adapter')
+    expect(uiState(controller.ui).candidates).toHaveLength(2)
+    await controller.discover('dom-agent')
+    expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'dom-detection' }))
+    expect(uiState(controller.ui).candidates).toHaveLength(0)
+    await controller.dispose()
+  })
+  it('only uses saved rules through the separate action and never falls back on failure', async () => {
+    const controller = await setup()
+    controller.discoverSavedRule()
+    expect(uiState(controller.ui).candidates).toHaveLength(1)
+    document.querySelector('img.old-rule')!.remove()
+    const picker = vi.spyOn(controller.ui, 'startPicking')
+    controller.discoverSavedRule()
+    expect(uiState(controller.ui).notice.title).toBe('上次规则未找到图片')
+    expect(picker).not.toHaveBeenCalled()
+    expect(sendMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'dom-detection' }))
+    await controller.dispose()
+  })
+  it('preserves saved rules when switching methods or cancelling, and deletes without scanning', async () => {
+    const controller = await setup()
+    await controller.updatePreference({ method: 'dom-agent' })
+    expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ preference: { method: 'dom-agent' } }))
+    await controller.discover('similar')
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    expect(controller.ui.pickingMask().dataset.open).toBe('false')
+    expect(uiState(controller.ui).preference.rule).toEqual(rule)
+    const discover = vi.spyOn(controller, 'discover')
+    await controller.deleteAdaptation()
+    expect(uiState(controller.ui).preference.rule).toBeUndefined()
+    expect(discover).not.toHaveBeenCalled()
+    await controller.dispose()
+  })
 })
 
 describe('overlapping page operations', () => {
@@ -468,7 +550,7 @@ describe('page task lifecycle', () => {
     await controller.dispose()
   })
 
-  it('can start a new task immediately after cancelling in-flight uploads', async () => {
+  it('can reselect and start a new task after cancelling in-flight uploads', async () => {
     const upload = deferred<{ ok: false; error: { code: string; message: string; retryable: boolean } }>()
     let creates = 0
     let uploads = 0
@@ -491,6 +573,7 @@ describe('page task lifecycle', () => {
     const previous = controller.translateContextImage(image.src)
     await vi.waitFor(() => expect(uploads).toBe(1))
     await controller.cancel()
+    await controller.reselect()
     await controller.translateContextImage(image.src)
     expect(creates).toBe(2)
     expect(uploads).toBe(2)

@@ -5,6 +5,7 @@ from datetime import datetime, timezone, timedelta
 import hashlib
 from io import BytesIO
 import json
+import zipfile
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
@@ -130,6 +131,52 @@ def _create_session(client):
             "autoTermsEnabled": True,
         },
     )
+
+
+@pytest.mark.parametrize("destination", ["new", "existing"])
+def test_selected_originals_download_and_import_without_translation(browser_platform, destination):
+    _data_root, engine, app = browser_platform
+    client = app.test_client()
+    session = _create_session(client).get_json()
+    route = f"/api/v2/browser-extension/sessions/{session['id']}"
+    images = {}
+    for ordinal, color in [(2, "red"), (1, "blue")]:
+        output = BytesIO()
+        Image.new("RGB", (640, 960), color).save(output, format="PNG")
+        images[ordinal] = output.getvalue()
+        response = client.post(route + "/pages", headers=HEADERS, data={
+            "clientPageKey": f"original-{ordinal}", "ordinal": str(ordinal),
+            "logicalPath": f"{ordinal}.png", "file": (BytesIO(images[ordinal]), "page.png"),
+        }, content_type="multipart/form-data")
+        assert response.status_code == 201
+    assert client.get(route + "/originals.zip").status_code == 401
+    archive = client.get(route + "/originals.zip", headers=HEADERS)
+    assert archive.status_code == 200
+    assert archive.mimetype == "application/zip"
+    with zipfile.ZipFile(BytesIO(archive.data)) as bundle:
+        assert bundle.namelist() == ["00001.png", "00002.png"]
+        assert bundle.read("00001.png") == images[1]
+        assert bundle.read("00002.png") == images[2]
+    archive.close()
+    command = {"destination": destination, "chapterTitle": "Chapter", "originalsOnly": True}
+    if destination == "new":
+        command["bookTitle"] = "Originals only"
+        target_id = session["bookId"]
+    else:
+        target_id = ContentRepository(engine).create_book(title="Existing originals")["id"]
+        command["targetBookId"] = target_id
+    imported = client.post(route + "/import", headers=HEADERS, json=command)
+    assert imported.status_code == 200, imported.get_json()
+    assert imported.get_json()["importedPages"] == 2
+    with engine.connect() as connection:
+        assert connection.execute(select(func.count()).select_from(jobs)).scalar_one() == 0
+        assert connection.execute(select(func.count()).select_from(pages).where(
+            pages.c.chapter_id == session["chapterId"],
+        )).scalar_one() == 2
+        assert connection.execute(select(books.c.kind).where(
+            books.c.id == target_id,
+        )).scalar_one() == "library"
+    assert client.get(route, headers=HEADERS).status_code == 404
 
 
 @pytest.fixture()

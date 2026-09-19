@@ -4028,6 +4028,20 @@ paths:
         "404": {$ref: "#/components/responses/NotFound"}
         "409": {$ref: "#/components/responses/Conflict"}
         "422": {$ref: "#/components/responses/ValidationError"}
+  /browser-extension/sessions/{session_id}/originals.zip:
+    get:
+      tags: [browser-extension]
+      operationId: downloadBrowserSessionOriginals
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: Original image files ordered and numbered by page, without translation.
+          content:
+            application/zip:
+              schema: {type: string, format: binary}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
   /browser-extension/dom-detection:
     post:
       tags: [browser-extension]
@@ -9796,6 +9810,7 @@ components:
         bookTitle: {type: string, minLength: 1, maxLength: 500}
         targetBookId: {$ref: "#/components/schemas/Uuid"}
         chapterTitle: {type: string, minLength: 1, maxLength: 500}
+        originalsOnly: {type: boolean, default: false, description: Prepare uploaded originals and import without starting translation.}
     BrowserSessionImportResult:
       type: object
       additionalProperties: false

@@ -1,12 +1,12 @@
 {
   "name": "saber-translator-browser-extension",
   "private": true,
-  "version": "1.1.2",
+  "version": "1.1.3",
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
     "typecheck": "vue-tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run src",
     "package": "npm run build && node scripts/package.mjs"
   },
   "devDependencies": {

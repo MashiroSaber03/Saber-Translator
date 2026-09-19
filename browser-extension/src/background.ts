@@ -304,6 +304,19 @@ interface LivePage { pageUrl: string; documentId?: string; sessionId?: string; r
 
 async function discard(sessionId: string): Promise<void> {
   await saberRequest(`/sessions/${encodeURIComponent(sessionId)}/discard`, { method: 'POST' })
+  await detachSession(sessionId)
+}
+
+async function detachSession(sessionId: string): Promise<void> {
+  await serializeStorageWrite(async () => {
+    const values = await chrome.storage.session.get(null)
+    for (const [key, page] of Object.entries(values)) {
+      if (key.startsWith(ACTIVE_SESSION_KEY_PREFIX) && (page as LivePage).sessionId === sessionId) {
+        const { sessionId: _id, ...live } = page as LivePage
+        await chrome.storage.session.set({ [key]: live })
+      }
+    }
+  })
 }
 
 async function closeTabPage(tabId: number, pageUrl?: string, documentId?: string): Promise<void> {
@@ -503,15 +516,7 @@ async function handleRequest(
       `/sessions/${encodeURIComponent(request.sessionId)}/import`,
       { method: 'POST', body: JSON.stringify(request.payload) },
     )
-    await serializeStorageWrite(async () => {
-      const values = await chrome.storage.session.get(null)
-      for (const [key, page] of Object.entries(values)) {
-        if (key.startsWith(ACTIVE_SESSION_KEY_PREFIX) && (page as LivePage).sessionId === request.sessionId) {
-          const { sessionId: _id, ...live } = page as LivePage
-          await chrome.storage.session.set({ [key]: live })
-        }
-      }
-    })
+    await detachSession(request.sessionId)
     return result
   }
   if (request.type === 'dom-detection') {

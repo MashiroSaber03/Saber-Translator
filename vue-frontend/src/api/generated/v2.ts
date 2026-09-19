@@ -2909,6 +2909,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/browser-extension/sessions/{session_id}/originals.zip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["downloadBrowserSessionOriginals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/browser-extension/dom-detection": {
         parameters: {
             query?: never;
@@ -5870,6 +5886,11 @@ export interface components {
             bookTitle?: string;
             targetBookId?: components["schemas"]["Uuid"];
             chapterTitle: string;
+            /**
+             * @description Prepare uploaded originals and import without starting translation.
+             * @default false
+             */
+            originalsOnly: boolean;
         };
         BrowserSessionImportResult: {
             /** @enum {string} */
@@ -12020,6 +12041,30 @@ export interface operations {
             };
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    downloadBrowserSessionOriginals: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: components["parameters"]["SessionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Original image files ordered and numbered by page, without translation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/zip": string;
+                };
+            };
+            404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationError"];
         };
     };
