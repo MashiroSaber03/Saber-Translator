@@ -940,6 +940,9 @@ def _paste_with_alpha(canvas: Image.Image, overlay: Image.Image, x: int, y: int)
     """
     将带透明通道的图像正确粘贴到画布上
     """
+    if isinstance(canvas, _BubbleTextLayer):
+        canvas.add_image(overlay, (x, y), composite=True)
+        return
     converted = overlay if overlay.mode == 'RGBA' else overlay.convert('RGBA')
     try:
         # 获取画布尺寸
@@ -1669,17 +1672,75 @@ def _draw_bubble_text_pass(
     )
 
 
+class _BubbleTextLayer:
+    """记录一次排版的绘制操作，按实际边界创建图层，不以气泡框裁剪。"""
+
+    mode = "RGBA"
+
+    def __init__(self):
+        self._image = self
+        self.operations = []
+        self.bounds = None
+
+    def include(self, box):
+        if self.bounds is None:
+            self.bounds = box
+        else:
+            left, top, right, bottom = self.bounds
+            self.bounds = (min(left, box[0]), min(top, box[1]),
+                           max(right, box[2]), max(bottom, box[3]))
+
+    def text(self, xy, text, **params):
+        box = params["font"].getbbox(text, stroke_width=params.get("stroke_width", 0))
+        # 保留小数坐标的栅格化余量。
+        self.include((math.floor(xy[0] + box[0]) - 1,
+                      math.floor(xy[1] + box[1]) - 1,
+                      math.ceil(xy[0] + box[2]) + 1,
+                      math.ceil(xy[1] + box[3]) + 1))
+        self.operations.append(("text", xy, text, params))
+
+    def add_image(self, image, xy, *, composite):
+        self.include((xy[0], xy[1], xy[0] + image.width, xy[1] + image.height))
+        # 排版函数会释放临时字符图片，记录保留自己的副本。
+        self.operations.append(("image", xy, image.copy(), composite))
+
+    def paste(self, image, xy, mask=None):
+        self.add_image(image, xy, composite=False)
+
+    def render(self):
+        left, top, right, bottom = self.bounds or (0, 0, 1, 1)
+        layer = Image.new("RGBA", (right - left, bottom - top), (0, 0, 0, 0))
+        try:
+            draw = ImageDraw.Draw(layer)
+            for kind, xy, content, options in self.operations:
+                position = (xy[0] - left, xy[1] - top)
+                if kind == "text":
+                    draw.text(position, content, **options)
+                elif options:
+                    _paste_with_alpha(layer, content, *position)
+                else:
+                    layer.paste(content, position, content)
+            return layer, (left, top)
+        except Exception:
+            layer.close()
+            raise
+
+    def close(self):
+        for kind, _xy, content, _options in self.operations:
+            if kind == "image":
+                content.close()
+
+
 def _render_bubble_text_layer(
     text: str,
     font: ImageFont.FreeTypeFont,
     state: "BubbleState",
     *,
     bubble_index: int,
-    layer_size: tuple[int, int],
     text_origin: tuple[float, float],
     max_text_width: int,
     max_text_height: int,
-) -> Image.Image:
+) -> tuple[Image.Image, tuple[int, int]]:
     """先绘制整个气泡的描边层，再绘制整个气泡的正文层。
 
     排版函数为了处理竖排标点和字体回退，仍需逐字符定位。如果每个字符都在
@@ -1688,9 +1749,8 @@ def _render_bubble_text_layer(
     描边与正文图层。
     """
 
-    layer = Image.new("RGBA", layer_size, (0, 0, 0, 0))
+    draw = _BubbleTextLayer()
     try:
-        draw = ImageDraw.Draw(layer)
         x, y = text_origin
         stroke_active = state.stroke_enabled and state.stroke_width > 0
         if stroke_active:
@@ -1720,10 +1780,30 @@ def _render_bubble_text_layer(
             fill=state.text_color,
             stroke_width=0,
         )
-        return layer
-    except Exception:
-        layer.close()
-        raise
+        return draw.render()
+    finally:
+        draw.close()
+
+
+def _rotate_bubble_layer(layer, origin, center, angle):
+    """围绕气泡中心旋转实际绘制边界，输出画布覆盖所有旋转后的像素。"""
+    radians = math.radians(angle)
+    cosine, sine = math.cos(radians), math.sin(radians)
+    cx, cy = center
+    corners = []
+    for x, y in ((0, 0), (layer.width, 0), (0, layer.height), layer.size):
+        dx, dy = origin[0] + x - cx, origin[1] + y - cy
+        corners.append((cx + cosine * dx - sine * dy,
+                        cy + sine * dx + cosine * dy))
+    left = math.floor(min(x for x, _ in corners)) - 2
+    top = math.floor(min(y for _, y in corners)) - 2
+    right = math.ceil(max(x for x, _ in corners)) + 2
+    bottom = math.ceil(max(y for _, y in corners)) + 2
+    # Pillow 使用从目标像素到源像素的逆变换。
+    matrix = (cosine, sine, cx + cosine * (left - cx) + sine * (top - cy) - origin[0],
+              -sine, cosine, cy - sine * (left - cx) + cosine * (top - cy) - origin[1])
+    return layer.transform((right - left, bottom - top), Image.Transform.AFFINE,
+                           matrix, resample=Image.Resampling.BICUBIC), (left, top)
 
 
 def render_bubbles_unified(
@@ -1775,74 +1855,27 @@ def render_bubbles_unified(
         max_text_height = bubble_height
         
         try:
-            if state.rotation_angle != 0:
-                # === 旋转渲染：使用外接圆方案 ===
-                diagonal = int(math.ceil(math.sqrt(bubble_width**2 + bubble_height**2)))
-                stroke_active = state.stroke_enabled and state.stroke_width > 0
-                padding = max(10, int(state.stroke_width * 2) if stroke_active else 0)
-                temp_size = diagonal + padding * 2
-                temp_offset_x = (temp_size - bubble_width) // 2
-                temp_offset_y = (temp_size - bubble_height) // 2
-                temp_img = _render_bubble_text_layer(
+            if state.rotation_angle != 0 or (state.stroke_enabled and state.stroke_width > 0):
+                layer, origin = _render_bubble_text_layer(
                     text,
                     font,
                     state,
                     bubble_index=i,
-                    layer_size=(temp_size, temp_size),
-                    text_origin=(temp_offset_x, temp_offset_y),
+                    text_origin=(x1 + offset_x, y1 + offset_y),
                     max_text_width=max_text_width,
                     max_text_height=max_text_height,
                 )
-                rotated_img = None
+                rotated = None
                 try:
-                    temp_center = temp_size // 2
-                    rotated_img = temp_img.rotate(
-                        -state.rotation_angle,
-                        resample=Image.Resampling.BICUBIC,
-                        center=(temp_center, temp_center),
-                        expand=False
-                    )
-
-                    bubble_center_x = (x1 + x2) // 2
-                    bubble_center_y = (y1 + y2) // 2
-                    paste_x = int(round(bubble_center_x - temp_center + offset_x))
-                    paste_y = int(round(bubble_center_y - temp_center + offset_y))
-                    image.paste(rotated_img, (paste_x, paste_y), rotated_img)
+                    if state.rotation_angle != 0:
+                        rotated, origin = _rotate_bubble_layer(
+                            layer, origin,
+                            ((x1 + x2) / 2 + offset_x, (y1 + y2) / 2 + offset_y),
+                            state.rotation_angle,
+                        )
+                    _paste_with_alpha(image, rotated if rotated is not None else layer, *origin)
                 finally:
-                    _close_images(rotated_img, temp_img)
-            elif state.stroke_enabled and state.stroke_width > 0:
-                # 描边气泡先在独立图层上完成整段描边，再统一覆盖整段正文。
-                # 整数位移通过粘贴位置实现，小数位移保留在 Pillow 绘制坐标中。
-                padding = max(10, int(state.stroke_width * 2))
-                integer_offset_x = math.floor(offset_x)
-                integer_offset_y = math.floor(offset_y)
-                fractional_offset_x = offset_x - integer_offset_x
-                fractional_offset_y = offset_y - integer_offset_y
-                layer = _render_bubble_text_layer(
-                    text,
-                    font,
-                    state,
-                    bubble_index=i,
-                    layer_size=(
-                        bubble_width + padding * 2,
-                        bubble_height + padding * 2,
-                    ),
-                    text_origin=(
-                        padding + fractional_offset_x,
-                        padding + fractional_offset_y,
-                    ),
-                    max_text_width=max_text_width,
-                    max_text_height=max_text_height,
-                )
-                try:
-                    _paste_with_alpha(
-                        image,
-                        layer,
-                        x1 - padding + integer_offset_x,
-                        y1 - padding + integer_offset_y,
-                    )
-                finally:
-                    layer.close()
+                    _close_images(rotated, layer)
             else:
                 # === 无旋转：直接绘制 ===
                 draw_x = x1 + offset_x

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
 import pytest
 
 from src.core.config_models import BubbleState
-from src.core.rendering import render_bubbles_unified
+from src.core.rendering import _draw_bubble_text_pass, get_font, render_bubbles_unified
 from src.shared import constants
 
 
@@ -149,3 +149,90 @@ def test_zero_width_stroke_keeps_the_fill_only_rendering(text_direction: str) ->
     finally:
         disabled.close()
         zero_width.close()
+
+
+@pytest.mark.parametrize("rotation_angle", [0, 18, -35, 90])
+@pytest.mark.parametrize("stroke_width", [0, 0.5, 6])
+@pytest.mark.parametrize("alignment", ["start", "center", "end"])
+@pytest.mark.parametrize("direction,text", [
+    ("horizontal", "测试测试"),
+    ("vertical", "测试测试"),
+    ("vertical", "<H>AB</H>……⁉ー测试"),
+])
+def test_overflow_matches_unclipped_full_page_render(direction, text, stroke_width, rotation_angle, alignment):
+    """整页直接绘制作为参照，覆盖框外正文、描边与特殊字符贴图。"""
+    state = BubbleState(
+        translated_text=text, coords=(440, 440, 560, 560), font_size=80,
+        font_family=constants.DEFAULT_FONT_RELATIVE_PATH,
+        text_direction=direction, text_color="#000000",
+        stroke_enabled=stroke_width > 0, stroke_color="#FF0000",
+        stroke_width=stroke_width, rotation_angle=rotation_angle,
+        position_offset={"x": -13.25, "y": 7.75},
+        inline_align=alignment, block_align=alignment,
+    )
+    font = get_font(state.font_family, state.font_size)
+    direct = not stroke_width and not rotation_angle
+    with Image.new("RGB" if direct else "RGBA", (1000, 1000),
+                   "white" if direct else (0, 0, 0, 0)) as reference_layer:
+        draw = ImageDraw.Draw(reference_layer)
+        for fill, width in ((state.stroke_color, stroke_width), (state.text_color, 0)):
+            if fill == state.stroke_color and not stroke_width:
+                continue
+            _draw_bubble_text_pass(
+                draw, text, font, state, 426.75, 447.75, 120, 120,
+                bubble_index=0, fill=fill, stroke_width=width,
+            )
+        with reference_layer.rotate(
+            -rotation_angle, center=(486.75, 507.75),
+            resample=Image.Resampling.BICUBIC,
+        ) as rotated, Image.new("RGB", (1000, 1000), "white") as expected, \
+                Image.new("RGB", (1000, 1000), "white") as actual:
+            expected.paste(rotated, (0, 0), None if direct else rotated)
+            render_bubbles_unified(actual, [state])
+            expected_pixels = np.asarray(expected).astype(np.int16)
+            actual_pixels = np.asarray(actual).astype(np.int16)
+            ink = np.any(expected_pixels < 240, axis=2)
+            outside = ink.copy()
+            outside[437:578, 416:557] = False
+            assert outside.any(), "用例必须确实包含旧图层边界以外的文字"
+            # 仿射变换的浮点舍入允许少量抗锯齿差异，但不能丢失文字。
+            difference = np.abs(actual_pixels - expected_pixels)
+            assert difference[ink].mean() < 1
+            assert np.count_nonzero(np.any(difference > 16, axis=2)) < ink.sum() * 0.01
+
+
+@pytest.mark.parametrize("angle", [-30, 30, 90])
+@pytest.mark.parametrize("stroke_width", [0, 0.5])
+def test_rotation_preserves_text_that_enters_page_from_outside(angle, stroke_width):
+    """先完整旋转再裁到页面；不能提前丢掉原本位于页面外的文字。"""
+    state = BubbleState(
+        translated_text="<H>AB</H>……⁉ー测试", coords=(240, 240, 360, 360),
+        font_size=80, font_family=constants.DEFAULT_FONT_RELATIVE_PATH,
+        text_direction="vertical", text_color="#000000",
+        stroke_enabled=stroke_width > 0, stroke_color="#FF0000",
+        stroke_width=stroke_width, rotation_angle=angle,
+        inline_align="center", block_align="center",
+    )
+    font = get_font(state.font_family, state.font_size)
+    with Image.new("RGBA", (1200, 1200)) as reference:
+        draw = ImageDraw.Draw(reference)
+        passes = [(state.stroke_color, stroke_width)] if stroke_width else []
+        passes.append((state.text_color, 0))
+        for fill, width in passes:
+            _draw_bubble_text_pass(
+                draw, state.translated_text, font, state, 540, 540, 120, 120,
+                bubble_index=0, fill=fill, stroke_width=width,
+            )
+        assert reference.getbbox()[0] < 300  # 未旋转文字确实超出了最终页面。
+        with reference.rotate(-angle, resample=Image.Resampling.BICUBIC) as rotated, \
+                rotated.crop((300, 300, 900, 900)) as cropped, \
+                Image.new("RGB", (600, 600), "white") as expected, \
+                Image.new("RGB", (600, 600), "white") as actual:
+            expected.paste(cropped, (0, 0), cropped)
+            render_bubbles_unified(actual, [state])
+            expected_pixels = np.asarray(expected).astype(np.int16)
+            difference = np.abs(np.asarray(actual).astype(np.int16) - expected_pixels)
+            ink = np.any(expected_pixels < 240, axis=2)
+            assert ink.any()
+            assert difference[ink].mean() < 1
+            assert np.count_nonzero(np.any(difference > 16, axis=2)) < ink.sum() * 0.01
