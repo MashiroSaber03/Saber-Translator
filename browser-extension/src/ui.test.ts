@@ -58,6 +58,9 @@ beforeEach(async () => {
   })
   handlers = callbacks()
   ui = new ExtensionUi(handlers, DEFAULT_PREFERENCE, 'Example chapter', true)
+  expect(ui.shadow.querySelector('iframe')).toBeNull()
+  ui.setOpen(true)
+  ui.setOpen(false)
   const frameWindow = { postMessage: vi.fn() }
   Object.defineProperty(ui.shadow.querySelector('iframe'), 'contentWindow', {
     value: frameWindow,

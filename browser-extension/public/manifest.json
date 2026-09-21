@@ -3,7 +3,7 @@
   "name": "__MSG_extensionName__",
   "description": "__MSG_extensionDescription__",
   "default_locale": "zh_CN",
-  "version": "1.1.3",
+  "version": "1.1.4",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA70YATcvt3Udo48n4gVmPoLM28++uVoCclTOHDvp5zKwmDRFel+1cD/d7L/mQg1whQXr2H1JUl/Q33NUj7jbtHf/lsoUlkTPYAwUIW8EPH6Jdo7ifiRVjicV09BtPMz8gIDHt+Cmsk8awhj5iigpb/YAoEMZ625msTnv76DYyO+th4gmdX2wLrm9OwoQKWRKB0QTIQYfqVVx9Po7xDwFpYbop0Oz/Lk/3K5xOCgbsLK7fOUBHMjbCty43cZpK5V3gBIglB09eJV/jbbYTjLEWKo0+YBAlZOyH+LJy+2ttgLB5q4V91EVc7NKTowcHW4wi4ASoNudId6eO04Q/6AdY0wIDAQAB",
   "permissions": [
     "storage",

@@ -5,6 +5,7 @@ import PanelApp from './PanelApp.vue'
 import type { PluginSettingsApi } from '../../vue-frontend/src/types/browserExtensionSettings'
 
 const saveSettings = vi.hoisted(() => vi.fn(async () => true))
+vi.mock('./studio/StatusBar.vue', () => ({ default: { render: () => null } }))
 vi.mock('./studio/TranslationView.vue', () => ({
   default: { props: ['request'], setup: (props: any) => () => h('button', { onClick: () => props.request('confirm', ['page']).catch(() => {}) }, 'Test start') },
 }))

@@ -103,7 +103,7 @@ fieldset {
   display: flex;
   align-items: center;
   gap: 11px;
-  padding: 18px 20px 15px;
+  padding: 12px 16px 8px;
   user-select: none;
   touch-action: none;
   cursor: grab;
@@ -214,25 +214,30 @@ fieldset {
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
-  padding: 20px 20px 16px;
+  padding: 16px;
   scrollbar-width: thin;
   scrollbar-color: var(--s-line) transparent;
 }
-.studio-footer {
+.studio-action-area {
   flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 11px 14px;
-  color: var(--s-muted);
   background: var(--s-bg);
+  max-height: 40%;
+  overflow: auto;
+}
+.studio-action-area:empty { display: none; }
+.flow-actions {
+  padding: 12px 16px;
   border-top: 1px solid var(--s-line);
-  font-size: 10px;
 }
-.footer-separator {
-  opacity: 0.5;
-}
+.flow-actions .actions { margin: 0; }
+.flow-actions .footnote { margin: 6px 0 0; }
+.flow-actions .notice { margin: 8px 0 0; }
+.studio-status { padding: 0 16px 10px; flex-shrink: 0; font-size: 11px; }
+.status-line { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+.status-line > span { display: flex; align-items: center; gap: 6px; }
+.status-line .version-button { margin-left: auto; }
+.connection-detail, .version-detail { padding: 8px 0; border-top: 1px solid var(--s-line); color: var(--s-muted); overflow-wrap: anywhere; }
+.connection-detail p, .version-detail p { max-height: 64px; overflow: auto; }
 .status-dot {
   display: inline-block;
   width: 6px;
@@ -253,7 +258,7 @@ fieldset {
   gap: 10px;
 }
 .view-heading {
-  margin-bottom: 18px;
+  margin-bottom: 12px;
 }
 h2 {
   font-size: 17px;
@@ -296,10 +301,10 @@ h2 {
   align-items: flex-start;
   border: 1px solid var(--s-line);
   border-radius: 12px;
-  padding: 12px;
+  padding: 10px;
   background: var(--s-accent-soft);
   font-size: 12px;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
   overflow-wrap: anywhere;
 }
 .notice strong {
@@ -928,14 +933,6 @@ progress::-webkit-progress-value {
   font-size: 9px;
   padding: 4px;
   text-align: center;
-}
-.sticky-actions {
-  position: sticky;
-  bottom: -16px;
-  margin: 14px -3px -2px;
-  padding: 10px 3px;
-  background: var(--s-bg);
-  z-index: 3;
 }
 .selection-actions {
   display: grid;

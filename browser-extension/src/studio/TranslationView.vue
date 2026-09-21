@@ -12,6 +12,7 @@ import type {
 } from '../types'
 const props = defineProps<{
   state: StudioState
+  actionTarget?: HTMLElement
   request: <T = void>(action: StudioAction, payload?: unknown) => Promise<T>
 }>()
 const selected = ref<string[]>([])
@@ -179,6 +180,7 @@ async function downloadSelected() {
           "
       /></label>
     </section>
+    <Teleport :to="actionTarget ?? 'body'" :disabled="!actionTarget"><div class="flow-actions">
     <button
       class="button primary full"
       :disabled="busy"
@@ -187,7 +189,8 @@ async function downloadSelected() {
       <span aria-hidden="true">✦</span
       >{{ state.preference.method === 'similar' ? '选择一张漫画图片' : '识别漫画图片' }}
     </button>
-    <p class="footnote">确认图片后才开始翻译，译文显示在原位置</p>
+    <p class="footnote">确认图片后才开始翻译，退出页面清理临时数据</p>
+    </div></Teleport>
   </template>
   <template v-if="state.view === 'candidates'"
     ><div class="section-heading">
@@ -223,7 +226,7 @@ async function downloadSelected() {
         /><span class="candidate-meta">{{ item.width }} × {{ item.height }}</span></label
       >
     </div>
-    <div class="sticky-actions">
+    <Teleport :to="actionTarget ?? 'body'" :disabled="!actionTarget"><div class="flow-actions">
       <div class="selection-actions">
         <button class="button" :disabled="busy || !selected.length" @click="importIds = [...selected]; importOpen = true">仅导入书架</button>
         <button class="button" title="将勾选原图按网页顺序打包为 ZIP，需连接本机 Saber" :disabled="busy || !selected.length" @click="downloadSelected">{{ downloadStage || '下载原图（ZIP）' }}</button>
@@ -236,9 +239,9 @@ async function downloadSelected() {
         开始翻译 · {{ selected.length }} 张
       </button>
       </div>
-      <p v-if="downloadStage" class="notice" role="status">{{ downloadStage }} {{ state.notice.title }} {{ state.notice.message }}</p>
+      <p v-if="downloadStage" class="muted" role="status">{{ downloadStage }}</p>
       <p v-if="error" class="notice error" role="alert">{{ error }}</p>
-    </div></template
+    </div></Teleport></template
   >
   <template v-if="state.view === 'progress'">
     <div v-if="state.preparation" class="progress-card">
@@ -272,7 +275,7 @@ async function downloadSelected() {
         </div>
       </div>
       <progress :max="session.counts.total || 1" :value="session.counts.completed" />
-      <div class="actions">
+      <Teleport :to="actionTarget ?? 'body'" :disabled="!actionTarget"><div class="flow-actions"><div class="actions">
         <button
           class="button grow"
           :disabled="!session.counts.completed"
@@ -288,6 +291,7 @@ async function downloadSelected() {
           导入到书架
         </button>
       </div>
+      </div></Teleport>
       <div v-if="!state.imported" class="actions">
         <button class="text-button" :disabled="actionPending || session.state === 'cancelled'" @click="act(state.discoveryStopped ? 'resume-discovery' : 'stop-discovery')">{{ state.discoveryStopped ? '继续发现' : '停止继续发现' }}</button
         ><button

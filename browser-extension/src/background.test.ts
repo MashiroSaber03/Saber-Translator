@@ -25,7 +25,7 @@ beforeEach(async () => {
   vi.stubGlobal('chrome', {
     storage: { local: area(local), session: area(session) },
     runtime: {
-      id, onInstalled: event(),
+      id, onInstalled: event(), onUpdateAvailable: event(),
       onMessage: { addListener: (callback: typeof listener) => { listener = callback } },
     },
     alarms: { create: vi.fn(), onAlarm: event() },

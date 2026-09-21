@@ -9,6 +9,7 @@ const props = defineProps<{
   state: StudioState | null
   request: (action: StudioAction) => Promise<unknown>
 }>()
+const emit = defineEmits<{ saved: [] }>()
 const token = ref('')
 const port = ref(5000)
 const hostname = ref('')
@@ -25,12 +26,13 @@ async function send<T>(request: BackgroundRequest): Promise<T> {
 async function checkConnection(save = false) {
   busy.value = true
   failed.value = false
-  message.value = '正在连接本机 Saber…'
+  message.value = ''
   try {
     if (save) {
       await send({ type: 'save-connection', token: token.value, serverPort: port.value })
       token.value = token.value.trim()
       saved = { token: token.value, port: port.value }
+      emit('saved')
     } else {
       const connection = await send<{ token: string; serverPort: number; hostname: string }>({ type: 'get-connection-state' })
       hostname.value = connection.hostname
@@ -42,8 +44,7 @@ async function checkConnection(save = false) {
       port.value = connection.serverPort
       saved = { token: token.value, port: port.value }
     }
-    await send({ type: 'status' })
-    message.value = '已连接 Saber，本机接口可用'
+    if (save) message.value = '连接信息已保存，连接状态见顶部。'
   } catch (error) {
     failed.value = true
     message.value = (error as Error).message
@@ -80,8 +81,8 @@ async function toggleSite() {
 }
 </script>
 <template>
-  <div class="view-heading"><div><h2>连接与站点</h2><p>连接本机运行的 Saber-Translator</p></div></div>
-  <div class="notice" :class="{ error: failed }" role="status">{{ message }}</div>
+  <div class="view-heading"><h2>连接与站点</h2></div>
+  <div v-if="message" class="notice" :class="{ error: failed }" role="status">{{ message }}</div>
   <form class="setting-group" @submit.prevent="checkConnection(true)">
     <p class="muted">先在 GUI「概览」启动后端，再在「设置」中允许扩展连接并复制配对令牌。</p>
     <label class="field">配对令牌

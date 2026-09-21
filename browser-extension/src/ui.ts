@@ -102,8 +102,6 @@ export class ExtensionUi {
     this.fab.title = 'Saber 漫画翻译 · 拖动调整位置'
     this.panel.className = 'saber-panel'
     this.frame.title = 'Saber 漫画翻译'
-    this.frame.src = chrome.runtime.getURL('panel.html')
-    this.panel.append(this.frame)
     this.pickMask.className = 'saber-pick-mask'
     const tip = document.createElement('span')
     tip.textContent = '点击一张漫画图片，识别同类图片 · Esc 取消'
@@ -355,6 +353,10 @@ export class ExtensionUi {
     if (this.state.open) this.placePanelNearFab()
   }
   setOpen(open: boolean): void {
+    if (open && !this.frame.parentElement) {
+      this.frame.src = chrome.runtime.getURL('panel.html')
+      this.panel.append(this.frame)
+    }
     const opening = open && !this.state.open
     this.state.open = open
     this.panel.dataset.open = String(open)

@@ -4,12 +4,20 @@ import SettingsView from './studio/SettingsView.vue'
 import TasksView from './studio/TasksView.vue'
 import TranslationView from './studio/TranslationView.vue'
 import StudioIcon from './studio/StudioIcon.vue'
+import StatusBar from './studio/StatusBar.vue'
 import { usePageBridge } from './studio/pageBridge'
 import type { StudioAction, StudioTab } from './studio/protocol'
 import type { PluginSettingsApi } from '../../vue-frontend/src/types/browserExtensionSettings'
 const props = defineProps<{ api: PluginSettingsApi; needsConnection?: boolean }>()
 const { state, request: pageRequest, notify } = usePageBridge()
 const settingsEditor = ref<InstanceType<typeof SettingsView>>()
+const actionArea = ref<HTMLElement>()
+const statusBar = ref<InstanceType<typeof StatusBar>>()
+async function configureConnection() {
+  selectTab('settings')
+  await nextTick()
+  settingsEditor.value?.showConnection()
+}
 async function request<T = void>(action: StudioAction, payload?: unknown): Promise<T> {
   if (['confirm', 'retry-start', 'restart'].includes(action)) {
     if (settingsEditor.value && !(await settingsEditor.value.save())) {
@@ -100,6 +108,7 @@ onBeforeUnmount(() => {
         <StudioIcon name="close" />
       </button>
     </header>
+    <StatusBar ref="statusBar" :active="visible && (state?.open ?? true)" @configure="configureConnection" />
     <nav class="studio-nav" aria-label="插件功能" role="tablist">
       <button
         v-for="(item, index) in tabs"
@@ -128,7 +137,7 @@ onBeforeUnmount(() => {
           <h3>当前网站已停用</h3>
           <button class="button" @click="selectTab('settings')">前往配置重新启用</button>
         </div>
-        <TranslationView v-else-if="state" :state="state" :request="request" />
+        <TranslationView v-else-if="state" :state="state" :request="request" :action-target="actionArea" />
         <div v-else class="empty-state">
           <span class="empty-icon">✦</span>
           <h3>打开一页漫画</h3>
@@ -148,6 +157,7 @@ onBeforeUnmount(() => {
           :state="state"
           :request="request"
           :active="visible && (state?.open ?? true) && tab === 'settings'"
+          @connection-saved="statusBar?.checkConnection()"
         />
       </div>
       <div
@@ -160,9 +170,6 @@ onBeforeUnmount(() => {
         <TasksView :api="props.api" :active="tasksActive" />
       </div>
     </main>
-    <footer class="studio-footer">
-      本机 Saber 处理<span class="footer-separator">·</span
-      >页面退出后清理临时数据
-    </footer>
+    <footer ref="actionArea" v-show="tab === 'translate' && !state?.preference.disabled" class="studio-action-area" aria-label="当前流程操作" />
   </div>
 </template>

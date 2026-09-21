@@ -7,6 +7,7 @@ import ConnectionView from './ConnectionView.vue'
 import type { StudioAction, StudioState } from './protocol'
 import type { PluginSettingsApi } from '../../../vue-frontend/src/types/browserExtensionSettings'
 defineProps<{ api: PluginSettingsApi; active?: boolean; state: StudioState | null; request: (action: StudioAction) => Promise<unknown> }>()
+defineEmits<{ connectionSaved: [] }>()
 const section = ref('connection')
 const styleVisited = ref(false)
 const sharedVisited = ref(false)
@@ -24,7 +25,7 @@ async function save(): Promise<boolean> {
   }
   return true
 }
-defineExpose({ save })
+defineExpose({ save, showConnection: () => { section.value = 'connection' } })
 watch(section, value => {
   if (value === 'style') styleVisited.value = true
   else if (value !== 'connection') {
@@ -46,7 +47,7 @@ const options = [
     >配置分类<SelectControl v-model="section" :options="options" label="配置分类"
   /></label>
   <div v-show="section === 'connection'">
-    <ConnectionView :active="(active ?? true) && section === 'connection'" :state="state" :request="request" />
+    <ConnectionView :active="(active ?? true) && section === 'connection'" :state="state" :request="request" @saved="$emit('connectionSaved')" />
   </div>
   <div v-if="styleVisited" v-show="section === 'style'"><StyleSettingsView ref="styleEditor" :api="api" :active="(active ?? true) && section === 'style'" /></div>
   <div v-if="sharedVisited" v-show="section !== 'style' && section !== 'connection'" class="translator-settings">

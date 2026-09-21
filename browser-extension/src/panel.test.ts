@@ -49,6 +49,8 @@ it('edits only plugin text style and the optional DOM assistant, preserving draf
     bookSettings: [],
   }
   vi.stubGlobal('chrome', {
+    runtime: { getManifest: () => ({ version: '1.1.3' }), sendMessage: async () => ({ ok: true, data: {} }) },
+    management: { getSelf: async () => ({ installType: 'development' }) },
     storage: {
       onChanged: { addListener: vi.fn(), removeListener: vi.fn() },
       local: {

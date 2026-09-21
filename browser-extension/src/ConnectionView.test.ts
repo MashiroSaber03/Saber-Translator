@@ -33,14 +33,14 @@ async function reopen() {
   await nextTick()
 }
 it('refreshes an unedited connection form after another tab saves', async () => {
-  await vi.waitFor(() => expect(document.body.textContent).toContain('已连接 Saber'))
+  await vi.waitFor(() => expect(tokenInput().value).toBe(connection.token))
   connection = { ...connection, token: 'new-token-from-another-tab-with-32-characters', serverPort: 5100 }
   await reopen()
   await vi.waitFor(() => expect(tokenInput().value).toBe(connection.token))
   expect(portInput().value).toBe('5100')
 })
 it('retains an unsaved draft without claiming to have tested that draft', async () => {
-  await vi.waitFor(() => expect(document.body.textContent).toContain('已连接 Saber'))
+  await vi.waitFor(() => expect(tokenInput().value).toBe(connection.token))
   tokenInput().value = 'unsaved-token-with-at-least-32-characters'
   tokenInput().dispatchEvent(new Event('input', { bubbles: true }))
   connection.token = 'new-token-from-another-tab-with-32-characters'
@@ -50,14 +50,14 @@ it('retains an unsaved draft without claiming to have tested that draft', async 
   expect(tokenInput().value).toBe('unsaved-token-with-at-least-32-characters')
   expect(sendMessage).not.toHaveBeenCalledWith({ type: 'status' })
   document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
-  await vi.waitFor(() => expect(document.body.textContent).toContain('已连接 Saber'))
+  await vi.waitFor(() => expect(document.body.textContent).toContain('连接信息已保存'))
   connection.token = 'updated-again-after-the-draft-was-saved'
   await reopen()
   await vi.waitFor(() => expect(tokenInput().value).toBe(connection.token))
 })
 
 it('updates a visible clean form on a connection storage change', async () => {
-  await vi.waitFor(() => expect(document.body.textContent).toContain('已连接 Saber'))
+  await vi.waitFor(() => expect(tokenInput().value).toBe(connection.token))
   const previous = { ...connection }
   connection.token = 'a-token-updated-while-this-view-stays-open'
   const listener = vi.mocked(chrome.storage.onChanged.addListener).mock.calls[0]![0]

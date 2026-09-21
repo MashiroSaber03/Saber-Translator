@@ -1,4 +1,6 @@
 import { API_REQUEST_TIMEOUT_MS, RequestFailure, saberRequest, serverBase } from './api'
+import { registerUpdateNotifications } from './updates'
+
 import {
   loadSettings,
   preferenceFor,
@@ -18,6 +20,8 @@ import type {
   ResultImagePayload,
   UploadPageRequest,
 } from './types'
+
+registerUpdateNotifications()
 
 const CONTEXT_MENU_ID = 'saber-translate-image'
 const MAX_RESULT_BYTES = 45 * 1024 * 1024
