@@ -662,6 +662,10 @@ def run_desktop(args: object) -> int:
                     LauncherState.STOPPED, "数据转换完成，启动后端验证成功后自动清理备份",
                 ))
             controller.show()
+            if os.name == "nt":
+                # Startup can delay Explorer's first icon request. Publish it again
+                # once UI initialization has returned to the event loop.
+                QTimer.singleShot(0, lambda: window.setWindowIcon(native_icon))
         except Exception as error:
             # Roll back the installed candidate before displaying the startup failure.
             window.show_storage_preparation("启动失败，正在确认数据恢复状态…")
