@@ -1,249 +1,62 @@
-import { mount } from '@vue/test-utils'
+import { mount, enableAutoUnmount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { defineComponent } from 'vue'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ReaderCanvas from '@/components/reader/ReaderCanvas.vue'
-import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
-import UiButton from '@/components/ui/UiButton.vue'
-import UiSpinner from '@/components/ui/UiSpinner.vue'
-
-const pageImage = {
-  id: 'page-1',
-  chapterId: 'chapter-1',
-  ordinal: 1,
-  logicalSourcePath: 'page.png',
-  sourceRevision: 1,
-  documentRevision: 1,
-  renderedRevision: 1,
-  renderStatus: 'ready' as const,
-  detectionState: 'processed' as const,
-  sourceUrl: '/api/v2/assets/source',
-  thumbnailSourceUrl: '/api/v2/assets/thumb',
-  cleanUrl: null,
-  translatedUrl: '/api/v2/assets/translated',
-  width: 800,
-  height: 1200,
-}
-
-const VirtualPageStreamStub = defineComponent({
-  name: 'VirtualPageStream',
-  props: {
-    gap: { type: Number, default: 0 },
-    items: { type: Array, default: () => [] },
-    overscanScreens: { type: Number, default: 0 },
-  },
-  emits: ['visibleChange'],
-  template: '<div class="virtual-page-stream-stub" />',
-})
-
-function readScopedStyle(filePath: string): string {
-  const source = readFileSync(resolve(process.cwd(), filePath), 'utf8')
-  return source.match(/<style scoped>([\s\S]*)<\/style>/)?.[1] ?? ''
-}
-
-describe('ReaderCanvas', () => {
-  beforeEach(() => {
-    setActivePinia(createPinia())
-  })
-
-  it('passes only immutable current-page URLs into the virtual stream', async () => {
-    const wrapper = mount(ReaderCanvas, {
-      props: {
-        images: [pageImage],
-        viewMode: 'translated',
-        isLoading: false,
-      },
-      global: {
-        stubs: { VirtualPageStream: VirtualPageStreamStub },
-      },
+import ReaderImage from '@/components/reader/ReaderImage.vue'
+import VirtualPageStream from '@/components/virtual/VirtualPageStream.vue'
+import { DEFAULT_READER_SETTINGS } from '@/components/reader/readerSettings'
+import type { V2PageSummary } from '@/api/v2/content'
+enableAutoUnmount(afterEach)
+const image = { id: 'p1', chapterId: 'a', ordinal: 1, sourceUrl: '/source', translatedUrl: '/translated', width: 800, height: 1200 } as V2PageSummary
+beforeEach(() => setActivePinia(createPinia()))
+afterEach(() => vi.unstubAllGlobals())
+describe('reader canvas', () => {
+  it('restores long-page progress on mount and when changing its fit', async () => {
+    let resize = () => {}
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: () => void) { resize = callback }
+      observe() {}
+      disconnect() {}
     })
-
-    const stream = wrapper.getComponent(VirtualPageStreamStub)
-    expect(stream.props('overscanScreens')).toBe(2)
-    expect(stream.props('items')).toEqual([
-      expect.objectContaining({
-        id: 'page-1',
-        url: '/api/v2/assets/translated',
-        width: 800,
-        height: 1200,
-      }),
-    ])
-
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { callback(0); return 1 })
+    const settings = { ...DEFAULT_READER_SETTINGS, layout: 'single' as const, fits: { ...DEFAULT_READER_SETTINGS.fits, single: 'original' as const } }
+    const wrapper = mount(ReaderCanvas, { props: { images: [image], viewMode: 'original', isLoading: false, settings, position: { pageId: 'p1', index: 0, fraction: 0.25 } } })
+    await flushPromises()
+    const el = wrapper.get('.reader-canvas__paged').element as HTMLElement
+    expect(el.scrollTop).toBe(300)
+    Object.defineProperties(el, { clientWidth: { value: 400 }, clientHeight: { value: 300 } })
+    resize()
+    await wrapper.setProps({ settings: { ...settings, fits: { ...settings.fits, single: 'width' } } })
+    await flushPromises()
+    expect(el.scrollTop).toBe(150)
+  })
+  it('reuses the continuous stream for both axes and preserves page identity when changing image URLs', async () => {
+    const wrapper = mount(ReaderCanvas, { props: { images: [image], viewMode: 'translated', isLoading: false }, global: { stubs: { VirtualPageStream: true } } })
+    expect(wrapper.getComponent(VirtualPageStream).props('items')[0].url).toBe('/translated')
+    await wrapper.setProps({ viewMode: 'original', settings: { ...DEFAULT_READER_SETTINGS, layout: 'horizontal', direction: 'rtl' } })
+    expect(wrapper.getComponent(VirtualPageStream).props()).toMatchObject({ horizontal: true, direction: 'rtl' })
+    expect(wrapper.getComponent(VirtualPageStream).props('items')[0]).toMatchObject({ id: 'p1', url: '/source' })
+  })
+  it('shows only the current spread in the selected reading direction', async () => {
+    const wrapper = mount(ReaderCanvas, { props: { images: [image, { ...image, id: 'p2' }, { ...image, id: 'p3' }], viewMode: 'original', isLoading: false, settings: { ...DEFAULT_READER_SETTINGS, layout: 'double', direction: 'rtl' }, group: [0, 1] } })
+    expect(wrapper.findAll('figure').map(f => f.attributes('data-page-id'))).toEqual(['p2', 'p1'])
+    await wrapper.setProps({ group: [2] })
+    expect(wrapper.findAll('figure').map(f => f.attributes('data-page-id'))).toEqual(['p3'])
+  })
+  it('marks source fallbacks only when viewing translations', async () => {
+    const wrapper = mount(ReaderCanvas, { props: { images: [{ ...image, translatedUrl: null }], viewMode: 'translated', isLoading: false, settings: { ...DEFAULT_READER_SETTINGS, layout: 'single' } } })
+    expect(wrapper.getComponent(ReaderImage).props()).toMatchObject({ src: '/source', badge: '未翻译' })
     await wrapper.setProps({ viewMode: 'original' })
-    expect(wrapper.getComponent(VirtualPageStreamStub).props('items')).toEqual([
-      expect.objectContaining({ url: '/api/v2/assets/source' }),
-    ])
+    expect(wrapper.getComponent(ReaderImage).props('badge')).toBeUndefined()
   })
-
-  it('marks source fallbacks as untranslated only in translated mode', async () => {
-    const untranslatedPage = {
-      ...pageImage,
-      id: 'page-2',
-      translatedUrl: null,
-    }
-    const wrapper = mount(ReaderCanvas, {
-      props: {
-        images: [untranslatedPage],
-        viewMode: 'translated',
-        isLoading: false,
-      },
-      global: {
-        stubs: { VirtualPageStream: VirtualPageStreamStub },
-      },
-    })
-
-    expect(wrapper.getComponent(VirtualPageStreamStub).props('items')).toEqual([
-      expect.objectContaining({
-        badge: '未翻译',
-        url: '/api/v2/assets/source',
-      }),
-    ])
-
-    await wrapper.setProps({ viewMode: 'original' })
-    expect(wrapper.getComponent(VirtualPageStreamStub).props('items')).toEqual([
-      expect.objectContaining({ badge: undefined }),
-    ])
-  })
-
-  it('applies width, gap, and background settings to the actual virtual canvas', () => {
-    const wrapper = mount(ReaderCanvas, {
-      props: {
-        backgroundColor: '#ffffff',
-        imageGap: 24,
-        imageWidth: 75,
-        images: [pageImage],
-        viewMode: 'translated',
-        isLoading: false,
-      },
-      global: {
-        stubs: { VirtualPageStream: VirtualPageStreamStub },
-      },
-    })
-
-    const stream = wrapper.getComponent(VirtualPageStreamStub)
-    expect(stream.props('gap')).toBe(24)
-    expect(stream.attributes('style')).toContain('--reader-image-width: 75%')
-    expect(wrapper.get('.reader-canvas').attributes('style')).toContain(
-      '--reader-page-background: #ffffff'
-    )
-  })
-
-  it('renders loading feedback through the shared spinner primitive', () => {
-    const wrapper = mount(ReaderCanvas, {
-      props: {
-        images: [],
-        viewMode: 'translated',
-        isLoading: true,
-      },
-    })
-
-    const spinner = wrapper.getComponent(UiSpinner)
-    expect(spinner.props('label')).toBe('正在加载阅读内容')
-  })
-
-  it('renders the empty reader state through the inverse product empty-state pattern', () => {
-    const wrapper = mount(ReaderCanvas, {
-      props: {
-        images: [],
-        viewMode: 'translated',
-        isLoading: false,
-      },
-    })
-
-    const emptyState = wrapper.getComponent(ProductEmptyState)
-    expect(emptyState.props()).toMatchObject({
-      title: '暂无图片',
-      description: '该章节还没有图片，点击下方按钮开始翻译',
-      variant: 'inverse',
-    })
-    expect(emptyState.get('.product-empty-state__icon-text').text()).toBe('📖')
-    const translateButton = wrapper.getComponent(UiButton)
-    expect(translateButton.props('variant')).toBe('primary')
-    expect(translateButton.text()).toContain('进入翻译')
-    expect(wrapper.find('.reader-empty-state').exists()).toBe(false)
-    expect(wrapper.find('.empty-icon').exists()).toBe(false)
-  })
-
-  it('does not keep legacy DOM id hooks for reader canvas states', () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/components/reader/ReaderCanvas.vue'),
-      'utf8'
-    )
-
-    for (const legacyId of [
-      'id="loadingState"',
-      'id="emptyState"',
-      'id="goTranslateBtn"',
-      'id="imagesContainer"',
-    ]) {
-      expect(source).not.toContain(legacyId)
-    }
-  })
-
-  it('maps canvas style owner colors through semantic tokens', () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/components/reader/ReaderCanvas.vue'),
-      'utf8'
-    )
-    const style = readScopedStyle('src/components/reader/ReaderCanvas.vue')
-
-    expect(source).not.toContain('document.querySelectorAll')
-    expect(style).not.toMatch(/#[0-9A-Fa-f]{3,8}\b|rgba?\(/)
-    expect(style).toContain('--reader-canvas-page-background: var(--color-surface-inverse)')
-  })
-
-  it('keeps the reader canvas shell styles in a single owner block', () => {
-    const style = readScopedStyle('src/components/reader/ReaderCanvas.vue')
-    const readerMainBlocks = style.match(/^\.reader-canvas\s*\{/gm) ?? []
-
-    expect(readerMainBlocks).toHaveLength(1)
-  })
-
-  it('does not keep stale image-loading CSS after the spinner migration', () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/components/reader/ReaderCanvas.vue'),
-      'utf8'
-    )
-    const style = readScopedStyle('src/components/reader/ReaderCanvas.vue')
-
-    expect(source).not.toContain('class="reader-image loading"')
-    expect(style).not.toContain('.reader-image.loading')
-    expect(style).not.toContain('--reader-canvas-image-loading-background')
-  })
-
-  it('keeps reader canvas state hooks under the reader-canvas owner', () => {
-    const source = readFileSync(
-      resolve(process.cwd(), 'src/components/reader/ReaderCanvas.vue'),
-      'utf8'
-    )
-
-    for (const currentHook of [
-      'reader-canvas',
-      'reader-canvas__loading-state',
-      'reader-canvas__loading-text',
-      'reader-canvas__empty-state',
-      'reader-canvas__stream',
-    ]) {
-      expect(source).toContain(currentHook)
-    }
-
-    expect(source).toContain('VirtualPageStream')
-    expect(source).not.toContain('<img')
-
-    for (const oldHook of [
-      'reader-main',
-      'loading-state',
-      'loading-text',
-      'reader-canvas-empty-state',
-      'images-container',
-      'reader-image-wrapper',
-      'reader-image',
-      'image-index',
-    ]) {
-      expect(source).not.toMatch(new RegExp(`class="[^"]*\\b${oldHook}\\b`))
-      expect(source).not.toMatch(new RegExp(`\\.${oldHook}\\b`))
-    }
+  it('offers image retry without removing the page', async () => {
+    const wrapper = mount(ReaderImage, { props: { src: '/broken', alt: '第 1 页' } })
+    await wrapper.get('img').trigger('error')
+    expect(wrapper.text()).toContain('加载失败')
+    await wrapper.get('button').trigger('click')
+    expect(wrapper.get('img').attributes('src')).toBe('/broken')
+    await wrapper.get('img').trigger('error')
+    await wrapper.setProps({ src: '/replacement' })
+    expect(wrapper.get('img').attributes('src')).toBe('/replacement')
   })
 })

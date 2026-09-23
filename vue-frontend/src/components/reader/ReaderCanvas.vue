@@ -1,156 +1,372 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
 import UiSpinner from '@/components/ui/UiSpinner.vue'
 import VirtualPageStream from '@/components/virtual/VirtualPageStream.vue'
-import type { VirtualPageStreamItem } from '@/components/virtual/VirtualPageStream.vue'
 import type { V2PageSummary } from '@/api/v2/content'
-import { DEFAULT_READER_SETTINGS } from './readerSettings'
+import { DEFAULT_READER_SETTINGS, type ReaderSettings } from './readerSettings'
+import { fitScale, type ReaderPosition } from './readerLayout'
+import ReaderImage from './ReaderImage.vue'
 import { usePublicUserAccess } from '@/composables/usePublicUserAccess'
 
 const props = withDefaults(
   defineProps<{
-    backgroundColor?: string
-    imageGap?: number
-    imageWidth?: number
     images: V2PageSummary[]
     viewMode: 'original' | 'translated'
     isLoading: boolean
+    settings?: ReaderSettings
+    position?: ReaderPosition
+    navigationId?: number
+    group?: number[]
+    neighbours?: number[]
+    canPrev?: boolean
+    canNext?: boolean
   }>(),
-  {
-    backgroundColor: DEFAULT_READER_SETTINGS.bgColor,
-    imageGap: DEFAULT_READER_SETTINGS.imageGap,
-    imageWidth: DEFAULT_READER_SETTINGS.imageWidth,
-  }
+  { settings: () => ({ ...DEFAULT_READER_SETTINGS }), group: () => [0], neighbours: () => [] }
 )
-
 const emit = defineEmits<{
-  (e: 'pageChange', page: number): void
-  (e: 'goTranslate'): void
+  positionChange: [position: ReaderPosition]
+  goTranslate: []
+  toggleControls: []
+  navigate: [delta: number]
+  size: [id: string, width: number, height: number]
 }>()
 const publicAccess = usePublicUserAccess()
 const canTranslate = computed(() => publicAccess.featureAllowed('translation'))
-
-const showEmptyState = computed(() => !props.isLoading && props.images.length === 0)
-const showImagesContainer = computed(() => !props.isLoading && props.images.length > 0)
-const canvasStyle = computed(() => ({
-  '--reader-page-background': props.backgroundColor,
+const paged = computed(() => ['single', 'double'].includes(props.settings.layout))
+const pageButtons = computed(() => (['left', 'right'] as const).map(side => {
+  const delta = (side === 'left' ? -1 : 1) * (props.settings.direction === 'rtl' ? -1 : 1)
+  return { side, delta, label: delta < 0 ? '上一页' : '下一页', enabled: delta < 0 ? props.canPrev : props.canNext }
 }))
-const streamStyle = computed(() => ({
-  '--reader-image-width': `${props.imageWidth}%`,
-}))
-const pageIndexById = computed(() => new Map(props.images.map((page, index) => [page.id, index])))
-const streamItems = computed<VirtualPageStreamItem[]>(() =>
-  props.images.map((page, index) => {
-    return {
-      alt: `第 ${index + 1} 页`,
-      badge: props.viewMode === 'translated' && page.translatedUrl === null ? '未翻译' : undefined,
-      height: page.height ?? 1,
-      id: page.id,
-      label: `${index + 1} / ${props.images.length}`,
-      url:
-        props.viewMode === 'translated' ? (page.translatedUrl ?? page.sourceUrl) : page.sourceUrl,
-      width: page.width ?? 1,
-    }
-  })
+const fit = computed(() => props.settings.fits[props.settings.layout])
+const stage = ref<HTMLElement | null>(null)
+const viewport = ref({ width: 1, height: 1 })
+let observer: ResizeObserver | undefined
+let restoring = false
+let restoreSequence = 0
+const items = computed(() =>
+  props.images.map((page, index) => ({
+    id: page.id,
+    alt: `第 ${index + 1} 页`,
+    width: page.width || 800,
+    height: page.height || 1200,
+    badge: props.viewMode === 'translated' && !page.translatedUrl ? '未翻译' : undefined,
+    url: props.viewMode === 'translated' ? page.translatedUrl || page.sourceUrl : page.sourceUrl,
+  }))
 )
-
-function handleVisibleChange(ids: string[]): void {
-  if (ids.length === 0) return
-  const visibleIndexes = ids
-    .map(id => pageIndexById.value.get(id))
-    .filter((index): index is number => index !== undefined)
-  if (visibleIndexes.length === 0) return
-  emit('pageChange', Math.min(...visibleIndexes) + 1)
+const current = computed(() => {
+  const selected = props.group
+    .map(i => items.value[i])
+    .filter((p): p is NonNullable<typeof p> => Boolean(p))
+  return props.settings.direction === 'rtl' ? selected.reverse() : selected
+})
+const natural = computed(() => ({
+  width: current.value.reduce((sum, p) => sum + p.width, 0),
+  height: Math.max(1, ...current.value.map(p => p.height)),
+}))
+const scale = computed(() =>
+  fitScale(
+    natural.value.width,
+    natural.value.height,
+    viewport.value.width,
+    viewport.value.height,
+    fit.value
+  )
+)
+const spreadStyle = computed(() => ({
+  width: `${Math.max(viewport.value.width, natural.value.width * scale.value)}px`,
+  height: `${Math.max(viewport.value.height, natural.value.height * scale.value)}px`,
+}))
+let preloaded: HTMLImageElement[] = []
+watch(
+  () => [paged.value, props.neighbours.map(i => items.value[i]?.url).join('|')],
+  () => {
+    preloaded = []
+    if (paged.value)
+      for (const i of props.neighbours) {
+        const item = items.value[i]
+        if (item) {
+          const image = new Image()
+          image.src = item.url
+          preloaded.push(image)
+        }
+      }
+  },
+  { immediate: true }
+)
+function measure() {
+  if (stage.value)
+    viewport.value = { width: stage.value.clientWidth, height: stage.value.clientHeight }
 }
+watch(stage, el => {
+  observer?.disconnect()
+  if (el) {
+    measure()
+    observer?.observe(el)
+  }
+})
+watch(
+  [stage, () => props.navigationId, scale, () => props.settings.direction],
+  async () => {
+    const sequence = ++restoreSequence
+    const fraction = props.position?.fraction ?? 0
+    restoring = true
+    await nextTick()
+    if (sequence !== restoreSequence) return
+    if (stage.value && paged.value) {
+      stage.value.scrollTop = fraction * natural.value.height * scale.value
+      stage.value.scrollLeft = props.settings.direction === 'rtl' ? stage.value.scrollWidth : 0
+    }
+    requestAnimationFrame(() => {
+      if (sequence === restoreSequence) restoring = false
+    })
+  },
+  { flush: 'post' }
+)
+function scrollPage() {
+  if (restoring || !stage.value || !props.position) return
+  emit('positionChange', {
+    ...props.position,
+    fraction: Math.min(1, stage.value.scrollTop / Math.max(1, natural.value.height * scale.value)),
+  })
+}
+let pointer: { x: number; y: number; left: number; top: number; type: string } | null = null
+let moved = false
+let multiTouch = false
+function down(event: PointerEvent) {
+  if (pointer) {
+    multiTouch = true
+    return
+  }
+  if (event.button !== 0) return
+  multiTouch = false
+  moved = false
+  pointer = {
+    x: event.clientX,
+    y: event.clientY,
+    left: stage.value?.scrollLeft ?? 0,
+    top: stage.value?.scrollTop ?? 0,
+    type: event.pointerType,
+  }
+}
+function move(event: PointerEvent) {
+  if (!pointer) return
+  const dx = event.clientX - pointer.x,
+    dy = event.clientY - pointer.y
+  if (Math.hypot(dx, dy) > 8) moved = true
+  if (paged.value && pointer.type === 'mouse' && moved && stage.value) {
+    stage.value.scrollLeft = pointer.left - dx
+    stage.value.scrollTop = pointer.top - dy
+  }
+}
+function up(event: PointerEvent) {
+  if (!pointer) return
+  const dx = event.clientX - pointer.x,
+    dy = event.clientY - pointer.y
+  if (
+    paged.value &&
+    pointer.type === 'touch' &&
+    !multiTouch &&
+    stage.value &&
+    stage.value.scrollWidth <= stage.value.clientWidth + 1 &&
+    Math.abs(dx) > 50 &&
+    Math.abs(dx) > Math.abs(dy) * 1.5
+  ) {
+    emit('navigate', (dx < 0 ? 1 : -1) * (props.settings.direction === 'rtl' ? -1 : 1))
+    moved = true
+  }
+  pointer = null
+}
+function cancelPointer() {
+  pointer = null
+  moved = true
+}
+function click(event: MouseEvent) {
+  if (
+    moved ||
+    multiTouch ||
+    window.getSelection()?.toString() ||
+    (event.target as Element).closest('button,input,select,a')
+  )
+    return
+  const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  const x = (event.clientX - bounds.left) / bounds.width
+  if (!paged.value || (x >= 0.25 && x <= 0.75)) emit('toggleControls')
+  else emit('navigate', (x > 0.75 ? 1 : -1) * (props.settings.direction === 'rtl' ? -1 : 1))
+}
+onMounted(() => {
+  if (typeof ResizeObserver !== 'undefined') {
+    observer = new ResizeObserver(measure)
+    if (stage.value) observer.observe(stage.value)
+  }
+  measure()
+})
+onUnmounted(() => {
+  restoreSequence++
+  observer?.disconnect()
+  preloaded = []
+})
 </script>
 
 <template>
-  <main class="reader-canvas" :style="canvasStyle">
-    <div v-if="isLoading" class="reader-canvas__loading-state">
-      <UiSpinner size="48px" label="正在加载阅读内容" :decorative="false" />
-      <p class="reader-canvas__loading-text">正在加载...</p>
+  <main class="reader-canvas" :style="{ background: settings.bgColor }">
+    <div v-if="isLoading" class="reader-canvas__message">
+      <UiSpinner label="正在加载阅读内容" :decorative="false" />
     </div>
-
     <ProductEmptyState
-      v-else-if="showEmptyState"
-      class="reader-canvas__empty-state"
+      v-else-if="!images.length"
+      class="reader-canvas__message"
       title="暂无图片"
-      description="该章节还没有图片，点击下方按钮开始翻译"
+      description="该章节还没有图片"
       variant="inverse"
     >
-      <template #icon>📖</template>
       <template #actions>
-        <UiButton v-if="canTranslate" variant="primary" @click="emit('goTranslate')">
-          进入翻译
-        </UiButton>
+        <UiButton v-if="canTranslate" @click="emit('goTranslate')">进入翻译</UiButton>
       </template>
     </ProductEmptyState>
-
-    <VirtualPageStream
-      v-else-if="showImagesContainer"
-      class="reader-canvas__stream"
-      :style="streamStyle"
-      :items="streamItems"
-      :gap="imageGap"
-      :overscan-screens="2"
-      @visible-change="handleVisibleChange"
-    />
+    <div
+      v-else
+      class="reader-canvas__surface"
+      @pointerdown="down"
+      @pointermove="move"
+      @pointerup="up"
+      @pointercancel="cancelPointer"
+      @pointerleave="cancelPointer"
+      @click="click"
+    >
+      <div
+        v-if="paged"
+        ref="stage"
+        class="reader-canvas__paged"
+        :class="{ 'reader-canvas__paged--swipe': fit === 'screen' || fit === 'width' }"
+        @scroll.passive="scrollPage"
+      >
+        <div class="reader-canvas__spread" :style="spreadStyle">
+          <figure
+            v-for="item in current"
+            :key="item.id"
+            :data-page-id="item.id"
+            :style="{ width: `${item.width * scale}px`, height: `${item.height * scale}px` }"
+          >
+            <ReaderImage
+              :src="item.url"
+              :alt="item.alt"
+              :badge="item.badge"
+              @size="(w, h) => emit('size', item.id, w, h)"
+            />
+          </figure>
+        </div>
+      </div>
+      <VirtualPageStream
+        v-else
+        class="reader-canvas__stream"
+        :items="items"
+        :gap="settings.imageGap"
+        :fit="fit"
+        :image-width="settings.imageWidth"
+        :direction="settings.direction"
+        :horizontal="settings.layout === 'horizontal'"
+        :position="position"
+        :navigation-id="navigationId"
+        @position-change="emit('positionChange', $event)"
+        @size="(id, w, h) => emit('size', id, w, h)"
+      />
+    </div>
+    <template v-if="paged && !isLoading && images.length">
+      <UiButton
+        v-for="button in pageButtons"
+        :key="button.side"
+        class="reader-canvas__page-button"
+        :class="`reader-canvas__page-button--${button.side}`"
+        variant="ghost"
+        :aria-label="button.label"
+        :title="button.label"
+        :disabled="!button.enabled"
+        @click.stop="emit('navigate', button.delta)"
+      >
+        <UiIcon :name="button.side === 'left' ? 'chevron-left' : 'chevron-right'" :size="28" />
+      </UiButton>
+    </template>
   </main>
 </template>
-
 <style scoped>
 .reader-canvas {
-  --reader-canvas-page-background: var(--color-surface-inverse);
-  --reader-canvas-muted-text: color-mix(in srgb, var(--color-text-inverse) 70%, transparent);
-
-  min-height: calc(100dvh - 56px);
-  background: var(--reader-page-background, var(--reader-canvas-page-background));
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
 }
 
-.reader-canvas__stream {
-  width: min(var(--reader-image-width, 100%), 1200px);
-  height: calc(100dvh - 56px);
-  margin: 0 auto;
-  padding: 16px 0 80px;
+.reader-canvas__page-button {
+  --ui-button-padding: 0;
+  --ui-button-radius: 12px;
+  --ui-button-ghost-background: var(--color-overlay-scrim);
+  --ui-button-ghost-color: var(--color-text-inverse);
+  --ui-button-ghost-border: 1px solid var(--color-overlay-inverse-muted);
+  --ui-button-ghost-hover-background: var(--color-surface-inverse-raised);
+  --ui-button-ghost-hover-color: var(--color-text-inverse);
+  --ui-button-disabled-background: var(--color-overlay-scrim);
+  --ui-button-disabled-color: var(--color-text-inverse);
+  --ui-button-disabled-border: 1px solid var(--color-overlay-inverse-muted);
+  --ui-button-disabled-opacity: 0.3;
+
+  position: absolute;
+  top: 50%;
+  translate: 0 -50%;
+  width: 44px;
+  height: 56px;
+  z-index: var(--z-local-overlay);
+  opacity: 0.75;
 }
 
-.reader-canvas__loading-state {
-  --ui-spinner-border-width: 3px;
-  --ui-spinner-track-color: var(--color-overlay-inverse-soft);
-  --ui-spinner-color: var(--color-action-brand);
-  --ui-spinner-duration: 1s;
+.reader-canvas__page-button:hover:not(:disabled),
+.reader-canvas__page-button:focus-visible {
+  opacity: 1;
+}
 
+.reader-canvas__page-button--left {
+  left: 12px;
+}
+
+.reader-canvas__page-button--right {
+  right: 12px;
+}
+
+.reader-canvas__surface,
+.reader-canvas__paged {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.reader-canvas__paged {
+  overflow: auto;
+  overscroll-behavior: contain;
+  overflow-anchor: none;
+}
+
+.reader-canvas__paged--swipe {
+  touch-action: pan-y pinch-zoom;
+}
+
+.reader-canvas__spread {
   display: flex;
-  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+.reader-canvas__spread figure {
+  flex-shrink: 0;
+  margin: 0;
+}
+
+.reader-canvas__message {
+  height: 100%;
+  display: flex;
   align-items: center;
   justify-content: center;
-  height: calc(100dvh - 56px);
-  color: var(--reader-canvas-muted-text);
-}
-
-.reader-canvas__loading-text {
-  margin: 16px 0;
-}
-
-.reader-canvas__empty-state {
-  --product-empty-state-min-height: calc(100dvh - 56px);
-  --product-empty-state-max-width: none;
-  --product-empty-state-padding: 20px;
-  --product-empty-state-icon-width: auto;
-  --product-empty-state-icon-height: auto;
-  --product-empty-state-icon-margin-bottom: 16px;
-  --product-empty-state-icon-border: 0;
-  --product-empty-state-icon-radius: 0;
-  --product-empty-state-icon-background: transparent;
-  --product-empty-state-icon-font-size: 64px;
-  --product-empty-state-title-margin: 0 0 8px;
-  --product-empty-state-title-font-size: 1.5rem;
-  --product-empty-state-title-font-weight: 500;
-  --product-empty-state-description-margin: 0 0 24px;
-  --product-empty-state-description-font-size: 14px;
-  --product-empty-state-actions-margin-top: 0;
 }
 </style>

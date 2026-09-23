@@ -1,445 +1,361 @@
 <script setup lang="ts">
-import UiInput from '@/components/ui/UiInput.vue'
+import { computed, ref, watch } from 'vue'
 import UiButton from '@/components/ui/UiButton.vue'
-import UiColorSwatchGroup from '@/components/ui/UiColorSwatchGroup.vue'
+import UiInput from '@/components/ui/UiInput.vue'
+import UiNumberField from '@/components/ui/UiNumberField.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import UiField from '@/components/ui/UiField.vue'
-import UiIcon from '@/components/ui/UiIcon.vue'
-import UiIconButton from '@/components/ui/UiIconButton.vue'
-import OverlayLayer from '@/components/ui/OverlayLayer.vue'
-import { nextTick, ref, onMounted, onUnmounted, watch } from 'vue'
-import { useDialogLifecycle } from '@/composables/useDialogLifecycle'
+import UiColorSwatchGroup from '@/components/ui/UiColorSwatchGroup.vue'
 import {
-  DEFAULT_READER_SETTINGS,
+  READER_LAYOUTS,
+  READER_FITS,
   READER_BG_COLOR_PRESETS,
-  loadReaderSettings,
-  saveReaderSettings,
   type ReaderSettings,
+  type ReaderLayout,
+  type ReaderFit,
 } from './readerSettings'
 
 const props = defineProps<{
+  settings: ReaderSettings
+  page: number
+  total: number
+  range: string
+  offset: boolean
+  canPrev: boolean
+  canNext: boolean
   hasPrevChapter: boolean
   hasNextChapter: boolean
-  showChapterNav: boolean
-  settingsRequestId?: number
+  chapterId: string
+  chapters: { id: string; title: string }[]
 }>()
-
 const emit = defineEmits<{
-  (e: 'navigateChapter', direction: 'prev' | 'next'): void
-  (e: 'settingsChange', settings: ReaderSettings): void
+  settingsChange: [settings: ReaderSettings]
+  navigate: [delta: number]
+  jump: [page: number]
+  chapter: [id: string]
+  offset: []
+  restart: []
+  close: []
 }>()
-
-const settings = ref<ReaderSettings>({ ...DEFAULT_READER_SETTINGS })
-const isSettingsPanelOpen = ref(false)
-const settingsDialogRef = ref<HTMLElement | null>(null)
-const showScrollTopBtn = ref(false)
-const bgColorPresets = READER_BG_COLOR_PRESETS
-let scrollContainer: HTMLElement | null = null
-
-function bindScrollContainer() {
-  scrollContainer?.removeEventListener('scroll', handleScroll)
-  scrollContainer = document.querySelector<HTMLElement>('.reader-canvas__stream')
-  scrollContainer?.addEventListener('scroll', handleScroll, { passive: true })
-  handleScroll()
-}
-
-function openSettings() {
-  isSettingsPanelOpen.value = true
-}
-
-function closeSettings() {
-  isSettingsPanelOpen.value = false
-}
-
-function scrollToTop() {
-  scrollContainer?.scrollTo({ top: 0, behavior: 'smooth' })
-}
-
-function handleScroll() {
-  showScrollTopBtn.value = (scrollContainer?.scrollTop ?? 0) > 500
-}
-
-function handleKeydown(e: KeyboardEvent) {
-  if (isSettingsPanelOpen.value) return
-  switch (e.key) {
-    case 'ArrowLeft':
-      if (props.hasPrevChapter) {
-        emit('navigateChapter', 'prev')
-      }
-      break
-    case 'ArrowRight':
-      if (props.hasNextChapter) {
-        emit('navigateChapter', 'next')
-      }
-      break
-    case 'Home':
-      scrollContainer?.scrollTo({ top: 0, behavior: 'smooth' })
-      break
-    case 'End':
-      scrollContainer?.scrollTo({
-        top: scrollContainer.scrollHeight,
-        behavior: 'smooth',
-      })
-      break
-  }
-}
-
-useDialogLifecycle({
-  open: isSettingsPanelOpen,
-  container: settingsDialogRef,
-  close: closeSettings,
-})
-
-function loadSettings() {
-  const storedSettings = loadReaderSettings()
-  if (storedSettings) {
-    settings.value = storedSettings
-  }
-  publishSettings()
-}
-
-function saveSettings() {
-  saveReaderSettings(settings.value)
-}
-
-function publishSettings() {
-  emit('settingsChange', { ...settings.value })
-}
-
-function updateImageWidth(value: number) {
-  settings.value.imageWidth = value
-  publishSettings()
-  saveSettings()
-}
-
-function updateImageGap(value: number) {
-  settings.value.imageGap = value
-  publishSettings()
-  saveSettings()
-}
-
-function updateBgColor(color: string) {
-  settings.value.bgColor = color
-  publishSettings()
-  saveSettings()
-}
-
-function navigateChapter(direction: 'prev' | 'next') {
-  emit('navigateChapter', direction)
-}
-
+const pageInput = ref<number | null>(props.page)
 watch(
-  () => props.settingsRequestId,
-  (requestId, previousRequestId) => {
-    if (requestId !== undefined && requestId !== previousRequestId) {
-      openSettings()
-    }
+  () => props.page,
+  value => {
+    pageInput.value = value
   }
 )
-watch(
-  () => props.showChapterNav,
-  () => {
-    void nextTick(bindScrollContainer)
-  }
+const chapterOptions = computed(() => props.chapters.map(c => ({ value: c.id, label: c.title })))
+const chapterIndex = computed(() => props.chapters.findIndex(c => c.id === props.chapterId))
+const layoutLabel = computed(
+  () => READER_LAYOUTS.find(item => item.value === props.settings.layout)!.label
 )
-
-onMounted(() => {
-  loadSettings()
-
-  void nextTick(bindScrollContainer)
-  document.addEventListener('keydown', handleKeydown)
-})
-
-onUnmounted(() => {
-  scrollContainer?.removeEventListener('scroll', handleScroll)
-  scrollContainer = null
-  document.removeEventListener('keydown', handleKeydown)
-})
+const fitLabel = computed(
+  () => READER_FITS.find(item => item.value === props.settings.fits[props.settings.layout])!.label
+)
+function update(patch: Partial<ReaderSettings>) {
+  emit('settingsChange', { ...props.settings, ...patch })
+}
+function setLayout(layout: ReaderLayout) {
+  update({ layout })
+}
+function setFit(fit: ReaderFit) {
+  update({ fits: { ...props.settings.fits, [props.settings.layout]: fit } })
+}
+function cycleLayout() {
+  setLayout(
+    READER_LAYOUTS[
+      (READER_LAYOUTS.findIndex(x => x.value === props.settings.layout) + 1) % READER_LAYOUTS.length
+    ]!.value
+  )
+}
+function cycleFit() {
+  setFit(
+    READER_FITS[
+      (READER_FITS.findIndex(x => x.value === props.settings.fits[props.settings.layout]) + 1) %
+        READER_FITS.length
+    ]!.value
+  )
+}
+function chapter(delta: number) {
+  const item = props.chapters[chapterIndex.value + delta]
+  if (item) emit('chapter', item.id)
+}
+function jump() {
+  if (pageInput.value !== null && Number.isFinite(pageInput.value)) emit('jump', pageInput.value)
+}
 </script>
 
 <template>
-  <OverlayLayer v-if="showChapterNav" class="reader-controls__chapter-nav-layer" passthrough>
-    <nav class="reader-controls__chapter-nav" aria-label="章节导航">
-      <UiButton
-        variant="inverse"
-        size="md"
-        class="reader-controls__nav-button"
-        :disabled="!hasPrevChapter"
-        @click="navigateChapter('prev')"
-      >
-        <span class="reader-controls__nav-icon" aria-hidden="true">◀</span>
-        <span class="reader-controls__nav-text">上一章</span>
+  <aside class="reader-controls" aria-label="阅读设置">
+    <div class="reader-controls__heading">
+      <strong>阅读设置</strong><UiButton variant="inverse" size="sm" aria-label="收起阅读设置" @click="emit('close')">
+        关闭
       </UiButton>
+    </div>
+    <section class="reader-controls__section">
+      <UiField class="reader-controls__field" label="页面" tone="inverse">
+        <form class="reader-controls__navigation" @submit.prevent="jump">
+          <UiButton
+            variant="inverse"
+            size="sm"
+            :disabled="!canPrev"
+            aria-label="上一页"
+            @click="emit('navigate', -1)"
+          >
+            ‹
+          </UiButton>
+          <UiNumberField
+            v-model="pageInput"
+            class="reader-controls__page-input"
+            aria-label="跳转页码"
+            :min="1"
+            :max="Math.max(1, total)"
+            :disabled="!total"
+          />
+          <UiButton type="submit" variant="inverse" size="sm" :disabled="!total">跳转</UiButton>
+          <UiButton
+            variant="inverse"
+            size="sm"
+            :disabled="!canNext"
+            aria-label="下一页"
+            @click="emit('navigate', 1)"
+          >
+            ›
+          </UiButton>
+        </form>
+        <span class="reader-controls__hint">{{ range }} / {{ total }} 页</span>
+      </UiField>
+      <UiField class="reader-controls__field" label="章节" tone="inverse">
+        <UiSelect
+          :model-value="chapterId"
+          :options="chapterOptions"
+          teleport-to=".reader-page"
+          aria-label="选择章节"
+          @update:model-value="emit('chapter', String($event))"
+        />
+        <div class="reader-controls__pair">
+          <UiButton variant="inverse" size="sm" :disabled="!hasPrevChapter" @click="chapter(-1)">
+            上一章
+          </UiButton>
+          <UiButton variant="inverse" size="sm" :disabled="!hasNextChapter" @click="chapter(1)">
+            下一章
+          </UiButton>
+        </div>
+      </UiField>
+    </section>
+    <section class="reader-controls__section">
+      <UiField class="reader-controls__field" label="阅读模式" tone="inverse">
+        <UiButton variant="inverse" block aria-label="循环切换阅读模式" @click="cycleLayout">
+          {{ layoutLabel }} · 切换
+        </UiButton>
+        <details>
+          <summary>选择模式</summary>
+          <div class="reader-controls__options">
+            <UiButton
+              v-for="item in READER_LAYOUTS"
+              :key="item.value"
+              :variant="settings.layout === item.value ? 'primary' : 'inverse'"
+              :aria-pressed="settings.layout === item.value"
+              size="sm"
+              @click="setLayout(item.value)"
+            >
+              {{ item.label }}
+            </UiButton>
+          </div>
+        </details>
+      </UiField>
       <UiButton
-        variant="inverse"
-        size="md"
-        class="reader-controls__nav-button"
-        :disabled="!hasNextChapter"
-        @click="navigateChapter('next')"
+        v-if="settings.layout === 'double'"
+        :variant="offset ? 'primary' : 'inverse'"
+        :aria-pressed="offset"
+        block
+        @click="emit('offset')"
       >
-        <span class="reader-controls__nav-text">下一章</span>
-        <span class="reader-controls__nav-icon" aria-hidden="true">▶</span>
+        双页错开一页
       </UiButton>
-    </nav>
-  </OverlayLayer>
-
-  <OverlayLayer v-show="showScrollTopBtn" class="reader-controls__scroll-top-layer" passthrough>
-    <UiIconButton
-      variant="primary"
-      size="xl"
-      shape="circle"
-      elevated
-      class="reader-controls__scroll-top-button"
-      label="回到顶部"
-      @click="scrollToTop"
-    >
-      <span aria-hidden="true">↑</span>
-    </UiIconButton>
-  </OverlayLayer>
-
-  <OverlayLayer
-    v-if="isSettingsPanelOpen"
-    class="reader-controls__settings-panel"
-    level="popover"
-    role="dialog"
-    aria-modal="true"
-    aria-label="阅读设置"
-  >
-    <div class="reader-controls__settings-overlay" @click="closeSettings"></div>
-    <div ref="settingsDialogRef" class="reader-controls__settings-content" tabindex="-1">
-      <div class="reader-controls__settings-header">
-        <h3 class="reader-controls__settings-title">阅读设置</h3>
-        <UiIconButton
-          variant="inverse"
-          size="sm"
-          shape="circle"
-          class="reader-controls__close-button"
-          label="关闭阅读设置"
-          @click="closeSettings"
-        >
-          <UiIcon name="x" size="16" />
-        </UiIconButton>
-      </div>
-      <div class="reader-controls__settings-body">
-        <UiField
-          variant="settings"
-          tone="inverse"
-          label="图片宽度"
-          control-id="imageWidthSlider"
-          class="reader-controls__setting-field"
-        >
-          <div class="reader-controls__setting-control">
-            <UiInput
-              type="range"
-              id="imageWidthSlider"
-              class="reader-controls__range"
-              min="50"
-              max="100"
-              :model-value="settings.imageWidth"
-              @update:model-value="value => updateImageWidth(Number(value))"
-            />
-            <span class="reader-controls__setting-value">{{ settings.imageWidth }}%</span>
+      <UiField class="reader-controls__field" label="图片适配" tone="inverse">
+        <UiButton variant="inverse" block aria-label="循环切换图片适配" @click="cycleFit">
+          {{ fitLabel }} · 切换
+        </UiButton>
+        <details>
+          <summary>选择适配方式</summary>
+          <div class="reader-controls__options">
+            <UiButton
+              v-for="item in READER_FITS"
+              :key="item.value"
+              :variant="settings.fits[settings.layout] === item.value ? 'primary' : 'inverse'"
+              :aria-pressed="settings.fits[settings.layout] === item.value"
+              size="sm"
+              @click="setFit(item.value)"
+            >
+              {{ item.label }}
+            </UiButton>
           </div>
-        </UiField>
-
+        </details>
+      </UiField>
+      <UiField class="reader-controls__field" label="阅读方向" tone="inverse">
+        <div class="reader-controls__pair">
+          <UiButton
+            :variant="settings.direction === 'ltr' ? 'primary' : 'inverse'"
+            size="sm"
+            :aria-pressed="settings.direction === 'ltr'"
+            @click="update({ direction: 'ltr' })"
+          >
+            从左向右
+          </UiButton>
+          <UiButton
+            :variant="settings.direction === 'rtl' ? 'primary' : 'inverse'"
+            size="sm"
+            :aria-pressed="settings.direction === 'rtl'"
+            @click="update({ direction: 'rtl' })"
+          >
+            从右向左
+          </UiButton>
+        </div>
+      </UiField>
+      <UiField class="reader-controls__field" label="底部进度条" tone="inverse">
+        <div class="reader-controls__options reader-controls__options--three">
+          <UiButton
+            v-for="item in [
+              { value: 'normal', label: '普通' },
+              { value: 'pages', label: '页码分段' },
+              { value: 'hidden', label: '隐藏' },
+            ] as const"
+            :key="item.value"
+            :variant="settings.progress === item.value ? 'primary' : 'inverse'"
+            size="sm"
+            :aria-pressed="settings.progress === item.value"
+            @click="update({ progress: item.value })"
+          >
+            {{ item.label }}
+          </UiButton>
+        </div>
+      </UiField>
+    </section>
+    <details class="reader-controls__section">
+      <summary>外观与快捷键</summary>
+      <UiField label="背景颜色" tone="inverse">
+        <UiColorSwatchGroup
+          :model-value="settings.bgColor"
+          :options="READER_BG_COLOR_PRESETS"
+          aria-label="阅读背景颜色"
+          @change="update({ bgColor: $event })"
+        />
+      </UiField>
+      <template v-if="settings.layout === 'vertical' || settings.layout === 'horizontal'">
         <UiField
-          variant="settings"
+          v-if="settings.fits[settings.layout] === 'width' || settings.fits[settings.layout] === 'screen'"
+          :label="`图片宽度上限 ${settings.imageWidth}%`"
           tone="inverse"
-          label="图片间距"
-          control-id="imageGapSlider"
-          class="reader-controls__setting-field"
         >
-          <div class="reader-controls__setting-control">
-            <UiInput
-              type="range"
-              id="imageGapSlider"
-              class="reader-controls__range"
-              min="0"
-              max="50"
-              :model-value="settings.imageGap"
-              @update:model-value="value => updateImageGap(Number(value))"
-            />
-            <span class="reader-controls__setting-value">{{ settings.imageGap }}px</span>
-          </div>
-        </UiField>
-
-        <UiField
-          variant="settings"
-          tone="inverse"
-          label="背景颜色"
-          class="reader-controls__setting-field"
-        >
-          <UiColorSwatchGroup
-            :model-value="settings.bgColor"
-            :options="bgColorPresets"
-            aria-label="阅读背景颜色"
-            @change="updateBgColor"
+          <UiInput
+            type="range"
+            aria-label="图片宽度上限"
+            :min="50"
+            :max="100"
+            :model-value="settings.imageWidth"
+            @update:model-value="update({ imageWidth: Number($event) })"
           />
         </UiField>
-      </div>
-    </div>
-  </OverlayLayer>
+        <UiField :label="`图片间距 ${settings.imageGap}px`" tone="inverse">
+          <UiInput
+            type="range"
+            aria-label="图片间距"
+            :min="0"
+            :max="50"
+            :model-value="settings.imageGap"
+            @update:model-value="update({ imageGap: Number($event) })"
+          />
+        </UiField>
+      </template>
+      <p class="reader-controls__hint">
+        ← → 翻页 · Home / End 首尾页<br />M 菜单 · F 全屏 · I 适配 · O 双页偏移<br />滚轮只滚动图片，不自动跳章。
+      </p>
+    </details>
+    <UiButton variant="inverse" block :disabled="!total" @click="emit('restart')">
+      从头阅读
+    </UiButton>
+  </aside>
 </template>
-
 <style scoped>
-.reader-controls__chapter-nav-layer,
-.reader-controls__scroll-top-layer,
-.reader-controls__settings-panel {
-  --reader-controls-chapter-nav-start: color-mix(
-    in srgb,
-    var(--color-surface-inverse) 95%,
-    transparent
-  );
-  --reader-controls-chapter-nav-end: color-mix(
-    in srgb,
-    var(--color-surface-inverse) 80%,
-    transparent
-  );
-  --reader-controls-settings-overlay-background: var(--color-overlay-scrim);
-  --reader-controls-settings-panel-background: var(--color-surface-inverse-raised);
-  --reader-controls-settings-panel-shadow: var(--color-overlay-scrim-subtle);
-  --reader-controls-settings-divider: var(--color-overlay-inverse-subtle);
-  --reader-controls-setting-label-text: color-mix(
-    in srgb,
-    var(--color-text-inverse) 70%,
-    transparent
-  );
-  --reader-controls-range-track: var(--color-overlay-inverse-muted);
-}
-
-.reader-controls__chapter-nav-layer {
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-}
-
-.reader-controls__chapter-nav {
-  height: 60px;
-  width: 100%;
-  background: linear-gradient(
-    to top,
-    var(--reader-controls-chapter-nav-start),
-    var(--reader-controls-chapter-nav-end)
-  );
-  backdrop-filter: blur(10px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 24px;
-  padding: 0 16px;
-}
-
-.reader-controls__scroll-top-layer {
-  display: flex;
-  align-items: flex-end;
-  justify-content: flex-end;
-  padding: 0 24px 80px 0;
-}
-
-.reader-controls__scroll-top-button {
-  z-index: var(--z-dropdown);
-}
-
-.reader-controls__settings-panel {
-  display: block;
-}
-
-.reader-controls__settings-overlay {
-  position: absolute;
-  inset: 0;
-  background: var(--reader-controls-settings-overlay-background);
-}
-
-.reader-controls__settings-content {
-  position: absolute;
-  top: 56px;
-  right: 16px;
-  width: 300px;
-  background: var(--reader-controls-settings-panel-background);
-  border-radius: 12px;
-  box-shadow: 0 8px 32px var(--reader-controls-settings-panel-shadow);
-  overflow: hidden;
-  outline: none;
-}
-
-.reader-controls__settings-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px;
-  border-bottom: 1px solid var(--reader-controls-settings-divider);
-  background: var(--reader-controls-settings-panel-background);
-}
-
-.reader-controls__settings-title {
-  margin: 0;
+.reader-controls {
+  width: 288px;
+  flex: 0 0 288px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px 16px 48px;
+  background: var(--color-surface-inverse-raised);
   color: var(--color-text-inverse);
-  font-size: 16px;
-  font-weight: 500;
+  border-left: 1px solid var(--color-overlay-inverse-subtle);
 }
 
-.reader-controls__close-button {
-  flex: 0 0 auto;
-}
-
-.reader-controls__settings-body {
-  padding: 16px;
-  background: var(--reader-controls-settings-panel-background);
-}
-
-.reader-controls__setting-field {
-  --ui-field-inverse-label-color: var(--reader-controls-setting-label-text);
-  --ui-field-label-font-size: 13px;
-  --ui-field-label-font-weight: 400;
-  --ui-field-settings-header-margin-bottom: 8px;
-
+.reader-controls__heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   margin-bottom: 20px;
 }
 
-.reader-controls__setting-field:last-child {
+.reader-controls__section {
+  display: grid;
+  gap: 16px;
+  border-bottom: 1px solid var(--color-overlay-inverse-subtle);
+  padding-bottom: 20px;
+  margin-bottom: 20px;
+}
+
+.reader-controls__navigation {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.reader-controls__page-input {
+  min-width: 0;
+  flex: 1;
+}
+
+.reader-controls__field {
   margin-bottom: 0;
 }
 
-.reader-controls__setting-control {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.reader-controls__pair,
+.reader-controls__options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 8px;
 }
 
-.reader-controls__range {
-  flex: 1;
-  height: 4px;
-  appearance: none;
-  background: var(--reader-controls-range-track);
-  border-radius: 2px;
-  outline: none;
+.reader-controls__options--three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.reader-controls__range::-webkit-slider-thumb {
-  appearance: none;
-  width: 16px;
-  height: 16px;
-  background: var(--color-action-brand);
-  border-radius: 50%;
-  cursor: pointer;
-}
-
-.reader-controls__setting-value {
+.reader-controls__hint {
+  display: block;
+  font-size: 12px;
   color: var(--color-text-inverse);
-  font-size: 13px;
-  min-width: 45px;
-  text-align: right;
+  opacity: 0.7;
+  line-height: 1.8;
+  margin-top: 8px;
+}
+
+.reader-controls summary {
+  cursor: pointer;
+  font-size: 12px;
+  padding: 10px 0;
+  opacity: 0.85;
+}
+
+.reader-controls__options {
+  --ui-button-padding: 8px 4px;
+  --ui-button-font-size: 12px;
 }
 
 @media (--breakpoint-md-down) {
-  .reader-controls__settings-content {
-    right: 8px;
-    left: 8px;
-    width: auto;
-  }
-
-  .reader-controls__scroll-top-button {
-    transform: scale(0.9);
-    transform-origin: right bottom;
+  .reader-controls {
+    width: 100%;
+    flex-basis: 100%;
   }
 }
 </style>

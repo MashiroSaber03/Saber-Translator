@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as fc from 'fast-check'
 import {
   READER_BG_COLOR_PRESETS,
+  DEFAULT_READER_SETTINGS,
   READER_SETTINGS_KEY,
   loadReaderSettings,
   parseReaderSettingsPayload,
@@ -17,9 +18,22 @@ const validReaderSettingsArb: fc.Arbitrary<ReaderSettings> = fc.record({
   imageWidth: validImageWidthArb,
   imageGap: validImageGapArb,
   bgColor: validBgColorArb,
+  layout: fc.constantFrom('single' as const, 'double' as const, 'vertical' as const, 'horizontal' as const),
+  direction: fc.constantFrom('ltr' as const, 'rtl' as const),
+  progress: fc.constantFrom('normal' as const, 'pages' as const, 'hidden' as const),
+  fits: fc.record({
+    single: fc.constantFrom('screen' as const, 'width' as const, 'height' as const, 'original' as const),
+    double: fc.constantFrom('screen' as const, 'width' as const, 'height' as const, 'original' as const),
+    vertical: fc.constantFrom('screen' as const, 'width' as const, 'height' as const, 'original' as const),
+    horizontal: fc.constantFrom('screen' as const, 'width' as const, 'height' as const, 'original' as const),
+  }),
 })
 
 describe('reader settings persistence properties', () => {
+  it('preserves old appearance settings and supplies new reading defaults', () => {
+    const old = { imageWidth: 70, imageGap: 17, bgColor: '#ffffff' }
+    expect(parseReaderSettingsPayload(JSON.stringify(old))).toEqual({ ...DEFAULT_READER_SETTINGS, ...old })
+  })
   let localStorageMock: Record<string, string> = {}
 
   beforeEach(() => {

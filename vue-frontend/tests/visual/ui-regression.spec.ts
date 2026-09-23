@@ -429,13 +429,6 @@ function createFixtureSettings() {
       customBaseUrl: '',
       openaiOptions: fixtureOpenAiOptions(true),
     },
-    browserDomAgent: {
-      provider: 'siliconflow',
-      apiKey: '',
-      modelName: '',
-      customBaseUrl: '',
-      openaiOptions: fixtureOpenAiOptions(false),
-    },
     proofreading: {
       enabled: false,
       rounds: [],
@@ -459,6 +452,7 @@ function createFixtureSettings() {
     removeTextWithOcr: false,
     compressVisionImages: true,
     lamaDisableResize: false,
+    lamaRegionalInpainting: false,
   }
 }
 
@@ -2670,11 +2664,8 @@ test('reader loaded state keeps its layout contract', async ({ page }) => {
   await expect(page.locator('.reader-page')).toBeVisible()
   await expect(page.getByRole('button', { name: /打开任务中心/ })).toHaveCount(0)
   await expect(page.locator('.reader-canvas__stream .virtual-page-stream__image')).toHaveCount(2)
-  await expect(page.locator('.reader-header__book-title')).toHaveCSS('color', 'rgb(255, 255, 255)')
-  await expect(page.locator('.reader-header__mode-button.product-header-action--active')).toHaveCSS(
-    'color',
-    'rgb(102, 126, 234)'
-  )
+  await expect(page.locator('.reader-header__title strong')).toBeVisible()
+  await expect(page.getByRole('button', { name: '译图', exact: true })).toHaveAttribute('aria-pressed', 'true')
   await expect(page).toHaveScreenshot('reader-loaded.png', {
     fullPage: true,
     animations: 'disabled',
@@ -2684,28 +2675,211 @@ test('reader loaded state keeps its layout contract', async ({ page }) => {
 test('reader settings panel keeps its control layout contract', async ({ page }) => {
   await page.goto('/reader?book=demo-book&chapter=demo-chapter')
   await expect(page.locator('.reader-page')).toBeVisible()
-  await page.getByRole('button', { name: '阅读设置' }).click()
-  const settingsPanel = page.locator('.reader-controls__settings-panel')
+  const settingsPanel = page.getByRole('complementary', { name: '阅读设置' })
   await expect(settingsPanel).toBeVisible()
-  await expect(settingsPanel.locator('.reader-controls__setting-field')).toHaveCount(3)
+  await page.getByRole('combobox', { name: '选择章节' }).click()
+  await expect(page.getByRole('listbox')).toBeVisible()
+  await page.getByRole('combobox', { name: '选择章节' }).press('Escape')
+  await expect(settingsPanel.getByRole('button', { name: '循环切换阅读模式' })).toBeVisible()
   await expect(settingsPanel).toHaveScreenshot('reader-settings-panel.png', {
     animations: 'disabled',
   })
 
-  const stream = page.locator('.reader-canvas__stream')
-  const initialWidth = (await stream.boundingBox())?.width ?? 0
-  await page.getByRole('slider', { name: '图片宽度' }).fill('70')
+  await page.getByText('外观与快捷键', { exact: true }).click()
+  const image = page.locator('.virtual-page-stream__page').first()
+  const initialWidth = (await image.boundingBox())?.width ?? 0
+  await page.getByRole('slider', { name: '图片宽度上限' }).fill('50')
   await page.getByRole('slider', { name: '图片间距' }).fill('24')
   await page.getByRole('button', { name: '白色' }).click()
 
   await expect
-    .poll(async () => (await stream.boundingBox())?.width ?? 0)
+    .poll(async () => (await image.boundingBox())?.width ?? 0)
     .toBeLessThan(initialWidth - 100)
-  await expect(page.locator('.virtual-page-stream__page').first()).toHaveCSS(
-    'margin-bottom',
-    '24px'
-  )
+  const gap = await page.locator('.virtual-page-stream__page').evaluateAll(elements => {
+    const first = elements[0]!.getBoundingClientRect()
+    return elements[1]!.getBoundingClientRect().top - first.bottom
+  })
+  expect(gap).toBeCloseTo(24, 0)
   await expect(page.locator('.reader-canvas')).toHaveCSS('background-color', 'rgb(255, 255, 255)')
+})
+
+test('reader chapter menu opens after a narrow-screen refresh and in fullscreen', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/reader?book=demo-book&chapter=demo-chapter')
+  await expect(page.getByRole('dialog', { name: '阅读菜单' })).toBeVisible()
+  await page.reload()
+  const chapters = page.getByRole('combobox', { name: '选择章节' })
+  await chapters.click()
+  await expect(page.getByRole('listbox')).toBeVisible()
+  await chapters.press('Escape')
+  await page.getByRole('button', { name: '收起阅读设置' }).click()
+  await expect(page.getByRole('button', { name: '打开阅读菜单' })).toBeVisible()
+  await page.getByRole('button', { name: '打开阅读菜单' }).click()
+  await page.getByRole('button', { name: '全屏', exact: true }).click()
+  await expect.poll(() => page.evaluate(() => Boolean(document.fullscreenElement))).toBe(true)
+  await page.getByRole('button', { name: '打开阅读菜单' }).click()
+  await chapters.click()
+  await expect(page.getByRole('listbox')).toBeVisible()
+})
+
+test('reader interaction audit: clicks, dragging, keyboard and progress', async ({ page }) => {
+  await prepareVisualPage(page, { pages: createDemoV2Pages(9) })
+  await page.goto('/reader?book=demo-book&chapter=demo-chapter')
+  await page.getByText('选择模式', { exact: true }).click()
+  await page.getByRole('button', { name: '单页', exact: true }).click()
+  await page.getByText('选择适配方式', { exact: true }).click()
+  await page.getByRole('button', { name: '适应屏幕', exact: true }).click()
+  await page.getByRole('button', { name: '收起菜单', exact: true }).click()
+  const canvas = page.locator('.reader-canvas__surface')
+  const box = (await canvas.boundingBox())!
+  await page.mouse.click(box.x + box.width * .9, box.y + box.height * .5)
+  await expect(page.getByRole('slider', { name: '阅读进度' })).toHaveValue('2')
+  await page.mouse.click(box.x + box.width * .1, box.y + box.height * .5)
+  await expect(page.getByRole('slider', { name: '阅读进度' })).toHaveValue('1')
+  await page.keyboard.press('End')
+  await page.keyboard.press('ArrowRight')
+  await expect(page.getByRole('slider', { name: '阅读进度' })).toHaveValue('9')
+  await page.keyboard.press('Home')
+  await page.mouse.move(box.x + box.width * .7, box.y + box.height * .5)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width * .3, box.y + box.height * .4, { steps: 10 })
+  await page.mouse.up()
+  await expect(page.getByRole('slider', { name: '阅读进度' })).toHaveValue('1')
+  await page.keyboard.press('m')
+  const jump = page.getByRole('spinbutton', { name: '跳转页码' })
+  await jump.fill('5')
+  await jump.press('End')
+  await expect(page.getByRole('slider', { name: '阅读进度' })).toHaveValue('1')
+  await page.getByRole('button', { name: '跳转', exact: true }).click()
+  await expect(page.getByRole('slider', { name: '阅读进度' })).toHaveValue('5')
+  for (const mode of ['普通', '页码分段', '隐藏']) {
+    await page.getByRole('button', { name: mode, exact: true }).click()
+    await page.getByRole('slider', { name: '阅读进度' }).fill('3')
+    await expect(page.locator('.reader-header__page-info')).toHaveText('3 / 9')
+    await page.getByRole('slider', { name: '阅读进度' }).fill('5')
+  }
+})
+
+test('reader interaction audit: double spread offset and standalone landscape', async ({ page }) => {
+  const pages = createDemoV2Pages(9)
+  pages[3]!.width = 1600
+  pages[3]!.height = 900
+  await prepareVisualPage(page, { pages })
+  await page.goto('/reader?book=demo-book&chapter=demo-chapter')
+  await page.getByText('选择模式', { exact: true }).click()
+  await page.getByRole('button', { name: '双页', exact: true }).click()
+  await expect(page.locator('.reader-header__page-info')).toHaveText('1–2 / 9')
+  await page.getByRole('button', { name: '双页错开一页' }).click()
+  const navigation = page.getByRole('complementary', { name: '阅读设置' })
+  for (const label of ['1 / 9', '2–3 / 9', '4 / 9', '5–6 / 9', '7–8 / 9', '9 / 9']) {
+    await expect(page.locator('.reader-header__page-info')).toHaveText(label)
+    if (label !== '9 / 9') await navigation.getByRole('button', { name: '下一页', exact: true }).click()
+  }
+  await expect(navigation.getByRole('button', { name: '下一页', exact: true })).toBeDisabled()
+})
+
+test('reader page arrows stay visible, follow direction and turn exactly one spread', async ({ page }) => {
+  await prepareVisualPage(page, { pages: createDemoV2Pages(5) })
+  await page.goto('/reader?book=demo-book&chapter=demo-chapter')
+  const arrows = page.locator('.reader-canvas__page-button')
+  await expect(arrows).toHaveCount(0)
+  await page.getByText('选择模式', { exact: true }).click()
+  await page.getByRole('button', { name: '单页', exact: true }).click()
+  const left = page.locator('.reader-canvas__page-button--left')
+  const right = page.locator('.reader-canvas__page-button--right')
+  await expect(left).toBeDisabled()
+  await expect(right).toHaveAttribute('aria-label', '下一页')
+  await right.click()
+  await expect(page.getByRole('slider', { name: '阅读进度' })).toHaveValue('2')
+  await expect(page.getByRole('complementary', { name: '阅读设置' })).toBeVisible()
+  await page.getByRole('button', { name: '双页', exact: true }).click()
+  await page.getByRole('button', { name: '从右向左', exact: true }).click()
+  await expect(left).toHaveAttribute('aria-label', '下一页')
+  await expect(right).toBeDisabled()
+  await left.click()
+  await expect(page.locator('.reader-header__page-info')).toHaveText('3–4 / 5')
+  await page.getByRole('button', { name: '收起菜单', exact: true }).click()
+  await expect(left).toBeVisible()
+  await expect(right).toBeVisible()
+  await left.click()
+  await expect(page.getByRole('slider', { name: '阅读进度' })).toHaveValue('5')
+  await expect(left).toBeDisabled()
+  await right.click()
+  await expect(page.getByRole('slider', { name: '阅读进度' })).toHaveValue('3')
+  await page.getByRole('button', { name: '打开阅读菜单' }).click()
+  await page.getByRole('button', { name: '全屏', exact: true }).click()
+  await expect(left).toBeVisible()
+  await expect(right).toBeVisible()
+  await page.getByRole('button', { name: '打开阅读菜单' }).click()
+  await page.getByRole('button', { name: '退出全屏', exact: true }).click()
+  await page.getByText('选择模式', { exact: true }).click()
+  await page.getByRole('button', { name: '横向连续', exact: true }).click()
+  await expect(arrows).toHaveCount(0)
+})
+
+test('reader interaction audit: image failure retries without changing page', async ({ page }) => {
+  let broken = true
+  await page.route('**/api/v2/assets/demo-rendered-1', route => broken ? route.abort() : route.fallback())
+  await page.goto('/reader?book=demo-book&chapter=demo-chapter')
+  await expect(page.getByText('第 1 页加载失败')).toBeVisible()
+  broken = false
+  await page.getByRole('button', { name: '重试', exact: true }).click()
+  await expect(page.getByRole('img', { name: '第 1 页', exact: true })).toBeVisible()
+  await expect.poll(() => page.getByRole('img', { name: '第 1 页', exact: true }).evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0)
+  await expect(page.locator('.reader-header__page-info')).toHaveText('1 / 2')
+})
+
+test('reader interaction audit: failed chapter load can retry', async ({ page }) => {
+  let broken = true
+  await page.route('**/api/v2/chapters/demo-chapter/pages?*', route => broken
+    ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'UNAVAILABLE', message: '测试加载失败' } }) })
+    : route.fallback())
+  await page.goto('/reader?book=demo-book&chapter=demo-chapter')
+  await expect(page.getByRole('button', { name: '重新加载' })).toBeVisible()
+  broken = false
+  await page.getByRole('button', { name: '重新加载' }).click()
+  await expect(page.getByRole('img', { name: '第 1 页', exact: true })).toBeVisible()
+})
+
+test('reader interaction audit: empty chapter has no active page navigation', async ({ page }) => {
+  await prepareVisualPage(page, { pages: [] })
+  await page.goto('/reader?book=demo-book&chapter=demo-chapter')
+  await expect(page.getByText('暂无图片', { exact: true })).toBeVisible()
+  await expect(page.locator('.reader-header__page-info')).toHaveText('0 / 0')
+  await expect(page.getByRole('button', { name: '上一页', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: '下一页', exact: true })).toBeDisabled()
+  await expect(page.getByRole('slider', { name: '阅读进度' })).toHaveCount(0)
+})
+
+test('reader interaction audit: touch swipe respects direction and vertical pan does not turn pages', async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
+  try {
+    const page = await context.newPage()
+    await prepareVisualPage(page, { pages: createDemoV2Pages(9) })
+    await page.goto('http://127.0.0.1:5173/reader?book=demo-book&chapter=demo-chapter')
+    await page.getByText('选择模式', { exact: true }).click()
+    await page.getByRole('button', { name: '单页', exact: true }).click()
+    await page.getByRole('button', { name: '收起阅读设置' }).click()
+    const session = await context.newCDPSession(page)
+    async function swipe(from: [number, number], to: [number, number]) {
+      await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: from[0], y: from[1] }] })
+      for (let step = 1; step <= 6; step++) {
+        await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: from[0] + (to[0] - from[0]) * step / 6, y: from[1] + (to[1] - from[1]) * step / 6 }] })
+      }
+      await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    }
+    await swipe([300, 400], [90, 400])
+    await expect(page.getByRole('slider', { name: '阅读进度' })).toHaveValue('2')
+    await swipe([190, 550], [190, 250])
+    await expect(page.getByRole('slider', { name: '阅读进度' })).toHaveValue('2')
+    await page.getByRole('button', { name: '打开阅读菜单' }).click()
+    await page.getByRole('button', { name: '从右向左', exact: true }).click()
+    await page.getByRole('button', { name: '收起阅读设置' }).click()
+    await swipe([90, 400], [300, 400])
+    await expect(page.getByRole('slider', { name: '阅读进度' })).toHaveValue('3')
+  } finally {
+    await context.close()
+  }
 })
 
 test('mobile translate loaded workspace keeps responsive layout contract', async ({ page }) => {

@@ -13,6 +13,7 @@ const props = withDefaults(defineProps<{
   size?: 'lg' | 'md' | 'sm' | 'xs'
   variant?: 'default' | 'studio'
   placeholder?: string
+  teleportTo?: string | HTMLElement
 }>(), {
   options: () => [],
   disabled: false,
@@ -20,6 +21,7 @@ const props = withDefaults(defineProps<{
   size: 'md',
   variant: 'default',
   placeholder: '请选择',
+  teleportTo: 'body',
 })
 
 const emit = defineEmits<{
@@ -173,6 +175,7 @@ function handleKeydown(event: KeyboardEvent): void {
 
   if (event.key === 'Escape' && isOpen.value) {
     event.preventDefault()
+    event.stopPropagation()
     closeDropdown()
     return
   }
@@ -286,7 +289,7 @@ watch(activeIndex, (index) => {
     </span>
   </button>
 
-  <Teleport to="body">
+  <Teleport :to="teleportTo" defer>
     <div
       v-if="isOpen"
       :id="dropdownId"
