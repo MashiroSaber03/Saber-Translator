@@ -136,7 +136,8 @@ def test_private_font_usage_remains_quota_limited(directory_fonts):
             storage.publish_bytes(b'xx', extension='bin', mime_type='application/octet-stream')
 
 
-def test_350_upgrade_preserves_font_ids_page_references_and_bytes(tmp_path):
+@pytest.mark.parametrize('display_name', ['用户字体', '长文件名字体验收' * 10])
+def test_350_upgrade_preserves_font_ids_page_references_and_bytes(tmp_path, display_name):
     root = tmp_path / 'old'
     root.mkdir()
     payload = next(f.path for f in font_files.bundled_font_files() if f.path.name == 'ALGER.TTF').read_bytes()
@@ -149,7 +150,7 @@ def test_350_upgrade_preserves_font_ids_page_references_and_bytes(tmp_path):
         db.execute("INSERT INTO schema_metadata(singleton_id,runtime_profile,storage_version) VALUES (1,'local','3.5.0')")
         db.execute("INSERT INTO fonts(id,kind,display_name,builtin_key) VALUES (?,'builtin','思源黑体','default')", (DEFAULT_FONT_ID,))
         db.execute("INSERT INTO assets(id,relative_path,mime_type,checksum,byte_size) VALUES ('old-font',?,'font/ttf',?,?)", (relative, hashlib.sha256(payload).hexdigest(), len(payload)))
-        db.execute("INSERT INTO fonts(id,kind,display_name,asset_id) VALUES (?,'uploaded','用户字体','old-font')", (uploaded,))
+        db.execute("INSERT INTO fonts(id,kind,display_name,asset_id) VALUES (?,'uploaded',?,'old-font')", (uploaded, display_name))
         db.execute("INSERT INTO books(id,title) VALUES ('book','book')")
         db.execute("INSERT INTO chapters(id,book_id,title,ordinal) VALUES ('chapter','book','chapter',1)")
         db.execute("INSERT INTO pages(id,chapter_id,ordinal,logical_source_path,default_font_id) VALUES ('page','chapter',1,'page.png',?)", (uploaded,))
@@ -158,7 +159,10 @@ def test_350_upgrade_preserves_font_ids_page_references_and_bytes(tmp_path):
         assert read_identity(root)[0] == '3.5.1'
         with closing(sqlite3.connect(root / 'saber.sqlite3')) as db:
             path, owner = db.execute('SELECT relative_path,owner_user_id FROM fonts WHERE id=?', (uploaded,)).fetchone()
-            assert owner == LOCAL_USER_ID and (root / path).read_bytes() == payload
+            resolved = font_files.font_path(root, path, owner)
+            assert owner == LOCAL_USER_ID and resolved.read_bytes() == payload
+            assert ImageFont.truetype(str(resolved), 20).getbbox('test') is not None
+            assert (path, owner) in font_files.scan_font_files(root, owner)
             assert db.execute("SELECT default_font_id FROM pages WHERE id='page'").fetchone()[0] == uploaded
             assert not db.execute('SELECT id FROM assets').fetchall()
         assert not (root / relative).exists()

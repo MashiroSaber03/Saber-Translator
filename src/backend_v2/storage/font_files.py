@@ -11,6 +11,7 @@ from src.backend_v2.storage.defaults import DEFAULT_FONT_ID
 from src.shared.constants import DEFAULT_FONT_FAMILY
 from src.shared.path_helpers import resource_path
 from src.storage_migrator.control import reject_links
+from src.storage_migrator.paths import filesystem_path
 
 
 SUPPORTED_FONT_SUFFIXES = frozenset({'.ttf', '.ttc', '.otf', '.woff', '.woff2'})
@@ -49,6 +50,7 @@ def bundled_font_files() -> tuple[FontFile, ...]:
 
 
 def font_path(root: Path, relative: str, owner: str | None) -> Path:
+    root = filesystem_path(root)
     if owner is not None and (owner in {'.', '..'} or PureWindowsPath(owner).name != owner or '/' in owner or ':' in owner):
         raise ValueError('字体所属用户无效')
     parts = PurePosixPath(relative).parts
@@ -71,6 +73,7 @@ def font_path(root: Path, relative: str, owner: str | None) -> Path:
 
 def prepare_font_directory(root: Path) -> None:
     """Install bundled files once, without overwriting an existing directory."""
+    root = filesystem_path(root)
     folder = root / 'fonts'
     shared = folder / 'shared'
     reject_links(folder)

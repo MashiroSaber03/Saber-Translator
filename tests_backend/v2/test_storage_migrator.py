@@ -14,6 +14,7 @@ from src.storage_migrator.contracts import StorageError, contract_sql, read_iden
 from src.storage_migrator.control import DataRootLock, DataRootAlreadyLocked, business_ready, atomic_json, control_root, registered_process, wait_for_children
 from src.storage_migrator.registry import Migration, migration_chain
 from src.storage_migrator.runner import StorageManager, OWNER_FILE
+from src.storage_migrator.paths import filesystem_path
 
 
 @pytest.fixture(scope="module")
@@ -492,3 +493,75 @@ def test_mixed_chain_uses_one_copy_and_orders_version_markers(root):
         assert len(operations) == 1
         assert read_identity(operations[0][0] / 'backup')[0] == '3.5.1'
         assert read_identity(root)[0] == '3.5.3'
+
+
+@pytest.mark.skipif(sys.platform != 'win32', reason='Windows extended filesystem paths')
+@pytest.mark.parametrize('rollback', [False, True])
+def test_long_work_and_backup_paths_preserve_identity_and_can_be_removed(root, rollback):
+    # The source is below MAX_PATH, but the migration's extra directories exceed it.
+    name = '字' * (235 - len(str(root / 'objects'))) + '.bin'
+    saved = root / 'objects' / name
+    saved.write_bytes(b'old long-path content')
+    with manager(root) as migration:
+        migration.prepare(initialize_database)
+        op, state = next(migration._operations())
+        assert state['root'] == str(root.resolve())
+        assert len(str(op / 'backup' / 'objects' / name)) > 260
+        assert (op / 'backup' / 'objects' / name).read_bytes() == saved.read_bytes()
+        migration.before_start()
+        if rollback:
+            migration.startup_failed()
+            assert read_identity(root)[0] == '3.5.1'
+            assert saved.read_bytes() == b'old long-path content'
+            assert not (op / 'discarded').exists()
+        else:
+            assert migration.confirm_ready() == []
+            assert read_identity(root)[0] == '3.5.2'
+        assert not (op / 'backup').exists()
+        assert not (op / 'work').exists()
+
+
+@pytest.mark.parametrize('deep', [False, pytest.param(True, marks=pytest.mark.skipif(sys.platform != 'win32', reason='Windows long SQLite path'))])
+def test_readonly_database_uri_handles_literal_uri_characters(tmp_path, deep):
+    from src.storage_migrator.contracts import read_database
+    path = tmp_path / '数据库 #100%.sqlite3'
+    if deep:
+        path = tmp_path / ('nested-' * 18) / ('nested-' * 18) / path.name
+    filesystem_path(path.parent).mkdir(parents=True, exist_ok=True)
+    with closing(sqlite3.connect(filesystem_path(path))) as db:
+        db.execute('CREATE TABLE saved(value TEXT)')
+    with closing(read_database(path)) as db:
+        assert db.execute('SELECT count(*) FROM saved').fetchone() == (0,)
+        with pytest.raises(sqlite3.OperationalError, match='readonly'):
+            db.execute("INSERT INTO saved VALUES ('must not write')")
+
+
+@pytest.mark.skipif(sys.platform != 'win32', reason='Windows path spelling')
+def test_extended_path_preserves_unc_and_is_idempotent():
+    path = Path(r'\\server\share\folder')
+    extended = filesystem_path(path)
+    assert str(extended) == r'\\?\UNC\server\share\folder'
+    assert filesystem_path(extended) == extended
+
+
+@pytest.mark.parametrize('valid_identity', [True, False])
+def test_recovery_of_marker_interrupted_before_atomic_replace(root, valid_identity):
+    def crash(stage):
+        if stage == 'copying':
+            raise PowerLoss()
+    with pytest.raises(PowerLoss), manager(root, failpoint=crash) as migration:
+        migration.prepare(initialize_database)
+    op, state = next(migration._operations())
+    marker = op / 'work' / OWNER_FILE
+    temporary = marker.with_suffix(marker.suffix + '.tmp')
+    marker.replace(temporary)
+    if not valid_identity:
+        temporary.write_text(json.dumps({'id': state['id'], 'root': 'another-directory'}))
+    with manager(root) as recovered:
+        with pytest.raises(StorageError, match='已恢复旧数据'):
+            recovered.prepare(initialize_database)
+        assert read_identity(root)[0] == '3.5.1'
+        assert (root / 'objects' / 'saved.txt').read_text(encoding='utf-8') == '用户已保存的成果'
+        assert (op / 'work').exists() is not valid_identity
+        if not valid_identity:
+            assert temporary.exists()

@@ -212,7 +212,7 @@ def test_bundled_font_id_resolves_to_a_renderable_resource(content_platform) -> 
     with engine.connect() as connection:
         resolved = resolve_font_path(connection, storage, bundled.id)
 
-    assert Path(resolved) == storage.data_root / bundled.relative_path
+    assert Path(resolved).samefile(storage.data_root / bundled.relative_path)
     assert ImageFont.truetype(resolved, 16).getbbox("A") is not None
 
 

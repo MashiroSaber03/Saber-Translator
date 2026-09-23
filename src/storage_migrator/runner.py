@@ -14,6 +14,7 @@ from src.version import APP_VERSION
 from .contracts import StorageError, contract_sql, file_hash, read_database, read_identity, validate_data
 from .control import DataRootLock, atomic_json, control_root, reject_links, wait_for_children, is_empty_root
 from .registry import MIGRATIONS, SOURCE_PREPARERS, VERSION_VALIDATORS, migration_chain
+from .paths import filesystem_path
 
 
 LOGGER = logging.getLogger(__name__)
@@ -68,6 +69,7 @@ class StorageManager:
                 "targetVersion": self.target, "steps": [step.target for step in chain]}
 
     def _validate_version(self, root: Path, version: str, *, files=False):
+        root = filesystem_path(root)
         validate_data(root, self.sql_for(version), files=files)
         validator = VERSION_VALIDATORS.get(version)
         if validator:
@@ -76,7 +78,7 @@ class StorageManager:
                 validator(db, root=root, files=files)
 
     def _operations(self):
-        folder = self.control / "operations"
+        folder = filesystem_path(self.control / "operations")
         reject_links(folder)
         if folder.exists():
             for op in sorted(folder.iterdir()):
@@ -113,18 +115,27 @@ class StorageManager:
         reject_links(path)
         marker = path / OWNER_FILE
         reject_links(marker)
+        expected = {"id": state["id"], "root": state["root"]}
         try:
+            if not marker.exists():
+                # A kill between fsync and replace can leave a complete marker.
+                # Recover it only after validating the same ownership identity.
+                temporary = marker.with_suffix(marker.suffix + ".tmp")
+                reject_links(temporary)
+                if json.loads(temporary.read_text(encoding="utf-8")) == expected:
+                    os.replace(temporary, marker)
             identity = json.loads(marker.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
             raise StorageError(f"无法读取转换目录身份，拒绝删除/替换: {path}") from exc
-        if identity != {"id": state["id"], "root": state["root"]}:
+        if identity != expected:
             raise StorageError(f"无法核验转换目录，拒绝删除/替换: {path}")
 
     def _remove(self, path: Path, state: dict) -> None:
+        path = filesystem_path(path)
         reject_links(path)
         if not path.exists():
             return
-        if not path.resolve().is_relative_to((self.control / "operations" / state["id"]).resolve()):
+        if not path.resolve().is_relative_to(filesystem_path(self.control / "operations" / state["id"]).resolve()):
             raise StorageError("清理目标越界")
         if not any(path.iterdir()):
             path.rmdir()
@@ -226,14 +237,15 @@ class StorageManager:
         prepare_source = self.preparers.get(result["sourceVersion"])
         if prepare_source is None:
             raise StorageError("缺少源版本任务终止规则，拒绝执行实际转换")
+        source_root = filesystem_path(self.root)
         size = 0
-        for path in self.root.rglob("*"):
+        for path in source_root.rglob("*"):
             reject_links(path)
             if path.is_file():
                 size += path.stat().st_size
         if shutil.disk_usage(self.root.parent).free < size + max(size // 10, 256 * 1024 * 1024):
             raise StorageError("磁盘空间不足，无法创建完整转换副本；原数据未修改")
-        op = self.control / "operations" / str(uuid.uuid4())
+        op = filesystem_path(self.control / "operations" / str(uuid.uuid4()))
         reject_links(op.parent)
         op.mkdir(parents=True)
         state = {"id": op.name, "root": str(self.root), "profile": self.profile,
@@ -244,8 +256,8 @@ class StorageManager:
         self._marker(work, state)
         try:
             self._state(op, state, "copying")
-            for path in self.root.rglob("*"):
-                relative = path.relative_to(self.root)
+            for path in source_root.rglob("*"):
+                relative = path.relative_to(source_root)
                 if relative.parts[0] == "runtime" or (len(relative.parts) == 1 and relative.name in {"saber.sqlite3", "saber.sqlite3-wal", "saber.sqlite3-shm", OWNER_FILE}):
                     continue
                 destination = work / relative

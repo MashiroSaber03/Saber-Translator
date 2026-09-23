@@ -18,6 +18,16 @@ python saber_v2.py --role storage-migrator --action upgrade --data-dir D:\SaberD
 
 发行包将 `python saber_v2.py` 替换成 `Saber-Translator.exe`。public 模式必须显式提供 `--profile public --data-dir ...`。
 
+### 更新程序与搬迁数据
+
+打包版默认数据目录是 `%LOCALAPPDATA%\SaberTranslator\data-v2`，不是 EXE 同级目录；源码版默认为项目下的 `data-v2`。`--data-dir` 优先于环境变量 `SABER_V2_DATA_ROOT`，两者都未设置时才使用默认目录。同一台电脑更新打包程序，通常直接沿用原数据目录，无需搬迁。
+
+需要搬迁时，先退出桌面和后端，确认上一次升级已经完成，再将整个 `data-v2` 放到目标默认位置，或通过 `--data-dir` 指向搬迁后的目录。保留数据库、图片、字体和配置等全部内容；正常完成升级后的历史控制目录不必随迁。
+
+升级中断或尚未完成后端就绪验收时，不要搬迁。恢复记录和目录身份绑定原绝对路径，仅将 `data-v2` 与 `.data-v2.saber-storage` 一起搬到新路径不能完成恢复。应在原路径保留两者，重新启动完成恢复及升级验收后再搬迁；不要修改身份记录来绕过检查。
+
+转换器在 Windows 上使用扩展路径访问迁移工作副本和备份，字体读取与扫描也使用相同的文件路径处理。它不要求用户开启系统长路径设置，能处理迁移额外层级造成的超长路径。数据库仍保存相对路径，恢复记录仍保存原绝对目录身份；扩展路径前缀只用于文件访问，不改变数据格式或搬迁规则。
+
 `check` 只读，不创建数据目录、锁或备份。`upgrade` 独占运行，完成实际转换后返回 `awaiting_health`，保留备份等待正常 Launcher 首次确认 API 和 Worker 就绪。独立 CLI 不假装已经完成运行验收。
 
 ## 实际转换及自动清理

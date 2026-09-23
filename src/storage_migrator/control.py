@@ -11,9 +11,11 @@ import uuid
 import psutil
 
 from .contracts import StorageError
+from .paths import filesystem_path
 
 
 def reject_links(path: Path) -> None:
+    path = filesystem_path(path)
     if path.exists() or path.is_symlink():
         info = path.lstat()
         if path.is_symlink() or getattr(info, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0):
@@ -38,6 +40,7 @@ def is_empty_root(root: Path) -> bool:
 
 
 def atomic_json(path: Path, payload: dict) -> None:
+    path = filesystem_path(path)
     reject_links(path.parent)
     reject_links(path)
     temporary = path.with_suffix(path.suffix + ".tmp")

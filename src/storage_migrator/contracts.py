@@ -6,8 +6,10 @@ import json
 from pathlib import Path
 import re
 import sqlite3
+from urllib.parse import quote
 
 from src.version import parse_version
+from .paths import filesystem_path
 
 
 class StorageError(RuntimeError):
@@ -15,7 +17,9 @@ class StorageError(RuntimeError):
 
 
 def read_database(path: Path):
-    return sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
+    # Path.as_uri() treats the Windows extended-path '?' as a URI authority.
+    path = filesystem_path(path).resolve()
+    return sqlite3.connect("file:" + quote(str(path), safe="/:") + "?mode=ro", uri=True)
 
 
 def read_identity(root: Path) -> tuple[str, str]:
@@ -97,7 +101,7 @@ def validate_schema(db: sqlite3.Connection, sql: str) -> None:
 
 
 def file_hash(path: Path) -> str:
-    with path.open("rb") as source:
+    with filesystem_path(path).open("rb") as source:
         return hashlib.file_digest(source, "sha256").hexdigest()
 
 
