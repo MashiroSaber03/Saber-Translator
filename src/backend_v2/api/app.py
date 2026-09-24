@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.version import APP_VERSION
+from src.version import STORAGE_VERSION
 from src.storage_migrator.control import business_ready
 
 from dataclasses import dataclass, field
@@ -120,7 +120,7 @@ def _create_v2_blueprint(settings: ApiSettings) -> Blueprint:
         if include_identity:
             payload.update(
                 {
-                    "storageVersion": APP_VERSION,
+                    "storageVersion": STORAGE_VERSION,
                     "role": "api",
                     "epochId": settings.identity.epoch_id,
                     "dataRootFingerprint": data_root_fingerprint(settings.data_root),

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from src.backend_v2.storage.startup import current_storage_process
 from src.storage_migrator.control import business_ready
-from src.version import APP_VERSION
+from src.version import STORAGE_VERSION
 
 import json
 import logging
@@ -62,7 +62,7 @@ def _write_ready_marker(data_root: Path, identity: RuntimeIdentity) -> None:
     temporary.write_text(
         json.dumps(
             {
-                "storageVersion": APP_VERSION,
+                "storageVersion": STORAGE_VERSION,
                 "pid": os.getpid(),
                 "epochId": identity.epoch_id,
                 "dataRootFingerprint": data_root_fingerprint(data_root),

@@ -5,7 +5,7 @@ from __future__ import annotations
 from contextlib import nullcontext
 from src.storage_migrator.runner import StorageManager
 from src.storage_migrator.control import business_ready, control_root
-from src.version import APP_VERSION
+from src.version import STORAGE_VERSION
 
 from dataclasses import dataclass, field
 from enum import Enum
@@ -365,7 +365,7 @@ def _wait_for_api(
                 status == 200
                 and isinstance(payload, dict)
                 and payload.get("epochId") == expected_epoch_id
-                and payload.get("storageVersion") == APP_VERSION
+                and payload.get("storageVersion") == STORAGE_VERSION
                 and payload.get("status") == "ok"
             ):
                 return
@@ -511,7 +511,7 @@ def _wait_for_worker(
                 raise _LauncherStopRequested
             continue
         if (payload.get("epochId") == expected_epoch_id
-                and payload.get("storageVersion") == APP_VERSION
+                and payload.get("storageVersion") == STORAGE_VERSION
                 and payload.get("dataRootFingerprint") == data_root_fingerprint(data_root)):
             return
         if stop_event is None:

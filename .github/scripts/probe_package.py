@@ -39,7 +39,7 @@ def main() -> None:
             )
             payload = json.loads(result.stdout)
             expected = "created" if action == "upgrade" else "current"
-            if payload.get("status") != expected or payload.get("targetVersion") != manifest["version"]:
+            if payload.get("status") != expected or payload.get("targetVersion") != manifest["storageVersion"]:
                 raise RuntimeError(f"Unexpected storage probe result: {payload}")
 
 

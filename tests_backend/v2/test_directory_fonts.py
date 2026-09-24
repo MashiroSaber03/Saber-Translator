@@ -23,7 +23,7 @@ from src.backend_v2.storage.schema import assets, fonts, pages, platform_config
 from src.backend_v2.storage.seeding import QUICK_WORKSPACE_CHAPTER_ID
 from src.storage_migrator.contracts import contract_sql, read_identity
 from src.storage_migrator.runner import StorageManager
-from src.version import APP_VERSION
+from src.version import STORAGE_VERSION
 
 
 @pytest.fixture
@@ -157,7 +157,7 @@ def test_350_upgrade_preserves_font_ids_page_references_and_bytes(tmp_path, disp
         db.execute("INSERT INTO pages(id,chapter_id,ordinal,logical_source_path,default_font_id) VALUES ('page','chapter',1,'page.png',?)", (uploaded,))
     with StorageManager(root, 'local') as manager:
         assert manager.prepare(initialize_database)['status'] == 'awaiting_health'
-        assert read_identity(root)[0] == APP_VERSION
+        assert read_identity(root)[0] == STORAGE_VERSION
         with closing(sqlite3.connect(root / 'saber.sqlite3')) as db:
             path, owner = db.execute('SELECT relative_path,owner_user_id FROM fonts WHERE id=?', (uploaded,)).fetchone()
             resolved = font_files.font_path(root, path, owner)

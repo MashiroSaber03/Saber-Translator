@@ -1,4 +1,4 @@
-"""Append one fixed step per release, including explicit no-data-change steps."""
+"""Fixed migration steps between storage versions, independent of app releases."""
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,7 +28,7 @@ VERSION_VALIDATORS = {"3.5.0": validate, "3.5.1": validate_directory_fonts, "3.5
 
 def migration_chain(source: str, target: str, steps=MIGRATIONS) -> list[Migration]:
     if parse_version(source) > parse_version(target):
-        raise StorageError(f"数据版本 {source} 高于程序版本 {target}，不支持降级")
+        raise StorageError(f"数据版本 {source} 高于目标存储版本 {target}，不支持降级")
     by_source = {}
     for step in steps:
         if step.source in by_source or parse_version(step.source) >= parse_version(step.target):

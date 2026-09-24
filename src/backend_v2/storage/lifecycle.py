@@ -9,7 +9,7 @@ import json
 
 from sqlalchemy import insert
 
-from src.version import APP_VERSION
+from src.version import STORAGE_VERSION
 from src.storage_migrator.contracts import (
     StorageError, contract_sql, read_database, read_identity, validate_schema,
 )
@@ -29,7 +29,7 @@ class StorageInitializationResult:
 def schema_smoke_test(database_path: Path) -> None:
     with closing(read_database(database_path)) as connection:
         connection.execute("BEGIN")
-        validate_schema(connection, contract_sql(APP_VERSION))
+        validate_schema(connection, contract_sql(STORAGE_VERSION))
 
 
 def _clear_initialization(data_root: Path) -> None:
@@ -60,8 +60,8 @@ def initialize_database(data_root: Path, *, profile_name: str = "local") -> Stor
         version, profile = read_identity(data_root)
         if profile != profile_name:
             raise StorageError(f"该数据目录属于 {profile} 模式，不能由 {profile_name} 模式使用")
-        if version != APP_VERSION:
-            raise StorageError(f"存储版本 {version} 与程序 {APP_VERSION} 不一致，请先运行存储转换器")
+        if version != STORAGE_VERSION:
+            raise StorageError(f"存储版本 {version} 与所需存储版本 {STORAGE_VERSION} 不一致，请先运行存储转换器")
         schema_smoke_test(database_path)
         _clear_initialization(data_root)
         return StorageInitializationResult(database_path, False)
@@ -83,7 +83,7 @@ def initialize_database(data_root: Path, *, profile_name: str = "local") -> Stor
         seed_system_records(engine, profile_name=profile_name)
         with engine.begin() as connection:
             connection.execute(insert(schema_metadata).values(
-                singleton_id=1, runtime_profile=profile_name, storage_version=APP_VERSION,
+                singleton_id=1, runtime_profile=profile_name, storage_version=STORAGE_VERSION,
             ))
         with engine.connect() as connection:
             connection.exec_driver_sql("PRAGMA wal_checkpoint(TRUNCATE)")
