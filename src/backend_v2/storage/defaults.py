@@ -23,7 +23,7 @@ DEFAULT_TEXT_STYLE: dict[str, object] = {
     "layoutDirection": "auto",
     "textColor": "#000000",
     "fillColor": "#FFFFFF",
-    "inpaintMethod": "solid",
+    "inpaintMethod": "lama_manga",
     "useAutoTextColor": False,
     "strokeEnabled": True,
     "strokeColor": "#FFFFFF",

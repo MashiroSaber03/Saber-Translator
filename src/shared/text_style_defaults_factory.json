@@ -5,7 +5,7 @@
   "layoutDirection": "auto",
   "textColor": "#000000",
   "fillColor": "#FFFFFF",
-  "inpaintMethod": "solid",
+  "inpaintMethod": "lama_manga",
   "useAutoTextColor": false,
   "strokeEnabled": true,
   "strokeColor": "#FFFFFF",

@@ -17,8 +17,8 @@ export const blockAlignOptions = [
 ]
 
 export const inpaintMethodOptions = [
+  { label: 'lama漫画(推荐)', value: 'lama_manga' },
   { label: '纯色填充', value: 'solid' },
-  { label: 'LAMA修复 (速度优化)', value: 'lama_mpe' },
-  { label: 'LAMA修复 (通用)', value: 'litelama' },
-  { label: 'LAMA修复 (漫画)', value: 'lama_manga' },
+  { label: 'lama通用', value: 'litelama' },
+  { label: 'lama速度', value: 'lama_mpe' },
 ]
