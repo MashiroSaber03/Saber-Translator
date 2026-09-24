@@ -18,9 +18,12 @@ class Migration:
     validate: Callable[[Path], None] | None = None
 
 
-MIGRATIONS: tuple[Migration, ...] = (Migration("3.5.0", "3.5.1", directory_fonts),)
-SOURCE_PREPARERS = {"3.5.0": stop_unfinished, "3.5.1": stop_unfinished}
-VERSION_VALIDATORS = {"3.5.0": validate, "3.5.1": validate_directory_fonts}
+MIGRATIONS: tuple[Migration, ...] = (
+    Migration("3.5.0", "3.5.1", directory_fonts),
+    Migration("3.5.1", "3.5.2"),
+)
+SOURCE_PREPARERS = {"3.5.0": stop_unfinished, "3.5.1": stop_unfinished, "3.5.2": stop_unfinished}
+VERSION_VALIDATORS = {"3.5.0": validate, "3.5.1": validate_directory_fonts, "3.5.2": validate_directory_fonts}
 
 
 def migration_chain(source: str, target: str, steps=MIGRATIONS) -> list[Migration]:
