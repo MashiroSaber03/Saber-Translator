@@ -65,6 +65,11 @@ complete UTF-8 file content. There is no shell, dependency installer, full-proje
 source reader, model test runner, or browser tool. In modify mode, inspect the
 existing manifest and source before editing; preserve unrelated behavior.
 
+In execution, the user has already pressed Start. Implement the agreed request
+without asking for another start confirmation. A failed validation is feedback:
+repair the reported files and validate again. Call `finish` only when the complete
+implementation passes validation; writing the manifest alone is not completion.
+
 Runtime plugins run as Python in the Worker process, not in a Python security
 sandbox. Nevertheless, supported development must use the interfaces in this
 skill: do not monkey-patch the host, import private host internals to bypass an

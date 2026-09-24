@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import itertools
 import json
 import logging
 import re
@@ -19,6 +18,7 @@ from src.shared.openai_execution import (
     OpenAICompatibleBusinessRetryableError,
     OpenAICompatibleSyncExecutor,
     build_openai_compatible_runtime_options,
+    parse_json_block_from_text,
 )
 from src.shared.openai_options import OpenAICompatibleOptions
 
@@ -26,6 +26,7 @@ from .models import PluginAgentSession
 
 logger = logging.getLogger("PluginAgent.Controller")
 _ASSISTANT_MESSAGE_PATTERN = re.compile(r'"assistant_message"\s*:\s*"')
+_MAX_EXECUTION_STEPS = 32
 _PLANNING_FIELDS = {"assistant_message", "can_execute", "target_proposal"}
 _EXECUTION_FIELDS = {"assistant_message", "action"}
 _ACTION_FIELDS = {"tool", "args"}
@@ -146,7 +147,7 @@ class PluginAgentController:
         tool_history: list[dict[str, Any]] = []
         last_validation: dict[str, Any] | None = None
 
-        for iteration in itertools.count(1):
+        for iteration in range(1, _MAX_EXECUTION_STEPS + 1):
             if tool_executor.is_control_requested():
                 raise PluginAgentControlRequested(
                     "plugin agent job control requested"
@@ -218,20 +219,21 @@ class PluginAgentController:
             if tool_name == "finish":
                 final_validation = last_validation or tool_executor.validate_plugin()
                 self._validate_tool_result("validate_plugin", final_validation)
-                if not final_validation["success"]:
-                    error = final_validation.get("error")
-                    raise ValueError(
-                        error if isinstance(error, str) and error else "插件校验失败"
-                    )
-                return {
-                    "assistant_message": assistant_message or "插件任务完成。",
-                    "validation": final_validation,
-                }
+                if final_validation["success"]:
+                    return {
+                        "assistant_message": assistant_message or "插件任务完成。",
+                        "validation": final_validation,
+                    }
+                # A premature finish is a failed validation, not a failed job.
+                tool_name = "validate_plugin"
 
             tool_args = action["args"]
             group_id = f"tool-{iteration}"
             emit_event("tool_call", self._build_tool_call_payload(tool_name, tool_args, group_id))
-            tool_result = tool_executor.run_tool(tool_name, tool_args)
+            tool_result = (
+                final_validation if action["tool"] == "finish"
+                else tool_executor.run_tool(tool_name, tool_args)
+            )
             self._validate_tool_result(tool_name, tool_result)
             emit_event("tool_result", self._build_tool_result_payload(tool_name, tool_result, group_id))
 
@@ -244,10 +246,14 @@ class PluginAgentController:
             tool_history.append(
                 {
                     "tool": tool_name,
-                    "args": dict(tool_args),
-                    "result": dict(tool_result),
+                    "args": {key: value for key, value in tool_args.items() if key != "content"},
+                    "result": {key: value for key, value in tool_result.items() if key != "preview"},
                 }
             )
+            tool_history = tool_history[-8:]
+
+        detail = last_validation.get("error", "") if last_validation else ""
+        raise RuntimeError(f"插件助手达到 {_MAX_EXECUTION_STEPS} 步执行上限，仍未完成。{detail}")
 
     def _call_agent_json(
         self,
@@ -301,7 +307,10 @@ class PluginAgentController:
 
         def parse_response(content: str) -> dict[str, Any]:
             try:
-                return self._parse_agent_envelope(content, require_action=require_action)
+                return self._parse_agent_envelope(
+                    content, require_action=require_action,
+                    force_json_output=openai_options.request.force_json_output,
+                )
             except OpenAICompatibleBusinessRetryableError as error:
                 if require_action:
                     # The existing executor retries this request. Keep only the
@@ -349,9 +358,10 @@ class PluginAgentController:
         content: str,
         *,
         require_action: bool = False,
+        force_json_output: bool = True,
     ) -> dict[str, Any]:
         try:
-            parsed = json.loads(content)
+            parsed = json.loads(content) if force_json_output else parse_json_block_from_text(content)
         except (TypeError, json.JSONDecodeError) as exc:
             raise OpenAICompatibleBusinessRetryableError(
                 f"Agent JSON 解析失败: {exc}"
@@ -361,10 +371,11 @@ class PluginAgentController:
                 "Agent 返回结果必须是 JSON 对象"
             )
         expected_fields = _EXECUTION_FIELDS if require_action else _PLANNING_FIELDS
-        if set(parsed) != expected_fields:
+        if not expected_fields.issubset(parsed):
             raise OpenAICompatibleBusinessRetryableError(
                 "Agent 返回结果字段与当前阶段不匹配"
             )
+        parsed = {key: parsed[key] for key in expected_fields}
         assistant_message = parsed["assistant_message"]
         if not isinstance(assistant_message, str):
             raise OpenAICompatibleBusinessRetryableError(
@@ -645,7 +656,7 @@ class PluginAgentController:
             f"锁定插件: {session.locked_target.plugin_id}\n"
             f"插件目录: {session.locked_target.plugin_dir}\n"
             f"会话模式: {session.mode}\n"
-            f"完整工具历史: {history_json}\n\n"
+            f"近期工具结果（写入内容不重复附带，需要时 read_file 读取）: {history_json}\n\n"
             "可用工具：list_files, read_file, write_file, delete_file, read_skill, validate_plugin, finish\n"
             "工具 args 参数约定（禁止额外字段）：\n"
             '- list_files: {} 或 {"path":"相对目录"}\n'
@@ -669,6 +680,7 @@ class PluginAgentController:
             '- assistant_message 必须放在返回 JSON 的第一个字段，action 必须紧随其后。\n'
             "- 修改文件时必须提供完整文件内容，不要只给 diff。\n"
             "- finish 前至少应完成一次 validate_plugin 并确保成功。\n"
+            "- 校验失败时根据错误修正文件并重新校验，不要重复调用 finish 或等待用户确认。\n"
             "- 需求已实现且最后一次修改已通过校验时，立即调用 finish；不要重复读写相同内容或重复校验。\n"
             "- 优先保持实现简单、符合项目插件规范。\n"
         )
@@ -691,6 +703,10 @@ class PluginAgentController:
         ]
         for item in session.messages:
             messages.append({"role": item.role, "content": item.content})
+        messages.append({
+            "role": "user",
+            "content": "用户已点击开始执行，目标已锁定。现在根据上述已确认需求和近期工具结果继续完成文件修改；不再请求开始确认。只有实现完成且校验通过才能 finish。",
+        })
         return messages
 
     @staticmethod
@@ -743,10 +759,7 @@ class PluginAgentController:
         group_id: str,
     ) -> dict[str, Any]:
         success = tool_result["success"]
-        raw_path = tool_result.get("path")
-        if raw_path is not None and not isinstance(raw_path, str):
-            raise TypeError("Plugin Agent 工具结果 path 必须是字符串")
-        path = raw_path or ""
+        path = tool_result.get("path", "")
         summary = cls._summarize_tool_result(tool_name, tool_result, success)
         changed_files: list[str] = []
         file_previews: dict[str, str] = {}
@@ -771,29 +784,12 @@ class PluginAgentController:
     def _build_validation_payload(
         validation_result: dict[str, Any],
     ) -> dict[str, Any]:
-        PluginAgentController._require_tool_result(validation_result)
         success = validation_result["success"]
         if success:
-            plugin_id = validation_result.get("plugin_id")
-            if plugin_id is not None and not isinstance(plugin_id, str):
-                raise TypeError("Plugin Agent 校验结果 plugin_id 必须是字符串")
-            plugin_label = plugin_id or "当前插件"
-            package_version = validation_result.get("package_version")
-            if package_version is not None and not isinstance(
-                package_version,
-                str,
-            ):
-                raise TypeError(
-                    "Plugin Agent 校验结果 package_version 必须是字符串"
-                )
-            if package_version:
-                plugin_label = f"{plugin_label} {package_version}"
+            plugin_label = f"{validation_result['plugin_id']} {validation_result['package_version']}"
             summary = f"插件校验通过：{plugin_label}"
         else:
-            error = validation_result.get("error")
-            if error is not None and not isinstance(error, str):
-                raise TypeError("Plugin Agent 校验结果 error 必须是字符串")
-            summary = f"插件校验失败：{error or '未知错误'}"
+            summary = f"插件校验失败：{validation_result['error']}"
         return {
             "summary": summary,
             "success": success,
