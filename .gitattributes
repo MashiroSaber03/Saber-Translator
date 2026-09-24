@@ -1,0 +1,4 @@
+# Keep frontend source and generated assets reproducible on Windows and Linux.
+# Auto detection preserves binary files such as images and fonts.
+/vue-frontend/** text=auto eol=lf
+/src/backend_v2/static/vue/** text=auto eol=lf
