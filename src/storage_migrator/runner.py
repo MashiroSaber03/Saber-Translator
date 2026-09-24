@@ -10,7 +10,7 @@ import sqlite3
 from typing import Callable
 import uuid
 
-from src.version import APP_VERSION
+from src.version import STORAGE_VERSION
 from .contracts import StorageError, contract_sql, file_hash, read_database, read_identity, validate_data
 from .control import DataRootLock, atomic_json, control_root, reject_links, wait_for_children, is_empty_root
 from .registry import MIGRATIONS, SOURCE_PREPARERS, VERSION_VALIDATORS, migration_chain
@@ -22,7 +22,7 @@ OWNER_FILE = ".saber-migration-owner.json"
 
 
 class StorageManager:
-    def __init__(self, root: Path, profile: str, *, target=APP_VERSION, steps=MIGRATIONS,
+    def __init__(self, root: Path, profile: str, *, target=STORAGE_VERSION, steps=MIGRATIONS,
                  sql_for=contract_sql, progress: Callable[[str], None] | None = None,
                  failpoint: Callable[[str], None] | None = None, preparers=SOURCE_PREPARERS):
         reject_links(root)
@@ -222,7 +222,7 @@ class StorageManager:
             self.check()
             return {**result, "status": "created"}
         if result["status"] == "current":
-            if self.target == APP_VERSION:
+            if self.target == STORAGE_VERSION:
                 initialize(self.root, profile_name=self.profile)
             return result
         chain = migration_chain(result["sourceVersion"], self.target, self.steps)

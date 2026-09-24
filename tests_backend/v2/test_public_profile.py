@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.version import APP_VERSION
+from src.version import STORAGE_VERSION
 
 from src.backend_v2.storage.defaults import DEFAULT_FONT_ID
 
@@ -359,7 +359,7 @@ def test_public_capabilities_host_filter_and_security_headers(public_platform) -
         headers={INTERNAL_HEALTH_TOKEN_HEADER: "public-profile-token"},
     )
     assert internal_health.get_json() == {
-        "storageVersion": APP_VERSION,
+        "storageVersion": STORAGE_VERSION,
         "status": "ok",
         "role": "api",
         "epochId": "public-profile-test",

@@ -118,7 +118,8 @@ def test_release_workflow_builds_the_triggering_revision() -> None:
     assert "EVENT_NAME: ${{ github.event_name }}" in workflow
     assert 'MANIFEST_VERSION=$(jq -er .version version.json)' in workflow
     assert '"$VERSION" != "$MANIFEST_VERSION"' in workflow
-    assert 'test -f "src/storage_migrator/schemas/$VERSION.sql"' in workflow
+    assert 'STORAGE_VERSION=$(jq -er .storageVersion version.json)' in workflow
+    assert 'test -f "src/storage_migrator/schemas/$STORAGE_VERSION.sql"' in workflow
     assert "prerelease: false" in workflow
     assert "git status --porcelain -- src/backend_v2/static/vue" in workflow
     assert "python -m pytest tests_backend -q" in workflow

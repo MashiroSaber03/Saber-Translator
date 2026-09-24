@@ -2,7 +2,7 @@
 
 from functools import wraps
 
-from src.version import APP_VERSION
+from src.version import STORAGE_VERSION
 from src.storage_migrator.contracts import StorageError, read_identity
 from src.storage_migrator.control import registered_process
 from src.backend_v2.paths import resolve_data_root
@@ -20,7 +20,7 @@ def current_storage_process(role):
             getattr(RuntimeIdentity, f"for_{role}")(test_mode=False)
             root = resolve_data_root(args.data_dir)
             with registered_process(root, role):
-                if read_identity(root) != (APP_VERSION, getattr(args, "profile", "local")):
+                if read_identity(root) != (STORAGE_VERSION, getattr(args, "profile", "local")):
                     raise StorageError("API/Worker 只接受当前版本和指定运行模式的数据，请通过 Launcher 启动")
                 schema_smoke_test(root / "saber.sqlite3")
                 return run(args)

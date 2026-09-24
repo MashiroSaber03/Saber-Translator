@@ -8,7 +8,7 @@ import sys
 
 import pytest
 
-from src.version import APP_VERSION, parse_version
+from src.version import STORAGE_VERSION, parse_version
 from src.backend_v2.storage.lifecycle import initialize_database, schema_smoke_test
 from src.storage_migrator.contracts import StorageError, contract_sql, read_identity
 from src.storage_migrator.control import DataRootLock, DataRootAlreadyLocked, business_ready, atomic_json, control_root, registered_process, wait_for_children
@@ -59,7 +59,7 @@ def manager(root, **kwargs):
 
 
 def test_version_numeric_and_registry():
-    assert APP_VERSION == "3.5.2"
+    assert STORAGE_VERSION == "3.5.2"
     assert parse_version("3.5.10") > parse_version("3.5.9")
     for value in ("3.5", "3.05.0", "3.6.0-rc1", "v3.5.1"):
         with pytest.raises(ValueError):
@@ -72,7 +72,7 @@ def test_version_numeric_and_registry():
 
 def test_current_check_and_readonly_cli(root):
     with closing(sqlite3.connect(root / "saber.sqlite3")) as db, db:
-        db.execute("UPDATE schema_metadata SET storage_version=?", (APP_VERSION,))
+        db.execute("UPDATE schema_metadata SET storage_version=?", (STORAGE_VERSION,))
     assert StorageManager(root, "local").check()["status"] == "current"
     result = subprocess.run([sys.executable, "saber_v2.py", "--role", "storage-migrator", "--action", "check", "--data-dir", str(root)], capture_output=True, text=True, encoding="utf-8")
     assert result.returncode == 0, result.stderr
@@ -122,7 +122,7 @@ def test_351_upgrade_to_current_preserves_data_without_backup(root):
     with StorageManager(root, "local") as migration:
         assert migration.check()["status"] == "upgrade_required"
         assert migration.prepare(initialize_database)["status"] == "updated"
-        assert read_identity(root)[0] == APP_VERSION
+        assert read_identity(root)[0] == STORAGE_VERSION
         assert not list(migration._operations())
         assert business_ready(root)
         assert migration.check()["status"] == "current"
@@ -244,7 +244,7 @@ def test_lock_outside_root_and_live_process_protection(root):
 
 def test_api_gate_allows_only_health(root):
     with closing(sqlite3.connect(root / "saber.sqlite3")) as db, db:
-        db.execute("UPDATE schema_metadata SET storage_version=?", (APP_VERSION,))
+        db.execute("UPDATE schema_metadata SET storage_version=?", (STORAGE_VERSION,))
     from src.backend_v2.api.app import ApiSettings, create_api_app
     from src.backend_v2.runtime_identity import RuntimeIdentity
     from src.backend_v2.storage.database import create_sqlite_engine
@@ -255,7 +255,7 @@ def test_api_gate_allows_only_health(root):
         atomic_json(control_root(root) / "upgrade-pending.json", {"id": "test"})
         with app.test_client() as client:
             health = client.get("/api/v2/health")
-            assert health.status_code == 200 and health.json["storageVersion"] == APP_VERSION
+            assert health.status_code == 200 and health.json["storageVersion"] == STORAGE_VERSION
             assert client.get("/api/v2/jobs").status_code == 503
     finally:
         app.extensions["saber_v2_runtime"].close()
@@ -348,7 +348,7 @@ def test_real_launcher_confirms_candidate_and_cleans_backup(root):
         db.execute("UPDATE schema_metadata SET storage_version='3.4.9'")
         db.execute("ALTER TABLE app_settings ADD COLUMN old_fixture_column TEXT")
     def fixture_sql(version):
-        return contract_sql(APP_VERSION) + ("\nALTER TABLE app_settings ADD COLUMN old_fixture_column TEXT;" if version == "3.4.9" else "")
+        return contract_sql(STORAGE_VERSION) + ("\nALTER TABLE app_settings ADD COLUMN old_fixture_column TEXT;" if version == "3.4.9" else "")
     def fixture_convert(work):
         with closing(sqlite3.connect(work / "saber.sqlite3")) as db, db:
             db.execute("ALTER TABLE app_settings DROP COLUMN old_fixture_column")
@@ -357,7 +357,7 @@ def test_real_launcher_confirms_candidate_and_cleans_backup(root):
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         port = listener.getsockname()[1]
-    with StorageManager(root, "local", steps=(Migration("3.4.9", APP_VERSION, fixture_convert),), sql_for=fixture_sql, preparers={"3.4.9": stop_unfinished}) as migration:
+    with StorageManager(root, "local", steps=(Migration("3.4.9", STORAGE_VERSION, fixture_convert),), sql_for=fixture_sql, preparers={"3.4.9": stop_unfinished}) as migration:
         supervisor = LauncherSupervisor(LauncherConfig(root, host="127.0.0.1", port=port, open_browser=False), storage_manager=migration,
             status_callback=lambda status: ready.set() if status.state == LauncherState.RUNNING else None)
         def run():
@@ -374,7 +374,7 @@ def test_real_launcher_confirms_candidate_and_cleans_backup(root):
             assert business_ready(root)
             op, state = list(migration._operations())[0]
             assert state["stage"] == "cleaned" and not (op / "backup").exists()
-            assert read_identity(root)[0] == APP_VERSION
+            assert read_identity(root)[0] == STORAGE_VERSION
         finally:
             supervisor.request_stop()
             thread.join(40)
@@ -457,10 +457,10 @@ def test_pending_candidate_profile_mismatch_is_readonly(root):
 
 def test_release_registers_complete_fixed_contracts():
     from src.storage_migrator.registry import MIGRATIONS, SOURCE_PREPARERS, VERSION_VALIDATORS
-    versions = {"3.5.0", APP_VERSION} | {step.source for step in MIGRATIONS} | {step.target for step in MIGRATIONS}
+    versions = {"3.5.0", STORAGE_VERSION} | {step.source for step in MIGRATIONS} | {step.target for step in MIGRATIONS}
     for version in versions:
-        assert parse_version(version) <= parse_version(APP_VERSION)
-        migration_chain(version, APP_VERSION, MIGRATIONS)
+        assert parse_version(version) <= parse_version(STORAGE_VERSION)
+        migration_chain(version, STORAGE_VERSION, MIGRATIONS)
         assert contract_sql(version)
         assert version in SOURCE_PREPARERS
         assert version in VERSION_VALIDATORS
