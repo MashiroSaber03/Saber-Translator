@@ -2953,9 +2953,99 @@ def test_plugin_agent_execution_uses_one_leading_system_message() -> None:
         "plugin skill",
     )
 
-    assert [message["role"] for message in messages] == ["system", "user"]
+    assert [message["role"] for message in messages] == ["system", "user", "user"]
     assert "execution instructions" in messages[0]["content"]
     assert "plugin skill" in messages[0]["content"]
+    assert messages[-1]["role"] == "user"
+    assert "用户已点击开始执行" in messages[-1]["content"]
+
+
+@pytest.mark.parametrize("repair", [True, False])
+def test_plugin_agent_premature_finish_repairs_real_worktree(tmp_path, monkeypatch, repair):
+    from src.core.plugin_agent import controller as controller_module
+
+    monkeypatch.setattr(controller_module, "_MAX_EXECUTION_STEPS", 5)
+    tools = PluginAgentWorktreeTools(
+        worktree=tmp_path, skill_markdown="skill", control_requested=lambda: False,
+    )
+    tools.write_file("plugin.json", json.dumps(_valid_manifest()))
+    tools.write_file("README.md", "incomplete plugin")
+    controller = PluginAgentController()
+    requests = []
+
+    def respond(messages, *_args, **_kwargs):
+        requests.append(messages)
+        if repair and len(requests) == 2:
+            assert "plugin entrypoint module is missing" in messages[0]["content"]
+            action = {"tool": "write_file", "args": {
+                "path": "plugin.py",
+                "content": "class Plugin:\n    def after_translate(self, context, data):\n        return data\n",
+            }}
+        else:
+            action = {"tool": "finish", "args": {}}
+        return {"assistant_message": "执行", "action": action}
+
+    monkeypatch.setattr(controller, "_call_agent_json", respond)
+    session = PluginAgentSession(
+        session_id="repair", mode="create",
+        locked_target=LockedPluginTarget(mode="create", plugin_id="strict_v3",
+            display_name="Strict", plugin_dir=str(tmp_path)),
+        messages=[PluginAgentMessage(id="1", role="assistant", content="请确认后开始")],
+    )
+    events = []
+    if repair:
+        result = controller.execute(session, "skill", {}, tools, lambda *event: events.append(event))
+        assert result["validation"]["success"]
+        assert len(requests) == 3
+        assert parse_archive(build_archive(tmp_path)).manifest.plugin_id == "strict_v3"
+    else:
+        with pytest.raises(RuntimeError, match="5 步执行上限"):
+            controller.execute(session, "skill", {}, tools, lambda *event: events.append(event))
+        assert len(requests) == 5
+        assert not (tmp_path / "plugin.py").exists()
+    assert any(kind == "validation" and not payload["success"] for kind, payload in events)
+    assert len(session.messages) == 1
+
+
+def test_plugin_agent_optional_json_mode_and_extra_description():
+    envelope = {"assistant_message": "ok", "can_execute": False, "target_proposal": None}
+    wrapped = "```json\n" + json.dumps({**envelope, "explanation": "extra"}) + "\n```"
+    assert PluginAgentController._parse_agent_envelope(wrapped, force_json_output=False) == envelope
+    with pytest.raises(OpenAICompatibleBusinessRetryableError):
+        PluginAgentController._parse_agent_envelope(wrapped, force_json_output=True)
+
+
+def test_plugin_agent_keeps_recent_results_without_repeating_written_content(tmp_path, monkeypatch):
+    tools = PluginAgentWorktreeTools(
+        worktree=tmp_path, skill_markdown="skill", control_requested=lambda: False,
+    )
+    with zipfile.ZipFile(BytesIO(_plugin_archive())) as archive:
+        archive.extractall(tmp_path)
+    controller = PluginAgentController()
+    calls = 0
+
+    def respond(messages, *_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        if calls <= 10:
+            action = {"tool": "write_file", "args": {
+                "path": f"note-{calls}.txt", "content": "unique-written-content" * 100,
+            }}
+        else:
+            prompt = messages[0]["content"]
+            assert 'note-1.txt' not in prompt
+            assert 'note-2.txt' not in prompt
+            assert 'note-3.txt' in prompt and 'note-10.txt' in prompt
+            assert 'unique-written-content' not in prompt
+            action = {"tool": "finish", "args": {}}
+        return {"assistant_message": "执行", "action": action}
+
+    monkeypatch.setattr(controller, "_call_agent_json", respond)
+    session = PluginAgentSession(session_id="history", mode="create",
+        locked_target=LockedPluginTarget(mode="create", plugin_id="test_v3",
+            display_name="Test", plugin_dir=str(tmp_path)))
+    assert controller.execute(session, "skill", {}, tools, lambda *_: None)["validation"]["success"]
+    assert calls == 11
 
 
 def test_plugin_agent_http_maps_domain_and_request_validation_errors(
