@@ -10,8 +10,6 @@ import UiIconButton from '@/components/ui/UiIconButton.vue'
 import UiProgressBar from '@/components/ui/UiProgressBar.vue'
 import { ref, watch } from 'vue'
 import { showToast } from '@/utils/toast'
-import { useWebImportStore } from '@/stores/webImportStore'
-import { useRuntimeStore } from '@/stores/runtimeStore'
 import {
   createContainerImportJob,
   importImagesSequentially,
@@ -33,8 +31,6 @@ const emit = defineEmits<{
   (e: 'contentImportAccepted', jobIds: string[]): void
   (e: 'uploadComplete', count: number): void
 }>()
-const webImportStore = useWebImportStore()
-const runtimeStore = useRuntimeStore()
 const folderInputRef = ref<InstanceType<typeof UiFileInput> | null>(null)
 const isLoading = ref(false)
 const errorMessage = ref('')
@@ -47,9 +43,6 @@ const failedTextStyle = ref<TextStyleSettings | null>(null)
 const CONTAINER_SUFFIXES = new Set(['.pdf', '.zip', '.cbz', '.mobi', '.azw', '.azw3'])
 const IMAGE_SUFFIXES = new Set(['.bmp', '.gif', '.jpeg', '.jpg', '.png', '.tif', '.tiff', '.webp'])
 
-function triggerWebImport() {
-  webImportStore.openModal()
-}
 function triggerFolderSelect() {
   folderInputRef.value?.click()
 }
@@ -274,19 +267,6 @@ watch(() => props.chapterId, () => {
       >
         <UiIcon name="folder-open" size="15" />
         <span>选择文件夹</span>
-      </UiButton>
-      <span v-if="runtimeStore.capabilities?.features.webImport !== false" class="image-upload__separator" aria-hidden="true">|</span>
-      <UiButton
-        v-if="runtimeStore.capabilities?.features.webImport !== false"
-        class="image-upload__inline-action"
-        variant="link"
-        size="sm"
-        :disabled="disabled || isLoading"
-        aria-label="从网页导入漫画图片"
-        @click.stop="triggerWebImport"
-      >
-        <UiIcon name="globe" size="15" />
-        <span>从网页导入</span>
       </UiButton>
     </ProductActionRow>
     <UiFileInput

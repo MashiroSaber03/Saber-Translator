@@ -2499,39 +2499,12 @@ test('translation settings modal keeps every tab layout contract', async ({ page
   }
 })
 
-test('web import expanded settings keep modal layout contract', async ({ page }) => {
+test('translation upload exposes local import without a web import entry', async ({ page }) => {
   await page.goto('/translate')
-  await page.getByRole('button', { name: '从网页导入漫画图片' }).click()
-  const webImportModal = page.locator('.web-import-modal')
-  await expect(webImportModal).toBeVisible()
-  await webImportModal.getByRole('button', { name: '网页导入设置' }).click()
-  await webImportModal.getByRole('tab', { name: /高级设置/ }).click()
-  await expect(webImportModal.locator('.product-collapsible-section__body')).toBeVisible()
-  await expect(webImportModal.locator('[role="tab"][aria-selected="true"]')).toHaveText('高级设置')
-  await webImportModal.evaluate(element => {
-    element.scrollTop = 0
-    element.querySelector<HTMLElement>('[data-testid="base-dialog-body"]')?.scrollTo(0, 0)
-  })
-  await expect(webImportModal).toHaveScreenshot('web-import-expanded-settings.png', {
-    animations: 'disabled',
-  })
-})
-
-test('web import result and logs keep modal layout contract', async ({ page }) => {
-  await page.goto('/translate')
-  await page.getByRole('button', { name: '从网页导入漫画图片' }).click()
-  const webImportModal = page.locator('.web-import-modal')
-  await expect(webImportModal).toBeVisible()
-  await webImportModal.locator('#webImportSourceUrl').fill('https://example.com/chapter-1')
-  await webImportModal.getByRole('button', { name: /开始提取/ }).click()
-
-  await expect(webImportModal.locator('.product-log-panel')).toBeVisible()
-  await expect(webImportModal.locator('.web-import-results-grid__section')).toBeVisible()
-  await expect(webImportModal.locator('.product-selectable-image-grid')).toBeVisible()
-  await expect(webImportModal.getByLabel('网页导入结果元信息')).toContainText('共 2 张')
-  await expect(webImportModal).toHaveScreenshot('web-import-result-logs.png', {
-    animations: 'disabled',
-  })
+  await expect(page.getByRole('button', { name: '选择本地图片文件夹' })).toBeVisible()
+  await expect(page.locator('#imageUpload')).toHaveAttribute('type', 'file')
+  await expect(page.getByRole('button', { name: '从网页导入漫画图片' })).toHaveCount(0)
+  await expect(page.locator('.web-import-modal')).toHaveCount(0)
 })
 
 test('plugin agent modal keeps three-column settings layout contract', async ({ page }) => {

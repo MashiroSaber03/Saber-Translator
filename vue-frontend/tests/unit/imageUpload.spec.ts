@@ -14,7 +14,6 @@ import type {
   SequentialImportSummary,
 } from '@/api/v2/content'
 import { getTextStyleDefaults } from '@/defaults/textStyleDefaults'
-import { useWebImportStore } from '@/stores/webImportStore'
 
 const textStyle = {
   ...getTextStyleDefaults(),
@@ -63,9 +62,7 @@ describe('ImageUpload', () => {
     })
   })
 
-  it('uses product upload primitives for files, folders, and web import', async () => {
-    const webImportStore = useWebImportStore()
-    const openModal = vi.spyOn(webImportStore, 'openModal')
+  it('keeps file and folder import available without a web import entry', () => {
     const wrapper = mountImageUpload()
 
     expect(wrapper.getComponent(ProductFileDropzone).props()).toMatchObject({
@@ -76,8 +73,8 @@ describe('ImageUpload', () => {
     })
     expect(wrapper.getComponent(ProductActionRow).props('ariaLabel')).toBe('其他导入方式')
 
-    await wrapper.get('button[aria-label="从网页导入漫画图片"]').trigger('click')
-    expect(openModal).toHaveBeenCalled()
+    expect(wrapper.find('button[aria-label="选择本地图片文件夹"]').exists()).toBe(true)
+    expect(wrapper.find('button[aria-label="从网页导入漫画图片"]').exists()).toBe(false)
   })
 
   it('uploads ordinary images directly into the backend chapter', async () => {
