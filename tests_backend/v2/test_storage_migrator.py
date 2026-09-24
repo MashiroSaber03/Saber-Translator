@@ -22,7 +22,9 @@ def baseline(tmp_path_factory):
     root = tmp_path_factory.mktemp("version-baseline") / "data"
     initialize_database(root)
     # The migration protocol fixtures need existing files, not real font payloads.
-    with closing(sqlite3.connect(root / "saber.sqlite3")) as db:
+    with closing(sqlite3.connect(root / "saber.sqlite3")) as db, db:
+        # Freeze protocol fixtures at 3.5.1; later releases use the same schema.
+        db.execute("UPDATE schema_metadata SET storage_version='3.5.1'")
         for (relative,) in db.execute("SELECT relative_path FROM fonts"):
             path = root / relative
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -53,22 +55,24 @@ def sql_for(version):
 
 
 def manager(root, **kwargs):
-    return StorageManager(root, "local", target="3.5.2", steps=(Migration("3.5.1", "3.5.2", convert),), sql_for=sql_for, **kwargs)
+    return StorageManager(root, "local", target="3.6.0", steps=(Migration("3.5.1", "3.6.0", convert),), sql_for=sql_for, **kwargs)
 
 
 def test_version_numeric_and_registry():
-    assert APP_VERSION == "3.5.1"
+    assert APP_VERSION == "3.5.2"
     assert parse_version("3.5.10") > parse_version("3.5.9")
-    for value in ("3.5", "3.05.0", "3.5.2-rc1", "v3.5.1"):
+    for value in ("3.5", "3.05.0", "3.6.0-rc1", "v3.5.1"):
         with pytest.raises(ValueError):
             parse_version(value)
     with pytest.raises(StorageError, match="降级"):
         migration_chain("3.6.0", "3.5.1")
     with pytest.raises(StorageError, match="缺少"):
-        migration_chain("3.5.1", "3.5.3", [Migration("3.5.1", "3.5.2")])
+        migration_chain("3.5.1", "3.6.1", [Migration("3.5.1", "3.6.0")])
 
 
 def test_current_check_and_readonly_cli(root):
+    with closing(sqlite3.connect(root / "saber.sqlite3")) as db, db:
+        db.execute("UPDATE schema_metadata SET storage_version=?", (APP_VERSION,))
     assert StorageManager(root, "local").check()["status"] == "current"
     result = subprocess.run([sys.executable, "saber_v2.py", "--role", "storage-migrator", "--action", "check", "--data-dir", str(root)], capture_output=True, text=True, encoding="utf-8")
     assert result.returncode == 0, result.stderr
@@ -110,12 +114,32 @@ def test_profile_schema_and_json_rejected(root):
         schema_smoke_test(root / "saber.sqlite3")
 
 
+def test_351_upgrade_to_current_preserves_data_without_backup(root):
+    assert contract_sql("3.5.1") == contract_sql("3.5.2")
+    with closing(sqlite3.connect(root / "saber.sqlite3")) as db:
+        before = list(db.iterdump())
+    saved = (root / "objects" / "saved.txt").read_bytes()
+    with StorageManager(root, "local") as migration:
+        assert migration.check()["status"] == "upgrade_required"
+        assert migration.prepare(initialize_database)["status"] == "updated"
+        assert read_identity(root)[0] == APP_VERSION
+        assert not list(migration._operations())
+        assert business_ready(root)
+        assert migration.check()["status"] == "current"
+    with closing(sqlite3.connect(root / "saber.sqlite3")) as db:
+        after = list(db.iterdump())
+    assert [line for line in before if not line.startswith('INSERT INTO "schema_metadata"')] == [
+        line for line in after if not line.startswith('INSERT INTO "schema_metadata"')
+    ]
+    assert (root / "objects" / "saved.txt").read_bytes() == saved
+
+
 def test_noop_chain_preserves_files_and_does_not_backup(root):
     before = (root / "objects" / "saved.txt").read_bytes()
-    steps = (Migration("3.5.1", "3.5.2"), Migration("3.5.2", "3.5.3"))
-    with StorageManager(root, "local", target="3.5.3", steps=steps, sql_for=lambda _: contract_sql("3.5.1")) as migration:
+    steps = (Migration("3.5.1", "3.6.0"), Migration("3.6.0", "3.6.1"))
+    with StorageManager(root, "local", target="3.6.1", steps=steps, sql_for=lambda _: contract_sql("3.5.1")) as migration:
         assert migration.prepare(initialize_database)["status"] == "updated"
-        assert read_identity(root)[0] == "3.5.3"
+        assert read_identity(root)[0] == "3.6.1"
         assert not list(migration._operations())
         assert business_ready(root)
     assert (root / "objects" / "saved.txt").read_bytes() == before
@@ -124,7 +148,7 @@ def test_noop_chain_preserves_files_and_does_not_backup(root):
 def test_noop_failure_keeps_version(root):
     def fail(_):
         raise StorageError("bad target")
-    with StorageManager(root, "local", target="3.5.2", steps=(Migration("3.5.1", "3.5.2", validate=fail),), sql_for=lambda _: contract_sql("3.5.1")) as migration:
+    with StorageManager(root, "local", target="3.6.0", steps=(Migration("3.5.1", "3.6.0", validate=fail),), sql_for=lambda _: contract_sql("3.5.1")) as migration:
         with pytest.raises(StorageError, match="bad target"):
             migration.prepare(initialize_database)
     assert read_identity(root)[0] == "3.5.1"
@@ -138,7 +162,7 @@ def test_real_upgrade_commit_cleanup_and_user_backup(root):
         assert migration.prepare(initialize_database)["status"] == "awaiting_health"
         op, state = list(migration._operations())[0]
         assert read_identity(op / "backup")[0] == "3.5.1"
-        assert read_identity(root)[0] == "3.5.2"
+        assert read_identity(root)[0] == "3.6.0"
         assert not business_ready(root)
         with pytest.raises(StorageError, match="尚未开始"):
             migration.confirm_ready()
@@ -172,7 +196,7 @@ def test_recovery_at_persisted_boundaries(root, stage):
             recovered.prepare(initialize_database)
             recovered.before_start()
             recovered.confirm_ready()
-            assert read_identity(root)[0] == "3.5.2"
+            assert read_identity(root)[0] == "3.6.0"
         else:
             with pytest.raises(StorageError, match="已恢复旧数据"):
                 recovered.prepare(initialize_database)
@@ -205,7 +229,7 @@ def test_cleanup_failure_persists_and_next_start_retries(root, monkeypatch):
         migration.before_start()
         assert migration.confirm_ready() == []
         assert not (op / "backup").exists()
-        assert read_identity(root)[0] == "3.5.2"
+        assert read_identity(root)[0] == "3.6.0"
 
 
 def test_lock_outside_root_and_live_process_protection(root):
@@ -219,6 +243,8 @@ def test_lock_outside_root_and_live_process_protection(root):
 
 
 def test_api_gate_allows_only_health(root):
+    with closing(sqlite3.connect(root / "saber.sqlite3")) as db, db:
+        db.execute("UPDATE schema_metadata SET storage_version=?", (APP_VERSION,))
     from src.backend_v2.api.app import ApiSettings, create_api_app
     from src.backend_v2.runtime_identity import RuntimeIdentity
     from src.backend_v2.storage.database import create_sqlite_engine
@@ -294,7 +320,7 @@ def test_unknown_backup_marker_never_deleted(root):
         migration.before_start()
         assert migration.confirm_ready()
         assert (op / "backup" / "saber.sqlite3").exists()
-        assert read_identity(root)[0] == "3.5.2"
+        assert read_identity(root)[0] == "3.6.0"
 
 
 def test_business_process_imports_no_historical_steps():
@@ -391,7 +417,7 @@ def test_post_commit_marker_cleanup_denied_does_not_block_business(root, monkeyp
             assert migration.confirm_ready()
             assert business_ready(root)
             migration.startup_failed()
-            assert read_identity(root)[0] == "3.5.2"
+            assert read_identity(root)[0] == "3.6.0"
         assert migration.confirm_ready() == []
         assert list(migration._operations())[0][1]["stage"] == "cleaned"
 
@@ -426,7 +452,7 @@ def test_pending_candidate_profile_mismatch_is_readonly(root):
     with StorageManager(root, "public") as migration:
         with pytest.raises(StorageError, match="模式"):
             migration.prepare(initialize_database)
-    assert read_identity(root) == ("3.5.2", "local")
+    assert read_identity(root) == ("3.6.0", "local")
 
 
 def test_release_registers_complete_fixed_contracts():
@@ -483,16 +509,16 @@ def test_real_windows_open_backup_file_retries_cleanup(root):
 
 def test_mixed_chain_uses_one_copy_and_orders_version_markers(root):
     def second_step(work):
-        assert read_identity(work)[0] == '3.5.2'
+        assert read_identity(work)[0] == '3.6.0'
         convert(work)
-    steps = (Migration('3.5.1', '3.5.2'), Migration('3.5.2', '3.5.3', second_step))
-    with StorageManager(root, 'local', target='3.5.3', steps=steps,
-                        sql_for=lambda v: sql_for('3.5.1' if v == '3.5.2' else v)) as migration:
+    steps = (Migration('3.5.1', '3.6.0'), Migration('3.6.0', '3.6.1', second_step))
+    with StorageManager(root, 'local', target='3.6.1', steps=steps,
+                        sql_for=lambda v: sql_for('3.5.1' if v == '3.6.0' else v)) as migration:
         migration.prepare(initialize_database)
         operations = list(migration._operations())
         assert len(operations) == 1
         assert read_identity(operations[0][0] / 'backup')[0] == '3.5.1'
-        assert read_identity(root)[0] == '3.5.3'
+        assert read_identity(root)[0] == '3.6.1'
 
 
 @pytest.mark.skipif(sys.platform != 'win32', reason='Windows extended filesystem paths')
@@ -516,7 +542,7 @@ def test_long_work_and_backup_paths_preserve_identity_and_can_be_removed(root, r
             assert not (op / 'discarded').exists()
         else:
             assert migration.confirm_ready() == []
-            assert read_identity(root)[0] == '3.5.2'
+            assert read_identity(root)[0] == '3.6.0'
         assert not (op / 'backup').exists()
         assert not (op / 'work').exists()
 
