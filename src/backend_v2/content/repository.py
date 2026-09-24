@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 
 from src.backend_v2.auth.ownership import effective_owner_id
 from src.backend_v2.serialization import canonical_json as _json
-from src.backend_v2.timestamps import utcnow as _utcnow
+from src.backend_v2.timestamps import iso_utc, utcnow as _utcnow
 from src.backend_v2.content.translation_constraints import (
     empty_translation_constraints,
     validate_translation_constraints,
@@ -384,8 +384,8 @@ class ContentRepository:
                 "tags": tags_by_book.get(str(row["id"]), []),
                 "jobStatusSummary": jobs_by_book.get(str(row["id"]), {}),
                 "chapterOrderRevision": row["chapter_order_revision"],
-                "createdAt": row["created_at"].isoformat(),
-                "updatedAt": row["updated_at"].isoformat(),
+                "createdAt": iso_utc(row["created_at"]),
+                "updatedAt": iso_utc(row["updated_at"]),
             }
             for row in rows
         ]
@@ -503,8 +503,8 @@ class ContentRepository:
                 else None
             ),
             "chapterOrderRevision": book["chapter_order_revision"],
-            "createdAt": book["created_at"].isoformat(),
-            "updatedAt": book["updated_at"].isoformat(),
+            "createdAt": iso_utc(book["created_at"]),
+            "updatedAt": iso_utc(book["updated_at"]),
             "tags": [dict(row) for row in tag_rows],
             "chapters": [
                 {
