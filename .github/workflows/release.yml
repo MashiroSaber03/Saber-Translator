@@ -50,7 +50,7 @@ jobs:
       tag_name: ${{ steps.version.outputs.TAG_NAME }}
     
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Verify release guard
         run: node --test .github/scripts/prepare_release.test.cjs
@@ -91,7 +91,7 @@ jobs:
 
       - name: Verify release target
         id: release_target
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           RELEASE_TAG: ${{ steps.version.outputs.TAG_NAME }}
         with:
@@ -100,7 +100,7 @@ jobs:
 
       - name: Create Draft Release
         if: steps.release_target.outputs.create_release == 'true'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.version.outputs.TAG_NAME }}
           name: v${{ steps.version.outputs.VERSION }}
@@ -154,7 +154,7 @@ jobs:
       # 1. 检出代码
       # --------------------------------------------------
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       # --------------------------------------------------
       # 2. 从 models-storage Release 下载模型文件
@@ -173,7 +173,7 @@ jobs:
           if ($drive.Free -lt 25GB) { throw 'Packaging needs at least 25 GiB free disk space.' }
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -238,7 +238,7 @@ jobs:
       # 7. 构建并校验 v2 Web 前端
       # --------------------------------------------------
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
