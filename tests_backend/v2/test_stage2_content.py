@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from io import BytesIO
 import json
 from pathlib import Path
@@ -41,6 +42,7 @@ from src.backend_v2.storage.defaults import (
 from src.backend_v2.storage.schema import (
     app_settings,
     assets,
+    books,
     bubbles,
     chapter_write_locks,
     chapters,
@@ -381,18 +383,26 @@ def test_content_name_commands_reject_non_string_values(content_platform) -> Non
     assert [response.status_code for response in responses] == [422] * 5
 
 
-def test_book_detail_includes_the_list_projection_timestamps(content_platform) -> None:
-    _data_root, _engine, repository, _storage, _importer, book, _chapter = (
+def test_book_detail_and_list_serialize_sqlite_timestamps_as_utc(content_platform) -> None:
+    _data_root, engine, repository, _storage, _importer, book, _chapter = (
         content_platform
     )
+    with engine.begin() as connection:
+        connection.execute(
+            update(books).where(books.c.id == book["id"]).values(
+                created_at=datetime(2026, 9, 24, 11, 31, 18),
+                updated_at=datetime(2026, 9, 25, 0, 15, 30),
+            )
+        )
 
     summary = next(
         item for item in repository.list_books() if item["id"] == book["id"]
     )
     detail = repository.get_book(str(book["id"]))
 
-    assert detail["createdAt"] == summary["createdAt"]
-    assert detail["updatedAt"] == summary["updatedAt"]
+    for result in (summary, detail):
+        assert result["createdAt"] == "2026-09-24T11:31:18Z"
+        assert result["updatedAt"] == "2026-09-25T00:15:30Z"
 
 
 def test_book_search_matches_titles_and_tag_names(content_platform) -> None:

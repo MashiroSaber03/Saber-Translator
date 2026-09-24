@@ -265,8 +265,12 @@ function mapRunStateToCardStatus(runState: string): PluginAgentTimelineItem['sta
 }
 
 function formatTimestamp(timestamp: string): string {
-  const match = timestamp.match(/T(\d{2}:\d{2}:\d{2})/)
-  return match?.[1] || timestamp
+  return new Date(timestamp).toLocaleTimeString('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  })
 }
 
 function formatEventPayload(payload: unknown): string {
