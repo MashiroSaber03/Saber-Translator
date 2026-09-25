@@ -11,6 +11,9 @@ import multiprocessing
 
 
 def main() -> int:
+    from src.backend_v2.standard_streams import restore_standard_streams
+
+    restore_standard_streams()
     multiprocessing.freeze_support()
 
     from src.backend_v2.dispatch import dispatch

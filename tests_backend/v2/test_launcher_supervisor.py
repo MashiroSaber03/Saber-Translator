@@ -57,6 +57,20 @@ def test_desktop_captured_children_enable_stream_frames() -> None:
     assert captured[STREAM_FRAME_ENV] == "1"
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows console creation")
+def test_captured_backend_process_has_no_console() -> None:
+    import os
+
+    process = _spawn(
+        [sys.executable, "-c",
+         "import ctypes; print(ctypes.windll.kernel32.GetConsoleWindow())"],
+        os.environ.copy(), capture_output=True,
+    )
+    output, _ = process.communicate(timeout=10)
+    assert process.returncode == 0
+    assert output.strip() == "0"
+
+
 def test_browser_extension_secret_is_passed_only_to_the_api() -> None:
     token = "browser-extension-secret"
     api = _child_environment(

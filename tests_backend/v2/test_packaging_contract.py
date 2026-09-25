@@ -28,7 +28,8 @@ def test_production_spec_uses_only_the_backend_first_entrypoint() -> None:
     assert "'PySide6'" not in spec.split("excludes =", 1)[1].split("]", 1)[0]
     assert "'desktop', 'assets'" in spec
     assert "'desktop', 'assets', 'app-icon.ico'" in spec
-    assert "hide_console='hide-early'" in spec
+    assert "console=False" in spec
+    assert "hide_console=" not in spec
     assert "'openapi', 'v2.yaml'" in spec
     assert "'src', 'backend_v2', 'static'" in spec
     assert "'src', 'backend_v2', 'resources'" in spec

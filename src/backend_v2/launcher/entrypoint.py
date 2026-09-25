@@ -269,7 +269,11 @@ def _spawn(
 ) -> subprocess.Popen[str]:
     creation_flags = 0
     if os.name == "nt":
-        creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP
+        creation_flags = (
+            subprocess.CREATE_NO_WINDOW
+            if capture_output
+            else subprocess.CREATE_NEW_PROCESS_GROUP
+        )
     return subprocess.Popen(
         command,
         cwd=str(project_root()),
