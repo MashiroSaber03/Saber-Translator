@@ -1,7 +1,5 @@
 # Saber-Translator 前端开发说明
 
-> 最后更新：2026-07-29
-
 这是 Saber-Translator 的 Vue 3 + TypeScript + Vite 前端工程说明。
 
 ---
@@ -100,7 +98,7 @@ npm run typecheck
 
 推荐先看：
 
-- [后端优先架构方案](../docs/refactor/backend-first-architecture-plan.md)
+- [项目说明与运行架构](../README.md)
 - [OpenAPI v2](../openapi/v2.yaml)
 
 ---
