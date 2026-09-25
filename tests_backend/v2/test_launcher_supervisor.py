@@ -24,10 +24,10 @@ from src.backend_v2.logging_config import STREAM_FRAME_ENV
 from src.backend_v2.runtime_identity import INTERNAL_HEALTH_TOKEN_HEADER
 
 
-def test_child_process_logs_are_forced_to_utf8(tmp_path) -> None:
+def test_child_process_logs_are_forced_to_utf8() -> None:
     registration = _new_registration("api")
 
-    environment = _child_environment(tmp_path, "api", registration)
+    environment = _child_environment("api", registration)
 
     assert environment["PYTHONUTF8"] == "1"
     assert environment["PYTHONIOENCODING"] == "utf-8"
@@ -43,12 +43,11 @@ def test_child_process_logs_are_forced_to_utf8(tmp_path) -> None:
     assert output.strip() == "中文子进程日志"
 
 
-def test_desktop_captured_children_enable_stream_frames(tmp_path) -> None:
+def test_desktop_captured_children_enable_stream_frames() -> None:
     registration = _new_registration("worker")
 
-    direct = _child_environment(tmp_path, "worker", registration)
+    direct = _child_environment("worker", registration)
     captured = _child_environment(
-        tmp_path,
         "worker",
         registration,
         stream_frames=True,
@@ -58,17 +57,15 @@ def test_desktop_captured_children_enable_stream_frames(tmp_path) -> None:
     assert captured[STREAM_FRAME_ENV] == "1"
 
 
-def test_browser_extension_secret_is_passed_only_to_the_api(tmp_path) -> None:
+def test_browser_extension_secret_is_passed_only_to_the_api() -> None:
     token = "browser-extension-secret"
     api = _child_environment(
-        tmp_path,
         "api",
         _new_registration("api"),
         browser_extension_enabled=True,
         browser_extension_token=token,
     )
     worker = _child_environment(
-        tmp_path,
         "worker",
         _new_registration("worker"),
         browser_extension_enabled=True,
@@ -81,7 +78,6 @@ def test_browser_extension_secret_is_passed_only_to_the_api(tmp_path) -> None:
     assert BROWSER_EXTENSION_TOKEN_ENV not in worker
     with pytest.raises(ValueError, match="requires a token"):
         _child_environment(
-            tmp_path,
             "api",
             _new_registration("api"),
             browser_extension_enabled=True,
