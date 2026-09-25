@@ -1,5 +1,6 @@
 """Windows GUI processes must retain redirected logs without a console."""
 
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -25,6 +26,8 @@ print('中文错误日志', file=sys.stderr, flush=True)
     result = subprocess.run(
         [str(pythonw), "-c", script], cwd=project_root(), input="中文后台日志\n",
         capture_output=True, encoding="utf-8", timeout=20,
+        # Match the UTF-8 environment used by the actual backend launcher.
+        env={**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"},
         creationflags=subprocess.CREATE_NO_WINDOW,
     )
     assert result.returncode == 0, result.stderr
