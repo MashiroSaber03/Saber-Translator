@@ -255,7 +255,6 @@ def create_api_app(settings: ApiSettings) -> Flask:
 
     app.config.update(
         JSON_SORT_KEYS=False,
-        SABER_V2_DATA_ROOT=str(settings.data_root),
         SABER_V2_API_EPOCH_ID=settings.identity.epoch_id,
         SABER_V2_PROFILE=settings.profile.name,
     )

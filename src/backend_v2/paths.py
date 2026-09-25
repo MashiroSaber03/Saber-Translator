@@ -13,23 +13,16 @@ from pathlib import Path
 import sys
 
 
-DATA_ROOT_ENV = "SABER_V2_DATA_ROOT"
-
-
 def project_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
 def resolve_data_root(explicit: str | os.PathLike[str] | None = None) -> Path:
-    candidate = explicit or os.environ.get(DATA_ROOT_ENV)
-    if candidate:
-        return Path(candidate).expanduser().resolve()
+    if explicit:
+        return Path(explicit).expanduser().resolve()
 
     if getattr(sys, "frozen", False):
-        local_app_data = os.environ.get("LOCALAPPDATA")
-        if not local_app_data:
-            raise RuntimeError("LOCALAPPDATA is required for packaged v2 startup")
-        return (Path(local_app_data) / "SaberTranslator" / "data-v2").resolve()
+        return Path(sys.executable).resolve().parent / "data-v2"
 
     return (project_root() / "data-v2").resolve()
 

@@ -314,7 +314,7 @@ def test_direct_production_role_startup_requires_launcher_identity(
     assert "Launcher-issued epoch identity" in completed.stderr
 
 
-def test_launcher_exposes_only_the_target_roles_secret(tmp_path: Path) -> None:
+def test_launcher_exposes_only_the_target_roles_secret() -> None:
     polluted = _clean_role_environment()
     polluted.update(
         {
@@ -340,8 +340,8 @@ def test_launcher_exposes_only_the_target_roles_secret(tmp_path: Path) -> None:
             role="worker",
             pid=0,
         )
-        api = _child_environment(tmp_path, "api", api_registration)
-        worker = _child_environment(tmp_path, "worker", worker_registration)
+        api = _child_environment("api", api_registration)
+        worker = _child_environment("worker", worker_registration)
     finally:
         os.environ.clear()
         os.environ.update(original)
@@ -358,7 +358,7 @@ def test_launcher_exposes_only_the_target_roles_secret(tmp_path: Path) -> None:
     assert api[LAUNCHER_PID_ENV] == str(os.getpid())
     assert worker[LAUNCHER_PID_ENV] == str(os.getpid())
     with pytest.raises(ValueError):
-        _child_environment(tmp_path, "renderer", api_registration)
+        _child_environment("renderer", api_registration)
 
 
 def test_posix_parent_monitor_stops_after_launcher_parent_changes() -> None:

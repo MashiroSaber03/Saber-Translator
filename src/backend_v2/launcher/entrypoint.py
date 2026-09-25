@@ -42,7 +42,6 @@ from src.backend_v2.browser_extension.auth import (
     BROWSER_EXTENSION_TOKEN_ENV,
 )
 from src.backend_v2.paths import (
-    DATA_ROOT_ENV,
     data_root_fingerprint,
     ensure_data_root,
     project_root,
@@ -193,7 +192,6 @@ def _new_registration(role: str, *, pid: int = 0) -> EpochRegistration:
 
 
 def _child_environment(
-    data_root: Path,
     role: str,
     registration: EpochRegistration,
     *,
@@ -211,7 +209,6 @@ def _child_environment(
     # which irreversibly corrupts Chinese log messages in the GUI.
     environment["PYTHONUTF8"] = "1"
     environment["PYTHONIOENCODING"] = "utf-8"
-    environment[DATA_ROOT_ENV] = str(data_root)
     environment[LAUNCHER_PID_ENV] = str(os.getpid())
     environment[PROFILE_ENV] = profile
     if log_level:
@@ -699,7 +696,6 @@ def _start_child(
                 resident_models=resident_models,
             ),
             _child_environment(
-                data_root,
                 role,
                 registration,
                 profile=profile,
