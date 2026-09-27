@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import unittest
 from unittest import mock
@@ -43,13 +44,16 @@ class OpenAICompatibleOptionsContractTests(unittest.TestCase):
                 return {"choices": [{"message": {"content": "识别成功"}}]}
 
         class FakeClient:
-            def __enter__(self):
+            async def aclose(self):
+                pass
+
+            async def __aenter__(self):
                 return self
 
-            def __exit__(self, exc_type, exc, tb):
+            async def __aexit__(self, exc_type, exc, tb):
                 return False
 
-            def request(self, method=None, url=None, headers=None, json=None):
+            async def request(self, method=None, url=None, headers=None, json=None):
                 self.last_request = {
                     "method": method,
                     "url": url,
@@ -59,7 +63,7 @@ class OpenAICompatibleOptionsContractTests(unittest.TestCase):
                 return FakeResponse()
 
         fake_client = FakeClient()
-        with mock.patch("src.shared.ai_transport.httpx.Client", return_value=fake_client):
+        with mock.patch("src.shared.ai_transport.httpx.AsyncClient", return_value=fake_client):
             content = OpenAICompatibleChatTransport().complete_vision(
                 UnifiedVisionRequest(
                     provider="custom",
@@ -90,13 +94,16 @@ class OpenAICompatibleOptionsContractTests(unittest.TestCase):
                 return {"choices": [{"message": {"content": "测试成功"}}]}
 
         class FakeClient:
-            def __enter__(self):
+            async def aclose(self):
+                pass
+
+            async def __aenter__(self):
                 return self
 
-            def __exit__(self, exc_type, exc, tb):
+            async def __aexit__(self, exc_type, exc, tb):
                 return False
 
-            def request(self, method=None, url=None, headers=None, json=None):
+            async def request(self, method=None, url=None, headers=None, json=None):
                 response = FakeResponse()
                 response.request_json = json
                 self.last_request = {"method": method, "url": url, "headers": headers, "json": json}
@@ -128,7 +135,7 @@ class OpenAICompatibleOptionsContractTests(unittest.TestCase):
         )
 
         fake_client = FakeClient()
-        with mock.patch("src.shared.ai_transport.httpx.Client", return_value=fake_client):
+        with mock.patch("src.shared.ai_transport.httpx.AsyncClient", return_value=fake_client):
             content = transport.complete(request)
 
         self.assertEqual(content, "测试成功")
@@ -147,13 +154,16 @@ class OpenAICompatibleOptionsContractTests(unittest.TestCase):
                 return {"choices": [{"message": {"content": "测试成功"}}]}
 
         class FakeClient:
-            def __enter__(self):
+            async def aclose(self):
+                pass
+
+            async def __aenter__(self):
                 return self
 
-            def __exit__(self, exc_type, exc, tb):
+            async def __aexit__(self, exc_type, exc, tb):
                 return False
 
-            def request(self, method=None, url=None, headers=None, json=None):
+            async def request(self, method=None, url=None, headers=None, json=None):
                 self.last_request = {"method": method, "url": url, "headers": headers, "json": json}
                 return FakeResponse()
 
@@ -177,7 +187,7 @@ class OpenAICompatibleOptionsContractTests(unittest.TestCase):
         )
 
         fake_client = FakeClient()
-        with mock.patch("src.shared.ai_transport.httpx.Client", return_value=fake_client):
+        with mock.patch("src.shared.ai_transport.httpx.AsyncClient", return_value=fake_client):
             content = transport.complete(request)
 
         self.assertEqual(content, "测试成功")
@@ -196,13 +206,16 @@ class OpenAICompatibleOptionsContractTests(unittest.TestCase):
                 return {"choices": [{"message": {"content": "测试成功"}}]}
 
         class FakeClient:
-            def __enter__(self):
+            async def aclose(self):
+                pass
+
+            async def __aenter__(self):
                 return self
 
-            def __exit__(self, exc_type, exc, tb):
+            async def __aexit__(self, exc_type, exc, tb):
                 return False
 
-            def request(self, method=None, url=None, headers=None, json=None):
+            async def request(self, method=None, url=None, headers=None, json=None):
                 self.last_request = {"method": method, "url": url, "headers": headers, "json": json}
                 return FakeResponse()
 
@@ -224,7 +237,7 @@ class OpenAICompatibleOptionsContractTests(unittest.TestCase):
         )
 
         fake_client = FakeClient()
-        with mock.patch("src.shared.ai_transport.httpx.Client", return_value=fake_client):
+        with mock.patch("src.shared.ai_transport.httpx.AsyncClient", return_value=fake_client):
             content = transport.complete(request)
 
         self.assertEqual(content, "测试成功")
@@ -249,20 +262,23 @@ class OpenAICompatibleOptionsContractTests(unittest.TestCase):
                 return {"choices": [{"message": {"content": "测试成功"}}]}
 
         class FakeClient:
-            def __enter__(self):
+            async def aclose(self):
+                pass
+
+            async def __aenter__(self):
                 return self
 
-            def __exit__(self, exc_type, exc, tb):
+            async def __aexit__(self, exc_type, exc, tb):
                 return False
 
-            def request(self, method=None, url=None, headers=None, json=None):
+            async def request(self, method=None, url=None, headers=None, json=None):
                 self.last_request = {"method": method, "url": url, "headers": headers, "json": json}
                 return FakeResponse()
 
         transport = OpenAICompatibleChatTransport()
         fake_client = FakeClient()
 
-        with mock.patch("src.shared.ai_transport.httpx.Client", return_value=fake_client):
+        with mock.patch("src.shared.ai_transport.httpx.AsyncClient", return_value=fake_client):
             success, message = transport.test_connection(
                 ProviderConnectionTestRequest(
                     provider="custom",
@@ -422,21 +438,24 @@ class OpenAICompatibleOptionsContractTests(unittest.TestCase):
         class FakeResponse:
             status_code = 200
 
-            def __enter__(self):
+            async def __aenter__(self):
                 return self
 
-            def __exit__(self, exc_type, exc, tb):
+            async def __aexit__(self, exc_type, exc, tb):
                 return False
 
-            def iter_lines(self):
+            async def aiter_lines(self):
                 yield 'data:{"choices":[{"delta":{"content":"成功"}}]}'
                 yield "data:[DONE]"
 
         class FakeClient:
-            def __enter__(self):
+            async def aclose(self):
+                pass
+
+            async def __aenter__(self):
                 return self
 
-            def __exit__(self, exc_type, exc, tb):
+            async def __aexit__(self, exc_type, exc, tb):
                 return False
 
             def stream(self, *args, **kwargs):
@@ -453,7 +472,7 @@ class OpenAICompatibleOptionsContractTests(unittest.TestCase):
             ),
         )
 
-        with mock.patch("src.shared.ai_transport.httpx.Client", return_value=FakeClient()):
+        with mock.patch("src.shared.ai_transport.httpx.AsyncClient", return_value=FakeClient()):
             content = OpenAICompatibleChatTransport().complete(request)
 
         self.assertEqual(content, "成功")
@@ -462,21 +481,24 @@ class OpenAICompatibleOptionsContractTests(unittest.TestCase):
         class FakeResponse:
             status_code = 200
 
-            def __enter__(self):
+            async def __aenter__(self):
                 return self
 
-            def __exit__(self, exc_type, exc, tb):
+            async def __aexit__(self, exc_type, exc, tb):
                 return False
 
-            def iter_lines(self):
+            async def aiter_lines(self):
                 yield 'data:{"choices":[{"delta":{"content":"部分"}}]}'
                 yield "data:{broken"
 
         class FakeClient:
-            def __enter__(self):
+            async def aclose(self):
+                pass
+
+            async def __aenter__(self):
                 return self
 
-            def __exit__(self, exc_type, exc, tb):
+            async def __aexit__(self, exc_type, exc, tb):
                 return False
 
             def stream(self, *args, **kwargs):
@@ -493,7 +515,7 @@ class OpenAICompatibleOptionsContractTests(unittest.TestCase):
             ),
         )
 
-        with mock.patch("src.shared.ai_transport.httpx.Client", return_value=FakeClient()), \
+        with mock.patch("src.shared.ai_transport.httpx.AsyncClient", return_value=FakeClient()), \
              self.assertRaisesRegex(ValueError, "无效 JSON"):
             OpenAICompatibleChatTransport().complete(request)
 
@@ -503,20 +525,25 @@ class OpenAICompatibleOptionsContractTests(unittest.TestCase):
         class FakeResponse:
             status_code = 200
 
-            def __enter__(self):
+            async def __aenter__(self):
                 return self
 
-            def __exit__(self, exc_type, exc, tb):
+            async def __aexit__(self, exc_type, exc, tb):
                 return False
 
-            def iter_lines(self):
-                yield ": keep-alive"
+            async def aiter_lines(self):
+                while True:
+                    await asyncio.sleep(0.005)
+                    yield ": keep-alive"
 
         class FakeClient:
-            def __enter__(self):
+            async def aclose(self):
+                pass
+
+            async def __aenter__(self):
                 return self
 
-            def __exit__(self, exc_type, exc, tb):
+            async def __aexit__(self, exc_type, exc, tb):
                 return False
 
             def stream(self, *args, **kwargs):
@@ -534,11 +561,10 @@ class OpenAICompatibleOptionsContractTests(unittest.TestCase):
                     transport_retries=0,
                 ),
             ),
-            runtime_options=build_openai_compatible_runtime_options(timeout=30),
+            runtime_options=build_openai_compatible_runtime_options(timeout=0.02),
         )
 
-        with mock.patch("src.shared.ai_transport.httpx.Client", return_value=FakeClient()), \
-             mock.patch("src.shared.ai_transport.time.monotonic", side_effect=[0, 31]), \
+        with mock.patch("src.shared.ai_transport.httpx.AsyncClient", return_value=FakeClient()), \
              self.assertRaises(httpx.ReadTimeout):
             OpenAICompatibleChatTransport().complete(request)
 
@@ -551,7 +577,7 @@ class OpenAICompatibleOptionsContractTests(unittest.TestCase):
             base_url="https://example.com/v1",
         )
 
-        with mock.patch("src.shared.ai_transport.httpx.Client") as client_factory, \
+        with mock.patch("src.shared.ai_transport.httpx.AsyncClient") as client_factory, \
              self.assertRaisesRegex(ValueError, "API Key"):
             OpenAICompatibleChatTransport().complete(request)
 
@@ -915,25 +941,28 @@ class ProviderRegistryContractTests(unittest.TestCase):
         class FakeResponse:
             status_code = 200
 
-            def __enter__(self):
+            async def __aenter__(self):
                 return self
 
-            def __exit__(self, exc_type, exc, tb):
+            async def __aexit__(self, exc_type, exc, tb):
                 return False
 
-            def read(self):
+            async def aread(self):
                 return b""
 
-            def iter_lines(self):
+            async def aiter_lines(self):
                 yield 'data: {"choices":[{"delta":{"content":"你好"}}]}'
                 yield 'data: {"choices":[{"delta":{"content":"，世界"}}]}'
                 yield 'data: [DONE]'
 
         class FakeClient:
-            def __enter__(self):
+            async def aclose(self):
+                pass
+
+            async def __aenter__(self):
                 return self
 
-            def __exit__(self, exc_type, exc, tb):
+            async def __aexit__(self, exc_type, exc, tb):
                 return False
 
             def stream(self, *args, **kwargs):
@@ -955,7 +984,7 @@ class ProviderRegistryContractTests(unittest.TestCase):
         )
 
         with mock.patch(
-            "src.shared.ai_transport.httpx.Client",
+            "src.shared.ai_transport.httpx.AsyncClient",
             return_value=FakeClient(),
         ), self.assertLogs("saber.user", level="DEBUG") as captured:
             result = OpenAICompatibleSyncExecutor(transport).execute(
@@ -980,25 +1009,28 @@ class ProviderRegistryContractTests(unittest.TestCase):
         class FakeResponse:
             status_code = 200
 
-            def __enter__(self):
+            async def __aenter__(self):
                 return self
 
-            def __exit__(self, exc_type, exc, tb):
+            async def __aexit__(self, exc_type, exc, tb):
                 return False
 
-            def read(self):
+            async def aread(self):
                 return b""
 
-            def iter_lines(self):
+            async def aiter_lines(self):
                 yield 'data: {"choices":[{"delta":{"content":"你好"}}]}'
                 yield 'data: {"choices":[{"delta":{"content":"，世界"}}]}'
                 yield 'data: [DONE]'
 
         class FakeClient:
-            def __enter__(self):
+            async def aclose(self):
+                pass
+
+            async def __aenter__(self):
                 return self
 
-            def __exit__(self, exc_type, exc, tb):
+            async def __aexit__(self, exc_type, exc, tb):
                 return False
 
             def stream(self, *args, **kwargs):
@@ -1021,7 +1053,7 @@ class ProviderRegistryContractTests(unittest.TestCase):
             ),
         )
 
-        with mock.patch("src.shared.ai_transport.httpx.Client", return_value=FakeClient()):
+        with mock.patch("src.shared.ai_transport.httpx.AsyncClient", return_value=FakeClient()):
             content = transport.complete(request)
 
         self.assertEqual(content, "你好，世界")

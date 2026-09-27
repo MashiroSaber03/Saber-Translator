@@ -162,8 +162,6 @@ class ChatClient:
             CHAT_CAPABILITY,
             custom_url,
         ) or ""
-        self._timeout = 120.0
-        self._total_timeout = 300.0
         self._transport = AsyncOpenAICompatibleTransport()
         self._executor = OpenAICompatibleAsyncExecutor(self._transport)
 
@@ -214,31 +212,22 @@ class ChatClient:
             type(self.config).__name__,
         )
 
-        try:
-            result = await asyncio.wait_for(
-                self._executor.execute(
-                    UnifiedChatRequest(
-                        provider=self.provider,
-                        api_key=self.config.api_key,
-                        model=self.config.model,
-                        credential_version_id=self.config.credential_version_id,
-                        messages=self._build_messages(prompt, system),
-                        base_url=self.config.base_url or None,
-                        capability="chat",
-                        openai_options=options,
-                        runtime_options=build_openai_compatible_runtime_options(
-                            timeout=self._timeout,
-                            stream_output_label="漫画分析对话",
-                        ),
-                    ),
-                    capability="chat",
-                    parser=parse_json_block_from_text,
-                    logger_instance=logger,
+        result = await self._executor.execute(
+            UnifiedChatRequest(
+                provider=self.provider,
+                api_key=self.config.api_key,
+                model=self.config.model,
+                credential_version_id=self.config.credential_version_id,
+                messages=self._build_messages(prompt, system),
+                base_url=self.config.base_url or None,
+                capability="chat",
+                openai_options=options,
+                runtime_options=build_openai_compatible_runtime_options(
+                    stream_output_label="漫画分析对话",
                 ),
-                timeout=self._total_timeout,
-            )
-        except TimeoutError as exc:
-            raise TimeoutError(
-                f"对话模型调用超过总时限（{self._total_timeout:g} 秒）"
-            ) from exc
+            ),
+            capability="chat",
+            parser=parse_json_block_from_text,
+            logger_instance=logger,
+        )
         return result.parsed

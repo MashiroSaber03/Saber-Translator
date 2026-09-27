@@ -1044,7 +1044,6 @@ class CoreTranslationAlgorithms:
             base_url=custom_base_url or None,
             openai_options=options,
             runtime_options=build_openai_compatible_runtime_options(
-                timeout=120,
                 stream_output_label="术语提取",
             ),
             capability=TRANSLATION_CAPABILITY,
@@ -1310,7 +1309,6 @@ class CoreTranslationAlgorithms:
                 capability=HQ_TRANSLATION_CAPABILITY,
                 openai_options=options,
                 runtime_options=build_openai_compatible_runtime_options(
-                    timeout=300.0 if options.execution.use_stream else 120.0,
                     stream_output_label=(
                         "AI校对" if mode == "proofread" else "高质量翻译"
                     ),
