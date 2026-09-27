@@ -134,7 +134,7 @@
         </UiField>
       </UiFormGrid>
       <UiField
-        v-show="showRpmLimit"
+        v-show="showRpmLimit || isLocalProvider"
         variant="settings"
         control="checkbox"
         hint="同时作用于整页批量和逐气泡翻译"
