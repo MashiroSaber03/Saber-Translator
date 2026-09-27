@@ -131,7 +131,6 @@ def call_ai_vision_ocr_service(image_pil, provider='siliconflow', api_key=None, 
                 base_url=custom_base_url if provider_lower == 'custom' else None,
                 openai_options=effective_options,
                 runtime_options=build_openai_compatible_runtime_options(
-                    timeout=120.0,
                     stream_output_label="AI视觉OCR",
                 ),
             ),

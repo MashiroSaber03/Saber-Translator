@@ -2,7 +2,6 @@
 Manga Insight VLM client using shared async transport.
 """
 
-import asyncio
 import base64
 import io
 import logging
@@ -81,10 +80,6 @@ class VLMClient:
             VLM_CAPABILITY,
             config.base_url,
         ) or ""
-        # Keep one transport attempt shorter than the complete logical call so
-        # a stalled stream still leaves time for the configured retry layers.
-        self._timeout = 120.0
-        self._total_timeout = 300.0
         self._transport = AsyncOpenAICompatibleTransport()
         self._executor = OpenAICompatibleAsyncExecutor(self._transport)
 
@@ -93,25 +88,6 @@ class VLMClient:
             config.provider,
             self._base_url,
         )
-
-    async def _execute_with_total_timeout(self, *args, **kwargs):
-        """Bound the complete logical VLM call, including all retry layers.
-
-        ``httpx`` timeouts are inactivity timeouts. A remote endpoint that
-        keeps dripping bytes can therefore keep one worker step alive forever,
-        preventing pause/cancel from reaching the next safe point. The VLM
-        timeout is intentionally also a wall-clock deadline for the complete
-        executor call.
-        """
-        try:
-            return await asyncio.wait_for(
-                self._executor.execute(*args, **kwargs),
-                timeout=self._total_timeout,
-            )
-        except TimeoutError as exc:
-            raise TimeoutError(
-                f"视觉模型调用超过总时限（{self._total_timeout:g} 秒）"
-            ) from exc
 
     async def analyze_page(
         self,
@@ -180,7 +156,7 @@ class VLMClient:
             raise ValueError(f"服务商 '{provider}' 需要设置 base_url")
 
         options = OpenAICompatibleOptions.from_dict(self.config.openai_options.to_dict())
-        result = await self._execute_with_total_timeout(
+        result = await self._executor.execute(
             UnifiedChatRequest(
                 provider=provider,
                 api_key=self.config.api_key,
@@ -191,7 +167,6 @@ class VLMClient:
                 capability="vlm",
                 openai_options=options,
                 runtime_options=build_openai_compatible_runtime_options(
-                    timeout=self._timeout,
                     stream_output_label="漫画分析",
                 ),
             ),

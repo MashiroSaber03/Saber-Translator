@@ -26,7 +26,6 @@ from src.shared.ai_transport import (
 from src.shared.memory_errors import is_memory_allocation_error
 from src.shared.openai_execution import (
     OpenAICompatibleBusinessRetryableError,
-    OpenAICompatibleRuntimeOptions,
     OpenAICompatibleSyncExecutor,
     build_openai_compatible_runtime_options,
 )
@@ -77,17 +76,6 @@ def _build_translation_openai_options(
         rpm_limit=default_rpm_limit,
         transport_retries=DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
         business_retries=default_business_retries,
-    )
-
-
-def _build_translation_runtime_options(
-    *,
-    timeout: float,
-    label: str,
-) -> OpenAICompatibleRuntimeOptions:
-    return build_openai_compatible_runtime_options(
-        timeout=timeout,
-        stream_output_label=label,
     )
 
 
@@ -254,9 +242,8 @@ def translate_single_text(
                 base_url=custom_base_url or None,
                 capability=TRANSLATION_CAPABILITY,
                 openai_options=effective_options,
-                runtime_options=_build_translation_runtime_options(
-                    timeout=30.0,
-                    label="普通翻译",
+                runtime_options=build_openai_compatible_runtime_options(
+                    stream_output_label="普通翻译",
                 ),
                 messages=messages,
             ),
@@ -593,9 +580,8 @@ def _translate_batch_with_llm(
             base_url=custom_base_url or None,
             capability=TRANSLATION_CAPABILITY,
             openai_options=effective_options,
-            runtime_options=_build_translation_runtime_options(
-                timeout=120.0,
-                label="普通翻译",
+            runtime_options=build_openai_compatible_runtime_options(
+                stream_output_label="普通翻译",
             ),
         ),
         capability=TRANSLATION_CAPABILITY,

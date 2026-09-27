@@ -9,7 +9,6 @@ import json
 import logging
 import math
 import random
-import time
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
@@ -32,6 +31,7 @@ from src.shared.ai_providers import (
 )
 from src.shared.http_config import build_httpx_kwargs, is_local_service
 from src.shared.openai_execution import (
+    DEFAULT_AI_REQUEST_TIMEOUT,
     OpenAICompatibleEmptyContentError,
     OpenAICompatibleRuntimeOptions,
     ResolvedOpenAICompatibleInvocation,
@@ -48,6 +48,11 @@ from src.shared.openai_rate_limits import SharedRPMLimiter
 from src.shared.user_logging import inline_log_text, user_log
 
 logger = logging.getLogger("SharedAITransport")
+
+
+class AIRequestDeadlineExceeded(httpx.ReadTimeout):
+    """The complete request attempt exhausted its wall-clock budget."""
+
 
 RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
 RETRYABLE_EXCEPTIONS = (
@@ -68,6 +73,12 @@ def _log_transport_retry(
     attempt: int,
     max_retries: int,
 ) -> None:
+    if isinstance(reason, AIRequestDeadlineExceeded):
+        reason = str(reason)
+    elif isinstance(reason, httpx.ReadTimeout):
+        reason = "等待模型响应数据超时（ReadTimeout）"
+    elif isinstance(reason, BaseException):
+        reason = type(reason).__name__
     logger.debug(
         "AI 网络请求重试：reason=%s wait=%.1fs attempt=%s/%s",
         reason,
@@ -175,7 +186,7 @@ class UnifiedChatRequest:
 
     @property
     def timeout(self) -> float:
-        return self.runtime_options.timeout_or(120.0)
+        return self.runtime_options.timeout_or(DEFAULT_AI_REQUEST_TIMEOUT)
 
     @property
     def use_stream(self) -> bool:
@@ -241,7 +252,7 @@ class UnifiedVisionRequest:
 
     @property
     def timeout(self) -> float:
-        return self.runtime_options.timeout_or(120.0)
+        return self.runtime_options.timeout_or(DEFAULT_AI_REQUEST_TIMEOUT)
 
     @property
     def use_json_format(self) -> bool:
@@ -719,55 +730,22 @@ class OpenAICompatibleChatTransport:
         max_retries: int,
         before_request: Optional[Callable[[], None]] = None,
     ) -> Dict[str, Any]:
-        last_exception: Optional[Exception] = None
-        for attempt in range(max_retries + 1):
-            with httpx.Client(**build_httpx_kwargs(base_url, timeout)) as client:
-                try:
-                    if before_request is not None:
-                        before_request()
-                    response = client.request(
-                        method=method,
-                        url=url,
-                        headers=_build_auth_headers(api_key),
-                        json=body,
-                    )
+        async def prepare_request() -> None:
+            if before_request is not None:
+                before_request()
 
-                    if response.status_code in RETRYABLE_STATUS_CODES and attempt < max_retries:
-                        wait_time = _calculate_backoff(attempt, response)
-                        _log_transport_retry(
-                            f"HTTP {response.status_code}",
-                            wait_seconds=wait_time,
-                            attempt=attempt + 1,
-                            max_retries=max_retries,
-                        )
-                        time.sleep(wait_time)
-                        continue
-
-                    if response.status_code != 200:
-                        error_text = response.text[:500] if response.text else "无响应内容"
-                        raise ValueError(f"API 错误 {response.status_code}: {error_text}")
-
-                    payload = response.json()
-                    if not isinstance(payload, dict):
-                        raise ValueError("AI API 响应必须是 JSON 对象")
-                    return payload
-                except RETRYABLE_EXCEPTIONS as exc:
-                    last_exception = exc
-                    if attempt < max_retries:
-                        wait_time = _calculate_backoff(attempt)
-                        _log_transport_retry(
-                            type(exc).__name__,
-                            wait_seconds=wait_time,
-                            attempt=attempt + 1,
-                            max_retries=max_retries,
-                        )
-                        time.sleep(wait_time)
-                        continue
-                    raise
-
-        if last_exception:
-            raise last_exception
-        raise RuntimeError("重试耗尽")
+        # Reuse the async transport so sync callers get the same cancellable
+        # per-attempt deadline, retry policy and connection cleanup.
+        return asyncio.run(AsyncOpenAICompatibleTransport()._request_json(
+            base_url=base_url,
+            timeout=timeout,
+            method=method,
+            url=url,
+            api_key=api_key,
+            body=body,
+            max_retries=max_retries,
+            before_request=prepare_request,
+        ))
 
     def _complete_stream(
         self,
@@ -776,84 +754,13 @@ class OpenAICompatibleChatTransport:
         invocation: ResolvedOpenAICompatibleInvocation,
         before_request: Optional[Callable[[], None]] = None,
     ) -> str:
-        if not base_url:
-            raise ValueError("缺少 Base URL")
+        async def prepare_request() -> None:
+            if before_request is not None:
+                before_request()
 
-        url = f"{base_url.rstrip('/')}/chat/completions"
-        body = _build_chat_body(request, invocation)
-        body["stream"] = True
-        max_retries = invocation.effective_options.execution.transport_retries
-
-        last_exception: Optional[Exception] = None
-        for attempt in range(max_retries + 1):
-            full_text = ""
-            with httpx.Client(**build_httpx_kwargs(base_url, invocation.timeout)) as client:
-                try:
-                    if before_request is not None:
-                        before_request()
-                    attempt_started_at = time.monotonic()
-                    with client.stream(
-                        "POST",
-                        url,
-                        headers=_build_auth_headers(request.api_key),
-                        json=body,
-                    ) as response:
-                        if response.status_code in RETRYABLE_STATUS_CODES and attempt < max_retries:
-                            wait_time = _calculate_backoff(attempt, response)
-                            _log_transport_retry(
-                                f"HTTP {response.status_code}",
-                                wait_seconds=wait_time,
-                                attempt=attempt + 1,
-                                max_retries=max_retries,
-                            )
-                            time.sleep(wait_time)
-                            continue
-
-                        if response.status_code != 200:
-                            error_text = response.read().decode("utf-8", errors="ignore")[:500]
-                            raise ValueError(f"API 错误 {response.status_code}: {error_text}")
-
-                        for line in response.iter_lines():
-                            if time.monotonic() - attempt_started_at > invocation.timeout:
-                                raise httpx.ReadTimeout(
-                                    "AI stream attempt exceeded "
-                                    f"{invocation.timeout:g} seconds"
-                                )
-                            data_str = _extract_sse_data(line)
-                            if data_str is None or not data_str:
-                                continue
-                            if data_str == "[DONE]":
-                                break
-                            try:
-                                data = json.loads(data_str)
-                            except json.JSONDecodeError as exc:
-                                raise ValueError("AI 流响应包含无效 JSON") from exc
-                            chunk = _extract_stream_chunk(data)
-                            if chunk:
-                                full_text += chunk
-                                if invocation.runtime_options.on_stream_chunk:
-                                    invocation.runtime_options.on_stream_chunk(chunk, full_text)
-                    full_text = full_text.strip()
-                    if not full_text:
-                        raise OpenAICompatibleEmptyContentError("AI 未返回有效内容")
-                    return full_text
-                except RETRYABLE_EXCEPTIONS as exc:
-                    last_exception = exc
-                    if attempt < max_retries and not full_text:
-                        wait_time = _calculate_backoff(attempt)
-                        _log_transport_retry(
-                            type(exc).__name__,
-                            wait_seconds=wait_time,
-                            attempt=attempt + 1,
-                            max_retries=max_retries,
-                        )
-                        time.sleep(wait_time)
-                        continue
-                    raise
-
-        if last_exception:
-            raise last_exception
-        raise RuntimeError("重试耗尽")
+        return asyncio.run(AsyncOpenAICompatibleTransport()._complete_stream(
+            request, base_url, invocation, prepare_request,
+        ))
 
     def _list_gemini_models(self, request: ProviderModelListRequest) -> List[Dict[str, str]]:
         url = "https://generativelanguage.googleapis.com/v1beta/models"
@@ -1072,7 +979,7 @@ class AsyncOpenAICompatibleTransport:
                         if timeout is None
                         else f"AI request attempt exceeded {timeout:g} seconds"
                     )
-                    raise httpx.ReadTimeout(
+                    raise AIRequestDeadlineExceeded(
                         message
                     ) from exc
 
@@ -1100,7 +1007,7 @@ class AsyncOpenAICompatibleTransport:
                 if attempt < max_retries:
                     wait_time = _calculate_backoff(attempt)
                     _log_transport_retry(
-                        type(exc).__name__,
+                        exc,
                         wait_seconds=wait_time,
                         attempt=attempt + 1,
                         max_retries=max_retries,
@@ -1133,6 +1040,7 @@ class AsyncOpenAICompatibleTransport:
         last_exception: Optional[Exception] = None
         for attempt in range(max_retries + 1):
             full_text = ""
+            retry_wait: Optional[float] = None
             client = httpx.AsyncClient(
                 **build_httpx_kwargs(base_url, invocation.timeout)
             )
@@ -1140,10 +1048,7 @@ class AsyncOpenAICompatibleTransport:
                 if before_request is not None:
                     await before_request()
                 try:
-                    # httpx's timeout is an inactivity timeout. Bound the
-                    # complete attempt as well so keep-alive/empty SSE frames
-                    # cannot consume the caller's entire logical deadline and
-                    # suppress configured transport retries.
+                    # Bound each attempt, even while the server sends heartbeats.
                     async with asyncio.timeout(invocation.timeout):
                         async with client.stream(
                             "POST",
@@ -1155,16 +1060,8 @@ class AsyncOpenAICompatibleTransport:
                                 response.status_code in RETRYABLE_STATUS_CODES
                                 and attempt < max_retries
                             ):
-                                wait_time = _calculate_backoff(attempt, response)
-                                _log_transport_retry(
-                                    f"HTTP {response.status_code}",
-                                    wait_seconds=wait_time,
-                                    attempt=attempt + 1,
-                                    max_retries=max_retries,
-                                )
-                                await asyncio.sleep(wait_time)
-                                continue
-                            if response.status_code != 200:
+                                retry_wait = _calculate_backoff(attempt, response)
+                            elif response.status_code != 200:
                                 error_bytes = await response.aread()
                                 error_text = error_bytes.decode(
                                     "utf-8",
@@ -1173,27 +1070,37 @@ class AsyncOpenAICompatibleTransport:
                                 raise ValueError(
                                     f"API 错误 {response.status_code}: {error_text}"
                                 )
-
-                            async for line in response.aiter_lines():
-                                data_str = _extract_sse_data(line)
-                                if data_str is None or not data_str:
-                                    continue
-                                if data_str == "[DONE]":
-                                    break
-                                try:
-                                    data = json.loads(data_str)
-                                except json.JSONDecodeError as exc:
-                                    raise ValueError("AI 流响应包含无效 JSON") from exc
-                                chunk = _extract_stream_chunk(data)
-                                if chunk:
-                                    full_text += chunk
-                                    if invocation.runtime_options.on_stream_chunk:
-                                        invocation.runtime_options.on_stream_chunk(chunk, full_text)
+                            else:
+                                async for line in response.aiter_lines():
+                                    data_str = _extract_sse_data(line)
+                                    if data_str is None or not data_str:
+                                        continue
+                                    if data_str == "[DONE]":
+                                        break
+                                    try:
+                                        data = json.loads(data_str)
+                                    except json.JSONDecodeError as exc:
+                                        raise ValueError("AI 流响应包含无效 JSON") from exc
+                                    chunk = _extract_stream_chunk(data)
+                                    if chunk:
+                                        full_text += chunk
+                                        if invocation.runtime_options.on_stream_chunk:
+                                            invocation.runtime_options.on_stream_chunk(chunk, full_text)
                 except TimeoutError as exc:
-                    raise httpx.ReadTimeout(
+                    raise AIRequestDeadlineExceeded(
                         "AI stream attempt exceeded "
                         f"{invocation.timeout:g} seconds"
                     ) from exc
+
+                if retry_wait is not None:
+                    _log_transport_retry(
+                        f"HTTP {response.status_code}",
+                        wait_seconds=retry_wait,
+                        attempt=attempt + 1,
+                        max_retries=max_retries,
+                    )
+                    await asyncio.sleep(retry_wait)
+                    continue
 
                 full_text = full_text.strip()
                 if not full_text:
@@ -1204,7 +1111,7 @@ class AsyncOpenAICompatibleTransport:
                 if attempt < max_retries and not full_text:
                     wait_time = _calculate_backoff(attempt)
                     _log_transport_retry(
-                        type(exc).__name__,
+                        exc,
                         wait_seconds=wait_time,
                         attempt=attempt + 1,
                         max_retries=max_retries,

@@ -187,7 +187,6 @@ class BrowserDomAgentService:
                 capability=PLUGIN_AGENT_CAPABILITY,
                 openai_options=config["openai_options"],
                 runtime_options=build_openai_compatible_runtime_options(
-                    timeout=90.0,
                     stream_output_label="Browser DOM Agent",
                 ),
                 messages=messages,

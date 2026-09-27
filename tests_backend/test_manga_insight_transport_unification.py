@@ -194,7 +194,7 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(parsed, {"answer": "retry-ok"})
         self.assertEqual(complete_mock.await_count, 2)
 
-    async def test_chat_client_bounds_the_complete_logical_call(self) -> None:
+    async def test_chat_client_propagates_cancellation_without_retrying(self) -> None:
         from src.core.manga_insight.config_models import ChatLLMConfig
         from src.core.manga_insight.embedding_client import ChatClient
 
@@ -210,14 +210,14 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
         with mock.patch(
             "src.core.manga_insight.embedding_client.AsyncOpenAICompatibleTransport.complete",
             new=mock.AsyncMock(side_effect=never_finishes),
-        ):
+        ) as complete_mock:
             client = ChatClient(config)
-            client._total_timeout = 0.01
-            with self.assertRaisesRegex(
-                TimeoutError,
-                "对话模型调用超过总时限（0.01 秒）",
-            ):
-                await client.generate_json("用户问题")
+            task = asyncio.create_task(client.generate_json("用户问题"))
+            await asyncio.sleep(0)
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+            self.assertEqual(complete_mock.await_count, 1)
 
     async def test_embedding_client_delegates_to_shared_async_transport(self) -> None:
         from src.core.manga_insight.config_models import EmbeddingConfig
@@ -396,7 +396,7 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request.temperature, 0.2)
         self.assertFalse(request.use_stream)
         self.assertEqual(request.response_format, {"type": "json_object"})
-        self.assertEqual(request.runtime_options.timeout, 120.0)
+        self.assertEqual(request.timeout, 300.0)
         self.assertEqual(request.messages[0]["role"], "user")
         self.assertEqual(request.messages[0]["content"][-1], {"type": "text", "text": "分析这页漫画"})
 
@@ -541,7 +541,7 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(content, {"pages": [{"page_number": 1}]})
         self.assertEqual(complete_mock.await_count, 2)
 
-    async def test_vlm_client_bounds_the_complete_retrying_call_by_wall_clock(self) -> None:
+    async def test_vlm_client_propagates_cancellation_without_retrying(self) -> None:
         from src.core.manga_insight.config_models import VLMConfig
         from src.core.manga_insight.vlm_client import VLMClient
 
@@ -567,14 +567,14 @@ class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
         with mock.patch(
             "src.core.manga_insight.vlm_client.AsyncOpenAICompatibleTransport.complete",
             new=mock.AsyncMock(side_effect=never_finishes),
-        ):
+        ) as complete_mock:
             client = VLMClient(config)
-            client._total_timeout = 0.01
-            with self.assertRaisesRegex(
-                TimeoutError,
-                "视觉模型调用超过总时限（0.01 秒）",
-            ):
-                await client.analyze_page(_png_bytes(), 1, "分析这页漫画")
+            task = asyncio.create_task(client.analyze_page(_png_bytes(), 1, "分析这页漫画"))
+            await asyncio.sleep(0)
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+            self.assertEqual(complete_mock.await_count, 1)
 
     def test_vlm_single_page_requires_the_requested_page_number(self) -> None:
         from src.core.manga_insight.config_models import VLMConfig

@@ -340,7 +340,6 @@ class PluginAgentController:
                 capability=PLUGIN_AGENT_CAPABILITY,
                 openai_options=openai_options,
                 runtime_options=build_openai_compatible_runtime_options(
-                    timeout=180.0,
                     stream_output_label=label,
                     on_stream_chunk=on_stream_chunk,
                 ),

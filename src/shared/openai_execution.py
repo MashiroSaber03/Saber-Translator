@@ -41,6 +41,7 @@ if TYPE_CHECKING:
     )
 
 logger = logging.getLogger("SharedOpenAIExecution")
+DEFAULT_AI_REQUEST_TIMEOUT = 300.0
 
 T = TypeVar("T")
 
@@ -241,7 +242,7 @@ def resolve_openai_compatible_invocation(
         runtime_options=runtime,
         response_format={"type": "json_object"} if effective_options.request.force_json_output else None,
         use_stream=effective_options.execution.use_stream,
-        timeout=runtime.timeout_or(120.0),
+        timeout=runtime.timeout_or(DEFAULT_AI_REQUEST_TIMEOUT),
         service_name=build_openai_rpm_service_name(capability, canonical_provider),
     )
 
