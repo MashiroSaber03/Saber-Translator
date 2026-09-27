@@ -249,7 +249,7 @@ async function diagnose(kind: 'models' | 'connection') {
         @update:model-value="transportRetries => execution({ transportRetries })"
       />
     </div>
-    <label v-if="metadata?.supportsStream" class="switch-field"
+    <label v-if="metadata?.supportsStream || metadata?.kind === 'local'" class="switch-field"
       >流式调用<input
         class="switch"
         type="checkbox"
