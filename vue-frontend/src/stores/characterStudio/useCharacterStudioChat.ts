@@ -2,8 +2,10 @@ import { ref, type Ref } from 'vue'
 
 import {
   abortCharacterStudioChatOperation,
+  editCharacterStudioChatMessage,
   regenerateCharacterStudioChatMessage,
   streamCharacterStudioChatMessage,
+  type CharacterStudioChatStreamEvent,
 } from '@/api/characterStudio'
 import {
   applyAssistantStreamContent,
@@ -137,94 +139,101 @@ export function useCharacterStudioChat(options: CharacterStudioChatOptions) {
     }
   }
 
-  async function sendChatMessage(content: string, attachments: File[] = []): Promise<void> {
+  type ChatSubmission =
+    | { kind: 'send'; content: string; attachments: File[] }
+    | { kind: 'regenerate'; messageId: string }
+    | { kind: 'edit'; messageId: string; content: string }
+
+  async function runChatGeneration(submission: ChatSubmission): Promise<void> {
     const document = options.currentDocument.value
     const activeSession = options.activeChatSession.value
     if (!options.bookId.value || !document || !activeSession) return
-    if (!content.trim() && attachments.length === 0) return
     if (isChatStreaming.value || abortController) return
+    if (submission.kind === 'send' && !submission.content.trim() && !submission.attachments.length)
+      return
+    if (submission.kind === 'edit' && !submission.content.trim()) return
+
+    const previousSession = deepClone(activeSession)
+    const optimisticSession = deepClone(activeSession)
+    if (submission.kind === 'send') {
+      optimisticSession.messages.push(
+        createOptimisticMessage('user', submission.content, submission.attachments.map(createOptimisticAttachment))
+      )
+    } else {
+      const userIndex = findRegenerationUserMessageIndex(previousSession.messages, submission.messageId)
+      if (userIndex < 0) return
+      optimisticSession.messages = optimisticSession.messages.slice(0, userIndex + 1)
+      if (submission.kind === 'edit') optimisticSession.messages[userIndex]!.content = submission.content
+    }
+    optimisticSession.messages.push(createOptimisticMessage('assistant', ''))
 
     const controller = new AbortController()
     abortController = controller
     const runId = ++streamRunId
+    const requestedBookId = options.bookId.value
+    const requestedDocId = document.id
+    const requestedSessionId = previousSession.session_id
+    const isActive = () =>
+      isActiveStream(runId, controller, requestedBookId, requestedDocId, requestedSessionId)
+    let operationAccepted = false
     isChatStreaming.value = true
     clearErrorMessage()
     options.activeWorkspaceTab.value = 'chat'
-    const requestedBookId = options.bookId.value
-    const requestedDocId = document.id
-    const previousSession = deepClone(activeSession)
-    const requestedSessionId = previousSession.session_id
     rollbackSession = previousSession
-    const optimisticSession = deepClone(activeSession)
-    let operationAccepted = false
-    optimisticSession.messages.push(
-      createOptimisticMessage('user', content, attachments.map(createOptimisticAttachment)),
-      createOptimisticMessage('assistant', '')
-    )
     options.activeChatSession.value = optimisticSession
 
+    const onAccepted = (operationId: string) => {
+      operationAccepted = true
+      if (!isActive()) return
+      activeChatOperationId.value = operationId
+      if (submission.kind === 'send') acceptedChatSubmissionCount.value += 1
+    }
+    const onEvent = (event: CharacterStudioChatStreamEvent) => {
+      if (!isActive()) return
+      const session = options.activeChatSession.value
+      if (event.type === 'assistant_delta' && session) {
+        applyAssistantStreamContent(session, event.content)
+      } else if (event.type === 'state') {
+        revokeOptimisticSessionAssets(session)
+        rollbackSession = null
+        options.applySession(event.session)
+      }
+    }
     try {
-      await streamCharacterStudioChatMessage({
-        sessionId: requestedSessionId,
-        baseSessionRevision: previousSession.revision,
-        content,
-        attachments,
-        signal: controller.signal,
-        onAccepted: operationId => {
-          operationAccepted = true
-          if (
-            isActiveStream(runId, controller, requestedBookId, requestedDocId, requestedSessionId)
-          ) {
-            activeChatOperationId.value = operationId
-            acceptedChatSubmissionCount.value += 1
-          }
-        },
-        onEvent: event => {
-          if (
-            !isActiveStream(runId, controller, requestedBookId, requestedDocId, requestedSessionId)
-          )
-            return
-          const session = options.activeChatSession.value
-          if (event.type === 'assistant_delta' && session) {
-            applyAssistantStreamContent(session, event.content)
-          } else if (event.type === 'state') {
-            revokeOptimisticSessionAssets(session)
-            rollbackSession = null
-            options.applySession(event.session)
-          }
-        },
-      })
+      if (submission.kind === 'send') {
+        await streamCharacterStudioChatMessage({
+          sessionId: requestedSessionId,
+          baseSessionRevision: previousSession.revision,
+          content: submission.content,
+          attachments: submission.attachments,
+          signal: controller.signal,
+          onAccepted,
+          onEvent,
+        })
+      } else if (submission.kind === 'edit') {
+        await editCharacterStudioChatMessage(
+          requestedSessionId, previousSession.revision, submission.messageId,
+          submission.content, onEvent, controller.signal, onAccepted
+        )
+      } else {
+        await regenerateCharacterStudioChatMessage(
+          requestedSessionId, previousSession.revision, submission.messageId,
+          onEvent, controller.signal, onAccepted
+        )
+      }
     } catch (error) {
-      if (controller.signal.aborted) return
+      if (controller.signal.aborted || !isActive()) return
       revokeOptimisticSessionAssets(options.activeChatSession.value)
       if (operationAccepted) {
         try {
           await options.reloadChatState(requestedDocId)
         } catch {
-          if (
-            isActiveStream(
-              runId,
-              controller,
-              requestedBookId,
-              requestedDocId,
-              requestedSessionId
-            )
-          ) {
-            options.activeChatSession.value = previousSession
-          }
+          if (isActive()) options.activeChatSession.value = previousSession
         }
-      } else if (
-        isActiveStream(
-          runId,
-          controller,
-          requestedBookId,
-          requestedDocId,
-          requestedSessionId
-        )
-      ) {
+      } else {
         options.activeChatSession.value = previousSession
       }
-      throw createActionError(error, '发送聊天消息失败')
+      if (isActive()) throw createActionError(error, '聊天生成失败')
     } finally {
       if (abortController === controller) {
         abortController = null
@@ -236,72 +245,16 @@ export function useCharacterStudioChat(options: CharacterStudioChatOptions) {
     }
   }
 
+  async function sendChatMessage(content: string, attachments: File[] = []): Promise<void> {
+    await runChatGeneration({ kind: 'send', content, attachments })
+  }
+
   async function regenerateChatMessage(messageId: string): Promise<void> {
-    const document = options.currentDocument.value
-    const activeSession = options.activeChatSession.value
-    if (!options.bookId.value || !document || !activeSession) return
-    if (isChatStreaming.value || abortController) return
+    await runChatGeneration({ kind: 'regenerate', messageId })
+  }
 
-    const controller = new AbortController()
-    abortController = controller
-    const runId = ++streamRunId
-    isChatStreaming.value = true
-    clearErrorMessage()
-    const requestedBookId = options.bookId.value
-    const requestedDocId = document.id
-    const previousSession = deepClone(activeSession)
-    const requestedSessionId = previousSession.session_id
-    rollbackSession = previousSession
-    const userIndex = findRegenerationUserMessageIndex(previousSession.messages, messageId)
-    if (userIndex >= 0) {
-      const optimisticSession = deepClone(previousSession)
-      optimisticSession.messages = optimisticSession.messages.slice(0, userIndex + 1)
-      optimisticSession.messages.push(createOptimisticMessage('assistant', ''))
-      options.activeChatSession.value = optimisticSession
-    }
-
-    try {
-      await regenerateCharacterStudioChatMessage(
-        requestedSessionId,
-        previousSession.revision,
-        messageId,
-        event => {
-          if (
-            !isActiveStream(runId, controller, requestedBookId, requestedDocId, requestedSessionId)
-          )
-            return
-          const session = options.activeChatSession.value
-          if (event.type === 'assistant_delta' && session) {
-            applyAssistantStreamContent(session, event.content)
-          } else if (event.type === 'state') {
-            revokeOptimisticSessionAssets(session)
-            rollbackSession = null
-            options.applySession(event.session)
-          }
-        },
-        controller.signal,
-        operationId => {
-          if (
-            isActiveStream(runId, controller, requestedBookId, requestedDocId, requestedSessionId)
-          ) {
-            activeChatOperationId.value = operationId
-          }
-        }
-      )
-    } catch (error) {
-      if (controller.signal.aborted) return
-      revokeOptimisticSessionAssets(options.activeChatSession.value)
-      options.activeChatSession.value = previousSession
-      throw createActionError(error, '消息重生失败')
-    } finally {
-      if (abortController === controller) {
-        abortController = null
-        activeChatOperationId.value = null
-        rollbackSession = null
-      }
-      if (runId === streamRunId) isChatStreaming.value = false
-      void options.flushPendingRehydrate()
-    }
+  async function editChatMessage(messageId: string, content: string): Promise<void> {
+    await runChatGeneration({ kind: 'edit', messageId, content })
   }
 
   return {
@@ -312,5 +265,6 @@ export function useCharacterStudioChat(options: CharacterStudioChatOptions) {
     abortActiveChatStream,
     sendChatMessage,
     regenerateChatMessage,
+    editChatMessage,
   }
 }

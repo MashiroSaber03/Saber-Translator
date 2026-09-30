@@ -546,7 +546,7 @@ function addStateTask() {
     name: '新任务',
     triggerTiming: 'initialization',
     interval: 0,
-    commands: '<<taskjs>>\n\n<</taskjs>>',
+    commands: '',
     disabled: false,
   })
 }

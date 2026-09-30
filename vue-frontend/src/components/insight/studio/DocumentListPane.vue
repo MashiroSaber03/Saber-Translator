@@ -70,7 +70,7 @@ function formatOrigin(origin: CharacterStudioSummary['origin']) {
 
 function formatTime(value: string) {
   if (!value) return '未更新'
-  return value.slice(0, 16).replace('T', ' ')
+  return new Date(value).toLocaleString('zh-CN', { hour12: false })
 }
 
 function documentChips(item: CharacterStudioSummary): ProductChipItem[] {

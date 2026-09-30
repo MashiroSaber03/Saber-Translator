@@ -19,8 +19,7 @@ import type {
 const props = defineProps<{
   assistantName: string
   attachmentUrlFor: (attachment: CharacterStudioChatAttachment) => string
-  chatMutating: boolean
-  chatStreaming: boolean
+  chatBusy: boolean
   session: CharacterStudioChatSession
 }>()
 
@@ -78,9 +77,10 @@ function messageBubbleRole(
       size="compact"
       title="当前会话还没有消息"
     />
+    <!-- 消息只追加或从回退点截断；按会话内位置复用气泡，避免临时 ID 落库后重新播放入场动画。 -->
     <ProductMessageBubble
-      v-for="item in session.messages"
-      :key="item.message_id"
+      v-for="(item, index) in session.messages"
+      :key="`${session.session_id}:${index}:${item.role}`"
       class="studio-message-list__bubble"
       appearance="reading"
       :role="messageBubbleRole(item)"
@@ -111,7 +111,7 @@ function messageBubbleRole(
           <UiButton
             variant="primary"
             size="xs"
-            :disabled="!editingContent.trim() || chatMutating"
+            :disabled="!editingContent.trim() || chatBusy"
             @click="commitEdit(item)"
           >
             保存并重新生成
@@ -163,7 +163,7 @@ function messageBubbleRole(
             v-if="canEditMessage(item)"
             variant="secondary"
             size="xs"
-            :disabled="chatStreaming || chatMutating"
+            :disabled="chatBusy"
             @click="startEdit(item)"
           >
             编辑
@@ -171,16 +171,16 @@ function messageBubbleRole(
           <UiButton
             variant="secondary"
             size="xs"
-            :disabled="chatStreaming || chatMutating"
+            :disabled="chatBusy"
             @click="$emit('delete-message', item.message_id)"
           >
             从这里回退
           </UiButton>
           <UiButton
-            v-if="canRegenerateMessage(item)"
+            v-if="canRegenerateMessage(item, session.messages)"
             variant="secondary"
             size="xs"
-            :disabled="chatStreaming"
+            :disabled="chatBusy"
             @click="$emit('regenerate-message', item.message_id)"
           >
             重新生成

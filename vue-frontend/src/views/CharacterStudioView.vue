@@ -76,6 +76,7 @@
         <template #right>
           <div class="studio-page__workspace-slot-content">
             <CharacterStudioPreview
+              :key="store.currentDocument?.id"
               :book-id="props.bookId || ''"
               :document="store.currentDocument"
               :session="store.activeChatSession"
@@ -84,11 +85,11 @@
               :prompt-preview="store.chatPromptPreview"
               :prompt-preview-error="store.chatPromptPreviewError"
               :active-tab="store.activeWorkspaceTab"
-              :chat-loading="store.isChatLoading"
+              :chat-loading="store.isChatLoading || store.isDocumentLoading"
               :chat-streaming="store.isChatStreaming"
               :chat-abortable="Boolean(store.activeChatOperationId)"
               :accepted-chat-submission-count="store.acceptedChatSubmissionCount"
-              :chat-mutating="store.isChatMutating"
+              :chat-busy="store.isChatBusy"
               :chat-summarizing="store.isChatSummarizing"
               :chat-exporting="store.isChatExporting"
               :chat-importing="store.isChatImporting"
@@ -165,7 +166,7 @@ import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
 import ProductSplitWorkspace from '@/components/product/ProductSplitWorkspace.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRouter } from 'vue-router'
 import { useCharacterStudioStore } from '@/stores/characterStudioStore'
 import { useBookshelfStore } from '@/stores/bookshelfStore'
 import { confirmProductAction } from '@/composables/useProductConfirm'
@@ -218,6 +219,16 @@ async function runAction(action: () => Promise<void>) {
   } catch {
     return false
   }
+}
+
+const saveBeforeNavigation = () => runAction(() => store.persistCurrentDocument())
+onBeforeRouteLeave(saveBeforeNavigation)
+onBeforeRouteUpdate(saveBeforeNavigation)
+
+function warnBeforeUnload(event: BeforeUnloadEvent) {
+  if (!store.hasUnsavedDocumentEdits) return
+  event.preventDefault()
+  event.returnValue = ''
 }
 
 function isActiveHydration(requestId: number, bookId: string, docId?: string): boolean {
@@ -418,12 +429,14 @@ async function loadPromptPreviewFromChat() {
 }
 
 onMounted(async () => {
+  window.addEventListener('beforeunload', warnBeforeUnload)
   if (props.bookId) {
     await hydrateWorkspace(props.bookId)
   }
 })
 
 onUnmounted(() => {
+  window.removeEventListener('beforeunload', warnBeforeUnload)
   hydrateRequestId += 1
 })
 
@@ -594,6 +607,25 @@ watch(
 @media (--breakpoint-studio-down) {
   .studio-page__workspace-shell {
     padding: 14px;
+  }
+}
+
+@media (--breakpoint-md-down) {
+  .studio-page__workspace-shell {
+    overflow-y: auto;
+    grid-template-rows: max-content max-content;
+    align-content: start;
+  }
+
+  .studio-page__workspace-slot-content,
+  .studio-page__workspace-slot-content > .studio-editor {
+    height: auto;
+    min-height: 0;
+  }
+
+  .studio-page__workspace-slot-content > .character-studio-preview {
+    height: 640px;
+    min-height: 640px;
   }
 }
 </style>

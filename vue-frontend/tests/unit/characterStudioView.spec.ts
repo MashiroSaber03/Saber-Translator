@@ -4,6 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import CharacterStudioView from '@/views/CharacterStudioView.vue'
+import CharacterStudioPreview from '@/components/insight/studio/CharacterStudioPreview.vue'
 import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
 import { useCharacterStudioStore } from '@/stores/characterStudioStore'
@@ -29,6 +30,8 @@ function createDeferred(): { promise: Promise<void>; resolve: () => void } {
 }
 
 vi.mock('vue-router', () => ({
+  onBeforeRouteLeave: vi.fn(),
+  onBeforeRouteUpdate: vi.fn(),
   useRouter: () => ({
     push: pushMock,
     replace: replaceMock,
@@ -70,7 +73,7 @@ describe('CharacterStudioView workspace shell', () => {
     expect(wrapper.find('.empty-badge').exists()).toBe(false)
   })
 
-  it('renders dedicated scroll containers for the two-pane workspace', async () => {
+  it('renders workspace scroll containers and clears assistant drafts when switching roles', async () => {
     const studioStore = useCharacterStudioStore()
     const bookshelfStore = useBookshelfStore()
 
@@ -111,6 +114,7 @@ describe('CharacterStudioView workspace shell', () => {
       createdAt: '2026-05-15T00:00:00',
       updatedAt: '2026-05-15T00:00:00',
     }
+    studioStore.activeWorkspaceTab = 'assistant'
 
     const wrapper = mount(CharacterStudioView, {
       props: {
@@ -120,7 +124,6 @@ describe('CharacterStudioView workspace shell', () => {
         stubs: {
           CharacterStudioSidebar: { template: '<div class="sidebar-stub">sidebar</div>' },
           CharacterStudioEditor: { template: '<div class="editor-stub">editor</div>' },
-          CharacterStudioPreview: { template: '<div class="preview-stub">preview</div>' },
           StudioTopbar: { template: '<div class="topbar-stub">topbar</div>' },
         },
       },
@@ -129,6 +132,17 @@ describe('CharacterStudioView workspace shell', () => {
     expect(wrapper.find('.product-split-workspace').exists()).toBe(true)
     expect(wrapper.find('[data-testid="editor-scroll"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="chat-scroll"]').exists()).toBe(true)
+    await wrapper.get('textarea[aria-label="卡片助手消息内容"]').setValue('仅修改阿尔法')
+    studioStore.currentDocument = { ...studioStore.currentDocument!, id: 'doc_beta' }
+    await flushPromises()
+    expect((wrapper.get('textarea[aria-label="卡片助手消息内容"]').element as HTMLTextAreaElement).value).toBe('')
+    expect(wrapper.getComponent(CharacterStudioPreview).props('chatBusy')).toBe(false)
+    studioStore.isChatSummarizing = true
+    await flushPromises()
+    expect(wrapper.getComponent(CharacterStudioPreview).props('chatBusy')).toBe(true)
+    studioStore.isChatSummarizing = false
+    await flushPromises()
+    expect(wrapper.getComponent(CharacterStudioPreview).props('chatBusy')).toBe(false)
   })
 
   it('requires confirmation before deleting a role document', async () => {

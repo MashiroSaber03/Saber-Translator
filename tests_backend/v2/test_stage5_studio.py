@@ -60,8 +60,10 @@ from src.backend_v2.studio.service import (
 from src.backend_v2.studio.service import _apply_generated_section
 from src.backend_v2.studio.pure import (
     build_diagnostics_report,
+    build_export_bundle,
     create_empty_document,
     import_document_payload,
+    run_state_tasks,
 )
 from src.shared.user_logging import user_log, user_log_context
 
@@ -74,11 +76,7 @@ class FakeStudioAlgorithms:
         section: str,
         config: Mapping[str, Any],
         analysis_context: Mapping[str, Any] | None = None,
-        on_chunk=None,
     ) -> Mapping[str, Any]:
-        if on_chunk:
-            on_chunk('{"identity":', '{"identity":')
-            on_chunk("{}}", '{"identity":{}}')
         if section == "identity":
             return {
                 "identity": {
@@ -124,7 +122,7 @@ class FakeStudioAlgorithms:
             on_chunk("回复", "持久化回复")
         return "持久化回复"
 
-    def summarize(self, messages, *, config, on_chunk=None):
+    def summarize(self, messages, *, config):
         return {"summary": f"{len(messages)} messages"}
 
 
@@ -140,7 +138,6 @@ def _portable_message(
             "message_received": 0,
             "message_sent": 0,
         },
-        "matched_lorebook_ids": [],
     }
     return {
         "messageId": message_id,
@@ -189,7 +186,6 @@ def test_studio_generation_prompt_consumes_analysis_context(
         prompt: str,
         *,
         config: Mapping[str, Any],
-        on_chunk=None,
         validator=None,
     ) -> object:
         captured["prompt"] = prompt
@@ -237,7 +233,6 @@ def test_studio_generation_prompt_declares_nested_lorebook_contract(
         prompt: str,
         *,
         config: Mapping[str, Any],
-        on_chunk=None,
         validator=None,
     ) -> object:
         captured["prompt"] = prompt
@@ -295,6 +290,51 @@ def test_generated_lorebook_validation_uses_existing_business_retry(monkeypatch,
     assert result == valid
     assert len(calls) == 2
     assert document == original
+
+
+@pytest.mark.parametrize("kind", ("studio_generate", "studio_summary"))
+def test_structured_studio_operations_retry_without_publishing_json_drafts(studio_platform, monkeypatch, kind):
+    from src.shared.ai_transport import OpenAICompatibleChatTransport
+    from src.shared.openai_options import OpenAICompatibleOptions
+
+    repository = StudioRepository(studio_platform["engine"])
+    document = repository.create_document(book_id=str(studio_platform["book"]["id"]), title="Saber")
+    options = OpenAICompatibleOptions()
+    options.execution.use_stream = True
+    options.execution.business_retries = 1
+    config = {"chat": {"provider": "ollama", "model_name": "test", "custom_base_url": "", "openai_options": options.to_dict()}}
+    valid = {"identity": {**document["identity"], "scenario": "重试成功"}} if kind == "studio_generate" else {"summary": "重试后生成的总结"}
+    replies = iter(["{invalid", json.dumps(valid)])
+    calls = []
+
+    def complete(_transport, request, **kwargs):
+        calls.append(request)
+        text = next(replies)
+        callback = kwargs["resolved_invocation"].runtime_options.on_stream_chunk
+        if callback:
+            callback(text, text)
+        return text
+
+    monkeypatch.setattr(OpenAICompatibleChatTransport, "complete", complete)
+    monkeypatch.setattr("src.shared.openai_execution.time.sleep", lambda _: None)
+    if kind == "studio_generate":
+        accepted = repository.create_generate_operation(document_id=str(document["id"]), base_revision=1,
+            section="identity", config=config, idempotency_key="structured-retry")
+    else:
+        session = repository.create_session(document_id=str(document["id"]), title="预览", base_index_revision=1, greeting="你好")
+        accepted = repository.create_summary_operation(session_id=str(session["sessionId"]), base_revision=int(session["revision"]),
+            config=config, idempotency_key="structured-retry")
+    operations = OperationRepository(studio_platform["engine"])
+    claimed = operations.claim_next(executor_role="api", executor_epoch_id=studio_platform["epoch_id"], allowed_kinds=(kind,))
+    assert claimed is not None
+    StudioOperationService(engine=studio_platform["engine"], repository=repository).handle(*claimed)
+    assert len(calls) == 2
+    assert operations.get(str(accepted["operationId"]))["status"] == "completed"
+    assert [event["type"] for event in operations.events_after(str(accepted["operationId"]))] == ["operation_started", "operation_completed"]
+    if kind == "studio_generate":
+        assert repository.get_document(str(document["id"]))["identity"]["scenario"] == "重试成功"
+    else:
+        assert repository.get_session(str(session["sessionId"]))["summaryBlocks"] == [valid]
 
 
 def test_invalid_studio_generation_stops_at_configured_retry_limit(monkeypatch):
@@ -594,7 +634,7 @@ def test_studio_chat_uses_vlm_for_image_attachments(monkeypatch) -> None:
     )["model"] == "vision-model"
 
 
-def test_studio_chat_merges_session_system_messages(monkeypatch) -> None:
+def test_studio_chat_preserves_session_system_message_positions(monkeypatch) -> None:
     captured: dict[str, Any] = {}
 
     def complete(
@@ -627,10 +667,9 @@ def test_studio_chat_merges_session_system_messages(monkeypatch) -> None:
     assert result == "ok"
     assert [
         message["role"] for message in captured["messages"]
-    ] == ["system", "user"]
-    assert captured["messages"][0]["content"] == (
-        "角色系统提示\n\n导入会话上下文"
-    )
+    ] == ["system", "system", "user"]
+    assert captured["messages"][0]["content"] == "角色系统提示"
+    assert captured["messages"][1]["content"] == "导入会话上下文"
 
 
 def test_studio_chat_rejects_empty_provider_response(monkeypatch) -> None:
@@ -1015,7 +1054,7 @@ def test_generate_operation_freezes_analysis_context(
     assert stored["request"]["config"] == {"chat": chat_config}
 
 
-def test_generate_rejects_unchanged_document_without_revision_bump(
+def test_generate_completes_unchanged_document_without_revision_bump(
     studio_platform,
 ) -> None:
     class NoopStudioAlgorithms(FakeStudioAlgorithms):
@@ -1026,7 +1065,6 @@ def test_generate_rejects_unchanged_document_without_revision_bump(
             section: str,
             config: Mapping[str, Any],
             analysis_context: Mapping[str, Any] | None = None,
-            on_chunk=None,
         ) -> Mapping[str, Any]:
             return {
                 key: deepcopy(document[key])
@@ -1059,17 +1097,12 @@ def test_generate_rejects_unchanged_document_without_revision_bump(
         allowed_kinds=("studio_generate",),
     )
     assert claimed is not None
-    with pytest.raises(ValueError, match="no document changes"):
-        StudioOperationService(
-            engine=studio_platform["engine"],
-            repository=repository,
-            algorithms=NoopStudioAlgorithms(),
-        ).handle(*claimed)
-    operations.fail(
-        claimed[0],
-        code="NO_DOCUMENT_CHANGES",
-        message="no changes",
-    )
+    StudioOperationService(
+        engine=studio_platform["engine"],
+        repository=repository,
+        algorithms=NoopStudioAlgorithms(),
+    ).handle(*claimed)
+    assert operations.get(claimed[1]["operationId"])["status"] == "completed"
     restored = repository.get_document(str(document["id"]))
     assert restored["revision"] == document["revision"]
 
@@ -1217,8 +1250,6 @@ def test_generate_and_edit_idempotency_replay_precedes_revision_checks(
     ).events_after(str(accepted["operationId"]))
     assert [event["type"] for event in events] == [
         "operation_started",
-        "chunk",
-        "chunk",
         "operation_completed",
     ]
 
@@ -1339,7 +1370,6 @@ def test_new_chat_session_runs_initialization_state_tasks(
             "message_received": 0,
             "message_sent": 0,
         },
-        "matched_lorebook_ids": [],
     }
     assert session["messages"][0]["variablesSnapshot"] == {
         "trust_score": "20"
@@ -1458,7 +1488,6 @@ def test_chat_chain_rewrite_restores_runtime_and_variables(
             "message_received": 1,
             "message_sent": 1,
         },
-        "matched_lorebook_ids": ["lore-saber"],
     }
 
     edited = repository.edit_or_regenerate_message(
@@ -1481,7 +1510,6 @@ def test_chat_chain_rewrite_restores_runtime_and_variables(
             "message_received": 0,
             "message_sent": 0,
         },
-        "matched_lorebook_ids": [],
     }
     service.handle(*claimed)
 
@@ -1495,9 +1523,7 @@ def test_chat_chain_rewrite_restores_runtime_and_variables(
         "message_received": 1,
         "message_sent": 1,
     }
-    assert regenerated["runtimeState"]["matched_lorebook_ids"] == [
-        "lore-saber"
-    ]
+    assert "matched_lorebook_ids" not in regenerated["runtimeState"]
 
     repository.delete_message_chain(
         message_id=str(regenerated["messages"][-1]["messageId"]),
@@ -1511,7 +1537,6 @@ def test_chat_chain_rewrite_restores_runtime_and_variables(
             "message_received": 0,
             "message_sent": 0,
         },
-        "matched_lorebook_ids": [],
     }
 
 
@@ -1647,6 +1672,7 @@ def test_png_and_session_portable_roundtrip_uses_asset_ids(
     )
     attachment = imported_session["messages"][0]["attachments"][0]
     assert attachment["assetId"]
+    assert attachment["filename"] == "image.png"
     assert attachment["assetUrl"].startswith("/api/v2/assets/")
     assert (
         imported_session["summaryThroughMessageId"]
@@ -1656,6 +1682,7 @@ def test_png_and_session_portable_roundtrip_uses_asset_ids(
         str(imported_session["sessionId"])
     )
     assert exported["schema"] == "saber-studio-chat-v2"
+    assert exported["messages"][0]["attachments"][0]["filename"] == "image.png"
     assert exported["messages"][0]["attachments"][0]["blob_base64"]
 
 
@@ -1879,6 +1906,15 @@ def test_summary_window_and_summary_invalidation_follow_message_ordinals(
         config={},
         idempotency_key="edit-inside-summary",
     )
+    invalidated = repository.get_session(str(session["sessionId"]))
+    assert invalidated["summaryBlocks"] == first_summary
+    claimed = operations.claim_next(
+        executor_role="api", executor_epoch_id=studio_platform["epoch_id"],
+        allowed_kinds=("studio_chat",),
+    )
+    assert claimed is not None
+    assert claimed[1]["request"]["summaryBlocks"] == []
+    service.handle(*claimed)
     invalidated = repository.get_session(str(session["sessionId"]))
     assert invalidated["summaryBlocks"] == []
     assert invalidated["summaryThroughMessageId"] is None
@@ -2762,6 +2798,187 @@ def test_studio_generate_route_freezes_ready_compressed_context(
     assert frozen["revision"] == 2
     assert frozen["dependencyFingerprint"] == "a" * 64
     assert frozen["payload"] == context_payload
+
+
+@pytest.mark.parametrize("content", [None, "修改后的问题"])
+@pytest.mark.parametrize("outcome", ["failed", "cancelled", "completed"])
+def test_chat_rewrite_commits_only_after_success(studio_platform, content, outcome):
+    repository = StudioRepository(studio_platform["engine"])
+    operations = OperationRepository(studio_platform["engine"])
+    service = StudioOperationService(
+        engine=studio_platform["engine"], repository=repository, algorithms=FakeStudioAlgorithms(),
+    )
+    document = repository.create_document(book_id=studio_platform["book"]["id"], title="原始角色")
+    session = repository.create_session(document_id=document["id"], title="测试", base_index_revision=1)
+    sent = repository.send_message(
+        session_id=session["sessionId"], base_revision=session["revision"], content="原始问题",
+        asset_ids=[], config={}, idempotency_key="original-chat",
+    )
+    def claim(kind):
+        result = operations.claim_next(
+            executor_role="api", executor_epoch_id=studio_platform["epoch_id"], allowed_kinds=(kind,),
+        )
+        assert result is not None
+        return result
+    service.handle(*claim("studio_chat"))
+    before = repository.get_session(session["sessionId"])
+    repository.create_summary_operation(
+        session_id=session["sessionId"], base_revision=before["revision"],
+        config={}, idempotency_key="original-summary",
+    )
+    service.handle(*claim("studio_summary"))
+    before = repository.get_session(session["sessionId"])
+    rewrite = repository.edit_or_regenerate_message(
+        message_id=sent["userMessageId"] if content else before["messages"][-1]["messageId"],
+        base_revision=before["revision"], content=content, config={}, idempotency_key="rewrite",
+    )
+    retained = repository.get_session(session["sessionId"])
+    for field in ("messages", "variables", "runtimeState", "summaryBlocks", "summaryThroughMessageId"):
+        assert retained[field] == before[field]
+    claimed = claim("studio_chat")
+    assert claimed[1]["request"]["messages"][-1]["content"] == (content or "原始问题")
+    assert claimed[1]["request"]["summaryBlocks"] == []
+    if outcome == "cancelled":
+        repository.abort(session_id=session["sessionId"], operation_id=rewrite["operationId"])
+        with pytest.raises(OperationFenced):
+            service.handle(*claimed)
+    elif outcome == "failed":
+        class FailedAlgorithms(FakeStudioAlgorithms):
+            def chat(self, **kwargs):
+                raise ValueError("provider failed")
+        service.algorithms = FailedAlgorithms()
+        with pytest.raises(ValueError, match="provider failed"):
+            service.handle(*claimed)
+        operations.fail(claimed[0], code="PROVIDER_FAILED", message="provider failed")
+    else:
+        service.handle(*claimed)
+    after = repository.get_session(session["sessionId"])
+    if outcome == "completed":
+        assert after["messages"][0]["content"] == (content or "原始问题")
+        assert len(after["messages"]) == 2
+        assert after["messages"][-1]["messageId"] != before["messages"][-1]["messageId"]
+        assert after["summaryBlocks"] == []
+    else:
+        for field in ("messages", "variables", "runtimeState", "summaryBlocks", "summaryThroughMessageId"):
+            assert after[field] == before[field]
+
+
+@pytest.mark.parametrize("depth", [0, 1])
+def test_chat_context_and_preview_use_the_same_snapshot_across_turns(studio_platform, depth):
+    captured = []
+    class CaptureAlgorithms(FakeStudioAlgorithms):
+        def chat(self, *, messages, system, **kwargs):
+            captured.append({"system": system, "messages": deepcopy(messages)})
+            return "已收到"
+    repository = StudioRepository(studio_platform["engine"])
+    operations = OperationRepository(studio_platform["engine"])
+    service = StudioOperationService(
+        engine=studio_platform["engine"], repository=repository, algorithms=CaptureAlgorithms(),
+    )
+    document = create_empty_document(studio_platform["book"]["id"], title="林")
+    document["coreMessages"]["message_example"] = "用户：一起参加展览吧。林：好的。"
+    document["coreMessages"]["post_history_instructions"] = "保持简洁"
+    document["lorebook"]["entries"] = [
+        {
+            "id": position, "keys": [], "secondary_keys": [], "comment": position,
+            "content": position + "：展览代号蓝星", "enabled": True, "constant": True,
+            "selective": False, "position": position, "priority": 150, "depth": depth,
+            "probability": 100, "prevent_recursion": True, "children": [],
+        } for position in ("before_char", "after_char", "at_depth")
+    ]
+    document["stateTasks"] = [{
+        "id": "score", "name": "增加分数", "triggerTiming": "message_sent",
+        "interval": 1, "commands": "/addvar key=score 1", "disabled": False,
+    }]
+    document = repository.create_document(
+        book_id=studio_platform["book"]["id"], title="林", document=document,
+    )
+    session = repository.create_session(
+        document_id=document["id"], title="上下文", base_index_revision=1, greeting="你好",
+    )
+    with studio_platform["engine"].begin() as connection:
+        connection.execute(update(studio_chat_sessions).where(
+            studio_chat_sessions.c.id == session["sessionId"]
+        ).values(runtime_state_json=json.dumps({"matched_lorebook_ids": ["before_char", "after_char", "at_depth"]})))
+    for turn in range(2):
+        session = repository.get_session(session["sessionId"])
+        repository.send_message(
+            session_id=session["sessionId"], base_revision=session["revision"],
+            content=f"第{turn + 1}轮", asset_ids=[], config={}, idempotency_key=f"context-{turn}",
+        )
+        claimed = operations.claim_next(
+            executor_role="api", executor_epoch_id=studio_platform["epoch_id"], allowed_kinds=("studio_chat",),
+        )
+        assert claimed is not None
+        service.handle(*claimed)
+        current = repository.get_session(session["sessionId"])
+        preview = service.prompt_preview(document=document, session=current)
+        assert preview["source"] == "request"
+        expected = captured[-1]
+        assert preview["system"] == expected["system"]
+        assert preview["messages"] == [
+            {"role": m["role"], "content": m["content"], "assetIds": []} for m in expected["messages"]
+        ]
+        assert len(preview["lorebookHits"]) == 3
+        assert expected["system"].index("before_char：") < expected["system"].index("角色：林") < expected["system"].index("after_char：")
+        assert document["coreMessages"]["message_example"] in expected["system"]
+        if depth:
+            assert expected["messages"][-2]["content"].startswith("at_depth：")
+        else:
+            assert "[补充上下文]\nat_depth：" in expected["messages"][-1]["content"]
+        assert expected["messages"][-1]["role"] == "user"
+        assert expected["messages"][-1]["content"].startswith(f"第{turn + 1}轮")
+        assert expected["messages"][-1]["content"].endswith("[回复要求]\n保持简洁")
+        assert current["variables"]["score"] == str(turn + 1)
+        assert "matched_lorebook_ids" not in current["runtimeState"]
+    modified = deepcopy(document)
+    modified["identity"]["description"] = "修改后的设定"
+    modified["stateTasks"].append({
+        "id": "receive-score", "name": "收到消息增加分数", "triggerTiming": "message_received",
+        "interval": 1, "commands": "/addvar key=score 100", "disabled": False,
+    })
+    repository.update_document(document_id=document["id"], base_revision=document["revision"], title="林", document=modified)
+    preview = service.prompt_preview(document=modified, session=current)
+    assert preview["system"] == captured[-1]["system"]
+    io_service = StudioIOService(
+        data_root=studio_platform["data_root"], engine=studio_platform["engine"], repository=repository,
+    )
+    imported = io_service.import_session(
+        document_id=document["id"], base_index_revision=2,
+        payload=io_service.export_session(session["sessionId"]), idempotency_key="context-import",
+    )
+    preview = service.prompt_preview(document=modified, session=imported)
+    assert preview["source"] == "current_config"
+    assert '"score": "2"' in preview["system"]
+    assert imported["variables"]["score"] == "2"
+
+
+@pytest.mark.parametrize("format", ["v2", "v3"])
+def test_card_export_roundtrip_preserves_aliases_and_lorebook_fields(format):
+    document = create_empty_document("test-book", title="林")
+    document["identity"]["aliases"] = ["小林", "Lin"]
+    document["lorebook"]["entries"] = [{
+        "id": "entry", "keys": ["林"], "secondary_keys": [], "comment": "展览",
+        "content": "蓝星", "constant": True, "selective": False, "enabled": True,
+        "position": "at_depth", "priority": 150, "depth": 2, "children": [],
+        "probability": 75, "prevent_recursion": False, "use_regex": True,
+    }]
+    restored = import_document_payload("test-book", build_export_bundle(document)[format])
+    assert restored["identity"]["aliases"] == document["identity"]["aliases"]
+    for key in ("priority", "depth", "probability", "prevent_recursion", "use_regex", "position", "content"):
+        assert restored["lorebook"]["entries"][0][key] == document["lorebook"]["entries"][0][key]
+
+
+def test_state_tasks_execute_supported_commands_and_report_unsupported_without_partial_changes():
+    session = {"variables": {"score": "20"}, "_runtime": {}}
+    task = {"name": "增加分数", "triggerTiming": "message_sent", "interval": 1, "disabled": False, "commands": "/addvar key=score 0.5"}
+    assert run_state_tasks(session, [task], event="message_sent")[0]["type"] == "task"
+    assert session["variables"]["score"] == "20.5"
+    invalid = {**task, "commands": "/setvar key=score 100\nalert('test')"}
+    log = run_state_tasks(session, [invalid], event="message_sent")
+    assert log[0]["type"] == "task_error"
+    assert "不支持" in log[0]["message"]
+    assert session["variables"]["score"] == "20.5"
 
 
 def test_studio_exports_unicode_titles_with_wsgi_safe_headers(
