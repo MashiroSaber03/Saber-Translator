@@ -100,6 +100,16 @@ class DefaultStudioAlgorithms:
                 f"当前角色文档：\n{document_json}"
             )
         else:
+            lorebook_contract = (
+                '{"name":"角色世界书","entries":['
+                '{"id":"稳定唯一ID","keys":["触发词"],'
+                '"secondary_keys":[],"comment":"条目名称",'
+                '"content":"原作事实","constant":false,'
+                '"selective":false,"enabled":true,'
+                '"position":"before_char","priority":100,'
+                '"depth":4,"children":[],'
+                '"probability":100,"prevent_recursion":true}]}'
+            )
             contracts = {
                 "identity": (
                     '{"identity":{"name":"角色名","aliases":[],'
@@ -112,16 +122,7 @@ class DefaultStudioAlgorithms:
                     '"system_prompt":"","post_history_instructions":"",'
                     '"creator_notes":"","character_version":"2.0.0"}}'
                 ),
-                "lorebook": (
-                    '{"lorebook":{"name":"世界书名称","entries":['
-                    '{"id":"稳定唯一ID","keys":["触发词"],'
-                    '"secondary_keys":[],"comment":"条目名称",'
-                    '"content":"原作事实","constant":false,'
-                    '"selective":false,"enabled":true,'
-                    '"position":"before_char","priority":100,'
-                    '"depth":4,"children":[],'
-                    '"probability":100,"prevent_recursion":true}]}}'
-                ),
+                "lorebook": '{"lorebook":' + lorebook_contract + '}',
                 "regex": '{"regexScripts":[]}',
                 "state-tasks": '{"stateTasks":[]}',
                 "translate": (
@@ -145,7 +146,7 @@ class DefaultStudioAlgorithms:
                     '"post_history_instructions":"",'
                     '"creator_notes":"基于原作分析生成",'
                     '"character_version":"2.0.0"},'
-                    '"lorebook":{"name":"角色世界书","entries":[]},'
+                    '"lorebook":' + lorebook_contract + ','
                     '"regexScripts":[],"stateTasks":[]}'
                 ),
             }
@@ -166,6 +167,7 @@ class DefaultStudioAlgorithms:
             lorebook_requirement = (
                 "世界书 entries 中的每个条目都必须包含非负整数 depth 和数组 children；"
                 "没有子条目时 children 必须返回空数组。"
+                "所有条目及子条目都必须遵循同一完整字段结构，条目名称使用 comment，不要使用 title。"
                 if section in {"lorebook", "full"}
                 else ""
             )
@@ -180,13 +182,22 @@ class DefaultStudioAlgorithms:
                 f"漫画分析压缩上下文：\n{context_json}\n\n"
                 f"当前角色文档：\n{document_json}"
             )
+        def validate_generated(result: object) -> None:
+            if not isinstance(result, Mapping):
+                raise ValueError("Studio generation did not return a JSON object")
+            if section == "review":
+                _normalize_review(result)
+                return
+            _validate_generated_payload(document, result, section=section)
+            merged = _apply_generated_section(document, result, section=section)
+            validate_current_document(merged, book_id=merged["bookId"], title=merged.get("title"))
+
         result = self._chat_json(
             prompt,
             config=config,
             on_chunk=on_chunk,
+            validator=validate_generated,
         )
-        if not isinstance(result, Mapping):
-            raise ValueError("Studio generation did not return a JSON object")
         return dict(result)
 
     def chat(
@@ -279,20 +290,30 @@ class DefaultStudioAlgorithms:
         *,
         config: Mapping[str, Any],
         on_chunk: Callable[[str, str], None] | None = None,
+        validator: Callable[[object], None] | None = None,
     ) -> object:
-        text = self._complete(
+        from src.shared.openai_execution import (
+            OpenAICompatibleBusinessRetryableError,
+            parse_json_block_from_text,
+        )
+
+        def parse(text: str) -> object:
+            try:
+                result = parse_json_block_from_text(text)
+                if validator is not None:
+                    validator(result)
+                return result
+            except (ValueError, TypeError) as exc:
+                raise OpenAICompatibleBusinessRetryableError(str(exc)) from exc
+
+        return self._complete(
             [{"role": "user", "content": prompt}],
             config=config,
             temperature=0.3,
             force_json=True,
             on_chunk=on_chunk,
+            parser=parse,
         )
-        cleaned = text.strip()
-        if cleaned.startswith("```"):
-            cleaned = cleaned.split("\n", 1)[-1]
-            if cleaned.endswith("```"):
-                cleaned = cleaned[:-3]
-        return json.loads(cleaned.strip())
 
     @staticmethod
     def _complete(
@@ -303,7 +324,8 @@ class DefaultStudioAlgorithms:
         force_json: bool,
         on_chunk: Callable[[str, str], None] | None,
         prefer_vlm: bool = False,
-    ) -> str:
+        parser: Callable[[str], object] | None = None,
+    ) -> Any:
         from src.shared.ai_transport import UnifiedChatRequest
         from src.shared.openai_execution import (
             OpenAICompatibleSyncExecutor,
@@ -348,18 +370,15 @@ class DefaultStudioAlgorithms:
             ),
             openai_options=options,
             runtime_options=build_openai_compatible_runtime_options(
-                timeout=_positive_number(
-                    section.get("timeout_seconds"),
-                    "Studio timeout_seconds",
-                ),
                 on_stream_chunk=on_chunk,
             ),
         )
         result = OpenAICompatibleSyncExecutor().execute(
             request,
             capability=request.capability,
+            parser=parser,
         )
-        return str(result.parsed)
+        return result.parsed
 
 
 class StudioOperationService:
@@ -1023,17 +1042,16 @@ def _provider_config(
         if raw_options is None
         else _required_mapping(raw_options, "Studio provider openai_options")
     )
-    timeout = section.get("timeout_seconds")
     base_url = section.get("custom_base_url")
     if base_url == "":
         base_url = None
     return {
         "provider": section.get("provider", ""),
         "api_key": section.get("api_key", ""),
+        "credential_version_id": section.get("credential_version_id"),
         "model": section.get("model_name", ""),
         "base_url": base_url,
         "openai_options": options,
-        "timeout_seconds": 120 if timeout is None else timeout,
     }
 
 
@@ -1231,14 +1249,6 @@ def _required_string(value: object, label: str) -> str:
     if not result:
         raise ValueError(f"{label} must not be empty")
     return result
-
-
-def _positive_number(value: object, label: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ValueError(f"{label} must be a number")
-    if value <= 0:
-        raise ValueError(f"{label} must be positive")
-    return float(value)
 
 
 def _current_document(value: object) -> dict[str, Any]:

@@ -319,7 +319,7 @@ def log_task_finished(
 ) -> None:
     status_labels = {
         "completed": "已完成",
-        "completed_with_errors": "已完成，部分页面失败",
+        "completed_with_errors": "已结束，部分步骤失败",
         "failed": "失败",
         "cancelled": "已取消",
         "paused": "已暂停",

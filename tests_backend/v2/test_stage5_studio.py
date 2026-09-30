@@ -190,6 +190,7 @@ def test_studio_generation_prompt_consumes_analysis_context(
         *,
         config: Mapping[str, Any],
         on_chunk=None,
+        validator=None,
     ) -> object:
         captured["prompt"] = prompt
         return {
@@ -237,6 +238,7 @@ def test_studio_generation_prompt_declares_nested_lorebook_contract(
         *,
         config: Mapping[str, Any],
         on_chunk=None,
+        validator=None,
     ) -> object:
         captured["prompt"] = prompt
         return {}
@@ -252,6 +254,67 @@ def test_studio_generation_prompt_declares_nested_lorebook_contract(
     assert "depth" in captured["prompt"]
     assert "children" in captured["prompt"]
     assert "没有子条目时 children 必须返回空数组" in captured["prompt"]
+    for field in ("comment", "keys", "enabled", "constant", "selective", "priority", "position"):
+        assert f'"{field}":' in captured["prompt"]
+
+
+@pytest.mark.parametrize("section", ("full", "lorebook"))
+@pytest.mark.parametrize("invalid", ("missing_fields", "bad_child", "malformed_json"))
+def test_generated_lorebook_validation_uses_existing_business_retry(monkeypatch, section, invalid):
+    from src.shared.ai_transport import OpenAICompatibleChatTransport
+    from src.shared.openai_options import OpenAICompatibleOptions
+
+    document = create_empty_document("book-1", title="Saber")
+    original = deepcopy(document)
+    entry = {"id": "scene", "keys": ["学校"], "comment": "学校", "content": "角色在学校读书。",
+             "enabled": True, "constant": False, "selective": False, "priority": 100,
+             "position": "before_char", "depth": 4, "children": []}
+    valid = {"lorebook": {"name": "世界书", "entries": [entry]}}
+    if section == "full":
+        valid.update({key: deepcopy(document[key]) for key in
+                      ("identity", "coreMessages", "regexScripts", "stateTasks")})
+    broken = deepcopy(valid)
+    wrong_entry = {"id": "scene", "title": "学校", "content": "读书", "depth": 0, "children": []}
+    if invalid == "bad_child":
+        broken["lorebook"]["entries"][0]["children"] = [wrong_entry]
+    else:
+        broken["lorebook"]["entries"] = [wrong_entry]
+    replies = iter(["{broken" if invalid == "malformed_json" else json.dumps(broken), json.dumps(valid)])
+    calls = []
+    def complete(_transport, request, **kwargs):
+        calls.append(request)
+        return next(replies)
+    monkeypatch.setattr(OpenAICompatibleChatTransport, "complete", complete)
+    monkeypatch.setattr("src.shared.openai_execution.time.sleep", lambda _: None)
+    options = OpenAICompatibleOptions()
+    options.execution.business_retries = 1
+    result = DefaultStudioAlgorithms().generate(document, section=section, config={"chat": {
+        "provider": "ollama", "model_name": "test", "custom_base_url": "",
+        "openai_options": options.to_dict(),
+    }})
+    assert result == valid
+    assert len(calls) == 2
+    assert document == original
+
+
+def test_invalid_studio_generation_stops_at_configured_retry_limit(monkeypatch):
+    from src.shared.ai_transport import OpenAICompatibleChatTransport
+    from src.shared.openai_execution import OpenAICompatibleBusinessRetriesExhaustedError
+    from src.shared.openai_options import OpenAICompatibleOptions
+
+    calls = []
+    def complete(_transport, request, **kwargs):
+        calls.append(request)
+        return '{"lorebook":{"name":"世界书","entries":[{"title":"错误条目"}]}}'
+    monkeypatch.setattr(OpenAICompatibleChatTransport, "complete", complete)
+    monkeypatch.setattr("src.shared.openai_execution.time.sleep", lambda _: None)
+    options = OpenAICompatibleOptions()
+    options.execution.business_retries = 1
+    with pytest.raises(OpenAICompatibleBusinessRetriesExhaustedError):
+        DefaultStudioAlgorithms().generate(create_empty_document("book-1", title="Saber"),
+            section="lorebook", config={"chat": {"provider": "ollama", "model_name": "test",
+            "custom_base_url": "", "openai_options": options.to_dict()}})
+    assert len(calls) == 2
 
 
 def test_studio_complete_respects_saved_nonstream_setting(
@@ -269,6 +332,7 @@ def test_studio_complete_respects_saved_nonstream_setting(
             request.runtime_options.on_stream_chunk is not None
         )
         captured["base_url"] = request.base_url
+        captured["timeout"] = _kwargs["resolved_invocation"].timeout
         return "{}"
 
     monkeypatch.setattr(
@@ -307,6 +371,7 @@ def test_studio_complete_respects_saved_nonstream_setting(
         "use_stream": False,
         "has_callback": True,
         "base_url": None,
+        "timeout": 300,
     }
 
 

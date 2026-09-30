@@ -4,6 +4,7 @@ Manga Insight Embedding / Chat clients backed by shared async transport.
 
 import asyncio
 import logging
+from collections.abc import Callable
 from typing import Any
 
 from src.shared.ai_transport import (
@@ -13,6 +14,7 @@ from src.shared.ai_transport import (
 )
 from src.shared.openai_execution import (
     OpenAICompatibleAsyncExecutor,
+    OpenAICompatibleBusinessRetryableError,
     build_openai_compatible_runtime_options,
     parse_json_block_from_text,
 )
@@ -187,6 +189,7 @@ class ChatClient:
         prompt: str,
         *,
         system: str | None = None,
+        validator: Callable[[Any], Any] | None = None,
     ) -> Any:
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("chat prompt must be a non-empty string")
@@ -212,6 +215,13 @@ class ChatClient:
             type(self.config).__name__,
         )
 
+        def parse_response(text: str) -> Any:
+            try:
+                parsed = parse_json_block_from_text(text)
+                return validator(parsed) if validator is not None else parsed
+            except (ValueError, TypeError) as exc:
+                raise OpenAICompatibleBusinessRetryableError(str(exc)) from exc
+
         result = await self._executor.execute(
             UnifiedChatRequest(
                 provider=self.provider,
@@ -227,7 +237,7 @@ class ChatClient:
                 ),
             ),
             capability="chat",
-            parser=parse_json_block_from_text,
+            parser=parse_response,
             logger_instance=logger,
         )
         return result.parsed

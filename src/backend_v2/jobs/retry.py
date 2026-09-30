@@ -756,14 +756,7 @@ class JobRetryService:
         source_target_page_ids = {
             str(row["page_id_snapshot"]) for row in source_targets
         }
-        if scope == "full" or not selected_page_ids:
-            retry_targets = source_targets
-        else:
-            retry_targets = [
-                target
-                for target in source_targets
-                if str(target["page_id_snapshot"]) in selected_page_ids
-            ]
+        retry_targets = source_targets
         target_page_ids = {
             str(row["page_id_snapshot"]) for row in retry_targets
         }
@@ -799,7 +792,6 @@ class JobRetryService:
             raise JobConflict("one or more Insight retry pages no longer exist")
 
         retry_page_ids = set(selected_page_ids)
-        target_mappings: list[dict[str, Any]] = []
         for target in retry_targets:
             page_id = str(target["page_id_snapshot"])
             source_asset_id = str(target["source_asset_id"])
@@ -819,21 +811,30 @@ class JobRetryService:
                 or current_checksum != source_checksum
             ):
                 retry_page_ids.add(page_id)
-            source_asset_id = current_asset_id
-            source_checksum = current_checksum
             if str(target["status"]) != "completed":
                 retry_page_ids.add(page_id)
             if page_id not in source_results:
                 retry_page_ids.add(page_id)
-            target_mappings.append(
-                {
-                    "page_id": page_id,
-                    "chapter_id": str(target["chapter_id"]),
-                    "source_asset_id": source_asset_id,
-                    "source_checksum": source_checksum,
-                    "page_number": int(target["page_number_snapshot"]),
-                }
+
+        # Freeze current book order and include valid results outside the original task.
+        from src.backend_v2.insight.commands import (
+            InsightAnalysisCommandService, analysis_final_steps,
+        )
+
+        commands = InsightAnalysisCommandService(self.engine)
+        with self.engine.connect() as connection:
+            _, current_targets = commands._resolve_targets_in_connection(
+                connection, book_id=book_id, scope="full", chapter_ids=(), page_ids=(),
             )
+            current_by_page = {target.page_id: target for target in current_targets}
+            selected_targets = [
+                current_by_page[str(target["page_id_snapshot"])]
+                for target in retry_targets
+            ]
+            whole_book_targets, additional_copies = commands._reuse_book_results(
+                connection, book_id, selected_targets, "incremental",
+            )
+        target_mappings = [target.mapping() for target in whole_book_targets]
 
         new_run_id = str(uuid.uuid4())
         config["runId"] = new_run_id
@@ -850,23 +851,7 @@ class JobRetryService:
         ]
         if layer_indices != list(range(len(layer_indices))):
             raise JobConflict("Insight retry layer configuration is invalid")
-        final_steps = (
-            (
-                "insight_validate_run",
-                *(
-                    f"insight_build_layer_{index}"
-                    for index in layer_indices
-                ),
-                "insight_stage_compressed_context",
-                "insight_stage_overview_no_spoiler",
-                "insight_stage_overview_story_summary",
-                "insight_stage_timeline",
-                "insight_stage_vectors",
-                "insight_publish_run",
-            )
-            if scope == "full"
-            else ("insight_publish_run",)
-        )
+        final_steps = analysis_final_steps(layer_indices)
         target_by_page = {
             str(target["page_id"]): target for target in target_mappings
         }
@@ -884,9 +869,9 @@ class JobRetryService:
                 ]
                 if page_id in retry_page_ids
             ]
-            + [JobItemSpec(page_id=None, step_kinds=final_steps)]
+            + [JobItemSpec(page_id=None, step_kinds=(kind,)) for kind in final_steps]
         )
-        retry_page_count = len(item_specs) - 1
+        retry_page_count = len(item_specs) - len(final_steps)
         display = _json_object(source.get("target_display_json"))
         spec = JobSpec(
             kind="insight_analysis",
@@ -951,12 +936,14 @@ class JobRetryService:
                             "source_checksum"
                         ],
                         "page_number": target_by_page[page_id]["page_number"],
-                        "payload": _json_object(
-                            source_results[page_id]["payload_json"]
-                        ),
+                        "payload": {
+                            **_json_object(source_results[page_id]["payload_json"]),
+                            "source_asset_id": target_by_page[page_id]["source_asset_id"],
+                            "page_number_snapshot": target_by_page[page_id]["page_number"],
+                        },
                     }
                     for page_id in copied_page_ids
-                ),
+                ) + tuple(additional_copies),
             )
 
         response = self.repository.create_batch(

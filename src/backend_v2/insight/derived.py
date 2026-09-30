@@ -695,17 +695,23 @@ class ProviderDerivedAlgorithms:
         layer_name = _required_string(layer.get("name"), "Insight layer name")
         prompt = (
             f"请生成“{layer_name}”层级摘要。"
-            "只依据输入，保留关键事件、连续性和因果关系。输出 JSON。\n\n"
+            '只依据输入，保留关键事件、连续性和因果关系。输出一个 JSON 对象，'
+            '格式为 {"summary":"本组摘要","key_events":[]}，不要输出数组。\n\n'
             + "\n\n".join(_json(dict(value)) for value in inputs)
         )
-        result = self._chat_json(
+        def validate(result: Any) -> dict[str, Any]:
+            if not isinstance(result, Mapping) or not contains_nonempty_text(result):
+                raise ValueError("summary layer response must be a non-empty object")
+            if not isinstance(result.get("key_events", []), list):
+                raise ValueError("summary layer key_events must be an array")
+            return dict(result)
+
+        return self._chat_json(
             prompt,
             config=config,
             prompt_type=prompt_type,
+            validator=validate,
         )
-        if not isinstance(result, Mapping) or not contains_nonempty_text(result):
-            raise ValueError("summary layer response must be a non-empty object")
-        return dict(result)
 
     def build_overview(
         self,
@@ -953,6 +959,7 @@ class ProviderDerivedAlgorithms:
         *,
         config: Mapping[str, Any],
         prompt_type: str,
+        validator: Callable[[Any], Any] | None = None,
     ) -> object:
         from src.core.manga_insight.embedding_client import ChatClient
 
@@ -983,6 +990,7 @@ class ProviderDerivedAlgorithms:
             return await client.generate_json(
                 f"{configured}\n\n{prompt}".strip(),
                 system=system,
+                validator=validator,
             )
 
         return asyncio.run(execute())
@@ -1368,7 +1376,7 @@ class InsightDerivedRepository:
         )
 
     def snapshot_for_run(self, *, run_id: str) -> AnalysisInputSnapshot:
-        """Read only successful staging results from one isolated full run."""
+        """Read successful new and reused pages for whole-book post-processing."""
 
         source_pointer = page_assets.alias("run_snapshot_source")
         with self.engine.connect() as connection:
@@ -1437,7 +1445,7 @@ class InsightDerivedRepository:
             if _required_string(
                 row["status"],
                 "analysis page result status",
-            ) != "staging":
+            ) not in {"staging", "published"}:
                 raise InsightConflict(
                     "stored staging page analysis is invalid"
                 )
@@ -1635,7 +1643,10 @@ class InsightDerivedRepository:
                         & (source_pointer.c.role == "source"),
                     )
                     .join(assets, assets.c.id == source_pointer.c.asset_id)
-                    .where(analysis_heads.c.book_id == book_id)
+                    .where(
+                        analysis_heads.c.book_id == book_id,
+                        analysis_page_results.c.source_checksum == assets.c.checksum,
+                    )
                     .order_by(
                         numbered_pages.c.chapter_ordinal,
                         numbered_pages.c.page_ordinal,
@@ -1672,34 +1683,6 @@ class InsightDerivedRepository:
                 rows = current_rows
             if not rows and book_head is None:
                 raise InsightNotFound("book has no published page analysis")
-            current_page_ids = [
-                _required_string(value, "current Insight page id")
-                for value in connection.execute(
-                    select(numbered_pages.c.page_id).order_by(
-                        numbered_pages.c.current_page_number
-                    )
-                ).scalars()
-            ]
-            if len(set(current_page_ids)) != len(current_page_ids):
-                raise InsightConflict(
-                    "current Insight pages are duplicated"
-                )
-            analyzed_page_ids = {
-                _required_string(
-                    row["page_id_snapshot"],
-                    "current analysis pageId",
-                )
-                for row in rows
-            }
-            missing_page_ids = set(current_page_ids) - analyzed_page_ids
-            if any(
-                active_target_statuses.get(page_id)
-                not in {"failed", "conflict"}
-                for page_id in missing_page_ids
-            ):
-                raise InsightConflict(
-                    "current book contains pages without published analysis"
-                )
             ordered_inputs = []
             for row in rows:
                 page_id = _required_string(
@@ -1977,6 +1960,11 @@ class InsightDerivedRepository:
             if selected_run_ids == {active_run_id}:
                 source_run_id = active_run_id
                 source_run_status = active_run_status
+                book_page_count = connection.execute(
+                    select(func.count()).select_from(numbered_pages)
+                ).scalar_one()
+                if len(pages_payload) < book_page_count:
+                    source_run_status = "completed_with_errors"
         return AnalysisInputSnapshot(
             book_id=book_id,
             source_run_id=source_run_id,
@@ -3796,17 +3784,14 @@ class InsightDerivedWorkerService:
             raise JobConflict("frozen Insight scope is invalid")
         if layer_match is not None and run_id is None:
             raise JobConflict("summary layer step is missing its analysis run")
-        full_stage = (
-            scope == "full"
-            and run_id is not None
+        staging_run = (
+            run_id is not None
             and (
                 layer_match is not None
                 or kind.startswith("insight_stage_")
             )
         )
-        if full_stage:
-            if run_id is None:
-                raise JobConflict("full Insight stage is missing its analysis run")
+        if staging_run:
             frozen = self.repository.snapshot_for_run(run_id=run_id)
         else:
             frozen_inputs = config.get("analysisInputs")
@@ -3880,50 +3865,66 @@ class InsightDerivedWorkerService:
                     layer_definition.get("name"),
                     "frozen Insight layer name",
                 )
-                completed_units = []
+                with self.repository.engine.connect() as connection:
+                    completed_indices = set(connection.execute(
+                        select(analysis_layer_results.c.unit_index).where(
+                            analysis_layer_results.c.run_id == run_id,
+                            analysis_layer_results.c.layer_index == layer_index,
+                        )
+                    ).scalars())
+                failed_units = []
                 for unit in layer_units:
-                    content = self.algorithms.build_layer(
-                        unit["inputs"],
-                        layer=unit["layer"],
-                        config=config,
-                    )
-                    if not isinstance(content, Mapping) or not contains_nonempty_text(content):
-                        raise InsightConflict(
-                            "summary layer algorithm returned an empty or non-object result"
+                    self.jobs.assert_attempt_active(fence)
+                    if unit["unitIndex"] in completed_indices:
+                        continue
+                    try:
+                        content = self.algorithms.build_layer(
+                            unit["inputs"], layer=unit["layer"], config=config,
                         )
-                    completed_units.append(
-                        {
-                            **unit,
-                            "content": dict(content),
-                        }
-                    )
-                log_result(
-                    f"第 {layer_index + 1} 层汇总结果｜{len(completed_units)} 个分组",
-                    json_details(
-                        [
-                            {
-                                "unit": index,
-                                "content": value["content"],
-                            }
-                            for index, value in enumerate(
-                                completed_units,
-                                start=1,
+                        if not isinstance(content, Mapping) or not contains_nonempty_text(content):
+                            raise InsightConflict(
+                                "summary layer algorithm returned an empty or non-object result"
                             )
-                        ]
-                    ),
-                )
-                checkpoint: dict[str, Any] = {}
-
-                def publish(connection: Connection) -> None:
-                    checkpoint.update(
-                        self.repository.publish_layer(
-                            connection,
-                            run_id=run_id,
-                            layer_index=layer_index,
-                            layer_name=layer_name,
-                            units=completed_units,
-                        )
+                    except AttemptFenced:
+                        raise
+                    except Exception as exc:
+                        failed_units.append({
+                            "unitIndex": unit["unitIndex"],
+                            "error": redact_sensitive_text(str(exc)),
+                        })
+                        continue
+                    completed = {**unit, "content": dict(content)}
+                    self.jobs.checkpoint_step(
+                        fence, step_id=step_id,
+                        checkpoint={"completedUnitCount": len(completed_indices) + 1},
+                        publisher=lambda connection: self.repository.publish_layer(
+                            connection, run_id=run_id, layer_index=layer_index,
+                            layer_name=layer_name, units=[completed],
+                        ),
                     )
+                    completed_indices.add(unit["unitIndex"])
+                    log_result(
+                        f"第 {layer_index + 1} 层第 {unit['unitIndex'] + 1} 组汇总已保存",
+                        json_details(content),
+                    )
+                if failed_units:
+                    self.jobs.checkpoint_step(
+                        fence, step_id=step_id,
+                        checkpoint={"completedUnitCount": len(completed_indices), "failedUnits": failed_units},
+                    )
+                    self.jobs.fail_step(
+                        fence, step_id=step_id, code="INSIGHT_SUMMARY_PARTIAL_FAILURE",
+                        message=f"汇总分组失败 {len(failed_units)}/{len(layer_units)}；成功分组已保存。{failed_units[0]['error']}",
+                    )
+                    return {"failed": True, "__already_published__": True}
+                log_result(
+                    f"第 {layer_index + 1} 层汇总完成｜{len(completed_indices)} 个分组",
+                )
+                checkpoint: dict[str, Any] = {
+                    "runId": run_id, "layerIndex": layer_index,
+                    "unitCount": len(completed_indices),
+                }
+                publish = None
             elif kind in {
                 "insight_build_overview",
                 "insight_stage_overview_no_spoiler",
@@ -3972,7 +3973,7 @@ class InsightDerivedWorkerService:
                             kind="overview",
                             template=template,
                             payload=payload,
-                            activate=not full_stage,
+                            activate=not staging_run,
                         )
                     )
             elif kind in {
@@ -4002,7 +4003,7 @@ class InsightDerivedWorkerService:
                             kind="compressed_context",
                             template="default",
                             payload=payload,
-                            activate=not full_stage,
+                            activate=not staging_run,
                         )
                     )
             elif kind in {
@@ -4033,7 +4034,7 @@ class InsightDerivedWorkerService:
                             connection=connection,
                             frozen=frozen,
                             result=timeline,
-                            activate=not full_stage,
+                            activate=not staging_run,
                         )
                     )
             elif kind in {
@@ -4067,7 +4068,7 @@ class InsightDerivedWorkerService:
                             generation=vector_build["generation"],
                             page_count=vector_build["pageCount"],
                             event_count=vector_build["eventCount"],
-                            activate=not full_stage,
+                            activate=not staging_run,
                         )
                     )
                 self.jobs.complete_step(
@@ -4509,7 +4510,7 @@ def _publication_status(
 ) -> str:
     if frozen.fingerprint != current.fingerprint:
         return "stale"
-    if frozen.source_run_status == "completed_with_errors":
+    if "completed_with_errors" in {frozen.source_run_status, current.source_run_status}:
         return "degraded"
     return "ready"
 

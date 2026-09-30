@@ -19,6 +19,57 @@ def _png_bytes() -> bytes:
     return output.getvalue()
 
 
+def test_chat_schema_failure_retries_over_real_http():
+    import json
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from src.core.manga_insight.config_models import ChatLLMConfig
+    from src.core.manga_insight.embedding_client import ChatClient
+
+    responses = ['[{"summary":"wrong shape"}]', '{"summary":"valid summary","key_events":[]}']
+    requests = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            requests.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
+            body = json.dumps({"choices": [{"message": {"role": "assistant", "content": responses[len(requests) - 1]}, "finish_reason": "stop"}]}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        config = ChatLLMConfig.from_dict({
+            "provider": "custom", "api_key": "local-test-key", "model": "local-test",
+            "base_url": f"http://127.0.0.1:{server.server_port}/v1",
+            "credential_version_id": None,
+            "openai_options": {
+                "request": {"force_json_output": False, "temperature": None, "extra_body": {}},
+                "execution": {"use_stream": False, "rpm_limit": 0, "transport_retries": 0, "business_retries": 1},
+            },
+        })
+
+        def validate(value):
+            if not isinstance(value, dict):
+                raise ValueError("summary must be an object")
+            return value
+
+        result = asyncio.run(ChatClient(config).generate_json("Summarize", validator=validate))
+        assert result["summary"] == "valid summary"
+        assert len(requests) == 2
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
 class MangaInsightSharedTransportTests(unittest.IsolatedAsyncioTestCase):
     def test_incomplete_http_response_is_transport_retryable(self) -> None:
         import httpx
