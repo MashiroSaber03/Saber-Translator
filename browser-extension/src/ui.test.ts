@@ -96,6 +96,35 @@ it('acknowledges asynchronous discovery only when it finishes', async () => {
   await new Promise(resolve => setTimeout(resolve, 0))
   expect(post.mock.calls.some(([data]: any[]) => data.channel === 'saber:response' && data.ok)).toBe(true)
 })
+it('relays DOM detection to the initiating frame and keeps untrusted results out', async () => {
+  let selected: unknown
+  handlers.onDiscover = vi.fn(async (_method, detect) => {
+    selected = await detect!({ pageUrl: 'https://example.test/chapter', nodes: [] })
+  })
+  await send('discover', 'dom-agent')
+  expect(post).toHaveBeenCalledWith(expect.objectContaining({ channel: 'saber:dom-detection', id: 1 }), origin)
+  const reply = {
+    isTrusted: true, origin, source: ui.shadow.querySelector('iframe')!.contentWindow,
+    data: { channel: 'saber:dom-detection-result', id: 1, ok: true, result: { nodeIds: ['page'], selector: '' } },
+  }
+  receive({ ...reply, source: window } as unknown as Event)
+  receive({ ...reply, data: { ...reply.data, id: 2 } } as unknown as Event)
+  expect(selected).toBeUndefined()
+  receive(reply as unknown as Event)
+  await new Promise(resolve => setTimeout(resolve, 0))
+  expect(selected).toEqual({ nodeIds: ['page'], selector: '' })
+  expect(post).toHaveBeenCalledWith({ channel: 'saber:response', id: 1, ok: true, result: undefined }, origin)
+})
+it('rejects the pending DOM discovery when its page is removed', async () => {
+  let failure: unknown
+  handlers.onDiscover = vi.fn(async (_method, detect) => {
+    try { await detect!({ nodes: [] }) } catch (error) { failure = error }
+  })
+  await send('discover', 'dom-agent')
+  ui.remove()
+  await new Promise(resolve => setTimeout(resolve, 0))
+  expect(failure).toMatchObject({ code: 'page_closed' })
+})
 it('returns to collected candidates with one update, without briefly clearing the selection', () => {
   const candidates = [{ id: 'one', sourceUrl: 'https://example.test/one.png', width: 640, height: 960 }] as any
   ui.showCandidates(candidates)

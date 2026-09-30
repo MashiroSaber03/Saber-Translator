@@ -24,7 +24,7 @@ import type {
   BrowserSessionImportResult,
   ContextTranslateMessage,
   DetectionMethod,
-  DomDetectionResult,
+  DomDetector,
   DomainPreference,
   DomainPreferencePatch,
   LearnedRule,
@@ -71,7 +71,7 @@ function domAgentPageUrl(): string {
 }
 
 function errorDetails(error: unknown): { code: string; message: string } {
-  if (error instanceof ExtensionRequestError) {
+  if (error instanceof Error && 'code' in error && typeof error.code === 'string') {
     return { code: error.code, message: error.message }
   }
   return {
@@ -313,7 +313,7 @@ export class PageController {
     this.activeRule = null
     this.ui = new ExtensionUi(
       {
-        onDiscover: method => this.discover(method),
+        onDiscover: (method, detectDom) => this.discover(method, detectDom),
         onDiscoverSaved: () => this.discoverSavedRule(),
         onConfirm: ids => this.confirm(ids),
         onImportSelected: (ids, command) => this.importSelected(ids, command),
@@ -458,7 +458,7 @@ export class PageController {
     this.ui = null
   }
 
-  private async discover(method: DetectionMethod): Promise<void> {
+  private async discover(method: DetectionMethod, detectDom?: DomDetector): Promise<void> {
     if (!this.ui || this.discovering || this.taskStarting) return
     this.discovering = true
     this.activeRule = null
@@ -477,13 +477,11 @@ export class PageController {
           this.ui.showCandidates([])
           return
         }
-        const result = await send<DomDetectionResult>({
-          type: 'dom-detection',
-          payload: {
-            pageUrl: domAgentPageUrl(),
-            pageTitle: this.pageTitle,
-            nodes: domSummary(generic),
-          },
+        if (!detectDom) throw new Error('请从悬浮窗启动 DOM Agent 识别')
+        const result = await detectDom({
+          pageUrl: domAgentPageUrl(),
+          pageTitle: this.pageTitle,
+          nodes: domSummary(generic),
         })
         const selected = new Set(result.nodeIds)
         if (this.disposed) return

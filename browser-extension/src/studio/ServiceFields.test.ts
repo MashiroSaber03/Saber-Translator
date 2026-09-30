@@ -30,6 +30,20 @@ async function mount(overrides: Record<string, unknown> = {}) {
 const click = (text: string) =>
   [...document.querySelectorAll('button')].find(b => b.textContent?.trim() === text)!.click()
 afterEach(() => app.unmount())
+it('allows Sakura streaming to be disabled without hiding its switch', async () => {
+  const draft = reactive({ ...config, provider: 'sakura',
+    openaiOptions: { ...config.openaiOptions, execution: { ...config.openaiOptions.execution, useStream: true } },
+  })
+  const changed = vi.fn(patch => Object.assign(draft, patch))
+  await mount({ config: draft, onChange: changed })
+  const input = [...document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')]
+    .find(node => node.closest('label')?.textContent?.includes('流式调用'))!
+  expect(input.checked).toBe(true)
+  input.click()
+  await nextTick()
+  expect(draft.openaiOptions.execution.useStream).toBe(false)
+  expect(input.checked).toBe(false)
+})
 it('hides unsupported controls for traditional translators while retaining retry settings', async () => {
   const draft = reactive({ ...config, provider: 'caiyun' })
   await mount({ config: draft })

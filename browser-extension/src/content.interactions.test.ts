@@ -40,11 +40,11 @@ it('keeps the recognition method stable until the pending detection finishes', a
   await controller.updatePreference({ method: 'dom-agent' })
   let resolve!: (result: any) => void
   const response = new Promise(done => { resolve = done })
-  send.mockImplementation(async (request: any) => request.type === 'dom-detection' ? response : ({ ok: true, data: {} }))
-  const pending = controller.discover('dom-agent')
+  const detect = vi.fn((_payload: { nodes: any[] }) => response)
+  const pending = controller.discover('dom-agent', detect)
   await controller.updatePreference({ method: 'similar' })
-  const nodes = send.mock.calls.find(([request]) => request.type === 'dom-detection')![0].payload.nodes
-  resolve({ ok: true, data: { nodeIds: nodes.map((node: any) => node.id), selector: '' } })
+  const nodes = detect.mock.calls[0]![0].nodes
+  resolve({ nodeIds: nodes.map((node: any) => node.id), selector: '' })
   await pending
   expect(controller.preference.method).toBe('dom-agent')
   expect(controller.activeMethod).toBe('dom-agent')
@@ -109,9 +109,7 @@ it('removes the picker keyboard listener when the page is disposed', async () =>
 
 it('ignores a DOM recognition failure after the page has exited', async () => {
   let fail!: (error: Error) => void
-  send.mockImplementation((request: any) => request.type === 'dom-detection'
-    ? new Promise((_resolve, reject) => { fail = reject }) : Promise.resolve({ ok: true, data: {} }))
-  const pending = controller.discover('dom-agent')
+  const pending = controller.discover('dom-agent', () => new Promise((_resolve, reject) => { fail = reject }))
   await controller.dispose()
   fail(new Error('network failure'))
   await expect(pending).resolves.toBeUndefined()

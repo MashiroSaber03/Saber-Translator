@@ -13,6 +13,7 @@ import type {
   BrowserSessionImportCommand,
   BrowserSessionImportResult,
   DetectionMethod,
+  DomDetector,
   DomainPreference,
 } from './types'
 
@@ -42,7 +43,7 @@ interface TestController {
   scheduleLazyScan(): void
   discoverLazyImages(): Promise<void>
   session: BrowserSessionDto | null
-  discover(method: DetectionMethod): Promise<void>
+  discover(method: DetectionMethod, detectDom?: DomDetector): Promise<void>
   discoverSavedRule(): void
   updatePreference(patch: Partial<DomainPreference>): Promise<void>
   deleteAdaptation(): Promise<void>
@@ -130,7 +131,6 @@ describe('explicit discovery choices', () => {
     sendMessage.mockImplementation((request: { type: string }) => {
       if (request.type === 'get-preference') return successful({ ...DEFAULT_PREFERENCE, method: 'similar', rule })
       if (request.type === 'set-preference') return successful({})
-      if (request.type === 'dom-detection') return successful({ nodeIds: [], selector: '' })
       return defaultResponse(request)
     })
     for (const className of ['old-rule', 'new-choice']) {
@@ -162,8 +162,10 @@ describe('explicit discovery choices', () => {
     const controller = await setup()
     await controller.discover('adapter')
     expect(uiState(controller.ui).candidates).toHaveLength(2)
-    await controller.discover('dom-agent')
-    expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'dom-detection' }))
+    const detect = vi.fn().mockResolvedValue({ nodeIds: [], selector: '' })
+    await controller.discover('dom-agent', detect)
+    expect(detect).toHaveBeenCalledWith(expect.objectContaining({ nodes: expect.any(Array) }))
+    expect(sendMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'dom-detection' }))
     expect(uiState(controller.ui).candidates).toHaveLength(0)
     await controller.dispose()
   })
