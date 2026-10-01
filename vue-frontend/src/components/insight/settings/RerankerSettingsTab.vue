@@ -28,8 +28,8 @@ const provider = ref(insightStore.config.reranker.provider)
 const apiKey = ref(insightStore.config.reranker.apiKey)
 const model = ref(insightStore.config.reranker.model)
 const baseUrl = ref(insightStore.config.reranker.baseUrl ?? '')
-const transportRetries = ref(insightStore.config.reranker.transportRetries ?? 1)
-const businessRetries = ref(insightStore.config.reranker.businessRetries ?? 0)
+const transportRetries = ref(insightStore.config.reranker.transportRetries ?? 3)
+const businessRetries = ref(insightStore.config.reranker.businessRetries ?? 3)
 const timeoutSeconds = ref(insightStore.config.reranker.timeoutSeconds ?? 0)
 
 const showBaseUrl = computed(() => provider.value === 'custom')
@@ -107,8 +107,8 @@ function applyDraftConfig(config: StoreRerankerConfig): void {
   apiKey.value = config.apiKey
   model.value = config.model
   baseUrl.value = config.baseUrl ?? ''
-  transportRetries.value = config.transportRetries ?? 1
-  businessRetries.value = config.businessRetries ?? 0
+  transportRetries.value = config.transportRetries ?? 3
+  businessRetries.value = config.businessRetries ?? 3
   timeoutSeconds.value = config.timeoutSeconds ?? 0
 }
 

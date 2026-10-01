@@ -114,8 +114,8 @@ describe('useInsightStore imageGen config', () => {
     expect(normalizeInsightRerankerConfig()).toMatchObject({
       provider: 'jina',
       model: 'jina-reranker-v2-base-multilingual',
-      transportRetries: 1,
-      businessRetries: 0,
+      transportRetries: 3,
+      businessRetries: 3,
       timeoutSeconds: 0,
     })
 
@@ -123,8 +123,8 @@ describe('useInsightStore imageGen config', () => {
       provider: 'newapi',
       model: '',
       baseUrl: '',
-      transportRetries: 1,
-      businessRetries: 0,
+      transportRetries: 3,
+      businessRetries: 3,
       timeoutSeconds: 0,
     })
   })

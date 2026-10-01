@@ -1,7 +1,7 @@
 import type { OpenAICompatibleOptions } from '@/types/settings'
 import { deepClone } from './deepClone'
 
-export const DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES = 1
+export const DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES = 3
 
 export interface OpenAICompatibleOptionsWire {
   request: {
@@ -40,7 +40,7 @@ export function createDefaultOpenAiOptions(
       useStream: false,
       rpmLimit: 0,
       transportRetries: DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
-      businessRetries: 0,
+      businessRetries: 3,
       ...overrides?.execution,
     },
   }

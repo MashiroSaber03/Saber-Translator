@@ -63,7 +63,7 @@ export const useInsightStore = defineStore('insight', () => {
       baseUrl: '',
       openaiOptions: {
         request: { forceJsonOutput: false, temperature: 0.3 },
-        execution: { useStream: true, rpmLimit: 0, transportRetries: 1, businessRetries: 0 },
+        execution: { useStream: true, rpmLimit: 0, transportRetries: 3, businessRetries: 3 },
       },
       imageMaxSize: 0,
     },
@@ -75,7 +75,7 @@ export const useInsightStore = defineStore('insight', () => {
       baseUrl: '',
       openaiOptions: {
         request: { forceJsonOutput: false },
-        execution: { useStream: true, rpmLimit: 0, transportRetries: 1, businessRetries: 0 },
+        execution: { useStream: true, rpmLimit: 0, transportRetries: 3, businessRetries: 3 },
       },
     },
     embedding: {
@@ -84,8 +84,8 @@ export const useInsightStore = defineStore('insight', () => {
       model: 'text-embedding-3-small',
       baseUrl: '',
       rpmLimit: 0,
-      transportRetries: 1,
-      businessRetries: 0,
+      transportRetries: 3,
+      businessRetries: 3,
       timeoutSeconds: 0,
     },
     reranker: normalizeInsightRerankerConfig(),

@@ -239,8 +239,8 @@ def _insight_provider_factory_payload(
             "execution": {
                 "use_stream": True,
                 "rpm_limit": 0,
-                "transport_retries": 1,
-                "business_retries": 0,
+                "transport_retries": 3,
+                "business_retries": 3,
             },
         }
         if domain == "insight_vlm":
@@ -250,8 +250,8 @@ def _insight_provider_factory_payload(
         payload["rpmLimit"] = 0
     payload.update(
         {
-            "transportRetries": 1,
-            "businessRetries": 0,
+            "transportRetries": 3,
+            "businessRetries": 3,
             "timeoutSeconds": 0,
         }
     )

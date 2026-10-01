@@ -57,7 +57,7 @@ export const DEFAULT_AI_VISION_OCR: AiVisionOcrSettings = {
     execution: {
       useStream: false,
       rpmLimit: DEFAULT_RPM_AI_VISION_OCR,
-      transportRetries: 1,
+      transportRetries: 3,
       businessRetries: DEFAULT_TRANSLATION_MAX_RETRIES
     }
   }),
@@ -79,7 +79,7 @@ export const DEFAULT_TRANSLATION_SERVICE: TranslationServiceSettings = {
     execution: {
       useStream: true,
       rpmLimit: DEFAULT_RPM_TRANSLATION,
-      transportRetries: 1,
+      transportRetries: 3,
       businessRetries: DEFAULT_TRANSLATION_MAX_RETRIES
     }
   }),
@@ -117,8 +117,8 @@ export const DEFAULT_PLUGIN_AGENT: PluginAgentSettings = {
     execution: {
       useStream: true,
       rpmLimit: 0,
-      transportRetries: 1,
-      businessRetries: 0
+      transportRetries: 3,
+      businessRetries: 3
     }
   })
 }

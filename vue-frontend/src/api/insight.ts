@@ -1222,8 +1222,8 @@ function defaultVlmDraft(provider: string): InsightVlmProviderDraft {
       execution: {
         use_stream: true,
         rpm_limit: 0,
-        transport_retries: 1,
-        business_retries: 0,
+        transport_retries: 3,
+        business_retries: 3,
       },
     }),
     imageMaxSize: 0,
@@ -1240,8 +1240,8 @@ function defaultLlmDraft(provider: string): InsightLlmProviderDraft {
       execution: {
         use_stream: true,
         rpm_limit: 0,
-        transport_retries: 1,
-        business_retries: 0,
+        transport_retries: 3,
+        business_retries: 3,
       },
     }),
   }
@@ -1253,8 +1253,8 @@ function defaultEmbeddingDraft(provider: string): InsightEmbeddingProviderDraft 
     model: getProviderDefaultModel(provider, 'embedding'),
     baseUrl: '',
     rpmLimit: 0,
-    transportRetries: 1,
-    businessRetries: 0,
+    transportRetries: 3,
+    businessRetries: 3,
     timeoutSeconds: 0,
   }
 }
@@ -1264,8 +1264,8 @@ function defaultRerankerDraft(provider: string): InsightRerankerProviderDraft {
     apiKey: '',
     model: getProviderDefaultModel(provider, 'reranker'),
     baseUrl: '',
-    transportRetries: 1,
-    businessRetries: 0,
+    transportRetries: 3,
+    businessRetries: 3,
     timeoutSeconds: 0,
   }
 }
@@ -1275,8 +1275,8 @@ function defaultImageGenDraft(provider: string): InsightImageGenProviderDraft {
     apiKey: '',
     model: getProviderDefaultModel(provider, 'imageGen'),
     baseUrl: '',
-    transportRetries: 1,
-    businessRetries: 0,
+    transportRetries: 3,
+    businessRetries: 3,
     timeoutSeconds: 0,
   }
 }

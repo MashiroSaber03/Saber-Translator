@@ -9,7 +9,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Optional
 
-DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES = 1
+DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES = 3
 _OPENAI_EXTRA_BODY_RESERVED_KEYS = {
     "model",
     "messages",
@@ -163,7 +163,7 @@ class OpenAICompatibleExecutionOptions:
     use_stream: bool = False
     rpm_limit: int = 0
     transport_retries: int = DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES
-    business_retries: int = 0
+    business_retries: int = 3
 
     def __post_init__(self) -> None:
         self.use_stream = _require_bool(
@@ -250,7 +250,7 @@ def create_openai_compatible_options(
     use_stream: bool = False,
     rpm_limit: int = 0,
     transport_retries: int = DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
-    business_retries: int = 0,
+    business_retries: int = 3,
 ) -> OpenAICompatibleOptions:
     return OpenAICompatibleOptions(
         request=OpenAICompatibleRequestOptions(

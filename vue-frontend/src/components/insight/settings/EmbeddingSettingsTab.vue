@@ -29,8 +29,8 @@ const apiKey = ref(insightStore.config.embedding.apiKey)
 const model = ref(insightStore.config.embedding.model)
 const baseUrl = ref(insightStore.config.embedding.baseUrl ?? '')
 const rpmLimit = ref(insightStore.config.embedding.rpmLimit ?? 0)
-const transportRetries = ref(insightStore.config.embedding.transportRetries ?? 1)
-const businessRetries = ref(insightStore.config.embedding.businessRetries ?? 0)
+const transportRetries = ref(insightStore.config.embedding.transportRetries ?? 3)
+const businessRetries = ref(insightStore.config.embedding.businessRetries ?? 3)
 const timeoutSeconds = ref(insightStore.config.embedding.timeoutSeconds ?? 0)
 
 const showBaseUrl = computed(() => provider.value === 'custom')
@@ -112,8 +112,8 @@ function applyDraftConfig(config: StoreEmbeddingConfig): void {
   model.value = config.model
   baseUrl.value = config.baseUrl ?? ''
   rpmLimit.value = config.rpmLimit ?? 0
-  transportRetries.value = config.transportRetries ?? 1
-  businessRetries.value = config.businessRetries ?? 0
+  transportRetries.value = config.transportRetries ?? 3
+  businessRetries.value = config.businessRetries ?? 3
   timeoutSeconds.value = config.timeoutSeconds ?? 0
 }
 
