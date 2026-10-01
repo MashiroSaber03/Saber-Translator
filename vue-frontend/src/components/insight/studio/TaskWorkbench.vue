@@ -3,7 +3,7 @@
     <div class="task-workbench__head">
       <div class="task-workbench__head-copy">
         <h3 class="task-workbench__title">状态任务</h3>
-        <p class="task-workbench__description">用于初始化变量或挂载受控运行时逻辑；在当前预览里，任务间隔按事件触发次数计算。</p>
+        <p class="task-workbench__description">每行一条指令：/setvar key=变量名 值，或 /addvar key=变量名 数字。任务间隔按事件次数计算；不执行 JavaScript。</p>
       </div>
       <ProductActionRow appearance="accent" aria-label="状态任务操作">
         <UiButton variant="secondary" :disabled="generating" @click="$emit('generate')">
@@ -15,7 +15,7 @@
 
     <ProductEmptyState
       v-if="tasks.length === 0"
-      description="建议至少保留一个初始化任务。"
+      description="需要初始化或更新聊天变量时再添加。"
       icon-name="list"
       role="note"
       size="compact"
@@ -61,6 +61,7 @@
               :model-value="task.commands"
               variant="studio"
               rows="6"
+              placeholder="/setvar key=score 20&#10;/addvar key=score 1"
               @update:model-value="$emit('update:field', index, 'commands', $event)"
             />
           </UiField>

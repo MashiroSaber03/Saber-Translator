@@ -18,8 +18,7 @@ const props = defineProps<{
   imageOpen: boolean
   displayGreetings: StudioGreetingOption[]
   selectedGreetingId: string
-  chatMutating: boolean
-  chatStreaming: boolean
+  chatBusy: boolean
   chatPromptLoading: boolean
   promptPreview: string
   promptPreviewError: string
@@ -96,7 +95,7 @@ const greetingItems = computed<ProductChoiceCardItem[]>(() => props.displayGreet
         <UiButton variant="secondary" @click="greetingModel = false">取消</UiButton>
         <UiButton
           variant="primary"
-          :disabled="!selectedGreetingId || chatMutating || chatStreaming"
+          :disabled="!selectedGreetingId || chatBusy"
           @click="$emit('confirm-greeting-selection')"
         >
           确认并重新开场
@@ -107,7 +106,7 @@ const greetingItems = computed<ProductChoiceCardItem[]>(() => props.displayGreet
 
   <BaseModal
     v-model="promptModel"
-    title="本轮提示词预览"
+    title="提示词预览"
     size="large"
     custom-class="studio-chat-modal"
   >
@@ -119,7 +118,7 @@ const greetingItems = computed<ProductChoiceCardItem[]>(() => props.displayGreet
       title="提示词加载中..."
       tone="info"
     >
-      正在生成本轮提示词预览。
+      正在加载提示词预览。
     </ProductStatusBanner>
     <ProductStatusBanner
       v-else-if="promptPreviewError"

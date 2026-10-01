@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 import hashlib
 import re
 from typing import Any, Mapping
@@ -618,6 +619,7 @@ def build_export_bundle(document: Mapping[str, Any]) -> dict[str, Any]:
         "character_version": core["character_version"],
         "extensions": {
             "fav": doc["status"]["is_favorite"],
+            "saber": {"aliases": deepcopy(identity["aliases"])},
             "regex_scripts": deepcopy(doc["regexScripts"]),
             "xiaobaix-tasks": {
                 "tasks": deepcopy(doc["stateTasks"])
@@ -748,6 +750,12 @@ def import_document_payload(
             "extensions",
             label="Studio card extensions",
             required=False,
+        )
+        saber = _external_object(
+            extensions, "saber", label="Studio card extensions.saber", required=False,
+        )
+        doc["identity"]["aliases"] = _external_string_array(
+            saber, "aliases", label="Studio card extensions.saber.aliases",
         )
         doc["status"]["is_favorite"] = _external_boolean(
             extensions,
@@ -904,18 +912,11 @@ def apply_regex_scripts(
 def match_lorebook(
     entries: list[Mapping[str, Any]],
     text: str,
-    *,
-    session: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    runtime = session.setdefault("_runtime", {})
-    matched_ids = set(runtime.setdefault("matched_lorebook_ids", []))
     matched: list[dict[str, Any]] = []
     for entry in _flatten(entries):
         entry = dict(entry)
         if not entry["enabled"]:
-            continue
-        entry_id = entry["id"]
-        if entry.get("prevent_recursion") and entry_id in matched_ids:
             continue
         keys = entry["keys"]
         secondary = entry.get("secondary_keys", [])
@@ -939,9 +940,6 @@ def match_lorebook(
         if not hit or not _probability(entry, text):
             continue
         matched.append(entry)
-        if entry.get("prevent_recursion") and entry_id:
-            matched_ids.add(entry_id)
-    runtime["matched_lorebook_ids"] = list(matched_ids)
     return matched
 
 
@@ -982,15 +980,13 @@ def run_state_tasks(
             and current_count % interval
         ):
             continue
-        for line in task["commands"].splitlines():
-            match = re.search(
-                r"/setvar\s+key=([A-Za-z0-9_\-\.]+)\s+([^'\")]+)",
-                line.strip(),
-            )
-            if match:
-                session.setdefault("variables", {})[match.group(1)] = (
-                    match.group(2).strip().strip("'\"")
-                )
+        variables = dict(session.setdefault("variables", {}))
+        try:
+            _execute_task_commands(task["commands"], variables)
+        except ValueError as exc:
+            logs.append({"type": "task_error", "name": task["name"], "message": str(exc)})
+            continue
+        session["variables"].update(variables)
         logs.append(
             {
                 "type": "task",
@@ -1000,6 +996,38 @@ def run_state_tasks(
             }
         )
     return logs
+
+
+def _execute_task_commands(commands: str, variables: dict[str, Any]) -> None:
+    executed = False
+    for raw in commands.splitlines():
+        line = raw.strip()
+        if not line or line in {"<<taskjs>>", "<</taskjs>>"}:
+            continue
+        # 已有任务使用这个固定包装；只提取指令，不执行 JavaScript。
+        wrapped = re.fullmatch(r"(?:await\s+)?STscript\(([\"'])(.*?)\1\);?", line)
+        if wrapped:
+            line = wrapped.group(2)
+        match = re.fullmatch(r"/(setvar|addvar)\s+key=([A-Za-z0-9_\-.]+)\s+(.+)", line)
+        if not match:
+            raise ValueError(f"不支持的状态指令：{line}。支持 /setvar 和 /addvar。")
+        command, key, value = match.groups()
+        if value[:1] in {"'", '"'} and value[-1:] == value[:1]:
+            value = value[1:-1]
+        if command == "addvar":
+            try:
+                amount = Decimal(value)
+                current = Decimal(str(variables.get(key, "0")))
+                result = current + amount
+            except InvalidOperation as exc:
+                raise ValueError(f"变量 {key} 和增量必须是数字") from exc
+            if not result.is_finite():
+                raise ValueError(f"变量 {key} 和增量必须是有限数字")
+            value = format(result, "f")
+        variables[key] = value
+        executed = True
+    if not executed:
+        raise ValueError("任务没有可执行的状态指令")
 
 
 def _provider_section(
@@ -1057,9 +1085,12 @@ def _entry_v2(entry: Mapping[str, Any], uid: int) -> dict[str, Any]:
         "selective": entry["selective"],
         "enabled": entry["enabled"],
         "position": entry["position"],
+        "insertion_order": entry["priority"],
+        "use_regex": entry.get("use_regex", False),
         "extensions": {
             "depth": entry["depth"],
             "probability": entry.get("probability", 100),
+            "prevent_recursion": entry.get("prevent_recursion", True),
         },
     }
 

@@ -17,7 +17,7 @@
       :chat-exporting="chatExporting"
       :chat-importing="chatImporting"
       :chat-loading="chatLoading"
-      :chat-mutating="chatMutating"
+      :chat-busy="chatBusy"
       :chat-prompt-loading="chatPromptLoading"
       :chat-streaming="chatStreaming"
       :chat-abortable="chatAbortable"
@@ -67,9 +67,8 @@
       v-model:image-open="imagePreviewOpen"
       v-model:prompt-open="promptPreviewModalOpen"
       v-model:selected-greeting-id="selectedGreetingId"
-      :chat-mutating="chatMutating"
+      :chat-busy="chatBusy"
       :chat-prompt-loading="chatPromptLoading"
-      :chat-streaming="chatStreaming"
       :display-greetings="displayGreetings"
       :image-src="imagePreviewSrc"
       :image-title="imagePreviewTitle"
@@ -116,7 +115,7 @@ const props = defineProps<{
   chatAbortable?: boolean
   chatImporting: boolean
   chatLoading: boolean
-  chatMutating: boolean
+  chatBusy: boolean
   chatPromptLoading: boolean
   chatStreaming: boolean
   chatSummarizing: boolean

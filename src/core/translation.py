@@ -549,7 +549,7 @@ def _translate_batch_with_llm(
         openai_options=openai_options,
         default_force_json_output=False,
         default_rpm_limit=0,
-        default_business_retries=2,
+        default_business_retries=constants.DEFAULT_TRANSLATION_MAX_RETRIES,
     )
     use_json_format = effective_options.request.force_json_output
     # 组装消息列表 (包含 system prompt、few-shot 示例、user prompt)

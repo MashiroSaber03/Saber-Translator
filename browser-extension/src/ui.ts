@@ -5,6 +5,8 @@ import type {
   BrowserSessionImportCommand,
   BrowserSessionImportResult,
   DetectionMethod,
+  DomDetector,
+  DomDetectionResult,
   DomainPreference,
   PanelPosition,
   FabPosition,
@@ -12,9 +14,10 @@ import type {
 } from './types'
 import type { StudioAction, StudioState } from './studio/protocol'
 import { HOST_STYLES } from './hostStyles'
+import { RequestFailure } from './api'
 
 export interface UiCallbacks {
-  onDiscover(method: DetectionMethod): void | Promise<void>
+  onDiscover(method: DetectionMethod, detectDom?: DomDetector): void | Promise<void>
   onDiscoverSaved(): void
   onConfirm(candidateIds: string[]): void | Promise<void>
   onImportSelected(candidateIds: string[], command: BrowserSessionImportCommand): Promise<BrowserSessionImportResult>
@@ -61,6 +64,11 @@ export class ExtensionUi {
   private fabDrag: Drag | null = null
   private suppressFabClick = false
   private frameReady = false
+  private domDetection: {
+    id: number
+    resolve: (result: DomDetectionResult) => void
+    reject: (error: Error) => void
+  } | null = null
 
   constructor(
     private readonly callbacks: UiCallbacks,
@@ -142,12 +150,22 @@ export class ExtensionUi {
     if (
       !event.isTrusted ||
       event.source !== this.frame.contentWindow ||
-      event.origin !== this.origin ||
-      event.data?.channel !== 'saber:command'
+      event.origin !== this.origin
     )
       return
+    if (event.data?.channel === 'saber:dom-detection-result') {
+      const pending = this.domDetection
+      if (!pending || pending.id !== event.data.id) return
+      this.domDetection = null
+      if (event.data.ok) pending.resolve(event.data.result)
+      else pending.reject(new RequestFailure(
+        event.data.error.code, event.data.error.message, event.data.error.retryable
+      ))
+      return
+    }
+    if (event.data?.channel !== 'saber:command') return
     const { id, action, payload } = event.data
-    void this.command(action, payload).then(
+    void this.command(action, payload, id).then(
       result => {
         if (id !== undefined)
           this.frame.contentWindow?.postMessage(
@@ -169,7 +187,7 @@ export class ExtensionUi {
       }
     )
   }
-  private async command(action: StudioAction, payload: any): Promise<unknown> {
+  private async command(action: StudioAction, payload: any, id?: number): Promise<unknown> {
     switch (action) {
       case 'ready':
         this.frameReady = true
@@ -190,6 +208,14 @@ export class ExtensionUi {
         await this.callbacks.onPreferenceChange(payload)
         return this.publish()
       case 'discover':
+        if (payload === 'dom-agent' && id !== undefined) {
+          return this.callbacks.onDiscover(payload, input => new Promise((resolve, reject) => {
+            this.domDetection = { id, resolve, reject }
+            this.frame.contentWindow!.postMessage(
+              { channel: 'saber:dom-detection', id, payload: input }, this.origin
+            )
+          }))
+        }
         return this.callbacks.onDiscover(payload)
       case 'discover-saved':
         this.callbacks.onDiscoverSaved()
@@ -512,6 +538,8 @@ export class ExtensionUi {
     return this.pickMask
   }
   remove(): void {
+    this.domDetection?.reject(new RequestFailure('page_closed', '漫画页面已退出', false))
+    this.domDetection = null
     window.removeEventListener('message', this.onMessage)
     window.removeEventListener('resize', this.reclamp)
     window.removeEventListener('pointermove', this.pointerMove)

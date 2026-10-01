@@ -54,7 +54,7 @@ DEFAULT_BROWSER_DOM_AGENT = {
         "request": {"forceJsonOutput": True},
         "execution": {
             "useStream": False, "rpmLimit": 0,
-            "transportRetries": 1, "businessRetries": 1,
+            "transportRetries": 3, "businessRetries": 3,
         },
     },
 }
@@ -200,7 +200,7 @@ def default_translation_settings() -> dict[str, object]:
             "openaiOptions": openai_options(
                 use_stream=False,
                 rpm_limit=0,
-                transport_retries=1,
+                transport_retries=3,
                 business_retries=3,
             ),
             "minImageSize": 32,
@@ -217,7 +217,7 @@ def default_translation_settings() -> dict[str, object]:
             "openaiOptions": openai_options(
                 use_stream=True,
                 rpm_limit=0,
-                transport_retries=1,
+                transport_retries=3,
                 business_retries=3,
             ),
             "translationMode": "batch",
@@ -250,8 +250,8 @@ def default_translation_settings() -> dict[str, object]:
             "openaiOptions": openai_options(
                 use_stream=True,
                 rpm_limit=0,
-                transport_retries=1,
-                business_retries=0,
+                transport_retries=3,
+                business_retries=3,
             ),
         },
         "proofreading": {

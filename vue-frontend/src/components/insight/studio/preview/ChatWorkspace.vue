@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import ProductEmptyState from '@/components/product/ProductEmptyState.vue'
 import { buildCharacterStudioGreetingOptions } from '@/utils/characterStudioGreetings'
+import { hasUnsummarizedChatMessages } from '@/stores/characterStudioChatSession'
 import ChatComposer from './ChatComposer.vue'
 import MessageList from './MessageList.vue'
 import SessionToolbar from './SessionToolbar.vue'
@@ -23,7 +24,7 @@ const props = defineProps<{
   chatAbortable?: boolean
   chatImporting: boolean
   chatLoading: boolean
-  chatMutating: boolean
+  chatBusy: boolean
   chatPromptLoading: boolean
   chatStreaming: boolean
   chatSummarizing: boolean
@@ -56,6 +57,7 @@ const currentSessionExcerpt = computed(() => {
   return last?.content || ''
 })
 const currentSessionMeta = computed(() => `${props.session?.messages.length || 0} 条消息`)
+const canSummarize = computed(() => hasUnsummarizedChatMessages(props.session))
 const displayGreetings = computed(() =>
   props.availableGreetings?.length
     ? props.availableGreetings
@@ -95,11 +97,11 @@ function switchSession(sessionId: string) {
     <SessionToolbar
       :archived-sessions="archivedSessions"
       :can-use-greeting="displayGreetings.length > 0"
+      :can-summarize="canSummarize"
       :chat-exporting="chatExporting"
       :chat-importing="chatImporting"
-      :chat-mutating="chatMutating"
+      :chat-busy="chatBusy"
       :chat-prompt-loading="chatPromptLoading"
-      :chat-streaming="chatStreaming"
       :chat-summarizing="chatSummarizing"
       :current-greeting-label="currentGreetingLabel"
       :current-session-excerpt="currentSessionExcerpt"
@@ -137,8 +139,7 @@ function switchSession(sessionId: string) {
       <MessageList
         :assistant-name="assistantName"
         :attachment-url-for="attachmentUrl"
-        :chat-mutating="chatMutating"
-        :chat-streaming="chatStreaming"
+        :chat-busy="chatBusy"
         :session="session"
         @delete-message="$emit('delete-message', $event)"
         @edit-message="$emit('edit-message', $event)"
@@ -146,6 +147,8 @@ function switchSession(sessionId: string) {
         @regenerate-message="$emit('regenerate-message', $event)"
       />
       <ChatComposer
+        :key="session.session_id"
+        :chat-busy="chatBusy"
         :accepted-chat-submission-count="acceptedChatSubmissionCount"
         :chat-abortable="chatAbortable"
         :chat-streaming="chatStreaming"

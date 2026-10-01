@@ -12,11 +12,11 @@ import type { CharacterStudioChatSessionSummary } from '@/types/characterStudio'
 defineProps<{
   archivedSessions: CharacterStudioChatSessionSummary[]
   canUseGreeting: boolean
+  canSummarize: boolean
   chatExporting: boolean
   chatImporting: boolean
-  chatMutating: boolean
+  chatBusy: boolean
   chatPromptLoading: boolean
-  chatStreaming: boolean
   chatSummarizing: boolean
   currentGreetingLabel: string
   currentSessionExcerpt: string
@@ -105,7 +105,7 @@ onUnmounted(() => {
           variant="toolbar"
           data-testid="session-list-trigger"
           class="session-toolbar__trigger session-toolbar__trigger--inline"
-          :disabled="!hasSession || chatMutating || chatStreaming"
+          :disabled="!hasSession || chatBusy"
           :aria-controls="SESSION_LIST_PANEL_ID"
           :aria-expanded="sessionListOpen ? 'true' : 'false'"
           @click="toggleSessionList"
@@ -164,6 +164,7 @@ onUnmounted(() => {
             <UiButton
               variant="toolbar"
               class="session-toolbar__session-item"
+              :disabled="chatBusy"
               @click="chooseSession(item.session_id)"
             >
               <div class="session-toolbar__session-item-main">
@@ -181,6 +182,7 @@ onUnmounted(() => {
               variant="danger"
               size="xs"
               :label="`永久删除归档会话：${item.title}`"
+              :disabled="chatBusy"
               @click.stop="$emit('delete-session', item)"
             >
               <UiIcon name="trash" size="14" />
@@ -194,7 +196,7 @@ onUnmounted(() => {
           variant="toolbar"
           data-testid="greeting-picker-trigger"
           class="session-toolbar__trigger session-toolbar__trigger--inline"
-          :disabled="!canUseGreeting || chatMutating || chatStreaming"
+          :disabled="!canUseGreeting || chatBusy"
           @click="$emit('open-greeting-picker')"
         >
           <div class="session-toolbar__trigger-copy session-toolbar__trigger-copy--inline">
@@ -216,7 +218,7 @@ onUnmounted(() => {
     >
       <UiButton
         variant="secondary"
-        :disabled="!hasDocument || chatMutating || chatStreaming"
+        :disabled="!hasDocument || chatBusy"
         size="sm"
         @click="$emit('new-session')"
       >
@@ -225,7 +227,7 @@ onUnmounted(() => {
       <UiButton
         variant="secondary"
         data-testid="prompt-preview-trigger"
-        :disabled="!hasSession || chatPromptLoading || chatStreaming"
+        :disabled="!hasSession || chatPromptLoading || chatBusy"
         size="sm"
         @click="$emit('open-prompt-preview')"
       >
@@ -233,7 +235,7 @@ onUnmounted(() => {
       </UiButton>
       <UiButton
         variant="secondary"
-        :disabled="!canUseGreeting || chatMutating || chatStreaming"
+        :disabled="!canUseGreeting || chatBusy"
         size="sm"
         @click="$emit('open-greeting-picker')"
       >
@@ -241,7 +243,7 @@ onUnmounted(() => {
       </UiButton>
       <UiButton
         variant="secondary"
-        :disabled="!hasSession || chatSummarizing || chatStreaming"
+        :disabled="!canSummarize || chatBusy"
         size="sm"
         @click="$emit('summarize-session')"
       >
@@ -249,7 +251,7 @@ onUnmounted(() => {
       </UiButton>
       <UiButton
         variant="secondary"
-        :disabled="!hasSession || chatExporting || chatStreaming"
+        :disabled="!hasSession || chatBusy"
         size="sm"
         @click="$emit('export-session')"
       >
@@ -257,7 +259,7 @@ onUnmounted(() => {
       </UiButton>
       <UiButton
         variant="secondary"
-        :disabled="!hasDocument || chatImporting || chatStreaming"
+        :disabled="!hasDocument || chatBusy"
         size="sm"
         @click="pickImport"
       >
@@ -475,6 +477,10 @@ onUnmounted(() => {
   .session-toolbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .session-toolbar__triggers {
+    flex: 0 0 auto;
   }
 
   .session-toolbar__actions {

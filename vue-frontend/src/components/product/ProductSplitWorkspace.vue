@@ -198,5 +198,10 @@ onUnmounted(stopResize)
   .product-split-workspace__resizer {
     display: none;
   }
+
+  .product-split-workspace__scroll {
+    height: auto;
+    overflow: visible;
+  }
 }
 </style>

@@ -53,7 +53,6 @@ class StudioAlgorithms(Protocol):
         section: str,
         config: Mapping[str, Any],
         analysis_context: Mapping[str, Any] | None = None,
-        on_chunk: Callable[[str, str], None] | None = None,
     ) -> Mapping[str, Any]: ...
 
     def chat(
@@ -70,7 +69,6 @@ class StudioAlgorithms(Protocol):
         messages: Sequence[Mapping[str, Any]],
         *,
         config: Mapping[str, Any],
-        on_chunk: Callable[[str, str], None] | None = None,
     ) -> Mapping[str, Any]: ...
 
 
@@ -82,7 +80,6 @@ class DefaultStudioAlgorithms:
         section: str,
         config: Mapping[str, Any],
         analysis_context: Mapping[str, Any] | None = None,
-        on_chunk: Callable[[str, str], None] | None = None,
     ) -> Mapping[str, Any]:
         context_json = json.dumps(
             dict(analysis_context or {}),
@@ -100,6 +97,16 @@ class DefaultStudioAlgorithms:
                 f"当前角色文档：\n{document_json}"
             )
         else:
+            lorebook_contract = (
+                '{"name":"角色世界书","entries":['
+                '{"id":"稳定唯一ID","keys":["触发词"],'
+                '"secondary_keys":[],"comment":"条目名称",'
+                '"content":"原作事实","constant":false,'
+                '"selective":false,"enabled":true,'
+                '"position":"before_char","priority":100,'
+                '"depth":4,"children":[],'
+                '"probability":100,"prevent_recursion":true}]}'
+            )
             contracts = {
                 "identity": (
                     '{"identity":{"name":"角色名","aliases":[],'
@@ -112,18 +119,13 @@ class DefaultStudioAlgorithms:
                     '"system_prompt":"","post_history_instructions":"",'
                     '"creator_notes":"","character_version":"2.0.0"}}'
                 ),
-                "lorebook": (
-                    '{"lorebook":{"name":"世界书名称","entries":['
-                    '{"id":"稳定唯一ID","keys":["触发词"],'
-                    '"secondary_keys":[],"comment":"条目名称",'
-                    '"content":"原作事实","constant":false,'
-                    '"selective":false,"enabled":true,'
-                    '"position":"before_char","priority":100,'
-                    '"depth":4,"children":[],'
-                    '"probability":100,"prevent_recursion":true}]}}'
-                ),
+                "lorebook": '{"lorebook":' + lorebook_contract + '}',
                 "regex": '{"regexScripts":[]}',
-                "state-tasks": '{"stateTasks":[]}',
+                "state-tasks": (
+                    '{"stateTasks":[{"id":"稳定唯一ID","name":"任务名",'
+                    '"triggerTiming":"initialization","interval":1,'
+                    '"commands":"/setvar key=score 0","disabled":false}]}'
+                ),
                 "translate": (
                     '{"identity":{"name":"","aliases":[],'
                     '"description":"","personality":"","scenario":""},'
@@ -145,7 +147,7 @@ class DefaultStudioAlgorithms:
                     '"post_history_instructions":"",'
                     '"creator_notes":"基于原作分析生成",'
                     '"character_version":"2.0.0"},'
-                    '"lorebook":{"name":"角色世界书","entries":[]},'
+                    '"lorebook":' + lorebook_contract + ','
                     '"regexScripts":[],"stateTasks":[]}'
                 ),
             }
@@ -166,6 +168,7 @@ class DefaultStudioAlgorithms:
             lorebook_requirement = (
                 "世界书 entries 中的每个条目都必须包含非负整数 depth 和数组 children；"
                 "没有子条目时 children 必须返回空数组。"
+                "所有条目及子条目都必须遵循同一完整字段结构，条目名称使用 comment，不要使用 title。"
                 if section in {"lorebook", "full"}
                 else ""
             )
@@ -176,17 +179,29 @@ class DefaultStudioAlgorithms:
                 f"只输出 JSON 对象，顶层结构必须为：{contracts[section]}。"
                 f"{full_requirement}"
                 f"{lorebook_requirement}"
+                "状态任务仅支持每行一条 /setvar key=变量名 值 或 /addvar key=变量名 数字；"
+                "变量名使用英文字母、数字、下划线；不要生成 JavaScript 或 STscript 包装。"
+                "triggerTiming 使用 initialization、message_received 或 message_sent。"
+                "没有需要的任务时 stateTasks 返回空数组。"
                 "不要回传数据库元数据、revision、status、meta 或解释文字。\n\n"
                 f"漫画分析压缩上下文：\n{context_json}\n\n"
                 f"当前角色文档：\n{document_json}"
             )
+        def validate_generated(result: object) -> None:
+            if not isinstance(result, Mapping):
+                raise ValueError("Studio generation did not return a JSON object")
+            if section == "review":
+                _normalize_review(result)
+                return
+            _validate_generated_payload(document, result, section=section)
+            merged = _apply_generated_section(document, result, section=section)
+            validate_current_document(merged, book_id=merged["bookId"], title=merged.get("title"))
+
         result = self._chat_json(
             prompt,
             config=config,
-            on_chunk=on_chunk,
+            validator=validate_generated,
         )
-        if not isinstance(result, Mapping):
-            raise ValueError("Studio generation did not return a JSON object")
         return dict(result)
 
     def chat(
@@ -198,7 +213,6 @@ class DefaultStudioAlgorithms:
         on_chunk: Callable[[str, str], None] | None = None,
     ) -> str:
         remote_messages: list[dict[str, Any]] = []
-        system_parts = [system] if system else []
         has_image_attachments = False
         for index, raw in enumerate(messages):
             if not isinstance(raw, Mapping):
@@ -207,10 +221,6 @@ class DefaultStudioAlgorithms:
             if role not in {"system", "user", "assistant"}:
                 raise ValueError(f"Studio chat message {index} role is invalid")
             content = _string(raw.get("content"), f"Studio chat message {index} content")
-            if role == "system":
-                if content:
-                    system_parts.append(content)
-                continue
             attachments = raw.get("attachmentDataUrls", [])
             if not isinstance(attachments, list) or not all(
                 isinstance(value, str) and value
@@ -232,10 +242,10 @@ class DefaultStudioAlgorithms:
                 remote_messages.append({"role": role, "content": parts})
             else:
                 remote_messages.append({"role": role, "content": content})
-        if system_parts:
+        if system:
             remote_messages.insert(
                 0,
-                {"role": "system", "content": "\n\n".join(system_parts)},
+                {"role": "system", "content": system},
             )
         result = self._complete(
             remote_messages,
@@ -254,7 +264,6 @@ class DefaultStudioAlgorithms:
         messages: Sequence[Mapping[str, Any]],
         *,
         config: Mapping[str, Any],
-        on_chunk: Callable[[str, str], None] | None = None,
     ) -> Mapping[str, Any]:
         prompt = (
             "总结以下角色对话，保留事实、关系、变量变化和未解决事项。"
@@ -264,7 +273,6 @@ class DefaultStudioAlgorithms:
         result = self._chat_json(
             prompt,
             config=config,
-            on_chunk=on_chunk,
         )
         if not isinstance(result, Mapping):
             raise ValueError("Studio summary did not return a JSON object")
@@ -278,21 +286,30 @@ class DefaultStudioAlgorithms:
         prompt: str,
         *,
         config: Mapping[str, Any],
-        on_chunk: Callable[[str, str], None] | None = None,
+        validator: Callable[[object], None] | None = None,
     ) -> object:
-        text = self._complete(
+        from src.shared.openai_execution import (
+            OpenAICompatibleBusinessRetryableError,
+            parse_json_block_from_text,
+        )
+
+        def parse(text: str) -> object:
+            try:
+                result = parse_json_block_from_text(text)
+                if validator is not None:
+                    validator(result)
+                return result
+            except (ValueError, TypeError) as exc:
+                raise OpenAICompatibleBusinessRetryableError(str(exc)) from exc
+
+        return self._complete(
             [{"role": "user", "content": prompt}],
             config=config,
             temperature=0.3,
             force_json=True,
-            on_chunk=on_chunk,
+            on_chunk=None,
+            parser=parse,
         )
-        cleaned = text.strip()
-        if cleaned.startswith("```"):
-            cleaned = cleaned.split("\n", 1)[-1]
-            if cleaned.endswith("```"):
-                cleaned = cleaned[:-3]
-        return json.loads(cleaned.strip())
 
     @staticmethod
     def _complete(
@@ -303,7 +320,8 @@ class DefaultStudioAlgorithms:
         force_json: bool,
         on_chunk: Callable[[str, str], None] | None,
         prefer_vlm: bool = False,
-    ) -> str:
+        parser: Callable[[str], object] | None = None,
+    ) -> Any:
         from src.shared.ai_transport import UnifiedChatRequest
         from src.shared.openai_execution import (
             OpenAICompatibleSyncExecutor,
@@ -348,18 +366,15 @@ class DefaultStudioAlgorithms:
             ),
             openai_options=options,
             runtime_options=build_openai_compatible_runtime_options(
-                timeout=_positive_number(
-                    section.get("timeout_seconds"),
-                    "Studio timeout_seconds",
-                ),
                 on_stream_chunk=on_chunk,
             ),
         )
         result = OpenAICompatibleSyncExecutor().execute(
             request,
             capability=request.capability,
+            parser=parser,
         )
-        return str(result.parsed)
+        return result.parsed
 
 
 class StudioOperationService:
@@ -394,7 +409,6 @@ class StudioOperationService:
             operation.get("kind"),
             "Studio operation kind",
         )
-        on_chunk = self._event_callback(fence)
         if kind == "studio_generate":
             _exact_keys(
                 request,
@@ -421,12 +435,12 @@ class StudioOperationService:
                     "Studio analysis context",
                 )
             )
+            # JSON 结果校验完成后整体发布；逐字事件只用于聊天文本。
             generated = self.algorithms.generate(
                 document,
                 section=section,
                 config=config,
                 analysis_context=analysis_context,
-                on_chunk=on_chunk,
             )
             if section == "review":
                 review = _normalize_review(generated)
@@ -475,7 +489,7 @@ class StudioOperationService:
                     "summaryBlocks",
                     "summaryThroughMessageId",
                     "variables",
-                },
+                } | ({"rewriteMessageId"} if "rewriteMessageId" in request else set()),
                 "Studio chat request",
             )
             return self._chat(
@@ -510,7 +524,6 @@ class StudioOperationService:
             summary = self.algorithms.summarize(
                 messages,
                 config=config,
-                on_chunk=on_chunk,
             )
             if not isinstance(summary, Mapping):
                 raise ValueError("Studio summary did not return a JSON object")
@@ -538,68 +551,12 @@ class StudioOperationService:
         input_assets: Mapping[str, Any],
         config: Mapping[str, Any],
     ) -> Mapping[str, Any]:
-        document = _current_document(request.get("document"))
         messages = _operation_messages(
-            request.get("messages"),
-            label="Studio chat messages",
-            require_nonempty=True,
+            request.get("messages"), label="Studio chat messages", require_nonempty=True,
         )
-        last = messages[-1]
-        if last["role"] != "user":
-            raise ValueError("Studio chat last message must be a user message")
-        raw_user = last["content"]
-        runtime_state = deepcopy(
-            _required_mapping(
-                request.get("runtimeState"),
-                "Studio chat runtimeState",
-            )
-        )
-        variables = deepcopy(
-            _required_mapping(
-                request.get("variables"),
-                "Studio chat variables",
-            )
-        )
-        session_work = {
-            "variables": variables,
-            "_runtime": runtime_state,
-        }
-        _, prompt_user, regex_hits = apply_regex_scripts(
-            raw_user,
-            document["regexScripts"],
-            placement=1,
-            respect_run_on_edit=True,
-        )
-        lorebook_hits = sort_lorebook_hits(
-            match_lorebook(
-                document["lorebook"]["entries"],
-                prompt_user,
-                session=session_work,
-            )
-        )
-        runtime_log: list[dict[str, Any]] = list(regex_hits)
-        runtime_log.extend(
-            {
-                "type": "lorebook",
-                "id": entry["id"],
-                "comment": entry["comment"],
-            }
-            for entry in lorebook_hits
-        )
-        runtime_log.extend(
-            run_state_tasks(
-                session_work,
-                document["stateTasks"],
-                event="message_received",
-            )
-        )
-        summaries = _summary_blocks(request.get("summaryBlocks"))
-        system = _build_system_prompt(
-            document=document,
-            variables=variables,
-            summaries=summaries,
-            lorebook_hits=lorebook_hits,
-        )
+        if messages[-1]["role"] != "user":
+            raise ValueError("Studio chat must end with a user message")
+        system, conversation, _, session_work, runtime_log = _prepare_chat_prompt(request)
         allowed_asset_ids: set[str] = set()
         for role, value in input_assets.items():
             if not isinstance(role, str) or not role.startswith("attachment:"):
@@ -608,87 +565,49 @@ class StudioOperationService:
                 _required_string(value, "Studio operation input asset id")
             )
         asset_data_urls = self._asset_data_urls(allowed_asset_ids)
-        summarized_through = request.get("summaryThroughMessageId")
-        if summarized_through is not None and not isinstance(
-            summarized_through,
-            str,
-        ):
-            raise ValueError(
-                "Studio chat summaryThroughMessageId must be a string or null"
-            )
-        if summarized_through is not None and not any(
-            item["messageId"] == summarized_through for item in messages
-        ):
-            raise ValueError(
-                "Studio chat summaryThroughMessageId does not identify a message"
-            )
-        include = summarized_through is None
-        conversation: list[dict[str, Any]] = []
-        for index, message in enumerate(messages):
-            if not include:
-                if message["messageId"] == summarized_through:
-                    include = True
-                continue
-            attachment_urls: list[str] = []
-            for attachment in message["attachments"]:
-                asset_id = attachment["assetId"]
+        remote_messages: list[dict[str, Any]] = []
+        for message in conversation:
+            attachment_urls = []
+            for asset_id in message["assetIds"]:
                 if asset_id not in allowed_asset_ids:
-                    raise ValueError(
-                        "Studio chat attachment is not bound to the operation"
-                    )
-                data_url = asset_data_urls.get(asset_id)
-                if data_url is None:
+                    raise ValueError("Studio chat attachment is not bound to the operation")
+                if asset_id not in asset_data_urls:
                     raise ValueError("Studio chat attachment is unavailable")
-                attachment_urls.append(data_url)
-            conversation.append(
-                {
-                    "role": message["role"],
-                    "content": (
-                        prompt_user
-                        if index == len(messages) - 1
-                        else message["content"]
-                    ),
-                    "attachmentDataUrls": attachment_urls,
-                }
-            )
+                attachment_urls.append(asset_data_urls[asset_id])
+            remote_messages.append({
+                "role": message["role"],
+                "content": message["content"],
+                "attachmentDataUrls": attachment_urls,
+            })
         self.repository.operations.append_event(
             fence,
             event_type="prompt_ready",
             payload={
-                "messageCount": len(conversation),
+                "messageCount": len(remote_messages),
                 "attachmentCount": sum(
-                    len(item["attachmentDataUrls"])
-                    for item in conversation
+                    len(item["attachmentDataUrls"]) for item in remote_messages
                 ),
             },
         )
         assistant = self.algorithms.chat(
-            messages=conversation,
+            messages=remote_messages,
             system=system,
             config=self._with_credentials(
                 config,
-                prefer_vlm=any(
-                    item["attachmentDataUrls"] for item in conversation
-                ),
+                prefer_vlm=any(item["attachmentDataUrls"] for item in remote_messages),
             ),
             on_chunk=self._event_callback(fence),
         )
         if not isinstance(assistant, str) or not assistant.strip():
             raise ValueError("Studio chat did not return response text")
+        document = _current_document(request.get("document"))
         visible_assistant, _, output_hits = apply_regex_scripts(
-            assistant,
-            document["regexScripts"],
-            placement=2,
-            respect_run_on_edit=True,
+            assistant, document["regexScripts"], placement=2, respect_run_on_edit=True,
         )
         runtime_log.extend(output_hits)
-        runtime_log.extend(
-            run_state_tasks(
-                session_work,
-                document["stateTasks"],
-                event="message_sent",
-            )
-        )
+        runtime_log.extend(run_state_tasks(
+            session_work, document["stateTasks"], event="message_sent",
+        ))
         published = self.repository.publish_chat(
             fence,
             content=visible_assistant,
@@ -708,102 +627,19 @@ class StudioOperationService:
         document: Mapping[str, Any],
         session: Mapping[str, Any],
     ) -> dict[str, Any]:
-        document = _current_document(document)
-        messages = _operation_messages(
-            session.get("messages"),
-            label="Studio session messages",
-        )
-        last_user_index = next(
-            (
-                index
-                for index in range(len(messages) - 1, -1, -1)
-                if messages[index].get("role") == "user"
-            ),
-            None,
-        )
-        last_user = (
-            messages[last_user_index]["content"]
-            if last_user_index is not None
-            else ""
-        )
-        _, prompt_user, _regex_hits = apply_regex_scripts(
-            last_user,
-            document["regexScripts"],
-            placement=1,
-            respect_run_on_edit=True,
-        )
-        work = {
-            "variables": deepcopy(
-                _required_mapping(
-                    session.get("variables"),
-                    "Studio session variables",
-                )
-            ),
-            "_runtime": deepcopy(
-                _required_mapping(
-                    session.get("runtimeState"),
-                    "Studio session runtimeState",
-                )
-            ),
-        }
-        hits = sort_lorebook_hits(
-            match_lorebook(
-                document["lorebook"]["entries"],
-                prompt_user,
-                session=work,
-            )
-        )
-        system = _build_system_prompt(
-            document=document,
-            variables=work["variables"],
-            summaries=_summary_blocks(session.get("summaryBlocks")),
-            lorebook_hits=hits,
-        )
-        summarized_through = session.get("summaryThroughMessageId")
-        if summarized_through is not None and not isinstance(
-            summarized_through,
-            str,
-        ):
-            raise ValueError(
-                "Studio session summaryThroughMessageId must be a string or null"
-            )
-        if summarized_through is not None and not any(
-            message["messageId"] == summarized_through
-            for message in messages
-        ):
-            raise ValueError(
-                "Studio session summaryThroughMessageId does not identify a message"
-            )
-        include = summarized_through is None
-        visible: list[dict[str, Any]] = []
-        for index, message in enumerate(messages):
-            if not include:
-                if message.get("messageId") == summarized_through:
-                    include = True
-                continue
-            visible.append(
-                {
-                    "role": message["role"],
-                    "content": (
-                        prompt_user
-                        if index == last_user_index
-                        else message["content"]
-                    ),
-                    "assetIds": [
-                        attachment["assetId"]
-                        for attachment in message["attachments"]
-                    ],
-                }
-            )
-        lorebook_hits = []
-        for index, entry in enumerate(hits):
-            entry_id = entry["id"]
-            comment = entry["comment"]
-            lorebook_hits.append({"id": entry_id, "comment": comment})
+        # 已生成的回复使用原请求快照；未聊天的会话显示当前配置。
+        request = self.repository.get_chat_prompt_request(str(session["sessionId"]))
+        has_request = request is not None
+        if request is None:
+            request = {"document": document, **session}
+        system, messages, hits, _, _ = _prepare_chat_prompt(request, apply_user_input=has_request)
         return {
+            "source": "request" if has_request else "current_config",
             "system": system,
-            "messages": visible,
-            "lorebookHits": lorebook_hits,
+            "messages": messages,
+            "lorebookHits": [
+                {"id": entry["id"], "comment": entry["comment"]} for entry in hits
+            ],
         }
 
     def agent_chunks(
@@ -1023,47 +859,102 @@ def _provider_config(
         if raw_options is None
         else _required_mapping(raw_options, "Studio provider openai_options")
     )
-    timeout = section.get("timeout_seconds")
     base_url = section.get("custom_base_url")
     if base_url == "":
         base_url = None
     return {
         "provider": section.get("provider", ""),
         "api_key": section.get("api_key", ""),
+        "credential_version_id": section.get("credential_version_id"),
         "model": section.get("model_name", ""),
         "base_url": base_url,
         "openai_options": options,
-        "timeout_seconds": 120 if timeout is None else timeout,
     }
 
 
-def _build_system_prompt(
+def _prepare_chat_prompt(
+    request: Mapping[str, Any],
     *,
-    document: Mapping[str, Any],
-    variables: Mapping[str, Any],
-    summaries: object,
-    lorebook_hits: Sequence[Mapping[str, Any]],
-) -> str:
+    apply_user_input: bool = True,
+) -> tuple[str, list[dict[str, Any]], list[dict[str, Any]], dict[str, Any], list[dict[str, Any]]]:
+    """Build model and preview context from the same immutable input."""
+    document = _current_document(request.get("document"))
+    messages = _operation_messages(request.get("messages"), label="Studio chat messages")
+    work = {
+        "variables": deepcopy(_required_mapping(request.get("variables"), "Studio chat variables")),
+        "_runtime": deepcopy(_required_mapping(request.get("runtimeState"), "Studio chat runtimeState")),
+    }
+    work["_runtime"].pop("matched_lorebook_ids", None)
+    last_user_index = next(
+        (index for index in range(len(messages) - 1, -1, -1) if messages[index]["role"] == "user"),
+        None,
+    ) if apply_user_input else None
+    raw_user = messages[last_user_index]["content"] if last_user_index is not None else ""
+    _, prompt_user, regex_hits = apply_regex_scripts(
+        raw_user, document["regexScripts"], placement=1, respect_run_on_edit=True,
+    )
+    hits = sort_lorebook_hits(match_lorebook(document["lorebook"]["entries"], prompt_user))
+    logs = list(regex_hits)
+    logs.extend(
+        {"type": "lorebook", "id": entry["id"], "comment": entry["comment"]} for entry in hits
+    )
+    if last_user_index is not None:
+        logs.extend(run_state_tasks(work, document["stateTasks"], event="message_received"))
     identity = document["identity"]
     core = document["coreMessages"]
-    lorebook_text = "\n".join(
-        entry["content"] for entry in lorebook_hits
-    )
-    return "\n\n".join(
-        value
-        for value in (
-            core["system_prompt"],
-            f"角色：{identity['name']}",
-            identity["description"],
-            identity["personality"],
-            identity["scenario"],
-            core["post_history_instructions"],
-            f"变量：{json.dumps(dict(variables), ensure_ascii=False)}",
-            f"会话摘要：{json.dumps(summaries, ensure_ascii=False)}",
-            f"世界书：{lorebook_text}",
-        )
-        if value
-    )
+    system = "\n\n".join(value for value in (
+        core["system_prompt"],
+        "\n".join(entry["content"] for entry in hits if entry["position"] == "before_char"),
+        f"角色：{identity['name']}",
+        identity["description"],
+        identity["personality"],
+        identity["scenario"],
+        "\n".join(entry["content"] for entry in hits if entry["position"] == "after_char"),
+        f"示例对话：\n{core['message_example']}" if core["message_example"] else "",
+        f"变量：{json.dumps(work['variables'], ensure_ascii=False)}",
+        f"会话摘要：{json.dumps(_summary_blocks(request.get('summaryBlocks')), ensure_ascii=False)}",
+    ) if value)
+    through = request.get("summaryThroughMessageId")
+    if through is not None and (not isinstance(through, str) or not any(
+        item["messageId"] == through for item in messages
+    )):
+        raise ValueError("Studio chat summaryThroughMessageId does not identify a message")
+    include = through is None
+    history: list[dict[str, Any]] = []
+    for index, message in enumerate(messages):
+        if not include:
+            if message["messageId"] == through:
+                include = True
+            continue
+        history.append({
+            "role": message["role"],
+            "content": prompt_user if index == last_user_index else message["content"],
+            "assetIds": [attachment["assetId"] for attachment in message["attachments"]],
+        })
+    # 深度按保留的真实聊天消息计数，不把其他注入条目算进深度。
+    injections: dict[int, list[dict[str, Any]]] = {}
+    for entry in hits:
+        if entry["position"] == "at_depth":
+            position = max(0, len(history) - entry["depth"])
+            if history and position == len(history) and history[-1]["role"] == "user":
+                history[-1]["content"] += f"\n\n[补充上下文]\n{entry['content']}"
+                continue
+            injections.setdefault(position, []).append({
+                "role": "system", "content": entry["content"], "assetIds": [],
+            })
+    # 生成请求以用户消息结束；回复要求在该消息的正文之后，不另造末尾 system 消息。
+    if core["post_history_instructions"] and history and history[-1]["role"] == "user":
+        history[-1]["content"] += f"\n\n[回复要求]\n{core['post_history_instructions']}"
+    conversation: list[dict[str, Any]] = []
+    for index in range(len(history) + 1):
+        conversation.extend(injections.get(index, []))
+        if index < len(history):
+            conversation.append(history[index])
+    if core["post_history_instructions"] and (not history or history[-1]["role"] != "user"):
+        conversation.append({
+            "role": "system", "content": core["post_history_instructions"], "assetIds": [],
+        })
+    return system, conversation, hits, work, logs
 
 
 def _normalize_review(generated: Mapping[str, Any]) -> dict[str, Any]:
@@ -1231,14 +1122,6 @@ def _required_string(value: object, label: str) -> str:
     if not result:
         raise ValueError(f"{label} must not be empty")
     return result
-
-
-def _positive_number(value: object, label: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ValueError(f"{label} must be a number")
-    if value <= 0:
-        raise ValueError(f"{label} must be positive")
-    return float(value)
 
 
 def _current_document(value: object) -> dict[str, Any]:

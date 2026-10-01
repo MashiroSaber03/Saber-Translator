@@ -187,7 +187,7 @@ class StudioIOService:
         messages: list[dict[str, Any]] = []
         for message in session["messages"]:
             exported_attachments: list[dict[str, str]] = []
-            for index, attachment in enumerate(message["attachments"], start=1):
+            for attachment in message["attachments"]:
                 asset_id = attachment["assetId"]
                 path = self._asset_path(asset_id)
                 if path is None:
@@ -196,7 +196,7 @@ class StudioIOService:
                     )
                 exported_attachments.append(
                     {
-                        "filename": f"attachment-{index}{path.suffix}",
+                        "filename": attachment["filename"],
                         "mime_type": attachment["mimeType"],
                         "blob_base64": base64.b64encode(
                             path.read_bytes()
@@ -286,6 +286,7 @@ class StudioIOService:
         try:
             for message in messages:
                 restored_ids: list[str] = []
+                names: dict[str, str] = {}
                 attachments = message.pop("attachments")
                 for attachment in attachments:
                     encoded = attachment["blob_base64"]
@@ -299,8 +300,12 @@ class StudioIOService:
                         BytesIO(binary)
                     ).id
                     restored_ids.append(asset_id)
+                    names[asset_id] = attachment["filename"]
                     imported_assets.append(asset_id)
                 message["assetIds"] = restored_ids
+                if not isinstance(message["generationMeta"], Mapping):
+                    raise ValueError("message generationMeta must be an object")
+                message["generationMeta"]["attachmentNames"] = names
         except Exception:
             self._mark_assets_for_gc(imported_assets)
             raise

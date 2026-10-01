@@ -16,7 +16,6 @@ import type {
   BrowserSessionDto,
   BrowserSessionImportResult,
   ContextTranslateMessage,
-  DomDetectionResult,
   ResultImagePayload,
   UploadPageRequest,
 } from './types'
@@ -522,12 +521,6 @@ async function handleRequest(
     )
     await detachSession(request.sessionId)
     return result
-  }
-  if (request.type === 'dom-detection') {
-    return await saberRequest<DomDetectionResult>('/dom-detection', {
-      method: 'POST',
-      body: JSON.stringify(request.payload),
-    }, undefined, IMAGE_TRANSFER_TIMEOUT_MS)
   }
   throw new RequestFailure('unknown_message', '不支持的扩展请求', false)
 }

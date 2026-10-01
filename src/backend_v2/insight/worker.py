@@ -216,6 +216,16 @@ class InsightAnalysisWorkerService:
         pending_targets = [
             value for value in batch if value["status"] == "pending"
         ]
+        if grouping == "contiguous":
+            # Reused pages provide context but cannot join two separate recomputation ranges.
+            contiguous_targets = []
+            for value in pending_targets:
+                if value["page_number_snapshot"] < target["page_number_snapshot"]:
+                    continue
+                if contiguous_targets and value["page_number_snapshot"] != contiguous_targets[-1]["page_number_snapshot"] + 1:
+                    break
+                contiguous_targets.append(value)
+            pending_targets = contiguous_targets
         try:
             images: list[bytes] = []
             for pending_target in pending_targets:
@@ -245,38 +255,13 @@ class InsightAnalysisWorkerService:
             ]
             previous_batches = self.repository.previous_successful_batches(
                 run_id=run_id,
-                before_ordinal=batch_first_ordinal,
+                before_page_number=page_numbers[0],
                 pages_per_batch=pages_per_batch,
-                batch_count=(0 if scope == "page" else context_batch_count),
-                grouping=grouping,
-                context_chapter_id=(
-                    str(target["chapter_id"])
-                    if scope == "chapter" and target.get("chapter_id") is not None
-                    else None
+                batch_count=context_batch_count,
+                grouping=_analysis_batch_grouping(
+                    scope="full", analysis_config=analysis_config,
                 ),
             )
-            if scope == "incremental" and len(previous_batches) < context_batch_count:
-                active_batches = self.repository.previous_active_batches(
-                    book_id=_required_string(
-                        config.get("bookId"),
-                        "frozen Insight book id",
-                    ),
-                    before_page_number=page_numbers[0],
-                    pages_per_batch=pages_per_batch,
-                    batch_count=context_batch_count,
-                    align_to_chapter=(
-                        _analysis_batch_grouping(
-                            scope="full",
-                            analysis_config=analysis_config,
-                        )
-                        == "chapter"
-                    ),
-                )
-                previous_batches = _merge_context_batches(
-                    active_batches,
-                    previous_batches,
-                    limit=context_batch_count,
-                )
             algorithm_config = self._with_vlm_credentials(config)
             raw = self.algorithms.analyze_batch(
                 images,
@@ -631,33 +616,6 @@ def _analysis_batch_grouping(
     if not isinstance(align_to_chapter, bool):
         raise JobConflict("frozen Insight first-layer alignment is invalid")
     return "chapter" if align_to_chapter else "global"
-
-
-def _merge_context_batches(
-    older_batches: Sequence[Sequence[Mapping[str, Any]]],
-    current_run_batches: Sequence[Sequence[Mapping[str, Any]]],
-    *,
-    limit: int,
-) -> list[list[Mapping[str, Any]]]:
-    merged: list[tuple[int, set[int], list[Mapping[str, Any]]]] = []
-    for batch in (*older_batches, *current_run_batches):
-        values = [dict(page) for page in batch]
-        page_numbers = {
-            int(page["page_number_snapshot"])
-            for page in values
-            if isinstance(page.get("page_number_snapshot"), int)
-            and not isinstance(page.get("page_number_snapshot"), bool)
-        }
-        if not page_numbers:
-            continue
-        merged = [
-            existing
-            for existing in merged
-            if page_numbers.isdisjoint(existing[1])
-        ]
-        merged.append((min(page_numbers), page_numbers, values))
-    merged.sort(key=lambda value: value[0])
-    return [batch for _start, _page_numbers, batch in merged[-limit:]]
 
 
 def _format_previous_batches(

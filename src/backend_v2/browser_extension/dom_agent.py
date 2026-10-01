@@ -84,8 +84,8 @@ def _openai_options(value: object) -> OpenAICompatibleOptions:
             "execution": {
                 "use_stream": execution.get("useStream", False),
                 "rpm_limit": execution.get("rpmLimit", 0),
-                "transport_retries": execution.get("transportRetries", 1),
-                "business_retries": execution.get("businessRetries", 1),
+                "transport_retries": execution.get("transportRetries", 3),
+                "business_retries": execution.get("businessRetries", 3),
             },
         }
     )

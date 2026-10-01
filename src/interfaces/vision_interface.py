@@ -99,7 +99,7 @@ def call_ai_vision_ocr_service(image_pil, provider='siliconflow', api_key=None, 
             use_stream=False,
             rpm_limit=0,
             transport_retries=DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
-            business_retries=0,
+            business_retries=3,
         )
         if not prompt:
             if effective_options.request.force_json_output or prompt_mode == "json":

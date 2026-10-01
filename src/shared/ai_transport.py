@@ -40,6 +40,7 @@ from src.shared.openai_execution import (
     resolve_openai_compatible_invocation,
 )
 from src.shared.openai_options import (
+    DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
     OpenAICompatibleOptions,
     clone_openai_compatible_options,
     validate_and_clone_openai_extra_body,
@@ -793,7 +794,7 @@ class OpenAICompatibleChatTransport:
 
 
 class AsyncOpenAICompatibleTransport:
-    def __init__(self, max_retries: int = 0):
+    def __init__(self, max_retries: int = DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES):
         self.max_retries = _require_nonnegative_int(
             max_retries,
             name="max_retries",

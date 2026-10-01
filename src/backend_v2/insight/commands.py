@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
+import json
 import uuid
 
 from sqlalchemy import Engine, select, update
@@ -49,6 +50,20 @@ ALLOWED_COMMAND_KEYS = frozenset(
         "pageIds",
     }
 )
+
+
+def analysis_final_steps(layer_indices: Sequence[int]) -> tuple[str, ...]:
+    """The same whole-book post-processing for analysis and retries."""
+    return (
+        "insight_validate_run",
+        *(f"insight_build_layer_{index}" for index in layer_indices),
+        "insight_stage_compressed_context",
+        "insight_stage_overview_no_spoiler",
+        "insight_stage_overview_story_summary",
+        "insight_stage_timeline",
+        "insight_stage_vectors",
+        "insight_publish_run",
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +114,9 @@ class InsightAnalysisCommandService:
             chapter_ids=normalized["chapterIds"],
             page_ids=normalized["pageIds"],
         )
+        analysis_targets = targets
+        with self.engine.connect() as connection:
+            targets, reused = self._reuse_book_results(connection, book_id, targets, scope)
         run_id = str(uuid.uuid4())
         config = self.settings.resolve_insight(
             book_id=book_id,
@@ -110,35 +128,23 @@ class InsightAnalysisCommandService:
         config["targetCount"] = len(targets)
 
         single_chapter = {
-            target.chapter_id for target in targets
+            target.chapter_id for target in analysis_targets
         }
-        if scope == "full":
-            layer_steps: list[str] = []
-            for layer in config["analysis"]["layers"]:
-                if not isinstance(layer, Mapping):
-                    raise ValueError("Insight layer must be an object")
-                layer_index = layer.get("index")
-                if (
-                    isinstance(layer_index, bool)
-                    or not isinstance(layer_index, int)
-                    or layer_index < 0
-                ):
-                    raise ValueError(
-                        "Insight layer index must be a non-negative integer"
-                    )
-                layer_steps.append(f"insight_build_layer_{layer_index}")
-            final_steps = (
-                "insight_validate_run",
-                *layer_steps,
-                "insight_stage_compressed_context",
-                "insight_stage_overview_no_spoiler",
-                "insight_stage_overview_story_summary",
-                "insight_stage_timeline",
-                "insight_stage_vectors",
-                "insight_publish_run",
-            )
-        else:
-            final_steps = ("insight_publish_run",)
+        layer_indices: list[int] = []
+        for layer in config["analysis"]["layers"]:
+            if not isinstance(layer, Mapping):
+                raise ValueError("Insight layer must be an object")
+            layer_index = layer.get("index")
+            if (
+                isinstance(layer_index, bool)
+                or not isinstance(layer_index, int)
+                or layer_index < 0
+            ):
+                raise ValueError(
+                    "Insight layer index must be a non-negative integer"
+                )
+            layer_indices.append(layer_index)
+        final_steps = analysis_final_steps(layer_indices)
         spec = JobSpec(
             kind="insight_analysis",
             book_id=book_id,
@@ -147,7 +153,7 @@ class InsightAnalysisCommandService:
                 if len(single_chapter) == 1
                 else None
             ),
-            page_id=targets[0].page_id if len(targets) == 1 else None,
+            page_id=analysis_targets[0].page_id if len(analysis_targets) == 1 else None,
             config=config,
             items=(
                 *(
@@ -156,17 +162,14 @@ class InsightAnalysisCommandService:
                         step_kinds=("insight_analyze_batch",),
                         asset_inputs={"source": target.source_asset_id},
                     )
-                    for target in targets
+                    for target in analysis_targets
                 ),
-                JobItemSpec(
-                    page_id=None,
-                    step_kinds=final_steps,
-                ),
+                *(JobItemSpec(page_id=None, step_kinds=(kind,)) for kind in final_steps),
             ),
             target_display={
                 "book": _required_string(book.get("title"), "book title"),
                 "scope": scope,
-                "pageCount": len(targets),
+                "pageCount": len(analysis_targets),
             },
         )
         target_mappings = tuple(target.mapping() for target in targets)
@@ -180,6 +183,9 @@ class InsightAnalysisCommandService:
                     chapter_ids=normalized["chapterIds"],
                     page_ids=normalized["pageIds"],
                 )
+                current_targets, current_reused = self._reuse_book_results(
+                    connection, book_id, current_targets, scope,
+                )
             except ValueError as exc:
                 raise InsightConflict(
                     "Insight analysis targets changed before job admission"
@@ -189,6 +195,7 @@ class InsightAnalysisCommandService:
                 or _required_string(current_book.get("title"), "book title")
                 != _required_string(book.get("title"), "book title")
                 or current_targets != targets
+                or current_reused != reused
             ):
                 raise InsightConflict(
                     "Insight analysis targets changed before job admission"
@@ -210,6 +217,9 @@ class InsightAnalysisCommandService:
                 config=config,
                 targets=target_mappings,
             )
+            InsightRepository.copy_page_successes(
+                connection, run_id=run_id, scope=scope, copies=reused,
+            )
             connection.execute(
                 update(jobs)
                 .where(jobs.c.id == job_ids[0])
@@ -227,6 +237,44 @@ class InsightAnalysisCommandService:
             transaction_hook=initialize_run,
         )
         return response
+
+    def _reuse_book_results(
+        self, connection: Connection, book_id: str,
+        selected: list[FrozenTarget], scope: str,
+    ) -> tuple[list[FrozenTarget], list[dict[str, Any]]]:
+        """Reuse valid unselected pages so every run summarizes the whole book."""
+        if scope == "full":
+            return selected, []
+        _, all_targets = self._resolve_targets_in_connection(
+            connection, book_id=book_id, scope="full", chapter_ids=(), page_ids=(),
+        )
+        active = {
+            row["page_id_snapshot"]: row
+            for row in connection.execute(
+                select(analysis_page_results)
+                .join(analysis_heads, analysis_heads.c.active_result_id == analysis_page_results.c.id)
+                .where(analysis_heads.c.book_id == book_id)
+            ).mappings()
+        }
+        selected_ids = {target.page_id for target in selected}
+        targets = []
+        copies = []
+        for target in all_targets:
+            if target.page_id in selected_ids:
+                targets.append(target)
+                continue
+            result = active.get(target.page_id)
+            if result is None or result["source_checksum"] != target.source_checksum:
+                continue
+            payload = json.loads(result["payload_json"])
+            payload.update(source_asset_id=target.source_asset_id, page_number_snapshot=target.page_number)
+            copies.append({
+                "page_id": target.page_id, "source_asset_id": target.source_asset_id,
+                "source_checksum": target.source_checksum, "page_number": target.page_number,
+                "payload": payload,
+            })
+            targets.append(target)
+        return targets, copies
 
     def _resolve_targets(
         self,
@@ -332,9 +380,7 @@ class InsightAnalysisCommandService:
                 include = page_id in page_ids
             if include:
                 selected.append(row)
-        if not selected:
-            if scope == "incremental":
-                raise ValueError("没有需要增量分析的页面")
+        if not selected and scope != "incremental":
             raise ValueError("analysis target is empty")
         page_numbers = {
             _required_string(row.get("page_id"), "page id"): index
@@ -440,17 +486,16 @@ def validate_insight_job_requirements(
         capability=VLM_CAPABILITY,
         label="漫画分析 VLM",
     )
-    if scope == "full":
-        _validate_provider_section(
-            config.get("chat"),
-            capability=CHAT_CAPABILITY,
-            label="漫画分析 LLM",
-        )
-        _validate_provider_section(
-            config.get("embedding"),
-            capability=EMBEDDING_CAPABILITY,
-            label="漫画分析 Embedding",
-        )
+    _validate_provider_section(
+        config.get("chat"),
+        capability=CHAT_CAPABILITY,
+        label="漫画分析 LLM",
+    )
+    _validate_provider_section(
+        config.get("embedding"),
+        capability=EMBEDDING_CAPABILITY,
+        label="漫画分析 Embedding",
+    )
 
 
 def _validate_provider_section(

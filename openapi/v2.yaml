@@ -7491,6 +7491,7 @@ components:
           required: [available]
           properties:
             available: {type: boolean}
+            filename: {type: string, minLength: 1}
     StudioMessage:
       type: object
       additionalProperties: false
@@ -7617,6 +7618,7 @@ components:
       additionalProperties: false
       required: [system, messages, lorebookHits]
       properties:
+        source: {type: string, enum: [request, current_config]}
         system: {type: string}
         messages:
           type: array
@@ -7673,6 +7675,9 @@ components:
           minimum: 1
         content:
           type: string
+        attachmentNames:
+          type: object
+          additionalProperties: {type: string, minLength: 1, maxLength: 255}
         assetIds:
           type: array
           uniqueItems: true

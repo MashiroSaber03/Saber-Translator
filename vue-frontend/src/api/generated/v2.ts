@@ -4645,6 +4645,7 @@ export interface components {
         };
         StudioAttachment: components["schemas"]["StudioAsset"] & {
             available: boolean;
+            filename?: string;
         };
         StudioMessage: {
             messageId: components["schemas"]["Uuid"];
@@ -4733,6 +4734,8 @@ export interface components {
             comment: string;
         };
         StudioPromptPreview: {
+            /** @enum {string} */
+            source?: "request" | "current_config";
             system: string;
             messages: components["schemas"]["StudioPromptMessage"][];
             lorebookHits: components["schemas"]["StudioPromptLorebookHit"][];
@@ -4759,6 +4762,9 @@ export interface components {
         StudioMessageCommand: {
             baseSessionRevision: number;
             content?: string;
+            attachmentNames?: {
+                [key: string]: string;
+            };
             assetIds?: components["schemas"]["Uuid"][];
         };
         StudioMessageEditCommand: {

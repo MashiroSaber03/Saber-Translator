@@ -387,7 +387,7 @@ function mapDocument(value: unknown): CharacterStudioDocument {
 function mapAttachment(value: unknown, label: string): CharacterStudioChatAttachment {
   const attachment = exactObject(
     value,
-    ['assetId', 'assetUrl', 'mimeType', 'byteSize', 'width', 'height', 'available'],
+    ['assetId', 'assetUrl', 'mimeType', 'byteSize', 'width', 'height', 'available', 'filename'],
     ['assetId', 'assetUrl', 'mimeType', 'byteSize', 'width', 'height', 'available'],
     label,
   )
@@ -398,7 +398,9 @@ function mapAttachment(value: unknown, label: string): CharacterStudioChatAttach
   booleanValue(attachment.available, `${label}.available`)
   return {
     attachment_id: assetId,
-    filename: assetId,
+    filename: attachment.filename === undefined
+      ? '图片'
+      : nonEmptyString(attachment.filename, `${label}.filename`),
     mime_type: nonEmptyString(attachment.mimeType, `${label}.mimeType`),
     asset_path: nonEmptyString(attachment.assetUrl, `${label}.assetUrl`),
   }
@@ -449,7 +451,6 @@ function mapSession(value: unknown): CharacterStudioChatSession {
   const archived = booleanValue(raw.archived, '角色聊天会话.archived')
   const archivedAt = nullableDate(raw.archivedAt, '角色聊天会话.archivedAt')
   if (archived !== (archivedAt !== null)) throw new Error('角色聊天会话归档状态不一致')
-  nullableString(raw.summaryThroughMessageId, '角色聊天会话.summaryThroughMessageId')
   integerValue(raw.summaryGeneration, '角色聊天会话.summaryGeneration', 0)
   objectValue(raw.runtimeState, '角色聊天会话.runtimeState')
   return {
@@ -462,6 +463,7 @@ function mapSession(value: unknown): CharacterStudioChatSession {
     archived_at: archivedAt,
     greeting_source: objectValue(raw.greetingSource, '角色聊天会话.greetingSource'),
     summary_blocks: mapSummaryBlocks(raw.summaryBlocks, '角色聊天会话.summaryBlocks'),
+    summary_through_message_id: nullableString(raw.summaryThroughMessageId, '角色聊天会话.summaryThroughMessageId'),
     messages: arrayValue(raw.messages, '角色聊天会话.messages').map((message, index) =>
       mapMessage(message, `角色聊天会话.messages[${index}]`)
     ),
@@ -524,11 +526,19 @@ function mapChatState(value: unknown): CharacterStudioChatState {
 function formatPromptPreview(value: unknown): string {
   const preview = exactObject(
     value,
-    ['system', 'messages', 'lorebookHits'],
+    ['system', 'messages', 'lorebookHits', 'source'],
     ['system', 'messages', 'lorebookHits'],
     '角色提示词预览',
   )
   const sections: string[] = []
+  if (preview.source !== undefined) {
+    const source = stringValue(preview.source, '角色提示词预览.source')
+    if (!['request', 'current_config'].includes(source))
+      throw new Error('角色提示词预览.source无效')
+    sections.push(source === 'request'
+      ? '以下为已保存的实际请求提示词。'
+      : '该会话没有可用的请求记录；以下为当前配置预览，不重放状态任务。')
+  }
   const system = stringValue(preview.system, '角色提示词预览.system')
   if (system.trim()) sections.push(`[system]\n${system}`)
   for (const [index, item] of arrayValue(preview.messages, '角色提示词预览.messages').entries()) {
@@ -859,16 +869,14 @@ export async function editCharacterStudioChatMessage(
   sessionId: string,
   baseRevision: number,
   messageId: string,
-  content: string
-): Promise<CharacterStudioChatSession> {
+  content: string,
+  onEvent: (event: CharacterStudioChatStreamEvent) => void,
+  signal?: AbortSignal,
+  onAccepted?: (operationId: string) => void,
+): Promise<void> {
   const accepted = await editV2StudioMessage(messageId, baseRevision, content)
-  const operation = await waitForOperation(accepted.operationId)
-  if (operation.kind !== 'studio_chat' || operation.studioSessionId !== sessionId) {
-    throw new Error('角色聊天编辑操作身份不匹配')
-  }
-  const session = mapSession(await getV2StudioSession(sessionId))
-  if (session.session_id !== sessionId) throw new Error('编辑后的角色聊天会话身份不匹配')
-  return session
+  onAccepted?.(accepted.operationId)
+  await followStudioOperation(accepted.operationId, sessionId, onEvent, signal)
 }
 
 export async function deleteCharacterStudioChatMessage(
@@ -1009,6 +1017,7 @@ export async function streamCharacterStudioChatMessage(payload: {
   signal?: AbortSignal
 }): Promise<void> {
   const assetIds: string[] = []
+  const attachmentNames: Record<string, string> = {}
   for (const attachment of payload.attachments ?? []) {
     payload.signal?.throwIfAborted()
     const label = `角色聊天附件 ${attachment.name}`
@@ -1023,12 +1032,15 @@ export async function streamCharacterStudioChatMessage(payload: {
     integerValue(asset.byteSize, `${label}.byteSize`, 1)
     if (asset.width !== null) integerValue(asset.width, `${label}.width`, 1)
     if (asset.height !== null) integerValue(asset.height, `${label}.height`, 1)
-    assetIds.push(nonEmptyString(asset.assetId, `${label}.assetId`))
+    const assetId = nonEmptyString(asset.assetId, `${label}.assetId`)
+    assetIds.push(assetId)
+    attachmentNames[assetId] = attachment.name
   }
   const accepted = await sendV2StudioMessage(payload.sessionId, {
     baseSessionRevision: payload.baseSessionRevision,
     content: payload.content,
     assetIds,
+    attachmentNames,
   })
   payload.onAccepted?.(accepted.operationId)
   await followStudioOperation(

@@ -157,7 +157,6 @@ def _default_chat_runtime_state() -> dict[str, Any]:
             "message_received": 0,
             "message_sent": 0,
         },
-        "matched_lorebook_ids": [],
     }
 
 
@@ -936,6 +935,29 @@ class StudioRepository:
             messages = self._message_rows(connection, session_id)
             return self._session_dto(connection, session, messages)
 
+    def get_chat_prompt_request(self, session_id: str) -> dict[str, Any] | None:
+        session = self.get_session(session_id)
+        if not session["messages"]:
+            return None
+        message = session["messages"][-1]
+        with self.engine.connect() as connection:
+            query = select(operations.c.request_json).where(
+                operations.c.studio_session_id == session_id,
+                operations.c.kind == "studio_chat",
+            )
+            if message["role"] == "assistant":
+                query = query.where(
+                    func.json_extract(operations.c.result_json, "$.assistantMessageId")
+                    == message["messageId"]
+                )
+            else:
+                query = query.where(
+                    func.json_extract(operations.c.request_json, "$.messages[#-1].messageId")
+                    == message["messageId"]
+                ).order_by(operations.c.created_at.desc())
+            value = connection.execute(query.limit(1)).scalar_one_or_none()
+        return _load_object(value, "operations.request_json") if value is not None else None
+
     def session_book_id(self, session_id: str) -> str:
         with self.engine.connect() as connection:
             value = connection.execute(
@@ -1139,15 +1161,18 @@ class StudioRepository:
         asset_ids: Sequence[str],
         config: Mapping[str, Any],
         idempotency_key: str,
+        attachment_names: Mapping[str, str] | None = None,
     ) -> dict[str, Any]:
         content = content.strip()
         if not content and not asset_ids:
             raise ValueError("message content is required")
+        attachment_names = _attachment_names({} if attachment_names is None else attachment_names, asset_ids)
         now = utcnow()
         canonical_request = {
             "baseRevision": base_revision,
             "content": content,
             "assetIds": list(asset_ids),
+            "attachmentNames": attachment_names,
         }
         request_hash = hashlib.sha256(
             _json(canonical_request).encode("utf-8")
@@ -1191,6 +1216,7 @@ class StudioRepository:
                     variables_snapshot_json=session["variables_json"],
                     generation_meta_json=_json(
                         {
+                            "attachmentNames": attachment_names,
                             "runtimeState": _load_object(
                                 session["runtime_state_json"],
                                 "studio_chat_sessions.runtime_state_json",
@@ -1777,34 +1803,22 @@ class StudioRepository:
                 normalized = content.strip()
                 if not normalized:
                     raise ValueError("message content is required")
-                connection.execute(
-                    update(studio_messages)
-                    .where(studio_messages.c.id == target["id"])
-                    .values(content=normalized, updated_at=now)
-                )
-            connection.execute(
-                delete(studio_messages).where(
-                    studio_messages.c.session_id == session_id,
-                    studio_messages.c.ordinal > target["ordinal"],
-                )
-            )
+            retained_messages = [
+                row for row in self._message_rows(connection, session_id)
+                if int(row["ordinal"]) <= int(target["ordinal"])
+            ]
             restored_variables, restored_runtime = (
-                self._chat_state_from_messages(connection, session_id)
+                self._chat_state_from_messages(
+                    connection, session_id, messages=retained_messages,
+                )
             )
             committed_revision = base_revision + 1
             committed_generation = int(session["generation"]) + 1
             session_values = {
                 "revision": committed_revision,
                 "generation": committed_generation,
-                "variables_json": _json(restored_variables),
-                "runtime_state_json": _json(restored_runtime),
                 "updated_at": now,
             }
-            if clear_summary:
-                session_values.update(
-                    summary_blocks_json="[]",
-                    summary_through_message_id=None,
-                )
             connection.execute(
                 update(studio_chat_sessions)
                 .where(
@@ -1819,8 +1833,10 @@ class StudioRepository:
             )
             message_dtos = self._messages_dto(
                 connection,
-                self._message_rows(connection, session_id),
+                retained_messages,
             )
+            if content is not None:
+                message_dtos[-1]["content"] = normalized
             summary_through_message_id = (
                 None
                 if clear_summary
@@ -1834,6 +1850,7 @@ class StudioRepository:
                 base_revision=committed_revision,
                 base_generation=committed_generation,
                 request_payload={
+                    "rewriteMessageId": str(target["id"]),
                     "document": from_storage(document_row),
                     "messages": message_dtos,
                     "variables": restored_variables,
@@ -1928,9 +1945,11 @@ class StudioRepository:
                     row[field] == generated_values[field]
                     for field in content_fields
                 ):
-                    raise ValueError(
-                        "Studio generation returned no document changes"
-                    )
+                    result.update({
+                        "documentId": document_id,
+                        "documentRevision": int(row["revision"]),
+                    })
+                    return
                 storage_values["last_diagnostics_json"] = None
                 storage_values["last_validated_at"] = None
             revision = int(row["revision"]) + 1
@@ -1994,6 +2013,29 @@ class StudioRepository:
                 raise OperationFenced(
                     "studio session changed before assistant publish"
                 )
+            request = _load_object(operation["request_json"], "operations.request_json")
+            rewrite_id = request.get("rewriteMessageId")
+            if rewrite_id is not None:
+                target = connection.execute(
+                    select(studio_messages).where(
+                        studio_messages.c.id == rewrite_id,
+                        studio_messages.c.session_id == session_id,
+                        studio_messages.c.role == "user",
+                    )
+                ).mappings().one_or_none()
+                if target is None:
+                    raise OperationFenced("studio rewrite target no longer exists")
+                connection.execute(
+                    delete(studio_messages).where(
+                        studio_messages.c.session_id == session_id,
+                        studio_messages.c.ordinal > target["ordinal"],
+                    )
+                )
+                connection.execute(
+                    update(studio_messages)
+                    .where(studio_messages.c.id == rewrite_id)
+                    .values(content=request["messages"][-1]["content"], updated_at=utcnow())
+                )
             ordinal = int(
                 connection.execute(
                     select(func.coalesce(func.max(studio_messages.c.ordinal), 0))
@@ -2032,6 +2074,8 @@ class StudioRepository:
                     revision=revision,
                     variables_json=_json(dict(variables)),
                     runtime_state_json=_json(dict(runtime_state)),
+                    summary_blocks_json=_json(request["summaryBlocks"]),
+                    summary_through_message_id=request["summaryThroughMessageId"],
                     updated_at=utcnow(),
                 )
             )
@@ -2492,9 +2536,12 @@ class StudioRepository:
     def _chat_state_from_messages(
         connection: Connection,
         session_id: str,
+        *,
+        messages: Sequence[Mapping[str, Any]] | None = None,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Restore the session state represented by the retained linear chain."""
-        messages = StudioRepository._message_rows(connection, session_id)
+        if messages is None:
+            messages = StudioRepository._message_rows(connection, session_id)
         if not messages:
             return {}, _default_chat_runtime_state()
         last_message = messages[-1]
@@ -2589,6 +2636,15 @@ class StudioRepository:
                         "available": asset["integrity_status"] == "ok",
                     }
                 )
+        for message in messages:
+            message_id = str(message["id"])
+            meta = _load_object(message["generation_meta_json"], "studio_messages.generation_meta_json")
+            names = _attachment_names(
+                meta.get("attachmentNames", {}),
+                [item["assetId"] for item in attachments[message_id]],
+            )
+            for index, attachment in enumerate(attachments[message_id], start=1):
+                attachment["filename"] = names.get(attachment["assetId"], f"图片 {index}")
         return [
             self._message_dto(
                 message,
@@ -2733,6 +2789,17 @@ class StudioRepository:
                 expires_at=now + timedelta(days=7),
             )
         )
+
+
+def _attachment_names(value: object, asset_ids: Sequence[str]) -> dict[str, str]:
+    if not isinstance(value, Mapping) or not set(value).issubset(asset_ids):
+        raise ValueError("attachmentNames must refer to the message assets")
+    result: dict[str, str] = {}
+    for asset_id, name in value.items():
+        if not isinstance(name, str) or not name.strip() or len(name) > 255 or "\x00" in name:
+            raise ValueError("attachment filename must be a non-empty string of up to 255 characters")
+        result[str(asset_id)] = name
+    return result
 
 
 def _credential_references(value: Mapping[str, Any]) -> dict[str, str]:

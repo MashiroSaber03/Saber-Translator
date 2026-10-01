@@ -340,6 +340,8 @@ describe('character studio v2 api', () => {
         ...chatState,
         activeSession: {
           ...session,
+          summaryThroughMessageId: 'msg-system',
+          summaryBlocks: [{ summary: '已导入上下文' }],
           messages: [
             {
               messageId: 'msg-system',
@@ -367,6 +369,7 @@ describe('character studio v2 api', () => {
       archived_sessions: [],
     })
     expect(importedState.active_session?.messages[0]?.role).toBe('system')
+    expect(importedState.active_session?.summary_through_message_id).toBe('msg-system')
   })
 
   it('exports documents and chat sessions through v2 download routes', async () => {
@@ -536,6 +539,7 @@ describe('character studio v2 api', () => {
         baseSessionRevision: 4,
         content: 'hello',
         assetIds: [],
+        attachmentNames: {},
       },
       { headers: { 'Idempotency-Key': expect.any(String) } }
     )

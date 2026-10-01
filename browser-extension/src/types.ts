@@ -107,6 +107,8 @@ export interface DomDetectionResult {
   selector: string
 }
 
+export type DomDetector = (payload: Record<string, unknown>) => Promise<DomDetectionResult>
+
 export interface UploadSource {
   kind: 'url' | 'data-url'
   value: string
@@ -163,7 +165,6 @@ export type BackgroundRequest =
       sessionId: string
       payload: BrowserSessionImportCommand & { originalsOnly?: boolean }
     }
-  | { type: 'dom-detection'; payload: Record<string, unknown> }
 
 export interface ContextTranslateMessage {
   type: 'context-translate-image'

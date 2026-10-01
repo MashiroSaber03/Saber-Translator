@@ -478,7 +478,7 @@ function addRound() {
       execution: {
         useStream: true,
         rpmLimit: 7,
-        transportRetries: 1,
+        transportRetries: 3,
         businessRetries: DEFAULT_HQ_TRANSLATION_MAX_RETRIES,
       },
     },

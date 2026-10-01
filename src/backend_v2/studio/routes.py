@@ -411,7 +411,7 @@ def create_studio_blueprint(
     @blueprint.post("/chat/sessions/<session_id>/messages")
     def send_message(session_id: str):
         body = _json_body(
-            allowed_keys={"baseSessionRevision", "content", "assetIds"}
+            allowed_keys={"baseSessionRevision", "content", "assetIds", "attachmentNames"}
         )
         asset_ids = body.get("assetIds", [])
         if not isinstance(asset_ids, list) or not all(
@@ -426,6 +426,7 @@ def create_studio_blueprint(
             base_revision=_revision(body, "baseSessionRevision"),
             content=content,
             asset_ids=asset_ids,
+            attachment_names=body.get("attachmentNames", {}),
             config=settings.resolve_insight(
                 book_id=repository.session_book_id(session_id),
                 scope="full",

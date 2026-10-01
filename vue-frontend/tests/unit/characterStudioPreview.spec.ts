@@ -137,6 +137,7 @@ const sessionStub: CharacterStudioChatSession = {
   archived_at: null,
   greeting_source: { type: 'first_message', index: 0 },
   summary_blocks: [],
+  summary_through_message_id: null,
   messages: [
     {
       message_id: 'msg-open',
@@ -238,7 +239,7 @@ function mountPreview(
       activeTab: 'chat',
       chatLoading: false,
       chatStreaming: false,
-      chatMutating: false,
+      chatBusy: false,
       chatSummarizing: false,
       chatExporting: false,
       chatImporting: false,
@@ -483,6 +484,45 @@ describe('CharacterStudioPreview workspace', () => {
     expect(source).not.toContain('action-primary')
     expect(source).not.toMatch(/<UiButton\b(?=[^>]*variant="toolbar")/)
     expect(source).not.toMatch(/\.(?:message-actions|editor-actions)\s*\{[\s\S]*--ui-button-/)
+  })
+
+  it('disables conflicting chat controls using the shared busy state and restores them when idle', async () => {
+    const wrapper = mountPreview({ session: conversationSessionStub, chatBusy: true })
+    await wrapper.get('textarea[aria-label="聊天消息内容"]').setValue('等待当前操作完成')
+    const toolbarButtons = wrapper.findAll('.session-toolbar__actions button')
+    const messageButtons = wrapper.findAll('.studio-message-list__actions button')
+    expect(toolbarButtons).toHaveLength(6)
+    expect(messageButtons.length).toBeGreaterThan(0)
+    expect([...toolbarButtons, ...messageButtons].every(button => (button.element as HTMLButtonElement).disabled)).toBe(true)
+    expect((wrapper.get('[data-testid="chat-upload-trigger"]').element as HTMLButtonElement).disabled).toBe(true)
+    expect((wrapper.get('[data-testid="chat-send-trigger"]').element as HTMLButtonElement).disabled).toBe(true)
+    await wrapper.setProps({ chatBusy: false })
+    expect([...toolbarButtons, ...messageButtons].every(button => !(button.element as HTMLButtonElement).disabled)).toBe(true)
+    expect((wrapper.get('[data-testid="chat-send-trigger"]').element as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('disables archived session controls if the chat becomes busy while the list is open', async () => {
+    const wrapper = mountPreview()
+    await wrapper.get('[data-testid="session-list-trigger"]').trigger('click')
+    await wrapper.setProps({ chatBusy: true, chatSummarizing: true })
+    const panel = wrapper.get('#studio-session-list-panel')
+    const archivedButtons = panel.findAll('button').slice(1)
+    expect(archivedButtons.length).toBeGreaterThan(0)
+    expect(archivedButtons.every(button => (button.element as HTMLButtonElement).disabled)).toBe(true)
+  })
+
+  it.each([
+    { name: 'missing session', session: null, enabled: false },
+    { name: 'empty session', session: { ...sessionStub, messages: [] }, enabled: false },
+    { name: 'new greeting', session: sessionStub, enabled: true },
+    { name: 'fully summarized session', session: { ...conversationSessionStub, summary_through_message_id: conversationSessionStub.messages.at(-1)!.message_id }, enabled: false },
+    { name: 'new messages after a summary', session: { ...conversationSessionStub, summary_through_message_id: 'msg-open' }, enabled: true },
+  ])('only enables manual summary for pending messages: $name', async ({ session, enabled }) => {
+    const wrapper = mountPreview({ session })
+    const button = wrapper.findAll('button').find(item => item.text() === '手动总结')!
+    expect((button.element as HTMLButtonElement).disabled).toBe(!enabled)
+    await button.trigger('click')
+    expect(wrapper.emitted('summarize-session')?.length || 0).toBe(enabled ? 1 : 0)
   })
 
   it('renders chat / assistant / runtime tabs through public tab controls', () => {
@@ -833,6 +873,7 @@ describe('CharacterStudioPreview workspace', () => {
 
   it('offers a backend abort action while a chat reply is still being generated', async () => {
     const wrapper = mountPreview({
+      chatBusy: true,
       chatStreaming: true,
       chatAbortable: true,
     })
@@ -938,6 +979,7 @@ describe('CharacterStudioPreview workspace', () => {
     expect((input.element as HTMLTextAreaElement).value).toBe('等待后端接收')
     await wrapper.setProps({
       acceptedChatSubmissionCount: 1,
+      chatBusy: true,
       chatStreaming: true,
       chatAbortable: true,
     })
@@ -967,8 +1009,8 @@ describe('CharacterStudioPreview workspace', () => {
     const input = wrapper.get('textarea.studio-chat-composer__input')
     await input.setValue('上传失败后保留')
     await wrapper.get('[data-testid="chat-send-trigger"]').trigger('click')
-    await wrapper.setProps({ chatStreaming: true, chatAbortable: false })
-    await wrapper.setProps({ chatStreaming: false, chatAbortable: false })
+    await wrapper.setProps({ chatBusy: true, chatStreaming: true, chatAbortable: false })
+    await wrapper.setProps({ chatBusy: false, chatStreaming: false, chatAbortable: false })
     await flushPromises()
 
     expect((input.element as HTMLTextAreaElement).value).toBe('上传失败后保留')
@@ -1094,6 +1136,88 @@ describe('CharacterStudioPreview workspace', () => {
     expect(assistantCard!.text()).toContain('重新生成')
     expect(assistantCard!.text()).toContain('从这里回退')
     expect(assistantCard!.text()).not.toContain('编辑')
+  })
+
+  it.each(['send', 'regenerate'] as const)(
+    'keeps %s bubbles mounted when streamed messages receive their persisted IDs',
+    async mode => {
+      const wrapper = mountPreview({
+        session: mode === 'send' ? sessionStub : conversationSessionStub,
+      })
+      const optimisticSession: CharacterStudioChatSession = {
+        ...conversationSessionStub,
+        messages: conversationSessionStub.messages.map((message, index) => ({
+          ...message,
+          message_id: index === 2 || (mode === 'send' && index === 1)
+            ? `temp-msg-${index}`
+            : message.message_id,
+          content: index === 2 ? '' : message.content,
+        })),
+      }
+      await wrapper.setProps({ session: optimisticSession, chatBusy: true, chatStreaming: true })
+      const bubbles = wrapper.findAll('[data-testid="studio-chat-message"]').map(item => item.element)
+
+      await wrapper.setProps({
+        session: {
+          ...optimisticSession,
+          messages: optimisticSession.messages.map((message, index) => ({
+            ...message,
+            content: index === 2 ? '流式回复内容' : message.content,
+          })),
+        },
+      })
+      expect(wrapper.findAll('[data-testid="studio-chat-message"]').at(-1)!.text()).toContain('流式回复内容')
+
+      const persistedSession: CharacterStudioChatSession = {
+        ...conversationSessionStub,
+        messages: conversationSessionStub.messages.map((message, index) => ({
+          ...message,
+          message_id: index === 2 ? 'msg-persisted-reply' : message.message_id,
+          content: index === 2 ? '后端处理后的最终回复' : message.content,
+        })),
+      }
+      await wrapper.setProps({ session: persistedSession, chatBusy: false, chatStreaming: false })
+      const completedBubbles = wrapper.findAll('[data-testid="studio-chat-message"]')
+      completedBubbles.forEach((bubble, index) => expect(bubble.element).toBe(bubbles[index]))
+      expect(completedBubbles[2]!.text()).toContain('后端处理后的最终回复')
+
+      await completedBubbles[2]!.findAll('button').find(button => button.text() === '重新生成')!.trigger('click')
+      expect(wrapper.emitted('regenerate-message')).toEqual([['msg-persisted-reply']])
+      await completedBubbles[1]!.findAll('button').find(button => button.text() === '编辑')!.trigger('click')
+      await completedBubbles[1]!.get('textarea').setValue('修改后的问题')
+      await completedBubbles[1]!.findAll('button').find(button => button.text() === '保存并重新生成')!.trigger('click')
+      expect(wrapper.emitted('edit-message')).toEqual([[{ messageId: 'msg-user-1', content: '修改后的问题' }]])
+    },
+  )
+
+  it('removes rolled-back bubbles and resets the message editor when switching sessions', async () => {
+    const wrapper = mountPreview({ session: conversationSessionStub })
+    const originalBubbles = wrapper.findAll('[data-testid="studio-chat-message"]')
+    await wrapper.setProps({ session: sessionStub })
+    expect(wrapper.findAll('[data-testid="studio-chat-message"]')).toHaveLength(1)
+    expect(wrapper.find('[data-testid="studio-chat-message"]').element).toBe(originalBubbles[0]!.element)
+
+    await wrapper.setProps({ session: conversationSessionStub })
+    const restoredBubbles = wrapper.findAll('[data-testid="studio-chat-message"]')
+    expect(restoredBubbles[2]!.element).not.toBe(originalBubbles[2]!.element)
+    await restoredBubbles[1]!.findAll('button').find(button => button.text() === '编辑')!.trigger('click')
+    expect(wrapper.find('textarea[aria-label="编辑聊天消息内容"]').exists()).toBe(true)
+
+    await wrapper.setProps({ session: { ...conversationSessionStub, session_id: 'chat-other' } })
+    expect(wrapper.find('textarea[aria-label="编辑聊天消息内容"]').exists()).toBe(false)
+    wrapper.findAll('[data-testid="studio-chat-message"]').forEach((bubble, index) => {
+      expect(bubble.element).not.toBe(restoredBubbles[index]!.element)
+    })
+  })
+
+  it('keeps the draft during same-session updates and clears it when switching sessions', async () => {
+    const wrapper = mountPreview({ session: conversationSessionStub })
+    const draft = () => wrapper.get('textarea[aria-label="聊天消息内容"]')
+    await draft().setValue('仅发送给当前会话')
+    await wrapper.setProps({ session: { ...conversationSessionStub, revision: conversationSessionStub.revision + 1 } })
+    expect((draft().element as HTMLTextAreaElement).value).toBe('仅发送给当前会话')
+    await wrapper.setProps({ session: { ...conversationSessionStub, session_id: 'chat-other' } })
+    expect((draft().element as HTMLTextAreaElement).value).toBe('')
   })
 
   it('opens greeting picker modal and shows greeting content cards', async () => {
@@ -1258,7 +1382,7 @@ describe('CharacterStudioPreview workspace', () => {
     await wrapper.get('[data-testid="prompt-preview-trigger"]').trigger('click')
     await flushPromises()
 
-    expect(document.body.textContent).toContain('本轮提示词预览')
+    expect(document.body.textContent).toContain('提示词预览')
     expect(document.body.textContent).toContain('请先发送至少一条消息后再查看本轮提示词')
   })
 

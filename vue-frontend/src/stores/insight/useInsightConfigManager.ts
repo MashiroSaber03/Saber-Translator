@@ -69,8 +69,8 @@ export function useInsightConfigManager(providerConfigs: Ref<InsightProviderDraf
         execution: {
           useStream: true,
           rpmLimit: 0,
-          transportRetries: 1,
-          businessRetries: 0,
+          transportRetries: 3,
+          businessRetries: 3,
         },
       },
       imageMaxSize: 0,
@@ -100,8 +100,8 @@ export function useInsightConfigManager(providerConfigs: Ref<InsightProviderDraf
         execution: {
           useStream: true,
           rpmLimit: 0,
-          transportRetries: 1,
-          businessRetries: 0,
+          transportRetries: 3,
+          businessRetries: 3,
         },
       },
     })
@@ -119,8 +119,8 @@ export function useInsightConfigManager(providerConfigs: Ref<InsightProviderDraf
       model: '',
       baseUrl: '',
       rpmLimit: 0,
-      transportRetries: 1,
-      businessRetries: 0,
+      transportRetries: 3,
+      businessRetries: 3,
       timeoutSeconds: 0,
     })
   )
@@ -133,8 +133,8 @@ export function useInsightConfigManager(providerConfigs: Ref<InsightProviderDraf
       apiKey: '',
       model: '',
       baseUrl: '',
-      transportRetries: 1,
-      businessRetries: 0,
+      transportRetries: 3,
+      businessRetries: 3,
       timeoutSeconds: 0,
     })
   )
@@ -147,8 +147,8 @@ export function useInsightConfigManager(providerConfigs: Ref<InsightProviderDraf
       apiKey: '',
       model: getProviderDefaultModel(provider, 'imageGen'),
       baseUrl: getProviderBaseUrl(provider, 'imageGen'),
-      transportRetries: 1,
-      businessRetries: 0,
+      transportRetries: 3,
+      businessRetries: 3,
       timeoutSeconds: 0,
     })
   )

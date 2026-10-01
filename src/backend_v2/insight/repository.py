@@ -39,6 +39,8 @@ from src.backend_v2.storage.schema import (
     chapters,
     idempotency_records,
     jobs,
+    job_steps,
+    job_items,
     note_citations,
     notes,
     page_assets,
@@ -776,12 +778,12 @@ class InsightRepository:
         self,
         *,
         run_id: str,
-        before_ordinal: int,
+        before_page_number: int,
         pages_per_batch: int,
         batch_count: int,
         grouping: str,
-        context_chapter_id: str | None = None,
     ) -> list[list[dict[str, Any]]]:
+        """Read valid preceding pages from the run's whole-book snapshot for every scope."""
         if batch_count == 0:
             return []
         batches: dict[int, list[tuple[int, dict[str, Any]]]] = {}
@@ -793,12 +795,10 @@ class InsightRepository:
             )
             conditions = [
                 analysis_run_targets.c.run_id == run_id,
-                analysis_run_targets.c.ordinal < before_ordinal,
+                analysis_run_targets.c.page_number_snapshot < before_page_number,
+                analysis_run_targets.c.status == "completed",
+                analysis_page_results.c.source_checksum == assets.c.checksum,
             ]
-            if context_chapter_id is not None:
-                conditions.append(
-                    analysis_run_targets.c.chapter_id == context_chapter_id
-                )
             rows = connection.execute(
                 select(
                     analysis_run_targets.c.ordinal,
@@ -817,6 +817,12 @@ class InsightRepository:
                         == analysis_run_targets.c.page_id_snapshot
                     ),
                 )
+                .join(
+                    page_assets,
+                    (page_assets.c.page_id == analysis_run_targets.c.page_id)
+                    & (page_assets.c.role == "source"),
+                )
+                .join(assets, assets.c.id == page_assets.c.asset_id)
                 .where(*conditions)
                 .order_by(analysis_run_targets.c.ordinal.desc())
             ).mappings()
@@ -851,110 +857,6 @@ class InsightRepository:
             for batch_index in sorted(batches)
         ]
 
-    def previous_active_batches(
-        self,
-        *,
-        book_id: str,
-        before_page_number: int,
-        pages_per_batch: int,
-        batch_count: int,
-        align_to_chapter: bool,
-    ) -> list[list[dict[str, Any]]]:
-        """Rebuild prior published batches for an incremental run's context."""
-
-        if batch_count == 0:
-            return []
-        source_pointer = page_assets.alias("insight_context_source")
-        page_head = analysis_heads.alias("insight_context_head")
-        active_result = analysis_page_results.alias("insight_context_result")
-        with self.engine.connect() as connection:
-            rows = list(
-                connection.execute(
-                    select(
-                        pages.c.chapter_id,
-                        assets.c.checksum.label("current_source_checksum"),
-                        active_result.c.source_checksum.label(
-                            "analysis_source_checksum"
-                        ),
-                        active_result.c.status.label("analysis_status"),
-                        active_result.c.payload_json,
-                    )
-                    .join(chapters, chapters.c.id == pages.c.chapter_id)
-                    .join(
-                        source_pointer,
-                        (source_pointer.c.page_id == pages.c.id)
-                        & (source_pointer.c.role == "source"),
-                    )
-                    .join(assets, assets.c.id == source_pointer.c.asset_id)
-                    .join(
-                        page_head,
-                        page_head.c.page_id == pages.c.id,
-                        isouter=True,
-                    )
-                    .join(
-                        active_result,
-                        active_result.c.id == page_head.c.active_result_id,
-                        isouter=True,
-                    )
-                    .where(chapters.c.book_id == book_id)
-                    .order_by(chapters.c.ordinal, pages.c.ordinal)
-                ).mappings()
-            )
-
-        numbered = [
-            {**dict(row), "page_number_snapshot": page_number}
-            for page_number, row in enumerate(rows, start=1)
-        ]
-        grouped: list[list[dict[str, Any]]] = []
-        if align_to_chapter:
-            chapter_rows: dict[str, list[dict[str, Any]]] = {}
-            chapter_order: list[str] = []
-            for row in numbered:
-                chapter_id = _required_string(
-                    row["chapter_id"],
-                    "active analysis chapter id",
-                )
-                if chapter_id not in chapter_rows:
-                    chapter_order.append(chapter_id)
-                    chapter_rows[chapter_id] = []
-                chapter_rows[chapter_id].append(row)
-            for chapter_id in chapter_order:
-                values = chapter_rows[chapter_id]
-                grouped.extend(
-                    values[offset : offset + pages_per_batch]
-                    for offset in range(0, len(values), pages_per_batch)
-                )
-        else:
-            grouped = [
-                numbered[offset : offset + pages_per_batch]
-                for offset in range(0, len(numbered), pages_per_batch)
-            ]
-
-        valid: list[list[dict[str, Any]]] = []
-        for batch in grouped:
-            if not batch or int(batch[-1]["page_number_snapshot"]) >= before_page_number:
-                continue
-            payloads: list[dict[str, Any]] = []
-            for row in batch:
-                if (
-                    row["analysis_status"] != "published"
-                    or row["analysis_source_checksum"]
-                    != row["current_source_checksum"]
-                    or row["payload_json"] is None
-                ):
-                    payloads = []
-                    break
-                payload = _json_object(
-                    row["payload_json"],
-                    "active analysis page payload",
-                )
-                payload["page_number_snapshot"] = int(
-                    row["page_number_snapshot"]
-                )
-                payloads.append(payload)
-            if payloads:
-                valid.append(payloads)
-        return valid[-batch_count:]
 
     @staticmethod
     def publish_page_success(
@@ -1000,7 +902,7 @@ class InsightRepository:
             "page_id_snapshot": page_id,
             "page_number_snapshot": page_number,
             "payload_json": _json(canonical_payload),
-            "status": "staging" if scope == "full" else "published",
+            "status": "published",
             "updated_at": now,
         }
         if existing is None:
@@ -1029,26 +931,14 @@ class InsightRepository:
         if target_changed.rowcount != 1:
             raise InsightConflict("analysis run target is missing")
         InsightRepository._refresh_run_counts(connection, run_id, now)
-        if scope != "full":
-            book_id = _required_string(
-                connection.execute(
-                select(analysis_runs.c.book_id).where(analysis_runs.c.id == run_id)
-                ).scalar_one(),
-                "analysis run book id",
-            )
-            InsightRepository._upsert_page_head(
-                connection,
-                book_id=book_id,
-                page_id=page_id,
-                run_id=run_id,
-                result_id=result_id,
-                now=now,
-            )
-            mark_book_insight_derived_stale(
-                connection,
-                book_id=book_id,
-                now=now,
-            )
+        book_id = connection.execute(
+            select(analysis_runs.c.book_id).where(analysis_runs.c.id == run_id)
+        ).scalar_one()
+        InsightRepository._upsert_page_head(
+            connection, book_id=book_id, page_id=page_id,
+            run_id=run_id, result_id=result_id, now=now,
+        )
+        mark_book_insight_derived_stale(connection, book_id=book_id, now=now)
         return result_id
 
     @staticmethod
@@ -1123,7 +1013,7 @@ class InsightRepository:
                     "page_id_snapshot": page_id,
                     "page_number_snapshot": page_number,
                     "payload_json": _json(payload),
-                    "status": "staging" if scope == "full" else "published",
+                    "status": "staging",
                     "created_at": now,
                     "updated_at": now,
                 }
@@ -1141,29 +1031,6 @@ class InsightRepository:
         if targets_changed.rowcount != len(page_ids):
             raise InsightConflict("analysis retry targets are incomplete")
         InsightRepository._refresh_run_counts(connection, run_id, now)
-        if scope == "full":
-            return
-
-        book_id = _required_string(
-            connection.execute(
-                select(analysis_runs.c.book_id).where(analysis_runs.c.id == run_id)
-            ).scalar_one(),
-            "analysis run book id",
-        )
-        for page_id, result_id in result_ids_by_page.items():
-            InsightRepository._upsert_page_head(
-                connection,
-                book_id=book_id,
-                page_id=page_id,
-                run_id=run_id,
-                result_id=result_id,
-                now=now,
-            )
-        mark_book_insight_derived_stale(
-            connection,
-            book_id=book_id,
-            now=now,
-        )
 
     @staticmethod
     def publish_page_failure(
@@ -1433,252 +1300,240 @@ class InsightRepository:
         if success_count == 0:
             raise InsightConflict("analysis run has no publishable page results")
 
-        final_status = "completed_with_errors" if failed_count else "completed"
-        if scope == "full":
-            config = _json_object(run["config_json"], "analysis run config")
-            analysis_config = config.get("analysis")
-            if not isinstance(analysis_config, Mapping):
-                raise InsightConflict(
-                    "stored analysis run config is invalid"
-                )
-            layers = analysis_config.get("layers")
-            if not isinstance(layers, list):
+        postprocess_failed = connection.execute(
+            select(job_steps.c.id)
+            .join(job_items, job_items.c.id == job_steps.c.job_item_id)
+            .where(
+                job_items.c.job_id == run["job_id"],
+                job_items.c.page_id.is_(None),
+                job_steps.c.status.in_(("failed", "skipped")),
+            ).limit(1)
+        ).scalar_one_or_none() is not None
+        final_status = (
+            "completed_with_errors" if failed_count or postprocess_failed else "completed"
+        )
+        config = _json_object(run["config_json"], "analysis run config")
+        analysis_config = config.get("analysis")
+        if not isinstance(analysis_config, Mapping):
+            raise InsightConflict(
+                "stored analysis run config is invalid"
+            )
+        layers = analysis_config.get("layers")
+        if not isinstance(layers, list):
+            raise InsightConflict(
+                "stored analysis layer config is invalid"
+            )
+        expected_layers: dict[int, str] = {}
+        for index, layer in enumerate(layers, start=1):
+            if not isinstance(layer, Mapping):
                 raise InsightConflict(
                     "stored analysis layer config is invalid"
                 )
-            expected_layers: dict[int, str] = {}
-            for index, layer in enumerate(layers, start=1):
-                if not isinstance(layer, Mapping):
-                    raise InsightConflict(
-                        "stored analysis layer config is invalid"
-                    )
-                layer_index = _required_integer(
-                    layer.get("index"),
-                    f"analysis layer config {index} index",
-                )
-                if layer_index != index - 1:
-                    raise InsightConflict(
-                        "stored analysis layer order is invalid"
-                    )
-                layer_name = _required_string(
-                    layer.get("name"),
-                    f"analysis layer config {index} name",
-                )
-                if not layer_name.strip():
-                    raise InsightConflict(
-                        "stored analysis layer name is blank"
-                    )
-                if layer_index in expected_layers:
-                    raise InsightConflict(
-                        "stored analysis layer indices are duplicated"
-                    )
-                expected_layers[layer_index] = layer_name
-            staged_layer_rows = list(
-                connection.execute(
-                    select(analysis_layer_results)
-                    .where(analysis_layer_results.c.run_id == run_id)
-                    .order_by(
-                        analysis_layer_results.c.layer_index,
-                        analysis_layer_results.c.unit_index,
-                    )
-                ).mappings()
+            layer_index = _required_integer(
+                layer.get("index"),
+                f"analysis layer config {index} index",
             )
-            layer_units: dict[int, set[int]] = {}
-            layer_zero_event_count = 0
-            for row in staged_layer_rows:
-                result_id = _required_string(
-                    row["id"],
-                    "analysis layer result id",
+            if layer_index != index - 1:
+                raise InsightConflict(
+                    "stored analysis layer order is invalid"
                 )
-                if _required_string(
+            layer_name = _required_string(
+                layer.get("name"),
+                f"analysis layer config {index} name",
+            )
+            if not layer_name.strip():
+                raise InsightConflict(
+                    "stored analysis layer name is blank"
+                )
+            if layer_index in expected_layers:
+                raise InsightConflict(
+                    "stored analysis layer indices are duplicated"
+                )
+            expected_layers[layer_index] = layer_name
+        staged_layer_rows = list(
+            connection.execute(
+                select(analysis_layer_results)
+                .where(analysis_layer_results.c.run_id == run_id)
+                .order_by(
+                    analysis_layer_results.c.layer_index,
+                    analysis_layer_results.c.unit_index,
+                )
+            ).mappings()
+        )
+        layer_units: dict[int, set[int]] = {}
+        layer_zero_event_count = 0
+        for row in staged_layer_rows:
+            result_id = _required_string(
+                row["id"],
+                "analysis layer result id",
+            )
+            if _required_string(
+                row["run_id"],
+                "analysis layer result run id",
+            ) != run_id or _required_string(
+                row["status"],
+                "analysis layer result status",
+            ) != "staging":
+                raise InsightConflict(
+                    "full analysis layer result is not staging"
+                )
+            layer_index = _required_integer(
+                row["layer_index"],
+                "analysis layer result index",
+            )
+            unit_index = _required_integer(
+                row["unit_index"],
+                "analysis layer result unit index",
+            )
+            expected_name = expected_layers.get(layer_index)
+            if expected_name is None or _required_string(
+                row["layer_name"],
+                "analysis layer result name",
+            ) != expected_name:
+                raise InsightConflict(
+                    "analysis layer result identity is invalid"
+                )
+            units = layer_units.setdefault(layer_index, set())
+            if unit_index in units:
+                raise InsightConflict(
+                    "analysis layer result units are duplicated"
+                )
+            units.add(unit_index)
+            page_range = _json_object(
+                row["page_range_snapshot_json"],
+                "analysis layer page range",
+            )
+            if set(page_range) != {"start", "end"}:
+                raise InsightConflict(
+                    "analysis layer page range is invalid"
+                )
+            range_start = _required_integer(
+                page_range["start"],
+                "analysis layer page range start",
+                minimum=1,
+            )
+            _required_integer(
+                page_range["end"],
+                "analysis layer page range end",
+                minimum=range_start,
+            )
+            content = _json_object(
+                row["content_json"],
+                "analysis layer content",
+            )
+            if not contains_nonempty_text(content):
+                raise InsightConflict("analysis layer content is empty")
+            if layer_index == 0:
+                key_events = content.get("key_events", [])
+                if not isinstance(key_events, list):
+                    raise InsightConflict(
+                        "analysis layer key_events must be an array"
+                    )
+                layer_zero_event_count += len(key_events)
+            _required_sha256(
+                row["input_fingerprint"],
+                f"analysis layer result {result_id} input fingerprint",
+            )
+        staged_artifacts = list(
+            connection.execute(
+                select(analysis_artifacts).where(
+                    analysis_artifacts.c.run_id == run_id,
+                )
+            ).mappings()
+        )
+        staged_artifact_keys: set[tuple[str, str]] = set()
+        dependency_fingerprints: set[str] = set()
+        for row in staged_artifacts:
+            artifact_id = _required_string(
+                row["id"],
+                "analysis artifact id",
+            )
+            key = (
+                _required_string(row["kind"], "analysis artifact kind"),
+                _required_string(
+                    row["template"],
+                    "analysis artifact template",
+                ),
+            )
+            if key in staged_artifact_keys:
+                raise InsightConflict(
+                    "staged analysis artifacts are duplicated"
+                )
+            staged_artifact_keys.add(key)
+            if (
+                _required_string(
+                    row["book_id"],
+                    "analysis artifact book id",
+                )
+                != book_id
+                or _required_string(
                     row["run_id"],
-                    "analysis layer result run id",
-                ) != run_id or _required_string(
+                    "analysis artifact run id",
+                )
+                != run_id
+                or _required_string(
                     row["status"],
-                    "analysis layer result status",
-                ) != "staging":
-                    raise InsightConflict(
-                        "full analysis layer result is not staging"
-                    )
-                layer_index = _required_integer(
-                    row["layer_index"],
-                    "analysis layer result index",
+                    "analysis artifact status",
                 )
-                unit_index = _required_integer(
-                    row["unit_index"],
-                    "analysis layer result unit index",
+                != "building"
+                or _required_boolean(
+                    row["is_active"],
+                    "analysis artifact active flag",
                 )
-                expected_name = expected_layers.get(layer_index)
-                if expected_name is None or _required_string(
-                    row["layer_name"],
-                    "analysis layer result name",
-                ) != expected_name:
-                    raise InsightConflict(
-                        "analysis layer result identity is invalid"
-                    )
-                units = layer_units.setdefault(layer_index, set())
-                if unit_index in units:
-                    raise InsightConflict(
-                        "analysis layer result units are duplicated"
-                    )
-                units.add(unit_index)
-                page_range = _json_object(
-                    row["page_range_snapshot_json"],
-                    "analysis layer page range",
-                )
-                if set(page_range) != {"start", "end"}:
-                    raise InsightConflict(
-                        "analysis layer page range is invalid"
-                    )
-                range_start = _required_integer(
-                    page_range["start"],
-                    "analysis layer page range start",
-                    minimum=1,
-                )
-                _required_integer(
-                    page_range["end"],
-                    "analysis layer page range end",
-                    minimum=range_start,
-                )
-                content = _json_object(
-                    row["content_json"],
-                    "analysis layer content",
-                )
-                if not contains_nonempty_text(content):
-                    raise InsightConflict("analysis layer content is empty")
-                if layer_index == 0:
-                    key_events = content.get("key_events", [])
-                    if not isinstance(key_events, list):
-                        raise InsightConflict(
-                            "analysis layer key_events must be an array"
-                        )
-                    layer_zero_event_count += len(key_events)
-                _required_sha256(
-                    row["input_fingerprint"],
-                    f"analysis layer result {result_id} input fingerprint",
-                )
-            if set(layer_units) != set(expected_layers) or any(
-                units != set(range(len(units)))
-                for units in layer_units.values()
             ):
                 raise InsightConflict(
-                    "full analysis run is missing required summary layers"
+                    "staged analysis artifact identity is invalid"
                 )
-            required_artifacts = {
-                ("compressed_context", "default"),
-                ("overview", "no_spoiler"),
-                ("overview", "story_summary"),
-            }
-            staged_artifacts = list(
-                connection.execute(
-                    select(analysis_artifacts).where(
-                        analysis_artifacts.c.run_id == run_id,
-                    )
-                ).mappings()
+            _required_integer(
+                row["revision"],
+                "analysis artifact revision",
+                minimum=1,
             )
-            staged_artifact_keys: set[tuple[str, str]] = set()
-            dependency_fingerprints: set[str] = set()
-            for row in staged_artifacts:
-                artifact_id = _required_string(
-                    row["id"],
-                    "analysis artifact id",
+            dependency_fingerprints.add(
+                _required_sha256(
+                    row["dependency_fingerprint"],
+                    "analysis artifact dependency fingerprint",
                 )
-                key = (
-                    _required_string(row["kind"], "analysis artifact kind"),
-                    _required_string(
-                        row["template"],
-                        "analysis artifact template",
-                    ),
-                )
-                if key in staged_artifact_keys:
-                    raise InsightConflict(
-                        "staged analysis artifacts are duplicated"
-                    )
-                staged_artifact_keys.add(key)
-                if (
-                    _required_string(
-                        row["book_id"],
-                        "analysis artifact book id",
-                    )
-                    != book_id
-                    or _required_string(
-                        row["run_id"],
-                        "analysis artifact run id",
-                    )
-                    != run_id
-                    or _required_string(
-                        row["status"],
-                        "analysis artifact status",
-                    )
-                    != "building"
-                    or _required_boolean(
-                        row["is_active"],
-                        "analysis artifact active flag",
-                    )
-                ):
-                    raise InsightConflict(
-                        "staged analysis artifact identity is invalid"
-                    )
-                _required_integer(
-                    row["revision"],
-                    "analysis artifact revision",
-                    minimum=1,
-                )
-                dependency_fingerprints.add(
-                    _required_sha256(
-                        row["dependency_fingerprint"],
-                        "analysis artifact dependency fingerprint",
-                    )
-                )
-                if row["asset_id"] is not None:
-                    raise InsightConflict(
-                        "staged analysis artifact has an unexpected asset"
-                    )
-                payload = _json_object(
-                    row["payload_json"],
-                    f"analysis artifact {artifact_id} payload",
-                )
-                if not contains_nonempty_text(payload):
-                    raise InsightConflict("analysis artifact payload is empty")
-                if key[0] == "overview" and (
-                    not isinstance(payload.get("title"), str)
-                    or not payload["title"].strip()
-                    or not isinstance(payload.get("content"), str)
-                    or not payload["content"].strip()
-                ):
-                    raise InsightConflict("overview artifact payload is invalid")
-            if staged_artifact_keys != required_artifacts:
+            )
+            if row["asset_id"] is not None:
                 raise InsightConflict(
-                    "full analysis run is missing required overview artifacts"
+                    "staged analysis artifact has an unexpected asset"
                 )
-            staged_timelines = list(
-                connection.execute(
-                    select(timeline_versions).where(
-                        timeline_versions.c.run_id == run_id
-                    )
-                ).mappings()
+            payload = _json_object(
+                row["payload_json"],
+                f"analysis artifact {artifact_id} payload",
             )
-            staged_vectors = list(
-                connection.execute(
-                    select(vector_generations).where(
-                        vector_generations.c.run_id == run_id
-                    )
-                ).mappings()
-            )
-            if len(staged_timelines) != 1 or len(staged_vectors) != 1:
-                raise InsightConflict(
-                    "full analysis run is missing timeline or vector generation"
+            if not contains_nonempty_text(payload):
+                raise InsightConflict("analysis artifact payload is empty")
+            if key[0] == "overview" and (
+                not isinstance(payload.get("title"), str)
+                or not payload["title"].strip()
+                or not isinstance(payload.get("content"), str)
+                or not payload["content"].strip()
+            ):
+                raise InsightConflict("overview artifact payload is invalid")
+        staged_timelines = list(
+            connection.execute(
+                select(timeline_versions).where(
+                    timeline_versions.c.run_id == run_id
                 )
+            ).mappings()
+        )
+        staged_vectors = list(
+            connection.execute(
+                select(vector_generations).where(
+                    vector_generations.c.run_id == run_id,
+                    vector_generations.c.status == "building",
+                )
+            ).mappings()
+        )
+        if len(staged_timelines) > 1 or len(staged_vectors) > 1:
+            raise InsightConflict("analysis run contains duplicate derived generations")
+        staged_timeline_id = None
+        staged_vector_id = None
+        if staged_timelines:
             staged_timeline = staged_timelines[0]
-            staged_vector = staged_vectors[0]
-            staged_timeline_id = _required_string(
-                staged_timeline["id"],
-                "staged timeline id",
-            )
-            staged_vector_id = _required_string(
-                staged_vector["id"],
-                "staged vector generation id",
-            )
+            staged_timeline_id = _required_string(staged_timeline["id"], "staged timeline id")
             timeline_mode = _required_string(
                 staged_timeline["mode"],
                 "staged timeline mode",
@@ -1752,6 +1607,9 @@ class InsightRepository:
                 "staged timeline event count",
                 minimum=1,
             )
+        if staged_vectors:
+            staged_vector = staged_vectors[0]
+            staged_vector_id = _required_string(staged_vector["id"], "staged vector generation id")
             if (
                 _required_string(
                     staged_vector["book_id"],
@@ -1796,204 +1654,182 @@ class InsightRepository:
                     "staged vector event count",
                 )
                 != layer_zero_event_count
-                or len(dependency_fingerprints) != 1
             ):
                 raise InsightConflict(
                     "staged derived generations are inconsistent"
                 )
-            targets_by_page = {
-                _required_string(
-                    target["page_id_snapshot"],
-                    "analysis target page id",
-                ): target
-                for target in refreshed
-            }
-            result_rows: dict[str, Mapping[str, Any]] = {}
-            for row in connection.execute(
-                    select(analysis_page_results).where(
-                        analysis_page_results.c.run_id == run_id
-                    )
-                ).mappings():
-                result_page_id = _required_string(
-                    row["page_id_snapshot"],
-                    "analysis page result page id",
+        if len(dependency_fingerprints) > 1:
+            raise InsightConflict("staged derived generations are inconsistent")
+        targets_by_page = {
+            _required_string(
+                target["page_id_snapshot"],
+                "analysis target page id",
+            ): target
+            for target in refreshed
+        }
+        result_rows: dict[str, Mapping[str, Any]] = {}
+        for row in connection.execute(
+                select(analysis_page_results).where(
+                    analysis_page_results.c.run_id == run_id
                 )
-                result_id = _required_string(row["id"], "analysis page result id")
-                if result_page_id in result_rows:
-                    raise InsightConflict(
-                        "analysis page results are duplicated"
-                    )
-                target = targets_by_page.get(result_page_id)
-                if target is None or target["status"] not in {
-                    "completed",
-                    "conflict",
-                }:
-                    raise InsightConflict(
-                        "analysis run contains an unexpected page result"
-                    )
-                result_status = _required_string(
-                    row["status"],
-                    "analysis page result status",
-                )
-                if result_status != "staging":
-                    raise InsightConflict(
-                        "full analysis page result is not staging"
-                    )
-                source_asset_id = _required_string(
-                    row["source_asset_id"],
-                    "analysis page result source asset id",
-                )
-                source_checksum = _required_sha256(
-                    row["source_checksum"],
-                    "analysis page result source checksum",
-                )
-                page_number = _required_integer(
-                    row["page_number_snapshot"],
-                    "analysis page result page number",
-                    minimum=1,
-                )
-                if (
-                    _required_string(
-                        row["run_id"],
-                        "analysis page result run id",
-                    )
-                    != run_id
-                    or source_asset_id != target["source_asset_id"]
-                    or source_checksum != target["source_checksum"]
-                    or page_number != target["page_number_snapshot"]
-                    or _optional_string(
-                        row["page_id"],
-                        "analysis page result current page id",
-                    )
-                    != _optional_string(
-                        target["page_id"],
-                        "analysis target current page id",
-                    )
-                ):
-                    raise InsightConflict(
-                        "analysis page result identity is inconsistent"
-                    )
-                _page_analysis(
-                    row["payload_json"],
-                    "analysis page payload",
-                    page_id=result_page_id,
-                    page_number=page_number,
-                    source_asset_id=source_asset_id,
-                    source_checksum=source_checksum,
-                )
-                result_rows[result_page_id] = {**row, "id": result_id}
-            expected_result_pages = {
-                page_id
-                for page_id, target in targets_by_page.items()
-                if target["status"] in {"completed", "conflict"}
-            }
-            if set(result_rows) != expected_result_pages:
+            ).mappings():
+            result_page_id = _required_string(
+                row["page_id_snapshot"],
+                "analysis page result page id",
+            )
+            result_id = _required_string(row["id"], "analysis page result id")
+            if result_page_id in result_rows:
                 raise InsightConflict(
-                    "analysis run page results are incomplete"
+                    "analysis page results are duplicated"
                 )
-            for target in successful:
-                page_id = _required_string(
-                    target["page_id_snapshot"],
-                    "successful analysis target page id",
+            target = targets_by_page.get(result_page_id)
+            if target is None or target["status"] not in {
+                "completed",
+                "conflict",
+            }:
+                raise InsightConflict(
+                    "analysis run contains an unexpected page result"
                 )
-                result = result_rows.get(page_id)
-                if result is None:
-                    raise InsightConflict(
-                        f"analysis result missing for successful page {page_id}"
-                    )
-                published = connection.execute(
-                    update(analysis_page_results)
-                    .where(
-                        analysis_page_results.c.id == result["id"],
-                        analysis_page_results.c.status == "staging",
-                    )
-                    .values(status="published", updated_at=now)
-                )
-                if published.rowcount != 1:
-                    raise InsightConflict(
-                        "analysis page result publication was fenced"
-                    )
-                InsightRepository._upsert_page_head(
-                    connection,
-                    book_id=book_id,
-                    page_id=page_id,
-                    run_id=run_id,
-                    result_id=_required_string(
-                        result["id"],
-                        "analysis page result id",
-                    ),
-                    now=now,
-                )
-            InsightRepository._upsert_book_head(
-                connection,
-                book_id=book_id,
-                run_id=run_id,
-                now=now,
+            result_status = _required_string(
+                row["status"],
+                "analysis page result status",
             )
-            derived_status = (
-                "degraded"
-                if final_status == "completed_with_errors"
-                else "ready"
+            if result_status not in {"staging", "published"}:
+                raise InsightConflict(
+                    "full analysis page result is not staging"
+                )
+            source_asset_id = _required_string(
+                row["source_asset_id"],
+                "analysis page result source asset id",
             )
-            connection.execute(
-                update(analysis_layer_results)
-                .where(analysis_layer_results.c.run_id == run_id)
+            source_checksum = _required_sha256(
+                row["source_checksum"],
+                "analysis page result source checksum",
+            )
+            page_number = _required_integer(
+                row["page_number_snapshot"],
+                "analysis page result page number",
+                minimum=1,
+            )
+            if (
+                _required_string(
+                    row["run_id"],
+                    "analysis page result run id",
+                )
+                != run_id
+                or source_asset_id != target["source_asset_id"]
+                or source_checksum != target["source_checksum"]
+                or page_number != target["page_number_snapshot"]
+                or _optional_string(
+                    row["page_id"],
+                    "analysis page result current page id",
+                )
+                != _optional_string(
+                    target["page_id"],
+                    "analysis target current page id",
+                )
+            ):
+                raise InsightConflict(
+                    "analysis page result identity is inconsistent"
+                )
+            _page_analysis(
+                row["payload_json"],
+                "analysis page payload",
+                page_id=result_page_id,
+                page_number=page_number,
+                source_asset_id=source_asset_id,
+                source_checksum=source_checksum,
+            )
+            result_rows[result_page_id] = {**row, "id": result_id}
+        expected_result_pages = {
+            page_id
+            for page_id, target in targets_by_page.items()
+            if target["status"] in {"completed", "conflict"}
+        }
+        if set(result_rows) != expected_result_pages:
+            raise InsightConflict(
+                "analysis run page results are incomplete"
+            )
+        for target in successful:
+            page_id = _required_string(
+                target["page_id_snapshot"],
+                "successful analysis target page id",
+            )
+            result = result_rows.get(page_id)
+            if result is None:
+                raise InsightConflict(
+                    f"analysis result missing for successful page {page_id}"
+                )
+            published = connection.execute(
+                update(analysis_page_results)
+                .where(
+                    analysis_page_results.c.id == result["id"],
+                    analysis_page_results.c.status.in_(("staging", "published")),
+                )
                 .values(status="published", updated_at=now)
             )
+            if published.rowcount != 1:
+                raise InsightConflict(
+                    "analysis page result publication was fenced"
+                )
+            InsightRepository._upsert_page_head(
+                connection,
+                book_id=book_id,
+                page_id=page_id,
+                run_id=run_id,
+                result_id=_required_string(
+                    result["id"],
+                    "analysis page result id",
+                ),
+                now=now,
+            )
+        InsightRepository._upsert_book_head(
+            connection,
+            book_id=book_id,
+            run_id=run_id,
+            now=now,
+        )
+        derived_status = (
+            "degraded"
+            if final_status == "completed_with_errors" or success_count < connection.execute(
+                select(func.count(pages.c.id))
+                .join(chapters, chapters.c.id == pages.c.chapter_id)
+                .where(chapters.c.book_id == book_id)
+            ).scalar_one()
+            else "ready"
+        )
+        connection.execute(
+            update(analysis_layer_results)
+            .where(analysis_layer_results.c.run_id == run_id)
+            .values(status="published", updated_at=now)
+        )
+        for artifact in staged_artifacts:
             connection.execute(
-                update(analysis_artifacts)
-                .where(
+                update(analysis_artifacts).where(
                     analysis_artifacts.c.book_id == book_id,
+                    analysis_artifacts.c.kind == artifact["kind"],
+                    analysis_artifacts.c.template == artifact["template"],
                     analysis_artifacts.c.is_active.is_(True),
-                )
-                .values(is_active=False, updated_at=now)
+                ).values(is_active=False, updated_at=now)
             )
             connection.execute(
-                update(analysis_artifacts)
-                .where(
-                    analysis_artifacts.c.run_id == run_id,
-                    analysis_artifacts.c.status == "building",
-                )
-                .values(
-                    status=derived_status,
-                    is_active=True,
-                    updated_at=now,
-                )
+                update(analysis_artifacts).where(analysis_artifacts.c.id == artifact["id"])
+                .values(status=derived_status, is_active=True, updated_at=now)
             )
-            connection.execute(
-                update(timeline_versions)
-                .where(
-                    timeline_versions.c.book_id == book_id,
-                    timeline_versions.c.is_active.is_(True),
+        for table, generation_id in (
+            (timeline_versions, staged_timeline_id),
+            (vector_generations, staged_vector_id),
+        ):
+            if generation_id is not None:
+                connection.execute(
+                    update(table).where(
+                        table.c.book_id == book_id, table.c.is_active.is_(True),
+                    ).values(is_active=False, updated_at=now)
                 )
-                .values(is_active=False, updated_at=now)
-            )
-            connection.execute(
-                update(timeline_versions)
-                .where(timeline_versions.c.id == staged_timeline_id)
-                .values(
-                    status=derived_status,
-                    is_active=True,
-                    updated_at=now,
+                connection.execute(
+                    update(table).where(table.c.id == generation_id)
+                    .values(status=derived_status, is_active=True, updated_at=now)
                 )
-            )
-            connection.execute(
-                update(vector_generations)
-                .where(
-                    vector_generations.c.book_id == book_id,
-                    vector_generations.c.is_active.is_(True),
-                )
-                .values(is_active=False, updated_at=now)
-            )
-            connection.execute(
-                update(vector_generations)
-                .where(vector_generations.c.id == staged_vector_id)
-                .values(
-                    status=derived_status,
-                    is_active=True,
-                    updated_at=now,
-                )
-            )
 
         connection.execute(
             update(analysis_runs)
@@ -2007,12 +1843,6 @@ class InsightRepository:
                 updated_at=now,
             )
         )
-        if scope != "full":
-            mark_book_insight_derived_stale(
-                connection,
-                book_id=book_id,
-                now=now,
-            )
         return {
             "runId": run_id,
             "status": final_status,

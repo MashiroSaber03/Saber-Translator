@@ -10,6 +10,7 @@ const props = defineProps<{
   acceptedChatSubmissionCount?: number
   chatAbortable?: boolean
   chatStreaming: boolean
+  chatBusy: boolean
 }>()
 
 const emit = defineEmits<{
@@ -75,7 +76,7 @@ function removePendingFile(index: number) {
 function sendChat() {
   const content = chatInput.value.trim()
   if (
-    props.chatStreaming ||
+    props.chatBusy ||
     (!content && pendingFiles.value.length === 0)
   ) return
   acceptedCountAtSubmission = props.acceptedChatSubmissionCount ?? 0
@@ -131,7 +132,7 @@ onUnmounted(() => {
           data-testid="chat-upload-trigger"
           type="button"
           label="添加图片"
-          :disabled="chatStreaming"
+          :disabled="chatBusy"
           @click="pickAttachments"
         >
           <UiIcon name="plus" size="18" />
@@ -155,7 +156,7 @@ onUnmounted(() => {
           data-testid="chat-send-trigger"
           type="button"
           label="发送消息"
-          :disabled="!chatInput.trim() && pendingFiles.length === 0"
+          :disabled="chatBusy || (!chatInput.trim() && pendingFiles.length === 0)"
           @click="sendChat"
         >
           <UiIcon name="send" size="18" />

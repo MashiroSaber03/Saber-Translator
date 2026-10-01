@@ -42,6 +42,7 @@ export interface CharacterStudioChatSession {
   archived_at: string | null
   greeting_source: Record<string, unknown>
   summary_blocks: CharacterStudioChatSummaryBlock[]
+  summary_through_message_id: string | null
   messages: CharacterStudioChatMessage[]
   variables: Record<string, unknown>
   revision: number

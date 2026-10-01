@@ -105,8 +105,8 @@ class VLMConfig:
             execution=OpenAICompatibleExecutionOptions(
                 use_stream=True,
                 rpm_limit=0,
-                transport_retries=1,
-                business_retries=0,
+                transport_retries=3,
+                business_retries=3,
             ),
         )
     )
@@ -171,8 +171,8 @@ class ChatLLMConfig:
             execution=OpenAICompatibleExecutionOptions(
                 use_stream=True,
                 rpm_limit=0,
-                transport_retries=1,
-                business_retries=0,
+                transport_retries=3,
+                business_retries=3,
             ),
         )
     )
@@ -225,8 +225,8 @@ class EmbeddingConfig:
     base_url: str | None = None
     credential_version_id: str | None = None
     rpm_limit: int = 0
-    transport_retries: int = 1
-    business_retries: int = 0
+    transport_retries: int = 3
+    business_retries: int = 3
     timeout_seconds: float = 0
 
     def __post_init__(self) -> None:
@@ -289,8 +289,8 @@ class RerankerConfig:
     model: str = "jina-reranker-v2-base-multilingual"
     base_url: str | None = None
     credential_version_id: str | None = None
-    transport_retries: int = 1
-    business_retries: int = 0
+    transport_retries: int = 3
+    business_retries: int = 3
     timeout_seconds: float = 0
 
     def __post_init__(self) -> None:
@@ -348,8 +348,8 @@ class ImageGenConfig:
     model: str = "gpt-image-2"
     base_url: str | None = None
     credential_version_id: str | None = None
-    transport_retries: int = 1
-    business_retries: int = 0
+    transport_retries: int = 3
+    business_retries: int = 3
     timeout_seconds: float = 0
 
     def __post_init__(self) -> None:
