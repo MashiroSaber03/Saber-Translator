@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import deque
+from datetime import datetime, timezone
 import json
 import re
 import secrets
@@ -84,6 +85,18 @@ WAITING_REASON_LABELS = {
     "queue_blocked": "等待章节锁",
     "executor_busy": "执行器正忙",
 }
+
+
+def _format_task_time(value: object) -> str:
+    if not isinstance(value, str) or not value:
+        return "—"
+    try:
+        timestamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return "—"
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+    return timestamp.astimezone().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _label(text: str, object_name: str = "") -> QLabel:
@@ -512,7 +525,7 @@ class TaskCenterPage(QWidget):
                 STATUS_LABELS.get(status, status),
                 detail,
                 f"{percent}%",
-                str(job.get("createdAt") or "—").replace("T", " ")[:19],
+                _format_task_time(job.get("createdAt")),
             )
             for column, value in enumerate(values):
                 item = QTableWidgetItem(value)

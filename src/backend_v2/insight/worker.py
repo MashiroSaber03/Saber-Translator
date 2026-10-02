@@ -11,7 +11,7 @@ from typing import Any, Protocol
 
 from sqlalchemy import Engine
 
-from src.backend_v2.insight.page_schema import normalize_page_analysis
+from src.backend_v2.insight.page_schema import normalize_model_page, normalize_page_analysis
 from src.backend_v2.insight.provider_runtime import frozen_vlm_config
 from src.backend_v2.insight.repository import InsightConflict, InsightRepository
 from src.backend_v2.jobs.repository import (
@@ -48,6 +48,7 @@ class ProviderInsightAlgorithms:
         config: Mapping[str, Any],
     ) -> Mapping[str, Any]:
         from src.core.manga_insight.vlm_client import VLMClient
+        from src.shared.memory_errors import is_memory_allocation_error
 
         if not page_numbers or len(image_bytes) != len(page_numbers):
             raise ValueError("Insight batch images and page numbers must align")
@@ -95,13 +96,36 @@ class ProviderInsightAlgorithms:
             "original_text、translated_text、characters 或 character_mentions。"
         )
         client = VLMClient(vlm_config)
+        valid_pages: dict[int, dict[str, Any]] = {}
+
+        def validate_batch(result: dict[str, Any]) -> dict[str, Any]:
+            errors = []
+            for page in result["pages"]:
+                number = page["page_number"]
+                if number in valid_pages:
+                    continue
+                try:
+                    valid_pages[number] = normalize_model_page(page, page_number=number)
+                except ValueError as exc:
+                    errors.append(f"第 {number} 页：{exc}")
+            missing = [number for number in page_numbers if number not in valid_pages]
+            if missing:
+                raise ValueError(f"页面 {missing} 尚无有效结果；" + "; ".join(errors))
+            return {"pages": [valid_pages[number] for number in page_numbers]}
 
         async def execute() -> Mapping[str, Any]:
-            return await client.analyze_batch(
-                list(image_bytes),
-                list(page_numbers),
-                (prompt + strict_suffix).strip(),
-            )
+            try:
+                return await client.analyze_batch(
+                    list(image_bytes),
+                    list(page_numbers),
+                    (prompt + strict_suffix).strip(),
+                    validator=validate_batch,
+                )
+            except Exception as exc:
+                if not valid_pages or is_memory_allocation_error(exc):
+                    raise
+                user_log("warning", f"本批部分页面重试失败，保留 {len(valid_pages)} 页有效结果｜{exc}")
+                return {"pages": [valid_pages[number] for number in page_numbers if number in valid_pages]}
 
         return asyncio.run(execute())
 

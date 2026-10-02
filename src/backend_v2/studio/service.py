@@ -267,19 +267,22 @@ class DefaultStudioAlgorithms:
     ) -> Mapping[str, Any]:
         prompt = (
             "总结以下角色对话，保留事实、关系、变量变化和未解决事项。"
-            "输出 JSON 对象，至少包含 summary。\n\n"
+            '输出 JSON 对象：{"summary":"非空的总结文本"}。\n\n'
             + json.dumps(list(messages), ensure_ascii=False)
         )
+        def validate(result: object) -> None:
+            if not isinstance(result, Mapping):
+                raise ValueError("Studio summary did not return a JSON object")
+            summary = result.get("summary")
+            if not isinstance(summary, str) or not summary.strip():
+                raise ValueError("Studio summary did not return summary text")
+
         result = self._chat_json(
             prompt,
             config=config,
+            validator=validate,
         )
-        if not isinstance(result, Mapping):
-            raise ValueError("Studio summary did not return a JSON object")
-        summary = result.get("summary")
-        if not isinstance(summary, str) or not summary.strip():
-            raise ValueError("Studio summary did not return summary text")
-        return {"summary": summary.strip()}
+        return {"summary": result["summary"].strip()}
 
     def _chat_json(
         self,

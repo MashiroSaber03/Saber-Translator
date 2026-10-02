@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from contextlib import nullcontext
 from src.storage_migrator.runner import StorageManager
-from src.storage_migrator.control import business_ready, control_root
+from src.storage_migrator.control import business_ready, control_root, wait_for_children
 from src.version import STORAGE_VERSION
 
 from dataclasses import dataclass, field
@@ -84,7 +84,6 @@ MAX_CONSECUTIVE_RESTARTS = 3
 API_HEALTH_CHECK_INTERVAL_SECONDS = 1.0
 API_HEALTH_FAILURE_LIMIT = 3
 RESTART_STABILITY_SECONDS = 30.0
-PREVIOUS_CHILD_EXIT_TIMEOUT_SECONDS = 5.0
 TORCH_CUDNN_V8_API_LRU_CACHE_LIMIT_ENV = "TORCH_CUDNN_V8_API_LRU_CACHE_LIMIT"
 WORKER_CUDNN_V8_API_LRU_CACHE_LIMIT = "1000"
 RESIDENT_MODEL_WORKER_READY_TIMEOUT_SECONDS = 600.0
@@ -586,66 +585,6 @@ def _probe_payload(
     }
 
 
-def _is_expected_previous_child(pid: int, *, role: str, data_root: Path) -> bool:
-    if pid <= 0:
-        return False
-    try:
-        command = psutil.Process(pid).cmdline()
-    except psutil.NoSuchProcess:
-        return False
-    except psutil.AccessDenied:
-        return True
-    try:
-        role_index = command.index("--role")
-        data_index = command.index("--data-dir")
-    except ValueError:
-        return False
-    if role_index + 1 >= len(command) or command[role_index + 1] != role:
-        return False
-    if data_index + 1 >= len(command):
-        return False
-    try:
-        child_data_root = Path(command[data_index + 1]).expanduser().resolve()
-    except OSError:
-        return False
-    return child_data_root == data_root
-
-
-def _wait_for_previous_children_to_exit(
-    repository: ProcessEpochRepository,
-    *,
-    data_root: Path,
-    stop_event: threading.Event,
-) -> None:
-    previous = [
-        (role, epoch_id, pid)
-        for role in ("api", "worker")
-        for epoch_id, pid in repository.active_epoch_processes(role)
-        if _is_expected_previous_child(pid, role=role, data_root=data_root)
-    ]
-    if not previous:
-        return
-    deadline = time.monotonic() + PREVIOUS_CHILD_EXIT_TIMEOUT_SECONDS
-    while previous and time.monotonic() < deadline:
-        if stop_event.wait(0.05):
-            raise _LauncherStopRequested
-        previous = [
-            item
-            for item in previous
-            if _is_expected_previous_child(
-                item[2],
-                role=item[0],
-                data_root=data_root,
-            )
-        ]
-    if previous:
-        rendered = ", ".join(
-            f"{role} pid={pid} epoch={epoch_id[:8]}"
-            for role, epoch_id, pid in previous
-        )
-        raise RuntimeError(f"previous backend child did not exit: {rendered}")
-
-
 def _reconcile_all_previous_epochs(repository: ProcessEpochRepository) -> None:
     for epoch_id in repository.active_epochs("api"):
         repository.reconcile_dead_api(epoch_id)
@@ -897,9 +836,15 @@ class LauncherSupervisor:
         try:
             self._publish(LauncherState.STARTING, "正在初始化后端")
             _raise_if_stop_requested(self._stop_event)
+            check_cancelled = lambda: _raise_if_stop_requested(self._stop_event)
             owner = (nullcontext(self.storage_manager) if self.storage_manager is not None
-                     else StorageManager(config.data_root, config.profile))
+                     else StorageManager(config.data_root, config.profile,
+                                         check_startup_cancelled=check_cancelled))
             with owner as storage_manager, storage_manager.startup_guard():
+                if self.storage_manager is not None:
+                    # Desktop keeps its manager open between backend starts.
+                    wait_for_children(config.data_root, check_cancelled=check_cancelled)
+                _raise_if_stop_requested(self._stop_event)
                 storage_manager.prepare(initialize_database)
                 ensure_data_root(config.data_root)
                 prepare_font_directory(config.data_root)
@@ -910,11 +855,6 @@ class LauncherSupervisor:
                 try:
                     object_storage = AssetStorageService(config.data_root, engine)
                     repository.register(launcher_registration)
-                    _wait_for_previous_children_to_exit(
-                        repository,
-                        data_root=config.data_root,
-                        stop_event=self._stop_event,
-                    )
                     if business_ready(config.data_root):
                         _reconcile_all_previous_epochs(repository)
                         from src.backend_v2.storage.seeding import begin_runtime

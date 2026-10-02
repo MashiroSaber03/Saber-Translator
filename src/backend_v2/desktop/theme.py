@@ -216,6 +216,5 @@ QToolTip {
     font-size: 12px;
 }
 QMessageBox QLabel { font-size: 13px; }
-QMessageBox QLabel#qt_msgbox_label { min-width: 280px; }
 QMessageBox QPushButton { min-width: 84px; }
 """

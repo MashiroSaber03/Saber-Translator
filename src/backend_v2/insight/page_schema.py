@@ -53,11 +53,28 @@ def normalize_page_analysis(
         source_checksum=source_checksum,
         page_number=page_number,
     )
-    page = _extract_page(raw, page_number)
+    page = normalize_model_page(_extract_page(raw), page_number=page_number)
+    return {
+        "page_id": page_id,
+        "source_asset_id": source_asset_id,
+        "source_checksum": source_checksum,
+        "page_number_snapshot": page_number,
+        **{key: page[key] for key in PAGE_FIELDS - {"page_number"}},
+    }
+
+
+def normalize_model_page(page: Mapping[str, Any], *, page_number: int) -> dict[str, Any]:
+    """The same model fields are checked during generation and publication."""
     if set(page) != PAGE_FIELDS:
         raise InvalidPageAnalysis(
             "page analysis must contain exactly the current fields"
         )
+    if (
+        isinstance(page["page_number"], bool)
+        or not isinstance(page["page_number"], int)
+        or page["page_number"] != page_number
+    ):
+        raise InvalidPageAnalysis(f"page_number must be {page_number}")
     summary = _required_text(page["page_summary"], "page_summary")
     continuity = _text(page["continuity_notes"], "continuity_notes")
     raw_events = page["key_events"]
@@ -79,7 +96,7 @@ def normalize_page_analysis(
             f"key_events[{index}].summary",
         )
         importance = event["importance"]
-        if importance not in ALLOWED_IMPORTANCE:
+        if not isinstance(importance, str) or importance not in ALLOWED_IMPORTANCE:
             raise InvalidPageAnalysis(
                 f"key_events[{index}].importance is invalid"
             )
@@ -114,10 +131,7 @@ def normalize_page_analysis(
         warnings.append({"code": code, "message": message})
 
     return {
-        "page_id": page_id,
-        "source_asset_id": source_asset_id,
-        "source_checksum": source_checksum,
-        "page_number_snapshot": page_number,
+        "page_number": page_number,
         "page_summary": summary,
         "key_events": events,
         "continuity_notes": continuity,
@@ -156,7 +170,6 @@ def validate_persisted_page_analysis(raw: object) -> dict[str, Any]:
 
 def _extract_page(
     raw: Mapping[str, Any],
-    page_number: int,
 ) -> Mapping[str, Any]:
     if set(raw) != {"pages"}:
         raise InvalidPageAnalysis("model result must contain only pages")
@@ -165,17 +178,7 @@ def _extract_page(
         raise InvalidPageAnalysis("pages must be an array")
     if len(pages) != 1 or not isinstance(pages[0], Mapping):
         raise InvalidPageAnalysis("pages must contain exactly one page object")
-    page = pages[0]
-    actual_page_number = page.get("page_number")
-    if (
-        isinstance(actual_page_number, bool)
-        or not isinstance(actual_page_number, int)
-        or actual_page_number != page_number
-    ):
-        raise InvalidPageAnalysis(
-            f"page_number must be {page_number}, got {actual_page_number!r}"
-        )
-    return page
+    return pages[0]
 
 
 def _text(value: object, field: str) -> str:

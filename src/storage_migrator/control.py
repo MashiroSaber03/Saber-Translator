@@ -1,6 +1,7 @@
 """Stable coordination outside the swappable data root; no business DB access."""
 
 from contextlib import contextmanager
+from collections.abc import Callable
 import json
 import os
 from pathlib import Path
@@ -101,13 +102,18 @@ class DataRootLock:
         self.release()
 
 
-def wait_for_children(root: Path, *, timeout: float = 5.0) -> None:
+def wait_for_children(
+    root: Path, *, timeout: float = 5.0,
+    check_cancelled: Callable[[], None] | None = None,
+) -> None:
     folder = control_root(root) / "processes"
     reject_links(folder)
     if not folder.exists():
         return
     deadline = time.monotonic() + timeout
     while True:
+        if check_cancelled is not None:
+            check_cancelled()
         live = []
         for path in folder.glob("*.json"):
             reject_links(path)
@@ -120,7 +126,9 @@ def wait_for_children(root: Path, *, timeout: float = 5.0) -> None:
             except psutil.NoSuchProcess:
                 alive = False
             except psutil.AccessDenied as exc:
-                raise StorageError("无法确认旧进程是否退出，拒绝转换") from exc
+                raise StorageError(
+                    f"无法确认旧 API/Worker 是否退出（PID {record['pid']}，进程信息访问受限）；请先检查旧程序"
+                ) from exc
             if alive:
                 live.append(record["pid"])
             else:

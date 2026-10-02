@@ -691,7 +691,7 @@ def test_studio_summary_requires_the_canonical_summary_field(
     monkeypatch,
 ) -> None:
     algorithm = DefaultStudioAlgorithms()
-    monkeypatch.setattr(algorithm, "_chat_json", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(algorithm, "_chat_json", lambda *_args, **kwargs: kwargs["validator"]({}))
 
     with pytest.raises(ValueError, match="summary text"):
         algorithm.summarize([], config={})
@@ -699,7 +699,7 @@ def test_studio_summary_requires_the_canonical_summary_field(
     monkeypatch.setattr(
         algorithm,
         "_chat_json",
-        lambda *_args, **_kwargs: {"summary": {"unexpected": True}},
+        lambda *_args, **kwargs: kwargs["validator"]({"summary": {"unexpected": True}}),
     )
     with pytest.raises(ValueError, match="summary text"):
         algorithm.summarize([], config={})

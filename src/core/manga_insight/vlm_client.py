@@ -5,7 +5,7 @@ Manga Insight VLM client using shared async transport.
 import base64
 import io
 import logging
-from typing import Any
+from typing import Any, Callable
 
 from PIL import Image
 
@@ -102,6 +102,8 @@ class VLMClient:
         image_bytes: list[bytes],
         page_numbers: list[int],
         prompt: str,
+        *,
+        validator: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         if not image_bytes or len(image_bytes) != len(page_numbers):
             raise ValueError("VLM batch images and page numbers must have equal length")
@@ -121,14 +123,16 @@ class VLMClient:
 
         def parser(response_text: str) -> dict[str, Any]:
             try:
-                return self._parse_batch_analysis(
+                parsed = self._parse_batch_analysis(
                     response_text,
                     expected_page_numbers,
+                    require_complete=validator is None,
                 )
+                return validator(parsed) if validator is not None else parsed
             except (TypeError, ValueError) as exc:
                 page_label = ",".join(str(value) for value in expected_page_numbers)
                 raise OpenAICompatibleBusinessRetryableError(
-                    f"第{page_label}页批量 JSON 解析失败"
+                    f"第{page_label}页批量 JSON 解析失败：{exc}"
                 ) from exc
 
         provider = self.provider
@@ -190,6 +194,8 @@ class VLMClient:
         self,
         response_text: str,
         page_numbers: tuple[int, ...],
+        *,
+        require_complete: bool = True,
     ) -> dict[str, Any]:
         result = parse_json_block_from_text(response_text)
         if not isinstance(result, dict) or set(result) != {"pages"}:
@@ -198,7 +204,7 @@ class VLMClient:
         pages = result["pages"]
         if not isinstance(pages, list):
             raise ValueError("pages 必须是数组")
-        if len(pages) != len(page_numbers) or any(
+        if (require_complete and len(pages) != len(page_numbers)) or any(
             not isinstance(page, dict) for page in pages
         ):
             raise ValueError(f"pages 必须包含 {len(page_numbers)} 个页面对象")
@@ -213,6 +219,6 @@ class VLMClient:
             ):
                 raise ValueError("pages 中的 page_number 与请求页码不一致")
             by_number[actual_page_number] = page
-        if set(by_number) != set(page_numbers):
+        if require_complete and set(by_number) != set(page_numbers):
             raise ValueError("pages 没有完整覆盖请求页码")
-        return {"pages": [by_number[value] for value in page_numbers]}
+        return {"pages": [by_number[value] for value in page_numbers if value in by_number]}
