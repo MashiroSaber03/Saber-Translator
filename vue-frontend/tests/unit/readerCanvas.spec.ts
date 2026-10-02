@@ -9,8 +9,75 @@ import type { V2PageSummary } from '@/api/v2/content'
 enableAutoUnmount(afterEach)
 const image = { id: 'p1', chapterId: 'a', ordinal: 1, sourceUrl: '/source', translatedUrl: '/translated', width: 800, height: 1200 } as V2PageSummary
 beforeEach(() => setActivePinia(createPinia()))
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
+
+function pagedCanvas(layout: 'single' | 'double' = 'single', direction: 'ltr' | 'rtl' = 'ltr') {
+  return mount(ReaderCanvas, { props: {
+    images: [image, { ...image, id: 'p2' }], viewMode: 'original', isLoading: false,
+    canPrev: true, canNext: true,
+    settings: { ...DEFAULT_READER_SETTINGS, layout, direction },
+  } })
+}
+
+function scrollWheel(element: Element, deltaY: number, options: WheelEventInit = {}) {
+  const event = new WheelEvent('wheel', { deltaY, bubbles: true, cancelable: true, ...options })
+  element.dispatchEvent(event)
+  return event
+}
 describe('reader canvas', () => {
+  it.each(['single', 'double'] as const)('does not turn %s pages when clicking outside the arrows', async layout => {
+    const wrapper = pagedCanvas(layout)
+    const surface = wrapper.get('.reader-canvas__surface')
+    vi.spyOn(surface.element, 'getBoundingClientRect').mockReturnValue({ left: 0, width: 1000 } as DOMRect)
+    for (const clientX of [10, 500, 990]) await surface.trigger('click', { clientX })
+    expect(wrapper.emitted('navigate')).toBeUndefined()
+    expect(wrapper.emitted('toggleControls')).toBeUndefined()
+    await wrapper.get('[aria-label="下一页"]').trigger('click')
+    expect(wrapper.emitted('navigate')).toEqual([[1]])
+    expect(wrapper.emitted('toggleControls')).toBeUndefined()
+  })
+
+  it.each(['single', 'double'] as const)('responds to every consecutive wheel event in %s mode without a cooldown', layout => {
+    const wrapper = pagedCanvas(layout, 'rtl')
+    const element = wrapper.get('.reader-canvas__paged').element
+    expect(scrollWheel(element, 100).defaultPrevented).toBe(true)
+    for (let i = 0; i < 10; i++) scrollWheel(element, 20)
+    expect(wrapper.emitted('navigate')).toEqual(Array.from({ length: 11 }, () => [1, false]))
+    scrollWheel(element, 100, { deltaMode: 1 })
+    expect(wrapper.emitted('navigate')).toHaveLength(12)
+    scrollWheel(element, -100)
+    expect(wrapper.emitted('navigate')?.at(-1)).toEqual([-1, true])
+  })
+
+  it('scrolls an overflowing image and turns at its edge without requiring a pause', () => {
+    const wrapper = pagedCanvas()
+    const element = wrapper.get('.reader-canvas__paged').element as HTMLElement
+    Object.defineProperties(element, { clientHeight: { value: 600 }, scrollHeight: { value: 1800 } })
+    expect(scrollWheel(element, 100).defaultPrevented).toBe(false)
+    element.scrollTop = 1200
+    expect(scrollWheel(element, 100).defaultPrevented).toBe(true)
+    expect(wrapper.emitted('navigate')).toEqual([[1, false]])
+    // Scroll the next image normally while it still has content below.
+    element.scrollTop = 0
+    expect(scrollWheel(element, 100).defaultPrevented).toBe(false)
+    expect(wrapper.emitted('navigate')).toHaveLength(1)
+    scrollWheel(element, -100)
+    expect(wrapper.emitted('navigate')?.at(-1)).toEqual([-1, true])
+  })
+
+  it('leaves zoom and horizontal gestures alone and respects chapter boundaries', async () => {
+    const wrapper = pagedCanvas()
+    const element = wrapper.get('.reader-canvas__paged').element
+    for (const options of [{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { deltaX: 200 }]) {
+      expect(scrollWheel(element, 100, options).defaultPrevented).toBe(false)
+    }
+    expect(scrollWheel(element, 0).defaultPrevented).toBe(false)
+    await wrapper.setProps({ canNext: false, canPrev: false })
+    scrollWheel(element, 100)
+    scrollWheel(element, -100)
+    expect(wrapper.emitted('navigate')).toBeUndefined()
+  })
+
   it('restores long-page progress on mount and when changing its fit', async () => {
     let resize = () => {}
     vi.stubGlobal('ResizeObserver', class {

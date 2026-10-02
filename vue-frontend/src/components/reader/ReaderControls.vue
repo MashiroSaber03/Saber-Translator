@@ -30,6 +30,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   settingsChange: [settings: ReaderSettings]
+  cycleFit: []
   navigate: [delta: number]
   jump: [page: number]
   chapter: [id: string]
@@ -65,14 +66,6 @@ function cycleLayout() {
   setLayout(
     READER_LAYOUTS[
       (READER_LAYOUTS.findIndex(x => x.value === props.settings.layout) + 1) % READER_LAYOUTS.length
-    ]!.value
-  )
-}
-function cycleFit() {
-  setFit(
-    READER_FITS[
-      (READER_FITS.findIndex(x => x.value === props.settings.fits[props.settings.layout]) + 1) %
-        READER_FITS.length
     ]!.value
   )
 }
@@ -174,7 +167,7 @@ function jump() {
         双页错开一页
       </UiButton>
       <UiField class="reader-controls__field" label="图片适配" tone="inverse">
-        <UiButton variant="inverse" block aria-label="循环切换图片适配" @click="cycleFit">
+        <UiButton variant="inverse" block aria-label="循环切换图片适配" @click="emit('cycleFit')">
           {{ fitLabel }} · 切换
         </UiButton>
         <details>
@@ -269,7 +262,7 @@ function jump() {
         </UiField>
       </template>
       <p class="reader-controls__hint">
-        ← → 翻页 · Home / End 首尾页<br />M 菜单 · F 全屏 · I 适配 · O 双页偏移<br />滚轮只滚动图片，不自动跳章。
+        ← → 翻页 · Home / End 首尾页<br />M 菜单 · F 全屏 · I 适配 · O 双页偏移<br />单页／双页：滚轮翻页；图片超出屏幕时先滚动，到边缘继续滚动即可翻页。连续模式：滚轮滚动图片。不会自动跳章。
       </p>
     </details>
     <UiButton variant="inverse" block :disabled="!total" @click="emit('restart')">
