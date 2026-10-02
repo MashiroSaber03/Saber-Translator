@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiFileInput from '@/components/ui/UiFileInput.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductAvatar from '@/components/product/ProductAvatar.vue'
 import type { CharacterStudioDocument, CharacterStudioEditorPendingState } from '@/types/characterStudio'
@@ -7,6 +9,7 @@ import type { CharacterStudioGenerationSection } from '@/types/characterStudioDo
 
 defineProps<{
   avatarUrl: string
+  avatarBusy?: boolean
   document: CharacterStudioDocument
   formatOrigin: (origin: CharacterStudioDocument['origin']['type']) => string
   isGenerationLocked: boolean
@@ -14,23 +17,59 @@ defineProps<{
   pendingState: CharacterStudioEditorPendingState
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
+  (event: 'update-avatar', file: File | null): void
   (event: 'delete'): void
   (event: 'generate', section: CharacterStudioGenerationSection): void
 }>()
+
+const avatarInput = ref<InstanceType<typeof UiFileInput> | null>(null)
+
+function selectAvatar(files: File[]) {
+  const file = files[0]
+  avatarInput.value?.clear()
+  if (file) emit('update-avatar', file)
+}
 </script>
 
 <template>
   <section class="studio-hero-section">
     <div class="studio-hero-section__main">
-      <ProductAvatar
-        class="studio-hero-section__avatar"
-        :image-src="avatarUrl"
-        label="角色头像"
-        :fallback-text="document.identity.name"
-        size="hero"
-        shape="portrait"
-      />
+      <div class="studio-hero-section__portrait">
+        <ProductAvatar
+          class="studio-hero-section__avatar"
+          :image-src="avatarUrl"
+          label="角色头像"
+          :fallback-text="document.identity.name"
+          size="hero"
+          shape="portrait"
+        />
+        <UiButton
+          variant="secondary"
+          size="sm"
+          :disabled="avatarBusy || pendingState.deleting"
+          @click="avatarInput?.click()"
+        >
+          {{ avatarBusy ? '保存图片中...' : avatarUrl ? '更换图片' : '上传图片' }}
+        </UiButton>
+        <UiButton
+          v-if="avatarUrl"
+          variant="secondary"
+          size="sm"
+          :disabled="avatarBusy || pendingState.deleting"
+          @click="emit('update-avatar', null)"
+        >
+          移除图片
+        </UiButton>
+        <UiFileInput
+          ref="avatarInput"
+          hidden
+          accept="image/*"
+          aria-label="上传角色图片"
+          :disabled="avatarBusy || pendingState.deleting"
+          @files-change="selectAvatar"
+        />
+      </div>
       <div class="studio-hero-section__copy">
         <div class="studio-hero-section__kicker">当前角色</div>
         <h2 class="studio-hero-section__title">{{ document.meta.title || document.identity.name }}</h2>
@@ -91,6 +130,14 @@ defineEmits<{
 .studio-hero-section__avatar {
   --product-avatar-background: linear-gradient(180deg, var(--studio-surface-tint-strong), color-mix(in srgb, var(--color-text-heading) 4%, transparent));
   --product-avatar-color: var(--color-text-link-strong);
+}
+
+.studio-hero-section__portrait {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
 }
 
 .studio-hero-section__copy {

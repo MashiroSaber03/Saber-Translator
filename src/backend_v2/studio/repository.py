@@ -298,6 +298,11 @@ class StudioRepository:
                 document=document,
             )
             canonical_title, storage_values = to_storage(canonical)
+            if "avatarAssetId" in document:
+                avatar_id = document["avatarAssetId"]
+                if avatar_id is not None:
+                    self._assert_assets(connection, [avatar_id])
+                storage_values["avatar_asset_id"] = avatar_id
             changed = connection.execute(
                 update(studio_documents)
                 .where(

@@ -325,7 +325,6 @@ function mapDocument(value: unknown): CharacterStudioDocument {
     '角色文档.coreMessages',
   )
   const lorebook = exactObject(raw.lorebook, ['name', 'entries'], ['name', 'entries'], '角色文档.lorebook')
-  nullableString(raw.avatarAssetId, '角色文档.avatarAssetId')
   const createdAt = dateValue(raw.createdAt, '角色文档.createdAt')
   const updatedAt = dateValue(raw.updatedAt, '角色文档.updatedAt')
   const diagnostics = status.last_diagnostics === null
@@ -378,6 +377,7 @@ function mapDocument(value: unknown): CharacterStudioDocument {
     ),
     exportArtifacts: objectValue(raw.exportArtifacts, '角色文档.exportArtifacts'),
     revision: integerValue(raw.revision, '角色文档.revision', 1),
+    avatarAssetId: nullableString(raw.avatarAssetId, '角色文档.avatarAssetId'),
     avatarUrl: nullableString(raw.avatarUrl, '角色文档.avatarUrl'),
     createdAt,
     updatedAt,

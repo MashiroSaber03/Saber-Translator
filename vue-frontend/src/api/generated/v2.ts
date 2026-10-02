@@ -4569,6 +4569,8 @@ export interface components {
             disabled: boolean;
         };
         StudioDocumentContent: {
+            /** @description Omit to keep the current avatar; null removes it. */
+            avatarAssetId?: string | null;
             origin: components["schemas"]["StudioDocumentOrigin"];
             status: components["schemas"]["StudioDocumentStatus"];
             meta: components["schemas"]["StudioDocumentMeta"];

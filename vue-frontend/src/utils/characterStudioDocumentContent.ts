@@ -5,6 +5,7 @@ export function characterStudioDocumentContent(
   document: CharacterStudioDocument,
 ): V2StudioDocumentContent {
   return {
+    avatarAssetId: document.avatarAssetId,
     origin: document.origin,
     status: document.status,
     meta: {

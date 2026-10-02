@@ -112,6 +112,7 @@ export interface CharacterStudioDocument {
   stateTasks: StateTask[]
   exportArtifacts: Record<string, unknown>
   revision: number
+  avatarAssetId: string | null
   avatarUrl: string | null
   createdAt: string
   updatedAt: string

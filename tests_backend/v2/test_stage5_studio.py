@@ -45,6 +45,7 @@ from src.backend_v2.storage.seeding import seed_system_records
 from src.backend_v2.studio.repository import (
     StudioConflict,
     StudioDataInvalid,
+    StudioNotFound,
     StudioRepository,
 )
 from src.backend_v2.studio.io import StudioIOService
@@ -809,6 +810,58 @@ def test_document_is_canonical_and_revision_cas_is_enforced(
             title="Saber",
             document=changed,
         )
+
+
+def test_document_avatar_upload_replace_remove_and_export(studio_platform) -> None:
+    repository = StudioRepository(studio_platform["engine"])
+    io_service = StudioIOService(
+        data_root=studio_platform["data_root"],
+        engine=studio_platform["engine"],
+        repository=repository,
+    )
+    document = repository.create_document(
+        book_id=str(studio_platform["book"]["id"]), title="头像测试",
+    )
+    for index, color in enumerate(((200, 30, 40), (30, 60, 200))):
+        image = BytesIO()
+        Image.new("RGB", (24, 32), color).save(image, format="PNG")
+        image.seek(0)
+        asset = io_service.publish_image(image, idempotency_key=f"avatar-{index}")
+        document["avatarAssetId"] = asset["assetId"]
+        document["identity"]["description"] = "保留角色设定"
+        document = repository.update_document(
+            document_id=document["id"], base_revision=document["revision"],
+            title=None, document=document,
+        )
+        assert repository.get_document(document["id"])["avatarUrl"] == asset["assetUrl"]
+        exported = io_service.export_png(document)
+        assert Image.open(BytesIO(exported)).convert("RGB").getpixel((0, 0)) == color
+        assert read_card_png(exported)["data"]["description"] == "保留角色设定"
+
+    unchanged = deepcopy(document)
+    unchanged.pop("avatarAssetId")
+    document = repository.update_document(
+        document_id=document["id"], base_revision=document["revision"],
+        title=None, document=unchanged,
+    )
+    assert document["avatarAssetId"] == asset["assetId"]
+    with pytest.raises(StudioNotFound):
+        repository.update_document(
+            document_id=document["id"], base_revision=document["revision"],
+            title=None, document={**document, "avatarAssetId": "missing-asset"},
+        )
+    with pytest.raises(StudioConflict):
+        repository.update_document(
+            document_id=document["id"], base_revision=1,
+            title=None, document={**document, "avatarAssetId": None},
+        )
+    removed = repository.update_document(
+        document_id=document["id"], base_revision=document["revision"],
+        title=None, document={**document, "avatarAssetId": None},
+    )
+    assert removed["avatarAssetId"] is None and removed["avatarUrl"] is None
+    assert removed["identity"]["description"] == "保留角色设定"
+    assert not repository.index(book_id=document["bookId"])["documents"][0]["hasAvatar"]
 
 
 def test_current_document_rejects_partial_coerced_and_corrupt_data(
