@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import logging
 from collections.abc import Sequence
 
 from src.backend_v2.local_models import LOCAL_MODEL_IDS
 from src.backend_v2.runtime_profile import PROFILE_NAMES
+from src.shared.user_logging import user_log
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -68,15 +70,19 @@ def dispatch(argv: Sequence[str] | None = None) -> int:
         from src.storage_migrator.entrypoint import run_migrator
         return run_migrator(args)
 
-    if args.role == "api":
-        from src.backend_v2.api.entrypoint import run_api
-
-        return run_api(args)
-
-    if args.role == "worker":
-        from src.backend_v2.worker.entrypoint import run_worker
-
-        return run_worker(args)
+    if args.role in {"api", "worker"}:
+        try:
+            if args.role == "api":
+                from src.backend_v2.api.entrypoint import run_api as run_child
+            else:
+                from src.backend_v2.worker.entrypoint import run_worker as run_child
+            return run_child(args)
+        except Exception as error:
+            # Background roles must exit instead of opening a frozen-runtime dialog.
+            message = f"{args.role.upper()} 进程启动或运行失败：{error}"
+            logging.getLogger(f"saber.{args.role}").exception(message)
+            user_log("error", message, level=logging.ERROR)
+            return 1
 
     if args.role == "desktop":
         if args.profile != "local":

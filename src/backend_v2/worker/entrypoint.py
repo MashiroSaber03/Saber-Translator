@@ -36,7 +36,7 @@ from src.backend_v2.storage.database import (
     is_sqlite_busy_error,
 )
 from src.backend_v2.storage.epochs import ProcessEpochRepository
-from src.shared.user_logging import inline_log_text, user_log
+from src.shared.user_logging import user_log
 
 
 LOGGER = logging.getLogger("saber.worker")
@@ -579,13 +579,6 @@ def run_worker(args: object) -> int:
                     break
             if not stop_event.is_set():
                 job_loop.run(stop_event)
-    except BaseException as exc:
-        LOGGER.exception("Worker 运行失败")
-        user_log(
-            "error",
-            f"任务执行器异常退出｜{inline_log_text(exc)}",
-        )
-        raise
     finally:
         LOGGER.debug("Worker 正在关闭")
         if heartbeat is not None:
