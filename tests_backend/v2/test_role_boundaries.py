@@ -26,7 +26,6 @@ from src.backend_v2.launcher.entrypoint import (
     ManagedChild,
     _api_health_requires_restart,
     _child_environment,
-    _is_expected_previous_child,
     _reset_restart_count_after_stable_run,
     _start_child_with_retries,
     _stop_children,
@@ -375,35 +374,6 @@ def test_posix_parent_monitor_stops_after_launcher_parent_changes() -> None:
     )
 
     assert lost == [True]
-
-
-def test_previous_child_identity_requires_role_and_same_data_root(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    class FakeProcess:
-        def __init__(self, _pid: int) -> None:
-            pass
-
-        def cmdline(self) -> list[str]:
-            return [
-                sys.executable,
-                str(ENTRYPOINT),
-                "--role",
-                "worker",
-                "--data-dir",
-                str(tmp_path),
-            ]
-
-    monkeypatch.setattr(psutil, "Process", FakeProcess)
-
-    assert _is_expected_previous_child(123, role="worker", data_root=tmp_path.resolve())
-    assert not _is_expected_previous_child(123, role="api", data_root=tmp_path.resolve())
-    assert not _is_expected_previous_child(
-        123,
-        role="worker",
-        data_root=(tmp_path / "other").resolve(),
-    )
 
 
 def test_launcher_requires_repeated_api_health_failures_before_restart(

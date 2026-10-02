@@ -24,7 +24,8 @@ OWNER_FILE = ".saber-migration-owner.json"
 class StorageManager:
     def __init__(self, root: Path, profile: str, *, target=STORAGE_VERSION, steps=MIGRATIONS,
                  sql_for=contract_sql, progress: Callable[[str], None] | None = None,
-                 failpoint: Callable[[str], None] | None = None, preparers=SOURCE_PREPARERS):
+                 failpoint: Callable[[str], None] | None = None, preparers=SOURCE_PREPARERS,
+                 check_startup_cancelled: Callable[[], None] | None = None):
         reject_links(root)
         self.root = root.resolve()
         self.profile = profile
@@ -34,6 +35,7 @@ class StorageManager:
         self.sql_for = sql_for
         self.progress = progress or (lambda message: LOGGER.info(message))
         self.failpoint = failpoint or (lambda _stage: None)
+        self.check_startup_cancelled = check_startup_cancelled
         self.lock = DataRootLock(self.root)
         self.control = control_root(self.root)
         self.pending = self.control / "upgrade-pending.json"
@@ -42,7 +44,7 @@ class StorageManager:
     def __enter__(self):
         self.lock.acquire()
         try:
-            wait_for_children(self.root)
+            wait_for_children(self.root, check_cancelled=self.check_startup_cancelled)
         except BaseException:
             self.lock.release()
             raise

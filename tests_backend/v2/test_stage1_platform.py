@@ -1070,16 +1070,6 @@ def test_process_epoch_registration_allows_unbound_pid_and_rejects_negative(
         repository.register(EpochRegistration("invalid-api", "token", "api", -1))
 
 
-def test_active_epoch_processes_only_returns_current_role(platform) -> None:
-    _data_root, engine = platform
-    repository = ProcessEpochRepository(engine)
-    repository.register(EpochRegistration("api-active", "api-token", "api", 101))
-    repository.register(EpochRegistration("worker-active", "worker-token", "worker", 202))
-
-    assert repository.active_epoch_processes("api") == [("api-active", 101)]
-    assert repository.active_epoch_processes("worker") == [("worker-active", 202)]
-
-
 def test_worker_recovery_is_idempotent_and_preserves_chapter_lock(platform) -> None:
     _data_root, engine = platform
     seed_system_records(engine)

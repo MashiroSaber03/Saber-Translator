@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
+from datetime import timedelta
 import sys
 
+import psutil
 import pytest
+from sqlalchemy import select, update
 
 from src.backend_v2.browser_extension.auth import (
     BROWSER_EXTENSION_ENABLED_ENV,
@@ -22,6 +26,14 @@ from src.backend_v2.launcher.entrypoint import (
 )
 from src.backend_v2.logging_config import STREAM_FRAME_ENV
 from src.backend_v2.runtime_identity import INTERNAL_HEALTH_TOKEN_HEADER
+from src.backend_v2.storage.database import create_sqlite_engine, database_path_for
+from src.backend_v2.storage.epochs import EpochRegistration, ProcessEpochRepository
+from src.backend_v2.storage.lifecycle import initialize_database
+from src.backend_v2.storage.schema import process_epochs
+from src.backend_v2.timestamps import utcnow
+from src.storage_migrator.contracts import StorageError
+from src.storage_migrator.control import DataRootLock, atomic_json, control_root, registered_process, wait_for_children
+from src.storage_migrator.runner import StorageManager
 
 
 def test_child_process_logs_are_forced_to_utf8() -> None:
@@ -253,3 +265,96 @@ def test_stop_requested_before_run_is_not_lost(tmp_path) -> None:
         LauncherState.STOPPED,
     ]
     assert not (tmp_path / "data").exists()
+
+
+@pytest.mark.parametrize("reuse_manager", [False, True])
+def test_initial_start_and_desktop_restart_check_children_before_prepare(tmp_path, monkeypatch, reuse_manager):
+    root = tmp_path / "data"
+    manager = StorageManager(root, "local")
+    monkeypatch.setattr("src.storage_migrator.runner.wait_for_children", lambda root, **kwargs: wait_for_children(root, timeout=0, **kwargs))
+    monkeypatch.setattr("src.backend_v2.launcher.entrypoint.wait_for_children", lambda root, **kwargs: wait_for_children(root, timeout=0, **kwargs))
+
+    def unexpected_prepare(*_args):
+        pytest.fail("Database preparation must not run while a previous child is alive")
+
+    monkeypatch.setattr(StorageManager, "prepare", unexpected_prepare)
+    with manager if reuse_manager else nullcontext():
+        with registered_process(root, "api"):
+            supervisor = LauncherSupervisor(
+                LauncherConfig(data_root=root, host="127.0.0.1", port=5000),
+                storage_manager=manager if reuse_manager else None,
+            )
+            with pytest.raises(StorageError, match="尚未退出"):
+                supervisor.run()
+
+
+@pytest.mark.parametrize("reuse_manager", [False, True])
+def test_stale_epoch_and_reused_protected_pid_do_not_block_startup(tmp_path, monkeypatch, reuse_manager):
+    root = tmp_path / "data"
+    initialize_database(root)
+    engine = create_sqlite_engine(database_path_for(root))
+    try:
+        repository = ProcessEpochRepository(engine)
+        repository.register(EpochRegistration("old-api", "test-token", "api", 123))
+        with engine.begin() as connection:
+            connection.execute(update(process_epochs).values(lease_expires_at=utcnow() - timedelta(days=1)))
+
+        class ReusedProcess:
+            def __init__(self, pid):
+                assert pid == 123
+
+            def create_time(self):
+                return 2.0
+
+            def cmdline(self):
+                raise psutil.AccessDenied(123)
+
+        monkeypatch.setattr(psutil, "Process", ReusedProcess)
+        manager = StorageManager(root, "local")
+        with manager if reuse_manager else nullcontext():
+            marker = control_root(root) / "processes" / "api-123.json"
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            atomic_json(marker, {"data_root": str(root.resolve()), "pid": 123, "created_at": 1.0, "role": "api"})
+
+            class ReadyToStart(Exception):
+                pass
+
+            def start_child(**_kwargs):
+                assert not marker.exists()
+                with engine.connect() as connection:
+                    assert connection.execute(select(process_epochs.c.status).where(process_epochs.c.id == "old-api")).scalar_one() == "lost"
+                raise ReadyToStart
+
+            monkeypatch.setattr("src.backend_v2.launcher.entrypoint._start_child_with_retries", start_child)
+            supervisor = LauncherSupervisor(
+                LauncherConfig(data_root=root, host="127.0.0.1", port=5000),
+                storage_manager=manager if reuse_manager else None,
+            )
+            with pytest.raises(ReadyToStart):
+                supervisor.run()
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize("reuse_manager", [False, True])
+def test_cancel_previous_child_wait_stops_without_error_or_preparing_database(tmp_path, monkeypatch, reuse_manager):
+    root = tmp_path / "data"
+    manager = StorageManager(root, "local")
+    statuses = []
+    supervisor = LauncherSupervisor(
+        LauncherConfig(data_root=root, host="127.0.0.1", port=5000),
+        storage_manager=manager if reuse_manager else None,
+        status_callback=statuses.append,
+    )
+    def unexpected_prepare(*_args):
+        pytest.fail("Cancelled startup must not prepare the database")
+
+    monkeypatch.setattr(StorageManager, "prepare", unexpected_prepare)
+    monkeypatch.setattr("src.storage_migrator.control.time.sleep", lambda _: supervisor.request_stop())
+    with manager if reuse_manager else nullcontext():
+        with registered_process(root, "worker"):
+            assert supervisor.run() == 0
+            assert statuses[-1].state == LauncherState.STOPPED
+            assert all(status.state != LauncherState.DEGRADED for status in statuses)
+    with DataRootLock(root):
+        pass

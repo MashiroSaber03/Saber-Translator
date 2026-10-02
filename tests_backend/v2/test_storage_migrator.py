@@ -6,6 +6,7 @@ import sqlite3
 import subprocess
 import sys
 
+import psutil
 import pytest
 
 from src.version import STORAGE_VERSION, parse_version
@@ -240,6 +241,41 @@ def test_lock_outside_root_and_live_process_protection(root):
     with registered_process(root, "worker"):
         with pytest.raises(StorageError, match="尚未退出"):
             wait_for_children(root, timeout=0)
+
+
+@pytest.mark.parametrize("state", ["reused", "exited", "alive", "access_denied"])
+def test_child_identity_uses_creation_time_without_reading_command_line(tmp_path, monkeypatch, state):
+    root = tmp_path / "data"
+    marker = control_root(root) / "processes" / "api-123.json"
+    marker.parent.mkdir(parents=True)
+    atomic_json(marker, {"data_root": str(root.resolve()), "pid": 123, "created_at": 1.0, "role": "api"})
+
+    class Process:
+        def __init__(self, pid):
+            assert pid == 123
+            if state == "exited":
+                raise psutil.NoSuchProcess(pid)
+
+        def create_time(self):
+            if state == "access_denied":
+                raise psutil.AccessDenied(123)
+            return 2.0 if state == "reused" else 1.0
+
+        def cmdline(self):
+            raise AssertionError("Command-line permissions must not decide process identity")
+
+        def is_running(self):
+            return True
+
+    monkeypatch.setattr("src.storage_migrator.control.psutil.Process", Process)
+    if state in {"alive", "access_denied"}:
+        message = "尚未退出" if state == "alive" else "进程信息访问受限"
+        with pytest.raises(StorageError, match=message):
+            wait_for_children(root, timeout=0)
+        assert marker.exists()
+    else:
+        wait_for_children(root, timeout=0)
+        assert not marker.exists()
 
 
 def test_api_gate_allows_only_health(root):

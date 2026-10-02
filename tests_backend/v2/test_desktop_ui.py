@@ -991,19 +991,29 @@ def test_log_view_inherits_the_bundled_application_font() -> None:
     assert "Fixedsys" not in WINDOW_STYLESHEET
 
 
-def test_message_box_width_applies_to_text_without_stretching_the_icon() -> None:
+@pytest.mark.parametrize("message", [
+    "设置自动保存失败：测试消息",
+    "后端启动或运行失败：旧 API/Worker 尚未退出；请先关闭旧程序。" * 6,
+    "Backend startup failed: previous backend child did not exit. Please close the previous process. " * 6,
+])
+def test_message_box_fits_text_without_stretching_the_icon(message) -> None:
     app = _app()
     box = QMessageBox(
         QMessageBox.Icon.Warning,
         "Saber-Translator",
-        "设置自动保存失败：测试消息",
+        message,
     )
     box.setStyleSheet(WINDOW_STYLESHEET)
     box.show()
     app.processEvents()
 
     labels = {label.objectName(): label for label in box.findChildren(QLabel)}
-    assert labels["qt_msgbox_label"].minimumWidth() == 280
+    label = labels["qt_msgbox_label"]
+    assert label.text() == message
+    if len(message) > 100:
+        assert label.wordWrap()
+    assert label.height() >= label.heightForWidth(label.width())
+    assert box.rect().contains(label.geometry())
     assert labels["qt_msgboxex_icon_label"].minimumWidth() < 280
 
     box.close()

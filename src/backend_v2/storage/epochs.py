@@ -166,21 +166,6 @@ class ProcessEpochRepository:
                 ).scalars()
             )
 
-    def active_epoch_processes(
-        self,
-        role: Literal["api", "worker"],
-    ) -> list[tuple[str, int]]:
-        with self.engine.connect() as connection:
-            return [
-                (str(epoch_id), int(pid))
-                for epoch_id, pid in connection.execute(
-                    select(process_epochs.c.id, process_epochs.c.pid).where(
-                        process_epochs.c.role == role,
-                        process_epochs.c.status == "active",
-                    )
-                )
-            ]
-
     def is_active_epoch(
         self,
         *,
