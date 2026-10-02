@@ -47,6 +47,7 @@ import type {
 import { deepClone } from '@/utils/deepClone'
 import { characterStudioDocumentContent } from '@/utils/characterStudioDocumentContent'
 import { showToast } from '@/utils/toast'
+import { uploadV2StudioAsset } from '@/api/v2/studio'
 
 export const useCharacterStudioStore = defineStore('character-studio', () => {
   const bookId = ref('')
@@ -73,6 +74,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   const isWorkspaceLoading = ref(false)
   const isDocumentLoading = ref(false)
   const isSaving = ref(false)
+  const isUploadingAvatar = ref(false)
   const isChatLoading = ref(false)
   const isChatMutating = ref(false)
   const isChatSummarizing = ref(false)
@@ -220,6 +222,7 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   }
 
   function clearDocumentActionState() {
+    isUploadingAvatar.value = false
     generatingSection.value = null
     downloadingFormat.value = null
     isValidating.value = false
@@ -465,6 +468,25 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     }
   }
 
+  async function updateAvatar(file: File | null) {
+    if (!currentDocument.value || isUploadingAvatar.value) return
+    const isCurrent = captureDocumentGuard()
+    isUploadingAvatar.value = true
+    clearErrorMessage()
+    try {
+      const asset = file ? await uploadV2StudioAsset(file) : null
+      if (!isCurrent() || !currentDocument.value) return
+      currentDocument.value.avatarAssetId = asset?.assetId ?? null
+      currentDocument.value.avatarUrl = asset?.assetUrl ?? null
+      await persistCurrentDocument()
+    } catch (error) {
+      if (!isCurrent()) return
+      throw createActionError(error, '保存角色图片失败')
+    } finally {
+      if (isCurrent()) isUploadingAvatar.value = false
+    }
+  }
+
   function persistCurrentDocument(): Promise<void> {
     if (!bookId.value || !currentDocument.value) return Promise.resolve()
     if (autosaveTimer) {
@@ -587,7 +609,6 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
   ): CharacterStudioDocument {
     const rebased = deepClone(localDocument)
     rebased.revision = savedDocument.revision
-    rebased.avatarUrl = savedDocument.avatarUrl
     rebased.createdAt = savedDocument.createdAt
     rebased.updatedAt = savedDocument.updatedAt
     return rebased
@@ -1189,6 +1210,8 @@ export const useCharacterStudioStore = defineStore('character-studio', () => {
     isWorkspaceLoading,
     isDocumentLoading,
     isSaving,
+    isUploadingAvatar,
+    updateAvatar,
     isChatLoading,
     isChatBusy,
     isChatStreaming,

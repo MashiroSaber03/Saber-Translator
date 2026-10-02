@@ -187,7 +187,6 @@ onMounted(() => {
     observer = new ResizeObserver(resize)
     if (containerRef.value) observer.observe(containerRef.value)
   }
-  void restore()
 })
 onBeforeUnmount(() => {
   observer?.disconnect()

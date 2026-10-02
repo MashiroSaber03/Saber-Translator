@@ -24,6 +24,19 @@ beforeEach(() => {
 })
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
 describe('reader state ownership', () => {
+  it('opens the previous page at its bottom only for backward wheel navigation', async () => {
+    const wrapper = create(); await flushPromises()
+    wrapper.getComponent(ReaderControls).vm.$emit('settingsChange', { ...DEFAULT_READER_SETTINGS, layout: 'single' })
+    wrapper.getComponent(ReaderControls).vm.$emit('jump', 3)
+    await flushPromises()
+    wrapper.getComponent(ReaderCanvas).vm.$emit('navigate', -1, true)
+    await flushPromises()
+    expect(wrapper.getComponent(ReaderCanvas).props('position')).toMatchObject({ pageId: 'p2', fraction: 1 })
+    wrapper.getComponent(ReaderControls).vm.$emit('navigate', -1)
+    await flushPromises()
+    expect(wrapper.getComponent(ReaderCanvas).props('position')).toMatchObject({ pageId: 'p1', fraction: 0 })
+  })
+
   it('shows zero for empty chapters', async () => {
     listPages.mockResolvedValue({ items: [], nextCursor: null })
     const wrapper = create(); await flushPromises()

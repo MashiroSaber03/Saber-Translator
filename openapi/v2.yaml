@@ -7341,6 +7341,10 @@ components:
       required:
         [origin, status, meta, identity, coreMessages, lorebook, regexScripts, stateTasks, exportArtifacts]
       properties:
+        avatarAssetId:
+          type: [string, "null"]
+          minLength: 1
+          description: Omit to keep the current avatar; null removes it.
         origin: {$ref: "#/components/schemas/StudioDocumentOrigin"}
         status: {$ref: "#/components/schemas/StudioDocumentStatus"}
         meta: {$ref: "#/components/schemas/StudioDocumentMeta"}

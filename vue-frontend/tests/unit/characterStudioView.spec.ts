@@ -110,6 +110,7 @@ describe('CharacterStudioView workspace shell', () => {
       stateTasks: [],
       exportArtifacts: {},
       revision: 1,
+      avatarAssetId: null,
       avatarUrl: null,
       createdAt: '2026-05-15T00:00:00',
       updatedAt: '2026-05-15T00:00:00',

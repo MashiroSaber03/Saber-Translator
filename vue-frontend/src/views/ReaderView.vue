@@ -119,10 +119,13 @@ function jump(page: number) {
   setPosition({ pageId: images.value[index]!.id, index, fraction: 0 })
   navigationId.value++
 }
-function navigate(delta: number) {
+function navigate(delta: number, fromEnd = false) {
   if (paged.value) {
     const next = groups.value[groupIndex.value + delta]
-    if (next) jump(next[0]! + 1)
+    if (next) {
+      jump(next[0]! + 1)
+      if (fromEnd) setPosition({ ...position.value, fraction: 1 })
+    }
   } else {
     const next = currentIndex.value + delta
     if (next >= 0 && next < images.value.length) jump(next + 1)
@@ -383,7 +386,6 @@ watch(
           :can-next="canNext"
           @position-change="setPosition"
           @go-translate="translate"
-          @toggle-controls="controls = !controls"
           @navigate="navigate"
           @size="learnedSize"
         />
@@ -443,6 +445,7 @@ watch(
           :chapter-id="chapterId"
           :chapters="chapters"
           @settings-change="updateSettings"
+          @cycle-fit="cycleFit"
           @navigate="navigate"
           @jump="jump"
           @chapter="chapter"

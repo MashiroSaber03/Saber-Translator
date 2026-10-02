@@ -56,6 +56,7 @@
             <CharacterStudioEditor
               :document="store.currentDocument"
               :avatar-url="avatarUrl"
+              :avatar-busy="store.isUploadingAvatar"
               :diagnostics="store.diagnostics"
               :pending-state="store.editorPendingState"
               :active-tab="store.activeEditorTab"
@@ -68,6 +69,7 @@
               @validate="validate"
               @delete="deleteCurrent"
               @import-worldbook="importWorldbook"
+              @update-avatar="updateAvatar"
               @download="download"
             />
           </div>
@@ -329,6 +331,10 @@ async function importWorldbook(file: File) {
 
 async function saveNow() {
   await runAction(() => store.persistCurrentDocument())
+}
+
+async function updateAvatar(file: File | null) {
+  await runAction(() => store.updateAvatar(file))
 }
 
 async function validate() {

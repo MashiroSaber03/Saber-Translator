@@ -29,8 +29,7 @@ const props = withDefaults(
 const emit = defineEmits<{
   positionChange: [position: ReaderPosition]
   goTranslate: []
-  toggleControls: []
-  navigate: [delta: number]
+  navigate: [delta: number, fromEnd?: boolean]
   size: [id: string, width: number, height: number]
 }>()
 const publicAccess = usePublicUserAccess()
@@ -175,26 +174,27 @@ function up(event: PointerEvent) {
     Math.abs(dx) > Math.abs(dy) * 1.5
   ) {
     emit('navigate', (dx < 0 ? 1 : -1) * (props.settings.direction === 'rtl' ? -1 : 1))
-    moved = true
   }
   pointer = null
 }
 function cancelPointer() {
   pointer = null
-  moved = true
 }
-function click(event: MouseEvent) {
+function wheel(event: WheelEvent) {
+  const el = stage.value
   if (
-    moved ||
-    multiTouch ||
-    window.getSelection()?.toString() ||
-    (event.target as Element).closest('button,input,select,a')
-  )
-    return
-  const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect()
-  const x = (event.clientX - bounds.left) / bounds.width
-  if (!paged.value || (x >= 0.25 && x <= 0.75)) emit('toggleControls')
-  else emit('navigate', (x > 0.75 ? 1 : -1) * (props.settings.direction === 'rtl' ? -1 : 1))
+    !el || event.defaultPrevented || event.ctrlKey || event.metaKey || event.shiftKey ||
+    !event.deltaY || Math.abs(event.deltaX) > Math.abs(event.deltaY)
+  ) return
+
+  const direction = Math.sign(event.deltaY)
+  const canScroll = direction > 0
+    ? el.scrollTop + el.clientHeight < el.scrollHeight - 1
+    : el.scrollTop > 1
+  if (canScroll) return
+  event.preventDefault()
+  if (direction > 0 ? props.canNext : props.canPrev)
+    emit('navigate', direction, direction < 0)
 }
 onMounted(() => {
   if (typeof ResizeObserver !== 'undefined') {
@@ -234,7 +234,6 @@ onUnmounted(() => {
       @pointerup="up"
       @pointercancel="cancelPointer"
       @pointerleave="cancelPointer"
-      @click="click"
     >
       <div
         v-if="paged"
@@ -242,6 +241,7 @@ onUnmounted(() => {
         class="reader-canvas__paged"
         :class="{ 'reader-canvas__paged--swipe': fit === 'screen' || fit === 'width' }"
         @scroll.passive="scrollPage"
+        @wheel="wheel"
       >
         <div class="reader-canvas__spread" :style="spreadStyle">
           <figure

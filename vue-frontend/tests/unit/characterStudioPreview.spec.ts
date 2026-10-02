@@ -61,6 +61,7 @@ const documentStub: CharacterStudioDocument = {
   stateTasks: [],
   exportArtifacts: {},
   revision: 1,
+  avatarAssetId: null,
   avatarUrl: null,
   createdAt: '2026-05-15T00:00:00',
   updatedAt: '2026-05-15T00:00:00',
@@ -968,6 +969,47 @@ describe('CharacterStudioPreview workspace', () => {
     expect(source).not.toContain('variant="toolbar"')
     expect(source).not.toContain('action-ghost')
     expect(source).not.toContain('action-primary')
+  })
+
+  it('sends chat on Enter without inserting a newline', async () => {
+    const wrapper = mountPreview()
+    const input = wrapper.get('textarea.studio-chat-composer__input')
+    await input.setValue('你好')
+    const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    input.element.dispatchEvent(event)
+
+    expect(event.defaultPrevented).toBe(true)
+    expect(wrapper.emitted('send-chat')).toEqual([[{ content: '你好', attachments: [] }]])
+    expect((input.element as HTMLTextAreaElement).value).toBe('你好')
+  })
+
+  it.each([
+    { shiftKey: true },
+    { isComposing: true },
+    { keyCode: 229 },
+  ])('preserves newline and IME key handling: %j', async modifiers => {
+    const wrapper = mountPreview()
+    const input = wrapper.get('textarea.studio-chat-composer__input')
+    await input.setValue('你好')
+    const event = new KeyboardEvent('keydown', {
+      key: 'Enter', bubbles: true, cancelable: true, ...modifiers,
+    })
+    input.element.dispatchEvent(event)
+
+    expect(event.defaultPrevented).toBe(false)
+    expect(wrapper.emitted('send-chat')).toBeUndefined()
+  })
+
+  it('does not send empty drafts, repeated Enter, or messages while busy', async () => {
+    const wrapper = mountPreview()
+    const input = wrapper.get('textarea.studio-chat-composer__input')
+    await input.trigger('keydown', { key: 'Enter' })
+    await input.setValue('你好')
+    await input.trigger('keydown', { key: 'Enter', repeat: true })
+    await wrapper.setProps({ chatBusy: true })
+    await input.trigger('keydown', { key: 'Enter' })
+
+    expect(wrapper.emitted('send-chat')).toBeUndefined()
   })
 
   it('clears the chat draft only after the backend accepts the operation', async () => {

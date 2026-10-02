@@ -24,12 +24,14 @@
     <template v-else>
       <StudioHeroSection
         :avatar-url="avatarUrl"
+        :avatar-busy="avatarBusy"
         :document="localDocument"
         :format-origin="formatOrigin"
         :is-generation-locked="isGenerationLocked"
         :is-generating="isGenerating"
         :pending-state="pendingState"
         @delete="$emit('delete')"
+        @update-avatar="$emit('update-avatar', $event)"
         @generate="$emit('generate', $event)"
       />
 
@@ -348,6 +350,7 @@ const exportDownloadItems: readonly ExportDownloadItem[] = [
 const props = defineProps<{
   document: CharacterStudioDocument | null
   avatarUrl: string
+  avatarBusy?: boolean
   diagnostics: ExportDiagnostic | null
   pendingState: CharacterStudioEditorPendingState
   activeTab: 'overview' | 'character' | 'greetings' | 'lorebook' | 'scripts' | 'export'
@@ -355,6 +358,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
+  (e: 'update-avatar', file: File | null): void
   (e: 'update:document', value: CharacterStudioDocument | null): void
   (e: 'update:activeTab', value: 'overview' | 'character' | 'greetings' | 'lorebook' | 'scripts' | 'export'): void
   (e: 'update:activeScriptTab', value: 'regex' | 'tasks'): void

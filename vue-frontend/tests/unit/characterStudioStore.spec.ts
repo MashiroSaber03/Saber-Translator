@@ -10,6 +10,9 @@ import type {
 } from '@/types/characterStudio'
 import { buildCharacterStudioGreetingOptions } from '@/utils/characterStudioGreetings'
 import { deepClone } from '@/utils/deepClone'
+import { uploadV2StudioAsset } from '@/api/v2/studio'
+
+vi.mock('@/api/v2/studio', () => ({ uploadV2StudioAsset: vi.fn() }))
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -25,6 +28,7 @@ const demoDocument: CharacterStudioDocument = {
   id: 'doc_alpha',
   bookId: 'book-demo',
   revision: 1,
+  avatarAssetId: null,
   avatarUrl: null,
   createdAt: '2026-05-15T00:00:00',
   updatedAt: '2026-05-15T00:00:00',
@@ -309,6 +313,103 @@ vi.mock('@/api/characterStudio', () => ({
 }))
 
 describe('characterStudioStore', () => {
+  it('saves and removes the current avatar without losing text edits', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+    await store.loadWorkspace('book-demo')
+    getCharacterStudioDocumentMock.mockResolvedValueOnce(deepClone(demoDocument))
+    await store.openDocument('doc_alpha')
+    store.currentDocument!.identity.description = '正在编辑的简介'
+    vi.mocked(uploadV2StudioAsset).mockResolvedValueOnce({
+      assetId: 'avatar-one', assetUrl: '/api/v2/assets/avatar-one',
+      mimeType: 'image/png', byteSize: 20, width: 24, height: 32,
+    })
+    await store.updateAvatar(new File(['image'], 'avatar.png', { type: 'image/png' }))
+    expect(store.currentDocument?.avatarAssetId).toBe('avatar-one')
+    expect(store.currentDocument?.identity.description).toBe('正在编辑的简介')
+    expect(store.documents[0]?.has_avatar).toBe(true)
+    expect(store.hasUnsavedDocumentEdits).toBe(false)
+    await store.updateAvatar(null)
+    expect(store.currentDocument?.avatarUrl).toBeNull()
+    expect(store.documents[0]?.has_avatar).toBe(false)
+  })
+
+  it('keeps the avatar when upload fails and does not apply late uploads to another character', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+    await store.loadWorkspace('book-demo')
+    getCharacterStudioDocumentMock.mockResolvedValueOnce(deepClone(demoDocument))
+    await store.openDocument('doc_alpha')
+    const file = new File(['image'], 'avatar.png', { type: 'image/png' })
+    vi.mocked(uploadV2StudioAsset).mockRejectedValueOnce(new Error('上传失败'))
+    await expect(store.updateAvatar(file)).rejects.toThrow('上传失败')
+    expect(store.currentDocument?.avatarUrl).toBeNull()
+    expect(store.isUploadingAvatar).toBe(false)
+    const upload = deferred<Awaited<ReturnType<typeof uploadV2StudioAsset>>>()
+    vi.mocked(uploadV2StudioAsset).mockReturnValueOnce(upload.promise)
+    const pending = store.updateAvatar(file)
+    store.currentDocument = { ...deepClone(demoDocument), id: 'another-character' }
+    upload.resolve({
+      assetId: 'late-avatar', assetUrl: '/api/v2/assets/late-avatar',
+      mimeType: 'image/png', byteSize: 20, width: 24, height: 32,
+    })
+    await pending
+    expect(store.currentDocument?.avatarAssetId).toBeNull()
+  })
+
+  it('ignores an old upload failure after reopening the character and starting a new upload', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+    await store.loadWorkspace('book-demo')
+    getCharacterStudioDocumentMock.mockResolvedValueOnce(deepClone(demoDocument))
+    await store.openDocument('doc_alpha')
+    const oldUpload = deferred<Awaited<ReturnType<typeof uploadV2StudioAsset>>>()
+    vi.mocked(uploadV2StudioAsset).mockReturnValueOnce(oldUpload.promise)
+    const file = new File(['image'], 'avatar.png', { type: 'image/png' })
+    const oldAction = store.updateAvatar(file)
+    getCharacterStudioDocumentMock.mockResolvedValueOnce(deepClone(demoDocument))
+    await store.openDocument('doc_alpha')
+    const newUpload = deferred<Awaited<ReturnType<typeof uploadV2StudioAsset>>>()
+    vi.mocked(uploadV2StudioAsset).mockReturnValueOnce(newUpload.promise)
+    const newAction = store.updateAvatar(file)
+    oldUpload.reject(new Error('旧上传失败'))
+    await oldAction
+    expect(store.errorMessage).toBe('')
+    expect(store.isUploadingAvatar).toBe(true)
+    newUpload.resolve({
+      assetId: 'new-avatar', assetUrl: '/api/v2/assets/new-avatar',
+      mimeType: 'image/png', byteSize: 20, width: 24, height: 32,
+    })
+    await newAction
+    expect(store.currentDocument?.avatarAssetId).toBe('new-avatar')
+    expect(store.isUploadingAvatar).toBe(false)
+  })
+
+  it('keeps a new avatar when an earlier text save completes', async () => {
+    const { useCharacterStudioStore } = await import('@/stores/characterStudioStore')
+    const store = useCharacterStudioStore()
+    await store.loadWorkspace('book-demo')
+    getCharacterStudioDocumentMock.mockResolvedValueOnce(deepClone(demoDocument))
+    await store.openDocument('doc_alpha')
+    store.currentDocument!.identity.description = '并发保存的简介'
+    const textSnapshot = deepClone(store.currentDocument!)
+    const textSave = deferred<CharacterStudioDocument>()
+    saveCharacterStudioDocumentMock.mockReturnValueOnce(textSave.promise)
+    const saving = store.persistCurrentDocument()
+    vi.mocked(uploadV2StudioAsset).mockResolvedValueOnce({
+      assetId: 'concurrent-avatar', assetUrl: '/api/v2/assets/concurrent-avatar',
+      mimeType: 'image/png', byteSize: 20, width: 24, height: 32,
+    })
+    const upload = store.updateAvatar(new File(['image'], 'avatar.png', { type: 'image/png' }))
+    await Promise.resolve()
+    textSave.resolve({ ...textSnapshot, revision: 2 })
+    await Promise.all([saving, upload])
+    expect(store.currentDocument?.avatarAssetId).toBe('concurrent-avatar')
+    expect(store.currentDocument?.avatarUrl).toBe('/api/v2/assets/concurrent-avatar')
+    expect(store.currentDocument?.identity.description).toBe('并发保存的简介')
+    expect(store.hasUnsavedDocumentEdits).toBe(false)
+  })
+
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.useRealTimers()

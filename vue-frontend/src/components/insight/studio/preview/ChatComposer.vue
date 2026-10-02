@@ -84,6 +84,12 @@ function sendChat() {
   emit('send-chat', { content, attachments: pendingFiles.value.map(item => item.file) })
 }
 
+function handleKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Enter' || event.shiftKey || event.isComposing || event.keyCode === 229) return
+  event.preventDefault()
+  if (!event.repeat) sendChat()
+}
+
 onUnmounted(() => {
   pendingFiles.value.forEach(item => URL.revokeObjectURL(item.previewUrl))
 })
@@ -123,7 +129,8 @@ onUnmounted(() => {
         variant="studio"
         rows="1"
         aria-label="聊天消息内容"
-        placeholder="输入消息，或添加图片后让角色结合画面继续聊天。"
+        placeholder="输入消息（Enter 发送，Shift+Enter 换行），也可添加图片。"
+        @keydown="handleKeydown"
       />
       <div class="studio-chat-composer__actions">
         <UiIconButton
