@@ -22,6 +22,7 @@ from src.backend_v2.auth.ownership import effective_owner_id
 from src.backend_v2.redaction import redact_sensitive_text
 from src.backend_v2.serialization import canonical_json as _json
 from src.backend_v2.insight.page_schema import (
+    ALLOWED_IMPORTANCE,
     InvalidPageAnalysis,
     validate_persisted_page_analysis,
 )
@@ -74,6 +75,31 @@ DERIVED_KINDS = frozenset(
 FINAL_ANALYSIS_RUN_STATUSES = frozenset(
     {"completed", "completed_with_errors"}
 )
+
+
+def _normalize_layer_events(value: object) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        raise ValueError("summary layer key_events must be an array")
+    events = []
+    for index, raw in enumerate(value):
+        # Earlier layer prompts also accepted plain event descriptions.
+        event = {"summary": raw} if isinstance(raw, str) else raw
+        if not isinstance(event, Mapping):
+            raise ValueError(f"summary layer key_events[{index}] must be an object or text")
+        summary = event.get("summary")
+        if not isinstance(summary, str) or not summary.strip():
+            raise ValueError(f"summary layer key_events[{index}].summary must be non-empty text")
+        importance = event.get("importance", "normal")
+        if not isinstance(importance, str) or importance not in ALLOWED_IMPORTANCE:
+            raise ValueError(f"summary layer key_events[{index}].importance is invalid")
+        normalized = {**event, "summary": summary.strip(), "importance": importance}
+        if "event_type" in event:
+            event_type = event["event_type"]
+            if not isinstance(event_type, str) or not event_type.strip():
+                raise ValueError(f"summary layer key_events[{index}].event_type must be non-empty text")
+            normalized["event_type"] = event_type.strip()
+        events.append(normalized)
+    return events
 
 
 def _json_object(value: object, field: str) -> dict[str, Any]:
@@ -198,6 +224,17 @@ def _safe_timeline_error(error: object) -> str:
     return message[:1000]
 
 
+def _timeline_optional_fields(value: Mapping[str, Any], fields: Sequence[str]) -> dict[str, Any]:
+    """Represent absent optional model values by omitted fields on the wire."""
+    return {
+        key: item for key, item in value.items()
+        if key not in fields or (
+            item is not None
+            and not (key in {"arc", "importance"} and isinstance(item, str) and not item.strip())
+        )
+    }
+
+
 def _validate_timeline_parts(
     *,
     content: object,
@@ -211,6 +248,16 @@ def _validate_timeline_parts(
         raise ValueError("timeline response must contain at least one event")
     if not isinstance(characters, list):
         raise ValueError("timeline response is missing characters")
+    content = _timeline_optional_fields(content, ("plot_arcs", "plot_threads"))
+    for field, optional_fields in (
+        ("plot_arcs", ("mood", "event_ids")),
+        ("plot_threads", ("description", "introduced_at", "resolved_at")),
+    ):
+        if isinstance(content.get(field), list):
+            content[field] = [
+                _timeline_optional_fields(item, optional_fields) if isinstance(item, Mapping) else item
+                for item in content[field]
+            ]
 
     validated_events: list[dict[str, Any]] = []
     for index, event in enumerate(events):
@@ -240,7 +287,9 @@ def _validate_timeline_parts(
             raise ValueError(
                 f"timeline event {index + 1} must reference at least one page"
             )
-        validated_events.append(dict(event))
+        if event.get("importance") is not None and not isinstance(event["importance"], str):
+            raise ValueError(f"timeline event {index + 1} importance must be a string")
+        validated_events.append(_timeline_optional_fields(event, ("importance",)))
 
     validated_characters: list[dict[str, Any]] = []
     names: set[str] = set()
@@ -258,6 +307,8 @@ def _validate_timeline_parts(
             raise ValueError(
                 f"timeline character {index + 1} description is invalid"
             )
+        if character.get("arc") is not None and not isinstance(character["arc"], str):
+            raise ValueError(f"timeline character {index + 1} arc must be a string")
         first_page = character.get("first_page")
         if (
             isinstance(first_page, bool)
@@ -305,7 +356,11 @@ def _validate_timeline_parts(
                     f"timeline character {index + 1} key moment "
                     f"{moment_index + 1} page is invalid"
                 )
-        validated_characters.append(dict(character))
+        normalized_character = _timeline_optional_fields(character, ("arc", "related_page_numbers"))
+        normalized_character["key_moments"] = [
+            _timeline_optional_fields(moment, ("page",)) for moment in key_moments
+        ]
+        validated_characters.append(normalized_character)
     return dict(content), validated_events, validated_characters
 
 
@@ -331,6 +386,11 @@ def _normalized_timeline_result(
             "degraded": mode != "enhanced",
         }
     )
+    try:
+        _validate_timeline_metadata(content, mode=mode)
+    except InsightConflict as exc:
+        # Model output errors must enter the shared JSON business-retry path.
+        raise ValueError(str(exc)) from exc
     return {
         "mode": mode,
         "content": content,
@@ -484,13 +544,17 @@ def validate_timeline_payload(
 
 def _canonical_timeline_references(
     *,
-    frozen: AnalysisInputSnapshot,
+    pages: Sequence[Mapping[str, Any]],
     events: Sequence[Mapping[str, Any]],
     characters: Sequence[Mapping[str, Any]],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    if any("eventId" in event for event in events):
+        raise InsightConflict("timeline event must not define eventId")
+    if any("characterId" in character for character in characters):
+        raise InsightConflict("timeline character must not define characterId")
     page_ids_by_number: dict[int, str] = {}
     page_numbers_by_id: dict[str, int] = {}
-    for index, page in enumerate(frozen.pages, start=1):
+    for index, page in enumerate(pages, start=1):
         page_id = _required_string(
             page.get("pageId"),
             f"timeline source page {index} pageId",
@@ -696,15 +760,22 @@ class ProviderDerivedAlgorithms:
         prompt = (
             f"请生成“{layer_name}”层级摘要。"
             '只依据输入，保留关键事件、连续性和因果关系。输出一个 JSON 对象，'
-            '格式为 {"summary":"本组摘要","key_events":[]}，不要输出数组。\n\n'
+            '格式为 {"summary":"本组摘要","key_events":[{"summary":"事件描述","importance":"normal"}]}。'
+            'summary 必须是非空文本；key_events 中每项为事件对象，importance 仅使用 high、medium、normal，'
+            '可选 event_type 为非空文本。没有关键事件时 key_events 为 []，不要输出顶层数组。\n\n'
             + "\n\n".join(_json(dict(value)) for value in inputs)
         )
         def validate(result: Any) -> dict[str, Any]:
-            if not isinstance(result, Mapping) or not contains_nonempty_text(result):
+            if not isinstance(result, Mapping) or not result:
                 raise ValueError("summary layer response must be a non-empty object")
-            if not isinstance(result.get("key_events", []), list):
-                raise ValueError("summary layer key_events must be an array")
-            return dict(result)
+            summary = result.get("summary")
+            if not isinstance(summary, str) or not summary.strip():
+                raise ValueError("summary layer summary must be non-empty text")
+            return {
+                **result,
+                "summary": summary.strip(),
+                "key_events": _normalize_layer_events(result.get("key_events", [])),
+            }
 
         return self._chat_json(
             prompt,
@@ -725,16 +796,12 @@ class ProviderDerivedAlgorithms:
             "只依据输入，不补写不存在的情节。输出 JSON，至少包含 title 与 content。\n\n"
             + _page_context(pages)
         )
-        result = self._chat_json(prompt, config=config, prompt_type="book_overview")
-        if not isinstance(result, Mapping):
-            raise ValueError("overview response must be an object")
-        title = result.get("title")
-        content = result.get("content")
-        if not isinstance(title, str) or not title.strip():
-            raise ValueError("overview response title must be a non-empty string")
-        if not isinstance(content, str) or not content.strip():
-            raise ValueError("overview response content must be a non-empty string")
-        return dict(result)
+        return self._chat_json(
+            prompt, config=config, prompt_type="book_overview",
+            validator=lambda result: validate_artifact_payload(
+                kind="overview", template=template, payload=result,
+            ),
+        )
 
     def build_compressed_context(
         self,
@@ -744,15 +811,15 @@ class ProviderDerivedAlgorithms:
     ) -> Mapping[str, Any]:
         prompt = (
             "把以下漫画逐页分析压缩成可供后续问答和剧情生成使用的上下文。"
-            "保留事件顺序、因果、角色状态变化和未解决线索。输出 JSON。\n\n"
+            "保留事件顺序、因果、角色状态变化和未解决线索。输出包含实质文本内容的 JSON 对象。\n\n"
             + _page_context(pages)
         )
-        result = self._chat_json(prompt, config=config, prompt_type="group_summary")
-        if not isinstance(result, Mapping) or not contains_nonempty_text(result):
-            raise ValueError(
-                "compressed context response must be a non-empty object"
-            )
-        return dict(result)
+        return self._chat_json(
+            prompt, config=config, prompt_type="group_summary",
+            validator=lambda result: validate_artifact_payload(
+                kind="compressed_context", template="default", payload=result,
+            ),
+        )
 
     def build_timeline(
         self,
@@ -760,38 +827,69 @@ class ProviderDerivedAlgorithms:
         *,
         config: Mapping[str, Any],
     ) -> Mapping[str, Any]:
-        enhanced_prompt = (
-            "根据以下漫画分析生成增强时间线。输出 JSON："
+        # Summary units and compressed context can cover overlapping pages.
+        source_pages: dict[str, dict[str, Any]] = {}
+        for page in pages:
+            _page_context_label(page)
+            ids = page["pageIds"] if page.get("pageIds") is not None else [page["pageId"]]
+            numbers = page["pageNumbers"] if page.get("pageNumbers") is not None else [page["pageNumber"]]
+            for page_id, number in zip(ids, numbers, strict=True):
+                source = {"pageId": page_id, "pageNumber": number}
+                if page_id in source_pages and source_pages[page_id] != source:
+                    raise InsightConflict("timeline source page references do not match")
+                source_pages[page_id] = source
+
+        def validate(result: object, *, mode: str, fallback_reason: str | None) -> dict[str, Any]:
+            normalized = _normalized_timeline_result(
+                result, mode=mode, fallback_reason=fallback_reason,
+            )
+            normalized["events"], normalized["characters"] = _canonical_timeline_references(
+                pages=list(source_pages.values()),
+                events=normalized["events"], characters=normalized["characters"],
+            )
+            return normalized
+
+        output_contract = (
+            "只输出 JSON 对象，格式为："
             '{"content":{"story_summary":"...","plot_arcs":'
             '[{"id":"...","name":"...","description":"...",'
-            '"page_range":{"start":1,"end":2},"mood":"...",'
-            '"event_ids":["..."]}],"plot_threads":[]},'
+            '"page_range":{"start":1,"end":2}}],'
+            '"plot_threads":[{"id":"...","name":"...",'
+            '"type":"伏笔","status":"未解决"}]},'
             '"events":[{"summary":"...","page_ids":["..."]}],'
             '"characters":[{"name":"...","aliases":[],"description":"...",'
             '"personality":"...","arc":"...","first_page":1,'
             '"key_moments":[{"summary":"...","page":1}],'
             '"related_page_numbers":[1]}]}。'
+            "story_summary 必须是非空文本；plot_arcs 中每项必须包含 id、name、description 和 page_range，"
+            "plot_threads 中每项必须包含非空文本 id、name、type、status，各自数组内的 id 不得重复。"
+            "剧情线可选 description 为非空文本，introduced_at 为正整数页码，resolved_at 为正整数页码或 null。"
+            "没有可确认的剧情阶段或剧情线时使用空数组，不要为了填充字段编造事实。"
+            "events 至少包含一个有来源的事件，使用输入中实际的 page_ids 或 page_numbers 关联页面；"
+            "页码必须为正整数，page_range.end 不得小于 start。"
+            "没有角色资料时 characters 为 []。不要输出系统生成的 eventId、characterId 或模式元数据。"
             "不要把推断写成事实。\n\n"
+        )
+        enhanced_prompt = (
+            "根据以下漫画分析生成增强时间线。" + output_contract
             + _page_context(pages)
         )
         enhanced_error: Exception | None = None
         try:
-            result = self._chat_json(
+            return self._chat_json(
                 enhanced_prompt,
                 config=config,
                 prompt_type="book_overview",
-            )
-            return _normalized_timeline_result(
-                result,
-                mode="enhanced",
-                fallback_reason=None,
+                validator=lambda result: validate(
+                    result, mode="enhanced", fallback_reason=None,
+                ),
             )
         except Exception as exc:
             if is_memory_allocation_error(exc):
                 raise
             enhanced_error = exc
 
-        compressed_payloads: list[dict[str, Any]] = []
+        compressed_inputs: list[Mapping[str, Any]] = []
         for index, page in enumerate(pages):
             analysis = _required_mapping(
                 page.get("analysis"),
@@ -805,25 +903,22 @@ class ProviderDerivedAlgorithms:
                 f"timeline input {index + 1} compressed_context",
             )
             if compressed_payload:
-                compressed_payloads.append(compressed_payload)
+                compressed_inputs.append(page)
         compressed_error: Exception | None = None
-        if compressed_payloads:
+        if compressed_inputs:
             compressed_prompt = (
-                "根据以下压缩上下文生成漫画时间线。输出 JSON，必须包含 "
-                "content、events 和 characters；事件使用 page_ids 或 page_numbers "
-                "关联来源页面。不要补写上下文中不存在的事实。\n\n"
-                + "\n\n".join(_json(value) for value in compressed_payloads)
+                "根据以下压缩上下文生成漫画时间线。" + output_contract
+                + _page_context(compressed_inputs)
             )
             try:
-                result = self._chat_json(
+                return self._chat_json(
                     compressed_prompt,
                     config=config,
                     prompt_type="book_overview",
-                )
-                return _normalized_timeline_result(
-                    result,
-                    mode="compressed",
-                    fallback_reason=_safe_timeline_error(enhanced_error),
+                    validator=lambda result: validate(
+                        result, mode="compressed",
+                        fallback_reason=_safe_timeline_error(enhanced_error),
+                    ),
                 )
             except Exception as exc:
                 if is_memory_allocation_error(exc):
@@ -831,33 +926,11 @@ class ProviderDerivedAlgorithms:
                 compressed_error = exc
 
         events = []
-        story_summary = ""
         for page_index, page in enumerate(pages):
             payload = _required_mapping(
                 page.get("analysis"),
                 f"timeline input {page_index + 1} analysis",
             )
-            compressed_context_value = payload.get("compressed_context")
-            compressed_context = (
-                _required_mapping(
-                    compressed_context_value,
-                    f"timeline input {page_index + 1} compressed_context",
-                )
-                if compressed_context_value is not None
-                else {}
-            )
-            if compressed_context and not story_summary:
-                for key in ("story_summary", "summary", "content"):
-                    value = compressed_context.get(key)
-                    if value is None:
-                        continue
-                    if not isinstance(value, str):
-                        raise InsightConflict(
-                            f"timeline input {page_index + 1} {key} must be a string"
-                        )
-                    if value:
-                        story_summary = value
-                        break
             raw_events = payload.get("key_events", [])
             if not isinstance(raw_events, list):
                 raise InsightConflict(
@@ -927,7 +1000,7 @@ class ProviderDerivedAlgorithms:
         return {
             "mode": "simple",
             "content": {
-                "story_summary": story_summary,
+                "story_summary": "\n".join(event["summary"] for event in events),
                 "requested_mode": "enhanced",
                 "actual_mode": "simple",
                 "fallback_reason": fallback_reason,
@@ -987,10 +1060,16 @@ class ProviderDerivedAlgorithms:
         client = ChatClient(chat_config)
 
         async def execute() -> object:
+            def validate(result: Any) -> Any:
+                try:
+                    return validator(result) if validator is not None else result
+                except InsightConflict as exc:
+                    raise ValueError(str(exc)) from exc
+
             return await client.generate_json(
                 f"{configured}\n\n{prompt}".strip(),
                 system=system,
-                validator=validator,
+                validator=validate,
             )
 
         return asyncio.run(execute())
@@ -2652,12 +2731,8 @@ class InsightDerivedRepository:
         except ValueError as exc:
             raise InsightConflict(str(exc)) from exc
         _validate_timeline_metadata(content, mode=mode)
-        if any("eventId" in event for event in raw_events):
-            raise InsightConflict("timeline event must not define eventId")
-        if any("characterId" in character for character in raw_characters):
-            raise InsightConflict("timeline character must not define characterId")
         raw_events, raw_characters = _canonical_timeline_references(
-            frozen=frozen,
+            pages=frozen.pages,
             events=raw_events,
             characters=raw_characters,
         )
@@ -3136,7 +3211,7 @@ class InsightDerivedRepository:
                     }
                 )
             try:
-                _validate_timeline_parts(
+                content_payload, event_payloads, character_payloads = _validate_timeline_parts(
                     content=content_payload,
                     events=event_payloads,
                     characters=character_payloads,
@@ -3394,7 +3469,7 @@ class InsightDerivedRepository:
                 "stored timeline status is invalid"
             )
         try:
-            _validate_timeline_parts(
+            _, _, characters = _validate_timeline_parts(
                 content={},
                 events=[],
                 characters=characters,
@@ -3468,7 +3543,7 @@ class InsightDerivedRepository:
             ),
         }
         try:
-            _validate_timeline_parts(
+            _, _, characters = _validate_timeline_parts(
                 content={},
                 events=[],
                 characters=[character],
@@ -3485,7 +3560,7 @@ class InsightDerivedRepository:
             ),
             "mode": mode,
             "status": status,
-            "character": character,
+            "character": characters[0],
         }
 
     def qa_status(
@@ -4445,31 +4520,15 @@ class InsightDerivedWorkerService:
                 raise InsightConflict(
                     "analysis layer has no covered pages"
                 )
-            raw_events = content.get("key_events", [])
-            if not isinstance(raw_events, list):
-                raise InsightConflict(
-                    "analysis layer key_events must be an array"
-                )
-            for index, event in enumerate(raw_events, start=1):
-                if not isinstance(event, Mapping):
-                    raise InsightConflict(
-                        "analysis layer event must be an object"
-                    )
-                summary = event.get("summary")
-                importance = event.get("importance", "normal")
-                if not isinstance(summary, str) or not summary.strip():
-                    raise InsightConflict(
-                        "analysis layer event summary is invalid"
-                    )
-                if not isinstance(importance, str):
-                    raise InsightConflict(
-                        "analysis layer event importance is invalid"
-                    )
-                text = summary.strip()
+            try:
+                events = _normalize_layer_events(content.get("key_events", []))
+            except ValueError as exc:
+                raise InsightConflict(str(exc)) from exc
+            for index, event in enumerate(events, start=1):
                 records.append(
                     {
                         "id": f"event-{layer_id}-{index}",
-                        "document": text,
+                        "document": event["summary"],
                         "metadata": {
                             "book_id": frozen.book_id,
                             "page_id": page_refs[0][0],
@@ -4480,7 +4539,7 @@ class InsightDerivedWorkerService:
                             "page_numbers_json": _json(
                                 [value[1] for value in page_refs]
                             ),
-                            "importance": importance,
+                            "importance": event["importance"],
                             "type": "event",
                         },
                     }
@@ -4622,4 +4681,4 @@ def _page_context_label(page: Mapping[str, Any]) -> str:
         if len(page_numbers) == 1
         else f"{page_numbers[0]}-{page_numbers[-1]}"
     )
-    return f"第 {page_range} 页（page_ids={_json(page_ids)}）"
+    return f"第 {page_range} 页（page_ids={_json(page_ids)}，page_numbers={_json(page_numbers)}）"

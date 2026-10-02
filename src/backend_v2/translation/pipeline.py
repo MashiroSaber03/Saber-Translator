@@ -819,6 +819,27 @@ def _validate_color_results(
     return normalized
 
 
+def _normalize_term_candidates(value: object) -> list[dict[str, str]]:
+    if not isinstance(value, list):
+        raise ValueError("automatic term extraction returned no candidate array")
+    candidates = []
+    for index, raw in enumerate(value):
+        if not isinstance(raw, Mapping):
+            raise ValueError(f"automatic term candidate {index} must be an object")
+        source, target, note = raw.get("source"), raw.get("target"), raw.get("note", "")
+        if not isinstance(source, str) or not isinstance(target, str):
+            raise ValueError(f"automatic term candidate {index} source and target must be strings")
+        if not isinstance(note, str):
+            raise ValueError(f"automatic term candidate {index} note must be a string")
+        if not source.strip() or not target.strip():
+            raise ValueError(f"automatic term candidate {index} requires source and target")
+        candidates.append({
+            "source": source.strip(), "target": target.strip(), "note": note.strip(),
+            "matchMode": "text",
+        })
+    return candidates
+
+
 class CoreTranslationAlgorithms:
     """Worker-side adapters around the current core algorithms."""
 
@@ -1027,13 +1048,10 @@ class CoreTranslationAlgorithms:
             parsed = parse_json_block_from_text(raw)
             if isinstance(parsed, Mapping):
                 parsed = parsed.get("terms")
-            if not isinstance(parsed, list) or any(
-                not isinstance(entry, Mapping) for entry in parsed
-            ):
-                raise OpenAICompatibleBusinessRetryableError(
-                    "自动术语提取必须返回 JSON 数组或包含 terms 数组的对象"
-                )
-            return [dict(entry) for entry in parsed]
+            try:
+                return _normalize_term_candidates(parsed)
+            except ValueError as exc:
+                raise OpenAICompatibleBusinessRetryableError(str(exc)) from exc
 
         request = UnifiedChatRequest(
             provider=provider,
@@ -2344,44 +2362,10 @@ class TranslationPipelineService:
             result,
             label="automatic term extraction result",
         )
-        raw_candidates = result.get("candidates")
-        if not isinstance(raw_candidates, list):
-            raise JobConflict("automatic term extraction returned no candidate array")
-        candidates: list[dict[str, str]] = []
-        for index, raw in enumerate(raw_candidates):
-            if not isinstance(raw, Mapping):
-                raise JobConflict(
-                    f"automatic term candidate {index} must be an object"
-                )
-            source_value = raw.get("source")
-            target_value = raw.get("target")
-            note_value = raw.get("note", "")
-            if not isinstance(source_value, str) or not isinstance(
-                target_value,
-                str,
-            ):
-                raise JobConflict(
-                    f"automatic term candidate {index} source and target "
-                    "must be strings"
-                )
-            if not isinstance(note_value, str):
-                raise JobConflict(
-                    f"automatic term candidate {index} note must be a string"
-                )
-            source = source_value.strip()
-            target = target_value.strip()
-            if not source or not target:
-                raise JobConflict(
-                    f"automatic term candidate {index} requires source and target"
-                )
-            candidates.append(
-                {
-                    "source": source,
-                    "target": target,
-                    "note": note_value.strip(),
-                    "matchMode": "text",
-                }
-            )
+        try:
+            candidates = _normalize_term_candidates(result.get("candidates"))
+        except ValueError as exc:
+            raise JobConflict(str(exc)) from exc
 
         effective_after, added_count = with_glossary_delta(
             effective_before,

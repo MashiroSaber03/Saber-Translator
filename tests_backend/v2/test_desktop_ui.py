@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 import logging
 import os
 from pathlib import Path
@@ -676,6 +677,31 @@ def test_interrupted_task_offers_continue_and_cancel() -> None:
     actions = page._actions({"jobId": "job-1", "status": "interrupted"})
 
     assert [button.text() for button in actions.findChildren(QPushButton)] == ["继续", "取消"]
+
+
+@pytest.mark.parametrize(("offset", "expected"), [
+    (8, "2026-10-02 11:45:54"),
+    (-5, "2026-10-01 22:45:54"),
+])
+@pytest.mark.parametrize("created_at", [
+    "2026-10-02T03:45:54Z", "2026-10-02T05:45:54+02:00", "2026-10-02T03:45:54",
+])
+def test_task_times_use_local_timezone_in_all_tabs(monkeypatch, offset, expected, created_at):
+    class LocalDatetime(datetime):
+        def astimezone(self, tz=None):
+            return super().astimezone(tz or timezone(timedelta(hours=offset)))
+
+    monkeypatch.setattr("src.backend_v2.desktop.window.datetime", LocalDatetime)
+    app = _app()
+    page = TaskCenterPage()
+    running, queued, completed = [
+        {"jobId": status, "kind": "translation", "status": status, "createdAt": created_at}
+        for status in ("running", "queued", "completed")
+    ]
+    page.set_jobs([running, queued], [completed], False, True, True, "executor_busy")
+    assert [table.item(0, 4).text() for table in page.tables] == [expected] * 3
+    page.deleteLater()
+    app.processEvents()
 
 
 def test_task_action_buttons_fit_their_dedicated_column() -> None:

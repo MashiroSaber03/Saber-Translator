@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from copy import deepcopy
 from datetime import timedelta
 from io import BytesIO
 import gc
@@ -2556,6 +2557,44 @@ def test_derived_artifacts_timeline_and_vectors_publish_as_generations(
     assert status["coverage"] == {"pages": 2, "events": 2}
 
 
+def test_vector_rebuild_accepts_saved_text_events_without_reanalyzing_pages(
+    insight_platform,
+) -> None:
+    platform = insight_platform
+    book_id = str(platform["book"]["id"])
+    InsightAnalysisCommandService(platform["engine"]).create_analysis_job(
+        command={"bookId": book_id, "scope": "full"},
+        idempotency_key="legacy-layer-source",
+    )
+    assert _run_job(platform, FakeInsightAlgorithms()) == "completed"
+    with platform["engine"].begin() as connection:
+        page_results = list(connection.execute(select(analysis_page_results.c.id)).scalars())
+        layers = list(connection.execute(select(analysis_layer_results).where(
+            analysis_layer_results.c.layer_index == 0,
+        )).mappings())
+        assert layers
+        for layer in layers:
+            content = json.loads(layer["content_json"])
+            content["key_events"][0] = "  旧格式事件：发现红书  "
+            connection.execute(update(analysis_layer_results).where(
+                analysis_layer_results.c.id == layer["id"],
+            ).values(content_json=json.dumps(content, ensure_ascii=False)))
+
+    InsightDerivedCommandService(platform["engine"]).create_job(
+        book_id=book_id, kind="vector", template="default",
+        idempotency_key="legacy-layer-vector-rebuild",
+    )
+    store = FakeVectorStore()
+    assert _run_derived_job(platform, algorithms=FakeDerivedAlgorithms(), vector_store=store) == "completed"
+    records = store.publications[0]["event_records"]
+    old_events = [record for record in records if record["document"] == "旧格式事件：发现红书"]
+    assert len(old_events) == len(layers)
+    assert all(record["metadata"]["importance"] == "normal" for record in old_events)
+    assert InsightDerivedRepository(platform["engine"]).qa_status(book_id=book_id)["available"]
+    with platform["engine"].connect() as connection:
+        assert list(connection.execute(select(analysis_page_results.c.id)).scalars()) == page_results
+
+
 def test_local_reanalysis_does_not_reuse_older_full_run_derived_inputs(
     insight_platform,
 ) -> None:
@@ -2794,11 +2833,11 @@ def test_provider_timeline_falls_back_through_compressed_context(
         ]
     )
 
-    def fake_chat_json(*_args, **_kwargs):
+    def fake_chat_json(*_args, **kwargs):
         result = next(calls)
         if isinstance(result, Exception):
             raise result
-        return result
+        return kwargs["validator"](result)
 
     monkeypatch.setattr(algorithms, "_chat_json", fake_chat_json)
     result = algorithms.build_timeline(
@@ -2831,11 +2870,136 @@ def test_provider_timeline_falls_back_through_compressed_context(
     }
 
 
+@pytest.mark.parametrize("mode", ["enhanced", "compressed"])
+@pytest.mark.parametrize("missing_field", ["name", "type", "status"])
+def test_timeline_retries_incomplete_threads_before_publication(
+    insight_platform, monkeypatch, mode, missing_field,
+) -> None:
+    platform = insight_platform
+    book_id = str(platform["book"]["id"])
+    InsightAnalysisCommandService(platform["engine"]).create_analysis_job(
+        command={"bookId": book_id, "scope": "full"},
+        idempotency_key="timeline-retry-source",
+    )
+    assert _run_job(platform, FakeInsightAlgorithms()) == "completed"
+    repository = InsightDerivedRepository(platform["engine"])
+    frozen = repository.snapshot(book_id=book_id)
+    page_id = frozen.pages[0]["pageId"]
+    response = {
+        "content": {
+            "story_summary": "发现红书，决定归还。",
+            "plot_threads": [{"id": "return-book", "name": "归还红书", "type": "线索", "status": "未解决"}],
+        },
+        "events": [{"summary": "决定归还红书", "page_ids": [page_id]}],
+        "characters": [],
+    }
+    broken = deepcopy(response)
+    del broken["content"]["plot_threads"][0][missing_field]
+    prompts = []
+    expected_attempts = 2 if mode == "enhanced" else 4
+
+    async def complete(_self, request, **_kwargs):
+        prompts.append(request.messages[-1]["content"])
+        return json.dumps(response if len(prompts) == expected_attempts else broken)
+
+    async def immediate_sleep(_seconds):
+        pass
+
+    monkeypatch.setattr("src.shared.ai_transport.AsyncOpenAICompatibleTransport.complete", complete)
+    monkeypatch.setattr("src.shared.openai_execution.asyncio.sleep", immediate_sleep)
+    config = SettingsResolver(platform["engine"]).resolve_insight(book_id=book_id, scope="full")
+    config["chat"]["openai_options"]["execution"]["business_retries"] = 1
+    result = ProviderDerivedAlgorithms().build_timeline(
+        [{"pageId": page_id, "pageNumber": 1, "analysis": {
+            "key_events": [{"summary": "决定归还红书"}],
+            "compressed_context": {"content": "发现红书，决定归还。"},
+        }}],
+        config=config,
+    )
+    assert len(prompts) == expected_attempts
+    assert result["mode"] == mode
+    assert result["content"]["plot_threads"] == response["content"]["plot_threads"]
+    assert all('"type":"伏笔","status":"未解决"' in prompt for prompt in prompts)
+    if mode == "compressed":
+        assert "压缩上下文生成漫画时间线" in prompts[-1]
+    with platform["engine"].begin() as connection:
+        repository.publish_timeline(connection=connection, frozen=frozen, result=result)
+    timeline = repository.get_timeline(book_id=book_id)
+    assert timeline["mode"] == mode
+    assert timeline["content"]["plot_threads"] == response["content"]["plot_threads"]
+
+
+def test_timeline_invalid_metadata_falls_back_to_page_events(monkeypatch) -> None:
+    algorithms = ProviderDerivedAlgorithms()
+    responses = iter([
+        {"story_summary": "摘要", "plot_threads": [{"id": "thread", "description": "缺少必填字段"}]},
+        {"story_summary": " ", "plot_threads": []},
+    ])
+    calls = []
+
+    def fake_chat_json(prompt, **kwargs):
+        calls.append(prompt)
+        return kwargs["validator"]({
+            "content": next(responses),
+            "events": [{"summary": "发现红书", "page_ids": ["page-1"]}],
+            "characters": [],
+        })
+
+    monkeypatch.setattr(algorithms, "_chat_json", fake_chat_json)
+    result = algorithms.build_timeline(
+        [{"pageId": "page-1", "pageNumber": 1, "analysis": {
+            "key_events": [{"summary": "发现红书"}],
+            "compressed_context": {"content": "压缩上下文"},
+        }}], config={},
+    )
+    assert len(calls) == 2
+    assert result["mode"] == "simple"
+    assert result["content"]["degraded"] is True
+    assert "name must be a non-empty string" in result["content"]["fallback_reason"]
+    assert "story_summary must be a non-empty string" in result["content"]["fallback_reason"]
+    assert result["events"] == [{
+        "summary": "发现红书", "importance": "normal", "page_ids": ["page-1"], "page_numbers": [1],
+    }]
+
+
+def test_provider_layer_normalizes_text_and_object_events_before_saving(monkeypatch) -> None:
+    algorithms = ProviderDerivedAlgorithms()
+    response = {"summary": " 本组摘要 ", "key_events": [
+        " 发现红书 ",
+        {"summary": " 归还书本 ", "importance": "high", "event_type": " action "},
+        {"summary": "后续事件"},
+    ]}
+    monkeypatch.setattr(algorithms, "_chat_json", lambda *_args, **kwargs: kwargs["validator"](response))
+    result = algorithms.build_layer([], layer={"name": "汇总", "promptType": "segment_summary"}, config={})
+    assert result == {"summary": "本组摘要", "key_events": [
+        {"summary": "发现红书", "importance": "normal"},
+        {"summary": "归还书本", "importance": "high", "event_type": "action"},
+        {"summary": "后续事件", "importance": "normal"},
+    ]}
+    assert response["key_events"][0] == " 发现红书 "
+
+
+@pytest.mark.parametrize("events", [
+    None, {}, [None], [12], [" "], [{}],
+    [{"summary": "事件", "importance": "unexpected"}],
+    [{"summary": "事件", "importance": []}],
+    [{"summary": "事件", "event_type": ""}],
+])
+def test_provider_layer_rejects_invalid_events_in_model_response(monkeypatch, events) -> None:
+    algorithms = ProviderDerivedAlgorithms()
+    monkeypatch.setattr(algorithms, "_chat_json", lambda *_args, **kwargs: kwargs["validator"](
+        {"summary": "摘要", "key_events": events},
+    ))
+    with pytest.raises(ValueError, match="summary layer key_events"):
+        algorithms.build_layer([], layer={"name": "汇总", "promptType": "segment_summary"}, config={})
+
+
 @pytest.mark.parametrize(
     ("method_name", "result", "message"),
     [
         ("build_layer", {}, "non-empty object"),
-        ("build_overview", {}, "title must be a non-empty string"),
+        ("build_layer", {"summary": " ", "key_events": ["事件"]}, "summary must be non-empty text"),
+        ("build_overview", {}, "non-empty object"),
         ("build_overview", {"title": "title", "content": ""}, "content must be a non-empty string"),
         ("build_compressed_context", {}, "non-empty object"),
     ],
@@ -2868,7 +3032,7 @@ def test_provider_derived_algorithms_reject_empty_or_partial_results(
     elif method_name == "build_overview":
         kwargs["template"] = "story_summary"
 
-    with pytest.raises(ValueError, match=message):
+    with pytest.raises((ValueError, InsightConflict), match=message):
         getattr(algorithms, method_name)(pages, **kwargs)
 
 
@@ -2919,13 +3083,13 @@ def test_provider_timeline_does_not_fallback_after_memory_failure(
             "build_overview",
             ([{"pageId": "page-1", "pageNumber": 1, "analysis": {"page_summary": "summary"}}],),
             {"template": "story_summary", "config": {}},
-            "overview response must be an object",
+            "Insight artifact payload must be a non-empty object",
         ),
         (
             "build_compressed_context",
             ([{"pageId": "page-1", "pageNumber": 1, "analysis": {"page_summary": "summary"}}],),
             {"config": {}},
-            "compressed context response must be a non-empty object",
+            "Insight artifact payload must be a non-empty object",
         ),
     ],
 )
@@ -2942,7 +3106,7 @@ def test_provider_derived_algorithms_reject_non_object_model_results(
         lambda *_args, **kwargs: kwargs["validator"]("bad") if kwargs.get("validator") else "bad",
     )
 
-    with pytest.raises(ValueError, match=message):
+    with pytest.raises((ValueError, InsightConflict), match=message):
         getattr(algorithms, method_name)(*args, **kwargs)
 
 
@@ -3851,7 +4015,7 @@ def test_continuation_page_generation_rejects_malformed_provider_results(
     monkeypatch.setattr(
         ProviderDerivedAlgorithms,
         "_chat_json",
-        staticmethod(lambda *_args, **_kwargs: response),
+        staticmethod(lambda *_args, **kwargs: kwargs["validator"](response)),
     )
 
     with pytest.raises(ValueError, match="continuation page response"):

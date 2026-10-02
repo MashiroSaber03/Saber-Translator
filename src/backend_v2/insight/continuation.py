@@ -2798,17 +2798,20 @@ class DefaultContinuationAlgorithms:
             '{"script":"可供逐页拆解的完整脚本"}。\n\n'
             + _json(context)
         )
-        result = ProviderDerivedAlgorithms._chat_json(
+        def validate(result: object) -> str:
+            if not isinstance(result, Mapping):
+                raise ValueError("continuation script response is not JSON")
+            script = result.get("script")
+            if not isinstance(script, str) or not script.strip():
+                raise ValueError("continuation script response is missing script")
+            return script.strip()
+
+        return ProviderDerivedAlgorithms._chat_json(
             prompt,
             config=config,
             prompt_type="book_overview",
+            validator=validate,
         )
-        if not isinstance(result, Mapping):
-            raise ValueError("continuation script response is not JSON")
-        script = result.get("script")
-        if not isinstance(script, str) or not script.strip():
-            raise ValueError("continuation script response is missing script")
-        return script.strip()
 
     def generate_page(
         self,
@@ -2827,14 +2830,12 @@ class DefaultContinuationAlgorithms:
             '"finalPrompt":"..."}。\n\n'
             f"上一页：{_json(previous or {})}\n\n脚本：{script}"
         )
-        result = ProviderDerivedAlgorithms._chat_json(
+        return ProviderDerivedAlgorithms._chat_json(
             prompt,
             config=config,
             prompt_type="group_summary",
+            validator=_validated_generated_page,
         )
-        if not isinstance(result, Mapping):
-            raise ValueError("continuation page response is not JSON")
-        return _validated_generated_page(result)
 
     def generate_image(
         self,
@@ -3884,7 +3885,9 @@ def _validated_page_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def _validated_generated_page(result: Mapping[str, Any]) -> dict[str, Any]:
+def _validated_generated_page(result: object) -> dict[str, Any]:
+    if not isinstance(result, Mapping):
+        raise ValueError("continuation page response is not JSON")
     text_fields = (
         "storyText",
         "continuityText",
