@@ -177,7 +177,7 @@ function handleImageError() {
 
 .book-card__cover {
   aspect-ratio: 3 / 4;
-  background: linear-gradient(135deg, var(--color-action-brand) 0%, var(--color-action-brand-strong) 100%);
+  background: linear-gradient(135deg, var(--color-action-brand-fill) 0%, var(--color-action-brand-fill-strong) 100%);
   display: block;
   overflow: hidden;
   position: relative;

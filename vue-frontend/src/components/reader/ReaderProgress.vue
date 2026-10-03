@@ -99,6 +99,9 @@ function hover(event: PointerEvent) {
 
 .reader-progress__page {
   direction: ltr;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: var(--color-surface-inverse-raised);
   font-size: 12px;
   opacity: 0;
   font-variant-numeric: tabular-nums;

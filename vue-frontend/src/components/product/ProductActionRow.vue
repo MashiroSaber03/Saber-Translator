@@ -66,8 +66,8 @@ const props = withDefaults(defineProps<{
 
 .product-action-row--dialog {
   --ui-button-font-size: 14px;
-  --ui-button-primary-background: var(--color-surface-brand);
-  --ui-button-primary-hover-background: var(--color-surface-brand-strong);
+  --ui-button-primary-background: var(--color-action-brand-fill);
+  --ui-button-primary-hover-background: var(--color-action-brand-fill-strong);
   --ui-button-primary-shadow: none;
   --ui-button-primary-hover-shadow: none;
   --ui-button-primary-hover-transform: none;
@@ -97,13 +97,13 @@ const props = withDefaults(defineProps<{
 .product-action-row--appearance-accent {
   --ui-button-primary-background: linear-gradient(
     135deg,
-    var(--color-text-link-strong) 0%,
-    color-mix(in srgb, var(--color-text-link-strong) 65%, var(--color-action-brand)) 100%
+    var(--color-action-primary-fill) 0%,
+    color-mix(in srgb, var(--color-action-primary-fill) 65%, var(--color-action-brand-fill)) 100%
   );
   --ui-button-primary-hover-background: linear-gradient(
     135deg,
-    var(--color-text-link-strong) 0%,
-    color-mix(in srgb, var(--color-text-link-strong) 65%, var(--color-action-brand)) 100%
+    var(--color-action-primary-fill-hover) 0%,
+    color-mix(in srgb, var(--color-action-primary-fill-hover) 65%, var(--color-action-brand-fill-strong)) 100%
   );
   --ui-button-primary-shadow: 0 2px 8px color-mix(in srgb, var(--color-text-link-strong) 22%, transparent);
   --ui-button-primary-hover-shadow: 0 6px 20px color-mix(in srgb, var(--color-text-link-strong) 26%, transparent);

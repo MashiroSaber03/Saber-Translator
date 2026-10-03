@@ -84,7 +84,7 @@ const store = useTaskCenterStore()
   padding: 1px 6px;
   color: var(--color-text-inverse);
   text-align: center;
-  background: var(--color-action-primary);
+  background: var(--color-action-primary-fill);
   border-radius: 999px;
 }
 

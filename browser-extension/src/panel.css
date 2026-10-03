@@ -3,6 +3,7 @@
   color-scheme: light;
   --s-accent: #e84182;
   --s-accent-strong: #c82969;
+  --s-on-accent: #ffffff;
   --s-accent-soft: #fdeaf2;
   --s-bg: #fffafc;
   --s-surface: #ffffff;
@@ -24,6 +25,7 @@
   color-scheme: dark;
   --s-accent: #fa81ae;
   --s-accent-strong: #ffaccb;
+  --s-on-accent: #211a20;
   --s-accent-soft: #412432;
   --s-bg: #211a20;
   --s-surface: #2b2229;
@@ -918,7 +920,7 @@ progress::-webkit-progress-value {
   content: '✓';
   display: block;
   text-align: center;
-  color: white;
+  color: var(--s-on-accent);
   font-size: 12px;
   line-height: 16px;
 }

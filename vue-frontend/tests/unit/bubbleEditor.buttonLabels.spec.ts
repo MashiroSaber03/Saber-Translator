@@ -774,7 +774,7 @@ describe('BubbleEditor button labels', () => {
     expect(source).not.toMatch(/--bubble-editor-(text-column-divider|column-title-text|text-action-background)/)
     expect(source).not.toMatch(/<svg[\s>]/)
     expect(source).toContain('--bubble-editor-style-panel-border: color-mix')
-    expect(source).toContain('--bubble-editor-translated-title-text: var(--color-surface-success)')
+    expect(source).toContain('--bubble-editor-translated-title-text: var(--color-text-strong)')
   })
 
   it('uses typed model updates and an anchored color popover for text and color controls', async () => {

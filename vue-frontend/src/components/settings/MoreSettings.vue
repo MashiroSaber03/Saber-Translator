@@ -325,7 +325,7 @@ async function recoverAssetJournal() {
 }
 
 .more-settings__about-link {
-  color: var(--color-action-primary);
+  color: var(--color-text-link-strong);
   text-decoration: none;
 }
 
@@ -334,7 +334,7 @@ async function recoverAssetJournal() {
 }
 
 .more-settings__about-disclaimer {
-  color: var(--color-status-warning);
+  color: var(--color-text-secondary);
   font-weight: 500;
 }
 </style>

@@ -518,7 +518,7 @@ const {
 
 <style scoped>
 .bubble-editor {
-  --bubble-editor-translated-title-text: var(--color-surface-success);
+  --bubble-editor-translated-title-text: var(--color-text-strong);
   --bubble-editor-text-action-hover-border: var(--color-text-disabled);
   --bubble-editor-original-text-background: var(--color-surface-quiet);
   --bubble-editor-translated-text-background: color-mix(in srgb, var(--color-status-success) 6%, var(--color-surface-base));
@@ -874,7 +874,7 @@ const {
 .bubble-editor__footer-action {
   min-height: 40px;
 
-  --ui-button-primary-background: linear-gradient(135deg, var(--color-action-primary) 0%, var(--color-action-primary-soft) 100%);
+  --ui-button-primary-background: linear-gradient(135deg, var(--color-action-primary-fill) 0%, var(--color-action-primary-fill-hover) 100%);
   --ui-button-primary-hover-background: var(--ui-button-primary-background);
   --ui-button-primary-hover-shadow: 0 4px 12px color-mix(in srgb, var(--color-action-primary) 30%, transparent);
 }

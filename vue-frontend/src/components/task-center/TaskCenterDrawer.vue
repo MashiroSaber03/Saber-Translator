@@ -1008,7 +1008,7 @@ function analysisCreated(result: V2InsightAnalysisJobAccepted) {
 }
 
 .task-center__tab--active {
-  color: var(--color-action-primary);
+  color: var(--color-text-link-strong);
   border-color: var(--color-action-primary);
 }
 

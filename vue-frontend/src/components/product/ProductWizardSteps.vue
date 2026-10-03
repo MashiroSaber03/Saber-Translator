@@ -104,13 +104,13 @@ function selectStep(index: number): void {
 
 .product-wizard-steps__step--active {
   border-color: var(--product-wizard-steps-step-active-border, var(--color-border-brand));
-  background: var(--product-wizard-steps-step-active-background, var(--color-surface-brand));
+  background: var(--product-wizard-steps-step-active-background, var(--color-action-brand-fill));
   color: var(--product-wizard-steps-step-active-text, var(--color-text-inverse));
 }
 
 .product-wizard-steps__step--completed {
   border-color: var(--product-wizard-steps-step-completed-border, var(--color-status-success));
-  background: var(--product-wizard-steps-step-completed-background, var(--color-status-success));
+  background: var(--product-wizard-steps-step-completed-background, var(--color-action-success-fill));
   color: var(--product-wizard-steps-step-active-text, var(--color-text-inverse));
 }
 

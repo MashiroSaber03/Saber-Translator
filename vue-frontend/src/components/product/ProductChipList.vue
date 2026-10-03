@@ -40,7 +40,7 @@ function chipStyle(item: ProductChipItem): Record<string, string> | undefined {
   if (item.tone !== 'custom') return undefined
 
   return {
-    '--product-chip-list-custom-background': item.backgroundColor ?? 'var(--color-action-primary)',
+    '--product-chip-list-custom-background': item.backgroundColor ?? 'var(--color-action-primary-fill)',
     '--product-chip-list-custom-border': item.borderColor ?? 'transparent',
     '--product-chip-list-custom-text': item.textColor ?? 'var(--color-text-inverse)',
   }
@@ -150,12 +150,12 @@ function chipPressed(item: ProductChipItem): string | undefined {
 
 .product-chip-list__chip--primary {
   border-color: var(--product-chip-list-primary-border, transparent);
-  background: var(--product-chip-list-primary-background, var(--color-action-primary));
+  background: var(--product-chip-list-primary-background, var(--color-action-primary-fill));
   color: var(--product-chip-list-primary-text, var(--color-text-inverse));
 }
 
 .product-chip-list__chip--success {
-  background: var(--color-status-success);
+  background: var(--color-action-success-fill);
   color: var(--color-text-inverse);
 }
 
@@ -183,19 +183,19 @@ function chipPressed(item: ProductChipItem): string | undefined {
 
 .product-chip-list__chip--interactive:hover {
   border-color: var(--color-action-primary);
-  background: var(--color-action-primary);
+  background: var(--color-action-primary-fill);
   color: var(--color-text-inverse);
 }
 
 .product-chip-list__chip--interactive.product-chip-list__chip--selected {
   border-color: var(--product-chip-list-custom-border, var(--color-action-primary));
-  background: var(--product-chip-list-custom-background, var(--color-action-primary));
+  background: var(--product-chip-list-custom-background, var(--color-action-primary-fill));
   color: var(--product-chip-list-custom-text, var(--color-text-inverse));
 }
 
 .product-chip-list__chip--interactive.product-chip-list__chip--selected:hover {
   border-color: var(--product-chip-list-custom-border, var(--color-action-primary));
-  background: var(--product-chip-list-custom-background, var(--color-action-primary));
+  background: var(--product-chip-list-custom-background, var(--color-action-primary-fill));
   color: var(--product-chip-list-custom-text, var(--color-text-inverse));
 }
 </style>

@@ -55,8 +55,8 @@ function openStudio() {
   --product-record-card-actions-align-self: center;
   --product-record-card-body-grid-column: 1;
   --product-record-card-body-grid-row: 2;
-  --ui-button-primary-background: linear-gradient(135deg, var(--color-action-primary-hover), var(--color-action-primary-soft));
-  --ui-button-primary-hover-background: linear-gradient(135deg, var(--color-action-primary-hover), var(--color-action-primary-soft));
+  --ui-button-primary-background: linear-gradient(135deg, var(--color-action-primary-fill-hover), var(--color-action-primary-fill));
+  --ui-button-primary-hover-background: var(--ui-button-primary-background);
   --ui-button-primary-shadow: 0 10px 22px var(--shadow-action-brand);
   --ui-button-radius: 14px;
   --ui-button-padding: 12px 20px;

@@ -69,7 +69,7 @@ onUnmounted(() => {
   max-width: 100%;
   pointer-events: auto;
   word-break: break-word;
-  color: white;
+  color: var(--color-text-inverse);
   text-align: center;
   font-size: 14px;
 }
@@ -84,6 +84,7 @@ onUnmounted(() => {
 
 .vue-toast-warning {
   background-color: var(--toast-notification-warning-background);
+  color: var(--color-text-on-warning);
 }
 
 .vue-toast-error {
@@ -94,11 +95,7 @@ onUnmounted(() => {
   position: absolute;
   top: calc(50% - 12px);
   right: 10px;
-  color: var(--toast-notification-close-text);
-}
-
-.vue-toast-close:hover {
-  color: white;
+  color: inherit;
 }
 
 .toast-slide-enter-active {

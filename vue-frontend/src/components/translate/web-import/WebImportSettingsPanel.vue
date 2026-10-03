@@ -172,10 +172,10 @@ function updateSettingsTab(tabId: string): void {
   --product-status-banner-body-font-size: 13px;
   --product-status-banner-body-font-weight: 500;
   --ui-button-sm-padding: 8px 14px;
-  --ui-button-primary-background: var(--color-action-primary);
-  --ui-button-primary-hover-background: var(--color-action-primary-hover);
+  --ui-button-primary-background: var(--color-action-primary-fill);
+  --ui-button-primary-hover-background: var(--color-action-primary-fill-hover);
   --ui-button-primary-shadow: none;
-  --ui-button-primary-disabled-background: var(--color-action-primary);
+  --ui-button-primary-disabled-background: var(--color-action-primary-fill);
   --ui-button-primary-disabled-opacity: 0.6;
 
   margin-bottom: 16px;
