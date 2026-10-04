@@ -49,6 +49,7 @@ from src.backend_v2.paths import (
 )
 from src.backend_v2.redaction import redact_sensitive_text
 from src.backend_v2.runtime_identity import (
+    API_BIND_FAILED_EXIT_CODE,
     API_EPOCH_ID_ENV,
     API_EPOCH_TOKEN_ENV,
     LAUNCHER_PID_ENV,
@@ -102,6 +103,10 @@ class LauncherState(str, Enum):
 
 class _LauncherStopRequested(Exception):
     """Internal control flow used to cancel a startup wait promptly."""
+
+
+class _ApiBindFailed(RuntimeError):
+    """The configured listener is unavailable; restarting cannot fix it."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -353,6 +358,11 @@ def _wait_for_api(
     while time.monotonic() < deadline:
         _raise_if_stop_requested(stop_event)
         return_code = child.poll()
+        if return_code == API_BIND_FAILED_EXIT_CODE:
+            raise _ApiBindFailed(
+                f"无法监听端口 {port}，请检查端口占用或系统权限，"
+                "并在设置中修改运行端口。具体原因见运行日志。"
+            )
         if return_code is not None:
             raise RuntimeError(f"v2 API exited during startup with code {return_code}")
         try:
@@ -760,12 +770,15 @@ def _start_child_with_retries(
                 browser_extension_enabled=browser_extension_enabled,
                 browser_extension_token=browser_extension_token,
             )
-        except _LauncherStopRequested:
+        except (_LauncherStopRequested, _ApiBindFailed):
             raise
-        except Exception:
+        except Exception as error:
             current_restart_count += 1
             if current_restart_count > MAX_CONSECUTIVE_RESTARTS:
-                break
+                raise RuntimeError(
+                    f"{role.upper()} 启动失败（连续重试 "
+                    f"{MAX_CONSECUTIVE_RESTARTS} 次）：{error}"
+                ) from error
             LOGGER.warning(
                 "%s 子进程启动失败，将执行第 %s/%s 次连续重启",
                 role.upper(),
@@ -1183,7 +1196,7 @@ def run_launcher(args: object) -> int:
         port,
         log_path,
     )
-    return LauncherSupervisor(
+    supervisor = LauncherSupervisor(
         LauncherConfig(
             data_root=data_root,
             host=host,
@@ -1193,4 +1206,9 @@ def run_launcher(args: object) -> int:
             open_browser=not args.no_browser,
             resident_models=resident_models,
         )
-    ).run()
+    )
+    try:
+        return supervisor.run()
+    except _ApiBindFailed:
+        # Supervisor already logged the cause; do not open a frozen CLI dialog.
+        return API_BIND_FAILED_EXIT_CODE

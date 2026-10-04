@@ -32,6 +32,7 @@ from src.backend_v2.launcher.entrypoint import (
     _try_reconcile_dead_child,
 )
 from src.backend_v2.runtime_identity import (
+    API_BIND_FAILED_EXIT_CODE,
     API_EPOCH_ID_ENV,
     API_EPOCH_TOKEN_ENV,
     LAUNCHER_PID_ENV,
@@ -550,10 +551,11 @@ def test_launcher_stops_after_the_consecutive_startup_retry_limit(
     tmp_path: Path,
 ) -> None:
     attempts: list[int] = []
+    cause = RuntimeError("startup failed")
 
     def fail_start_child(**kwargs):
         attempts.append(int(kwargs["restart_count"]))
-        raise RuntimeError("startup failed")
+        raise cause
 
     monkeypatch.setattr(
         "src.backend_v2.launcher.entrypoint._start_child",
@@ -564,7 +566,7 @@ def test_launcher_stops_after_the_consecutive_startup_retry_limit(
         lambda _seconds: None,
     )
 
-    with pytest.raises(RuntimeError, match="exceeded"):
+    with pytest.raises(RuntimeError, match="启动失败.*startup failed") as caught:
         _start_child_with_retries(
             role="worker",
             data_root=tmp_path,
@@ -576,6 +578,31 @@ def test_launcher_stops_after_the_consecutive_startup_retry_limit(
         )
 
     assert attempts == list(range(MAX_CONSECUTIVE_RESTARTS + 1))
+    assert caught.value.__cause__ is cause
+
+
+def test_launcher_port_conflict_stops_after_one_api_attempt(tmp_path: Path) -> None:
+    from src.backend_v2.storage.lifecycle import initialize_database
+
+    root = tmp_path / "data"
+    initialize_database(root)
+    project = Path(__file__).resolve().parents[2]
+    with socket.socket() as listener:
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        result = subprocess.run(
+            [sys.executable, str(project / "saber_v2.py"), "--role", "launcher",
+             "--data-dir", str(root), "--port", str(listener.getsockname()[1])],
+            cwd=project, capture_output=True, text=True, encoding="utf-8",
+            env={**os.environ, "PYTHONUTF8": "1"}, timeout=20,
+        )
+    assert result.returncode == API_BIND_FAILED_EXIT_CODE
+    assert "无法监听端口" in result.stdout + result.stderr
+    assert "第 1/3 次连续重启" not in result.stdout + result.stderr
+    with sqlite3.connect(root / "saber.sqlite3") as database:
+        assert database.execute("SELECT count(*) FROM process_epochs WHERE role='api'").fetchone()[0] == 1
+        assert database.execute("SELECT count(*) FROM process_epochs WHERE role='worker'").fetchone()[0] == 0
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows Job Object integration")
