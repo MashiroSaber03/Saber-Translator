@@ -8,6 +8,7 @@ from src.storage_migrator.control import business_ready
 import json
 import logging
 import os
+import socket
 import threading
 from collections.abc import Callable
 
@@ -21,6 +22,7 @@ from src.backend_v2.logging_config import configure_backend_logging
 from src.backend_v2.paths import data_root_fingerprint, ensure_data_root, resolve_data_root
 from src.backend_v2.runtime_heartbeat import EpochHeartbeat
 from src.backend_v2.runtime_identity import (
+    API_BIND_FAILED_EXIT_CODE,
     CHILD_LEASE_LOST_EXIT_CODE,
     LauncherParentMonitor,
     RuntimeIdentity,
@@ -49,6 +51,32 @@ def _waitress_server_options(profile: RuntimeProfile) -> dict[str, object]:
             trusted_proxy_headers={"x-forwarded-for"},
         )
     return options
+
+
+def _create_http_server(app, *, host: str, port: int, profile: RuntimeProfile):
+    from waitress.adjustments import Adjustments
+    from waitress.server import create_server
+
+    options = _waitress_server_options(profile)
+    if os.name != "nt":
+        return create_server(app, host=host, port=port, **options)
+
+    # Windows port reuse can bind successfully while requests reach another API.
+    # Give Waitress the actual, exclusively bound listeners instead of probing.
+    listeners = []
+    try:
+        for family, socktype, proto, address in Adjustments(host=host, port=port).listen:
+            listener = socket.socket(family, socktype, proto)
+            listeners.append(listener)
+            if family == socket.AF_INET6:
+                listener.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+            listener.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            listener.bind(address)
+        return create_server(app, sockets=listeners, **options)
+    except BaseException:
+        for listener in listeners:
+            listener.close()
+        raise
 
 
 @current_storage_process("api")
@@ -163,14 +191,15 @@ def run_api(args: object) -> int:
             )
             return 0
 
-        from waitress.server import create_server
-
-        server = create_server(
-            app,
-            host=args.host,
-            port=args.port,
-            **_waitress_server_options(profile),
-        )
+        try:
+            server = _create_http_server(
+                app, host=args.host, port=args.port, profile=profile,
+            )
+        except OSError as error:
+            message = f"无法监听 {args.host}:{args.port}：{error}"
+            LOGGER.exception(message)
+            user_log("error", message, level=logging.ERROR)
+            return API_BIND_FAILED_EXIT_CODE
         close_server = server.close
         if fenced.is_set():
             return CHILD_LEASE_LOST_EXIT_CODE
