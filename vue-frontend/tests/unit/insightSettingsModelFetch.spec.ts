@@ -196,6 +196,24 @@ describe('Insight settings model fetch ownership', () => {
     fetchModelsMock.mockReset()
   })
 
+  it.each(settingsFormIdCases)('preserves a cleared $name model after switching providers and back', async testCase => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    testCase.configureStore(useInsightStore())
+    const wrapper = mount(testCase.component, { global: { plugins: [pinia] } })
+    const provider = wrapper.getComponent(UiSelect)
+    const original = provider.props('modelValue')
+    await wrapper.get(`#${testCase.expectedModelInputId}`).setValue('')
+    const other = 'switchProvider' in testCase ? testCase.switchProvider : 'newapi'
+    for (const next of [other, original]) {
+      provider.vm.$emit('update:modelValue', next)
+      provider.vm.$emit('change', next)
+      await flushPromises()
+    }
+    expect(latestConfig<{ model: string }>(wrapper).model).toBe('')
+    wrapper.unmount()
+  })
+
   it.each(settingsFetchCases)('ignores stale $name model-list responses after provider changes', async (testCase) => {
     const deferred = createDeferred({
       success: true,

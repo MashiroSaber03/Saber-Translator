@@ -162,6 +162,28 @@ describe('useTranslateInit', () => {
     expect(mocks.getPageDocument).toHaveBeenCalledWith('page-1', expect.any(AbortSignal))
   })
 
+  it('keeps saved empty prompts when loading the factory prompt catalog', async () => {
+    const document = bootstrap('quick', 'quick-chapter', 'quick_workspace')
+    document.settings.settings[0]!.payload.translatePrompt = ''
+    document.settings.settings[0]!.payload.textboxPrompt = ''
+    mocks.getTranslationBootstrap.mockResolvedValue({
+      ...document,
+      prompts: ['translate', 'textbox'].map(type => ({
+        id: `factory-${type}`,
+        type,
+        name: 'Factory prompt',
+        content: 'Factory content',
+        isFactoryDefault: true,
+        revision: 1,
+      })),
+    })
+
+    expect(await useTranslateInit().initializeApp()).toBe(true)
+    expect(useSettingsStore().settings.translatePrompt).toBe('')
+    expect(useSettingsStore().settings.textboxPrompt).toBe('')
+    expect(useSettingsStore().promptCatalog).toHaveLength(2)
+  })
+
   it('does not finish initialization before the authoritative page style is loaded', async () => {
     const defaults = createDefaultSettings().textStyle
     const { fontFamily, ...pageStyleDefaults } = defaults

@@ -10,6 +10,7 @@ import providers from '../../../src/shared/ai_provider_manifest.json'
 import type { OpenAICompatibleOptions } from '../../../vue-frontend/src/types/openaiSettings'
 import type { PluginSettingsApi } from '../../../vue-frontend/src/types/browserExtensionSettings'
 import type { components } from '../../../vue-frontend/src/api/generated/v2'
+import { providerKeyField } from '../../../vue-frontend/src/utils/providerSettings'
 export interface ServiceConfig {
   provider: string
   modelName: string
@@ -106,14 +107,9 @@ async function diagnose(kind: 'models' | 'connection') {
     provider,
     domain: props.domain,
     baseUrl: props.config.customBaseUrl,
-    ...(metadata.value?.requiresApiKey || props.secret.trim()
-      ? {
-          secret: {
-            [props.domain === 'ai_vision_ocr' ? 'ai_vision_api_key' : 'api_key']:
-              props.secret.trim(),
-          },
-        }
-      : {}),
+    secret: {
+      [providerKeyField(props.domain)]: props.secret.trim(),
+    },
   }
   try {
     if (kind === 'models') {

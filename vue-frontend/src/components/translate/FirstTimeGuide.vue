@@ -104,8 +104,8 @@ function openSettingsAndClose() {
 }
 
 .guide-actions {
-  --ui-button-primary-background: var(--color-action-primary);
-  --ui-button-primary-hover-background: var(--color-action-primary-hover);
+  --ui-button-primary-background: var(--color-action-primary-fill, var(--color-action-primary));
+  --ui-button-primary-hover-background: var(--color-action-primary-fill-hover, var(--color-action-primary-hover));
   --ui-button-primary-shadow: none;
 
   margin-bottom: 16px;

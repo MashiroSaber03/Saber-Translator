@@ -337,4 +337,12 @@ async function recoverAssetJournal() {
   color: var(--color-status-warning);
   font-weight: 500;
 }
+
+[data-theme="dark"] .more-settings__about-link {
+  color: var(--color-text-link-strong);
+}
+
+[data-theme="dark"] .more-settings__about-disclaimer {
+  color: var(--color-text-secondary);
+}
 </style>

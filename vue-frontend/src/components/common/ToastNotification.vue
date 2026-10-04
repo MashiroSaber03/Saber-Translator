@@ -69,7 +69,7 @@ onUnmounted(() => {
   max-width: 100%;
   pointer-events: auto;
   word-break: break-word;
-  color: white;
+  color: var(--color-text-inverse);
   text-align: center;
   font-size: 14px;
 }
@@ -95,10 +95,6 @@ onUnmounted(() => {
   top: calc(50% - 12px);
   right: 10px;
   color: var(--toast-notification-close-text);
-}
-
-.vue-toast-close:hover {
-  color: white;
 }
 
 .toast-slide-enter-active {
@@ -141,5 +137,17 @@ onUnmounted(() => {
     padding-right: 32px;
     font-size: 13px;
   }
+}
+
+.vue-toast-close:hover {
+  color: white;
+}
+
+[data-theme="dark"] .vue-toast-warning {
+  color: var(--color-text-on-warning);
+}
+
+[data-theme="dark"] .vue-toast-close {
+  color: inherit;
 }
 </style>

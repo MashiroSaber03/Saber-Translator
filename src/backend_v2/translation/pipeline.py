@@ -1010,6 +1010,9 @@ class CoreTranslationAlgorithms:
         *,
         prompt: str,
     ) -> Mapping[str, Any]:
+        if not prompt.strip():
+            raise ValueError("自动术语提取提示词为空，请填写提示词或关闭自动添加术语")
+
         from src.shared.ai_providers import TRANSLATION_CAPABILITY
         from src.shared.ai_transport import UnifiedChatRequest
         from src.shared.openai_execution import (

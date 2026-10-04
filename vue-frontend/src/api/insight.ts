@@ -59,6 +59,7 @@ import {
   restoreBrowserCredentialLeases,
 } from '@/services/browserCredentials'
 import { deepClone } from '@/utils/deepClone'
+import { appendProviderSettingChange, boundProviderCredential, mergeCredentialSummaries, sameSettingValue } from '@/utils/providerSettings'
 import { getProviderDefaultModel } from '@/config/aiProviders'
 import {
   createV2Prompt,
@@ -71,7 +72,6 @@ import {
   saveV2SettingsTransaction,
   updateV2Prompt,
   type V2CredentialEdit,
-  type V2CredentialSummary,
   type V2Prompt,
   type V2PromptMutation,
   type V2ProviderSettingEntry,
@@ -291,8 +291,6 @@ function requireOverviewTemplate(value: string): OverviewTemplateType {
   }
   return value as OverviewTemplateType
 }
-
-let credentialSummaries: V2CredentialSummary[] = []
 
 async function boundedMap<T, R>(
   items: readonly T[],
@@ -1391,9 +1389,8 @@ function readProviderDrafts(document: V2SettingsDocument): InsightProviderDrafts
   ]
   for (const [domain, providerDrafts] of domains) {
     for (const [provider, draft] of Object.entries(providerDrafts)) {
-      const value = document.credentials.find(
-        credential => credential.domain === domain && credential.provider === provider,
-      )?.secret.api_key
+      const stored = document.providerSettings.find(row => row.domain === domain && row.provider === provider)
+      const value = boundProviderCredential(document.credentials, stored, domain, provider)?.secret.api_key
       draft.apiKey = typeof value === 'string' ? value : ''
     }
   }
@@ -1521,11 +1518,10 @@ function requireInsightAppPayload(value: unknown): InsightAppPayload {
 
 export async function getGlobalConfig(): Promise<InsightSettingsSnapshot> {
   const [document, prompts] = await Promise.all([getV2Settings(INSIGHT_DOMAINS), listV2Prompts()])
-  credentialSummaries = mergeCredentialSummaries(
+  document.credentials = mergeCredentialSummaries(
     document.credentials,
     await restoreBrowserCredentialLeases(),
   )
-  document.credentials = credentialSummaries
   const appEntry = document.settings.find(row => row.domain === 'insight')
   if (!appEntry) throw new Error('后端 Insight 设置缺失')
   const app = requireInsightAppPayload(appEntry.payload)
@@ -1640,49 +1636,8 @@ function requireActiveProvider(domain: InsightProviderDomain, provider: unknown)
   return provider
 }
 
-function mergeCredentialSummaries(
-  current: V2CredentialSummary[],
-  changed: V2CredentialSummary[]
-): V2CredentialSummary[] {
-  const byIdentity = new Map(current.map(row => [`${row.domain}\0${row.provider}`, row]))
-  for (const row of changed) byIdentity.set(`${row.domain}\0${row.provider}`, row)
-  return [...byIdentity.values()]
-}
-
-export async function saveGlobalConfig(
-  snapshot: InsightSettingsSnapshot
-): Promise<InsightSettingsSnapshot> {
-  const [document, currentPrompts] = await Promise.all([
-    getV2Settings(INSIGHT_DOMAINS),
-    listV2Prompts(),
-  ])
-  credentialSummaries = mergeCredentialSummaries(
-    document.credentials,
-    await restoreBrowserCredentialLeases(),
-  )
-  document.credentials = credentialSummaries
-  const currentApp = document.settings.find(row => row.domain === 'insight')
-  if (!currentApp) throw new Error('后端 Insight 设置缺失')
-  const { config, providerDrafts } = snapshot
-  const providerSettings: V2ProviderSettingMutation[] = []
-  const credentialEdits: V2CredentialEdit[] = []
-  const promptEdits: V2PromptMutation[] = []
-
-  const vlmProvider = requireActiveProvider(INSIGHT_PROVIDER_DOMAINS.vlm, config.vlm.provider)
-  const llmProvider = requireActiveProvider(INSIGHT_PROVIDER_DOMAINS.llm, config.llm.provider)
-  const embeddingProvider = requireActiveProvider(
-    INSIGHT_PROVIDER_DOMAINS.embedding,
-    config.embedding.provider
-  )
-  const rerankerProvider = requireActiveProvider(
-    INSIGHT_PROVIDER_DOMAINS.reranker,
-    config.reranker.provider
-  )
-  const imageGenProvider = requireActiveProvider(
-    INSIGHT_PROVIDER_DOMAINS.imageGen,
-    config.imageGen.provider
-  )
-  const appPayload = requireInsightAppPayload({
+function serializeInsightApp(config: InsightSettingsSnapshot['config']): InsightAppPayload {
+  return requireInsightAppPayload({
     analysis: {
       batch: {
         pagesPerBatch: config.batch.pagesPerBatch,
@@ -1695,14 +1650,51 @@ export async function saveGlobalConfig(
         })),
       },
     },
-    vlm: { provider: vlmProvider },
-    chat: { provider: llmProvider, useSameAsVlm: config.llm.useSameAsVlm },
-    embedding: { provider: embeddingProvider },
-    reranker: { provider: rerankerProvider },
-    imageGen: { provider: imageGenProvider },
+    vlm: { provider: requireActiveProvider(INSIGHT_PROVIDER_DOMAINS.vlm, config.vlm.provider) },
+    chat: {
+      provider: requireActiveProvider(INSIGHT_PROVIDER_DOMAINS.llm, config.llm.provider),
+      useSameAsVlm: config.llm.useSameAsVlm,
+    },
+    embedding: { provider: requireActiveProvider(INSIGHT_PROVIDER_DOMAINS.embedding, config.embedding.provider) },
+    reranker: { provider: requireActiveProvider(INSIGHT_PROVIDER_DOMAINS.reranker, config.reranker.provider) },
+    imageGen: { provider: requireActiveProvider(INSIGHT_PROVIDER_DOMAINS.imageGen, config.imageGen.provider) },
   })
+}
+
+export async function saveGlobalConfig(
+  snapshot: InsightSettingsSnapshot,
+  baseline: InsightSettingsSnapshot,
+): Promise<InsightSettingsSnapshot> {
+  const [document, currentPrompts] = await Promise.all([
+    getV2Settings(INSIGHT_DOMAINS),
+    listV2Prompts(),
+  ])
+  document.credentials = mergeCredentialSummaries(
+    document.credentials,
+    await restoreBrowserCredentialLeases(),
+  )
+  const currentApp = document.settings.find(row => row.domain === 'insight')
+  if (!currentApp) throw new Error('后端 Insight 设置缺失')
+  const { config, providerDrafts } = snapshot
+  const currentProviderDrafts = readProviderDrafts(document)
+  const providerSettings: V2ProviderSettingMutation[] = []
+  const credentialEdits: V2CredentialEdit[] = []
+  const promptEdits: V2PromptMutation[] = []
+
+  const appPayload = serializeInsightApp(config)
+  const baselineApp = serializeInsightApp(baseline.config)
+  const appChanged = !sameSettingValue(appPayload, baselineApp)
+  const vlmProvider = appPayload.vlm.provider
+  const llmProvider = appPayload.chat.provider
+  const embeddingProvider = appPayload.embedding.provider
+  const rerankerProvider = appPayload.reranker.provider
+  const imageGenProvider = appPayload.imageGen.provider
+  const conflictMessage = '设置已被其他页面更新，请关闭并重新打开设置后再编辑'
+  if (appChanged && !sameSettingValue(currentApp.payload, baselineApp)
+    && !sameSettingValue(currentApp.payload, appPayload)) throw new Error(conflictMessage)
 
   function appendProviderMutations<TDraft extends { apiKey: string }>(
+    kind: keyof InsightSettingsSnapshot['providerDrafts'],
     domain: InsightProviderDomain,
     drafts: Record<string, TDraft>,
     activeProvider: string,
@@ -1721,34 +1713,25 @@ export async function saveGlobalConfig(
       const existingRow = document.providerSettings.find(
         row => row.domain === domain && row.provider === provider
       )
-      const existingCredential = document.credentials.find(
-        row => row.domain === domain && row.provider === provider
-      )
-      const mutation: V2ProviderSettingMutation = {
-        domain,
-        provider,
-        payload: serialize(draft, `${domain}.${provider}`),
-        baseRevision: existingRow?.revision ?? 0,
-        ...(existingRow?.credentialVersionId
-          ? { credentialVersionId: existingRow.credentialVersionId }
-          : {}),
-      }
-      const secret = draft.apiKey.trim()
-      const currentApiKey = existingCredential?.secret.api_key
-      if (secret && currentApiKey !== secret) {
-        const clientRef = `insight:${domain}:${provider}`
-        credentialEdits.push({
-          domain,
-          provider,
-          secret: { api_key: secret },
-          baseRevision: existingCredential?.revision ?? 0,
-          credentialId: existingCredential?.credentialId,
-          clientRef,
-        })
-        mutation.credentialEditRef = clientRef
-        delete mutation.credentialVersionId
-      }
-      providerSettings.push(mutation)
+      const payload = serialize(draft, `${domain}.${provider}`)
+      const previous = baseline.config[kind].provider === provider
+        ? baseline.config[kind] : baseline.providerDrafts[kind][provider]
+      const previousPayload = previous && serialize(previous as unknown as TDraft, `${domain}.${provider}`)
+      // Compare with the loaded form, so an untouched cache cannot overwrite another page.
+      if (previous && sameSettingValue(payload, previousPayload)
+        && draft.apiKey.trim() === previous.apiKey.trim()) continue
+      const current = currentProviderDrafts[kind][provider]
+      const currentPayload = current && serialize(current as unknown as TDraft, `${domain}.${provider}`)
+      const currentKey = current?.apiKey ?? ''
+      if (existingRow && sameSettingValue(payload, currentPayload)
+        && draft.apiKey.trim() === currentKey) continue
+      if (existingRow && (!previous
+        || !sameSettingValue(previousPayload, currentPayload)
+        || previous.apiKey.trim() !== currentKey)) throw new Error(conflictMessage)
+      appendProviderSettingChange(providerSettings, credentialEdits, {
+        domain, provider, payload,
+        secret: { api_key: draft.apiKey }, stored: existingRow, credentials: document.credentials,
+      })
     }
   }
 
@@ -1758,6 +1741,7 @@ export async function saveGlobalConfig(
   const { provider: _rerankerProvider, ...rerankerDraft } = config.reranker
   const { provider: _imageGenProvider, ...imageGenDraft } = config.imageGen
   appendProviderMutations(
+    'vlm',
     INSIGHT_PROVIDER_DOMAINS.vlm,
     providerDrafts.vlm,
     vlmProvider,
@@ -1765,6 +1749,7 @@ export async function saveGlobalConfig(
     serializeVlmDraft
   )
   appendProviderMutations(
+    'llm',
     INSIGHT_PROVIDER_DOMAINS.llm,
     providerDrafts.llm,
     llmProvider,
@@ -1772,6 +1757,7 @@ export async function saveGlobalConfig(
     serializeLlmDraft
   )
   appendProviderMutations(
+    'embedding',
     INSIGHT_PROVIDER_DOMAINS.embedding,
     providerDrafts.embedding,
     embeddingProvider,
@@ -1779,6 +1765,7 @@ export async function saveGlobalConfig(
     serializeEmbeddingDraft
   )
   appendProviderMutations(
+    'reranker',
     INSIGHT_PROVIDER_DOMAINS.reranker,
     providerDrafts.reranker,
     rerankerProvider,
@@ -1786,6 +1773,7 @@ export async function saveGlobalConfig(
     serializeRetriedProviderDraft
   )
   appendProviderMutations(
+    'imageGen',
     INSIGHT_PROVIDER_DOMAINS.imageGen,
     providerDrafts.imageGen,
     imageGenProvider,
@@ -1802,7 +1790,9 @@ export async function saveGlobalConfig(
     const factory = currentPrompts.find(prompt => prompt.type === type && prompt.isFactoryDefault)
     if (!factory) throw new Error(`后端默认提示词不存在：${type}`)
     if (typeof content !== 'string') throw new Error(`提示词内容格式无效：${type}`)
+    if (baseline.config.prompts[type] === content) continue
     if (factory.content === content) continue
+    if (factory.content !== baseline.config.prompts[type]) throw new Error(conflictMessage)
     promptEdits.push({
       id: factory.id,
       name: factory.name,
@@ -1810,8 +1800,8 @@ export async function saveGlobalConfig(
       baseRevision: factory.revision,
     })
   }
-  const prepared = await prepareBrowserCredentialTransaction({
-    settings: [
+  const transaction: V2SettingsTransaction = {
+    settings: !appChanged || sameSettingValue(appPayload, currentApp.payload) ? [] : [
       {
         domain: 'insight',
         payload: appPayload,
@@ -1821,12 +1811,11 @@ export async function saveGlobalConfig(
     providerSettings,
     credentialEdits,
     promptEdits,
-  } as V2SettingsTransaction)
-  const saved = await saveV2SettingsTransaction(prepared.transaction)
-  credentialSummaries = mergeCredentialSummaries(
-    mergeCredentialSummaries(document.credentials, saved.credentials),
-    prepared.summaries,
-  )
+  }
+  if (transaction.settings?.length || providerSettings.length || promptEdits.length) {
+    const prepared = await prepareBrowserCredentialTransaction(transaction)
+    await saveV2SettingsTransaction(prepared.transaction)
+  }
   return deepClone(snapshot)
 }
 
@@ -1839,7 +1828,8 @@ function diagnosticRequest(
     provider: config.provider,
     model: config.model,
     baseUrl: config.base_url,
-    ...(config.api_key ? { secret: { api_key: config.api_key } } : { domain }),
+    domain,
+    secret: { api_key: config.api_key },
   })
 }
 
@@ -1883,7 +1873,8 @@ export function fetchModels(
   return fetchV2ModelCatalog({
     provider,
     baseUrl,
-    ...(apiKey ? { secret: { api_key: apiKey } } : { domain }),
+    domain,
+    secret: { api_key: apiKey },
   })
 }
 

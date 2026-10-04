@@ -5,6 +5,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 import os
 import shutil
 import tempfile
+import threading
 import uuid
 
 from src.backend_v2.storage.defaults import DEFAULT_FONT_ID
@@ -16,6 +17,7 @@ from src.storage_migrator.paths import filesystem_path
 
 SUPPORTED_FONT_SUFFIXES = frozenset({'.ttf', '.ttc', '.otf', '.woff', '.woff2'})
 FONT_NAMESPACE = uuid.UUID('a345a950-8e8f-4dbb-88dc-b13122358bf8')
+_FONT_INSTALL_LOCK = threading.Lock()
 DISPLAY_NAMES = {
     '思源黑体sourcehansansk-bold.ttf': '思源黑体', 'stxingka.ttf': '华文行楷',
     'stxinwei.ttf': '华文新魏', 'stzhongs.ttf': '华文中宋', 'stkaiti.ttf': '楷体',
@@ -76,21 +78,23 @@ def prepare_font_directory(root: Path) -> None:
     root = filesystem_path(root)
     folder = root / 'fonts'
     shared = folder / 'shared'
-    reject_links(folder)
-    reject_links(shared)
-    if shared.is_dir():
-        return
-    folder.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix='.install-', dir=folder) as staging:
-        for font in bundled_font_files():
-            shutil.copyfile(font.path, Path(staging) / font.path.name)
-        try:
-            os.rename(staging, shared)
-        except OSError:
-            # Windows reports EEXIST; POSIX can report ENOTEMPTY for the same race.
-            reject_links(shared)
-            if not shared.is_dir():
-                raise
+    # Parallel pages share one process: only one thread should publish its font cache.
+    with _FONT_INSTALL_LOCK:
+        reject_links(folder)
+        reject_links(shared)
+        if shared.is_dir():
+            return
+        folder.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix='.install-', dir=folder) as staging:
+            for font in bundled_font_files():
+                shutil.copyfile(font.path, Path(staging) / font.path.name)
+            try:
+                os.rename(staging, shared)
+            except OSError:
+                # A different process may have installed the same complete directory.
+                reject_links(shared)
+                if not shared.is_dir():
+                    raise
 
 
 def scan_font_files(root: Path, owner: str) -> list[tuple[str, str | None]]:

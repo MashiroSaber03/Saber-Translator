@@ -3,8 +3,11 @@ import {
   configureBrowserCredentials,
   prepareBrowserCredentialTransaction,
 } from '@/services/browserCredentials'
+import type { V2SettingsTransaction } from '@/api/v2/settings'
 
-const { upload } = vi.hoisted(() => ({ upload: vi.fn().mockResolvedValue({}) }))
+const { upload } = vi.hoisted(() => ({
+  upload: vi.fn().mockResolvedValue({}),
+}))
 vi.mock('@/api/client', () => ({ apiClient: { put: upload } }))
 
 afterEach(() => {
@@ -13,7 +16,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-function storageTransaction() {
+function storageTransaction(change?: V2SettingsTransaction) {
   const request = {
     result: 'saved-key',
     error: null as Error | null,
@@ -40,7 +43,7 @@ function storageTransaction() {
     },
   })
   configureBrowserCredentials(true, 'test-user')
-  const pending = prepareBrowserCredentialTransaction({
+  const pending = prepareBrowserCredentialTransaction(change ?? {
     credentialEdits: [{
       domain: 'translation',
       provider: 'custom',
@@ -75,4 +78,16 @@ it('does not upload a lease when the local transaction aborts after request succ
   await rejected
   expect(upload).not.toHaveBeenCalled()
   expect(close).toHaveBeenCalledOnce()
+})
+
+it('clearing a provider stores an empty browser field and uploads the empty value', async () => {
+  const { transaction, put, pending } = storageTransaction({
+    credentialEdits: [{ domain: 'translation', provider: 'custom', baseRevision: 0,
+      secret: { api_key: '' }, clientRef: 'cleared-key' }],
+  })
+  await vi.waitFor(() => expect(put).toHaveBeenCalledWith(expect.objectContaining({ secret: { api_key: '' } })))
+  expect(upload).not.toHaveBeenCalled()
+  transaction.oncomplete?.()
+  expect(await pending).toMatchObject({ summaries: [expect.objectContaining({ hasKey: false, secret: { api_key: '' } })] })
+  expect(upload).toHaveBeenCalledWith('/api/v2/browser-credentials/translation/custom', { secret: { api_key: '' } })
 })

@@ -8,7 +8,7 @@ import UiField from '@/components/ui/UiField.vue'
 import UiFormGrid from '@/components/ui/UiFormGrid.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiNumberField from '@/components/ui/UiNumberField.vue'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
 import { useInsightStore } from '@/stores/insightStore'
 import type { BatchConfig } from '@/types/insight'
@@ -20,10 +20,6 @@ const emit = defineEmits<{
   (e: 'update:config', config: BatchConfig): void
 }>()
 
-const props = defineProps<{
-  syncRequestId?: number
-}>()
-
 const insightStore = useInsightStore()
 
 const pagesPerBatch = ref(insightStore.config.batch.pagesPerBatch)
@@ -32,7 +28,7 @@ const architecturePreset = ref(insightStore.config.batch.architecturePreset)
 
 function createDefaultCustomLayers(): CustomLayer[] {
   return [
-    { name: '批量分析', units: 5, align: false },
+    { name: '批量分析', units: pagesPerBatch.value, align: false },
     { name: '段落总结', units: 5, align: false },
     { name: '全书总结', units: 0, align: false },
   ]
@@ -47,10 +43,11 @@ function cloneCustomLayers(layers: CustomLayer[]): CustomLayer[] {
 }
 
 const customLayers = ref<CustomLayer[]>(
-  insightStore.config.batch.customLayers.length > 0
-    ? cloneCustomLayers(insightStore.config.batch.customLayers)
-    : createDefaultCustomLayers()
+  cloneCustomLayers(insightStore.config.batch.customLayers)
 )
+watch(architecturePreset, preset => {
+  if (preset === 'custom' && !customLayers.value.length) customLayers.value = createDefaultCustomLayers()
+}, { immediate: true })
 
 const batchEstimate = computed(() => `每批次分析 ${pagesPerBatch.value || 5} 页`)
 const showCustomLayersEditor = computed(() => architecturePreset.value === 'custom')
@@ -124,25 +121,10 @@ function buildDraftConfig(): BatchConfig {
   }
 }
 
-function applyDraftConfig(config: BatchConfig): void {
-  pagesPerBatch.value = config.pagesPerBatch
-  contextBatchCount.value = config.contextBatchCount
-  architecturePreset.value = config.architecturePreset
-
-  if (config.customLayers.length > 0) {
-    customLayers.value = cloneCustomLayers(config.customLayers)
-  } else {
-    customLayers.value = createDefaultCustomLayers()
-  }
-}
-
 useInsightSettingsDraft<BatchConfig>({
   sources: [pagesPerBatch, contextBatchCount, architecturePreset, customLayers],
   buildDraft: buildDraftConfig,
-  applyDraft: applyDraftConfig,
-  loadDraft: () => insightStore.config.batch,
   emitDraft: config => emit('update:config', config),
-  syncRequestId: () => props.syncRequestId,
   deep: true,
 })
 </script>

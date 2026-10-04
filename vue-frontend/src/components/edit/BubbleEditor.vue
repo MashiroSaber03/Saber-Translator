@@ -874,8 +874,12 @@ const {
 .bubble-editor__footer-action {
   min-height: 40px;
 
-  --ui-button-primary-background: linear-gradient(135deg, var(--color-action-primary) 0%, var(--color-action-primary-soft) 100%);
+  --ui-button-primary-background: linear-gradient(135deg, var(--color-action-primary-fill, var(--color-action-primary)) 0%, var(--color-action-primary-fill-hover, var(--color-action-primary-soft)) 100%);
   --ui-button-primary-hover-background: var(--ui-button-primary-background);
   --ui-button-primary-hover-shadow: 0 4px 12px color-mix(in srgb, var(--color-action-primary) 30%, transparent);
+}
+
+[data-theme="dark"] .bubble-editor {
+  --bubble-editor-translated-title-text: var(--color-text-strong);
 }
 </style>

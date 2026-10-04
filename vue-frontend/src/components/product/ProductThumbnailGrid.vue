@@ -261,7 +261,7 @@ function itemAriaLabel(item: ProductThumbnailGridItem): string {
   height: 24px;
   padding: 0 6px;
   border-radius: 999px;
-  background: var(--color-action-primary);
+  background: var(--color-action-primary-fill, var(--color-action-primary));
   box-shadow: 0 2px 6px var(--shadow-medium);
   font-size: 12px;
 }
@@ -271,7 +271,7 @@ function itemAriaLabel(item: ProductThumbnailGridItem): string {
   right: 6px;
   padding: 3px 6px;
   border-radius: 999px;
-  background: var(--color-status-info);
+  background: var(--color-status-info-fill, var(--color-status-info));
   font-size: 10px;
 }
 
@@ -292,5 +292,9 @@ function itemAriaLabel(item: ProductThumbnailGridItem): string {
   color: var(--color-text-inverse);
   font-size: 10px;
   text-align: center;
+}
+
+[data-theme="dark"] .product-thumbnail-grid__label {
+  background: var(--color-surface-inverse-raised);
 }
 </style>

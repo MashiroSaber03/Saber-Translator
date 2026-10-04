@@ -132,7 +132,7 @@ function handleCoverError(): void {
   overflow: hidden;
   border-radius: 12px;
   aspect-ratio: 3 / 4;
-  background: linear-gradient(135deg, var(--color-action-brand) 0%, var(--color-action-brand-strong) 100%);
+  background: linear-gradient(135deg, var(--color-action-brand-fill, var(--color-action-brand)) 0%, var(--color-action-brand-fill-strong, var(--color-action-brand-strong)) 100%);
   box-shadow: 0 8px 24px var(--book-detail-summary-cover-shadow);
 }
 

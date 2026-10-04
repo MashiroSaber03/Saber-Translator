@@ -113,10 +113,10 @@ defineEmits<{
   --apply-options-section-menu-shadow: var(--shadow-medium);
   --apply-options-section-option-text: var(--color-text-secondary);
   --apply-options-section-option-hover-text: var(--color-action-primary-hover);
-  --apply-options-section-action-background: linear-gradient(135deg, var(--color-action-primary-soft) 0%, var(--color-action-primary-hover) 100%);
+  --apply-options-section-action-background: linear-gradient(135deg, var(--color-action-primary-fill, var(--color-action-primary-soft)) 0%, var(--color-action-primary-fill-hover, var(--color-action-primary-hover)) 100%);
   --apply-options-section-action-hover-background: linear-gradient(135deg, var(--color-action-primary) 0%, var(--color-text-link-strong) 100%);
   --apply-options-section-options-action-background: linear-gradient(135deg, var(--color-action-primary-hover) 0%, var(--color-text-link-strong) 100%);
-  --apply-options-section-options-action-hover-background: linear-gradient(135deg, var(--color-text-link-strong) 0%, color-mix(in srgb, var(--color-text-link-strong) 78%, var(--color-surface-inverse)) 100%);
+  --apply-options-section-options-action-hover-background: linear-gradient(135deg, var(--color-action-primary-fill-hover, var(--color-text-link-strong)) 0%, color-mix(in srgb, var(--color-action-primary-fill-hover, var(--color-text-link-strong)) 78%, var(--color-surface-inverse)) 100%);
   --apply-options-section-options-action-border: color-mix(in srgb, var(--color-text-inverse) 24%, transparent);
   --apply-options-section-options-action-text: var(--color-text-inverse);
 
@@ -196,5 +196,10 @@ defineEmits<{
   margin: 6px 0;
   border: none;
   border-top: 1px solid var(--apply-options-section-menu-divider);
+}
+
+[data-theme="dark"] .apply-options-section {
+  --apply-options-section-action-hover-background: var(--apply-options-section-action-background);
+  --apply-options-section-options-action-background: var(--apply-options-section-action-background);
 }
 </style>

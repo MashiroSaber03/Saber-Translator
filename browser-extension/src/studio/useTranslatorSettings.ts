@@ -2,6 +2,7 @@ import { computed, onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import type { PluginSettingsApi } from '../../../vue-frontend/src/types/browserExtensionSettings'
 import type { TranslationSettings } from '../../../vue-frontend/src/types/translationSettings'
 import type { components } from '../../../vue-frontend/src/api/generated/v2'
+import { appendProviderSettingChange, boundProviderCredential, mergeCredentialSummaries, providerKeyField } from '../../../vue-frontend/src/utils/providerSettings'
 
 type Schema = components['schemas']
 export type ServiceKey = 'translation' | 'hqTranslation' | 'aiVisionOcr'
@@ -46,7 +47,9 @@ export function useTranslatorSettings(api: PluginSettingsApi, active: Ref<boolea
     api(`${path}${path.includes('?') ? '&' : '?'}scope=global`, method, body)
   const entry = computed(() => document.value!.settings.find(row => row.domain === 'translation')!)
   const credential = (domain: string, provider: string) =>
-    document.value?.credentials.find(row => row.domain === domain && row.provider === provider)
+    boundProviderCredential(document.value?.credentials ?? [],
+      document.value?.providerSettings.find(row => row.domain === domain && row.provider === provider),
+      domain, provider)
   const secretValue = (domain: string, provider: string, field: string) =>
     secrets.value[identity(domain, provider)]?.[field] ??
     String(credential(domain, provider)?.secret?.[field] ?? '')
@@ -151,33 +154,13 @@ export function useTranslatorSettings(api: PluginSettingsApi, active: Ref<boolea
             row => row.domain === draft.domain && row.provider === draft.provider
           )
           const key = credential(draft.domain, draft.provider)
-          const changes = Object.entries(secrets.value[id] ?? {})
-            .map(([field, value]) => [field, value.trim()] as const)
-            .filter(([field, value]) => value && value !== String(key?.secret?.[field] ?? ''))
-          const secret = changes.length
-            ? { ...key?.secret, ...Object.fromEntries(changes) }
-            : {}
-          if (
-            JSON.stringify(stored?.payload) === JSON.stringify(draft.payload) &&
-            !Object.keys(secret).length
-          )
-            continue
-          const row: Schema['ProviderSettingMutation'] = {
-            ...clone(draft),
-            baseRevision: stored?.revision ?? 0,
-          }
-          if (Object.keys(secret).length) {
-            transaction.credentialEdits!.push({
-              domain: draft.domain,
-              provider: draft.provider,
-              secret,
-              baseRevision: key?.revision ?? 0,
-              ...(key ? { credentialId: key.credentialId } : {}),
-              clientRef: id,
-            })
-            row.credentialEditRef = id
-          } else if (key) row.credentialVersionId = key.credentialVersionId
-          transaction.providerSettings!.push(row)
+          const edited = secrets.value[id]
+          const defaults = draft.domain === 'ocr'
+            ? { baidu_api_key: '', baidu_secret_key: '' } : { [providerKeyField(draft.domain)]: '' }
+          appendProviderSettingChange(transaction.providerSettings!, transaction.credentialEdits!, {
+            ...clone(draft), stored, credentials: document.value!.credentials,
+            secret: Object.keys(edited ?? {}).length ? { ...defaults, ...key?.secret, ...edited } : undefined,
+          })
         }
         if (transaction.settings!.length || transaction.providerSettings!.length) {
           const result = await globalApi<Schema['SettingsTransactionResult']>(
@@ -187,14 +170,10 @@ export function useTranslatorSettings(api: PluginSettingsApi, active: Ref<boolea
           )
           for (const row of result.settings)
             if (row.domain === 'translation') entry.value.revision = row.revision
+          document.value!.credentials = mergeCredentialSummaries(document.value!.credentials, result.credentials)
           for (const row of result.credentials) {
-            const index = document.value!.credentials.findIndex(
-              key => key.domain === row.domain && key.provider === row.provider
-            )
-            if (index < 0) document.value!.credentials.push(row)
-            else document.value!.credentials[index] = row
             const id = identity(row.domain, row.provider)
-            const sent = transaction.credentialEdits!.find(key => key.clientRef === id)!
+            const sent = transaction.credentialEdits!.find(key => key.domain === row.domain && key.provider === row.provider)!
             for (const [field, value] of Object.entries(sent.secret))
               if (secrets.value[id]?.[field]?.trim() === value) delete secrets.value[id]![field]
           }
@@ -208,7 +187,8 @@ export function useTranslatorSettings(api: PluginSettingsApi, active: Ref<boolea
               payload: row.payload,
               revision,
               credentialVersionId:
-                credential(row.domain, row.provider)?.credentialVersionId ?? null,
+                result.credentials.find(key => key.domain === row.domain && key.provider === row.provider)?.credentialVersionId
+                ?? row.credentialVersionId ?? null,
             }
             const index = document.value!.providerSettings.findIndex(
               item => item.domain === row.domain && item.provider === row.provider

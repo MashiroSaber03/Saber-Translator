@@ -265,7 +265,8 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(
     pyz,
     a.scripts,
-    [],
+    # Frozen Python ignores encoding environment variables; desktop pipes use UTF-8.
+    [('X utf8', None, 'OPTION')],
     exclude_binaries=True,
     name='Saber-Translator',
     debug=False,

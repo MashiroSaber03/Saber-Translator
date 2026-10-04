@@ -173,4 +173,16 @@
   --shadow-medium: rgba(0, 0, 0, .36);
   --shadow-action-brand: rgba(129, 140, 248, .36);
   --shadow-action-success: rgba(52, 211, 153, .32);
+
+  /* Dark-only fills; components fall back to their original light colors. */
+  --color-action-primary-fill: #2563eb;
+  --color-action-primary-fill-hover: #1d4ed8;
+  --color-action-brand-fill: #4f46e5;
+  --color-action-brand-fill-strong: #6d28d9;
+  --color-action-success-fill: #15803d;
+  --color-action-success-fill-strong: #166534;
+  --color-status-error-fill: #b91c1c;
+  --color-status-error-fill-hover: #991b1b;
+  --color-status-info-fill: #0e7490;
+  --color-text-on-warning: #1a1a2e;
 }

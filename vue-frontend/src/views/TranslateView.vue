@@ -491,6 +491,7 @@ async function handleQuickWorkspacePromoted() {
 
     <SettingsModal
       v-model="showSettingsModal"
+      :before-close="translateInit.flushChapterWorkState"
     />
 
     <BookGlossaryModal v-model="showBookGlossaryModal" />

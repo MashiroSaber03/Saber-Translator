@@ -164,4 +164,10 @@ function hover(event: PointerEvent) {
     var(--color-surface-inverse) var(--segment)
   );
 }
+
+[data-theme="dark"] .reader-progress__page {
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: var(--color-surface-inverse-raised);
+}
 </style>

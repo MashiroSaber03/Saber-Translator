@@ -51,3 +51,13 @@
   --ui-textarea-error-border: var(--color-status-error);
   --ui-textarea-focus-shadow: var(--color-focus-brand-subtle);
 }
+
+:root[data-theme="dark"] {
+  --toast-notification-info-background: var(--color-status-info-fill);
+  --toast-notification-success-background: var(--color-action-success-fill);
+  --toast-notification-error-background: var(--color-status-error-fill);
+  --ui-button-danger-background-start: var(--color-status-error-fill);
+  --ui-button-danger-background-end: var(--color-status-error-fill-hover);
+  --ui-button-danger-hover-background-start: var(--color-status-error-fill-hover);
+  --ui-button-danger-hover-background-end: var(--color-status-error-fill-hover);
+}

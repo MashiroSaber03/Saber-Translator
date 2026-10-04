@@ -503,10 +503,6 @@ function handlePromptModeChange(mode: UiSelectValue) {
 async function testBaiduOcr() {
   const apiKey = settings.value.baiduOcr.apiKey?.trim()
   const secretKey = settings.value.baiduOcr.secretKey?.trim()
-  if (Boolean(apiKey) !== Boolean(secretKey)) {
-    toast.warning('更换百度 OCR 凭据时必须同时填写 API Key 和 Secret Key')
-    return
-  }
   if (!apiKey || !secretKey) {
     toast.warning('请填写百度OCR的API Key和Secret Key')
     return

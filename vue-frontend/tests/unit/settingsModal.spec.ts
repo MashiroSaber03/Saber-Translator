@@ -261,6 +261,65 @@ describe('SettingsModal', () => {
     }
   })
 
+  it('keeps editing enabled and submits newer changes after a pending automatic save', async () => {
+    vi.useFakeTimers()
+    try {
+      let finish!: (saved: boolean) => void
+      const pending = new Promise<boolean>(resolve => { finish = resolve })
+      const submitted: number[] = []
+      saveToBackendMock.mockImplementation(() => {
+        submitted.push(settingsStoreState.settings.textStyle.fontSize)
+        return submitted.length === 1 ? pending : Promise.resolve(true)
+      })
+      const wrapper = mount(SettingsModal, { props: { modelValue: true } })
+      await flushPromises()
+      settingsStoreState.settings.textStyle.fontSize = 18
+      await vi.advanceTimersByTimeAsync(450)
+      expect((wrapper.get('fieldset').element as HTMLFieldSetElement).disabled).toBe(false)
+      settingsStoreState.settings.textStyle.fontSize = 19
+      finish(true)
+      await flushPromises()
+      expect(submitted).toEqual([18, 19])
+      expect(settingsStoreState.settings.textStyle.fontSize).toBe(19)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps the dialog open until chapter work state also saves, including a retry', async () => {
+    const beforeClose = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+    const wrapper = mount(SettingsModal, {
+      props: { modelValue: true, beforeClose },
+    })
+    await flushPromises()
+    const done = wrapper.findAll('button').find(button => button.text() === '完成')!
+    await done.trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(wrapper.text()).toContain('保存失败')
+    await done.trigger('click')
+    await flushPromises()
+    expect(beforeClose).toHaveBeenCalledTimes(2)
+    expect(wrapper.emitted('update:modelValue')).toEqual([[false]])
+  })
+
+  it('disables closing while chapter work state is still being saved', async () => {
+    let finish!: (value: boolean) => void
+    const beforeClose = vi.fn(() => new Promise<boolean>(resolve => { finish = resolve }))
+    const wrapper = mount(SettingsModal, {
+      props: { modelValue: true, beforeClose },
+    })
+    await flushPromises()
+    const done = wrapper.findAll('button').find(button => button.text() === '完成')!
+    await done.trigger('click')
+    await flushPromises()
+    expect(done.attributes('disabled')).toBeDefined()
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    finish(true)
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')).toEqual([[false]])
+  })
+
   it('does not render glossary and non-translate tabs', () => {
     const wrapper = mount(SettingsModal, {
       props: {
@@ -400,7 +459,7 @@ describe('SettingsModal', () => {
       'utf8'
     )
 
-    expect(source).toContain('scheduleAutoSave()')
+    expect(source).toContain('useSettingsAutoSave(')
     expect(source).toContain('hasUnsavedChanges')
     expect(source).not.toContain('settingsSnapshot')
     expect(source).not.toContain('providerSnapshot')
@@ -440,7 +499,7 @@ describe('SettingsModal', () => {
     )
 
     expect(source).toContain('title="设置加载失败"')
-    expect(source).toContain(':disabled="!settingsStore.isBackendReady || globalSaving"')
+    expect(source).toContain(':disabled="!settingsStore.isBackendReady"')
     expect(source).toContain('settingsStore.backendError ||')
   })
 

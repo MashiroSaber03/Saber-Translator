@@ -13,8 +13,10 @@ import {
   type V2CredentialEdit,
   type V2CredentialSummary,
   type V2ProviderSettingMutation,
+  type V2ProviderSettingEntry,
 } from '@/api/v2/settings'
 import { deepClone } from '@/utils/deepClone'
+import { appendProviderSettingChange, boundProviderCredential, mergeCredentialSummaries } from '@/utils/providerSettings'
 import {
   createDefaultWebImportProviderConfigs,
   createDefaultWebImportSettings,
@@ -72,42 +74,23 @@ function hydrateBackendWebImportSettings(value: unknown): unknown {
 
 function credentialValue(
   credentials: V2CredentialSummary[],
+  stored: V2ProviderSettingEntry | undefined,
   domain: string,
   provider: string,
   field: string,
 ): unknown {
-  return credentials.find(
-    row => row.domain === domain && row.provider === provider,
-  )?.secret[field]
+  return boundProviderCredential(credentials, stored, domain, provider)?.secret[field]
 }
 
 function credentialText(
   credentials: V2CredentialSummary[],
+  stored: V2ProviderSettingEntry | undefined,
   domain: string,
   provider: string,
   field: string,
 ): string {
-  const value = credentialValue(credentials, domain, provider, field)
+  const value = credentialValue(credentials, stored, domain, provider, field)
   return typeof value === 'string' ? value : ''
-}
-
-function canonicalCredentialValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonicalCredentialValue)
-  if (!value || typeof value !== 'object') return value
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, child]) => [key, canonicalCredentialValue(child)]),
-  )
-}
-
-function credentialMatches(
-  current: V2CredentialSummary | undefined,
-  secret: Record<string, unknown>,
-): boolean {
-  if (!current) return false
-  return JSON.stringify(canonicalCredentialValue(current.secret))
-    === JSON.stringify(canonicalCredentialValue(secret))
 }
 
 export const useWebImportStore = defineStore('webImport', () => {
@@ -121,7 +104,7 @@ export const useWebImportStore = defineStore('webImport', () => {
   const hasLoadedBackendSettings = ref(false)
   const credentialSummaries = ref<V2CredentialSummary[]>([])
   let settingsRevision = 0
-  let providerRevisions = new Map<string, number>()
+  let providerEntries = new Map<string, V2ProviderSettingEntry>()
   let initPromise: Promise<void> | null = null
 
   const status = ref<WebImportStatus>('idle')
@@ -179,8 +162,8 @@ export const useWebImportStore = defineStore('webImport', () => {
         return false
       }
       settingsRevision = entry.revision
-      providerRevisions = new Map(
-        response.providerSettings.map(row => [`${row.domain}\u0000${row.provider}`, row.revision])
+      providerEntries = new Map(
+        response.providerSettings.map(row => [`${row.domain}\u0000${row.provider}`, row])
       )
       credentialSummaries.value = response.credentials
       const loadedAgentProviderConfigs: Record<string, unknown> = {}
@@ -189,6 +172,7 @@ export const useWebImportStore = defineStore('webImport', () => {
         loadedAgentProviderConfigs[row.provider] = {
           apiKey: credentialText(
             credentialSummaries.value,
+            row,
             row.domain,
             row.provider,
             'api_key',
@@ -208,6 +192,7 @@ export const useWebImportStore = defineStore('webImport', () => {
       }
       settings.value.firecrawl.apiKey = credentialText(
         credentialSummaries.value,
+        providerEntries.get('web_import_firecrawl\u0000firecrawl'),
         'web_import_firecrawl',
         'firecrawl',
         'api_key',
@@ -216,12 +201,14 @@ export const useWebImportStore = defineStore('webImport', () => {
       if (activeAgent) Object.assign(settings.value.agent, activeAgent)
       settings.value.advanced.customCookie = credentialText(
         credentialSummaries.value,
+        providerEntries.get('web_import_http\u0000headers'),
         'web_import_http',
         'headers',
         'cookie',
       )
       const headers = credentialValue(
         credentialSummaries.value,
+        providerEntries.get('web_import_http\u0000headers'),
         'web_import_http',
         'headers',
         'headers',
@@ -249,37 +236,11 @@ export const useWebImportStore = defineStore('webImport', () => {
         payload: Record<string, unknown>,
         secret: Record<string, unknown>
       ) => {
-        const identity = `${domain}\u0000${provider}`
-        const existing = credentialSummaries.value.find(
-          row => row.domain === domain && row.provider === provider
-        )
-        const nonEmptySecret = Object.fromEntries(
-          Object.entries(secret).filter(([, value]) => value !== '' && value != null)
-        )
-        const mutation: V2ProviderSettingMutation = {
-          domain,
-          provider,
-          payload,
-          baseRevision: providerRevisions.get(identity) ?? 0,
-        }
-        if (
-          Object.keys(nonEmptySecret).length > 0
-          && !credentialMatches(existing, nonEmptySecret)
-        ) {
-          const clientRef = `credential:${domain}:${provider}`
-          credentialEdits.push({
-            domain,
-            provider,
-            secret: nonEmptySecret,
-            baseRevision: existing?.revision ?? 0,
-            credentialId: existing?.credentialId,
-            clientRef,
-          })
-          mutation.credentialEditRef = clientRef
-        } else if (existing) {
-          mutation.credentialVersionId = existing.credentialVersionId
-        }
-        providerSettings.push(mutation)
+        appendProviderSettingChange(providerSettings, credentialEdits, {
+          domain, provider, payload, credentials: credentialSummaries.value,
+          stored: providerEntries.get(`${domain}\u0000${provider}`),
+          secret,
+        })
       }
 
       for (const [provider, config] of Object.entries(providerConfigs.value.agent)) {
@@ -332,16 +293,15 @@ export const useWebImportStore = defineStore('webImport', () => {
       settingsRevision = savedSetting.revision
       for (const row of result.providerSettings) {
         if (typeof row.provider !== 'string') continue
-        providerRevisions.set(`${row.domain}\u0000${row.provider}`, row.revision)
+        const change = providerSettings.find(item => item.domain === row.domain && item.provider === row.provider)
+        if (!change) continue
+        const credential = result.credentials.find(item => item.domain === row.domain && item.provider === row.provider)
+        providerEntries.set(`${row.domain}\u0000${row.provider}`, {
+          domain: row.domain, provider: row.provider, revision: row.revision,
+          payload: deepClone(change.payload), credentialVersionId: credential?.credentialVersionId ?? change.credentialVersionId ?? null,
+        })
       }
-      for (const summary of result.credentials) {
-        credentialSummaries.value = [
-          ...credentialSummaries.value.filter(
-            existing => existing.domain !== summary.domain || existing.provider !== summary.provider
-          ),
-          summary,
-        ]
-      }
+      credentialSummaries.value = mergeCredentialSummaries(credentialSummaries.value, result.credentials)
       return true
     } catch (error) {
       settingsSaveError.value = error instanceof Error ? error.message : '网页导入设置保存失败'

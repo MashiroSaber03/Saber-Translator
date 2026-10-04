@@ -121,7 +121,7 @@ withDefaults(defineProps<{
 .product-message-bubble--user .product-message-bubble__body {
   border-color: transparent;
   border-bottom-right-radius: 4px;
-  background: var(--color-action-primary);
+  background: var(--color-action-primary-fill, var(--color-action-primary));
   color: var(--color-text-inverse);
 }
 

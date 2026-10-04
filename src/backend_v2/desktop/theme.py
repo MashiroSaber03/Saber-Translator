@@ -215,6 +215,10 @@ QToolTip {
     padding: 6px 9px;
     font-size: 12px;
 }
+QMessageBox {
+    background: #FCFBFC;
+    color: #2D292C;
+}
 QMessageBox QLabel { font-size: 13px; }
 QMessageBox QPushButton { min-width: 84px; }
 """

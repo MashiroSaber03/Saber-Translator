@@ -5,7 +5,7 @@ import UiFormGrid from '@/components/ui/UiFormGrid.vue'
 import UiNumberField from '@/components/ui/UiNumberField.vue'
 import { ref, computed } from 'vue'
 import OpenAIExtraBodyEditor from '@/components/common/OpenAIExtraBodyEditor.vue'
-import { getProviderDefaultModel, providerRequiresApiKey } from '@/config/aiProviders'
+import { providerRequiresApiKey } from '@/config/aiProviders'
 import { useInsightStore } from '@/stores/insightStore'
 import * as insightApi from '@/api/insight'
 import type { StoreLlmConfig } from '@/types/insight'
@@ -19,10 +19,6 @@ import { LLM_PROVIDER_OPTIONS } from './types'
 const emit = defineEmits<{
   (e: 'showMessage', message: string, type: 'success' | 'error'): void
   (e: 'update:config', config: StoreLlmConfig): void
-}>()
-
-const props = defineProps<{
-  syncRequestId?: number
 }>()
 
 const insightStore = useInsightStore()
@@ -75,22 +71,14 @@ const { isTesting, testConnection } = useInsightConnectionTest({
 })
 
 function onProviderChange(): void {
-  const newProvider = provider.value
   invalidateModelFetch()
 
   applyDraftConfig(insightStore.switchLlmProviderDraft(buildDraftConfig()))
-
-  if (!model.value) {
-    const defaultModel = getProviderDefaultModel(newProvider, 'chat')
-    if (defaultModel) {
-      model.value = defaultModel
-    }
-  }
 }
 
 function buildDraftConfig(): StoreLlmConfig {
   return {
-    useSameAsVlm: false,
+    useSameAsVlm: insightStore.config.llm.useSameAsVlm,
     provider: provider.value,
     apiKey: apiKey.value,
     model: model.value,
@@ -138,10 +126,7 @@ useInsightSettingsDraft<StoreLlmConfig>({
     businessRetries,
   ],
   buildDraft: buildDraftConfig,
-  applyDraft: applyDraftConfig,
-  loadDraft: () => insightStore.config.llm,
   emitDraft: config => emit('update:config', config),
-  syncRequestId: () => props.syncRequestId,
   deep: true,
 })
 </script>

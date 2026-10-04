@@ -1254,4 +1254,8 @@ function analysisCreated(result: V2InsightAnalysisJobAccepted) {
   gap: 4px;
   padding-left: 18px;
 }
+
+[data-theme="dark"] .task-center__tab--active {
+  color: var(--color-text-link-strong);
+}
 </style>

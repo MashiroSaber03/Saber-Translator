@@ -42,6 +42,7 @@ describe('v2 diagnostics api', () => {
 
     expect(postMock).toHaveBeenNthCalledWith(1, '/api/v2/model-catalog', {
       provider: 'openai',
+      domain: 'translation',
       baseUrl: 'https://api.example.test',
       secret: { api_key: 'model-key' },
     })
@@ -50,6 +51,7 @@ describe('v2 diagnostics api', () => {
       '/api/v2/connection-tests/ai_vision_ocr',
       {
         provider: 'gemini',
+        domain: 'ai_vision_ocr',
         model: 'vision-model',
         baseUrl: 'https://vision.example.test',
         prompt: 'read text',
@@ -64,12 +66,14 @@ describe('v2 diagnostics api', () => {
         model: 'chat-model',
         baseUrl: undefined,
         domain: 'hq',
+        secret: { api_key: '' },
       },
     )
     expect(postMock).toHaveBeenNthCalledWith(
       4,
       '/api/v2/connection-tests/baidu_ocr',
       {
+        domain: 'ocr',
         secret: {
           baidu_api_key: 'baidu-key',
           baidu_secret_key: 'baidu-secret',

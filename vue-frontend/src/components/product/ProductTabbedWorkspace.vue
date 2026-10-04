@@ -189,7 +189,7 @@ onBeforeUnmount(() => {
 .product-tabbed-workspace__tab--active,
 .product-tabbed-workspace__tab--active:hover {
   color: var(--product-tabbed-workspace-tab-text-active, var(--color-text-inverse));
-  background: var(--product-tabbed-workspace-tab-background-active, var(--color-action-brand));
+  background: var(--product-tabbed-workspace-tab-background-active, var(--color-action-brand-fill, var(--color-action-brand)));
 }
 
 .product-tabbed-workspace__tab-icon {

@@ -5,7 +5,7 @@ import UiFormGrid from '@/components/ui/UiFormGrid.vue'
 import UiNumberField from '@/components/ui/UiNumberField.vue'
 import { ref, computed } from 'vue'
 import OpenAIExtraBodyEditor from '@/components/common/OpenAIExtraBodyEditor.vue'
-import { getProviderDefaultModel, providerRequiresApiKey } from '@/config/aiProviders'
+import { providerRequiresApiKey } from '@/config/aiProviders'
 import { useInsightStore } from '@/stores/insightStore'
 import * as insightApi from '@/api/insight'
 import type { StoreVlmConfig } from '@/types/insight'
@@ -19,10 +19,6 @@ import { VLM_PROVIDER_OPTIONS } from './types'
 const emit = defineEmits<{
   (e: 'showMessage', message: string, type: 'success' | 'error'): void
   (e: 'update:config', config: StoreVlmConfig): void
-}>()
-
-const props = defineProps<{
-  syncRequestId?: number
 }>()
 
 const insightStore = useInsightStore()
@@ -76,17 +72,9 @@ const { isTesting, testConnection } = useInsightConnectionTest({
 })
 
 function onProviderChange(): void {
-  const newProvider = provider.value
   invalidateModelFetch()
 
   applyDraftConfig(insightStore.switchVlmProviderDraft(buildDraftConfig()))
-
-  if (!model.value) {
-    const defaultModel = getProviderDefaultModel(newProvider, 'vlm')
-    if (defaultModel) {
-      model.value = defaultModel
-    }
-  }
 }
 
 function buildDraftConfig(): StoreVlmConfig {
@@ -143,10 +131,7 @@ useInsightSettingsDraft<StoreVlmConfig>({
     imageMaxSize,
   ],
   buildDraft: buildDraftConfig,
-  applyDraft: applyDraftConfig,
-  loadDraft: () => insightStore.config.vlm,
   emitDraft: config => emit('update:config', config),
-  syncRequestId: () => props.syncRequestId,
   deep: true,
 })
 </script>

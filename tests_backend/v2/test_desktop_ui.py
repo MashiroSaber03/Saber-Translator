@@ -11,7 +11,7 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QPoint, Qt
-from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtGui import QColor, QIcon, QPalette, QPixmap
 from PySide6.QtNetwork import QNetworkReply
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
@@ -991,24 +991,31 @@ def test_log_view_inherits_the_bundled_application_font() -> None:
     assert "Fixedsys" not in WINDOW_STYLESHEET
 
 
+@pytest.mark.parametrize("background", ["#F3F3F3", "#1E1E1E"])
 @pytest.mark.parametrize("message", [
     "设置自动保存失败：测试消息",
     "后端启动或运行失败：旧 API/Worker 尚未退出；请先关闭旧程序。" * 6,
     "Backend startup failed: previous backend child did not exit. Please close the previous process. " * 6,
 ])
-def test_message_box_fits_text_without_stretching_the_icon(message) -> None:
+def test_message_box_fits_text_without_stretching_the_icon(message, background) -> None:
     app = _app()
     box = QMessageBox(
         QMessageBox.Icon.Warning,
         "Saber-Translator",
         message,
     )
+    palette = QPalette(box.palette())
+    palette.setColor(QPalette.ColorRole.Window, QColor(background))
+    box.setPalette(palette)
     box.setStyleSheet(WINDOW_STYLESHEET)
     box.show()
     app.processEvents()
 
     labels = {label.objectName(): label for label in box.findChildren(QLabel)}
     label = labels["qt_msgbox_label"]
+    background_lightness = box.palette().color(QPalette.ColorRole.Window).lightnessF()
+    text_lightness = label.palette().color(QPalette.ColorRole.WindowText).lightnessF()
+    assert abs(background_lightness - text_lightness) >= 0.5
     assert label.text() == message
     if len(message) > 100:
         assert label.wordWrap()

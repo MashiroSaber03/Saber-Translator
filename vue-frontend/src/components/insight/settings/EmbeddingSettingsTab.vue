@@ -2,7 +2,7 @@
 import UiField from '@/components/ui/UiField.vue'
 import UiNumberField from '@/components/ui/UiNumberField.vue'
 import { ref, computed } from 'vue'
-import { getProviderDefaultModel, providerRequiresApiKey } from '@/config/aiProviders'
+import { providerRequiresApiKey } from '@/config/aiProviders'
 import { useInsightStore } from '@/stores/insightStore'
 import * as insightApi from '@/api/insight'
 import type { StoreEmbeddingConfig } from '@/types/insight'
@@ -16,10 +16,6 @@ import { EMBEDDING_PROVIDER_OPTIONS } from './types'
 const emit = defineEmits<{
   (e: 'showMessage', message: string, type: 'success' | 'error'): void
   (e: 'update:config', config: StoreEmbeddingConfig): void
-}>()
-
-const props = defineProps<{
-  syncRequestId?: number
 }>()
 
 const insightStore = useInsightStore()
@@ -82,15 +78,9 @@ const { isTesting, testConnection } = useInsightConnectionTest({
 })
 
 function onProviderChange(): void {
-  const newProvider = provider.value
   invalidateModelFetch()
 
   applyDraftConfig(insightStore.switchEmbeddingProviderDraft(buildDraftConfig()))
-
-  if (!model.value) {
-    const defaultModel = getProviderDefaultModel(newProvider, 'embedding')
-    if (defaultModel) model.value = defaultModel
-  }
 }
 
 function buildDraftConfig(): StoreEmbeddingConfig {
@@ -129,10 +119,7 @@ useInsightSettingsDraft<StoreEmbeddingConfig>({
     timeoutSeconds,
   ],
   buildDraft: buildDraftConfig,
-  applyDraft: applyDraftConfig,
-  loadDraft: () => insightStore.config.embedding,
   emitDraft: config => emit('update:config', config),
-  syncRequestId: () => props.syncRequestId,
 })
 </script>
 
@@ -183,7 +170,7 @@ useInsightSettingsDraft<StoreEmbeddingConfig>({
     <UiField
       variant="settings"
       label="传输重试次数"
-      hint="网络超时、连接错误、429/5xx 默认重试 1 次"
+      hint="网络超时、连接错误、429/5xx"
       control-id="insight-embedding-transport-retries"
     >
       <UiNumberField
@@ -196,7 +183,7 @@ useInsightSettingsDraft<StoreEmbeddingConfig>({
     <UiField
       variant="settings"
       label="业务重试次数"
-      hint="空向量或数量不匹配时默认不额外重试"
+      hint="空向量或数量不匹配"
       control-id="insight-embedding-business-retries"
     >
       <UiNumberField

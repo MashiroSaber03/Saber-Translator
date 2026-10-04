@@ -254,6 +254,26 @@ def test_studio_generation_prompt_declares_nested_lorebook_contract(
         assert f'"{field}":' in captured["prompt"]
 
 
+@pytest.mark.parametrize("section", ("regex", "full", "translate"))
+def test_generated_regex_prompt_example_satisfies_current_document_contract(monkeypatch, section):
+    document = create_empty_document("book-1", title="Saber")
+
+    def chat_json(self, prompt, *, config, validator):
+        start = prompt.index('{"id":"稳定唯一ID","scriptName":')
+        script, _ = json.JSONDecoder().raw_decode(prompt[start:])
+        script.update(id="trim-space", scriptName="去除首尾空格", findRegex="^ +| +$", replaceString="")
+        result = {"regexScripts": [script]}
+        if section != "regex":
+            result.update({key: deepcopy(document[key]) for key in
+                           ("identity", "coreMessages", "lorebook", "stateTasks")})
+        validator(result)
+        return result
+
+    monkeypatch.setattr(DefaultStudioAlgorithms, "_chat_json", chat_json)
+    generated = DefaultStudioAlgorithms().generate(document, section=section, config={})
+    assert generated["regexScripts"][0]["findRegex"] == "^ +| +$"
+
+
 @pytest.mark.parametrize("section", ("full", "lorebook"))
 @pytest.mark.parametrize("invalid", ("missing_fields", "bad_child", "malformed_json"))
 def test_generated_lorebook_validation_uses_existing_business_retry(monkeypatch, section, invalid):

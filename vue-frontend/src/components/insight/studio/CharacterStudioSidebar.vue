@@ -204,8 +204,8 @@ function handleFileSelect(files: File[]) {
   --ui-button-radius: 14px;
   --ui-button-primary-background: linear-gradient(
     135deg,
-    var(--color-action-brand),
-    var(--color-action-brand-strong)
+    var(--color-action-brand-fill, var(--color-action-brand)),
+    var(--color-action-brand-fill-strong, var(--color-action-brand-strong))
   );
   --ui-button-primary-shadow: 0 12px 24px
     color-mix(in srgb, var(--color-action-brand) 20%, transparent);

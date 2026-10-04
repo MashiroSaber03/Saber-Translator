@@ -28,10 +28,6 @@ const emit = defineEmits<{
   (e: 'update:prompts', prompts: Record<string, string>): void
 }>()
 
-const props = defineProps<{
-  syncRequestId?: number
-}>()
-
 const insightStore = useInsightStore()
 
 const currentPromptType = ref<PromptType>('batch_analysis')
@@ -329,7 +325,7 @@ watch(currentPromptType, (newType, previousType) => {
   if (newType) {
     currentPromptContent.value = customPrompts.value[newType] ?? defaultPrompts.value[newType] ?? ''
   }
-})
+}, { flush: 'sync' })
 
 watch([currentPromptType, currentPromptContent], () => {
   emitPrompts()
@@ -343,18 +339,6 @@ function collectDraftPrompts(): Record<string, string> {
 function emitPrompts(): void {
   emit('update:prompts', { ...collectDraftPrompts() })
 }
-
-function refreshDraftFromStore(): void {
-  customPrompts.value = { ...insightStore.config.prompts }
-  currentPromptContent.value = customPrompts.value[currentPromptType.value]
-    ?? defaultPrompts.value[currentPromptType.value]
-    ?? ''
-  emitPrompts()
-}
-
-watch(() => props.syncRequestId, () => {
-  refreshDraftFromStore()
-})
 
 async function initialize(): Promise<void> {
   await Promise.all([loadDefaultPrompts(), loadPromptsLibrary()])

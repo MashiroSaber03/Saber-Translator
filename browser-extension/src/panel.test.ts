@@ -182,7 +182,7 @@ it('edits only plugin text style and the optional DOM assistant, preserving draf
         domain: 'browser_dom_agent',
         provider: 'siliconflow',
         payload: { modelName: 'new-agent-model' },
-        credentialEditRef: 'siliconflow',
+        credentialEditRef: 'credential:browser_dom_agent:siliconflow',
       },
     ],
     credentialEdits: [

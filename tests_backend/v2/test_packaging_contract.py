@@ -54,6 +54,19 @@ def test_production_spec_imports_its_dependency_probe() -> None:
     assert "from importlib.util import find_spec" in spec
 
 
+def test_packaged_interpreter_initializes_standard_streams_as_utf8() -> None:
+    tree = ast.parse((PROJECT_ROOT / "app.spec").read_text(encoding="utf-8"))
+    executable = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "EXE"
+    )
+
+    assert ("X utf8", None, "OPTION") in ast.literal_eval(executable.args[2])
+
+
 def test_production_spec_does_not_bundle_foreign_windows_icu() -> None:
     spec = (PROJECT_ROOT / "app.spec").read_text(encoding="utf-8")
 

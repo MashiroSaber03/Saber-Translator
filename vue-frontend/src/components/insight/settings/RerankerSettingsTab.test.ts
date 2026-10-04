@@ -50,7 +50,6 @@ describe('RerankerSettingsTab', () => {
       },
     })
 
-    await wrapper.setProps({ syncRequestId: 1 })
     await flushPromises()
 
     expect(latestConfig(wrapper)).toEqual({

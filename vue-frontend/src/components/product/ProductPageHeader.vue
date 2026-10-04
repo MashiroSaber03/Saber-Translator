@@ -171,7 +171,7 @@ withDefaults(defineProps<{
   min-height: 64px;
   margin: 0;
   padding: 8px 24px;
-  background: linear-gradient(135deg, var(--color-action-brand) 0%, var(--color-action-brand-strong) 100%);
+  background: linear-gradient(135deg, var(--color-action-brand-fill, var(--color-action-brand)) 0%, var(--color-action-brand-fill-strong, var(--color-action-brand-strong)) 100%);
   box-shadow: 0 2px 20px var(--shadow-action-brand);
 }
 
@@ -277,7 +277,7 @@ withDefaults(defineProps<{
   margin: 0;
   padding: 0 16px;
   color: var(--color-text-inverse);
-  background: linear-gradient(135deg, var(--color-action-brand) 0%, var(--color-action-brand-strong) 100%);
+  background: linear-gradient(135deg, var(--color-action-brand-fill, var(--color-action-brand)) 0%, var(--color-action-brand-fill-strong, var(--color-action-brand-strong)) 100%);
   box-shadow: 0 2px 10px var(--product-page-header-reader-shadow, var(--internal-product-page-header-reader-shadow));
 }
 

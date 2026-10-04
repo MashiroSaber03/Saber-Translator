@@ -70,9 +70,9 @@ defineEmits<{
 <style scoped>
 .studio-topbar {
   --studio-topbar-backdrop-background: color-mix(in srgb, var(--color-surface-card) 90%, transparent);
-  --studio-topbar-primary-action-end: color-mix(in srgb, var(--color-text-link-strong) 65%, var(--color-action-brand));
+  --studio-topbar-primary-action-end: color-mix(in srgb, var(--color-action-primary-fill, var(--color-text-link-strong)) 65%, var(--color-action-brand-fill, var(--color-action-brand)));
   --studio-topbar-primary-action-shadow: color-mix(in srgb, var(--color-text-link-strong) 22%, transparent);
-  --studio-topbar-primary-action-start: var(--color-text-link-strong);
+  --studio-topbar-primary-action-start: var(--color-action-primary-fill, var(--color-text-link-strong));
   --studio-topbar-status-background: var(--studio-surface-tint-muted);
   --studio-topbar-title-text: var(--studio-text-strong);
   --product-header-action-context-surface: var(--studio-surface-tint);

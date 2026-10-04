@@ -20,6 +20,14 @@ function latestConfig<T>(wrapper: ReturnType<typeof mount>): T {
 }
 
 describe('ImageGenSettingsTab', () => {
+  it('keeps cleared model and URL values when another field is updated', () => {
+    setActivePinia(createPinia())
+    const store = useInsightStore()
+    store.updateImageGenConfig({ model: '', baseUrl: '' })
+    store.updateImageGenConfig({ transportRetries: 4 })
+    expect(store.config.imageGen.model).toBe('')
+    expect(store.config.imageGen.baseUrl).toBe('')
+  })
   it('renders the image generation provider as a selector', () => {
     const pinia = createPinia()
     setActivePinia(pinia)
@@ -57,7 +65,6 @@ describe('ImageGenSettingsTab', () => {
       },
     })
 
-    await wrapper.setProps({ syncRequestId: 1 })
     await flushPromises()
 
     expect(latestConfig(wrapper)).toEqual({
@@ -192,7 +199,6 @@ describe('ImageGenSettingsTab', () => {
       },
     })
 
-    await wrapper.setProps({ syncRequestId: 1 })
     await flushPromises()
 
     expect(wrapper.text()).toContain('当前服务商需要手动填写模型名')

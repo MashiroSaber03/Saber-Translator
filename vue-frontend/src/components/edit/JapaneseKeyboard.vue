@@ -329,8 +329,8 @@ onUnmounted(() => {
 <style scoped>
 .kana-keyboard {
   --japanese-keyboard-panel-shadow: color-mix(in srgb, var(--color-overlay-backdrop-solid) 15%, transparent);
-  --japanese-keyboard-header-start: var(--color-status-error-bright);
-  --japanese-keyboard-header-end: var(--color-status-error-bright-hover);
+  --japanese-keyboard-header-start: var(--color-status-error-fill, var(--color-status-error-bright));
+  --japanese-keyboard-header-end: var(--color-status-error-fill-hover, var(--color-status-error-bright-hover));
   --japanese-keyboard-header-button-background: var(--color-overlay-inverse-muted);
   --japanese-keyboard-kana-key-background: var(--color-surface-quiet);
   --japanese-keyboard-kana-key-hover-background: var(--color-surface-interactive-hover);

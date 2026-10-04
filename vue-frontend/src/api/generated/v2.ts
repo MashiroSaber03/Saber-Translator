@@ -3714,8 +3714,7 @@ export interface components {
             readonly secret: {
                 [key: string]: unknown;
             };
-            /** @constant */
-            hasKey: true;
+            hasKey: boolean;
             currentVersion: number;
             revision: number;
         };
@@ -3747,7 +3746,8 @@ export interface components {
                 [key: string]: unknown;
             };
             baseRevision: number;
-            credentialVersionId?: components["schemas"]["Uuid"];
+            /** @description Optional stored credential version. Null or omission means no stored credential is selected. */
+            credentialVersionId?: components["schemas"]["Uuid"] | null;
             credentialEditRef?: string;
         };
         CredentialEdit: {

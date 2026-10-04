@@ -4,6 +4,7 @@ import type { components } from '../api/generated/v2'
 import type { PluginSettingsApi } from '../types/browserExtensionSettings'
 import type { TextStyleSettings } from '../types/textStyleSettings'
 import { parseCompleteTextStyleSettings } from '../defaults/textStyleDefaults'
+import { appendProviderSettingChange, boundProviderCredential, mergeCredentialSummaries, sameSettingValue } from '../utils/providerSettings'
 export function useBrowserExtensionSettings(api: PluginSettingsApi) {
   type Schema = components['schemas']
   type AgentDraft = {
@@ -38,9 +39,9 @@ export function useBrowserExtensionSettings(api: PluginSettingsApi) {
   const provider = computed(() => String(agent.value.payload.provider))
   const draft = computed(() => drafts.value[provider.value]!)
   const credential = computed(() =>
-    document.value!.credentials.find(
-      row => row.domain === 'browser_dom_agent' && row.provider === provider.value
-    )
+    boundProviderCredential(document.value!.credentials,
+      document.value!.providerSettings.find(row => row.domain === 'browser_dom_agent' && row.provider === provider.value),
+      'browser_dom_agent', provider.value)
   )
   const providerMetadata = computed(() => providers.find(row => row.id === provider.value))
   const providerOptions = providers
@@ -131,9 +132,8 @@ export function useBrowserExtensionSettings(api: PluginSettingsApi) {
       domain: 'browser_dom_agent',
       provider: selected,
       baseUrl: draft.value.customBaseUrl,
-      ...(secretDrafts.value[selected]?.trim()
-        ? { secret: { api_key: secretDrafts.value[selected] } }
-        : {}),
+      ...(secretDrafts.value[selected] !== undefined
+        ? { secret: { api_key: secretDrafts.value[selected] } } : {}),
     }
     try {
       if (kind === 'models') {
@@ -172,39 +172,15 @@ export function useBrowserExtensionSettings(api: PluginSettingsApi) {
       const stored = current.providerSettings.find(
         row => row.domain === 'browser_dom_agent' && row.provider === value
       )
-      const key = current.credentials.find(
-        row => row.domain === 'browser_dom_agent' && row.provider === value
-      )
-      const secret = secretDrafts.value[value]?.trim()
-      const secretChanged = Boolean(secret) && secret !== String(key?.secret?.api_key ?? '')
-      if (!secretChanged && JSON.stringify(stored?.payload) === JSON.stringify(drafts.value[value]))
-        continue
-      if (secretChanged)
-        transaction.credentialEdits!.push({
-          domain: 'browser_dom_agent',
-          provider: value,
-          secret: { api_key: secret! },
-          clientRef: value,
-          baseRevision: key?.revision ?? 0,
-          ...(key ? { credentialId: key.credentialId } : {}),
-        })
-      const credentialVersionId = stored?.credentialVersionId ?? key?.credentialVersionId
-      transaction.providerSettings!.push({
-        domain: 'browser_dom_agent',
-        provider: value,
-        payload: { ...drafts.value[value]! },
-        baseRevision: stored?.revision ?? 0,
-        ...(secretChanged
-          ? { credentialEditRef: value }
-          : credentialVersionId
-            ? { credentialVersionId }
-            : {}),
+      appendProviderSettingChange(transaction.providerSettings!, transaction.credentialEdits!, {
+        domain: 'browser_dom_agent', provider: value, payload: { ...drafts.value[value]! }, stored,
+        credentials: current.credentials,
+        secret: secretDrafts.value[value] === undefined ? undefined : { api_key: secretDrafts.value[value] },
       })
     }
     for (const entry of current.settings) {
       if (
-        JSON.stringify(entry.payload) !==
-        JSON.stringify(original!.settings.find(row => row.domain === entry.domain)?.payload)
+        !sameSettingValue(entry.payload, original!.settings.find(row => row.domain === entry.domain)?.payload)
       )
         transaction.settings!.push({
           domain: entry.domain,
@@ -227,17 +203,7 @@ export function useBrowserExtensionSettings(api: PluginSettingsApi) {
       baseline.revision = revision
       document.value!.settings.find(row => row.domain === change.domain)!.revision = revision
     }
-    for (const key of result.credentials) {
-      const index = document.value!.credentials.findIndex(
-        row => row.domain === key.domain && row.provider === key.provider
-      )
-      if (index < 0) document.value!.credentials.push(key)
-      else document.value!.credentials[index] = key
-      const submitted = transaction.credentialEdits!.find(row => row.provider === key.provider)!
-      if (secretDrafts.value[key.provider]?.trim() === submitted.secret.api_key) {
-        delete secretDrafts.value[key.provider]
-      }
-    }
+    document.value!.credentials = mergeCredentialSummaries(document.value!.credentials, result.credentials)
     for (const change of transaction.providerSettings!) {
       const revision = result.providerSettings.find(
         row => row.domain === change.domain && row.provider === change.provider
@@ -257,9 +223,13 @@ export function useBrowserExtensionSettings(api: PluginSettingsApi) {
       )
       if (index < 0) document.value!.providerSettings.push(entry)
       else document.value!.providerSettings[index] = entry
+      const bound = boundProviderCredential(document.value!.credentials, entry, entry.domain, entry.provider)
+      if (secretDrafts.value[entry.provider]?.trim() === (bound?.secret.api_key ?? '')) {
+        delete secretDrafts.value[entry.provider]
+      }
       if (
-        JSON.stringify(drafts.value[change.provider]) === JSON.stringify(change.payload) &&
-        !secretDrafts.value[change.provider]?.trim()
+        sameSettingValue(drafts.value[change.provider], change.payload) &&
+        secretDrafts.value[change.provider] === undefined
       ) {
         dirtyProviders.delete(change.provider)
       }

@@ -628,7 +628,7 @@ function handlePromptExampleSelect(exampleId: string | number): void {
   --product-segmented-tabs-tab-border: 1px solid var(--color-border-muted);
   --product-segmented-tabs-tab-background: var(--color-surface-muted);
   --product-segmented-tabs-active-border: 1px solid var(--color-action-primary);
-  --product-segmented-tabs-active-background: var(--color-action-primary);
+  --product-segmented-tabs-active-background: var(--color-action-primary-fill, var(--color-action-primary));
   --product-segmented-tabs-active-text: var(--color-text-inverse);
   --product-segmented-tabs-active-shadow: none;
 

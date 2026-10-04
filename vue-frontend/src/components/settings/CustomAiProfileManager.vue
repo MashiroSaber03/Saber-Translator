@@ -46,7 +46,6 @@ const groupedProfiles = computed(() => CUSTOM_AI_PROFILE_KINDS
 const canSave = computed(() => (
   draft.value.name.trim().length > 0
   && draft.value.baseUrl.trim().length > 0
-  && draft.value.apiKey.trim().length > 0
   && draft.value.model.trim().length > 0
   && !store.isSaving
 ))

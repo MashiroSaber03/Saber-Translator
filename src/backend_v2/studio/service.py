@@ -107,6 +107,12 @@ class DefaultStudioAlgorithms:
                 '"depth":4,"children":[],'
                 '"probability":100,"prevent_recursion":true}]}'
             )
+            regex_contract = (
+                '{"id":"稳定唯一ID","scriptName":"脚本名",'
+                '"findRegex":"正则表达式","replaceString":"替换文本",'
+                '"placement":[2],"markdownOnly":false,"promptOnly":false,'
+                '"runOnEdit":true,"disabled":false}'
+            )
             contracts = {
                 "identity": (
                     '{"identity":{"name":"角色名","aliases":[],'
@@ -120,7 +126,7 @@ class DefaultStudioAlgorithms:
                     '"creator_notes":"","character_version":"2.0.0"}}'
                 ),
                 "lorebook": '{"lorebook":' + lorebook_contract + '}',
-                "regex": '{"regexScripts":[]}',
+                "regex": '{"regexScripts":[' + regex_contract + ']}',
                 "state-tasks": (
                     '{"stateTasks":[{"id":"稳定唯一ID","name":"任务名",'
                     '"triggerTiming":"initialization","interval":1,'
@@ -172,6 +178,15 @@ class DefaultStudioAlgorithms:
                 if section in {"lorebook", "full"}
                 else ""
             )
+            regex_requirement = (
+                f"regexScripts 每个脚本必须严格遵循：{regex_contract}。"
+                "placement 是整数数组；scriptName、findRegex、replaceString 是字符串，"
+                "markdownOnly、promptOnly、runOnEdit、disabled 是布尔值。"
+                "不要使用 name、regex、replacement 或 replaceWith 等其他字段名。"
+                "没有必要生成脚本时返回空数组。"
+                if section in {"regex", "full", "translate"}
+                else ""
+            )
             prompt = (
                 f"请{instruction}。目标角色是当前文档的角色名或 source_character，"
                 "不要混入其他角色的设定。漫画分析压缩上下文是生成事实依据，"
@@ -179,6 +194,7 @@ class DefaultStudioAlgorithms:
                 f"只输出 JSON 对象，顶层结构必须为：{contracts[section]}。"
                 f"{full_requirement}"
                 f"{lorebook_requirement}"
+                f"{regex_requirement}"
                 "状态任务仅支持每行一条 /setvar key=变量名 值 或 /addvar key=变量名 数字；"
                 "变量名使用英文字母、数字、下划线；不要生成 JavaScript 或 STscript 包装。"
                 "triggerTiming 使用 initialization、message_received 或 message_sent。"
@@ -725,6 +741,24 @@ class StudioOperationService:
                     "regex_delete、task_add、task_update、task_delete。"
                     "普通字段修改放入 set，键使用点路径，例如 "
                     '{"set":{"identity.description":"新的简介"}}；'
+                    "greeting_add 使用字符串或字符串数组。新增条目不要传 id，ID 由应用生成。"
+                    "新增格式必须遵循以下示例，只输出需要的操作："
+                    '{"worldbook_add":{"comment":"条目名称","keys":["触发词"],'
+                    '"secondary_keys":[],"content":"原作事实","constant":false,'
+                    '"selective":false,"enabled":true,"position":"before_char",'
+                    '"priority":100,"depth":4,"children":[],"probability":100,'
+                    '"prevent_recursion":true},'
+                    '"regex_add":{"scriptName":"脚本名","findRegex":"正则表达式",'
+                    '"replaceString":"替换文本","placement":[2],"markdownOnly":false,'
+                    '"promptOnly":false,"runOnEdit":true,"disabled":false},'
+                    '"task_add":{"name":"任务名","triggerTiming":"initialization",'
+                    '"interval":1,"commands":"/setvar key=score 0","disabled":false}}。'
+                    "placement 仅允许整数数组：[1] 表示用户消息，[2] 表示助手回复；"
+                    "脚本字段不要使用 name、regex、replaceWith、enabled、scope 等别名。"
+                    "task triggerTiming 仅允许 initialization、message_received、message_sent；"
+                    "commands 仅允许每行 /setvar key=变量名 值 或 /addvar key=变量名 数字。"
+                    '更新操作格式为 {"id":"已有条目ID","changes":{"字段":"新值"}}，'
+                    '删除操作格式为 {"id":"已有条目ID"}，不要用 set 更新整个脚本、任务或世界书数组。'
                     "不要输出 RFC 6902 的操作数组。需要视觉预览时可输出 "
                     "```html 代码块。不要声称已直接保存文档。\n\n当前文档：\n"
                     + json.dumps(document, ensure_ascii=False)

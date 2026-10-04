@@ -260,4 +260,77 @@ describe('settings store plugin agent configuration', () => {
     expect(store.settings.pluginAgent.openaiOptions.request.forceJsonOutput).toBe(false)
     expect(store.settings.pluginAgent.openaiOptions.request.extraBody).toBeUndefined()
   })
+
+  it('does not save before loading settings', async () => {
+    const store = useSettingsStore()
+    expect(await store.savePluginAgentSettings()).toBe(false)
+    expect(settingsApiMocks.saveV2SettingsTransaction).not.toHaveBeenCalled()
+  })
+
+  it('leaves an untouched plugin agent from another page unchanged', async () => {
+    settingsApiMocks.getV2Settings
+      .mockResolvedValueOnce(backendDocument())
+      .mockResolvedValueOnce(backendDocument('other-page-model', 6, 4))
+    const store = useSettingsStore()
+    await store.loadFromBackend()
+
+    expect(await store.savePluginAgentSettings()).toBe(true)
+    expect(settingsApiMocks.saveV2SettingsTransaction).not.toHaveBeenCalled()
+  })
+
+  it('rejects stale plugin agent edits without overwriting another page', async () => {
+    settingsApiMocks.getV2Settings
+      .mockResolvedValueOnce(backendDocument())
+      .mockResolvedValueOnce(backendDocument('other-page-model', 6, 4))
+    settingsApiMocks.saveV2SettingsTransaction.mockRejectedValueOnce(new Error('设置已被其他页面更新'))
+    const store = useSettingsStore()
+    await store.loadFromBackend()
+    store.updatePluginAgent({ rpmLimit: 17 })
+
+    expect(await store.savePluginAgentSettings()).toBe(false)
+    expect(store.backendError).toContain('其他页面')
+    expect(store.settings.pluginAgent.openaiOptions.execution.rpmLimit).toBe(17)
+    const transaction = settingsApiMocks.saveV2SettingsTransaction.mock.calls[0]?.[0] as V2SettingsTransaction
+    expect(transaction.settings?.[0]?.baseRevision).toBe(5)
+    expect(transaction.providerSettings?.[0]?.baseRevision).toBe(3)
+  })
+
+  it('keeps the loaded provider revision when only its key is edited', async () => {
+    const current = pluginAgentDocument()
+    current.providerSettings[0]!.revision = 4
+    settingsApiMocks.getV2Settings
+      .mockResolvedValueOnce(backendDocument())
+      .mockResolvedValueOnce(current)
+    settingsApiMocks.saveV2SettingsTransaction.mockRejectedValueOnce(new Error('provider setting conflict'))
+    const store = useSettingsStore()
+    await store.loadFromBackend()
+    store.updatePluginAgent({ apiKey: '' })
+
+    expect(await store.savePluginAgentSettings()).toBe(false)
+    const transaction = settingsApiMocks.saveV2SettingsTransaction.mock.calls[0]?.[0] as V2SettingsTransaction
+    expect(transaction.providerSettings?.[0]?.baseRevision).toBe(3)
+    expect(transaction.credentialEdits?.[0]?.secret).toEqual({ api_key: '' })
+    expect(store.settings.pluginAgent.apiKey).toBe('')
+  })
+
+  it('does not refresh the global revision after saving only the plugin key', async () => {
+    const current = pluginAgentDocument()
+    current.settings[0]!.revision = 6
+    settingsApiMocks.getV2Settings
+      .mockResolvedValueOnce(backendDocument())
+      .mockResolvedValueOnce(current)
+    settingsApiMocks.saveV2SettingsTransaction.mockResolvedValueOnce({
+      settings: [], bookSettings: [], providerSettings: [{ domain: 'plugin_agent', provider: 'siliconflow', revision: 4 }],
+      credentials: [], prompts: [],
+    })
+    const store = useSettingsStore()
+    await store.loadFromBackend()
+    store.updatePluginAgent({ apiKey: '' })
+    expect(await store.savePluginAgentSettings()).toBe(true)
+
+    store.settings.translation.modelName = 'pending-model'
+    await store.saveToBackend()
+    const transaction = settingsApiMocks.saveV2SettingsTransaction.mock.calls[1]?.[0] as V2SettingsTransaction
+    expect(transaction.settings?.find(row => row.domain === 'translation')?.baseRevision).toBe(5)
+  })
 })

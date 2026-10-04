@@ -220,7 +220,7 @@ def validate_translation_constraints(payload: object) -> dict[str, Any]:
         glossary["autoExtractPrompt"],
         field="glossary.autoExtractPrompt",
         maximum=_MAX_PROMPT_LENGTH,
-        allow_empty=False,
+        allow_empty=True,
     )
     return {
         "glossary": {

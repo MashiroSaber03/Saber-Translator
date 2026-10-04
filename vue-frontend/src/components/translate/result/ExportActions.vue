@@ -252,8 +252,8 @@ function handleImportFile(files: File[]): void {
 .result-export-actions__button {
   --ui-button-padding: 9px 15px;
   --ui-button-font-size: 0.88rem;
-  --ui-button-primary-background: var(--color-action-brand);
-  --ui-button-primary-hover-background: var(--color-action-brand-strong);
+  --ui-button-primary-background: var(--color-action-brand-fill, var(--color-action-brand));
+  --ui-button-primary-hover-background: var(--color-action-brand-fill-strong, var(--color-action-brand-strong));
   --ui-button-primary-shadow: none;
   --ui-button-primary-hover-shadow: none;
   --ui-button-primary-hover-transform: none;

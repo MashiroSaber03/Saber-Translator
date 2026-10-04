@@ -132,6 +132,11 @@ def _frozen_ai_vision_ocr_config() -> dict[str, object]:
     }
 
 
+def test_auto_term_extraction_rejects_empty_prompt_before_model_call() -> None:
+    with pytest.raises(ValueError, match="自动术语提取提示词为空"):
+        CoreTranslationAlgorithms().extract_terms(["May"], {}, prompt="")
+
+
 def _frozen_detector_config(detector_type: str = "default") -> dict[str, object]:
     return {
         "detector_type": detector_type,

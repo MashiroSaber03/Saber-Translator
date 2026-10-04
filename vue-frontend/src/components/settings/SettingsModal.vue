@@ -38,7 +38,7 @@
 
     <fieldset
       class="settings-modal__fieldset"
-      :disabled="!settingsStore.isBackendReady || globalSaving"
+      :disabled="!settingsStore.isBackendReady"
     >
       <ProductSegmentedTabs
         :tabs="tabs"
@@ -151,7 +151,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useRuntimeStore } from '@/stores/runtimeStore'
 import BaseModal from '@/components/common/BaseModal.vue'
@@ -170,10 +170,12 @@ import MoreSettings from './MoreSettings.vue'
 import TextStyleDefaultsSettings from './TextStyleDefaultsSettings.vue'
 import BrowserExtensionSettings from './BrowserExtensionSettings.vue'
 import { showToast } from '@/utils/toast'
+import { useSettingsAutoSave } from '@/composables/useSettingsAutoSave'
 
 const props = defineProps<{
   modelValue: boolean
   initialTab?: string
+  beforeClose?: () => Promise<boolean>
 }>()
 
 const emit = defineEmits<{
@@ -199,7 +201,17 @@ type SettingsTabId =
 const activeTab = ref<SettingsTabId>('ocr')
 const visitedTabs = ref<Set<SettingsTabId>>(new Set(['ocr']))
 const contentReady = ref(false)
-const globalSaving = ref(false)
+const { isSaving: globalSaving, hasUnsavedChanges, persistChanges } = useSettingsAutoSave({
+  source: () => [settingsStore.settings, settingsStore.textStyleDefaults,
+    settingsStore.exportPreferences, settingsStore.providerConfigs],
+  ready: () => isOpen.value && contentReady.value,
+  save: async () => {
+    if (!(await settingsStore.saveToBackend())) {
+      throw new Error(settingsStore.backendError || '设置自动保存失败')
+    }
+  },
+  onError: error => showToast(error instanceof Error ? error.message : '设置自动保存失败', 'error'),
+})
 const closeSaveFailed = ref(false)
 const pluginSaving = ref(false)
 const isSaving = computed(() => globalSaving.value || pluginSaving.value)
@@ -209,10 +221,6 @@ const backendUnavailableMessage = computed(
     settingsStore.backendError || '正在读取后端设置；完成前不展示或写入配置，也不调用 Provider。'
 )
 let openRequestId = 0
-let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
-let savePromise: Promise<boolean> | null = null
-let applyingPersistence = false
-let hasUnsavedChanges = false
 
 const allTabs = [
   { id: 'ocr', label: 'OCR识别' },
@@ -266,21 +274,6 @@ watch(
   { immediate: true }
 )
 
-watch(
-  () => [
-    settingsStore.settings,
-    settingsStore.textStyleDefaults,
-    settingsStore.exportPreferences,
-    settingsStore.providerConfigs,
-  ],
-  () => {
-    if (!isOpen.value || !contentReady.value || applyingPersistence) return
-    hasUnsavedChanges = true
-    scheduleAutoSave()
-  },
-  { deep: true }
-)
-
 async function handleOpen() {
   closeSaveFailed.value = false
   const requestId = ++openRequestId
@@ -290,7 +283,7 @@ async function handleOpen() {
   activeTab.value = openingTab
   visitedTabs.value = new Set([openingTab])
   // A failed save left the current draft in the store; reopening must not mark it saved.
-  if (!hasUnsavedChanges) await settingsStore.loadFromBackend()
+  if (!hasUnsavedChanges.value) await settingsStore.loadFromBackend()
   if (requestId !== openRequestId || !isOpen.value) return
   contentReady.value = true
   if (props.initialTab && isSettingsTabId(props.initialTab)) {
@@ -299,8 +292,6 @@ async function handleOpen() {
 }
 
 function closeModal(notifyParent: boolean) {
-  if (autoSaveTimer !== null) clearTimeout(autoSaveTimer)
-  autoSaveTimer = null
   closeSaveFailed.value = false
   openRequestId += 1
   contentReady.value = false
@@ -316,59 +307,28 @@ async function handleClose(): Promise<void> {
     closeSaveFailed.value = true
     return
   }
+  if (props.beforeClose) {
+    globalSaving.value = true
+    try {
+      if (!(await props.beforeClose())) {
+        closeSaveFailed.value = true
+        return
+      }
+    } catch (error) {
+      closeSaveFailed.value = true
+      showToast(error instanceof Error ? error.message : '章节设置保存失败', 'error')
+      return
+    } finally {
+      globalSaving.value = false
+    }
+  }
   closeModal(true)
 }
 
 onBeforeUnmount(() => {
   openRequestId += 1
-  if (autoSaveTimer !== null) clearTimeout(autoSaveTimer)
-  void persistChanges()
   contentReady.value = false
 })
-
-function scheduleAutoSave(): void {
-  if (autoSaveTimer !== null) clearTimeout(autoSaveTimer)
-  autoSaveTimer = setTimeout(() => {
-    autoSaveTimer = null
-    void persistChanges()
-  }, 450)
-}
-
-async function persistChanges(): Promise<boolean> {
-  if (autoSaveTimer !== null) {
-    clearTimeout(autoSaveTimer)
-    autoSaveTimer = null
-  }
-  if (savePromise) return savePromise
-  if (!contentReady.value || !hasUnsavedChanges) return true
-
-  hasUnsavedChanges = false
-  globalSaving.value = true
-  applyingPersistence = true
-  savePromise = (async () => {
-    try {
-      const saved = await settingsStore.saveToBackend()
-      await nextTick()
-      if (!saved) {
-        hasUnsavedChanges = true
-        showToast(settingsStore.backendError || '设置自动保存失败', 'error')
-      }
-      return saved
-    } catch (error) {
-      hasUnsavedChanges = true
-      showToast(error instanceof Error ? error.message : '设置自动保存失败', 'error')
-      return false
-    } finally {
-      applyingPersistence = false
-      globalSaving.value = false
-    }
-  })()
-  try {
-    return await savePromise
-  } finally {
-    savePromise = null
-  }
-}
 </script>
 
 <style scoped>
