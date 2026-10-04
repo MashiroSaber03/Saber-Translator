@@ -1008,7 +1008,7 @@ function analysisCreated(result: V2InsightAnalysisJobAccepted) {
 }
 
 .task-center__tab--active {
-  color: var(--color-text-link-strong);
+  color: var(--color-action-primary);
   border-color: var(--color-action-primary);
 }
 
@@ -1253,5 +1253,9 @@ function analysisCreated(result: V2InsightAnalysisJobAccepted) {
   display: grid;
   gap: 4px;
   padding-left: 18px;
+}
+
+[data-theme="dark"] .task-center__tab--active {
+  color: var(--color-text-link-strong);
 }
 </style>

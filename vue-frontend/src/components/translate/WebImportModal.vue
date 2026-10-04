@@ -173,14 +173,14 @@ const {
 .web-import-modal__body {
   display: block;
 
-  --ui-button-primary-background: var(--color-action-primary-fill);
+  --ui-button-primary-background: var(--color-action-primary-fill, var(--color-border-info));
   --ui-button-primary-hover-background: color-mix(
     in srgb,
-    var(--color-action-primary-fill) 84%,
+    var(--color-action-primary-fill, var(--color-border-info)) 84%,
     var(--color-overlay-backdrop-solid)
   );
   --ui-button-primary-shadow: none;
-  --ui-button-primary-disabled-background: var(--color-action-primary-fill);
+  --ui-button-primary-disabled-background: var(--color-action-primary-fill, var(--color-border-info));
   --ui-button-primary-disabled-opacity: 0.6;
 }
 </style>

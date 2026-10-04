@@ -91,21 +91,20 @@ defineEmits<{
 .result-toolbar__control {
   --ui-button-padding: 10px 18px;
   --ui-button-font-size: 0.95em;
-  --ui-button-primary-background: linear-gradient(135deg, var(--color-action-primary-fill-hover) 0%, var(--color-action-primary-fill) 100%);
-  --ui-button-primary-hover-background: linear-gradient(135deg, color-mix(in srgb, var(--color-action-primary-fill-hover) 82%, var(--color-overlay-backdrop-solid)) 0%, var(--color-action-primary-fill) 100%);
+  --ui-button-primary-background: linear-gradient(135deg, var(--color-action-primary-fill-hover, var(--color-action-primary-hover)) 0%, var(--color-action-primary-fill, var(--color-action-primary)) 100%);
+  --ui-button-primary-hover-background: linear-gradient(135deg, color-mix(in srgb, var(--color-action-primary-fill-hover, var(--color-action-primary-hover)) 82%, var(--color-overlay-backdrop-solid)) 0%, var(--color-action-primary-fill, var(--color-action-primary)) 100%);
   --ui-button-primary-shadow: 0 2px 6px color-mix(in srgb, var(--color-action-primary) 20%, transparent);
   --ui-button-primary-hover-shadow: 0 4px 10px color-mix(in srgb, var(--color-action-primary) 30%, transparent);
 }
 
 .result-toolbar__control--active {
-  --ui-button-primary-background: linear-gradient(135deg, var(--color-action-success-fill) 0%, var(--color-action-success-fill-strong) 100%);
-  --ui-button-primary-hover-background: linear-gradient(135deg, color-mix(in srgb, var(--color-action-success-fill) 82%, var(--color-overlay-backdrop-solid)) 0%, var(--color-action-success-fill-strong) 100%);
+  --ui-button-primary-background: linear-gradient(135deg, var(--color-action-success-fill, var(--color-surface-success)) 0%, var(--color-action-success-fill-strong, var(--color-action-success-strong)) 100%);
+  --ui-button-primary-hover-background: linear-gradient(135deg, color-mix(in srgb, var(--color-action-success-fill, var(--color-surface-success)) 82%, var(--color-overlay-backdrop-solid)) 0%, var(--color-action-success-fill-strong, var(--color-action-success-strong)) 100%);
   --ui-button-primary-shadow: 0 2px 6px color-mix(in srgb, var(--color-surface-success) 20%, transparent);
   --ui-button-primary-hover-shadow: 0 4px 10px color-mix(in srgb, var(--color-surface-success) 30%, transparent);
 }
 
 .result-toolbar__retry {
-  --ui-button-danger-color: var(--color-text-on-warning);
   --ui-button-padding: 10px 18px;
   --ui-button-font-size: 0.95em;
   --ui-button-danger-background: linear-gradient(135deg, var(--color-status-warning-hover) 0%, var(--color-status-warning) 100%);
@@ -130,5 +129,9 @@ defineEmits<{
   color: var(--color-text-muted);
   font-size: 14px;
   text-align: right;
+}
+
+[data-theme="dark"] .result-toolbar__retry {
+  --ui-button-danger-color: var(--color-text-on-warning);
 }
 </style>

@@ -84,7 +84,6 @@ onUnmounted(() => {
 
 .vue-toast-warning {
   background-color: var(--toast-notification-warning-background);
-  color: var(--color-text-on-warning);
 }
 
 .vue-toast-error {
@@ -95,7 +94,7 @@ onUnmounted(() => {
   position: absolute;
   top: calc(50% - 12px);
   right: 10px;
-  color: inherit;
+  color: var(--toast-notification-close-text);
 }
 
 .toast-slide-enter-active {
@@ -138,5 +137,17 @@ onUnmounted(() => {
     padding-right: 32px;
     font-size: 13px;
   }
+}
+
+.vue-toast-close:hover {
+  color: white;
+}
+
+[data-theme="dark"] .vue-toast-warning {
+  color: var(--color-text-on-warning);
+}
+
+[data-theme="dark"] .vue-toast-close {
+  color: inherit;
 }
 </style>

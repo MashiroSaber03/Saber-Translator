@@ -99,9 +99,6 @@ function hover(event: PointerEvent) {
 
 .reader-progress__page {
   direction: ltr;
-  padding: 2px 5px;
-  border-radius: 4px;
-  background: var(--color-surface-inverse-raised);
   font-size: 12px;
   opacity: 0;
   font-variant-numeric: tabular-nums;
@@ -166,5 +163,11 @@ function hover(event: PointerEvent) {
     var(--color-surface-inverse) calc(var(--segment) - 1px),
     var(--color-surface-inverse) var(--segment)
   );
+}
+
+[data-theme="dark"] .reader-progress__page {
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: var(--color-surface-inverse-raised);
 }
 </style>

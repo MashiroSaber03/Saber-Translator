@@ -142,12 +142,12 @@ const workflowChipItems = computed<ProductChipItem[]>(() => [
 }
 
 .workflow-section__run-action--safe {
-  background: linear-gradient(135deg, var(--color-action-success-fill) 0%, var(--color-action-success-fill-strong) 100%);
+  background: linear-gradient(135deg, var(--color-action-success-fill, var(--color-action-success)) 0%, var(--color-action-success-fill-strong, var(--color-status-success)) 100%);
   box-shadow: 0 8px 16px color-mix(in srgb, var(--color-action-success) 24%, transparent);
 }
 
 .workflow-section__run-action--safe:hover:not(:disabled) {
-  background: linear-gradient(135deg, var(--color-action-success-fill-strong) 0%, var(--color-action-success-fill) 100%);
+  background: linear-gradient(135deg, var(--color-action-success-fill-strong, var(--color-status-success)) 0%, var(--color-action-success-fill, var(--color-action-success)) 100%);
   box-shadow: 0 10px 18px color-mix(in srgb, var(--color-action-success) 28%, transparent);
   transform: translateY(-1px);
 }

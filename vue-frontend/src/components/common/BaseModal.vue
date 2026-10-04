@@ -346,8 +346,8 @@ watch(
   padding: 20px 25px;
   background: linear-gradient(
     135deg,
-    var(--color-action-primary-fill) 0%,
-    var(--color-action-primary-fill-hover) 100%
+    var(--color-action-primary-fill, var(--color-action-primary)) 0%,
+    var(--color-action-primary-fill-hover, var(--color-action-primary-hover)) 100%
   );
   color: var(--color-text-inverse);
 }

@@ -96,7 +96,7 @@ withDefaults(defineProps<{
 }
 
 .ui-icon-button--primary {
-  background: var(--color-action-primary-fill);
+  background: var(--color-action-primary-fill, var(--color-action-primary));
   color: var(--color-text-inverse);
 }
 
@@ -121,7 +121,7 @@ withDefaults(defineProps<{
 
 .ui-icon-button--active {
   border-color: var(--ui-icon-button-active-border, var(--color-action-primary));
-  background: var(--ui-icon-button-active-background, var(--color-action-primary-fill));
+  background: var(--ui-icon-button-active-background, var(--color-action-primary-fill, var(--color-action-primary)));
   color: var(--ui-icon-button-active-color, var(--color-text-inverse));
 }
 
@@ -139,7 +139,7 @@ withDefaults(defineProps<{
 }
 
 .ui-icon-button--active:hover:not(:disabled) {
-  background: var(--ui-icon-button-active-hover-background, var(--color-action-primary-fill-hover));
+  background: var(--ui-icon-button-active-hover-background, var(--color-action-primary-fill-hover, var(--color-action-primary-hover)));
   border-color: var(--ui-icon-button-active-hover-border, var(--color-action-primary-hover));
   color: var(--ui-icon-button-active-color, var(--color-text-inverse));
 }

@@ -241,11 +241,13 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 10px;
 }
+
 .insight-settings-save-status {
   margin-right: auto;
   color: var(--color-text-muted);
   font-size: var(--font-size-sm);
 }
+
 .insight-settings-tabs {
   --product-segmented-tabs-active-background: var(--color-surface-brand);
   --product-segmented-tabs-active-text: var(--color-text-inverse);

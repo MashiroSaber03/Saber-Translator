@@ -37,10 +37,10 @@ defineEmits<{
 
 <style scoped>
 .web-import-footer-actions__primary {
-  --ui-button-primary-background: var(--color-action-primary-fill);
-  --ui-button-primary-hover-background: var(--color-action-primary-fill-hover);
+  --ui-button-primary-background: var(--color-action-primary-fill, var(--color-action-primary));
+  --ui-button-primary-hover-background: var(--color-action-primary-fill-hover, var(--color-action-primary-hover));
   --ui-button-primary-shadow: none;
-  --ui-button-primary-disabled-background: var(--color-action-primary-fill);
+  --ui-button-primary-disabled-background: var(--color-action-primary-fill, var(--color-action-primary));
   --ui-button-primary-disabled-opacity: 0.6;
 }
 </style>

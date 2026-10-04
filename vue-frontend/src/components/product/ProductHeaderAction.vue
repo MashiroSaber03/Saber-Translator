@@ -131,13 +131,13 @@ function handleClick(event: MouseEvent) {
   --internal-product-header-action-hover-surface: var(--product-header-action-context-hover-surface, var(--color-surface-interactive-hover));
   --internal-product-header-action-hover-border-color: var(--product-header-action-context-hover-border, var(--product-header-action-border-color, var(--internal-product-header-action-border-color)));
   --internal-product-header-action-hover-text-color: var(--product-header-action-context-hover-text, var(--product-header-action-text-color, var(--internal-product-header-action-text-color)));
-  --internal-product-header-action-solid-surface: var(--product-header-action-context-solid-surface, linear-gradient(135deg, var(--color-action-brand-fill) 0%, var(--color-action-brand-fill-strong) 100%));
+  --internal-product-header-action-solid-surface: var(--product-header-action-context-solid-surface, linear-gradient(135deg, var(--color-action-brand-fill, var(--color-action-brand)) 0%, var(--color-action-brand-fill-strong, var(--color-action-brand-strong)) 100%));
   --internal-product-header-action-solid-hover-surface: var(--product-header-action-context-solid-hover-surface, var(--product-header-action-solid-surface, var(--internal-product-header-action-solid-surface)));
   --internal-product-header-action-solid-text-color: var(--product-header-action-context-solid-text, var(--color-text-inverse));
   --internal-product-header-action-solid-shadow-color: var(--product-header-action-context-solid-shadow, var(--shadow-action-brand));
   --internal-product-header-action-plain-text-color: var(--product-header-action-context-plain-text, var(--product-header-action-text-color, var(--internal-product-header-action-text-color)));
   --internal-product-header-action-active-surface: var(--product-header-action-context-active-surface, var(--color-focus-brand-soft));
-  --internal-product-header-action-active-text-color: var(--product-header-action-context-active-text, var(--color-text-link-strong));
+  --internal-product-header-action-active-text-color: var(--product-header-action-context-active-text, var(--color-action-primary));
 
   display: inline-flex;
   align-items: center;
@@ -256,5 +256,9 @@ function handleClick(event: MouseEvent) {
   .product-header-action--collapse-label-md .product-header-action__label {
     display: none;
   }
+}
+
+[data-theme="dark"] .product-header-action {
+  --internal-product-header-action-active-text-color: var(--product-header-action-context-active-text, var(--color-text-link-strong));
 }
 </style>

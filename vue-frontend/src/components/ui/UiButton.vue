@@ -84,13 +84,13 @@ const buttonClasses = computed(() => {
 }
 
 .ui-button--primary {
-  background: var(--ui-button-primary-background, linear-gradient(135deg, var(--color-action-brand-fill) 0%, var(--color-action-brand-fill-strong) 100%));
+  background: var(--ui-button-primary-background, linear-gradient(135deg, var(--color-action-brand-fill, var(--color-action-brand)) 0%, var(--color-action-brand-fill-strong, var(--color-action-brand-strong)) 100%));
   color: var(--ui-button-primary-color, var(--color-text-inverse));
   box-shadow: var(--ui-button-primary-shadow, 0 2px 8px var(--ui-button-primary-shadow-color));
 }
 
 .ui-button--primary:hover:not(:disabled) {
-  background: var(--ui-button-primary-hover-background, var(--ui-button-primary-background, linear-gradient(135deg, var(--color-action-brand-fill) 0%, var(--color-action-brand-fill-strong) 100%)));
+  background: var(--ui-button-primary-hover-background, var(--ui-button-primary-background, linear-gradient(135deg, var(--color-action-brand-fill, var(--color-action-brand)) 0%, var(--color-action-brand-fill-strong, var(--color-action-brand-strong)) 100%)));
   transform: var(--ui-button-primary-hover-transform, translateY(-2px));
   box-shadow: var(--ui-button-primary-hover-shadow, 0 6px 20px var(--ui-button-primary-hover-shadow-color));
 }
@@ -119,7 +119,7 @@ const buttonClasses = computed(() => {
     --ui-button-primary-disabled-background,
     var(
       --ui-button-primary-background,
-      linear-gradient(135deg, var(--color-action-brand-fill) 0%, var(--color-action-brand-fill-strong) 100%)
+      linear-gradient(135deg, var(--color-action-brand-fill, var(--color-action-brand)) 0%, var(--color-action-brand-fill-strong, var(--color-action-brand-strong)) 100%)
     )
   );
   color: var(--ui-button-primary-disabled-color, var(--color-text-inverse));
@@ -139,12 +139,12 @@ const buttonClasses = computed(() => {
 }
 
 .ui-button--secondary.ui-button--tone-info {
-  --internal-ui-button-disabled-background: var(--color-status-info-fill);
+  --internal-ui-button-disabled-background: var(--color-status-info-fill, var(--color-status-info));
   --internal-ui-button-disabled-border: 0;
   --internal-ui-button-disabled-color: var(--color-text-inverse);
 
   border-color: transparent;
-  background: var(--color-status-info-fill);
+  background: var(--color-status-info-fill, var(--color-status-info));
   color: var(--color-text-inverse);
 }
 
@@ -154,7 +154,7 @@ const buttonClasses = computed(() => {
 
 .ui-button--secondary.ui-button--tone-info:hover:not(:disabled) {
   border-color: transparent;
-  background: color-mix(in srgb, var(--color-status-info-fill) 84%, var(--color-overlay-backdrop-solid));
+  background: color-mix(in srgb, var(--color-status-info) 84%, var(--color-text-default));
   color: var(--color-text-inverse);
 }
 
@@ -287,6 +287,10 @@ const buttonClasses = computed(() => {
 
 .ui-button--loading:not(:where(.ui-button--bare)) {
   pointer-events: none;
+}
+
+[data-theme="dark"] .ui-button--secondary.ui-button--tone-info:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-status-info-fill) 84%, var(--color-overlay-backdrop-solid));
 }
 
 </style>

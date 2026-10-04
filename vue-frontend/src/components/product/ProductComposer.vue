@@ -74,8 +74,8 @@ function handleKeydown(event: KeyboardEvent): void {
   --ui-textarea-min-height: 48px;
   --ui-textarea-radius: 12px;
   --ui-textarea-padding: 12px 14px;
-  --ui-button-primary-background: var(--color-action-primary-fill);
-  --ui-button-primary-hover-background: var(--color-action-primary-fill-hover);
+  --ui-button-primary-background: var(--color-action-primary-fill, var(--color-action-primary));
+  --ui-button-primary-hover-background: var(--color-action-primary-fill-hover, var(--color-action-primary-hover));
   --ui-button-primary-shadow: none;
   --ui-button-primary-hover-shadow: none;
   --ui-button-primary-hover-transform: none;

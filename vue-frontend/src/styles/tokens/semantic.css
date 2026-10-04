@@ -11,20 +11,12 @@
   --color-action-success-bright: #00ff88;
   --color-action-success-bright-active: #00cc6a;
 
-  /* Filled backgrounds pair with white labels in either theme. */
-  --color-action-primary-fill: #2563eb;
-  --color-action-primary-fill-hover: #1d4ed8;
-  --color-action-brand-fill: #4f46e5;
-  --color-action-brand-fill-strong: #6d28d9;
-  --color-action-success-fill: #15803d;
-  --color-action-success-fill-strong: #166534;
-  --color-status-error-fill: #b91c1c;
-  --color-status-error-fill-hover: #991b1b;
-  --color-status-info-fill: #0e7490;
-
   --color-status-success: #5cb85c;
   --color-status-error: #d9534f;
+  --color-status-error-hover: #d43f3a;
+  --color-status-error-active: #c9302c;
   --color-status-error-bright: #ff6b6b;
+  --color-status-error-bright-hover: #ee5a5a;
   --color-status-error-vivid: #ff1744;
   --color-status-warning: #f0ad4e;
   --color-status-warning-hover: #eb9316;
@@ -73,12 +65,11 @@
   --color-text-strong: var(--color-overlay-backdrop-solid);
   --color-text-secondary: #666;
   --color-text-supporting: #777;
-  --color-text-muted: var(--color-text-secondary);
+  --color-text-muted: #999;
   --color-text-disabled: #aaa;
   --color-text-subtle: #888;
   --color-text-heading: #2c3e50;
   --color-text-inverse: #fff;
-  --color-text-on-warning: #1a1a2e;
   --color-text-brand: #6366f1;
   --color-text-link: #3498db;
   --color-text-link-strong: #1f5fc3;
@@ -117,6 +108,9 @@
 
   --color-status-success: #34d399;
   --color-status-error: #f87171;
+  --color-status-error-hover: #ef4444;
+  --color-status-error-active: #dc2626;
+  --color-status-error-bright-hover: #ef4444;
   --color-status-warning: #fbbf24;
   --color-status-warning-hover: #f59e0b;
   --color-status-info: #38bdf8;
@@ -179,4 +173,16 @@
   --shadow-medium: rgba(0, 0, 0, .36);
   --shadow-action-brand: rgba(129, 140, 248, .36);
   --shadow-action-success: rgba(52, 211, 153, .32);
+
+  /* Dark-only fills; components fall back to their original light colors. */
+  --color-action-primary-fill: #2563eb;
+  --color-action-primary-fill-hover: #1d4ed8;
+  --color-action-brand-fill: #4f46e5;
+  --color-action-brand-fill-strong: #6d28d9;
+  --color-action-success-fill: #15803d;
+  --color-action-success-fill-strong: #166534;
+  --color-status-error-fill: #b91c1c;
+  --color-status-error-fill-hover: #991b1b;
+  --color-status-info-fill: #0e7490;
+  --color-text-on-warning: #1a1a2e;
 }

@@ -680,7 +680,7 @@ watch(
   --product-tabbed-workspace-border: var(--insight-view-sidebar-divider);
   --product-tabbed-workspace-tab-text: var(--insight-text-secondary);
   --product-tabbed-workspace-tab-background-hover: var(--insight-surface-tertiary);
-  --product-tabbed-workspace-tab-background-active: var(--color-action-primary-fill);
+  --product-tabbed-workspace-tab-background-active: var(--color-action-primary-fill, var(--color-action-primary));
 }
 
 .insight-view__load-status {

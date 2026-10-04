@@ -52,7 +52,7 @@ const fallbackInitial = computed(() => props.fallbackText.trim().slice(0, 1) || 
   height: var(--product-avatar-height, var(--internal-product-avatar-height));
   overflow: hidden;
   border-radius: var(--product-avatar-radius, var(--internal-product-avatar-radius));
-  background: var(--product-avatar-background, linear-gradient(135deg, var(--color-action-brand-fill), var(--color-action-brand-fill-strong)));
+  background: var(--product-avatar-background, linear-gradient(135deg, var(--color-action-brand-fill, var(--color-action-brand)), var(--color-action-brand-fill-strong, var(--color-action-brand-strong))));
   color: var(--product-avatar-color, var(--color-text-inverse));
 }
 
