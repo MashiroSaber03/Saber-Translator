@@ -60,9 +60,9 @@ export function useInsightConfigManager(providerConfigs: Ref<InsightProviderDraf
       config.openaiOptions = cloneOpenAiOptions(draft.openaiOptions)
       config.imageMaxSize = draft.imageMaxSize
     },
-    () => ({
+    provider => ({
       apiKey: '',
-      model: '',
+      model: getProviderDefaultModel(provider, 'vlm'),
       baseUrl: '',
       openaiOptions: {
         request: { forceJsonOutput: false, temperature: 0.3 },
@@ -91,9 +91,9 @@ export function useInsightConfigManager(providerConfigs: Ref<InsightProviderDraf
       config.baseUrl = draft.baseUrl
       config.openaiOptions = cloneOpenAiOptions(draft.openaiOptions)
     },
-    () => ({
+    provider => ({
       apiKey: '',
-      model: '',
+      model: getProviderDefaultModel(provider, 'chat'),
       baseUrl: '',
       openaiOptions: {
         request: { forceJsonOutput: false },
@@ -114,9 +114,9 @@ export function useInsightConfigManager(providerConfigs: Ref<InsightProviderDraf
     () => providerConfigs.value.embedding,
     ({ provider: _provider, ...draft }) => draft,
     (config, draft) => Object.assign(config, draft),
-    () => ({
+    provider => ({
       apiKey: '',
-      model: '',
+      model: getProviderDefaultModel(provider, 'embedding'),
       baseUrl: '',
       rpmLimit: 0,
       transportRetries: 3,
@@ -129,9 +129,9 @@ export function useInsightConfigManager(providerConfigs: Ref<InsightProviderDraf
     () => providerConfigs.value.reranker,
     ({ provider: _provider, ...draft }) => draft,
     (config, draft) => Object.assign(config, draft),
-    () => ({
+    provider => ({
       apiKey: '',
-      model: '',
+      model: getProviderDefaultModel(provider, 'reranker'),
       baseUrl: '',
       transportRetries: 3,
       businessRetries: 3,

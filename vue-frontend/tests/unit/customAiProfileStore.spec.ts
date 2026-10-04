@@ -135,7 +135,7 @@ describe('useCustomAiProfileStore', () => {
     expect(store.byKind('chatVision')[0]?.apiKey).toBe('replacement-key')
   })
 
-  it('keeps a newly created profile loaded with its plaintext API key', async () => {
+  it.each(['new-key', ''])('keeps a newly created profile loaded with API key value %j', async apiKey => {
     mocks.getV2Settings.mockResolvedValue({
       settings: [{
         domain: 'custom_ai_profiles',
@@ -159,7 +159,7 @@ describe('useCustomAiProfileStore', () => {
       name: '新服务',
       kind: 'chatVision',
       baseUrl: 'https://new.example.com/v1/',
-      apiKey: 'new-key',
+      apiKey,
       model: 'new-model',
     })
 
@@ -168,9 +168,27 @@ describe('useCustomAiProfileStore', () => {
     expect(store.byKind('chatVision')[0]).toEqual(expect.objectContaining({
       name: '新服务',
       baseUrl: 'https://new.example.com/v1',
-      apiKey: 'new-key',
+      apiKey,
       model: 'new-model',
     }))
+  })
+
+  it('saves a cleared profile key as an empty value and loads it empty', async () => {
+    const store = useCustomAiProfileStore()
+    await store.load()
+    const document = await mocks.getV2Settings.mock.results[0]!.value
+    mocks.saveV2SettingsTransaction.mockResolvedValue({
+      settings: [{ domain: 'custom_ai_profiles', revision: 3 }], credentials: [credential('', 2)],
+      providerSettings: [], bookSettings: [], prompts: [],
+    })
+    expect(await store.update({ ...store.byKind('chatVision')[0]!, apiKey: '' })).toBe(true)
+    expect(mocks.saveV2SettingsTransaction.mock.calls[0]![0].credentialEdits).toContainEqual(
+      expect.objectContaining({ domain: 'custom_ai_profile', secret: { api_key: '' } }),
+    )
+    mocks.getV2Settings.mockResolvedValue({ ...document, credentials: [credential('', 2)] })
+    store.reset()
+    await store.load()
+    expect(store.byKind('chatVision')[0]!.apiKey).toBe('')
   })
 
   it('applies an edit to the latest authoritative list without losing concurrent additions', async () => {

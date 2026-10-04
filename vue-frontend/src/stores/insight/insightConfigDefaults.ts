@@ -36,8 +36,8 @@ export function normalizeInsightImageGenConfig(
     businessRetries: 3,
     timeoutSeconds: 0,
   }
-  const model = source?.model ?? (providerChanged ? providerDefaultModel : base.model || defaultModel)
-  const baseUrl = source?.baseUrl ?? (providerChanged ? defaultBaseUrl : (base.baseUrl || defaultBaseUrl))
+  const model = source?.model ?? (providerChanged ? providerDefaultModel : base.model)
+  const baseUrl = source?.baseUrl ?? (providerChanged ? defaultBaseUrl : base.baseUrl)
   const businessRetries = source?.businessRetries ?? base.businessRetries ?? 3
 
   return {

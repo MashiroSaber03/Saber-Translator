@@ -101,6 +101,21 @@ describe('BookGlossaryModal', () => {
     }))
   })
 
+  it('preserves a cleared prompt when saving and reopening', async () => {
+    const store = useBookTranslationConstraintsStore()
+    store.loadBookConstraints('book-1', {
+      glossary: { enabled: true, autoExtractEnabled: false, autoExtractPrompt: '', entries: [] },
+      nonTranslate: { enabled: false, entries: [] },
+    }, 1)
+    store.saveBookConstraints = saveBookConstraintsMock.mockResolvedValue(undefined)
+    const wrapper = mount(BookGlossaryModal, { props: { modelValue: true } })
+    expect((wrapper.get('#autoGlossaryPrompt').element as HTMLTextAreaElement).value).toBe('')
+    await wrapper.get('[data-testid="save-book-glossary-button"]').trigger('click')
+    expect(saveBookConstraintsMock).toHaveBeenCalledWith(expect.objectContaining({
+      glossary: expect.objectContaining({ autoExtractPrompt: '' }),
+    }))
+  })
+
   it('resets the auto glossary prompt back to the default prompt', async () => {
     const store = useBookTranslationConstraintsStore()
     store.loadBookConstraints('book-1', {

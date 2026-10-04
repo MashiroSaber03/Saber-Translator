@@ -661,12 +661,78 @@ def test_credentials_require_the_current_domain_provider_identity() -> None:
             "headers",
             {"headers": {"Referer": ""}},
         )
-    with pytest.raises(ValueError, match="non-empty strings"):
+    assert validate_credential_secret("translation", "custom", {"api_key": "   "}) == {"api_key": ""}
+    with pytest.raises(ValueError, match="must be strings"):
         validate_credential_secret(
             "translation",
             "custom",
-            {"api_key": "   "},
+            {"api_key": 123},
         )
+
+
+def test_settings_load_bound_credential_and_unbind_without_deleting_history(platform) -> None:
+    _data_root, engine = platform
+    repository = SettingsRepository(engine)
+    initial = repository.save_transaction(
+        credentials_edits=(CredentialEdit(
+            domain="translation", provider="custom", secret={"api_key": "old-key"},
+            base_revision=0, client_ref="key",
+        ),),
+        providers=(ProviderSettingMutation(
+            domain="translation", provider="custom", payload={}, base_revision=0,
+            credential_edit_ref="key",
+        ),),
+    )["credentials"][0]
+    latest = repository.save_transaction(credentials_edits=(CredentialEdit(
+        domain="translation", provider="custom", secret={"api_key": "new-key"},
+        credential_id=initial["credentialId"], base_revision=initial["revision"], client_ref="key",
+    ),))["credentials"][0]
+    document = repository.load(domains=("translation",))
+    assert document["providerSettings"][0]["credentialVersionId"] == initial["credentialVersionId"]
+    assert {row["credentialVersionId"] for row in document["credentials"]} == {
+        initial["credentialVersionId"], latest["credentialVersionId"],
+    }
+    assert repository.resolve_provider_secret(domain="translation", provider="custom") == {"api_key": "old-key"}
+    repository.save_transaction(providers=(ProviderSettingMutation(
+        domain="translation", provider="custom", payload={}, base_revision=1,
+        credential_version_id=None,
+    ),))
+    assert repository.load(domains=("translation",))["providerSettings"][0]["credentialVersionId"] is None
+    with pytest.raises(LookupError):
+        repository.resolve_provider_secret(domain="translation", provider="custom")
+    assert repository.resolve_secret(initial["credentialVersionId"]) == {"api_key": "old-key"}
+
+
+@pytest.mark.parametrize("domain,provider,initial_secret,empty_secret", [
+    ("translation", "custom", {"api_key": "old-key"}, {"api_key": ""}),
+    ("ai_vision_ocr", "custom", {"ai_vision_api_key": "old-key"}, {"ai_vision_api_key": ""}),
+    ("ocr", "baidu", {"baidu_api_key": "old-key", "baidu_secret_key": "old-secret"},
+     {"baidu_api_key": "", "baidu_secret_key": ""}),
+    ("ocr", "baidu", {"baidu_api_key": "old-key", "baidu_secret_key": "old-secret"},
+     {"baidu_api_key": "old-key", "baidu_secret_key": ""}),
+    ("web_import_firecrawl", "firecrawl", {"api_key": "old-key"}, {"api_key": ""}),
+    ("web_import_http", "headers", {"cookie": "old-cookie", "headers": {"X-Test": "test"}}, {"cookie": ""}),
+])
+def test_settings_store_and_load_empty_credential_fields(platform, domain, provider, initial_secret, empty_secret) -> None:
+    _data_root, engine = platform
+    repository = SettingsRepository(engine)
+    payload = {"version": "standard", "sourceLanguage": "JAP"} if domain == "ocr" else {}
+    initial = repository.save_transaction(
+        credentials_edits=(CredentialEdit(domain=domain, provider=provider, secret=initial_secret,
+                                         base_revision=0, client_ref="key"),),
+        providers=(ProviderSettingMutation(domain=domain, provider=provider, payload=payload,
+                                          base_revision=0, credential_edit_ref="key"),),
+    )["credentials"][0]
+    saved = repository.save_transaction(
+        credentials_edits=(CredentialEdit(domain=domain, provider=provider, secret=empty_secret,
+                                         credential_id=initial["credentialId"], base_revision=1, client_ref="key"),),
+        providers=(ProviderSettingMutation(domain=domain, provider=provider, payload=payload,
+                                          base_revision=1, credential_edit_ref="key"),),
+    )["credentials"][0]
+    assert saved["secret"] == empty_secret
+    assert saved["hasKey"] is any(empty_secret.values())
+    assert repository.load(domains=(domain,))["credentials"][0]["secret"] == empty_secret
+    assert repository.resolve_provider_secret(domain=domain, provider=provider) == empty_secret
 
 
 def test_removed_custom_ai_profile_credential_can_be_deleted(platform) -> None:

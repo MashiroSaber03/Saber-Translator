@@ -97,7 +97,7 @@ function summary(record: BrowserCredentialRecord): V2CredentialSummary {
     domain: record.domain,
     provider: record.provider,
     secret: { ...record.secret },
-    hasKey: true,
+    hasKey: Object.values(record.secret).some(value => value !== ''),
     currentVersion: 1,
     revision: 0,
   }

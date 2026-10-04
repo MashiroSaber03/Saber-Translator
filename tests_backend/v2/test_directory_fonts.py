@@ -61,21 +61,17 @@ def test_manual_files_refresh_without_restart_and_missing_file_is_explicit(direc
     assert item in catalog.list()
 
 
-def test_first_use_installation_can_race_without_overwriting_files(directory_fonts, monkeypatch):
+def test_first_use_installation_can_race_without_overwriting_files(directory_fonts):
     from concurrent.futures import ThreadPoolExecutor
     from threading import Barrier
     root, _, _, _, payload = directory_fonts
     barrier = Barrier(4)
-    copy = shutil.copyfile
-
-    def copy_together(source, destination):
-        result = copy(source, destination)
+    def prepare_together(root):
         barrier.wait(timeout=10)
-        return result
+        font_files.prepare_font_directory(root)
 
-    monkeypatch.setattr(font_files.shutil, 'copyfile', copy_together)
     with ThreadPoolExecutor(max_workers=4) as executor:
-        list(executor.map(font_files.prepare_font_directory, [root] * 4))
+        list(executor.map(prepare_together, [root] * 4))
     assert (root / 'fonts/shared/Alpha.ttf').read_bytes() == payload
     assert not list((root / 'fonts').glob('.install-*'))
 

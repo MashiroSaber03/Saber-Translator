@@ -2,7 +2,7 @@
 import UiField from '@/components/ui/UiField.vue'
 import UiNumberField from '@/components/ui/UiNumberField.vue'
 import { computed, ref } from 'vue'
-import { getProviderDefaultModel, providerRequiresApiKey, providerRequiresBaseUrl, providerRequiresModel } from '@/config/aiProviders'
+import { providerRequiresApiKey, providerRequiresBaseUrl, providerRequiresModel } from '@/config/aiProviders'
 import { useInsightStore } from '@/stores/insightStore'
 import type { StoreImageGenConfig } from '@/types/insight'
 import InsightModelProviderSection from './InsightModelProviderSection.vue'
@@ -12,10 +12,6 @@ import { IMAGE_GEN_PROVIDER_OPTIONS } from './types'
 
 const emit = defineEmits<{
   (e: 'update:config', config: StoreImageGenConfig): void
-}>()
-
-const props = defineProps<{
-  syncRequestId?: number
 }>()
 
 const insightStore = useInsightStore()
@@ -32,18 +28,8 @@ const timeoutSeconds = ref(insightStore.config.imageGen.timeoutSeconds)
 const showBaseUrl = computed(() => providerRequiresBaseUrl(provider.value))
 const showModelWarning = computed(() => providerRequiresModel(provider.value) && !model.value.trim())
 
-function getDefaultModel(providerId: string): string {
-  return getProviderDefaultModel(providerId, 'imageGen')
-}
-
 function onProviderChange(): void {
-  const newProvider = provider.value
-
   applyDraftConfig(insightStore.switchImageGenProviderDraft(buildDraftConfig()))
-
-  if (!model.value) {
-    model.value = getDefaultModel(newProvider)
-  }
 }
 
 function buildDraftConfig(): StoreImageGenConfig {
@@ -71,10 +57,7 @@ function applyDraftConfig(config: StoreImageGenConfig): void {
 useInsightSettingsDraft<StoreImageGenConfig>({
   sources: [provider, apiKey, model, baseUrl, transportRetries, businessRetries, timeoutSeconds],
   buildDraft: buildDraftConfig,
-  applyDraft: applyDraftConfig,
-  loadDraft: () => insightStore.config.imageGen,
   emitDraft: config => emit('update:config', config),
-  syncRequestId: () => props.syncRequestId,
 })
 </script>
 
@@ -105,11 +88,11 @@ useInsightSettingsDraft<StoreImageGenConfig>({
       @provider-change="onProviderChange"
     />
 
-    <UiField variant="settings" label="传输重试次数" hint="网络超时、连接错误、429/5xx 默认重试 1 次" control-id="insight-imagegen-transport-retries">
+    <UiField variant="settings" label="传输重试次数" hint="网络超时、连接错误、429/5xx" control-id="insight-imagegen-transport-retries">
       <UiNumberField v-model="transportRetries" input-id="insight-imagegen-transport-retries" :min="0" />
     </UiField>
 
-    <UiField variant="settings" label="业务重试次数" hint="空图片或结果不可解析时默认不额外重试" control-id="insight-imagegen-business-retries">
+    <UiField variant="settings" label="业务重试次数" hint="空图片或结果不可解析" control-id="insight-imagegen-business-retries">
       <UiNumberField v-model="businessRetries" input-id="insight-imagegen-business-retries" :min="0" />
     </UiField>
 

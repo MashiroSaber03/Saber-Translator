@@ -272,20 +272,6 @@ export function useTranslateInit() {
       }
       settingsStore.hydrateResourceCatalogs(bootstrap.fonts, bootstrap.prompts)
       fontList.value = bootstrap.fonts
-      const translationPrompts = bootstrap.prompts.filter(
-        prompt => prompt.type === 'translate',
-      )
-      const textboxPrompts = bootstrap.prompts.filter(
-        prompt => prompt.type === 'textbox',
-      )
-      const translateFactory = translationPrompts.find(prompt => prompt.isFactoryDefault)
-      if (!settingsStore.settings.translatePrompt && translateFactory) {
-        settingsStore.setTranslatePrompt(translateFactory.content)
-      }
-      const textboxFactory = textboxPrompts.find(prompt => prompt.isFactoryDefault)
-      if (!settingsStore.settings.textboxPrompt && textboxFactory) {
-        settingsStore.setTextboxPrompt(textboxFactory.content)
-      }
 
       currentBookId.value = bootstrap.book.id
       currentChapterId.value = bootstrap.chapter.id

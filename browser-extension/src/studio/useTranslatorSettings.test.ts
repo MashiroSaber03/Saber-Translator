@@ -191,10 +191,13 @@ it('reads existing keys and changes one field without losing the other', async (
   const doc = document() as any
   doc.credentials = [{ domain: 'ocr', provider: 'baidu', revision: 1,
     credentialId: 'ocr-key', credentialVersionId: 'ocr-v1',
+    currentVersion: 1, hasKey: true,
     secret: { baidu_api_key: 'existing-id', baidu_secret_key: 'existing-secret' } }]
+  doc.providerSettings.push({ domain: 'ocr', provider: 'baidu', revision: 1,
+    credentialVersionId: 'ocr-v1', payload: doc.settings[0].payload.baiduOcr })
   const api = vi.fn(async (_path, method, body) => method === 'PUT' ? {
     ...result(body), credentials: body.credentialEdits.map((row: any) => ({
-      ...row, credentialId: 'ocr-key', credentialVersionId: 'ocr-v2', revision: 2,
+      ...row, credentialId: 'ocr-key', credentialVersionId: 'ocr-v2', revision: 2, currentVersion: 2, hasKey: true,
     })),
   } : doc)
   await mount(api)
@@ -211,3 +214,33 @@ it('reads existing keys and changes one field without losing the other', async (
   expect(await state.save()).toBe(true)
   expect(api.mock.calls.length).toBe(count)
 })
+
+it.each(['translation', 'hqTranslation', 'aiVisionOcr', 'baiduOcr'] as const)(
+  'stores an empty key field for %s without restoring the previous value', async service => {
+    const doc = document() as any
+    const domains = { translation: 'translation', hqTranslation: 'hq', aiVisionOcr: 'ai_vision_ocr', baiduOcr: 'ocr' }
+    const domain = domains[service]
+    const provider = service === 'baiduOcr' ? 'baidu' : doc.settings[0].payload[service].provider
+    const field = service === 'baiduOcr' ? 'baidu_api_key' : service === 'aiVisionOcr' ? 'ai_vision_api_key' : 'api_key'
+    const secret = { [field]: 'dummy-old-key', ...(service === 'baiduOcr' ? { baidu_secret_key: 'dummy-other-key' } : {}) }
+    doc.credentials = [{ domain, provider, revision: 1, currentVersion: 1, hasKey: true,
+      credentialId: 'key', credentialVersionId: 'old-key', secret }]
+    doc.providerSettings = [{ domain, provider, revision: 1, credentialVersionId: 'old-key',
+      payload: { ...doc.settings[0].payload[service] } }]
+    delete doc.providerSettings[0].payload.provider
+    const api = vi.fn(async (_path, method, body) => {
+      if (method !== 'PUT') return structuredClone(doc)
+      const key = { ...doc.credentials[0], secret: body.credentialEdits[0].secret, credentialVersionId: 'empty-key', currentVersion: 2 }
+      doc.credentials = [key]
+      doc.providerSettings[0].credentialVersionId = key.credentialVersionId
+      return { ...result(body), credentials: [key] }
+    })
+    await mount(api)
+    state.updateSecret(service, field, '')
+    expect(await state.save()).toBe(true)
+    expect(state.secretValue(domain, provider, field)).toBe('')
+    expect(api.mock.calls.find(call => call[1] === 'PUT')![2].credentialEdits[0].secret[field]).toBe('')
+    await state.load()
+    expect(state.secretValue(domain, provider, field)).toBe('')
+  },
+)

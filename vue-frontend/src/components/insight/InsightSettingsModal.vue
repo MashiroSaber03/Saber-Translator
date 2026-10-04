@@ -5,17 +5,9 @@ import UiButton from '@/components/ui/UiButton.vue'
 import ProductActionRow from '@/components/product/ProductActionRow.vue'
 import ProductSegmentedTabs from '@/components/product/ProductSegmentedTabs.vue'
 import ProductStatusBanner from '@/components/product/ProductStatusBanner.vue'
-import { useInsightStore, type InsightConfigStateSnapshot } from '@/stores/insightStore'
+import { useInsightStore } from '@/stores/insightStore'
+import { useSettingsAutoSave } from '@/composables/useSettingsAutoSave'
 import * as insightApi from '@/api/insight'
-import type {
-  BatchConfig,
-  StoreEmbeddingConfig,
-  StoreImageGenConfig,
-  StoreLlmConfig,
-  StoreRerankerConfig,
-  StoreVlmConfig,
-} from '@/types/insight'
-import { deepClone } from '@/utils/deepClone'
 
 import VlmSettingsTab from './settings/VlmSettingsTab.vue'
 import LlmSettingsTab from './settings/LlmSettingsTab.vue'
@@ -42,27 +34,24 @@ type InsightSettingsTabId =
 
 const activeSettingsTab = ref<InsightSettingsTabId>('vlm')
 const visitedSettingsTabs = ref<Set<InsightSettingsTabId>>(new Set(['vlm']))
-const isSaving = ref(false)
 const isLoadingConfig = ref(true)
 const backendConfigReady = ref(false)
+const closeSaveFailed = ref(false)
 const testMessage = ref('')
 const testMessageType = ref<'success' | 'error' | ''>('')
 const messageTone = computed(() => (testMessageType.value === 'error' ? 'danger' : 'success'))
 let messageTimer: ReturnType<typeof setTimeout> | null = null
-let closeTimer: ReturnType<typeof setTimeout> | null = null
-let initialConfigState: InsightConfigStateSnapshot | null = null
-let requestSequence = 0
+let savedConfig: ReturnType<typeof insightStore.getConfigForApi> | null = null
 let isMounted = true
-
-const syncRequestId = ref(0)
-
-const vlmDraft = ref<StoreVlmConfig>(deepClone(insightStore.config.vlm))
-const llmDraft = ref<StoreLlmConfig>(deepClone(insightStore.config.llm))
-const batchDraft = ref<BatchConfig>(deepClone(insightStore.config.batch))
-const embeddingDraft = ref<StoreEmbeddingConfig>(deepClone(insightStore.config.embedding))
-const rerankerDraft = ref<StoreRerankerConfig>(deepClone(insightStore.config.reranker))
-const promptsDraft = ref<Record<string, string>>(deepClone(insightStore.config.prompts))
-const imageGenDraft = ref<StoreImageGenConfig>(deepClone(insightStore.config.imageGen))
+const { isSaving, persistChanges } = useSettingsAutoSave({
+  source: () => insightStore.getConfigForApi(),
+  ready: () => backendConfigReady.value,
+  save: async () => {
+    if (!savedConfig) throw new Error('请先加载后端设置')
+    savedConfig = await insightApi.saveGlobalConfig(insightStore.getConfigForApi(), savedConfig)
+  },
+  onError: error => showMessage('保存失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error'),
+})
 
 const settingsTabs = [
   { id: 'vlm', label: 'VLM 多模态', glyph: '🖼️' },
@@ -95,15 +84,9 @@ function updateSettingsTab(tabId: string): void {
   }
 }
 
-function close(): void {
-  if (isSaving.value) return
-  requestSequence += 1
+function closeModal(): void {
   clearMessageTimer()
-  clearCloseTimer()
-  if (initialConfigState) {
-    insightStore.restoreConfigState(initialConfigState)
-    initialConfigState = null
-  }
+  backendConfigReady.value = false
   emit('close')
 }
 
@@ -111,26 +94,19 @@ function hasVisitedSettingsTab(tab: InsightSettingsTabId): boolean {
   return visitedSettingsTabs.value.has(tab)
 }
 
-function closeAfterCommit(): void {
-  if (!isMounted) return
-  requestSequence += 1
-  clearMessageTimer()
-  clearCloseTimer()
-  initialConfigState = null
-  emit('close')
+async function handleClose(): Promise<void> {
+  if (isSaving.value) return
+  if (!(await persistChanges())) {
+    closeSaveFailed.value = true
+    return
+  }
+  closeModal()
 }
 
 function clearMessageTimer(): void {
   if (messageTimer) {
     clearTimeout(messageTimer)
     messageTimer = null
-  }
-}
-
-function clearCloseTimer(): void {
-  if (closeTimer) {
-    clearTimeout(closeTimer)
-    closeTimer = null
   }
 }
 
@@ -146,109 +122,32 @@ function showMessage(message: string, type: 'success' | 'error'): void {
   }, 3000)
 }
 
-function refreshDraftsFromStore(): void {
-  vlmDraft.value = deepClone(insightStore.config.vlm)
-  llmDraft.value = deepClone(insightStore.config.llm)
-  batchDraft.value = deepClone(insightStore.config.batch)
-  embeddingDraft.value = deepClone(insightStore.config.embedding)
-  rerankerDraft.value = deepClone(insightStore.config.reranker)
-  promptsDraft.value = deepClone(insightStore.config.prompts)
-  imageGenDraft.value = deepClone(insightStore.config.imageGen)
-}
-
-function applyDraftsToStore(): void {
-  insightStore.updateVlmConfig(vlmDraft.value)
-  insightStore.updateLlmConfig(llmDraft.value)
-  insightStore.updateBatchConfig(batchDraft.value)
-  insightStore.updateEmbeddingConfig(embeddingDraft.value)
-  insightStore.updateRerankerConfig(rerankerDraft.value)
-  insightStore.updatePrompts(promptsDraft.value)
-  insightStore.updateImageGenConfig(imageGenDraft.value)
-}
-
-async function saveSettings(): Promise<void> {
-  if (isSaving.value) return
-
-  const requestId = ++requestSequence
-  isSaving.value = true
-
-  try {
-    let apiConfig: ReturnType<typeof insightStore.getConfigForApi>
-    try {
-      applyDraftsToStore()
-      apiConfig = insightStore.getConfigForApi()
-    } finally {
-      if (initialConfigState) {
-        insightStore.restoreConfigState(initialConfigState)
-      }
-    }
-    const savedConfig = await insightApi.saveGlobalConfig(apiConfig)
-    if (!isMounted || requestId !== requestSequence) return
-    insightStore.setConfigFromApi(savedConfig)
-    requestTabsSyncFromStore()
-    backendConfigReady.value = true
-    initialConfigState = insightStore.snapshotConfigState()
-    showMessage('设置已保存', 'success')
-    clearCloseTimer()
-    closeTimer = setTimeout(() => {
-      closeTimer = null
-      closeAfterCommit()
-    }, 500)
-  } catch (error) {
-    if (isMounted && requestId === requestSequence) {
-      showMessage('保存失败: ' + (error instanceof Error ? error.message : '网络错误'), 'error')
-    }
-  } finally {
-    if (isMounted && requestId === requestSequence) isSaving.value = false
-  }
-}
-
-async function loadConfig(existingRequestId?: number): Promise<boolean> {
-  const requestId = existingRequestId ?? ++requestSequence
-  try {
-    const config = await insightApi.getGlobalConfig()
-    if (!isMounted || requestId !== requestSequence) return false
-    insightStore.setConfigFromApi(config)
-    requestTabsSyncFromStore()
-    return true
-  } catch (error) {
-    if (!isMounted || requestId !== requestSequence) return false
-    showMessage(error instanceof Error ? error.message : '加载后端配置失败', 'error')
-    requestTabsSyncFromStore()
-    return false
-  }
-}
-
-function requestTabsSyncFromStore(): void {
-  refreshDraftsFromStore()
-  syncRequestId.value += 1
-}
-
 onMounted(async () => {
-  backendConfigReady.value = await loadConfig()
-  if (!isMounted) return
-  if (backendConfigReady.value) {
-    initialConfigState = insightStore.snapshotConfigState()
+  try {
+    const loaded = await insightApi.getGlobalConfig()
+    if (!isMounted) return
+    insightStore.setConfigFromApi(loaded)
+    savedConfig = loaded
+    backendConfigReady.value = true
+  } catch (error) {
+    showMessage(error instanceof Error ? error.message : '加载后端配置失败', 'error')
+  } finally {
+    if (isMounted) isLoadingConfig.value = false
   }
-  isLoadingConfig.value = false
 })
 
 onBeforeUnmount(() => {
   isMounted = false
-  requestSequence += 1
   clearMessageTimer()
-  clearCloseTimer()
-  if (initialConfigState) {
-    insightStore.restoreConfigState(initialConfigState)
-    initialConfigState = null
-  }
 })
 </script>
 
 <template>
-  <BaseModal title="漫画分析设置" size="large" custom-class="insight-settings-modal" @close="close">
+  <BaseModal title="漫画分析设置" size="large" custom-class="insight-settings-modal"
+    :show-close-button="!isSaving" :close-on-overlay="!isSaving" :close-on-esc="!isSaving"
+    @close="handleClose">
     <ProductStatusBanner
-      v-if="testMessage"
+      v-if="backendConfigReady && testMessage"
       class="insight-settings-message"
       :tone="messageTone"
       aria-live="polite"
@@ -257,7 +156,10 @@ onBeforeUnmount(() => {
     </ProductStatusBanner>
 
     <p v-if="isLoadingConfig" class="insight-settings-loading">正在读取后端配置…</p>
-    <fieldset v-else class="insight-settings-fields" :disabled="!backendConfigReady">
+    <ProductStatusBanner v-else-if="!backendConfigReady" tone="danger" title="设置加载失败">
+      {{ testMessage || '请关闭并重新打开设置后再编辑。' }}
+    </ProductStatusBanner>
+    <fieldset v-else class="insight-settings-fields">
       <ProductSegmentedTabs
         :tabs="settingsTabs"
         :active-tab="activeSettingsTab"
@@ -271,75 +173,79 @@ onBeforeUnmount(() => {
       <VlmSettingsTab
         v-if="hasVisitedSettingsTab('vlm')"
         v-show="activeSettingsTab === 'vlm'"
-        :sync-request-id="syncRequestId"
-        @update:config="vlmDraft = $event"
+        @update:config="insightStore.updateVlmConfig($event)"
         @show-message="showMessage"
       />
 
       <LlmSettingsTab
         v-if="hasVisitedSettingsTab('llm')"
         v-show="activeSettingsTab === 'llm'"
-        :sync-request-id="syncRequestId"
-        @update:config="llmDraft = $event"
+        @update:config="insightStore.updateLlmConfig($event)"
         @show-message="showMessage"
       />
 
       <BatchSettingsTab
         v-if="hasVisitedSettingsTab('batch')"
         v-show="activeSettingsTab === 'batch'"
-        :sync-request-id="syncRequestId"
-        @update:config="batchDraft = $event"
+        @update:config="insightStore.updateBatchConfig($event)"
       />
 
       <EmbeddingSettingsTab
         v-if="hasVisitedSettingsTab('embedding')"
         v-show="activeSettingsTab === 'embedding'"
-        :sync-request-id="syncRequestId"
-        @update:config="embeddingDraft = $event"
+        @update:config="insightStore.updateEmbeddingConfig($event)"
         @show-message="showMessage"
       />
 
       <RerankerSettingsTab
         v-if="hasVisitedSettingsTab('reranker')"
         v-show="activeSettingsTab === 'reranker'"
-        :sync-request-id="syncRequestId"
-        @update:config="rerankerDraft = $event"
+        @update:config="insightStore.updateRerankerConfig($event)"
         @show-message="showMessage"
       />
 
       <PromptsSettingsTab
         v-if="hasVisitedSettingsTab('prompts')"
         v-show="activeSettingsTab === 'prompts'"
-        :sync-request-id="syncRequestId"
-        @update:prompts="promptsDraft = $event"
+        @update:prompts="insightStore.updatePrompts($event)"
         @show-message="showMessage"
       />
 
       <ImageGenSettingsTab
         v-if="hasVisitedSettingsTab('imagegen')"
         v-show="activeSettingsTab === 'imagegen'"
-        :sync-request-id="syncRequestId"
-        @update:config="imageGenDraft = $event"
+        @update:config="insightStore.updateImageGenConfig($event)"
         @show-message="showMessage"
       />
     </fieldset>
 
     <template #footer>
+      <div class="insight-settings-footer">
+      <ProductStatusBanner v-if="closeSaveFailed" tone="danger" role="alert">
+        保存失败，部分修改尚未保存。可以继续编辑并重试；仍然关闭可能丢失未保存的修改。
+      </ProductStatusBanner>
       <ProductActionRow aria-label="漫画分析设置操作" variant="dialog">
-        <UiButton variant="secondary" :disabled="isSaving" @click="close">取消</UiButton>
-        <UiButton
-          variant="primary"
-          :disabled="isSaving || isLoadingConfig || !backendConfigReady"
-          @click="saveSettings"
-        >
-          {{ isSaving ? '保存中...' : '保存' }}
-        </UiButton>
+        <span class="insight-settings-save-status">{{ isSaving ? '正在保存…' : closeSaveFailed ? '上次关闭时保存失败' : '修改后自动保存' }}</span>
+        <UiButton v-if="closeSaveFailed" variant="secondary" :disabled="isSaving" @click="closeModal">仍然关闭</UiButton>
+        <UiButton variant="primary" :disabled="isSaving" @click="handleClose">完成</UiButton>
       </ProductActionRow>
+      </div>
     </template>
   </BaseModal>
 </template>
 
 <style scoped>
+.insight-settings-footer {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.insight-settings-save-status {
+  margin-right: auto;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
 .insight-settings-tabs {
   --product-segmented-tabs-active-background: var(--color-surface-brand);
   --product-segmented-tabs-active-text: var(--color-text-inverse);

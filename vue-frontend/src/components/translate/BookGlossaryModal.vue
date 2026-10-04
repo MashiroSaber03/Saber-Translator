@@ -31,7 +31,7 @@
         control-id="autoGlossaryPrompt"
       >
         <p class="constraint-modal-body__field-description">
-          默认会显示内置提示词，你可以直接在此基础上修改；如果你把内容全部删空后保存，系统会自动恢复为默认提示词。
+          修改或清空后会按当前内容保存；需要恢复内置提示词时，请点击下方重置按钮。
         </p>
         <UiTextarea
           id="autoGlossaryPrompt"

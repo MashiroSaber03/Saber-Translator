@@ -37,7 +37,6 @@ type EmbeddingConfig = StoreEmbeddingConfig
 type RerankerConfig = StoreRerankerConfig
 type ImageGenConfig = StoreImageGenConfig
 type InsightConfig = StoreInsightConfig
-export type InsightConfigStateSnapshot = InsightSettingsSnapshot
 
 export const useInsightStore = defineStore('insight', () => {
   const currentBookId = ref<string | null>(null)
@@ -316,18 +315,6 @@ export const useInsightStore = defineStore('insight', () => {
     }
   }
 
-  function snapshotConfigState(): InsightConfigStateSnapshot {
-    return {
-      config: deepClone(config.value),
-      providerDrafts: deepClone(providerConfigs.value),
-    }
-  }
-
-  function restoreConfigState(snapshot: InsightConfigStateSnapshot): void {
-    config.value = deepClone(snapshot.config)
-    providerConfigs.value = deepClone(snapshot.providerDrafts)
-  }
-
   function setConfigFromApi(snapshot: InsightSettingsSnapshot): void {
     config.value = deepClone(snapshot.config)
     providerConfigs.value = deepClone(snapshot.providerDrafts)
@@ -395,8 +382,6 @@ export const useInsightStore = defineStore('insight', () => {
     updatePrompts,
     getConfigForApi,
     setConfigFromApi,
-    snapshotConfigState,
-    restoreConfigState,
     switchVlmProviderDraft,
     switchLlmProviderDraft,
     switchEmbeddingProviderDraft,

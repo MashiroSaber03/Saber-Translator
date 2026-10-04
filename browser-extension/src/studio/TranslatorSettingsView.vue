@@ -56,21 +56,17 @@ async function testBaidu() {
     baidu_secret_key: secretValue('ocr', 'baidu', 'baidu_secret_key'),
   }
   try {
-    if (Boolean(secret?.baidu_api_key?.trim()) !== Boolean(secret?.baidu_secret_key?.trim()))
-      throw new Error('请同时填写百度 API Key 和 Secret Key')
+    if (!secret.baidu_api_key.trim() || !secret.baidu_secret_key.trim())
+      throw new Error('测试连接需要填写百度 API Key 和 Secret Key')
     const result = await globalApi<{ success: boolean; message: string }>(
       '/connection-tests/baidu_ocr',
       'POST',
       {
         domain: 'ocr',
-        ...(secret?.baidu_api_key?.trim() && secret?.baidu_secret_key?.trim()
-          ? {
-              secret: {
-                baidu_api_key: secret.baidu_api_key.trim(),
-                baidu_secret_key: secret.baidu_secret_key.trim(),
-              },
-            }
-          : {}),
+        secret: {
+          baidu_api_key: secret.baidu_api_key.trim(),
+          baidu_secret_key: secret.baidu_secret_key.trim(),
+        },
       }
     )
     baiduMessage.value = result.message

@@ -2555,6 +2555,16 @@ def test_quick_workspace_reset_clears_pages_and_constraints(
     )
 
 
+def test_translation_constraints_preserve_cleared_auto_extract_prompt(content_platform) -> None:
+    _root, _engine, repository, _storage, _importer, book, _chapter = content_platform
+    payload = empty_translation_constraints()
+    payload["glossary"]["autoExtractPrompt"] = ""
+    repository.update_constraints(
+        book_id=str(book["id"]), base_revision=1, payload=payload,
+    )
+    assert repository.get_constraints(str(book["id"]))["payload"]["glossary"]["autoExtractPrompt"] == ""
+
+
 def test_translation_constraints_validate_regex_and_reject_duplicate_rows(
     content_platform,
 ) -> None:

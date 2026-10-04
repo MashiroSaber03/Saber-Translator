@@ -213,6 +213,9 @@ describe('useSettingsStore backend-first loading', () => {
       prompts: [],
     })
     expect(await store.saveToBackend()).toBe(true)
+    expect(settingsApiMocks.saveV2SettingsTransaction).not.toHaveBeenCalled()
+    store.settings.translation.modelName = 'updated-model'
+    expect(await store.saveToBackend()).toBe(true)
     const transaction = settingsApiMocks.saveV2SettingsTransaction.mock.calls[0]?.[0]
     expect(transaction.credentialEdits).not.toContainEqual(expect.objectContaining({
       domain: 'translation',
@@ -297,7 +300,7 @@ describe('useSettingsStore backend-first loading', () => {
       provider: 'deepseek',
       credentialEditRef: 'credential:translation:deepseek',
     }))
-    expect(store.settings.translation.apiKey).toBe('sk-new-secret')
+    expect(store.settings.translation.apiKey).toBe('  sk-new-secret  ')
     expect(store.credentialSummaries[0]?.secret).toEqual({ api_key: 'sk-new-secret' })
     expect(settingsApiMocks.getV2Settings).toHaveBeenCalledTimes(1)
   })
@@ -512,10 +515,10 @@ describe('useSettingsStore backend-first loading', () => {
       (entry: { domain: string }) => entry.domain === 'translation',
     )
     expect(textDefaultsMutation.payload.inpaintMethod).toBe('litelama')
-    expect(translationMutation.payload).not.toHaveProperty('textStyle')
+    expect(translationMutation).toBeUndefined()
   })
 
-  it('does not submit a partial Baidu OCR credential replacement', async () => {
+  it('saves each Baidu OCR credential field even when one is empty', async () => {
     const settings = createDefaultSettings()
     settingsApiMocks.getV2Settings.mockResolvedValue({
       settings: [
@@ -540,9 +543,11 @@ describe('useSettingsStore backend-first loading', () => {
     const store = useSettingsStore()
     expect(await store.loadFromBackend()).toBe(true)
     store.updateBaiduOcr({ apiKey: 'replacement-only', secretKey: '' })
+    settingsApiMocks.saveV2SettingsTransaction.mockResolvedValue({ settings: [], providerSettings: [], credentials: [], prompts: [] })
 
-    expect(await store.saveToBackend()).toBe(false)
-    expect(store.backendError).toContain('必须同时填写')
-    expect(settingsApiMocks.saveV2SettingsTransaction).not.toHaveBeenCalled()
+    expect(await store.saveToBackend()).toBe(true)
+    expect(settingsApiMocks.saveV2SettingsTransaction.mock.calls[0]![0].credentialEdits).toContainEqual(
+      expect.objectContaining({ domain: 'ocr', secret: { baidu_api_key: 'replacement-only', baidu_secret_key: '' } }),
+    )
   })
 })

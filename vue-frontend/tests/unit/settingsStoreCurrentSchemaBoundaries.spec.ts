@@ -227,6 +227,9 @@ describe('settings store current schema boundaries', () => {
     expect(store.settings.translation.apiKey).toBe('new-secret')
 
     expect(await store.saveToBackend()).toBe(true)
+    expect(settingsApiMocks.saveV2SettingsTransaction).toHaveBeenCalledTimes(1)
+    store.settings.translation.modelName = 'another-model'
+    expect(await store.saveToBackend()).toBe(true)
     const secondTransaction = (
       settingsApiMocks.saveV2SettingsTransaction.mock.calls[1]?.[0]
     ) as V2SettingsTransaction

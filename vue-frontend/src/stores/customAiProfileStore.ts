@@ -211,7 +211,7 @@ export const useCustomAiProfileStore = defineStore('customAiProfiles', () => {
         const existing = authority.credentials.find(
           item => item.domain === CREDENTIAL_DOMAIN && item.provider === profile.id,
         )
-        if (!profile.apiKey || existing?.secret.api_key === profile.apiKey) return
+        if (existing?.secret.api_key === profile.apiKey || (!existing && !profile.apiKey)) return
         credentialEdits.push({
           domain: CREDENTIAL_DOMAIN,
           provider: profile.id,
@@ -265,19 +265,11 @@ export const useCustomAiProfileStore = defineStore('customAiProfiles', () => {
 
   async function create(profile: Omit<CustomAiProfile, 'id'>): Promise<CustomAiProfile | null> {
     const created = normalizedProfile({ ...profile, id: createUuid() })
-    if (!created.apiKey) {
-      error.value = 'API Key 不能为空'
-      return null
-    }
     return await persist(current => [...current, created]) ? created : null
   }
 
   async function update(profile: CustomAiProfile): Promise<boolean> {
     const updated = normalizedProfile(profile)
-    if (!updated.apiKey) {
-      error.value = 'API Key 不能为空'
-      return false
-    }
     return persist((current) => {
       if (!current.some(item => item.id === updated.id)) {
         throw new Error('要编辑的自定义服务不存在')

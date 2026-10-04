@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useWebImportStore } from '@/stores/webImportStore'
 import { createDefaultWebImportSettings } from '@/stores/settings/modules/webImport'
+import type { V2SettingsDocument } from '@/api/v2/settings'
 
 const mocks = vi.hoisted(() => ({
   getSettings: vi.fn(),
@@ -14,7 +15,7 @@ vi.mock('@/api/v2/settings', () => ({
   saveV2SettingsTransaction: mocks.saveSettings,
 }))
 
-function settingsDocument(provider = 'openai', modelName = 'gpt-4o-mini') {
+function settingsDocument(provider = 'openai', modelName = 'gpt-4o-mini'): V2SettingsDocument {
   const settings = createDefaultWebImportSettings()
   settings.agent.provider = provider
   settings.agent.modelName = modelName
@@ -28,6 +29,7 @@ function settingsDocument(provider = 'openai', modelName = 'gpt-4o-mini') {
     backendSettings.advanced as Partial<typeof backendSettings.advanced>
   ).customHeaders
   return {
+    bookSettings: [],
     credentials: [
       {
         credentialId: 'credential-1',
@@ -68,9 +70,9 @@ describe('webImportStore backend settings workflow', () => {
     vi.clearAllMocks()
     localStorage.clear()
     mocks.getSettings.mockResolvedValue(settingsDocument())
-    mocks.saveSettings.mockResolvedValue({
+    mocks.saveSettings.mockImplementation(async tx => ({
       bookSettings: [],
-      credentials: [
+      credentials: tx.credentialEdits.some((row: { provider: string }) => row.provider === 'deepseek') ? [
         {
           credentialId: 'credential-deepseek',
           credentialVersionId: 'credential-version-deepseek',
@@ -81,7 +83,7 @@ describe('webImportStore backend settings workflow', () => {
           revision: 1,
           secret: { api_key: 'deepseek-key' },
         },
-      ],
+      ] : [],
       prompts: [],
       providerSettings: [
         { domain: 'web_import_agent', provider: 'openai', revision: 2 },
@@ -90,7 +92,7 @@ describe('webImportStore backend settings workflow', () => {
         { domain: 'web_import_http', provider: 'headers', revision: 1 },
       ],
       settings: [{ domain: 'web_import', revision: 3 }],
-    })
+    }))
   })
 
   it('keeps agent credentials isolated per provider while editing drafts', () => {
@@ -132,6 +134,10 @@ describe('webImportStore backend settings workflow', () => {
         secret: { cookie: 'session=value', headers: { Referer: 'https://example.com' } },
       },
     )
+    document.providerSettings.push(...document.credentials.slice(1).map(credential => ({
+      domain: credential.domain, provider: credential.provider, payload: {},
+      credentialVersionId: credential.credentialVersionId, revision: 1,
+    })))
     mocks.getSettings.mockResolvedValue(document)
     const store = useWebImportStore()
 
@@ -216,13 +222,7 @@ describe('webImportStore backend settings workflow', () => {
 
     const secondPayload = mocks.saveSettings.mock.calls[1]?.[0]
     expect(secondPayload.settings[0].baseRevision).toBe(3)
-    expect(secondPayload.providerSettings).toContainEqual(
-      expect.objectContaining({
-        domain: 'web_import_agent',
-        provider: 'deepseek',
-        baseRevision: 1,
-      })
-    )
+    expect(secondPayload.providerSettings).toEqual([])
     expect(mocks.getSettings).toHaveBeenCalledTimes(1)
   })
 
@@ -239,5 +239,21 @@ describe('webImportStore backend settings workflow', () => {
     expect(await store.saveSettings()).toBe(false)
     expect(store.settingsSaveError).toBe('自定义 Headers 的名称和值必须是非空字符串')
     expect(mocks.saveSettings).not.toHaveBeenCalled()
+  })
+
+  it('clearing the agent key writes an empty value and loading uses the saved value', async () => {
+    const store = useWebImportStore()
+    await store.loadFromBackend()
+    store.setAgentApiKey('')
+    expect(await store.saveSettings()).toBe(true)
+    expect(store.settings.agent.apiKey).toBe('')
+    expect(mocks.saveSettings.mock.calls[0]![0].credentialEdits).toContainEqual(
+      expect.objectContaining({ domain: 'web_import_agent', provider: 'openai', secret: { api_key: '' } }),
+    )
+    const document = settingsDocument()
+    document.credentials[0]!.secret.api_key = ''
+    mocks.getSettings.mockResolvedValue(document)
+    expect(await store.loadFromBackend()).toBe(true)
+    expect(store.settings.agent.apiKey).toBe('')
   })
 })

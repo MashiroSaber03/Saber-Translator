@@ -28,6 +28,7 @@ from src.shared.openai_execution import (
     OpenAICompatibleBusinessRetryableError,
     OpenAICompatibleSyncExecutor,
     build_openai_compatible_runtime_options,
+    strip_reasoning_tags,
 )
 from src.shared.openai_options import (
     DEFAULT_OPENAI_COMPATIBLE_TRANSPORT_RETRIES,
@@ -79,10 +80,21 @@ def _build_translation_openai_options(
     )
 
 
+def _clean_translation_response(content: str) -> str:
+    cleaned = strip_reasoning_tags(content).strip()
+    if re.search(
+        r"</?(?:think|thinking|reasoning|thought|reflection|内心独白)>",
+        cleaned,
+        re.IGNORECASE,
+    ):
+        raise TranslationParseException("翻译响应包含不完整的思考标签")
+    return cleaned
+
+
 def _parse_single_translation_response(content: str, *, use_json_format: bool) -> str:
     if not isinstance(content, str):
         raise OpenAICompatibleBusinessRetryableError("翻译响应必须是字符串")
-    translated_text = content.strip()
+    translated_text = _clean_translation_response(content)
     if use_json_format:
         try:
             payload = json.loads(translated_text)
@@ -424,12 +436,7 @@ def _parse_batch_response(response_text: str, expected_count: int) -> list[str]:
     if isinstance(expected_count, bool) or not isinstance(expected_count, int) or expected_count < 1:
         raise ValueError("批量翻译期望数量必须是正整数")
 
-    cleaned_text = re.sub(
-        r"<think>.*?</think>",
-        "",
-        response_text,
-        flags=re.DOTALL | re.IGNORECASE,
-    ).strip()
+    cleaned_text = _clean_translation_response(response_text)
     # 某些服务商会把行首 <|n|> 简化为 <n>；该变体仍是无歧义的同一协议。
     cleaned_text = re.sub(
         r"(?m)^(\s*)<(\d+)>",
@@ -467,12 +474,7 @@ def _parse_batch_json_response(response_text: str, expected_count: int) -> list[
     if isinstance(expected_count, bool) or not isinstance(expected_count, int) or expected_count < 1:
         raise ValueError("批量翻译期望数量必须是正整数")
 
-    cleaned_text = re.sub(
-        r"<think>.*?</think>",
-        "",
-        response_text,
-        flags=re.DOTALL | re.IGNORECASE,
-    ).strip()
+    cleaned_text = _clean_translation_response(response_text)
     fenced = re.fullmatch(r"```(?:json)?\s*([\s\S]*?)\s*```", cleaned_text)
     if fenced:
         cleaned_text = fenced.group(1).strip()

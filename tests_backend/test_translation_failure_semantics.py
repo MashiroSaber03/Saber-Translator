@@ -194,6 +194,27 @@ def test_batch_json_parser_rejects_malformed_contract(response: str) -> None:
         )
 
 
+@pytest.mark.parametrize("batch", [False, True])
+@pytest.mark.parametrize("json_format", [False, True])
+def test_translation_parsers_remove_complete_reasoning_and_retry_incomplete_tags(
+    batch: bool, json_format: bool,
+) -> None:
+    if batch:
+        output = '{"translations":[{"id":1,"text":"我是梅。"}]}' if json_format else '<|1|>我是梅。'
+        parse = lambda text: translation._parse_batch_translation_response(
+            text, texts=["I AM MAY."], use_json_format=json_format,
+        )
+        expected = ["我是梅。"]
+    else:
+        output = '{"translated_text":"我是梅。"}' if json_format else '我是梅。'
+        parse = lambda text: translation._parse_single_translation_response(text, use_json_format=json_format)
+        expected = "我是梅。"
+    assert parse('<think>分析文字</think>' + output) == expected
+    for broken in ['思考文字</think>' + output, '<think>' + output]:
+        with pytest.raises(OpenAICompatibleBusinessRetryableError, match="不完整的思考标签"):
+            parse(broken)
+
+
 def test_single_json_parser_rejects_non_string_translation() -> None:
     with pytest.raises(OpenAICompatibleBusinessRetryableError, match="必须是字符串"):
         translation._parse_single_translation_response(

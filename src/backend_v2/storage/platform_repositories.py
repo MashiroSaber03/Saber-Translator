@@ -592,6 +592,10 @@ class SettingsRepository:
             credential_rows = self._credential_summaries_from_connection(
                 connection,
                 domains=domains,
+                include_versions=tuple(
+                    str(row["credential_version_id"])
+                    for row in provider_rows if row["credential_version_id"] is not None
+                ),
             )
         document = {
             "settings": [
@@ -861,8 +865,6 @@ class SettingsRepository:
             edit.provider,
             edit.secret,
         )
-        if not secret or not any(value not in (None, "") for value in secret.values()):
-            raise ValueError("credential secret must contain at least one value")
         secret_json = _canonical_json(secret)
         fingerprint = hashlib.sha256(secret_json.encode("utf-8")).hexdigest()
 
@@ -912,7 +914,7 @@ class SettingsRepository:
                 "domain": edit.domain,
                 "provider": edit.provider,
                 "secret": secret,
-                "hasKey": True,
+                "hasKey": any(secret.values()),
                 "currentVersion": 1,
                 "revision": 1,
             }
@@ -974,7 +976,7 @@ class SettingsRepository:
             "domain": edit.domain,
             "provider": edit.provider,
             "secret": secret,
-            "hasKey": True,
+            "hasKey": any(secret.values()),
             "currentVersion": version,
             "revision": edit.base_revision + 1,
         }
@@ -988,6 +990,7 @@ class SettingsRepository:
         connection: Connection,
         *,
         domains: tuple[str, ...] = (),
+        include_versions: tuple[str, ...] = (),
     ) -> list[dict[str, object]]:
         statement = (
             select(
@@ -995,7 +998,7 @@ class SettingsRepository:
                 credentials.c.domain,
                 credentials.c.provider,
                 credential_current_versions.c.revision,
-                credential_current_versions.c.credential_version_id,
+                credential_versions.c.id.label("credential_version_id"),
                 credential_versions.c.version,
                 credential_versions.c.secret_json,
             )
@@ -1005,12 +1008,15 @@ class SettingsRepository:
             )
             .join(
                 credential_versions,
-                credential_versions.c.id
-                == credential_current_versions.c.credential_version_id,
+                credential_versions.c.credential_id == credentials.c.id,
             )
             .where(credentials.c.owner_user_id == effective_owner_id(),
-                   self.scope.condition(credentials.c.domain))
-            .order_by(credentials.c.domain, credentials.c.provider)
+                   self.scope.condition(credentials.c.domain),
+                   or_(
+                       credential_versions.c.id == credential_current_versions.c.credential_version_id,
+                       credential_versions.c.id.in_(include_versions),
+                   ))
+            .order_by(credentials.c.domain, credentials.c.provider, credential_versions.c.version.desc())
         )
         if domains:
             statement = statement.where(credentials.c.domain.in_([self.scope.storage_domain(d) for d in domains]))
@@ -1021,11 +1027,11 @@ class SettingsRepository:
                 "credentialVersionId": row["credential_version_id"],
                 "domain": self.scope.public_domain(row["domain"]),
                 "provider": row["provider"],
-                "secret": _require_object(
+                "secret": (secret := _require_object(
                     json.loads(row["secret_json"]),
                     "stored credential secret",
-                ),
-                "hasKey": True,
+                )),
+                "hasKey": any(secret.values()),
                 "currentVersion": row["version"],
                 "revision": row["revision"],
             }

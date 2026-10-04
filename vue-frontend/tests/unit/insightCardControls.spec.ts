@@ -166,6 +166,22 @@ describe('Insight card-like controls', () => {
     vi.restoreAllMocks()
   })
 
+  it('keeps the previous prompt intact when loading a different type from the library', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useInsightStore().updatePrompts({ batch_analysis: '原来的批量分析提示词', qa_response: '原来的问答提示词' })
+    getPromptsLibraryMock.mockResolvedValue([
+      { id: 'qa-prompt', name: '问答模板', type: 'qa_response', content: '新的问答提示词' },
+    ])
+    const wrapper = mount(PromptsSettingsTab, { global: { plugins: [pinia] } })
+    await flushPromises()
+    await wrapper.get('[aria-label="加载提示词：问答模板"]').trigger('click')
+    const prompts = wrapper.emitted('update:prompts')!.at(-1)![0] as Record<string, string>
+    expect(prompts.batch_analysis).toBe('原来的批量分析提示词')
+    expect(prompts.qa_response).toBe('新的问答提示词')
+    wrapper.unmount()
+  })
+
   it('uses separate controls for loading and deleting saved prompts', async () => {
     const wrapper = mount(PromptsSettingsTab, {
       global: {
@@ -483,6 +499,7 @@ describe('Insight card-like controls', () => {
     const wrapper = mount(ChatComposer, {
       props: {
         chatStreaming: false,
+        chatBusy: false,
       },
     })
     const file = new File(['image'], 'scene.png', { type: 'image/png' })

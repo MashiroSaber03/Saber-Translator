@@ -2,6 +2,7 @@ import { normalizeProviderId } from '@/config/aiProviders'
 import type { FetchModelsResponse } from '@/types'
 
 import { fetchV2ModelCatalog, runV2ConnectionTest, type V2ConnectionTestResult } from './settings'
+import { providerKeyField } from '@/utils/providerSettings'
 
 export interface AiVisionOcrTestParams {
   provider: string
@@ -20,27 +21,18 @@ export interface AiTranslateTestParams {
   domain?: string
 }
 
-function secretOrDomain(
-  domain: string,
-  secret: Record<string, string>
-): { domain?: string; secret?: Record<string, string> } {
-  const present = Object.fromEntries(
-    Object.entries(secret).filter(([, value]) => value.trim().length > 0)
-  )
-  return Object.keys(present).length > 0 ? { secret: present } : { domain }
-}
-
 export function fetchModels(
   provider: string,
   apiKey: string,
   baseUrl?: string,
   domain = 'translation'
 ): Promise<FetchModelsResponse> {
-  const secretField = domain === 'ai_vision_ocr' ? 'ai_vision_api_key' : 'api_key'
+  const secretField = providerKeyField(domain)
   return fetchV2ModelCatalog({
     provider: normalizeProviderId(provider),
     baseUrl: baseUrl || undefined,
-    ...secretOrDomain(domain, { [secretField]: apiKey }),
+    domain,
+    secret: { [secretField]: apiKey },
   })
 }
 
@@ -53,10 +45,11 @@ export function testBaiduOcrConnection(
   secretKey: string
 ): Promise<V2ConnectionTestResult> {
   return runV2ConnectionTest('baidu_ocr', {
-    ...secretOrDomain('ocr', {
+    domain: 'ocr',
+    secret: {
       baidu_api_key: apiKey,
       baidu_secret_key: secretKey,
-    }),
+    },
   })
 }
 
@@ -68,9 +61,10 @@ export function testAiVisionOcrConnection(
     model: params.modelName,
     baseUrl: params.customBaseUrl || undefined,
     prompt: params.prompt || undefined,
-    ...secretOrDomain(params.domain || 'ai_vision_ocr', {
+    domain: params.domain || 'ai_vision_ocr',
+    secret: {
       ai_vision_api_key: params.apiKey,
-    }),
+    },
   })
 }
 
@@ -81,7 +75,8 @@ export function testAiTranslateConnection(
     provider: normalizeProviderId(params.provider),
     model: params.modelName || undefined,
     baseUrl: params.baseUrl || undefined,
-    ...secretOrDomain(params.domain || 'translation', { api_key: params.apiKey }),
+    domain: params.domain || 'translation',
+    secret: { api_key: params.apiKey },
   })
 }
 
@@ -90,7 +85,8 @@ export function testBaiduTranslateConnection(
   appKey: string
 ): Promise<V2ConnectionTestResult> {
   return runV2ConnectionTest('baidu_translate', {
-    ...secretOrDomain('translation', { app_id: appId, app_key: appKey }),
+    domain: 'translation',
+    secret: { app_id: appId, app_key: appKey },
   })
 }
 
@@ -99,6 +95,7 @@ export function testYoudaoTranslateConnection(
   appSecret: string
 ): Promise<V2ConnectionTestResult> {
   return runV2ConnectionTest('youdao_translate', {
-    ...secretOrDomain('translation', { app_key: appKey, app_secret: appSecret }),
+    domain: 'translation',
+    secret: { app_key: appKey, app_secret: appSecret },
   })
 }

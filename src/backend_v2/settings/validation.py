@@ -967,7 +967,7 @@ def validate_credential_secret(
     else:
         raise ValueError(f"unsupported credential domain/provider: {domain}/{provider}")
     if domain == "web_import_http":
-        if not result or set(result) - allowed:
+        if set(result) - allowed:
             raise ValueError(
                 "web import HTTP credential must contain cookie and/or headers"
             )
@@ -979,13 +979,10 @@ def validate_credential_secret(
     if domain == "web_import_http":
         cookie = result.get("cookie")
         headers = result.get("headers")
-        if cookie is not None and (
-            not isinstance(cookie, str) or not cookie.strip()
-        ):
+        if cookie is not None and not isinstance(cookie, str):
             raise ValueError("web import HTTP credential is invalid")
         if headers is not None and (
             not isinstance(headers, Mapping)
-            or not headers
             or any(
                 not isinstance(key, str)
                 or not key.strip()
@@ -996,11 +993,11 @@ def validate_credential_secret(
         ):
             raise ValueError("web import HTTP credential is invalid")
     elif any(
-        not isinstance(value, str) or not value.strip()
+        not isinstance(value, str)
         for value in result.values()
     ):
-        raise ValueError("credential secret values must be non-empty strings")
-    return result
+        raise ValueError("credential secret values must be strings")
+    return {key: value.strip() if isinstance(value, str) else value for key, value in result.items()}
 
 
 def validate_book_setting_payload(

@@ -299,23 +299,18 @@ describe('insight v2 settings ownership', () => {
           model: 'gemini-2.0-flash',
         },
       },
-    })
+    }, current)
 
     expect(putMock).toHaveBeenCalledWith(
       '/api/v2/settings/transactions',
       expect.objectContaining({
-        settings: [
-          expect.objectContaining({
-            domain: 'insight',
-            baseRevision: 3,
-          }),
-        ],
+        settings: [],
         providerSettings: expect.arrayContaining([
           expect.objectContaining({
             domain: 'insight_vlm',
             provider: 'gemini',
             baseRevision: 4,
-            credentialEditRef: 'insight:insight_vlm:gemini',
+            credentialEditRef: 'credential:insight_vlm:gemini',
           }),
         ]),
         credentialEdits: [
@@ -382,7 +377,7 @@ describe('insight v2 settings ownership', () => {
           model: 'reranker-model',
         },
       },
-    })
+    }, current)
 
     const request = putMock.mock.calls.at(-1)?.[1] as {
       providerSettings: Array<{
@@ -421,6 +416,7 @@ describe('insight v2 settings ownership', () => {
     })
     const { getGlobalConfig, saveGlobalConfig } = await import('@/api/insight')
     const current = await getGlobalConfig()
+    const baseline = structuredClone(current)
     current.providerDrafts.vlm.openai = {
       apiKey: 'inactive-secret',
       model: 'gpt-4.1-mini',
@@ -437,7 +433,7 @@ describe('insight v2 settings ownership', () => {
       imageMaxSize: 1536,
     }
 
-    const saved = await saveGlobalConfig(current)
+    const saved = await saveGlobalConfig(current, baseline)
 
     const request = putMock.mock.calls.at(-1)?.[1] as {
       providerSettings: Array<{
@@ -508,7 +504,7 @@ describe('insight v2 settings ownership', () => {
         ...current.config,
         prompts: { ...current.config.prompts, batch_analysis: '新提示词' },
       },
-    })
+    }, current)
 
     expect(putMock).toHaveBeenCalledTimes(1)
     expect(putMock).toHaveBeenCalledWith(
@@ -525,5 +521,67 @@ describe('insight v2 settings ownership', () => {
       }),
       { headers: { 'Idempotency-Key': expect.any(String) } }
     )
+  })
+  it('does not write any rows when the loaded form is unchanged', async () => {
+    const { getGlobalConfig, saveGlobalConfig } = await import('@/api/insight')
+    const baseline = await getGlobalConfig()
+    await saveGlobalConfig(structuredClone(baseline), baseline)
+    expect(putMock).not.toHaveBeenCalled()
+  })
+
+  it('does not overwrite a newer untouched provider from another page', async () => {
+    const { getGlobalConfig, saveGlobalConfig } = await import('@/api/insight')
+    const baseline = await getGlobalConfig()
+    const draft = structuredClone(baseline)
+    draft.config.vlm.model = 'my-vlm-change'
+    const newer = {
+      ...structuredClone(settingsDocument),
+      providerSettings: [
+        ...structuredClone(settingsDocument.providerSettings),
+        {
+          domain: 'insight_embedding', provider: 'openai', revision: 7,
+          credentialVersionId: null,
+          payload: {
+            modelName: 'peer-embedding', customBaseUrl: '',
+            rpmLimit: 0, transportRetries: 3, businessRetries: 3, timeoutSeconds: 0,
+          },
+        },
+      ],
+    }
+    getMock.mockImplementation((url: string) => Promise.resolve(
+      url === '/api/v2/settings' ? newer : { items: insightFactoryPrompts },
+    ))
+    await saveGlobalConfig(draft, baseline)
+    const body = putMock.mock.calls.at(-1)?.[1]
+    expect(body.providerSettings).toHaveLength(1)
+    expect(body.providerSettings[0]).toMatchObject({ domain: 'insight_vlm', payload: { modelName: 'my-vlm-change' } })
+    expect(body.settings).toEqual([])
+  })
+
+  it('rejects a changed provider if another page changed the same provider', async () => {
+    const { getGlobalConfig, saveGlobalConfig } = await import('@/api/insight')
+    const baseline = await getGlobalConfig()
+    const draft = structuredClone(baseline)
+    draft.config.vlm.model = 'my-change'
+    const newer = structuredClone(settingsDocument)
+    newer.providerSettings[0]!.payload.modelName = 'peer-change'
+    getMock.mockImplementation((url: string) => Promise.resolve(
+      url === '/api/v2/settings' ? newer : { items: insightFactoryPrompts },
+    ))
+    await expect(saveGlobalConfig(draft, baseline)).rejects.toThrow('其他页面更新')
+    expect(putMock).not.toHaveBeenCalled()
+  })
+
+  it('leaves a newer untouched prompt alone while saving a model change', async () => {
+    const { getGlobalConfig, saveGlobalConfig } = await import('@/api/insight')
+    const baseline = await getGlobalConfig()
+    const draft = structuredClone(baseline)
+    draft.config.vlm.model = 'my-change'
+    const newer = insightFactoryPrompts.map(prompt => ({ ...prompt, content: 'peer prompt' }))
+    getMock.mockImplementation((url: string) => Promise.resolve(
+      url === '/api/v2/settings' ? settingsDocument : { items: newer },
+    ))
+    await saveGlobalConfig(draft, baseline)
+    expect(putMock.mock.calls.at(-1)?.[1].promptEdits).toEqual([])
   })
 })
