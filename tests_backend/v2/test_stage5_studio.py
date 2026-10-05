@@ -24,6 +24,7 @@ from src.backend_v2.operations.repository import (
 )
 from src.backend_v2.runtime_identity import RuntimeIdentity
 from src.backend_v2.runtime_profile import PROFILE_ENV
+from src.backend_v2.serialization import canonical_json
 from src.backend_v2.storage.assets import AssetQuotaExceeded
 from src.backend_v2.storage.database import create_sqlite_engine
 from src.backend_v2.storage.epochs import (
@@ -1155,6 +1156,17 @@ def test_generate_completes_unchanged_document_without_revision_bump(
         book_id=str(studio_platform["book"]["id"]),
         title="No-op Character",
     )
+    session = repository.create_session(
+        document_id=document["id"], title="旧草稿", base_index_revision=1,
+    )
+    # A previously generated card can already contain a greeting while its
+    # empty chat draft was never aligned by the older publication path.
+    core_messages = {**document["coreMessages"], "first_message": "已有角色卡的问候"}
+    with studio_platform["engine"].begin() as connection:
+        connection.execute(update(studio_documents).where(studio_documents.c.id == document["id"]).values(
+            core_messages_json=canonical_json(core_messages),
+        ))
+    document = repository.get_document(document["id"])
     repository.create_generate_operation(
         document_id=str(document["id"]),
         base_revision=int(document["revision"]),
@@ -1178,6 +1190,9 @@ def test_generate_completes_unchanged_document_without_revision_bump(
     assert operations.get(claimed[1]["operationId"])["status"] == "completed"
     restored = repository.get_document(str(document["id"]))
     assert restored["revision"] == document["revision"]
+    aligned = repository.get_session(session["sessionId"])
+    assert [message["content"] for message in aligned["messages"]] == ["已有角色卡的问候"]
+    assert aligned["revision"] == session["revision"] + 1
 
 
 def test_chat_operation_persists_reply_after_request_lifecycle(
@@ -1991,6 +2006,76 @@ def test_summary_window_and_summary_invalidation_follow_message_ordinals(
     invalidated = repository.get_session(str(session["sessionId"]))
     assert invalidated["summaryBlocks"] == []
     assert invalidated["summaryThroughMessageId"] is None
+
+
+@pytest.mark.parametrize(("greeting", "has_user_messages"), [("", False), ("旧问候", False), ("旧问候", True)])
+def test_generated_greeting_is_aligned_before_avatar_save_and_first_send(
+    studio_platform, greeting, has_user_messages,
+) -> None:
+    repository = StudioRepository(studio_platform["engine"])
+    operations = OperationRepository(studio_platform["engine"])
+    document = repository.create_document(book_id=studio_platform["book"]["id"], title="生成角色")
+    document["coreMessages"]["first_message"] = greeting
+    document = repository.update_document(
+        document_id=document["id"], base_revision=document["revision"], title=None, document=document,
+    )
+    session = repository.create_session(
+        document_id=document["id"], title="预览", base_index_revision=1,
+        greeting=greeting, greeting_source={"type": "first_message", "index": 0},
+    )
+    if has_user_messages:
+        repository.send_message(
+            session_id=session["sessionId"], base_revision=session["revision"], content="保留已有聊天",
+            asset_ids=[], config={}, idempotency_key="existing-chat",
+        )
+        claimed = operations.claim_next(
+            executor_role="api", executor_epoch_id=studio_platform["epoch_id"], allowed_kinds=("studio_chat",),
+        )
+        assert claimed is not None
+        StudioOperationService(
+            engine=studio_platform["engine"], repository=repository, algorithms=FakeStudioAlgorithms(),
+        ).handle(*claimed)
+        session = repository.get_session(session["sessionId"])
+    generated = deepcopy(document)
+    generated["coreMessages"]["first_message"] = "生成后的新问候"
+    repository.create_generate_operation(
+        document_id=document["id"], base_revision=document["revision"], section="full",
+        config={}, idempotency_key="generate-greeting",
+    )
+    claimed = operations.claim_next(
+        executor_role="api", executor_epoch_id=studio_platform["epoch_id"], allowed_kinds=("studio_generate",),
+    )
+    assert claimed is not None
+    repository.publish_generate(claimed[0], generated_document=generated)
+    aligned = repository.get_session(session["sessionId"])
+    if has_user_messages:
+        assert aligned == session
+    else:
+        assert [message["content"] for message in aligned["messages"]] == ["生成后的新问候"]
+        assert aligned["revision"] == session["revision"] + 1
+        if greeting:
+            assert aligned["messages"][0]["messageId"] == session["messages"][0]["messageId"]
+    io_service = StudioIOService(
+        data_root=studio_platform["data_root"], engine=studio_platform["engine"], repository=repository,
+    )
+    for index, color in enumerate(((200, 30, 40), (30, 60, 200), None)):
+        avatar_id = None
+        if color is not None:
+            image = BytesIO()
+            Image.new("RGB", (24, 32), color).save(image, format="PNG")
+            image.seek(0)
+            avatar_id = io_service.publish_image(image, idempotency_key=f"generated-avatar-{index}")["assetId"]
+        document = repository.get_document(document["id"])
+        document["avatarAssetId"] = avatar_id
+        repository.update_document(
+            document_id=document["id"], base_revision=document["revision"], title=None, document=document,
+        )
+        assert repository.get_session(session["sessionId"]) == aligned
+    accepted = repository.send_message(
+        session_id=aligned["sessionId"], base_revision=aligned["revision"], content="立即发送",
+        asset_ids=[], config={}, idempotency_key="send-after-avatar",
+    )
+    assert accepted["operationId"]
 
 
 def test_draft_greeting_alignment_and_archived_only_deletion(

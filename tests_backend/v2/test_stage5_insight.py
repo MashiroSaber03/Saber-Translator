@@ -3048,6 +3048,25 @@ def test_timeline_invalid_metadata_falls_back_to_page_events(monkeypatch) -> Non
     }]
 
 
+@pytest.mark.parametrize("template", ("no_spoiler", "story_summary"))
+def test_overview_prompt_example_matches_persisted_artifact_contract(monkeypatch, template):
+    algorithms = ProviderDerivedAlgorithms()
+
+    def chat_json(prompt, **kwargs):
+        start = prompt.index('{"title":')
+        example, _ = json.JSONDecoder().raw_decode(prompt[start:])
+        assert set(example) == {"title", "content"}
+        assert all(isinstance(value, str) and value.strip() for value in example.values())
+        return kwargs["validator"](example)
+
+    monkeypatch.setattr(algorithms, "_chat_json", chat_json)
+    result = algorithms.build_overview(
+        [{"pageId": "page-1", "pageNumber": 1, "analysis": {"page_summary": "发现红书"}}],
+        template=template, config={},
+    )
+    assert isinstance(result["content"], str)
+
+
 def test_provider_layer_normalizes_text_and_object_events_before_saving(monkeypatch) -> None:
     algorithms = ProviderDerivedAlgorithms()
     response = {"summary": " 本组摘要 ", "key_events": [
