@@ -4127,14 +4127,6 @@ class InsightDerivedWorkerService:
                     for key, value in vector_build.items()
                     if not key.startswith("__")
                 }
-                log_result(
-                    "语义索引生成进度",
-                    (
-                        f"页面：{checkpoint.get('pageCount', 0)}/{checkpoint.get('pageTotal', 0)}",
-                        f"事件：{checkpoint.get('eventCount', 0)}/{checkpoint.get('eventTotal', 0)}",
-                        f"覆盖率：{float(checkpoint.get('coverage', 0)):.1%}",
-                    ),
-                )
                 def publish(connection: Connection) -> None:
                     checkpoint.update(
                         self.repository.publish_vector_generation(
@@ -4151,6 +4143,14 @@ class InsightDerivedWorkerService:
                     step_id=step_id,
                     checkpoint=checkpoint,
                     publisher=publish,
+                )
+                log_result(
+                    "语义索引生成完成",
+                    (
+                        f"页面：{checkpoint['pageCount']}/{checkpoint['pageTotal']}",
+                        f"事件：{checkpoint['eventCount']}/{checkpoint['eventTotal']}",
+                        f"覆盖率：{checkpoint['coverage']:.1%}",
+                    ),
                 )
                 return {
                     **checkpoint,
@@ -4288,6 +4288,18 @@ class InsightDerivedWorkerService:
             "pageTotal": len(page_records),
             "eventTotal": len(event_records),
         }
+        total = len(page_records) + len(event_records)
+
+        def log_progress() -> None:
+            completed = checkpoint["pageCount"] + checkpoint["eventCount"]
+            percent = completed * 100 // total if total else 100
+            filled = percent // 5
+            log_result(
+                f"语义索引生成进度 [{'=' * filled}{'-' * (20 - filled)}] "
+                f"{completed}/{total}（{percent}%）｜"
+                f"页面 {checkpoint['pageCount']}/{checkpoint['pageTotal']}｜"
+                f"事件 {checkpoint['eventCount']}/{checkpoint['eventTotal']}",
+            )
 
         def checkpoint_batch(kind: str, count: int) -> None:
             if kind not in {"pages", "events"}:
@@ -4302,7 +4314,6 @@ class InsightDerivedWorkerService:
                 if count < checkpoint["eventCount"] or count > len(event_records):
                     raise InsightConflict("vector event checkpoint is invalid")
                 checkpoint["eventCount"] = count
-            total = len(page_records) + len(event_records)
             completed = checkpoint["pageCount"] + checkpoint["eventCount"]
             checkpoint["coverage"] = 1.0 if total == 0 else completed / total
 
@@ -4321,7 +4332,9 @@ class InsightDerivedWorkerService:
                 checkpoint=checkpoint,
                 publisher=publish_partial,
             )
+            log_progress()
 
+        log_progress()
         try:
             result = self.vector_store.publish_batches(
                 book_id=frozen.book_id,

@@ -2682,8 +2682,58 @@ def test_derived_commands_reject_noncanonical_templates(
         )
 
 
+@pytest.mark.parametrize("event_total", [2, 0, 2049])
+def test_vector_progress_reports_committed_batches(
+    insight_platform, caplog, monkeypatch, event_total,
+) -> None:
+    platform = insight_platform
+    InsightAnalysisCommandService(platform["engine"]).create_analysis_job(
+        command={"bookId": str(platform["book"]["id"]), "scope": "full"},
+        idempotency_key="vector-progress-analysis",
+    )
+    assert _run_job(platform, FakeInsightAlgorithms()) == "completed"
+    accepted = InsightDerivedCommandService(platform["engine"]).create_job(
+        book_id=str(platform["book"]["id"]), kind="vector", template="default",
+        idempotency_key="vector-progress",
+    )
+    if event_total != 2:
+        monkeypatch.setattr(
+            InsightDerivedWorkerService, "_layer_zero_event_records",
+            lambda *_: [
+                {"id": f"event-{index}", "document": f"事件 {index}", "metadata": {}}
+                for index in range(event_total)
+            ],
+        )
+    caplog.clear()
+    caplog.set_level("INFO", logger="saber.user")
+    assert _run_derived_job(
+        platform, algorithms=FakeDerivedAlgorithms(),
+        vector_store=CheckpointingFakeVectorStore(
+            queue=JobQueueRepository(platform["engine"]),
+            job_id=str(accepted["jobIds"][0]),
+        ),
+    ) == "completed"
+    messages = [record.getMessage() for record in caplog.records]
+    progress = [message for message in messages if "语义索引生成进度 [" in message]
+    if event_total == 2049:
+        assert "0/2051（0%）" in progress[0]
+        assert "2050/2051（99%）" in progress[-2]
+        assert "2051/2051（100%）" in progress[-1]
+        assert all("100%" not in message for message in progress[:-1])
+    else:
+        expected = ["0/4（0%）", "2/4（50%）", "4/4（100%）"] if event_total else [
+            "0/2（0%）", "2/2（100%）",
+        ]
+        assert len(progress) == len(expected)
+        assert all(count in message for count, message in zip(expected, progress))
+    assert all("\r" not in message for message in progress)
+    completion = next(message for message in messages if "语义索引生成完成" in message)
+    assert messages.index(completion) > messages.index(progress[-1])
+
+
 def test_vector_cancel_fences_partial_generation_publication(
     insight_platform,
+    caplog,
 ) -> None:
     platform = insight_platform
     InsightAnalysisCommandService(platform["engine"]).create_analysis_job(
@@ -2717,9 +2767,14 @@ def test_vector_cancel_fences_partial_generation_publication(
         ),
     )
 
+    caplog.clear()
+    caplog.set_level("INFO", logger="saber.user")
     with pytest.raises(AttemptFenced):
         service.handle(fence, step)
 
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("0/4（0%）" in message for message in messages)
+    assert not any("语义索引生成完成" in message for message in messages)
     detail = queue.get_job(job_id)
     assert detail["status"] == "cancelled"
     with platform["engine"].connect() as connection:
@@ -2734,8 +2789,12 @@ def test_vector_cancel_fences_partial_generation_publication(
     assert generations[0]["is_active"]
 
 
+@pytest.mark.parametrize("pause_after_all_batches", [True, False])
 def test_vector_pause_resumes_from_checkpoint_and_switches_only_on_completion(
     insight_platform,
+    caplog,
+    monkeypatch,
+    pause_after_all_batches,
 ) -> None:
     platform = insight_platform
     InsightAnalysisCommandService(platform["engine"]).create_analysis_job(
@@ -2760,9 +2819,23 @@ def test_vector_pause_resumes_from_checkpoint_and_switches_only_on_completion(
     paused_store = CheckpointingFakeVectorStore(
         queue=queue,
         job_id=job_id,
-        control="pause",
+        control="pause" if pause_after_all_batches else None,
         control_after_batches=True,
     )
+    if not pause_after_all_batches:
+        publish_batches = paused_store.publish_batches
+
+        def pause_after_pages(**kwargs):
+            checkpoint = kwargs["on_batch"]
+
+            def on_batch(kind, count):
+                checkpoint(kind, count)
+                if kind == "pages":
+                    queue.request_pause(job_id)
+
+            return publish_batches(**{**kwargs, "on_batch": on_batch})
+
+        monkeypatch.setattr(paused_store, "publish_batches", pause_after_pages)
     service = InsightDerivedWorkerService(
         data_root=platform["data_root"],
         engine=platform["engine"],
@@ -2770,9 +2843,12 @@ def test_vector_pause_resumes_from_checkpoint_and_switches_only_on_completion(
         algorithms=FakeDerivedAlgorithms(),
         vector_store=paused_store,
     )
+    caplog.clear()
+    caplog.set_level("INFO", logger="saber.user")
     with pytest.raises(AttemptFenced):
         service.handle(fence, step)
     assert queue.get_job(job_id)["status"] == "paused"
+    assert not any("语义索引生成完成" in record.getMessage() for record in caplog.records)
 
     queue.resume(job_id)
     resumed_fence = queue.claim_next(worker_epoch_id=platform["epoch_id"])
@@ -2782,7 +2858,7 @@ def test_vector_pause_resumes_from_checkpoint_and_switches_only_on_completion(
     resumed_step = queue.next_step(resumed_fence)
     assert resumed_step is not None
     assert resumed_step["checkpoint"]["pageCount"] == 2
-    assert resumed_step["checkpoint"]["eventCount"] == 2
+    assert resumed_step["checkpoint"]["eventCount"] == (2 if pause_after_all_batches else 0)
     resumed_store = CheckpointingFakeVectorStore(
         queue=queue,
         job_id=job_id,
@@ -2795,14 +2871,24 @@ def test_vector_pause_resumes_from_checkpoint_and_switches_only_on_completion(
         vector_store=resumed_store,
     )
 
+    caplog.clear()
     resumed_service.handle(resumed_fence, resumed_step)
+    progress = [
+        record.getMessage() for record in caplog.records
+        if "语义索引生成进度 [" in record.getMessage()
+    ]
+    expected = ["4/4（100%）"] if pause_after_all_batches else [
+        "2/4（50%）", "4/4（100%）",
+    ]
+    assert len(progress) == len(expected)
+    assert all(count in message for count, message in zip(expected, progress))
 
     assert queue.finish_if_complete(resumed_fence) == "completed"
     assert resumed_store.calls == [
         {
             "resume": True,
             "initialPageCount": 2,
-            "initialEventCount": 2,
+            "initialEventCount": 2 if pause_after_all_batches else 0,
         }
     ]
     with platform["engine"].connect() as connection:
@@ -3112,6 +3198,7 @@ def test_provider_derived_algorithms_reject_non_object_model_results(
 
 def test_vector_worker_rejects_invalid_store_success_result(
     insight_platform,
+    caplog,
 ) -> None:
     platform = insight_platform
     InsightAnalysisCommandService(platform["engine"]).create_analysis_job(
@@ -3153,8 +3240,11 @@ def test_vector_worker_rejects_invalid_store_success_result(
         vector_store=InvalidVectorStore(),  # type: ignore[arg-type]
     )
 
+    caplog.clear()
+    caplog.set_level("INFO", logger="saber.user")
     with pytest.raises(InsightConflict, match="invalid result"):
         service.handle(fence, step)
+    assert not any("语义索引生成完成" in record.getMessage() for record in caplog.records)
     with platform["engine"].connect() as connection:
         failed = connection.execute(
             select(vector_generations).where(
