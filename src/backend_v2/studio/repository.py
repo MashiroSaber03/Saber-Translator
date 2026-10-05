@@ -1950,6 +1950,9 @@ class StudioRepository:
                     row[field] == generated_values[field]
                     for field in content_fields
                 ):
+                    self._align_active_draft(
+                        connection, self._document_from_connection(connection, document_id), utcnow(),
+                    )
                     result.update({
                         "documentId": document_id,
                         "documentRevision": int(row["revision"]),
@@ -1974,6 +1977,10 @@ class StudioRepository:
             if changed.rowcount != 1:
                 raise OperationFenced(
                     "studio document changed before generation publish"
+                )
+            if review is None:
+                self._align_active_draft(
+                    connection, self._document_from_connection(connection, document_id), utcnow(),
                 )
             result.update(
                 {

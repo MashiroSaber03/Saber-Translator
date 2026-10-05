@@ -793,7 +793,10 @@ class ProviderDerivedAlgorithms:
     ) -> Mapping[str, Any]:
         prompt = (
             f"请根据以下逐页分析生成“{template}”漫画概览。"
-            "只依据输入，不补写不存在的情节。输出 JSON，至少包含 title 与 content。\n\n"
+            "只依据输入，不补写不存在的情节。只输出一个 JSON 对象，"
+            '格式为 {"title":"非空标题字符串","content":"非空 Markdown 正文字符串"}。'
+            "title 与 content 必须直接位于顶层，值均为非空字符串；不要用模板名称包裹正文，"
+            "不要把 content 写成对象或数组。\n\n"
             + _page_context(pages)
         )
         return self._chat_json(
