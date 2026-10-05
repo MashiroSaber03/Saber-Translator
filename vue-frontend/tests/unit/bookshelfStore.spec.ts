@@ -4,7 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as bookshelfApi from '@/api/bookshelf'
 import { ApiClientError } from '@/api/client'
-import { useBookshelfStore } from '@/stores/bookshelfStore'
+import { ChapterDetailRefreshError, useBookshelfStore } from '@/stores/bookshelfStore'
 import type { BookData, TagData } from '@/types/api'
 import { setTestBooks, setTestTags } from '../helpers/bookshelfFixtures'
 
@@ -309,6 +309,23 @@ describe('bookshelfStore', () => {
     vi.spyOn(bookshelfApi, 'getTags').mockRejectedValueOnce(new Error('tag service unavailable'))
     await store.loadTags()
     expect(store.tagsError).toBe('tag service unavailable')
+  })
+
+  it.each(['create', 'delete'])('reports a committed chapter %s when the detail refresh fails', async (action) => {
+    const store = useBookshelfStore()
+    const create = vi.spyOn(bookshelfApi, 'createChapter').mockResolvedValue({
+      id: 'chapter-new', title: 'New', order: 0, imageCount: 0,
+    })
+    const remove = vi.spyOn(bookshelfApi, 'deleteChapter').mockResolvedValue(undefined)
+    vi.spyOn(bookshelfApi, 'getBookDetail').mockRejectedValue(new Error('refresh unavailable'))
+
+    if (action === 'create') {
+      await expect(store.createChapterApi('book-1', 'New')).rejects.toThrow(ChapterDetailRefreshError)
+      expect(create).toHaveBeenCalledTimes(1)
+    } else {
+      await expect(store.deleteChapterApi('book-1', 'chapter-1')).rejects.toThrow(ChapterDetailRefreshError)
+      expect(remove).toHaveBeenCalledTimes(1)
+    }
   })
 
   it('drops hidden batch selections when the backend list projection changes', async () => {

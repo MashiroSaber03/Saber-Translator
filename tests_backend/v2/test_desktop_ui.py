@@ -10,7 +10,7 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QPoint, Qt
+from PySide6.QtCore import QPoint, QRect, Qt
 from PySide6.QtGui import QColor, QIcon, QPalette, QPixmap
 from PySide6.QtNetwork import QNetworkReply
 from PySide6.QtWidgets import (
@@ -54,6 +54,81 @@ BRAND_LOGO = ASSET_ROOT / "app-icon.png"
 
 def _app() -> QApplication:
     return QApplication.instance() or QApplication([])
+
+
+@pytest.mark.parametrize("preparing", [False, True])
+@pytest.mark.parametrize("size", [(1080, 720), (1707, 1019), (16000, 16000)])
+@pytest.mark.parametrize(
+    "available", [QRect(100, 50, 1280, 900), QRect(-900, 0, 900, 600)]
+)
+def test_window_restores_inside_the_available_screen(
+    tmp_path, monkeypatch, preparing, size, available
+):
+    application = _app()
+
+    class Screen:
+        def availableGeometry(self):
+            return available
+
+    monkeypatch.setattr(DesktopWindow, "screen", lambda self: Screen())
+    settings = DesktopSettings(window_width=size[0], window_height=size[1])
+    window = DesktopWindow(
+        None if preparing else settings,
+        native_icon_path=NATIVE_ICON,
+        brand_logo_path=BRAND_LOGO,
+        data_root=tmp_path,
+    )
+    try:
+        if preparing:
+            assert available.contains(window.geometry())
+            window.initialize_pages(settings, tmp_path)
+        assert available.contains(window.geometry())
+        assert window.geometry().center() == available.center()
+        assert window.width() == min(size[0], available.width())
+        assert window.height() == min(size[1], available.height())
+    finally:
+        window.allow_close()
+        window.deleteLater()
+        application.processEvents()
+
+
+@pytest.mark.parametrize("save_on_quit", [False, True])
+@pytest.mark.parametrize("state", ["maximized", "minimized"])
+def test_window_saves_normal_size_instead_of_current_state(
+    tmp_path, save_on_quit, state
+):
+    application = _app()
+    store = DesktopSettingsStore(tmp_path)
+    controller = DesktopController(
+        application,
+        data_root=tmp_path,
+        settings_store=store,
+        settings=DesktopSettings(pet_enabled=False),
+        native_icon_path=NATIVE_ICON,
+        brand_logo_path=BRAND_LOGO,
+    )
+    try:
+        controller.window.show()
+        controller.window.resize(960, 680)
+        application.processEvents()
+        controller.window.showMaximized()
+        application.processEvents()
+        if state == "minimized":
+            controller.window.showMinimized()
+            application.processEvents()
+        if save_on_quit:
+            controller._finish_quit()
+        else:
+            controller.apply_settings(controller.settings.updated(pet_scale_percent=125))
+        saved = store.load()
+        assert (saved.window_width, saved.window_height) == (960, 680)
+    finally:
+        controller._pet_timer.stop()
+        controller.tray.hide()
+        controller.pet.close()
+        controller.window.allow_close()
+        controller.deleteLater()
+        application.processEvents()
 
 
 def test_desktop_log_bridge_respects_the_configured_level() -> None:

@@ -253,8 +253,6 @@ class DesktopController(QObject):
             pet_screen_name=self.settings.pet_screen_name,
             pet_position_x=self.settings.pet_position_x,
             pet_position_y=self.settings.pet_position_y,
-            window_width=self.window.width(),
-            window_height=self.window.height(),
         )
         if not self._store_settings(updated):
             return
@@ -498,6 +496,11 @@ class DesktopController(QObject):
     ) -> bool:
         if self.storage_manager is not None and (self.storage_manager.rolled_back or not business_ready(self.data_root)):
             return False
+        normal_size = self.window.normalGeometry().size()
+        updated = updated.updated(
+            window_width=max(920, normal_size.width()),
+            window_height=max(640, normal_size.height()),
+        )
         try:
             self.settings_store.save(updated)
         except OSError as error:
@@ -511,11 +514,7 @@ class DesktopController(QObject):
         return True
 
     def _finish_quit(self) -> None:
-        updated = self.settings.updated(
-            window_width=max(920, self.window.width()),
-            window_height=max(640, self.window.height()),
-        )
-        self._store_settings(updated, show_error=False)
+        self._store_settings(self.settings, show_error=False)
         self.tasks.stop()
         self.tray.hide()
         self.pet.close()

@@ -7,6 +7,8 @@ import { BOOKSHELF_DEFAULT_TAG_COLOR } from '@/constants/bookshelf'
 export type BookSortBy = 'title' | 'createdAt' | 'updatedAt'
 export type SortOrder = 'asc' | 'desc'
 
+export class ChapterDetailRefreshError extends Error {}
+
 interface BookUpdatePayload {
   title?: string
   cover?: File
@@ -123,14 +125,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     return books.value.find(book => book.id === bookId) || null
   }
 
-  function addChapter(bookId: string, chapter: ChapterData): void {
-    eachBookProjection(bookId, (book) => {
-      book.chapters ??= []
-      book.chapters.push(chapter)
-      book.chapterCount = book.chapters.length
-    })
-  }
-
   function updateChapter(bookId: string, chapterId: string, updates: Partial<ChapterData>): void {
     eachBookProjection(bookId, (book) => {
       const index = book.chapters?.findIndex(item => item.id === chapterId) ?? -1
@@ -139,16 +133,6 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
         if (chapter) {
           book.chapters[index] = { ...chapter, ...updates }
         }
-      }
-    })
-  }
-
-  function deleteChapter(bookId: string, chapterId: string): void {
-    eachBookProjection(bookId, (book) => {
-      const index = book.chapters?.findIndex(chapter => chapter.id === chapterId) ?? -1
-      if (book.chapters && index >= 0) {
-        book.chapters.splice(index, 1)
-        book.chapterCount = book.chapters.length
       }
     })
   }
@@ -413,7 +397,10 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
 
   async function createChapterApi(bookId: string, title: string): Promise<ChapterData> {
     const chapter = await bookshelfApi.createChapter(bookId, title)
-    addChapter(bookId, chapter)
+    invalidateBookReads()
+    if (!await loadBookDetail(bookId)) {
+      throw new ChapterDetailRefreshError('章节已创建，但详情刷新失败，请重新打开书籍查看最新列表')
+    }
     return chapter
   }
 
@@ -429,7 +416,9 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   async function deleteChapterApi(bookId: string, chapterId: string): Promise<void> {
     await bookshelfApi.deleteChapter(chapterId)
     invalidateBookReads()
-    deleteChapter(bookId, chapterId)
+    if (!await loadBookDetail(bookId)) {
+      throw new ChapterDetailRefreshError('章节已删除，但详情刷新失败，请重新打开书籍查看最新列表')
+    }
   }
 
   async function reorderChaptersApi(bookId: string, chapterIds: string[]): Promise<void> {

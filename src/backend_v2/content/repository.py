@@ -658,14 +658,20 @@ class ContentRepository:
                     now=_utcnow(),
                 )
             connection.execute(delete(chapters).where(chapters.c.id == chapter_id))
-            connection.execute(
-                update(chapters)
+            following_ids = connection.execute(
+                select(chapters.c.id)
                 .where(
                     chapters.c.book_id == book_id,
                     chapters.c.ordinal > row["ordinal"],
                 )
-                .values(ordinal=chapters.c.ordinal - 1)
-            )
+                .order_by(chapters.c.ordinal)
+            ).scalars().all()
+            for following_id in following_ids:
+                connection.execute(
+                    update(chapters)
+                    .where(chapters.c.id == following_id)
+                    .values(ordinal=chapters.c.ordinal - 1)
+                )
             connection.execute(
                 update(books)
                 .where(books.c.id == book_id)
@@ -1403,14 +1409,20 @@ class ContentRepository:
                 now=_utcnow(),
             )
             connection.execute(delete(pages).where(pages.c.id == page_id))
-            connection.execute(
-                update(pages)
+            following_ids = connection.execute(
+                select(pages.c.id)
                 .where(
                     pages.c.chapter_id == chapter_id,
                     pages.c.ordinal > page["ordinal"],
                 )
-                .values(ordinal=pages.c.ordinal - 1)
-            )
+                .order_by(pages.c.ordinal)
+            ).scalars().all()
+            for following_id in following_ids:
+                connection.execute(
+                    update(pages)
+                    .where(pages.c.id == following_id)
+                    .values(ordinal=pages.c.ordinal - 1)
+                )
             connection.execute(
                 update(chapters)
                 .where(chapters.c.id == chapter_id)
