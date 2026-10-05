@@ -1133,9 +1133,6 @@ class DesktopWindow(QMainWindow):
         self._close_to_tray_enabled = True
         self.setWindowTitle("Saber-Translator")
         self.setWindowIcon(QIcon(str(native_icon_path)))
-        self.setMinimumSize(920, 640)
-        initial_settings = settings or DesktopSettings()
-        self.resize(initial_settings.window_width, initial_settings.window_height)
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         root = QWidget()
@@ -1177,9 +1174,24 @@ class DesktopWindow(QMainWindow):
         preparation_layout.addWidget(self.preparation_progress)
         preparation_layout.addStretch()
         if settings is None:
+            self._restore_window_geometry(DesktopSettings())
             self.show_storage_preparation("正在检查存储版本")
         else:
             self.initialize_pages(settings, data_root)
+
+    def _restore_window_geometry(self, settings: DesktopSettings) -> None:
+        available = self.screen().availableGeometry()
+        self.setMinimumSize(min(920, available.width()), min(640, available.height()))
+        geometry = QRect(
+            0, 0,
+            max(self.minimumWidth(), min(settings.window_width, available.width())),
+            max(self.minimumHeight(), min(settings.window_height, available.height())),
+        )
+        geometry.moveTo(
+            available.x() + (available.width() - geometry.width()) // 2,
+            available.y() + (available.height() - geometry.height()) // 2,
+        )
+        self.setGeometry(geometry)
 
     def show_storage_preparation(self, message: str, *, failed: bool = False) -> None:
         self._preparing = True
@@ -1210,7 +1222,7 @@ class DesktopWindow(QMainWindow):
         self.tasks.command_requested.connect(self.job_command_requested)
         self.tasks.queue_pause_requested.connect(self.queue_pause_requested)
         self.settings.settings_changed.connect(self.settings_changed)
-        self.resize(settings.window_width, settings.window_height)
+        self._restore_window_geometry(settings)
         self._preparing = False
         self.title_bar.close_button.setEnabled(True)
         self.title_bar.close_button.setToolTip("")

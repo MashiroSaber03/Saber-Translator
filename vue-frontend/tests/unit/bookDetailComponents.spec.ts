@@ -25,7 +25,7 @@ import TaskStatusBadge from '@/components/task-center/TaskStatusBadge.vue'
 import type { BookData, TagData } from '@/types/api'
 import * as bookshelfApi from '@/api/bookshelf'
 import { ApiClientError } from '@/api/client'
-import { useBookshelfStore } from '@/stores/bookshelfStore'
+import { ChapterDetailRefreshError, useBookshelfStore } from '@/stores/bookshelfStore'
 import { useSettingsStore } from '@/stores/settings'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import * as browserDownload from '@/utils/browserDownload'
@@ -67,7 +67,7 @@ const ChapterListStub = defineComponent({
     downloadPending: Boolean,
     translationPending: Boolean,
   },
-  emits: ['delete', 'downloadSelected', 'select', 'selectAll', 'translateSelected'],
+  emits: ['create', 'delete', 'downloadSelected', 'select', 'selectAll', 'translateSelected'],
   template: '<div class="chapter-list-stub" />',
 })
 
@@ -569,6 +569,7 @@ describe('bookshelf detail child components', () => {
     }])
     store.setCurrentBook(book.id)
     vi.spyOn(bookshelfApi, 'deleteChapter').mockResolvedValue(undefined)
+    vi.spyOn(bookshelfApi, 'getBookDetail').mockResolvedValue(book)
     const wrapper = mount(BookDetailModal, {
       global: {
         stubs: {
@@ -595,6 +596,45 @@ describe('bookshelf detail child components', () => {
     expect(bookshelfApi.deleteChapter).toHaveBeenCalledTimes(1)
     expect(store.currentBook?.chapters).toEqual([])
     expect(wrapper.getComponent(ChapterListStub).props('selectedChapterIds').size).toBe(0)
+  })
+
+  it.each(['create', 'delete'])('closes stale details after a committed chapter %s cannot refresh', async (action) => {
+    const store = useBookshelfStore()
+    setTestBooks(store, [book])
+    store.setCurrentBook(book.id)
+    const error = new ChapterDetailRefreshError('已完成操作，请重新打开书籍')
+    const create = vi.spyOn(store, 'createChapterApi').mockRejectedValue(error)
+    const remove = vi.spyOn(store, 'deleteChapterApi').mockRejectedValue(error)
+    const wrapper = mount(BookDetailModal, {
+      global: { stubs: {
+        BaseModal: BaseModalStub,
+        BookDeleteConfirmContent: true,
+        BookDetailSummary: true,
+        ChapterFormContent: true,
+        ChapterList: ChapterListStub,
+        QuickTagPicker: true,
+      } },
+    })
+    if (action === 'create') {
+      wrapper.getComponent(ChapterListStub).vm.$emit('create')
+      await nextTick()
+      wrapper.getComponent(ChapterFormContent).vm.$emit('update:modelValue', 'New')
+      await nextTick()
+      const save = wrapper.get('section[data-title="新建章节"]').findAllComponents(UiButton)
+        .find(button => button.text() === '保存')!
+      await save.trigger('click')
+      await flushPromises()
+      expect(create).toHaveBeenCalledTimes(1)
+    } else {
+      wrapper.getComponent(ChapterListStub).vm.$emit('delete', 'chapter-selected')
+      await nextTick()
+      const confirm = wrapper.get('section[data-title="确认删除"]').findAllComponents(UiButton)
+        .find(button => button.text() === '删除')!
+      await confirm.trigger('click')
+      await flushPromises()
+      expect(remove).toHaveBeenCalledTimes(1)
+    }
+    expect(wrapper.emitted('close')).toHaveLength(1)
   })
 
   it('exports selected chapters through one durable ZIP job', async () => {

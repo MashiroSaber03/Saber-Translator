@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { useBookshelfStore } from '@/stores/bookshelfStore'
+import { ChapterDetailRefreshError, useBookshelfStore } from '@/stores/bookshelfStore'
 import { ApiClientError } from '@/api/client'
 import { createChaptersExportJob, getBookDetail } from '@/api/bookshelf'
 import { showToast, useToast } from '@/utils/toast'
@@ -138,6 +138,7 @@ async function confirmDelete() {
       showToast('章节已删除', 'success')
     }
   } catch (error) {
+    if (error instanceof ChapterDetailRefreshError) emit('close')
     if (error instanceof ApiClientError && error.status === 423) {
       showToast('仍有正在执行的任务或导入，请先在任务中心处理', 'warning')
       taskCenterStore.open({
@@ -259,6 +260,7 @@ async function saveChapter() {
       showChapterModal.value = false
     }
   } catch (error) {
+    if (error instanceof ChapterDetailRefreshError) emit('close')
     if (error instanceof ApiClientError && error.status === 423) {
       showToast('本章存在进行中的任务，请先在任务中心取消或等待任务结束', 'warning')
       taskCenterStore.open({

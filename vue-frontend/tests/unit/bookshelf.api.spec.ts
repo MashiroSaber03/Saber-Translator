@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { useBookshelfStore } from '@/stores/bookshelfStore'
 
 const { getMock, postMock, putMock, deleteMock, uploadMock } = vi.hoisted(() => ({
   getMock: vi.fn(),
@@ -58,6 +60,7 @@ const constraints = {
 
 describe('bookshelf v2 api contracts', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
     vi.resetModules()
     getMock.mockReset().mockImplementation((url: string) => {
       if (url.endsWith('/translation-constraints')) {
@@ -261,5 +264,38 @@ describe('bookshelf v2 api contracts', () => {
         orderedIds: ['chapter/id one', 'chapter two'],
       },
     )
+  })
+
+  it.each(['create', 'delete'])('refreshes details and the order revision after chapter %s', async (action) => {
+    const store = useBookshelfStore()
+    await store.loadBookDetail(book.id)
+    store.setCurrentBook(book.id)
+    const refreshed = {
+      ...book,
+      chapterOrderRevision: 4,
+      chapterCount: 1,
+      pageCount: 2,
+      chapters: [{ id: 'remaining', title: 'Remaining', ordinal: 1, pageCount: 2 }],
+    }
+    getMock.mockClear().mockImplementation((url: string) => Promise.resolve(
+      url.endsWith('/translation-constraints') ? constraints : refreshed,
+    ))
+    postMock.mockResolvedValue(refreshed.chapters[0])
+    putMock.mockResolvedValue({ chapterOrderRevision: 5 })
+
+    if (action === 'create') await store.createChapterApi(book.id, 'Remaining')
+    else await store.deleteChapterApi(book.id, 'deleted')
+    await store.reorderChaptersApi(book.id, ['remaining'])
+
+    expect(getMock).toHaveBeenCalledWith('/api/v2/books/book%2Fid%20one')
+    expect(putMock).toHaveBeenCalledWith('/api/v2/books/book%2Fid%20one/chapters/order', {
+      baseRevision: 4,
+      orderedIds: ['remaining'],
+    })
+    expect(store.currentBook?.chapters).toEqual([
+      expect.objectContaining({ id: 'remaining', order: 0, imageCount: 2 }),
+    ])
+    expect(store.currentBook?.chapterCount).toBe(1)
+    expect(store.currentBook?.totalPages).toBe(2)
   })
 })

@@ -1210,6 +1210,64 @@ def test_last_visited_page_is_independent_last_write_wins(
     }
 
 
+def test_deleting_recreated_chapters_after_reordering_keeps_contiguous_ordinals(
+    content_platform,
+) -> None:
+    _root, _engine, repository, _storage, _importer, book, first = content_platform
+    book_id = str(book["id"])
+    removed = repository.create_chapter(book_id=book_id, title="Removed")
+    last = repository.create_chapter(book_id=book_id, title="Last")
+    repository.delete_chapter(str(removed["id"]))
+    replacement = repository.create_chapter(book_id=book_id, title="Replacement")
+    order = [str(first["id"]), str(replacement["id"]), str(last["id"])]
+    revision = repository.list_chapters(book_id)["book"]["chapter_order_revision"]
+    revision = repository.reorder_chapters(
+        book_id=book_id, ordered_ids=order, base_revision=revision,
+    )
+    for chapter_id in order:
+        repository.delete_chapter(chapter_id)
+        revision += 1
+        order = [value for value in order if value != chapter_id]
+        current = repository.list_chapters(book_id)
+        assert [(row["id"], row["ordinal"]) for row in current["chapters"]] == [
+            (value, index) for index, value in enumerate(order, start=1)
+        ]
+        assert current["book"]["chapter_order_revision"] == revision
+
+
+@pytest.mark.parametrize("deleted_index", [0, 1, 2, 3])
+def test_deleting_reordered_pages_keeps_remaining_content_and_ordinals(
+    content_platform, deleted_index,
+) -> None:
+    _root, _engine, repository, _storage, importer, _book, chapter = content_platform
+    chapter_id = str(chapter["id"])
+    ids = []
+    for index in range(4):
+        imported, _ = _import(
+            repository, importer, chapter_id=chapter_id,
+            payload=_image_bytes((20, 30), color=(index, 20, 30)),
+            logical_path=f"{index}.png", key=f"page-delete-{index}",
+        )
+        ids.append(str(imported["page"]["id"]))
+    order = ids[::-1]
+    revision = repository.list_pages(chapter_id=chapter_id, all_pages=True)["pageOrderRevision"]
+    revision = repository.reorder_pages(
+        chapter_id=chapter_id, ordered_ids=order, base_revision=revision,
+    )
+    remaining = [value for index, value in enumerate(order) if index != deleted_index]
+    documents = {value: repository.get_page_document(value) for value in remaining}
+    repository.delete_page(order[deleted_index])
+    current = repository.list_pages(chapter_id=chapter_id, all_pages=True)
+    assert [(row["id"], row["ordinal"]) for row in current["items"]] == [
+        (value, index) for index, value in enumerate(remaining, start=1)
+    ]
+    assert current["pageOrderRevision"] == revision + 1
+    assert {value: repository.get_page_document(value) for value in remaining} == documents
+    for page_id in remaining:
+        repository.delete_page(page_id)
+    assert repository.list_pages(chapter_id=chapter_id, all_pages=True)["items"] == []
+
+
 def test_page_import_and_chapter_order_cas_enforce_backend_ownership(
     content_platform,
 ) -> None:
