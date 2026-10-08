@@ -13,8 +13,8 @@ from sqlalchemy.engine import Connection
 
 DEFAULT_BUSY_TIMEOUT_MS = 5_000
 DATABASE_FILENAME = "saber.sqlite3"
-SQLITE_HEARTBEAT_BUSY_RETRY_LIMIT = 1
-SQLITE_HEARTBEAT_BUSY_RETRY_DELAY_SECONDS = 0.1
+SQLITE_BUSY_RETRY_LIMIT = 1
+SQLITE_BUSY_RETRY_DELAY_SECONDS = 0.1
 
 
 def is_sqlite_busy_error(exc: BaseException) -> bool:

@@ -10,7 +10,6 @@ import logging
 import os
 import socket
 import threading
-from collections.abc import Callable
 
 from src.backend_v2.api.app import ApiSettings, create_api_app
 from src.backend_v2.browser_extension.auth import (
@@ -20,10 +19,9 @@ from src.backend_v2.browser_extension.auth import (
 from src.backend_v2.import_guard import loaded_forbidden_api_modules
 from src.backend_v2.logging_config import configure_backend_logging
 from src.backend_v2.paths import data_root_fingerprint, ensure_data_root, resolve_data_root
-from src.backend_v2.runtime_heartbeat import EpochHeartbeat
 from src.backend_v2.runtime_identity import (
     API_BIND_FAILED_EXIT_CODE,
-    CHILD_LEASE_LOST_EXIT_CODE,
+    LAUNCHER_PARENT_LOST_EXIT_CODE,
     LauncherParentMonitor,
     RuntimeIdentity,
     start_launcher_parent_monitor,
@@ -100,22 +98,12 @@ def run_api(args: object) -> int:
             log_path,
         )
     identity = RuntimeIdentity.for_api(test_mode=args.test_mode)
-    heartbeat: EpochHeartbeat | None = None
-    repository: ProcessEpochRepository | None = None
     engine = create_sqlite_engine(database_path_for(data_root))
-    fenced = threading.Event()
-    close_server: Callable[[], None] | None = None
     parent_monitor: LauncherParentMonitor | None = None
-
-    def stop_fenced_server() -> None:
-        LOGGER.error("API 进程租约失效，正在停止服务")
-        fenced.set()
-        if close_server is not None:
-            close_server()
 
     def stop_orphaned_server() -> None:
         LOGGER.critical("Launcher 进程已退出，API 立即终止")
-        os._exit(CHILD_LEASE_LOST_EXIT_CODE)
+        os._exit(LAUNCHER_PARENT_LOST_EXIT_CODE)
 
     if not identity.test_mode:
         repository = ProcessEpochRepository(engine)
@@ -125,24 +113,13 @@ def run_api(args: object) -> int:
             token=identity.epoch_token,
         ):
             engine.dispose()
-            raise RuntimeError("Launcher-issued API epoch is missing, expired, or invalid")
-        heartbeat = EpochHeartbeat(
-            repository,
-            role="api",
-            identity=identity,
-            on_fenced=stop_fenced_server,
-        )
-        # API route/runtime construction can take longer than one lease on a
-        # busy machine.  The process owns the epoch as soon as validation
-        # succeeds, so renewal must cover initialization as well as serving.
-        heartbeat.start()
+            raise RuntimeError("Launcher-issued API epoch is missing or invalid")
         try:
             parent_monitor = start_launcher_parent_monitor(
                 stop_orphaned_server,
                 test_mode=identity.test_mode,
             )
         except BaseException:
-            heartbeat.stop()
             engine.dispose()
             raise
 
@@ -155,7 +132,6 @@ def run_api(args: object) -> int:
             ApiSettings(
                 data_root=data_root,
                 identity=identity,
-                epoch_healthy=lambda: not fenced.is_set(),
                 engine=engine,
                 host=args.host,
                 port=args.port,
@@ -200,9 +176,6 @@ def run_api(args: object) -> int:
             LOGGER.exception(message)
             user_log("error", message, level=logging.ERROR)
             return API_BIND_FAILED_EXIT_CODE
-        close_server = server.close
-        if fenced.is_set():
-            return CHILD_LEASE_LOST_EXIT_CODE
         def start_when_committed():
             while not business_ready(data_root):
                 if runtime_stop.wait(0.1):
@@ -226,8 +199,6 @@ def run_api(args: object) -> int:
             runtime_start_thread.join()
         if server is not None:
             LOGGER.debug("API 服务正在关闭")
-        if heartbeat is not None:
-            heartbeat.stop()
         if parent_monitor is not None:
             parent_monitor.stop()
         if server is not None:
@@ -238,6 +209,4 @@ def run_api(args: object) -> int:
         engine.dispose()
         if server is not None:
             LOGGER.debug("API 服务已关闭")
-    if fenced.is_set():
-        return CHILD_LEASE_LOST_EXIT_CODE
     return 0

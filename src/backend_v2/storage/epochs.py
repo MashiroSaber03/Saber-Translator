@@ -1,9 +1,9 @@
-"""Authoritative process epoch, heartbeat, and recovery repository."""
+"""Launcher-owned process identities and recovery repository."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 import hashlib
 import json
 import secrets
@@ -60,11 +60,8 @@ class ReconcileResult:
 
 
 class ProcessEpochRepository:
-    def __init__(self, engine: Engine, *, lease_seconds: int = 12) -> None:
-        if lease_seconds < 3:
-            raise ValueError("lease_seconds must be at least 3")
+    def __init__(self, engine: Engine) -> None:
         self.engine = engine
-        self.lease_seconds = lease_seconds
 
     def register(self, registration: EpochRegistration) -> None:
         if (
@@ -74,7 +71,6 @@ class ProcessEpochRepository:
         ):
             raise ValueError("epoch pid must be non-negative")
         now = utcnow()
-        expires_at = now + timedelta(seconds=self.lease_seconds)
         with immediate_transaction(self.engine) as connection:
             connection.execute(
                 insert(process_epochs).values(
@@ -83,8 +79,10 @@ class ProcessEpochRepository:
                     token_hash=hash_epoch_token(registration.token),
                     pid=registration.pid,
                     status="active",
+                    # Required by existing data-v2 schemas; neither timestamp
+                    # determines execution rights. Launcher owns status changes.
                     heartbeat_at=now,
-                    lease_expires_at=expires_at,
+                    lease_expires_at=now,
                 )
             )
 
@@ -95,14 +93,12 @@ class ProcessEpochRepository:
         epoch_id: str,
         token: str,
     ) -> bool:
-        now = utcnow()
         with self.engine.connect() as connection:
             stored_hash = connection.execute(
                 select(process_epochs.c.token_hash).where(
                     process_epochs.c.id == epoch_id,
                     process_epochs.c.role == role,
                     process_epochs.c.status == "active",
-                    process_epochs.c.lease_expires_at > now,
                 )
             ).scalar_one_or_none()
         return stored_hash is not None and secrets.compare_digest(
@@ -127,34 +123,6 @@ class ProcessEpochRepository:
             ).rowcount
         return changed == 1
 
-    def renew(
-        self,
-        *,
-        role: Literal["api", "worker"],
-        epoch_id: str,
-        token: str,
-    ) -> bool:
-        now = utcnow()
-        expires_at = now + timedelta(seconds=self.lease_seconds)
-        token_hash = hash_epoch_token(token)
-        with self.engine.begin() as connection:
-            changed = connection.execute(
-                update(process_epochs)
-                .where(
-                    process_epochs.c.id == epoch_id,
-                    process_epochs.c.role == role,
-                    process_epochs.c.status == "active",
-                    process_epochs.c.token_hash == token_hash,
-                    process_epochs.c.lease_expires_at > now,
-                )
-                .values(
-                    heartbeat_at=now,
-                    lease_expires_at=expires_at,
-                    updated_at=now,
-                )
-            ).rowcount
-        return changed == 1
-
     def active_epochs(self, role: Literal["api", "worker"]) -> list[str]:
         with self.engine.connect() as connection:
             return list(
@@ -172,7 +140,6 @@ class ProcessEpochRepository:
         role: Literal["api", "worker"],
         epoch_id: str,
     ) -> bool:
-        now = utcnow()
         with self.engine.connect() as connection:
             return bool(
                 connection.execute(
@@ -181,7 +148,6 @@ class ProcessEpochRepository:
                             process_epochs.c.id == epoch_id,
                             process_epochs.c.role == role,
                             process_epochs.c.status == "active",
-                            process_epochs.c.lease_expires_at > now,
                         )
                     )
                 ).scalar()

@@ -141,14 +141,12 @@ class SchedulingPolicyRepository:
     def overview(self) -> dict[str, Any]:
         policy = self.load()
         memory = psutil.virtual_memory()
-        now = utcnow()
         with self.engine.connect() as connection:
             worker_online = connection.execute(
                 select(process_epochs.c.id)
                 .where(
                     process_epochs.c.role == "worker",
                     process_epochs.c.status == "active",
-                    process_epochs.c.lease_expires_at > now,
                 )
                 .limit(1)
             ).scalar_one_or_none() is not None

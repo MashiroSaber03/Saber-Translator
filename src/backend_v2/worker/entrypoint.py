@@ -12,7 +12,6 @@ import os
 from pathlib import Path
 import signal
 import threading
-import time
 from typing import Any
 
 from src.backend_v2.local_models import (
@@ -21,9 +20,8 @@ from src.backend_v2.local_models import (
 )
 from src.backend_v2.logging_config import configure_backend_logging
 from src.backend_v2.paths import data_root_fingerprint, ensure_data_root, resolve_data_root
-from src.backend_v2.runtime_heartbeat import EpochHeartbeat
 from src.backend_v2.runtime_identity import (
-    CHILD_LEASE_LOST_EXIT_CODE,
+    LAUNCHER_PARENT_LOST_EXIT_CODE,
     LauncherParentMonitor,
     RuntimeIdentity,
     WORKER_RECYCLE_EXIT_CODE,
@@ -98,7 +96,6 @@ def run_worker(args: object) -> int:
         )
     identity = RuntimeIdentity.for_worker(test_mode=args.test_mode)
     engine = None
-    repository = None
     if not identity.test_mode:
         engine = create_sqlite_engine(database_path_for(data_root))
         repository = ProcessEpochRepository(engine)
@@ -108,7 +105,7 @@ def run_worker(args: object) -> int:
             token=identity.epoch_token,
         ):
             engine.dispose()
-            raise RuntimeError("Launcher-issued Worker epoch is missing, expired, or invalid")
+            raise RuntimeError("Launcher-issued Worker epoch is missing or invalid")
 
     if args.probe:
         print(
@@ -129,16 +126,6 @@ def run_worker(args: object) -> int:
 
     stop_event = threading.Event()
     parent_monitor: LauncherParentMonitor | None = None
-    heartbeat = (
-        EpochHeartbeat(
-            repository,
-            role="worker",
-            identity=identity,
-            on_fenced=stop_event.set,
-        )
-        if repository is not None
-        else None
-    )
 
     def request_stop(_signum: int, _frame: object) -> None:
         LOGGER.debug("Worker 收到终止信号")
@@ -146,21 +133,17 @@ def run_worker(args: object) -> int:
 
     def stop_orphaned_worker() -> None:
         LOGGER.critical("Launcher 进程已退出，Worker 立即终止")
-        os._exit(CHILD_LEASE_LOST_EXIT_CODE)
+        os._exit(LAUNCHER_PARENT_LOST_EXIT_CODE)
 
     signal.signal(signal.SIGINT, request_stop)
     signal.signal(signal.SIGTERM, request_stop)
 
-    if heartbeat is not None:
-        heartbeat.start()
     try:
         parent_monitor = start_launcher_parent_monitor(
             stop_orphaned_worker,
             test_mode=identity.test_mode,
         )
     except BaseException:
-        if heartbeat is not None:
-            heartbeat.stop()
         if engine is not None:
             engine.dispose()
         raise
@@ -482,52 +465,6 @@ def run_worker(args: object) -> int:
                 )
                 os._exit(WORKER_RECYCLE_EXIT_CODE)
 
-            auxiliary_lock = threading.Lock()
-            auxiliary_label: str | None = None
-
-            def run_auxiliary(label: str, callback: Any) -> bool:
-                nonlocal auxiliary_label
-                with auxiliary_lock:
-                    auxiliary_label = label
-                try:
-                    return bool(callback())
-                finally:
-                    with auxiliary_lock:
-                        auxiliary_label = None
-
-            def watch_auxiliary_work() -> None:
-                queued_since: float | None = None
-                while not stop_event.wait(0.25):
-                    with auxiliary_lock:
-                        label = auxiliary_label
-                    if label is None:
-                        queued_since = None
-                        continue
-                    try:
-                        durable_work_waiting = (
-                            job_repository.has_ready_queued_job()
-                        )
-                    except Exception as exc:
-                        if not is_sqlite_busy_error(exc):
-                            LOGGER.warning(
-                                "Worker 辅助工作看门狗读取队列失败",
-                                exc_info=exc,
-                            )
-                        continue
-                    if not durable_work_waiting:
-                        queued_since = None
-                        continue
-                    if queued_since is None:
-                        queued_since = time.monotonic()
-                        continue
-                    if time.monotonic() - queued_since < 1.5:
-                        continue
-                    LOGGER.critical(
-                        "辅助工作阻塞持久任务领取，立即回收 Worker：kind=%s",
-                        label,
-                    )
-                    os._exit(WORKER_RECYCLE_EXIT_CODE)
-
             job_loop = JobWorkerLoop(
                 job_repository,
                 worker_epoch_id=identity.epoch_id,
@@ -541,14 +478,8 @@ def run_worker(args: object) -> int:
                     step_kind,
                     insight_derived,
                 ),
-                safe_point=lambda: run_auxiliary(
-                    "interactive",
-                    run_immediate_work,
-                ),
-                idle_work=lambda: run_auxiliary(
-                    "maintenance",
-                    run_idle_work,
-                ),
+                safe_point=run_immediate_work,
+                idle_work=run_idle_work,
                 scheduling_policy=(
                     scheduling_policy.load
                     if scheduling_policy is not None
@@ -561,11 +492,6 @@ def run_worker(args: object) -> int:
                 on_control_timeout=abort_stalled_attempt,
                 plugin_runtime=plugin_job_runtime,
             )
-            threading.Thread(
-                target=watch_auxiliary_work,
-                name="worker-auxiliary-watchdog",
-                daemon=True,
-            ).start()
             _write_ready_marker(data_root, identity)
             LOGGER.debug(
                 "Worker 服务初始化完成并写入 ready marker："
@@ -581,16 +507,10 @@ def run_worker(args: object) -> int:
                 job_loop.run(stop_event)
     finally:
         LOGGER.debug("Worker 正在关闭")
-        if heartbeat is not None:
-            heartbeat.stop()
         if parent_monitor is not None:
             parent_monitor.stop()
         if engine is not None:
             engine.dispose()
         LOGGER.debug("Worker 已关闭")
 
-    return (
-        CHILD_LEASE_LOST_EXIT_CODE
-        if heartbeat is not None and not heartbeat.healthy
-        else 0
-    )
+    return 0

@@ -76,7 +76,6 @@ class WorkerModelControlRepository:
                 .where(
                     process_epochs.c.role == "worker",
                     process_epochs.c.status == "active",
-                    process_epochs.c.lease_expires_at > now,
                 )
                 .order_by(process_epochs.c.created_at.desc())
                 .limit(1)
@@ -118,7 +117,6 @@ class WorkerModelControlRepository:
         *,
         worker_epoch_id: str,
     ) -> dict[str, object] | None:
-        now = utcnow()
         with self.engine.connect() as connection:
             row = connection.execute(
                 select(
@@ -129,7 +127,6 @@ class WorkerModelControlRepository:
                     process_epochs.c.id == worker_epoch_id,
                     process_epochs.c.role == "worker",
                     process_epochs.c.status == "active",
-                    process_epochs.c.lease_expires_at > now,
                 )
             ).mappings().one_or_none()
             if (
@@ -254,7 +251,6 @@ class WorkerModelControlRepository:
                     process_epochs.c.id == worker_epoch_id,
                     process_epochs.c.role == "worker",
                     process_epochs.c.status == "active",
-                    process_epochs.c.lease_expires_at > now,
                     process_epochs.c.model_release_request_id == command_id,
                 )
                 .values(

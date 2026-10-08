@@ -14,17 +14,14 @@ from urllib.request import urlopen
 
 import psutil
 import pytest
-from sqlalchemy import select, update
+from sqlalchemy import select
 
 from src.backend_v2.launcher.entrypoint import (
-    API_HEALTH_CHECK_INTERVAL_SECONDS,
-    API_HEALTH_FAILURE_LIMIT,
     MAX_CONSECUTIVE_RESTARTS,
     RESTART_STABILITY_SECONDS,
     TORCH_CUDNN_V8_API_LRU_CACHE_LIMIT_ENV,
     WORKER_CUDNN_V8_API_LRU_CACHE_LIMIT,
     ManagedChild,
-    _api_health_requires_restart,
     _child_environment,
     _reset_restart_count_after_stable_run,
     _start_child_with_retries,
@@ -44,6 +41,7 @@ from src.backend_v2.storage.database import create_sqlite_engine, database_path_
 from src.backend_v2.storage.epochs import EpochRegistration
 from src.backend_v2.storage.schema import process_epochs
 from src.backend_v2.worker.entrypoint import _insight_layer_handler
+from src.backend_v2.jobs.repository import JobItemSpec, JobQueueRepository, JobSpec
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -142,7 +140,7 @@ def test_api_probe_loads_only_v2_routes_and_no_worker_modules(tmp_path: Path) ->
     )
 
 
-def test_api_epoch_heartbeat_starts_before_application_initialization(
+def test_api_validates_identity_before_application_initialization(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -160,17 +158,8 @@ def test_api_epoch_heartbeat_starts_before_application_initialization(
             pass
 
         def validate(self, **_kwargs: object) -> bool:
+            events.append("identity_validated")
             return True
-
-    class FakeHeartbeat:
-        def __init__(self, *_args: object, **_kwargs: object) -> None:
-            pass
-
-        def start(self) -> None:
-            events.append("heartbeat_started")
-
-        def stop(self) -> None:
-            events.append("heartbeat_stopped")
 
     class FakeRuntime:
         def close(self) -> None:
@@ -188,7 +177,7 @@ def test_api_epoch_heartbeat_starts_before_application_initialization(
 
     def create_app(_settings: object) -> object:
         events.append("app_initialized")
-        assert events[0] == "heartbeat_started"
+        assert events[0] == "identity_validated"
         return fake_app
 
     monkeypatch.setattr(
@@ -199,17 +188,16 @@ def test_api_epoch_heartbeat_starts_before_application_initialization(
         ),
     )
     monkeypatch.setattr(entrypoint, "ProcessEpochRepository", FakeEpochRepository)
-    monkeypatch.setattr(entrypoint, "EpochHeartbeat", FakeHeartbeat)
     monkeypatch.setattr(entrypoint, "create_sqlite_engine", lambda _path: FakeEngine())
     monkeypatch.setattr(entrypoint, "create_api_app", create_app)
     monkeypatch.setattr(entrypoint, "loaded_forbidden_api_modules", lambda: [])
     monkeypatch.setattr(entrypoint, "start_launcher_parent_monitor", lambda *_args, **_kwargs: None)
 
     from src.backend_v2.storage.lifecycle import initialize_database
-    initialize_database(tmp_path / "api-heartbeat")
+    initialize_database(tmp_path / "api-identity")
     result = entrypoint.run_api(
         SimpleNamespace(
-            data_dir=str(tmp_path / "api-heartbeat"),
+            data_dir=str(tmp_path / "api-identity"),
             probe=True,
             test_mode=False,
             host="127.0.0.1",
@@ -220,9 +208,8 @@ def test_api_epoch_heartbeat_starts_before_application_initialization(
 
     assert result == 0
     assert events == [
-        "heartbeat_started",
+        "identity_validated",
         "app_initialized",
-        "heartbeat_stopped",
         "runtime_closed",
         "engine_disposed",
     ]
@@ -375,37 +362,6 @@ def test_posix_parent_monitor_stops_after_launcher_parent_changes() -> None:
     )
 
     assert lost == [True]
-
-
-def test_launcher_requires_repeated_api_health_failures_before_restart(
-    monkeypatch,
-) -> None:
-    registration = EpochRegistration(
-        epoch_id="api-epoch",
-        token="token",
-        role="api",
-        pid=123,
-    )
-    managed = ManagedChild(
-        role="api",
-        process=object(),  # type: ignore[arg-type]
-        registration=registration,
-        ready_at=0.0,
-        next_health_check_at=0.0,
-    )
-    monkeypatch.setattr(
-        "src.backend_v2.launcher.entrypoint._api_is_healthy",
-        lambda _port, *, expected_epoch_id, expected_epoch_token: False,
-    )
-
-    for failure in range(1, API_HEALTH_FAILURE_LIMIT):
-        now = failure * API_HEALTH_CHECK_INTERVAL_SECONDS
-        assert not _api_health_requires_restart(managed, port=5000, now=now)
-        assert managed.health_failures == failure
-
-    now = API_HEALTH_FAILURE_LIMIT * API_HEALTH_CHECK_INTERVAL_SECONDS
-    assert _api_health_requires_restart(managed, port=5000, now=now)
-    assert managed.health_failures == API_HEALTH_FAILURE_LIMIT
 
 
 def test_stop_children_terminates_descendants_before_wrapper(monkeypatch) -> None:
@@ -662,8 +618,196 @@ def test_launcher_health_and_kill_on_close(tmp_path: Path) -> None:
     _wait_until(all_children_gone, timeout=10)
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows native GIL blocking")
+def test_live_api_and_worker_survive_native_blocking_and_publish_result(tmp_path: Path) -> None:
+    # Keep the production Launcher, API, Worker and job loop. Only replace a
+    # test handler and add a test route to reproduce a native call holding GIL.
+    wrapper = tmp_path / "blocking_roles.py"
+    wrapper.write_text(
+        f"import sys\nsys.path.insert(0, {str(PROJECT_ROOT)!r})\n" + '''
+import ctypes
+from pathlib import Path
+from flask import jsonify
+from src.backend_v2.launcher import entrypoint as launcher
+original_command = launcher._role_command
+def role_command(*args, **kwargs):
+    command = original_command(*args, **kwargs)
+    command[1] = __file__
+    return command
+launcher._role_command = role_command
+role = sys.argv[sys.argv.index('--role') + 1]
+def block():
+    sleep = ctypes.PyDLL('kernel32').Sleep
+    sleep.argtypes = [ctypes.c_ulong]
+    sleep.restype = None
+    sleep(15000)
+if role == 'worker':
+    from src.backend_v2.jobs.worker_loop import JobWorkerLoop
+    original_init = JobWorkerLoop.__init__
+    def package(*_args):
+        root = Path(sys.argv[sys.argv.index('--data-dir') + 1])
+        (root / 'native-block-started').touch()
+        block()
+        return {'nativeCallCompleted': True}
+    def initialize(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        self.handlers['package'] = package
+    JobWorkerLoop.__init__ = initialize
+elif role == 'api':
+    from src.backend_v2.api import entrypoint as api
+    original_app = api.create_api_app
+    def create_app(*args, **kwargs):
+        app = original_app(*args, **kwargs)
+        def native_block():
+            block()
+            return jsonify({'nativeCallCompleted': True})
+        app.add_url_rule('/__test_native_block', view_func=native_block)
+        return app
+    api.create_api_app = create_app
+import saber_v2
+raise SystemExit(saber_v2.main())
+''', encoding="utf-8",
+    )
+    port = _free_port()
+    root = tmp_path / "runtime"
+    process = subprocess.Popen(
+        [sys.executable, str(wrapper), "--role", "launcher", "--data-dir",
+         str(root), "--host", "127.0.0.1", "--port", str(port), "--no-browser"],
+        cwd=PROJECT_ROOT, env=_clean_role_environment(),
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    engine = None
+    api_results = []
+    api_thread = None
+    child_pids = []
+    try:
+        _wait_until(lambda: (root / "runtime/worker-ready.json").exists(), timeout=30)
+        engine = create_sqlite_engine(database_path_for(root))
+        with engine.connect() as connection:
+            initial_epochs = connection.execute(
+                select(process_epochs.c.id, process_epochs.c.pid)
+                .where(process_epochs.c.role.in_(("api", "worker")))
+            ).all()
+            assert connection.execute(
+                select(process_epochs.c.id).where(process_epochs.c.role == "launcher")
+            ).all() == []
+        child_pids = [int(row.pid) for row in initial_epochs]
+        assert len(initial_epochs) == 2
+        repository = JobQueueRepository(engine)
+        job = repository.create_batch(
+            display_name="Native blocking regression",
+            specs=[JobSpec(kind="export", config={"mode": "test"},
+                           items=(JobItemSpec(page_id=None, step_kinds=("package",)),))],
+        )
+        job_id = str(job["jobIds"][0])
+        def block_api():
+            with urlopen(f"http://127.0.0.1:{port}/__test_native_block", timeout=40) as response:
+                api_results.append(json.loads(response.read()))
+        api_thread = threading.Thread(target=block_api, daemon=True)
+        api_thread.start()
+        _wait_until(lambda: (root / "native-block-started").exists(), timeout=15)
+        time.sleep(13)
+        assert process.poll() is None
+        assert all(psutil.pid_exists(pid) for pid in child_pids)
+        with engine.connect() as connection:
+            epochs = connection.execute(
+                select(process_epochs.c.id, process_epochs.c.status)
+                .where(process_epochs.c.role.in_(("api", "worker")))
+            ).all()
+        assert epochs == [(row.id, "active") for row in initial_epochs]
+        _wait_until(lambda: repository.get_job(job_id)["status"] == "completed", timeout=15)
+        api_thread.join(timeout=15)
+        assert api_results == [{"nativeCallCompleted": True}]
+    finally:
+        if process.poll() is None:
+            process.terminate()
+        process.wait(timeout=10)
+        if api_thread is not None:
+            api_thread.join(timeout=1)
+        if engine is not None:
+            engine.dispose()
+    _wait_until(lambda: all(not psutil.pid_exists(pid) for pid in child_pids), timeout=10)
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Windows process supervision integration")
-def test_worker_self_fences_and_launcher_restarts_it_without_restarting_api(
+def test_queued_job_waits_for_running_auxiliary_work_without_restarting_worker(tmp_path: Path) -> None:
+    wrapper = tmp_path / "slow_auxiliary.py"
+    wrapper.write_text(
+        f"import sys\nsys.path.insert(0, {str(PROJECT_ROOT)!r})\n" + '''
+import time
+from pathlib import Path
+from src.backend_v2.launcher import entrypoint as launcher
+original_command = launcher._role_command
+def role_command(*args, **kwargs):
+    command = original_command(*args, **kwargs)
+    command[1] = __file__
+    return command
+launcher._role_command = role_command
+if sys.argv[sys.argv.index('--role') + 1] == 'worker':
+    from src.backend_v2.operations.executor import WorkerOperationRunner
+    from src.backend_v2.jobs.worker_loop import JobWorkerLoop
+    root = Path(sys.argv[sys.argv.index('--data-dir') + 1])
+    original_run_one = WorkerOperationRunner.run_one
+    def run_one(self):
+        trigger = root / 'auxiliary-trigger'
+        if trigger.exists():
+            trigger.unlink()
+            (root / 'auxiliary-started').touch()
+            time.sleep(6)
+            (root / 'auxiliary-finished').touch()
+            return True
+        return original_run_one(self)
+    WorkerOperationRunner.run_one = run_one
+    original_init = JobWorkerLoop.__init__
+    def initialize(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        self.handlers['package'] = lambda *_args: {'done': True}
+    JobWorkerLoop.__init__ = initialize
+import saber_v2
+raise SystemExit(saber_v2.main())
+''', encoding="utf-8",
+    )
+    port = _free_port()
+    root = tmp_path / "runtime"
+    process = subprocess.Popen(
+        [sys.executable, str(wrapper), "--role", "launcher", "--data-dir",
+         str(root), "--host", "127.0.0.1", "--port", str(port), "--no-browser"],
+        cwd=PROJECT_ROOT, env=_clean_role_environment(),
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    engine = None
+    children = []
+    try:
+        marker_path = root / "runtime/worker-ready.json"
+        _wait_until(marker_path.exists, timeout=30)
+        original = json.loads(marker_path.read_text(encoding="utf-8"))
+        children = [child.pid for child in psutil.Process(process.pid).children(recursive=True)]
+        (root / "auxiliary-trigger").touch()
+        _wait_until(lambda: (root / "auxiliary-started").exists())
+        engine = create_sqlite_engine(database_path_for(root))
+        repository = JobQueueRepository(engine)
+        result = repository.create_batch(
+            display_name="Queued behind auxiliary work",
+            specs=[JobSpec(kind="export", config={"mode": "test"},
+                           items=(JobItemSpec(page_id=None, step_kinds=("package",)),))],
+        )
+        job_id = str(result["jobIds"][0])
+        _wait_until(lambda: repository.get_job(job_id)["status"] == "completed", timeout=20)
+        assert (root / "auxiliary-finished").exists()
+        current = json.loads(marker_path.read_text(encoding="utf-8"))
+        assert current["epochId"] == original["epochId"]
+        assert current["pid"] == original["pid"]
+    finally:
+        if process.poll() is None:
+            process.terminate()
+        process.wait(timeout=10)
+        if engine is not None:
+            engine.dispose()
+    _wait_until(lambda: all(not psutil.pid_exists(pid) for pid in children), timeout=10)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows process supervision integration")
+def test_launcher_restarts_exited_worker_without_restarting_api(
     tmp_path: Path,
 ) -> None:
     port = _free_port()
@@ -711,14 +855,7 @@ def test_worker_self_fences_and_launcher_restarts_it_without_restarting_api(
         ) as response:
             api_epoch = json.loads(response.read())["epochId"]
 
-        engine = create_sqlite_engine(database_path_for(data_root))
-        with engine.begin() as connection:
-            connection.execute(
-                update(process_epochs)
-                .where(process_epochs.c.id == initial_marker["epochId"])
-                .values(status="lost")
-            )
-        engine.dispose()
+        psutil.Process(int(initial_marker["pid"])).terminate()
 
         def worker_restarted() -> bool:
             try:
@@ -728,6 +865,8 @@ def test_worker_self_fences_and_launcher_restarts_it_without_restarting_api(
             return current.get("epochId") != initial_marker["epochId"]
 
         _wait_until(worker_restarted, timeout=20)
+        with sqlite3.connect(database_path_for(data_root)) as database:
+            assert database.execute("SELECT status FROM process_epochs WHERE id=?", (initial_marker["epochId"],)).fetchone()[0] == "lost"
         _wait_until(lambda: not psutil.pid_exists(int(initial_marker["pid"])), timeout=10)
         with urlopen(
             f"http://127.0.0.1:{port}/api/v2/health",
@@ -750,7 +889,7 @@ def test_worker_self_fences_and_launcher_restarts_it_without_restarting_api(
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows process supervision integration")
-def test_api_self_fences_and_launcher_restarts_it_without_restarting_worker(
+def test_launcher_restarts_exited_api_without_restarting_worker(
     tmp_path: Path,
 ) -> None:
     port = _free_port()
@@ -814,12 +953,8 @@ def test_api_self_fences_and_launcher_restarts_it_without_restarting_worker(
                     )
                 ).scalar_one()
             )
-            connection.execute(
-                update(process_epochs)
-                .where(process_epochs.c.id == initial_api_epoch)
-                .values(status="lost")
-            )
         engine.dispose()
+        psutil.Process(initial_api_pid).terminate()
 
         replacement_epoch: str | None = None
 
@@ -837,6 +972,8 @@ def test_api_self_fences_and_launcher_restarts_it_without_restarting_worker(
             return response.status == 200 and replacement_epoch != initial_api_epoch
 
         _wait_until(api_restarted, timeout=20)
+        with sqlite3.connect(database_path_for(data_root)) as database:
+            assert database.execute("SELECT status FROM process_epochs WHERE id=?", (initial_api_epoch,)).fetchone()[0] == "lost"
         _wait_until(lambda: not psutil.pid_exists(initial_api_pid), timeout=10)
         current_worker_marker = json.loads(marker_path.read_text(encoding="utf-8"))
         assert current_worker_marker["epochId"] == initial_worker_marker["epochId"]

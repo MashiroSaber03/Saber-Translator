@@ -44,8 +44,8 @@ from src.backend_v2.redaction import (
 )
 from src.backend_v2.settings.resolver import SettingsResolver
 from src.backend_v2.storage.database import (
-    SQLITE_HEARTBEAT_BUSY_RETRY_DELAY_SECONDS,
-    SQLITE_HEARTBEAT_BUSY_RETRY_LIMIT,
+    SQLITE_BUSY_RETRY_DELAY_SECONDS,
+    SQLITE_BUSY_RETRY_LIMIT,
     immediate_transaction,
     is_sqlite_busy_error,
 )
@@ -563,7 +563,7 @@ class TransientRequestRepository:
         request_id: str,
         connection_token: str,
     ) -> bool:
-        for attempt in range(SQLITE_HEARTBEAT_BUSY_RETRY_LIMIT + 1):
+        for attempt in range(SQLITE_BUSY_RETRY_LIMIT + 1):
             try:
                 with self.engine.begin() as connection:
                     changed = connection.execute(
@@ -581,7 +581,7 @@ class TransientRequestRepository:
             except Exception as exc:
                 if (
                     not is_sqlite_busy_error(exc)
-                    or attempt >= SQLITE_HEARTBEAT_BUSY_RETRY_LIMIT
+                    or attempt >= SQLITE_BUSY_RETRY_LIMIT
                 ):
                     raise
                 LOGGER.debug(
@@ -589,9 +589,9 @@ class TransientRequestRepository:
                     "request=%s retry=%s/%s",
                     request_id[:8],
                     attempt + 1,
-                    SQLITE_HEARTBEAT_BUSY_RETRY_LIMIT,
+                    SQLITE_BUSY_RETRY_LIMIT,
                 )
-                time.sleep(SQLITE_HEARTBEAT_BUSY_RETRY_DELAY_SECONDS)
+                time.sleep(SQLITE_BUSY_RETRY_DELAY_SECONDS)
 
     def consume(
         self,
@@ -690,12 +690,10 @@ class TransientRequestRepository:
                 process_epochs.c.id == fence.worker_epoch_id,
                 process_epochs.c.role == "worker",
                 process_epochs.c.status == "active",
-                process_epochs.c.lease_expires_at > utcnow(),
             ),
         )
 
     def _worker_is_active(self, worker_epoch_id: str) -> bool:
-        now = utcnow()
         with self.engine.connect() as connection:
             return bool(
                 connection.execute(
@@ -704,7 +702,6 @@ class TransientRequestRepository:
                             process_epochs.c.id == worker_epoch_id,
                             process_epochs.c.role == "worker",
                             process_epochs.c.status == "active",
-                            process_epochs.c.lease_expires_at > now,
                         )
                     )
                 ).scalar()

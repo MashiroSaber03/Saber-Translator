@@ -612,7 +612,7 @@ class OperationRepository:
             raise ValueError("operation event payload must be an object")
         now = utcnow()
         with immediate_transaction(self.engine) as connection:
-            self._assert_fence(connection, fence, now)
+            self._assert_fence(connection, fence)
             secret_values = _operation_secret_values(
                 connection,
                 fence.operation_id,
@@ -648,13 +648,11 @@ class OperationRepository:
             operations.c.status == "pending",
             operations.c.kind.in_(tuple(allowed_kinds)),
         )
-        now = utcnow()
         with self.engine.connect() as connection:
             self._assert_epoch(
                 connection,
                 role=executor_role,
                 epoch_id=executor_epoch_id,
-                now=now,
             )
             pending_id = connection.execute(
                 select(operations.c.id)
@@ -671,7 +669,6 @@ class OperationRepository:
                 connection,
                 role=executor_role,
                 epoch_id=executor_epoch_id,
-                now=now,
             )
             row = connection.execute(
                 select(operations)
@@ -836,7 +833,7 @@ class OperationRepository:
     ) -> None:
         now = utcnow()
         with immediate_transaction(self.engine) as connection:
-            row = self._assert_fence(connection, fence, now)
+            row = self._assert_fence(connection, fence)
             secret_values = _operation_secret_values(
                 connection,
                 fence.operation_id,
@@ -1006,24 +1003,21 @@ class OperationRepository:
         *,
         role: str,
         epoch_id: str,
-        now: datetime,
     ) -> None:
         value = connection.execute(
             select(process_epochs.c.id).where(
                 process_epochs.c.id == epoch_id,
                 process_epochs.c.role == role,
                 process_epochs.c.status == "active",
-                process_epochs.c.lease_expires_at > now,
             )
         ).scalar_one_or_none()
         if value is None:
-            raise OperationFenced(f"{role} epoch is inactive or expired")
+            raise OperationFenced(f"{role} epoch is inactive")
 
     @staticmethod
     def _assert_fence(
         connection: Connection,
         fence: OperationFence,
-        now: datetime,
     ) -> Mapping[str, Any]:
         row = connection.execute(
             select(operations).where(
@@ -1037,7 +1031,6 @@ class OperationRepository:
                         process_epochs.c.id == fence.executor_epoch_id,
                         process_epochs.c.role == fence.executor_role,
                         process_epochs.c.status == "active",
-                        process_epochs.c.lease_expires_at > now,
                     )
                 ),
             )
@@ -1212,13 +1205,11 @@ class RenderRequestRepository:
         # The render executor polls frequently.  Avoid taking SQLite's write
         # reservation when there is no eligible work; the transactional query
         # below remains the authoritative claim and safely handles races.
-        now = utcnow()
         with self.engine.connect() as connection:
             OperationRepository._assert_epoch(
                 connection,
                 role="api",
                 epoch_id=api_epoch_id,
-                now=now,
             )
             has_pending = connection.execute(
                 select(render_requests.c.id)
@@ -1237,7 +1228,7 @@ class RenderRequestRepository:
         now = utcnow()
         with immediate_transaction(self.engine) as connection:
             OperationRepository._assert_epoch(
-                connection, role="api", epoch_id=api_epoch_id, now=now
+                connection, role="api", epoch_id=api_epoch_id
             )
             row = connection.execute(
                 select(render_requests)
@@ -1309,7 +1300,6 @@ class RenderRequestRepository:
                             process_epochs.c.id == fence.api_epoch_id,
                             process_epochs.c.role == "api",
                             process_epochs.c.status == "active",
-                            process_epochs.c.lease_expires_at > now,
                         )
                     ),
                 )
@@ -1388,7 +1378,6 @@ class RenderRequestRepository:
                             process_epochs.c.id == fence.api_epoch_id,
                             process_epochs.c.role == "api",
                             process_epochs.c.status == "active",
-                            process_epochs.c.lease_expires_at > now,
                         )
                     ),
                 )

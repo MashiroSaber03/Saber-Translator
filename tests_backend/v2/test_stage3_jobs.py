@@ -534,6 +534,58 @@ def test_step_completion_events_identify_page_kind_and_book(job_platform) -> Non
     assert completed[0]["payload"]["bookId"] == str(book["id"])
 
 
+@pytest.mark.parametrize("execution_mode", ["sequential", "parallel"])
+@pytest.mark.parametrize(
+    "step_kind", ["detect", "style_apply_document", "text_import_apply"],
+)
+def test_step_publication_skips_downstream_steps_in_progress(
+    job_platform, execution_mode: str, step_kind: str,
+) -> None:
+    _engine, repository, _book, chapter, worker_epoch_id = job_platform
+    created = repository.create_batch(
+        display_name="publication skips rendering",
+        specs=[
+            JobSpec(
+                kind="translation",
+                chapter_id=str(chapter["id"]),
+                config={"executionMode": execution_mode},
+                items=(
+                    JobItemSpec(
+                        page_id=None, step_kinds=(step_kind, "render", "save"),
+                    ),
+                ),
+            )
+        ],
+    )
+    job_id = str(created["jobIds"][0])
+    fence = repository.claim_next(worker_epoch_id=worker_epoch_id)
+    assert fence is not None
+    step = repository.next_step(fence)
+    assert step is not None
+
+    def publish(connection) -> None:
+        connection.execute(
+            update(job_steps)
+            .where(
+                job_steps.c.job_item_id == step["itemId"],
+                job_steps.c.kind.in_(("render", "save")),
+                job_steps.c.status == "pending",
+            )
+            .values(status="skipped")
+        )
+
+    repository.complete_step(
+        fence, step_id=str(step["stepId"]), checkpoint={}, publisher=publish,
+    )
+    # Inspect before finalization can rebuild and hide a stale projection.
+    detail = repository.get_job(job_id)
+    pools = {pool["kind"]: pool for pool in detail["progress"]["pools"]}
+    assert pools[step_kind]["completed"] == 1
+    assert pools["render"]["skipped"] == pools["save"]["skipped"] == 1
+    assert detail["progress"]["completedItems"] == 1
+    assert repository.finish_if_complete(fence) == "completed"
+
+
 def test_step_publication_persists_mutated_checkpoint_and_can_skip(
     job_platform,
 ) -> None:
@@ -902,8 +954,6 @@ def test_lost_worker_epoch_fences_all_late_writes(job_platform) -> None:
     step = repository.next_step(fence)
     assert step is not None
     with engine.begin() as connection:
-        from src.backend_v2.storage.schema import process_epochs
-
         connection.execute(
             update(process_epochs)
             .where(process_epochs.c.id == worker_epoch_id)
@@ -1498,12 +1548,7 @@ def test_persistent_queue_pause_blocks_only_new_job_admission(job_platform) -> N
 def test_queue_snapshot_reports_offline_worker_wait(job_platform) -> None:
     engine, repository, _book, _chapter, worker_epoch_id = job_platform
     _create_job(repository, kind="export")
-    with engine.begin() as connection:
-        connection.execute(
-            update(process_epochs)
-            .where(process_epochs.c.id == worker_epoch_id)
-            .values(lease_expires_at=utcnow() - timedelta(seconds=1))
-        )
+    ProcessEpochRepository(engine).reconcile_dead_worker(worker_epoch_id)
 
     snapshot = repository.list_jobs()
     assert snapshot["workerOnline"] is False
