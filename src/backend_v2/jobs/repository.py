@@ -2005,7 +2005,7 @@ class JobQueueRepository:
         now = utcnow()
         # Observe that common no-op case without taking SQLite's writer lock.
         with self.engine.connect() as connection:
-            self._assert_worker_epoch(connection, worker_epoch_id, now)
+            self._assert_worker_epoch(connection, worker_epoch_id)
             if bool(
                 connection.execute(
                     select(queue_state.c.admission_paused).where(
@@ -2022,7 +2022,7 @@ class JobQueueRepository:
             if current is not None:
                 return None
         with immediate_transaction(self.engine) as connection:
-            self._assert_worker_epoch(connection, worker_epoch_id, now)
+            self._assert_worker_epoch(connection, worker_epoch_id)
             if bool(
                 connection.execute(
                     select(queue_state.c.admission_paused).where(
@@ -2092,34 +2092,6 @@ class JobQueueRepository:
             )
             return {"queuePaused": paused}
 
-    def has_ready_queued_job(self) -> bool:
-        """Return whether queue admission can immediately serve durable work."""
-
-        with self.engine.connect() as connection:
-            admission_paused = bool(
-                connection.execute(
-                    select(queue_state.c.admission_paused).where(
-                        queue_state.c.singleton_id == 1
-                    )
-                ).scalar_one()
-            )
-            if admission_paused:
-                return False
-            if connection.execute(
-                select(jobs.c.id)
-                .where(jobs.c.status.in_(EXECUTING_JOB_STATUSES))
-                .limit(1)
-            ).scalar_one_or_none() is not None:
-                return False
-            return connection.execute(
-                select(jobs.c.id)
-                .where(
-                    jobs.c.status == "queued",
-                    jobs.c.blocked_by_job_id.is_(None),
-                )
-                .limit(1)
-            ).scalar_one_or_none() is not None
-
     def has_ready_queued_competitor(self, *, owner_user_id: str) -> bool:
         """Return whether another owner has unblocked durable work."""
 
@@ -2155,7 +2127,7 @@ class JobQueueRepository:
             raise ValueError("unsupported scheduling yield reason")
         now = utcnow()
         with immediate_transaction(self.engine) as connection:
-            self._assert_attempt(connection, fence, now, allowed_statuses=("running",))
+            self._assert_attempt(connection, fence, allowed_statuses=("running",))
             running_steps = int(
                 connection.execute(
                     select(func.count())
@@ -2232,12 +2204,10 @@ class JobQueueRepository:
 
         if not roles:
             return {}
-        now = utcnow()
         with immediate_transaction(self.engine) as connection:
             self._assert_attempt(
                 connection,
                 fence,
-                now,
                 allowed_statuses=("running",),
             )
             owns_item = connection.execute(
@@ -2326,12 +2296,10 @@ class JobQueueRepository:
             if not isinstance(asset_id, str) or not asset_id:
                 raise ValueError("job asset input ID is invalid")
             normalized[role] = asset_id
-        now = utcnow()
         with immediate_transaction(self.engine) as connection:
             self._assert_attempt(
                 connection,
                 fence,
-                now,
                 allowed_statuses=("running",),
             )
             owns_item = connection.execute(
@@ -2409,12 +2377,10 @@ class JobQueueRepository:
             }
 
     def attempt_config(self, fence: AttemptFence) -> dict[str, object]:
-        now = utcnow()
         with self.engine.connect() as connection:
             self._assert_attempt(
                 connection,
                 fence,
-                now,
                 allowed_statuses=("running",),
             )
             row = connection.execute(
@@ -2431,12 +2397,10 @@ class JobQueueRepository:
     ) -> str:
         """Scrub an exception before a domain publisher persists it."""
 
-        now = utcnow()
         with self.engine.connect() as connection:
             self._assert_attempt(
                 connection,
                 fence,
-                now,
                 allowed_statuses=("running",),
             )
             secret_values = _job_secret_values(connection, fence.job_id)
@@ -2459,7 +2423,6 @@ class JobQueueRepository:
             self._assert_attempt(
                 connection,
                 fence,
-                now,
                 allowed_statuses=("running",),
             )
             safe_payload = redact_sensitive_value(
@@ -2478,12 +2441,10 @@ class JobQueueRepository:
         self,
         fence: AttemptFence,
     ) -> set[tuple[str, str | None]]:
-        now = utcnow()
         with self.engine.connect() as connection:
             self._assert_attempt(
                 connection,
                 fence,
-                now,
                 allowed_statuses=("running",),
             )
             rows = connection.execute(
@@ -2532,7 +2493,6 @@ class JobQueueRepository:
             self._assert_attempt(
                 connection,
                 fence,
-                now,
                 allowed_statuses=("running",),
             )
             if job_config is not None:
@@ -2568,12 +2528,10 @@ class JobQueueRepository:
     ) -> tuple[int, int]:
         """Return pending/running counts, optionally scoped to one stage pool."""
 
-        now = utcnow()
         with self.engine.connect() as connection:
             self._assert_attempt(
                 connection,
                 fence,
-                now,
                 allowed_statuses=("running",),
             )
             conditions = [
@@ -2600,12 +2558,10 @@ class JobQueueRepository:
     ) -> dict[str, str]:
         if not item_ids:
             return {}
-        now = utcnow()
         with self.engine.connect() as connection:
             self._assert_attempt(
                 connection,
                 fence,
-                now,
                 allowed_statuses=("running",),
             )
             rows = connection.execute(
@@ -2625,12 +2581,10 @@ class JobQueueRepository:
 
         if not step_ids:
             return {}
-        now = utcnow()
         with self.engine.connect() as connection:
             self._assert_attempt(
                 connection,
                 fence,
-                now,
                 allowed_statuses=("running",),
             )
             rows = connection.execute(
@@ -2647,12 +2601,10 @@ class JobQueueRepository:
         self,
         fence: AttemptFence,
     ) -> list[dict[str, str]]:
-        now = utcnow()
         with self.engine.connect() as connection:
             self._assert_attempt(
                 connection,
                 fence,
-                now,
                 allowed_statuses=("running",),
             )
             rows = connection.execute(
@@ -2680,12 +2632,10 @@ class JobQueueRepository:
     def terminal_item_count(self, fence: AttemptFence) -> int:
         """Return items that have fully left the durable page pipeline."""
 
-        now = utcnow()
         with self.engine.connect() as connection:
             self._assert_attempt(
                 connection,
                 fence,
-                now,
                 allowed_statuses=("running",),
             )
             return int(
@@ -2702,12 +2652,10 @@ class JobQueueRepository:
     def pending_step_kinds(self, fence: AttemptFence) -> tuple[str, ...]:
         """Return the durable step kinds that still need a Worker handler."""
 
-        now = utcnow()
         with self.engine.connect() as connection:
             self._assert_attempt(
                 connection,
                 fence,
-                now,
                 allowed_statuses=("running",),
             )
             rows = connection.execute(
@@ -2725,12 +2673,10 @@ class JobQueueRepository:
     def step_kinds(self, fence: AttemptFence) -> tuple[str, ...]:
         """Return only the durable pools that belong to this job graph."""
 
-        now = utcnow()
         with self.engine.connect() as connection:
             self._assert_attempt(
                 connection,
                 fence,
-                now,
                 allowed_statuses=("running",),
             )
             rows = connection.execute(
@@ -2761,7 +2707,7 @@ class JobQueueRepository:
         )
         now = utcnow()
         with immediate_transaction(self.engine) as connection:
-            self._assert_attempt(connection, fence, now, allowed_statuses=("running",))
+            self._assert_attempt(connection, fence, allowed_statuses=("running",))
             if allowed_kind_values == ():
                 return None
             prior_step = job_steps.alias("prior_step")
@@ -2923,7 +2869,7 @@ class JobQueueRepository:
             raise ValueError("maximum item ordinal must be positive")
         now = utcnow()
         with immediate_transaction(self.engine) as connection:
-            self._assert_attempt(connection, fence, now, allowed_statuses=("running",))
+            self._assert_attempt(connection, fence, allowed_statuses=("running",))
             prior_step = job_steps.alias("batch_prior_step")
             first_boundary_step = job_steps.alias("batch_first_boundary_step")
             last_boundary_step = job_steps.alias("batch_last_boundary_step")
@@ -3122,9 +3068,8 @@ class JobQueueRepository:
             return {}
         if max_item_ordinal is not None and max_item_ordinal < 1:
             raise ValueError("maximum item ordinal must be positive")
-        now = utcnow()
         with self.engine.connect() as connection:
-            self._assert_attempt(connection, fence, now, allowed_statuses=("running",))
+            self._assert_attempt(connection, fence, allowed_statuses=("running",))
             prior_step = job_steps.alias("ready_prior_step")
             proofread_barrier_step = job_steps.alias("ready_proofread_barrier_step")
             proofread_barrier_item = job_items.alias("ready_proofread_barrier_item")
@@ -3189,7 +3134,6 @@ class JobQueueRepository:
             job_status = self._assert_attempt(
                 connection,
                 fence,
-                now,
                 allowed_statuses=("running",),
             )
             safe_checkpoint = redact_sensitive_value(
@@ -3295,7 +3239,6 @@ class JobQueueRepository:
             job_status = self._assert_attempt(
                 connection,
                 fence,
-                now,
                 allowed_statuses=("running",),
             )
             row = connection.execute(
@@ -3359,7 +3302,6 @@ class JobQueueRepository:
             job_status = self._assert_attempt(
                 connection,
                 fence,
-                now,
                 allowed_statuses=("running",),
             )
             item_id = connection.execute(
@@ -3427,12 +3369,10 @@ class JobQueueRepository:
             )
 
     def completion_status(self, fence: AttemptFence) -> str | None:
-        now = utcnow()
         with self.engine.connect() as connection:
             self._assert_attempt(
                 connection,
                 fence,
-                now,
                 allowed_statuses=("running",),
             )
             outcome = self._completion_outcome(connection, fence.job_id)
@@ -3444,7 +3384,6 @@ class JobQueueRepository:
             self._assert_attempt(
                 connection,
                 fence,
-                now,
                 allowed_statuses=("running",),
             )
             outcome = self._completion_outcome(connection, fence.job_id)
@@ -3632,7 +3571,6 @@ class JobQueueRepository:
             self._assert_attempt(
                 connection,
                 fence,
-                now,
                 allowed_statuses=("running",),
             )
             snapshot = self._progress_snapshot(
@@ -3673,7 +3611,6 @@ class JobQueueRepository:
             self._assert_attempt(
                 connection,
                 fence,
-                now,
                 allowed_statuses=("running",),
             )
             message = redact_sensitive_text(
@@ -3741,7 +3678,6 @@ class JobQueueRepository:
             job_status = self._assert_attempt(
                 connection,
                 fence,
-                now,
                 allowed_statuses=("running",),
             )
             secret_values = _job_secret_values(connection, fence.job_id)
@@ -3873,7 +3809,9 @@ class JobQueueRepository:
                     event_type = "page_completed"
                 else:
                     event_type = "step_completed"
-            if status == "completed":
+            # Publication can also skip downstream steps, so its projection must
+            # include the entire graph changed in this transaction.
+            if status == "completed" and publisher is None:
                 snapshot = self._progress_after_step_finished(
                     connection,
                     fence.job_id,
@@ -4403,24 +4341,21 @@ class JobQueueRepository:
     def _assert_worker_epoch(
         connection: Any,
         worker_epoch_id: str,
-        now: datetime,
     ) -> None:
         epoch = connection.execute(
             select(process_epochs.c.id).where(
                 process_epochs.c.id == worker_epoch_id,
                 process_epochs.c.role == "worker",
                 process_epochs.c.status == "active",
-                process_epochs.c.lease_expires_at > now,
             )
         ).scalar_one_or_none()
         if epoch is None:
-            raise AttemptFenced("Worker epoch is inactive or expired")
+            raise AttemptFenced("Worker epoch is inactive")
 
     @staticmethod
     def _assert_attempt(
         connection: Any,
         fence: AttemptFence,
-        now: datetime,
         *,
         allowed_statuses: Sequence[str],
     ) -> str:
@@ -4434,7 +4369,6 @@ class JobQueueRepository:
                         process_epochs.c.id == fence.worker_epoch_id,
                         process_epochs.c.role == "worker",
                         process_epochs.c.status == "active",
-                        process_epochs.c.lease_expires_at > now,
                     )
                 ),
             )
@@ -5174,7 +5108,6 @@ class JobQueueRepository:
         low_memory: bool,
     ) -> dict[str, object]:
         owner_user_id = effective_owner_id()
-        now = utcnow()
         queue_paused = bool(
             connection.execute(
                 select(queue_state.c.admission_paused).where(
@@ -5188,7 +5121,6 @@ class JobQueueRepository:
                     exists().where(
                         process_epochs.c.role == "worker",
                         process_epochs.c.status == "active",
-                        process_epochs.c.lease_expires_at > now,
                     )
                 )
             ).scalar()

@@ -31,7 +31,6 @@ from src.backend_v2.storage.database import (
 from src.backend_v2.storage.defaults import (
     DEFAULT_BROWSER_DOM_AGENT,
     DEFAULT_INSIGHT_SETTINGS,
-    DEFAULT_TEXT_STYLE,
     DEFAULT_WEB_IMPORT_SETTINGS,
     default_translation_settings,
 )
@@ -46,7 +45,6 @@ from src.backend_v2.storage.lifecycle import (
     schema_smoke_test,
 )
 from src.backend_v2.storage.platform_repositories import (
-    BookSettingMutation,
     CredentialEdit,
     FontRepository,
     PromptMutation,
@@ -1646,34 +1644,39 @@ def test_api_recovery_fails_remote_work_and_requeues_safe_render(platform) -> No
     )
 
 
-def test_expired_or_replaced_epoch_cannot_be_renewed(platform) -> None:
+@pytest.mark.parametrize("role", ["api", "worker"])
+@pytest.mark.parametrize("end_state", ["closed", "lost"])
+def test_process_identity_lasts_until_launcher_ends_it(platform, role, end_state) -> None:
     _data_root, engine = platform
-    repository = ProcessEpochRepository(engine, lease_seconds=3)
-    registration = EpochRegistration("worker", "secret", "worker", 123)
+    repository = ProcessEpochRepository(engine)
+    registration = EpochRegistration("process", "secret", role, 123)
     repository.register(registration)
-    assert repository.renew(role="worker", epoch_id="worker", token="secret")
-    expired_at = utcnow() - timedelta(seconds=1)
+    expired_at = utcnow() - timedelta(days=365)
     with engine.begin() as connection:
         connection.execute(
             update(process_epochs)
-            .where(process_epochs.c.id == "worker")
-            .values(lease_expires_at=expired_at)
+            .where(process_epochs.c.id == registration.epoch_id)
+            .values(heartbeat_at=expired_at, lease_expires_at=expired_at)
         )
-    assert not repository.is_active_epoch(role="worker", epoch_id="worker")
-    assert not repository.renew(role="worker", epoch_id="worker", token="secret")
-    with engine.begin() as connection:
-        connection.execute(
-            process_epochs.update()
-            .where(process_epochs.c.id == "worker")
-            .values(status="lost")
-        )
-    assert not repository.renew(role="worker", epoch_id="worker", token="secret")
-    assert not repository.renew(role="worker", epoch_id="worker", token="wrong")
+    assert repository.is_active_epoch(role=role, epoch_id=registration.epoch_id)
+    assert repository.validate(role=role, epoch_id=registration.epoch_id, token="secret")
+    assert not repository.validate(role=role, epoch_id=registration.epoch_id, token="wrong")
+    other_role = "worker" if role == "api" else "api"
+    assert not repository.validate(role=other_role, epoch_id=registration.epoch_id, token="secret")
+    if end_state == "closed":
+        assert repository.close(registration)
+    elif role == "worker":
+        repository.reconcile_dead_worker(registration.epoch_id)
+    else:
+        repository.reconcile_dead_api(registration.epoch_id)
+    assert not repository.is_active_epoch(role=role, epoch_id=registration.epoch_id)
+    assert not repository.validate(role=role, epoch_id=registration.epoch_id, token="secret")
+    assert not repository.bind_pid(registration, 456)
 
 
 def test_launcher_epoch_tokens_are_never_persisted_in_plaintext(platform) -> None:
     _data_root, engine = platform
-    repository = ProcessEpochRepository(engine, lease_seconds=3)
+    repository = ProcessEpochRepository(engine)
     registrations = (
         EpochRegistration("worker-secret-epoch", "worker-secret", "worker", 123),
         EpochRegistration("api-secret-epoch", "api-secret", "api", 321),
@@ -1697,12 +1700,12 @@ def test_launcher_epoch_tokens_are_never_persisted_in_plaintext(platform) -> Non
         "worker-secret-epoch": hash_epoch_token("worker-secret"),
         "api-secret-epoch": hash_epoch_token("api-secret"),
     }
-    assert repository.renew(
+    assert repository.validate(
         role="worker",
         epoch_id="worker-secret-epoch",
         token="worker-secret",
     )
-    assert repository.renew(
+    assert repository.validate(
         role="api",
         epoch_id="api-secret-epoch",
         token="api-secret",

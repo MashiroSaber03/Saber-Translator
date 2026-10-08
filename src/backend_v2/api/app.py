@@ -13,7 +13,7 @@ from pathlib import Path
 import secrets
 import socket
 import time
-from typing import Any, Callable
+from typing import Any
 from urllib.parse import urlsplit
 
 from flask import Blueprint, Flask, Response, g, jsonify, request
@@ -42,7 +42,6 @@ class ApiSettings:
     data_root: Path
     identity: RuntimeIdentity
     engine: Engine
-    epoch_healthy: Callable[[], bool] = lambda: True
     host: str = "0.0.0.0"
     port: int = 5000
     profile: RuntimeProfile = resolve_runtime_profile("local")
@@ -105,9 +104,8 @@ def _create_v2_blueprint(settings: ApiSettings) -> Blueprint:
 
     @blueprint.get("/health")
     def health() -> Response:
-        healthy = settings.epoch_healthy()
         payload: dict[str, object] = {
-            "status": "ok" if healthy else "fenced",
+            "status": "ok",
         }
         internal_token = request.headers.get(INTERNAL_HEALTH_TOKEN_HEADER, "")
         include_identity = settings.profile.name != "public" or (
@@ -127,7 +125,6 @@ def _create_v2_blueprint(settings: ApiSettings) -> Blueprint:
                 }
             )
         response = jsonify(payload)
-        response.status_code = 200 if healthy else 503
         return response
 
     @blueprint.get("/openapi.json")

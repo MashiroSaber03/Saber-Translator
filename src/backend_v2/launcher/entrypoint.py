@@ -82,8 +82,6 @@ from src.shared.user_logging import STREAM_FRAME_PREFIX, inline_log_text, user_l
 
 
 MAX_CONSECUTIVE_RESTARTS = 3
-API_HEALTH_CHECK_INTERVAL_SECONDS = 1.0
-API_HEALTH_FAILURE_LIMIT = 3
 RESTART_STABILITY_SECONDS = 30.0
 TORCH_CUDNN_V8_API_LRU_CACHE_LIMIT_ENV = "TORCH_CUDNN_V8_API_LRU_CACHE_LIMIT"
 WORKER_CUDNN_V8_API_LRU_CACHE_LIMIT = "1000"
@@ -148,8 +146,6 @@ class ManagedChild:
     registration: EpochRegistration
     restart_count: int = 0
     ready_at: float = 0.0
-    next_health_check_at: float = 0.0
-    health_failures: int = 0
 
 
 def _role_command(
@@ -184,14 +180,14 @@ def _role_command(
     return role_command
 
 
-def _new_registration(role: str, *, pid: int = 0) -> EpochRegistration:
-    if role not in {"api", "worker", "launcher"}:
+def _new_registration(role: str) -> EpochRegistration:
+    if role not in {"api", "worker"}:
         raise ValueError(f"unsupported v2 process role: {role}")
     return EpochRegistration(
         epoch_id=str(uuid.uuid4()),
         token=secrets.token_urlsafe(32),
         role=role,  # type: ignore[arg-type]
-        pid=pid,
+        pid=0,
     )
 
 
@@ -385,76 +381,6 @@ def _wait_for_api(
             elif stop_event.wait(0.1):
                 raise _LauncherStopRequested
     raise RuntimeError(f"v2 API did not become healthy within {timeout_seconds:.0f}s")
-
-
-def _api_is_healthy(
-    port: int,
-    *,
-    expected_epoch_id: str,
-    expected_epoch_token: str,
-) -> bool:
-    try:
-        status, payload = _read_api_health(
-            port,
-            expected_epoch_token=expected_epoch_token,
-            timeout_seconds=0.5,
-        )
-    except (OSError, URLError, ValueError):
-        return False
-    return bool(
-        status == 200
-        and isinstance(payload, dict)
-        and payload.get("status") == "ok"
-        and payload.get("epochId") == expected_epoch_id
-    )
-
-
-def _api_health_requires_restart(
-    managed: ManagedChild,
-    *,
-    port: int,
-    now: float,
-) -> bool:
-    if managed.role != "api" or now < managed.next_health_check_at:
-        return False
-    managed.next_health_check_at = now + API_HEALTH_CHECK_INTERVAL_SECONDS
-    if _api_is_healthy(
-        port,
-        expected_epoch_id=managed.registration.epoch_id,
-        expected_epoch_token=managed.registration.token,
-    ):
-        managed.health_failures = 0
-        return False
-    managed.health_failures += 1
-    LOGGER.warning(
-        "API 运行期健康检查失败：epoch=%s，连续失败=%s/%s",
-        managed.registration.epoch_id[:8],
-        managed.health_failures,
-        API_HEALTH_FAILURE_LIMIT,
-    )
-    return managed.health_failures >= API_HEALTH_FAILURE_LIMIT
-
-
-def _worker_epoch_requires_restart(
-    managed: ManagedChild,
-    *,
-    repository: ProcessEpochRepository,
-    now: float,
-) -> bool:
-    if managed.role != "worker" or now < managed.next_health_check_at:
-        return False
-    managed.next_health_check_at = now + API_HEALTH_CHECK_INTERVAL_SECONDS
-    try:
-        return not repository.is_active_epoch(
-            role="worker",
-            epoch_id=managed.registration.epoch_id,
-        )
-    except Exception:
-        LOGGER.exception(
-            "读取 Worker epoch 状态失败，将在下一轮重试：epoch=%s",
-            managed.registration.epoch_id[:8],
-        )
-        return False
 
 
 def _try_reconcile_dead_child(
@@ -725,7 +651,6 @@ def _start_child(
         registration=registration,
         restart_count=restart_count,
         ready_at=ready_at,
-        next_health_check_at=ready_at + API_HEALTH_CHECK_INTERVAL_SECONDS,
     )
 
 
@@ -864,15 +789,13 @@ class LauncherSupervisor:
                 storage_manager.before_start()
                 engine = create_sqlite_engine(database_path_for(config.data_root))
                 repository = ProcessEpochRepository(engine)
-                launcher_registration = _new_registration("launcher", pid=os.getpid())
                 try:
                     object_storage = AssetStorageService(config.data_root, engine)
-                    repository.register(launcher_registration)
                     if business_ready(config.data_root):
                         _reconcile_all_previous_epochs(repository)
                         from src.backend_v2.storage.seeding import begin_runtime
                         begin_runtime(engine, profile_name=config.profile)
-                        LOGGER.debug("已完成历史进程租约与中断任务恢复")
+                        LOGGER.debug("已完成历史进程状态与中断任务恢复")
                         recovered = object_storage.recover_journal()
                         integrity = object_storage.scan_integrity()
                         LOGGER.debug(
@@ -952,64 +875,11 @@ class LauncherSupervisor:
                             while not self._stop_event.wait(0.25):
                                 now = time.monotonic()
                                 for role, managed in list(children.items()):
-                                    recovery_was_requested = False
                                     _reset_restart_count_after_stable_run(
                                         managed,
                                         now=now,
                                     )
                                     return_code = managed.process.poll()
-                                    if (
-                                        return_code is None
-                                        and _api_health_requires_restart(
-                                            managed,
-                                            port=config.port,
-                                            now=now,
-                                        )
-                                    ):
-                                        LOGGER.error(
-                                            "API 进程仍存活但健康检查持续失败，"
-                                            "先终止旧进程再执行 epoch 恢复：pid=%s，epoch=%s",
-                                            managed.process.pid,
-                                            managed.registration.epoch_id[:8],
-                                        )
-                                        user_log(
-                                            "warning",
-                                            "接口进程健康检查持续失败，正在自动恢复",
-                                        )
-                                        self._publish(
-                                            LauncherState.DEGRADED,
-                                            "API 健康检查失败，正在恢复",
-                                            children,
-                                        )
-                                        recovery_was_requested = True
-                                        _stop_children([managed.process])
-                                        return_code = managed.process.poll()
-                                    if (
-                                        return_code is None
-                                        and _worker_epoch_requires_restart(
-                                            managed,
-                                            repository=repository,
-                                            now=now,
-                                        )
-                                    ):
-                                        LOGGER.error(
-                                            "Worker epoch 已失效但旧进程仍存活，"
-                                            "正在终止旧进程后重启：pid=%s，epoch=%s",
-                                            managed.process.pid,
-                                            managed.registration.epoch_id[:8],
-                                        )
-                                        user_log(
-                                            "warning",
-                                            "任务执行器运行权已失效，正在自动重启",
-                                        )
-                                        self._publish(
-                                            LauncherState.DEGRADED,
-                                            "Worker 状态异常，正在恢复",
-                                            children,
-                                        )
-                                        recovery_was_requested = True
-                                        _stop_children([managed.process])
-                                        return_code = managed.process.poll()
                                     if return_code is None:
                                         continue
                                     controlled_recycle = (
@@ -1032,24 +902,23 @@ class LauncherSupervisor:
                                         managed.process.pid,
                                         return_code,
                                     )
-                                    if not recovery_was_requested:
-                                        role_label = (
-                                            "接口进程"
-                                            if role == "api"
-                                            else "任务执行器"
+                                    role_label = (
+                                        "接口进程"
+                                        if role == "api"
+                                        else "任务执行器"
+                                    )
+                                    if controlled_recycle:
+                                        user_log(
+                                            "system",
+                                            "任务执行器已主动回收卡住的处理器，"
+                                            "正在自动恢复",
                                         )
-                                        if controlled_recycle:
-                                            user_log(
-                                                "system",
-                                                "任务执行器已主动回收卡住的处理器，"
-                                                "正在自动恢复",
-                                            )
-                                        else:
-                                            user_log(
-                                                "warning",
-                                                f"{role_label}意外退出｜"
-                                                f"退出码 {return_code}｜正在自动恢复",
-                                            )
+                                    else:
+                                        user_log(
+                                            "warning",
+                                            f"{role_label}意外退出｜"
+                                            f"退出码 {return_code}｜正在自动恢复",
+                                        )
                                     if not _try_reconcile_dead_child(
                                         repository,
                                         role=role,
@@ -1121,10 +990,7 @@ class LauncherSupervisor:
                     if credential_broker is not None:
                         credential_broker.close()
                         LOGGER.debug("浏览器密钥内存服务已清空并停止")
-                    try:
-                        repository.close(launcher_registration)
-                    finally:
-                        engine.dispose()
+                    engine.dispose()
                     user_log("system", "后端已关闭")
         except _LauncherStopRequested:
             clean_exit = True
