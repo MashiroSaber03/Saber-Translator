@@ -1,8 +1,11 @@
 from contextlib import closing
 from pathlib import Path
 import hashlib
+import os
 import shutil
 import sqlite3
+import subprocess
+import tempfile
 import uuid
 
 from flask import Flask
@@ -74,6 +77,96 @@ def test_first_use_installation_can_race_without_overwriting_files(directory_fon
         list(executor.map(prepare_together, [root] * 4))
     assert (root / 'fonts/shared/Alpha.ttf').read_bytes() == payload
     assert not list((root / 'fonts').glob('.install-*'))
+
+
+def test_failed_font_copy_does_not_publish_partial_install(directory_fonts, monkeypatch):
+    root, _, _, _, _ = directory_fonts
+    def fail_copy(*_args):
+        raise OSError('copy interrupted')
+    monkeypatch.setattr(font_files.shutil, 'copyfile', fail_copy)
+    with pytest.raises(OSError, match='copy interrupted'):
+        font_files.prepare_font_directory(root)
+    assert not (root / 'fonts/shared').exists()
+    assert not list((root / 'fonts').glob('.install-*'))
+
+
+def _windows_acl_is_protected(path):
+    import ctypes
+    from ctypes import wintypes
+    advapi = ctypes.WinDLL('advapi32', use_last_error=True)
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    pointer = ctypes.c_void_p
+    advapi.GetNamedSecurityInfoW.argtypes = [
+        wintypes.LPCWSTR, ctypes.c_int, wintypes.DWORD,
+        pointer, pointer, pointer, pointer, ctypes.POINTER(pointer),
+    ]
+    advapi.GetNamedSecurityInfoW.restype = wintypes.DWORD
+    advapi.GetSecurityDescriptorControl.argtypes = [
+        pointer, ctypes.POINTER(wintypes.WORD), ctypes.POINTER(wintypes.DWORD),
+    ]
+    advapi.GetSecurityDescriptorControl.restype = wintypes.BOOL
+    kernel.LocalFree.argtypes = [pointer]
+    kernel.LocalFree.restype = pointer
+    descriptor = pointer()
+    error = advapi.GetNamedSecurityInfoW(str(path), 1, 4, None, None, None, None, ctypes.byref(descriptor))
+    assert error == 0
+    try:
+        control, revision = wintypes.WORD(), wintypes.DWORD()
+        assert advapi.GetSecurityDescriptorControl(descriptor, ctypes.byref(control), ctypes.byref(revision))
+        return bool(control.value & 0x1000)
+    finally:
+        kernel.LocalFree(descriptor)
+
+
+@pytest.mark.skipif(os.name != 'nt', reason='Windows ACL regression')
+def test_new_shared_fonts_inherit_parent_permissions(directory_fonts):
+    root, _, catalog, _, _ = directory_fonts
+    assert catalog.list()
+    assert not _windows_acl_is_protected(root / 'fonts/shared')
+    assert not _windows_acl_is_protected(root / 'fonts/shared/Alpha.ttf')
+
+
+@pytest.mark.skipif(os.name != 'nt', reason='Windows ACL regression')
+def test_legacy_shared_acl_is_repaired_without_changing_fonts_or_private_acl(directory_fonts):
+    root, engine, catalog, _, payload = directory_fonts
+    folder = root / 'fonts'
+    folder.mkdir()
+    with tempfile.TemporaryDirectory(dir=folder) as stage:
+        Path(stage, 'Alpha.ttf').write_bytes(payload)
+        Path(stage, '手动字体.ttf').write_bytes(payload)
+        os.rename(stage, folder / 'shared')
+    private = folder / 'users/alice'
+    private.mkdir(parents=True, mode=0o700)
+    assert _windows_acl_is_protected(folder / 'shared')
+    with engine.connect() as connection:
+        before = list(connection.execute(select(fonts)).mappings())
+    font_files.prepare_font_directory(root)
+    assert not _windows_acl_is_protected(folder / 'shared')
+    assert _windows_acl_is_protected(private)
+    assert (folder / 'shared/Alpha.ttf').read_bytes() == payload
+    assert (folder / 'shared/手动字体.ttf').read_bytes() == payload
+    assert ImageFont.truetype(str(folder / 'shared/Alpha.ttf'), 20).getbbox('ABC')
+    with engine.connect() as connection:
+        assert list(connection.execute(select(fonts)).mappings()) == before
+    items = catalog.list()
+    assert len(items) == 2
+    assert catalog.list() == items
+
+
+@pytest.mark.skipif(os.name != 'nt', reason='Windows ACL regression')
+def test_custom_shared_acl_is_preserved(directory_fonts):
+    root, _, catalog, _, payload = directory_fonts
+    shared = root / 'fonts/shared'
+    shared.mkdir(parents=True, mode=0o700)
+    (shared / 'Alpha.ttf').write_bytes(payload)
+    subprocess.run(
+        ['icacls', str(shared), '/grant', '*S-1-1-0:(OI)(CI)R'],
+        check=True, capture_output=True,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+    assert _windows_acl_is_protected(shared)
+    assert catalog.list()
+    assert _windows_acl_is_protected(shared)
 
 
 def test_upload_and_manual_private_files_are_isolated_and_not_assets(directory_fonts):
