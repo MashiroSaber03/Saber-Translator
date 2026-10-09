@@ -129,7 +129,7 @@ export const DEFAULT_PROOFREADING: ProofreadingSettings = {
 }
 
 export const DEFAULT_BOX_EXPAND: BoxExpandSettings = {
-  ratio: 0,
+  ratio: 2,
   top: 0,
   bottom: 0,
   left: 0,
