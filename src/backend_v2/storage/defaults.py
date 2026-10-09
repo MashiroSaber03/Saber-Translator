@@ -259,7 +259,7 @@ def default_translation_settings() -> dict[str, object]:
             "rounds": [],
         },
         "boxExpand": {
-            "ratio": 0.0,
+            "ratio": 2.0,
             "top": 0.0,
             "bottom": 0.0,
             "left": 0.0,
