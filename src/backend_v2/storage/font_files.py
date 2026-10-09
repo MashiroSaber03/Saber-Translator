@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 import os
 import shutil
-import tempfile
 import threading
 import uuid
 
@@ -73,6 +72,76 @@ def font_path(root: Path, relative: str, owner: str | None) -> Path:
     return path
 
 
+def _restore_legacy_font_inheritance(shared: Path) -> None:
+    """Undo only the private ACL left by the old TemporaryDirectory installer."""
+    if os.name != 'nt':
+        return
+    import ctypes
+    from ctypes import wintypes
+
+    advapi = ctypes.WinDLL('advapi32', use_last_error=True)
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    pointer = ctypes.c_void_p
+    advapi.GetNamedSecurityInfoW.argtypes = [
+        wintypes.LPCWSTR, ctypes.c_int, wintypes.DWORD,
+        pointer, pointer, ctypes.POINTER(pointer), pointer, ctypes.POINTER(pointer),
+    ]
+    advapi.GetNamedSecurityInfoW.restype = wintypes.DWORD
+    advapi.ConvertSecurityDescriptorToStringSecurityDescriptorW.argtypes = [
+        pointer, wintypes.DWORD, wintypes.DWORD,
+        ctypes.POINTER(wintypes.LPWSTR), pointer,
+    ]
+    advapi.ConvertSecurityDescriptorToStringSecurityDescriptorW.restype = wintypes.BOOL
+    advapi.SetNamedSecurityInfoW.argtypes = [
+        wintypes.LPWSTR, ctypes.c_int, wintypes.DWORD,
+        pointer, pointer, pointer, pointer,
+    ]
+    advapi.SetNamedSecurityInfoW.restype = wintypes.DWORD
+    kernel.LocalFree.argtypes = [pointer]
+    kernel.LocalFree.restype = pointer
+    descriptor, dacl = pointer(), pointer()
+    text = wintypes.LPWSTR()
+    try:
+        error = advapi.GetNamedSecurityInfoW(
+            str(shared), 1, 4, None, None, ctypes.byref(dacl), None,
+            ctypes.byref(descriptor),
+        )
+        if error in {1, 50}:  # Filesystems without Windows ACL support.
+            return
+        if error == 5:
+            # A custom ACL can allow listing without allowing ACL inspection.
+            # Do not make that readable directory require extra permissions.
+            next(shared.iterdir(), None)
+            return
+        if error:
+            raise ctypes.WinError(error)
+        if not dacl:
+            return
+        if not advapi.ConvertSecurityDescriptorToStringSecurityDescriptorW(
+            descriptor, 1, 4, ctypes.byref(text), None,
+        ):
+            raise ctypes.WinError(ctypes.get_last_error())
+        acl = text.value
+        legacy_entries = {'A;OICI;FA;;;SY', 'A;OICI;FA;;;BA', 'A;OICI;FA;;;OW'}
+        if not acl.startswith('D:P(') or set(acl[4:-1].split(')(')) != legacy_entries:
+            return
+        # Keep every explicit entry and restore parent inheritance. Windows
+        # propagates the inherited entries to existing font files as well.
+        error = advapi.SetNamedSecurityInfoW(
+            str(shared), 1, 0x20000004, None, None, dacl, None,
+        )
+        if error:
+            raise ctypes.WinError(error)
+    except PermissionError as exc:
+        raise PermissionError(
+            13, '字体目录权限不足，请在 Windows 安全设置中恢复此目录的权限继承；'
+            '若旧目录由管理员创建，需由管理员处理一次', str(shared), 5,
+        ) from exc
+    finally:
+        kernel.LocalFree(ctypes.cast(text, pointer))
+        kernel.LocalFree(descriptor)
+
+
 def prepare_font_directory(root: Path) -> None:
     """Install bundled files once, without overwriting an existing directory."""
     root = filesystem_path(root)
@@ -83,11 +152,16 @@ def prepare_font_directory(root: Path) -> None:
         reject_links(folder)
         reject_links(shared)
         if shared.is_dir():
+            _restore_legacy_font_inheritance(shared)
             return
         folder.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(prefix='.install-', dir=folder) as staging:
+        # A permanent shared directory must inherit the project permissions,
+        # not the private ACL applied by tempfile.mkdtemp on Windows.
+        staging = folder / f'.install-{uuid.uuid4().hex}'
+        staging.mkdir()
+        try:
             for font in bundled_font_files():
-                shutil.copyfile(font.path, Path(staging) / font.path.name)
+                shutil.copyfile(font.path, staging / font.path.name)
             try:
                 os.rename(staging, shared)
             except OSError:
@@ -95,6 +169,11 @@ def prepare_font_directory(root: Path) -> None:
                 reject_links(shared)
                 if not shared.is_dir():
                     raise
+        finally:
+            if staging.exists():
+                reject_links(staging)
+                shutil.rmtree(staging)
+        _restore_legacy_font_inheritance(shared)
 
 
 def scan_font_files(root: Path, owner: str) -> list[tuple[str, str | None]]:
