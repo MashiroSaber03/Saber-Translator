@@ -32,6 +32,7 @@ from sqlalchemy.engine import Connection
 
 from src.backend_v2.auth.credential_broker import parse_credential_reference
 from src.backend_v2.auth.ownership import effective_owner_id
+from src.backend_v2.jobs import MAX_DEEP_LEARNING_CONCURRENCY
 from src.backend_v2.domain.state_machines import (
     InvalidTransition,
     JobEvent,
@@ -175,9 +176,10 @@ class JobSpec:
                 isinstance(concurrency, bool)
                 or not isinstance(concurrency, int)
                 or concurrency < 1
+                or concurrency > MAX_DEEP_LEARNING_CONCURRENCY
             ):
                 raise ValueError(
-                    "deepLearningConcurrency must be a positive integer"
+                    f"deepLearningConcurrency must be an integer from 1 to {MAX_DEEP_LEARNING_CONCURRENCY}"
                 )
         if not self.items:
             raise ValueError("job requires at least one item")
@@ -236,6 +238,8 @@ def decode_job_config(row: Mapping[str, Any]) -> dict[str, Any]:
             raise JobDataInvalid(
                 "jobs.config_json.deepLearningConcurrency is invalid"
             )
+        # Old job snapshots allowed larger values; four pools is the real limit.
+        config["deepLearningConcurrency"] = min(concurrency, MAX_DEEP_LEARNING_CONCURRENCY)
     return config
 
 

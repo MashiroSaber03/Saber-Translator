@@ -29,6 +29,7 @@ from src.backend_v2.jobs.repository import (
     JobNotFound,
     JobQueueRepository,
     JobSpec,
+    decode_job_config,
     utcnow,
 )
 from src.backend_v2.jobs.retry import JobRetryService
@@ -3643,8 +3644,10 @@ def test_worker_rejects_coerced_parallel_and_batch_settings(job_platform) -> Non
     ) == 256
 
 
+@pytest.mark.parametrize("concurrency", [1, 2, 4])
 def test_parallel_worker_enforces_frozen_deep_learning_concurrency(
     job_platform,
+    concurrency,
 ) -> None:
     _engine, repository, _book, chapter, worker_epoch_id = job_platform
     created = repository.create_batch(
@@ -3655,11 +3658,12 @@ def test_parallel_worker_enforces_frozen_deep_learning_concurrency(
                 chapter_id=str(chapter["id"]),
                 config={
                     "executionMode": "parallel",
-                    "deepLearningConcurrency": 1,
+                    "deepLearningConcurrency": concurrency,
                 },
                 items=tuple(
-                    JobItemSpec(page_id=None, step_kinds=("detect", "ocr"))
-                    for _index in range(3)
+                    JobItemSpec(page_id=None, step_kinds=(kind,))
+                    for _index in range(2)
+                    for kind in ("detect", "ocr", "color", "repair")
                 ),
             )
         ],
@@ -3669,23 +3673,30 @@ def test_parallel_worker_enforces_frozen_deep_learning_concurrency(
     active_count = 0
     maximum_active = 0
     model_threads: set[int] = set()
+    busy_pools: set[str] = set()
+    overlap = threading.Barrier(concurrency, timeout=3)
 
     def handler(_fence, step):
         nonlocal active_count, maximum_active
         with state_lock:
             model_threads.add(threading.get_ident())
+            kind = str(step["stepKind"])
+            assert kind not in busy_pools
+            busy_pools.add(kind)
             active_count += 1
             maximum_active = max(maximum_active, active_count)
+        overlap.wait()
         time.sleep(0.04)
         with state_lock:
             active_count -= 1
+            busy_pools.remove(kind)
         return {"done": str(step["stepKind"])}
 
     stop = threading.Event()
     loop = JobWorkerLoop(
         repository,
         worker_epoch_id=worker_epoch_id,
-        handlers={"detect": handler, "ocr": handler},
+        handlers={kind: handler for kind in ("detect", "ocr", "color", "repair")},
         idle_poll_seconds=0.01,
     )
     thread = threading.Thread(target=loop.run, args=(stop,), daemon=True)
@@ -3698,23 +3709,28 @@ def test_parallel_worker_enforces_frozen_deep_learning_concurrency(
     stop.set()
     thread.join(timeout=2)
     assert repository.get_job(job_id)["status"] == "completed"
-    assert maximum_active == 1
-    assert len(model_threads) == 1
+    assert maximum_active == concurrency
+    assert len(model_threads) == concurrency
 
 
-def test_parallel_worker_accepts_positive_concurrency_above_four(
+def test_new_jobs_reject_concurrency_above_the_pool_count() -> None:
+    with pytest.raises(ValueError, match="integer from 1 to 4"):
+        JobSpec(kind="detect", config={"deepLearningConcurrency": 5}, items=(JobItemSpec(page_id=None, step_kinds=("detect",)),))
+
+
+def test_parallel_worker_restores_old_concurrency_above_four(
     job_platform,
 ) -> None:
-    _engine, repository, _book, chapter, worker_epoch_id = job_platform
+    engine, repository, _book, chapter, worker_epoch_id = job_platform
     created = repository.create_batch(
-        display_name="device-sized deep learning pipeline",
+        display_name="legacy deep learning pipeline",
         specs=[
             JobSpec(
                 kind="translation",
                 chapter_id=str(chapter["id"]),
                 config={
                     "executionMode": "parallel",
-                    "deepLearningConcurrency": 8,
+                    "deepLearningConcurrency": 4,
                 },
                 items=tuple(
                     JobItemSpec(page_id=None, step_kinds=("detect",))
@@ -3724,6 +3740,10 @@ def test_parallel_worker_accepts_positive_concurrency_above_four(
         ],
     )
     job_id = str(created["jobIds"][0])
+    old_config = {"executionMode": "parallel", "deepLearningConcurrency": 8}
+    with engine.begin() as connection:
+        connection.execute(update(jobs).where(jobs.c.id == job_id).values(config_json=json.dumps(old_config)))
+    assert decode_job_config({"config_json": json.dumps(old_config)})["deepLearningConcurrency"] == 4
     stop = threading.Event()
     loop = JobWorkerLoop(
         repository,

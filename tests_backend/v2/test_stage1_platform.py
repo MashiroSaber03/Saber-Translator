@@ -911,13 +911,34 @@ def test_translation_settings_reject_nullable_browser_temperature() -> None:
         validate_setting_payload("translation", payload)
 
 
-def test_parallel_deep_learning_concurrency_has_no_arbitrary_upper_gate() -> None:
+@pytest.mark.parametrize(('requested', 'expected'), [(1, 1), (4, 4), (8, 4)])
+def test_parallel_deep_learning_concurrency_is_bounded_by_four_pools(requested, expected) -> None:
     payload = default_translation_settings()
-    payload["parallel"]["deepLearningLockSize"] = 8
+    payload["parallel"]["deepLearningLockSize"] = requested
 
     validated = validate_setting_payload("translation", payload)
 
-    assert validated["parallel"]["deepLearningLockSize"] == 8
+    assert validated["parallel"]["deepLearningLockSize"] == expected
+    assert payload["parallel"]["deepLearningLockSize"] == requested
+
+
+def test_old_parallel_setting_loads_without_resetting_other_fields(platform) -> None:
+    _root, engine = platform
+    repository = SettingsRepository(engine)
+    payload = default_translation_settings()
+    payload["targetLanguage"] = "zh"
+    repository.save_transaction(settings=(SettingMutation("translation", payload, 0),))
+    with engine.begin() as connection:
+        stored = json.loads(connection.execute(select(app_settings.c.payload_json).where(app_settings.c.domain == "translation")).scalar_one())
+        stored["parallel"]["deepLearningLockSize"] = 8
+        connection.execute(update(app_settings).where(app_settings.c.domain == "translation").values(payload_json=json.dumps(stored)))
+    loaded = repository.load(domains=("translation",))["settings"][0]
+    assert loaded["payload"]["parallel"]["deepLearningLockSize"] == 4
+    assert loaded["payload"]["targetLanguage"] == "zh"
+    repository.save_transaction(settings=(SettingMutation("translation", loaded["payload"], loaded["revision"]),))
+    with engine.connect() as connection:
+        saved = json.loads(connection.execute(select(app_settings.c.payload_json).where(app_settings.c.domain == "translation")).scalar_one())
+    assert saved["parallel"]["deepLearningLockSize"] == 4
 
 
 def test_ai_translation_batch_sizes_have_no_fixed_upper_bound() -> None:

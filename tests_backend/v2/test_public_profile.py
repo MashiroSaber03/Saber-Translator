@@ -1096,7 +1096,7 @@ def test_public_policy_forces_locked_settings_on_read_and_write(
     saved_translation = saved_document["settings"][0]["payload"]
     assert saved_translation["lamaDisableResize"] is True
     assert saved_translation["parallel"]["enabled"] is False
-    assert saved_translation["parallel"]["deepLearningLockSize"] == 9
+    assert saved_translation["parallel"]["deepLearningLockSize"] == 4
 
 
 @pytest.mark.parametrize(

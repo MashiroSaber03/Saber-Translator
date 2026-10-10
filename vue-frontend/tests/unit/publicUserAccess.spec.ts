@@ -1,10 +1,14 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { mount } from '@vue/test-utils'
 
 import type { PublicUserPolicy, RuntimeCapabilities } from '@/api/v2/auth'
+import ParallelSettings from '@/components/settings/ParallelSettings.vue'
+import UiNumberField from '@/components/ui/UiNumberField.vue'
 import { usePublicUserAccess } from '@/composables/usePublicUserAccess'
 import { useAuthStore } from '@/stores/authStore'
 import { useRuntimeStore } from '@/stores/runtimeStore'
+import { useSettingsStore } from '@/stores/settings'
 
 function policy(): PublicUserPolicy {
   return {
@@ -97,5 +101,18 @@ describe('ordinary public-user policy projection', () => {
     expect(access.featureAllowed('translation')).toBe(true)
     expect(access.modelAllowed('detector_default')).toBe(true)
     expect(access.maxDeepLearningConcurrency()).toBeNull()
+  })
+
+  it('keeps a public administrator limit lower than the pool count', () => {
+    const store = useSettingsStore()
+    store.settings.parallel.enabled = true
+    const runtime = useRuntimeStore()
+    runtime.capabilities = capabilities('public')
+    runtime.capabilities.publicUserPolicy.settings.parallel.allowed = true
+    const wrapper = mount(ParallelSettings)
+    const field = wrapper.getComponent(UiNumberField)
+    expect(field.props('max')).toBe(2)
+    field.vm.$emit('update:modelValue', 4)
+    expect(store.settings.parallel.deepLearningLockSize).toBe(2)
   })
 })

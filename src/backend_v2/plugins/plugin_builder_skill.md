@@ -330,8 +330,8 @@ switching providers while retaining another provider's credential reference;
 provider/credential setup belongs in the host's settings.
 
 - `executionMode`: `sequential` or `parallel`; `deepLearningConcurrency`:
-  positive integer used for parallel deep-learning concurrency. Concurrency is
-  not model batch size.
+  integer from 1 to 4, limiting simultaneously active detection, OCR, color,
+  and repair pools. Each pool runs one step at a time; this is not model batch size.
 - `targetLanguage`: the task target language, not the saved default language.
 - In `hq`, `data["translation"]["batchSize"]`: positive integer page batch size.
 - In `proofread`, existing `data["proofreadingRounds"][i]["batchSize"]`:

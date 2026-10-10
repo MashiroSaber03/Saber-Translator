@@ -17,7 +17,7 @@ import {
   createDefaultSettings,
 } from './defaults'
 import { isProofreadingRoundId } from './proofreadingIdentity'
-import { isPaddleOcrVlLanguage } from '@/constants'
+import { isPaddleOcrVlLanguage, MAX_DEEP_LEARNING_CONCURRENCY } from '@/constants'
 
 type PlainRecord = Record<string, unknown>
 type AiVisionPromptMode = TranslationSettings['aiVisionOcr']['promptMode']
@@ -300,6 +300,7 @@ export function parseCurrentSettings(value: unknown): TranslationSettings | null
   if (!isFiniteRange(sanitized.preciseMask.boxExpandRatio, 0, 100)) return null
   if (!isIntegerRange(sanitized.aiVisionOcr.minImageSize, 0)) return null
   if (!isIntegerRange(sanitized.parallel.deepLearningLockSize, 1)) return null
+  sanitized.parallel.deepLearningLockSize = Math.min(sanitized.parallel.deepLearningLockSize, MAX_DEEP_LEARNING_CONCURRENCY)
   if (!isIntegerRange(sanitized.hqTranslation.batchSize, 1)) return null
   const rounds = sanitizeProofreadingRounds((value.proofreading as PlainRecord).rounds)
   if (!rounds) return null

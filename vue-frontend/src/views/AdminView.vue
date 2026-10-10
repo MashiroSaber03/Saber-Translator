@@ -35,6 +35,7 @@ import type { UiSelectOption, UiSelectValue } from '@/components/ui/selectTypes'
 import { useRuntimeStore } from '@/stores/runtimeStore'
 import { deepClone } from '@/utils/deepClone'
 import { jobKindLabel } from '@/utils/taskDisplay'
+import { MAX_DEEP_LEARNING_CONCURRENCY } from '@/constants'
 
 const GIB = 1024 ** 3
 type UserStatusFilter = 'all' | AdminUser['taskStatus'] | 'disabled'
@@ -541,7 +542,7 @@ onBeforeUnmount(() => {
                 class="policy-number-input"
                 :model-value="scheduling.policy.maxDeepLearningConcurrency"
                 :min="1"
-                :max="8"
+                :max="MAX_DEEP_LEARNING_CONCURRENCY"
                 :step="1"
                 size="sm"
                 aria-label="深度学习并发"

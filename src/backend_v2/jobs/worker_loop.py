@@ -10,6 +10,7 @@ import time
 from typing import Any
 
 from src.backend_v2.auth.ownership import owner_scope
+from src.backend_v2.jobs import DEEP_LEARNING_STEP_KINDS, MAX_DEEP_LEARNING_CONCURRENCY
 from src.backend_v2.jobs.repository import (
     AttemptFence,
     AttemptFenced,
@@ -36,11 +37,9 @@ BatchStepHandler = Callable[
     Mapping[str, Any],
 ]
 ControlTimeoutHandler = Callable[[AttemptFence, str], None]
-DEEP_LEARNING_STEP_KINDS = frozenset({"detect", "ocr", "color", "repair"})
 PIPELINE_BUSY_RETRY_LIMIT = 3
 PIPELINE_BUSY_RETRY_BASE_SECONDS = 0.05
 PARALLEL_PIPELINE_LEAD_WINDOW = 50
-MAX_DEEP_LEARNING_THREADS = 8
 MIN_SCHEDULER_POLL_SECONDS = 0.1
 MAX_SCHEDULER_POLL_SECONDS = 0.5
 DEFAULT_CONTROL_TIMEOUT_SECONDS = 1.5
@@ -638,7 +637,7 @@ class JobWorkerLoop:
             value = config.get("deepLearningConcurrency")
             if isinstance(value, bool) or not isinstance(value, int):
                 raise ValueError("deepLearningConcurrency must be an integer")
-            deep_learning_concurrency = value
+            deep_learning_concurrency = min(value, MAX_DEEP_LEARNING_CONCURRENCY)
         if deep_learning_concurrency < 1:
             raise ValueError("deepLearningConcurrency must be a positive integer")
 
@@ -918,14 +917,7 @@ class JobWorkerLoop:
         # pool preserves the configured concurrency without migrating model calls
         # across every pipeline thread during long jobs.
         deep_learning_executor = ThreadPoolExecutor(
-            max_workers=(
-                deep_learning_concurrency
-                if self.scheduling_policy is None
-                else min(
-                    MAX_DEEP_LEARNING_THREADS,
-                    deep_learning_concurrency,
-                )
-            ),
+            max_workers=deep_learning_concurrency,
             thread_name_prefix="job-model",
         )
         executor = ThreadPoolExecutor(

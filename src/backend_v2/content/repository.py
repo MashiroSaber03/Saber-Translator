@@ -196,10 +196,13 @@ def _validate_chapter_settings_memory(payload: dict[str, object]) -> None:
                 result[key] = value
         return result
 
-    validate_setting_payload(
+    validated = validate_setting_payload(
         "translation",
         merge(default_translation_settings(), payload),
     )
+    parallel = payload.get("parallel")
+    if isinstance(parallel, dict) and "deepLearningLockSize" in parallel:
+        parallel["deepLearningLockSize"] = validated["parallel"]["deepLearningLockSize"]
 
 
 def normalize_logical_path(raw_path: str) -> str:
