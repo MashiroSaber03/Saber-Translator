@@ -9,6 +9,7 @@ from typing import Any, Mapping
 from urllib.parse import urlsplit
 
 from src.backend_v2.content.page_style import validate_text_style_payload
+from src.backend_v2.jobs import MAX_DEEP_LEARNING_CONCURRENCY
 from src.backend_v2.storage.defaults import (
     DEFAULT_BROWSER_DOM_AGENT,
     DEFAULT_WEB_IMPORT_SETTINGS,
@@ -500,10 +501,13 @@ def _validate_translation(payload: dict[str, Any]) -> None:
         VISION_OCR_CAPABILITY,
         "translation.aiVisionOcr.provider",
     )
-    _integer(
-        payload["parallel"]["deepLearningLockSize"],
-        "translation.parallel.deepLearningLockSize",
-        minimum=1,
+    payload["parallel"]["deepLearningLockSize"] = min(
+        _integer(
+            payload["parallel"]["deepLearningLockSize"],
+            "translation.parallel.deepLearningLockSize",
+            minimum=1,
+        ),
+        MAX_DEEP_LEARNING_CONCURRENCY,
     )
     _integer(
         payload["hqTranslation"]["batchSize"],

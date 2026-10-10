@@ -9,6 +9,8 @@ import UiField from '@/components/ui/UiField.vue'
 import UiNumberField from '@/components/ui/UiNumberField.vue'
 import UiSwitch from '@/components/ui/UiSwitch.vue'
 import { useSettingsStore } from '@/stores/settings'
+import { parseCurrentSettings } from '@/stores/settings/schema'
+import { createDefaultSettings } from '@/stores/settings/defaults'
 
 describe('ParallelSettings', () => {
   beforeEach(() => {
@@ -40,17 +42,27 @@ describe('ParallelSettings', () => {
 
     expect(numberField.props('modelValue')).toBe(2)
     expect(numberField.props('min')).toBe(1)
-    expect(numberField.props('max')).toBeUndefined()
+    expect(numberField.props('max')).toBe(4)
     expect(numberField.props('controls')).toBe(true)
 
     numberField.vm.$emit('update:modelValue', 8)
-    expect(store.settings.parallel.deepLearningLockSize).toBe(8)
+    expect(store.settings.parallel.deepLearningLockSize).toBe(4)
 
     numberField.vm.$emit('update:modelValue', 0)
-    expect(store.settings.parallel.deepLearningLockSize).toBe(8)
+    expect(store.settings.parallel.deepLearningLockSize).toBe(4)
 
     expect(wrapper.find('.number-input').exists()).toBe(false)
     expect(wrapper.find('.number-control').exists()).toBe(false)
+  })
+
+  it('loads an old concurrency without resetting other settings', () => {
+    const old = createDefaultSettings()
+    old.parallel.deepLearningLockSize = 8
+    old.targetLanguage = 'zh'
+    const loaded = parseCurrentSettings(old)
+    expect(loaded?.parallel.deepLearningLockSize).toBe(4)
+    expect(loaded?.targetLanguage).toBe('zh')
+    expect(old.parallel.deepLearningLockSize).toBe(8)
   })
 
   it('maps warning note colors to semantic status tokens', () => {

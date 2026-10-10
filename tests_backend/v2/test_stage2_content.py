@@ -706,6 +706,21 @@ def test_chapter_settings_memory_is_cas_scoped_and_rejects_style_or_secrets(
         )
 
 
+def test_old_chapter_concurrency_is_bounded_on_load_and_save(content_platform) -> None:
+    _root, engine, repository, _storage, _importer, book, chapter = content_platform
+    chapter_id = str(chapter["id"])
+    memory = {"parallel": {"enabled": True, "deepLearningLockSize": 8}, "targetLanguage": "zh"}
+    with engine.begin() as connection:
+        connection.execute(update(chapters).where(chapters.c.id == chapter_id).values(settings_memory_json=json.dumps(memory)))
+    bootstrap = repository.translation_bootstrap(book_id=str(book["id"]), chapter_id=chapter_id)
+    loaded = bootstrap["chapter"]["settingsMemory"]
+    assert loaded == {"parallel": {"enabled": True, "deepLearningLockSize": 4}, "targetLanguage": "zh"}
+    repository.update_chapter_settings_memory(chapter_id=chapter_id, base_revision=1, payload=memory)
+    with engine.connect() as connection:
+        saved = json.loads(connection.execute(select(chapters.c.settings_memory_json).where(chapters.c.id == chapter_id)).scalar_one())
+    assert saved == loaded
+
+
 def test_chapter_settings_memory_has_no_aggregate_byte_gate(content_platform) -> None:
     _root, _engine, repository, _storage, _importer, _book, chapter = (
         content_platform

@@ -5131,7 +5131,7 @@ components:
             maxDeepLearningConcurrency:
               type: [integer, "null"]
               minimum: 1
-              maximum: 8
+              maximum: 4
         features:
           type: object
           additionalProperties: false
@@ -5307,7 +5307,7 @@ components:
         queueDiscipline: {type: string, enum: [owner_round_robin, fifo]}
         pageQuantum: {type: integer, minimum: 1, maximum: 20}
         interactiveBurst: {type: integer, minimum: 0, maximum: 3}
-        maxDeepLearningConcurrency: {type: integer, minimum: 1, maximum: 8}
+        maxDeepLearningConcurrency: {type: integer, minimum: 1, maximum: 4}
         apiOperationConcurrency: {type: integer, minimum: 1, maximum: 8}
         modelIdleSeconds: {type: integer, minimum: 60, maximum: 3600}
         minAvailableMemoryMiB:

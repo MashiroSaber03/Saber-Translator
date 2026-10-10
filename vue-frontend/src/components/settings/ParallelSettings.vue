@@ -7,17 +7,21 @@ import UiSwitch from '@/components/ui/UiSwitch.vue'
 import { useSettingsStore } from '@/stores/settings'
 import { computed } from 'vue'
 import { usePublicUserAccess } from '@/composables/usePublicUserAccess'
+import { MAX_DEEP_LEARNING_CONCURRENCY } from '@/constants'
 
 const settingsStore = useSettingsStore()
 const publicAccess = usePublicUserAccess()
 const parallelAllowed = computed(() => publicAccess.parallelAllowed())
-const maxConcurrency = computed(() => publicAccess.maxDeepLearningConcurrency())
+const maxConcurrency = computed(() => Math.min(
+  MAX_DEEP_LEARNING_CONCURRENCY,
+  publicAccess.maxDeepLearningConcurrency() ?? MAX_DEEP_LEARNING_CONCURRENCY,
+))
 const parallelEnabled = computed(() => (
   parallelAllowed.value && settingsStore.settings.parallel.enabled
 ))
 const deepLearningConcurrency = computed(() => Math.min(
   settingsStore.settings.parallel.deepLearningLockSize,
-  maxConcurrency.value ?? settingsStore.settings.parallel.deepLearningLockSize,
+  maxConcurrency.value,
 ))
 
 function updateParallelEnabled(value: boolean): void {
@@ -28,7 +32,7 @@ function updateParallelEnabled(value: boolean): void {
 function updateLockSize(value: number | null): void {
   if (value === null || !Number.isInteger(value) || value < 1) return
   settingsStore.updateParallel({
-    deepLearningLockSize: Math.min(value, maxConcurrency.value ?? value),
+    deepLearningLockSize: Math.min(value, maxConcurrency.value),
   })
 }
 </script>
@@ -56,7 +60,7 @@ function updateLockSize(value: number | null): void {
         variant="settings"
         label="深度学习并发数"
         control-id="parallelDeepLearningLockSize"
-        hint="控制检测/OCR/颜色/修复的最大并发数（建议1-2）"
+        hint="同时运行的深度学习处理池数，共4个：检测/OCR/颜色/修复（建议1-2）"
         :class="{ 'parallel-settings__field--disabled': !parallelEnabled }"
       >
         <UiNumberField
@@ -64,7 +68,7 @@ function updateLockSize(value: number | null): void {
           input-id="parallelDeepLearningLockSize"
           aria-label="深度学习并发数"
           :min="1"
-          :max="maxConcurrency ?? undefined"
+          :max="maxConcurrency"
           controls
           :disabled="!parallelAllowed || !parallelEnabled"
           @update:model-value="updateLockSize"
@@ -77,7 +81,7 @@ function updateLockSize(value: number | null): void {
           <span>注意事项</span>
         </div>
         <ul class="parallel-settings__note-list">
-          <li class="parallel-settings__note-item">并发数设为1时为串行执行，最稳定</li>
+          <li class="parallel-settings__note-item">设为1时深度学习池串行运行，翻译等其他池仍可并行</li>
           <li class="parallel-settings__note-item">增大并发数可能加速处理，但会占用更多GPU/CPU资源</li>
           <li class="parallel-settings__note-item">如果遇到显存不足，请将并发数设为1</li>
         </ul>

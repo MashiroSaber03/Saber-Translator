@@ -13,6 +13,7 @@ import psutil
 from sqlalchemy import Engine, func, select, update
 
 from src.backend_v2.serialization import canonical_json
+from src.backend_v2.jobs import MAX_DEEP_LEARNING_CONCURRENCY
 from src.backend_v2.storage.database import is_sqlite_busy_error
 from src.backend_v2.storage.schema import (
     DEFAULT_SCHEDULING_POLICY_JSON,
@@ -81,7 +82,7 @@ def validate_scheduling_policy(value: object) -> dict[str, Any]:
             value["maxDeepLearningConcurrency"],
             label="深度学习并发数",
             minimum=1,
-            maximum=8,
+            maximum=MAX_DEEP_LEARNING_CONCURRENCY,
         ),
         "apiOperationConcurrency": _integer(
             value["apiOperationConcurrency"],
@@ -123,6 +124,8 @@ class SchedulingPolicyRepository:
             value = json.loads(str(payload))
         except json.JSONDecodeError as exc:
             raise RuntimeError("调度策略不是有效 JSON") from exc
+        if isinstance(value, dict) and isinstance(value.get("maxDeepLearningConcurrency"), int):
+            value["maxDeepLearningConcurrency"] = min(value["maxDeepLearningConcurrency"], MAX_DEEP_LEARNING_CONCURRENCY)
         return validate_scheduling_policy(value)
 
     def save(self, value: object) -> dict[str, Any]:

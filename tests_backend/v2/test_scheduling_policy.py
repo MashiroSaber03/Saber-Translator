@@ -4,6 +4,9 @@ import threading
 import time
 
 import pytest
+import json
+from sqlalchemy import update
+from src.backend_v2.storage.schema import platform_config
 
 from src.backend_v2.operations.executor import DurableOperationExecutor
 from src.backend_v2.operations.repository import OperationFence
@@ -30,6 +33,10 @@ def test_scheduling_policy_uses_the_small_machine_defaults_and_closed_schema(
         changed["minAvailableMemoryMiB"] = 0
         assert repository.save(changed) == changed
         assert repository.load() == changed
+        legacy = {**changed, "maxDeepLearningConcurrency": 8}
+        with engine.begin() as connection:
+            connection.execute(update(platform_config).values(scheduler_policy_json=json.dumps(legacy)))
+        assert repository.load() == {**changed, "maxDeepLearningConcurrency": 4}
     finally:
         engine.dispose()
 
@@ -37,6 +44,8 @@ def test_scheduling_policy_uses_the_small_machine_defaults_and_closed_schema(
         validate_scheduling_policy({**changed, "extra": True})
     with pytest.raises(ValueError, match="最低可用内存"):
         validate_scheduling_policy({**changed, "minAvailableMemoryMiB": 256})
+    with pytest.raises(ValueError, match="深度学习并发数"):
+        validate_scheduling_policy({**changed, "maxDeepLearningConcurrency": 5})
 
 
 def test_api_operation_executor_applies_a_changed_limit_to_new_operations() -> None:
