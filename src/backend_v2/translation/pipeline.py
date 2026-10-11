@@ -148,6 +148,7 @@ class TranslationAlgorithms(Protocol):
         config: Mapping[str, Any],
         *,
         precise_mask: Image.Image | None = None,
+        user_mask: Image.Image | None = None,
     ) -> Image.Image: ...
 
     def render(
@@ -1352,6 +1353,7 @@ class CoreTranslationAlgorithms:
         config: Mapping[str, Any],
         *,
         precise_mask: Image.Image | None = None,
+        user_mask: Image.Image | None = None,
     ) -> Image.Image:
         import numpy as np
 
@@ -1391,6 +1393,7 @@ class CoreTranslationAlgorithms:
                 else None
             ),
             mask_dilate_size=config["mask_dilate_size"],
+            user_mask=np.array(user_mask, dtype=np.uint8) if user_mask is not None else None,
             mask_box_expand_ratio=config["mask_box_expand_ratio"],
             lama_model=config["lama_model"],
             disable_resize=config["disable_resize"],
@@ -2644,6 +2647,12 @@ class TranslationPipelineService:
             step_kind="detect",
             role="text_mask",
         )
+        masks = self.jobs.bind_item_inputs(
+            fence, item_id=str(step["itemId"]), page_id=page_id,
+            roles=("text_mask", "user_mask"), optional_roles=("text_mask", "user_mask"),
+        )
+        if precise_mask_asset_id is None and "text_mask" in masks:
+            precise_mask_asset_id = str(masks["text_mask"]["id"])
         inpaint_method = str(style_defaults["inpaintMethod"])
         before = self._atomic_hook(
             fence,
@@ -2676,7 +2685,13 @@ class TranslationPipelineService:
         image = self._open_asset(input_asset_id, "RGB")
         source_size = image.size
         precise_mask: Image.Image | None = None
+        user_mask: Image.Image | None = None
         try:
+            bound_user = masks.get("user_mask")
+            if bound_user is not None:
+                user_mask = self._open_asset(str(bound_user["id"]), "L")
+                if user_mask.size != source_size:
+                    raise JobConflict("manual mask size does not match source image")
             mask_asset_id = before.get("textMaskAssetId")
             if mask_asset_id is not None:
                 mask_asset_id = _require_non_empty_string(
@@ -2715,11 +2730,14 @@ class TranslationPipelineService:
                 input_bubbles,
                 inpainting,
                 precise_mask=precise_mask,
+                user_mask=user_mask,
             )
         finally:
             image.close()
             if precise_mask is not None:
                 precise_mask.close()
+            if user_mask is not None:
+                user_mask.close()
         if not isinstance(repaired, Image.Image):
             raise JobConflict("inpainting did not return an image")
         try:

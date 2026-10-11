@@ -178,6 +178,7 @@ watch(
     if (
       !image
       || image.documentRevision === undefined
+      || !image.hasUnsavedChanges
       || translateInit.isSwitchingImage.value
       || !isPageDocumentRegistered(image.id)
     ) {

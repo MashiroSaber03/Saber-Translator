@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { defineComponent, h } from 'vue'
+import { defineComponent, h, reactive } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useEditWorkspace } from '@/components/edit/useEditWorkspace'
@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   registerPageDocument: vi.fn(),
   reRenderFullImage: vi.fn(),
   toast: vi.fn(),
+  exit: vi.fn(),
 }))
 
 vi.mock('@/api/v2/content', () => ({
@@ -51,9 +52,20 @@ interface WorkspaceHarness {
   applyAndNext: () => Promise<void>
   currentImageIndex: number
   isBusy: boolean
+  handleExitToolbarAction: () => Promise<void>
+  maskDirty: boolean
+  maskActive: boolean
+  viewMode: 'dual' | 'original' | 'translated'
+  syncEnabled: boolean
+  originalScale: number
+  scale: number
+  toolbarScale: number
+  fitToScreen: () => void
+  zoomIn: () => void
+  resetZoom: () => void
 }
 
-async function mountWorkspace(bubbles: BubbleState[]) {
+async function mountWorkspace(bubbles: BubbleState[], comparison?: unknown) {
   const imageStore = useImageStore()
   addTestImage(imageStore, '1.png', '/api/v2/assets/source-1', {
     chapterId: 'chapter-1',
@@ -69,11 +81,23 @@ async function mountWorkspace(bubbles: BubbleState[]) {
   mocks.registerPageDocument.mockReturnValue(bubbles)
   const Harness = defineComponent({
     setup() {
-      const workspace = useEditWorkspace(vi.fn())
+      const workspace = useEditWorkspace(mocks.exit)
+      if (comparison) workspace.imageComparisonRef.value = comparison as NonNullable<typeof workspace.imageComparisonRef.value>
       return {
         applyAndNext: workspace.applyAndNext,
         currentImageIndex: workspace.currentImageIndex,
         isBusy: workspace.isBusy,
+        handleExitToolbarAction: workspace.handleExitToolbarAction,
+        maskDirty: workspace.maskEditor.dirty,
+        maskActive: workspace.maskEditor.active,
+        viewMode: workspace.viewMode,
+        syncEnabled: workspace.syncEnabled,
+        originalScale: workspace.originalScale,
+        scale: workspace.scale,
+        toolbarScale: workspace.toolbarScale,
+        fitToScreen: workspace.fitToScreen,
+        zoomIn: workspace.zoomIn,
+        resetZoom: workspace.resetZoom,
       }
     },
     render: () => h('div'),
@@ -104,6 +128,32 @@ describe('EditWorkspace backend-owned navigation', () => {
       pageStyleDefaults: { ...TEXT_STYLE_DEFAULTS },
       renderStatus: 'stale',
     }))
+  })
+
+  it('uses the remaining visible original viewport when the result panel is collapsed', async () => {
+    const original = document.createElement('div')
+    const translated = document.createElement('div')
+    original.getBoundingClientRect = () => new DOMRect(0, 0, 600, 400)
+    Object.defineProperties(original, { clientWidth: { value: 600 }, clientHeight: { value: 400 } })
+    const image = document.createElement('img')
+    Object.defineProperties(image, { naturalWidth: { value: 1000 }, naturalHeight: { value: 500 } })
+    const comparison = reactive({
+      originalViewportRef: original, translatedViewportRef: translated,
+      originalImageRef: image, translatedImageRef: image,
+      translatedPanelCollapsed: true,
+    })
+    const wrapper = await mountWorkspace([], comparison)
+    const workspace = wrapper.vm as unknown as WorkspaceHarness
+    workspace.fitToScreen()
+    expect(workspace.originalScale).toBeCloseTo(0.57)
+    workspace.syncEnabled = false
+    workspace.zoomIn()
+    expect(workspace.originalScale).toBeCloseTo(0.684)
+    expect(workspace.scale).toBeCloseTo(0.57)
+    expect(workspace.toolbarScale).toBeCloseTo(workspace.originalScale)
+    comparison.translatedPanelCollapsed = false
+    expect(workspace.toolbarScale).toBeCloseTo(workspace.scale)
+    wrapper.unmount()
   })
 
   it('persists the authoritative page document before ordinary navigation', () => {
@@ -178,6 +228,51 @@ describe('EditWorkspace backend-owned navigation', () => {
     expect(source).not.toContain('forceInitializeBookshelfSession')
     expect(source).not.toContain('saveBookshelfPageProgress')
     expect(source).not.toContain('saveStep')
+  })
+
+  it('shares the save gate for exit, rendering the result only after persistence', async () => {
+    const wrapper = await mountWorkspace([])
+    try {
+      const workspace = wrapper.vm as unknown as WorkspaceHarness
+      await workspace.handleExitToolbarAction()
+      expect(mocks.flushPageDocument).toHaveBeenCalledWith('page-1')
+      expect(mocks.reRenderFullImage).toHaveBeenCalledOnce()
+      expect(mocks.exit).toHaveBeenCalledWith('exit')
+      expect(mocks.queuePageDocumentSave.mock.invocationCallOrder[0]).toBeLessThan(mocks.reRenderFullImage.mock.invocationCallOrder[0]!)
+      expect(mocks.reRenderFullImage.mock.invocationCallOrder[0]).toBeLessThan(mocks.exit.mock.invocationCallOrder[0]!)
+    } finally { wrapper.unmount() }
+  })
+
+  it('cannot leave or change pages while a failed mask save still has local strokes', async () => {
+    const wrapper = await mountWorkspace([])
+    try {
+      const workspace = wrapper.vm as unknown as WorkspaceHarness
+      workspace.maskActive = true
+      workspace.maskDirty = true
+      await workspace.applyAndNext()
+      await workspace.handleExitToolbarAction()
+      expect(workspace.currentImageIndex).toBe(0)
+      expect(mocks.exit).not.toHaveBeenCalled()
+      expect(mocks.queuePageDocumentSave).not.toHaveBeenCalled()
+      expect(mocks.toast).toHaveBeenCalledWith('请先保存当前修复范围，或放弃未保存的修改', 'warning')
+    } finally { wrapper.unmount() }
+  })
+
+  it('zooms the visible original view when synchronization is disabled', async () => {
+    const wrapper = await mountWorkspace([])
+    try {
+      const workspace = wrapper.vm as unknown as WorkspaceHarness
+      workspace.viewMode = 'original'
+      workspace.syncEnabled = false
+      const originalBefore = workspace.originalScale
+      const translatedBefore = workspace.scale
+      workspace.zoomIn()
+      expect(workspace.originalScale).toBeGreaterThan(originalBefore)
+      expect(workspace.scale).toBe(translatedBefore)
+      workspace.resetZoom()
+      expect(workspace.originalScale).toBe(originalBefore)
+      expect(workspace.scale).toBe(translatedBefore)
+    } finally { wrapper.unmount() }
   })
 
   it('waits for the authoritative page style before allowing edits', () => {

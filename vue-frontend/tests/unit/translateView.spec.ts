@@ -8,6 +8,9 @@ import TranslateView from '@/views/TranslateView.vue'
 import ImageUpload from '@/components/translate/ImageUpload.vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useImageStore } from '@/stores/imageStore'
+import { useBubbleStore } from '@/stores/bubbleStore'
+import * as pagePersistence from '@/services/pageDocumentPersistence'
+import { createBubbleState } from '@/utils/bubbleFactory'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import UiIcon from '@/components/ui/UiIcon.vue'
 
@@ -275,6 +278,29 @@ describe('TranslateView', () => {
       settingsStore.settings.textStyle,
     )
     expect(wrapper.getComponent(ImageUpload).props('disabled')).toBe(false)
+  })
+
+  it('does not save loaded bubbles, but persists subsequent local edits', async () => {
+    const queue = vi.spyOn(pagePersistence, 'queuePageDocumentSave').mockResolvedValue(undefined)
+    vi.spyOn(pagePersistence, 'isPageDocumentRegistered').mockReturnValue(true)
+    vi.spyOn(pagePersistence, 'flushPageDocument').mockResolvedValue(undefined)
+    mountTranslateView()
+    await nextTick()
+    const imageStore = useImageStore()
+    const bubbleStore = useBubbleStore()
+    imageStore.setImages([{
+      id: 'page-1', chapterId: 'chapter-1', fileName: 'comic.jpg',
+      sourceAssetUrl: '/api/v2/assets/source', cleanAssetUrl: null,
+      translatedAssetUrl: null, translationStatus: 'pending',
+      documentRevision: 2, hasUnsavedChanges: false, bubbleStates: [],
+    }])
+    bubbleStore.setBubbles([createBubbleState({ originalText: '漫画对白' })], true)
+    await nextTick()
+    expect(queue).not.toHaveBeenCalled()
+
+    bubbleStore.updateBubble(0, { translatedText: '编辑后的对白' })
+    await nextTick()
+    expect(queue).toHaveBeenCalledWith('page-1', 2, bubbleStore.bubbles)
   })
 
   it('reloads the chapter when an accepted container import reaches a terminal state', async () => {

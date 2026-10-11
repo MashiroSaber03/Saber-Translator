@@ -119,6 +119,7 @@ PAGE_ASSET_ROLES = (
     "clean",
     "translated",
     "text_mask",
+    "user_mask",
 )
 PROMPT_TYPES = (
     "translate",

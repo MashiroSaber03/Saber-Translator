@@ -5,7 +5,8 @@ import { createPinia, setActivePinia } from 'pinia'
 import { defineComponent, h } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { useBrush } from '@/composables/useBrush'
+import { useBrush, type BrushCallbacks } from '@/composables/useBrush'
+import { paintMaskCircles } from '@/utils/binaryMaskPng'
 import { useImageStore } from '@/stores/imageStore'
 import { addTestImage } from '../helpers/imageFixtures'
 
@@ -77,7 +78,7 @@ function createBrushSurface({
   return { image, viewport, wrapper }
 }
 
-function mountBrush(onBrushComplete = vi.fn()) {
+function mountBrush(onBrushComplete = vi.fn(), onMaskStroke?: BrushCallbacks['onMaskStroke']) {
   let brushApi: ReturnType<typeof useBrush> | null = null
   const Harness = defineComponent({
     setup() {
@@ -87,6 +88,7 @@ function mountBrush(onBrushComplete = vi.fn()) {
           inpaintMethod: 'solid',
         }),
         onBrushComplete,
+        onMaskStroke,
       })
       return brushApi
     },
@@ -149,6 +151,48 @@ describe('useBrush', () => {
     })
   })
 
+  it('keeps fast strokes continuous in the preview and submitted mask', async () => {
+    const save = vi.fn().mockResolvedValue(undefined)
+    const { brush, wrapper } = mountBrush(undefined, save)
+    brush.toggleBrushMode('repair')
+    brush.startBrushPainting(new MouseEvent('mousedown', { button: 0, clientX: 40, clientY: 40 }), createBrushSurface())
+    const initialSize = brush.brushSize.value
+    brush.adjustBrushSize(5)
+    expect(brush.brushSize.value).toBe(initialSize)
+    brush.continueBrushPainting(new MouseEvent('mousemove', { clientX: 160, clientY: 40 }))
+    brush.finishBrushPainting()
+    await flushPromises()
+    const bounds = save.mock.calls[0]![0]
+    const pixels = new Uint8Array(200 * 120)
+    paintMaskCircles(pixels, 200, 120, bounds.path.map((p: {x: number; y: number}) => ({...p, radius: bounds.radius})), 255)
+    for (let x = 40; x <= 160; x++) expect(pixels[40 * 200 + x]).toBe(255)
+    const preview = HTMLCanvasElement.prototype.getContext.call(document.createElement('canvas'), '2d')!
+    expect(preview.ellipse).toHaveBeenCalledTimes(bounds.path.length)
+    brush.adjustBrushSize(5)
+    expect(brush.brushSize.value).toBe(initialSize + 5)
+    expect(mocks.createMaskRepair).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('follows an outside-image drag without connecting across untouched image content', async () => {
+    const save = vi.fn().mockResolvedValue(undefined)
+    const { brush, wrapper } = mountBrush(undefined, save)
+    brush.toggleBrushMode('repair')
+    brush.startBrushPainting(new MouseEvent('mousedown', { button: 0, clientX: 40, clientY: 40 }), createBrushSurface())
+    for (const [clientX, clientY] of [[40, -40], [160, -40], [160, 40]]) {
+      brush.continueBrushPainting(new MouseEvent('mousemove', { clientX, clientY }))
+    }
+    brush.finishBrushPainting()
+    await flushPromises()
+    const bounds = save.mock.calls[0]![0]
+    const pixels = new Uint8Array(200 * 120)
+    paintMaskCircles(pixels, 200, 120, bounds.path.map((p: {x: number; y: number}) => ({...p, radius: bounds.radius})), 255)
+    expect(pixels[40 * 200 + 40]).toBe(255)
+    expect(pixels[40 * 200 + 160]).toBe(255)
+    expect(pixels[40 * 200 + 100]).toBe(0)
+    wrapper.unmount()
+  })
+
   it('submits the interaction mask as a backend repair operation', async () => {
     const { brush, onBrushComplete } = mountBrush()
 
@@ -204,6 +248,24 @@ describe('useBrush', () => {
 
     expect(mocks.toast).toHaveBeenCalledWith('画笔修复失败', 'error')
     expect(onBrushComplete).not.toHaveBeenCalled()
+  })
+
+  it.each(['submission', 'execution'])('refreshes the revision after %s failure before a new stroke', async phase => {
+    const message = phase === 'submission' ? 'revision changed' : 'model failed'
+    const failedRequest = phase === 'submission' ? mocks.createMaskRepair : mocks.waitForOperation
+    failedRequest.mockRejectedValueOnce(new Error(message))
+    const { brush, onBrushComplete } = mountBrush()
+    drawStroke(brush)
+    await vi.waitFor(() => expect(brush.isBrushSubmitting.value).toBe(false))
+    expect(mocks.toast).toHaveBeenCalledWith(message, 'error')
+    expect(onBrushComplete).not.toHaveBeenCalled()
+    expect(useImageStore().currentImage?.documentRevision).toBe(4)
+    brush.exitBrushMode()
+    drawStroke(brush)
+    await vi.waitFor(() => expect(onBrushComplete).toHaveBeenCalledOnce())
+    expect(mocks.createMaskRepair).toHaveBeenLastCalledWith('page-1', expect.any(Blob), {
+      baseRevision: 4, fillColor: '#ffffff', method: 'solid',
+    })
   })
 
   it('does not publish a result after the owner unmounts', async () => {

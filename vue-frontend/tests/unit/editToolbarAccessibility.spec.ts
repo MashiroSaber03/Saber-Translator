@@ -7,6 +7,7 @@ import EditToolbar from '@/components/edit/EditToolbar.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
+import UiColorInput from '@/components/ui/UiColorInput.vue'
 
 function createToolbarProps() {
   return {
@@ -33,6 +34,38 @@ function createToolbarProps() {
 }
 
 describe('EditToolbar accessibility', () => {
+  it.each([false, true])('offers the clean image toggle in either editing mode (range=%s)', async (maskMode) => {
+    const wrapper = mount(EditToolbar, {
+      props: { ...createToolbarProps(), maskMode, canPreviewClean: true, showCleanPreview: false },
+    })
+    const toggle = wrapper.get('button[title="查看不含译文的修复图"]')
+    expect(toggle.text()).toBe('仅看修复')
+    expect(toggle.attributes('aria-pressed')).toBe('false')
+    await toggle.trigger('click')
+    expect(wrapper.emitted('toggle-clean-preview')).toHaveLength(1)
+    await wrapper.setProps({ showCleanPreview: true })
+    expect(toggle.attributes('aria-pressed')).toBe('true')
+    expect(toggle.attributes('title')).toBe('返回查看译图')
+  })
+
+  it('disables clean preview when the page has no repaired image', async () => {
+    const wrapper = mount(EditToolbar, { props: createToolbarProps() })
+    const toggle = wrapper.get('button[title="尚未生成修复图，请先进行背景修复"]')
+    expect(toggle.attributes('disabled')).toBeDefined()
+    await toggle.trigger('click')
+    expect(wrapper.emitted('toggle-clean-preview')).toBeUndefined()
+  })
+
+  it('replaces only the secondary tools while keeping navigation and the exit control', () => {
+    const wrapper = mount(EditToolbar, {
+      props: { ...createToolbarProps(), maskMode: true },
+      slots: { 'mask-tools': '<div aria-label="掩膜工具">掩膜工具</div>' },
+    })
+    expect(wrapper.find('[aria-label="掩膜工具"]').exists()).toBe(true)
+    expect(wrapper.find('button[title="自动检测当前图片的文本框"]').exists()).toBe(false)
+    expect(wrapper.get('button[title="下一张图片 (D)"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.findAll('button').find(button => button.text() === '退出编辑')?.attributes('disabled')).toBeUndefined()
+  })
   it('uses an explicit button for the image indicator thumbnail toggle', async () => {
     const wrapper = mount(EditToolbar, {
       props: createToolbarProps(),
@@ -41,6 +74,7 @@ describe('EditToolbar accessibility', () => {
     const indicator = wrapper.get('.edit-toolbar__image-indicator')
     expect(indicator.element.tagName).toBe('BUTTON')
     expect(indicator.attributes('aria-label')).toBe('显示或隐藏缩略图')
+    expect(wrapper.findAll('[aria-label="显示或隐藏缩略图"]')).toHaveLength(1)
 
     await indicator.trigger('click')
     expect(wrapper.emitted('toggle-thumbnails')).toHaveLength(1)
@@ -54,6 +88,17 @@ describe('EditToolbar accessibility', () => {
     await wrapper.get('button[title="下一张图片 (D)"]').trigger('pointerup')
 
     expect(wrapper.emitted('pointer-action-complete')).toHaveLength(1)
+  })
+
+  it('keeps keyboard focus inside toolbar dropdowns and color inputs', async () => {
+    const wrapper = mount(EditToolbar, {
+      props: { ...createToolbarProps(), maskMode: true },
+      slots: { 'mask-tools': '<button role="combobox">修复方式</button><UiColorInput model-value="#ffffff" /><div role="listbox"><div role="option">选项</div></div>' },
+      global: { components: { UiColorInput } },
+    })
+    for (const selector of ['[role="combobox"]', 'input', '[role="option"]'])
+      await wrapper.get(selector).trigger('pointerup')
+    expect(wrapper.emitted('pointer-action-complete')).toBeUndefined()
   })
 
   it('disables navigation and backend mutations while an edit operation is running', () => {
@@ -74,7 +119,7 @@ describe('EditToolbar accessibility', () => {
       '批量检测所有图片',
       '使用当前文本框翻译此图片',
       '删除选中气泡框 (Delete)',
-      '修复选中气泡背景 (R)',
+      '修复选中气泡背景',
       '应用更改并跳转下一张 (Ctrl+Enter)',
     ]) {
       expect(wrapper.get(`button[title="${title}"]`).attributes('disabled')).toBeDefined()
@@ -127,7 +172,6 @@ describe('EditToolbar accessibility', () => {
     expect(wrapper.findAllComponents(UiIconButton).map(button => button.props('label'))).toEqual([
       '上一张图片',
       '下一张图片',
-      '显示或隐藏缩略图',
       '上一个气泡',
       '下一个气泡',
       '切换布局',
@@ -137,6 +181,8 @@ describe('EditToolbar accessibility', () => {
       '放大',
       '缩小',
       '原始大小',
+      '修复笔刷',
+      '还原笔刷',
     ])
     expect(wrapper.get('button[title="上一张图片 (A)"]').attributes('aria-label')).toBe('上一张图片')
     expect(wrapper.get('button[title="放大 (+)"]').attributes('aria-label')).toBe('放大')
@@ -168,11 +214,12 @@ describe('EditToolbar accessibility', () => {
     })
 
     expect(wrapper.get('.edit-toolbar__image-indicator').attributes('aria-pressed')).toBe('true')
-    expect(wrapper.get('button[title="显示/隐藏缩略图"]').attributes('aria-pressed')).toBe('true')
     expect(wrapper.get('button[title="同步缩放/拖动"]').attributes('aria-pressed')).toBe('true')
     expect(wrapper.get('button[title="添加气泡框（或中键拖拽绘制）"]').attributes('aria-pressed')).toBe('true')
     expect(wrapper.get('button[title="修复笔刷 (按住R+左键拖拽)"]').attributes('aria-pressed')).toBe('true')
     expect(wrapper.get('button[title="还原笔刷 (按住U+左键拖拽)"]').attributes('aria-pressed')).toBe('false')
+    expect(wrapper.get('[aria-label="修复笔刷"]').text()).toBe('')
+    expect(wrapper.get('[aria-label="还原笔刷"]').text()).toBe('')
   })
 
   it('does not keep legacy DOM id hooks for edit toolbar counters', () => {

@@ -228,7 +228,7 @@ describe('EditImageComparison event forwarding', () => {
 
     expect(source).toContain(":class=\"{ 'edit-image-comparison__divider--vertical': layoutMode === 'vertical' }\"")
     expect(source).toMatch(/\.edit-image-comparison--layout-vertical \.edit-image-comparison__canvas-region\s*\{[^}]*flex-direction:\s*column;/)
-    expect(source).toMatch(/\.edit-image-comparison--layout-vertical \.edit-image-comparison__image-panel\s*\{[^}]*min-height:\s*150px;/)
+    expect(source).toMatch(/\.edit-image-comparison--layout-vertical \.edit-image-comparison__image-panel:not\(\.edit-image-comparison__image-panel--collapsed\)\s*\{[^}]*min-height:\s*150px;/)
     expect(source).toMatch(/\.edit-image-comparison__divider--vertical\s*\{[^}]*height:\s*8px;[^}]*cursor:\s*ns-resize;/)
     expect(source).toMatch(/\.edit-image-comparison__divider--vertical \.edit-image-comparison__divider-handle\s*\{[^}]*writing-mode:\s*horizontal-tb;/)
   })

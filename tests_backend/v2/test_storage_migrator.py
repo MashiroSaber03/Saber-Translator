@@ -11,7 +11,7 @@ import pytest
 
 from src.version import STORAGE_VERSION, parse_version
 from src.backend_v2.storage.lifecycle import initialize_database, schema_smoke_test
-from src.storage_migrator.contracts import StorageError, contract_sql, read_identity
+from src.storage_migrator.contracts import StorageError, contract_sql, read_identity, validate_schema
 from src.storage_migrator.control import DataRootLock, DataRootAlreadyLocked, business_ready, atomic_json, control_root, registered_process, wait_for_children
 from src.storage_migrator.registry import Migration, migration_chain
 from src.storage_migrator.runner import StorageManager, OWNER_FILE
@@ -24,7 +24,14 @@ def baseline(tmp_path_factory):
     initialize_database(root)
     # The migration protocol fixtures need existing files, not real font payloads.
     with closing(sqlite3.connect(root / "saber.sqlite3")) as db, db:
-        # Freeze protocol fixtures at 3.5.1; later releases use the same schema.
+        # Use the actual historical contract, not today's schema with an old label.
+        original_assets = next(statement for statement in contract_sql("3.5.1").split(";")
+                               if statement.lstrip().startswith("CREATE TABLE page_assets ("))
+        original_indexes = [row[0] for row in db.execute("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='page_assets' AND sql IS NOT NULL")]
+        db.execute("DROP TABLE page_assets")
+        db.execute(original_assets)
+        for sql in original_indexes:
+            db.execute(sql)
         db.execute("UPDATE schema_metadata SET storage_version='3.5.1'")
         for (relative,) in db.execute("SELECT relative_path FROM fonts"):
             path = root / relative
@@ -60,7 +67,7 @@ def manager(root, **kwargs):
 
 
 def test_version_numeric_and_registry():
-    assert STORAGE_VERSION == "3.5.2"
+    assert STORAGE_VERSION == "3.5.3"
     assert parse_version("3.5.10") > parse_version("3.5.9")
     for value in ("3.5", "3.05.0", "3.6.0-rc1", "v3.5.1"):
         with pytest.raises(ValueError):
@@ -72,6 +79,8 @@ def test_version_numeric_and_registry():
 
 
 def test_current_check_and_readonly_cli(root):
+    from src.storage_migrator.v3_5_3 import convert as add_user_masks
+    add_user_masks(root)
     with closing(sqlite3.connect(root / "saber.sqlite3")) as db, db:
         db.execute("UPDATE schema_metadata SET storage_version=?", (STORAGE_VERSION,))
     assert StorageManager(root, "local").check()["status"] == "current"
@@ -115,15 +124,15 @@ def test_profile_schema_and_json_rejected(root):
         schema_smoke_test(root / "saber.sqlite3")
 
 
-def test_351_upgrade_to_current_preserves_data_without_backup(root):
+def test_351_upgrade_to_352_preserves_data_without_backup(root):
     assert contract_sql("3.5.1") == contract_sql("3.5.2")
     with closing(sqlite3.connect(root / "saber.sqlite3")) as db:
         before = list(db.iterdump())
     saved = (root / "objects" / "saved.txt").read_bytes()
-    with StorageManager(root, "local") as migration:
+    with StorageManager(root, "local", target="3.5.2") as migration:
         assert migration.check()["status"] == "upgrade_required"
         assert migration.prepare(initialize_database)["status"] == "updated"
-        assert read_identity(root)[0] == STORAGE_VERSION
+        assert read_identity(root)[0] == "3.5.2"
         assert not list(migration._operations())
         assert business_ready(root)
         assert migration.check()["status"] == "current"
@@ -384,10 +393,12 @@ def test_real_launcher_confirms_candidate_and_cleans_backup(root):
         db.execute("UPDATE schema_metadata SET storage_version='3.4.9'")
         db.execute("ALTER TABLE app_settings ADD COLUMN old_fixture_column TEXT")
     def fixture_sql(version):
-        return contract_sql(STORAGE_VERSION) + ("\nALTER TABLE app_settings ADD COLUMN old_fixture_column TEXT;" if version == "3.4.9" else "")
+        return contract_sql("3.5.1" if version == "3.4.9" else STORAGE_VERSION) + ("\nALTER TABLE app_settings ADD COLUMN old_fixture_column TEXT;" if version == "3.4.9" else "")
     def fixture_convert(work):
         with closing(sqlite3.connect(work / "saber.sqlite3")) as db, db:
             db.execute("ALTER TABLE app_settings DROP COLUMN old_fixture_column")
+        from src.storage_migrator.v3_5_3 import convert as add_user_masks
+        add_user_masks(work)
     ready = threading.Event()
     errors = []
     with socket.socket() as listener:
@@ -427,7 +438,8 @@ def test_installed_candidate_corruption_rolls_back_on_next_prepare(root):
             migration.prepare(initialize_database)
         assert migration.rolled_back
         assert read_identity(root)[0] == "3.5.1"
-        schema_smoke_test(root / "saber.sqlite3")
+        with closing(sqlite3.connect(root / "saber.sqlite3")) as db:
+            validate_schema(db, contract_sql("3.5.1"))
 
 
 def test_desktop_setup_error_before_backend_restores_installed_data(root):

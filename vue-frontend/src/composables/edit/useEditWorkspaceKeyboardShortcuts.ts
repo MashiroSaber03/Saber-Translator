@@ -16,6 +16,9 @@ interface UseEditWorkspaceKeyboardShortcutsOptions {
   zoomIn: () => void
   zoomOut: () => void
   resetZoom: () => void
+  maskActive?: Readonly<Ref<boolean>>
+  exitMaskMode?: () => void
+  applyMask?: () => Promise<void>
 }
 
 export function useEditWorkspaceKeyboardShortcuts(options: UseEditWorkspaceKeyboardShortcutsOptions) {
@@ -49,11 +52,14 @@ export function useEditWorkspaceKeyboardShortcuts(options: UseEditWorkspaceKeybo
       return
     }
     if (isEditableTarget(event.target)) return
-
+    if ((event.ctrlKey || event.metaKey || event.altKey) &&
+        !(event.key === 'Enter' && event.ctrlKey && !event.metaKey && !event.altKey)) return
     switch (event.key) {
       case 'Escape':
         if (options.brushMode.value) {
           options.exitBrushMode()
+        } else if (options.maskActive?.value) {
+          options.exitMaskMode?.()
         } else {
           void options.exitEditMode()
         }
@@ -61,7 +67,7 @@ export function useEditWorkspaceKeyboardShortcuts(options: UseEditWorkspaceKeybo
         break
       case 'Delete':
       case 'Backspace':
-        if (!options.brushMode.value && options.hasSelection.value) {
+        if (!options.maskActive?.value && !options.brushMode.value && options.hasSelection.value) {
           options.deleteSelectedBubbles()
           event.preventDefault()
         }
@@ -82,7 +88,8 @@ export function useEditWorkspaceKeyboardShortcuts(options: UseEditWorkspaceKeybo
         break
       case 'Enter':
         if (event.ctrlKey && !options.brushMode.value) {
-          void options.applyAndNext()
+          if (options.maskActive?.value) void options.applyMask?.()
+          else void options.applyAndNext()
           event.preventDefault()
         }
         break

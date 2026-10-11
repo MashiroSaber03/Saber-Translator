@@ -2203,6 +2203,7 @@ class JobQueueRepository:
         item_id: str,
         page_id: str,
         roles: Sequence[str],
+        optional_roles: Sequence[str] = (),
     ) -> dict[str, dict[str, object]]:
         """Freeze current page assets for one item and return their metadata."""
 
@@ -2264,6 +2265,8 @@ class JobQueueRepository:
                         )
                     ).mappings().one_or_none()
                     if current is None:
+                        if role in optional_roles:
+                            continue
                         raise JobConflict(
                             f"page has no current {role} asset to bind"
                         )

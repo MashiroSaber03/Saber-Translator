@@ -401,13 +401,19 @@ export async function createMaskRepair(
     baseRevision: number
     fillColor: string
     method: 'solid'
+    fromSource?: boolean
   } | {
     baseRevision: number
-    method: 'lama_mpe' | 'litelama' | 'lama_manga' | 'restore_source'
+    method: 'lama_mpe' | 'litelama' | 'lama_manga'
+    fromSource?: boolean
+  } | {
+    baseRevision: number
+    method: 'restore_source'
+    fromSource?: false
   },
 ): Promise<V2OperationAccepted> {
   const body = new FormData()
-  body.append('target', 'mask')
+  body.append('target', command.fromSource ? 'page_mask' : 'mask')
   body.append('base_revision', String(command.baseRevision))
   body.append('method', command.method)
   if (command.method === 'solid') body.append('fill_color', command.fillColor)

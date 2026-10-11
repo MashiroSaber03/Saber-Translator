@@ -1,5 +1,5 @@
 <template>
-  <div class="edit-toolbar" @pointerup="$emit('pointer-action-complete')">
+  <div class="edit-toolbar" @pointerup="handlePointerUp">
     <div class="edit-toolbar__row edit-toolbar__row--primary">
       <div class="edit-toolbar__image-navigator">
         <UiIconButton
@@ -33,18 +33,6 @@
           @click="$emit('go-next-image')"
         >
           <span class="edit-toolbar__text-glyph edit-toolbar__text-glyph--compact" aria-hidden="true">▶▶</span>
-        </UiIconButton>
-        <UiIconButton
-          variant="inverse"
-          size="sm"
-          class="edit-toolbar__thumbnail-toggle"
-          :active="showThumbnails"
-          :pressed="showThumbnails"
-          label="显示或隐藏缩略图"
-          title="显示/隐藏缩略图"
-          @click="$emit('toggle-thumbnails')"
-        >
-          <span class="edit-toolbar__text-glyph edit-toolbar__text-glyph--thumbnail" aria-hidden="true">☷</span>
         </UiIconButton>
       </div>
 
@@ -101,6 +89,16 @@
         >
           <span class="edit-toolbar__text-glyph edit-toolbar__text-glyph--view-mode" aria-hidden="true">⧉</span>
         </UiIconButton>
+        <UiButton
+          variant="toolbar"
+          class="edit-toolbar__annotation-action"
+          :disabled="!canPreviewClean"
+          :aria-pressed="!!showCleanPreview"
+          :title="!canPreviewClean ? '尚未生成修复图，请先进行背景修复' : showCleanPreview ? '返回查看译图' : '查看不含译文的修复图'"
+          @click="$emit('toggle-clean-preview')"
+        >
+          <span class="edit-toolbar__annotation-label">仅看修复</span>
+        </UiButton>
         <UiIconButton
           variant="inverse"
           size="md"
@@ -140,8 +138,14 @@
       </UiButton>
     </div>
 
-    <div class="edit-toolbar__row edit-toolbar__row--secondary">
+    <slot v-if="maskMode" name="mask-tools" />
+    <div v-else class="edit-toolbar__row edit-toolbar__row--secondary">
       <div class="edit-toolbar__annotation-tools">
+        <UiButton variant="toolbar" class="edit-toolbar__annotation-action" title="查看和编辑背景修复范围" :disabled="isBusy" @click="$emit('toggle-mask-mode')">
+          <UiIcon name="target" class="edit-toolbar__annotation-icon" size="14" />
+          <span class="edit-toolbar__annotation-label">修复范围</span>
+        </UiButton>
+        <div class="edit-toolbar__divider"></div>
         <UiButton
           variant="toolbar"
           class="edit-toolbar__annotation-action edit-toolbar__annotation-action--detect"
@@ -178,7 +182,6 @@
         <UiButton
           variant="toolbar"
           class="edit-toolbar__annotation-action"
-          :class="{ 'edit-toolbar__annotation-action--active': isDrawingMode }"
           :aria-pressed="isDrawingMode"
           :disabled="isBusy"
           @click="$emit('toggle-drawing-mode')"
@@ -203,7 +206,7 @@
           :class="{ 'edit-toolbar__annotation-action--loading': isRepairLoading }"
           :disabled="isBusy || !hasSelection || isRepairLoading"
           @click="$emit('repair-selected-bubble')"
-          title="修复选中气泡背景 (R)"
+          title="修复选中气泡背景"
         >
           <UiIcon name="wand-sparkles" class="edit-toolbar__annotation-icon" size="14" :class="{ 'edit-toolbar__repair-icon--spinning': isRepairLoading }" />
           <span class="edit-toolbar__annotation-label">修复</span>
@@ -211,48 +214,36 @@
 
         <div class="edit-toolbar__divider"></div>
 
-        <UiButton
-          variant="toolbar"
+        <UiIconButton
+          variant="inverse"
+          size="sm"
           class="edit-toolbar__annotation-action edit-toolbar__annotation-action--brush"
-          :class="{ 'edit-toolbar__annotation-action--active': brushMode === 'repair' }"
-          :aria-pressed="brushMode === 'repair'"
+          :pressed="brushMode === 'repair'"
+          label="修复笔刷"
           :disabled="isBusy"
           @click="$emit('activate-repair-brush')"
           title="修复笔刷 (按住R+左键拖拽)"
         >
-          <UiIcon name="brush" class="edit-toolbar__annotation-icon" size="14" />
-          <span class="edit-toolbar__annotation-label">修复笔刷</span>
-        </UiButton>
-        <UiButton
-          variant="toolbar"
+          <UiIcon name="brush" class="edit-toolbar__annotation-icon" size="16" />
+        </UiIconButton>
+        <UiIconButton
+          variant="inverse"
+          size="sm"
           class="edit-toolbar__annotation-action edit-toolbar__annotation-action--brush"
-          :class="{ 'edit-toolbar__annotation-action--active': brushMode === 'restore' }"
-          :aria-pressed="brushMode === 'restore'"
+          :pressed="brushMode === 'restore'"
+          label="还原笔刷"
           :disabled="isBusy"
           @click="$emit('activate-restore-brush')"
           title="还原笔刷 (按住U+左键拖拽)"
         >
-          <UiIcon name="eraser" class="edit-toolbar__annotation-icon" size="14" />
-          <span class="edit-toolbar__annotation-label">还原笔刷</span>
-        </UiButton>
-        <span v-if="brushMode" class="edit-toolbar__brush-size">
-          笔刷: {{ brushSize }}px
+          <UiIcon name="eraser" class="edit-toolbar__annotation-icon" size="16" />
+        </UiIconButton>
+        <span v-if="brushMode" class="edit-toolbar__brush-size" title="再次点击笔刷或按 Esc 退出">
+          {{ brushSize }}px · 滚轮调大小 · Esc 退出
         </span>
 
         <EditToolbarHelp />
       </div>
-
-      <div
-        v-if="brushMode"
-        class="edit-toolbar__brush-cursor"
-        :style="brushCursorStyle"
-      ></div>
-
-      <OverlayLayer v-if="brushMode" class="edit-toolbar__brush-mode-hint-layer" passthrough>
-        <div class="edit-toolbar__brush-mode-hint">
-          {{ brushMode === 'repair' ? '修复笔刷 (R)' : '还原笔刷 (U)' }} - 滚轮调整大小
-        </div>
-      </OverlayLayer>
 
       <div class="edit-toolbar__spacer"></div>
 
@@ -269,6 +260,7 @@
         </UiButton>
       </div>
     </div>
+    <div v-if="brushMode" class="edit-toolbar__brush-cursor" :style="brushCursorStyle"></div>
   </div>
 </template>
 
@@ -277,7 +269,6 @@
 import UiButton from '@/components/ui/UiButton.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
-import OverlayLayer from '@/components/ui/OverlayLayer.vue'
 import { computed } from 'vue'
 import EditToolbarHelp from './EditToolbarHelp.vue'
 
@@ -301,9 +292,12 @@ const props = defineProps<{
   mouseY: number
   isBusy: boolean
   isRepairLoading?: boolean
+  maskMode?: boolean
+  canPreviewClean?: boolean
+  showCleanPreview?: boolean
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   (e: 'go-previous-image'): void
   (e: 'go-next-image'): void
   (e: 'toggle-thumbnails'): void
@@ -311,6 +305,7 @@ defineEmits<{
   (e: 'select-next-bubble'): void
   (e: 'toggle-layout'): void
   (e: 'toggle-view-mode'): void
+  (e: 'toggle-clean-preview'): void
   (e: 'toggle-sync'): void
   (e: 'fit-to-screen'): void
   (e: 'zoom-in'): void
@@ -327,7 +322,13 @@ defineEmits<{
   (e: 'activate-restore-brush'): void
   (e: 'apply-and-next'): void
   (e: 'pointer-action-complete'): void
+  (e: 'toggle-mask-mode'): void
 }>()
+
+function handlePointerUp(event: PointerEvent): void {
+  if (event.target instanceof Element && event.target.closest('input, [role="combobox"], [role="listbox"]')) return
+  emit('pointer-action-complete')
+}
 
 const brushCursorStyle = computed(() => {
   const color = props.brushMode === 'repair'
@@ -374,7 +375,6 @@ const brushCursorStyle = computed(() => {
   --edit-toolbar-brush-button-hover-background: color-mix(in srgb, var(--color-status-warning) 30%, transparent);
   --edit-toolbar-brush-button-border: color-mix(in srgb, var(--color-status-warning) 40%, transparent);
   --edit-toolbar-image-index-text: var(--color-action-brand);
-  --edit-toolbar-brush-hint-background: color-mix(in srgb, var(--color-overlay-backdrop-solid) 80%, transparent);
   --edit-toolbar-brush-repair-fill: color-mix(in srgb, var(--color-status-success) 40%, transparent);
   --edit-toolbar-brush-repair-border: var(--color-status-success);
   --edit-toolbar-brush-restore-fill: color-mix(in srgb, var(--color-status-info) 40%, transparent);
@@ -481,7 +481,6 @@ const brushCursorStyle = computed(() => {
   letter-spacing: -2px;
 }
 
-.edit-toolbar__text-glyph--thumbnail,
 .edit-toolbar__text-glyph--fit {
   font-size: 16px;
 }
@@ -531,30 +530,9 @@ const brushCursorStyle = computed(() => {
   margin-left: 8px;
 }
 
-.edit-toolbar__annotation-action--active {
-  background: var(--edit-toolbar-chip-active-background);
-  border-color: var(--color-border-brand-gradient);
-}
-
 .edit-toolbar__brush-cursor {
   pointer-events: none;
   transition: width 0.1s, height 0.1s;
-}
-
-.edit-toolbar__brush-mode-hint-layer {
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  padding-bottom: 20px;
-}
-
-.edit-toolbar__brush-mode-hint {
-  padding: 8px 16px;
-  background: var(--edit-toolbar-brush-hint-background);
-  color: var(--color-text-inverse);
-  border-radius: 6px;
-  font-size: 13px;
-  pointer-events: none;
 }
 
 .edit-toolbar__annotation-tools {
@@ -616,12 +594,18 @@ const brushCursorStyle = computed(() => {
 }
 
 .edit-toolbar__annotation-action--brush {
+  padding: 0;
   background: var(--edit-toolbar-brush-button-background);
   border-color: var(--edit-toolbar-brush-button-border);
 }
 
 .edit-toolbar__annotation-action--brush:hover {
   background: var(--edit-toolbar-brush-button-hover-background);
+}
+
+.edit-toolbar__annotation-action[aria-pressed='true'] {
+  background: var(--edit-toolbar-chip-active-background);
+  border-color: var(--color-border-brand-gradient);
 }
 
 </style>

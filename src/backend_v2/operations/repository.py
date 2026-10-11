@@ -303,6 +303,7 @@ class OperationRepository:
         mask_checksum: str,
         idempotency_key: str,
         regional_inpainting: bool = False,
+        from_source: bool = False,
     ) -> tuple[dict[str, object], bool]:
         self.validate_page_repair_identity(
             base_revision=base_revision,
@@ -319,6 +320,8 @@ class OperationRepository:
             "method": method,
             "repairRevision": base_revision + 1,
         }
+        if from_source:
+            request_identity["fromSource"] = True
         if method == "solid":
             request_identity["fillColor"] = fill_color
         request_hash = self._page_repair_request_hash(
@@ -410,8 +413,14 @@ class OperationRepository:
                 "source": str(source_id),
                 "repair_mask": mask_asset_id,
             }
-            if parent_clean_id is not None:
-                inputs["parent_clean"] = str(parent_clean_id)
+            if not from_source:
+                if parent_clean_id is not None:
+                    inputs["parent_clean"] = str(parent_clean_id)
+                user_mask_id = connection.execute(select(page_assets.c.asset_id).where(
+                    page_assets.c.page_id == page_id, page_assets.c.role == "user_mask",
+                )).scalar_one_or_none()
+                if user_mask_id is not None:
+                    inputs["user_mask"] = str(user_mask_id)
             connection.execute(
                 insert(operation_asset_inputs),
                 [
@@ -503,6 +512,7 @@ class OperationRepository:
         fill_color: str | None,
         mask_checksum: str,
         idempotency_key: str,
+        from_source: bool = False,
     ) -> dict[str, object] | None:
         self.validate_page_repair_identity(
             base_revision=base_revision,
@@ -519,6 +529,8 @@ class OperationRepository:
             "method": method,
             "repairRevision": base_revision + 1,
         }
+        if from_source:
+            payload["fromSource"] = True
         if method == "solid":
             payload["fillColor"] = fill_color
         request_hash = self._page_repair_request_hash(

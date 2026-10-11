@@ -34,21 +34,27 @@ const props = defineProps<{
   isTranslateLoading: boolean
   isBusy: boolean
   isPickingColor?: boolean
+  maskOverlay?: string | null
+  maskMode?: boolean
+  showCleanPreview?: boolean
 }>()
 
 const processedImageUrl = computed(
-  () => props.currentImage?.translatedAssetUrl
+  () => (props.showCleanPreview ? props.currentImage?.cleanAssetUrl : null)
+    || props.currentImage?.translatedAssetUrl
     || props.currentImage?.cleanAssetUrl
     || props.currentImage?.sourceAssetUrl
     || '',
 )
 
 const processedImageLabel = computed(() =>
-  props.currentImage?.translatedAssetUrl
-    ? '翻译图 (中文)'
-    : props.currentImage?.cleanAssetUrl
-      ? '消字图'
-      : '结果图',
+  props.showCleanPreview && props.currentImage?.cleanAssetUrl
+    ? '修复图 (无译文)'
+    : props.currentImage?.translatedAssetUrl
+      ? '翻译图 (中文)'
+      : props.currentImage?.cleanAssetUrl
+        ? '消字图'
+        : '结果图',
 )
 
 const emit = defineEmits<{
@@ -91,6 +97,7 @@ defineExpose({
   translatedWrapperRef,
   translatedImageRef,
   translatedPanelRef,
+  translatedPanelCollapsed,
   editPanelRef,
 })
 </script>
@@ -149,9 +156,10 @@ defineExpose({
               alt="原图"
               @load="emit('imageLoad', 'original')"
             >
+            <img v-if="maskOverlay && !isPickingColor" :src="maskOverlay" class="edit-image-comparison__mask" alt="原图修复范围覆盖层">
             <BubbleOverlay
               v-if="currentImage?.sourceAssetUrl"
-              v-show="!isPickingColor"
+              v-show="!isPickingColor && !maskMode"
               :bubbles="bubbles"
               :selected-index="selectedBubbleIndex"
               :selected-indices="selectedIndices"
@@ -226,9 +234,10 @@ defineExpose({
               :alt="processedImageLabel"
               @load="emit('imageLoad', 'translated')"
             >
+            <img v-if="maskOverlay && !isPickingColor" :src="maskOverlay" class="edit-image-comparison__mask" alt="结果图修复范围覆盖层">
             <BubbleOverlay
               v-if="processedImageUrl"
-              v-show="!isPickingColor"
+              v-show="!isPickingColor && !maskMode"
               :bubbles="bubbles"
               :selected-index="selectedBubbleIndex"
               :selected-indices="selectedIndices"
@@ -277,6 +286,8 @@ defineExpose({
 </template>
 
 <style scoped>
+.edit-image-comparison__mask { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: var(--z-canvas); }
+
 .edit-image-comparison {
   --edit-image-comparison-panel-background: var(--color-surface-inverse-panel);
   --edit-image-comparison-panel-header-background: var(--color-overlay-scrim-subtle);
@@ -311,7 +322,7 @@ defineExpose({
 
 .edit-image-comparison__image-panel {
   display: flex;
-  flex: 1;
+  flex: var(--panel-flex, 1) 1 0;
   flex-direction: column;
   min-width: 150px;
   overflow: hidden;
@@ -323,6 +334,7 @@ defineExpose({
 .edit-image-comparison__image-panel--collapsed {
   flex: 0 0 40px;
   min-width: 40px;
+  min-height: 40px;
 }
 
 .edit-image-comparison__panel-header {
@@ -363,23 +375,25 @@ defineExpose({
   color: var(--color-text-inverse);
 }
 
-.edit-image-comparison__image-panel--collapsed .edit-image-comparison__panel-header {
-  align-items: flex-start;
-}
+@media (--breakpoint-md-up) {
+  .edit-image-comparison--layout-horizontal .edit-image-comparison__image-panel--collapsed .edit-image-comparison__panel-header {
+    align-items: flex-start;
+  }
 
-.edit-image-comparison__image-panel--collapsed .edit-image-comparison__panel-title {
-  display: block;
-  flex: 0 0 13px;
-  width: 13px;
-  min-width: 13px;
-  line-height: 1.45;
-  white-space: normal;
-  word-break: break-all;
-}
+  .edit-image-comparison--layout-horizontal .edit-image-comparison__image-panel--collapsed .edit-image-comparison__panel-title {
+    display: block;
+    flex: 0 0 13px;
+    width: 13px;
+    min-width: 13px;
+    line-height: 1.45;
+    white-space: normal;
+    word-break: break-all;
+  }
 
-.edit-image-comparison__image-panel--collapsed .edit-image-comparison__panel-title-icon {
-  display: block;
-  margin-bottom: 2px;
+  .edit-image-comparison--layout-horizontal .edit-image-comparison__image-panel--collapsed .edit-image-comparison__panel-title-icon {
+    display: block;
+    margin-bottom: 2px;
+  }
 }
 
 .edit-image-comparison__viewport {
@@ -539,7 +553,7 @@ defineExpose({
   flex-direction: column;
 }
 
-.edit-image-comparison--layout-vertical .edit-image-comparison__image-panel {
+.edit-image-comparison--layout-vertical .edit-image-comparison__image-panel:not(.edit-image-comparison__image-panel--collapsed) {
   min-height: 150px;
 }
 

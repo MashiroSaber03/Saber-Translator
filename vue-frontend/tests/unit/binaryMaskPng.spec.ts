@@ -1,7 +1,7 @@
 import { inflateSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
 
-import { encodeBinaryMaskPng } from '@/utils/binaryMaskPng'
+import { encodeBinaryMaskPng, encodeGrayscaleMaskPng, paintMaskCircles } from '@/utils/binaryMaskPng'
 
 function readBlobBytes(blob: Blob): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {
@@ -64,5 +64,23 @@ describe('binary mask PNG encoder', () => {
 
   it('rejects empty drawing input instead of uploading an empty mask', async () => {
     await expect(encodeBinaryMaskPng(16, 12, [])).rejects.toThrow('没有绘制区域')
+  })
+
+  it('preserves tri-state pixels and applies later strokes over earlier ones', async () => {
+    const pixels = new Uint8Array(16 * 12).fill(127)
+    const circles = [{ x: 8, y: 6, radius: 3 }]
+    paintMaskCircles(pixels, 16, 12, circles, 255)
+    paintMaskCircles(pixels, 16, 12, circles, 0)
+    expect(pixels[6 * 16 + 8]).toBe(0)
+    paintMaskCircles(pixels, 16, 12, [{x:8,y:6,radius:1}], 127)
+    expect(pixels[6 * 16 + 8]).toBe(127)
+    expect(pixels[0]).toBe(127)
+    const png = await decodePng(await encodeGrayscaleMaskPng(16, 12, pixels))
+    expect(png.colorType).toBe(0)
+    expect(png.bitDepth).toBe(8)
+    for (let y = 0; y < 12; y += 1) {
+      expect([...png.scanlines.slice(y * 17 + 1, (y + 1) * 17)])
+        .toEqual([...pixels.slice(y * 16, (y + 1) * 16)])
+    }
   })
 })

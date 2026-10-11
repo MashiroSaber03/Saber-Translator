@@ -175,7 +175,10 @@ class PageRepairService:
         method: str,
         fill_color: str | None,
         idempotency_key: str,
+        from_source: bool = False,
     ) -> tuple[dict[str, object], bool]:
+        if from_source and method == "restore_source":
+            raise ValueError("restore_source only supports a local mask")
         base_revision, method, fill_color = (
             self.repository.validate_page_repair_identity(
                 base_revision=base_revision,
@@ -205,7 +208,7 @@ class PageRepairService:
             if (
                 colors is None
                 or any(value not in {0, 255} for _count, value in colors)
-                or not any(value == 255 for _count, value in colors)
+                or (not from_source and not any(value == 255 for _count, value in colors))
             ):
                 raise ValueError(
                     "repair mask must be binary (0=keep, 255=repair) and non-empty"
@@ -242,6 +245,7 @@ class PageRepairService:
             fill_color=fill_color,
             mask_checksum=mask_checksum,
             idempotency_key=idempotency_key,
+            from_source=from_source,
         )
         if replay is not None:
             return replay, True
@@ -273,6 +277,7 @@ class PageRepairService:
             mask_asset_id=mask_asset.id,
             mask_checksum=mask_checksum,
             idempotency_key=idempotency_key,
+            from_source=from_source,
         )
 
     def handle(
@@ -328,6 +333,8 @@ class PageRepairService:
             "parent_clean" if "parent_clean" in inputs else "source",
         )
         repair_mask_asset_id = self._required_text(inputs, "repair_mask")
+        manual_record = None
+        user = None
         before = self._atomic_hook(
             fence,
             phase="before",
@@ -353,6 +360,14 @@ class PageRepairService:
         )
         if method != frozen_method:
             raise RuntimeError("repair plugin cannot change the frozen method")
+        if request.get("fromSource", False) and any(
+            before.get(key) != value for key, value in (
+                ("sourceAssetId", source_asset_id),
+                ("inputAssetId", input_asset_id),
+                ("textMaskAssetId", repair_mask_asset_id),
+            )
+        ):
+            raise RuntimeError("page mask repair inputs are frozen")
         with ExitStack() as opened_assets:
             source = opened_assets.enter_context(
                 self._open_asset(
@@ -374,7 +389,18 @@ class PageRepairService:
             )
             if parent.size != source.size or mask.size != source.size:
                 raise RuntimeError("repair assets must have identical dimensions")
+            colors = mask.getcolors(maxcolors=3)
+            if colors is None or any(value not in {0, 255} for _, value in colors):
+                raise RuntimeError("repair mask must be binary")
             expected_size = source.size
+            if not request.get("fromSource", False):
+                user = opened_assets.enter_context(
+                    self._open_asset(str(inputs["user_mask"]), "L")
+                    if "user_mask" in inputs else Image.new("L", expected_size, 127)
+                )
+                if user.size != expected_size:
+                    raise RuntimeError("manual mask dimensions must match the source image")
+                user.paste(0 if method == "restore_source" else 255, mask=mask)
             if method == "solid":
                 repaired = parent.copy()
                 fill = Image.new(
@@ -408,6 +434,8 @@ class PageRepairService:
                 record = self._publish_png(repaired)
             finally:
                 repaired.close()
+            if user is not None:
+                manual_record = self._publish_png(user)
 
         after = self._atomic_hook(
             fence,
@@ -439,6 +467,15 @@ class PageRepairService:
                     select(pages.c.source_revision).where(pages.c.id == page_id)
                 ).scalar_one()
             )
+            if manual_record is not None:
+                connection.execute(page_assets.delete().where(
+                    page_assets.c.page_id == page_id, page_assets.c.role == "user_mask",
+                ))
+                connection.execute(insert(page_assets).values(
+                    page_id=page_id, role="user_mask", asset_id=manual_record.id,
+                    input_source_revision=source_revision, input_document_revision=revision,
+                    producer_operation_id=fence.operation_id,
+                ))
             existing = connection.execute(
                 select(page_assets.c.asset_id).where(
                     page_assets.c.page_id == page_id,

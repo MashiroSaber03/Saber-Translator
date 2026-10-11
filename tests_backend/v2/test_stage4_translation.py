@@ -470,7 +470,7 @@ class WrongSizedDetectionMaskAlgorithms(DeterministicFakeProvider):
 
 
 class WrongSizedRepairAlgorithms(DeterministicFakeProvider):
-    def repair(self, _image, _payloads, _config, *, precise_mask=None):
+    def repair(self, _image, _payloads, _config, *, precise_mask=None, user_mask=None):
         return Image.new("RGB", (8, 8), "white")
 
 
@@ -494,7 +494,7 @@ class RepairCloseTrackingAlgorithms(DeterministicFakeProvider):
         super().__init__()
         self.repaired_image: Image.Image | None = None
 
-    def repair(self, image, bubbles, config, *, precise_mask=None):
+    def repair(self, image, bubbles, config, *, precise_mask=None, user_mask=None):
         self.repaired_image = super().repair(
             image,
             bubbles,
@@ -579,7 +579,7 @@ class PageStyleRecordingAlgorithms(DeterministicFakeProvider):
         self.repair_masks: list[tuple[str, tuple[int, int], int] | None] = []
         self.render_payloads: list[list[dict[str, Any]]] = []
 
-    def repair(self, image, payloads, config, *, precise_mask=None):
+    def repair(self, image, payloads, config, *, precise_mask=None, user_mask=None):
         self.repair_configs.append(dict(config))
         self.repair_masks.append(
             (
@@ -3938,6 +3938,54 @@ def test_remove_text_uses_existing_bubbles_without_running_detection(
     )
     assert document["bubbles"][0]["bubbleId"] == bubble_id
     assert document["bubbles"][0]["payload"]["coords"] == [9, 10, 51, 58]
+
+
+def test_remove_text_reuses_both_saved_mask_layers_without_detection(translation_platform):
+    import numpy as np
+    from src.backend_v2.operations.masks import PageMaskService
+
+    platform = translation_platform
+    created, _ = ContentRepository(platform["engine"]).mutate_page_document(
+        page_id=platform["page_id"], base_revision=1,
+        mutations=[{"op": "create", "clientMutationId": "mask-bubble", "fields": _bubble_fields(coords=[9, 10, 51, 58])}],
+        idempotency_key="mask-bubble",
+    )
+    masks = PageMaskService(data_root=platform["data_root"], engine=platform["engine"])
+    automatic = np.zeros((64, 64), dtype=np.uint8)
+    automatic[14:18, 14:18] = 255
+    manual = np.full((64, 64), 127, dtype=np.uint8)
+    manual[15, 15] = 0
+    manual[60, 60] = 255
+    for role, pixels in (("text_mask", automatic), ("user_mask", manual)):
+        with Image.fromarray(pixels) as image:
+            record = masks.publish(image)
+        with platform["engine"].begin() as connection:
+            connection.execute(page_assets.insert().values(
+                page_id=platform["page_id"], role=role, asset_id=record.id,
+                input_source_revision=1, input_document_revision=created["document"]["documentRevision"],
+            ))
+
+    class SavedMasksProvider(DeterministicFakeProvider):
+        called = False
+
+        def detect(self, _image, _config):
+            raise AssertionError("existing masks must not require redetection")
+
+        def repair(self, image, payloads, config, *, precise_mask=None, user_mask=None):
+            self.called = True
+            assert np.array_equal(np.array(precise_mask), automatic)
+            assert np.array_equal(np.array(user_mask), manual)
+            return image.copy()
+
+    algorithms = SavedMasksProvider()
+    accepted = TranslationJobCommandService(platform["engine"], profile=LOCAL_PROFILE).create_chapter_job(
+        chapter_id=str(platform["chapter"]["id"]),
+        config={"mode": "remove_text", "executionMode": "sequential"},
+        page_ids=[platform["page_id"]], idempotency_key="remove-with-saved-masks",
+    )
+    job_id = _run_translation_job(platform, algorithms)
+    assert job_id == accepted["jobIds"][0] and algorithms.called
+    assert JobQueueRepository(platform["engine"]).get_job(job_id)["status"] == "completed"
 
 
 def _run_auxiliary_job(

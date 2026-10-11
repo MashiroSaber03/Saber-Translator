@@ -168,12 +168,15 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
       ) {
         throw new Error('气泡尚未完成后端持久化')
       }
-      await runBubbleRepair(
-        current.id,
-        bubbleId,
-        current.documentRevision,
-      )
-      await reloadPageDocument(current.id, bubbleId)
+      try {
+        await runBubbleRepair(
+          current.id,
+          bubbleId,
+          current.documentRevision,
+        )
+      } finally {
+        await reloadPageDocument(current.id, bubbleId)
+      }
       await callbacks?.onReRender?.()
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '背景修复失败'

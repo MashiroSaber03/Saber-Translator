@@ -145,7 +145,7 @@ class DeterministicFakeProvider:
             "mode": mode,
         }
 
-    def repair(self, image, _payloads, _config, *, precise_mask=None):
+    def repair(self, image, _payloads, _config, *, precise_mask=None, user_mask=None):
         return image.copy()
 
     def render(self, clean_image, _payloads, _config):

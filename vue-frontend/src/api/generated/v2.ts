@@ -519,6 +519,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/pages/{page_id}/masks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getPageMasks"];
+        put: operations["savePageUserMask"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/pages/{page_id}/repairs": {
         parameters: {
             query?: never;
@@ -4418,9 +4434,26 @@ export interface components {
             bubble_id: components["schemas"]["Uuid"];
             base_revision: number;
         };
+        PageMasks: {
+            pageId: components["schemas"]["Uuid"];
+            sourceRevision: number;
+            documentRevision: number;
+            width: number;
+            height: number;
+            preciseMask: string | null;
+            boxMask: string;
+            automaticMask: string;
+            userMask: string;
+            finalMask: string;
+            processing: {
+                boxExpandRatio: number;
+                dilateSize: number;
+                closeGaps: boolean;
+            };
+        };
         MaskSolidRepairCommand: {
-            /** @constant */
-            target: "mask";
+            /** @enum {string} */
+            target: "mask" | "page_mask";
             /** Format: binary */
             mask: string;
             base_revision: number;
@@ -4429,8 +4462,8 @@ export interface components {
             fill_color: string;
         };
         MaskModelRepairCommand: {
-            /** @constant */
-            target: "mask";
+            /** @enum {string} */
+            target: "mask" | "page_mask";
             /** Format: binary */
             mask: string;
             base_revision: number;
@@ -5108,6 +5141,7 @@ export interface components {
             /** @enum {string} */
             renderStatus: "not_rendered" | "ready" | "stale" | "rendering" | "render_failed" | "awaiting_repair" | "repair_failed";
             translatedUrl: string | null;
+            cleanUrl: string | null;
         };
         PageList: {
             items: components["schemas"]["PageSummary"][];
@@ -7152,6 +7186,69 @@ export interface operations {
                     };
                 };
             };
+        };
+    };
+    getPageMasks: {
+        parameters: {
+            query?: {
+                method?: "solid" | "lama_mpe" | "litelama" | "lama_manga";
+            };
+            header?: never;
+            path: {
+                page_id: components["parameters"]["PageId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current automatic, manual, and effective masks as base64 grayscale PNGs. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageMasks"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    savePageUserMask: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                page_id: components["parameters"]["PageId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    base_revision: number;
+                    /** Format: binary */
+                    mask: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Manual mask saved without changing the current clean or translated image. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageDocumentMutationResponse"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            423: components["responses"]["Locked"];
         };
     };
     createPageRepairOperation: {

@@ -45,6 +45,7 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
     imageStore.updateImageByIndex(index, {
       documentRevision: status.documentRevision,
       renderedRevision: status.renderedRevision,
+      cleanAssetUrl: status.cleanUrl,
       translatedAssetUrl: status.translatedUrl,
       translationStatus,
     })

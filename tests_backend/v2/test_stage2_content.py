@@ -2115,6 +2115,7 @@ def test_plan_page_source_bubble_and_render_status_routes(
         )
         assert render_status.status_code == 200
         assert render_status.get_json()["pageId"] == page_id
+        assert render_status.get_json()["cleanUrl"] is None
         assert render_status.get_json()["documentRevision"] == (
             created_payload["document"]["documentRevision"]
         )

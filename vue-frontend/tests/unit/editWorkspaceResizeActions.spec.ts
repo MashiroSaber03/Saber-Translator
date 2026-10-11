@@ -2,11 +2,46 @@ import { mount } from '@vue/test-utils'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { defineComponent, h, ref } from 'vue'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { useEditWorkspaceResizeActions } from '@/composables/edit/useEditWorkspaceResizeActions'
 
 describe('useEditWorkspaceResizeActions', () => {
+  it.each(['row', 'column'] as const)('resizes %s panels without overriding their collapsed flex rules', (direction) => {
+    let actions: ReturnType<typeof useEditWorkspaceResizeActions> | null = null
+    const container = document.createElement('div')
+    container.style.display = 'flex'
+    container.style.flexDirection = direction
+    vi.spyOn(container, 'getBoundingClientRect').mockReturnValue({
+      left: 0, top: 0, width: 1000, height: 1000,
+    } as DOMRect)
+    const originalPanel = document.createElement('div')
+    const translatedPanel = document.createElement('div')
+    container.append(originalPanel, translatedPanel)
+    const Host = defineComponent({
+      setup() {
+        actions = useEditWorkspaceResizeActions({
+          layoutMode: ref('horizontal'),
+          originalPanelRef: ref(originalPanel),
+          translatedPanelRef: ref(translatedPanel),
+          editPanelRef: ref(null),
+        })
+        return () => h('div')
+      },
+    })
+    const wrapper = mount(Host)
+    actions?.startDividerDrag(new MouseEvent('mousedown', { button: 0 }))
+    actions?.handleDividerDrag(new MouseEvent('mousemove', { clientX: 600, clientY: 600 }))
+    expect(originalPanel.style.getPropertyValue('--panel-flex')).toBe('60')
+    expect(translatedPanel.style.getPropertyValue('--panel-flex')).toBe('40')
+    expect(originalPanel.style.flex).toBe('')
+    expect(translatedPanel.style.flex).toBe('')
+    actions?.handleDividerDrag(new MouseEvent('mousemove', { clientX: 999, clientY: 999 }))
+    expect(originalPanel.style.getPropertyValue('--panel-flex')).toBe('80')
+    expect(translatedPanel.style.getPropertyValue('--panel-flex')).toBe('20')
+    wrapper.unmount()
+  })
+
   it('uses explicit panel refs instead of querying layout classes', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/composables/edit/useEditWorkspaceResizeActions.ts'),

@@ -47,6 +47,8 @@ export interface CurrentRepairSettings {
 export interface BrushCallbacks {
   onBrushComplete?: () => void | Promise<unknown>
   getCurrentRepairSettings?: () => CurrentRepairSettings
+  onMaskStroke?: (bounds: BrushBounds) => Promise<void> | undefined
+  getBrushColor?: () => string | undefined
 }
 
 export function useBrush(callbacks?: BrushCallbacks) {
@@ -69,6 +71,8 @@ export function useBrush(callbacks?: BrushCallbacks) {
 
   const isActive = computed(() => brushMode.value !== null)
   const brushColor = computed(() => {
+    const override = callbacks?.getBrushColor?.()
+    if (override) return override
     if (brushMode.value === 'repair') {
       return 'rgba(76, 175, 80, 0.4)'
     }
@@ -103,6 +107,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
   }
 
   function adjustBrushSize(delta: number): void {
+    if (isBrushPainting.value) return
     setBrushSize(brushSize.value + delta)
   }
 
@@ -124,10 +129,20 @@ export function useBrush(callbacks?: BrushCallbacks) {
     mouseX.value = event.clientX
     mouseY.value = event.clientY
     if (!isBrushPainting.value || !isActive.value) return
-    const position = getBrushPositionInImage(event, activeSurface)
+    const position = getBrushPositionInImage(event, activeSurface, true)
     if (position) {
-      brushPath.value.push(position)
-      drawBrushStroke(position)
+      const previous = brushPath.value[brushPath.value.length - 1]!
+      const distance = Math.hypot(position.x - previous.x, position.y - previous.y)
+      const steps = Math.ceil(distance / (brushSize.value / position.scale / 4))
+      for (let step = 1; step <= steps; step++) {
+        const sample = {
+          x: previous.x + (position.x - previous.x) * step / steps,
+          y: previous.y + (position.y - previous.y) * step / steps,
+          scale: position.scale,
+        }
+        brushPath.value.push(sample)
+        drawBrushStroke(sample)
+      }
     }
   }
 
@@ -152,7 +167,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
     ) return
 
     isBrushSubmitting.value = true
-    const submission = submitMaskRepair(
+    const submission = callbacks?.onMaskStroke?.(bounds) ?? submitMaskRepair(
       image.id,
       image.documentRevision,
       width,
@@ -201,42 +216,51 @@ export function useBrush(callbacks?: BrushCallbacks) {
       ? 'restore_source'
       : settings.inpaintMethod
     const mask = await createBinaryMask(width, height, bounds)
-    const accepted = await createMaskRepair(
-      pageId,
-      mask,
-      method === 'solid'
-        ? {
-            baseRevision: current.documentRevision,
-            fillColor: settings.fillColor,
-            method,
+    try {
+      const accepted = await createMaskRepair(
+        pageId,
+        mask,
+        method === 'solid'
+          ? {
+              baseRevision: current.documentRevision,
+              fillColor: settings.fillColor,
+              method,
+            }
+          : {
+              baseRevision: current.documentRevision,
+              method,
+            },
+      )
+      await waitForOperation(accepted.operationId, {
+        signal: abortController.signal,
+      })
+    } finally {
+      // Submission conflicts and failed accepted repairs both need a fresh revision.
+      if (!isOwnerDisposed && imageStore.currentImage?.id === pageId) {
+        const document = await getPageDocument(pageId, abortController.signal)
+        if (!isOwnerDisposed && imageStore.currentImage?.id === pageId) {
+          if (document.pageId !== pageId || document.chapterId !== current.chapterId) {
+            // eslint-disable-next-line no-unsafe-finally -- Identity mismatch must prevent adoption even after a failed repair.
+            throw new Error(`页面 ${pageId} 的后端文档身份不匹配`)
           }
-        : {
-            baseRevision: current.documentRevision,
-            method,
-          },
-    )
-    await waitForOperation(accepted.operationId, {
-      signal: abortController.signal,
-    })
-    if (isOwnerDisposed || imageStore.currentImage?.id !== pageId) return
-    const document = await getPageDocument(pageId, abortController.signal)
-    if (isOwnerDisposed || imageStore.currentImage?.id !== pageId) return
-    if (document.pageId !== pageId || document.chapterId !== current.chapterId) {
-      throw new Error(`页面 ${pageId} 的后端文档身份不匹配`)
+          const bubbles = registerPageDocument(document)
+          imageStore.updateCurrentImage({
+            bubbleStates: bubbles,
+            documentRevision: document.documentRevision,
+            hasUnsavedChanges: false,
+          })
+          bubbleStore.setBubbles(bubbles, true)
+        }
+      }
     }
-    const bubbles = registerPageDocument(document)
-    imageStore.updateCurrentImage({
-      bubbleStates: bubbles,
-      documentRevision: document.documentRevision,
-      hasUnsavedChanges: false,
-    })
-    bubbleStore.setBubbles(bubbles, true)
+    if (isOwnerDisposed || imageStore.currentImage?.id !== pageId) return
     await callbacks?.onBrushComplete?.()
   }
 
   function getBrushPositionInImage(
     event: MouseEvent,
     surface: BrushSurface | null,
+    allowOutsideImage = false,
   ): BrushPosition | null {
     if (!surface || !surface.image.naturalWidth || !surface.image.naturalHeight) return null
     const rect = surface.wrapper.getBoundingClientRect()
@@ -248,12 +272,12 @@ export function useBrush(callbacks?: BrushCallbacks) {
     if (!Number.isFinite(scale) || scale <= 0) return null
     const x = (event.clientX - rect.left) / scale
     const y = (event.clientY - rect.top) / scale
-    if (
+    if (!allowOutsideImage && (
       x < 0
       || y < 0
       || x > surface.image.naturalWidth
       || y > surface.image.naturalHeight
-    ) return null
+    )) return null
     return { x, y, scale }
   }
 
@@ -353,6 +377,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
     brushMode,
     brushSize,
     isBrushSubmitting,
+    isBrushPainting,
     mouseX,
     mouseY,
     exitBrushMode,

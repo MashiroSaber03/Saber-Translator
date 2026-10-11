@@ -354,6 +354,7 @@ def create_content_blueprint(
                 "documentRevision": page["documentRevision"],
                 "renderedRevision": page["renderedRevision"],
                 "renderStatus": page["renderStatus"],
+                "cleanUrl": page["cleanUrl"],
                 "translatedUrl": page["translatedUrl"],
             }
         )

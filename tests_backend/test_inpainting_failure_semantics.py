@@ -52,13 +52,13 @@ def test_solid_fill_failure_is_not_reported_as_success(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        inpainting.ImageDraw,
-        "Draw",
-        mock.Mock(side_effect=RuntimeError("draw failed")),
+        Image.Image,
+        "paste",
+        mock.Mock(side_effect=RuntimeError("fill failed")),
     )
     source = Image.new("RGB", (8, 8), "white")
     try:
-        with pytest.raises(RuntimeError, match="draw failed"):
+        with pytest.raises(RuntimeError, match="fill failed"):
             inpainting.inpaint_bubbles(
                 source,
                 [(1, 1, 6, 6)],

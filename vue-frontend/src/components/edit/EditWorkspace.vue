@@ -16,7 +16,7 @@
       :bubble-count="bubbleCount"
       :layout-mode="layoutMode"
       :sync-enabled="syncEnabled"
-      :scale="scale"
+      :scale="toolbarScale"
       :is-drawing-mode="isDrawingMode"
       :has-selection="hasSelection"
       :brush-mode="brushMode"
@@ -25,6 +25,9 @@
       :mouse-y="mouseY"
       :is-busy="isBusy"
       :is-repair-loading="isRepairLoading"
+      :mask-mode="maskEditor.active.value"
+      :can-preview-clean="!!currentImage?.cleanAssetUrl"
+      :show-clean-preview="showCleanPreview"
       @go-previous-image="goToPreviousImage"
       @go-next-image="goToNextImage"
       @toggle-thumbnails="toggleThumbnails"
@@ -32,6 +35,7 @@
       @select-next-bubble="selectNextBubble"
       @toggle-layout="toggleLayout"
       @toggle-view-mode="toggleViewMode"
+      @toggle-clean-preview="cleanPreviewRequested = !showCleanPreview"
       @toggle-sync="toggleSync"
       @fit-to-screen="fitToScreen"
       @zoom-in="zoomIn"
@@ -46,9 +50,23 @@
       @repair-selected-bubble="handleRepairSelectedBubble"
       @activate-repair-brush="activateRepairBrush"
       @activate-restore-brush="activateRestoreBrush"
+      @toggle-mask-mode="toggleMaskMode"
       @apply-and-next="applyAndNext"
       @pointer-action-complete="focusWorkspaceAfterToolbarPointer"
-    />
+    >
+      <template #mask-tools>
+        <EditMaskPanel
+          :tool="brushMode ? maskEditor.tool.value : null" :visibility="maskEditor.visibility.value" :preview="maskEditor.state.value" :busy="isBusy"
+          :loading="maskEditor.loading.value" :saving="maskEditor.saving.value" :applying="maskEditor.applying.value"
+          :dirty="maskEditor.dirty.value" :error="maskEditor.error.value"
+          :inpaint-method="currentInpaintMethod" :fill-color="currentFillColor" :brush-size="brushSize"
+          @method="handleBubbleUpdateWithSync({ inpaintMethod: $event })"
+          @fill-color="handleBubbleUpdateWithSync({ fillColor: $event })"
+          @tool="setMaskTool" @visibility="maskEditor.visibility.value = $event" @apply="maskEditor.apply"
+          @close="toggleMaskMode" @retry="maskEditor.retry" @discard="maskEditor.discard"
+        />
+      </template>
+    </EditToolbar>
 
     <div v-if="colorPickField" class="edit-workspace__color-pick-status" role="status">
       <span>设置{{ BUBBLE_COLOR_LABELS[colorPickField] }}：点击原图或结果图中的可见像素取色，按 Esc 取消。</span>
@@ -86,6 +104,9 @@
       :is-translate-loading="isTranslateLoading"
       :is-busy="isBusy"
       :is-picking-color="isPickingColor"
+      :mask-overlay="maskEditor.active.value ? maskEditor.overlay.value : null"
+      :mask-mode="maskEditor.active.value"
+      :show-clean-preview="showCleanPreview"
       @wheel-panel="handleWheel"
       @mouse-down-panel="handleMouseDown"
       @image-load="handleImageLoad"
@@ -108,16 +129,25 @@
 
 <script setup lang="ts">
 
+import { computed, ref } from 'vue'
+import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 import EditImageComparison from './EditImageComparison.vue'
 import EditToolbar from './EditToolbar.vue'
 import EditThumbnailPanel from './EditThumbnailPanel.vue'
+import EditMaskPanel from './EditMaskPanel.vue'
 import { useEditWorkspace, type EditWorkspaceEmit } from './useEditWorkspace'
 import UiButton from '@/components/ui/UiButton.vue'
 import { BUBBLE_COLOR_LABELS } from './bubbleColorFields'
+import { showToast } from '@/utils/toast'
 
 const emit = defineEmits<EditWorkspaceEmit>()
 
 const {
+  currentInpaintMethod,
+  currentFillColor,
+  maskEditor,
+  toggleMaskMode,
+  setMaskTool,
   workspaceRef,
   colorPickField,
   isPickingColor,
@@ -150,6 +180,7 @@ const {
   isRepairLoading,
   scale,
   originalScale,
+  toolbarScale,
   originalTransformStyle,
   translatedTransformStyle,
   isDrawingMode,
@@ -198,6 +229,18 @@ const {
   detectAllImages,
   translateWithCurrentBubbles,
 } = useEditWorkspace(emit)
+
+const cleanPreviewRequested = ref(false)
+const showCleanPreview = computed(() => cleanPreviewRequested.value && !!currentImage.value?.cleanAssetUrl)
+
+function guardUnsavedMask(): boolean {
+  if (!maskEditor.dirty.value) return true
+  showToast('请先保存当前修复范围，或放弃未保存的修改', 'warning')
+  return false
+}
+
+onBeforeRouteLeave(guardUnsavedMask)
+onBeforeRouteUpdate(guardUnsavedMask)
 </script>
 
 <style scoped>

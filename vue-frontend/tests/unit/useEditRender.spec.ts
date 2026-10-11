@@ -51,6 +51,7 @@ function readyStatus() {
     documentRevision: 4,
     renderedRevision: 4,
     renderStatus: 'ready',
+    cleanUrl: '/api/v2/assets/clean-1',
     translatedUrl: '/api/v2/assets/translated-1',
   }
 }
@@ -80,6 +81,7 @@ describe('useEditRender backend-first orchestration', () => {
     expect(useImageStore().currentImage).toMatchObject({
       documentRevision: 4,
       renderedRevision: 4,
+      cleanAssetUrl: '/api/v2/assets/clean-1',
       translatedAssetUrl: '/api/v2/assets/translated-1',
     })
   })
@@ -151,6 +153,7 @@ describe('useEditRender backend-first orchestration', () => {
         ...readyStatus(),
         documentRevision: 5,
         renderedRevision: 5,
+        cleanUrl: '/api/v2/assets/clean-latest',
         translatedUrl: '/api/v2/assets/translated-latest',
       })
     const { useEditRender } = await import('@/composables/useEditRender')
@@ -163,6 +166,7 @@ describe('useEditRender backend-first orchestration', () => {
     await expect(second).resolves.toBe(true)
     resolveFirst({
       ...readyStatus(),
+      cleanUrl: '/api/v2/assets/clean-stale',
       translatedUrl: '/api/v2/assets/translated-stale',
     })
     await expect(first).resolves.toBe(false)
@@ -170,6 +174,7 @@ describe('useEditRender backend-first orchestration', () => {
     expect(useImageStore().currentImage).toMatchObject({
       documentRevision: 5,
       renderedRevision: 5,
+      cleanAssetUrl: '/api/v2/assets/clean-latest',
       translatedAssetUrl: '/api/v2/assets/translated-latest',
     })
   })

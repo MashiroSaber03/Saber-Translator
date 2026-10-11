@@ -47,20 +47,21 @@ function pngChunk(type: Uint8Array, payload: Uint8Array): Uint8Array<ArrayBuffer
   return chunk
 }
 
-function createScanlines(
-  width: number,
-  height: number,
-  circles: readonly BinaryMaskCircle[],
-): Uint8Array<ArrayBuffer> {
+function maskSize(width: number, height: number): number {
   if (!Number.isInteger(width) || width <= 0 || !Number.isInteger(height) || height <= 0) {
     throw new Error('修复掩膜尺寸无效')
   }
-  if (circles.length === 0) throw new Error('修复掩膜没有绘制区域')
-  const stride = width + 1
-  const byteLength = stride * height
-  if (!Number.isSafeInteger(byteLength)) throw new Error('修复掩膜尺寸过大')
-  const scanlines = new Uint8Array(byteLength)
+  if (!Number.isSafeInteger(width * height)) throw new Error('修复掩膜尺寸过大')
+  return width * height
+}
 
+export function paintMaskCircles(
+  pixels: Uint8Array, width: number, height: number,
+  circles: readonly BinaryMaskCircle[], value: 0 | 127 | 255,
+): boolean {
+  if (pixels.length !== maskSize(width, height)) throw new Error('修复掩膜尺寸无效')
+  if (circles.length === 0) throw new Error('修复掩膜没有绘制区域')
+  let changed = false
   for (const circle of circles) {
     if (
       !Number.isFinite(circle.x)
@@ -77,16 +78,17 @@ function createScanlines(
     const radiusSquared = circle.radius * circle.radius
     for (let y = minY; y <= maxY; y += 1) {
       const deltaY = y + 0.5 - circle.y
-      const rowOffset = y * stride + 1
+      const rowOffset = y * width
       for (let x = minX; x <= maxX; x += 1) {
         const deltaX = x + 0.5 - circle.x
-        if (deltaX * deltaX + deltaY * deltaY <= radiusSquared) {
-          scanlines[rowOffset + x] = 255
+        if (deltaX * deltaX + deltaY * deltaY <= radiusSquared && pixels[rowOffset + x] !== value) {
+          pixels[rowOffset + x] = value
+          changed = true
         }
       }
     }
   }
-  return scanlines
+  return changed
 }
 
 async function deflate(scanlines: Uint8Array<ArrayBuffer>): Promise<Uint8Array<ArrayBuffer>> {
@@ -98,12 +100,14 @@ async function deflate(scanlines: Uint8Array<ArrayBuffer>): Promise<Uint8Array<A
   return new Uint8Array(await compressed)
 }
 
-export async function encodeBinaryMaskPng(
-  width: number,
-  height: number,
-  circles: readonly BinaryMaskCircle[],
+export async function encodeGrayscaleMaskPng(
+  width: number, height: number, pixels: Uint8Array,
 ): Promise<Blob> {
-  const scanlines = createScanlines(width, height, circles)
+  if (pixels.length !== maskSize(width, height)) throw new Error('修复掩膜尺寸无效')
+  const scanlines = new Uint8Array((width + 1) * height)
+  for (let y = 0; y < height; y += 1) {
+    scanlines.set(pixels.subarray(y * width, (y + 1) * width), y * (width + 1) + 1)
+  }
   const compressed = await deflate(scanlines)
   const header = new Uint8Array(13)
   writeUint32(header, 0, width)
@@ -116,4 +120,12 @@ export async function encodeBinaryMaskPng(
     pngChunk(IDAT, compressed),
     pngChunk(IEND, new Uint8Array()),
   ], { type: 'image/png' })
+}
+
+export async function encodeBinaryMaskPng(
+  width: number, height: number, circles: readonly BinaryMaskCircle[],
+): Promise<Blob> {
+  const pixels = new Uint8Array(maskSize(width, height))
+  paintMaskCircles(pixels, width, height, circles, 255)
+  return encodeGrayscaleMaskPng(width, height, pixels)
 }

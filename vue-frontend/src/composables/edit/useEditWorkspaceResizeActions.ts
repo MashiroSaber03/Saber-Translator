@@ -48,16 +48,16 @@ export function useEditWorkspaceResizeActions(options: UseEditWorkspaceResizeAct
       if (totalWidth <= 0) return
       const leftPercent = Math.max(20, Math.min(80, (mouseX / totalWidth) * 100))
 
-      originalPanel.style.flex = `0 0 ${leftPercent}%`
-      translatedPanel.style.flex = `0 0 ${100 - leftPercent}%`
+      originalPanel.style.setProperty('--panel-flex', String(leftPercent))
+      translatedPanel.style.setProperty('--panel-flex', String(100 - leftPercent))
     } else {
       const mouseY = event.clientY - containerRect.top
       const totalHeight = containerRect.height
       if (totalHeight <= 0) return
       const topPercent = Math.max(20, Math.min(80, (mouseY / totalHeight) * 100))
 
-      originalPanel.style.flex = `0 0 ${topPercent}%`
-      translatedPanel.style.flex = `0 0 ${100 - topPercent}%`
+      originalPanel.style.setProperty('--panel-flex', String(topPercent))
+      translatedPanel.style.setProperty('--panel-flex', String(100 - topPercent))
     }
   }
 

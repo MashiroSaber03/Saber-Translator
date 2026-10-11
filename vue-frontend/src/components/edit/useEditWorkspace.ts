@@ -5,6 +5,7 @@ import { useImageStore } from '@/stores/imageStore'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageViewer } from '@/composables/useImageViewer'
 import { useBrush, type BrushSurface } from '@/composables/useBrush'
+import { useMaskEditor, type MaskTool } from '@/composables/edit/useMaskEditor'
 import { useBubbleActions } from '@/composables/useBubbleActions'
 import { useEditRender } from '@/composables/useEditRender'
 import { useEditWorkspaceKeyboardShortcuts } from '@/composables/edit/useEditWorkspaceKeyboardShortcuts'
@@ -13,6 +14,7 @@ import { useEditWorkspaceProcessingActions } from '@/composables/edit/useEditWor
 import { useEditWorkspaceResizeActions } from '@/composables/edit/useEditWorkspaceResizeActions'
 import {
   flushPageDocument,
+  queuePageDocumentMutation,
   queuePageDocumentSave,
   registerPageDocument,
 } from '@/services/pageDocumentPersistence'
@@ -71,6 +73,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
     brushMode,
     brushSize,
     isBrushSubmitting,
+    isBrushPainting,
     mouseX,
     mouseY,
     toggleBrushMode,
@@ -81,6 +84,8 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
     adjustBrushSize
   } = useBrush({
     onBrushComplete: () => reRenderFullImage(),
+    onMaskStroke: bounds => maskEditor.active.value ? maskEditor.stroke(bounds) : undefined,
+    getBrushColor: () => maskEditor.active.value && maskEditor.tool.value === 'clear' ? 'rgba(128, 128, 128, 0.4)' : undefined,
     // 提供当前编辑面板的修复设置，不依赖气泡选中状态
     getCurrentRepairSettings: () => ({
       inpaintMethod: currentInpaintMethod.value,
@@ -202,6 +207,10 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
 
   const originalViewer = useImageViewer()
   const translatedViewer = useImageViewer()
+  const useOriginalViewport = computed(() => viewMode.value === 'original'
+    || (viewMode.value === 'dual' && imageComparisonRef.value?.translatedPanelCollapsed))
+  const primaryViewer = computed(() => useOriginalViewport.value ? originalViewer : translatedViewer)
+  const toolbarScale = computed(() => primaryViewer.value.scale.value)
 
   const scale = computed(() => translatedViewer.scale.value)
 
@@ -217,35 +226,36 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
     transform: `translate(${translatedViewer.translateX.value}px, ${translatedViewer.translateY.value}px) scale(${translatedViewer.scale.value})`
   }))
 
-  function translatedViewportCenter(): { x: number; y: number } {
-    const viewport = translatedViewportRef.value || originalViewportRef.value
+  function currentViewportCenter(): { x: number; y: number } {
+    const viewport = useOriginalViewport.value ? originalViewportRef.value : translatedViewportRef.value
     return {
       x: (viewport?.clientWidth ?? 0) / 2,
       y: (viewport?.clientHeight ?? 0) / 2,
     }
   }
 
-  function zoomIn(): void {
-    const center = translatedViewportCenter()
-    translatedViewer.zoomIn(center.x, center.y)
+  function syncViewerTransform(viewer: ReturnType<typeof useImageViewer>): void {
     if (syncEnabled.value) {
-      originalViewer.setTransform(translatedViewer.getTransform())
+      const otherViewer = viewer === originalViewer ? translatedViewer : originalViewer
+      otherViewer.setTransform(viewer.getTransform())
     }
+  }
+
+  function zoomIn(): void {
+    const center = currentViewportCenter()
+    primaryViewer.value.zoomIn(center.x, center.y)
+    syncViewerTransform(primaryViewer.value)
   }
 
   function zoomOut(): void {
-    const center = translatedViewportCenter()
-    translatedViewer.zoomOut(center.x, center.y)
-    if (syncEnabled.value) {
-      originalViewer.setTransform(translatedViewer.getTransform())
-    }
+    const center = currentViewportCenter()
+    primaryViewer.value.zoomOut(center.x, center.y)
+    syncViewerTransform(primaryViewer.value)
   }
 
   function resetZoom(): void {
-    translatedViewer.resetZoom()
-    if (syncEnabled.value) {
-      originalViewer.setTransform(translatedViewer.getTransform())
-    }
+    primaryViewer.value.resetZoom()
+    syncViewerTransform(primaryViewer.value)
   }
 
   async function persistCurrentDocument(): Promise<void> {
@@ -258,15 +268,19 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
     ])
   }
 
-  async function navigateAfterPersist(navigate: () => void): Promise<void> {
+  async function navigateAfterPersist(navigate: () => unknown): Promise<void> {
     if (isBusy.value || brushMode.value) return
+    if (maskEditor.dirty.value) {
+      showToast('请先保存当前修复范围，或放弃未保存的修改', 'warning')
+      return
+    }
     isNavigationPending.value = true
     try {
       await persistCurrentDocument()
-      navigate()
+      await navigate()
     } catch (error) {
       showToast(
-        error instanceof Error ? error.message : '保存当前页失败，无法切换图片',
+        error instanceof Error ? error.message : '保存当前页失败，操作未完成',
         'error',
       )
     } finally {
@@ -358,6 +372,10 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
           hasUnsavedChanges: false,
         })
         bubbleStore.setBubbles(loaded, true)
+        if (loaded.length === 0) {
+          currentInpaintMethod.value = pageTextStyle.inpaintMethod
+          currentFillColor.value = pageTextStyle.fillColor
+        }
         selectFirstBubbleIfExists()
         isPageDocumentReady.value = true
       })
@@ -387,6 +405,41 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
     selectFirstBubbleIfExists,
   })
 
+  const maskEditor = useMaskEditor({
+    getRepairSettings: () => ({ inpaintMethod: currentInpaintMethod.value, fillColor: currentFillColor.value }),
+    onApplied: () => reRenderFullImage(),
+  })
+
+  async function toggleMaskMode(): Promise<void> {
+    if (isBusy.value || isBrushPainting.value) return
+    if (maskEditor.active.value) {
+      if (maskEditor.close()) {
+        cancelBrushShortcut()
+        exitBrushMode()
+      }
+      return
+    }
+    cancelColorPick()
+    cancelBrushShortcut()
+    exitBrushMode()
+    isDrawingMode.value = false
+    isNavigationPending.value = true
+    try { await persistCurrentDocument() }
+    catch (error) { showToast(error instanceof Error ? error.message : '页面保存失败', 'error'); return }
+    finally { isNavigationPending.value = false }
+    await maskEditor.open()
+  }
+
+  function setMaskTool(tool: MaskTool | null): void {
+    if (!maskEditor.active.value || isBusy.value || isBrushPainting.value) return
+    const wasActive = brushMode.value !== null && maskEditor.tool.value === tool
+    cancelBrushShortcut()
+    exitBrushMode()
+    if (!tool || wasActive) return
+    maskEditor.tool.value = tool
+    toggleBrushMode(tool === 'preserve' ? 'restore' : 'repair')
+  }
+
   const isBusy = computed(() => (
     !isPageDocumentReady.value
     || isProcessing.value
@@ -394,6 +447,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
     || isRepairLoading.value
     || isBrushSubmitting.value
     || isNavigationPending.value
+    || maskEditor.busy.value
   ))
 
   const { colorPickField, isPickingColor, startColorPick, cancelColorPick, pickImageColor } = useImageColorPicker({
@@ -407,6 +461,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
 
   function startImageColorPick(field: BubbleColorField): void {
     if (isDrawingBox.value || !startColorPick(field)) return
+    cancelBrushShortcut()
     exitBrushMode()
     isDrawingMode.value = false
     handleDragEnd()
@@ -444,11 +499,14 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
     goToPreviousImage,
     goToNextImage,
     applyAndNext,
-    toggleBrushMode: activateBrushShortcut,
+    toggleBrushMode: activateBrush,
     exitBrushMode,
     zoomIn,
     zoomOut,
     resetZoom,
+    maskActive: maskEditor.active,
+    exitMaskMode: () => { void toggleMaskMode() },
+    applyMask: maskEditor.apply,
   })
 
 
@@ -496,16 +554,14 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
   function toggleSync(): void {
     syncEnabled.value = !syncEnabled.value
     // 开启同步时，立即同步两个视口的变换状态
-    if (syncEnabled.value) {
-      originalViewer.setTransform(translatedViewer.getTransform())
-    }
+    syncViewerTransform(primaryViewer.value)
   }
 
   function fitToScreen(): void {
-    const viewport = translatedViewportRef.value || originalViewportRef.value
+    const viewport = useOriginalViewport.value ? originalViewportRef.value : translatedViewportRef.value
     if (!viewport) return
 
-    const img = translatedImageRef.value || originalImageRef.value
+    const img = useOriginalViewport.value ? originalImageRef.value : translatedImageRef.value
     if (!img || !img.naturalWidth || !img.naturalHeight) return
 
     const viewportRect = viewport.getBoundingClientRect()
@@ -543,16 +599,13 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
     const viewer = viewport === 'original' ? originalViewer : translatedViewer
     viewer.zoomAt(mouseX, mouseY, factor)
 
-    if (syncEnabled.value) {
-      const otherViewer = viewport === 'original' ? translatedViewer : originalViewer
-      otherViewer.setTransform(viewer.getTransform())
-    }
+    syncViewerTransform(viewer)
   }
 
   function handleMouseDown(event: MouseEvent, viewport: 'original' | 'translated'): void {
     if (isPickingColor.value) return
     if (brushMode.value) {
-      if (isBrushSubmitting.value) return
+      if (isBusy.value || (maskEditor.active.value && !maskEditor.overlay.value)) return
       const surface = getBrushSurface(viewport)
       if (surface) {
         startBrushPainting(event, surface)
@@ -561,7 +614,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
     }
 
     if (event.button === 1) {
-      if (!isBusy.value && startDrawing(event, viewport)) {
+      if (!maskEditor.active.value && !isBusy.value && startDrawing(event, viewport)) {
         isMiddleButtonDown.value = true
         document.body.classList.add('middle-button-drawing')
       }
@@ -619,10 +672,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
     const viewer = activeViewport.value === 'original' ? originalViewer : translatedViewer
     viewer.drag(event.clientX, event.clientY)
 
-    if (syncEnabled.value) {
-      const otherViewer = activeViewport.value === 'original' ? translatedViewer : originalViewer
-      otherViewer.setTransform(viewer.getTransform())
-    }
+    syncViewerTransform(viewer)
   }
 
   function handleDragEnd(): void {
@@ -752,21 +802,11 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
   }
 
   async function handleExitToolbarAction(): Promise<void> {
-    if (isBusy.value || brushMode.value) return
-    isNavigationPending.value = true
-    try {
-      await persistCurrentDocument()
+    await navigateAfterPersist(async () => {
       // Unmounting cancels editor polling, so refresh the result before leaving.
       await reRenderFullImage()
       emit('exit')
-    } catch (error) {
-      showToast(
-        error instanceof Error ? error.message : '保存当前页失败，无法退出编辑',
-        'error',
-      )
-    } finally {
-      isNavigationPending.value = false
-    }
+    })
   }
 
   function handleBubbleUpdateWithSync(updates: Partial<BubbleState>): void {
@@ -780,6 +820,15 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
 
     if (selectedBubbleIndex.value >= 0) {
       handleBubbleUpdate(updates)
+    } else if (updates.inpaintMethod !== undefined || updates.fillColor !== undefined) {
+      const image = currentImage.value
+      if (!image || image.documentRevision === undefined) return
+      void queuePageDocumentMutation(image.id, image.documentRevision, bubbles.value, {
+        pageStyleDefaultsPatch: {
+          inpaintMethod: currentInpaintMethod.value,
+          fillColor: currentFillColor.value,
+        },
+      }).catch(error => showToast(error instanceof Error ? error.message : '修复设置保存失败', 'error'))
     }
   }
 
@@ -810,19 +859,10 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
   }
 
 
-  function activateRepairBrush(): void {
+  function activateBrush(mode: 'repair' | 'restore'): void {
     if (isBusy.value) return
-    toggleBrushMode('repair')
-  }
-
-  function activateRestoreBrush(): void {
-    if (isBusy.value) return
-    toggleBrushMode('restore')
-  }
-
-  function activateBrushShortcut(mode: 'repair' | 'restore'): void {
-    if (isBusy.value) return
-    toggleBrushMode(mode)
+    if (maskEditor.active.value) setMaskTool(mode === 'restore' ? 'preserve' : 'repair')
+    else toggleBrushMode(mode)
   }
 
   function deleteSelectedBubblesWhenIdle(): void {
@@ -910,7 +950,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
     loadBubbleStatesFromImage()
   }, { flush: 'sync' })
 
-  watch(selectedBubble, (bubble) => {
+  watch(selectedBubble, bubble => {
     if (bubble) {
       currentInpaintMethod.value = bubble.inpaintMethod
       currentFillColor.value = bubble.fillColor
@@ -918,6 +958,8 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
   }, { immediate: true })
 
   return {
+    currentInpaintMethod,
+    currentFillColor,
     workspaceRef,
     colorPickField,
     isPickingColor,
@@ -950,6 +992,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
     isRepairLoading,
     scale,
     originalScale,
+    toolbarScale,
     originalTransformStyle,
     translatedTransformStyle,
     isDrawingMode,
@@ -991,8 +1034,11 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
     handleOcrRecognize,
     handleReTranslateBubble,
     handleRepairSelectedBubble,
-    activateRepairBrush,
-    activateRestoreBrush,
+    activateRepairBrush: () => activateBrush('repair'),
+    activateRestoreBrush: () => activateBrush('restore'),
+    maskEditor,
+    toggleMaskMode,
+    setMaskTool,
     applyAndNext,
     autoDetectBubbles,
     detectAllImages,

@@ -146,6 +146,19 @@ describe('useBubbleActions backend-first operations', () => {
     )
   })
 
+  it('refreshes the repair revision after failure without rerendering a success', async () => {
+    runBubbleRepairMock.mockRejectedValueOnce(new Error('model failed'))
+    const onReRender = vi.fn()
+    const actions = useBubbleActions({ onReRender })
+    await actions.repairSelectedBubble()
+    expect(showToastMock).toHaveBeenCalledWith('model failed', 'error')
+    expect(onReRender).not.toHaveBeenCalled()
+    expect(useImageStore().currentImage?.documentRevision).toBe(8)
+    await actions.repairSelectedBubble()
+    expect(runBubbleRepairMock).toHaveBeenLastCalledWith('page-1', 'bubble-1', 8)
+    expect(onReRender).toHaveBeenCalledOnce()
+  })
+
   it('runs one trailing preview after edits arrive during an in-flight preview', async () => {
     let resolveFirst!: () => void
     const onDelayedPreview = vi

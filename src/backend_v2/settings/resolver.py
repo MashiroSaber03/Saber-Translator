@@ -596,6 +596,8 @@ class SettingsResolver:
         return {
             "disableResize": effective["lamaDisableResize"],
             "regionalInpainting": effective["lamaRegionalInpainting"],
+            "maskDilateSize": effective["preciseMask"]["dilateSize"],
+            "maskBoxExpandRatio": effective["preciseMask"]["boxExpandRatio"],
             "settingsSnapshot": {
                 "appRevision": int(row["revision"]),
                 "chapterMemoryRevision": int(

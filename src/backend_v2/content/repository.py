@@ -1846,6 +1846,7 @@ class ContentRepository:
         default_font_id: object = _MISSING,
         page_style_defaults_patch: dict[str, object] | None = None,
         propagate_style_fields: list[str] | None = None,
+        user_mask_asset_id: object = _MISSING,
     ) -> tuple[dict[str, object], bool]:
         style_patch = dict(page_style_defaults_patch or {})
         propagation = list(propagate_style_fields or [])
@@ -1854,6 +1855,7 @@ class ContentRepository:
             and default_font_id is _MISSING
             and not style_patch
             and not propagation
+            and user_mask_asset_id is _MISSING
         ):
             raise ValueError(
                 "command must mutate bubbles, the default font, or page style"
@@ -2010,6 +2012,14 @@ class ContentRepository:
             "pageStyleDefaultsPatch": style_patch,
             "propagateStyleFields": propagation,
         }
+        if user_mask_asset_id is not _MISSING:
+            with self.engine.connect() as connection:
+                checksum = connection.execute(select(assets.c.checksum).where(
+                    assets.c.id == user_mask_asset_id,
+                )).scalar_one_or_none()
+            if checksum is None:
+                raise ValueError("manual mask asset not found")
+            request_payload["userMaskChecksum"] = checksum
         request_hash = hashlib.sha256(
             _json(request_payload).encode("utf-8")
         ).hexdigest()
@@ -2041,6 +2051,7 @@ class ContentRepository:
                     pages.c.render_status,
                     pages.c.default_font_id,
                     pages.c.page_style_defaults_json,
+                    pages.c.source_revision,
                 ).where(pages.c.id == page_id)
             ).mappings().one_or_none()
             if page is None:
@@ -2389,6 +2400,15 @@ class ContentRepository:
                 page_values["default_font_id"] = default_font_id
             if style_patch:
                 page_values["page_style_defaults_json"] = _json(current_style)
+            if user_mask_asset_id is not _MISSING:
+                connection.execute(delete(page_assets).where(
+                    page_assets.c.page_id == page_id, page_assets.c.role == "user_mask",
+                ))
+                connection.execute(insert(page_assets).values(
+                    page_id=page_id, role="user_mask", asset_id=user_mask_asset_id,
+                    input_source_revision=page["source_revision"],
+                    input_document_revision=new_revision,
+                ))
             if advance_render_request:
                 page_values["render_status"] = "stale"
             elif (

@@ -8,6 +8,7 @@ from src.version import parse_version
 from .contracts import StorageError
 from .v3_5_0 import stop_unfinished, validate
 from .v3_5_1 import convert as directory_fonts, validate as validate_directory_fonts
+from .v3_5_3 import convert as user_masks
 
 
 @dataclass(frozen=True)
@@ -21,9 +22,10 @@ class Migration:
 MIGRATIONS: tuple[Migration, ...] = (
     Migration("3.5.0", "3.5.1", directory_fonts),
     Migration("3.5.1", "3.5.2"),
+    Migration("3.5.2", "3.5.3", user_masks),
 )
-SOURCE_PREPARERS = {"3.5.0": stop_unfinished, "3.5.1": stop_unfinished, "3.5.2": stop_unfinished}
-VERSION_VALIDATORS = {"3.5.0": validate, "3.5.1": validate_directory_fonts, "3.5.2": validate_directory_fonts}
+SOURCE_PREPARERS = {"3.5.0": stop_unfinished, "3.5.1": stop_unfinished, "3.5.2": stop_unfinished, "3.5.3": stop_unfinished}
+VERSION_VALIDATORS = {"3.5.0": validate, "3.5.1": validate_directory_fonts, "3.5.2": validate_directory_fonts, "3.5.3": validate_directory_fonts}
 
 
 def migration_chain(source: str, target: str, steps=MIGRATIONS) -> list[Migration]:

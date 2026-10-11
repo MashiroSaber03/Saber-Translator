@@ -33,6 +33,7 @@ from src.backend_v2.operations.repository import (
 from src.backend_v2.settings.resolver import SettingsResolver
 from src.backend_v2.public_policy import PublicUserPolicyAccess
 from src.backend_v2.runtime_profile import RuntimeProfile
+from src.backend_v2.content.repository import ContentConflict, ContentLocked
 
 
 def create_operations_blueprint(
@@ -54,6 +55,46 @@ def create_operations_blueprint(
         method_validator=public_access.require_inpaint_method,
         settings_transformer=public_access.apply_page_repair_settings,
     )
+    from src.backend_v2.operations.masks import PageMaskService
+    masks = PageMaskService(
+        data_root=data_root, engine=engine,
+        settings_transformer=public_access.apply_page_repair_settings,
+    )
+
+    @blueprint.errorhandler(ContentConflict)
+    def mask_conflict(error):
+        return _error("content_conflict", str(error), 409)
+
+    @blueprint.errorhandler(ContentLocked)
+    def mask_locked(error):
+        return _error(str(error), "chapter is reserved by backend work", 423)
+
+    @blueprint.get("/pages/<page_id>/masks")
+    def get_masks(page_id: str):
+        public_access.require_feature("editMode")
+        method = request.args.get("method", "lama_mpe")
+        if method not in {"solid", "lama_mpe", "litelama", "lama_manga"}:
+            raise ValueError("invalid repair method")
+        public_access.require_inpaint_method(method)
+        response = jsonify(masks.preview(page_id=page_id, method=method))
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @blueprint.put("/pages/<page_id>/masks")
+    def save_masks(page_id: str):
+        public_access.require_feature("editMode")
+        _validate_multipart_fields(allowed_form_keys={"base_revision"}, allowed_file_keys={"mask"})
+        upload = request.files.get("mask")
+        if upload is None:
+            raise ValueError("mask file is required")
+        result, replayed = masks.save(
+            page_id=page_id, upload=upload.stream,
+            base_revision=_integer_value(request.form.get("base_revision"), "base_revision", minimum=1),
+            idempotency_key=_require_idempotency_key(),
+        )
+        response = jsonify(result)
+        response.headers["Idempotency-Replayed"] = "true" if replayed else "false"
+        return response
 
     @blueprint.errorhandler(OperationNotFound)
     def not_found(error: OperationNotFound):
@@ -212,7 +253,7 @@ def create_operations_blueprint(
                 ),
                 idempotency_key=_require_idempotency_key(),
             )
-        elif target == "mask":
+        elif target in {"mask", "page_mask"}:
             _validate_multipart_fields(
                 allowed_form_keys={
                     "target",
@@ -236,9 +277,10 @@ def create_operations_blueprint(
                     minimum=1,
                 ),
                 idempotency_key=_require_idempotency_key(),
+                from_source=target == "page_mask",
             )
         else:
-            raise ValueError("repair target must be bubble or mask")
+            raise ValueError("repair target must be bubble, mask, or page_mask")
         result = jsonify(response)
         result.headers["Idempotency-Replayed"] = (
             "true" if replayed else "false"

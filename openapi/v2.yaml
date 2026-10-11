@@ -716,6 +716,50 @@ paths:
                 required: [recovered]
                 properties:
                   recovered: {type: integer, minimum: 0}
+  /pages/{page_id}/masks:
+    get:
+      tags: [operations]
+      operationId: getPageMasks
+      parameters:
+        - $ref: "#/components/parameters/PageId"
+        - name: method
+          in: query
+          schema: {type: string, enum: [solid, lama_mpe, litelama, lama_manga], default: lama_mpe}
+      responses:
+        "200":
+          description: Current automatic, manual, and effective masks as base64 grayscale PNGs.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PageMasks"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+    put:
+      tags: [operations]
+      operationId: savePageUserMask
+      parameters:
+        - $ref: "#/components/parameters/PageId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [base_revision, mask]
+              properties:
+                base_revision: {type: integer, minimum: 1}
+                mask: {type: string, format: binary, contentMediaType: image/png}
+      responses:
+        "200":
+          description: Manual mask saved without changing the current clean or translated image.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PageDocumentMutationResponse"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "423": {$ref: "#/components/responses/Locked"}
+        "422": {$ref: "#/components/responses/ValidationError"}
   /pages/{page_id}/repairs:
     post:
       tags: [operations]
@@ -7076,6 +7120,29 @@ components:
         base_revision:
           type: integer
           minimum: 1
+    PageMasks:
+      type: object
+      additionalProperties: false
+      required: [pageId, sourceRevision, documentRevision, width, height, preciseMask, boxMask, automaticMask, userMask, finalMask, processing]
+      properties:
+        pageId: {$ref: "#/components/schemas/Uuid"}
+        sourceRevision: {type: integer, minimum: 1}
+        documentRevision: {type: integer, minimum: 1}
+        width: {type: integer, minimum: 1}
+        height: {type: integer, minimum: 1}
+        preciseMask: {type: [string, 'null'], contentEncoding: base64, contentMediaType: image/png}
+        boxMask: {type: string, contentEncoding: base64, contentMediaType: image/png}
+        automaticMask: {type: string, contentEncoding: base64, contentMediaType: image/png}
+        userMask: {type: string, contentEncoding: base64, contentMediaType: image/png}
+        finalMask: {type: string, contentEncoding: base64, contentMediaType: image/png}
+        processing:
+          type: object
+          additionalProperties: false
+          required: [boxExpandRatio, dilateSize, closeGaps]
+          properties:
+            boxExpandRatio: {type: number, minimum: 0}
+            dilateSize: {type: integer, minimum: 0}
+            closeGaps: {type: boolean}
     MaskSolidRepairCommand:
       type: object
       additionalProperties: false
@@ -7083,7 +7150,7 @@ components:
       properties:
         target:
           type: string
-          const: mask
+          enum: [mask, page_mask]
         mask:
           type: string
           format: binary
@@ -7104,7 +7171,7 @@ components:
       properties:
         target:
           type: string
-          const: mask
+          enum: [mask, page_mask]
         mask:
           type: string
           format: binary
@@ -8350,6 +8417,7 @@ components:
         - documentRevision
         - renderedRevision
         - renderStatus
+        - cleanUrl
         - translatedUrl
       properties:
         pageId: {$ref: "#/components/schemas/Uuid"}
@@ -8366,6 +8434,7 @@ components:
             - awaiting_repair
             - repair_failed
         translatedUrl: {type: [string, "null"]}
+        cleanUrl: {type: [string, "null"]}
     PageList:
       type: object
       additionalProperties: false
