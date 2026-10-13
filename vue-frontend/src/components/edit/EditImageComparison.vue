@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
 import type { BubbleColorField, BubbleCoords, BubbleState } from '@/types/bubble'
 import type { ImageData } from '@/types/image'
 import type { BrushMode } from '@/composables/useBrush'
+import { showToast } from '@/utils/toast'
 import BubbleEditor from './BubbleEditor.vue'
 import BubbleOverlay from './BubbleOverlay.vue'
 
@@ -37,10 +38,65 @@ const props = defineProps<{
   maskOverlay?: string | null
   maskMode?: boolean
   showCleanPreview?: boolean
+  originalTextOpacity?: number
+  translatedTextOpacity?: number
 }>()
 
+const originalTextLoaded = ref(false)
+const translatedTextLoaded = ref(false)
+const textPreviewFailed = ref(false)
+const textPreviewAttempt = ref(0)
+const canSplitText = computed(() => !!props.currentImage?.translatedAssetUrl && !!props.currentImage?.cleanAssetUrl)
+const originalTextOverlayUrl = computed(() => {
+  const image = props.currentImage
+  if (props.viewMode === 'original' || !image?.sourceAssetUrl || image.documentRevision === undefined) return ''
+  const showingTranslation = !!image.translatedAssetUrl && !(props.showCleanPreview && image.cleanAssetUrl)
+  if (showingTranslation && image.renderedRevision !== image.documentRevision) return ''
+  const protectTranslation = showingTranslation && !canSplitText.value
+  return `/api/v2/pages/${encodeURIComponent(image.id)}/original-text-overlay`
+    + `?revision=${image.documentRevision}&protectTranslation=${protectTranslation}`
+})
+const translatedTextOverlayUrl = computed(() => {
+  const image = props.currentImage
+  if (props.viewMode === 'original' || !canSplitText.value || !image
+    || image.documentRevision === undefined || image.renderedRevision !== image.documentRevision) return ''
+  return `/api/v2/pages/${encodeURIComponent(image.id)}/translated-text-overlay?revision=${image.documentRevision}`
+})
+watch(originalTextOverlayUrl, () => { originalTextLoaded.value = false; textPreviewFailed.value = false })
+watch(translatedTextOverlayUrl, () => { translatedTextLoaded.value = false; textPreviewFailed.value = false })
+
+function onOriginalTextLoad(event: Event): void {
+  const url = (event.target as HTMLImageElement).getAttribute('src')
+  if (url === originalTextOverlayUrl.value) originalTextLoaded.value = true
+}
+
+function onOriginalTextError(event: Event): void {
+  if ((event.target as HTMLImageElement).getAttribute('src') !== originalTextOverlayUrl.value) return
+  originalTextLoaded.value = false
+  textPreviewFailed.value = true
+  showToast('原文预览加载失败，可将透明度归零后重试', 'error')
+}
+
+function onTranslatedTextLoad(event: Event): void {
+  if ((event.target as HTMLImageElement).getAttribute('src') === translatedTextOverlayUrl.value)
+    translatedTextLoaded.value = true
+}
+
+function onTranslatedTextError(event: Event): void {
+  if ((event.target as HTMLImageElement).getAttribute('src') !== translatedTextOverlayUrl.value) return
+  translatedTextLoaded.value = false
+  textPreviewFailed.value = true
+  showToast('译文预览加载失败，请点击图片标题栏重试', 'error')
+}
+
+function retryTextPreview(): void {
+  originalTextLoaded.value = translatedTextLoaded.value = textPreviewFailed.value = false
+  textPreviewAttempt.value += 1
+}
+
 const processedImageUrl = computed(
-  () => (props.showCleanPreview ? props.currentImage?.cleanAssetUrl : null)
+  () => (props.showCleanPreview || (translatedTextLoaded.value && !props.isPickingColor)
+    ? props.currentImage?.cleanAssetUrl : null)
     || props.currentImage?.translatedAssetUrl
     || props.currentImage?.cleanAssetUrl
     || props.currentImage?.sourceAssetUrl
@@ -204,6 +260,16 @@ defineExpose({
             <span>{{ processedImageLabel }}</span>
           </span>
           <UiIconButton
+            v-if="textPreviewFailed"
+            label="重新加载文字预览"
+            title="重新加载文字预览"
+            variant="inverse"
+            size="xs"
+            @click="retryTextPreview"
+          >
+            <UiIcon name="refresh" size="14" />
+          </UiIconButton>
+          <UiIconButton
             class="edit-image-comparison__panel-toggle"
             :label="translatedPanelCollapsed ? '展开翻译图面板' : '折叠翻译图面板'"
             title="折叠/展开"
@@ -233,6 +299,32 @@ defineExpose({
               :src="processedImageUrl"
               :alt="processedImageLabel"
               @load="emit('imageLoad', 'translated')"
+            >
+            <img
+              v-if="originalTextOverlayUrl && ((originalTextOpacity ?? 0) > 0 || originalTextLoaded)"
+              v-show="(originalTextOpacity ?? 0) > 0 && originalTextLoaded && !isPickingColor && (!canSplitText || showCleanPreview || translatedTextLoaded)"
+              :key="`${originalTextOverlayUrl}:${textPreviewAttempt}`"
+              class="edit-image-comparison__source-overlay"
+              :src="originalTextOverlayUrl"
+              :style="{ opacity: (originalTextOpacity ?? 0) / 100 }"
+              alt=""
+              aria-hidden="true"
+              draggable="false"
+              @load="onOriginalTextLoad"
+              @error="onOriginalTextError"
+            >
+            <img
+              v-if="translatedTextOverlayUrl && ((!showCleanPreview && ((originalTextOpacity ?? 0) > 0 || (translatedTextOpacity ?? 100) < 100)) || translatedTextLoaded)"
+              v-show="translatedTextLoaded && !showCleanPreview && !isPickingColor"
+              :key="`${translatedTextOverlayUrl}:${textPreviewAttempt}`"
+              class="edit-image-comparison__translated-overlay"
+              :src="translatedTextOverlayUrl"
+              :style="{ opacity: (translatedTextOpacity ?? 100) / 100 }"
+              alt=""
+              aria-hidden="true"
+              draggable="false"
+              @load="onTranslatedTextLoad"
+              @error="onTranslatedTextError"
             >
             <img v-if="maskOverlay && !isPickingColor" :src="maskOverlay" class="edit-image-comparison__mask" alt="结果图修复范围覆盖层">
             <BubbleOverlay
@@ -287,6 +379,14 @@ defineExpose({
 
 <style scoped>
 .edit-image-comparison__mask { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: var(--z-canvas); }
+
+.edit-image-comparison__source-overlay,
+.edit-image-comparison__translated-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
 
 .edit-image-comparison {
   --edit-image-comparison-panel-background: var(--color-surface-inverse-panel);
@@ -429,7 +529,9 @@ defineExpose({
   will-change: transform;
 }
 
-.edit-image-comparison__image {
+.edit-image-comparison__image,
+.edit-image-comparison__source-overlay,
+.edit-image-comparison__translated-overlay {
   display: block;
   max-width: none;
   backface-visibility: hidden;

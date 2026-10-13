@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   getPageMasks: vi.fn(),
   savePageUserMask: vi.fn(),
   getPageDocument: vi.fn(),
+  getPageRenderStatus: vi.fn(),
   createMaskRepair: vi.fn(),
   waitForOperation: vi.fn(),
   queuePageDocumentSave: vi.fn(),
@@ -33,7 +34,16 @@ const encoded = (value: number) => btoa(String.fromCharCode(...new Array(16).fil
 const documentAt = (revision: number) => ({
   pageId: 'page',
   documentRevision: revision,
+  renderStatus: 'ready',
   bubbles: [],
+})
+const renderAt = (revision: number, pageId = 'page') => ({
+  pageId,
+  documentRevision: revision,
+  renderedRevision: revision,
+  renderStatus: 'ready',
+  cleanUrl: `/clean-${revision}.png`,
+  translatedUrl: `/translated-${revision}.png`,
 })
 const previewAt = (revision: number) => ({
   pageId: 'page',
@@ -62,6 +72,10 @@ beforeEach(() => {
     bubbleStates: [],
   })
   mocks.getPageMasks.mockResolvedValue(previewAt(1))
+  mocks.getPageRenderStatus.mockImplementation(async (pageId: string) => {
+    const preview = await mocks.getPageMasks.mock.results.at(-1)!.value
+    return renderAt(preview.documentRevision, pageId)
+  })
   mocks.savePageUserMask.mockResolvedValue({ document: documentAt(2) })
   mocks.registerPageDocument.mockReturnValue([])
   mocks.createMaskRepair.mockResolvedValue({ operationId: 'operation' })
@@ -114,6 +128,160 @@ afterEach(() => {
 })
 
 describe('mask editor persistence and execution', () => {
+  it.each(['ready', 'stale'])('keeps the displayed render revision accurate after a %s mask save', async renderStatus => {
+    useImageStore().updateCurrentImage({ renderedRevision: 1 })
+    mocks.savePageUserMask.mockResolvedValue({ document: { ...documentAt(2), renderStatus } })
+    mocks.getPageMasks.mockResolvedValueOnce(previewAt(1)).mockResolvedValue(previewAt(2))
+    mocks.getPageRenderStatus.mockResolvedValueOnce(renderAt(1)).mockResolvedValue({
+      ...renderAt(2), renderStatus, renderedRevision: renderStatus === 'ready' ? 2 : 1,
+      cleanUrl: '/clean-1.png', translatedUrl: '/translated-1.png',
+    })
+    await editor.open()
+    await editor.stroke(stroke)
+    expect(useImageStore().currentImage?.documentRevision).toBe(2)
+    expect(useImageStore().currentImage?.renderedRevision).toBe(renderStatus === 'ready' ? 2 : 1)
+    expect(useImageStore().currentImage?.cleanAssetUrl).toBe('/clean-1.png')
+    expect(useImageStore().currentImage?.translatedAssetUrl).toBe('/translated-1.png')
+    expect(mocks.createMaskRepair).not.toHaveBeenCalled()
+    expect(mocks.onApplied).not.toHaveBeenCalled()
+  })
+
+  it('adopts externally edited bubbles with their matching clean and translated images', async () => {
+    await editor.open()
+    expect(editor.close()).toBe(true)
+    mocks.getPageMasks.mockResolvedValue(previewAt(7))
+    mocks.getPageDocument.mockResolvedValue(documentAt(7))
+    await editor.open()
+    expect(useImageStore().currentImage).toMatchObject({
+      documentRevision: 7, renderedRevision: 7,
+      cleanAssetUrl: '/clean-7.png', translatedAssetUrl: '/translated-7.png',
+    })
+    expect(mocks.registerPageDocument).toHaveBeenCalledWith(documentAt(7))
+    expect(editor.state.value?.documentRevision).toBe(7)
+    expect(mocks.getPageMasks).toHaveBeenCalledTimes(2)
+    expect(mocks.createMaskRepair).not.toHaveBeenCalled()
+    expect(mocks.onApplied).not.toHaveBeenCalled()
+  })
+
+  it('refreshes finished rendering even when the document revision has not changed', async () => {
+    mocks.getPageRenderStatus.mockResolvedValueOnce({ ...renderAt(1), renderStatus: 'stale', renderedRevision: null })
+    await editor.open()
+    expect(useImageStore().currentImage?.renderedRevision).toBeNull()
+    await editor.retry()
+    expect(useImageStore().currentImage).toMatchObject({
+      renderedRevision: 1, translatedAssetUrl: '/translated-1.png',
+    })
+    expect(mocks.getPageDocument).not.toHaveBeenCalled()
+  })
+
+  it('does not resave an accepted stroke when reading render status fails', async () => {
+    await editor.open()
+    mocks.getPageMasks.mockResolvedValue(previewAt(2))
+    mocks.getPageRenderStatus.mockRejectedValueOnce(new Error('offline'))
+    await editor.stroke(stroke)
+    expect(editor.dirty.value).toBe(false)
+    expect(editor.error.value).toBe('offline')
+    expect(useImageStore().currentImage).toMatchObject({ documentRevision: 2, renderedRevision: 1 })
+    await editor.apply()
+    expect(mocks.createMaskRepair).not.toHaveBeenCalled()
+    await editor.retry()
+    expect(editor.error.value).toBe('')
+    expect(useImageStore().currentImage).toMatchObject({
+      documentRevision: 2, renderedRevision: 2, translatedAssetUrl: '/translated-2.png',
+    })
+    expect(mocks.savePageUserMask).toHaveBeenCalledOnce()
+  })
+
+  it.each([
+    { ...renderAt(3) },
+    { ...renderAt(2), pageId: 'another-page' },
+  ])('rejects render status that does not match the mask snapshot', async status => {
+    mocks.getPageMasks.mockResolvedValue(previewAt(2))
+    mocks.getPageRenderStatus.mockResolvedValue(status)
+    await editor.open()
+    expect(editor.overlay.value).toBeNull()
+    expect(editor.error.value).toContain('页面已更新')
+    expect(useImageStore().currentImage?.documentRevision).toBe(1)
+    expect(useImageStore().currentImage?.translatedAssetUrl).toBeFalsy()
+    expect(mocks.registerPageDocument).not.toHaveBeenCalled()
+  })
+
+  it('ignores a late render status after a newer preview has loaded', async () => {
+    await editor.open()
+    let finishStatus!: (value: ReturnType<typeof renderAt>) => void
+    mocks.getPageMasks.mockResolvedValueOnce(previewAt(2))
+    mocks.getPageRenderStatus.mockImplementationOnce(() => new Promise(resolve => { finishStatus = resolve }))
+    repairMethod.value = 'lama_manga'
+    await flushPromises()
+    mocks.getPageMasks.mockResolvedValue(previewAt(3))
+    mocks.getPageDocument.mockResolvedValue(documentAt(3))
+    repairMethod.value = 'solid'
+    await flushPromises()
+    finishStatus(renderAt(2))
+    await flushPromises()
+    expect(useImageStore().currentImage).toMatchObject({
+      documentRevision: 3, renderedRevision: 3, translatedAssetUrl: '/translated-3.png',
+    })
+    expect(editor.state.value?.documentRevision).toBe(3)
+  })
+
+  it('does not adopt an external document if its render status cannot be read', async () => {
+    mocks.getPageMasks.mockResolvedValue(previewAt(7))
+    mocks.getPageDocument.mockResolvedValue(documentAt(7))
+    mocks.getPageRenderStatus.mockRejectedValueOnce(new Error('offline'))
+    await editor.open()
+    expect(mocks.registerPageDocument).not.toHaveBeenCalled()
+    expect(useImageStore().currentImage?.documentRevision).toBe(1)
+    expect(editor.error.value).toBe('offline')
+    expect(editor.overlay.value).toBeNull()
+    await editor.retry()
+    expect(useImageStore().currentImage).toMatchObject({
+      documentRevision: 7, renderedRevision: 7, translatedAssetUrl: '/translated-7.png',
+    })
+  })
+
+  it('ignores a pending render status when navigating to another page', async () => {
+    await editor.open()
+    let finishStatus!: (value: ReturnType<typeof renderAt>) => void
+    mocks.getPageRenderStatus.mockImplementationOnce(() => new Promise(resolve => { finishStatus = resolve }))
+    const pending = editor.retry()
+    await flushPromises()
+    addTestImage(useImageStore(), 'next.png', '/next.png', {
+      id: 'next-page', documentRevision: 3, width: 4, height: 4, bubbleStates: [],
+    })
+    mocks.getPageMasks.mockResolvedValue({ ...previewAt(3), pageId: 'next-page' })
+    useImageStore().setCurrentImageIndex(1)
+    await flushPromises()
+    finishStatus(renderAt(1))
+    await pending
+    expect(useImageStore().currentImage).toMatchObject({
+      id: 'next-page', documentRevision: 3, renderedRevision: 3, translatedAssetUrl: '/translated-3.png',
+    })
+    expect(editor.state.value?.pageId).toBe('next-page')
+  })
+
+  it('keeps the new page overlay when an older mask response arrives with a different source revision', async () => {
+    let finishOld!: (value: ReturnType<typeof previewAt>) => void
+    mocks.getPageMasks.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve }))
+    const pending = editor.open()
+    await flushPromises()
+    addTestImage(useImageStore(), 'next.png', '/next.png', {
+      id: 'next-page', documentRevision: 3, width: 4, height: 4, bubbleStates: [],
+    })
+    mocks.getPageMasks.mockResolvedValue({ ...previewAt(3), pageId: 'next-page', sourceRevision: 9 })
+    useImageStore().setCurrentImageIndex(1)
+    await flushPromises()
+    const overlay = editor.overlay.value
+    expect(overlay).toBeTruthy()
+    finishOld(previewAt(1))
+    await pending
+    expect(editor.state.value?.pageId).toBe('next-page')
+    expect(editor.overlay.value).toBe(overlay)
+    expect(editor.error.value).toBe('')
+    expect(mocks.getPageRenderStatus).toHaveBeenCalledOnce()
+    expect(mocks.showToast).not.toHaveBeenCalled()
+  })
+
   it('reloads the current revision when repair submission conflicts, allowing a retry', async () => {
     await editor.open()
     mocks.createMaskRepair.mockRejectedValueOnce(

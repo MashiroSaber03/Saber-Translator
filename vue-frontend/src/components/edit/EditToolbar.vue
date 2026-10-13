@@ -99,6 +99,38 @@
         >
           <span class="edit-toolbar__annotation-label">仅看修复</span>
         </UiButton>
+        <label class="edit-toolbar__source-overlay" title="0% 隐藏原文，100% 显示原文；译文显示在原文上方">
+          <span>原文</span>
+          <UiInput
+            class="edit-toolbar__source-opacity"
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            aria-label="原文透明度"
+            :aria-valuetext="`${originalTextOpacity ?? 0}% 原文透明度`"
+            :model-value="originalTextOpacity ?? 0"
+            :disabled="!canOverlaySource"
+            @update:model-value="emit('update-original-text-opacity', Number($event))"
+          />
+          <span class="edit-toolbar__source-opacity-value">{{ originalTextOpacity ?? 0 }}%</span>
+        </label>
+        <label class="edit-toolbar__source-overlay" title="0% 隐藏译文，100% 显示译文；背景保持不变">
+          <span>译文</span>
+          <UiInput
+            class="edit-toolbar__source-opacity"
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            aria-label="译文透明度"
+            :aria-valuetext="`${translatedTextOpacity ?? 100}% 译文透明度`"
+            :model-value="translatedTextOpacity ?? 100"
+            :disabled="!canFadeTranslated"
+            @update:model-value="emit('update-translated-text-opacity', Number($event))"
+          />
+          <span class="edit-toolbar__source-opacity-value">{{ translatedTextOpacity ?? 100 }}%</span>
+        </label>
         <UiIconButton
           variant="inverse"
           size="md"
@@ -269,6 +301,7 @@
 import UiButton from '@/components/ui/UiButton.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
+import UiInput from '@/components/ui/UiInput.vue'
 import { computed } from 'vue'
 import EditToolbarHelp from './EditToolbarHelp.vue'
 
@@ -295,6 +328,10 @@ const props = defineProps<{
   maskMode?: boolean
   canPreviewClean?: boolean
   showCleanPreview?: boolean
+  originalTextOpacity?: number
+  canOverlaySource?: boolean
+  translatedTextOpacity?: number
+  canFadeTranslated?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -306,6 +343,8 @@ const emit = defineEmits<{
   (e: 'toggle-layout'): void
   (e: 'toggle-view-mode'): void
   (e: 'toggle-clean-preview'): void
+  (e: 'update-original-text-opacity', value: number): void
+  (e: 'update-translated-text-opacity', value: number): void
   (e: 'toggle-sync'): void
   (e: 'fit-to-screen'): void
   (e: 'zoom-in'): void
@@ -326,7 +365,7 @@ const emit = defineEmits<{
 }>()
 
 function handlePointerUp(event: PointerEvent): void {
-  if (event.target instanceof Element && event.target.closest('input, [role="combobox"], [role="listbox"]')) return
+  if (event.target instanceof Element && event.target.closest('input:not([type="range"]), [role="combobox"], [role="listbox"]')) return
   emit('pointer-action-complete')
 }
 
@@ -467,6 +506,29 @@ const brushCursorStyle = computed(() => {
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.edit-toolbar__source-overlay {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--edit-toolbar-annotation-button-border);
+  border-radius: 6px;
+  color: var(--color-text-inverse);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.edit-toolbar__source-opacity {
+  width: 72px;
+  accent-color: var(--color-action-brand);
+}
+
+.edit-toolbar__source-opacity-value {
+  min-width: 4ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .edit-toolbar__text-glyph {

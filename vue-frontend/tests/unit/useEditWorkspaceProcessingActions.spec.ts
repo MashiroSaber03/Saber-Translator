@@ -1,4 +1,5 @@
 import { createPinia, setActivePinia, storeToRefs } from 'pinia'
+import { flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
@@ -17,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   runPageOperation: vi.fn(),
   toast: vi.fn(),
   translateWithCurrentBubbles: vi.fn(),
+  onReRender: vi.fn(),
 }))
 
 vi.mock('@/api/v2/content', () => ({
@@ -75,6 +77,7 @@ function createActions(pageCount = 1) {
       currentImageIndex: ref(imageStore.currentImageIndex),
       bubbles,
       selectFirstBubbleIfExists: vi.fn(),
+      onReRender: mocks.onReRender,
     }),
     bubble,
   }
@@ -127,6 +130,26 @@ describe('useEditWorkspaceProcessingActions', () => {
       },
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     )
+    expect(mocks.toast).toHaveBeenCalledWith('重新翻译完成', 'success')
+  })
+
+  it('keeps translation busy until the existing renderer has refreshed the result image', async () => {
+    const { actions } = createActions()
+    const imageStore = useImageStore()
+    imageStore.updateCurrentImage({ renderedRevision: 3, translatedAssetUrl: '/old.png' })
+    let finishRender!: () => void
+    mocks.onReRender.mockImplementationOnce(() => new Promise<void>(resolve => { finishRender = resolve }))
+    const pending = actions.handleReTranslateBubble(0)
+    await flushPromises()
+    expect(imageStore.currentImage?.documentRevision).toBe(4)
+    expect(actions.isProcessing.value).toBe(true)
+    expect(mocks.toast).not.toHaveBeenCalledWith('重新翻译完成', 'success')
+    expect(mocks.onReRender).toHaveBeenCalledOnce()
+    imageStore.updateCurrentImage({ renderedRevision: 4, translatedAssetUrl: '/new.png' })
+    finishRender()
+    await pending
+    expect(imageStore.currentImage?.translatedAssetUrl).toBe('/new.png')
+    expect(actions.isProcessing.value).toBe(false)
     expect(mocks.toast).toHaveBeenCalledWith('重新翻译完成', 'success')
   })
 

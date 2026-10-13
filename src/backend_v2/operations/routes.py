@@ -80,6 +80,30 @@ def create_operations_blueprint(
         response.headers["Cache-Control"] = "no-store"
         return response
 
+    @blueprint.get("/pages/<page_id>/original-text-overlay")
+    def get_original_text_overlay(page_id: str):
+        public_access.require_feature("editMode")
+        revision = _integer_value(request.args.get('revision'), 'revision', minimum=1)
+        protect = request.args.get('protectTranslation', 'true')
+        if protect not in {'true', 'false'}:
+            raise ValueError('protectTranslation must be true or false')
+        response = Response(masks.text_overlay(
+            page_id=page_id, revision=revision, protect_translation=protect == 'true',
+        ), mimetype='image/png')
+        response.headers['Cache-Control'] = 'private, max-age=3600'
+        return response
+
+    @blueprint.get("/pages/<page_id>/translated-text-overlay")
+    def get_translated_text_overlay(page_id: str):
+        public_access.require_feature("editMode")
+        response = Response(masks.text_overlay(
+            page_id=page_id,
+            revision=_integer_value(request.args.get('revision'), 'revision', minimum=1),
+            layer='translated',
+        ), mimetype='image/png')
+        response.headers['Cache-Control'] = 'private, max-age=3600'
+        return response
+
     @blueprint.put("/pages/<page_id>/masks")
     def save_masks(page_id: str):
         public_access.require_feature("editMode")

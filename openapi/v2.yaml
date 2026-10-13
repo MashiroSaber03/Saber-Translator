@@ -716,6 +716,47 @@ paths:
                 required: [recovered]
                 properties:
                   recovered: {type: integer, minimum: 0}
+  /pages/{page_id}/original-text-overlay:
+    get:
+      tags: [operations]
+      operationId: getPageOriginalTextOverlay
+      parameters:
+        - $ref: "#/components/parameters/PageId"
+        - name: revision
+          in: query
+          required: true
+          schema: {type: integer, minimum: 1}
+        - name: protectTranslation
+          in: query
+          schema: {type: boolean, default: true}
+      responses:
+        "200":
+          description: Read-only original text preview, transparent outside text and over translated glyphs and strokes.
+          content:
+            image/png:
+              schema: {type: string, format: binary}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
+  /pages/{page_id}/translated-text-overlay:
+    get:
+      tags: [operations]
+      operationId: getPageTranslatedTextOverlay
+      parameters:
+        - $ref: "#/components/parameters/PageId"
+        - name: revision
+          in: query
+          required: true
+          schema: {type: integer, minimum: 1}
+      responses:
+        "200":
+          description: Read-only translated text preview using published glyph and stroke pixels, transparent elsewhere.
+          content:
+            image/png:
+              schema: {type: string, format: binary}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationError"}
   /pages/{page_id}/masks:
     get:
       tags: [operations]

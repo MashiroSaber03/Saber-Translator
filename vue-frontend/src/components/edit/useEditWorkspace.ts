@@ -139,7 +139,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
   const workspaceRef = ref<HTMLElement | null>(null)
   const imageComparisonRef = ref<EditImageComparisonExposed | null>(null)
 
-  function focusWorkspaceAfterToolbarPointer(): void {
+  function focusWorkspaceAfterPointer(): void {
     requestAnimationFrame(() => {
       workspaceRef.value?.focus({ preventScroll: true })
     })
@@ -403,6 +403,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
     currentImageIndex,
     bubbles,
     selectFirstBubbleIfExists,
+    onReRender: reRenderFullImage,
   })
 
   const maskEditor = useMaskEditor({
@@ -471,11 +472,15 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
   }
 
   function handleWorkspacePointerDown(event: PointerEvent): void {
-    if (!isPickingColor.value || !(event.target instanceof Node)) return
-    // Let the cancel button complete its click before removing its DOM target.
-    if (event.target instanceof Element && event.target.closest('.edit-workspace__color-pick-status')) return
+    if (!(event.target instanceof Node)) return
     const inOriginal = originalViewportRef.value?.contains(event.target)
     const inTranslated = translatedViewportRef.value?.contains(event.target)
+    if (!isPickingColor.value) {
+      if (inOriginal || inTranslated) focusWorkspaceAfterPointer()
+      return
+    }
+    // Let the cancel button complete its click before removing its DOM target.
+    if (event.target instanceof Element && event.target.closest('.edit-workspace__color-pick-status')) return
     if (!inOriginal && !inTranslated) {
       cancelColorPick()
       return
@@ -967,7 +972,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
     cancelColorPick,
     handleWorkspacePointerDown,
     imageComparisonRef,
-    focusWorkspaceAfterToolbarPointer,
+    focusWorkspaceAfterPointer,
     images,
     currentImageIndex,
     currentImage,

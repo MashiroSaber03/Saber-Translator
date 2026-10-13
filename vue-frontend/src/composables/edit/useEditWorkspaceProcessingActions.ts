@@ -26,6 +26,7 @@ interface UseEditWorkspaceProcessingActionsOptions {
   currentImageIndex: Ref<number>
   bubbles: Ref<BubbleState[]>
   selectFirstBubbleIfExists: () => void
+  onReRender: () => Promise<unknown>
 }
 
 export function useEditWorkspaceProcessingActions(
@@ -113,6 +114,7 @@ export function useEditWorkspaceProcessingActions(
       { signal: abortController.signal },
     )
     await reloadCurrentDocument(image.id, bubbleId)
+    if (options.currentImage.value?.id === image.id) await options.onReRender()
     return operation
   }
 

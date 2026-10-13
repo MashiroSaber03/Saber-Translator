@@ -28,6 +28,10 @@
       :mask-mode="maskEditor.active.value"
       :can-preview-clean="!!currentImage?.cleanAssetUrl"
       :show-clean-preview="showCleanPreview"
+      :original-text-opacity="originalTextOpacity"
+      :translated-text-opacity="translatedTextOpacity"
+      :can-overlay-source="viewMode !== 'original' && !!currentImage?.sourceAssetUrl"
+      :can-fade-translated="viewMode !== 'original' && !showCleanPreview && !!currentImage?.translatedAssetUrl && !!currentImage?.cleanAssetUrl"
       @go-previous-image="goToPreviousImage"
       @go-next-image="goToNextImage"
       @toggle-thumbnails="toggleThumbnails"
@@ -36,6 +40,8 @@
       @toggle-layout="toggleLayout"
       @toggle-view-mode="toggleViewMode"
       @toggle-clean-preview="cleanPreviewRequested = !showCleanPreview"
+      @update-original-text-opacity="originalTextOpacity = $event"
+      @update-translated-text-opacity="translatedTextOpacity = $event"
       @toggle-sync="toggleSync"
       @fit-to-screen="fitToScreen"
       @zoom-in="zoomIn"
@@ -52,7 +58,7 @@
       @activate-restore-brush="activateRestoreBrush"
       @toggle-mask-mode="toggleMaskMode"
       @apply-and-next="applyAndNext"
-      @pointer-action-complete="focusWorkspaceAfterToolbarPointer"
+      @pointer-action-complete="focusWorkspaceAfterPointer"
     >
       <template #mask-tools>
         <EditMaskPanel
@@ -107,6 +113,8 @@
       :mask-overlay="maskEditor.active.value ? maskEditor.overlay.value : null"
       :mask-mode="maskEditor.active.value"
       :show-clean-preview="showCleanPreview"
+      :original-text-opacity="originalTextOpacity"
+      :translated-text-opacity="translatedTextOpacity"
       @wheel-panel="handleWheel"
       @mouse-down-panel="handleMouseDown"
       @image-load="handleImageLoad"
@@ -155,7 +163,7 @@ const {
   cancelColorPick,
   handleWorkspacePointerDown,
   imageComparisonRef,
-  focusWorkspaceAfterToolbarPointer,
+  focusWorkspaceAfterPointer,
   images,
   currentImageIndex,
   currentImage,
@@ -232,6 +240,8 @@ const {
 
 const cleanPreviewRequested = ref(false)
 const showCleanPreview = computed(() => cleanPreviewRequested.value && !!currentImage.value?.cleanAssetUrl)
+const originalTextOpacity = ref(0)
+const translatedTextOpacity = ref(100)
 
 function guardUnsavedMask(): boolean {
   if (!maskEditor.dirty.value) return true

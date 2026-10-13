@@ -13,7 +13,7 @@ from src.backend_v2.content.repository import ContentConflict
 from src.backend_v2.operations.masks import PageMaskService
 from src.backend_v2.operations.repair import PageRepairService
 from src.backend_v2.operations.repository import OperationRepository, OperationNotFound
-from src.backend_v2.storage.schema import bubbles, page_assets, render_requests
+from src.backend_v2.storage.schema import assets, bubbles, page_assets, pages, render_requests
 from src.core.repair_mask import build_repair_mask, build_automatic_mask_layers
 
 
@@ -29,6 +29,131 @@ def decoded(value):
     with Image.open(BytesIO(base64.b64decode(value))) as image:
         assert image.mode == "L"
         return np.array(image)
+
+
+@pytest.mark.parametrize('direction,angle,color,stroke', [
+    ('horizontal', 0, '#000000', '#ffffff'),
+    ('vertical', -17, '#ffffff', '#ffffff'),
+    ('horizontal', 25, '#ff0000', '#0000ff'),
+])
+def test_original_text_preview_preserves_translated_glyphs_and_strokes(
+    operation_platform, direction, angle, color, stroke,
+):
+    import json
+    from sqlalchemy import update
+    from src.core.config_models import BubbleState
+    from src.core.rendering import render_bubbles_unified
+    from src.backend_v2.rendering.service import publish_png_asset
+    from src.backend_v2.rendering.fonts import materialize_render_payloads
+
+    p = operation_platform
+    service, _ = services(p)
+    with p['engine'].begin() as c:
+        payload = json.loads(c.execute(select(bubbles.c.payload_json)
+            .where(bubbles.c.id == p['bubble_id'])).scalar_one())
+        payload.update(translatedText='译文', coords=[4, 4, 60, 60], fontSize=20,
+                       textDirection=direction, rotationAngle=angle, strokeEnabled=True,
+                       strokeWidth=2, textColor=color, strokeColor=stroke)
+        c.execute(update(bubbles).where(bubbles.c.id == p['bubble_id'])
+                  .values(payload_json=json.dumps(payload)))
+    with p['engine'].connect() as c:
+        payloads = [payload for _, _, payload in materialize_render_payloads(c, service.storage, p['page_id'])]
+    states = [BubbleState.from_dict(value) for value in payloads]
+    with Image.new('RGBA', (64, 64), (0, 0, 0, 0)) as text:
+        render_bubbles_unified(text, states)
+        coverage = np.array(text.getchannel('A')) > 0
+    with Image.new('RGB', (64, 64), 'white') as rendered:
+        render_bubbles_unified(rendered, states)
+        record = publish_png_asset(service.storage, rendered)
+        result = np.array(rendered)
+    precise = np.zeros((64, 64), dtype=np.uint8)
+    precise[2:62, 2:62] = 255
+    with Image.fromarray(precise) as image:
+        mask = service.publish(image)
+    with p['engine'].begin() as c:
+        for role, asset in [('translated', record), ('text_mask', mask)]:
+            c.execute(page_assets.insert().values(page_id=p['page_id'], role=role, asset_id=asset.id,
+                input_source_revision=1, input_document_revision=1))
+        c.execute(update(pages).where(pages.c.id == p['page_id'])
+            .values(rendered_revision=1, render_status='ready'))
+        before = (c.execute(select(page_assets)).all(), c.execute(select(assets)).all())
+    with Image.open(BytesIO(service.text_overlay(
+        page_id=p['page_id'], revision=1, protect_translation=True,
+    ))) as overlay:
+        pixels = np.array(overlay)
+    assert coverage.any() and np.any((precise > 0) & ~coverage)
+    assert not pixels[coverage, 3].any()
+    assert np.all(pixels[(precise > 0) & ~coverage, 3] == 255)
+    assert not pixels[precise == 0, 3].any()
+    for opacity in (0, .25, .5, 1):
+        alpha = pixels[:, :, 3:4] / 255 * opacity
+        blended = np.rint(result * (1-alpha) + pixels[:, :, :3] * alpha).astype(np.uint8)
+        assert np.array_equal(blended[coverage], result[coverage])
+    with Image.open(BytesIO(service.text_overlay(
+        page_id=p['page_id'], revision=1, protect_translation=False,
+    ))) as overlay:
+        original_pixels = np.array(overlay)
+        assert np.array_equal(original_pixels[:, :, 3], precise)
+    with Image.open(BytesIO(service.text_overlay(
+        page_id=p['page_id'], revision=1, layer='translated',
+    ))) as overlay:
+        translated_pixels = np.array(overlay)
+    assert np.array_equal(translated_pixels[:, :, 3] > 0, coverage)
+    assert np.array_equal(translated_pixels[coverage, :3], result[coverage])
+    for original_opacity in (0, .25, .5, .75, 1):
+        original_alpha = original_pixels[:, :, 3:4] / 255 * original_opacity
+        background = 255 * (1-original_alpha) + original_pixels[:, :, :3] * original_alpha
+        for translated_opacity in (0, .25, .5, .75, 1):
+            translated_alpha = translated_pixels[:, :, 3:4] / 255 * translated_opacity
+            combined = background * (1-translated_alpha) + translated_pixels[:, :, :3] * translated_alpha
+            if translated_opacity == 1:
+                assert np.array_equal(combined[coverage].astype(np.uint8), result[coverage])
+            if original_opacity == 0 and translated_opacity == 1:
+                assert np.array_equal(combined.astype(np.uint8), result)
+            assert np.array_equal(combined[~coverage], background[~coverage])
+    with p['engine'].connect() as c:
+        assert (c.execute(select(page_assets)).all(), c.execute(select(assets)).all()) == before
+    with owner_scope('another-owner'), pytest.raises(OperationNotFound):
+        service.text_overlay(page_id=p['page_id'], revision=1, protect_translation=True)
+    with pytest.raises(ContentConflict):
+        service.text_overlay(page_id=p['page_id'], revision=2, protect_translation=True)
+
+
+def test_original_text_overlay_route_fallback_and_validation(operation_platform):
+    from src.backend_v2.api.app import ApiSettings, create_api_app
+    from src.backend_v2.runtime_identity import RuntimeIdentity
+
+    p = operation_platform
+    app = create_api_app(ApiSettings(data_root=p['data_root'], engine=p['engine'],
+        identity=RuntimeIdentity(epoch_id='original-text-api', epoch_token='test-only', test_mode=True)))
+    client = app.test_client()
+    path = f'/api/v2/pages/{p["page_id"]}/original-text-overlay'
+    try:
+        response = client.get(path+'?revision=1&protectTranslation=false')
+        assert response.status_code == 200 and response.mimetype == 'image/png'
+        with Image.open(BytesIO(response.data)) as overlay:
+            alpha = np.array(overlay)[:, :, 3]
+        assert alpha[10, 10] == 255 and alpha[50, 50] == 0
+        assert client.get(path+'?revision=2').status_code == 409
+        assert client.get(path+'?revision=1&protectTranslation=invalid').status_code == 422
+        assert client.get(path).status_code == 422
+        assert client.get('/api/v2/pages/missing/original-text-overlay?revision=1').status_code == 404
+        translated_path = f'/api/v2/pages/{p["page_id"]}/translated-text-overlay'
+        response = client.get(translated_path+'?revision=1')
+        assert response.status_code == 200 and response.mimetype == 'image/png'
+        assert response.headers['Cache-Control'] == 'private, max-age=3600'
+        with Image.open(BytesIO(response.data)) as overlay:
+            assert not np.array(overlay)[:, :, 3].any()
+        assert client.get(translated_path+'?revision=2').status_code == 409
+        assert client.get(translated_path).status_code == 422
+        assert client.get('/api/v2/pages/missing/translated-text-overlay?revision=1').status_code == 404
+        with p['engine'].begin() as c:
+            c.execute(bubbles.delete().where(bubbles.c.page_id == p['page_id']))
+        response = client.get(path+'?revision=1&protectTranslation=false')
+        with Image.open(BytesIO(response.data)) as overlay:
+            assert not np.array(overlay)[:, :, 3].any()
+    finally:
+        app.extensions['saber_v2_runtime'].close()
 
 
 def services(platform):

@@ -6,11 +6,12 @@ import base64
 import json
 
 import numpy as np
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageDraw, UnidentifiedImageError
 from sqlalchemy import select
 
 from src.backend_v2.auth.ownership import effective_owner_id
-from src.backend_v2.content.repository import ContentRepository
+from src.backend_v2.content.repository import ContentConflict, ContentRepository
+from src.backend_v2.rendering.fonts import materialize_render_payloads
 from src.backend_v2.operations.repository import OperationNotFound
 from src.backend_v2.settings.resolver import SettingsResolver
 from src.backend_v2.storage.assets import AssetStorageService
@@ -47,10 +48,10 @@ class PageMaskService:
         self.settings = SettingsResolver(engine)
         self.settings_transformer = settings_transformer
 
-    def snapshot(self, page_id):
+    def snapshot(self, page_id, *, for_render=False):
         with read_transaction(self.engine) as connection:
             page = connection.execute(select(
-                pages.c.document_revision, pages.c.source_revision,
+                pages.c.document_revision, pages.c.source_revision, pages.c.rendered_revision,
                 assets.c.width, assets.c.height,
             ).select_from(pages).join(chapters, chapters.c.id == pages.c.chapter_id)
                 .join(books, books.c.id == chapters.c.book_id)
@@ -62,9 +63,51 @@ class PageMaskService:
                 raise OperationNotFound("page not found")
             asset_ids = dict(connection.execute(select(page_assets.c.role, page_assets.c.asset_id)
                 .where(page_assets.c.page_id == page_id)).all())
-            payloads = [json.loads(value) for value in connection.execute(select(bubbles.c.payload_json)
-                .where(bubbles.c.page_id == page_id).order_by(bubbles.c.ordinal)).scalars()]
+            if for_render and 'translated' in asset_ids:
+                payloads = [payload for _, _, payload in materialize_render_payloads(
+                    connection, self.storage, page_id)]
+            else:
+                payloads = [json.loads(value) for value in connection.execute(select(bubbles.c.payload_json)
+                    .where(bubbles.c.page_id == page_id).order_by(bubbles.c.ordinal)).scalars()]
         return dict(page), asset_ids, payloads
+
+    def text_overlay(self, *, page_id, revision, protect_translation=False, layer='original'):
+        from src.core.config_models import BubbleState
+        from src.core.rendering import render_bubbles_unified
+
+        render_text = layer == 'translated' or protect_translation
+        page, asset_ids, payloads = self.snapshot(page_id, for_render=render_text)
+        if page['document_revision'] != revision:
+            raise ContentConflict('page changed while loading text preview')
+        if render_text and 'translated' in asset_ids and page['rendered_revision'] != revision:
+            raise ContentConflict('translated image is still being rendered')
+        role = 'translated' if layer == 'translated' and 'translated' in asset_ids else 'source'
+        source = self.storage.get_record(asset_ids[role])
+        with ExitStack() as opened:
+            image = opened.enter_context(Image.open(self.storage.resolve_relative_path(source.relative_path)))
+            overlay = opened.enter_context(image.convert('RGBA'))
+            if layer == 'translated':
+                alpha = np.zeros((overlay.height, overlay.width), dtype=np.uint8)
+            elif 'text_mask' in asset_ids:
+                precise = opened.enter_context(self.open_mask(asset_ids['text_mask'], overlay.size))
+                alpha = np.where(np.asarray(precise) >= 128, 255, 0).astype(np.uint8)
+            else:
+                boxes = opened.enter_context(Image.new('L', overlay.size, 0))
+                draw = ImageDraw.Draw(boxes)
+                for payload in payloads:
+                    draw.polygon([tuple(point) for point in rotated_box_polygon(
+                        payload['coords'], payload['rotationAngle'])], fill=255)
+                alpha = np.array(boxes)
+            if render_text and 'translated' in asset_ids:
+                text = opened.enter_context(Image.new('RGBA', overlay.size, (0, 0, 0, 0)))
+                render_bubbles_unified(text, [BubbleState.from_dict(value) for value in payloads])
+                coverage = opened.enter_context(text.getchannel('A'))
+                # Use the published result pixels, including strokes and anti-aliasing.
+                alpha[np.asarray(coverage) > 0] = 255 if layer == 'translated' else 0
+            mask = opened.enter_context(Image.fromarray(alpha))
+            preview = opened.enter_context(Image.new('RGBA', overlay.size, (0, 0, 0, 0)))
+            preview.paste(overlay, (0, 0), mask)
+            return png_bytes(preview)
 
     def open_mask(self, asset_id, size):
         if asset_id is None:

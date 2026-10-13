@@ -1,5 +1,5 @@
 import { computed, onUnmounted, ref, shallowRef, watch } from 'vue'
-import { getPageDocument, type V2PageDocument } from '@/api/v2/content'
+import { getPageDocument, getPageRenderStatus, type V2PageDocument } from '@/api/v2/content'
 import { getPageMasks, savePageUserMask, type PageMasks } from '@/api/v2/masks'
 import { createMaskRepair, waitForOperation } from '@/api/v2/operations'
 import { ApiClientError, isRequestCanceled } from '@/api/client'
@@ -13,6 +13,7 @@ import {
 import { encodeGrayscaleMaskPng, paintMaskCircles } from '@/utils/binaryMaskPng'
 import { showToast } from '@/utils/toast'
 import type { BrushBounds, CurrentRepairSettings } from '@/composables/useBrush'
+import { applyPageRenderStatus } from '@/composables/useEditRender'
 import { maskOverlayPixels, maskVisibility, type MaskStages } from '@/utils/maskPreview'
 
 export type MaskTool = 'repair' | 'preserve' | 'clear'
@@ -108,6 +109,8 @@ export function useMaskEditor(options: {
         options.getRepairSettings().inpaintMethod,
         controller.signal
       )
+      if (!active.value || sequence !== requestSequence || imageStore.currentImage?.id !== image.id)
+        return
       if (state.value && result.sourceRevision !== state.value.sourceRevision) {
         overlay.value = null
         throw new Error('原图已更换，请刷新页面后重新编辑修复范围')
@@ -120,16 +123,24 @@ export function useMaskEditor(options: {
       ])
       if (!active.value || sequence !== requestSequence || imageStore.currentImage?.id !== image.id)
         return
-      if (imageStore.currentImage.documentRevision !== result.documentRevision) {
-        const document = await getPageDocument(image.id, controller.signal)
-        if (!active.value || sequence !== requestSequence || imageStore.currentImage?.id !== image.id)
-          return
-        if (document.documentRevision !== result.documentRevision) {
-          overlay.value = null
-          throw new Error('页面已更新，请重新加载修复范围')
-        }
-        adopt(document)
+      const [document, renderStatus] = await Promise.all([
+        imageStore.currentImage.documentRevision !== result.documentRevision
+          ? getPageDocument(image.id, controller.signal) : null,
+        getPageRenderStatus(image.id, controller.signal),
+      ])
+      if (!active.value || sequence !== requestSequence || imageStore.currentImage?.id !== image.id)
+        return
+      if (
+        (document && (document.pageId !== image.id || document.documentRevision !== result.documentRevision))
+        || renderStatus.pageId !== image.id
+        || renderStatus.documentRevision !== result.documentRevision
+        || (imageStore.currentImage.documentRevision ?? 0) > result.documentRevision
+      ) {
+        overlay.value = null
+        throw new Error('页面已更新，请重新加载修复范围')
       }
+      if (document) adopt(document)
+      applyPageRenderStatus(renderStatus)
       state.value = result
       stages = { raw, boxes, automatic }
       manual = nextManual
@@ -288,7 +299,11 @@ export function useMaskEditor(options: {
     ],
     (next, previous) => {
       const targetChanged = next[0] !== previous[0] || next[2] !== previous[2]
-      if (active.value && !dirty.value && (!busy.value || (loading.value && targetChanged))) void refresh()
+      if (
+        active.value && !dirty.value
+        && (targetChanged || next[1] !== state.value?.documentRevision)
+        && (!busy.value || (loading.value && targetChanged))
+      ) void refresh()
     }
   )
   onUnmounted(() => {

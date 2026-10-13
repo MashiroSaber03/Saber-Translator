@@ -12,6 +12,32 @@ export interface EditRenderCallbacks {
   onRenderError?: (error: string) => void
 }
 
+export function applyPageRenderStatus(status: V2PageRenderStatus): void {
+  const imageStore = useImageStore()
+  const index = imageStore.images.findIndex(image => image.id === status.pageId)
+  const image = imageStore.images[index]
+  if (
+    !image || (image.documentRevision ?? 0) > status.documentRevision
+    || (image.renderedRevision === status.documentRevision
+      && status.renderedRevision !== status.documentRevision)
+  ) return
+  const failed = status.renderStatus === 'render_failed' || status.renderStatus === 'repair_failed'
+  const translationStatus = failed
+    ? 'failed'
+    : status.renderStatus === 'ready'
+      ? 'completed'
+      : status.renderStatus === 'not_rendered'
+        ? 'pending'
+        : 'processing'
+  imageStore.updateImageByIndex(index, {
+    documentRevision: status.documentRevision,
+    renderedRevision: status.renderedRevision,
+    cleanAssetUrl: status.cleanUrl,
+    translatedAssetUrl: status.translatedUrl,
+    translationStatus,
+  })
+}
+
 export function useEditRender(callbacks?: EditRenderCallbacks) {
   const bubbleStore = useBubbleStore()
   const imageStore = useImageStore()
@@ -31,26 +57,6 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
     })
   }
 
-  function applyRenderStatus(pageId: string, status: V2PageRenderStatus): void {
-    const index = imageStore.images.findIndex(image => image.id === pageId)
-    if (index < 0) return
-    const failed = status.renderStatus === 'render_failed' || status.renderStatus === 'repair_failed'
-    const translationStatus = failed
-      ? 'failed'
-      : status.renderStatus === 'ready'
-        ? 'completed'
-        : status.renderStatus === 'not_rendered'
-          ? 'pending'
-          : 'processing'
-    imageStore.updateImageByIndex(index, {
-      documentRevision: status.documentRevision,
-      renderedRevision: status.renderedRevision,
-      cleanAssetUrl: status.cleanUrl,
-      translatedAssetUrl: status.translatedUrl,
-      translationStatus,
-    })
-  }
-
   async function refreshUntilRendered(
     pageId: string,
     minimumRevision: number,
@@ -64,7 +70,7 @@ export function useEditRender(callbacks?: EditRenderCallbacks) {
       if (status.pageId !== pageId) {
         throw new Error(`页面 ${pageId} 的渲染状态身份不匹配`)
       }
-      applyRenderStatus(pageId, status)
+      applyPageRenderStatus(status)
       if (
         (status.renderedRevision ?? 0) >= minimumRevision
         && status.renderStatus === 'ready'

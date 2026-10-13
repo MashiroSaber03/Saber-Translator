@@ -214,6 +214,7 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
         kind: 'bubble_ocr',
       })
       await reloadPageDocument(current.id, bubbleId)
+      if (imageStore.currentImage?.id === current.id) await callbacks?.onReRender?.()
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'OCR 识别出错'
       showToast(errorMessage, 'error')

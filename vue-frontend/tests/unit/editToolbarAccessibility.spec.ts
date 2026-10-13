@@ -34,6 +34,24 @@ function createToolbarProps() {
 }
 
 describe('EditToolbar accessibility', () => {
+  it.each([false, true])('offers the shared opacity slider in either editing mode (range=%s)', async (maskMode) => {
+    const wrapper = mount(EditToolbar, {
+      props: { ...createToolbarProps(), maskMode, canOverlaySource: true, originalTextOpacity: 0 },
+    })
+    const slider = wrapper.get('input[aria-label="原文透明度"]')
+    expect(slider.attributes('min')).toBe('0')
+    expect(slider.attributes('max')).toBe('100')
+    await slider.setValue('50')
+    expect(wrapper.emitted('update-original-text-opacity')).toEqual([[50]])
+    await wrapper.setProps({ originalTextOpacity: 50 })
+    expect(slider.attributes('aria-valuetext')).toBe('50% 原文透明度')
+    expect(wrapper.get('.edit-toolbar__source-opacity-value').text()).toBe('50%')
+    await slider.trigger('pointerup')
+    expect(wrapper.emitted('pointer-action-complete')).toHaveLength(1)
+    await wrapper.setProps({ canOverlaySource: false })
+    expect(slider.attributes('disabled')).toBeDefined()
+  })
+
   it.each([false, true])('offers the clean image toggle in either editing mode (range=%s)', async (maskMode) => {
     const wrapper = mount(EditToolbar, {
       props: { ...createToolbarProps(), maskMode, canPreviewClean: true, showCleanPreview: false },
@@ -46,6 +64,21 @@ describe('EditToolbar accessibility', () => {
     await wrapper.setProps({ showCleanPreview: true })
     expect(toggle.attributes('aria-pressed')).toBe('true')
     expect(toggle.attributes('title')).toBe('返回查看译图')
+  })
+
+  it.each([false, true])('offers independent translated opacity in either editing mode (range=%s)', async maskMode => {
+    const wrapper = mount(EditToolbar, {
+      props: { ...createToolbarProps(), maskMode, canFadeTranslated: true, translatedTextOpacity: 100 },
+    })
+    const slider = wrapper.get('input[aria-label="译文透明度"]')
+    expect(slider.element).toHaveProperty('value', '100')
+    await slider.setValue('25')
+    expect(wrapper.emitted('update-translated-text-opacity')).toEqual([[25]])
+    expect(wrapper.emitted('update-original-text-opacity')).toBeUndefined()
+    await slider.trigger('pointerup')
+    expect(wrapper.emitted('pointer-action-complete')).toHaveLength(1)
+    await wrapper.setProps({ canFadeTranslated: false })
+    expect(slider.attributes('disabled')).toBeDefined()
   })
 
   it('disables clean preview when the page has no repaired image', async () => {
@@ -96,7 +129,7 @@ describe('EditToolbar accessibility', () => {
       slots: { 'mask-tools': '<button role="combobox">修复方式</button><UiColorInput model-value="#ffffff" /><div role="listbox"><div role="option">选项</div></div>' },
       global: { components: { UiColorInput } },
     })
-    for (const selector of ['[role="combobox"]', 'input', '[role="option"]'])
+    for (const selector of ['[role="combobox"]', 'input:not([type="range"])', '[role="option"]'])
       await wrapper.get(selector).trigger('pointerup')
     expect(wrapper.emitted('pointer-action-complete')).toBeUndefined()
   })

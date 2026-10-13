@@ -92,7 +92,11 @@ describe('useBubbleActions backend-first operations', () => {
   })
 
   it('queues OCR as a durable backend page operation without browser image data', async () => {
-    const actions = useBubbleActions()
+    useImageStore().updateCurrentImage({ renderedRevision: 7 })
+    const onReRender = vi.fn(async () => {
+      useImageStore().updateCurrentImage({ renderedRevision: 8, translatedAssetUrl: '/new.png' })
+    })
+    const actions = useBubbleActions({ onReRender })
     await actions.handleOcrRecognize(0)
 
     expect(queuePageDocumentSaveMock).toHaveBeenCalledWith(
@@ -111,6 +115,10 @@ describe('useBubbleActions backend-first operations', () => {
     expect(JSON.stringify(runPageOperationMock.mock.calls)).not.toContain('data:image')
     expect(getPageDocumentMock).toHaveBeenCalledWith('page-1')
     expect(useBubbleStore().bubbles[0]?.originalText).toBe('后端识别文本')
+    expect(useImageStore().currentImage).toMatchObject({
+      documentRevision: 8, renderedRevision: 8, translatedAssetUrl: '/new.png',
+    })
+    expect(onReRender).toHaveBeenCalledOnce()
   })
 
   it('queues selected-bubble repair in the backend and requests authoritative rerender', async () => {

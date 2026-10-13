@@ -178,4 +178,26 @@ describe('useEditRender backend-first orchestration', () => {
       translatedAssetUrl: '/api/v2/assets/translated-latest',
     })
   })
+
+  it('keeps newer image state when another editor has already advanced the document', async () => {
+    const { applyPageRenderStatus } = await import('@/composables/useEditRender')
+    applyPageRenderStatus({ ...readyStatus(), documentRevision: 5, renderedRevision: 5,
+      cleanUrl: '/clean-latest', translatedUrl: '/translated-latest' })
+    applyPageRenderStatus(readyStatus())
+    expect(useImageStore().currentImage).toMatchObject({
+      documentRevision: 5, renderedRevision: 5,
+      cleanAssetUrl: '/clean-latest', translatedAssetUrl: '/translated-latest',
+    })
+  })
+
+  it('does not replace a completed render with a late pending status for the same document', async () => {
+    const { applyPageRenderStatus } = await import('@/composables/useEditRender')
+    applyPageRenderStatus(readyStatus())
+    applyPageRenderStatus({ ...readyStatus(), renderStatus: 'stale', renderedRevision: 3,
+      cleanUrl: '/clean-old', translatedUrl: '/translated-old' })
+    expect(useImageStore().currentImage).toMatchObject({
+      documentRevision: 4, renderedRevision: 4,
+      cleanAssetUrl: '/api/v2/assets/clean-1', translatedAssetUrl: '/api/v2/assets/translated-1',
+    })
+  })
 })
