@@ -46,7 +46,7 @@
         <UiField
           class="script-generation-panel__reference-count-field"
           variant="settings"
-          label="VLM参考图数"
+          label="画风参考图数量"
           control-id="script-reference-count"
         >
           <UiNumberField
@@ -54,7 +54,7 @@
             v-model="refCount"
             :min="1"
             size="xs"
-            aria-label="VLM参考图数"
+            aria-label="画风参考图数量"
           />
         </UiField>
         <ProductActionRow class="script-generation-panel__reference-actions" aria-label="脚本参考图操作">
@@ -124,7 +124,7 @@ const emit = defineEmits<{
 }>()
 
 const scriptText = ref('')
-const refCount = ref(5)
+const refCount = defineModel<number>('referenceCount', { default: 3 })
 const selectorVisible = ref(false)
 const selectedReferenceTokens = ref<string[]>([])
 const availableOriginalImages = ref<MangaImageInfo[]>([])
@@ -225,7 +225,6 @@ function handleSave() {
 
 watch(() => props.bookId, (newBookId) => {
   invalidateAvailableImages()
-  refCount.value = 5
   availableOriginalImages.value = []
   originalCursor.value = 0
   hasOlderOriginalImages.value = false

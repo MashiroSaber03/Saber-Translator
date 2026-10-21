@@ -1,0 +1,231 @@
+# Scorecard checklist: open bugs (#203–#208).
+# Each item: id, short target, status (done | partial | missing), issue, note (evidence).
+# Statuses must be true on main. BUG-203 verified against 47f9306 on 2026-10-07; the rest
+# against 4b53f62 on 2026-10-05, except BUG-204 against ec350d6 on 2026-10-09.
+area = "bugs"
+title = "Open bugs"
+order = 9
+
+[[item]]
+id = "BUG-203-1"
+target = "Every document write goes through one atomic_write (temp, fsync, rename)"
+status = "done"
+issue = 203
+note = "photocraft_format::atomic_write (format/src/atomic.rs, #230/8227071); every write site routes through it: engine file_cmds.rs write_file and preset_store.rs, automation files.rs/headless.rs/workspace.rs, app services.rs write_atomic, format store.rs and autosave.rs"
+
+[[item]]
+id = "BUG-203-2"
+target = "Temp file in the same dir, sync_all, rename over target, fsync dir on Unix"
+status = "done"
+issue = 203
+note = "atomic.rs: temp_name in the same dir, create_new + write_all + sync_all, Unix directory fsync after the rename"
+
+[[item]]
+id = "BUG-203-3"
+target = "Windows: retry the rename with backoff on PermissionDenied"
+status = "done"
+issue = 203
+note = "atomic.rs RenameRetry::platform(): seven retries from 10 ms on Windows; retry_rename is shared with automation's cap-std workspace write"
+
+[[item]]
+id = "BUG-203-4"
+target = "Unwritable directory errors clearly, never falls back to writing in place"
+status = "done"
+issue = 203
+note = "atomic.rs maps read-only dir, disk-full and cross-device rename errors to messages that say the original was not changed; there is no in-place fallback path"
+
+[[item]]
+id = "BUG-203-5"
+target = "On any failure the original file is untouched and the temp file removed"
+status = "done"
+issue = 203
+note = "atomic.rs removes the temp file on every failure; tests assert the original bytes survive write and rename failures"
+
+[[item]]
+id = "BUG-203-6"
+target = "Failure-injection tests: mid-write, rename and read-only dir errors keep original bytes"
+status = "done"
+issue = 203
+note = "format/src/atomic/tests.rs: Faulty AtomicFs injects mid-write StorageFull, rename failure and a read-only dir; locked-target retries, symlink and file-mode preservation covered too"
+
+[[item]]
+id = "BUG-204-1"
+target = "Interface prefs (UI scale, font size, channels in colour, sliders, tooltips) wired or hidden"
+status = "done"
+issue = 204
+note = "prefs_ui.rs tick reads ui_scale (sync_display_scale), ui_font_size (theme::set_ui_font_size) and show_tooltips (sync_tooltips); show_channels_in_color is wired in channel_thumbs and the canvas channel view (#2385); dynamic_color_sliders is in prefs::HIDDEN_UNTIL_IMPLEMENTED"
+
+[[item]]
+id = "BUG-204-2"
+target = "workspace.large_tabs, animated_zoom, auto_show_home_screen wired or hidden"
+status = "done"
+issue = 204
+note = "workspace.large_tabs controls document tab height in canvas.rs; auto_show_home_screen drives the Home screen; animated_zoom is in prefs::HIDDEN_UNTIL_IMPLEMENTED"
+
+[[item]]
+id = "BUG-204-3"
+target = "RAW prefs and ask_before_saving_layered_tiff read, or hidden"
+status = "done"
+issue = 204
+note = "ask_before_saving_layered_tiff drives the TIFF Options prompt (ui-egui tiff_options_ui.rs); raw_defaults.open_in_camera_raw drives the Camera Raw dialog (camera_raw_ui.rs); the other raw_defaults fields are in prefs::HIDDEN_UNTIL_IMPLEMENTED"
+
+[[item]]
+id = "BUG-204-4"
+target = "Recent files persisted through prefs across restarts"
+status = "done"
+issue = 204
+note = "crates/ui-egui/src/lib.rs::push_recent stores the list in preferences; prefs_ui::load restores it and recent_files_survive_a_restart_and_honour_the_count verifies reload"
+
+[[item]]
+id = "BUG-204-5"
+target = "Recent-files list honours recent_file_count (default 20)"
+status = "done"
+issue = 204
+note = "lib.rs push_recent caps the list with recent_cap (recent_file_count); menus.rs covers default and custom limits"
+
+[[item]]
+id = "BUG-204-6"
+target = "Test: every Prefs field is read somewhere or on a hidden allowlist"
+status = "done"
+issue = 204
+note = "crates/engine/tests/prefs_usage.rs every_preference_is_read_or_hidden: each field is read outside prefs.rs or listed in prefs::HIDDEN_UNTIL_IMPLEMENTED, never both"
+
+[[item]]
+id = "BUG-205-1"
+target = "Free Transform with a selection moves only the selected part of a linked mask"
+status = "done"
+issue = 205
+note = "linked_mask_with_a_selection_moves_only_the_selected_region (transform_cmds.rs; 5a5facc, #242)"
+
+[[item]]
+id = "BUG-205-2"
+target = "Live transform preview draws the layer with its mask applied"
+status = "done"
+issue = 205
+note = "transform_tool.rs preview_mask + preview_applies_the_linked_mask (5a5facc, #242)"
+
+[[item]]
+id = "BUG-205-3"
+target = "edit.transform honours target mask: transforms only a targeted, unlinked mask"
+status = "done"
+issue = 205
+note = "targeted_unlinked_mask_transforms_alone and targeted_linked_mask_moves_with_its_layer (transform_cmds.rs) plus the through-the-box tests (transform_tool.rs; 5a5facc, #242)"
+
+[[item]]
+id = "BUG-205-4"
+target = "Test: a linked raster mask with no selection moves with the pixels"
+status = "done"
+issue = 205
+note = "linked_raster_mask_moves_with_the_pixels (transform_cmds.rs): a reveal-all mask with a hidden half, linked, no selection; asserts the hidden half travels with the pixels and nothing hidden is left behind"
+
+[[item]]
+id = "BUG-205-5"
+target = "Tests: linked mask + selection stays aligned; unlinked stays; targeted mask only"
+status = "done"
+issue = 205
+note = "All three in transform_cmds.rs: linked_mask_with_a_selection_moves_only_the_selected_region checks the mask value under each moved pixel, unlinked_mask_stays_put covers it with and without a selection, targeted_unlinked_mask_transforms_alone moves the mask while the layer bounds stay"
+
+[[item]]
+id = "BUG-206-1"
+target = "CharStyle models per-character manual kerning separately from the auto-kern mode"
+status = "done"
+issue = 206
+note = "doc/src/text.rs CharStyle carries both: kerning: Kerning for the automatic mode (Metrics/Optical/Off) and kern: f32 for manual kerning in 1/1000 em between this character and the next, added on top of the pair's automatic kerning"
+
+[[item]]
+id = "BUG-206-2"
+target = "PSD import keeps Optical and manual Kerning values"
+status = "done"
+issue = 206
+note = "io/tests/psd_kerning.rs manual_and_off_kerning_round_trip_through_psd and optical_kerning_round_trips_through_psd import an exported layer and compare every character's (mode, kern) pair; the optical mode travels in the document Txt2 block (#1348)"
+
+[[item]]
+id = "BUG-206-3"
+target = "PSD export writes the real AutoKerning mode and Kerning values"
+status = "done"
+issue = 206
+note = "manual_and_off_kerning_round_trip_through_psd (io/tests/psd_kerning.rs) reads the AutoKerning flag and Kerning value of every character back out of the written TySh: (false, 100) after A, (true, -50) after T, and automatic kerning off where the style says so"
+
+[[item]]
+id = "BUG-206-4"
+target = "Alt+Left/Right at a collapsed caret adjusts pair kerning; Character panel field"
+status = "done"
+issue = 206
+note = "type_tool.rs: Alt+Left/Right at a collapsed caret calls kern_pair (20 per step, 100 with Cmd); the Character panel field takes Metrics, Optical or a manual value (kerning_label / parse_kerning). Covered by type_tool_alt_arrows_kern_the_pair and kerning_field_values (input_tests.rs)"
+
+[[item]]
+id = "BUG-206-5"
+target = "Tests: PSD round trip of manual and Optical kerning, a real file in the oracle corpus"
+status = "partial"
+issue = 206
+note = "Round trips covered by io/tests/psd_kerning.rs (manual, Off and Optical, plus hostile_kerning_values and txt2_extras_survive_a_resave_of_unchanged_text); corpus_text_layers reads real PSDs and applies their Txt2 optical kerning, but no oracle file is dedicated to kerning values"
+
+[[item]]
+id = "BUG-207-1"
+target = "Retouch tools respect the paint target (mask, alpha channel, Quick Mask)"
+status = "done"
+issue = 207
+note = "run_stroke paints channel_cmds::target_surface; retouch_strokes_paint_the_targeted_mask (retouch_ui.rs) and engine retouch_cmds/tests.rs (e2444ce, #234)"
+
+[[item]]
+id = "BUG-207-2"
+target = "Sample All Layers applies to Blur, Sharpen and Smudge"
+status = "done"
+issue = 207
+note = "retouch_ui.rs passes sampleAllLayers to paint.blur/sharpen/smudge; sample_all_layers_reaches_the_command (e2444ce, #234)"
+
+[[item]]
+id = "BUG-207-3"
+target = "Smudge mixes premultiplied RGBA (no dark fringe at transparent edges)"
+status = "done"
+issue = 207
+note = "paint/src/retouch.rs premultiplies; smudge_into_transparency_leaves_no_dark_fringe (e2444ce, #234)"
+
+[[item]]
+id = "BUG-207-4"
+target = "edit.transform transforms a targeted alpha channel"
+status = "done"
+issue = 207
+note = "edit.transform follows a targeted alpha channel or Quick Mask (explicit target since #242, Channels panel target with no target/layer param since #2835); Edit > Transform > Rotate/Flip are routed to the target too; transforms_follow_the_targeted_alpha_channel"
+
+[[item]]
+id = "BUG-207-5"
+target = "Tests: per-tool mask/channel targeting, Sample All Layers, no smudge fringe"
+status = "missing"
+issue = 207
+note = "Only smudge_drags_colour_along_the_stroke (retouch.rs:407)"
+
+[[item]]
+id = "BUG-208-1"
+target = "Shift while dragging a Rect/Elliptical Marquee constrains to a square/circle"
+status = "done"
+issue = 208
+note = "canvas.rs marquee_corners applies Shift via Drag::marquee_mods; marquee_tests.rs::shift_during_the_drag_draws_a_square_and_the_readout_follows covers the drag"
+
+[[item]]
+id = "BUG-208-2"
+target = "Alt while dragging a marquee draws from the centre"
+status = "done"
+issue = 208
+note = "canvas.rs marquee_corners centres Alt drags; marquee_tests.rs::alt_draws_from_the_centre_and_shift_alt_a_centred_circle verifies rectangles and ellipses"
+
+[[item]]
+id = "BUG-208-3"
+target = "W x H px readout beside the cursor while dragging a marquee"
+status = "done"
+issue = 208
+note = "canvas.rs marquee_readout draws the readout; marquee_tests.rs asserts dimensions while dragging and its removal after release"
+
+[[item]]
+id = "BUG-208-4"
+target = "Add/subtract/intersect from modifiers pressed before the drag, kept by a test"
+status = "partial"
+issue = 208
+note = "Mods captured at press (canvas.rs:1679, used :1779); only a badge test (tool_feedback.rs:195)"
+
+[[item]]
+id = "BUG-208-5"
+target = "Kittest: Shift drag gives a square, Alt drag is centred, readout matches the size"
+status = "done"
+issue = 208
+note = "crates/ui-egui/src/marquee_tests.rs covers Shift, Alt, selection bounds, W/H readout and drag completion"

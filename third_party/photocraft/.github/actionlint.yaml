@@ -1,0 +1,4 @@
+# Custom runner labels actionlint can't know about.
+self-hosted-runner:
+  labels:
+    - macos-release  # org larger runner (M2 Pro), used by release.yml

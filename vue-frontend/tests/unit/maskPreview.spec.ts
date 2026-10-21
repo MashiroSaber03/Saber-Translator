@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { reactive } from 'vue'
-import { maskOverlayPixels, maskVisibility, type MaskStages } from '@/utils/maskPreview'
+import { maskOverlayPixels as drawMaskOverlay, maskOverlayClasses, maskVisibility, type MaskStages, type MaskVisibility } from '@/utils/maskPreview'
+
+function maskOverlayPixels(width: number, height: number, stages: MaskStages, manual: Uint8Array,
+  visibility: MaskVisibility, pixels?: Uint8ClampedArray): Uint8ClampedArray {
+  return drawMaskOverlay(maskOverlayClasses(width, height, stages, manual), visibility, pixels)
+}
 
 const size = 40
 function region(x1: number, y1: number, x2: number, y2: number): Uint8Array {
@@ -17,6 +22,17 @@ const stages: MaskStages = {
 }
 
 describe('mask display composition', () => {
+  it('reuses the RGBA buffer and clears hidden pixels without changing the masks', () => {
+    const manual = new Uint8Array(size * size).fill(127)
+    const visible = maskVisibility()
+    const pixels = new Uint8ClampedArray(size * size * 4)
+    expect(maskOverlayPixels(size, size, stages, manual, visible, pixels)).toBe(pixels)
+    expect(at(pixels, 20, 20)).toEqual([244, 67, 54, 110])
+    visible.final = false
+    maskOverlayPixels(size, size, stages, manual, visible, pixels)
+    expect(pixels.some(Boolean)).toBe(false)
+    expect(manual.every(value => value === 127)).toBe(true)
+  })
   it('shows only yellow text-box ranges, without implicitly displaying text masks', () => {
     const manual = new Uint8Array(size * size).fill(127)
     const visible = { ...maskVisibility(), final: false, boxes: true }

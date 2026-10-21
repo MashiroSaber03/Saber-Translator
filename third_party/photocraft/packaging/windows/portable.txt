@@ -1,0 +1,9 @@
+PhotoCraft portable mode
+
+While this file sits next to photocraft.exe, PhotoCraft keeps its preferences, brush presets,
+crash-recovery autosaves and startup state in the PhotoCraftData folder beside it, and writes
+nothing to %APPDATA%. Copy the whole folder to move PhotoCraft with its settings.
+
+Delete this file to use the normal per-user settings folder (%APPDATA%\Photocraft) instead.
+If PhotoCraftData can't be written (for example on a read-only drive), PhotoCraft says so and
+uses %APPDATA%\Photocraft instead.

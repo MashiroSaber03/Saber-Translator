@@ -531,6 +531,7 @@ export function useTranslateInit() {
     forgetReplacedChapter,
 
     switchImage,
+    queueLastVisitedPageWrite,
     goToPrevious,
     goToNext,
   }

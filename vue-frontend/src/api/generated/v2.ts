@@ -1736,6 +1736,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/pages/{page_id}/editor-document": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getEditorDocument"];
+        put: operations["saveEditorDocument"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/editor/fonts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listEditorFonts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/editor/fonts/{font_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getEditorFont"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/pages/{page_id}/document": {
         parameters: {
             query?: never;
@@ -4251,7 +4299,19 @@ export interface components {
         };
         BubblePolygon: unknown[] | number[][];
         BubbleRgb: number[];
+        RichText: null | {
+            runs: components["schemas"]["TextStyleRun"][];
+            paragraphs: components["schemas"]["TextStyleRun"][];
+        };
+        TextStyleRun: {
+            /** @description UTF-8 byte length */
+            len: number;
+            style: {
+                [key: string]: unknown;
+            };
+        };
         BubblePayload: {
+            richText?: components["schemas"]["RichText"];
             originalText: string;
             translatedText: string;
             textboxText: string;
@@ -4286,6 +4346,7 @@ export interface components {
             ocrResult: components["schemas"]["BubbleOcrResult"] | null;
         };
         BubbleMutationFields: {
+            richText?: components["schemas"]["RichText"];
             originalText?: string;
             translatedText?: string;
             textboxText?: string;
@@ -4319,6 +4380,7 @@ export interface components {
             fontId?: components["schemas"]["Uuid"] | null;
         };
         CompleteBubbleMutationFields: {
+            richText?: components["schemas"]["RichText"];
             originalText: string;
             translatedText: string;
             textboxText: string;
@@ -9681,6 +9743,119 @@ export interface operations {
             409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationError"];
             423: components["responses"]["Locked"];
+        };
+    };
+    getEditorDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                page_id: components["parameters"]["PageId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Native PhotoCraft document with generated text projections. */
+            200: {
+                headers: {
+                    "X-Document-Revision"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/x-photocraft": string;
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    saveEditorDocument: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable key for this normalized command and target scope. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                page_id: components["parameters"]["PageId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    baseRevision: number;
+                    /** Format: binary */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Saved native document and atomic text projection. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageDocumentMutationResponse"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
+            423: components["responses"]["Locked"];
+        };
+    };
+    listEditorFonts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Existing owned/shared fonts available to both editors. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            id: components["schemas"]["Uuid"];
+                            displayName: string;
+                            /** @enum {string} */
+                            scope: "shared" | "private";
+                            isDefault: boolean;
+                            url: string;
+                        }[];
+                    };
+                };
+            };
+        };
+    };
+    getEditorFont: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                font_id: components["schemas"]["Uuid"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Font bytes resolved through the existing ownership and directory rules. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+            404: components["responses"]["NotFound"];
         };
     };
     getPageDocument: {

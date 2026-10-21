@@ -1,0 +1,167 @@
+# Scorecard checklist: workspace and UI (#217). The "settings that do nothing" count comes from
+# the prefs audit (#204), not from here.
+# Statuses must be true on main. Verified against 4b53f62 on 2026-10-05.
+area = "ui"
+title = "Workspace and UI"
+order = 4
+
+[[item]]
+id = "UI-217-1"
+target = "Tool options, last Export As / Save for Web / Fill settings and font recents persist"
+status = "partial"
+issue = 217
+note = "Fill (fill_ui.rs:72) and Liquify (liquify_ui.rs:64, #418) keep their settings in Preferences (prefs.dialogs); no tool_options/export fields in Preferences; export_dialog.rs:21 png/85. Each painting tool keeps its own brush (paint_mouse.rs sync_tool_brush, #218), but those live in UiState, so they are lost at quit like the other tool options"
+
+[[item]]
+id = "UI-217-2"
+target = "Window size and dock width remembered across restarts"
+status = "done"
+issue = 217
+note = "eframe persistence (ui.ron): persist_window for the window, egui memory for the dock panel width; window_and_panel_geometry_survive_a_restart asserts the round trip (apps/photocraft/src/main.rs; b07a2e5b, #587)"
+
+[[item]]
+id = "UI-217-3"
+target = "File > Open starts in the last-used folder"
+status = "done"
+issue = 217
+note = "file_dialog.rs last_used_dir: open dialogs ask with initial_dir (the most recent file's folder) and apps services.rs passes it to rfd set_directory; open_starts_in_the_last_used_folder + last_used_dir_takes_the_most_recent_parent"
+
+[[item]]
+id = "UI-217-4"
+target = "Preferences all take effect; recent files persist and honour recent_file_count (#204)"
+status = "missing"
+issue = 217
+note = "See the prefs audit and BUG-204-*"
+
+[[item]]
+id = "UI-217-5"
+target = "Panel groups can float (menu + drag out of the dock) and are restored at launch"
+status = "missing"
+issue = 217
+note = "No floating groups in dock.rs/panels.rs"
+
+[[item]]
+id = "UI-217-6"
+target = "Document tabs: overflow list, context menu (Close/Others/All/Reveal), drag to reorder"
+status = "done"
+issue = 217
+note = "canvas.rs: Close/Others/All menu with unsaved prompt; Reveal reuses file.revealInFinder (engine layer_menu_cmds::reveal); the » chevron (tab_strip) lists overflow; dragging a tab reorders via document.move"
+
+[[item]]
+id = "UI-217-7"
+target = "Command palette shows recently run commands on an empty query"
+status = "done"
+issue = 217
+note = "palette.rs: note_recent from menus::invoke keeps the last 8 commands (dedup, newest first); an empty query lists them via recent_hits; the_palette_records_and_replays_recent_commands_on_an_empty_query covers record -> empty query -> replay"
+
+[[item]]
+id = "UI-217-8"
+target = "Tool-specific canvas right-click menu; right-click spelling suggestions in text fields"
+status = "partial"
+issue = 217
+note = "paint_mouse.rs brush picker and canvas_tool_menu.rs selection actions; text_field_menu.rs gives every text field its right-click Undo/Cut/Copy/Paste/Delete/Select All menu (#2921); other tools missing; the Type tool's edit menu starts with spelling suggestions and Add to Dictionary over a misspelled word (#4370); Ignore / Ignore All, suggestions in the non-editing type menu and in generic text fields are not there yet"
+
+[[item]]
+id = "UI-217-9"
+target = "UI scale presets 100/115/125/150/200 % through zoom_factor, remembered"
+status = "done"
+issue = 217
+note = "prefs::UiScale offers Auto plus 75 to 300 percent (13 presets, more than the five this row lists); prefs_ui.rs display_scale resolves it (Auto follows the system scale, fractional and unscaled 4K included, #1072/#1278) and sync_display_scale applies it with ctx.set_zoom_factor. It is a preference, so it is remembered. The zoom_factor assert in input_tests.rs is about canvas zoom not scaling the interface, not about this setting"
+
+[[item]]
+id = "UI-217-10"
+target = "Appearance: animation toggle, canvas pattern toggle per theme, start-screen recents"
+status = "partial"
+issue = 217
+note = "interface.enableAnimations (prefs_ui.rs sync_animations, #3273) zeroes egui animation_time and scroll animation in both styles; the Home screen lists recent files (canvas.rs home_recent, #2691); no canvas pattern toggle yet (#2264) and no option to hide the Home screen recents"
+
+[[item]]
+id = "UI-217-11"
+target = "Soft dark and soft light themes with picker previews; outlined knobs in light themes"
+status = "partial"
+issue = 217
+note = "theme.rs ThemeKind has fourteen themes: the twelve earlier ones plus Soft Dark and Soft Light (low-contrast Studio-layout palettes, text at 4.5:1, selectable in Preferences with the existing theme-card previews, ui.set {theme}, Window > Theme); outlined knobs in the light themes are still missing"
+
+[[item]]
+id = "UI-217-12"
+target = "Save custom New Document presets; a real Recent category"
+status = "done"
+issue = 217
+note = "document_preset_cmds.rs and new_doc_ui.rs: named presets save/select/delete through preferences; Recent lists Clipboard, the last 20 documents created in the dialog (document.recent.*, persisted with the presets, newest first, deduplicated) and the uncovered defaults (#3131); created_documents_fill_the_recent_category"
+
+[[item]]
+id = "UI-217-13"
+target = "Numeric fields accept arithmetic and units; scrubby labels; double-click resets a slider"
+status = "done"
+issue = 217
+note = "widgets::value_field: arithmetic plus units (1in, 5mm, 72pt, 50%) converted at the document resolution (#3099); widgets::scrub_label makes options-bar, slider-row and Character labels scrubby (Shift x10, Alt fine); slider rows with a known default reset on double-click"
+
+[[item]]
+id = "UI-217-14"
+target = "Layers panel: wheel steps blend modes, drop on New/Trash duplicates/deletes, checker behind art"
+status = "done"
+issue = 217
+note = "panels.rs: the wheel steps the blend-mode dropdown (widgets::dropdown_wheel_hovered, #1747); rows dropped on New Layer/Group/Delete duplicate/group/delete them (footer_drop, #736), effect rows dropped on Delete delete that effect or the whole style (fx_trash_drop, #3102); pixel thumbnails draw widgets::checker behind the art; Shift+Plus/Minus step the layer's or the painting tool's blend mode (blend_keys.rs, #3102)"
+
+[[item]]
+id = "UI-217-15"
+target = "Curves: smoothing / pencil mode, black/grey/white eyedroppers, tooltips"
+status = "done"
+issue = 217
+note = "Curves editor (adjust_editors.rs, dialog and Properties): Edit points / Draw (pencil) buttons and Smooth, all with tooltips; pencil curves are 256-level maps (Adjustment::Curves pencil, params pencil/smooth, PSD curv map form and smart-filter Mpng; #3088). Set Black/Neutral Gray/White Point eyedroppers in the Image > Adjustments > Curves dialog (adjust_dialog.rs, #873) and in a Curves adjustment layer's Properties panel (layer_picker.rs: a click on the image is one layer.setAdjustment with the eyedropper param, sampling below the layer; Esc or another tool disarms; #3110)"
+
+[[item]]
+id = "UI-217-16"
+target = "Hue/Saturation: Saturation and Lightness sliders get hue-following colour tracks"
+status = "done"
+issue = 217
+note = "saturation_track/lightness_track (adjust_editors.rs): grey -> the hue and black -> the hue -> white, recolouring as the Hue slider moves; saturation_and_lightness_tracks_follow_the_hue"
+
+[[item]]
+id = "UI-217-17"
+target = "Color panel: wheel plus RGB/HSB/CMYK/Lab/Gray/Web slider modes; resizes with its group"
+status = "missing"
+issue = 217
+note = "panels.rs:1837 single field + hex/RGB readout"
+
+[[item]]
+id = "UI-217-18"
+target = "Alt+wheel zooms in gentle ~5 % steps; zoom controls uncramped"
+status = "missing"
+issue = 217
+note = "canvas.rs:1107-1125 no Alt handling"
+
+[[item]]
+id = "UI-217-19"
+target = "Shortcut hints rendered per platform; Reveal label per OS"
+status = "done"
+issue = 217
+note = "hints and tooltips go through shortcuts::pretty (6266b7a9, #262; pretty_uses_the_platform_notation); menus::reveal_label names Reveal in Finder per OS (Show in Explorer / Show in Folder) in the Smart Objects menu and the tab menu; reveal_label_names_the_platform_file_manager + smart_objects_reveal_item_names_the_platform_file_manager"
+
+[[item]]
+id = "UI-217-20"
+target = "'Show rulers in new documents' preference; guides stored as f64"
+status = "done"
+issue = 217
+note = "View › Rulers is remembered in unitsAndRulers.showRulers and applied at launch and on change (#2918; rulers_open_as_last_set_after_a_restart); doc Guides are Vec<f64> through New Guide, .pcraft and PSD 1032 (guides_keep_sub_pixel_positions_through_pcraft_and_psd)"
+
+[[item]]
+id = "UI-217-21"
+target = "One Preset Manager for every preset kind with folders, search, reorder, load/save sets"
+status = "partial"
+issue = 217
+note = "edit_menu_cmds.rs:714 covers brushes, custom shapes, patterns with reorder"
+
+[[item]]
+id = "UI-217-22"
+target = "Stamp Visible into a new layer keeping originals; Alt+Merge keeps originals"
+status = "done"
+issue = 217
+note = "stamp_cmds.rs layer.stampVisible (Cmd+Alt+Shift+E) merges every visible layer into a new layer above the active one and keeps the originals; layer.stampDown (Cmd+Alt+E) too. As in Photoshop they have no menu item of their own: Alt + Layer > Merge Visible / Merge Down / Merge Layers run them (stamp_cmds::alt_variant, menus.rs); stamp_tests.rs alt_click_on_merge_items_stamps and cmd_alt_shift_e_stamps_visible_and_can_be_rebound"
+
+[[item]]
+id = "UI-217-23"
+target = "Layer clipboard: copy/paste whole layers (masks, styles, type) between documents"
+status = "partial"
+issue = 217
+note = "layer.copyToDocument copies layers into another open document keeping names, content, masks, styles and blending, converting to the destination's profile and depth, as one history step (layer_copy_cmds.rs, #589). It is the command a drag between documents dispatches; there is still no copy/paste layer clipboard"

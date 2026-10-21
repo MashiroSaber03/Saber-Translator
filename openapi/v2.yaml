@@ -2413,6 +2413,90 @@ paths:
         "409": {$ref: "#/components/responses/Conflict"}
         "423": {$ref: "#/components/responses/Locked"}
         "422": {$ref: "#/components/responses/ValidationError"}
+  /pages/{page_id}/editor-document:
+    get:
+      tags: [pages]
+      operationId: getEditorDocument
+      parameters:
+        - $ref: '#/components/parameters/PageId'
+      responses:
+        '200':
+          description: Native PhotoCraft document with generated text projections.
+          headers:
+            X-Document-Revision:
+              schema: {type: integer, minimum: 1}
+          content:
+            application/x-photocraft:
+              schema: {type: string, format: binary}
+        '404': {$ref: '#/components/responses/NotFound'}
+    put:
+      tags: [pages]
+      operationId: saveEditorDocument
+      parameters:
+        - $ref: '#/components/parameters/PageId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [baseRevision, file]
+              properties:
+                baseRevision: {type: integer, minimum: 1}
+                file: {type: string, format: binary}
+      responses:
+        '200':
+          description: Saved native document and atomic text projection.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PageDocumentMutationResponse'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '423': {$ref: '#/components/responses/Locked'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /editor/fonts:
+    get:
+      tags: [pages]
+      operationId: listEditorFonts
+      responses:
+        '200':
+          description: Existing owned/shared fonts available to both editors.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [id, displayName, scope, isDefault, url]
+                      properties:
+                        id: {$ref: '#/components/schemas/Uuid'}
+                        displayName: {type: string}
+                        scope: {type: string, enum: [shared, private]}
+                        isDefault: {type: boolean}
+                        url: {type: string}
+  /editor/fonts/{font_id}:
+    get:
+      tags: [pages]
+      operationId: getEditorFont
+      parameters:
+        - in: path
+          name: font_id
+          required: true
+          schema: {$ref: '#/components/schemas/Uuid'}
+      responses:
+        '200':
+          description: Font bytes resolved through the existing ownership and directory rules.
+          content:
+            application/octet-stream:
+              schema: {type: string, format: binary}
+        '404': {$ref: '#/components/responses/NotFound'}
   /pages/{page_id}/document:
     get:
       tags: [pages]
@@ -6689,6 +6773,26 @@ components:
       minItems: 3
       maxItems: 3
       items: {type: integer, minimum: 0, maximum: 255}
+    RichText:
+      oneOf:
+        - type: 'null'
+        - type: object
+          additionalProperties: false
+          required: [runs, paragraphs]
+          properties:
+            runs:
+              type: array
+              items: {$ref: '#/components/schemas/TextStyleRun'}
+            paragraphs:
+              type: array
+              items: {$ref: '#/components/schemas/TextStyleRun'}
+    TextStyleRun:
+      type: object
+      additionalProperties: false
+      required: [len, style]
+      properties:
+        len: {type: integer, minimum: 0, description: UTF-8 byte length}
+        style: {type: object, additionalProperties: true}
     BubblePayload:
       type: object
       additionalProperties: false
@@ -6718,6 +6822,7 @@ components:
         - textlines
         - ocrResult
       properties:
+        richText: {$ref: "#/components/schemas/RichText"}
         originalText: {type: string}
         translatedText: {type: string}
         textboxText: {type: string}
@@ -6768,6 +6873,7 @@ components:
       additionalProperties: false
       minProperties: 1
       properties:
+        richText: {$ref: "#/components/schemas/RichText"}
         originalText: {type: string}
         translatedText: {type: string}
         textboxText: {type: string}
@@ -6844,6 +6950,7 @@ components:
         - textlines
         - ocrResult
       properties:
+        richText: {$ref: "#/components/schemas/RichText"}
         originalText: {type: string}
         translatedText: {type: string}
         textboxText: {type: string}

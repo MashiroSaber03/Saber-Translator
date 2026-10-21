@@ -109,6 +109,7 @@
         </div>
         <div v-else-if="state.currentStep.value === 1" class="continuation-panel__step-panel">
           <ScriptGenerationPanel
+            v-model:reference-count="state.styleRefPages.value"
             :script="state.chapterScript.value"
             :is-generating="isGeneratingScript"
             :is-saving="isSavingScript"

@@ -1,0 +1,37 @@
+[package]
+name = "photocraft-tablet"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Pen tablet pressure, tilt, rotation and eraser end on macOS (AppKit) and Linux X11 (XInput2)"
+
+# The one isolated `unsafe` helper crate (craftrules never-crash, AGENTS.md): the AppKit event
+# monitor needs Objective-C interop. Only `src/macos.rs` allows `unsafe`; everything else is
+# denied, and every other crate keeps the workspace's `unsafe_code = "forbid"`.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+
+# Already in Cargo.lock (eframe/wgpu/fmv-macos-events and winit pull them in); pinned exactly:
+# review the diff before bumping.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "=0.6.4"
+block2 = "=0.6.2"
+objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSGeometry"] }
+objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "block2", "NSEvent"] }
+
+# Pure-Rust X11 client (no unsafe in the RustConnection path we use).
+[target.'cfg(target_os = "linux")'.dependencies]
+x11rb = { version = "=0.13.2", default-features = false, features = ["xinput"] }
+
+# Tests build real tablet NSEvents (from CGEvents) and read them through the monitor's path.
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "block2", "NSEvent", "NSGraphicsContext", "objc2-core-graphics", "NSApplication", "NSResponder"] }
+objc2-core-graphics = { version = "=0.3.2", default-features = false, features = ["std", "CGEvent", "CGEventTypes"] }
+
+[[test]]
+name = "monitor_macos"
+harness = false

@@ -1,0 +1,160 @@
+# Contributor names for the About window (craftrules standards/contributors.md).
+#
+# Everyone who contributes is credited by GitHub username automatically. Anything more is up to
+# you: add YOUR OWN entry below, in your own PR (commit it yourself). Never add someone else; a
+# maintainer may add a person only when that person asked, recording where in consent_source.
+#
+# Easiest: python3 ../../craftrules/scripts/contributors.py --add-me . \
+#            [--real-name "Ada Lovelace"] [--display-name "Ada"] [--sync-github-name]
+#
+# Or copy this block, replacing your-github-username (every field is optional):
+#
+#   [people.your-github-username]
+#   real_name = "Your Name"        # shown when the viewer picks "Real name"
+#   display_name = "Nickname"      # shown when the viewer picks "Display name"
+#   sync_github_name = true        # or: use the name on your public GitHub profile as display name
+#
+# To remove your names, delete your entry (or set fields empty) in a PR. The next
+# contributors.py run, and the next build, drop them.
+
+[people.jonathanwxh-cell]
+display_name = "jonathnwxh"
+sync_github_name = false
+
+[people.Skyfuller1303]
+display_name = "Skyfuller"
+sync_github_name = true
+
+[people.AlanRockefeller]
+sync_github_name = true
+
+[people.echelon]
+real_name = "Brandon Thomas"
+display_name = "Brandon Thomas"
+sync_github_name = false
+
+[people.Streetblock]
+sync_github_name = true
+
+[people.switch87]
+real_name = "Gert Pellin"
+display_name = "Gert Pellin"
+sync_github_name = false
+
+[people.reynold-hu]
+real_name = "Reynold Hu"
+sync_github_name = true
+
+[people.ArthurViniciusBA1]
+real_name = "Arthur Vinicius"
+
+[people.SckraT]
+sync_github_name = true
+
+[people.GamerWil26]
+real_name = "Willy Foo"
+display_name = "Willy Foo"
+sync_github_name = false
+
+[people.SilentYeti]
+sync_github_name = true
+
+[people.Elvis33LE]
+sync_github_name = true
+
+[people.stevanmarjanovic]
+sync_github_name = true
+
+[people.Hathor875]
+real_name = "Krzysztof Cieślik"
+sync_github_name = true
+
+[people.maxm11]
+sync_github_name = true
+
+[people.skraus2]
+sync_github_name = true
+
+[people.excited-raccoon]
+sync_github_name = true
+
+[people.hamada147]
+real_name = "Ahmed Moussa"
+display_name = "Ahmed Moussa"
+sync_github_name = false
+
+[people.alexanderalber]
+real_name = "Alexander Alber"
+display_name = "Alexander Alber"
+sync_github_name = false
+
+[people.Erica4fr]
+sync_github_name = true
+
+[people.itsF4LCON]
+real_name = "Ran Geerts"
+display_name = "Ran Geerts"
+sync_github_name = false
+
+[people.vangel76]
+sync_github_name = true
+
+[people.FinnNk]
+sync_github_name = true
+
+[people.TheTeslak]
+sync_github_name = true
+
+[people.timothydaly1]
+display_name = "SyntaxError"
+
+[people.atoslins]
+real_name = "Atos Lins"
+display_name = "Atos Lins"
+sync_github_name = false
+
+[people.axlecoffee]
+sync_github_name = true
+
+[people.Losminek]
+sync_github_name = true
+
+[people.FredApps]
+sync_github_name = true
+
+[people.arthurdeka]
+sync_github_name = true
+
+[people.aweussom]
+real_name = "Tommy Leonhardsen"
+
+[people.Furash]
+sync_github_name = true
+
+[people.lucAmbr0]
+sync_github_name = true
+
+[people.Hevarh1]
+sync_github_name = true
+
+[people.dotCooCoo]
+real_name = "Robert Lee"
+sync_github_name = true
+
+[people.deadmeu]
+sync_github_name = true
+
+[people.megaDon101]
+display_name = "megadon"
+sync_github_name = false
+
+[people.sssehnsuchttt]
+sync_github_name = true
+
+[people.VanTan666]
+display_name = "VanTan"
+sync_github_name = false
+
+[people.yeniufuklar-com]
+real_name = "Ufuk Efe"
+sync_github_name = true

@@ -1,0 +1,297 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      fuzz:
+        description: "Run the fuzz job"
+        type: boolean
+        default: false
+      fuzz_seconds:
+        description: "Seconds per fuzz target"
+        default: "600"
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  # No test or fuzz run may print a page: the engine refuses to spool, and if something ever
+  # bypasses that, lp fails loudly on a printer that does not exist.
+  PHOTOCRAFT_NO_PRINT: "1"
+  LPDEST: photocraft-no-such-printer
+  # Debug and test builds keep line tables (file:line in panic backtraces) but drop the rest of the
+  # debug info: faster codegen and links (Windows PDBs most of all), and a target dir small enough
+  # for the Linux job's second, craft-fonts build (it ran out of disk with full debug info).
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+
+# A newer push to a PR branch cancels its older run. Runs on main are never cancelled: a merge
+# that lands while main's run is in progress waits for it, so every main state that gets a run is
+# checked to the end. (Cancelling here left main unverified whenever merges came close together.)
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Which OSes the test job runs on. main, manual runs and PRs labelled `full-ci` get Linux and
+  # Windows. Other PRs get Linux, plus Windows when they touch code whose behaviour differs by
+  # platform: the app shell, UI, text and fonts, GPU, pen input, build scripts or the lockfile.
+  # macOS is tested only by release.yml.
+  platforms:
+    name: select platforms
+    runs-on: ubuntu-latest
+    outputs:
+      os: ${{ steps.pick.outputs.os }}
+      web: ${{ steps.pick.outputs.web }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: pick
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          FULL: ${{ contains(github.event.pull_request.labels.*.name, 'full-ci') }}
+        run: |
+          # No macOS on PRs or main: the org's 5 macOS slots are kept for release builds, and
+          # release.yml builds and tests macOS (a failing release is fixed and rebuilt).
+          all='["ubuntu-latest","windows-latest"]'
+          if [ "$EVENT" != pull_request ] || [ "$FULL" = true ]; then
+            echo "os=$all" >> "$GITHUB_OUTPUT"
+            echo "web=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # The browser build (a fat-LTO wasm build) runs only when something it compiles or
+          # packages changed: the web app and its packaging, crate sources and manifests (the web
+          # build compiles nearly every crate), the workspace manifests and this workflow.
+          if git diff --name-only "$BASE" HEAD | grep -Eq '^(apps/photocraft-web/|packaging/web/|packaging/env\.sh$|crates/[^/]+/(src/|Cargo\.toml$|build\.rs$)|Cargo\.(toml|lock)$|rust-toolchain(\.toml)?$|\.github/workflows/ci\.yml$)'; then
+            echo "web=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "web=false" >> "$GITHUB_OUTPUT"
+          fi
+          if git diff --name-only "$BASE" HEAD | grep -Eq '^(apps/|crates/(ui-egui|text|gpu|tablet|heif)/|Cargo\.lock$|(.*/)?build\.rs$|\.github/workflows/ci\.yml$)'; then
+            echo "os=$all" >> "$GITHUB_OUTPUT"
+          else
+            echo 'os=["ubuntu-latest"]' >> "$GITHUB_OUTPUT"
+          fi
+
+  test:
+    name: test (${{ matrix.os }})
+    needs: platforms
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(needs.platforms.outputs.os) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Unused toolchains in the image (Android SDK, .NET, GHC, CodeQL) are deleted in the
+      # background: the space is free before the craft-fonts build needs it, and nothing waits.
+      - name: Install Linux system dependencies (egui/winit/rfd)
+        if: runner.os == 'Linux'
+        run: |
+          nohup sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL </dev/null >/dev/null 2>&1 &
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libxkbcommon-dev libwayland-dev libx11-dev libxrandr-dev libxi-dev \
+            libgl1-mesa-dev libgtk-3-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      # Only main saves caches; PRs restore main's. Every PR used to save its own set (up to
+      # 3.8 GB), usable by that PR only, so the repo's 10 GB cache budget kept evicting main's.
+      # A failing test still saves: the cache holds compiled dependencies, not test results.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: true
+
+      - name: Format
+        if: runner.os == 'Linux'
+        run: cargo fmt --all -- --check
+
+      # `--features heif`: official builds open HEIC photos via the optional photocraft-heif crate.
+      - name: Test
+        run: cargo test --workspace --locked --features heif
+
+      # The same codecs without the optional decoder: HEIC must stay a clear "not in this build"
+      # error for distributors who leave it out.
+      - name: Test without heif
+        if: runner.os == 'Linux'
+        run: cargo test -p photocraft-heif -p photocraft-codecs -p photocraft-io --locked
+
+      # The same tests built with the optional craft-fonts input (crates/text/build.rs), so the
+      # Japanese font tests that skip without it run here. Linux only. Keep the exact `--workspace
+      # --features heif` of the Test step: any other package or feature selection resolves a
+      # different feature set, recompiles the whole dependency graph into the same target dir and
+      # runs the runner out of disk (as `-p photocraft-text -p photocraft-ui-egui` did after #800).
+      - name: Check out craft-fonts
+        if: runner.os == 'Linux'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: storytold/craft-fonts
+          ref: abb83316d96aa59c1cf64784289e378fe9fa5695
+          path: craft-fonts
+
+      - name: Test with craft-fonts
+        if: runner.os == 'Linux'
+        env:
+          CRAFT_FONTS_DIR: ${{ github.workspace }}/craft-fonts
+          CRAFT_FONTS_REQUIRED: "1"
+        run: cargo test --workspace --locked --features heif
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked --features heif -- -D warnings
+
+      - name: Dependency layering
+        run: cargo xtask layers
+
+      # docs/scorecard.md must match its sources (checklists, budgets, baseline, corpus floors,
+      # prefs audit). Static: it reads committed files only, no benchmarks run here.
+      - name: Scorecard up to date
+        if: runner.os == 'Linux'
+        run: cargo xtask scorecard --check
+
+  corpus:
+    # Real-file corpus tests (cargo feature `corpus`), on every PR and on main. The corpora are
+    # pinned in xtask/src/corpus_pins.rs and sha256-verified (xtask/*.sha256) after both a cache
+    # restore and a download; a missing corpus fails the tests. The cache key changes only when a
+    # pin or manifest does, so normally this restores in seconds (fork PRs read the base cache).
+    name: corpus tests
+    runs-on: ubuntu-latest
+    env:
+      # test-corpus builds with --release, but here without the release profile's thin LTO and
+      # single codegen unit: they ran LTO over the dependency graph for each of the ~95 corpus test
+      # binaries, so building took 23.5 of the job's 37 minutes while the tests ran for 1.5.
+      # Turning them off builds 2.7x faster; the code under test is the same.
+      CARGO_PROFILE_RELEASE_LTO: "false"
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: corpus
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: true
+      - name: Restore test corpora
+        uses: actions/cache@v4
+        with:
+          path: corpus/
+          key: corpus-${{ hashFiles('xtask/src/corpus_pins.rs', 'xtask/*.sha256') }}
+      - name: Fetch and verify corpora
+        run: cargo xtask corpus --all
+      - name: Corpus tests
+        run: cargo xtask test-corpus
+
+  wasm:
+    name: wasm32 check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: wasm32
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: true
+      - name: Check wasm-safe crates
+        run: cargo xtask wasm
+
+  web:
+    name: web build and wasm size gate
+    # PRs run it only when web-relevant files change (see `platforms`); main always does.
+    needs: platforms
+    if: needs.platforms.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    env:
+      # Match release.yml so PR results reflect what would actually ship.
+      TRUNK_VERSION: 0.21.14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ci-web
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: true
+      - name: Install trunk
+        run: |
+          curl -fsSL "https://github.com/trunk-rs/trunk/releases/download/v${TRUNK_VERSION}/trunk-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar -xz -C "$HOME/.cargo/bin" trunk
+          trunk --version
+      # package.sh runs Trunk's release build, validates relative URLs, checks the 24 MiB
+      # wasm limit and exercises the same packaging step used by release.yml.
+      - name: Build and verify browser release
+        run: packaging/web/package.sh
+      - name: Report wasm size
+        if: success()
+        run: |
+          {
+            echo "### Browser WebAssembly size"
+            echo
+            echo "| File | Bytes | MiB | Limit |"
+            echo "| --- | ---: | ---: | ---: |"
+            for wasm in dist/web/*.wasm; do
+              [ -f "$wasm" ] || continue
+              bytes=$(wc -c < "$wasm" | tr -d ' ')
+              mib=$(awk -v n="$bytes" 'BEGIN { printf "%.2f", n / 1048576 }')
+              echo "| $(basename "$wasm") | $bytes | $mib | 24 MiB |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  fuzz:
+    name: fuzz (${{ matrix.target.crate }}/${{ matrix.target.name }})
+    # Placeholder: manual trigger only until a nightly schedule is enabled.
+    if: github.event_name == 'workflow_dispatch' && inputs.fuzz
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - { crate: psd, name: parse }
+          - { crate: psd, name: descriptor }
+          - { crate: psd, name: image_source_data }
+          - { crate: psd, name: grd }
+          - { crate: psd, name: ase }
+          - { crate: psd, name: aco }
+          - { crate: psd, name: patterns }
+          - { crate: psd, name: filter_effects }
+          - { crate: psd, name: metadata }
+          - { crate: psd, name: tagged }
+          - { crate: psd, name: resources }
+          - { crate: codecs, name: decode_any }
+          - { crate: codecs, name: decode_png }
+          - { crate: codecs, name: decode_jpeg }
+          - { crate: codecs, name: decode_tiff }
+          - { crate: codecs, name: decode_exr }
+          - { crate: codecs, name: decode_heif }
+          - { crate: affinity, name: preview }
+          - { crate: affinity, name: import_preview, args: "--features io" }
+          - { crate: format, name: load }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/${{ matrix.target.crate }}/fuzz
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+      - name: Fuzz
+        working-directory: crates/${{ matrix.target.crate }}
+        run: cargo fuzz run ${{ matrix.target.name }} ${{ matrix.target.args }} -- -max_total_time=${{ inputs.fuzz_seconds }}
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-${{ matrix.target.crate }}-${{ matrix.target.name }}
+          path: crates/${{ matrix.target.crate }}/fuzz/artifacts

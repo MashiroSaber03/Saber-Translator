@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { defineComponent, h } from 'vue'
+import { defineComponent, h, ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useEditWorkspace } from '@/components/edit/useEditWorkspace'
 import { useImageStore } from '@/stores/imageStore'
@@ -33,22 +33,58 @@ beforeEach(() => {
   mocks.mutation.mockResolvedValue(undefined)
 })
 
-async function harness() {
+async function harness(ordinaryActive = ref(true)) {
   let editor!: ReturnType<typeof useEditWorkspace>
   const wrapper = mount(defineComponent({
-    setup() { editor = useEditWorkspace(vi.fn()); return () => h('div') },
+    setup() { editor = useEditWorkspace(vi.fn(), ordinaryActive); return () => h('div') },
   }))
   await flushPromises()
   return { editor, wrapper }
 }
 
 describe('repair choices without a selected text box', () => {
+  it('fits an image loaded while hidden, without resetting a completed fit on mode switches', async () => {
+    const active = ref(false)
+    const { editor, wrapper } = await harness(active)
+    const image = document.createElement('img')
+    Object.defineProperties(image, { naturalWidth: { value: 3065 }, naturalHeight: { value: 12288 } })
+    const viewport = document.createElement('div')
+    const bounds = vi.spyOn(viewport, 'getBoundingClientRect').mockReturnValue({ width: 0, height: 0 } as DOMRect)
+    editor.imageComparisonRef.value = {
+      originalViewportRef: viewport, translatedViewportRef: viewport,
+      originalImageRef: image, translatedImageRef: image,
+    } as never
+    editor.fitToScreen()
+    expect(editor.toolbarScale.value).toBe(1)
+    bounds.mockReturnValue({ width: 800, height: 700 } as DOMRect)
+    active.value = true
+    await flushPromises()
+    expect(editor.toolbarScale.value).toBeCloseTo(700 / 12288 * 0.95)
+    editor.zoomIn()
+    const zoomed = editor.toolbarScale.value
+    active.value = false
+    await flushPromises()
+    active.value = true
+    await flushPromises()
+    expect(editor.toolbarScale.value).toBe(zoomed)
+    wrapper.unmount()
+  })
+  it('recovers ordinary controls after fine editing reloads the current document', async () => {
+    mocks.getPageDocument.mockRejectedValueOnce(new Error('offline'))
+    const { editor, wrapper } = await harness()
+    expect(editor.isBusy.value).toBe(true)
+    editor.handleDocumentLoaded('another-page')
+    expect(editor.isBusy.value).toBe(true)
+    editor.handleDocumentLoaded('page')
+    expect(editor.isBusy.value).toBe(false)
+    wrapper.unmount()
+  })
   it('saves the chosen method and color as page defaults through existing persistence', async () => {
     const { editor, wrapper } = await harness()
     editor.handleBubbleUpdateWithSync({ inpaintMethod: 'solid' })
     editor.handleBubbleUpdateWithSync({ fillColor: '#33aa66' })
     expect(mocks.mutation).toHaveBeenLastCalledWith('page', 4, [], {
-      pageStyleDefaultsPatch: { inpaintMethod: 'solid', fillColor: '#33aa66' },
+      pageStyleDefaultsPatch: { fillColor: '#33aa66' },
     })
     expect(editor.currentInpaintMethod.value).toBe('solid')
     expect(editor.currentFillColor.value).toBe('#33aa66')
@@ -64,6 +100,24 @@ describe('repair choices without a selected text box', () => {
     expect(bubbles.bubbles[0]?.inpaintMethod).toBe('solid')
     expect(bubbles.bubbles[0]?.fillColor).toBe('#33aa66')
     expect(mocks.mutation).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('keeps fine-editor repair choices on the page when the ordinary selection reloads', async () => {
+    const { editor, wrapper } = await harness(ref(false))
+    const bubbles = useBubbleStore()
+    bubbles.addBubble([10, 10, 80, 80])
+    bubbles.updateBubble(0, { inpaintMethod: 'solid', fillColor: '#abcdef' })
+    bubbles.selectBubble(0)
+    editor.handleBubbleUpdateWithSync({ inpaintMethod: 'litelama' }, true)
+    editor.handleBubbleUpdateWithSync({ fillColor: '#33aa66' }, true)
+    bubbles.setBubbles([...bubbles.bubbles], true)
+    await flushPromises()
+    expect(useImageStore().currentImage).toMatchObject({ inpaintMethod: 'litelama', fillColor: '#33aa66' })
+    expect(bubbles.bubbles[0]).toMatchObject({ inpaintMethod: 'solid', fillColor: '#abcdef' })
+    expect(mocks.mutation).toHaveBeenLastCalledWith('page', 4, expect.any(Array), {
+      pageStyleDefaultsPatch: { fillColor: '#33aa66' },
+    })
     wrapper.unmount()
   })
 

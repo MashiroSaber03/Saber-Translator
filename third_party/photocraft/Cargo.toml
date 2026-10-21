@@ -1,0 +1,143 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "apps/*", "xtask"]
+default-members = ["crates/*", "apps/photocraft", "apps/photocraft-cli", "xtask"]
+
+[workspace.package]
+version = "0.9.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.95"
+
+[workspace.dependencies]
+craft-ui = { git = "https://github.com/storytold/craft-libs", rev = "5c874d51eeb3de70e735c8ce87a59a7dedd47675", features = ["serde"] }
+# internal
+photocraft-geom = { path = "crates/geom" }
+photocraft-color = { path = "crates/color" }
+photocraft-cms = { path = "crates/cms" }
+photocraft-raster = { path = "crates/raster" }
+photocraft-doc = { path = "crates/doc" }
+photocraft-ops = { path = "crates/ops" }
+photocraft-psd = { path = "crates/psd" }
+photocraft-codecs = { path = "crates/codecs" }
+photocraft-raw = { path = "crates/raw" }
+photocraft-affinity = { path = "crates/affinity" }
+photocraft-compose = { path = "crates/compose" }
+photocraft-gpu = { path = "crates/gpu" }
+photocraft-paint = { path = "crates/paint" }
+photocraft-algo = { path = "crates/algo" }
+photocraft-io = { path = "crates/io" }
+photocraft-text = { path = "crates/text" }
+photocraft-vector = { path = "crates/vector" }
+photocraft-format = { path = "crates/format" }
+photocraft-automation = { path = "crates/automation" }
+photocraft-plugins = { path = "crates/plugins" }
+photocraft-engine = { path = "crates/engine" }
+photocraft-ui-egui = { path = "crates/ui-egui" }
+photocraft-testkit = { path = "crates/testkit" }
+photocraft-tablet = { path = "crates/tablet" }
+
+# external
+craft-print = { git = "https://github.com/storytold/craft-libs", rev = "3d37da389a3618ab9b76109da11416e9ca4ea719" }
+thiserror = "2"
+serde = { version = "1", features = ["derive", "rc"] }
+serde_json = "1"
+arc-swap = "1"
+bytemuck = { version = "1", features = ["derive"] }
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+image = { version = "0.25", default-features = false }
+# Baseline-JPEG decode of lossy DNG tiles (compression 34892), shared with zune-jpeg.
+zune-core = "0.5"
+zune-jpeg = "0.5"
+proptest = "1"
+eframe = { version = "0.36", default-features = false }
+# Without `default_fonts`, which embeds egui's fonts uncompressed: ui-egui ships them deflated
+# (egui_fonts.rs; the web build's size gate).
+egui = { version = "0.36", default-features = false }
+egui_kittest = "0.36"
+rfd = "0.17"
+log = "0.4"
+rayon = "1"
+criterion = { version = "0.5", default-features = false }
+getrandom = "0.3"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.dev]
+opt-level = 1
+# Line tables keep file:line in panic backtraces but drop variable info, which roughly halves link
+# time and PDB size for the ~260 test binaries (#2204). CI sets the same through
+# CARGO_PROFILE_DEV_DEBUG. To inspect locals in a debugger, build with CARGO_PROFILE_DEV_DEBUG=true.
+debug = "line-tables-only"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+# The browser build (apps/photocraft-web, `data-cargo-profile` in its index.html). Hosts cap the
+# size of a single file (Cloudflare Pages/Workers: 25 MiB), and the wasm is downloaded on every
+# visit, so this profile optimizes for size: fat LTO, opt-level "z" for PhotoCraft's own crates,
+# "s" for dependencies and for the crates that decode files, and 3 for pixel processing (filters
+# and compositing). Dependencies stay at "s": at "z" the whole wasm grows (by 0.4 MB, measured).
+# panic stays the target default (wasm32-unknown-unknown aborts; AGENTS.md's `panic = "unwind"`
+# is for the native app shell). packaging/web/package.sh fails the build above 24 MiB.
+[profile.wasm-release]
+inherits = "release"
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+strip = "debuginfo"
+
+[profile.wasm-release.package."*"]
+opt-level = "s"
+
+# Decoding and rasterizing keep their speed.
+[profile.wasm-release.package.photocraft-codecs]
+opt-level = "s"
+[profile.wasm-release.package.photocraft-raw]
+opt-level = "s"
+[profile.wasm-release.package.photocraft-heif]
+opt-level = "s"
+[profile.wasm-release.package.photocraft-vector]
+opt-level = "s"
+
+# Large crates off the per-frame and per-pixel paths: the document model, file parsers run once
+# per open/save, JSON (settings, presets, control channel), SVG parsing, and shader translation
+# (runs when a pipeline is created). "z" keeps the wasm well under the size gate.
+[profile.wasm-release.package.photocraft-doc]
+opt-level = "z"
+[profile.wasm-release.package.photocraft-psd]
+opt-level = "z"
+[profile.wasm-release.package.photocraft-format]
+opt-level = "z"
+[profile.wasm-release.package.photocraft-affinity]
+opt-level = "z"
+[profile.wasm-release.package.serde_json]
+opt-level = "z"
+[profile.wasm-release.package.usvg]
+opt-level = "z"
+[profile.wasm-release.package.naga]
+opt-level = "z"
+
+# Pixel processing keeps its speed-oriented optimization level.
+[profile.wasm-release.package.photocraft-raster]
+opt-level = 3
+[profile.wasm-release.package.photocraft-color]
+opt-level = 3
+[profile.wasm-release.package.photocraft-cms]
+opt-level = 3
+[profile.wasm-release.package.photocraft-compose]
+opt-level = 3
+[profile.wasm-release.package.photocraft-algo]
+opt-level = 3
+[profile.wasm-release.package.photocraft-paint]
+opt-level = 3
+

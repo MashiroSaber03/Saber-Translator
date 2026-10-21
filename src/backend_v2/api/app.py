@@ -322,6 +322,11 @@ def create_api_app(settings: ApiSettings) -> Flask:
             )
             response.headers["X-Content-Type-Options"] = "nosniff"
             response.headers["X-Frame-Options"] = "DENY"
+            if request.path.startswith("/photocraft/"):
+                response.headers["Content-Security-Policy"] = response.headers["Content-Security-Policy"].replace(
+                    "script-src 'self'", "script-src 'self' 'wasm-unsafe-eval'"
+                ).replace("frame-ancestors 'none'", "frame-ancestors 'self'")
+                response.headers["X-Frame-Options"] = "SAMEORIGIN"
             response.headers["Referrer-Policy"] = "no-referrer"
             response.headers["Permissions-Policy"] = (
                 "camera=(), microphone=(), geolocation=(), payment=()"

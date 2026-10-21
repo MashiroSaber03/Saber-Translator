@@ -1,0 +1,18 @@
+[package]
+name = "photocraft-testkit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+photocraft-geom = { workspace = true }
+photocraft-color = { workspace = true }
+photocraft-raster = { workspace = true }
+serde_json = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# In-process resident memory for the benchmarks (`perf`; MIT OR Apache-2.0).
+memory-stats = "1.2"

@@ -1,0 +1,103 @@
+[package]
+name = "photocraft"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+default-run = "photocraft"
+description = "Photocraft: an open-source, native image editor"
+build = "build.rs"
+
+[features]
+# Open HEIC/HEIF photos (the optional photocraft-heif crate). Not default so distributors choose
+# it; official builds (CI, packaging/, release) build with `--features heif`.
+heif = ["photocraft-codecs/heif"]
+
+[lints]
+workspace = true
+
+[dependencies]
+photocraft-doc = { workspace = true }
+photocraft-color = { workspace = true }
+photocraft-raster = { workspace = true }
+photocraft-geom = { workspace = true }
+photocraft-compose = { workspace = true }
+photocraft-engine = { workspace = true }
+photocraft-codecs = { workspace = true }
+photocraft-io = { workspace = true }
+photocraft-format = { workspace = true }
+photocraft-automation = { workspace = true }
+photocraft-ui-egui = { workspace = true }
+# Pen tablet pressure/tilt on macOS and X11 (the workspace's one isolated unsafe helper crate).
+photocraft-tablet = { workspace = true }
+eframe = { workspace = true, features = ["wgpu", "accesskit", "wayland", "x11", "persistence"] }
+egui = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rfd = { workspace = true }
+arboard = { version = "3.6", features = ["wayland-data-control"] }
+open = "5"
+# Reads the saved window layout (eframe persistence) to drop values that would abort startup.
+ron = "0.12"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Safe CoreGraphics bindings, compatible with the existing macOS 11 deployment target.
+# `event` (CGEventSource) is used for the Caps Lock poll (#1758).
+core-graphics2 = { version = "=0.6.1", default-features = false, features = ["display", "window", "link", "event"] }
+# Finder double-click / Open With / Dock drops arrive as Apple events; this small audited crate
+# registers the handler (Objective-C interop needs unsafe, which our workspace forbids) behind a
+# safe API. Pinned exactly: review the diff before bumping.
+fmv-macos-events = "=0.1.0"
+# Safe AppKit calls only: turn off AppKit's title bar dragging (mac_window.rs) and find where the
+# pointer is when files are dropped (cursor.rs; winit 0.30 drops carry no position). Already in
+# Cargo.lock (winit, photocraft-tablet); pinned exactly to the same versions.
+objc2 = "=0.6.4"
+objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSArray", "NSEnumerator", "NSGeometry"] }
+objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSApplication", "NSApplicationScripting", "NSEvent", "NSResponder", "NSView", "NSWindow"] }
+# The macOS menu bar (mac_menu.rs): a standalone native menu crate (from the tauri-apps org, but
+# not Tauri: no webview, no JS), AppKit menus behind a safe API (no GTK with default features off). Pinned exactly: review the diff before bumping.
+muda = { version = "=0.21.1", default-features = false }
+# Quit with `terminate:` from the main queue, outside winit's event handler (mac_window.rs).
+# Already in Cargo.lock (winit, objc2-app-kit); pinned exactly to the same version.
+dispatch2 = { version = "=0.3.1", default-features = false, features = ["std"] }
+
+# Drop position on X11 (`cursor.rs`): pure-Rust X client, already in Cargo.lock; pinned exactly.
+[target.'cfg(target_os = "linux")'.dependencies]
+photocraft-cms = { workspace = true }
+x11rb = { version = "=0.13.2", default-features = false, features = ["image", "randr", "xkb"] }
+# Clipboard images in types other than PNG on Wayland (`services.rs`, #2546): arboard asks for
+# image/png only. Already in Cargo.lock (arboard's wayland-data-control); pinned exactly.
+wl-clipboard-rs = { version = "=0.9.4", default-features = false }
+# Wayland desktop color selection through the existing XDG portal transport.
+zbus = "=5.19.0"
+# Caption button glyphs from the desktop's icon theme (`caption_style.rs`): SVG paths only, no
+# text or images. Already in Cargo.lock (photocraft-io); pinned exactly.
+resvg = { version = "=0.45.1", default-features = false }
+# Already used by the portal stack; bounded waits let cancelling close the OS request.
+futures-lite = "=2.6.1"
+async-io = "=2.6.0"
+# Open the window through Xwayland for a pen on Wayland (`tablet.rs`, #639): eframe doesn't
+# re-export winit's `EventLoopBuilderExtX11`. Already in Cargo.lock (eframe); pinned exactly.
+winit = { version = "=0.30.13", default-features = false, features = ["x11"] }
+
+# Safe Win32 wrappers on Windows: the pointer position for file drops (`cursor.rs`,
+# GetCursorPos) and the window frame for the custom title bar (`window_frame.rs`, window styles),
+# no dependencies of its own. Pinned exactly: review the diff before bumping.
+[target.'cfg(target_os = "windows")'.dependencies]
+# Safe Windows screen-capture bindings; Linux uses the pure-Rust X11 client/portal.
+xcap = "=0.9.8"
+winsafe = { version = "=0.0.29", default-features = false, features = ["user"] }
+
+# tests/mac_menu_appkit.rs: reads AppKit's menu bar back and sends it real key events.
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSString"] }
+objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSApplication", "NSEvent", "NSGraphicsContext", "NSMenu", "NSMenuItem", "NSResponder"] }
+
+[[test]]
+name = "mac_menu_appkit"
+harness = false
+
+[build-dependencies]
+# Icon + VERSIONINFO for photocraft.exe; build.rs only uses it when targeting Windows.
+winresource = "0.1"

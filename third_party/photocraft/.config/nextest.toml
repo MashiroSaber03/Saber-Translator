@@ -1,0 +1,15 @@
+# cargo-nextest (https://nexte.st): runs every test in its own process, in parallel across test
+# binaries. Optional for local runs; `cargo test` keeps working and stays what CI runs (#2204).
+#
+#   cargo nextest run --workspace        # all tests except doctests
+#   cargo test --doc --workspace         # nextest does not run doctests
+#
+# GPU tests: each test is its own process here, so the in-process `gpu_lock()` mutexes no longer
+# serialize them. Too many concurrent wgpu devices time out (`PollError: ... Wait timed out`), so
+# this group caps them at 4.
+[test-groups]
+gpu = { max-threads = 4 }
+
+[[profile.default.overrides]]
+filter = 'package(photocraft-gpu) | (package(photocraft-ui-egui) & (kind(test) | test(/canvas|gpu|mip|type_tool/)))'
+test-group = 'gpu'

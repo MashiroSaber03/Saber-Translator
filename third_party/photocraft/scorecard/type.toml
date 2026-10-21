@@ -1,0 +1,68 @@
+# Scorecard checklist: type (#218, #206).
+# Statuses must be true on main. Verified against 4b53f62 on 2026-10-05.
+area = "type"
+title = "Type"
+order = 5
+
+[[item]]
+id = "TYPE-218-1"
+target = "Type on a path: path shape, glyphs along the curve, caret follows, PSD round trip"
+status = "partial"
+issue = 218
+note = "TextShape::Path (doc text.rs) with glyphs placed rigidly along the curve by arc length (text warp.rs PathFrame), type.attachToPath and type.detachFromPath (#4365), .pcraft round trip. Missing: clicking a path with the Type tool, the caret and selection following the curve, and PSD path text (it saves as point text)"
+
+[[item]]
+id = "TYPE-218-2"
+target = "Paragraph direction (Auto/LTR/RTL) in the panel and options bar; visual RTL caret"
+status = "missing"
+issue = 218
+note = "Engine has TextDirection (text.rs:155); no UI"
+
+[[item]]
+id = "TYPE-218-3"
+target = "Thai/Khmer/Indic fallback fonts; golden shaping tests for complex scripts and RTL"
+status = "partial"
+issue = 218
+note = "Fallback fonts are covered for Thai, Khmer, Lao, Myanmar (THAI_FAMILIES, KHMER_FAMILIES, LAO_FAMILIES, MYANMAR_FAMILIES in fonts.rs; #1909, #3259), the nine Indic scripts (INDIC_FAMILIES: Nirmala UI, Kohinoor and Sangam MN, Noto Sans) and Arabic and Hebrew. Still missing: per-script golden shaping tests against reference output (only smoke tests that an installed font shapes without .notdef, plus a bidi test)"
+
+[[item]]
+id = "TYPE-218-4"
+target = "Variable font axis sliders from the font's axes; opsz follows the point size"
+status = "done"
+issue = 218
+note = "One slider per axis of the style's font in the Character section (Properties and Window > Character), setting type.setStyle variations; opsz follows the type size unless set (layout.rs variation_list); a style or weight resets the wght axis (#2985). PSD does not round-trip axis values yet"
+
+[[item]]
+id = "TYPE-218-5"
+target = "OpenType UI: Character panel buttons, Numerals and Stylistic Sets submenus"
+status = "partial"
+issue = 218
+note = "Type > OpenType toggles (type_extra_cmds.rs:512). Character panel (and the Properties Character section) has Photoshop's eight OpenType buttons: Standard Ligatures, Contextual Alternates, Discretionary Ligatures, Swash, Stylistic Alternates, Titling Alternates, Ordinals, Fractions, pressed while the feature is on at the selection and dispatching the type.openType.* commands (type_tool.rs opentype_row; character_panel_opentype_buttons_toggle_and_show_the_feature, #3752). Still missing: the Numerals and Stylistic Sets submenus, and greying out features the font lacks"
+
+[[item]]
+id = "TYPE-218-6"
+target = "Manual pair kerning (Alt+arrows), optical kerning rendered, both round-trip PSD (#206)"
+status = "done"
+issue = 218
+note = "Alt+Left/Right at a collapsed caret kerns the pair (type_tool.rs kern_pair, 20 per step and 100 with Cmd; type_tool_alt_arrows_kern_the_pair). Optical kerning is computed from the glyph outlines in text/src/optical.rs and applied by layout.rs when the run's mode is Optical (optical_matches_photoshop, optical_kerning_tightens_open_pairs). Both modes and manual values round-trip through PSD (io/tests/psd_kerning.rs; the optical mode travels in Txt2, txt2_carries_optical_kerning)"
+
+[[item]]
+id = "TYPE-218-7"
+target = "Warp Text dialog previews live and opens with the layer's current warp"
+status = "missing"
+issue = 218
+note = "view_cmds.rs:834 always seeds arc, bend 50"
+
+[[item]]
+id = "TYPE-218-8"
+target = "Text editing: select all, double/triple/quadruple-click selection, paste, with tests"
+status = "done"
+issue = 218
+note = "Like Photoshop, 2 clicks select the word, 3 the laid-out line (a column in vertical type), 4 the paragraph up to the hard return, 5 all text, and the next quick click starts over (#3493; type_tool.rs next_click_count, click_selection, multi_click). Tested through real canvas clicks in point, paragraph and vertical type, with paste replacing the selection and Cmd+A selecting all (type_tool_tests.rs multi_click_selects_word_line_paragraph_and_all_in_point_text, multi_click_separates_wrapped_lines_from_paragraphs, click_counts_cycle_and_restart, click_selection_without_layout_and_on_hostile_input, multi_click_without_a_session_does_nothing)"
+
+[[item]]
+id = "TYPE-218-9"
+target = "Distort/Perspective/Warp on live type as in Photoshop (was: offer 'Rasterize and continue?'; Photoshop doesn't prompt)"
+status = "done"
+issue = 218
+note = "Photoshop 2026 prompts for none of these: Edit › Transform › Warp on live type stays enabled with no rasterize prompt and offers only the warp styles (the mesh can't be dragged), so the type stays editable; Distort, Perspective and the split warps are greyed. PhotoCraft does the same: Warp on type commits the layer's Warp Text in one step (transform_tool.rs enter_type_warp, warp_cmds.rs warp_type_layer, #3004; warp_on_type_takes_a_style_and_keeps_the_type_editable), Distort/Perspective greyed (enable_rules.rs, #2701)"

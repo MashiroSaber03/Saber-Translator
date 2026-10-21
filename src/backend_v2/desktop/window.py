@@ -1163,7 +1163,7 @@ class DesktopWindow(QMainWindow):
         preparation_layout = QVBoxLayout(self.preparation_page)
         preparation_layout.setContentsMargins(32, 32, 32, 32)
         preparation_layout.addStretch()
-        self.preparation_title = _label("正在准备数据", "pageTitle")
+        self.preparation_title = _label("正在准备启动", "pageTitle")
         preparation_layout.addWidget(self.preparation_title)
         self.preparation_message = _label("正在检查存储版本", "muted")
         self.preparation_message.setWordWrap(True)
@@ -1198,9 +1198,9 @@ class DesktopWindow(QMainWindow):
         self._preparation_failed = failed
         self.sidebar.setEnabled(False)
         self.title_bar.close_button.setEnabled(failed)
-        self.title_bar.close_button.setToolTip("" if failed else "数据准备完成后可关闭")
-        self.title_bar.title.setText("存储准备失败" if failed else "正在准备数据")
-        self.preparation_title.setText("数据准备未完成" if failed else "正在准备数据")
+        self.title_bar.close_button.setToolTip("" if failed else "启动准备完成后可关闭")
+        self.title_bar.title.setText("启动准备失败" if failed else "正在准备启动")
+        self.preparation_title.setText("启动准备未完成" if failed else "正在准备启动")
         self.preparation_message.setText(message)
         self.preparation_progress.setVisible(not failed)
         if self.stack.indexOf(self.preparation_page) < 0:

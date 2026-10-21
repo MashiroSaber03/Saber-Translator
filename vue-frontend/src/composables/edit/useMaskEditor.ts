@@ -14,7 +14,7 @@ import { encodeGrayscaleMaskPng, paintMaskCircles } from '@/utils/binaryMaskPng'
 import { showToast } from '@/utils/toast'
 import type { BrushBounds, CurrentRepairSettings } from '@/composables/useBrush'
 import { applyPageRenderStatus } from '@/composables/useEditRender'
-import { maskOverlayPixels, maskVisibility, type MaskStages } from '@/utils/maskPreview'
+import { maskOverlayClasses, maskOverlayPixels, maskVisibility, type MaskOverlay, type MaskStages } from '@/utils/maskPreview'
 
 export type MaskTool = 'repair' | 'preserve' | 'clear'
 
@@ -55,7 +55,7 @@ export function useMaskEditor(options: {
   const tool = ref<MaskTool>('repair')
   const visibility = ref(maskVisibility())
   const state = shallowRef<PageMasks | null>(null)
-  const overlay = ref<string | null>(null)
+  const overlay = shallowRef<MaskOverlay | null>(null)
   const loading = ref(false)
   const saving = ref(false)
   const applying = ref(false)
@@ -64,6 +64,8 @@ export function useMaskEditor(options: {
   const busy = computed(() => loading.value || saving.value || applying.value)
   let stages: MaskStages | null = null
   let manual: Uint8Array | null = null
+  let overlayPixels: ImageData | null = null
+  let overlayClasses: Uint8Array | null = null
   let controller = new AbortController()
   let requestSequence = 0
 
@@ -78,17 +80,21 @@ export function useMaskEditor(options: {
     bubbleStore.setBubbles(bubbles, true)
   }
 
-  function drawOverlay(): void {
+  function drawOverlay(rebuild = false): void {
     if (!state.value || !stages || !manual) return
-    const canvas = document.createElement('canvas')
-    canvas.width = state.value.width
-    canvas.height = state.value.height
+    const canvas = overlay.value?.canvas ?? document.createElement('canvas')
+    if (canvas.width !== state.value.width) canvas.width = state.value.width
+    if (canvas.height !== state.value.height) canvas.height = state.value.height
     const context = canvas.getContext('2d')
     if (!context) return
-    const pixels = context.createImageData(canvas.width, canvas.height)
-    pixels.data.set(maskOverlayPixels(canvas.width, canvas.height, stages, manual, visibility.value))
-    context.putImageData(pixels, 0, 0)
-    overlay.value = canvas.toDataURL('image/png')
+    if (!overlayPixels || overlayPixels.width !== canvas.width || overlayPixels.height !== canvas.height)
+      overlayPixels = context.createImageData(canvas.width, canvas.height)
+    if (rebuild || !overlayClasses)
+      overlayClasses = maskOverlayClasses(canvas.width, canvas.height, stages, manual)
+    maskOverlayPixels(overlayClasses, visibility.value, overlayPixels.data)
+    context.putImageData(overlayPixels, 0, 0)
+    // Updating the small wrapper notifies both viewports without copying/encoding the pixels.
+    overlay.value = { canvas }
   }
 
   async function refresh(): Promise<void> {
@@ -144,7 +150,7 @@ export function useMaskEditor(options: {
       state.value = result
       stages = { raw, boxes, automatic }
       manual = nextManual
-      drawOverlay()
+      drawOverlay(true)
     } catch (cause) {
       if (sequence === requestSequence && !isRequestCanceled(cause)) {
         error.value = cause instanceof Error ? cause.message : '修复范围加载失败'
@@ -171,6 +177,8 @@ export function useMaskEditor(options: {
     requestSequence += 1
     state.value = null
     overlay.value = null
+    overlayPixels = null
+    overlayClasses = null
     stages = manual = null
     error.value = ''
     return true
@@ -227,7 +235,7 @@ export function useMaskEditor(options: {
     )
     if (!changed) return dirty.value ? save() : Promise.resolve()
     dirty.value = true
-    drawOverlay()
+    drawOverlay(true)
     return save()
   }
 
@@ -290,7 +298,7 @@ export function useMaskEditor(options: {
     }
   }
 
-  watch(visibility, drawOverlay, { deep: true })
+  watch(visibility, () => drawOverlay(), { deep: true })
   watch(
     () => [
       imageStore.currentImage?.id,
@@ -310,6 +318,9 @@ export function useMaskEditor(options: {
     controller.abort()
     requestSequence += 1
     stages = manual = null
+    overlay.value = null
+    overlayPixels = null
+    overlayClasses = null
   })
   return {
     active,

@@ -1,0 +1,41 @@
+[package]
+name = "photocraft-affinity-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[features]
+io = ["dep:photocraft-io"]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+photocraft-affinity = { path = "..", features = ["synth"] }
+photocraft-io = { path = "../../io", optional = true }
+
+[[bin]]
+name = "preview"
+path = "fuzz_targets/preview.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "import_preview"
+path = "fuzz_targets/import_preview.rs"
+required-features = ["io"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "stream"
+path = "fuzz_targets/stream.rs"
+test = false
+doc = false
+bench = false

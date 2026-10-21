@@ -1,0 +1,48 @@
+[package]
+name = "photocraft-codecs"
+description = "Symmetric, depth- and metadata-preserving codecs for flat raster image formats"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[features]
+# Real-file corpus tests (opt-in; `cargo xtask test-corpus`). Fail when the corpus is missing.
+corpus = []
+default = []
+# AVIF *encode* via ravif (pure Rust). Decoding AVIF needs dav1d (C), so AVIF
+# stays read-unsupported and therefore asymmetric; it is off by default.
+avif = ["image/avif"]
+# HEIC/HEIF decode via the optional photocraft-heif crate (heic-rs, pure Rust). Off by default so
+# distributors choose it at build time; official builds and CI enable it (`--features heif` on the
+# apps). Without it HEIF files are still recognised and opening one is a clear "unsupported" error.
+heif = ["dep:photocraft-heif"]
+
+[dependencies]
+thiserror.workspace = true
+image = { workspace = true, features = ["gif", "bmp", "tga", "ico", "qoi", "hdr"] }
+png = "0.18"
+tiff = { version = "0.11", default-features = false, features = ["deflate", "fax", "jpeg", "lzw"] }
+exr = { version = "1.73", default-features = false }
+half = "2"
+serde_json.workspace = true
+flate2.workspace = true
+image-webp = "0.2"
+zune-jpeg = "0.5"
+zune-core = "0.5"
+jpeg-encoder = "0.6"
+photocraft-heif = { path = "../heif", optional = true }
+
+# Orientation is applied a band of rows per task on native; wasm stays single-threaded.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rayon.workspace = true
+# EXR block (de)compression runs on the rayon pool natively; wasm stays single-threaded.
+exr = { version = "1.73", default-features = false, features = ["rayon"] }
+
+[dev-dependencies]
+proptest.workspace = true
+# Oracle decoders for cross-checking in tests only.
+image = { workspace = true, features = ["png", "jpeg", "tiff"] }
+
+[lints]
+workspace = true

@@ -1015,6 +1015,46 @@ def test_render_request_coalesces_and_old_revision_cannot_publish(
     assert page == (2, "ready")
 
 
+@pytest.mark.parametrize('superseded', [False, True])
+def test_render_completion_retries_sqlite_busy_without_rerendering_or_failing(operation_platform, monkeypatch, superseded):
+    import sqlite3
+    from src.backend_v2.operations.executor import DurableRenderExecutor
+
+    platform = operation_platform
+    repository = RenderRequestRepository(platform['engine'])
+    with immediate_transaction(platform['engine']) as connection:
+        repository.upsert(connection, page_id=platform['page_id'], requested_revision=1)
+    fence = repository.claim_next(api_epoch_id=platform['api_epoch_id'])
+    assert fence is not None
+    complete = repository.complete
+    attempts, prepared, published = [], [], []
+
+    def contend(fence, *, publisher):
+        attempts.append(fence)
+        if len(attempts) <= 3:
+            if superseded and len(attempts) == 3:
+                with immediate_transaction(platform['engine']) as connection:
+                    connection.execute(update(pages).where(pages.c.id == platform['page_id']).values(document_revision=2))
+                    repository.upsert(connection, page_id=platform['page_id'], requested_revision=2)
+            raise sqlite3.OperationalError('database is locked')
+        return complete(fence, publisher=publisher)
+
+    def prepare(fence):
+        prepared.append(fence)
+        return lambda _connection: published.append(fence.rendering_revision)
+
+    monkeypatch.setattr(repository, 'complete', contend)
+    executor = DurableRenderExecutor(repository, api_epoch_id=platform['api_epoch_id'], handler=prepare)
+    executor._execute(fence)
+    assert prepared == [fence]
+    assert len(attempts) == 4
+    assert published == ([] if superseded else [1])
+    with platform['engine'].connect() as connection:
+        row = connection.execute(select(render_requests)).mappings().one()
+    assert row['status'] == ('pending' if superseded else 'completed')
+    assert row['error_json'] is None
+
+
 def test_superseded_render_prepare_defers_to_repository_coalescing(
     operation_platform,
 ) -> None:

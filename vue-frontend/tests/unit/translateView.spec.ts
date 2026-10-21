@@ -21,6 +21,7 @@ const {
   handleKeydownMock,
   isContextReadyState,
   loadChapterSessionMock,
+  queueLastVisitedPageWriteMock,
   translateActionOptions,
 } = vi.hoisted(() => ({
   routeState: { query: {} as Record<string, string | undefined> },
@@ -29,6 +30,7 @@ const {
   handleKeydownMock: vi.fn(),
   isContextReadyState: { value: true },
   loadChapterSessionMock: vi.fn(),
+  queueLastVisitedPageWriteMock: vi.fn(),
   translateActionOptions: {
     value: null as null | { isEditMode: { value: boolean } },
   },
@@ -71,6 +73,7 @@ vi.mock('@/composables/useTranslateInit', () => ({
     isSwitchingImage: { value: false },
     initializeApp: initializeAppMock,
     initializeBookChapterContext: initializeBookChapterContextMock,
+    queueLastVisitedPageWrite: queueLastVisitedPageWriteMock,
   }),
 }))
 
@@ -175,6 +178,7 @@ describe('TranslateView', () => {
     handleKeydownMock.mockReset()
     isContextReadyState.value = true
     loadChapterSessionMock.mockReset()
+    queueLastVisitedPageWriteMock.mockReset()
     loadChapterSessionMock.mockResolvedValue(true)
     translateActionOptions.value = null
     initializeAppMock.mockResolvedValue(undefined)
@@ -266,6 +270,22 @@ describe('TranslateView', () => {
     await nextTick()
 
     expect(translateActionOptions.value!.isEditMode.value).toBe(false)
+  })
+
+  it('records editor page changes through the existing navigation write queue', async () => {
+    mountTranslateView()
+    const imageStore = useImageStore()
+    imageStore.setImages(['page-1', 'page-2'].map(id => ({
+      id, chapterId: 'chapter-1', fileName: `${id}.png`, bubbleStates: [],
+      sourceAssetUrl: '/api/v2/assets/source', cleanAssetUrl: null,
+      translatedAssetUrl: null, translationStatus: 'pending', hasUnsavedChanges: false,
+    })))
+    await nextTick()
+    expect(queueLastVisitedPageWriteMock).not.toHaveBeenCalled()
+    translateActionOptions.value!.isEditMode.value = true
+    imageStore.setCurrentImageIndex(1)
+    await nextTick()
+    expect(queueLastVisitedPageWriteMock).toHaveBeenCalledWith('chapter-1', 'page-2')
   })
 
   it('passes the current sidebar style to imports before the first page exists', async () => {

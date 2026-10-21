@@ -1,4 +1,4 @@
-import { ref, computed, watch, onMounted, onUnmounted, onErrorCaptured, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, onErrorCaptured, nextTick, type Ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { getPageDocument } from '@/api/v2/content'
 import { useImageStore } from '@/stores/imageStore'
@@ -33,7 +33,7 @@ export type EditWorkspaceEmit = {
   (e: 'exit'): void
 }
 
-export function useEditWorkspace(emit: EditWorkspaceEmit) {
+export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readonly<Ref<boolean>> = ref(true)) {
   const imageStore = useImageStore()
   const bubbleStore = useBubbleStore()
 
@@ -189,6 +189,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
   let initialFitTimeout: ReturnType<typeof setTimeout> | null = null
   let imageLoadFitTimeout: ReturnType<typeof setTimeout> | null = null
   let isOwnerActive = false
+  let pendingScreenFit = false
 
   function clearDelayedFitTimers(): void {
     if (layoutFitTimeout) {
@@ -205,8 +206,8 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
     }
   }
 
-  const originalViewer = useImageViewer()
-  const translatedViewer = useImageViewer()
+  const originalViewer = useImageViewer({ minScale: 0.01 })
+  const translatedViewer = useImageViewer({ minScale: 0.01 })
   const useOriginalViewport = computed(() => viewMode.value === 'original'
     || (viewMode.value === 'dual' && imageComparisonRef.value?.translatedPanelCollapsed))
   const primaryViewer = computed(() => useOriginalViewport.value ? originalViewer : translatedViewer)
@@ -376,8 +377,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
           currentInpaintMethod.value = pageTextStyle.inpaintMethod
           currentFillColor.value = pageTextStyle.fillColor
         }
-        selectFirstBubbleIfExists()
-        isPageDocumentReady.value = true
+        handleDocumentLoaded(pageId)
       })
       .catch(error => {
         if (isRequestCanceled(error)) return
@@ -388,6 +388,12 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
           )
         }
       })
+  }
+
+  function handleDocumentLoaded(pageId: string): void {
+    if (currentImage.value?.id !== pageId) return
+    selectFirstBubbleIfExists()
+    isPageDocumentReady.value = true
   }
 
   const {
@@ -495,6 +501,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
   }
 
   const { handleKeyDown, handleKeyUp, cancelBrushShortcut } = useEditWorkspaceKeyboardShortcuts({
+    enabled: ordinaryActive,
     isPickingColor,
     cancelColorPick,
     brushMode,
@@ -512,6 +519,23 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
     maskActive: maskEditor.active,
     exitMaskMode: () => { void toggleMaskMode() },
     applyMask: maskEditor.apply,
+  })
+
+  watch(ordinaryActive, active => {
+    if (active) {
+      void nextTick(() => {
+        // Failed image requests are not automatically retried when the network returns.
+        for (const image of [originalImageRef.value, translatedImageRef.value]) {
+          if (image?.complete && image.naturalWidth === 0) image.setAttribute('src', image.src)
+        }
+        if (pendingScreenFit) fitToScreen()
+      })
+      return
+    }
+    cancelBrushShortcut()
+    exitBrushMode()
+    cancelColorPick()
+    isDrawingMode.value = false
   })
 
 
@@ -563,6 +587,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
   }
 
   function fitToScreen(): void {
+    pendingScreenFit = true
     const viewport = useOriginalViewport.value ? originalViewportRef.value : translatedViewportRef.value
     if (!viewport) return
 
@@ -584,6 +609,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
     const transform = { scale: newScale, translateX: newTranslateX, translateY: newTranslateY }
     translatedViewer.setTransform(transform)
     originalViewer.setTransform(transform)
+    pendingScreenFit = false
   }
 
 
@@ -814,7 +840,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
     })
   }
 
-  function handleBubbleUpdateWithSync(updates: Partial<BubbleState>): void {
+  function handleBubbleUpdateWithSync(updates: Partial<BubbleState>, pageOnly = false): void {
     if (isBusy.value) return
     if (updates.inpaintMethod !== undefined) {
       currentInpaintMethod.value = updates.inpaintMethod
@@ -823,16 +849,18 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
       currentFillColor.value = updates.fillColor
     }
 
-    if (selectedBubbleIndex.value >= 0) {
+    if (selectedBubbleIndex.value >= 0 && !pageOnly) {
       handleBubbleUpdate(updates)
     } else if (updates.inpaintMethod !== undefined || updates.fillColor !== undefined) {
       const image = currentImage.value
       if (!image || image.documentRevision === undefined) return
+      const repairPatch = {
+        ...(updates.inpaintMethod !== undefined ? { inpaintMethod: updates.inpaintMethod } : {}),
+        ...(updates.fillColor !== undefined ? { fillColor: updates.fillColor } : {}),
+      }
+      imageStore.updateCurrentImage(repairPatch)
       void queuePageDocumentMutation(image.id, image.documentRevision, bubbles.value, {
-        pageStyleDefaultsPatch: {
-          inpaintMethod: currentInpaintMethod.value,
-          fillColor: currentFillColor.value,
-        },
+        pageStyleDefaultsPatch: repairPatch,
       }).catch(error => showToast(error instanceof Error ? error.message : '修复设置保存失败', 'error'))
     }
   }
@@ -840,6 +868,13 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
   function handleApplyStyleToAllBubbles(updates: Partial<BubbleState>): void {
     if (isBusy.value) return
     bubbleStore.updateAllBubbles(updates)
+    const image = currentImage.value
+    if (image?.documentRevision !== undefined) {
+      void queuePageDocumentMutation(image.id, image.documentRevision, bubbles.value, {
+        bubbleFields: Object.fromEntries(bubbles.value.filter(b => b.backendBubbleId)
+          .map(b => [b.backendBubbleId!, Object.keys(updates)])),
+      }).catch(error => showToast(error instanceof Error ? error.message : '文字样式保存失败', 'error'))
+    }
     handleReRender()
   }
 
@@ -889,7 +924,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
       if (canGoNext.value) {
         imageStore.goToNext()
       } else {
-        showToast('已是最后一张图片', 'info')
+        showToast('已应用当前图片', 'success')
       }
     })
   }
@@ -963,6 +998,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit) {
   }, { immediate: true })
 
   return {
+    handleDocumentLoaded,
     currentInpaintMethod,
     currentFillColor,
     workspaceRef,

@@ -103,6 +103,14 @@
       </ProductRecordCard>
 
       <ProductActionRow class="page-details-panel__actions" aria-label="页面剧情操作">
+        <UiButton
+          v-if="pages.some(page => page.status !== 'generated')"
+          variant="primary"
+          :disabled="isGenerating || isSaving"
+          @click="$emit('generate-details')"
+        >
+          {{ isGenerating ? '生成中...' : '重新生成页面剧情' }}
+        </UiButton>
         <UiButton variant="secondary" :disabled="isSaving" @click="$emit('save-changes')">
           <UiIcon v-if="!isSaving" name="save" size="15" />
           <span>{{ isSaving ? '保存中...' : '保存修改' }}</span>

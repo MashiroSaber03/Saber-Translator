@@ -38,6 +38,7 @@ STORED_BUBBLE_FIELDS = frozenset(
         "colorConfidence",
         "textlines",
         "ocrResult",
+        "richText",
     }
 )
 RENDER_BUBBLE_FIELDS = STORED_BUBBLE_FIELDS | {"fontFamily"}
@@ -239,13 +240,29 @@ def validate_bubble_payload(
         raise ValueError(
             "unknown bubble payload fields: " + ", ".join(sorted(unknown))
         )
-    if not partial and keys != fields:
-        missing = fields - keys
+    if not partial and fields - keys - {"richText"}:
+        missing = fields - keys - {"richText"}
         raise ValueError(
             "bubble payload is missing fields: " + ", ".join(sorted(missing))
         )
 
     result = dict(value)
+    if not partial:
+        result.setdefault("richText", None)
+    if result.get("richText") is not None:
+        rich = result["richText"]
+        if not isinstance(rich, dict) or set(rich) != {"runs", "paragraphs"}:
+            raise ValueError("richText must contain runs and paragraphs")
+        for name in ("runs", "paragraphs"):
+            runs = rich[name]
+            if not isinstance(runs, list) or len(runs) > 100_000:
+                raise ValueError(f"richText.{name} must be an array")
+            for run in runs:
+                if not isinstance(run, dict) or set(run) != {"len", "style"}:
+                    raise ValueError("invalid text run")
+                _integer(run["len"], field_name="run.len", minimum=0)
+                if not isinstance(run["style"], dict):
+                    raise ValueError("run.style must be an object")
     for name in ("originalText", "translatedText", "textboxText"):
         if name in result:
             result[name] = _string(result[name], field_name=name)
@@ -363,6 +380,7 @@ class BubbleState:
     color_confidence: float = 0.0
     textlines: list[BubbleTextline] = field(default_factory=list)
     ocr_result: OcrResult | None = None
+    rich_text: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -391,6 +409,7 @@ class BubbleState:
             "colorConfidence": self.color_confidence,
             "textlines": [textline.to_dict() for textline in self.textlines],
             "ocrResult": self.ocr_result.to_dict() if self.ocr_result else None,
+            "richText": self.rich_text,
         }
 
     @classmethod
@@ -436,4 +455,5 @@ class BubbleState:
                 if payload["ocrResult"] is not None
                 else None
             ),
+            rich_text=payload["richText"],
         )

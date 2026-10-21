@@ -1,0 +1,76 @@
+# Scorecard checklist: distribution (#220) and what ships today (.github/workflows/release.yml).
+# Statuses must be true on main. Verified against 4b53f62 on 2026-10-05.
+area = "distribution"
+title = "Distribution"
+order = 8
+
+[[item]]
+id = "DIST-1"
+target = "macOS universal build (aarch64 + x86_64), signed and notarized"
+status = "done"
+note = "release.yml:66,75,93 (macos-15); 0.2.0 shipped notarized"
+
+[[item]]
+id = "DIST-2"
+target = "Windows x64 and x86 builds"
+status = "partial"
+note = "release.yml:113-114; signing skipped with a warning until the signing material exists"
+
+[[item]]
+id = "DIST-3"
+target = "Linux x86_64 and aarch64: AppImage, deb, rpm, tar.gz"
+status = "done"
+note = "release.yml:162-163,186"
+
+[[item]]
+id = "DIST-4"
+target = "Flatpak single-file bundles, x86_64 and aarch64"
+status = "done"
+note = "release.yml:204-216 (#163)"
+
+[[item]]
+id = "DIST-5"
+target = "Web build (wasm32, trunk)"
+status = "done"
+note = "release.yml:312"
+
+[[item]]
+id = "DIST-6"
+target = "FreeBSD 14 x86_64 tar.gz (/usr/local tree) built in a FreeBSD VM"
+status = "partial"
+note = "release.yml:242-283 (freebsd job) + packaging/freebsd/package.sh; layout checked with --dry-run, not yet produced by a release run"
+
+[[item]]
+id = "DIST-220-1"
+target = "Help > Check for Updates plus an opt-out periodic release-feed check on all desktops"
+status = "missing"
+issue = 220
+note = "No update check in crates"
+
+[[item]]
+id = "DIST-220-2"
+target = "Windows ARM64 (aarch64-pc-windows-msvc) in the release matrix, signed like x64"
+status = "done"
+issue = 220
+note = "release.yml has { arch: arm64, target: aarch64-pc-windows-msvc } in the Windows matrix, and .github/workflows/windows-arm64.yml packages that MSI, installs it on a Windows 11 ARM64 runner, checks the installed binaries are ARM64 and runs the CLI natively before uninstalling. Signing takes the same path as x64: the secrets are optional and a missing one produces an unsigned artifact and a warning (see DIST-2)"
+
+[[item]]
+id = "DIST-220-3"
+target = "In-app bug report with reviewable diagnostics that opens a prefilled issue"
+status = "missing"
+issue = 220
+note = "No bug report dialog in crates"
+
+[[item]]
+id = "DIST-220-4"
+target = "Translation coverage per language reported by xtask; RTL layout for Arabic and Hebrew"
+status = "partial"
+issue = 220
+note = "`cargo xtask i18n-coverage` reports per-language coverage (#427); RTL languages mirror the shell (`direction.rs`), not yet panel interiors or dialogs"
+
+[[item]]
+id = "DIST-220-5"
+target = "Linux AppImage x86_64 + aarch64 ship; Flatpak kept; Flathub later (#173)"
+status = "partial"
+issue = 220
+note = "AppImage and Flatpak ship (release.yml:162-216); Flathub not done"

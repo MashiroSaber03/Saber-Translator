@@ -333,7 +333,7 @@ class PageRepairService:
             "parent_clean" if "parent_clean" in inputs else "source",
         )
         repair_mask_asset_id = self._required_text(inputs, "repair_mask")
-        manual_record = None
+        mask_override = None
         user = None
         before = self._atomic_hook(
             fence,
@@ -435,7 +435,7 @@ class PageRepairService:
             finally:
                 repaired.close()
             if user is not None:
-                manual_record = self._publish_png(user)
+                mask_override = self._mask_payload(user)
 
         after = self._atomic_hook(
             fence,
@@ -460,6 +460,21 @@ class PageRepairService:
                 raise RuntimeError(
                     "repair output image does not match the source image"
                 )
+            patch = published.convert("RGBA")
+            try:
+                if not request.get("fromSource", False):
+                    with self._open_asset(str(repair_mask_asset_id), "L") as patch_mask:
+                        patch.putalpha(patch_mask)
+                with BytesIO() as output:
+                    patch.save(output, format="PNG")
+                    patch_bytes = output.getvalue()
+            finally:
+                patch.close()
+        from src.backend_v2.editing.native import NativeEditor
+
+        native_editor = NativeEditor(self.storage)
+        with self.engine.connect() as connection:
+            native_result = native_editor.prepare(connection, page_id, repair=patch_bytes, mask_override=mask_override)
 
         def publish(connection: Connection, _row: Mapping[str, Any]) -> None:
             source_revision = int(
@@ -467,15 +482,6 @@ class PageRepairService:
                     select(pages.c.source_revision).where(pages.c.id == page_id)
                 ).scalar_one()
             )
-            if manual_record is not None:
-                connection.execute(page_assets.delete().where(
-                    page_assets.c.page_id == page_id, page_assets.c.role == "user_mask",
-                ))
-                connection.execute(insert(page_assets).values(
-                    page_id=page_id, role="user_mask", asset_id=manual_record.id,
-                    input_source_revision=source_revision, input_document_revision=revision,
-                    producer_operation_id=fence.operation_id,
-                ))
             existing = connection.execute(
                 select(page_assets.c.asset_id).where(
                     page_assets.c.page_id == page_id,
@@ -508,6 +514,7 @@ class PageRepairService:
                     )
                     .values(**values)
                 )
+            native_editor.publish(connection, page_id, revision, native_result, operation_id=fence.operation_id)
             connection.execute(
                 update(pages)
                 .where(

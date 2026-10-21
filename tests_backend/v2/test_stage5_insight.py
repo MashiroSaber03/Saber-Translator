@@ -4115,6 +4115,13 @@ def test_continuation_http_commands_reject_missing_or_ignored_fields(
             "characters": "主角",
             "finalPrompt": "prompt",
         },
+        {
+            "storyText": "剧情",
+            "continuityText": "",
+            "dialogueText": "",
+            "characters": [{"name": "主角"}],
+            "finalPrompt": "prompt",
+        },
     ),
 )
 def test_continuation_page_generation_rejects_malformed_provider_results(
@@ -4994,14 +5001,16 @@ def test_continuation_character_forms_and_sheet_are_versioned(
     repository.clear(**clear_input)
 
 
+@pytest.mark.parametrize("scope", ("full", "incremental"))
 def test_insight_export_job_freezes_run_and_builds_backend_zip(
     insight_platform,
+    scope: str,
 ) -> None:
     platform = insight_platform
     InsightAnalysisCommandService(platform["engine"]).create_analysis_job(
         command={
             "bookId": str(platform["book"]["id"]),
-            "scope": "full",
+            "scope": scope,
         },
         idempotency_key="export-analysis",
     )

@@ -36,6 +36,7 @@ const BUBBLE_PAYLOAD_KEYS = [
   'colorConfidence',
   'textlines',
   'ocrResult',
+  'richText',
 ] as const
 
 const OCR_RESULT_KEYS = [
@@ -194,7 +195,9 @@ type PersistedBubbleState = Omit<
 >
 
 function currentBubblePayload(value: unknown, label: string): PersistedBubbleState {
-  const payload = exactObject(value, BUBBLE_PAYLOAD_KEYS, label)
+  const withRichText = value && typeof value === 'object' && !Array.isArray(value)
+    ? { ...value, richText: (value as { richText?: unknown }).richText ?? null } : value
+  const payload = exactObject(withRichText, BUBBLE_PAYLOAD_KEYS, label)
   const position = exactObject(payload.position, ['x', 'y'], `${label}.position`)
   const fontSize = integerValue(payload.fontSize, `${label}.fontSize`, 1)
   const strokeWidth = finiteNumber(payload.strokeWidth, `${label}.strokeWidth`)
@@ -265,6 +268,7 @@ function currentBubblePayload(value: unknown, label: string): PersistedBubbleSta
     colorConfidence,
     textlines: textlinesValue(payload.textlines, `${label}.textlines`),
     ocrResult: ocrResultValue(payload.ocrResult, `${label}.ocrResult`),
+    richText: payload.richText as BubbleState['richText'],
   }
 }
 

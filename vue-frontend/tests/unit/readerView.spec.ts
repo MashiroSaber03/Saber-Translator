@@ -6,8 +6,8 @@ import ReaderCanvas from '@/components/reader/ReaderCanvas.vue'
 import ReaderControls from '@/components/reader/ReaderControls.vue'
 import { DEFAULT_READER_SETTINGS } from '@/components/reader/readerSettings'
 import { readerHistoryKey, saveReaderRecord, loadReaderRecord } from '@/components/reader/readerHistory'
-const { getBook, listPages, push, toast } = vi.hoisted(() => ({ getBook: vi.fn(), listPages: vi.fn(), push: vi.fn(), toast: vi.fn() }))
-vi.mock('@/api/v2/content', () => ({ getBook, listChapterPages: listPages }))
+const { getBook, listPages, updateLastVisitedPage, push, toast } = vi.hoisted(() => ({ getBook: vi.fn(), listPages: vi.fn(), updateLastVisitedPage: vi.fn(), push: vi.fn(), toast: vi.fn() }))
+vi.mock('@/api/v2/content', () => ({ getBook, listChapterPages: listPages, updateLastVisitedPage }))
 vi.mock('vue-router', () => ({ useRouter: () => ({ push }) }))
 vi.mock('@/utils/toast', () => ({ useToast: () => ({ error: toast }) }))
 enableAutoUnmount(afterEach)
@@ -20,10 +20,31 @@ beforeEach(() => {
   setActivePinia(createPinia()); localStorage.clear(); vi.clearAllMocks()
   vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })))
   getBook.mockResolvedValue(book)
+  updateLastVisitedPage.mockResolvedValue({})
   listPages.mockResolvedValue({ items: [page('p1'), page('p2'), page('p3')], nextCursor: null })
 })
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
 describe('reader state ownership', () => {
+  it('opens the current page for editing only after saving its existing navigation record', async () => {
+    let finish!: () => void
+    updateLastVisitedPage.mockReturnValueOnce(new Promise<void>(resolve => { finish = resolve }))
+    const wrapper = create(); await flushPromises()
+    wrapper.getComponent(ReaderControls).vm.$emit('jump', 2)
+    wrapper.getComponent(ReaderCanvas).vm.$emit('goTranslate')
+    await flushPromises()
+    expect(updateLastVisitedPage).toHaveBeenCalledWith('c1', 'p2')
+    expect(push).not.toHaveBeenCalled()
+    finish(); await flushPromises()
+    expect(push).toHaveBeenCalledWith({ path: '/translate', query: { book: 'b', chapter: 'c1' } })
+  })
+  it('keeps the reader open when its edit-page navigation cannot be saved', async () => {
+    updateLastVisitedPage.mockRejectedValueOnce(Error('network down'))
+    const wrapper = create(); await flushPromises()
+    wrapper.getComponent(ReaderCanvas).vm.$emit('goTranslate')
+    await flushPromises()
+    expect(push).not.toHaveBeenCalled()
+    expect(toast).toHaveBeenCalledWith('打开当前页编辑失败: network down')
+  })
   it('opens the previous page at its bottom only for backward wheel navigation', async () => {
     const wrapper = create(); await flushPromises()
     wrapper.getComponent(ReaderControls).vm.$emit('settingsChange', { ...DEFAULT_READER_SETTINGS, layout: 'single' })

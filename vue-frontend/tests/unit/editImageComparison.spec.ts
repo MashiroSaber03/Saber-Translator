@@ -1,8 +1,16 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import EditImageComparison from '@/components/edit/EditImageComparison.vue'
 import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
 import type { ImageData } from '@/types/image'
+
+beforeEach(() => {
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+    drawImage: vi.fn(), clearRect: vi.fn(),
+  } as unknown as CanvasRenderingContext2D)
+})
+afterEach(() => vi.restoreAllMocks())
+const mask = () => ({ canvas: document.createElement('canvas') })
 
 const toast = vi.hoisted(() => vi.fn())
 vi.mock('@/utils/toast', () => ({ showToast: toast }))
@@ -42,6 +50,33 @@ async function loadTextLayers(wrapper: ReturnType<typeof comparison>): Promise<v
 }
 
 describe('clean image comparison', () => {
+  it('redraws both mask canvases when pixels change and when a viewport remounts', async () => {
+    const wrapper = comparison()
+    const overlay = mask()
+    overlay.canvas.width = 800
+    overlay.canvas.height = 1200
+    await wrapper.setProps({ maskMode: true, maskOverlay: overlay })
+    const assertMasks = (count: number) => {
+      const canvases = wrapper.findAll('canvas.edit-image-comparison__mask')
+      expect(canvases).toHaveLength(count)
+      for (const canvas of canvases) {
+        expect(canvas.attributes('width')).toBe('800')
+        expect(canvas.attributes('height')).toBe('1200')
+        expect((canvas.element as HTMLCanvasElement).getContext('2d')!.drawImage)
+          .toHaveBeenCalledWith(overlay.canvas, 0, 0)
+      }
+    }
+    assertMasks(2)
+    await wrapper.setProps({ maskOverlay: { canvas: overlay.canvas } })
+    assertMasks(2)
+    await wrapper.setProps({ isPickingColor: true })
+    assertMasks(0)
+    await wrapper.setProps({ isPickingColor: false })
+    assertMasks(2)
+    await wrapper.setProps({ viewMode: 'translated' })
+    assertMasks(2) // View mode uses v-show, preserving each viewport's canvas.
+    wrapper.unmount()
+  })
   it('keeps the source overlay aligned through opacity changes, clean preview and page changes', async () => {
     const wrapper = comparison()
     expect(wrapper.find('.edit-image-comparison__source-overlay').exists()).toBe(false)
@@ -59,12 +94,12 @@ describe('clean image comparison', () => {
       expect(resultWrapper.attributes('style')).toBe(transform)
       expect(wrapper.get(resultImage).attributes('src')).toBe('/clean.png')
     }
-    await wrapper.setProps({ originalTextOpacity: 50, showCleanPreview: true, maskMode: true, maskOverlay: '/mask.png' })
+    await wrapper.setProps({ originalTextOpacity: 50, showCleanPreview: true, maskMode: true, maskOverlay: mask() })
     overlay = wrapper.get('.edit-image-comparison__source-overlay')
     expect(overlay.attributes('src')).toContain('protectTranslation=false')
     await overlay.trigger('load')
     expect(wrapper.get(resultImage).attributes('src')).toBe('/clean.png')
-    expect(wrapper.get(translatedLayer).element.nextElementSibling?.getAttribute('src')).toBe('/mask.png')
+    expect(wrapper.get(translatedLayer).element.nextElementSibling?.tagName).toBe('CANVAS')
     expect(wrapper.get(translatedLayer).attributes('style')).toContain('display: none')
     expect(overlay.element.parentElement).toBe(resultWrapper.element)
     await wrapper.setProps({ currentImage: createImage({ id: 'page-2', sourceAssetUrl: '/page-2.png' }) })
@@ -114,7 +149,7 @@ describe('clean image comparison', () => {
 
   it.each([false, true])('controls both text layers independently without fading the background (range=%s)', async maskMode => {
     const wrapper = comparison()
-    await wrapper.setProps({ originalTextOpacity: 50, translatedTextOpacity: 25, maskMode, maskOverlay: '/mask.png' })
+    await wrapper.setProps({ originalTextOpacity: 50, translatedTextOpacity: 25, maskMode, maskOverlay: mask() })
     await loadTextLayers(wrapper)
     const original = wrapper.get('.edit-image-comparison__source-overlay')
     const translated = wrapper.get(translatedLayer)
@@ -129,7 +164,7 @@ describe('clean image comparison', () => {
       expect(original.attributes('style')).toContain('opacity: 0.5')
       expect(translated.attributes('style')).toContain(`opacity: ${opacity / 100}`)
       expect(translated.attributes('src')).toBe(url)
-      expect(wrapper.get('img[alt="结果图修复范围覆盖层"]').attributes('style')).toBeUndefined()
+      expect(wrapper.get('canvas[aria-label="结果图修复范围覆盖层"]').attributes('style')).toBeUndefined()
     }
     await wrapper.setProps({ showCleanPreview: true })
     expect(translated.attributes('style')).toContain('display: none')
@@ -193,10 +228,10 @@ describe('clean image comparison', () => {
 
   it('uses the latest clean asset while retaining the repair range overlay', async () => {
     const wrapper = comparison()
-    await wrapper.setProps({ showCleanPreview: true, maskMode: true, maskOverlay: '/overlay.png' })
+    await wrapper.setProps({ showCleanPreview: true, maskMode: true, maskOverlay: mask() })
     await wrapper.setProps({ currentImage: createImage({ cleanAssetUrl: '/clean-new.png' }) })
     expect(wrapper.get(resultImage).attributes('src')).toBe('/clean-new.png')
-    expect(wrapper.get('img[alt="结果图修复范围覆盖层"]').attributes('src')).toBe('/overlay.png')
-    expect(wrapper.get('img[alt="原图修复范围覆盖层"]').attributes('src')).toBe('/overlay.png')
+    expect(wrapper.get('canvas[aria-label="结果图修复范围覆盖层"]').exists()).toBe(true)
+    expect(wrapper.get('canvas[aria-label="原图修复范围覆盖层"]').exists()).toBe(true)
   })
 })

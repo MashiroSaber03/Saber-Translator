@@ -1,0 +1,11 @@
+[package]
+name = "photocraft-ops"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+photocraft-doc = { workspace = true }

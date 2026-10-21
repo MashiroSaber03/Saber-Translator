@@ -44,10 +44,13 @@ from src.backend_v2.storage.schema import (
     app_settings,
     book_settings,
     books,
+    bubbles,
+    chapters,
     credential_current_versions,
     credential_versions,
     credentials,
     fonts,
+    pages,
     idempotency_records,
     provider_rate_limits,
     provider_settings,
@@ -1646,6 +1649,29 @@ class FontRepository:
                 if row["owner_user_id"] is None:
                     raise ValueError("共享字体由管理员在字体目录中管理")
                 path = font_path(self.root, row["relative_path"], row["owner_user_id"])
+                # The FK covers the box's summary font. A rich text layer can
+                # also use this file in any of its other character runs.
+                if path.is_file():
+                    from fontTools.ttLib import TTCollection, TTFont
+
+                    resource = TTCollection(path, lazy=True) if path.suffix.lower() == ".ttc" else TTFont(path, lazy=True)
+                    try:
+                        faces = resource.fonts if isinstance(resource, TTCollection) else [resource]
+                        families = {name.toUnicode().casefold() for face in faces for name in face["name"].names if name.nameID in {1, 16}}
+                        postscript = {name.toUnicode().casefold() for face in faces for name in face["name"].names if name.nameID == 6}
+                    finally:
+                        resource.close()
+                    payloads = connection.execute(select(bubbles.c.payload_json)
+                        .join(pages, pages.c.id == bubbles.c.page_id)
+                        .join(chapters, chapters.c.id == pages.c.chapter_id)
+                        .join(books, books.c.id == chapters.c.book_id)
+                        .where(books.c.owner_user_id == effective_owner_id())).scalars()
+                    for payload in payloads:
+                        for run in (json.loads(payload).get("richText") or {}).get("runs", []):
+                            style = run["style"]
+                            ps = style.get("postscript_name")
+                            if (ps.casefold() in postscript if ps else style.get("font_family", "").casefold() in families):
+                                raise RevisionConflict("字体仍被字符样式使用，请先更换这些文字的字体")
                 connection.execute(delete(fonts).where(fonts.c.id == font_id))
                 path.unlink(missing_ok=True)
                 result = {"deleted": True}

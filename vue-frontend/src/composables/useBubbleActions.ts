@@ -7,6 +7,7 @@ import {
 } from '@/api/v2/operations'
 import {
   queuePageDocumentSave,
+  queuePageDocumentMutation,
   registerPageDocument,
 } from '@/services/pageDocumentPersistence'
 import { useBubbleStore } from '@/stores/bubbleStore'
@@ -128,6 +129,13 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
 
   function handleBubbleUpdate(updates: Partial<BubbleState>): void {
     bubbleStore.updateSelectedBubble(updates)
+    const image = currentImage.value
+    const bubble = bubbles.value[selectedBubbleIndex.value]
+    if (image?.documentRevision !== undefined && bubble?.backendBubbleId) {
+      void queuePageDocumentMutation(image.id, image.documentRevision, bubbles.value, {
+        bubbleFields: { [bubble.backendBubbleId]: Object.keys(updates) },
+      }).catch(error => showToast(error instanceof Error ? error.message : '文字修改保存失败', 'error'))
+    }
     triggerDelayedPreview()
   }
 

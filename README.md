@@ -374,7 +374,7 @@ Worker 进程（翻译、分析、导入、导出、插件、模型）
 - 快速翻译是后端中的固定工作区；“新建快速翻译”会明确重置该工作区。
 - 插件使用不可变 v3 revision 快照，由 Worker 执行；插件运行时不是 Python 安全沙箱，请仅安装可信插件。
 
-### 源码开发
+### 源码部署与开发
 
 以下以 Windows、Python 3.12 为例，在项目根目录执行。CPU 与 GPU 依赖二选一。
 
@@ -396,6 +396,12 @@ GPU 版将上面的 CPU 安装命令替换为：
 .\venv\Scripts\python.exe -m pip install --force-reinstall --no-deps "onnxruntime-gpu>=1.27,<2"
 ```
 
+Windows x64 源码部署**不需要安装 Rust 或 C++ 编译工具**。首次启动、或更新到不同编辑内核的源码后，现有启动入口会下载并校验当前源码指定的内核包，再启动后端；准备过程显示在控制中心或终端里。CPU/GPU 共用同一个内核包，日常 Python/Vue 更新不会重复下载；本地已有匹配内核时无需联网。发行包已经包含内核。
+
+日常更新时，先退出当前源码实例，执行 `git pull` 后按原命令启动。下载失败会明确提示原因和指定版本的下载地址。也可从对应 `editor-<build>` Release 下载 ZIP 和 `.sha256` 文件，校验后将 ZIP 解压到项目根目录，再照常启动。内核文件保存在 `native/` 和 `src/backend_v2/static/photocraft/`，不会写入用户数据库。需要提前准备或检查时可运行 `.\venv\Scripts\python.exe -m src.backend_v2.editor_runtime`。
+
+侧栏文字设置、普通编辑与精细编辑共用 PhotoCraft 的 Rust 文字模型和渲染引擎；浏览器使用 WebAssembly，Python Worker 调用同一源码构建的本地程序。字符样式、图层与背景以当前页的编辑文档为准；数据库保存 OCR 等业务字段及文字投影，文档保存时在同一事务中更新投影，读取和渲染不再反向同步文字。旧数据仍可读取，读取不会改写已有图片。精细编辑中的选区修复仍使用原有修复任务和模型。
+
 从 Releases 下载完整模型包并解压到项目根目录，得到 `models/`（包含检测、OCR 和 LaMA 等模型），然后校验并启动：
 
 ```powershell
@@ -416,6 +422,18 @@ npm run dev
 ```
 
 生产前端由 `npm run build:check` 输出到 `src/backend_v2/static/vue`，PyInstaller 使用 `app.spec` 打包统一桌面入口；API 与 Worker 仍由同一可执行文件以独立角色启动。
+
+只有修改 Rust 内核的开发者需要安装 Rust 1.95.0（Windows 使用 MSVC 工具链及 C++ Build Tools），并执行：
+
+```powershell
+rustup target add wasm32-unknown-unknown
+cargo install wasm-bindgen-cli --version 0.2.129 --locked
+# 修改内核源码或 scripts/editor 后，更新配套版本并完整构建
+.\venv\Scripts\python.exe scripts/build_editor.py --pin
+.\venv\Scripts\python.exe scripts/build_editor.py
+```
+
+`editor-runtime.json` 固定内核源码指纹，与应用版本独立；修改内核时将它与源码一起提交。dev 推送会触发 `Publish Editor Runtime`，生成配套本地程序和浏览器 WASM 的 ZIP 与校验文件；正式发行工作流复用同一个包。源码指纹校验会阻止遗漏版本更新，已发布的内核包不覆盖。首次发布或内核更新时，需要等待这项构建成功后再部署该版本源码。其他平台目前保留自行构建入口。
 
 开发参考：[前端说明](vue-frontend/README.md) · [HTTP 契约](openapi/v2.yaml) · [插件开发](plugins/README.md) · [存储升级](docs/storage-migrations.md)。
 

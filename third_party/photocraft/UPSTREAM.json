@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/storytold/photocraft",
+  "commit": "c699e3cda69f4852b43c0b191ab0091aaeff9d6a",
+  "version": "0.9.0",
+  "license": "MIT OR Apache-2.0",
+  "integration": ["crates/saber", "apps/saber-editor", "apps/photocraft-web/src/saber_bridge.rs"],
+  "hostChanges": "Browser messages and page-owned save/lifecycle hooks; image and text processing remain in Rust."
+}

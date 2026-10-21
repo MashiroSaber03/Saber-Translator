@@ -2826,8 +2826,12 @@ class DefaultContinuationAlgorithms:
         prompt = (
             f"把续写脚本拆成第 {ordinal} 页。输出 JSON："
             '{"storyText":"...","continuityText":"...",'
-            '"dialogueText":"...","characters":[],'
-            '"finalPrompt":"..."}。\n\n'
+            '"dialogueText":"...","characters":["角色名称"],'
+            '"finalPrompt":"..."}。'
+            "storyText、continuityText、dialogueText、finalPrompt 都必须是字符串；"
+            "characters 只填写本页出场角色的名称字符串，不要返回角色对象，"
+            "无人出场时填写空数组。finalPrompt 是绘制本页漫画的完整图像提示词，"
+            "不是续写下一页的指令。\n\n"
             f"上一页：{_json(previous or {})}\n\n脚本：{script}"
         )
         return ProviderDerivedAlgorithms._chat_json(

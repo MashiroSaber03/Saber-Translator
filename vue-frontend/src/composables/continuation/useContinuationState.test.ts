@@ -67,6 +67,31 @@ describe('useContinuationState', () => {
     expect(state.messageType.value).toBe('error')
   })
 
+  it('clears a recovered character error after automatic analysis synchronization', async () => {
+    prepareContinuationMock.mockResolvedValue({
+      ready: false,
+      message: '分析尚未完成',
+      saved_data: { script: null, pages: [], config: null, has_data: false },
+    })
+    getCharactersMock.mockRejectedValue(new Error('续写前置数据未就绪'))
+    const state = useContinuationState(ref('book-1'))
+    await state.initializeData()
+    expect(state.errorMessage.value).toContain('加载角色失败：')
+
+    syncContinuationAnalysisMock.mockResolvedValue({ ready: true, message: '分析数据已就绪' })
+    getCharactersMock.mockResolvedValue({ items: [], nextCursor: null })
+    await state.syncAnalysisData('auto')
+
+    expect(state.isDataReady.value).toBe(true)
+    expect(state.errorMessage.value).toBe('')
+    expect(state.messageType.value).toBe('')
+
+    getCharactersMock.mockRejectedValue(new Error('角色接口仍不可用'))
+    await state.syncAnalysisData('auto')
+    expect(state.errorMessage.value).toBe('加载角色失败：角色接口仍不可用')
+    expect(state.messageType.value).toBe('error')
+  })
+
   it('resets stale continuation state before applying a fresh empty payload', async () => {
     prepareContinuationMock.mockResolvedValue({
       ready: true,

@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from html.parser import HTMLParser
 from io import BytesIO
+import logging
 from pathlib import Path, PurePosixPath
+import posixpath
 import shutil
 import stat
 from typing import Any, Mapping
+from urllib.parse import unquote, urlsplit
 import uuid
+from xml.etree import ElementTree
 import zipfile
 
 from PIL import Image
@@ -60,6 +65,56 @@ from src.shared.user_logging import log_result
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tif", ".tiff"}
 MOBI_MIN_IMAGE_BYTES = 5_000
+
+
+class _BookImageOrder(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.order: dict[str, int] = {}
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag not in {"img", "image"}:
+            return
+        attributes = dict(attrs)
+        source = attributes.get("src") or attributes.get("href") or attributes.get("xlink:href")
+        if source:
+            url = urlsplit(source)
+            if not url.scheme and not url.netloc:
+                name = PurePosixPath(unquote(url.path).replace("\\", "/")).name
+                self.order.setdefault(name, len(self.order))
+
+
+def _mobi_reading_order(document: Path) -> dict[str, int]:
+    """Kindle image record numbers need not match HTML/EPUB reading order."""
+    parser = _BookImageOrder()
+    if not document.is_file():
+        return parser.order
+    try:
+        if document.suffix.lower() != ".epub":
+            parser.feed(document.read_text(encoding="utf-8"))
+        else:
+            with zipfile.ZipFile(document) as archive:
+                container = ElementTree.fromstring(archive.read("META-INF/container.xml"))
+                package_path = next(
+                    node.attrib["full-path"] for node in container.iter()
+                    if node.tag.endswith("}rootfile")
+                )
+                package = ElementTree.fromstring(archive.read(package_path))
+                namespace = {"opf": "http://www.idpf.org/2007/opf"}
+                manifest = {
+                    node.attrib["id"]: node.attrib["href"]
+                    for node in package.findall("opf:manifest/opf:item", namespace)
+                }
+                for item in package.findall("opf:spine/opf:itemref", namespace):
+                    if item.get("linear") == "no":
+                        continue
+                    href = unquote(urlsplit(manifest[item.attrib["idref"]]).path)
+                    path = posixpath.normpath(posixpath.join(posixpath.dirname(package_path), href))
+                    parser.feed(archive.read(path).decode("utf-8"))
+    except (OSError, KeyError, StopIteration, UnicodeError, ValueError, ElementTree.ParseError, zipfile.BadZipFile) as exc:
+        logging.getLogger(__name__).warning("无法读取电子书阅读顺序，将按图片文件名排序：%s", exc)
+        return {}
+    return parser.order
 
 
 def _is_macos_metadata(path: PurePosixPath) -> bool:
@@ -502,7 +557,7 @@ class TransferWorkerService:
     ) -> list[dict[str, object]]:
         import mobi
 
-        temporary_root, _extracted_path = mobi.extract(str(path))
+        temporary_root, extracted_path = mobi.extract(str(path))
         destination = self.data_root / "temp" / "container-import" / job_id
         destination.mkdir(parents=True, exist_ok=True)
         entries: list[dict[str, object]] = []
@@ -532,9 +587,16 @@ class TransferWorkerService:
                 if current is None or byte_size > current[2]:
                     candidates[source.name] = (source, relative, byte_size)
 
+            document = Path(extracted_path).resolve()
+            if not document.is_relative_to(resolved_root):
+                raise ValueError("MOBI document escaped its temporary directory")
+            reading_order = _mobi_reading_order(document)
             for source, relative, byte_size in sorted(
                 candidates.values(),
-                key=lambda candidate: natural_sort_key(candidate[0].name),
+                key=lambda candidate: (
+                    reading_order.get(candidate[0].name, len(reading_order)),
+                    natural_sort_key(candidate[0].name),
+                ),
             ):
                 target = destination / relative
                 target.parent.mkdir(parents=True, exist_ok=True)

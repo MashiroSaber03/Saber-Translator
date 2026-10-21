@@ -37,6 +37,20 @@ function createPage() {
 }
 
 describe('PageDetailsPanel', () => {
+  it.each(['stale', 'failed', 'pending'])('can regenerate %s pages without clearing their content', async status => {
+    const page = { ...createPage(), status }
+    const wrapper = mount(PageDetailsPanel, {
+      props: { pages: [page], isGenerating: false },
+    })
+    const generate = wrapper.findAll('button').find(button => button.text() === '重新生成页面剧情')!
+    expect(generate).toBeTruthy()
+    await generate.trigger('click')
+    expect(wrapper.emitted('generate-details')).toEqual([[]])
+    expect(wrapper.get<HTMLTextAreaElement>('textarea#continuation-page-1-story').element.value).toBe('剧情')
+    await wrapper.setProps({ isGenerating: true })
+    expect(generate.attributes('disabled')).toBeDefined()
+  })
+
   it('uses product cards, fields, and action rows for generated page details', () => {
     const page = createPage()
     const wrapper = mount(PageDetailsPanel, {

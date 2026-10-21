@@ -33,6 +33,7 @@ from src.backend_v2.jobs.repository import (
     JobQueueRepository,
 )
 from src.backend_v2.rendering.service import publish_png_asset
+from src.backend_v2.storage.database import read_transaction
 from src.backend_v2.storage.assets import AssetRecord, AssetStorageService
 from src.backend_v2.storage.platform_repositories import SettingsRepository
 from src.backend_v2.storage.schema import (
@@ -1407,19 +1408,11 @@ class CoreTranslationAlgorithms:
         bubble_payloads: list[dict[str, Any]],
         config: Mapping[str, Any],
     ) -> Image.Image:
-        from src.core.config_models import BubbleState
-        from src.core.rendering import render_bubbles_unified
+        from src.backend_v2.editing.native import NativeEditor
 
         if config:
             raise ValueError("render configuration fields are invalid")
-        states = [BubbleState.from_dict(payload) for payload in bubble_payloads]
-        rendered = clean_image.copy()
-        try:
-            render_bubbles_unified(rendered, states)
-        except Exception:
-            rendered.close()
-            raise
-        return rendered
+        return NativeEditor.render_image(clean_image, bubble_payloads)
 
 
 class TranslationPipelineService:
@@ -1971,6 +1964,15 @@ class TranslationPipelineService:
             finally:
                 stored_mask.close()
         new_revision = snapshot.document_revision + 1
+        from src.backend_v2.editing.native import NativeEditor
+
+        documents = [dict(bubbleId=str(uuid.uuid4()), fontId=task_font_id, payload=payload) for payload in payloads]
+        if type(self.algorithms) is CoreTranslationAlgorithms:
+            with read_transaction(self.engine) as connection:
+                publish_document = NativeEditor(self.storage).prepare_commit(connection, page_id, new_revision,
+                    documents, job_step_id=str(step["stepId"]))
+        else:
+            publish_document = lambda connection: NativeEditor._publish_bubbles(connection, page_id, new_revision, documents)
 
         def publish(connection: Connection) -> None:
             self._assert_revision(
@@ -1998,22 +2000,6 @@ class TranslationPipelineService:
                 standalone_detect
                 and (has_translated_asset or has_drawable_text)
             )
-            connection.execute(delete(bubbles).where(bubbles.c.page_id == page_id))
-            if payloads:
-                connection.execute(
-                    insert(bubbles),
-                    [
-                        {
-                            "id": str(uuid.uuid4()),
-                            "page_id": page_id,
-                            "ordinal": index,
-                            "font_id": task_font_id,
-                            "payload_json": _json(payload),
-                            "updated_revision": new_revision,
-                        }
-                        for index, payload in enumerate(payloads, start=1)
-                    ],
-                )
             page_values: dict[str, object] = {
                 "document_revision": new_revision,
                 "detection_state": "processed",
@@ -2037,6 +2023,7 @@ class TranslationPipelineService:
                 raise JobConflict(
                     "page revision changed during detection publication"
                 )
+            publish_document(connection)
             connection.execute(
                 delete(page_assets).where(
                     page_assets.c.page_id == page_id,
@@ -2765,6 +2752,16 @@ class TranslationPipelineService:
         )
         record = self._asset_record(clean_asset_id)
 
+        native_editor = native_result = None
+        if type(self.algorithms) is CoreTranslationAlgorithms:
+            from src.backend_v2.editing.native import NativeEditor
+
+            native_editor = NativeEditor(self.storage)
+            background = self.storage.resolve_relative_path(record.relative_path).read_bytes()
+            with self.engine.connect() as connection:
+                native_result = native_editor.prepare(connection, page_id, background=background,
+                                                       render=step.get("jobKind") == "remove_text")
+
         def publish(connection: Connection) -> None:
             self._assert_revision(
                 connection, page_id, snapshot.document_revision
@@ -2778,6 +2775,11 @@ class TranslationPipelineService:
                 document_revision=snapshot.document_revision,
                 step_id=str(step["stepId"]),
             )
+            if native_result is not None:
+                from dataclasses import replace
+
+                native_editor.publish(connection, page_id, snapshot.document_revision,
+                                      replace(native_result, translated=None), job_step_id=str(step["stepId"]))
 
         checkpoint = {
             "cleanAssetId": record.id,
@@ -2858,6 +2860,7 @@ class TranslationPipelineService:
                 override_font_id=has_task_text_style,
                 font_id_override=task_font_id,
             )
+            font_ids = dict(connection.execute(select(bubbles.c.id, bubbles.c.font_id).where(bubbles.c.page_id == page_id)).all())
         render_payloads = [
             render_payload
             for _bubble_id, _payload, render_payload in projected
@@ -2920,12 +2923,33 @@ class TranslationPipelineService:
             raise JobConflict("render plugin configuration is invalid")
         clean = self._open_asset(input_asset_id, "RGB")
         clean_size = clean.size
+        native_result = None
+        native_editor = None
         try:
-            rendered = self.algorithms.render(
-                clean,
-                render_bubbles,
-                dict(render_config),
-            )
+            if type(self.algorithms) is CoreTranslationAlgorithms:
+                from io import BytesIO
+                from src.backend_v2.editing.native import NativeEditor
+
+                if render_config:
+                    raise ValueError("render configuration fields are invalid")
+                native_editor = NativeEditor(self.storage)
+                documents = []
+                for (bubble_id, payload, _), render_payload in zip(projected, render_bubbles, strict=True):
+                    value = dict(render_payload)
+                    value.pop("fontFamily")
+                    documents.append(dict(bubbleId=bubble_id, fontId=task_font_id if has_task_text_style else font_ids.get(bubble_id), payload=value))
+                background = None
+                if input_asset_id != str(input_asset["id"]):
+                    with BytesIO() as output:
+                        clean.save(output, format="PNG")
+                        background = output.getvalue()
+                with self.engine.connect() as connection:
+                    native_result = native_editor.prepare(connection, page_id, documents=documents, render=True, background=background)
+                with Image.open(BytesIO(native_result.translated)) as image:
+                    rendered = image.convert("RGB")
+                persisted_payloads = [(value["bubbleId"], value["payload"]) for value in native_result.bubbles]
+            else:
+                rendered = self.algorithms.render(clean, render_bubbles, dict(render_config))
         finally:
             clean.close()
         if not isinstance(rendered, Image.Image):
@@ -2957,27 +2981,17 @@ class TranslationPipelineService:
             self._assert_revision(
                 connection, page_id, snapshot.document_revision
             )
-            for bubble_id, payload in persisted_payloads:
-                values: dict[str, object] = {
-                    "payload_json": _json(payload),
-                    "updated_revision": snapshot.document_revision,
-                }
-                if has_task_text_style:
-                    values["font_id"] = task_font_id
-                changed = connection.execute(
-                    update(bubbles)
-                    .where(
-                        bubbles.c.id == bubble_id,
-                        bubbles.c.page_id == page_id,
-                        bubbles.c.updated_revision
-                        == snapshot.document_revision,
-                    )
-                    .values(**values)
-                )
-                if changed.rowcount != 1:
-                    raise JobConflict(
-                        "bubble changed during render publication"
-                    )
+            if native_result is not None and native_editor is not None:
+                from dataclasses import replace
+
+                native_editor.publish(connection, page_id, snapshot.document_revision,
+                                      replace(native_result, translated=None), job_step_id=str(step["stepId"]))
+            else:
+                from src.backend_v2.editing.native import NativeEditor
+
+                NativeEditor._publish_bubbles(connection, page_id, snapshot.document_revision,
+                    [dict(bubbleId=bubble_id, fontId=task_font_id if has_task_text_style else font_ids.get(bubble_id), payload=payload)
+                     for bubble_id, payload in persisted_payloads])
             connection.execute(
                 insert(job_step_asset_outputs).values(
                     job_step_id=str(step["stepId"]),
@@ -3120,40 +3134,33 @@ class TranslationPipelineService:
         checkpoint: dict[str, Any],
     ) -> Mapping[str, Any]:
         new_revision = snapshot.document_revision + 1
+        from src.backend_v2.editing.native import NativeEditor
+
+        with read_transaction(self.engine) as connection:
+            self._assert_revision(connection, snapshot.page_id, snapshot.document_revision)
+            rows = list(
+                connection.execute(
+                    select(bubbles.c.id, bubbles.c.font_id)
+                    .where(bubbles.c.page_id == snapshot.page_id)
+                    .order_by(bubbles.c.ordinal)
+                ).all()
+            )
+            current_ids = tuple(str(row.id) for row in rows)
+            if current_ids != snapshot.bubble_ids:
+                raise JobConflict("bubble set changed before step publication")
+            if len(payloads) != len(snapshot.bubble_ids):
+                raise JobConflict("bubble result count changed before publication")
+            documents = [dict(bubbleId=row.id, fontId=row.font_id, payload=payload) for row, payload in zip(rows, payloads, strict=True)]
+            if type(self.algorithms) is CoreTranslationAlgorithms:
+                publish_document = NativeEditor(self.storage).prepare_commit(connection, snapshot.page_id, new_revision,
+                    documents, job_step_id=str(step["stepId"]))
+            else:
+                publish_document = lambda writer: NativeEditor._publish_bubbles(writer, snapshot.page_id, new_revision, documents)
 
         def publish(connection: Connection) -> None:
             self._assert_revision(
                 connection, snapshot.page_id, snapshot.document_revision
             )
-            rows = list(
-                connection.execute(
-                    select(bubbles.c.id)
-                    .where(bubbles.c.page_id == snapshot.page_id)
-                    .order_by(bubbles.c.ordinal)
-                ).scalars()
-            )
-            current_ids = tuple(str(row) for row in rows)
-            if current_ids != snapshot.bubble_ids:
-                raise JobConflict("bubble set changed before step publication")
-            if len(payloads) != len(snapshot.bubble_ids):
-                raise JobConflict("bubble result count changed before publication")
-            for bubble_id, payload in zip(current_ids, payloads):
-                changed = connection.execute(
-                    update(bubbles)
-                    .where(
-                        bubbles.c.id == bubble_id,
-                        bubbles.c.updated_revision
-                        == snapshot.document_revision,
-                    )
-                    .values(
-                        payload_json=_json(payload),
-                        updated_revision=new_revision,
-                    )
-                )
-                if changed.rowcount != 1:
-                    raise JobConflict(
-                        "bubble changed during step publication"
-                    )
             changed = connection.execute(
                 update(pages)
                 .where(
@@ -3167,6 +3174,7 @@ class TranslationPipelineService:
             )
             if changed.rowcount != 1:
                 raise JobConflict("page revision changed during step publication")
+            publish_document(connection)
 
         checkpoint = {**checkpoint, "documentRevision": new_revision}
         self.jobs.complete_step(

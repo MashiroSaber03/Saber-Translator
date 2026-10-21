@@ -236,7 +236,7 @@ import UiIcon from '@/components/ui/UiIcon.vue'
 import UiField from '@/components/ui/UiField.vue'
 import UiNumberField from '@/components/ui/UiNumberField.vue'
 import UiProgressBar from '@/components/ui/UiProgressBar.vue'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { PageContent, MangaImageInfo, CharacterFormInfo } from '@/api/continuation'
 import { getAvailableImages, loadMoreAvailableCharacterForms } from '@/api/continuation'
 import type { ContinuationState } from '@/composables/continuation/useContinuationState'
@@ -262,7 +262,7 @@ const emit = defineEmits<{
 const state = props.state
 const editingPromptPage = ref<number | null>(null)
 const expandedStorySections = ref<Record<string, boolean>>({})
-const refCount = ref(state.styleRefPages?.value || 3)
+const refCount = state.styleRefPages
 const batchInitialReferenceTokens = state.initialReferenceTokens
 const selectorVisible = ref(false)
 const availableOriginalImages = ref<MangaImageInfo[]>([])
@@ -476,24 +476,6 @@ function handleSelectorConfirm(tokens: string[]) {
 function handleBatchGenerate() {
   emit('batch-generate', [...batchInitialReferenceTokens.value])
 }
-
-onMounted(() => {
-  if (state.styleRefPages?.value) {
-    refCount.value = state.styleRefPages.value
-  }
-})
-
-watch(refCount, (newValue) => {
-  if (state.styleRefPages && newValue > 0) {
-    state.styleRefPages.value = newValue
-  }
-})
-
-watch(() => state.styleRefPages?.value, (newValue) => {
-  if (newValue && newValue !== refCount.value) {
-    refCount.value = newValue
-  }
-})
 
 watch(() => props.bookId, () => {
   invalidateAvailableImages()

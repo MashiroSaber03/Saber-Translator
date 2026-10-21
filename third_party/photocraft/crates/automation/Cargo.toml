@@ -1,0 +1,32 @@
+[package]
+name = "photocraft-automation"
+description = "MCP server (rmcp) over the Photocraft engine, plus a bridge to a running GUI"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+photocraft-geom = { workspace = true }
+photocraft-doc = { workspace = true }
+photocraft-compose = { workspace = true }
+photocraft-codecs = { workspace = true }
+photocraft-io = { workspace = true }
+photocraft-format = { path = "../format" }
+photocraft-engine = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+rmcp = { version = "3.5", default-features = false, features = ["server", "macros", "transport-io"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "sync", "net", "io-util", "time"] }
+base64 = "0.22"
+schemars = "1"
+getrandom = { workspace = true }
+cap-std = "4"
+
+[dev-dependencies]
+rmcp = { version = "3.5", default-features = false, features = ["client", "server", "macros", "transport-io"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "sync", "net", "io-util", "time"] }

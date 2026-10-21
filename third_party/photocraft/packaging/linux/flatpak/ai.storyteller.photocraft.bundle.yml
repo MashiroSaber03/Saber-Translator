@@ -1,0 +1,50 @@
+# Flatpak manifest for the single-file bundle attached to every GitHub release
+# (photocraft-<version>-linux-<arch>.flatpak). Build it with packaging/linux/flatpak-bundle.sh.
+#
+# It repackages the release's own Linux tarball (photocraft-<version>-linux-<arch>.tar.gz,
+# built on Ubuntu 22.04 by package.sh) instead of compiling Rust inside flatpak-builder: no
+# network and no vendored crate sources during the build, a few seconds instead of 20+ minutes,
+# and byte-for-byte the same binaries as the AppImage/deb/rpm. The script unpacks the tarball
+# into `stage/` next to a copy of this file. The binaries need glibc >= 2.35 and load X11,
+# Wayland, xkbcommon and Vulkan at runtime; the freedesktop runtime has all of them, and the
+# GPU driver comes from its org.freedesktop.Platform.GL extension.
+#
+# ai.storyteller.photocraft.yml (same directory) is the from-source manifest for Flathub. Keep
+# runtime-version and finish-args identical in both (packaging-lint checks this).
+id: ai.storyteller.photocraft
+runtime: org.freedesktop.Platform
+runtime-version: '26.08'
+sdk: org.freedesktop.Sdk
+command: photocraft
+finish-args:
+  # Display: Wayland first; X11 only when no Wayland compositor is running.
+  - --socket=wayland
+  - --socket=fallback-x11
+  # X11 shared memory (MIT-SHM). Without it the X11 fallback is slow or fails.
+  - --share=ipc
+  # GPU access for the wgpu compositor (Vulkan, or GL as a fallback).
+  - --device=dri
+  # Open/Save dialogs go through the file-chooser portal (rfd's xdg-portal backend) and
+  # drag-and-drop through the document portal, so picked files work anywhere without broad
+  # filesystem access. Pictures and Documents are granted so files passed by path (the command
+  # line, Open Recent, "Save" next to the original) work in the usual places.
+  - --filesystem=xdg-pictures
+  - --filesystem=xdg-documents
+  # Deliberately not granted: network (the optional --control server listens on 127.0.0.1 in
+  # the sandbox; `flatpak override --user --share=network ai.storyteller.photocraft` exposes it to
+  # host agents) and home/host filesystem access.
+modules:
+  - name: photocraft
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 bin/photocraft /app/bin/photocraft
+      - install -Dm755 bin/photocraft-cli /app/bin/photocraft-cli
+      - install -Dm644 share/applications/ai.storyteller.photocraft.desktop /app/share/applications/ai.storyteller.photocraft.desktop
+      # .pcraft, .psb and .qoi; the runtime's shared-mime-info already knows PSD and the rest.
+      - install -Dm644 share/mime/packages/ai.storyteller.photocraft.xml /app/share/mime/packages/ai.storyteller.photocraft.xml
+      # Already has the release's version and date substituted by package.sh.
+      - install -Dm644 share/metainfo/ai.storyteller.photocraft.metainfo.xml /app/share/metainfo/ai.storyteller.photocraft.metainfo.xml
+      - mkdir -p /app/share/icons /app/share/doc && cp -R share/icons/hicolor /app/share/icons/ && cp -R share/doc/photocraft /app/share/doc/
+    sources:
+      - type: dir
+        path: stage

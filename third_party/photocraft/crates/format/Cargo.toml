@@ -1,0 +1,38 @@
+[package]
+name = "photocraft-format"
+description = "Native .pcraft document bundle: manifest + content-addressed zstd tiles"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+photocraft-geom = { workspace = true }
+photocraft-color = { workspace = true }
+photocraft-raster = { workspace = true }
+photocraft-doc = { workspace = true }
+photocraft-codecs = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true, features = ["unbounded_depth"] }
+thiserror = { workspace = true }
+flate2 = { workspace = true }
+# Same IEEE CRC-32 the ZIP container needs; already in Cargo.lock through flate2.
+crc32fast = "1.5"
+blake3 = { version = "1.8", default-features = false, features = ["pure"] }
+ruzstd = "0.9"
+
+# Unix directory cleanup uses no-follow descriptor-relative operations; the same
+# dependency provides the plain-fsync fallback on Apple file systems.
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1.1", default-features = false, features = ["std", "fs"] }
+
+# rustix does not expose Apple's directory-search open mode. Only the named
+# constant is used; all descriptor operations remain in safe rustix APIs.
+[target.'cfg(target_vendor = "apple")'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+proptest = { workspace = true }

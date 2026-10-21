@@ -144,6 +144,43 @@ def test_mobi_scan_uses_extraction_root_filters_deduplicates_and_naturally_sorts
     assert not extraction_root.exists()
 
 
+@pytest.mark.parametrize("document_format", ["html", "epub"])
+def test_mobi_scan_follows_book_reading_order_instead_of_image_names(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    document_format: str,
+) -> None:
+    import mobi
+
+    extraction_root = tmp_path / "extracted"
+    images = extraction_root / "Images"
+    images.mkdir(parents=True)
+    for index in (1, 2, 10):
+        (images / f"page {index}.bmp").write_bytes(_bmp((48, 48), (index, 0, 0)))
+    document = extraction_root / f"book.{document_format}"
+    first = '<html><img src="Images/page%2010.bmp#page"/><img src="Images/page%2010.bmp"/></html>'
+    second = '<html><svg><image xlink:href="Images/page%202.bmp"/></svg></html>'
+    if document_format == "html":
+        document.write_text(first + second, encoding="utf-8")
+    else:
+        with zipfile.ZipFile(document, "w") as archive:
+            archive.writestr("META-INF/container.xml", '<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/book.opf"/></rootfiles></container>')
+            archive.writestr("OEBPS/book.opf", '<package xmlns="http://www.idpf.org/2007/opf"><manifest><item id="second" href="2.xhtml"/><item id="first" href="1.xhtml"/></manifest><spine><itemref idref="first"/><itemref idref="second"/></spine></package>')
+            archive.writestr("OEBPS/1.xhtml", first)
+            archive.writestr("OEBPS/2.xhtml", second)
+    monkeypatch.setattr(mobi, "extract", lambda _path: (str(extraction_root), str(document)))
+    worker = object.__new__(TransferWorkerService)
+    worker.data_root = tmp_path / "data-v2"
+
+    entries = worker._scan_mobi(tmp_path / f"comic.{document_format}", "reading-order")
+
+    assert [Path(str(entry["logicalPath"])).name for entry in entries] == [
+        "page 10.bmp", "page 2.bmp", "page 1.bmp",
+    ]
+    assert len(entries) == 3
+    assert not extraction_root.exists()
+
+
 def test_pdf_import_renders_pages_at_two_times_the_source_dimensions(
     tmp_path: Path,
 ) -> None:

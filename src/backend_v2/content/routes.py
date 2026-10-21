@@ -32,6 +32,7 @@ from src.backend_v2.content.repository import (
     IdempotencyConflict,
 )
 from src.backend_v2.storage.assets import AssetStorageService
+from src.backend_v2.storage.database import read_transaction
 from src.backend_v2.storage.platform_repositories import (
     FontRepository,
     PromptRepository,
@@ -344,6 +345,54 @@ def create_content_blueprint(
     @blueprint.get("/pages/<page_id>/document")
     def get_page_document(page_id: str) -> Response:
         return jsonify(repository.get_page_document(page_id))
+
+    @blueprint.get("/pages/<page_id>/editor-document")
+    def get_editor_document(page_id: str) -> Response:
+        from src.backend_v2.editing.native import NativeEditor
+
+        public_access.require_feature("editMode")
+        with read_transaction(engine) as connection:
+            document = repository._get_page_document(connection, page_id)
+            payload = NativeEditor(repository.storage).read_document(connection, page_id)
+        response = Response(payload, mimetype="application/x-photocraft")
+        response.headers["X-Document-Revision"] = str(document["documentRevision"])
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @blueprint.get("/editor/fonts")
+    def editor_fonts() -> Response:
+        public_access.require_feature("editMode")
+        return jsonify({"items": [{**font, "url": f"/api/v2/editor/fonts/{font['id']}"}
+                                  for font in font_repository.list()]})
+
+    @blueprint.get("/editor/fonts/<font_id>")
+    def editor_font(font_id: str) -> Response:
+        from src.backend_v2.rendering.fonts import resolve_font_path
+
+        public_access.require_feature("editMode")
+        with engine.connect() as connection:
+            path = resolve_font_path(connection, storage, font_id)
+        return send_file(path, conditional=True, max_age=0)
+
+    @blueprint.put("/pages/<page_id>/editor-document")
+    def save_editor_document(page_id: str) -> Response:
+        public_access.require_feature("editMode")
+        _validate_multipart_fields(allowed_form_keys={"baseRevision"}, allowed_file_keys={"file"})
+        upload = request.files.get("file")
+        if upload is None:
+            raise ValueError("editor document is required")
+        repository.get_page_document(page_id)
+        payload = upload.stream.read(128 * 1024 * 1024 + 1)
+        if not payload or len(payload) > 128 * 1024 * 1024:
+            raise ValueError("编辑文档为空或超过 128 MiB")
+        result, replayed = repository.mutate_page_document(
+            page_id=page_id,
+            base_revision=_integer_value(request.form.get("baseRevision"), "baseRevision", minimum=1),
+            mutations=[], editor_document=payload, idempotency_key=_require_idempotency_key(),
+        )
+        response = jsonify(result)
+        response.headers["Idempotency-Replayed"] = "true" if replayed else "false"
+        return response
 
     @blueprint.get("/pages/<page_id>/render-status")
     def get_page_render_status(page_id: str) -> Response:

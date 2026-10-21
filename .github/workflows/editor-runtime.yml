@@ -1,0 +1,99 @@
+name: Publish Editor Runtime
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - third_party/photocraft/**
+      - scripts/build_editor.py
+      - scripts/editor/**
+      - src/backend_v2/editor_runtime.py
+      - editor-runtime.json
+      - .github/workflows/editor-runtime.yml
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: editor-runtime-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Verify editor source identity
+        id: editor
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $build = python scripts/build_editor.py --check
+          "build=$build" >> $env:GITHUB_OUTPUT
+          "tag=editor-$build" >> $env:GITHUB_OUTPUT
+          "asset=saber-editor-$build-windows-x86_64.zip" >> $env:GITHUB_OUTPUT
+
+      - name: Reuse published runtime
+        id: existing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EDITOR_TAG: ${{ steps.editor.outputs.tag }}
+          EDITOR_ASSET: ${{ steps.editor.outputs.asset }}
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          $release = gh release view $env:EDITOR_TAG --json isDraft,assets 2>$null | ConvertFrom-Json
+          if ($LASTEXITCODE -eq 0 -and -not $release.isDraft) {
+            $names = @($release.assets.name)
+            if ($env:EDITOR_ASSET -notin $names -or "$env:EDITOR_ASSET.sha256" -notin $names) {
+              throw 'Published editor runtime is incomplete; do not overwrite an immutable release.'
+            }
+            'ready=true' >> $env:GITHUB_OUTPUT
+          } else {
+            'ready=false' >> $env:GITHUB_OUTPUT
+          }
+          exit 0
+
+      - name: Setup Rust editor toolchain
+        if: steps.existing.outputs.ready != 'true'
+        uses: dtolnay/rust-toolchain@1.95.0
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Rust editor build
+        if: steps.existing.outputs.ready != 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: third_party/photocraft
+          key: editor-${{ runner.os }}
+
+      - name: Build native and browser runtime together
+        if: steps.existing.outputs.ready != 'true'
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          cargo install wasm-bindgen-cli --version 0.2.129 --locked
+          $env:CARGO_BUILD_TARGET = 'x86_64-pc-windows-msvc'
+          $env:CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS = '-C target-feature=+crt-static'
+          python scripts/build_editor.py --package .tmp-editor-dist
+          python -m src.backend_v2.editor_runtime
+          $env:PHOTOCRAFT_NO_SYSTEM_FONTS = '1'
+          python -c "import json, subprocess; from pathlib import Path; request = {'pageId': 'ci-smoke', 'source': str(Path('src/backend_v2/desktop/assets/app-icon.png').resolve()), 'png': str(Path('.tmp-editor-dist/smoke.png').resolve())}; result = subprocess.run(['native/saber-editor.exe'], input=json.dumps(request), capture_output=True, text=True, timeout=60); assert result.returncode == 0 and json.loads(result.stdout)['ok'], result.stderr + result.stdout; assert Path('.tmp-editor-dist/smoke.png').is_file()"
+
+      - name: Publish immutable source-user bundle
+        if: steps.existing.outputs.ready != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EDITOR_TAG: ${{ steps.editor.outputs.tag }}
+        run: |
+          gh release view $env:EDITOR_TAG --json isDraft 2>$null | Out-Null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $env:EDITOR_TAG --draft --target $env:GITHUB_SHA --title "编辑内核 $env:EDITOR_TAG" --notes '源码部署使用的配套编辑内核，由源码指纹固定。通常由启动入口自动下载；离线安装时校验 ZIP 后解压到项目根目录。'
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot create editor runtime release' }
+          }
+          $PSNativeCommandUseErrorActionPreference = $true
+          python .github/scripts/upload_release_assets.py $env:EDITOR_TAG .tmp-editor-dist 'saber-editor-*.zip*'
+          gh release edit $env:EDITOR_TAG --draft=false --prerelease --latest=false

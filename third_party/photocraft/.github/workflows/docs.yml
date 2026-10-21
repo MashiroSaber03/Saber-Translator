@@ -1,0 +1,38 @@
+name: Documentation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "book/**"
+      - "docs/**"
+      - "README.md"
+      - "SECURITY.md"
+      - ".github/workflows/docs.yml"
+  pull_request:
+    paths:
+      - "book/**"
+      - "docs/**"
+      - "README.md"
+      - "SECURITY.md"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: mdBook build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install mdBook
+        run: cargo install mdbook --version 0.4.52 --locked
+      - name: Build documentation
+        run: mdbook build book

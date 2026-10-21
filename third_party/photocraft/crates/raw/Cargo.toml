@@ -1,0 +1,44 @@
+[package]
+name = "photocraft-raw"
+description = "Clean-room, pure-Rust camera raw decoder and developer (DNG, CR2, TIFF/EP raws)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[features]
+default = []
+# Synthetic raw-file generators (DNG / CR2 / TIFF-EP writers and a lossless-JPEG
+# encoder) for tests and fuzz seeds.
+testgen = ["dep:image"]
+# Real-file corpus tests (opt-in; `cargo xtask test-corpus`). Fail when the corpus is missing.
+corpus = []
+
+[dependencies]
+# Adobe DNG compression 8: zlib (RFC 1950) with the TIFF predictor (pure-Rust backend).
+flate2 = { workspace = true }
+# Adobe DNG compression 34892: baseline JPEG tiles (lossy), decoded by zune-jpeg.
+zune-jpeg = { workspace = true }
+# Encodes the lossy-JPEG tiles of the testgen fixtures (feature `testgen`).
+image = { workspace = true, features = ["jpeg"], optional = true }
+zune-core = { workspace = true }
+
+# Parallel bands on native; wasm builds stay single-threaded.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rayon = { workspace = true }
+# JPEG XL-compressed DNG (DNG 1.7, e.g. Samsung Expert RAW). Pure Rust, MIT OR Apache-2.0. Pinned
+# exactly: it parses untrusted files; moving the pin is a reviewed change (re-run the raw fuzz target).
+# Native only: it added 0.88 MB to the browser build's wasm, which has a hard size cap
+# (packaging/web/package.sh); there JPEG XL DNG is reported as unsupported (src/jxl.rs).
+jxl-oxide = { version = "=0.12.6", default-features = false, features = ["rayon"] }
+
+[dev-dependencies]
+photocraft-raw = { path = ".", features = ["testgen"] }
+# Writes sRGB PNG previews in the `rawinfo` example.
+png = "0.18"
+# Lossless JPEG XL encoder for the JPEG XL DNG tests (tests only).
+zune-jpegxl = { version = "=0.5.2", default-features = false, features = ["std"] }
+zune-core = "0.5"
+
+[lints]
+workspace = true

@@ -1,0 +1,33 @@
+[package]
+name = "photocraft-text"
+description = "Font database, text shaping/layout (parley) and text-layer rasterization"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+photocraft-geom = { workspace = true }
+photocraft-color = { workspace = true }
+photocraft-raster = { workspace = true }
+photocraft-doc = { workspace = true }
+photocraft-psd = { workspace = true }
+# No `system` feature: fontique's system backend links fontconfig on Linux. We scan font
+# directories ourselves (native) and always register the bundled fonts (native + web).
+parley = { version = "0.11", default-features = false, features = ["std"] }
+skrifa = "0.44"
+flate2 = { workspace = true }
+
+# ICU dictionary data for Japanese word boundaries and complex-script (Thai, Lao, Khmer, Burmese)
+# line breaking. Native only: the CJK dictionary alone is 3.8 MB of wasm, and the web build must
+# stay under Cloudflare's 25 MiB per-file cap (packaging/web/package.sh). The web build falls back
+# to the generic Unicode rules for those scripts.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+parley = { version = "0.11", default-features = false, features = ["std", "complex-scripts"] }
+
+[build-dependencies]
+# Deflates the bundled fonts (build.rs); `flate2` above inflates them.
+flate2 = { workspace = true }

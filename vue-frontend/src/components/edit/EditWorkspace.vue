@@ -5,133 +5,158 @@
     ref="workspaceRef"
     @pointerdown.capture="handleWorkspacePointerDown"
   >
-    <EditToolbar
-      :current-image-index="currentImageIndex"
-      :image-count="imageCount"
-      :can-go-previous="canGoPrevious"
-      :can-go-next="canGoNext"
-      :show-thumbnails="showThumbnails"
-      :has-bubbles="hasBubbles"
-      :selected-bubble-index="selectedBubbleIndex"
-      :bubble-count="bubbleCount"
-      :layout-mode="layoutMode"
-      :sync-enabled="syncEnabled"
-      :scale="toolbarScale"
-      :is-drawing-mode="isDrawingMode"
-      :has-selection="hasSelection"
-      :brush-mode="brushMode"
-      :brush-size="brushSize"
-      :mouse-x="mouseX"
-      :mouse-y="mouseY"
-      :is-busy="isBusy"
-      :is-repair-loading="isRepairLoading"
-      :mask-mode="maskEditor.active.value"
-      :can-preview-clean="!!currentImage?.cleanAssetUrl"
-      :show-clean-preview="showCleanPreview"
-      :original-text-opacity="originalTextOpacity"
-      :translated-text-opacity="translatedTextOpacity"
-      :can-overlay-source="viewMode !== 'original' && !!currentImage?.sourceAssetUrl"
-      :can-fade-translated="viewMode !== 'original' && !showCleanPreview && !!currentImage?.translatedAssetUrl && !!currentImage?.cleanAssetUrl"
-      @go-previous-image="goToPreviousImage"
-      @go-next-image="goToNextImage"
-      @toggle-thumbnails="toggleThumbnails"
-      @select-previous-bubble="selectPreviousBubble"
-      @select-next-bubble="selectNextBubble"
-      @toggle-layout="toggleLayout"
-      @toggle-view-mode="toggleViewMode"
-      @toggle-clean-preview="cleanPreviewRequested = !showCleanPreview"
-      @update-original-text-opacity="originalTextOpacity = $event"
-      @update-translated-text-opacity="translatedTextOpacity = $event"
-      @toggle-sync="toggleSync"
-      @fit-to-screen="fitToScreen"
-      @zoom-in="zoomIn"
-      @zoom-out="zoomOut"
-      @reset-zoom="resetZoom"
-      @exit-edit-mode="handleExitToolbarAction"
-      @auto-detect-bubbles="autoDetectBubbles"
-      @detect-all-images="detectAllImages"
-      @translate-with-bubbles="translateWithCurrentBubbles"
-      @toggle-drawing-mode="toggleDrawingMode"
-      @delete-selected-bubbles="deleteSelectedBubbles"
-      @repair-selected-bubble="handleRepairSelectedBubble"
-      @activate-repair-brush="activateRepairBrush"
-      @activate-restore-brush="activateRestoreBrush"
-      @toggle-mask-mode="toggleMaskMode"
-      @apply-and-next="applyAndNext"
-      @pointer-action-complete="focusWorkspaceAfterPointer"
-    >
-      <template #mask-tools>
-        <EditMaskPanel
-          :tool="brushMode ? maskEditor.tool.value : null" :visibility="maskEditor.visibility.value" :preview="maskEditor.state.value" :busy="isBusy"
-          :loading="maskEditor.loading.value" :saving="maskEditor.saving.value" :applying="maskEditor.applying.value"
-          :dirty="maskEditor.dirty.value" :error="maskEditor.error.value"
-          :inpaint-method="currentInpaintMethod" :fill-color="currentFillColor" :brush-size="brushSize"
-          @method="handleBubbleUpdateWithSync({ inpaintMethod: $event })"
-          @fill-color="handleBubbleUpdateWithSync({ fillColor: $event })"
-          @tool="setMaskTool" @visibility="maskEditor.visibility.value = $event" @apply="maskEditor.apply"
-          @close="toggleMaskMode" @retry="maskEditor.retry" @discard="maskEditor.discard"
-        />
-      </template>
-    </EditToolbar>
-
-    <div v-if="colorPickField" class="edit-workspace__color-pick-status" role="status">
-      <span>设置{{ BUBBLE_COLOR_LABELS[colorPickField] }}：点击原图或结果图中的可见像素取色，按 Esc 取消。</span>
-      <UiButton size="sm" variant="secondary" @click="cancelColorPick">取消取色</UiButton>
+    <div v-if="!fineActive" class="edit-workspace__modes">
+      <UiButton size="sm" variant="primary" :disabled="modeSwitching" @click="setFineMode(false)">普通编辑</UiButton>
+      <UiButton size="sm" variant="inverse" :disabled="modeSwitching || isBusy" @click="setFineMode(true)">精细编辑</UiButton>
     </div>
+    <div class="edit-workspace__content">
+      <EditToolbar
+        v-show="!fineActive"
+        :current-image-index="currentImageIndex"
+        :image-count="imageCount"
+        :can-go-previous="canGoPrevious"
+        :can-go-next="canGoNext"
+        :show-thumbnails="showThumbnails"
+        :has-bubbles="hasBubbles"
+        :selected-bubble-index="selectedBubbleIndex"
+        :bubble-count="bubbleCount"
+        :layout-mode="layoutMode"
+        :sync-enabled="syncEnabled"
+        :scale="toolbarScale"
+        :is-drawing-mode="isDrawingMode"
+        :has-selection="hasSelection"
+        :brush-mode="brushMode"
+        :brush-size="brushSize"
+        :mouse-x="mouseX"
+        :mouse-y="mouseY"
+        :is-busy="isBusy"
+        :is-repair-loading="isRepairLoading"
+        :mask-mode="maskEditor.active.value"
+        :can-preview-clean="!!currentImage?.cleanAssetUrl"
+        :show-clean-preview="showCleanPreview"
+        :original-text-opacity="originalTextOpacity"
+        :translated-text-opacity="translatedTextOpacity"
+        :can-overlay-source="viewMode !== 'original' && !!currentImage?.sourceAssetUrl"
+        :can-fade-translated="viewMode !== 'original' && !showCleanPreview && !!currentImage?.translatedAssetUrl && !!currentImage?.cleanAssetUrl"
+        @go-previous-image="goToPreviousImage"
+        @go-next-image="goToNextImage"
+        @toggle-thumbnails="toggleThumbnails"
+        @select-previous-bubble="selectPreviousBubble"
+        @select-next-bubble="selectNextBubble"
+        @toggle-layout="toggleLayout"
+        @toggle-view-mode="toggleViewMode"
+        @toggle-clean-preview="cleanPreviewRequested = !showCleanPreview"
+        @update-original-text-opacity="originalTextOpacity = $event"
+        @update-translated-text-opacity="translatedTextOpacity = $event"
+        @toggle-sync="toggleSync"
+        @fit-to-screen="fitToScreen"
+        @zoom-in="zoomIn"
+        @zoom-out="zoomOut"
+        @reset-zoom="resetZoom"
+        @exit-edit-mode="handleExitToolbarAction"
+        @auto-detect-bubbles="autoDetectBubbles"
+        @detect-all-images="detectAllImages"
+        @translate-with-bubbles="translateWithCurrentBubbles"
+        @toggle-drawing-mode="toggleDrawingMode"
+        @delete-selected-bubbles="deleteSelectedBubbles"
+        @repair-selected-bubble="handleRepairSelectedBubble"
+        @activate-repair-brush="activateRepairBrush"
+        @activate-restore-brush="activateRestoreBrush"
+        @toggle-mask-mode="toggleMaskMode"
+        @apply-and-next="applyAndNext"
+        @pointer-action-complete="focusWorkspaceAfterPointer"
+      >
+        <template #mask-tools>
+          <EditMaskPanel
+            :tool="brushMode ? maskEditor.tool.value : null" :visibility="maskEditor.visibility.value" :preview="maskEditor.state.value" :busy="isBusy"
+            :loading="maskEditor.loading.value" :saving="maskEditor.saving.value" :applying="maskEditor.applying.value"
+            :dirty="maskEditor.dirty.value" :error="maskEditor.error.value"
+            :inpaint-method="currentInpaintMethod" :fill-color="currentFillColor" :brush-size="brushSize"
+            @method="handleBubbleUpdateWithSync({ inpaintMethod: $event })"
+            @fill-color="handleBubbleUpdateWithSync({ fillColor: $event })"
+            @tool="setMaskTool" @visibility="maskEditor.visibility.value = $event" @apply="maskEditor.apply"
+            @close="toggleMaskMode" @retry="maskEditor.retry" @discard="maskEditor.discard"
+          />
+        </template>
+      </EditToolbar>
 
-    <EditThumbnailPanel
-      :visible="showThumbnails"
-      :images="images"
-      :current-image-index="currentImageIndex"
-      :is-busy="isBusy"
-      @switch-to-image="switchToImage"
-    />
+      <div v-if="colorPickField" class="edit-workspace__color-pick-status" role="status">
+        <span>设置{{ BUBBLE_COLOR_LABELS[colorPickField] }}：点击原图或结果图中的可见像素取色，按 Esc 取消。</span>
+        <UiButton size="sm" variant="secondary" @click="cancelColorPick">取消取色</UiButton>
+      </div>
 
-    <EditImageComparison
-      ref="imageComparisonRef"
-      :view-mode="viewMode"
-      :layout-mode="layoutMode"
-      :current-image="currentImage"
-      :bubbles="bubbles"
-      :selected-bubble="selectedBubble"
-      :selected-bubble-index="selectedBubbleIndex"
-      :selected-indices="selectedIndices"
-      :scale="scale"
-      :original-scale="originalScale"
-      :is-drawing-mode="isDrawingMode"
-      :brush-mode="brushMode"
-      :current-image-width="currentImageWidth"
-      :current-image-height="currentImageHeight"
-      :current-drawing-rect="currentDrawingRect"
-      :drawing-rect-style="getDrawingRectStyle()"
-      :original-transform-style="originalTransformStyle"
-      :translated-transform-style="translatedTransformStyle"
-      :is-ocr-loading="isOcrLoading"
-      :is-translate-loading="isTranslateLoading"
-      :is-busy="isBusy"
-      :is-picking-color="isPickingColor"
-      :mask-overlay="maskEditor.active.value ? maskEditor.overlay.value : null"
-      :mask-mode="maskEditor.active.value"
-      :show-clean-preview="showCleanPreview"
-      :original-text-opacity="originalTextOpacity"
-      :translated-text-opacity="translatedTextOpacity"
-      @wheel-panel="handleWheel"
-      @mouse-down-panel="handleMouseDown"
-      @image-load="handleImageLoad"
-      @fit-to-screen="fitToScreen"
-      @start-divider-drag="startDividerDrag"
-      @start-panel-resize="startPanelResize"
-      @bubble-select="handleBubbleSelect"
-      @bubble-multi-select="handleBubbleMultiSelect"
-      @bubble-drag-end="handleBubbleDragEnd"
-      @bubble-resize-end="handleBubbleResizeEnd"
-      @bubble-rotate-end="handleBubbleRotateEnd"
-      @bubble-update="handleBubbleUpdateWithSync"
-      @apply-to-all-style="handleApplyStyleToAllBubbles"
-      @ocr-recognize="handleOcrRecognize"
-      @re-translate="handleReTranslateBubble"
-      @pick-color="startImageColorPick"
-    />
+      <EditThumbnailPanel
+        v-show="!fineActive"
+        :visible="showThumbnails"
+        :images="images"
+        :current-image-index="currentImageIndex"
+        :is-busy="isBusy"
+        @switch-to-image="switchToImage"
+      />
+
+      <EditImageComparison
+        v-show="!fineActive"
+        ref="imageComparisonRef"
+        :view-mode="viewMode"
+        :layout-mode="layoutMode"
+        :current-image="currentImage"
+        :bubbles="bubbles"
+        :selected-bubble="selectedBubble"
+        :selected-bubble-index="selectedBubbleIndex"
+        :selected-indices="selectedIndices"
+        :scale="scale"
+        :original-scale="originalScale"
+        :is-drawing-mode="isDrawingMode"
+        :brush-mode="brushMode"
+        :current-image-width="currentImageWidth"
+        :current-image-height="currentImageHeight"
+        :current-drawing-rect="currentDrawingRect"
+        :drawing-rect-style="getDrawingRectStyle()"
+        :original-transform-style="originalTransformStyle"
+        :translated-transform-style="translatedTransformStyle"
+        :is-ocr-loading="isOcrLoading"
+        :is-translate-loading="isTranslateLoading"
+        :is-busy="isBusy"
+        :is-picking-color="isPickingColor"
+        :mask-overlay="maskEditor.active.value ? maskEditor.overlay.value : null"
+        :mask-mode="maskEditor.active.value"
+        :show-clean-preview="showCleanPreview"
+        :original-text-opacity="originalTextOpacity"
+        :translated-text-opacity="translatedTextOpacity"
+        @wheel-panel="handleWheel"
+        @mouse-down-panel="handleMouseDown"
+        @image-load="handleImageLoad"
+        @fit-to-screen="fitToScreen"
+        @start-divider-drag="startDividerDrag"
+        @start-panel-resize="startPanelResize"
+        @bubble-select="handleBubbleSelect"
+        @bubble-multi-select="handleBubbleMultiSelect"
+        @bubble-drag-end="handleBubbleDragEnd"
+        @bubble-resize-end="handleBubbleResizeEnd"
+        @bubble-rotate-end="handleBubbleRotateEnd"
+        @bubble-update="handleBubbleUpdateWithSync"
+        @apply-to-all-style="handleApplyStyleToAllBubbles"
+        @ocr-recognize="handleOcrRecognize"
+        @re-translate="handleReTranslateBubble"
+        @pick-color="startImageColorPick"
+      />
+      <FineEditor v-if="fineMounted && currentImage?.id" ref="fineEditorRef" :inert="switching || !fineActive || undefined" :page-id="currentImage.id" :active="fineActive" :inpaint-method="currentImage.inpaintMethod" :fill-color="currentImage.fillColor" @busy="fineBusy = $event" @document-loaded="handleDocumentLoaded" @method="handleBubbleUpdateWithSync({ inpaintMethod: $event }, true)" @fill-color="handleBubbleUpdateWithSync({ fillColor: $event }, true)">
+        <template #toolbar-start>
+          <div class="edit-workspace__modes edit-workspace__modes--inline">
+            <UiButton size="sm" variant="inverse" :disabled="modeSwitching" @click="setFineMode(false)">普通编辑</UiButton>
+            <UiButton size="sm" variant="primary" :disabled="modeSwitching" @click="setFineMode(true)">精细编辑</UiButton>
+          </div>
+          <div class="edit-workspace__page-nav" aria-label="图片导航">
+            <UiIconButton size="sm" variant="inverse" label="上一张" :disabled="!canGoPrevious || modeSwitching" @click="navigateFine(false)"><UiIcon name="chevron-left" :size="17" /></UiIconButton>
+            <span class="edit-workspace__page-index">{{ currentImageIndex + 1 }} / {{ imageCount }}</span>
+            <UiIconButton size="sm" variant="inverse" label="下一张" :disabled="!canGoNext || modeSwitching" @click="navigateFine(true)"><UiIcon name="chevron-right" :size="17" /></UiIconButton>
+          </div>
+        </template>
+        <template #toolbar-end>
+          <UiButton size="sm" variant="inverse" :disabled="modeSwitching" @click="exitFine">退出编辑</UiButton>
+        </template>
+      </FineEditor>
+    </div>
   </div>
 </template>
 
@@ -143,14 +168,58 @@ import EditImageComparison from './EditImageComparison.vue'
 import EditToolbar from './EditToolbar.vue'
 import EditThumbnailPanel from './EditThumbnailPanel.vue'
 import EditMaskPanel from './EditMaskPanel.vue'
+import FineEditor from './FineEditor.vue'
 import { useEditWorkspace, type EditWorkspaceEmit } from './useEditWorkspace'
 import UiButton from '@/components/ui/UiButton.vue'
+import UiIcon from '@/components/ui/UiIcon.vue'
+import UiIconButton from '@/components/ui/UiIconButton.vue'
 import { BUBBLE_COLOR_LABELS } from './bubbleColorFields'
 import { showToast } from '@/utils/toast'
+import { flushPageDocument } from '@/services/pageDocumentPersistence'
 
 const emit = defineEmits<EditWorkspaceEmit>()
+const fineActive = ref(false)
+const fineMounted = ref(false)
+const switching = ref(false)
+const fineBusy = ref(false)
+const modeSwitching = computed(() => switching.value || fineBusy.value)
+const fineEditorRef = ref<InstanceType<typeof FineEditor>>()
+
+async function setFineMode(value: boolean): Promise<void> {
+  if (value === fineActive.value || modeSwitching.value) return
+  if (!guardUnsavedMask()) return
+  switching.value = true
+  try {
+    if (fineActive.value) await fineEditorRef.value?.saveNow()
+    if (currentImage.value?.id) await flushPageDocument(currentImage.value.id)
+    if (value) {
+      if (maskEditor.active.value) toggleMaskMode()
+      fineMounted.value = true
+    }
+    fineActive.value = value
+  } catch (error) { showToast(error instanceof Error ? error.message : '请先保存当前修改', 'error') }
+  finally { switching.value = false }
+}
+async function exitFine(): Promise<void> {
+  switching.value = true
+  try {
+    await fineEditorRef.value?.saveNow()
+    if (currentImage.value?.id) await flushPageDocument(currentImage.value.id)
+    await handleExitToolbarAction()
+  } catch (error) { showToast(error instanceof Error ? error.message : '请先保存当前修改', 'error') }
+  finally { switching.value = false }
+}
+async function navigateFine(next: boolean): Promise<void> {
+  switching.value = true
+  try {
+    await fineEditorRef.value?.saveNow()
+    if (next) await goToNextImage(); else await goToPreviousImage()
+  } catch (error) { showToast(error instanceof Error ? error.message : '请先保存当前修改', 'error') }
+  finally { switching.value = false }
+}
 
 const {
+  handleDocumentLoaded,
   currentInpaintMethod,
   currentFillColor,
   maskEditor,
@@ -236,7 +305,7 @@ const {
   autoDetectBubbles,
   detectAllImages,
   translateWithCurrentBubbles,
-} = useEditWorkspace(emit)
+} = useEditWorkspace(emit, computed(() => !fineActive.value))
 
 const cleanPreviewRequested = ref(false)
 const showCleanPreview = computed(() => cleanPreviewRequested.value && !!currentImage.value?.cleanAssetUrl)
@@ -249,8 +318,18 @@ function guardUnsavedMask(): boolean {
   return false
 }
 
-onBeforeRouteLeave(guardUnsavedMask)
-onBeforeRouteUpdate(guardUnsavedMask)
+function guardWorkspaceLeave(): boolean | Promise<boolean> {
+  if (!guardUnsavedMask() || modeSwitching.value) return false
+  if (!fineActive.value) return true
+  switching.value = true
+  const saved = fineEditorRef.value?.saveNow()
+  return Promise.resolve(saved).then(() => true).catch(error => {
+    showToast(error instanceof Error ? error.message : '请先保存当前修改', 'error')
+    return false
+  }).finally(() => { switching.value = false })
+}
+onBeforeRouteLeave(guardWorkspaceLeave)
+onBeforeRouteUpdate(guardWorkspaceLeave)
 </script>
 
 <style scoped>
@@ -273,6 +352,8 @@ onBeforeRouteUpdate(guardUnsavedMask)
   transition: none;
 }
 
+.edit-workspace__content { position: relative; display: flex; flex: 1; min-height: 0; flex-direction: column; }
+
 .edit-workspace__color-pick-status {
   position: absolute;
   right: 16px;
@@ -290,5 +371,20 @@ onBeforeRouteUpdate(guardUnsavedMask)
   border-radius: 8px;
   font-size: 13px;
 }
+
+.edit-workspace__modes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  color: var(--color-text-inverse);
+  background: var(--color-surface-inverse);
+  border-bottom: 1px solid var(--color-overlay-inverse-subtle);
+  font-size: 12px;
+}
+.edit-workspace__modes--inline { flex-shrink: 0; flex-wrap: nowrap; padding: 0; background: transparent; border: 0; }
+.edit-workspace__page-nav { display: flex; flex-shrink: 0; align-items: center; gap: 5px; padding: 0 10px; border-inline: 1px solid var(--color-overlay-inverse-muted); }
+.edit-workspace__page-index { min-width: 50px; text-align: center; font-variant-numeric: tabular-nums; }
 
 </style>

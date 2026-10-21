@@ -1,0 +1,81 @@
+# .deb and .rpm packages (nfpm: https://nfpm.goreleaser.com). Run by package.sh, which stages
+# the file tree, substitutes its path for ${STAGE} (nfpm doesn't expand env vars in `src`) and
+# exports VERSION and NFPM_ARCH.
+#
+#   nfpm package -f packaging/linux/nfpm.yaml -p deb -t dist/release/
+name: photocraft
+arch: ${NFPM_ARCH}
+platform: linux
+version: ${VERSION}
+# semver: 0.2.0-rc.1 becomes 0.2.0~rc.1 in deb/rpm, so pre-releases sort before the release.
+version_schema: semver
+release: 1
+section: graphics
+priority: optional
+maintainer: ${PHOTOCRAFT_MAINTAINER}
+vendor: Learning Machines LLC
+homepage: https://getartcraft.com/apps/photocraft
+license: MIT OR Apache-2.0
+description: |-
+  Open-source, native image editor with familiar, professional tools.
+  Layers, masks, adjustment layers, layer styles, type and brushes; opens and
+  saves layered PSD/PSB files; 8/16/32-bit documents; GPU compositing (wgpu).
+  Includes photocraft-cli, a headless converter and command runner.
+
+# The binaries link only glibc and libgcc_s directly. Windowing (X11/Wayland, xkbcommon) and the
+# GPU (Vulkan, EGL/GL) are loaded at runtime with dlopen, so they aren't ELF NEEDED entries and
+# the package tools can't find them: list them here. winit 0.30 loads, for X11: libX11,
+# libX11-xcb, libxcb, libXcursor, libXi, libxkbcommon and libxkbcommon-x11 (missing
+# libxkbcommon-x11 panicked in #201); for Wayland: libwayland-client and libxkbcommon. wgpu needs
+# libvulkan or libEGL. RandR goes through x11rb's protocol code and fonts are found by scanning
+# directories, so libXrandr and fontconfig aren't loaded. The app also checks for these at start
+# (apps/photocraft/src/linux_libs.rs) and names the missing package instead of crashing.
+overrides:
+  deb:
+    depends:
+      - libc6 (>= 2.35)
+      - libgcc-s1
+      - libxkbcommon0
+      - libxkbcommon-x11-0
+      - libwayland-client0
+      - libx11-6
+      - libx11-xcb1
+      - libxcb1
+      - libxcursor1
+      - libxi6
+      - libvulkan1 | libegl1
+    recommends:
+      - mesa-vulkan-drivers
+      - libegl-mesa0
+      - xdg-desktop-portal
+  rpm:
+    # Soname provides rather than package names, so the same requirements resolve on Fedora/RHEL
+    # (libxkbcommon-x11, libX11-xcb, ...) and openSUSE (libxkbcommon-x11-0, libX11-xcb1, ...).
+    depends:
+      - libxkbcommon.so.0()(64bit)
+      - libxkbcommon-x11.so.0()(64bit)
+      - libwayland-client.so.0()(64bit)
+      - libX11.so.6()(64bit)
+      - libX11-xcb.so.1()(64bit)
+      - libxcb.so.1()(64bit)
+      - libXcursor.so.1()(64bit)
+      - libXi.so.6()(64bit)
+      - (libvulkan.so.1()(64bit) or libEGL.so.1()(64bit))
+    recommends:
+      - mesa-vulkan-drivers
+      - xdg-desktop-portal
+
+contents:
+  - src: ${STAGE}/usr/bin/photocraft
+    dst: /usr/bin/photocraft
+    file_info: { mode: 0755 }
+  - src: ${STAGE}/usr/bin/photocraft-cli
+    dst: /usr/bin/photocraft-cli
+    file_info: { mode: 0755 }
+  - src: ${STAGE}/usr/share/
+    dst: /usr/share/
+    type: tree
+
+scripts:
+  postinstall: packaging/linux/postinst.sh
+  postremove: packaging/linux/postinst.sh

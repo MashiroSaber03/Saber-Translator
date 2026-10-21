@@ -1,0 +1,15 @@
+[package]
+name = "xtask"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+serde_json = { workspace = true }
+serde = { workspace = true }
+# perf/budgets.toml and scorecard/*.toml (MIT OR Apache-2.0).
+toml = "1"

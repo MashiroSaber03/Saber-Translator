@@ -67,7 +67,7 @@ def manager(root, **kwargs):
 
 
 def test_version_numeric_and_registry():
-    assert STORAGE_VERSION == "3.5.3"
+    assert STORAGE_VERSION == "3.5.4"
     assert parse_version("3.5.10") > parse_version("3.5.9")
     for value in ("3.5", "3.05.0", "3.6.0-rc1", "v3.5.1"):
         with pytest.raises(ValueError):
@@ -80,7 +80,9 @@ def test_version_numeric_and_registry():
 
 def test_current_check_and_readonly_cli(root):
     from src.storage_migrator.v3_5_3 import convert as add_user_masks
+    from src.storage_migrator.v3_5_4 import convert as add_editor_documents
     add_user_masks(root)
+    add_editor_documents(root)
     with closing(sqlite3.connect(root / "saber.sqlite3")) as db, db:
         db.execute("UPDATE schema_metadata SET storage_version=?", (STORAGE_VERSION,))
     assert StorageManager(root, "local").check()["status"] == "current"
@@ -398,7 +400,9 @@ def test_real_launcher_confirms_candidate_and_cleans_backup(root):
         with closing(sqlite3.connect(work / "saber.sqlite3")) as db, db:
             db.execute("ALTER TABLE app_settings DROP COLUMN old_fixture_column")
         from src.storage_migrator.v3_5_3 import convert as add_user_masks
+        from src.storage_migrator.v3_5_4 import convert as add_editor_documents
         add_user_masks(work)
+        add_editor_documents(work)
     ready = threading.Event()
     errors = []
     with socket.socket() as listener:

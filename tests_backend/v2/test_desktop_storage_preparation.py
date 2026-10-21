@@ -176,3 +176,32 @@ def test_gui_initialization_failure_is_delivered_to_storage_guard(tmp_path):
     assert "GUI initialization failed" in failures[0]
     with DataRootLock(manager.root):
         pass
+
+
+def test_editor_download_failure_uses_existing_preparation_ui_before_database(tmp_path, monkeypatch):
+    from src.backend_v2.desktop import entrypoint
+
+    app()
+    root = tmp_path / "data"
+    manager = StorageManager(root, "local")
+    worker = DesktopStoragePreparation(manager, DesktopSettings())
+    progress, prepared, failures = [], [], []
+    worker.progress.connect(progress.append)
+    worker.prepared.connect(lambda *_: prepared.append(True))
+    worker.failed.connect(failures.append)
+
+    def fail(report):
+        report("正在下载编辑内核：10%")
+        raise RuntimeError("测试：下载中断，请重试")
+    monkeypatch.setattr(entrypoint, "ensure_editor_runtime", fail)
+    worker.thread.start()
+    try:
+        wait_until(lambda: bool(failures))
+    finally:
+        worker.release()
+        worker.thread.join(15)
+    assert "正在下载编辑内核：10%" in progress
+    assert "下载中断" in failures[0]
+    assert not prepared and not (root / "saber.sqlite3").exists()
+    with DataRootLock(root):
+        pass

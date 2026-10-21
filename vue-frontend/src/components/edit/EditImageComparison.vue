@@ -6,6 +6,7 @@ import type { BubbleColorField, BubbleCoords, BubbleState } from '@/types/bubble
 import type { ImageData } from '@/types/image'
 import type { BrushMode } from '@/composables/useBrush'
 import { showToast } from '@/utils/toast'
+import type { MaskOverlay } from '@/utils/maskPreview'
 import BubbleEditor from './BubbleEditor.vue'
 import BubbleOverlay from './BubbleOverlay.vue'
 
@@ -35,7 +36,7 @@ const props = defineProps<{
   isTranslateLoading: boolean
   isBusy: boolean
   isPickingColor?: boolean
-  maskOverlay?: string | null
+  maskOverlay?: MaskOverlay | null
   maskMode?: boolean
   showCleanPreview?: boolean
   originalTextOpacity?: number
@@ -143,6 +144,23 @@ const translatedPanelRef = ref<HTMLElement | null>(null)
 const editPanelRef = ref<HTMLElement | null>(null)
 const originalPanelCollapsed = ref(false)
 const translatedPanelCollapsed = ref(false)
+const originalMaskRef = ref<HTMLCanvasElement | null>(null)
+const translatedMaskRef = ref<HTMLCanvasElement | null>(null)
+
+watch([() => props.maskOverlay, originalMaskRef, translatedMaskRef], ([overlay]) => {
+  if (!overlay) return
+  for (const canvas of [originalMaskRef.value, translatedMaskRef.value]) {
+    if (!canvas) continue
+    const source = overlay.canvas
+    if (canvas.width !== source.width) canvas.width = source.width
+    if (canvas.height !== source.height) canvas.height = source.height
+    const context = canvas.getContext('2d')
+    if (context) {
+      context.globalCompositeOperation = 'copy'
+      context.drawImage(source, 0, 0)
+    }
+  }
+}, { flush: 'post' })
 
 defineExpose({
   originalViewportRef,
@@ -212,7 +230,7 @@ defineExpose({
               alt="原图"
               @load="emit('imageLoad', 'original')"
             >
-            <img v-if="maskOverlay && !isPickingColor" :src="maskOverlay" class="edit-image-comparison__mask" alt="原图修复范围覆盖层">
+            <canvas v-if="maskOverlay && !isPickingColor" ref="originalMaskRef" class="edit-image-comparison__mask" aria-label="原图修复范围覆盖层" />
             <BubbleOverlay
               v-if="currentImage?.sourceAssetUrl"
               v-show="!isPickingColor && !maskMode"
@@ -326,7 +344,7 @@ defineExpose({
               @load="onTranslatedTextLoad"
               @error="onTranslatedTextError"
             >
-            <img v-if="maskOverlay && !isPickingColor" :src="maskOverlay" class="edit-image-comparison__mask" alt="结果图修复范围覆盖层">
+            <canvas v-if="maskOverlay && !isPickingColor" ref="translatedMaskRef" class="edit-image-comparison__mask" aria-label="结果图修复范围覆盖层" />
             <BubbleOverlay
               v-if="processedImageUrl"
               v-show="!isPickingColor && !maskMode"

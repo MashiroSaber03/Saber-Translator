@@ -60,14 +60,14 @@ describe('ScriptGenerationPanel', () => {
     })
 
     const referenceField = wrapper.getComponent(UiField)
-    expect(referenceField.props('label')).toBe('VLM参考图数')
+    expect(referenceField.props('label')).toBe('画风参考图数量')
     expect(referenceField.props('controlId')).toBe('script-reference-count')
 
     const numberField = wrapper.getComponent(UiNumberField)
     expect(numberField.props('inputId')).toBe('script-reference-count')
     expect(numberField.props('min')).toBe(1)
     expect(numberField.props('max')).toBeUndefined()
-    expect(numberField.props('modelValue')).toBe(5)
+    expect(numberField.props('modelValue')).toBe(3)
 
     const rows = wrapper.findAllComponents(ProductActionRow)
     expect(rows.some(row => row.props('ariaLabel') === '续写脚本编辑操作')).toBe(true)
@@ -132,6 +132,7 @@ describe('ScriptGenerationPanel', () => {
   it('emits script updates and includes reference count when generating', async () => {
     const wrapper = mount(ScriptGenerationPanel, {
       props: {
+        referenceCount: 1,
         script: {
           chapter_title: '测试章节',
           page_count: 10,
@@ -163,8 +164,13 @@ describe('ScriptGenerationPanel', () => {
     expect(generateEvents[generateEvents.length - 1]).toEqual([
       {
         referenceTokens: null,
-        referenceImageCount: 5,
+        referenceImageCount: 1,
       },
+    ])
+    await wrapper.setProps({ bookId: 'book-2', referenceCount: 2 })
+    await getButtonByText(wrapper, '生成脚本').trigger('click')
+    expect(wrapper.emitted('generate')?.at(-1)).toEqual([
+      { referenceTokens: null, referenceImageCount: 2 },
     ])
   })
 
@@ -247,7 +253,7 @@ describe('ScriptGenerationPanel', () => {
     expect(generateEvents[generateEvents.length - 1]).toEqual([
       {
         referenceTokens: null,
-        referenceImageCount: 5,
+        referenceImageCount: 3,
       },
     ])
   })

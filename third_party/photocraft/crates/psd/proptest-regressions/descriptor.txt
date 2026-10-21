@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 8089b21c70b7dfddf5697e3a0ec01fa8aeb5ea2e8e844f62ae6e8c2453382404 # shrinks to d = Descriptor { name: UnicodeString([]), class_id: Code([0, 0, 0, 0]), items: [(Code([0, 0, 0, 0]), Descriptor(Descriptor { name: UnicodeString([]), class_id: Code([0, 0, 0, 0]), items: [(Str([0]), Boolean(false))] }))] }

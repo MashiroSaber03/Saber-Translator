@@ -4,6 +4,7 @@ import { useEditWorkspaceKeyboardShortcuts } from '@/composables/edit/useEditWor
 import type { BrushMode } from '@/composables/useBrush'
 
 function harness() {
+  const enabled = ref(true)
   const brushMode = ref<BrushMode>(null)
   const actions = {
     cancelColorPick: vi.fn(),
@@ -21,16 +22,31 @@ function harness() {
     applyMask: vi.fn(),
   }
   const keyboard = useEditWorkspaceKeyboardShortcuts({
+    enabled,
     ...actions,
     isPickingColor: ref(false),
     hasSelection: ref(true),
     brushMode,
     maskActive: ref(true),
   })
-  return { ...keyboard, actions, brushMode }
+  return { ...keyboard, actions, brushMode, enabled }
 }
 
 describe('mask editing shares ordinary workspace shortcuts', () => {
+  it('does not run hidden ordinary commands while fine editing owns the workspace', () => {
+    const h = harness()
+    h.enabled.value = false
+    for (const key of ['Delete', 'Backspace', 'Escape', 'a', 'd', 'r', 'u', '+', '-', '0']) {
+      const event = new KeyboardEvent('keydown', { key, cancelable: true })
+      h.handleKeyDown(event)
+      expect(event.defaultPrevented).toBe(false)
+    }
+    h.handleKeyDown(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true }))
+    for (const action of Object.values(h.actions)) expect(action).not.toHaveBeenCalled()
+    h.enabled.value = true
+    h.handleKeyDown(new KeyboardEvent('keydown', { key: 'r' }))
+    expect(h.brushMode.value).toBe('repair')
+  })
   it.each([['r', 'repair'], ['u', 'restore']] as const)('holds %s only until the key is released', (key, mode) => {
     const h = harness()
     h.handleKeyDown(new KeyboardEvent('keydown', { key, cancelable: true }))
@@ -67,6 +83,35 @@ describe('mask editing shares ordinary workspace shortcuts', () => {
     expect(h.actions.applyMask).toHaveBeenCalledOnce()
     expect(h.actions.applyAndNext).not.toHaveBeenCalled()
   })
+
+  it('keeps brush shortcuts available after clicking toolbar buttons', () => {
+    const h = harness()
+    const button = document.createElement('button')
+    button.addEventListener('keydown', h.handleKeyDown)
+    h.brushMode.value = 'restore'
+    button.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    expect(h.brushMode.value).toBeNull()
+    expect(h.actions.exitMaskMode).not.toHaveBeenCalled()
+    button.dispatchEvent(new KeyboardEvent('keydown', { key: 'r' }))
+    expect(h.brushMode.value).toBe('repair')
+    h.handleKeyUp(new KeyboardEvent('keyup', { key: 'r' }))
+    expect(h.brushMode.value).toBeNull()
+  })
+
+  it.each(['input', 'textarea', 'select', '[role="combobox"]', '[role="dialog"] button'])(
+    'does not intercept keys in %s', selector => {
+      const h = harness()
+      const root = document.createElement('div')
+      if (selector === '[role="combobox"]') root.innerHTML = '<button role="combobox"></button>'
+      else if (selector === '[role="dialog"] button') root.innerHTML = '<div role="dialog"><button></button></div>'
+      else root.innerHTML = `<${selector}></${selector}>`
+      const target = root.querySelector(selector)!
+      target.addEventListener('keydown', h.handleKeyDown as EventListener)
+      for (const key of ['r', 'Escape', 'a', 'Delete'])
+        target.dispatchEvent(new KeyboardEvent('keydown', { key }))
+      for (const action of Object.values(h.actions)) expect(action).not.toHaveBeenCalled()
+    },
+  )
 
   it.each([
     { key: 'r', ctrlKey: true }, { key: 'u', metaKey: true },

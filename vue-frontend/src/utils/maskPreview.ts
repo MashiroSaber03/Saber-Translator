@@ -11,6 +11,7 @@ export const maskLayerOptions = [
 export type MaskLayer = (typeof maskLayerOptions)[number]['value']
 export type MaskVisibility = Record<MaskLayer, boolean>
 export type MaskStages = Record<'raw' | 'boxes' | 'automatic', Uint8Array | null>
+export type MaskOverlay = { canvas: HTMLCanvasElement }
 
 export function maskVisibility(): MaskVisibility {
   return {
@@ -19,55 +20,67 @@ export function maskVisibility(): MaskVisibility {
   }
 }
 
-export function maskOverlayPixels(
-  width: number, height: number, stages: MaskStages, manual: Uint8Array, visibility: MaskVisibility
-): Uint8ClampedArray {
-  // Read reactive switches once, instead of through their proxy for every pixel.
-  const visible = { ...visibility }
-  const pixels = new Uint8ClampedArray(width * height * 4)
-  const colors = Object.fromEntries(maskLayerOptions.map(item => [item.value, item.color])) as
-    Record<MaskLayer, (typeof maskLayerOptions)[number]['color']>
-  if (!maskLayerOptions.some(item => visible[item.value] &&
-    (item.value !== 'raw' || stages.raw))) return pixels
-  const finalAt = (index: number) => manual[index] === 255 ||
-    (manual[index] === 127 && Boolean(stages.automatic?.[index]))
-  // Raster outlines use the exact backend ranges, including expanded/rotated boxes.
-  function edge(index: number, x: number, y: number, selected: (i: number) => boolean, radius: number): boolean {
-    for (let distance = 1; distance <= radius; distance++) {
+// Compile geometry and manual overrides only when mask data changes. Display switches
+// then use a tiny palette over one byte per pixel, without repeating edge searches.
+export function maskOverlayClasses(
+  width: number, height: number, stages: MaskStages, manual: Uint8Array
+): Uint8Array {
+  const classes = new Uint8Array(width * height)
+  const inBoxes = (index: number) => Boolean(stages.boxes?.[index])
+  function edge(index: number, x: number, y: number): boolean {
+    for (let distance = 1; distance <= 3; distance++) {
       if (x < distance || y < distance || x >= width - distance || y >= height - distance ||
-          !selected(index - distance) || !selected(index + distance) ||
-          !selected(index - width * distance) || !selected(index + width * distance)) return true
+          !inBoxes(index - distance) || !inBoxes(index + distance) ||
+          !inBoxes(index - width * distance) || !inBoxes(index + width * distance)) return true
     }
     return false
   }
-  const inBoxes = (index: number) => Boolean(stages.boxes?.[index])
   for (let i = 0; i < manual.length; i++) {
-    const x = i % width, y = Math.floor(i / width)
+    const raw = (stages.raw?.[i] ?? 0) >= 128
+    const box = inBoxes(i)
+    const automatic = Boolean(stages.automatic?.[i])
+    const repair = manual[i] === 255, preserve = manual[i] === 0
+    let flags = (raw ? 1 : 0) | (box ? 2 : 0) | (automatic ? 4 : 0)
+      | (repair ? 8 : 0) | (preserve ? 16 : 0)
+      | (repair || (manual[i] === 127 && automatic) ? 32 : 0)
+    if (raw || box || preserve) {
+      const x = i % width, y = Math.floor(i / width), pattern = (x + y) % 12
+      if (pattern < 4) flags |= 128
+      if (box && pattern < 8 && edge(i, x, y)) flags |= 64
+    }
+    classes[i] = flags
+  }
+  return classes
+}
+
+export function maskOverlayPixels(
+  classes: Uint8Array, visibility: MaskVisibility,
+  pixels = new Uint8ClampedArray(classes.length * 4)
+): Uint8ClampedArray {
+  const visible = { ...visibility }
+  const colors = Object.fromEntries(maskLayerOptions.map(item => [item.value, item.color])) as
+    Record<MaskLayer, (typeof maskLayerOptions)[number]['color']>
+  const palette = new Uint8ClampedArray(256 * 4)
+  for (let flags = 0; flags < 256; flags++) {
     let color: readonly number[] | null = null
     let alpha = 110
-    if (visible.raw && (stages.raw?.[i] ?? 0) >= 128) {
-      color = colors.raw
-      alpha = (x + y) % 12 < 4 ? 160 : 45
-    }
-    if (visible.boxes && inBoxes(i) && !color) { color = colors.boxes; alpha = 28 }
-    if (visible.automatic && stages.automatic?.[i]) { color = colors.automatic; alpha = 110 }
-    if (visible.repair && manual[i] === 255) { color = colors.repair; alpha = 140 }
-    if (visible.preserve && manual[i] === 0) {
-      color = colors.preserve
-      alpha = (x + y) % 12 < 4 ? 200 : 85
-    }
-    if (visible.final && finalAt(i)) {
-      color = colors.final; alpha = 110
-    }
-    if (visible.boxes && inBoxes(i) && edge(i, x, y, inBoxes, 3) && (x + y) % 12 < 8) {
-      color = colors.boxes; alpha = 240
-    }
+    if (visible.raw && (flags & 1)) { color = colors.raw; alpha = flags & 128 ? 160 : 45 }
+    if (visible.boxes && (flags & 2) && !color) { color = colors.boxes; alpha = 28 }
+    if (visible.automatic && (flags & 4)) { color = colors.automatic; alpha = 110 }
+    if (visible.repair && (flags & 8)) { color = colors.repair; alpha = 140 }
+    if (visible.preserve && (flags & 16)) { color = colors.preserve; alpha = flags & 128 ? 200 : 85 }
+    if (visible.final && (flags & 32)) { color = colors.final; alpha = 110 }
+    if (visible.boxes && (flags & 64)) { color = colors.boxes; alpha = 240 }
     if (color) {
-      pixels[i * 4] = color[0]!
-      pixels[i * 4 + 1] = color[1]!
-      pixels[i * 4 + 2] = color[2]!
-      pixels[i * 4 + 3] = alpha
+      palette[flags * 4] = color[0]!
+      palette[flags * 4 + 1] = color[1]!
+      palette[flags * 4 + 2] = color[2]!
+      palette[flags * 4 + 3] = alpha
     }
   }
+  // Read and write the RGBA bytes in native order; this does not assume endianness.
+  const packed = new Uint32Array(palette.buffer)
+  const target = new Uint32Array(pixels.buffer, pixels.byteOffset, classes.length)
+  for (let i = 0; i < classes.length; i++) target[i] = packed[classes[i]!]!
   return pixels
 }

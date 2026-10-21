@@ -644,7 +644,7 @@ def get_font(font_family_relative_path=constants.DEFAULT_FONT_RELATIVE_PATH, fon
 
 def calculate_auto_font_size(text, bubble_width, bubble_height, text_direction='vertical',
                              font_family_relative_path=constants.DEFAULT_FONT_RELATIVE_PATH,
-                             min_size=12, max_size=80, padding_ratio=1.0):
+                             min_size=12, max_size=80, padding_ratio=1.0, line_spacing=1.0):
     """
     使用二分法计算最佳字体大小。
     
@@ -669,10 +669,7 @@ def calculate_auto_font_size(text, bubble_width, bubble_height, text_direction='
         return constants.DEFAULT_FONT_SIZE
     
     c_w = 1.0
-    l_h = 1.05
-
-    if text_direction == 'vertical':
-        W, H = H, W
+    l_h = max(1.05, line_spacing)
 
     low = min_size
     high = max_size

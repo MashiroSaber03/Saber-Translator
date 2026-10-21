@@ -140,8 +140,14 @@ jobs:
   # ============================================================================
   # 构建 Job - CPU 和 GPU 并行构建，直接上传到 Release
   # ============================================================================
-  build:
+  editor_runtime:
     needs: prepare
+    permissions:
+      contents: write
+    uses: ./.github/workflows/editor-runtime.yml
+
+  build:
+    needs: [prepare, editor_runtime]
     runs-on: windows-latest
     permissions:
       contents: write
@@ -250,6 +256,11 @@ jobs:
           cache-dependency-path: |
             vue-frontend/package-lock.json
             browser-extension/package-lock.json
+
+      - name: Prepare shared editing engine
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          python -m src.backend_v2.editor_runtime
 
       - name: Build v2 frontend
         working-directory: vue-frontend

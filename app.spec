@@ -9,6 +9,7 @@ same isolated API and Worker lifecycle used by the terminal Launcher role.
 import os
 import shutil
 import stat
+import sys
 from importlib.util import find_spec
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules, collect_all, copy_metadata
 
@@ -16,11 +17,15 @@ block_cipher = None
 
 # 项目根目录
 PROJECT_ROOT = os.path.abspath(os.path.dirname(SPEC))
+sys.path.insert(0, PROJECT_ROOT)
+from src.backend_v2.editor_runtime import NOTICE_FILES
 
 # ===================== 初始化收集列表 =====================
 datas = [(os.path.join(PROJECT_ROOT, "version.json"), "."),
          (os.path.join(PROJECT_ROOT, "src", "storage_migrator", "schemas"), "src/storage_migrator/schemas")]
-binaries = []
+binaries = [(os.path.join(PROJECT_ROOT, 'native', 'saber-editor.exe'), 'native')]
+for notice in NOTICE_FILES:
+    datas.append((os.path.join(PROJECT_ROOT, 'third_party', 'photocraft', notice), os.path.join('third_party/photocraft', os.path.dirname(notice))))
 hiddenimports = []
 module_collection_mode = {
     # TorchScript/inspect 需要在运行时访问原始 .py 文件；仅有 PYZ 内字节码不够。

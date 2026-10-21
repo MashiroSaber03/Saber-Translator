@@ -131,6 +131,24 @@ class VerticalPunctuationRenderingTests(unittest.TestCase):
                     self.FONTS[0],
                 )
 
+    def test_auto_vertical_font_fits_the_narrow_comic_bubble(self) -> None:
+        size = calculate_auto_font_size("我！！！", 44, 215, "vertical", self.FONTS[0])
+        self.assertLessEqual(size, 44)
+        self.assertLessEqual(size * 4, 215)
+
+    def test_auto_font_size_transposes_layout_without_swapping_dimensions_twice(self) -> None:
+        vertical = calculate_auto_font_size("我！！！", 44, 215, "vertical", self.FONTS[0])
+        horizontal = calculate_auto_font_size("我！！！", 215, 44, "horizontal", self.FONTS[0])
+        self.assertEqual(vertical, horizontal)
+
+    def test_auto_font_size_respects_spacing_when_wrapping(self) -> None:
+        for direction, width, height in (("vertical", 116, 202), ("horizontal", 202, 116)):
+            with self.subTest(direction=direction):
+                size = calculate_auto_font_size(
+                    "实机验收", width, height, direction, self.FONTS[0], line_spacing=1.2,
+                )
+                self.assertLessEqual(size, 50)
+
     def test_vertical_question_and_exclamation_marks_do_not_jump_far_above_direct_draw_position(self) -> None:
         for font_path in self.FONTS:
             with self.subTest(font=font_path, char="？"):

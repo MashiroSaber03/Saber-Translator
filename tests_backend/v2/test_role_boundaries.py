@@ -128,6 +128,7 @@ def test_api_probe_loads_only_v2_routes_and_no_worker_modules(tmp_path: Path) ->
     assert "/<path:path>" in routes
     assert "/js/<path:filename>" in routes
     assert "/assets/<path:filename>" in routes
+    assert "/photocraft/<path:filename>" in routes
     assert all(
         route.startswith("/api/v2/")
         or route in {
@@ -135,6 +136,7 @@ def test_api_probe_loads_only_v2_routes_and_no_worker_modules(tmp_path: Path) ->
             "/<path:path>",
             "/js/<path:filename>",
             "/assets/<path:filename>",
+            "/photocraft/<path:filename>",
         }
         for route in routes
     )

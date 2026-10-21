@@ -1,0 +1,31 @@
+# Windows on ARM: package the ARM64 release the way release.yml does (cross-compiled on an x64
+# runner, unsigned here), then install that MSI on a Windows 11 ARM64 runner, check the installed
+# binaries are ARM64, run the CLI natively, and uninstall. (A native ARM64 `cargo test` job is left
+# out for now: PdfCraft saw an intermittent access violation in egui UI tests there.)
+name: Windows ARM64
+
+# Nightly on main (dependency and runner-image drift shows up within a day), and on PRs that
+# change the Windows packaging itself.
+on:
+  pull_request:
+    paths:
+      - .github/workflows/windows-arm64.yml
+      - packaging/windows/**
+  schedule:
+    - cron: "41 4 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: windows-arm64-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  windows-arm64:
+    # Intentionally tracked at @main (not SHA-pinned) so org-wide CI improvements, security fixes, and build optimizations propagate without PR churn across all craftapp repos.
+    uses: storytold/craft-common-actions/.github/workflows/windows-arm64.yml@main
+    with:
+      app-name: photocraft
+      app-dir: PhotoCraft

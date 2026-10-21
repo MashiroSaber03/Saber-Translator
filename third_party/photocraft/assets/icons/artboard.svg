@@ -1,0 +1,16 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <!-- PhotoCraft's own Artboard tool glyph (not from an icon set): a board with a tick at each end of its edges. -->
+  <rect x="7" y="7" width="10" height="10" rx="1" />
+  <path d="M7 2v2.5M17 2v2.5M7 19.5V22M17 19.5V22" />
+  <path d="M2 7h2.5M2 17h2.5M19.5 7H22M19.5 17H22" />
+</svg>

@@ -1,0 +1,52 @@
+# Scorecard checklist: reliability (#212, #203, never-crash).
+# Statuses must be true on main. REL-4 verified against 47f9306 on 2026-10-07; the rest
+# against 4b53f62 on 2026-10-05.
+area = "reliability"
+title = "Reliability"
+order = 7
+
+[[item]]
+id = "REL-1"
+target = "panic_hunt fuzzes every command with adversarial params"
+status = "done"
+note = "engine/tests/panic_hunt.rs: every command, own thread, 4 s timeout; #[ignore], run in the gate"
+
+[[item]]
+id = "REL-2"
+target = "Every workspace crate carries the never-crash deny(clippy::unwrap_used, ...) attribute"
+status = "done"
+note = "Counted automatically above (crate roots under crates/ and apps/); testkit gained it in #221"
+
+[[item]]
+id = "REL-3"
+target = "The app catches escaped panics around command dispatch and import/export"
+status = "done"
+note = "a_panic_in_a_command_... runs the test-only `test.panic` spec through Session::execute and asserts Err plus an unchanged document (engine jobs_tests.rs); the worker guard is covered by a_panic_in_the_worker_...; crash_guard.rs guard_turns_a_panic_into_an_error covers import/export (apps/photocraft)"
+
+[[item]]
+id = "REL-4"
+target = "Atomic save (temp, fsync, rename) for every document write"
+status = "done"
+issue = 203
+note = "photocraft_format::atomic_write (format/src/atomic.rs, #230): same-dir temp, sync_all, rename with Windows PermissionDenied retry, Unix dir fsync; every document write site routes through it and format/src/atomic/tests.rs failure-injects write, rename and read-only-dir errors"
+
+[[item]]
+id = "REL-212-1"
+target = "Fallible allocation for paste/erase/fill/transform/save/import, clear out-of-memory error"
+status = "partial"
+issue = 212
+note = "Raster region/tile buffers, paste/erase/fill/transform and warp output use fallible reservations; save/import boundaries preserve existing state, but encoder/decoder internals still need a broader fallible-allocation audit"
+
+[[item]]
+id = "REL-212-2"
+target = "Export switches to PSB when the estimated file size exceeds 2 GB"
+status = "done"
+issue = 212
+note = "PSD export uses checked size estimates for raster, masks, channels, and retained metadata"
+
+[[item]]
+id = "REL-212-3"
+target = "Tests: an allocation-limit injection makes each command Err with the document unchanged"
+status = "partial"
+issue = 212
+note = "Engine failpoint tests cover paste, erase, fill, transform, import and save transaction boundaries; codec-level allocator failure coverage remains open"

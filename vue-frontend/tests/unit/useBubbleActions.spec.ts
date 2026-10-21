@@ -34,6 +34,7 @@ vi.mock('@/api/v2/operations', () => ({
 }))
 vi.mock('@/services/pageDocumentPersistence', () => ({
   queuePageDocumentSave: queuePageDocumentSaveMock,
+  queuePageDocumentMutation: vi.fn().mockResolvedValue(undefined),
   registerPageDocument: registerPageDocumentMock,
 }))
 vi.mock('@/utils/toast', () => ({

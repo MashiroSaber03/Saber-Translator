@@ -58,7 +58,9 @@ function createApiError(error: AxiosError): ApiError {
       || (isDevelopmentProxyFailure ? 'proxy_connection_error' : undefined)
       || error.code
       || 'UNKNOWN_ERROR',
-    message: backendMessage
+    message: (response?.status === 423 && backendMessage === 'chapter is reserved by backend work'
+      ? '当前章节正在执行后台任务，请等待完成或在任务中心取消任务后再编辑'
+      : backendMessage)
       || (isCanceled ? '请求已取消' : undefined)
       || (isNetworkFailure ? '无法连接后端服务，请稍后重试' : undefined)
       || (isDevelopmentProxyFailure ? '开发代理与后端连接中断，请稍后重试' : undefined)

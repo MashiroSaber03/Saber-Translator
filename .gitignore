@@ -112,3 +112,9 @@ CLAUDE.md
 
 # --- Git worktrees ---
 .worktrees/
+
+# Built from the pinned PhotoCraft source by scripts/build_editor.py.
+/native/
+/third_party/photocraft/target/
+/third_party/photocraft/docs/brand/
+/src/backend_v2/static/photocraft/

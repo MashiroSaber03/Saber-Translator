@@ -1,0 +1,12 @@
+[package]
+name = "photocraft-color"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+photocraft-cms = { workspace = true }
+serde = { workspace = true }

@@ -18,6 +18,7 @@ spec.loader.exec_module(release_assets)
     ('Saber-Translator-9-cpu.7z*', 'Saber-Translator-9-cpu.7z.003', 'Saber-Translator-9-gpu.7z.003'),
     ('models.z*', 'models.z03', 'README.txt'),
     ('saber-translator-*.zip*', 'saber-translator-browser-extension-v0.zip', 'models.zip'),
+    ('saber-editor-*.zip*', 'saber-editor-v0-windows-x86_64.zip', 'README.txt'),
 ])
 def test_upload_only_cleans_its_own_stale_assets(tmp_path, monkeypatch, pattern, old, other):
     current = old.replace('003', '001').replace('z03', 'zip').replace('v0', 'v1')

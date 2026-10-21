@@ -1,0 +1,96 @@
+#!/bin/sh
+# PhotoCraft AppImage entry point (packaging/linux/AppRun; installed by package.sh).
+#
+# On Wayland the compositor resolves a window's dock icon by taking the window's
+# app_id (ai.storyteller.photocraft) and looking up an installed .desktop file.
+# An AppImage installs nothing, so every AppImage run would otherwise show the
+# generic "Wayland" icon (#593). Best-effort desktop integration: on first run
+# (and whenever the AppImage's path changes) install the .desktop entry and the
+# hicolor icons into $XDG_DATA_HOME, then launch. Every failure here must leave
+# the launch untouched. Opt out with PHOTOCRAFT_NO_DESKTOP_INTEGRATION=1.
+
+set -u
+
+APPDIR="$(dirname "$(readlink -f "$0")")"
+DESK_ID=ai.storyteller.photocraft
+
+integrate() {
+  case "${PHOTOCRAFT_NO_DESKTOP_INTEGRATION:-}" in
+    1 | true | yes) return 0 ;;
+  esac
+  # The AppImage runtime exports $APPIMAGE; without it (an extracted AppDir) there
+  # is no path to register and nothing to do.
+  appimage="${APPIMAGE:-}"
+  [ -n "$appimage" ] && [ -f "$appimage" ] || return 0
+  appimage="$(readlink -f "$appimage")" || return 0
+  # Exec= is parsed by the desktop: a path holding a quote, backquote, dollar, backslash,
+  # percent or a line break would need escaping (or could add lines), so skip integration.
+  case "$appimage" in
+    *[\"\`\$\\%]* | *'
+'*) return 0 ;;
+  esac
+  home="${HOME:-}"
+  [ -n "$home" ] || return 0
+  data="${XDG_DATA_HOME:-$home/.local/share}"
+  src_desktop="$APPDIR/usr/share/applications/$DESK_ID.desktop"
+  [ -f "$src_desktop" ] || return 0
+
+  # If an external AppImage integrator (AppImageLauncher, appimaged, Gear Lever) is
+  # already managing this AppImage, do not write a second launcher (#3623); remove our
+  # own if left over from an earlier run, and still install the hicolor icons below.
+  apps="$data/applications"
+  mkdir -p "$apps" 2>/dev/null || return 0
+  external=0
+  if [ -n "${DESKTOPINTEGRATION:-}" ]; then
+    external=1
+  else
+    for f in "$apps"/*.desktop; do
+      if [ ! -f "$f" ] || [ "$f" = "$apps/$DESK_ID.desktop" ]; then
+        continue
+      fi
+      if grep '^Exec=' "$f" 2>/dev/null | grep -Fq "$appimage"; then
+        external=1
+        break
+      fi
+    done
+  fi
+  if [ "$external" = 1 ]; then
+    if [ -f "$apps/$DESK_ID.desktop" ]; then
+      rm -f "$apps/$DESK_ID.desktop" 2>/dev/null || true
+      command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$apps" >/dev/null 2>&1
+    fi
+  else
+    # Rewrite Exec to this AppImage (the binary is not on the host PATH) and drop
+    # TryExec, which would hide the entry; everything else is shipped as packaged.
+    tmp="$apps/.$DESK_ID.tmp.$$"
+    esc="$(printf '%s' "$appimage" | sed 's/[\\&|]/\\&/g')"
+    if sed -e "s|^Exec=.*|Exec=\"$esc\" %F|" -e '/^TryExec=/d' "$src_desktop" 2>/dev/null >"$tmp"; then
+      if cmp -s "$tmp" "$apps/$DESK_ID.desktop"; then
+        rm -f "$tmp"
+      else
+        if mv -f "$tmp" "$apps/$DESK_ID.desktop" 2>/dev/null; then
+          command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$apps" >/dev/null 2>&1
+        else
+          rm -f "$tmp"
+        fi
+      fi
+    else
+      rm -f "$tmp"
+      return 0
+    fi
+  fi
+
+  # Icons: per-file compare so an unchanged install costs a handful of cmp calls.
+  src_icons="$APPDIR/usr/share/icons/hicolor"
+  [ -d "$src_icons" ] || return 0
+  icons="$data/icons/hicolor"
+  (cd "$src_icons" && find . -type f) | while IFS= read -r rel; do
+    mkdir -p "$icons/$(dirname "$rel")" 2>/dev/null || continue
+    if ! cmp -s "$src_icons/$rel" "$icons/$rel"; then
+      cp "$src_icons/$rel" "$icons/$rel" 2>/dev/null || true
+    fi
+  done
+}
+
+integrate
+exec "$APPDIR/usr/bin/photocraft" "$@"

@@ -1,0 +1,30 @@
+[package]
+name = "photocraft-psd"
+description = "Faithful, lossless reader and writer for Adobe Photoshop PSD (v1) and PSB (v2) files"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "photocraft_psd"
+path = "src/lib.rs"
+
+[features]
+# Real-file corpus tests (opt-in; `cargo xtask test-corpus`). Fail when the corpus is missing.
+corpus = []
+default = []
+serde = ["dep:serde"]
+testgen = []
+
+[dependencies]
+thiserror = { workspace = true }
+flate2 = { workspace = true }
+serde = { workspace = true, optional = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+photocraft-psd = { path = ".", features = ["testgen"] }
+
+[lints]
+workspace = true

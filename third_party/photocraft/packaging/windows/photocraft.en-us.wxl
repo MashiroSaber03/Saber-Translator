@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Overrides for the setup wizard's WixUI strings, so its pages name the version being installed
+  ([PhotocraftVersion] is the full version, pre-release tag included, set in photocraft.wxs).
+-->
+<WixLocalization Culture="en-US" xmlns="http://wixtoolset.org/schemas/v4/wxl">
+  <String Id="WelcomeDlgTitle" Value="{\WixUI_Font_Bigger}Welcome to the [ProductName] [PhotocraftVersion] Setup Wizard" />
+  <String Id="WelcomeDlgDescription" Value="The Setup Wizard will install [ProductName] version [PhotocraftVersion] on your computer. Click Next to continue or Cancel to exit the Setup Wizard." />
+  <String Id="VerifyReadyDlgInstallTitle" Value="{\WixUI_Font_Title}Ready to install [ProductName] [PhotocraftVersion]" />
+  <String Id="ExitDialogTitle" Value="{\WixUI_Font_Bigger}Completed the [ProductName] [PhotocraftVersion] Setup Wizard" />
+</WixLocalization>

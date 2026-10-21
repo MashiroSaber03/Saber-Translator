@@ -128,6 +128,10 @@ export function useContinuationState(bookId: Ref<string | undefined>): Continuat
             characterFormCursor = charactersResult.nextCursor
             hasMoreCharacterForms.value = characterFormCursor !== null
             imageRefreshKey.value = Date.now()
+            if (messageType.value === 'error' && errorMessage.value.startsWith('加载角色失败：')) {
+                messageType.value = ''
+                errorMessage.value = ''
+            }
             return true
         } catch (error) {
             if (isCurrentRequest()) {

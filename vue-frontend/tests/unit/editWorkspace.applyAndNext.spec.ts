@@ -216,7 +216,7 @@ describe('EditWorkspace backend-owned navigation', () => {
         expect.any(Array),
       )
       expect(mocks.flushPageDocument).toHaveBeenCalledWith('page-2')
-      expect(mocks.toast).toHaveBeenCalledWith('已是最后一张图片', 'info')
+      expect(mocks.toast).toHaveBeenCalledWith('已应用当前图片', 'success')
       expect(mocks.reRenderFullImage).not.toHaveBeenCalled()
     } finally {
       wrapper.unmount()

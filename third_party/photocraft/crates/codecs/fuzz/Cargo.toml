@@ -1,0 +1,71 @@
+[package]
+name = "photocraft-codecs-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[package.metadata]
+cargo-fuzz = true
+
+# Standalone workspace so the main workspace's `crates/*` glob and lints do
+# not apply (cargo-fuzz needs nightly + sanitizer flags).
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+photocraft-codecs = { path = "..", features = ["heif"] }
+# Called directly too: the codec turns its panics into errors (see decode_heif.rs).
+heic-rs = "=0.1.4"
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "decode_any"
+path = "fuzz_targets/decode_any.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decode_png"
+path = "fuzz_targets/decode_png.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decode_jpeg"
+path = "fuzz_targets/decode_jpeg.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decode_tiff"
+path = "fuzz_targets/decode_tiff.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decode_exr"
+path = "fuzz_targets/decode_exr.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decode_heif"
+path = "fuzz_targets/decode_heif.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decode_gif"
+path = "fuzz_targets/decode_gif.rs"
+test = false
+doc = false
+bench = false

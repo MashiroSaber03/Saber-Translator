@@ -1,0 +1,19 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <!-- PhotoCraft's own Vertical Type Mask glyph (not from an icon set): a T drawn as marching
+       ants beside a downward arrow (the text runs top to bottom). -->
+  <path d="M2.5 7V4h12v3" stroke-dasharray="2.5 2.5" />
+  <path d="M8.5 4v16" stroke-dasharray="2.5 2.5" />
+  <path d="M6 20h5" stroke-dasharray="2.5 2.5" />
+  <path d="M20 8v12" />
+  <path d="M17.5 17.5 20 20l2.5-2.5" />
+</svg>

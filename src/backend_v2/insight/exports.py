@@ -153,11 +153,10 @@ class InsightExportCommandService:
         run_status = _required_string(run["status"], "active Insight run status")
         if (
             run_status not in FINAL_ANALYSIS_RUN_STATUSES
-            or _required_string(run["scope"], "active Insight run scope")
-            != "full"
+            or run["published_at"] is None
         ):
             raise InsightConflict(
-                "active Insight run is not a published full run"
+                "当前漫画分析尚未发布，暂时无法导出"
             )
         snapshot = self.derived.snapshot(book_id=book_id)
         config = {
@@ -482,10 +481,9 @@ class InsightExportWorkerService:
         run_status = _required_string(run["status"], "export source run status")
         if (
             run_status not in FINAL_ANALYSIS_RUN_STATUSES
-            or _required_string(run["scope"], "export source run scope")
-            != "full"
+            or run["published_at"] is None
         ):
-            raise InsightConflict("frozen Insight run is not a published full run")
+            raise InsightConflict("导出所用的漫画分析尚未发布")
 
         pages_by_id: dict[str, Mapping[str, Any]] = {}
         for row in page_rows:

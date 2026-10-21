@@ -249,6 +249,9 @@ watch(
   () => currentImage.value?.id,
   pageId => {
     if (!pageId) isEditMode.value = false
+    else if (isEditMode.value && currentChapterId.value) {
+      translateInit.queueLastVisitedPageWrite(currentChapterId.value, pageId)
+    }
   },
 )
 

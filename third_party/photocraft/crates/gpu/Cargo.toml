@@ -1,0 +1,29 @@
+[package]
+name = "photocraft-gpu"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+half = "2"
+photocraft-geom = { workspace = true }
+photocraft-color = { workspace = true }
+photocraft-raster = { workspace = true }
+photocraft-doc = { workspace = true }
+photocraft-compose = { workspace = true }
+# Same major version as eframe's wgpu so the app's device can be shared.
+wgpu = { version = "30", default-features = false, features = ["std", "wgsl"] }
+log = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# Effect distance fields are computed in parallel bands.
+rayon = { workspace = true }
+
+[dev-dependencies]
+wgpu = { version = "30" }
+pollster = "1"
+# Shape layers in the effect parity tests.
+photocraft-vector = { workspace = true }

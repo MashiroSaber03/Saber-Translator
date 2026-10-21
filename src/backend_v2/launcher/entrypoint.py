@@ -783,6 +783,14 @@ class LauncherSupervisor:
                     # Desktop keeps its manager open between backend starts.
                     wait_for_children(config.data_root, check_cancelled=check_cancelled)
                 _raise_if_stop_requested(self._stop_event)
+                from src.backend_v2.editor_runtime import ensure_editor_runtime
+
+                def editor_progress(message):
+                    _raise_if_stop_requested(self._stop_event)
+                    self._publish(LauncherState.STARTING, message)
+                    user_log("system", message)
+
+                ensure_editor_runtime(editor_progress)
                 storage_manager.prepare(initialize_database)
                 ensure_data_root(config.data_root)
                 prepare_font_directory(config.data_root)
@@ -1029,6 +1037,9 @@ def run_launcher(args: object) -> int:
 
     if args.probe:
         with StorageManager(data_root, profile.name) as manager:
+            from src.backend_v2.editor_runtime import ensure_editor_runtime
+
+            ensure_editor_runtime(lambda message: print(message, file=sys.stderr))
             manager.prepare(initialize_database)
         print(
             json.dumps(

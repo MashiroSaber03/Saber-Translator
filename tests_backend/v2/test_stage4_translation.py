@@ -401,12 +401,12 @@ def test_core_translation_render_supports_vertical_ascii_blocks() -> None:
 def test_core_translation_render_propagates_core_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from src.core import rendering
+    from src.backend_v2.editing.native import NativeEditor
 
     def fail_render(_image, _states):
         raise RuntimeError("render failed")
 
-    monkeypatch.setattr(rendering, "render_bubbles_unified", fail_render)
+    monkeypatch.setattr(NativeEditor, "render_image", fail_render)
     source = Image.new("RGB", (32, 32), "white")
     try:
         with pytest.raises(RuntimeError, match="render failed"):
@@ -3795,6 +3795,73 @@ def _run_translation_job(
     return fence.job_id
 
 
+@pytest.mark.parametrize('mode', ['standard', 'remove_text', 'detect'])
+def test_native_jobs_keep_clean_projection_and_paint_in_sync(
+    translation_platform, tmp_path, monkeypatch, mode,
+):
+    from src.backend_v2.editing.native import NativeEditor
+
+    platform = translation_platform
+    content = ContentRepository(platform['engine'])
+    storage = AssetStorageService(platform['data_root'], platform['engine'])
+    native = NativeEditor(storage)
+    page = platform['page_id']
+    with platform['engine'].connect() as connection:
+        initial = native.prepare(connection, page)
+        fonts = native.font_files(connection)
+    source, painted = tmp_path / 'source.pcraft', tmp_path / 'painted.pcraft'
+    source.write_bytes(initial.document)
+    NativeEditor.invoke(dict(pageId=page, project=str(source), fonts=fonts, output=str(painted), commands=[
+        dict(id='layer.new.layer', params=dict(name='Manual paint')),
+        dict(id='select.rect', params=dict(x=50, y=50, width=10, height=10)),
+        dict(id='edit.fill', params=dict(color='#ff0000')),
+        dict(id='layer.setProps', params=dict(opacity=0.5)),
+        dict(id='select.deselect', params={}),
+    ]))
+    content.mutate_page_document(page_id=page, base_revision=1, mutations=[],
+        editor_document=painted.read_bytes(), idempotency_key='manual-paint')
+    with platform['engine'].begin() as connection:
+        initial = native.prepare(connection, page, render=True)
+        native.publish(connection, page, 2, initial)
+    with Image.open(BytesIO(initial.clean)) as image:
+        expected_pixel = image.getpixel((55, 55))
+    assert expected_pixel != (255, 255, 255)
+
+    fake = DeterministicFakeProvider()
+    for name in ('detect', 'ocr', 'colors', 'translate', 'repair'):
+        method = getattr(fake, name)
+        monkeypatch.setattr(CoreTranslationAlgorithms, name,
+            lambda _self, *args, _method=method, **kwargs: _method(*args, **kwargs))
+    if mode == 'detect':
+        AuxiliaryTranslationCommands(platform['engine'], profile=LOCAL_PROFILE).create_detect_job(
+            chapter_id=str(platform['chapter']['id']), page_ids=[page], idempotency_key='native-detect')
+    else:
+        TranslationJobCommandService(platform['engine'], profile=LOCAL_PROFILE).create_chapter_job(
+            chapter_id=str(platform['chapter']['id']), page_ids=[page],
+            config=dict(mode=mode, executionMode='sequential'), idempotency_key='native-job')
+    job_id = _run_translation_job(platform, CoreTranslationAlgorithms())
+    assert JobQueueRepository(platform['engine']).get_job(job_id)['status'] == 'completed'
+    with platform['engine'].connect() as connection:
+        clean_path = connection.execute(select(assets.c.relative_path).join(
+            page_assets, page_assets.c.asset_id == assets.c.id).where(
+            page_assets.c.page_id == page, page_assets.c.role == 'clean')).scalar_one()
+        reloaded = native.prepare(connection, page, render=True)
+        saved_document = native.read_document(connection, page)
+    with Image.open(storage.resolve_relative_path(clean_path)) as published, Image.open(BytesIO(reloaded.clean)) as projected:
+        assert published.getpixel((55, 55)) == expected_pixel
+        assert published.convert('RGB').tobytes() == projected.convert('RGB').tobytes()
+    assert reloaded.document is None  # Rendering reads the saved native document without rewriting it.
+    painted.write_bytes(saved_document)
+    with zipfile.ZipFile(painted) as archive:
+        layers = json.loads(archive.read('manifest.json'))['document']['layers']
+        paint_id = next(layer['id'] for layer in layers if layer['name'] == 'Manual paint')
+    NativeEditor.invoke(dict(pageId=page, project=str(painted), fonts=fonts, clean=str(tmp_path / 'hidden.png'), commands=[
+        dict(id='layer.setProps', params=dict(layer=paint_id, visible=False)),
+    ]))
+    with Image.open(tmp_path / 'hidden.png') as hidden:
+        assert hidden.getpixel((55, 55)) == (255, 255, 255)
+
+
 def test_hq_mixed_batch_detects_only_unprocessed_page_and_preserves_manual_bubble(
     translation_platform,
 ) -> None:
@@ -3942,7 +4009,7 @@ def test_remove_text_uses_existing_bubbles_without_running_detection(
 
 def test_remove_text_reuses_both_saved_mask_layers_without_detection(translation_platform):
     import numpy as np
-    from src.backend_v2.operations.masks import PageMaskService
+    from src.backend_v2.operations.masks import png_bytes
 
     platform = translation_platform
     created, _ = ContentRepository(platform["engine"]).mutate_page_document(
@@ -3950,7 +4017,7 @@ def test_remove_text_reuses_both_saved_mask_layers_without_detection(translation
         mutations=[{"op": "create", "clientMutationId": "mask-bubble", "fields": _bubble_fields(coords=[9, 10, 51, 58])}],
         idempotency_key="mask-bubble",
     )
-    masks = PageMaskService(data_root=platform["data_root"], engine=platform["engine"])
+    storage = AssetStorageService(platform["data_root"], platform["engine"])
     automatic = np.zeros((64, 64), dtype=np.uint8)
     automatic[14:18, 14:18] = 255
     manual = np.full((64, 64), 127, dtype=np.uint8)
@@ -3958,7 +4025,7 @@ def test_remove_text_reuses_both_saved_mask_layers_without_detection(translation
     manual[60, 60] = 255
     for role, pixels in (("text_mask", automatic), ("user_mask", manual)):
         with Image.fromarray(pixels) as image:
-            record = masks.publish(image)
+            record = storage.publish_bytes(png_bytes(image), extension="png", mime_type="image/png", width=64, height=64)
         with platform["engine"].begin() as connection:
             connection.execute(page_assets.insert().values(
                 page_id=platform["page_id"], role=role, asset_id=record.id,

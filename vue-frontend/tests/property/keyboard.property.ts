@@ -179,11 +179,9 @@ describe('edit keyboard shortcut properties', () => {
   it('never hijacks edit shortcuts from editable controls', () => {
     const textarea = document.createElement('textarea')
     const input = document.createElement('input')
-    const button = document.createElement('button')
     const contentEditable = document.createElement('div')
     contentEditable.setAttribute('contenteditable', 'true')
     const inputBlur = vi.spyOn(input, 'blur')
-    const buttonBlur = vi.spyOn(button, 'blur')
 
     const textareaHarness = createShortcutHarness()
     textareaHarness.handleKeyDown(createKeyEvent('a', { target: textarea }))
@@ -194,11 +192,6 @@ describe('edit keyboard shortcut properties', () => {
     expectCallback(inputHarness.options, 'goToPreviousImage', 0)
     expect(inputBlur).not.toHaveBeenCalled()
 
-    const buttonHarness = createShortcutHarness()
-    buttonHarness.handleKeyDown(createKeyEvent('d', { target: button }))
-    expectCallback(buttonHarness.options, 'goToNextImage', 0)
-    expect(buttonBlur).not.toHaveBeenCalled()
-
     const contentEditableHarness = createShortcutHarness()
     contentEditableHarness.handleKeyDown(createKeyEvent('Backspace', { target: contentEditable }))
     expectCallback(contentEditableHarness.options, 'deleteSelectedBubbles', 0)
@@ -206,6 +199,18 @@ describe('edit keyboard shortcut properties', () => {
     const enterHarness = createShortcutHarness()
     enterHarness.handleKeyDown(createKeyEvent('Enter', { ctrlKey: true, target: input }))
     expectCallback(enterHarness.options, 'applyAndNext', 0)
+  })
+
+  it('keeps toolbar activation native without trapping canvas shortcuts on a button', () => {
+    const button = document.createElement('button')
+    const { options, handleKeyDown } = createShortcutHarness()
+    for (const key of ['Enter', ' ', 'Tab']) {
+      const event = createKeyEvent(key, { target: button })
+      handleKeyDown(event)
+      expect(event.defaultPrevented).toBe(false)
+    }
+    handleKeyDown(createKeyEvent('d', { target: button }))
+    expectCallback(options, 'goToNextImage', 1)
   })
 
   it.each(['input', 'button', 'dialog', 'slider'])(

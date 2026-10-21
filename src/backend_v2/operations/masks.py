@@ -72,8 +72,7 @@ class PageMaskService:
         return dict(page), asset_ids, payloads
 
     def text_overlay(self, *, page_id, revision, protect_translation=False, layer='original'):
-        from src.core.config_models import BubbleState
-        from src.core.rendering import render_bubbles_unified
+        from src.backend_v2.editing.native import NativeEditor
 
         render_text = layer == 'translated' or protect_translation
         page, asset_ids, payloads = self.snapshot(page_id, for_render=render_text)
@@ -99,8 +98,21 @@ class PageMaskService:
                         payload['coords'], payload['rotationAngle'])], fill=255)
                 alpha = np.array(boxes)
             if render_text and 'translated' in asset_ids:
-                text = opened.enter_context(Image.new('RGBA', overlay.size, (0, 0, 0, 0)))
-                render_bubbles_unified(text, [BubbleState.from_dict(value) for value in payloads])
+                if 'editor_document' not in asset_ids:
+                    # Unedited legacy images keep their original pixels and glyph
+                    # coverage until their first conversion to the native document.
+                    from src.core.config_models import BubbleState
+                    from src.core.rendering import render_bubbles_unified
+
+                    text = opened.enter_context(Image.new('RGBA', overlay.size, (0, 0, 0, 0)))
+                    render_bubbles_unified(text, [BubbleState.from_dict(value) for value in payloads])
+                else:
+                    with read_transaction(self.engine) as connection:
+                        current = connection.execute(select(pages.c.document_revision).where(pages.c.id == page_id)).scalar_one()
+                        if current != revision:
+                            raise ContentConflict('page changed while loading text preview')
+                        result = NativeEditor(self.storage).prepare(connection, page_id, text_only=True)
+                    text = opened.enter_context(Image.open(BytesIO(result.text)).convert('RGBA'))
                 coverage = opened.enter_context(text.getchannel('A'))
                 # Use the published result pixels, including strokes and anti-aliasing.
                 alpha[np.asarray(coverage) > 0] = 255 if layer == 'translated' else 0
@@ -165,14 +177,8 @@ class PageMaskService:
         with read_user_mask(upload) as mask:
             if mask.size != (page["width"], page["height"]):
                 raise ValueError("掩膜尺寸与原图不一致")
-            record = self.publish(mask)
+            payload = png_bytes(mask)
         return self.content.mutate_page_document(
             page_id=page_id, base_revision=base_revision, mutations=[],
-            idempotency_key=idempotency_key, user_mask_asset_id=record.id,
-        )
-
-    def publish(self, mask):
-        return self.storage.publish_stream(
-            BytesIO(png_bytes(mask)), extension="png", mime_type="image/png",
-            width=mask.width, height=mask.height,
+            idempotency_key=idempotency_key, user_mask=payload,
         )

@@ -10,7 +10,7 @@ from sqlalchemy import select
 from tests_backend.v2.test_stage3_operations import operation_platform
 from src.backend_v2.auth.ownership import owner_scope
 from src.backend_v2.content.repository import ContentConflict
-from src.backend_v2.operations.masks import PageMaskService
+from src.backend_v2.operations.masks import PageMaskService, png_bytes
 from src.backend_v2.operations.repair import PageRepairService
 from src.backend_v2.operations.repository import OperationRepository, OperationNotFound
 from src.backend_v2.storage.schema import assets, bubbles, page_assets, pages, render_requests
@@ -23,6 +23,25 @@ def png(array):
         image.save(stream, format="PNG")
     stream.seek(0)
     return stream
+
+
+def publish_mask(service, image):
+    return service.storage.publish_bytes(png_bytes(image), extension='png', mime_type='image/png',
+        width=image.width, height=image.height)
+
+
+def test_manual_mask_save_publishes_one_png_and_one_document(operation_platform):
+    p = operation_platform
+    masks, _ = services(p)
+    with p['engine'].connect() as connection:
+        before = set(connection.execute(select(assets.c.id)).scalars())
+    pixels = np.full((64, 64), 127, dtype=np.uint8)
+    pixels[10:15, 10:15] = 255
+    masks.save(page_id=p['page_id'], upload=png(pixels), base_revision=1, idempotency_key='one-mask')
+    with p['engine'].connect() as connection:
+        new_types = list(connection.execute(select(assets.c.mime_type).where(assets.c.id.not_in(before))).scalars())
+    assert sorted(new_types) == ['application/x-photocraft', 'image/png']
+    assert np.array_equal(decoded(masks.preview(page_id=p['page_id'], method='solid')['userMask']), pixels)
 
 
 def decoded(value):
@@ -69,7 +88,7 @@ def test_original_text_preview_preserves_translated_glyphs_and_strokes(
     precise = np.zeros((64, 64), dtype=np.uint8)
     precise[2:62, 2:62] = 255
     with Image.fromarray(precise) as image:
-        mask = service.publish(image)
+        mask = publish_mask(service, image)
     with p['engine'].begin() as c:
         for role, asset in [('translated', record), ('text_mask', mask)]:
             c.execute(page_assets.insert().values(page_id=p['page_id'], role=role, asset_id=asset.id,
@@ -319,7 +338,7 @@ def test_preview_exposes_actual_stages_without_creating_assets(operation_platfor
     precise[10:13, 10:13] = 255
     precise[50:53, 50:53] = 255
     with Image.fromarray(precise) as image:
-        record = masks.publish(image)
+        record = publish_mask(masks, image)
     with p['engine'].begin() as c:
         c.execute(page_assets.insert().values(page_id=p['page_id'], role='text_mask', asset_id=record.id,
                                              input_source_revision=1, input_document_revision=1))
@@ -354,17 +373,18 @@ def test_failed_manual_asset_publication_never_commits_image_or_marks(operation_
         page_id=p["page_id"], upload=png(stroke), base_revision=1,
         method="solid", fill_color="#ff0000", idempotency_key="fail-manual",
     )
-    publish = repair._publish_png
-    calls = 0
+    from src.backend_v2.storage.assets import AssetStorageService
 
-    def fail_manual(image):
-        nonlocal calls
-        calls += 1
-        if calls == 2:
-            raise OSError("manual mask write failed")
-        return publish(image)
+    publish = AssetStorageService.publish_bytes
 
-    monkeypatch.setattr(repair, "_publish_png", fail_manual)
+    def fail_manual(storage, payload, **kwargs):
+        if kwargs.get('mime_type') == 'image/png':
+            with Image.open(BytesIO(payload)) as image:
+                if image.mode == 'L':
+                    raise OSError("manual mask write failed")
+        return publish(storage, payload, **kwargs)
+
+    monkeypatch.setattr(AssetStorageService, "publish_bytes", fail_manual)
     with pytest.raises(OSError, match="manual mask write failed"):
         run_repair(p, repair, accepted)
     with p["engine"].connect() as connection:
@@ -380,7 +400,7 @@ def test_352_mask_migration_preserves_existing_images_and_indexes(operation_plat
     p = operation_platform
     masks, _ = services(p)
     with Image.new("RGB", (64, 64), "#123456") as image:
-        record = masks.publish(image)
+        record = publish_mask(masks, image)
     with p["engine"].begin() as connection:
         for role in ("clean", "translated"):
             connection.execute(page_assets.insert().values(

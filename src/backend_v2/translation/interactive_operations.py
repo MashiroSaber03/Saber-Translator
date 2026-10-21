@@ -15,13 +15,13 @@ from src.backend_v2.content.page_style import (
     rgb_to_hex,
     validate_page_style,
 )
-from src.backend_v2.serialization import canonical_json
 from src.backend_v2.operations.repository import (
     OperationFence,
     OperationRepository,
     RenderRequestRepository,
 )
 from src.backend_v2.rendering.service import publish_png_asset
+from src.backend_v2.storage.database import read_transaction
 from src.backend_v2.storage.assets import AssetRecord, AssetStorageService
 from src.backend_v2.storage.platform_repositories import SettingsRepository
 from src.backend_v2.storage.schema import (
@@ -183,17 +183,12 @@ class InteractivePageOperationService:
         payload["ocrResult"] = details[0]
         new_revision = int(page["document_revision"]) + 1
 
+        publish_bubble = self._prepare_one_bubble(
+            page_id=page_id, bubble_id=bubble_id, base_revision=int(page["document_revision"]),
+            new_revision=new_revision, payload=payload, expected_bubble_count=len(rows),
+        )
         def publish(connection: Connection, _row: Mapping[str, Any]) -> None:
-            self._update_one_bubble(
-                connection,
-                page_id=page_id,
-                bubble_id=bubble_id,
-                base_revision=int(page["document_revision"]),
-                new_revision=new_revision,
-                payload=payload,
-                render_changed=False,
-                expected_bubble_count=len(rows),
-            )
+            publish_bubble(connection, render_changed=False)
 
         response = {
             "bubbleId": operation["bubbleId"],
@@ -272,6 +267,10 @@ class InteractivePageOperationService:
             for row_index, row in enumerate(rows)
         )
 
+        publish_bubble = self._prepare_one_bubble(
+            page_id=page_id, bubble_id=bubble_id, base_revision=int(page["document_revision"]),
+            new_revision=new_revision, payload=payload, expected_bubble_count=len(rows),
+        )
         def publish(connection: Connection, _row: Mapping[str, Any]) -> None:
             has_translated = connection.execute(
                 select(page_assets.c.asset_id).where(
@@ -280,16 +279,7 @@ class InteractivePageOperationService:
                 )
             ).scalar_one_or_none()
             needs_render = has_translated is not None or has_drawable_text
-            self._update_one_bubble(
-                connection,
-                page_id=page_id,
-                bubble_id=bubble_id,
-                base_revision=int(page["document_revision"]),
-                new_revision=new_revision,
-                payload=payload,
-                render_changed=needs_render,
-                expected_bubble_count=len(rows),
-            )
+            publish_bubble(connection, render_changed=needs_render)
             if needs_render:
                 self.renders.upsert(
                     connection,
@@ -424,6 +414,10 @@ class InteractivePageOperationService:
             for row_index, row in enumerate(rows)
         )
 
+        publish_bubble = self._prepare_one_bubble(
+            page_id=page_id, bubble_id=bubble_id, base_revision=int(page["document_revision"]),
+            new_revision=new_revision, payload=payload, expected_bubble_count=len(rows),
+        )
         def publish(connection: Connection, _row: Mapping[str, Any]) -> None:
             has_translated = connection.execute(
                 select(page_assets.c.asset_id).where(
@@ -435,16 +429,7 @@ class InteractivePageOperationService:
                 changes_render
                 and (has_translated is not None or has_drawable_text)
             )
-            self._update_one_bubble(
-                connection,
-                page_id=page_id,
-                bubble_id=bubble_id,
-                base_revision=int(page["document_revision"]),
-                new_revision=new_revision,
-                payload=payload,
-                render_changed=needs_render,
-                expected_bubble_count=len(rows),
-            )
+            publish_bubble(connection, render_changed=needs_render)
             if needs_render:
                 self.renders.upsert(
                     connection,
@@ -588,6 +573,12 @@ class InteractivePageOperationService:
             finally:
                 stored_mask.close()
         new_revision = int(page["document_revision"]) + 1
+        from src.backend_v2.editing.native import NativeEditor
+
+        with read_transaction(self.engine) as connection:
+            publish_document = NativeEditor(self.storage).prepare_commit(connection, page_id, new_revision,
+                [dict(bubbleId=str(uuid.uuid4()), fontId=page["default_font_id"], payload=payload) for payload in payloads],
+                operation_id=fence.operation_id)
 
         def publish(connection: Connection, _row: Mapping[str, Any]) -> None:
             current = connection.execute(
@@ -615,24 +606,6 @@ class InteractivePageOperationService:
                 for payload in payloads
             )
             needs_render = has_translated_asset or has_drawable_text
-            connection.execute(
-                delete(bubbles).where(bubbles.c.page_id == page_id)
-            )
-            if payloads:
-                connection.execute(
-                    insert(bubbles),
-                    [
-                        {
-                            "id": str(uuid.uuid4()),
-                            "page_id": page_id,
-                            "ordinal": index,
-                            "font_id": page["default_font_id"],
-                            "payload_json": canonical_json(payload),
-                            "updated_revision": new_revision,
-                        }
-                        for index, payload in enumerate(payloads, start=1)
-                    ],
-                )
             changed = connection.execute(
                 update(pages)
                 .where(
@@ -660,6 +633,7 @@ class InteractivePageOperationService:
                     page_assets.c.role == "text_mask",
                 )
             )
+            publish_document(connection)
             if mask_record is not None:
                 connection.execute(
                     insert(page_assets).values(
@@ -827,76 +801,69 @@ class InteractivePageOperationService:
         result["credential_version_id"] = version_id
         return result
 
-    @staticmethod
-    def _update_one_bubble(
-        connection: Connection,
+    def _prepare_one_bubble(
+        self,
         *,
         page_id: str,
         bubble_id: str,
         base_revision: int,
         new_revision: int,
         payload: Mapping[str, Any],
-        render_changed: bool,
         expected_bubble_count: int,
-    ) -> None:
+    ):
+        from src.backend_v2.editing.native import NativeEditor
+
         payload = validate_bubble_payload(payload, render=False)
-        page = connection.execute(
-            select(
-                pages.c.render_status,
-                pages.c.rendered_revision,
-            ).where(
-                pages.c.id == page_id,
-                pages.c.document_revision == base_revision,
-            )
-        ).mappings().one_or_none()
-        if page is None:
-            raise RuntimeError("page revision changed")
-        values: dict[str, object] = {"document_revision": new_revision}
-        if render_changed:
-            values["render_status"] = "stale"
-        elif (
-            page["render_status"] == "ready"
-            and page["rendered_revision"] == base_revision
-        ):
-            values["rendered_revision"] = new_revision
-            pointer_changed = connection.execute(
-                update(page_assets)
-                .where(
-                    page_assets.c.page_id == page_id,
-                    page_assets.c.role == "translated",
-                    page_assets.c.input_document_revision == base_revision,
+        with read_transaction(self.engine) as connection:
+            documents = NativeEditor.page_bubbles(connection, page_id)
+            if len(documents) != expected_bubble_count or bubble_id not in {item["bubbleId"] for item in documents}:
+                raise RuntimeError("bubble set changed during publication")
+            for item in documents:
+                if item["bubbleId"] == bubble_id:
+                    item["payload"] = payload
+            publish_document = NativeEditor(self.storage).prepare_commit(connection, page_id, new_revision, documents)
+
+        def publish(connection: Connection, *, render_changed: bool) -> None:
+            page = connection.execute(
+                select(
+                    pages.c.render_status,
+                    pages.c.rendered_revision,
+                ).where(
+                    pages.c.id == page_id,
+                    pages.c.document_revision == base_revision,
                 )
-                .values(input_document_revision=new_revision)
+            ).mappings().one_or_none()
+            if page is None:
+                raise RuntimeError("page revision changed")
+            values: dict[str, object] = {"document_revision": new_revision}
+            if render_changed:
+                values["render_status"] = "stale"
+            elif (
+                page["render_status"] == "ready"
+                and page["rendered_revision"] == base_revision
+            ):
+                values["rendered_revision"] = new_revision
+                pointer_changed = connection.execute(
+                    update(page_assets)
+                    .where(
+                        page_assets.c.page_id == page_id,
+                        page_assets.c.role == "translated",
+                        page_assets.c.input_document_revision == base_revision,
+                    )
+                    .values(input_document_revision=new_revision)
+                )
+                if pointer_changed.rowcount != 1:
+                    raise RuntimeError("current translated asset is missing")
+            changed = connection.execute(
+                update(pages)
+                .where(
+                    pages.c.id == page_id,
+                    pages.c.document_revision == base_revision,
+                )
+                .values(**values)
             )
-            if pointer_changed.rowcount != 1:
-                raise RuntimeError("current translated asset is missing")
-        changed = connection.execute(
-            update(pages)
-            .where(
-                pages.c.id == page_id,
-                pages.c.document_revision == base_revision,
-            )
-            .values(**values)
-        )
-        if changed.rowcount != 1:
-            raise RuntimeError("page revision changed")
-        revisions_changed = connection.execute(
-            update(bubbles)
-            .where(
-                bubbles.c.page_id == page_id,
-                bubbles.c.updated_revision == base_revision,
-            )
-            .values(updated_revision=new_revision)
-        )
-        if revisions_changed.rowcount != expected_bubble_count:
-            raise RuntimeError("bubble revisions changed during publication")
-        bubble_changed = connection.execute(
-            update(bubbles)
-            .where(bubbles.c.id == bubble_id, bubbles.c.page_id == page_id)
-            .values(
-                payload_json=canonical_json(dict(payload)),
-                updated_revision=new_revision,
-            )
-        )
-        if bubble_changed.rowcount != 1:
-            raise RuntimeError("bubble no longer exists")
+            if changed.rowcount != 1:
+                raise RuntimeError("page revision changed")
+            publish_document(connection)
+
+        return publish

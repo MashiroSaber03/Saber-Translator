@@ -1,0 +1,520 @@
+# Performance budgets for `cargo xtask perf` and the scorecard (#221).
+#
+# Targets come from #209 (interactive edits), #210 (long operations) and #211 (slow algorithms).
+# Each [[scenario]] is measured by one row of one bench (`bench` + `row`, the row's exact name
+# in the bench's `--json` report), judged on `metric` (p50 | p95 | max; default p95) against
+# `budget_ms`. `enforce = false` marks a target the code doesn't meet yet: it is reported as
+# "over budget" but only a regression fails the run; flip it to true in the PR that meets it.
+# Scenarios the code can't support yet carry `not_measurable` (why) instead of a bench: never
+# invent a number for them.
+#
+# Benches run in release with `--json <file>` appended. `quick_args` = also runs in
+# `cargo xtask perf --quick` (small synthetic documents; budgets don't apply there).
+
+[settings]
+# A scenario regresses when its p50 grows by more than this share of the baseline…
+regression_pct = 15.0
+# …and by more than this many milliseconds (timer noise on very fast rows).
+regression_min_ms = 1.0
+
+[[bench]]
+name = "perf_scenarios"
+package = "photocraft-ui-egui"
+quick_args = ["--quick"]
+note = "the #209/#210/#211 rows: layered 20 MP, 150 layers, 16/32-bit, open, retouch, selection"
+
+[[bench]]
+name = "interactive_bench"
+package = "photocraft-ui-egui"
+args = ["--reps", "5"]
+note = "36 MP photo: dabs, filters, adjustment previews, saves"
+
+[[bench]]
+name = "fx_bench"
+package = "photocraft-ui-egui"
+args = ["--no-cpu", "--reps", "5"]
+note = "36 MP document with layer effects, GPU compositor"
+
+[[bench]]
+name = "bevel_bench"
+package = "photocraft-ui-egui"
+args = ["--reps", "9"]
+quick_args = ["--size", "1200x800", "--reps", "3"]
+note = "chisel bevel size change (a dragged slider) on a 12 MP ellipse and a text paragraph, GPU canvas and CPU"
+
+[[bench]]
+name = "camera_raw_bench"
+package = "photocraft-ui-egui"
+quick_args = ["--quick"]
+note = "36 MP dense RGB layer: CPU develop, histogram, ICC vectorscope, clipping, nine Lab probes and egui tessellation; excludes GPU upload/presentation"
+
+[[bench]]
+name = "type_bench"
+package = "photocraft-ui-egui"
+quick_args = ["--size", "2000x1500", "--layers", "20", "--steps", "15"]
+note = "font-size drag on 50 type layers"
+
+[[bench]]
+name = "large_image_bench"
+package = "photocraft-ui-egui"
+args = ["--size", "14000x14000", "--op", "refresh"]
+note = "196 MP: open and full refresh"
+
+# Hook: the layout-document bench lands with perf/layout-documents (#125/#128). It runs (and its
+# rows are kept in results.json) as soon as the example exists; add scenarios for its rows then.
+[[bench]]
+name = "layout_bench"
+package = "photocraft-ui-egui"
+requires = "crates/ui-egui/examples/layout_bench.rs"
+quick_args = []
+note = "layout PSDs with many styled layers (#125/#128)"
+
+# ---- #209: interactive edits on layered documents (20 MP, styled layers) ---------------------
+
+[[scenario]]
+id = "P1"
+title = "Move a layer with layer styles (per drag update)"
+issue = 209
+bench = "perf_scenarios"
+row = "move styled layer 10 px + refresh"
+budget_ms = 25
+enforce = false  # over budget in the 2026-10-05 baseline
+
+[[scenario]]
+id = "P2"
+title = "Change layer opacity"
+issue = 209
+bench = "perf_scenarios"
+row = "set layer opacity + refresh"
+budget_ms = 20
+enforce = false  # over budget in the 2026-10-05 baseline
+
+[[scenario]]
+id = "P3"
+title = "Change layer fill"
+issue = 209
+bench = "perf_scenarios"
+row = "set layer fill + refresh"
+budget_ms = 20
+enforce = false  # over budget in the 2026-10-05 baseline
+
+[[scenario]]
+id = "P4"
+title = "Change blend mode"
+issue = 209
+bench = "perf_scenarios"
+row = "set blend mode + refresh"
+budget_ms = 20
+enforce = false  # over budget in the 2026-10-05 baseline
+
+[[scenario]]
+id = "P5"
+title = "Toggle visibility"
+issue = 209
+bench = "perf_scenarios"
+row = "toggle visibility + refresh"
+budget_ms = 10
+enforce = false  # over budget in the 2026-10-05 baseline
+
+[[scenario]]
+id = "P6"
+title = "Undo a move"
+issue = 209
+bench = "perf_scenarios"
+row = "undo move + refresh"
+budget_ms = 25
+enforce = false  # over budget in the 2026-10-05 baseline
+
+[[scenario]]
+id = "P7"
+title = "Redo a property change"
+issue = 209
+bench = "perf_scenarios"
+row = "redo opacity change + refresh"
+budget_ms = 25
+enforce = false  # over budget in the 2026-10-05 baseline
+
+[[scenario]]
+id = "P8"
+title = "Duplicate a 12 MP layer (first)"
+issue = 209
+bench = "perf_scenarios"
+row = "duplicate 12 MP layer (first) + refresh"
+budget_ms = 100
+enforce = false  # over budget in the 2026-10-05 baseline
+
+[[scenario]]
+id = "P9"
+title = "Duplicate a 12 MP layer (repeat)"
+issue = 209
+bench = "perf_scenarios"
+row = "duplicate 12 MP layer (repeat) + refresh"
+budget_ms = 20
+enforce = false  # over budget in the 2026-10-05 baseline
+
+[[scenario]]
+id = "P10"
+title = "Paste a 12 MP layer (first)"
+issue = 209
+bench = "perf_scenarios"
+row = "paste 12 MP layer (first) + refresh"
+budget_ms = 100
+enforce = false  # over budget in the 2026-10-05 baseline
+
+[[scenario]]
+id = "P11"
+title = "Paste a 12 MP layer (repeat)"
+issue = 209
+bench = "perf_scenarios"
+row = "paste 12 MP layer (repeat) + refresh"
+budget_ms = 20
+enforce = false  # over budget in the 2026-10-05 baseline
+
+[[scenario]]
+id = "P12"
+title = "Arrow-key nudge in a 150-layer document"
+issue = 209
+bench = "perf_scenarios"
+row = "nudge 1 px in the many-layer document + refresh"
+budget_ms = 30
+enforce = false  # over budget in the 2026-10-05 baseline
+
+[[scenario]]
+id = "P51"
+title = "New layer in a 150-layer document"
+issue = 1771
+bench = "perf_scenarios"
+row = "new layer in the many-layer document + refresh"
+budget_ms = 16
+enforce = false  # not in the baseline yet
+
+[[scenario]]
+id = "P13"
+title = "Brush dab on a 15000×10000 16-bit document"
+issue = 209
+bench = "perf_scenarios"
+row = "brush dab 60 px on 16-bit 15000x10000 + refresh"
+budget_ms = 80
+enforce = false  # over budget in the 2026-10-05 baseline
+
+[[scenario]]
+id = "P14"
+title = "Move a layer on a 15000×10000 16-bit document"
+issue = 209
+bench = "perf_scenarios"
+row = "move layer on 16-bit 15000x10000 + refresh"
+budget_ms = 80
+enforce = false  # over budget in the 2026-10-05 baseline
+
+[[scenario]]
+id = "P15"
+title = "Zoom / pan frame time on a 15000×10000 16-bit document"
+issue = 209
+target = "≤ 16 ms per frame"
+not_measurable = "no headless canvas frame harness yet (zoom and pan sample the GPU texture in the egui paint callback)"
+
+[[scenario]]
+id = "P16"
+title = "Brush dab on a 32-bit document with 20 layers"
+issue = 209
+bench = "perf_scenarios"
+row = "brush dab 60 px on 32-bit 20 layers + refresh"
+budget_ms = 100
+enforce = false  # over budget in the 2026-10-05 baseline
+
+[[scenario]]
+id = "P17"
+title = "Move a layer on a 32-bit document with 20 layers"
+issue = 209
+bench = "perf_scenarios"
+row = "move layer on 32-bit 20 layers + refresh"
+budget_ms = 100
+enforce = false  # over budget in the 2026-10-05 baseline
+
+# ---- #210: long operations ---------------------------------------------------------------------
+
+[[scenario]]
+id = "P18"
+title = "Open a 20 MP layered PSD: first pixels (today: fully opened)"
+issue = 210
+bench = "perf_scenarios"
+row = "open 20 MP layered PSD (decode + first composite)"
+budget_ms = 1000
+enforce = false  # over budget in the 2026-10-05 baseline
+
+[[scenario]]
+id = "P19"
+title = "Open a 20 MP layered PSD: editable"
+issue = 210
+bench = "perf_scenarios"
+row = "open 20 MP layered PSD (decode + first composite)"
+budget_ms = 3000
+
+[[scenario]]
+id = "P20"
+title = "Open a 2 GB PSD / 4–5 GB PSB"
+issue = 210
+target = "opens with progress, editable, never blank"
+not_measurable = "opens run in the background with progress (#210), but there are no generated large-file fixtures yet (#216)"
+
+[[scenario]]
+id = "P21"
+title = "Content-Aware Fill on 10 MP"
+issue = 210
+bench = "perf_scenarios"
+row = "Content-Aware Fill 10 MP (200 px hole)"
+budget_ms = 1500
+
+[[scenario]]
+id = "P22"
+title = "Spot Healing stroke on 10 MP"
+issue = 210
+bench = "perf_scenarios"
+row = "Spot Healing stroke 10 MP"
+budget_ms = 500
+
+[[scenario]]
+id = "P23"
+title = "Warp / Puppet / Perspective preview at 4K"
+issue = 210
+target = "≤ 16 ms per frame, commit in the background"
+not_measurable = "the previews run inside the UI tools; no headless frame harness, no background commit"
+
+[[scenario]]
+id = "P24"
+title = "Import 500 brushes (longest UI-thread step)"
+issue = 210
+bench = "perf_scenarios"
+row = "import 500 brushes: longest UI-thread step"
+metric = "max"
+budget_ms = 100
+
+[[scenario]]
+id = "P25"
+title = "Cancel a Gaussian Blur job on 24 MP (until the worker exits)"
+issue = 210
+bench = "perf_scenarios"
+row = "cancel Gaussian Blur r 50 job on 24 MP"
+metric = "max"
+budget_ms = 200
+
+[[scenario]]
+id = "P49"
+title = "Cancel a Content-Aware Fill job on 24 MP (until the worker exits)"
+issue = 210
+bench = "perf_scenarios"
+row = "cancel Content-Aware Fill job on 24 MP"
+metric = "max"
+budget_ms = 200
+
+[[scenario]]
+id = "P50"
+title = "App frame time while a 24 MP Gaussian Blur job runs"
+issue = 210
+bench = "perf_scenarios"
+row = "app frame during 24 MP Gaussian Blur r 50 job"
+budget_ms = 16
+
+# ---- #211: slow algorithms ---------------------------------------------------------------------
+
+[[scenario]]
+id = "P26"
+title = "Select › Modify › Smooth on 24 MP (radius 50)"
+issue = 211
+bench = "perf_scenarios"
+row = "Select > Modify > Smooth r 50 on 24 MP"
+budget_ms = 100
+enforce = false  # #2873: p95 20-45 ms on 16 cores (load up to ~15), over 100 ms only at load avg > 20; CI cores unmeasured
+
+[[scenario]]
+id = "P27"
+title = "Select › Modify › Feather on 24 MP (radius 50)"
+issue = 211
+bench = "perf_scenarios"
+row = "Select > Modify > Feather r 50 on 24 MP"
+budget_ms = 100
+enforce = false  # #2873: p95 20-45 ms on 16 cores (load up to ~15), over 100 ms only at load avg > 20; CI cores unmeasured
+
+[[scenario]]
+id = "P28"
+title = "Content-Aware Scale 24 MP (to 90 % width)"
+issue = 211
+bench = "perf_scenarios"
+row = "Content-Aware Scale 24 MP to 90 % width"
+budget_ms = 3000
+enforce = false  # over budget in the 2026-10-05 baseline
+
+[[scenario]]
+id = "P29"
+title = "Select Subject on 24 MP, repeated"
+issue = 211
+bench = "perf_scenarios"
+row = "Select Subject 24 MP (repeat)"
+budget_ms = 100
+enforce = false  # #2865: met (repeats answer from the last mask, 7-10 ms p95, was 270-370 ms); enforce once the baseline is refreshed
+
+[[scenario]]
+id = "P30"
+title = "Liquify 800 px brush on 3500×2200 at full resolution"
+issue = 211
+target = "≤ 1 ms per update"
+bench = "perf_scenarios"
+row = "Liquify 800 px brush on 3500x2200 at full resolution"
+budget_ms = 1
+enforce = false # visible source-resolution rendering is measurable; target remains aspirational
+
+[[scenario]]
+id = "P31"
+title = "Camera Raw exposure change (proxy)"
+issue = 211
+target = "≤ 10 ms"
+bench = "camera_raw_bench"
+row = "exposure proxy update"
+budget_ms = 10
+enforce = false  # not in the 2026-10-05 baseline yet; contributor M4 run 2026-10-06: p95 5.4 ms
+
+[[scenario]]
+id = "P32"
+title = "Brush release on a long stroke"
+issue = 211
+target = "≤ 16 ms (no hitch at mouse-up)"
+bench = "perf_scenarios"
+row = "brush release: 600-point stroke, 200 px soft, 24 MP"
+budget_ms = 16
+enforce = false  # measurable since the release commits the live stroke's pixels; awaiting a baseline run
+
+[[scenario]]
+id = "P33"
+title = "Brush dab on A4 300 ppi CMYK (dab to screen)"
+issue = 211
+bench = "perf_scenarios"
+row = "brush dab on A4 300 ppi CMYK + refresh"
+budget_ms = 6
+enforce = false  # over budget in the 2026-10-05 baseline
+
+[[scenario]]
+id = "P34"
+title = "Brush preview memory, small dab on an 8K viewport"
+issue = 211
+target = "≤ 2 MiB"
+not_measurable = "the live brush preview buffers are UI-side; no headless counter yet"
+
+[[scenario]]
+id = "P35"
+title = "Marquee drag on 24 MP with Alt/Shift"
+issue = 211
+target = "≤ 17 ms p95"
+not_measurable = "Shift/Alt marquee modifiers don't exist yet (#208) and the drag preview is UI-side"
+
+[[scenario]]
+id = "P36"
+title = "Camera Raw exposure change with all SDR scopes (CPU)"
+issue = 211
+bench = "camera_raw_bench"
+row = "interactive scope update"
+budget_ms = 10
+enforce = false  # not in the 2026-10-05 baseline yet; contributor M4 run 2026-10-06: p95 8.0 ms
+
+# ---- tracked (no budget yet): regressions only -------------------------------------------------
+
+[[scenario]]
+id = "P40"
+title = "Brush dab 60 px on 36 MP"
+bench = "interactive_bench"
+row = "brush dab 60 px (command + refresh)"
+
+[[scenario]]
+id = "P41"
+title = "Gaussian Blur r 40 on 36 MP"
+bench = "interactive_bench"
+row = "Gaussian Blur r 40 (photo layer) + refresh"
+
+[[scenario]]
+id = "P42"
+title = "Curves dialog change, layer preview, 36 MP"
+bench = "interactive_bench"
+row = "Curves dialog change, layer preview"
+
+[[scenario]]
+id = "P43"
+title = "Save .psd, 36 MP, 3 layers"
+bench = "interactive_bench"
+row = "save .psd"
+
+[[scenario]]
+id = "P44"
+title = "Open .psd, 36 MP, 3 layers"
+bench = "interactive_bench"
+row = "open .psd (3 layers) + refresh"
+
+[[scenario]]
+id = "P45"
+title = "Full refresh with layer effects, warm caches, 36 MP (GPU)"
+bench = "fx_bench"
+row = "full refresh, warm caches (GPU)"
+
+[[scenario]]
+id = "P46"
+title = "Brush dab on a layer with effects, 36 MP (GPU)"
+bench = "fx_bench"
+row = "dab on the effect layer (damage + reach) (GPU)"
+
+[[scenario]]
+id = "P47"
+title = "Font-size drag step, 50 type layers"
+bench = "type_bench"
+row = "font size step: total"
+
+[[scenario]]
+id = "P48"
+title = "Full refresh of a 14000×14000 document"
+bench = "large_image_bench"
+row = "full refresh"
+
+[[scenario]]
+id = "P52"
+title = "Chisel bevel size change, 12 MP ellipse, size 8 (GPU)"
+bench = "bevel_bench"
+row = "bevel size change to 8, ellipse (GPU)"
+
+[[scenario]]
+id = "P53"
+title = "Chisel bevel size change, 12 MP ellipse, size 50 (GPU)"
+bench = "bevel_bench"
+row = "bevel size change to 50, ellipse (GPU)"
+
+[[scenario]]
+id = "P54"
+title = "Chisel bevel size change, 12 MP ellipse, size 250 (GPU)"
+bench = "bevel_bench"
+row = "bevel size change to 250, ellipse (GPU)"
+
+[[scenario]]
+id = "P55"
+title = "Chisel bevel size change, 12 MP text paragraph, size 8 (GPU)"
+bench = "bevel_bench"
+row = "bevel size change to 8, text (GPU)"
+
+[[scenario]]
+id = "P56"
+title = "Chisel bevel size change, 12 MP text paragraph, size 50 (GPU)"
+bench = "bevel_bench"
+row = "bevel size change to 50, text (GPU)"
+
+[[scenario]]
+id = "P57"
+title = "Chisel bevel size change, 12 MP text paragraph, size 250 (GPU)"
+bench = "bevel_bench"
+row = "bevel size change to 250, text (GPU)"
+
+[[scenario]]
+id = "P58"
+title = "Chisel bevel size change, 12 MP ellipse, size 8 (CPU)"
+bench = "bevel_bench"
+row = "bevel size change to 8, ellipse (CPU)"
+
+[[scenario]]
+id = "P59"
+title = "Chisel bevel size change, 12 MP text paragraph, size 8 (CPU)"
+bench = "bevel_bench"
+row = "bevel size change to 8, text (CPU)"

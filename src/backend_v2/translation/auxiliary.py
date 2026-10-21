@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
 
 from sqlalchemy import Engine, select, update
 from sqlalchemy.engine import Connection
+from src.backend_v2.storage.database import read_transaction
+from src.backend_v2.storage.assets import AssetStorageService
 
 from src.backend_v2.serialization import canonical_json
 from src.backend_v2.content.page_style import (
@@ -1082,7 +1084,9 @@ class StyleApplyWorkerService:
             new_defaults != defaults
             or default_font_id != page["default_font_id"]
         )
-        render_changed = False
+        render_changed = bool(selected.intersection(RENDER_STYLE_FIELDS) and any(
+            json.loads(row["payload_json"]).get("richText") for row in bubble_rows))
+        changed = changed or render_changed
         has_drawable_text = False
         for row in bubble_rows:
             payload = _load_current_bubble_payload(
@@ -1163,6 +1167,17 @@ class StyleApplyWorkerService:
         )
         base_revision = int(page["document_revision"])
         new_revision = base_revision + 1 if changed else base_revision
+        if changed:
+            from src.backend_v2.editing.native import NativeEditor
+
+            requested = {"fontId" if field == "fontFamily" else "textDirection" if field == "layoutDirection" else field
+                         for field in selected}
+            storage = AssetStorageService(Path(self.engine.url.database).parent, self.engine)
+            with read_transaction(self.engine) as connection:
+                publish_document = NativeEditor(storage).prepare_commit(connection, page_id, new_revision,
+                    [dict(bubbleId=bubble_id, fontId=default_font_id if "fontFamily" in selected else row["font_id"], payload=payload)
+                     for row, (bubble_id, payload) in zip(bubble_rows, updated_payloads, strict=True)],
+                    fields={bubble_id: requested for bubble_id, _ in updated_payloads}, job_step_id=str(step["stepId"]))
 
         def publish(connection: Connection) -> None:
             if connection.execute(
@@ -1173,26 +1188,6 @@ class StyleApplyWorkerService:
             ).scalar_one_or_none() is None:
                 raise RuntimeError("style job lost its chapter lock")
             if changed:
-                for bubble_id, payload in updated_payloads:
-                    values: dict[str, object] = {
-                        "payload_json": canonical_json(payload),
-                        "updated_revision": new_revision,
-                    }
-                    if "fontFamily" in selected:
-                        values["font_id"] = default_font_id
-                    bubble_changed = connection.execute(
-                        update(bubbles)
-                        .where(
-                            bubbles.c.id == bubble_id,
-                            bubbles.c.page_id == page_id,
-                            bubbles.c.updated_revision == base_revision,
-                        )
-                        .values(**values)
-                    )
-                    if bubble_changed.rowcount != 1:
-                        raise RuntimeError(
-                            "style target bubble changed during publication"
-                        )
                 page_changed = connection.execute(
                     update(pages)
                     .where(
@@ -1221,6 +1216,7 @@ class StyleApplyWorkerService:
                     raise RuntimeError(
                         "style target page changed during publication"
                     )
+                publish_document(connection)
                 if (
                     not needs_render
                     and page["render_status"] == "ready"
@@ -1454,6 +1450,13 @@ class TextImportWorkerService:
             render_changed and (has_translated_asset or has_drawable_text)
         )
         new_revision = base_revision + 1
+        from src.backend_v2.editing.native import NativeEditor
+
+        storage = AssetStorageService(Path(self.engine.url.database).parent, self.engine)
+        with read_transaction(self.engine) as connection:
+            publish_document = NativeEditor(storage).prepare_commit(connection, page_id, new_revision,
+                [dict(bubbleId=row["id"], fontId=row["font_id"], payload=updated_by_id.get(row["id"], bubble_payloads[row["id"]]))
+                 for row in sorted(bubble_rows.values(), key=lambda row: row["ordinal"])], job_step_id=str(step["stepId"]))
 
         def publish(connection: Connection) -> None:
             if connection.execute(
@@ -1463,37 +1466,6 @@ class TextImportWorkerService:
                 )
             ).scalar_one_or_none() is None:
                 raise RuntimeError("text import lost its chapter lock")
-            for bubble_id, payload in updates:
-                bubble_changed = connection.execute(
-                    update(bubbles)
-                    .where(
-                        bubbles.c.id == bubble_id,
-                        bubbles.c.page_id == page_id,
-                        bubbles.c.updated_revision == base_revision,
-                    )
-                    .values(
-                        payload_json=canonical_json(payload),
-                        updated_revision=new_revision,
-                    )
-                )
-                if bubble_changed.rowcount != 1:
-                    raise RuntimeError(
-                        f"text import bubble {bubble_id} changed after preview"
-                    )
-            changed_ids = [bubble_id for bubble_id, _payload in updates]
-            untouched = connection.execute(
-                update(bubbles)
-                .where(
-                    bubbles.c.page_id == page_id,
-                    bubbles.c.updated_revision == base_revision,
-                    bubbles.c.id.not_in(changed_ids),
-                )
-                .values(updated_revision=new_revision)
-            )
-            if untouched.rowcount != len(bubble_rows) - len(updates):
-                raise RuntimeError(
-                    "text import bubble set changed after preview"
-                )
             changed = connection.execute(
                 update(pages)
                 .where(
@@ -1518,6 +1490,7 @@ class TextImportWorkerService:
             )
             if changed.rowcount != 1:
                 raise RuntimeError("text import page changed after preview")
+            publish_document(connection)
             if (
                 not needs_render
                 and page["render_status"] == "ready"

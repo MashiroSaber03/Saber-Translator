@@ -285,10 +285,10 @@
           tone="success"
           size="sm"
           :disabled="isBusy || !!brushMode"
-          title="应用更改并跳转下一张 (Ctrl+Enter)"
+          :title="canGoNext ? '应用更改并跳转下一张 (Ctrl+Enter)' : '应用当前图片的更改 (Ctrl+Enter)'"
           @click="$emit('apply-and-next')"
         >
-          应用并下一张
+          {{ canGoNext ? '应用并下一张' : '应用更改' }}
         </UiButton>
       </div>
     </div>

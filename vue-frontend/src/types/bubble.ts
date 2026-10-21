@@ -24,6 +24,8 @@ export interface BubblePosition {
 }
 
 export interface BubbleState {
+  /** Native character/paragraph runs; UTF-8 byte lengths, shared by both editors. */
+  richText?: { runs: { len: number; style: Record<string, unknown> }[]; paragraphs: { len: number; style: Record<string, unknown> }[] } | null
   /** Stable backend identity. UI-only bubbles do not have one until persisted. */
   backendBubbleId?: string
   /** Correlates an unsaved UI bubble with the backend-created identity. */

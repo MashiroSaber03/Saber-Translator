@@ -17,7 +17,10 @@ from src.backend_v2.operations.repository import (
     RenderFence,
     RenderRequestRepository,
 )
-from src.backend_v2.storage.database import is_sqlite_busy_error
+from src.backend_v2.storage.database import (
+    SQLITE_BUSY_RETRY_DELAY_SECONDS,
+    is_sqlite_busy_error,
+)
 from src.shared.user_logging import (
     RetryLogEpisode,
     log_step_failed,
@@ -309,10 +312,16 @@ class DurableRenderExecutor:
             try:
                 with owner_scope(fence.owner_user_id):
                     publisher = self.handler(fence)
-                    published = self.repository.complete(
-                        fence,
-                        publisher=publisher,
-                    )
+                    while True:
+                        try:
+                            published = self.repository.complete(fence, publisher=publisher)
+                            break
+                        except Exception as exc:
+                            if not is_sqlite_busy_error(exc):
+                                raise
+                            # Keep the computed result; complete rechecks the same fence on retry.
+                            if self._stop.wait(SQLITE_BUSY_RETRY_DELAY_SECONDS):
+                                return
             except OperationFenced:
                 LOGGER.debug(
                     "渲染被 fencing 中断：request=%s page=%s",

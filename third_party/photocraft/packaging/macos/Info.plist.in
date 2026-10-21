@@ -1,0 +1,236 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template: packaging/macos/package.sh substitutes @VERSION@ (full, e.g. 0.2.0-rc.1),
+     @SHORT_VERSION@ (numeric X.Y.Z) and @BUILD_SHA@. -->
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+  <!-- UI translations are embedded in Rust; declare them for AppKit's system dialogs.
+       Keep in sync with LANGUAGES in crates/ui-egui/src/i18n/mod.rs. -->
+  <key>CFBundleLocalizations</key>
+  <array>
+    <string>en</string>
+    <string>ja</string>
+    <string>zh-Hans</string>
+    <string>zh-Hant</string>
+    <string>es</string>
+    <string>ru</string>
+    <string>uk</string>
+    <string>sr</string>
+    <string>cs</string>
+    <string>fr</string>
+    <string>id</string>
+    <string>ko</string>
+    <string>pl</string>
+    <string>de</string>
+    <string>pt-BR</string>
+    <string>el</string>
+    <string>nl</string>
+    <string>it</string>
+    <string>hu</string>
+    <string>tr</string>
+    <string>vi</string>
+  </array>
+  <key>CFBundleDisplayName</key>
+  <string>PhotoCraft</string>
+  <key>CFBundleName</key>
+  <string>PhotoCraft</string>
+  <key>CFBundleExecutable</key>
+  <string>PhotoCraft</string>
+  <key>CFBundleIdentifier</key>
+  <string>ai.storyteller.photocraft</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleSignature</key>
+  <string>????</string>
+  <key>CFBundleShortVersionString</key>
+  <string>@SHORT_VERSION@</string>
+  <key>CFBundleVersion</key>
+  <string>@SHORT_VERSION@</string>
+  <key>PhotoCraftVersion</key>
+  <string>@VERSION@</string>
+  <key>PhotoCraftBuildCommit</key>
+  <string>@BUILD_SHA@</string>
+  <key>CFBundleIconFile</key>
+  <string>PhotoCraft</string>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.graphics-design</string>
+  <!-- Must match MACOSX_DEPLOYMENT_TARGET in package.sh. Big Sur is the first release on
+       Apple silicon and has the Metal feature set wgpu targets. -->
+  <key>LSMinimumSystemVersion</key>
+  <string>11.0</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+  <key>NSSupportsAutomaticGraphicsSwitching</key>
+  <true/>
+  <key>NSRequiresAquaSystemAppearance</key>
+  <false/>
+  <key>NSHumanReadableCopyright</key>
+  <string>Copyright © the PhotoCraft authors. MIT OR Apache-2.0.</string>
+
+  <!-- Photocraft's own format. -->
+  <key>UTExportedTypeDeclarations</key>
+  <array>
+    <dict>
+      <key>UTTypeIdentifier</key>
+      <string>ai.storyteller.photocraft.document</string>
+      <key>UTTypeDescription</key>
+      <string>PhotoCraft Document</string>
+      <key>UTTypeConformsTo</key>
+      <array>
+        <string>public.data</string>
+        <string>public.image</string>
+      </array>
+      <key>UTTypeIconFile</key>
+      <string>PhotoCraft</string>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key>
+        <array><string>pcraft</string></array>
+        <key>public.mime-type</key>
+        <array><string>application/x-photocraft</string></array>
+      </dict>
+    </dict>
+  </array>
+  <!-- Types macOS may not know; the system's own declaration wins when it has one. -->
+  <key>UTImportedTypeDeclarations</key>
+  <array>
+    <dict>
+      <key>UTTypeIdentifier</key>
+      <string>ai.storyteller.photocraft.ora</string>
+      <key>UTTypeDescription</key>
+      <string>OpenRaster Image</string>
+      <key>UTTypeConformsTo</key>
+      <array><string>public.data</string><string>public.image</string></array>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key>
+        <array><string>ora</string></array>
+        <key>public.mime-type</key>
+        <array><string>image/openraster</string></array>
+      </dict>
+    </dict>
+    <dict>
+      <key>UTTypeIdentifier</key>
+      <string>ai.storyteller.photocraft.kra</string>
+      <key>UTTypeDescription</key>
+      <string>Krita Document</string>
+      <key>UTTypeConformsTo</key>
+      <array><string>public.data</string><string>public.image</string></array>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key>
+        <array><string>kra</string><string>krz</string></array>
+        <key>public.mime-type</key>
+        <array><string>application/x-krita</string></array>
+      </dict>
+    </dict>
+    <dict>
+      <key>UTTypeIdentifier</key>
+      <string>ai.storyteller.photocraft.pdn</string>
+      <key>UTTypeDescription</key>
+      <string>Paint.NET Document</string>
+      <key>UTTypeConformsTo</key>
+      <array><string>public.data</string><string>public.image</string></array>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key>
+        <array><string>pdn</string></array>
+        <key>public.mime-type</key>
+        <array><string>image/x-paintnet</string></array>
+      </dict>
+    </dict>
+    <dict>
+      <key>UTTypeIdentifier</key>
+      <string>com.adobe.photoshop-large-image</string>
+      <key>UTTypeDescription</key>
+      <string>PSD Large Document</string>
+      <key>UTTypeConformsTo</key>
+      <array>
+        <string>public.data</string>
+        <string>public.image</string>
+      </array>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key>
+        <array><string>psb</string></array>
+      </dict>
+    </dict>
+    <dict>
+      <key>UTTypeIdentifier</key>
+      <string>ai.storyteller.photocraft.qoi</string>
+      <key>UTTypeDescription</key>
+      <string>QOI Image</string>
+      <key>UTTypeConformsTo</key>
+      <array>
+        <string>public.data</string>
+        <string>public.image</string>
+      </array>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key>
+        <array><string>qoi</string></array>
+      </dict>
+    </dict>
+  </array>
+
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>PhotoCraft Document</string>
+      <key>CFBundleTypeRole</key>
+      <string>Editor</string>
+      <key>LSHandlerRank</key>
+      <string>Owner</string>
+      <key>CFBundleTypeIconFile</key>
+      <string>PhotoCraft</string>
+      <key>LSItemContentTypes</key>
+      <array><string>ai.storyteller.photocraft.document</string></array>
+    </dict>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>PSD Document</string>
+      <key>CFBundleTypeRole</key>
+      <string>Editor</string>
+      <key>LSHandlerRank</key>
+      <string>Alternate</string>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>com.adobe.photoshop-image</string>
+        <string>com.adobe.photoshop-large-image</string>
+      </array>
+    </dict>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>Image</string>
+      <key>CFBundleTypeRole</key>
+      <string>Editor</string>
+      <key>LSHandlerRank</key>
+      <string>Alternate</string>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>public.png</string>
+        <string>public.jpeg</string>
+        <string>public.tiff</string>
+        <string>org.webmproject.webp</string>
+        <string>com.compuserve.gif</string>
+        <string>com.microsoft.bmp</string>
+        <string>com.truevision.tga-image</string>
+        <string>com.microsoft.ico</string>
+        <string>public.pbm</string>
+        <string>com.ilm.openexr-image</string>
+        <string>public.radiance</string>
+        <string>public.avif</string>
+        <string>ai.storyteller.photocraft.qoi</string>
+        <string>ai.storyteller.photocraft.pdn</string>
+        <string>ai.storyteller.photocraft.ora</string>
+        <string>ai.storyteller.photocraft.kra</string>
+      </array>
+    </dict>
+  </array>
+</dict>
+</plist>

@@ -1,0 +1,34 @@
+[package]
+name = "photocraft-raw-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[package.metadata]
+cargo-fuzz = true
+
+# Standalone workspace so the main workspace's `crates/*` glob and lints do
+# not apply (cargo-fuzz needs nightly + sanitizer flags).
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+photocraft-raw = { path = ".." }
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "develop"
+path = "fuzz_targets/develop.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ljpeg"
+path = "fuzz_targets/ljpeg.rs"
+test = false
+doc = false
+bench = false

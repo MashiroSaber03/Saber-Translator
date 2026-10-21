@@ -120,6 +120,7 @@ def materialize_render_payloads(
                 coords[3] - coords[1],
                 persisted["textDirection"],
                 font_path,
+                line_spacing=persisted["lineSpacing"],
             )
         persisted = validate_bubble_payload(persisted, render=False)
         render_payload = validate_bubble_payload(

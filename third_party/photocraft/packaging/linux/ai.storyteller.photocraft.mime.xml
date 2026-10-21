@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- shared-mime-info definitions for types the system database may not have.
+     Installed to /usr/share/mime/packages/ (update-mime-database runs on install). -->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-photocraft">
+    <comment>PhotoCraft document</comment>
+    <icon name="ai.storyteller.photocraft"/>
+    <glob pattern="*.pcraft"/>
+  </mime-type>
+  <mime-type type="image/x-psb">
+    <comment>Large PSD document</comment>
+    <sub-class-of type="image/vnd.adobe.photoshop"/>
+    <generic-icon name="image-x-generic"/>
+    <magic priority="60">
+      <match type="string" value="8BPS\x00\x02" offset="0"/>
+    </magic>
+    <glob pattern="*.psb"/>
+  </mime-type>
+  <mime-type type="image/qoi">
+    <comment>QOI image</comment>
+    <generic-icon name="image-x-generic"/>
+    <magic priority="50">
+      <match type="string" value="qoif" offset="0"/>
+    </magic>
+    <glob pattern="*.qoi"/>
+  </mime-type>
+  <mime-type type="image/x-paintnet">
+    <comment>Paint.NET document</comment>
+    <generic-icon name="image-x-generic"/>
+    <magic priority="50">
+      <match type="string" value="PDN3" offset="0"/>
+    </magic>
+    <glob pattern="*.pdn"/>
+  </mime-type>
+</mime-info>

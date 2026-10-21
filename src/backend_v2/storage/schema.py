@@ -114,6 +114,7 @@ PAGE_WRITE_OPERATION_KINDS = (
     "bubble_translate",
 )
 PAGE_ASSET_ROLES = (
+    "editor_document",
     "source",
     "thumbnail_source",
     "clean",

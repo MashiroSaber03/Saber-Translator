@@ -34,6 +34,14 @@ def create_web_blueprint() -> Blueprint:
     def assets(filename: str) -> Response:
         return send_from_directory(_vue_dist_root() / "assets", filename)
 
+    @blueprint.get("/photocraft/<path:filename>")
+    def photocraft(filename: str) -> Response:
+        root = project_root() / "src" / "backend_v2" / "static" / "photocraft"
+        response = send_from_directory(root, filename, max_age=0)
+        if filename.endswith(".wasm"):
+            response.mimetype = "application/wasm"
+        return response
+
     @blueprint.get("/<path:path>")
     def spa_fallback(path: str) -> Response:
         if path == "api" or path.startswith("api/"):

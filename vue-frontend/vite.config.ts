@@ -52,6 +52,7 @@ export default defineConfig({
       allow: [workspaceRoot],
     },
     proxy: {
+      '/photocraft': { target: apiProxyTarget, changeOrigin: true },
       '/api': {
         target: apiProxyTarget,
         agent: apiProxyAgent,

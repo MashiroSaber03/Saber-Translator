@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch, type ComponentPublicInstance } from 'vue'
 import AppShell from '@/components/ui/AppShell.vue'
 import { useRouter } from 'vue-router'
-import { getBook, listChapterPages, type V2BookDetail, type V2PageSummary } from '@/api/v2/content'
+import { getBook, listChapterPages, updateLastVisitedPage, type V2BookDetail, type V2PageSummary } from '@/api/v2/content'
 import { useToast } from '@/utils/toast'
 import { useAuthStore } from '@/stores/authStore'
 import { usePublicUserAccess } from '@/composables/usePublicUserAccess'
@@ -202,9 +202,15 @@ function chapter(id: string) {
   persist()
   void router.push({ path: '/reader', query: { book: props.bookId, chapter: id } })
 }
-function translate() {
+async function translate() {
   persist()
-  void router.push({ path: '/translate', query: { book: props.bookId, chapter: props.chapterId } })
+  try {
+    const page = images.value[currentIndex.value]
+    if (page) await updateLastVisitedPage(props.chapterId, page.id)
+    await router.push({ path: '/translate', query: { book: props.bookId, chapter: props.chapterId } })
+  } catch (e) {
+    toast.error(`打开当前页编辑失败: ${e instanceof Error ? e.message : '未知错误'}`)
+  }
 }
 async function toggleFullscreen() {
   try {

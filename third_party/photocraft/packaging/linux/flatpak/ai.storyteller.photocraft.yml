@@ -1,0 +1,66 @@
+# Flatpak manifest for PhotoCraft, ready for a Flathub submission.
+#
+# Flatpak builds run offline, so the crate sources must be vendored first. From the repo root:
+#
+#   curl -fsSLO https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py
+#   python3 flatpak-cargo-generator.py Cargo.lock -o packaging/linux/flatpak/cargo-sources.json
+#   flatpak-builder --user --install --force-clean build-flatpak packaging/linux/flatpak/ai.storyteller.photocraft.yml
+#   flatpak run ai.storyteller.photocraft
+#
+# For Flathub, replace the `dir` source with a `git` source pinned to a release tag and commit.
+# The single-file .flatpak attached to each release comes from ai.storyteller.photocraft.bundle.yml,
+# which repackages the prebuilt release binaries. Keep runtime-version and finish-args identical.
+id: ai.storyteller.photocraft
+runtime: org.freedesktop.Platform
+runtime-version: '26.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: photocraft
+finish-args:
+  # Display: Wayland first; X11 only when no Wayland compositor is running.
+  - --socket=wayland
+  - --socket=fallback-x11
+  # X11 shared memory (MIT-SHM). Without it the X11 fallback is slow or fails.
+  - --share=ipc
+  # GPU access for the wgpu compositor (Vulkan, or GL as a fallback).
+  - --device=dri
+  # Open/Save dialogs go through the file-chooser portal (rfd's xdg-portal backend) and
+  # drag-and-drop through the document portal, so picked files work anywhere without broad
+  # filesystem access. Pictures and Documents are granted so files passed by path (the command
+  # line, Open Recent, "Save" next to the original) work in the usual places.
+  - --filesystem=xdg-pictures
+  - --filesystem=xdg-documents
+  # Deliberately not granted: network (the optional --control server listens on 127.0.0.1 in
+  # the sandbox; `flatpak override --user --share=network ai.storyteller.photocraft` exposes it to
+  # host agents) and home/host filesystem access.
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+modules:
+  - name: photocraft
+    buildsystem: simple
+    build-options:
+      env:
+        CARGO_HOME: /run/build/photocraft/cargo
+        CARGO_NET_OFFLINE: 'true'
+    build-commands:
+      - cargo --offline build --release --locked -p photocraft --features heif
+      - install -Dm755 target/release/photocraft /app/bin/photocraft
+      - install -Dm644 packaging/linux/ai.storyteller.photocraft.desktop /app/share/applications/ai.storyteller.photocraft.desktop
+      - install -Dm644 packaging/linux/ai.storyteller.photocraft.mime.xml /app/share/mime/packages/ai.storyteller.photocraft.xml
+      - mkdir -p /app/share/icons && cp -R assets/app-icon/hicolor /app/share/icons/
+      - >-
+        version=$(awk '/^\[/{p=($0=="[workspace.package]");next} p&&$1=="version"{gsub(/[" ]/,"",$3);print $3;exit}' Cargo.toml);
+        install -d /app/share/metainfo;
+        sed -e "s/@VERSION@/$version/" -e "s/@DATE@/$(date -u +%Y-%m-%d)/"
+        packaging/linux/ai.storyteller.photocraft.metainfo.xml.in > /app/share/metainfo/ai.storyteller.photocraft.metainfo.xml
+    sources:
+      - type: dir
+        path: ../../..
+        skip:
+          - target
+          - dist
+          - corpus
+          - build-flatpak
+          - .flatpak-builder
+      - cargo-sources.json

@@ -5,11 +5,13 @@ from __future__ import annotations
 from src.storage_migrator.runner import StorageManager
 from src.storage_migrator.control import business_ready, control_root
 from src.backend_v2.storage.lifecycle import initialize_database
+from src.backend_v2.editor_runtime import ensure_editor_runtime
 
 import json
 import logging
 import os
 from pathlib import Path
+import sys
 import threading
 import webbrowser
 
@@ -571,6 +573,7 @@ class DesktopStoragePreparation(QObject):
     def _run(self) -> None:
         try:
             with self.manager, self.manager.startup_guard():
+                ensure_editor_runtime(self.progress.emit)
                 result = self.manager.prepare(initialize_database)
                 ensure_data_root(self.manager.root)
                 settings = DesktopSettingsStore(self.manager.root).load(self.defaults)
@@ -595,6 +598,7 @@ def run_desktop(args: object) -> int:
     manager = StorageManager(data_root, "local")
     if args.probe:
         with manager, manager.startup_guard():
+            ensure_editor_runtime(lambda message: print(message, file=sys.stderr))
             manager.prepare(initialize_database)
             ensure_data_root(data_root)
             settings = DesktopSettingsStore(data_root).load(defaults)

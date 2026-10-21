@@ -117,6 +117,7 @@ class AssetStorageService:
         height: int | None = None,
         bind: Callable[[object, str], None] | None = None,
         failpoint: Callable[[str], None] | None = None,
+        connection=None,
     ) -> AssetRecord:
         from io import BytesIO
 
@@ -129,6 +130,7 @@ class AssetStorageService:
                 height=height,
                 bind=bind,
                 failpoint=failpoint,
+                connection=connection,
             )
 
     def get_record(self, asset_id: str) -> AssetRecord | None:
@@ -182,6 +184,7 @@ class AssetStorageService:
         height: int | None = None,
         bind: Callable[[object, str], None] | None = None,
         failpoint: Callable[[str], None] | None = None,
+        connection=None,
     ) -> AssetRecord:
         canonical_extension = extension.lower().lstrip(".")
         if not _EXTENSION_PATTERN.fullmatch(canonical_extension):
@@ -197,6 +200,13 @@ class AssetStorageService:
         ):
             raise ValueError("asset dimensions must be positive")
 
+        from contextlib import nullcontext
+
+        # A document and its derived asset pointers may be committed by the
+        # caller's existing transaction. Rollback leaves only an unreferenced
+        # object, which the normal orphan reconciliation already collects.
+        transaction = (lambda: nullcontext(connection)) if connection is not None else self.engine.begin
+        atomic = (lambda: nullcontext(connection)) if connection is not None else lambda: immediate_transaction(self.engine)
         owner_user_id = effective_owner_id()
         upload_budget = self.upload_budget(owner_user_id)
 
@@ -238,7 +248,7 @@ class AssetStorageService:
             width=width,
             height=height,
         )
-        with self.engine.begin() as connection:
+        with transaction() as connection:
             connection.execute(
                 insert(object_commit_journal).values(
                     asset_id=asset_id,
@@ -253,7 +263,7 @@ class AssetStorageService:
         self._fsync_directory(final_path.parent)
         self._hit(failpoint, "file_published")
 
-        with self.engine.begin() as connection:
+        with transaction() as connection:
             connection.execute(
                 update(object_commit_journal)
                 .where(
@@ -265,7 +275,7 @@ class AssetStorageService:
         self._hit(failpoint, "journal_file_published")
 
         try:
-            with immediate_transaction(self.engine) as connection:
+            with atomic() as connection:
                 if upload_budget is not None:
                     quota_bytes, used_bytes = self._quota_state(
                         connection,
@@ -299,7 +309,7 @@ class AssetStorageService:
                 )
         except AssetQuotaExceeded:
             final_path.unlink(missing_ok=True)
-            with self.engine.begin() as connection:
+            with transaction() as connection:
                 connection.execute(
                     delete(object_commit_journal).where(
                         object_commit_journal.c.asset_id == asset_id

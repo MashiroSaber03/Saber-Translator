@@ -102,7 +102,7 @@ beforeEach(() => {
       getImageData: () => ({
         data: Uint8ClampedArray.from({ length: 64 }, (_, i) => raw[Math.floor(i / 4)]!),
       }),
-      createImageData: () => ({ data: new Uint8ClampedArray(64) }),
+      createImageData: (width: number, height: number) => ({ width, height, data: new Uint8ClampedArray(width * height * 4) }),
       putImageData: vi.fn(),
     } as unknown as CanvasRenderingContext2D
   })
@@ -128,6 +128,19 @@ afterEach(() => {
 })
 
 describe('mask editor persistence and execution', () => {
+  it('reuses the display canvas and pixels across switches without PNG encoding or requests', async () => {
+    await editor.open()
+    const canvas = editor.overlay.value!.canvas
+    const calls = mocks.getPageMasks.mock.calls.length
+    for (let index = 0; index < 20; index++) {
+      editor.visibility.value.final = !editor.visibility.value.final
+      await flushPromises()
+      expect(editor.overlay.value!.canvas).toBe(canvas)
+    }
+    expect(HTMLCanvasElement.prototype.toDataURL).not.toHaveBeenCalled()
+    expect(mocks.getPageMasks).toHaveBeenCalledTimes(calls)
+    expect(mocks.savePageUserMask).not.toHaveBeenCalled()
+  })
   it.each(['ready', 'stale'])('keeps the displayed render revision accurate after a %s mask save', async renderStatus => {
     useImageStore().updateCurrentImage({ renderedRevision: 1 })
     mocks.savePageUserMask.mockResolvedValue({ document: { ...documentAt(2), renderStatus } })

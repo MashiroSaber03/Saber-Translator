@@ -1,0 +1,654 @@
+"""Integration tests against the real Rust executable, not a rendering mock."""
+
+from io import BytesIO
+import json
+import uuid
+from zipfile import ZipFile
+
+from PIL import Image
+import pytest
+from sqlalchemy import event, select, update
+
+from tests_backend.v2.test_stage2_content import content_platform, _image_bytes, _bubble_fields
+from src.backend_v2.content.repository import ContentConflict
+from src.backend_v2.api.app import ApiSettings, create_api_app
+from src.backend_v2.runtime_identity import RuntimeIdentity
+from src.backend_v2.auth.ownership import owner_scope
+from tests_backend.v2.test_public_profile import public_platform, _login, ALICE_PASSWORD, BOB_PASSWORD, PUBLIC_BASE
+from src.backend_v2.editing.native import NativeEditor
+from src.backend_v2.storage.defaults import DEFAULT_TEXT_STYLE
+from src.backend_v2.storage.schema import assets, bubbles, page_assets, pages
+
+
+def import_page(platform):
+    _, _, _, _, importer, _, chapter = platform
+    result, _ = importer.import_page(chapter_id=chapter['id'], logical_path='page.png',
+        text_style=dict(DEFAULT_TEXT_STYLE), upload=BytesIO(_image_bytes((200, 200))),
+        idempotency_key=str(uuid.uuid4()))
+    return result['page']['id']
+
+
+@pytest.mark.parametrize('uploaded', [False, True])
+@pytest.mark.parametrize('superseded', [False, True])
+def test_document_preparation_does_not_hold_writer_and_rechecks_revision(content_platform, monkeypatch, uploaded, superseded):
+    from src.backend_v2.storage.database import immediate_transaction
+
+    page, document, _, _ = _text_page(content_platform)
+    _, engine, repository, _, *_ = content_platform
+    other_page = import_page(content_platform)
+    before_asset, payload = _project_asset(content_platform, page)
+    prepare = NativeEditor.prepare
+    writes = []
+
+    def prepare_with_concurrent_writer(editor, connection, page_id, **kwargs):
+        with immediate_transaction(engine) as writer:
+            writer.execute(update(pages).where(pages.c.id == other_page).values(detection_state='processed'))
+            if superseded:
+                writer.execute(update(pages).where(pages.c.id == page).values(document_revision=document['documentRevision'] + 1))
+        writes.append(page_id)
+        return prepare(editor, connection, page_id, **kwargs)
+
+    monkeypatch.setattr(NativeEditor, 'prepare', prepare_with_concurrent_writer)
+    command = dict(page_id=page, base_revision=document['documentRevision'], idempotency_key='prepare-unlocked',
+        mutations=[] if uploaded else [dict(op='patch', clientMutationId='text',
+            bubbleId=document['bubbles'][0]['bubbleId'], fields={'translatedText': '准备期间允许其他页面保存'})])
+    if uploaded:
+        command['editor_document'] = payload
+    if superseded:
+        with pytest.raises(ContentConflict, match='revision changed'):
+            repository.mutate_page_document(**command)
+        assert _project_asset(content_platform, page)[0] == before_asset
+        assert repository.get_page_document(page)['bubbles'] == document['bubbles']
+    else:
+        result, replayed = repository.mutate_page_document(**command)
+        assert not replayed
+        again, replayed = repository.mutate_page_document(**command)
+        assert replayed and again == result
+    assert writes == [page]
+
+
+@pytest.mark.parametrize('legacy', [False, True])
+@pytest.mark.parametrize('direction,coords', [
+    ('horizontal', [80, 80, 170, 98]),
+    ('vertical', [80, 40, 98, 160]),
+])
+def test_oversized_text_remains_visible_without_resizing_the_repair_frame(content_platform, direction, coords, legacy):
+    _, engine, repository, storage, _, _, _ = content_platform
+    page = import_page(content_platform)
+    saved, _ = repository.mutate_page_document(page_id=page, base_revision=1,
+        mutations=[dict(op='create', clientMutationId='overflow', fields=_bubble_fields(
+            translatedText='测试文字完整显示', coords=coords, textDirection=direction, fontSize=54,
+            rotationAngle=0, strokeEnabled=False))], idempotency_key='overflow')
+    assert saved['document']['bubbles'][0]['payload']['coords'] == coords
+    def text_layers(layer):
+        content = layer['content']
+        if content['kind'] == 'text':
+            return [content]
+        return [text for child in content.get('children', []) for text in text_layers(child)]
+    with engine.connect() as connection:
+        project = NativeEditor(storage).read_document(connection, page)
+        if legacy:
+            output = BytesIO()
+            with ZipFile(BytesIO(project)) as source, ZipFile(output, 'w') as target:
+                for name in source.namelist():
+                    data = source.read(name)
+                    if name == 'manifest.json':
+                        manifest = json.loads(data)
+                        for layer in manifest['document']['layers']:
+                            for text in text_layers(layer):
+                                text.pop('overflow_visible', None)
+                        data = json.dumps(manifest).encode()
+                    target.writestr(name, data)
+            result = NativeEditor(storage).prepare(connection, page, uploaded=output.getvalue(), render=True, text_only=True)
+            project = result.document
+        else:
+            result = NativeEditor(storage).prepare(connection, page, render=True, text_only=True)
+    assert result.bubbles[0]['payload']['coords'] == coords
+    assert result.bubbles[0]['payload']['translatedText'] == '测试文字完整显示'
+    with Image.open(BytesIO(result.text)) as text:
+        alpha = text.getchannel('A')
+        assert alpha.getbbox(), 'large text must not disappear'
+        alpha.paste(0, tuple(coords))
+        assert alpha.getbbox(), 'the visible text must extend outside the unchanged frame'
+    with ZipFile(BytesIO(project)) as archive:
+        manifest = json.loads(archive.read('manifest.json'))
+    assert all(text['overflow_visible'] for layer in manifest['document']['layers'] for text in text_layers(layer))
+
+
+@pytest.mark.parametrize('legacy', [False, True])
+def test_gray_manga_supports_colour_without_changing_background(content_platform, legacy):
+    _, engine, repository, storage, importer, _, chapter = content_platform
+    source = Image.linear_gradient('L').resize((200, 200))
+    upload = BytesIO()
+    source.save(upload, format='PNG')
+    upload.seek(0)
+    imported, _ = importer.import_page(chapter_id=chapter['id'], logical_path='gray.png',
+        text_style=dict(DEFAULT_TEXT_STYLE), upload=upload, idempotency_key=str(uuid.uuid4()))
+    page = imported['page']['id']
+    saved, _ = repository.mutate_page_document(page_id=page, base_revision=1,
+        mutations=[dict(op='create', clientMutationId='create', fields=_bubble_fields(
+            translatedText='ABC', coords=[20, 20, 180, 160], textDirection='horizontal', fontSize=40,
+            textColor='#cc2233', strokeColor='#2266ff', strokeWidth=3))], idempotency_key='colour')
+    editor = NativeEditor(storage)
+    expected_background = source.convert('RGB')
+    if legacy:
+        patch = BytesIO()
+        Image.new('RGB', source.size, (100, 150, 110)).save(patch, format='PNG')
+        expected_background = Image.new('L', source.size, 130).convert('RGB')
+        with engine.connect() as connection:
+            project = editor.prepare(connection, page, repair=patch.getvalue()).document
+        with ZipFile(BytesIO(project)) as archive:
+            manifest = json.loads(archive.read('manifest.json'))
+            manifest['document']['mode'] = 'Grayscale'
+            old = BytesIO()
+            with ZipFile(old, 'w') as output:
+                for name in archive.namelist():
+                    output.writestr(name, json.dumps(manifest).encode() if name == 'manifest.json' else archive.read(name))
+        saved, _ = repository.mutate_page_document(page_id=page, base_revision=saved['document']['documentRevision'],
+            mutations=[], editor_document=old.getvalue(), idempotency_key='old-project')
+    with engine.connect() as connection:
+        rendered = editor.prepare(connection, page, render=True, text_only=True)
+        repaired = editor.prepare(connection, page, repair=upload.getvalue())
+    repair_layer = _manifest(repaired.document)['document']['layers'][0]['content']['children'][-1]
+    assert repair_layer['content']['surface']['format']['mode'] == 'Rgb'
+    with Image.open(BytesIO(rendered.text)) as overlay:
+        pixels = list(overlay.convert('RGBA').get_flattened_data())
+        assert any(r > g + 60 and r > b + 60 and a > 200 for r, g, b, a in pixels)
+        assert any(b > r + 60 and b > g + 60 and a > 200 for r, g, b, a in pixels)
+    with Image.open(BytesIO(rendered.clean)) as clean:
+        assert clean.convert('RGB').tobytes() == expected_background.tobytes()
+
+
+def test_native_character_styles_roundtrip_and_ordinary_patch(content_platform, tmp_path):
+    _, engine, repository, storage, _, _, _ = content_platform
+    page = import_page(content_platform)
+    response, _ = repository.mutate_page_document(page_id=page, base_revision=1,
+        mutations=[dict(op='create', clientMutationId='create', fields=_bubble_fields(
+            translatedText='A中😀B', coords=[10, 10, 190, 190], textDirection='horizontal', fontSize=24))],
+        idempotency_key='create')
+    editor = NativeEditor(storage)
+    with engine.connect() as connection:
+        original = editor.prepare(connection, page)
+        fonts = editor.font_files(connection)
+    source = tmp_path / 'input.pcraft'
+    output = tmp_path / 'edited.pcraft'
+    source.write_bytes(original.document)
+    layer = original.bubbles[0]['layer']
+    NativeEditor.invoke(dict(pageId=page, project=str(source), fonts=fonts, output=str(output),
+        commands=[dict(id='type.setStyle', params=dict(layer=layer, range=[1, 3], size=48, color='#ff0000'))]))
+    edited = output.read_bytes()
+    saved, replayed = repository.mutate_page_document(page_id=page, base_revision=2,
+        mutations=[], editor_document=edited, idempotency_key='fine')
+    assert not replayed
+    replay, replayed = repository.mutate_page_document(page_id=page, base_revision=2,
+        mutations=[], editor_document=edited, idempotency_key='fine')
+    assert replayed and replay == saved
+    rich = saved['document']['bubbles'][0]['payload']['richText']
+    assert sum(run['len'] for run in rich['runs']) == len('A中😀B'.encode())
+    assert len(rich['runs']) == 3
+    with pytest.raises(ContentConflict):
+        repository.mutate_page_document(page_id=page, base_revision=2,
+            mutations=[], editor_document=edited, idempotency_key='stale')
+    bubble = saved['document']['bubbles'][0]['bubbleId']
+    moved, _ = repository.mutate_page_document(page_id=page, base_revision=3,
+        mutations=[dict(op='patch', clientMutationId='move', bubbleId=bubble, fields={'coords': [12, 12, 192, 192]})],
+        idempotency_key='move')
+    assert moved['document']['bubbles'][0]['payload']['richText'] == rich
+    sized, _ = repository.mutate_page_document(page_id=page, base_revision=4,
+        mutations=[dict(op='patch', clientMutationId='size', bubbleId=bubble, fields={'fontSize': 32})],
+        idempotency_key='size')
+    runs = sized['document']['bubbles'][0]['payload']['richText']['runs']
+    assert all(run['style']['size_pt'] == 32 for run in runs)
+    assert runs[0]['style']['color'] != runs[1]['style']['color']
+    with engine.connect() as connection:
+        rendered = editor.prepare(connection, page, render=True, text_only=True)
+    with Image.open(BytesIO(rendered.text)) as overlay:
+        assert overlay.mode == 'RGBA' and overlay.getchannel('A').getbbox()
+
+
+def test_document_and_projection_rollback_together(content_platform, monkeypatch):
+    _, engine, repository, storage, _, _, _ = content_platform
+    page = import_page(content_platform)
+    before = repository.get_page_document(page)
+    original_publish = NativeEditor.publish
+    def fail_after_assets(self, connection, page_id, revision, result, **kwargs):
+        original_publish(self, connection, page_id, revision, result, **kwargs)
+        raise RuntimeError('simulated commit failure')
+    monkeypatch.setattr(NativeEditor, 'publish', fail_after_assets)
+    with pytest.raises(RuntimeError, match='simulated'):
+        repository.mutate_page_document(page_id=page, base_revision=1,
+            mutations=[dict(op='create', clientMutationId='new', fields=_bubble_fields(translatedText='测试'))],
+            idempotency_key='fail')
+    assert repository.get_page_document(page) == before
+    with engine.connect() as connection:
+        assert connection.execute(select(page_assets.c.asset_id).where(
+            page_assets.c.page_id == page, page_assets.c.role == 'editor_document')).first() is None
+
+
+def test_legacy_upgrade_does_not_change_published_images(content_platform):
+    _, engine, repository, storage, _, _, _ = content_platform
+    page = import_page(content_platform)
+    with engine.connect() as connection:
+        before = connection.execute(select(page_assets).where(page_assets.c.page_id == page)).all()
+        NativeEditor(storage).prepare(connection, page)
+        after = connection.execute(select(page_assets).where(page_assets.c.page_id == page)).all()
+    assert before == after
+
+
+def test_native_http_roundtrip_and_invalid_upload_preserve_the_page(content_platform):
+    data_root, engine, repository, _, _, _, _ = content_platform
+    page = import_page(content_platform)
+    client = create_api_app(ApiSettings(data_root=data_root, engine=engine,
+        identity=RuntimeIdentity(epoch_id='native-http', epoch_token='test', test_mode=True))).test_client()
+    loaded = client.get(f'/api/v2/pages/{page}/editor-document')
+    assert loaded.status_code == 200
+    assert loaded.mimetype == 'application/x-photocraft'
+    assert loaded.headers['X-Document-Revision'] == '1'
+    assert repository.get_page_document(page)['documentRevision'] == 1
+
+    def upload(payload, key):
+        return client.put(f'/api/v2/pages/{page}/editor-document',
+            headers={'Idempotency-Key': key}, data={'baseRevision': '1',
+            'file': (BytesIO(payload), 'page.pcraft')})
+
+    saved = upload(loaded.data, 'native-save')
+    assert saved.status_code == 200
+    assert saved.get_json()['document']['renderStatus'] == 'stale', 'a graphics-only page still needs a composite'
+    replayed = upload(loaded.data, 'native-save')
+    assert replayed.get_json() == saved.get_json()
+    assert replayed.headers['Idempotency-Replayed'] == 'true'
+    assert upload(loaded.data, 'stale-save').status_code == 409
+    before = repository.get_page_document(page)
+    invalid = client.put(f'/api/v2/pages/{page}/editor-document',
+        headers={'Idempotency-Key': 'invalid'}, data={'baseRevision': '2',
+        'file': (BytesIO(b'not a document'), 'page.pcraft')})
+    assert invalid.status_code == 422
+    assert repository.get_page_document(page) == before
+
+    other_page = import_page(content_platform)
+    rejected = client.put(f'/api/v2/pages/{other_page}/editor-document',
+        headers={'Idempotency-Key': 'wrong-page'}, data={'baseRevision': '1',
+        'file': (BytesIO(loaded.data), 'page.pcraft')})
+    assert rejected.status_code == 422
+    assert repository.get_page_document(other_page)['documentRevision'] == 1
+
+
+@pytest.mark.parametrize('image_format', ['JPEG', 'PNG', 'WEBP', 'GIF', 'BMP', 'TIFF'])
+def test_native_source_formats_keep_the_page_dimensions(content_platform, image_format):
+    _, engine, _, storage, importer, _, chapter = content_platform
+    imported, _ = importer.import_page(chapter_id=chapter['id'], logical_path='source',
+        text_style=dict(DEFAULT_TEXT_STYLE), upload=BytesIO(_image_bytes((40, 60), image_format=image_format)),
+        idempotency_key='format')
+    with engine.connect() as connection:
+        result = NativeEditor(storage).prepare(connection, imported['page']['id'], render=True)
+    assert (result.width, result.height) == (40, 60)
+    with Image.open(BytesIO(result.clean)) as clean:
+        assert clean.size == (40, 60)
+
+
+def test_native_rotated_jpeg_uses_the_imported_orientation(content_platform):
+    _, engine, _, storage, importer, _, chapter = content_platform
+    image = Image.new('RGB', (40, 60), '#ca5544')
+    exif = image.getexif()
+    exif[274] = 6
+    upload = BytesIO()
+    image.save(upload, format='JPEG', exif=exif)
+    upload.seek(0)
+    imported, _ = importer.import_page(chapter_id=chapter['id'], logical_path='rotated.jpg',
+        text_style=dict(DEFAULT_TEXT_STYLE), upload=upload, idempotency_key='rotation')
+    with engine.connect() as connection:
+        result = NativeEditor(storage).prepare(connection, imported['page']['id'], render=True)
+    assert (result.width, result.height) == (60, 40)
+
+
+def test_native_routes_keep_public_ownership_and_csrf_checks(public_platform):
+    from src.backend_v2.content.repository import ContentRepository
+    from src.backend_v2.content.image_import import ImageImportService
+    from src.backend_v2.storage.assets import AssetStorageService
+
+    platform = public_platform
+    repository = ContentRepository(platform['engine'])
+    storage = AssetStorageService(platform['data_root'], platform['engine'])
+    importer = ImageImportService(data_root=platform['data_root'], repository=repository, storage=storage)
+    with owner_scope(platform['alice']['id']):
+        book = repository.create_book(title='Private editor')
+        chapter = repository.create_chapter(book_id=book['id'], title='Chapter')
+        imported, _ = importer.import_page(chapter_id=chapter['id'], logical_path='manga.png',
+            text_style=dict(DEFAULT_TEXT_STYLE), upload=BytesIO(_image_bytes((40, 60))), idempotency_key='private')
+    page = imported['page']['id']
+    alice, _ = _login(platform['app'], 'alice', ALICE_PASSWORD)
+    bob, csrf = _login(platform['app'], 'bob', BOB_PASSWORD)
+    loaded = alice.get(f'/api/v2/pages/{page}/editor-document', base_url=PUBLIC_BASE)
+    assert loaded.status_code == 200
+    assert bob.get(f'/api/v2/pages/{page}/editor-document', base_url=PUBLIC_BASE).status_code == 404
+    denied = bob.put(f'/api/v2/pages/{page}/editor-document', base_url=PUBLIC_BASE,
+        headers={'X-CSRF-Token': csrf, 'Idempotency-Key': 'not-owned'},
+        data={'baseRevision': '1', 'file': (BytesIO(loaded.data), 'page.pcraft')})
+    assert denied.status_code == 404
+    missing_csrf = alice.put(f'/api/v2/pages/{page}/editor-document', base_url=PUBLIC_BASE,
+        headers={'Idempotency-Key': 'no-csrf'},
+        data={'baseRevision': '1', 'file': (BytesIO(loaded.data), 'page.pcraft')})
+    assert missing_csrf.status_code == 403
+    assert platform['app'].test_client().get('/api/v2/editor/fonts', base_url=PUBLIC_BASE).status_code == 401
+
+
+def test_editor_wasm_policy_does_not_relax_other_pages(public_platform, tmp_path, monkeypatch):
+    from src.backend_v2.api import web
+
+    static = tmp_path / 'src' / 'backend_v2' / 'static'
+    for name in ('photocraft', 'vue'):
+        (static / name).mkdir(parents=True)
+        (static / name / 'index.html').write_text('<!doctype html><title>test</title>')
+    (static / 'photocraft' / 'editor.wasm').write_bytes(b'\0asm\1\0\0\0')
+    monkeypatch.setattr(web, 'project_root', lambda: tmp_path)
+    client = public_platform['app'].test_client()
+    editor = client.get('/photocraft/index.html', base_url=PUBLIC_BASE)
+    assert editor.status_code == 200
+    assert editor.headers['X-Frame-Options'] == 'SAMEORIGIN'
+    assert "frame-ancestors 'self'" in editor.headers['Content-Security-Policy']
+    assert "'wasm-unsafe-eval'" in editor.headers['Content-Security-Policy']
+    wasm = client.get('/photocraft/editor.wasm', base_url=PUBLIC_BASE)
+    assert wasm.status_code == 200 and wasm.mimetype == 'application/wasm'
+    ordinary = client.get('/', base_url=PUBLIC_BASE)
+    assert ordinary.headers['X-Frame-Options'] == 'DENY'
+    assert "'wasm-unsafe-eval'" not in ordinary.headers['Content-Security-Policy']
+
+
+def _text_page(platform):
+    _, engine, repository, storage, *_ = platform
+    page = import_page(platform)
+    saved, _ = repository.mutate_page_document(page_id=page, base_revision=1,
+        mutations=[dict(op='create', clientMutationId='text', fields=_bubble_fields(
+            translatedText='ABCD', coords=[10, 10, 190, 190], textDirection='horizontal', fontSize=24,
+            textColor='#000000'))], idempotency_key='create')
+    with engine.connect() as conn:
+        result = NativeEditor(storage).prepare(conn, page)
+        fonts = NativeEditor(storage).font_files(conn)
+    return page, saved['document'], result, fonts
+
+
+def _native_edit(platform, page, result, fonts, tmp_path, params):
+    project, output = tmp_path / 'in.pcraft', tmp_path / 'out.pcraft'
+    project.write_bytes(result.document)
+    NativeEditor.invoke(dict(pageId=page, project=str(project), fonts=fonts, output=str(output),
+        commands=[dict(id='type.setStyle', params={'layer': result.bubbles[0]['layer'], **params})]))
+    repository = platform[2]
+    saved, _ = repository.mutate_page_document(page_id=page,
+        base_revision=repository.get_page_document(page)['documentRevision'],
+        mutations=[], editor_document=output.read_bytes(), idempotency_key=str(uuid.uuid4()))
+    return saved['document']
+
+
+def _project_asset(platform, page):
+    _, engine, _, storage, *_ = platform
+    with engine.connect() as conn:
+        row = conn.execute(select(assets.c.id, assets.c.relative_path).join(page_assets,
+            page_assets.c.asset_id == assets.c.id).where(
+                page_assets.c.page_id == page, page_assets.c.role == 'editor_document')).one()
+    return row.id, storage.resolve_relative_path(row.relative_path).read_bytes()
+
+
+def _manifest(payload):
+    with ZipFile(BytesIO(payload)) as archive:
+        return json.loads(archive.read('manifest.json'))
+
+
+def test_sidebar_and_ordinary_same_value_styles_apply_to_all_characters(content_platform, tmp_path):
+    page, _, initial, fonts = _text_page(content_platform)
+    document = _native_edit(content_platform, page, initial, fonts, tmp_path,
+        dict(range=[1, 3], size=48, color='#ff0000'))
+    repository = content_platform[2]
+    assert [r['style']['size_pt'] for r in document['bubbles'][0]['payload']['richText']['runs']] == [24, 48, 24]
+    sized, _ = repository.mutate_page_document(page_id=page, base_revision=document['documentRevision'],
+        mutations=[], page_style_defaults_patch={'autoFontSize': False, 'fontSize': 24},
+        propagate_style_fields=['fontSize'], idempotency_key='sidebar')
+    payload = sized['document']['bubbles'][0]['payload']
+    assert all(r['style']['size_pt'] == 24 for r in payload['richText']['runs'])
+    assert len(payload['richText']['runs']) > 1, 'unrelated per-character colors survive'
+    colored, _ = repository.mutate_page_document(page_id=page, base_revision=sized['document']['documentRevision'],
+        mutations=[dict(op='patch', clientMutationId='ordinary', bubbleId=document['bubbles'][0]['bubbleId'],
+                        fields={'textColor': '#000000'})], idempotency_key='ordinary')
+    assert all(r['style']['color']['c'][:3] == [0, 0, 0]
+               for r in colored['document']['bubbles'][0]['payload']['richText']['runs'])
+
+
+def test_business_edits_do_not_rewrite_native_text_or_leak_back_from_an_old_snapshot(content_platform):
+    page, document, initial, _ = _text_page(content_platform)
+    _, _, repository, *_ = content_platform
+    before = _project_asset(content_platform, page)
+    saved, _ = repository.mutate_page_document(page_id=page, base_revision=document['documentRevision'],
+        mutations=[dict(op='patch', clientMutationId='ocr', bubbleId=document['bubbles'][0]['bubbleId'],
+                        fields={'originalText': 'new OCR text', 'inpaintMethod': 'solid'})], idempotency_key='business')
+    assert _project_asset(content_platform, page) == before
+    metadata = json.loads(dict(_manifest(before[1])['document']['metadata']['text'])['saber.page'])
+    native = next(iter(metadata['bubbles'].values()))
+    assert set(native['payload']) <= {'blockAlign', 'strokeColor', 'strokeWidth'}
+    restored, _ = repository.mutate_page_document(page_id=page, base_revision=saved['document']['documentRevision'],
+        mutations=[], editor_document=initial.document, idempotency_key='fine')
+    assert restored['document']['bubbles'][0]['payload']['originalText'] == 'new OCR text'
+    assert restored['document']['bubbles'][0]['payload']['inpaintMethod'] == 'solid'
+
+
+def test_render_reads_native_text_and_does_not_republish_the_document_or_projection(content_platform):
+    page, document, _, _ = _text_page(content_platform)
+    _, engine, _, storage, *_ = content_platform
+    before = _project_asset(content_platform, page)
+    payload = dict(document['bubbles'][0]['payload'], fontSize=77)
+    # A stale/corrupted cache must never become the input authority for rendering.
+    with engine.begin() as conn:
+        conn.execute(update(bubbles).where(bubbles.c.page_id == page).values(payload_json=json.dumps(payload)))
+    with engine.connect() as conn:
+        result = NativeEditor(storage).prepare(conn, page, render=True)
+    assert result.document is None
+    assert result.bubbles[0]['payload']['fontSize'] == 24
+    with engine.begin() as conn:
+        NativeEditor(storage).publish(conn, page, document['documentRevision'], result)
+    assert _project_asset(content_platform, page) == before
+    with engine.connect() as conn:
+        assert json.loads(conn.execute(select(bubbles.c.payload_json).where(bubbles.c.page_id == page)).scalar_one()) == payload
+
+
+def test_editor_read_uses_one_snapshot_for_revision_and_file(content_platform, tmp_path, monkeypatch):
+    page, document, _, fonts = _text_page(content_platform)
+    data_root, engine, repository, *_ = content_platform
+    client = create_api_app(ApiSettings(data_root=data_root, engine=engine,
+        identity=RuntimeIdentity(epoch_id='native-read', epoch_token='test', test_mode=True))).test_client()
+    original = NativeEditor.read_document
+    def concurrent_write(self, conn, target):
+        repository.mutate_page_document(page_id=page, base_revision=document['documentRevision'],
+            mutations=[dict(op='patch', clientMutationId='concurrent', bubbleId=document['bubbles'][0]['bubbleId'],
+                            fields={'fontSize': 44})], idempotency_key='concurrent')
+        return original(self, conn, target)
+    monkeypatch.setattr(NativeEditor, 'read_document', concurrent_write)
+    response = client.get(f'/api/v2/pages/{page}/editor-document')
+    assert response.status_code == 200
+    project = tmp_path / 'served.pcraft'
+    project.write_bytes(response.data)
+    served = NativeEditor.invoke(dict(pageId=page, project=str(project), fonts=fonts))
+    assert response.headers['X-Document-Revision'] == str(document['documentRevision'])
+    assert served['bubbles'][0]['payload']['fontSize'] == 24
+    assert repository.get_page_document(page)['bubbles'][0]['payload']['fontSize'] == 44
+
+
+def test_partial_character_font_is_protected_until_the_whole_box_changes_font(content_platform, tmp_path):
+    from fontTools.ttLib import TTFont
+    from src.backend_v2.storage.platform_repositories import FontRepository, RevisionConflict
+    page, document, initial, fonts = _text_page(content_platform)
+    font = TTFont(next(f['path'] for f in fonts if f['id'] != document['bubbles'][0]['fontId']), fontNumber=0)
+    for name in font['name'].names:
+        if name.nameID in {1, 4, 6, 16}:
+            name.string = 'AuditSecondaryFace'.encode(name.getEncoding())
+    payload = BytesIO()
+    font.save(payload)
+    font.close()
+    _, engine, repository, storage, *_ = content_platform
+    catalog = FontRepository(engine)
+    uploaded, _ = catalog.upload(filename='audit.ttf', payload=payload.getvalue(), display_name='Audit', idempotency_key='font')
+    with engine.connect() as conn:
+        fonts = NativeEditor(storage).font_files(conn)
+    document = _native_edit(content_platform, page, initial, fonts, tmp_path,
+        dict(range=[1, 3], font='AuditSecondaryFace', postscriptName='AuditSecondaryFace'))
+    assert document['bubbles'][0]['fontId'] != uploaded['id']
+    with pytest.raises(RevisionConflict, match='字符样式'):
+        catalog.delete(font_id=uploaded['id'], idempotency_key='used')
+    changed, _ = repository.mutate_page_document(page_id=page, base_revision=document['documentRevision'],
+        mutations=[dict(op='patch', clientMutationId='font', bubbleId=document['bubbles'][0]['bubbleId'],
+                        fields={'fontId': document['bubbles'][0]['fontId']})], idempotency_key='same-font')
+    assert all(r['style']['font_family'] != 'AuditSecondaryFace'
+               for r in changed['document']['bubbles'][0]['payload']['richText']['runs'])
+    assert catalog.delete(font_id=uploaded['id'], idempotency_key='unused')[0]['deleted']
+
+
+def test_legacy_native_metadata_is_read_compatibly_and_converted_only_on_save(content_platform):
+    page, document, _, _ = _text_page(content_platform)
+    _, engine, repository, storage, *_ = content_platform
+    _, payload = _project_asset(content_platform, page)
+    manifest = _manifest(payload)
+    texts = manifest['document']['metadata']['text']
+    metadata = json.loads(dict(texts)['saber.page'])
+    for entry in metadata['bubbles'].values():
+        entry['payload'] = document['bubbles'][0]['payload']
+    manifest['document']['metadata']['text'] = [[key, json.dumps(metadata) if key == 'saber.page' else value] for key, value in texts]
+    rewritten = BytesIO()
+    with ZipFile(BytesIO(payload)) as source, ZipFile(rewritten, 'w') as dest:
+        for name in source.namelist():
+            dest.writestr(name, json.dumps(manifest).encode() if name == 'manifest.json' else source.read(name))
+    with engine.begin() as conn:
+        asset = storage.publish_bytes(rewritten.getvalue(), extension='pcraft', mime_type='application/x-photocraft', connection=conn)
+        conn.execute(update(page_assets).where(page_assets.c.page_id == page, page_assets.c.role == 'editor_document').values(asset_id=asset.id))
+    before = _project_asset(content_platform, page)
+    with engine.connect() as conn:
+        converted = NativeEditor(storage).read_document(conn, page)
+    assert _project_asset(content_platform, page) == before
+    assert not NativeEditor._legacy_document(converted)
+    saved, _ = repository.mutate_page_document(page_id=page, base_revision=document['documentRevision'],
+        mutations=[], editor_document=converted, idempotency_key='convert')
+    assert saved['document']['bubbles'][0]['payload']['richText'] == document['bubbles'][0]['payload']['richText']
+    assert not NativeEditor._legacy_document(_project_asset(content_platform, page)[1])
+
+
+@pytest.mark.parametrize('field,value', [('translatedText', '任务直接提交'), ('originalText', '仅更新原文')])
+def test_task_commit_writes_the_projection_once_without_staging_sql(content_platform, monkeypatch, field, value):
+    page, before, _, _ = _text_page(content_platform)
+    _, engine, repository, storage, *_ = content_platform
+    previous_asset = _project_asset(content_platform, page)
+    editor = NativeEditor(storage)
+    original_prepare = editor.prepare
+    calls, writes = [], []
+    other_page = import_page(content_platform)
+
+    def prepare(connection, page_id, **kwargs):
+        from src.backend_v2.storage.database import immediate_transaction
+
+        with immediate_transaction(engine) as writer:
+            writer.execute(update(pages).where(pages.c.id == other_page).values(detection_state='processed'))
+        assert editor.page_bubbles(connection, page_id)[0]['payload'] == before['bubbles'][0]['payload']
+        calls.append(page_id)
+        return original_prepare(connection, page_id, **kwargs)
+
+    def record(_conn, _cursor, statement, _params, _context, _many):
+        if statement.startswith('UPDATE bubbles SET') and 'payload_json=' in statement:
+            writes.append(statement)
+
+    monkeypatch.setattr(editor, 'prepare', prepare)
+    event.listen(engine, 'before_cursor_execute', record)
+    try:
+        with engine.connect() as connection:
+            documents = editor.page_bubbles(connection, page)
+            documents[0]['payload'][field] = value
+            publish = editor.prepare_commit(connection, page, before['documentRevision'] + 1, documents)
+        with engine.begin() as connection:
+            publish(connection)
+            connection.execute(update(pages).where(pages.c.id == page).values(document_revision=before['documentRevision'] + 1))
+    finally:
+        event.remove(engine, 'before_cursor_execute', record)
+    assert len(writes) == 1
+    assert bool(calls) == (field == 'translatedText')
+    assert repository.get_page_document(page)['bubbles'][0]['payload'][field] == value
+    if field == 'originalText':
+        assert _project_asset(content_platform, page) == previous_asset
+
+
+@pytest.mark.parametrize('superseded', [False, True])
+def test_interactive_preparation_allows_writers_and_rejects_a_stale_result(content_platform, monkeypatch, superseded):
+    from src.backend_v2.operations.repository import OperationRepository
+    from src.backend_v2.storage.database import immediate_transaction
+    from src.backend_v2.translation.interactive_operations import InteractivePageOperationService
+
+    page, document, _, _ = _text_page(content_platform)
+    root, engine, repository, *_ = content_platform
+    service = InteractivePageOperationService(data_root=root, engine=engine, repository=OperationRepository(engine))
+    before = _project_asset(content_platform, page)
+    other_page = import_page(content_platform)
+    prepare = NativeEditor.prepare
+
+    def unlocked(editor, connection, page_id, **kwargs):
+        with immediate_transaction(engine) as writer:
+            writer.execute(update(pages).where(pages.c.id == other_page).values(detection_state='processed'))
+        return prepare(editor, connection, page_id, **kwargs)
+
+    monkeypatch.setattr(NativeEditor, 'prepare', unlocked)
+    payload = dict(document['bubbles'][0]['payload'], translatedText='交互任务')
+    publish = service._prepare_one_bubble(page_id=page, bubble_id=document['bubbles'][0]['bubbleId'],
+        base_revision=document['documentRevision'], new_revision=document['documentRevision'] + 1,
+        payload=payload, expected_bubble_count=1)
+    if superseded:
+        with engine.begin() as connection:
+            connection.execute(update(pages).where(pages.c.id == page).values(document_revision=document['documentRevision'] + 1))
+        with pytest.raises(RuntimeError, match='page revision changed'):
+            with immediate_transaction(engine) as connection:
+                publish(connection, render_changed=True)
+        assert _project_asset(content_platform, page) == before
+        assert repository.get_page_document(page)['bubbles'] == document['bubbles']
+    else:
+        with immediate_transaction(engine) as connection:
+            publish(connection, render_changed=True)
+        assert repository.get_page_document(page)['bubbles'][0]['payload']['translatedText'] == '交互任务'
+
+
+def test_task_commit_same_value_style_changes_every_character(content_platform, tmp_path):
+    page, _, initial, fonts = _text_page(content_platform)
+    document = _native_edit(content_platform, page, initial, fonts, tmp_path, dict(range=[1, 3], size=48, color='#ff0000'))
+    _, engine, repository, storage, *_ = content_platform
+    editor = NativeEditor(storage)
+    with engine.connect() as connection:
+        documents = editor.page_bubbles(connection, page)
+        publish = editor.prepare_commit(connection, page, document['documentRevision'] + 1, documents,
+                      fields={documents[0]['bubbleId']: {'fontSize'}})
+    with engine.begin() as connection:
+        publish(connection)
+        connection.execute(update(pages).where(pages.c.id == page).values(document_revision=document['documentRevision'] + 1))
+    runs = repository.get_page_document(page)['bubbles'][0]['payload']['richText']['runs']
+    assert all(run['style']['size_pt'] == 24 for run in runs)
+    assert len(runs) > 1, 'unrelated per-character colors survive'
+
+
+@pytest.mark.parametrize('entry', ['ordinary', 'task'])
+@pytest.mark.parametrize('text,lengths,style_indices', [
+    ('ABCD-追加😀', [1, 2, len('D-追加😀'.encode())], [0, 1, 2]),
+    ('AB中😀CD', [1, 9, 1], [0, 1, 2]),
+    ('ACD', [1, 1, 1], [0, 1, 2]),
+    ('', [0], [0]),
+])
+def test_text_changes_keep_unmodified_character_styles(content_platform, tmp_path, entry, text, lengths, style_indices):
+    page, _, initial, fonts = _text_page(content_platform)
+    document = _native_edit(content_platform, page, initial, fonts, tmp_path, dict(range=[1, 3], size=48, color='#ff0000'))
+    _, engine, repository, storage, *_ = content_platform
+    revision = document['documentRevision']
+    if entry == 'ordinary':
+        repository.mutate_page_document(page_id=page, base_revision=revision,
+            mutations=[dict(op='patch', clientMutationId='append', bubbleId=document['bubbles'][0]['bubbleId'],
+                            fields={'translatedText': text})], idempotency_key='append')
+    else:
+        with engine.connect() as connection:
+            editor = NativeEditor(storage)
+            documents = editor.page_bubbles(connection, page)
+            documents[0]['payload']['translatedText'] = text
+            publish = editor.prepare_commit(connection, page, revision + 1, documents)
+        with engine.begin() as connection:
+            publish(connection)
+            connection.execute(update(pages).where(pages.c.id == page).values(document_revision=revision + 1))
+    runs = repository.get_page_document(page)['bubbles'][0]['payload']['richText']['runs']
+    previous = document['bubbles'][0]['payload']['richText']['runs']
+    assert [run['style'] for run in runs] == [previous[i]['style'] for i in style_indices]
+    assert [run['len'] for run in runs] == lengths

@@ -1,0 +1,19 @@
+[package]
+name = "photocraft-heif"
+description = "Optional HEIF/HEIC still-image decoder for PhotoCraft (a thin, panic-guarded wrapper around heic-rs)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+# Pure Rust, no unsafe. Pinned exactly: a young, single-owner crate that parses untrusted files;
+# moving the pin is a reviewed change (re-run the fuzz target and the heif corpus tests).
+heic-rs = { version = "=0.1.4", default-features = false, features = ["std"] }
+
+# The tiles of a HEIC photo decode in parallel on native; wasm stays single-threaded.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+heic-rs = { version = "=0.1.4", default-features = false, features = ["std", "parallel"] }
+
+[lints]
+workspace = true

@@ -32,7 +32,7 @@ from src.backend_v2.jobs.repository import decode_job_progress
 from src.backend_v2.rendering.fonts import resolve_font_path
 from src.backend_v2.settings.validation import validate_setting_payload
 from src.backend_v2.storage.assets import AssetRecord, AssetStorageService
-from src.backend_v2.storage.database import immediate_transaction
+from src.backend_v2.storage.database import immediate_transaction, read_transaction
 from src.backend_v2.storage.defaults import (
     default_translation_settings,
 )
@@ -1833,7 +1833,7 @@ class ContentRepository:
         return self._page_summary(row)
 
     def get_page_document(self, page_id: str) -> dict[str, object]:
-        with self.engine.connect() as connection:
+        with read_transaction(self.engine) as connection:
             return self._get_page_document(connection, page_id)
 
     def mutate_page_document(
@@ -1846,8 +1846,13 @@ class ContentRepository:
         default_font_id: object = _MISSING,
         page_style_defaults_patch: dict[str, object] | None = None,
         propagate_style_fields: list[str] | None = None,
-        user_mask_asset_id: object = _MISSING,
+        user_mask: bytes | None = None,
+        editor_document: bytes | None = None,
     ) -> tuple[dict[str, object], bool]:
+        from src.backend_v2.editing.native import NativeEditor, NATIVE_BUBBLE_FIELDS
+
+        if user_mask is not None and self.storage is None:
+            raise ValueError("editing assets are unavailable")
         style_patch = dict(page_style_defaults_patch or {})
         propagation = list(propagate_style_fields or [])
         if (
@@ -1855,7 +1860,8 @@ class ContentRepository:
             and default_font_id is _MISSING
             and not style_patch
             and not propagation
-            and user_mask_asset_id is _MISSING
+            and user_mask is None
+            and editor_document is None
         ):
             raise ValueError(
                 "command must mutate bubbles, the default font, or page style"
@@ -2012,20 +2018,17 @@ class ContentRepository:
             "pageStyleDefaultsPatch": style_patch,
             "propagateStyleFields": propagation,
         }
-        if user_mask_asset_id is not _MISSING:
-            with self.engine.connect() as connection:
-                checksum = connection.execute(select(assets.c.checksum).where(
-                    assets.c.id == user_mask_asset_id,
-                )).scalar_one_or_none()
-            if checksum is None:
-                raise ValueError("manual mask asset not found")
-            request_payload["userMaskChecksum"] = checksum
+        if editor_document is not None:
+            request_payload["editorDocumentChecksum"] = hashlib.sha256(editor_document).hexdigest()
+        if user_mask is not None:
+            request_payload["userMaskChecksum"] = hashlib.sha256(user_mask).hexdigest()
         request_hash = hashlib.sha256(
             _json(request_payload).encode("utf-8")
         ).hexdigest()
         scope = f"page-document:{page_id}"
         now = _utcnow()
-        with immediate_transaction(self.engine) as connection:
+
+        def replayed(connection):
             replay = connection.execute(
                 select(
                     idempotency_records.c.request_hash,
@@ -2042,7 +2045,10 @@ class ContentRepository:
                     raise IdempotencyConflict(
                         "Idempotency-Key was reused for a different page mutation"
                     )
-                return json.loads(replay["response_json"]), True
+                return json.loads(replay["response_json"])
+            return None
+
+        def checked_page(connection):
             page = connection.execute(
                 select(
                     pages.c.chapter_id,
@@ -2066,6 +2072,14 @@ class ContentRepository:
                 )
             ).scalar_one_or_none() is not None:
                 raise ContentConflict("page has an active operation")
+            return page
+
+        # Decode/update the native project under a read snapshot, without reserving the writer.
+        with read_transaction(self.engine) as connection:
+            replay = replayed(connection)
+            if replay is not None:
+                return replay, True
+            page = checked_page(connection)
             existing_rows = list(
                 connection.execute(
                     select(
@@ -2090,9 +2104,8 @@ class ContentRepository:
                 for row in existing_rows
             }
             order = [str(row["id"]) for row in existing_rows]
-            deleted_ids: set[str] = set()
-            created_ids: set[str] = set()
             mutation_results: list[dict[str, str]] = []
+            native_fields: dict[str, set[str]] = {}
             renderable_change = False
             validated_font_ids: set[str] = set()
 
@@ -2123,27 +2136,28 @@ class ContentRepository:
             )
             if style_patch:
                 current_style.update(style_patch)
-            has_current_translated = (
-                connection.execute(
-                    select(page_assets.c.asset_id).where(
-                        page_assets.c.page_id == page_id,
-                        page_assets.c.role == "translated",
-                    )
-                ).scalar_one_or_none()
-                is not None
-            )
-            has_active_render = (
-                connection.execute(
-                    select(render_requests.c.id).where(
-                        render_requests.c.page_id == page_id,
-                        render_requests.c.status.in_(
-                            ACTIVE_RENDER_REQUEST_STATUSES
-                        ),
-                    )
-                ).scalar_one_or_none()
-                is not None
-            )
             calculate_auto_font_size = None
+            native_editor = None
+            native_result = None
+            if editor_document is not None:
+                if self.storage is None:
+                    raise ValueError("editing assets are unavailable")
+                native_editor = NativeEditor(self.storage)
+                native_result = native_editor.prepare(connection, page_id, uploaded=editor_document)
+                projected = native_result.bubbles
+                ids = [str(item["bubbleId"]) for item in projected]
+                if len(ids) != len(set(ids)):
+                    raise ValueError("duplicate native text IDs")
+                for item in projected:
+                    uuid.UUID(str(item["bubbleId"]))
+                    validate_font_reference(item["fontId"], field="fontId")
+                if ids and connection.execute(select(bubbles.c.id).where(
+                    bubbles.c.id.in_(ids), bubbles.c.page_id != page_id,
+                )).first() is not None:
+                    raise ValueError("native text ID belongs to another page")
+                order = ids
+                documents = {item["bubbleId"]: item for item in projected}
+                renderable_change = True
             if "fontSize" in propagation and bool(
                 current_style["autoFontSize"]
             ):
@@ -2165,7 +2179,6 @@ class ContentRepository:
                         },
                     }
                     order.append(bubble_id)
-                    created_ids.add(bubble_id)
                     mutation_results.append(
                         {
                             "op": operation,
@@ -2181,7 +2194,6 @@ class ContentRepository:
                 if operation == "delete":
                     documents.pop(bubble_id)
                     order.remove(bubble_id)
-                    deleted_ids.add(bubble_id)
                     mutation_results.append(
                         {
                             "op": operation,
@@ -2202,6 +2214,9 @@ class ContentRepository:
                     for key, value in fields.items()
                     if key != "fontId"
                 }
+                if operation == "patch":
+                    native_fields.setdefault(bubble_id, set()).update(fields)
+                    renderable_change = renderable_change or bool(set(fields).intersection(NATIVE_BUBBLE_FIELDS | {"fontId"}))
                 if operation == "reset":
                     current["payload"] = payload_fields
                 else:
@@ -2239,6 +2254,10 @@ class ContentRepository:
                 )
                 for document in documents.values():
                     payload = dict(document["payload"])  # type: ignore[arg-type]
+                    requested = {"fontId" if field == "fontFamily" else "textDirection" if field == "layoutDirection" else field
+                                 for field in propagation}
+                    native_fields.setdefault(str(document["bubbleId"]), set()).update(requested)
+                    renderable_change = renderable_change or bool(requested.intersection(NATIVE_BUBBLE_FIELDS | {"fontId"}))
                     for field in propagation_order:
                         if field not in propagation:
                             continue
@@ -2310,6 +2329,7 @@ class ContentRepository:
                                         coords[3] - coords[1],
                                         payload["textDirection"],
                                         font_path,
+                                        line_spacing=payload["lineSpacing"],
                                     )
                                     if payload["fontSize"] != calculated:
                                         renderable_change = True
@@ -2336,52 +2356,47 @@ class ContentRepository:
                 )
 
             new_revision = base_revision + 1
-            if existing_rows:
-                offset = len(existing_rows) * 2 + len(created_ids) + 1
+            if self.storage is not None and editor_document is None and (renderable_change or user_mask is not None):
+                native_editor = NativeEditor(self.storage)
+                native_result = native_editor.prepare(connection, page_id, documents=[documents[id] for id in order],
+                                                      mask_override=user_mask, fields=native_fields)
+                documents = {item["bubbleId"]: item for item in native_result.bubbles}
+        # Publish through the same command transaction after checking its original revision again.
+        with immediate_transaction(self.engine) as connection:
+            replay = replayed(connection)
+            if replay is not None:
+                return replay, True
+            page = checked_page(connection)
+            has_current_translated = (
                 connection.execute(
-                    update(bubbles)
-                    .where(bubbles.c.page_id == page_id)
-                    .values(ordinal=bubbles.c.ordinal + offset)
-                )
-            if deleted_ids:
+                    select(page_assets.c.asset_id).where(
+                        page_assets.c.page_id == page_id,
+                        page_assets.c.role == "translated",
+                    )
+                ).scalar_one_or_none()
+                is not None
+            )
+            has_active_render = (
                 connection.execute(
-                    delete(bubbles).where(
-                        bubbles.c.page_id == page_id,
-                        bubbles.c.id.in_(deleted_ids),
+                    select(render_requests.c.id).where(
+                        render_requests.c.page_id == page_id,
+                        render_requests.c.status.in_(
+                            ACTIVE_RENDER_REQUEST_STATUSES
+                        ),
                     )
-                )
-            for ordinal, bubble_id in enumerate(order, start=1):
-                document = documents[bubble_id]
-                values = {
-                    "ordinal": ordinal,
-                    "font_id": document["fontId"],
-                    "payload_json": _json(document["payload"]),
-                    "updated_revision": new_revision,
-                    "updated_at": _utcnow(),
-                }
-                if bubble_id in created_ids:
-                    connection.execute(
-                        insert(bubbles).values(
-                            id=bubble_id,
-                            page_id=page_id,
-                            **values,
-                        )
-                    )
-                else:
-                    connection.execute(
-                        update(bubbles)
-                        .where(
-                            bubbles.c.id == bubble_id,
-                            bubbles.c.page_id == page_id,
-                        )
-                        .values(**values)
-                    )
+                ).scalar_one_or_none()
+                is not None
+            )
+            if native_editor is not None and native_result is not None:
+                native_editor.publish(connection, page_id, new_revision, native_result)
+            else:
+                NativeEditor._publish_bubbles(connection, page_id, new_revision, [documents[id] for id in order])
             has_drawable_text = any(
                 document["payload"]["translatedText"].strip()
                 for document in documents.values()
             )
             needs_render = renderable_change and (
-                has_current_translated or has_drawable_text
+                has_current_translated or has_drawable_text or editor_document is not None
             )
             repair_blocks_render = page["render_status"] in {
                 "awaiting_repair",
@@ -2400,15 +2415,6 @@ class ContentRepository:
                 page_values["default_font_id"] = default_font_id
             if style_patch:
                 page_values["page_style_defaults_json"] = _json(current_style)
-            if user_mask_asset_id is not _MISSING:
-                connection.execute(delete(page_assets).where(
-                    page_assets.c.page_id == page_id, page_assets.c.role == "user_mask",
-                ))
-                connection.execute(insert(page_assets).values(
-                    page_id=page_id, role="user_mask", asset_id=user_mask_asset_id,
-                    input_source_revision=page["source_revision"],
-                    input_document_revision=new_revision,
-                ))
             if advance_render_request:
                 page_values["render_status"] = "stale"
             elif (
@@ -2528,23 +2534,11 @@ class ContentRepository:
         before: dict[str, object],
         after: dict[str, object],
     ) -> bool:
+        from src.backend_v2.editing.native import NATIVE_BUBBLE_FIELDS
+
         return any(
-            before[field] != after[field]
-            for field in (
-                "translatedText",
-                "coords",
-                "fontSize",
-                "textDirection",
-                "textColor",
-                "rotationAngle",
-                "position",
-                "strokeEnabled",
-                "strokeColor",
-                "strokeWidth",
-                "lineSpacing",
-                "inlineAlign",
-                "blockAlign",
-            )
+            before.get(field) != after.get(field)
+            for field in NATIVE_BUBBLE_FIELDS
         )
 
     @staticmethod

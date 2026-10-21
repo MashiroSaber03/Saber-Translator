@@ -13,12 +13,15 @@ import type { BubbleState } from '@/types/bubble'
 import { deepClone } from '@/utils/deepClone'
 
 interface PersistedPageState {
+  nativeVersion: number
+  savedNativeVersion: number
   debounceResolve: (() => void) | null
   debounceTimer: ReturnType<typeof setTimeout> | null
   defaultFontChanged: boolean
   desiredDefaultFontId: string | null
   desiredPropagateStyleFields: Set<string>
   desiredStylePatch: Record<string, unknown>
+  desiredBubbleFields: Record<string, Set<string>>
   desired: BubbleState[]
   desiredVersion: number
   documentRevision: number
@@ -33,6 +36,23 @@ interface PersistedPageState {
 const PAGE_DOCUMENT_TRAILING_MS = 150
 const PAGE_DOCUMENT_CACHE_SIZE = 3
 const states = new Map<string, PersistedPageState>()
+
+export interface PageEditorPort {
+  save(baseRevision: number): Promise<V2PageDocumentMutationResponse>
+}
+const editorPorts = new Map<string, PageEditorPort>()
+
+export function registerPageEditor(pageId: string, port: PageEditorPort): () => void {
+  editorPorts.set(pageId, port)
+  return () => { if (editorPorts.get(pageId) === port) editorPorts.delete(pageId) }
+}
+
+export function queueEditorDocumentSave(pageId: string, revision: number): Promise<void> {
+  const state = states.get(pageId)
+  if (!state) throw new Error('页面文档尚未加载')
+  state.nativeVersion = Math.max(state.nativeVersion, revision)
+  return queuePageDocumentMutation(pageId, state.documentRevision, state.desired)
+}
 
 function cloneBubbles(bubbles: BubbleState[]): BubbleState[] {
   // Pinia/Vue exposes the current editor state as reactive proxies, which
@@ -73,6 +93,7 @@ function bubbleFields(bubble: BubbleState): V2CompleteBubbleMutationFields {
       confidence: line.confidence,
     })),
     ocrResult: bubble.ocrResult ? { ...bubble.ocrResult } : null,
+    richText: bubble.richText ?? null,
     fontId: bubble.fontFamily,
   }
 }
@@ -101,7 +122,8 @@ function evictSettledStates(protectedPageId: string): void {
 
 function mutationsFor(
   persisted: BubbleState[],
-  desired: BubbleState[]
+  desired: BubbleState[],
+  requestedFields: Record<string, Set<string>>,
 ): V2PageDocumentBatchMutation['mutations'] {
   const previous = new Map(
     persisted
@@ -135,12 +157,16 @@ function mutationsFor(
       continue
     }
     const old = previous.get(id)
-    if (old && canonical(bubbleFields(old)) !== canonical(fields)) {
+    const before = old ? bubbleFields(old) : undefined
+    const requested = requestedFields[id] ?? new Set<string>()
+    const patch = Object.fromEntries(Object.entries(fields).filter(([key, value]) =>
+      requested.has(key) || canonical(before?.[key as keyof V2CompleteBubbleMutationFields]) !== canonical(value)))
+    if (old && Object.keys(patch).length) {
       mutations.push({
         bubbleId: id,
         clientMutationId: createUuid(),
-        fields,
-        op: 'reset',
+        fields: patch,
+        op: 'patch',
       })
     }
   }
@@ -165,6 +191,24 @@ function applyCreatedBubbleIds(
   }
 }
 
+function mergeSavedFields(desired: BubbleState[], sent: BubbleState[], saved: BubbleState[]): void {
+  const sentById = new Map(sent.map(bubble => [bubble.backendBubbleId, bubble]))
+  const savedById = new Map(saved.map(bubble => [bubble.backendBubbleId, bubble]))
+  for (const bubble of desired) {
+    if (!bubble.backendBubbleId) continue
+    const before = sentById.get(bubble.backendBubbleId)
+    const after = savedById.get(bubble.backendBubbleId)
+    if (!before || !after) continue
+    // Carry native projections (character runs, normalized geometry, etc.) forward
+    // only where the user has not made another change while the save was in flight.
+    for (const key of Object.keys(after) as (keyof BubbleState)[]) {
+      if (canonical(bubble[key]) === canonical(before[key])) {
+        Object.assign(bubble, { [key]: deepClone(after[key]) })
+      }
+    }
+  }
+}
+
 function isAmbiguousTransportError(error: unknown): boolean {
   return (
     error instanceof Error &&
@@ -179,12 +223,16 @@ async function mutateWithTransportReplay(
   pageId: string,
   command: V2PageDocumentBatchMutation
 ): Promise<V2PageDocumentMutationResponse> {
+  return withDocumentTransportReplay(key => mutatePageDocument(pageId, command, key))
+}
+
+export async function withDocumentTransportReplay<T>(submit: (key: string) => Promise<T>): Promise<T> {
   const idempotencyKey = createUuid()
   try {
-    return await mutatePageDocument(pageId, command, idempotencyKey)
+    return await submit(idempotencyKey)
   } catch (error) {
     if (!isAmbiguousTransportError(error)) throw error
-    return mutatePageDocument(pageId, command, idempotencyKey)
+    return submit(idempotencyKey)
   }
 }
 
@@ -198,12 +246,15 @@ export function registerPageDocument(document: V2PageDocument): BubbleState[] {
       (existing.lastError || canonical(existing.desired) === canonical(existing.persisted)))
   ) {
     const state: PersistedPageState = {
+      nativeVersion: 0,
+      savedNativeVersion: 0,
       debounceResolve: null,
       debounceTimer: null,
       defaultFontChanged: false,
       desiredDefaultFontId: document.defaultFontId ?? null,
       desiredPropagateStyleFields: new Set(),
       desiredStylePatch: {},
+      desiredBubbleFields: {},
       desired: cloneBubbles(bubbles),
       desiredVersion: 0,
       documentRevision: document.documentRevision,
@@ -232,6 +283,7 @@ export function queuePageDocumentSave(
 }
 
 export interface PageDocumentStyleMutation {
+  bubbleFields?: Record<string, string[]>
   defaultFontId?: string | null
   pageStyleDefaultsPatch?: Record<string, unknown>
   propagateStyleFields?: string[]
@@ -264,6 +316,10 @@ export function queuePageDocumentMutation(
     state.desiredDefaultFontId = style.defaultFontId ?? null
   }
   Object.assign(state.desiredStylePatch, style.pageStyleDefaultsPatch ?? {})
+  for (const [id, fields] of Object.entries(style.bubbleFields ?? {})) {
+    const requested = state.desiredBubbleFields[id] ??= new Set()
+    for (const field of fields) requested.add(field === 'fontFamily' ? 'fontId' : field)
+  }
   for (const field of style.propagateStyleFields ?? []) {
     state.desiredPropagateStyleFields.add(field)
   }
@@ -285,8 +341,10 @@ async function persistLoop(pageId: string, state: PersistedPageState): Promise<v
     while (true) {
       await waitForTrailingWindow(state)
       const sentVersion = state.desiredVersion
+      const nativeVersion = state.nativeVersion
+      const nativeDirty = nativeVersion !== state.savedNativeVersion
       const sent = cloneBubbles(state.desired)
-      const mutations = mutationsFor(state.persisted, sent)
+      const mutations = nativeDirty ? [] : mutationsFor(state.persisted, sent, state.desiredBubbleFields)
       const sentStylePatch = deepClone(state.desiredStylePatch)
       const sentPropagation = [...state.desiredPropagateStyleFields]
       const sentDefaultFont = state.desiredDefaultFontId
@@ -295,11 +353,11 @@ async function persistLoop(pageId: string, state: PersistedPageState): Promise<v
         Object.keys(sentStylePatch).length > 0 ||
         sentDefaultFontChanged ||
         sentPropagation.length > 0
-      if (mutations.length === 0 && !hasStyleCommand) return
+      if (mutations.length === 0 && !hasStyleCommand && !nativeDirty) return
       // A sidebar propagation and editor bubble delta are separate domain
       // commands. Flush the bubble delta first so the backend never has to
       // guess an overwrite order for the same bubble field.
-      const sendStyleCommand = mutations.length === 0 && hasStyleCommand
+      const sendStyleCommand = mutations.length === 0 && hasStyleCommand && !nativeDirty
       const command: V2PageDocumentBatchMutation = {
         baseRevision: state.documentRevision,
         mutations,
@@ -316,8 +374,14 @@ async function persistLoop(pageId: string, state: PersistedPageState): Promise<v
             }
           : {}),
       }
-      const response = await mutateWithTransportReplay(pageId, command)
+      const port = editorPorts.get(pageId)
+      if (nativeDirty && !port) throw new Error('精细编辑画布已关闭，请先保存当前修改')
+      const response = nativeDirty && port
+        ? await port.save(state.documentRevision)
+        : await mutateWithTransportReplay(pageId, command)
       const document = response.document
+      if (nativeDirty) state.savedNativeVersion = nativeVersion
+      if (!nativeDirty && !sendStyleCommand && sentVersion === state.desiredVersion) state.desiredBubbleFields = {}
       applyCreatedBubbleIds(sent, response.mutationResults)
       applyCreatedBubbleIds(state.desired, response.mutationResults)
       const bubbleStore = useBubbleStore()
@@ -346,27 +410,28 @@ async function persistLoop(pageId: string, state: PersistedPageState): Promise<v
       }
       state.documentRevision = document.documentRevision
       state.persisted = pageDocumentToBubbles(document)
+      if (sentVersion === state.desiredVersion) state.desired = cloneBubbles(state.persisted)
+      else mergeSavedFields(state.desired, sent, state.persisted)
 
       const imageIndex = imageStore.images.findIndex(image => image.id === pageId)
       if (imageIndex >= 0) {
         imageStore.updateImageByIndex(imageIndex, {
+          ...document.pageStyleDefaults,
+          ...(document.defaultFontId ? { fontFamily: document.defaultFontId } : {}),
           documentRevision: document.documentRevision,
-          bubbleStates:
-            sentVersion === state.desiredVersion
-              ? cloneBubbles(state.persisted)
-              : cloneBubbles(state.desired),
+          bubbleStates: cloneBubbles(state.desired),
           hasUnsavedChanges: sentVersion !== state.desiredVersion,
         })
       }
+      if (imageStore.currentImage?.id === pageId) {
+        bubbleStore.setBubbles(cloneBubbles(state.desired), true)
+      }
       if (sentVersion === state.desiredVersion) {
-        state.desired = cloneBubbles(state.persisted)
-        if (imageStore.currentImage?.id === pageId) {
-          bubbleStore.setBubbles(cloneBubbles(state.persisted), true)
-        }
         if (
           Object.keys(state.desiredStylePatch).length === 0 &&
           !state.defaultFontChanged &&
           state.desiredPropagateStyleFields.size === 0
+          && state.savedNativeVersion === state.nativeVersion
         )
           return
       }
