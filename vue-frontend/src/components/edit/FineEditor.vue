@@ -286,8 +286,10 @@ defineExpose({ saveNow, command })
 .fine-editor__canvas { display: block; width: 100%; height: 100%; border: 0; }
 .fine-editor__loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 12px; background: var(--color-surface-inverse-canvas); color: var(--color-text-inverse); font-size: 13px; }
 .fine-editor__spinner { animation: fine-editor-spin 1s linear infinite; }
+
 @keyframes fine-editor-spin { to { transform: rotate(360deg); } }
 .fine-editor__method { width: 190px; flex-shrink: 0; }
+
 .fine-editor {
   --ui-select-background: var(--color-surface-inverse);
   --ui-select-color: var(--color-text-inverse);
