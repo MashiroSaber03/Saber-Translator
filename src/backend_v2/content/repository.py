@@ -11,6 +11,7 @@ from typing import Any
 import uuid
 
 from sqlalchemy import Engine, and_, delete, exists, func, insert, or_, select, update
+from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
 
 from src.backend_v2.auth.ownership import effective_owner_id
@@ -1354,21 +1355,7 @@ class ContentRepository:
                 ordered_ids
             ):
                 raise ValueError("ordered page ids must be an exact permutation")
-            offset = len(existing) * 2 + 1
-            connection.execute(
-                update(pages)
-                .where(pages.c.chapter_id == chapter_id)
-                .values(ordinal=pages.c.ordinal + offset)
-            )
-            for ordinal, page_id in enumerate(ordered_ids, start=1):
-                connection.execute(
-                    update(pages)
-                    .where(
-                        pages.c.id == page_id,
-                        pages.c.chapter_id == chapter_id,
-                    )
-                    .values(ordinal=ordinal)
-                )
+            self._write_page_ordinals(connection, chapter_id, ordered_ids)
             connection.execute(
                 update(chapters)
                 .where(
@@ -1386,6 +1373,27 @@ class ContentRepository:
                 now=_utcnow(),
             )
         return base_revision + 1
+
+    @staticmethod
+    def _write_page_ordinals(
+        connection: Connection, chapter_id: str, ordered_ids: list[str],
+    ) -> None:
+        # Vacate the current ordinal range before assigning the new order.
+        offset = connection.execute(
+            select(func.coalesce(func.max(pages.c.ordinal), 0))
+            .where(pages.c.chapter_id == chapter_id)
+        ).scalar_one() + 1
+        connection.execute(
+            update(pages)
+            .where(pages.c.chapter_id == chapter_id)
+            .values(ordinal=pages.c.ordinal + offset)
+        )
+        for ordinal, page_id in enumerate(ordered_ids, start=1):
+            connection.execute(
+                update(pages)
+                .where(pages.c.id == page_id, pages.c.chapter_id == chapter_id)
+                .values(ordinal=ordinal)
+            )
 
     def delete_page(self, page_id: str) -> None:
         with immediate_transaction(self.engine) as connection:
@@ -1657,22 +1665,16 @@ class ContentRepository:
                 raise ContentNotFound("chapter not found")
             chapter_revision = chapter["page_order_revision"]
             self._assert_chapter_writable(connection, chapter_id)
-            existing_paths = set(
+            existing_pages = list(
                 connection.execute(
-                    select(pages.c.logical_source_path).where(
-                        pages.c.chapter_id == chapter_id
-                    )
-                ).scalars()
+                    select(pages.c.id, pages.c.logical_source_path, pages.c.ordinal)
+                    .where(pages.c.chapter_id == chapter_id)
+                    .order_by(pages.c.ordinal)
+                ).mappings()
             )
+            existing_paths = {row["logical_source_path"] for row in existing_pages}
             final_logical_path = deduplicate_logical_path(logical_path, existing_paths)
-            ordinal = (
-                connection.execute(
-                    select(func.coalesce(func.max(pages.c.ordinal), 0)).where(
-                        pages.c.chapter_id == chapter_id
-                    )
-                ).scalar_one()
-                + 1
-            )
+            ordinal = existing_pages[-1]["ordinal"] + 1 if existing_pages else 1
             page_id = str(uuid.uuid4())
             default_font_id, style_defaults = validate_text_style_defaults(
                 connection,
@@ -1688,6 +1690,15 @@ class ContentRepository:
                     page_style_defaults_json=_json(style_defaults),
                 )
             )
+            imported_order = [row["id"] for row in existing_pages] + [page_id]
+            sorted_pages = sorted(
+                [*existing_pages, {"id": page_id, "logical_source_path": final_logical_path}],
+                key=lambda row: natural_sort_key(row["logical_source_path"]),
+            )
+            ordered_ids = [row["id"] for row in sorted_pages]
+            if ordered_ids != imported_order:
+                self._write_page_ordinals(connection, chapter_id, ordered_ids)
+                ordinal = ordered_ids.index(page_id) + 1
             connection.execute(
                 insert(page_assets),
                 [

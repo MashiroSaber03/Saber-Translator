@@ -1037,6 +1037,123 @@ def test_import_is_idempotent_and_duplicate_names_are_server_deduplicated(
         ).all().__len__() == 2
 
 
+@pytest.mark.parametrize(
+    "initial_names,deleted_name,failed_name,added_names,expected_names",
+    [
+        (["10.png", "2.png", "1.png"], None, None, [], ["1.png", "2.png", "10.png"]),
+        (
+            ["001.png", "003.png", "010.png"], None, None, ["002.png"],
+            ["001.png", "002.png", "003.png", "010.png"],
+        ),
+        (
+            ["001.png", "002.png", "003.png"], "002.png", None, ["002.png"],
+            ["001.png", "002.png", "003.png"],
+        ),
+        (
+            ["001.png", "003.png"], None, "002.png", ["010.png", "002.png"],
+            ["001.png", "002.png", "003.png", "010.png"],
+        ),
+    ],
+    ids=["initial-import", "append", "delete-reimport", "retry-failed"],
+)
+def test_image_import_keeps_persisted_natural_page_order(
+    content_platform, initial_names, deleted_name, failed_name, added_names, expected_names,
+) -> None:
+    root, engine, repository, _storage, _importer, book, chapter = content_platform
+    chapter_id = str(chapter["id"])
+    app = create_api_app(ApiSettings(
+        data_root=root, engine=engine,
+        identity=RuntimeIdentity(epoch_id="test-order", epoch_token="test-only", test_mode=True),
+    ))
+    client = app.test_client()
+    endpoint = f"/api/v2/chapters/{chapter_id}/pages"
+    keys = {}
+
+    def upload(name, *, valid=True):
+        response = client.post(
+            endpoint,
+            data={
+                "file": (BytesIO(_image_bytes((30, 40)) if valid else b"invalid"), name),
+                "logicalPath": name,
+                "textStyle": json.dumps(DEFAULT_TEXT_STYLE),
+            },
+            headers={"Idempotency-Key": keys.setdefault(name, str(uuid.uuid4()))},
+        )
+        if valid:
+            assert response.status_code == 201
+            page = response.get_json()["page"]
+            assert client.get(f"/api/v2/pages/{page['id']}").get_json()["ordinal"] == page["ordinal"]
+        else:
+            assert response.status_code == 422
+        return response
+
+    imported = {name: upload(name).get_json()["page"]["id"] for name in initial_names}
+    if deleted_name:
+        response = client.delete(f"/api/v2/pages/{imported.pop(deleted_name)}")
+        assert response.status_code == 200
+        keys.pop(deleted_name)
+    retained = {page_id: repository.get_page_document(page_id) for page_id in imported.values()}
+    before_revision = client.get(endpoint).get_json()["pageOrderRevision"]
+    if failed_name:
+        upload(failed_name, valid=False)
+        assert client.get(endpoint).get_json()["pageOrderRevision"] == before_revision
+    for name in added_names:
+        upload(name)
+
+    current = client.get(endpoint, query_string={"all": "1"}).get_json()
+    assert [page["logicalSourcePath"] for page in current["items"]] == expected_names
+    assert [page["ordinal"] for page in current["items"]] == list(range(1, len(expected_names) + 1))
+    assert current["pageOrderRevision"] == before_revision + len(added_names)
+    assert {page_id: repository.get_page_document(page_id) for page_id in imported.values()} == retained
+
+    # A replay must neither append another page nor alter the already saved order.
+    last_name = (added_names or initial_names)[-1]
+    replay = client.post(
+        endpoint,
+        data={
+            "file": (BytesIO(_image_bytes((30, 40))), last_name),
+            "logicalPath": last_name,
+            "textStyle": json.dumps(DEFAULT_TEXT_STYLE),
+        },
+        headers={"Idempotency-Key": keys[last_name]},
+    )
+    assert replay.status_code == 200
+    assert client.get(endpoint, query_string={"all": "1"}).get_json() == current
+    bootstrap = client.get(
+        "/api/v2/translation/bootstrap",
+        query_string={"bookId": book["id"], "chapterId": chapter_id},
+    ).get_json()
+    assert bootstrap["pages"] == current
+
+    reopened = create_sqlite_engine(root / "saber.sqlite3")
+    try:
+        assert ContentRepository(reopened).list_pages(chapter_id=chapter_id, all_pages=True) == current
+    finally:
+        reopened.dispose()
+
+
+@pytest.mark.parametrize("last_ordinal", [3, 8, 10_000])
+def test_image_import_sorts_existing_pages_with_ordinal_gaps(content_platform, last_ordinal) -> None:
+    _root, engine, repository, _storage, importer, _book, chapter = content_platform
+    chapter_id = str(chapter["id"])
+    for name in ("001.png", "010.png"):
+        imported, _ = _import(
+            repository, importer, chapter_id=chapter_id,
+            payload=_image_bytes((30, 40)), logical_path=name, key=name,
+        )
+    with engine.begin() as connection:
+        connection.execute(update(pages).where(pages.c.id == imported["page"]["id"]).values(ordinal=last_ordinal))
+    imported, _ = _import(
+        repository, importer, chapter_id=chapter_id,
+        payload=_image_bytes((30, 40)), logical_path="002.png", key="002.png",
+    )
+    assert imported["page"]["ordinal"] == 2
+    current = repository.list_pages(chapter_id=chapter_id, all_pages=True)
+    assert [(page["ordinal"], page["logicalSourcePath"]) for page in current["items"]] == [
+        (1, "001.png"), (2, "002.png"), (3, "010.png"),
+    ]
+
+
 def test_page_listing_is_cursor_paginated_metadata_only(content_platform) -> None:
     _root, _engine, repository, _storage, importer, _book, chapter = content_platform
     chapter_id = str(chapter["id"])
