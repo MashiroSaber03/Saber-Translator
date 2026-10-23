@@ -84,10 +84,19 @@ pub fn start() {
                 }),
             )
             .await;
-        if let Some(el) = document.get_element_by_id("photocraft_loading") {
-            match result {
-                Ok(()) => el.remove(),
-                Err(e) => el.set_text_content(Some(&format!("精细编辑启动失败：{e:?}。浏览器需要支持 WebGPU 或 WebGL2。"))),
+        let loading = document.get_element_by_id("photocraft_loading");
+        match result {
+            Ok(()) => {
+                if let Some(el) = loading {
+                    el.remove();
+                }
+            }
+            Err(e) => {
+                let error = format!("精细编辑启动失败：{e:?}。浏览器需要支持 WebGPU 或 WebGL2。");
+                if let Some(el) = loading {
+                    el.set_text_content(Some(&error));
+                }
+                crate::saber_bridge::emit(serde_json::json!({"event":"error","error":error}), None);
             }
         }
     });

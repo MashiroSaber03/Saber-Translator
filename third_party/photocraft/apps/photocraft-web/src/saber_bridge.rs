@@ -5,9 +5,11 @@ use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 use wasm_bindgen::{JsCast as _, JsValue, closure::Closure};
 
+type Incoming = Arc<Mutex<Vec<(Value, Vec<u8>)>>>;
+
 #[derive(Default)]
 pub struct Bridge {
-    incoming: Arc<Mutex<Vec<(Value, Vec<u8>)>>>,
+    incoming: Incoming,
     page: String,
     revision: Option<u64>,
     theme: Option<Tokens>,
@@ -71,15 +73,16 @@ impl Bridge {
                 emit(json!({"requestId":request.get("requestId"),"error":error}), None);
             }
         }
-        if let Some(st) = app.session.active() {
-            if self.revision != Some(st.revision.saturating_sub(st.view_revision)) && !self.page.is_empty() {
-                self.revision = Some(st.revision.saturating_sub(st.view_revision));
-                emit(
-                    json!({"event":"changed","pageId":self.page,"revision":st.revision.saturating_sub(st.view_revision),
-                    "canUndo":st.history.can_undo(),"canRedo":st.history.can_redo()}),
-                    None,
-                );
-            }
+        if let Some(st) = app.session.active()
+            && self.revision != Some(st.revision.saturating_sub(st.view_revision))
+            && !self.page.is_empty()
+        {
+            self.revision = Some(st.revision.saturating_sub(st.view_revision));
+            emit(
+                json!({"event":"changed","pageId":self.page,"revision":st.revision.saturating_sub(st.view_revision),
+                "canUndo":st.history.can_undo(),"canRedo":st.history.can_redo()}),
+                None,
+            );
         }
     }
 
@@ -224,14 +227,6 @@ impl Bridge {
                     // while the save was in flight must not leave a false dirty flag.
                     st.saved_revision = revision.saturating_add(st.view_revision);
                 }
-            }
-            "presentation" => {
-                let fine = request.get("fine").and_then(Value::as_bool) == Some(true);
-                app.ui.panels.toolbar = fine;
-                app.ui.panels.dock = fine;
-                app.ui.panels.menu_bar = fine;
-                app.ui.panels.options_bar = fine;
-                app.ui.panels.status_bar = fine;
             }
             _ => return Err("未知编辑操作".into()),
         }

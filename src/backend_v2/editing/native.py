@@ -61,14 +61,24 @@ class NativeEditor:
                 )))]
 
     @staticmethod
-    def _legacy_document(payload: bytes) -> bool:
-        """Previous dev documents duplicated text in host metadata."""
+    def _legacy_document(payload: bytes) -> str | None:
+        """Return the migration needed; only old text metadata needs the stored text."""
         with ZipFile(BytesIO(payload)) as archive:
             manifest = json.loads(archive.read("manifest.json"))
         text = dict(manifest["document"].get("metadata", {}).get("text", []))
         metadata = json.loads(text.get("saber.page", "{}"))
-        return any("translatedText" in entry.get("payload", {}) or "richText" in entry.get("payload", {})
-                   for entry in metadata.get("bubbles", {}).values())
+        if any("translatedText" in entry.get("payload", {}) or "richText" in entry.get("payload", {})
+               for entry in metadata.get("bubbles", {}).values()):
+            return "text"
+        layers = list(manifest["document"].get("layers", []))
+        while layers:
+            layer = layers.pop()
+            if layer["id"] == metadata.get("background"):
+                if layer["content"]["kind"] != "raster":
+                    return "background"
+                break
+            layers.extend(layer.get("content", {}).get("children", []))
+        return None
 
     @staticmethod
     def page_bubbles(connection, page_id):
@@ -141,18 +151,18 @@ class NativeEditor:
                 render: bool = False, repair: bytes | None = None, text_only: bool = False,
                 mask_override: bytes | None = None, background: bytes | None = None, fields=None) -> EditingResult:
         page = connection.execute(select(pages).where(pages.c.id == page_id)).mappings().one()
-        pointer_rows = list(connection.execute(select(page_assets.c.role, page_assets.c.asset_id,
-                            page_assets.c.parent_asset_id, assets.c.relative_path, assets.c.width, assets.c.height)
+        pointer_rows = list(connection.execute(select(page_assets.c.role,
+                            assets.c.relative_path, assets.c.width, assets.c.height)
                     .join(assets, assets.c.id == page_assets.c.asset_id)
                     .where(page_assets.c.page_id == page_id)))
         pointers = {row.role: self.storage.resolve_relative_path(row.relative_path) for row in pointer_rows}
         records = {row.role: row for row in pointer_rows}
         current = pointers["editor_document"].read_bytes() if "editor_document" in pointers else None
-        legacy = current is not None and self._legacy_document(current)
+        legacy = self._legacy_document(current) if current is not None else None
         writing = (documents is not None or uploaded is not None or repair is not None
-                   or mask_override is not None or background is not None or current is None or legacy)
+                   or mask_override is not None or background is not None or current is None or legacy is not None)
         stored = self.page_bubbles(connection, page_id) if documents is None and (writing or not render and not text_only) else []
-        if documents is None and uploaded is None and (current is None or legacy):
+        if documents is None and uploaded is None and (current is None or legacy == "text"):
             documents = stored
         business = {item["bubbleId"]: item["payload"] for item in (documents if documents is not None else stored)}
         temporary_root = self.storage.data_root / "temp" / "editing"
@@ -254,9 +264,6 @@ class NativeEditor:
                           input_document_revision=revision, parent_asset_id=None,
                           producer_job_step_id=job_step_id, producer_operation_id=operation_id,
                           producer_render_request_id=render_request_id)
-            if role == "editor_document":
-                values["parent_asset_id"] = connection.execute(select(page_assets.c.asset_id).where(
-                    page_assets.c.page_id == page_id, page_assets.c.role == "clean")).scalar_one_or_none()
             present = connection.execute(select(page_assets.c.asset_id).where(
                 page_assets.c.page_id == page_id, page_assets.c.role == role)).scalar_one_or_none()
             if present:

@@ -65,6 +65,7 @@ pub fn open(session: &mut Session, bytes: &[u8], page_id: &str) -> Result<()> {
         return Err("编辑文档不属于当前页面".into());
     }
     rgb_document(&mut imported.document);
+    normalize_background(&mut imported.document)?;
     // Old dev projects predate visible overflow. Only native text's drawing policy changes;
     // its frame, repair geometry and already-published image assets stay intact.
     for id in imported.document.walk().iter().map(|(_, _, layer)| layer.id).collect::<Vec<_>>() {
@@ -72,9 +73,12 @@ pub fn open(session: &mut Session, bytes: &[u8], page_id: &str) -> Result<()> {
             text.overflow_visible = true;
             // Previous dev documents kept this preference in host metadata and tried to
             // implement it with first-paragraph spacing, which the type engine ignores.
-            if let Some(align) = meta.get("bubbles").and_then(Value::as_object).and_then(|entries|
-                entries.values().find(|entry| entry["layer"].as_u64() == Some(id.0)))
-                .and_then(|entry| entry.pointer("/payload/blockAlign")).and_then(Value::as_str)
+            if let Some(align) = meta
+                .get("bubbles")
+                .and_then(Value::as_object)
+                .and_then(|entries| entries.values().find(|entry| entry["layer"].as_u64() == Some(id.0)))
+                .and_then(|entry| entry.pointer("/payload/blockAlign"))
+                .and_then(Value::as_str)
             {
                 text.block_align = match align {
                     "center" => photocraft_doc::text::BlockAlign::Center,
@@ -120,26 +124,19 @@ pub fn create(session: &mut Session, source: &[u8], clean: Option<&[u8]>, page_i
     let mut doc = photocraft_io::import("source.png", source).map_err(|e| e.to_string())?.document;
     doc.resolution_dpi = 72.0;
     doc.name = "漫画页面".into();
-    let mut background = std::mem::take(&mut doc.layers);
-    for layer in &mut background {
-        layer.name = "原图".into();
-        layer.locks.all = true;
-    }
     if let Some(bytes) = clean {
         let clean_doc = photocraft_io::import("clean.png", bytes).map_err(|e| e.to_string())?.document;
         if clean_doc.size != doc.size {
             return Err("修复图尺寸与原图不一致".into());
         }
-        for mut layer in clean_doc.layers {
-            layer.name = "修复背景".into();
-            background.push(layer);
-        }
+        doc.layers.extend(clean_doc.layers);
     }
-    let group = Layer::group("背景", background);
-    let background_id = group.id.0;
-    doc.layers.push(group);
-    put_metadata(&mut doc, &json!({"pageId":page_id, "background":background_id, "bubbles":{}, "fonts":{}}));
     rgb_document(&mut doc);
+    let background = doc.layers.first().ok_or("页面缺少背景图层")?.id;
+    let pixels = doc.clone();
+    replace_background(&mut doc, background, &pixels)?;
+    doc.layers.truncate(1);
+    put_metadata(&mut doc, &json!({"pageId":page_id, "background":background.0, "bubbles":{}, "fonts":{}}));
     session.type_overflow_visible = true;
     session.add_document(doc, Some("page.pcraft".into()));
     Ok(())
@@ -579,7 +576,39 @@ pub fn png(session: &Session, background: bool) -> Result<Vec<u8>> {
     photocraft_io::export(&doc, "page.png", &Default::default()).map(|r| r.bytes).map_err(|e| e.to_string())
 }
 
-/// A successful existing repair becomes a raster patch in the same document/history.
+// Only the host-owned background is flattened; other layers stay editable.
+fn normalize_background(doc: &mut Document) -> Result<()> {
+    let id = metadata(doc)["background"].as_u64().map(LayerId).ok_or("页面缺少背景图层")?;
+    let layer = doc.layer(id).ok_or("页面背景图层不存在")?;
+    if !matches!(layer.content, LayerContent::Raster(_)) {
+        let mut solo = doc.clone();
+        solo.layers = vec![layer.clone()];
+        replace_background(doc, id, &solo)?;
+    }
+    let layer = doc.layer_mut(id).ok_or("页面背景图层不存在")?;
+    layer.name = "修复背景".into();
+    // Standard Background locks let Auto-Select start its layer marquee on the backdrop,
+    // instead of falling through to a previously selected text layer.
+    layer.locks.all = false;
+    layer.locks.position = true;
+    layer.locks.transparency = true;
+    Ok(())
+}
+
+fn replace_background(doc: &mut Document, id: LayerId, pixels: &Document) -> Result<()> {
+    let mut surface = photocraft_compose::flatten_to_surface(pixels, doc.pixel_format(), None);
+    if let Some(previous) = doc.layer(id).and_then(Layer::surface) {
+        surface.reuse_tiles_from(previous);
+    }
+    let mut layer = Layer::new("修复背景", LayerContent::Raster(surface));
+    layer.id = id;
+    layer.locks.position = true;
+    layer.locks.transparency = true;
+    *doc.layer_mut(id).ok_or("页面背景图层不存在")? = layer;
+    Ok(())
+}
+
+/// Commit a repair into the fixed background, retaining the engine's existing undo history.
 pub fn repair(session: &mut Session, bytes: &[u8]) -> Result<()> {
     let mut patch = photocraft_io::import("repair.png", bytes).map_err(|e| e.to_string())?.document;
     rgb_document(&mut patch);
@@ -587,17 +616,13 @@ pub fn repair(session: &mut Session, bytes: &[u8]) -> Result<()> {
         return Err("修复区域尺寸与原图不一致".into());
     }
     let background = metadata(active(session)?)["background"].as_u64().map(LayerId).ok_or("页面缺少背景图层")?;
-    if !matches!(active(session)?.layer(background).map(|layer| &layer.content), Some(LayerContent::Group(_))) {
-        return Err("页面背景图层不存在".into());
-    }
     session
         .edit("背景修复", move |doc, _| {
-            if let Some(Layer { content: LayerContent::Group(group), .. }) = doc.layer_mut(background) {
-                for mut layer in patch.layers {
-                    layer.name = "背景修复".into();
-                    group.children.push(layer);
-                }
-            }
+            let layer = doc.layer(background).ok_or_else(|| photocraft_engine::EngineError::Other("页面背景图层不存在".into()))?;
+            let mut solo = doc.clone();
+            solo.layers = vec![layer.clone()];
+            solo.layers.extend(patch.layers);
+            replace_background(doc, background, &solo).map_err(photocraft_engine::EngineError::Other)?;
             Ok(())
         })
         .map_err(|e| e.to_string())?;
@@ -643,17 +668,13 @@ mod tests {
 
     fn session() -> Session {
         let mut session = Session::new();
-        session.execute("file.new", json!({"width":200,"height":200,"background":"transparent"})).unwrap();
+        create(&mut session, &image_png([0, 0, 0, 0]), None, "p").unwrap();
         session
-            .edit("页面", |doc, _| {
-                let background = Layer::group("背景", std::mem::take(&mut doc.layers));
-                let background_id = background.id.0;
-                doc.layers.push(background);
-                put_metadata(doc, &json!({"pageId":"p","background":background_id,"fonts":{},"bubbles":{}}));
-                Ok(())
-            })
-            .unwrap();
-        session
+    }
+
+    fn image_png(rgba: [u8; 4]) -> Vec<u8> {
+        let image = photocraft_codecs::Image::from_u8(200, 200, photocraft_codecs::ChannelLayout::Rgba, rgba.repeat(200 * 200)).unwrap();
+        photocraft_codecs::encode(&image, photocraft_codecs::Format::Png, &Default::default()).unwrap()
     }
     fn bubble() -> Value {
         json!({"bubbleId":"text-1","fontId":"font-1","payload":{
@@ -698,7 +719,10 @@ mod tests {
                     let origin = if layout.vertical { -(x + width) } else { y };
                     let expected = origin + (extent - (bounds[3] - bounds[1])).max(0.0) * if align == "center" { 0.5 } else { 1.0 };
                     assert!((bounds[1] - expected).abs() < 0.001, "{direction}/{align}/{field}: actual lines must align");
-                    assert!(text.paragraph_runs().iter().all(|p| p.style.space_before_pt == 0.0), "{direction}/{align}/{field}: block alignment must not become paragraph spacing");
+                    assert!(
+                        text.paragraph_runs().iter().all(|p| p.style.space_before_pt == 0.0),
+                        "{direction}/{align}/{field}: block alignment must not become paragraph spacing"
+                    );
                 }
             }
         }
@@ -911,16 +935,98 @@ mod tests {
                 Ok(())
             })
             .unwrap();
+        let before = png(&session, false).unwrap();
         let patch = photocraft_codecs::Image::from_u8(200, 200, photocraft_codecs::ChannelLayout::Rgba, vec![255; 200 * 200 * 4]).unwrap();
-        let png = photocraft_codecs::encode(&patch, photocraft_codecs::Format::Png, &Default::default()).unwrap();
-        repair(&mut session, &png).unwrap();
+        let patch_png = photocraft_codecs::encode(&patch, photocraft_codecs::Format::Png, &Default::default()).unwrap();
+        repair(&mut session, &patch_png).unwrap();
         let doc = active(&session).unwrap();
         assert!(matches!(doc.layers.last().unwrap().content, LayerContent::Group(_)));
         let background = LayerId(metadata(doc)["background"].as_u64().unwrap());
-        let Some(Layer { content: LayerContent::Group(group), .. }) = doc.layer(background) else { panic!("background missing") };
-        assert_eq!(group.children.last().unwrap().name, "背景修复");
+        assert!(matches!(doc.layer(background).unwrap().content, LayerContent::Raster(_)));
+        assert!(doc.layer(background).unwrap().locks.position);
         session.execute("edit.undo", json!({})).unwrap();
         assert_eq!(active(&session).unwrap().layers.len(), 1);
+        assert_eq!(png(&session, false).unwrap(), before);
+    }
+
+    #[test]
+    fn repeated_repairs_update_one_background_with_undo_and_keep_other_layers() {
+        let mut session = Session::new();
+        create(&mut session, &image_png([30, 60, 90, 255]), None, "p").unwrap();
+        set_bubbles(&mut session, &[bubble()], &fonts()).unwrap();
+        let text = project(&session).unwrap()["bubbles"].clone();
+        let mut user = photocraft_io::import("draw.png", &image_png([0, 0, 0, 0])).unwrap().document.layers.remove(0);
+        user.name = "手绘".into();
+        let user_id = user.id;
+        session
+            .edit("手绘图层", |doc, _| {
+                doc.layers.push(user);
+                Ok(())
+            })
+            .unwrap();
+        let background = LayerId(metadata(active(&session).unwrap())["background"].as_u64().unwrap());
+        let mut pixels = [0_u8; 4].repeat(200 * 200);
+        for y in 150..170 {
+            for x in 150..170 {
+                pixels[(y * 200 + x) * 4..(y * 200 + x + 1) * 4].copy_from_slice(&[200, 100, 50, 255]);
+            }
+        }
+        let image = photocraft_codecs::Image::from_u8(200, 200, photocraft_codecs::ChannelLayout::Rgba, pixels).unwrap();
+        let patch = photocraft_codecs::encode(&image, photocraft_codecs::Format::Png, &Default::default()).unwrap();
+        for bytes in [&patch, &image_png([30, 60, 90, 255]), &patch] {
+            let before = png(&session, true).unwrap();
+            repair(&mut session, bytes).unwrap();
+            let after = png(&session, true).unwrap();
+            let doc = active(&session).unwrap();
+            assert_eq!(doc.layers.len(), 3, "repairs must not create user-visible layers");
+            assert_eq!(doc.layer(user_id).unwrap().name, "手绘");
+            assert_eq!(project(&session).unwrap()["bubbles"], text);
+            assert!(doc.layer(background).unwrap().locks.position);
+            let surface = doc.layer(background).unwrap().surface().unwrap();
+            assert!((surface.sample_channel(1, 1, 0) - 30.0 / 255.0).abs() < 0.001, "pixels outside a local patch stay unchanged");
+            session.execute("edit.undo", json!({})).unwrap();
+            assert_eq!(png(&session, true).unwrap(), before);
+            session.execute("edit.redo", json!({})).unwrap();
+            assert_eq!(png(&session, true).unwrap(), after);
+        }
+        assert!(session.execute("layer.translate", json!({"layer":background.0,"dx":20,"dy":10})).is_err());
+        let picked = session.execute("layer.pickAt", json!({"x":1,"y":1,"target":"group"})).unwrap();
+        assert_eq!(picked["layer"], json!(background.0), "the standard Background is picked but cannot move");
+        repair(&mut session, &image_png([120, 130, 140, 255])).unwrap();
+        assert_eq!(active(&session).unwrap().layers.len(), 3);
+        let surface = active(&session).unwrap().layer(background).unwrap().surface().unwrap();
+        assert!((surface.sample_channel(160, 160, 0) - 120.0 / 255.0).abs() < 0.001, "a whole-page result replaces previous repair pixels");
+    }
+
+    #[test]
+    fn legacy_background_group_opens_as_one_locked_layer_without_changing_pixels_or_text() {
+        let mut session = session();
+        set_bubbles(&mut session, &[bubble()], &fonts()).unwrap();
+        let background = LayerId(metadata(active(&session).unwrap())["background"].as_u64().unwrap());
+        session
+            .edit("旧背景", |doc, _| {
+                let mut source = photocraft_io::import("source.png", &image_png([30, 60, 90, 255])).unwrap().document.layers.remove(0);
+                source.name = "原图".into();
+                source.locks.all = true;
+                let mut patch = photocraft_io::import("patch.png", &image_png([100, 110, 120, 255])).unwrap().document.layers.remove(0);
+                patch.name = "背景修复".into();
+                let mut group = Layer::group("背景", vec![source, patch]);
+                group.id = background;
+                *doc.layer_mut(background).unwrap() = group;
+                Ok(())
+            })
+            .unwrap();
+        let before = png(&session, false).unwrap();
+        let text = project(&session).unwrap()["bubbles"].clone();
+        let mut reopened = Session::new();
+        open(&mut reopened, &snapshot(&session).unwrap(), "p").unwrap();
+        assert_eq!(png(&reopened, false).unwrap(), before);
+        assert_eq!(project(&reopened).unwrap()["bubbles"], text);
+        assert_eq!(active(&reopened).unwrap().layers.len(), 2);
+        let base = active(&reopened).unwrap().layer(background).unwrap();
+        assert!(matches!(base.content, LayerContent::Raster(_)));
+        assert!(base.locks.position && base.locks.transparency && !base.locks.all);
+        assert!(reopened.execute("layer.translate", json!({"layer":background.0,"dx":5})).is_err());
     }
 
     #[test]

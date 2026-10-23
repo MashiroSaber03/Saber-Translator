@@ -9,6 +9,7 @@ workspace = true
 
 [dependencies]
 photocraft-doc = { workspace = true }
+photocraft-compose = { workspace = true }
 photocraft-engine = { workspace = true }
 photocraft-text = { workspace = true }
 photocraft-io = { workspace = true }

@@ -157,7 +157,6 @@ async function load(): Promise<void> {
     loadedPage = page
     silentRevision = reply.revision ?? 0
     connectEditor(page)
-    await request({ op: 'presentation', fine: props.active })
   } catch (reason) {
     if (token !== loadVersion || disposed) return
     loadFailed.value = true
@@ -168,7 +167,7 @@ async function load(): Promise<void> {
 }
 
 async function persist(revision: number): Promise<void> {
-  if (!loadedPage || loading.value) return
+  if (!loadedPage || loading.value || loadFailed.value) return
   saving.value = true
   saveFailed.value = false
   error.value = ''
@@ -195,6 +194,14 @@ async function saveNow(): Promise<void> {
   error.value = ''
 }
 async function retry(): Promise<void> {
+  if (repairing.value) return
+  if (!ready && frame.value) {
+    loading.value = true
+    loadFailed.value = false
+    error.value = ''
+    frame.value.src = '/photocraft/index.html'
+    return
+  }
   try { if (!loadedPage || loadFailed.value) await load(); else await saveNow() }
   catch (reason) { error.value = reason instanceof Error ? reason.message : '保存失败，请重试' }
 }
@@ -219,13 +226,18 @@ async function repairSelection(): Promise<void> {
       : { method: props.inpaintMethod, baseRevision: image.documentRevision }
     const accepted = await createMaskRepair(loadedPage, new Blob([new Uint8Array(selected.bytes).buffer], { type: 'image/png' }), options)
     await waitForOperation(accepted.operationId)
-    const document = await getPageDocument(loadedPage)
-    const bytes = await apiClient.get<ArrayBuffer>(`/api/v2/pages/${loadedPage}/editor-document`, { responseType: 'arraybuffer' })
-    const reply = await request({ op: 'replace' }, bytes)
-    silentRevision = reply.revision ?? silentRevision
-    await request({ op: 'saved', revision: reply.revision })
-    adopt(document)
-    await render.reRenderFullImage()
+    try {
+      const document = await getPageDocument(loadedPage)
+      adopt(document)
+      await render.reRenderFullImage()
+      const bytes = await apiClient.get<ArrayBuffer>(`/api/v2/pages/${loadedPage}/editor-document`, { responseType: 'arraybuffer' })
+      const reply = await request({ op: 'replace' }, bytes)
+      silentRevision = reply.revision ?? silentRevision
+      await request({ op: 'saved', revision: reply.revision })
+    } catch (reason) {
+      loadFailed.value = true
+      throw reason
+    }
   } catch (reason) { error.value = reason instanceof Error ? reason.message : '选区修复失败' }
   finally { saving.value = false; repairing.value = false; emit('busy', false) }
 }
@@ -241,11 +253,18 @@ function onMessage(event: MessageEvent): void {
       if (reply.error) pending.reject(new Error(reply.error)); else pending.resolve(reply)
     }
   } else if (reply.event === 'ready') { ready = true; void load() }
+  else if (reply.event === 'error') {
+    ready = false
+    loading.value = false
+    loadFailed.value = true
+    error.value = reply.error || '精细编辑启动失败，请重试'
+    emit('busy', false)
+  }
   else if (reply.event === 'save') void retry()
   else if (reply.event === 'download' && reply.bytes && reply.filename) {
     triggerBlobDownload(new Blob([new Uint8Array(reply.bytes).buffer], { type: 'application/octet-stream' }), reply.filename)
   }
-  else if (reply.event === 'changed' && reply.pageId === loadedPage && props.active && (reply.revision ?? 0) > silentRevision) void persist(reply.revision ?? 0)
+  else if (reply.event === 'changed' && !repairing.value && reply.pageId === loadedPage && props.active && (reply.revision ?? 0) > silentRevision) void persist(reply.revision ?? 0)
 }
 function imageSignature(): string {
   const image = useImageStore().currentImage

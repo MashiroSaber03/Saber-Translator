@@ -149,7 +149,7 @@ def test_gray_manga_supports_colour_without_changing_background(content_platform
     with engine.connect() as connection:
         rendered = editor.prepare(connection, page, render=True, text_only=True)
         repaired = editor.prepare(connection, page, repair=upload.getvalue())
-    repair_layer = _manifest(repaired.document)['document']['layers'][0]['content']['children'][-1]
+    repair_layer = _manifest(repaired.document)['document']['layers'][0]
     assert repair_layer['content']['surface']['format']['mode'] == 'Rgb'
     with Image.open(BytesIO(rendered.text)) as overlay:
         pixels = list(overlay.convert('RGBA').get_flattened_data())
@@ -422,16 +422,30 @@ def test_business_edits_do_not_rewrite_native_text_or_leak_back_from_an_old_snap
     assert _project_asset(content_platform, page) == before
     metadata = json.loads(dict(_manifest(before[1])['document']['metadata']['text'])['saber.page'])
     native = next(iter(metadata['bubbles'].values()))
-    assert set(native['payload']) <= {'blockAlign', 'strokeColor', 'strokeWidth'}
+    assert set(native['payload']) <= {'strokeColor', 'strokeWidth'}
     restored, _ = repository.mutate_page_document(page_id=page, base_revision=saved['document']['documentRevision'],
         mutations=[], editor_document=initial.document, idempotency_key='fine')
     assert restored['document']['bubbles'][0]['payload']['originalText'] == 'new OCR text'
     assert restored['document']['bubbles'][0]['payload']['inpaintMethod'] == 'solid'
 
 
-def test_render_reads_native_text_and_does_not_republish_the_document_or_projection(content_platform):
+@pytest.mark.parametrize('background_locks', [None, dict(all=True, position=False, transparency=False)])
+def test_render_reads_native_text_and_does_not_republish_the_document_or_projection(content_platform, background_locks):
     page, document, _, _ = _text_page(content_platform)
     _, engine, _, storage, *_ = content_platform
+    if background_locks is not None:
+        _, original = _project_asset(content_platform, page)
+        manifest = _manifest(original)
+        manifest['document']['layers'][0]['locks'].update(background_locks)
+        changed = BytesIO()
+        with ZipFile(BytesIO(original)) as source, ZipFile(changed, 'w') as target:
+            for name in source.namelist():
+                target.writestr(name, json.dumps(manifest).encode() if name == 'manifest.json' else source.read(name))
+        assert not NativeEditor._legacy_document(changed.getvalue())
+        with engine.begin() as connection:
+            asset = storage.publish_bytes(changed.getvalue(), extension='pcraft', mime_type='application/x-photocraft', connection=connection)
+            connection.execute(update(page_assets).where(page_assets.c.page_id == page,
+                page_assets.c.role == 'editor_document').values(asset_id=asset.id))
     before = _project_asset(content_platform, page)
     payload = dict(document['bubbles'][0]['payload'], fontSize=77)
     # A stale/corrupted cache must never become the input authority for rendering.
@@ -525,6 +539,58 @@ def test_legacy_native_metadata_is_read_compatibly_and_converted_only_on_save(co
         mutations=[], editor_document=converted, idempotency_key='convert')
     assert saved['document']['bubbles'][0]['payload']['richText'] == document['bubbles'][0]['payload']['richText']
     assert not NativeEditor._legacy_document(_project_asset(content_platform, page)[1])
+
+
+@pytest.mark.parametrize('stale_cache', [False, True])
+def test_legacy_repair_layers_are_compacted_on_read_and_persisted_only_on_save(content_platform, stale_cache):
+    page, document, _, _ = _text_page(content_platform)
+    _, engine, repository, storage, *_ = content_platform
+    _, payload = _project_asset(content_platform, page)
+    manifest = _manifest(payload)
+    background = manifest['document']['layers'][0]
+    children = []
+    for index in range(4):
+        child = json.loads(json.dumps(background))
+        child.update(id=10000 + index, name='原图' if index == 0 else '背景修复')
+        child['locks']['all'] = index == 0
+        children.append(child)
+    background['content'] = dict(kind='group', children=children, expanded=True, artboard=None)
+    background['name'] = '背景'
+    background['locks']['all'] = False
+    old = BytesIO()
+    with ZipFile(BytesIO(payload)) as source, ZipFile(old, 'w') as target:
+        for name in source.namelist():
+            target.writestr(name, json.dumps(manifest).encode() if name == 'manifest.json' else source.read(name))
+    with engine.begin() as connection:
+        asset = storage.publish_bytes(old.getvalue(), extension='pcraft', mime_type='application/x-photocraft', connection=connection)
+        old_parent = connection.execute(select(page_assets.c.asset_id).where(
+            page_assets.c.page_id == page, page_assets.c.role == 'source')).scalar_one()
+        connection.execute(update(page_assets).where(page_assets.c.page_id == page,
+            page_assets.c.role == 'editor_document').values(asset_id=asset.id, parent_asset_id=old_parent))
+        if stale_cache:
+            cached = dict(document['bubbles'][0]['payload'], fontSize=77, translatedText='stale cache')
+            connection.execute(update(bubbles).where(bubbles.c.page_id == page).values(payload_json=json.dumps(cached)))
+    before = _project_asset(content_platform, page)
+    with engine.connect() as connection:
+        pointers = list(connection.execute(select(page_assets).where(page_assets.c.page_id == page)))
+        converted = NativeEditor(storage).read_document(connection, page)
+        assert list(connection.execute(select(page_assets).where(page_assets.c.page_id == page))) == pointers
+    assert _project_asset(content_platform, page) == before
+    assert repository.get_page_document(page)['documentRevision'] == document['documentRevision']
+    layers = _manifest(converted)['document']['layers']
+    assert len(layers) == len(manifest['document']['layers'])
+    assert layers[0]['content']['kind'] == 'raster'
+    assert layers[0]['locks']['position'] and layers[0]['locks']['transparency'] and not layers[0]['locks']['all']
+    assert not NativeEditor._legacy_document(converted)
+    saved, _ = repository.mutate_page_document(page_id=page, base_revision=document['documentRevision'],
+        mutations=[], editor_document=converted, idempotency_key='compact-background')
+    assert saved['document']['bubbles'][0]['payload']['fontSize'] == 24
+    assert saved['document']['bubbles'][0]['payload']['translatedText'] == 'ABCD'
+    assert saved['document']['bubbles'][0]['payload']['richText'] == document['bubbles'][0]['payload']['richText']
+    with engine.connect() as connection:
+        assert NativeEditor(storage).read_document(connection, page) == _project_asset(content_platform, page)[1]
+        assert connection.execute(select(page_assets.c.parent_asset_id).where(
+            page_assets.c.page_id == page, page_assets.c.role == 'editor_document')).scalar_one() is None
 
 
 @pytest.mark.parametrize('field,value', [('translatedText', '任务直接提交'), ('originalText', '仅更新原文')])

@@ -4969,6 +4969,7 @@ dependencies = [
  "base64 0.22.1",
  "blake3",
  "photocraft-codecs",
+ "photocraft-compose",
  "photocraft-doc",
  "photocraft-engine",
  "photocraft-format",
