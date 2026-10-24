@@ -226,6 +226,108 @@ def test_startup_failure_rolls_back(root):
         assert business_ready(root)
 
 
+@pytest.mark.parametrize("stage", ["installed", "starting"])
+@pytest.mark.parametrize("outcome", ["commit", "rollback"])
+def test_desktop_settings_during_upgrade_and_after_commit_or_rollback(root, monkeypatch, stage, outcome):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication
+    from src.backend_v2.desktop.entrypoint import DesktopController
+    from src.backend_v2.desktop.settings import DesktopSettings, DesktopSettingsStore
+
+    application = QApplication.instance() or QApplication([])
+    assets = Path(__file__).resolve().parents[2] / "src/backend_v2/desktop/assets"
+    store = DesktopSettingsStore(root)
+    store.save(DesktopSettings(port=60357, open_browser_on_start=False))
+    original_bytes = store.path.read_bytes()
+    controllers = []
+
+    with manager(root) as migration:
+        assert migration.prepare(initialize_database)["status"] == "awaiting_health"
+        if stage == "starting":
+            migration.before_start()
+        assert not business_ready(root)
+
+        def open_controller():
+            controller = DesktopController(
+                application, data_root=root, settings_store=store, settings=store.load(),
+                native_icon_path=assets / "app-icon.ico", brand_logo_path=assets / "app-icon.png",
+                storage_manager=migration,
+            )
+            controllers.append(controller)
+            controller.show()
+            application.processEvents()
+            return controller
+
+        try:
+            controller = open_controller()
+            page = controller.window.settings
+            assert controller.pet.isVisible()
+            page.pet_enabled.click()
+            assert not controller.pet.isVisible()
+            assert not store.load().pet_enabled
+
+            page.pet_top.click()
+            assert not controller.pet.always_on_top
+            assert not controller.pet.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
+            assert not store.load().pet_always_on_top
+            for percent in (100, 125, 150, 75, 150):
+                page.pet_scale.setCurrentText(f"{percent}%")
+                assert controller.pet.scale_percent == store.load().pet_scale_percent == percent
+                assert (controller.pet.width(), controller.pet.height()) == (
+                    round(192 * percent / 100), round(208 * percent / 100),
+                )
+            page.pet_enabled.click()
+            assert controller.pet.isVisible()
+            assert store.load().pet_enabled
+            page.pet_enabled.click()
+            page.port.setValue(60358)
+            controller._save_pet_position("test-screen", 0.25, 0.75)
+            saved = store.load()
+            assert saved == controller.settings
+            assert saved.port == 60358
+            assert (saved.pet_screen_name, saved.pet_position_x, saved.pet_position_y) == (
+                "test-screen", 0.25, 0.75,
+            )
+            assert page.auto_save_status.text() == "已自动保存"
+            assert not business_ready(root)
+
+            if stage == "installed":
+                migration.before_start()
+            if outcome == "commit":
+                assert migration.confirm_ready() == []
+                assert business_ready(root)
+                assert store.load() == saved
+                reopened = open_controller()
+                assert reopened.settings == saved
+                assert not reopened.pet.isVisible()
+                assert not reopened.window.settings.pet_enabled.isChecked()
+                assert not reopened.pet.always_on_top
+                assert reopened.pet.scale_percent == 150
+                assert reopened._status.state.value == "stopped"
+            else:
+                migration.startup_failed()
+                assert migration.rolled_back
+                assert store.path.read_bytes() == original_bytes
+                page.pet_enabled.click()
+                page.pet_scale.setCurrentText("100%")
+                controller._save_pet_position("discarded-screen", 0.5, 0.5)
+                assert not controller._store_settings(controller.settings, show_error=False)
+                assert store.path.read_bytes() == original_bytes
+                assert controller.settings == saved
+                assert not controller.pet.isVisible()
+                assert controller.pet.scale_percent == 150
+        finally:
+            for controller in controllers:
+                controller._pet_timer.stop()
+                controller.tasks.stop()
+                controller.tray.hide()
+                controller.pet.close()
+                controller.window.allow_close()
+                controller.deleteLater()
+            application.processEvents()
+
+
 def test_cleanup_failure_persists_and_next_start_retries(root, monkeypatch):
     with manager(root) as migration:
         migration.prepare(initialize_database)
