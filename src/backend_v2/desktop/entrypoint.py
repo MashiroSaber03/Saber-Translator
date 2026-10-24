@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from src.storage_migrator.runner import StorageManager
-from src.storage_migrator.control import business_ready, control_root
+from src.storage_migrator.control import control_root
 from src.backend_v2.storage.lifecycle import initialize_database
 
 import json
@@ -494,7 +494,8 @@ class DesktopController(QObject):
         *,
         show_error: bool = True,
     ) -> bool:
-        if self.storage_manager is not None and (self.storage_manager.rolled_back or not business_ready(self.data_root)):
+        # Installed desktop settings can change before backend health is confirmed.
+        if self.storage_manager is not None and self.storage_manager.rolled_back:
             return False
         normal_size = self.window.normalGeometry().size()
         updated = updated.updated(
