@@ -644,13 +644,17 @@ def get_font(font_family_relative_path=constants.DEFAULT_FONT_RELATIVE_PATH, fon
 
 def calculate_auto_font_size(text, bubble_width, bubble_height, text_direction='vertical',
                              font_family_relative_path=constants.DEFAULT_FONT_RELATIVE_PATH,
-                             min_size=12, max_size=80, padding_ratio=1.0):
+                             min_size=12, max_size=None, padding_ratio=1.0):
     """
     使用二分法计算最佳字体大小。
     
     对于包含换行符的文本，会考虑换行符对布局的影响：
     - 竖排模式：每个换行符代表一个新列
     - 横排模式：每个换行符代表一个新行
+
+    字号上限不再固定为 80：二分查找的上界由气泡尺寸和段落数推导，
+    因此大图可以按实际空间选取更合适的字号。max_size 仅作为可选的
+    显式上限保留，默认 None 表示不设固定上限。
     """
     if not text or not text.strip() or bubble_width <= 0 or bubble_height <= 0:
         return constants.DEFAULT_FONT_SIZE
@@ -675,7 +679,17 @@ def calculate_auto_font_size(text, bubble_width, bubble_height, text_direction='
         W, H = H, W
 
     low = min_size
-    high = max_size
+    # 二分上界：字号不会超过气泡的行宽（横排）或列高（竖排），
+    # 且每个段落至少占一行/列，所以 num_paragraphs * mid * l_h <= H。
+    # 这两个约束给出一个必然安全的上界，既能容纳大图所需的更大字号，
+    # 也不会让搜索范围无界。
+    upper_bound = max(
+        min_size,
+        int(min(W, H / (num_paragraphs * l_h))),
+    )
+    if max_size is not None:
+        upper_bound = min(upper_bound, max(min_size, int(max_size)))
+    high = upper_bound
     best_size = min_size
 
     while low <= high:
@@ -721,7 +735,7 @@ def calculate_auto_font_size(text, bubble_width, bubble_height, text_direction='
             high = mid - 1
 
     result = max(min_size, best_size)
-    logger.debug(f"自动计算的最佳字体大小: {result}px (范围: {min_size}-{max_size})")
+    logger.debug(f"自动计算的最佳字体大小: {result}px (范围: {min_size}-{upper_bound})")
     return result
 
 
