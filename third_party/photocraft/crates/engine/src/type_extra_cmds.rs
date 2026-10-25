@@ -159,8 +159,11 @@ fn to_paragraph(s: &mut Session, p: &Value) -> Result<Value> {
                 TextAlign::Right | TextAlign::JustifyRight => -height,
                 _ => 0.0,
             };
-            // The box's right edge is the first column's right edge, so the columns stay put.
-            let x = -v0 - width;
+            // Measure the paragraph baseline, as below for horizontal text: its capital-height
+            // offset can differ from the point column's half-em logical bounds.
+            let mut probe = t.clone();
+            probe.shape = TextShape::Box { x: 0.0, y: 0.0, width, height };
+            let x = layout(doc, &probe).lines.first().map_or(-v0 - width, |ln| ln.baseline);
             t.shape = TextShape::Box { x: 0.0, y: 0.0, width, height };
             t.transform = then_translate(&t.transform, f64::from(x), f64::from(y));
             return Ok(json!([x, y, width, height]));

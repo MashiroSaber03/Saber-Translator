@@ -2,6 +2,7 @@
 
 from io import BytesIO
 import json
+from pathlib import Path
 import uuid
 from zipfile import ZipFile
 
@@ -26,6 +27,39 @@ def import_page(platform):
         text_style=dict(DEFAULT_TEXT_STYLE), upload=BytesIO(_image_bytes((200, 200))),
         idempotency_key=str(uuid.uuid4()))
     return result['page']['id']
+
+
+@pytest.mark.parametrize('font_name', ['msyh.ttc', 'Arial_Unicode.ttf'])
+def test_native_emphasis_marks_stay_upright_after_project_reopen(tmp_path, font_name):
+    marks = '!！?？¡¿؟‼⁇⁈⁉﹖﹗'
+    font = Path(__file__).resolve().parents[2] / 'src/backend_v2/resources/fonts' / font_name
+    fonts = [dict(id='font', path=str(font))]
+    source = tmp_path / 'source.png'
+    Image.new('RGB', (len(marks) * 100, 200), 'white').save(source)
+    rendered = {}
+    for direction in ('horizontal', 'vertical'):
+        project, output = tmp_path / f'{direction}.pcraft', tmp_path / f'{direction}.png'
+        bubbles_input = [dict(bubbleId=str(i), fontId='font', payload=_bubble_fields(
+            translatedText=mark, coords=[i * 100, 10, (i + 1) * 100, 190], fontSize=48,
+            textDirection=direction, rotationAngle=0, strokeEnabled=False)) for i, mark in enumerate(marks)]
+        projection = NativeEditor.invoke(dict(pageId='emphasis', source=str(source), fonts=fonts,
+            bubbles=bubbles_input, output=str(project), text=str(output)))
+        with Image.open(output) as image:
+            rendered[direction] = image.getchannel('A')
+        reopened = NativeEditor.invoke(dict(pageId='emphasis', project=str(project), fonts=fonts, text=str(output)))
+        assert reopened['bubbles'] == projection['bubbles']
+        assert [item['payload']['translatedText'] for item in reopened['bubbles']] == list(marks)
+        assert [item['payload']['coords'] for item in reopened['bubbles']] == [item['payload']['coords'] for item in bubbles_input]
+        with Image.open(output) as image:
+            assert image.getchannel('A').tobytes() == rendered[direction].tobytes()
+    for i, mark in enumerate(marks):
+        sizes = []
+        for direction in ('horizontal', 'vertical'):
+            bbox = rendered[direction].crop((i * 100, 0, (i + 1) * 100, 200)).getbbox()
+            assert bbox, (font_name, mark, direction)
+            sizes.append((bbox[2] - bbox[0], bbox[3] - bbox[1]))
+        # Vertical OpenType alternates can change a mark's width, but it stays upright.
+        assert abs(sizes[0][1] - sizes[1][1]) <= 2, (font_name, mark, sizes)
 
 
 @pytest.mark.parametrize('uploaded', [False, True])

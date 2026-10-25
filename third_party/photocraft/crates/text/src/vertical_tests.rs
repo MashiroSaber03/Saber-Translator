@@ -39,7 +39,7 @@ fn cjk_engine() -> Option<(TextEngine, String)> {
 
 #[test]
 fn classes_follow_vertical_orientation() {
-    for c in ['縦', 'か', 'カ', '한', '、', '。', 'Ａ', '１'] {
+    for c in ['縦', 'か', 'カ', '한', '、', '。', 'Ａ', '１', '!', '?', '！', '？', '¡', '¿', '؟', '‼', '⁇', '⁈', '⁉', '﹖', '﹗'] {
         assert_eq!(vertical_class(c), VClass::Upright, "{c}");
     }
     for c in ['ー', '「', '」', '（', '）', '〜', '…', '—'] {
@@ -47,6 +47,71 @@ fn classes_follow_vertical_orientation() {
     }
     for c in ['A', 'z', '1', ' ', '-', 'ｶ', 'é'] {
         assert_eq!(vertical_class(c), VClass::Rotate, "{c}");
+    }
+}
+
+#[test]
+fn emphasis_punctuation_stays_upright_between_rotated_latin() {
+    let mut e = TextEngine::new();
+    let t = vertical("A!?B", "Inter", 40.0);
+    let before = t.clone();
+    let l = e.layout(&t, 72.0);
+    assert_eq!(l.glyphs.iter().map(|g| g.orient).collect::<Vec<_>>(), [GlyphOrient::Rotated, GlyphOrient::Upright, GlyphOrient::Upright, GlyphOrient::Rotated]);
+    assert_eq!(t, before, "orientation must not rewrite the stored text or styles");
+    for mark in ["!", "?", "‼", "⁉"] {
+        let t = vertical(mark, "Inter", 40.0);
+        let (l, v) = e.render(&t, 72.0, PixelFormat::RGBA8);
+        let (_, h) = e.render(&TextLayer { orientation: Orientation::Horizontal, ..t }, 72.0, PixelFormat::RGBA8);
+        assert!(l.glyphs.iter().all(|g| g.orient == GlyphOrient::Upright), "{mark}");
+        assert!(
+            v.rect.width().abs_diff(h.rect.width()) <= 2 && v.rect.height().abs_diff(h.rect.height()) <= 2,
+            "{mark}: vertical {:?}, horizontal {:?}",
+            v.rect,
+            h.rect
+        );
+    }
+}
+
+#[test]
+fn narrow_upright_marks_have_full_cells_and_wrap_with_their_carets() {
+    let mut engine = TextEngine::new();
+    let text = vertical("!!??", "Inter", 40.0);
+    let layout = engine.layout(&text, 72.0);
+    assert_eq!(layout.glyphs.len(), 4);
+    for (index, pair) in layout.glyphs.windows(2).enumerate() {
+        assert!((pair[1].y - pair[0].y - 40.0).abs() < 0.01, "{pair:?}");
+        if index != 1 {
+            assert!((pair[1].x - pair[0].x).abs() < 0.01, "equal marks stay centred: {pair:?}");
+        }
+    }
+    assert!(layout.clusters.iter().all(|c| (c.advance - 40.0).abs() < 0.01));
+    let text = TextLayer { shape: TextShape::Box { x: 0.0, y: 0.0, width: 300.0, height: 100.0 }, ..vertical("! ! ! !", "Inter", 40.0) };
+    let layout = engine.layout(&text, 72.0);
+    assert!(layout.lines.len() > 1);
+    for line in &layout.lines {
+        assert!(line.x1 - line.x0 <= 100.01, "{line:?}");
+    }
+    for (i, _) in text.text.char_indices().filter(|(_, c)| !c.is_whitespace()) {
+        let [a, b] = layout.caret_segment(i);
+        let index = layout.hit_test((a.0 + b.0) * 0.5, (a.1 + b.1) * 0.5);
+        assert_eq!(index, i, "caret {i}");
+    }
+}
+
+#[test]
+fn unrelated_upright_symbols_keep_their_existing_advance() {
+    let mut engine = TextEngine::new();
+    for symbol in ['§', '©', '®', '±', '¼', '½', '¾', '×', '÷'] {
+        for tracking in [-50.0, 0.0, 125.0] {
+            let mut text = vertical(&symbol.to_string().repeat(3), "Inter", 40.0);
+            text.runs[0].style.tracking = tracking;
+            let v = engine.layout(&text, 72.0);
+            let h = engine.layout(&TextLayer { orientation: Orientation::Horizontal, ..text }, 72.0);
+            assert_eq!(v.clusters.len(), h.clusters.len());
+            for (v, h) in v.clusters.iter().zip(&h.clusters) {
+                assert!((v.advance - h.advance).abs() < 0.01, "{symbol}, tracking {tracking}: vertical {}, horizontal {}", v.advance, h.advance);
+            }
+        }
     }
 }
 

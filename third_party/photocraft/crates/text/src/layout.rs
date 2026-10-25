@@ -89,6 +89,11 @@ pub enum VClass {
     AlternateOrRotate = 2,
 }
 
+// Comic emphasis marks that override the usual rotation of half-width text.
+fn emphasis_override(c: char) -> bool {
+    matches!(c, '!' | '?' | '¡' | '¿' | '؟' | '‼' | '⁇' | '⁈' | '⁉' | '﹖' | '﹗')
+}
+
 /// The vertical-type class of a character.
 pub fn vertical_class(c: char) -> VClass {
     let u = c as u32;
@@ -122,7 +127,8 @@ pub fn vertical_class(c: char) -> VClass {
     if (0xFF61..=0xFFDC).contains(&u) {
         return VClass::Rotate;
     }
-    let upright = crate::cjk::classify(c).is_some()
+    let upright = emphasis_override(c)
+        || crate::cjk::classify(c).is_some()
         || matches!(u, 0xA7 | 0xA9 | 0xAE | 0xB1 | 0xBC..=0xBE | 0xD7 | 0xF7 | 0x2E80..=0x2EFF | 0xFE10..=0xFE1F | 0xFE30..=0xFE4F | 0x1F000..=0x1FAFF);
     if upright { VClass::Upright } else { VClass::Rotate }
 }
@@ -580,7 +586,11 @@ impl Layouter {
             crate::served::request_for_text(&ptext);
             let fallback: Vec<String> = fonts.fallback_stack().map(str::to_string).collect();
             // Shapes the paragraph, each tab widened by its letter spacing in `tab_spacing` (px).
-            let build = |lcx: &mut LayoutContext<RunBrush>, fcx: &mut parley::FontContext, tab_spacing: &[f32]| -> Layout<RunBrush> {
+            let build = |lcx: &mut LayoutContext<RunBrush>,
+                         fcx: &mut parley::FontContext,
+                         tab_spacing: &[f32],
+                         vertical_padding: &[(Range<usize>, f32)]|
+             -> Layout<RunBrush> {
                 let mut b = lcx.ranged_builder(fcx, &ptext, 1.0, false);
                 // Paragraph-start style as the default (covers the direction mark and empty
                 // paragraphs), then every run piece intersecting this paragraph.
@@ -631,6 +641,10 @@ impl Layouter {
                 for (range, size) in &synthetic_small_caps {
                     b.push(StyleProperty::FontSize(*size), range.clone());
                 }
+                for (range, padding) in vertical_padding {
+                    let st = &out.styles[style_at(prange.start + range.start.saturating_sub(prefix.len()))];
+                    b.push(StyleProperty::LetterSpacing(st.tracking / 1000.0 * st.size_pt * k + padding), range.clone());
+                }
                 for (&at, &spacing) in tabs.iter().zip(tab_spacing) {
                     b.push(StyleProperty::LetterSpacing(spacing), at..at + 1);
                 }
@@ -653,14 +667,41 @@ impl Layouter {
             // Break again with the tab widths that layout gives until they agree; if they don't
             // settle, keep the safe layout.
             let wide = if is_box { tab_px } else { 0.0 };
-            let mut layout = build(&mut self.lcx, &mut fonts.fcx, &vec![wide; tabs.len()]);
+            let tab_spacing = vec![wide; tabs.len()];
+            let mut layout = build(&mut self.lcx, &mut fonts.fcx, &tab_spacing, &[]);
             break_lines(&mut layout);
+            // Upright marks such as ! need an em down the column, not their narrow horizontal
+            // advance. Feed that padding back through shaping so wrapping and carets agree too.
+            let mut vertical_padding = Vec::new();
+            if vertical && ptext.chars().any(emphasis_override) {
+                for line in layout.lines() {
+                    for run in line.runs() {
+                        for cluster in run.visual_clusters() {
+                            let style = cluster.first_style();
+                            let mark = ptext.get(cluster.text_range()).and_then(|text| text.chars().next());
+                            if !mark.is_some_and(emphasis_override) || cluster.glyphs().count() != 1 {
+                                continue;
+                            }
+                            let tracking = out.styles[style.brush.0 as usize].tracking / 1000.0 * run.font_size();
+                            let padding = run.font_size() + tracking - cluster.advance();
+                            if padding > 0.01 {
+                                vertical_padding.push((cluster.text_range(), padding));
+                            }
+                        }
+                    }
+                }
+                if !vertical_padding.is_empty() {
+                    vertical_padding.sort_by_key(|(range, _)| range.start);
+                    layout = build(&mut self.lcx, &mut fonts.fcx, &tab_spacing, &vertical_padding);
+                    break_lines(&mut layout);
+                }
+            }
             if is_box && !tabs.is_empty() {
                 let first = tab_widths(&layout, &tabs, &out.styles, indent_start, first_indent, tab_px);
                 let mut want: Vec<f32> = first.iter().map(|t| t.width).collect();
                 for _ in 0..4 {
                     let spacing: Vec<f32> = first.iter().zip(&want).map(|(t, w)| w / t.scale - (t.advance - tab_px)).collect();
-                    let mut next = build(&mut self.lcx, &mut fonts.fcx, &spacing);
+                    let mut next = build(&mut self.lcx, &mut fonts.fcx, &spacing, &vertical_padding);
                     break_lines(&mut next);
                     let got: Vec<f32> = tab_widths(&next, &tabs, &out.styles, indent_start, first_indent, tab_px).iter().map(|t| t.width).collect();
                     if got.iter().zip(&want).all(|(a, b)| (a - b).abs() < 0.01) {
@@ -920,6 +961,11 @@ impl Layouter {
                     let rm = run.metrics();
                     let vm = if vertical { Some(VMetrics::new(run.font(), run.normalized_coords(), run.font_size())) } else { None };
                     let class = gr.style().brush.1;
+                    let padding = vertical_padding
+                        .binary_search_by_key(&run.text_range().start, |(range, _)| range.start)
+                        .ok()
+                        .and_then(|i| vertical_padding.get(i))
+                        .map_or(0.0, |(_, padding)| *padding);
                     // Glyphs of the run's own characters (not substituted by `vert`).
                     let plain: Vec<u32> = match (&vm, class) {
                         (Some(v), 2) => ptext.get(run.text_range()).unwrap_or("").chars().filter_map(|c| v.cmap(c)).collect(),
@@ -950,7 +996,8 @@ impl Layouter {
                             let upright = class == 1 || (class == 2 && !plain.contains(&g.id));
                             vinfo.push(VGlyph {
                                 upright,
-                                advance: g.advance * hs,
+                                // Padding separates glyphs along the column, not across it.
+                                advance: (g.advance - padding).max(0.0) * hs,
                                 origin: if upright { v.origin(g.id) } else { 0.0 },
                                 // Rotated text is centred on the column: its baseline sits
                                 // (ascent − descent) / 2 from the centre line.

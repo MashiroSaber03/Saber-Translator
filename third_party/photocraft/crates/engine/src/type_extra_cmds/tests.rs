@@ -115,15 +115,28 @@ fn vertical_orientation_renders_columns_inside_the_canvas() {
 
 #[test]
 fn vertical_point_and_paragraph_conversion_keep_the_columns_in_place() {
-    for align in ["left", "center", "right"] {
+    for (align, content) in [
+        ("left", "Hello world"),
+        ("center", "Hello world"),
+        ("right", "Hello world"),
+        ("left", "!!??"),
+        ("center", "!!??"),
+        ("right", "!!??"),
+        ("left", "漢字!？"),
+        ("center", "漢字!？"),
+        ("right", "漢字!？"),
+    ] {
         let mut s = session(8);
         s.execute("image.canvasSize", json!({"width": 300, "height": 400})).ok();
-        let r = s.execute("type.create", json!({"x": 150, "y": 100, "text": "Hello world", "size": 30, "align": align})).unwrap();
+        let r = s.execute("type.create", json!({"x": 150, "y": 100, "text": content, "size": 30, "align": align})).unwrap();
         let id = LayerId(r["layer"].as_u64().unwrap());
         s.execute("type.orientation.vertical", json!({})).unwrap();
         let st = s.active().unwrap();
-        let before = layout(&st.doc, text(&s, id)).bounds().unwrap();
+        let original = layout(&st.doc, text(&s, id));
+        let before = original.bounds().unwrap();
         let before_tf = text(&s, id).transform;
+        let first_before = original.glyphs[0];
+        let p_before = before_tf.apply(photocraft_geom::Point::new(f64::from(first_before.x), f64::from(first_before.y)));
         let map = |t: &photocraft_geom::Affine, b: [f32; 4]| {
             let p = t.apply(photocraft_geom::Point::new(f64::from(b[0]), f64::from(b[1])));
             (p.x, p.y)
@@ -139,6 +152,7 @@ fn vertical_point_and_paragraph_conversion_keep_the_columns_in_place() {
         let g_after = l.glyphs[0];
         let tf = text(&s, id).transform;
         let p_after = tf.apply(photocraft_geom::Point::new(f64::from(g_after.x), f64::from(g_after.y)));
+        assert!((p_before.x - p_after.x).abs() < 1.5 && (p_before.y - p_after.y).abs() < 1.5, "{align} {content:?}: {p_before:?} → {p_after:?}");
         s.execute("type.convertToPointText", json!({})).unwrap();
         let st = s.active().unwrap();
         let back = layout(&st.doc, text(&s, id));
