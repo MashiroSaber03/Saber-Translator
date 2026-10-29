@@ -300,7 +300,7 @@ describe('TranslateView', () => {
     expect(wrapper.getComponent(ImageUpload).props('disabled')).toBe(false)
   })
 
-  it('does not save loaded bubbles, but persists subsequent local edits', async () => {
+  it('does not duplicate the editor submission with an outer deep autosave watcher', async () => {
     const queue = vi.spyOn(pagePersistence, 'queuePageDocumentSave').mockResolvedValue(undefined)
     vi.spyOn(pagePersistence, 'isPageDocumentRegistered').mockReturnValue(true)
     vi.spyOn(pagePersistence, 'flushPageDocument').mockResolvedValue(undefined)
@@ -320,7 +320,7 @@ describe('TranslateView', () => {
 
     bubbleStore.updateBubble(0, { translatedText: '编辑后的对白' })
     await nextTick()
-    expect(queue).toHaveBeenCalledWith('page-1', 2, bubbleStore.bubbles)
+    expect(queue).not.toHaveBeenCalled()
   })
 
   it('reloads the chapter when an accepted container import reaches a terminal state', async () => {

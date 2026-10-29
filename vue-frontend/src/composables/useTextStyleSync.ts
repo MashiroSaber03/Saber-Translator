@@ -1,6 +1,7 @@
 import { computed, getCurrentInstance, onUnmounted, ref, watch } from 'vue'
 
-import { getPageDocument, getPageRenderStatus } from '@/api/v2/content'
+import { getPageDocument } from '@/api/v2/content'
+import { waitForPageRender } from '@/composables/useEditRender'
 import { createChapterStyleApplyJob } from '@/api/v2/translation'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
@@ -12,7 +13,7 @@ import {
   registerPageDocument,
 } from '@/services/pageDocumentPersistence'
 import { showToast } from '@/utils/toast'
-import { parseCompleteTextStyleSettings } from '@/defaults/textStyleDefaults'
+import { normalizeImageTextStyleFields } from '@/defaults/textStyleDefaults'
 import type { TextStyleMutationField, TextStyleSettings } from '@/types/settings'
 
 export interface ApplySettingsOptions {
@@ -41,9 +42,6 @@ const RENDERED_STYLE_FIELDS = new Set<TextStyleMutationField>([
   'inlineAlign',
   'blockAlign',
 ])
-const RENDER_STATUS_POLL_MS = 500
-const RENDER_STATUS_TIMEOUT_MS = 30_000
-const RENDER_STATUS_RETRY_LIMIT = 5
 
 export function useTextStyleSync() {
   const imageStore = useImageStore()
@@ -51,7 +49,6 @@ export function useTextStyleSync() {
   const bubbleStore = useBubbleStore()
   const taskCenterStore = useTaskCenterStore()
   const currentImage = computed(() => imageStore.currentImage)
-  const isSyncingTextStyle = ref(false)
   const isApplyingToAll = ref(false)
   const renderStatusControllers = new Map<string, AbortController>()
 
@@ -64,72 +61,15 @@ export function useTextStyleSync() {
     })
   }
 
-  function syncImageToSidebar(image: typeof imageStore.currentImage) {
-    if (!image) return
-    settingsStore.updateTextStyle({
-      autoFontSize: image.autoFontSize,
-      fillColor: image.fillColor,
-      fontFamily: image.fontFamily,
-      fontSize: image.fontSize,
-      inpaintMethod: image.inpaintMethod,
-      layoutDirection: image.layoutDirection,
-      lineSpacing: image.lineSpacing,
-      strokeColor: image.strokeColor,
-      strokeEnabled: image.strokeEnabled,
-      strokeWidth: image.strokeWidth,
-      inlineAlign: image.inlineAlign,
-      blockAlign: image.blockAlign,
-      textColor: image.textColor,
-      useAutoTextColor: image.useAutoTextColor,
-    })
-  }
-
-  function syncSidebarToImage(style: typeof settingsStore.settings.textStyle) {
-    if (!imageStore.currentImage) return
-    imageStore.updateCurrentImage({
-      autoFontSize: style.autoFontSize,
-      fillColor: style.fillColor,
-      fontFamily: style.fontFamily,
-      fontSize: style.fontSize,
-      inpaintMethod: style.inpaintMethod,
-      layoutDirection: style.layoutDirection,
-      lineSpacing: style.lineSpacing,
-      strokeColor: style.strokeColor,
-      strokeEnabled: style.strokeEnabled,
-      strokeWidth: style.strokeWidth,
-      inlineAlign: style.inlineAlign,
-      blockAlign: style.blockAlign,
-      textColor: style.textColor,
-      useAutoTextColor: style.useAutoTextColor,
-    })
-  }
-
+  // The panel projects page defaults. User events below are the only writes;
+  // another two-way settings watcher would silently copy unrelated preferences
+  // back over an accepted page document.
   watch(
-    () => imageStore.currentImage,
-    image => {
-      if (!image || isSyncingTextStyle.value) return
-      isSyncingTextStyle.value = true
-      try {
-        syncImageToSidebar(image)
-      } finally {
-        isSyncingTextStyle.value = false
-      }
+    () => imageStore.currentImage ? normalizeImageTextStyleFields(imageStore.currentImage) : null,
+    style => {
+      if (style) settingsStore.updateTextStyle(style)
     },
     { immediate: true },
-  )
-
-  watch(
-    () => settingsStore.settings.textStyle,
-    style => {
-      if (!imageStore.currentImage || isSyncingTextStyle.value) return
-      isSyncingTextStyle.value = true
-      try {
-        syncSidebarToImage(style)
-      } finally {
-        isSyncingTextStyle.value = false
-      }
-    },
-    { deep: true },
   )
 
   async function persistStyle(
@@ -156,7 +96,10 @@ export function useTextStyleSync() {
       const failure = error instanceof Error ? error.message : '未知错误'
       try {
         await reloadAuthoritativePage(image.id, image.chapterId)
-        showToast(`文字样式写入后端失败，已恢复后端版本：${failure}`, 'error')
+        const retained = imageStore.images.find(candidate => candidate.id === image.id)?.hasUnsavedChanges
+        showToast(retained
+          ? `文字样式保存失败，修改已保留，请重试：${failure}`
+          : `文字样式保存失败，已重新加载后端版本：${failure}`, 'error')
       } catch (reloadError) {
         showToast(
           `文字样式写入后端失败：${failure}；重新加载失败：${
@@ -188,88 +131,17 @@ export function useTextStyleSync() {
     ) {
       throw new Error(`页面 ${pageId} 的后端文档身份不匹配`)
     }
-    const bubbles = registerPageDocument(document)
-    if (imageStore.currentImage?.id !== pageId) return
-    const pageTextStyle = parseCompleteTextStyleSettings({
-      ...document.pageStyleDefaults,
-      ...(document.defaultFontId ? { fontFamily: document.defaultFontId } : {}),
-    })
-    isSyncingTextStyle.value = true
-    try {
-      imageStore.updateCurrentImage({
-        ...pageTextStyle,
-        bubbleStates: bubbles,
-        documentRevision: document.documentRevision,
-        hasUnsavedChanges: false,
-      })
-      settingsStore.updateTextStyle(pageTextStyle)
-      bubbleStore.setBubbles(bubbles, true)
-    } finally {
-      isSyncingTextStyle.value = false
-    }
+    registerPageDocument(document)
   }
 
   async function refreshRenderedAsset(pageId: string, minimumRevision: number): Promise<void> {
     renderStatusControllers.get(pageId)?.abort()
     const controller = new AbortController()
     renderStatusControllers.set(pageId, controller)
-    const deadline = Date.now() + RENDER_STATUS_TIMEOUT_MS
-    let consecutiveReadFailures = 0
     try {
-      while (!controller.signal.aborted && Date.now() < deadline) {
-        let status
-        try {
-          status = await getPageRenderStatus(pageId, controller.signal)
-          if (controller.signal.aborted) return
-        } catch (error) {
-          if (controller.signal.aborted) return
-          consecutiveReadFailures += 1
-          if (consecutiveReadFailures >= RENDER_STATUS_RETRY_LIMIT) {
-            showToast(
-              `文字样式已保存，但无法读取后端渲染状态：${
-                error instanceof Error ? error.message : '未知错误'
-              }`,
-              'error',
-            )
-            return
-          }
-          await new Promise(resolve => setTimeout(resolve, RENDER_STATUS_POLL_MS))
-          continue
-        }
-        consecutiveReadFailures = 0
-        if (status.pageId !== pageId) {
-          showToast(`页面 ${pageId} 的渲染状态身份不匹配`, 'error')
-          return
-        }
-        if (
-          status.renderStatus === 'render_failed'
-          || status.renderStatus === 'repair_failed'
-        ) {
-          const index = imageStore.images.findIndex(image => image.id === pageId)
-          if (index >= 0) imageStore.setTranslationStatus(index, 'failed')
-          showToast('文字样式已保存，但后端重渲染失败', 'error')
-          return
-        }
-        if (
-          status.renderStatus !== 'ready'
-          || (status.renderedRevision ?? 0) < minimumRevision
-        ) {
-          await new Promise(resolve => setTimeout(resolve, RENDER_STATUS_POLL_MS))
-          continue
-        }
-        const index = imageStore.images.findIndex(image => image.id === pageId)
-        if (index >= 0) {
-          imageStore.updateImageByIndex(index, {
-            renderedRevision: status.renderedRevision ?? undefined,
-            translatedAssetUrl: status.translatedUrl,
-            translationStatus: 'completed',
-          })
-        }
-        return
-      }
-      if (!controller.signal.aborted) {
-        showToast('文字样式已保存，后端仍在生成最新预览', 'info')
-      }
+      await waitForPageRender(pageId, minimumRevision, controller.signal)
+    } catch (error) {
+      if (!controller.signal.aborted) showToast(`文字样式已保存，${error instanceof Error ? error.message : '预览加载失败'}`, 'error')
     } finally {
       if (renderStatusControllers.get(pageId) === controller) {
         renderStatusControllers.delete(pageId)

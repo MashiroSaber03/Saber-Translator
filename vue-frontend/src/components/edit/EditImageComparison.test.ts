@@ -169,26 +169,11 @@ describe('EditImageComparison event forwarding', () => {
     expect(wrapper.emitted('bubbleRotateEnd')?.[0]).toEqual([0, 15])
   })
 
-  it('forwards BubbleEditor bulk style payloads to the workspace owner', () => {
+  it('forwards the requested style scope to the workspace owner', () => {
     const wrapper = mountComparison()
-    const payload: Partial<BubbleState> = {
-      fontSize: 28,
-      fontFamily: 'fonts/STXIHEI.TTF',
-      textDirection: 'horizontal',
-      textColor: '#111111',
-      fillColor: '#ffffff',
-      strokeEnabled: true,
-      strokeColor: '#222222',
-      strokeWidth: 2,
-      inpaintMethod: 'solid',
-      lineSpacing: 1.4,
-      inlineAlign: 'center',
-      blockAlign: 'end',
-    }
+    wrapper.getComponent({ name: 'BubbleEditor' }).vm.$emit('applyStyle', 'selected')
 
-    wrapper.getComponent({ name: 'BubbleEditor' }).vm.$emit('applyToAllStyle', payload)
-
-    expect(wrapper.emitted('applyToAllStyle')?.[0]).toEqual([payload])
+    expect(wrapper.emitted('applyStyle')?.[0]).toEqual(['selected', undefined])
   })
 
   it('maps comparison owner colors through semantic tokens', () => {

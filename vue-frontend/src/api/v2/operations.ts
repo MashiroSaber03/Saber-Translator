@@ -410,6 +410,11 @@ export async function createMaskRepair(
     baseRevision: number
     method: 'restore_source'
     fromSource?: false
+  } | {
+    baseRevision: number
+    method: 'clone'
+    cloneOffset: [number, number]
+    fromSource?: false
   },
 ): Promise<V2OperationAccepted> {
   const body = new FormData()
@@ -417,6 +422,7 @@ export async function createMaskRepair(
   body.append('base_revision', String(command.baseRevision))
   body.append('method', command.method)
   if (command.method === 'solid') body.append('fill_color', command.fillColor)
+  if (command.method === 'clone') { body.append('clone_dx', String(command.cloneOffset[0])); body.append('clone_dy', String(command.cloneOffset[1])) }
   body.append('mask', mask, 'repair-mask.png')
   return parseOperationAccepted(await apiClient.upload<unknown>(
     `/api/v2/pages/${encodeURIComponent(pageId)}/repairs`,

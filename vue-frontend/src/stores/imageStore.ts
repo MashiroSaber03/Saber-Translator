@@ -1,6 +1,5 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import type { BubbleState } from '@/types/bubble'
 import type { ImageData, ImageDataLoadInput, ImageDataUpdates, TranslationStatus } from '@/types/image'
 import { normalizeImageTextStyleFields } from '@/defaults/textStyleDefaults'
 
@@ -104,20 +103,6 @@ export const useImageStore = defineStore('image', () => {
     }
   }
 
-  function updateCurrentBubbleStates(bubbleStates: BubbleState[] | null): void {
-    if (currentImage.value) {
-      currentImage.value.bubbleStates = bubbleStates
-      currentImage.value.hasUnsavedChanges = true
-    }
-  }
-
-  function setManuallyAnnotated(isManual: boolean): void {
-    if (!currentImage.value) return
-
-    currentImage.value.isManuallyAnnotated = isManual
-    currentImage.value.hasUnsavedChanges = true
-  }
-
   function updateCurrentImageProperty<K extends keyof ImageData>(
     key: K,
     value: ImageData[K],
@@ -170,8 +155,6 @@ export const useImageStore = defineStore('image', () => {
 
     updateCurrentImage,
     updateImageByIndex,
-    updateCurrentBubbleStates,
-    setManuallyAnnotated,
     updateCurrentImageProperty,
     updateCurrentImageDimensions,
 

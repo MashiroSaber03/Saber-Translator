@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import * as fc from 'fast-check'
 import { useBubbleStore } from '@/stores/bubbleStore'
+import { useImageStore } from '@/stores/imageStore'
+import { addTestImage } from '../helpers/imageFixtures'
 import type { BubbleState, BubbleCoords, TextDirection, InpaintMethod } from '@/types/bubble'
 import { cloneBubbleStates, createBubbleState } from '@/utils/bubbleFactory'
 
@@ -64,6 +66,7 @@ const bubbleStatesArbitrary = fc.array(bubbleStateArbitrary, { maxLength: 20 })
 describe('bubble store properties', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    addTestImage(useImageStore(), 'page.png', '/source')
   })
 
   it('keeps multi-selection as a duplicate-free set of valid indices', () => {

@@ -47,7 +47,7 @@ describe('EditToolbar accessibility', () => {
     expect(slider.attributes('aria-valuetext')).toBe('50% 原文透明度')
     expect(wrapper.get('.edit-toolbar__source-opacity-value').text()).toBe('50%')
     await slider.trigger('pointerup')
-    expect(wrapper.emitted('pointer-action-complete')).toHaveLength(1)
+    expect(wrapper.emitted('pointer-action-complete')).toBeUndefined()
     await wrapper.setProps({ canOverlaySource: false })
     expect(slider.attributes('disabled')).toBeDefined()
   })
@@ -76,7 +76,7 @@ describe('EditToolbar accessibility', () => {
     expect(wrapper.emitted('update-translated-text-opacity')).toEqual([[25]])
     expect(wrapper.emitted('update-original-text-opacity')).toBeUndefined()
     await slider.trigger('pointerup')
-    expect(wrapper.emitted('pointer-action-complete')).toHaveLength(1)
+    expect(wrapper.emitted('pointer-action-complete')).toBeUndefined()
     await wrapper.setProps({ canFadeTranslated: false })
     expect(slider.attributes('disabled')).toBeDefined()
   })
@@ -146,8 +146,8 @@ describe('EditToolbar accessibility', () => {
     for (const title of [
       '上一张图片 (A)',
       '下一张图片 (D)',
-      '上一个气泡',
-      '下一个气泡',
+      '上一个气泡 (Alt+↑)',
+      '下一个气泡 (Alt+↓)',
       '自动检测当前图片的文本框',
       '批量检测所有图片',
       '使用当前文本框翻译此图片',
@@ -207,15 +207,17 @@ describe('EditToolbar accessibility', () => {
       '下一张图片',
       '上一个气泡',
       '下一个气泡',
-      '切换布局',
       '切换视图模式',
+      '切换布局',
       '同步缩放和拖动',
       '适应屏幕',
       '放大',
       '缩小',
       '原始大小',
+      '复制文字框',
       '修复笔刷',
       '还原笔刷',
+      '仿制图章',
     ])
     expect(wrapper.get('button[title="上一张图片 (A)"]').attributes('aria-label')).toBe('上一张图片')
     expect(wrapper.get('button[title="放大 (+)"]').attributes('aria-label')).toBe('放大')

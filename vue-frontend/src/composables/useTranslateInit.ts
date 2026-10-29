@@ -23,7 +23,7 @@ import {
   queuePageDocumentSave,
   registerPageDocument,
 } from '@/services/pageDocumentPersistence'
-import { parseCompleteTextStyleSettings } from '@/defaults/textStyleDefaults'
+import { normalizeImageTextStyleFields } from '@/defaults/textStyleDefaults'
 
 export type TranslationRouteContext =
   | { kind: 'quick' }
@@ -108,7 +108,7 @@ export function useTranslateInit() {
     isBookshelfMode.value = false
     bookTranslationConstraintsStore.resetBookConstraints()
     imageStore.clearImages()
-    bubbleStore.clearBubblesLocal()
+    bubbleStore.clearSelection()
   }
 
   function markOwnerUnmounted(): void {
@@ -298,7 +298,7 @@ export function useTranslateInit() {
           return false
         }
       } else {
-        bubbleStore.clearBubblesLocal()
+        bubbleStore.clearSelection()
       }
 
       if (typeof document !== 'undefined') {
@@ -425,14 +425,11 @@ export function useTranslateInit() {
       && currentImage.documentRevision !== undefined
       && isPageDocumentRegistered(currentImage.id)
     ) {
-      imageStore.updateCurrentImageProperty('bubbleStates', bubbleStore.bubbles)
-      queuePageDocumentSave(
-        currentImage.id,
-        currentImage.documentRevision,
-        bubbleStore.bubbles,
-      )
       try {
-        await flushPageDocument(currentImage.id)
+        await Promise.all([
+          queuePageDocumentSave(currentImage.id, currentImage.documentRevision, bubbleStore.bubbles),
+          flushPageDocument(currentImage.id),
+        ])
       } catch (error) {
         if (pageRequestId === pageDocumentRequestId) {
           showToast(
@@ -463,23 +460,11 @@ export function useTranslateInit() {
       if (document.pageId !== pageId || document.chapterId !== target.chapterId) {
         throw new Error(`页面 ${pageId} 的后端文档身份不匹配`)
       }
-      const pageTextStyle = parseCompleteTextStyleSettings({
-        ...document.pageStyleDefaults,
-        ...(document.defaultFontId
-          ? { fontFamily: document.defaultFontId }
-          : {}),
-      })
-      const bubbles = registerPageDocument(document)
+      registerPageDocument(document)
       imageStore.setCurrentImageIndex(index)
       if (imageStore.currentImage?.id !== pageId) return false
-      imageStore.updateCurrentImage({
-        ...pageTextStyle,
-        bubbleStates: bubbles,
-        documentRevision: document.documentRevision,
-        hasUnsavedChanges: false,
-      })
+      const pageTextStyle = normalizeImageTextStyleFields(imageStore.currentImage)
       settingsStore.updateTextStyle(pageTextStyle)
-      bubbleStore.setBubbles(bubbles, true)
       if (persistNavigation && currentChapterId.value) {
         queueLastVisitedPageWrite(currentChapterId.value, pageId)
       }

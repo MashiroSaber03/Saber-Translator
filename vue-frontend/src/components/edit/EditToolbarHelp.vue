@@ -1,16 +1,17 @@
 <template>
-  <div class="edit-toolbar-help">
+  <div class="edit-toolbar-help" @pointerup.stop @pointerenter="dismissed = false" @focusin="dismissed = false" @keydown.esc="dismissHelp">
     <UiButton
       variant="toolbar"
       class="edit-toolbar-help__trigger"
       title="快捷键操作帮助"
       aria-describedby="edit-toolbar-help-tooltip"
+      @click="dismissed = false"
     >
       <UiIcon name="help-circle" size="14" />
       <span class="edit-toolbar-help__trigger-text">快捷键</span>
     </UiButton>
 
-    <div id="edit-toolbar-help-tooltip" class="edit-toolbar-help__popover" role="tooltip">
+    <div v-show="!dismissed" id="edit-toolbar-help-tooltip" class="edit-toolbar-help__popover" role="tooltip">
       <div class="edit-toolbar-help__section">
         <div class="edit-toolbar-help__title">
           <span class="edit-toolbar-help__title-icon" aria-hidden="true">🖱️</span>
@@ -52,6 +53,22 @@
           <span class="edit-toolbar-help__description">应用并跳转下一张</span>
         </div>
         <div class="edit-toolbar-help__item">
+          <span class="edit-toolbar-help__key">Alt+↑ / Alt+↓</span>
+          <span class="edit-toolbar-help__description">上/下一个气泡（输入框内可用）</span>
+        </div>
+        <div class="edit-toolbar-help__item">
+          <span class="edit-toolbar-help__key">Ctrl+S</span>
+          <span class="edit-toolbar-help__description">保存并刷新预览</span>
+        </div>
+        <div class="edit-toolbar-help__item">
+          <span class="edit-toolbar-help__key">Ctrl+A / Ctrl+D</span>
+          <span class="edit-toolbar-help__description">全选 / 复制选中文字框</span>
+        </div>
+        <div class="edit-toolbar-help__item">
+          <span class="edit-toolbar-help__key">方向键 / Shift+方向键</span>
+          <span class="edit-toolbar-help__description">文字框微移 1 / 10 像素（支持多选）</span>
+        </div>
+        <div class="edit-toolbar-help__item">
           <span class="edit-toolbar-help__key">Delete / Backspace</span>
           <span class="edit-toolbar-help__description">删除选中气泡</span>
         </div>
@@ -73,8 +90,17 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
+
+const dismissed = ref(false)
+function dismissHelp(event: KeyboardEvent): void {
+  if (dismissed.value) return
+  dismissed.value = true
+  event.preventDefault()
+  event.stopPropagation()
+}
 </script>
 
 <style scoped>

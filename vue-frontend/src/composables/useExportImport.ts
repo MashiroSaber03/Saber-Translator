@@ -10,7 +10,9 @@ import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settings'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import type { ImageData } from '@/types/image'
-import { triggerUrlDownload, withDownloadFileName } from '@/utils/browserDownload'
+import { triggerBlobDownload, triggerUrlDownload, withDownloadFileName } from '@/utils/browserDownload'
+import { downloadPagePsd } from '@/api/v2/content'
+import { flushPageDocument } from '@/services/pageDocumentPersistence'
 import { useToast } from '@/utils/toast'
 
 export const DOWNLOAD_FORMATS = ['zip', 'pdf', 'cbz'] as const
@@ -154,6 +156,20 @@ export function useExportImport() {
     toast.success(`下载已开始：${filename}`)
   }
 
+  async function downloadCurrentPsd(): Promise<void> {
+    const image = imageStore.currentImage
+    if (!image || isDownloading.value) return
+    isDownloading.value = true
+    downloadProgressText.value = '正在导出可编辑 PSD…'
+    try {
+      await flushPageDocument(image.id)
+      const blob = await downloadPagePsd(image.id)
+      triggerBlobDownload(blob, `${image.fileName.replace(/\.[^/.]+$/, '')}.psd`)
+      toast.success('PSD 已导出，文字图层可继续编辑')
+    } catch (error) { toast.error(`PSD 导出失败：${error instanceof Error ? error.message : String(error)}`) }
+    finally { isDownloading.value = false; resetDownloadProgressLater() }
+  }
+
   async function waitForExport(jobId: string) {
     activeExportWait?.abort()
     const controller = new AbortController()
@@ -240,6 +256,7 @@ export function useExportImport() {
   return {
     downloadAllImages,
     downloadCurrentImage,
+    downloadCurrentPsd,
     downloadProgress,
     downloadProgressText,
     exportText,

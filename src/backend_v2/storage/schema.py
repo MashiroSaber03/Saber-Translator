@@ -499,6 +499,7 @@ pages = Table(
     Column("page_style_defaults_json", Text, nullable=False, server_default="{}"),
     Column("warnings_json", Text, nullable=False, server_default="[]"),
     *_timestamps(),
+    Column("is_manually_annotated", Boolean, nullable=False, server_default="0"),
     UniqueConstraint(
         "chapter_id",
         "ordinal",

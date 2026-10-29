@@ -48,6 +48,34 @@ prop/event plumbing. File size is a review signal, never the reason to split.
   credentials use the shared settings field components so validation,
   loading, accessibility, and dark-theme behavior stay consistent.
 
+## Editing A Page
+
+- A page has one editable text draft: `imageStore`'s `bubbleStates`. `bubbleStore`
+  provides selection and editing operations over that same array. Changing modes
+  never copies a second draft back into the page. Accepted projections retain a
+  valid text-box selection; loading a document does not force it to the first box.
+- `pageDocumentPersistence` alone accepts document projections and publishes
+  committed revisions. It rejects older reads, preserves edits made during a save,
+  and coalesces ordinary mutations, page defaults and native snapshots through
+  the existing atomic document API. Its bounded snapshots are transport state,
+  not another editable document.
+- The sidebar and ordinary workspace submit data changes. Fine editing uses the
+  shared Rust engine in WASM for immediate interaction and submits its native
+  snapshot through that same queue. The backend native document owns translated
+  text, character runs and graphics; database bubbles retain business data and
+  the native read projection in the same commit.
+- Saving and generating the published image are distinct outcomes. The common
+  render observer updates result assets and reports failed output without
+  discarding a saved document or claiming that the preview succeeded.
+- Ordinary page undo keeps bounded native snapshots across mode switches and
+  resets on page changes. Fine editing retains native tool history. Local rich
+  text input undo remains local to the input; no additional history database or
+  synchronization bus is used.
+- Font fitting measures the existing Rust layout. Frames remain repair/layout
+  geometry even when text overflows them. Font registration retains the complete
+  fallback set so the two engines choose the same glyphs. Mask previews and
+  repairs continue to use the shared backend mask rules.
+
 ## Styling And Tokens
 
 - Global tokens are split into foundation, semantic, component, and domain

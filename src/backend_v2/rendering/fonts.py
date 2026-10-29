@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from functools import lru_cache
+from pathlib import Path
 from collections.abc import Mapping
 
 from sqlalchemy import select
@@ -18,6 +20,26 @@ from src.backend_v2.storage.defaults import DEFAULT_FONT_ID
 from src.backend_v2.auth.ownership import effective_owner_id
 from src.backend_v2.storage.schema import bubbles, fonts, pages
 from src.core.config_models import validate_bubble_payload
+
+
+def character_font_style(path: str) -> dict[str, object]:
+    """Describe the first face, matching the shared native font registration."""
+    return dict(_character_font_style(path, Path(path).stat().st_mtime_ns))
+
+
+@lru_cache(maxsize=128)
+def _character_font_style(path: str, modified_ns: int) -> dict[str, object]:
+    from fontTools.ttLib import TTFont
+
+    with TTFont(path, fontNumber=0, lazy=True) as font:
+        names = font["name"]
+        return {
+            "font_family": names.getDebugName(16) or names.getDebugName(1) or "",
+            "font_style": names.getDebugName(17) or names.getDebugName(2) or "",
+            "postscript_name": names.getDebugName(6),
+            "weight": int(font["OS/2"].usWeightClass) if "OS/2" in font else 400,
+            "italic": bool(font["head"].macStyle & 2) if "head" in font else False,
+        }
 
 
 def resolve_font_path(
@@ -47,9 +69,6 @@ def materialize_render_payloads(
     override_font_id: bool = False,
     font_id_override: str | None = None,
 ) -> list[tuple[str, dict[str, object], dict[str, object]]]:
-    if "fontSize" in initialize_auto_fields:
-        from src.core.rendering import calculate_auto_font_size
-
     page = connection.execute(
         select(
             pages.c.default_font_id,
@@ -109,23 +128,18 @@ def materialize_render_payloads(
                 and persisted["autoBgColor"] is not None
             ):
                 persisted["fillColor"] = rgb_to_hex(persisted["autoBgColor"])
-        if (
-            "fontSize" in initialize_auto_fields
-            and style_defaults["autoFontSize"]
-        ):
-            coords = persisted["coords"]
-            persisted["fontSize"] = calculate_auto_font_size(
-                persisted["translatedText"],
-                coords[2] - coords[0],
-                coords[3] - coords[1],
-                persisted["textDirection"],
-                font_path,
-                line_spacing=persisted["lineSpacing"],
-            )
         persisted = validate_bubble_payload(persisted, render=False)
         render_payload = validate_bubble_payload(
             {**persisted, "fontFamily": font_path},
             render=True,
         )
         result.append((str(row["id"]), persisted, render_payload))
+    if result and "fontSize" in initialize_auto_fields and style_defaults["autoFontSize"]:
+        from src.backend_v2.editing.native import NativeEditor
+
+        fitted = NativeEditor.fit_payloads([render for _, _, render in result], fonts=NativeEditor(storage).font_files(connection))
+        for index, (_, persisted, render) in enumerate(result):
+            size = fitted.get(str(index))
+            if size is not None:
+                persisted["fontSize"] = render["fontSize"] = size
     return result

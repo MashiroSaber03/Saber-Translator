@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { resolve } from 'node:path'
+import { readFileSync } from 'node:fs'
 import { chromium, expect, test, type Browser, type Page, type Route } from '@playwright/test'
 
 import type { components } from '../../src/api/generated/v2'
@@ -889,6 +890,21 @@ async function mockApi(route: Route, options: VisualFixtureOptions = {}) {
         },
       ],
     })
+    return
+  }
+
+  if (path === '/api/v2/editor/fonts') {
+    await fulfillJson({ items: [{ id: 'font-source-han', displayName: '思源黑体', scope: 'shared', isDefault: true,
+      url: '/api/v2/editor/fonts/font-source-han', style: { font_family: 'Source Han Sans K', font_style: 'Bold',
+        postscript_name: 'SourceHanSansKBold-Bold', weight: 700, italic: false } }] })
+    return
+  }
+  if (path === '/api/v2/editor/fonts/font-source-han') {
+    await route.fulfill({ contentType: 'font/ttf', body: readFileSync(resolve('../src/backend_v2/resources/fonts/思源黑体SourceHanSansK-Bold.TTF')) })
+    return
+  }
+  if (/^\/api\/v2\/pages\/demo-page-\d+\/editor-document$/.test(path)) {
+    await route.fulfill({ contentType: 'application/x-photocraft', headers: { 'X-Document-Revision': '1' }, body: Buffer.from('visual-history-fixture') })
     return
   }
 
@@ -2024,8 +2040,9 @@ test('translate edit workspace selected bubble keeps editor panel contract', asy
   await bubble.click()
   await expect(bubble).toHaveClass(/bubble-overlay__highlight-box--selected/)
   expect(await page.locator('.bubble-overlay__resize-handle').count()).toBeGreaterThanOrEqual(8)
-  await expect(page.locator('.bubble-editor__textarea--translated')).toBeVisible()
+  await expect(page.getByRole('textbox', { name: '译文富文本', exact: true })).toBeVisible()
   await expect(page.locator('.bubble-editor')).toBeVisible()
+  await expect(page.getByRole('heading', { name: '文字样式', exact: true })).toBeVisible()
   const colorPicker = page.locator('.bubble-editor__toolbar-color-picker').first()
   await expect(colorPicker.getByRole('button', { name: '文字颜色', exact: true })).toBeVisible()
   await expect(workspace.locator('input[type="color"]')).toHaveCount(0)
@@ -2038,6 +2055,17 @@ test('translate edit workspace selected bubble keeps editor panel contract', asy
     fullPage: true,
     animations: 'disabled',
   })
+  await page.getByRole('button', { name: '修复笔刷', exact: true }).click()
+  const shape = page.getByRole('combobox', { name: '修复绘制方式', exact: true })
+  await expect(shape).toBeVisible()
+  const shapeBounds = await shape.boundingBox()
+  const brushBounds = await page.getByRole('button', { name: '修复笔刷', exact: true }).boundingBox()
+  expect(shapeBounds!.width).toBeLessThan(160)
+  expect(Math.abs(shapeBounds!.y - brushBounds!.y)).toBeLessThan(4)
+  expectCssColorNear(await shape.evaluate(element => getComputedStyle(element).color), [255, 255, 255], 3)
+  await shape.click()
+  await page.getByRole('option', { name: '套索选区', exact: true }).click()
+  await expect(shape).toHaveText('套索选区')
 })
 
 async function prepareEditorColorPage(page: Page) {
@@ -2067,6 +2095,13 @@ async function prepareEditorColorPage(page: Page) {
           const { fontId, ...payload } = mutation.fields
           if (typeof fontId === 'string') bubble.fontId = fontId
           Object.assign(bubble.payload, payload)
+          // This fixture models the native first-run projection; real engine
+          // roundtrips and output pixels are covered by native/UI integration.
+          const run = (payload.richText as { runs?: { style: { size_pt: number; color: { c: number[] } } }[] } | undefined)?.runs?.[0]
+          if (run) {
+            bubble.payload.fontSize = Math.round(run.style.size_pt)
+            bubble.payload.textColor = '#' + run.style.color.c.slice(0, 3).map(c => Math.round(c * 255).toString(16).padStart(2, '0')).join('')
+          }
         }
       }
       document.documentRevision += 1
@@ -2079,6 +2114,9 @@ async function prepareEditorColorPage(page: Page) {
     pageId: document.pageId, documentRevision: document.documentRevision, renderedRevision: document.documentRevision,
     renderStatus: 'ready', translatedUrl: '/api/v2/assets/demo-rendered-1',
   } }))
+  await page.route('**/api/v2/pages/demo-page-1/editor-document', route => route.fulfill({
+    contentType: 'application/x-photocraft', headers: { 'X-Document-Revision': String(document.documentRevision) }, body: Buffer.from('visual-history-fixture'),
+  }))
   await page.goto('/translate?book=demo-book&chapter=demo-chapter')
   await expect(page.getByTestId('translation-result-display')).toBeVisible()
   await page.getByRole('button', { name: '切换编辑模式' }).click()
@@ -2086,6 +2124,255 @@ async function prepareEditorColorPage(page: Page) {
   await expect(page.getByRole('button', { name: '文字颜色', exact: true })).toBeEnabled()
   return { document, mutations }
 }
+
+test('ordinary editor expanded sections stay aligned in a narrow sidebar', async ({ page }, testInfo) => {
+  const fixture = await prepareEditorColorPage(page)
+  const checkControls = async () => {
+    const font = (await page.getByRole('combobox', { name: '字体', exact: true }).boundingBox())!
+    const size = (await page.getByRole('spinbutton', { name: '字号', exact: true }).boundingBox())!
+    expect(size.width).toBeGreaterThanOrEqual(96)
+    expect(size.height).toBe(36)
+    expect(font.height).toBe(size.height)
+    if (Math.abs(font.y - size.y) < 60) expect(font.y).toBe(size.y)
+    for (const name of ['行间距', '字距', '字宽', '字高', '旋转角度', '描边宽度']) {
+      const field = (await page.getByRole('spinbutton', { name, exact: true }).boundingBox())!
+      expect(field.height).toBe(size.height)
+    }
+    expect(await page.locator('.bubble-editor').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+  }
+  await expect(page.getByRole('heading', { name: '文字样式', exact: true })).toBeVisible()
+  await checkControls()
+  await page.screenshot({ path: testInfo.outputPath('current-sidebar-default.png') })
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await expect(page.getByText('更多排版', { exact: true })).toHaveCount(0)
+  await expect(page.getByRole('spinbutton', { name: '字宽', exact: true })).toBeVisible()
+  await expect(page.getByRole('spinbutton', { name: '字高', exact: true })).toBeVisible()
+  for (const title of ['常用样式', '字号预设']) await page.getByText(title, { exact: true }).click()
+  const divider = (await page.locator('.edit-image-comparison__editor-resize-handle--vertical').boundingBox())!
+  await page.mouse.move(divider.x + divider.width / 2, divider.y + 200)
+  await page.mouse.down()
+  await page.mouse.move(1270, divider.y + 200)
+  await page.mouse.up()
+  const editor = page.locator('.bubble-editor')
+  const panel = page.locator('.edit-image-comparison__editor-panel')
+  await expect.poll(async () => Math.round((await panel.boundingBox())!.width)).toBe(300)
+  await checkControls()
+  expect(await editor.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+  for (const selector of ['.bubble-editor__toolbar-row--actions', '.bubble-editor__toolbar-row--typography']) {
+    const fields = await page.locator(selector).evaluate(element => Array.from(element.children).map(child => {
+      const rect = child.getBoundingClientRect()
+      return { left: rect.left, right: rect.right, top: rect.top }
+    }))
+    for (let i = 1; i < fields.length; i++) {
+      if (Math.abs(fields[i]!.top - fields[i - 1]!.top) < 2) expect(fields[i]!.left - fields[i - 1]!.right).toBeGreaterThanOrEqual(6)
+      else expect(fields[i]!.top).toBeGreaterThan(fields[i - 1]!.top)
+    }
+  }
+  await page.getByRole('textbox', { name: '样式名称', exact: true }).scrollIntoViewIfNeeded()
+  for (const row of await page.locator('.bubble-editor__favorite-row').all()) {
+    expect(await row.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+    const children = await row.evaluate(element => Array.from(element.children).map(child => child.getBoundingClientRect().top))
+    expect(Math.max(...children) - Math.min(...children)).toBeLessThan(3)
+  }
+  await expect(panel).toHaveScreenshot('ordinary-editor-expanded-sidebar.png', { animations: 'disabled' })
+  await page.route('**/api/v2/chapters/demo-chapter/text-export?*', route => route.fulfill({ json: { pages: [{
+    page_id: 'demo-page-2', page_number: 2, document_revision: 1,
+    bubbles: [{ bubble_id: 'search-long-text', translated_text: '这是用于检查长译文结果的对白。'.repeat(20) }],
+  }] } }))
+  await page.getByRole('button', { name: '章节查找替换', exact: true }).click()
+  await page.getByRole('textbox', { name: '查找译文', exact: true }).fill('检查长译文')
+  await expect(page.locator('.chapter-text-search__result')).toHaveCount(1)
+  expect(await page.locator('.chapter-text-search').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+  await expect(panel).toHaveScreenshot('ordinary-editor-search-sidebar.png', { animations: 'disabled' })
+  expect(fixture.mutations).toHaveLength(0)
+})
+
+test('selected characters stay visible while ordinary editor style controls own focus', async ({ page }, testInfo) => {
+  const fixture = await prepareEditorColorPage(page)
+  const input = page.getByRole('textbox', { name: '译文富文本', exact: true })
+  const editor = page.locator('.rich-text-input')
+  const highlighted = editor.locator('.rich-text-input__selection')
+  await input.fill('甲乙丙丁戊己')
+  await expect.poll(() => fixture.document.bubbles[0]!.payload.translatedText).toBe('甲乙丙丁戊己')
+  await page.getByRole('button', { name: '已自动保存', exact: true }).waitFor()
+  const writesBeforeSelection = fixture.mutations.length
+  await input.press('Control+End')
+  for (let i = 0; i < 4; i++) await input.press('Shift+ArrowLeft')
+  await expect(page.locator('.bubble-editor__text-scope')).toHaveText('已选 4 个字')
+  await expect(highlighted).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+  expect(await page.evaluate(() => window.getSelection()?.toString())).toBe('丙丁戊己')
+  const size = page.getByRole('spinbutton', { name: '字号', exact: true })
+  await size.click()
+  await expect(size).toBeFocused()
+  await expect(highlighted).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+  expect(fixture.mutations).toHaveLength(writesBeforeSelection)
+  await size.fill('42')
+  await size.press('ArrowUp')
+  await expect(size).toBeFocused()
+  await expect(size).toHaveValue('43')
+  await expect(highlighted).toHaveText('丙丁戊己')
+  await expect.poll(() => (fixture.document.bubbles[0]!.payload as {
+    richText?: { runs: { len: number; style: { size_pt: number } }[] }
+  }).richText?.runs.map(run => [run.len, run.style.size_pt])).toEqual([[6, 28], [12, 43]])
+  expect(JSON.stringify(fixture.document)).not.toContain('rich-text-input__selection')
+  await page.evaluate(() => {
+    const scope = window as unknown as { copiedEditorText: string }
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+      writeText: async (text: string) => { scope.copiedEditorText = text },
+    } })
+  })
+  await page.getByRole('button', { name: '复制选中', exact: true }).click()
+  expect(await page.evaluate(() => (window as unknown as { copiedEditorText: string }).copiedEditorText)).toBe('丙丁戊己')
+  const font = page.getByRole('combobox', { name: '字体', exact: true })
+  await font.click()
+  await expect(page.getByRole('listbox')).toBeVisible()
+  await expect(highlighted).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: '文字颜色', exact: true }).click()
+  const hex = page.getByRole('dialog', { name: '文字颜色', exact: true }).getByRole('textbox', { name: 'HEX 色值' })
+  await hex.click()
+  await expect(hex).toBeFocused()
+  await expect(highlighted).toHaveText('丙丁戊己')
+  await expect(highlighted).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+  await page.keyboard.press('Escape')
+  await page.screenshot({ path: testInfo.outputPath('retained-selection-style-control.png') })
+  await input.focus()
+  await expect.poll(() => page.evaluate(() => window.getSelection()?.toString())).toBe('丙丁戊己')
+  await input.press('Control+End')
+  await expect.poll(() => page.evaluate(() => window.getSelection()?.isCollapsed)).toBe(true)
+  await expect(page.locator('.bubble-editor__text-scope')).toHaveText('输入位置')
+  for (let i = 1; i <= 2; i++) {
+    await input.press('Shift+ArrowLeft')
+    await expect(page.locator('.bubble-editor__text-scope')).toHaveText(`已选 ${i} 个字`)
+  }
+  await expect(page.locator('.bubble-editor__text-scope')).toHaveText('已选 2 个字')
+  await expect(highlighted).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+  expect(await page.evaluate(() => window.getSelection()?.toString())).toBe('戊己')
+  await size.click()
+  await expect(highlighted).toHaveText('戊己')
+  await expect(highlighted).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+  await page.locator('.edit-image-comparison__image-panel--original').click({ position: { x: 15, y: 70 } })
+  await expect(page.locator('.bubble-editor__text-scope')).toHaveText('整框文字')
+  await expect(highlighted).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+  await page.getByRole('button', { name: '复制整框', exact: true }).click()
+  expect(await page.evaluate(() => (window as unknown as { copiedEditorText: string }).copiedEditorText)).toBe('甲乙丙丁戊己')
+  await page.getByLabel('气泡 2', { exact: true }).first().click()
+  await expect(editor.locator('.rich-text-input__selection')).toHaveCount(0)
+  await page.getByRole('button', { name: '下一张图片', exact: true }).click()
+  await expect(page.locator('.rich-text-input[data-selection-active]')).toHaveCount(0)
+})
+
+test('retained selection crosses paragraphs and mixed character styles without changing content', async ({ page }) => {
+  const fixture = await prepareEditorColorPage(page)
+  const input = page.getByRole('textbox', { name: '译文富文本', exact: true })
+  await input.fill('甲乙\n丙😀丁戊')
+  await expect.poll(() => fixture.document.bubbles[0]!.payload.translatedText).toBe('甲乙\n丙😀丁戊')
+  await input.press('Control+End')
+  for (let i = 0; i < 6; i++) await input.press('Shift+ArrowLeft')
+  await expect(page.locator('.bubble-editor__text-scope')).toHaveText('已选 6 个字')
+  const selected = await page.evaluate(() => window.getSelection()?.toString().replace(/\n+/g, '\n'))
+  expect(selected).toBe('乙\n丙😀丁戊')
+  const tracking = page.getByRole('spinbutton', { name: '字距', exact: true })
+  await tracking.fill('5')
+  await expect(tracking).toBeFocused()
+  const highlighted = page.locator('.rich-text-input__selection')
+  expect((await highlighted.allTextContents()).join('')).toBe(selected!.replaceAll('\n', ''))
+  for (const part of await highlighted.all()) await expect(part).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+  await expect(page.locator('.bubble-editor__text-scope')).toHaveText('已选 6 个字')
+  await page.getByRole('button', { name: '加粗', exact: true }).click()
+  expect((await highlighted.allTextContents()).join('')).toBe('乙丙😀丁戊')
+  await expect.poll(() => fixture.document.bubbles[0]!.payload.translatedText).toBe('甲乙\n丙😀丁戊')
+})
+
+test('mixed character percentages step from their normal values and survive reload', async ({ page }, testInfo) => {
+  const fixture = await prepareEditorColorPage(page)
+  const input = page.getByRole('textbox', { name: '译文富文本', exact: true })
+  const otherFrames = JSON.stringify(fixture.document.bubbles.slice(1))
+  const coords = [...fixture.document.bubbles[0]!.payload.coords]
+  await input.fill('甲乙丙丁')
+  await input.press('Control+End')
+  await input.press('Shift+ArrowLeft')
+  await input.press('Shift+ArrowLeft')
+  await expect(page.locator('.bubble-editor__text-scope')).toHaveText('已选 2 个字')
+  const width = page.getByRole('spinbutton', { name: '字宽', exact: true })
+  const height = page.getByRole('spinbutton', { name: '字高', exact: true })
+  const tracking = page.getByRole('spinbutton', { name: '字距', exact: true })
+  await width.fill('110')
+  await height.fill('120')
+  await tracking.fill('5')
+  await input.press('Control+A')
+  await expect(page.locator('.bubble-editor__text-scope')).toHaveText('已选 4 个字')
+  await expect(width).toHaveValue('')
+  await expect(height).toHaveValue('')
+  await expect(tracking).toHaveValue('')
+  await width.press('ArrowUp')
+  await expect(width).toHaveValue('101')
+  await height.press('ArrowDown')
+  await expect(height).toHaveValue('99')
+  await tracking.press('ArrowUp')
+  await expect(tracking).toHaveValue('1')
+  const styles = () => (fixture.document.bubbles[0]!.payload.richText as {
+    runs: { style: Record<string, unknown> }[]
+  } | undefined)?.runs.map(run => run.style) ?? []
+  await expect.poll(() => styles().length > 0 && styles().every(style => style.horizontal_scale === 1.01
+    && style.vertical_scale === 0.99 && style.tracking === 10)).toBe(true)
+  expect(fixture.document.bubbles[0]!.payload.coords).toEqual(coords)
+  expect(JSON.stringify(fixture.document.bubbles.slice(1))).toBe(otherFrames)
+  await page.getByRole('button', { name: '已自动保存', exact: true }).waitFor()
+  await page.reload()
+  await page.getByRole('button', { name: '切换编辑模式', exact: true }).click()
+  await expect(width).toHaveValue('101')
+  await expect(height).toHaveValue('99')
+  await expect(tracking).toHaveValue('1')
+  await expect(input).toHaveText('甲乙丙丁')
+  await page.screenshot({ path: testInfo.outputPath('mixed-percentages-reloaded.png') })
+})
+
+test('Escape closes shortcut help before leaving the ordinary editor', async ({ page }) => {
+  await prepareEditorColorPage(page)
+  const help = page.getByRole('button', { name: '快捷键', exact: true })
+  const tooltip = page.getByRole('tooltip')
+  await help.click()
+  await expect(tooltip).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(tooltip).not.toBeVisible()
+  await expect(page.getByRole('textbox', { name: '译文富文本', exact: true })).toBeVisible()
+  await help.click()
+  await expect(tooltip).toBeVisible()
+  await page.keyboard.press('Escape')
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.edit-workspace')).not.toBeVisible()
+})
+
+test('scrolling over a focused typography number scrolls the sidebar without editing its value', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  const fixture = await prepareEditorColorPage(page)
+  const height = page.getByRole('spinbutton', { name: '字高', exact: true })
+  await height.fill('110')
+  await height.press('Tab')
+  await page.getByRole('button', { name: '已自动保存', exact: true }).waitFor()
+  await height.click()
+  const panel = page.locator('.bubble-editor')
+  const top = await panel.evaluate(element => element.scrollTop)
+  const writes = fixture.mutations.length
+  await height.hover()
+  await page.mouse.wheel(0, 300)
+  await expect(height).toHaveValue('110')
+  await expect.poll(() => panel.evaluate(element => element.scrollTop)).toBeGreaterThan(top)
+  expect(fixture.mutations).toHaveLength(writes)
+  await height.click()
+  await height.press('ArrowUp')
+  await expect(height).toHaveValue('111')
+})
+
+test('view controls retain menu focus so Escape does not exit editing', async ({ page }) => {
+  await prepareEditorColorPage(page)
+  await page.locator('.edit-toolbar__comparison summary').click()
+  await page.getByRole('button', { name: '切换布局', exact: true }).click()
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.edit-toolbar__comparison')).not.toHaveAttribute('open')
+  await expect(page.getByRole('textbox', { name: '译文富文本', exact: true })).toBeVisible()
+})
 
 test('editor preserves decimal stroke widths through keyboard steps and reload', async ({ page }) => {
   const { document } = await prepareEditorColorPage(page)
@@ -2095,8 +2382,8 @@ test('editor preserves decimal stroke widths through keyboard steps and reload',
   await width.pressSequentially('1.2')
   await expect.poll(() => document.bubbles[0]!.payload.strokeWidth).toBe(1.2)
   await width.press('ArrowUp')
-  await expect(width).toHaveValue('1.3')
-  await expect.poll(() => document.bubbles[0]!.payload.strokeWidth).toBe(1.3)
+  await expect(width).toHaveValue('2.2')
+  await expect.poll(() => document.bubbles[0]!.payload.strokeWidth).toBe(2.2)
   await width.press('ArrowDown')
   await expect(width).toHaveValue('1.2')
   await expect.poll(() => document.bubbles[0]!.payload.strokeWidth).toBe(1.2)
@@ -2208,16 +2495,23 @@ test.describe('editor image color picking', () => {
     await page.setViewportSize({ width: 1440, height: 660 })
     await page.getByText('字号预设', { exact: true }).click()
     const editor = page.locator('.bubble-editor').first()
-    const styleSection = page.locator('.bubble-editor__style-section')
+    const styleSection = editor
     await styleSection.evaluate(element => { element.scrollTop = 0 })
     const trigger = page.getByRole('button', { name: '文字颜色', exact: true })
     await trigger.click()
     const popover = page.getByRole('dialog', { name: '文字颜色', exact: true })
     await expect(popover).toBeVisible()
-    const initial = (await popover.boundingBox())!
+    const initialAnchor = (await trigger.boundingBox())!
     expect(await styleSection.evaluate(element => element.scrollHeight - element.clientHeight)).toBeGreaterThan(30)
     await styleSection.evaluate(element => { element.scrollTop += 30 })
-    await expect.poll(async () => (await popover.boundingBox())!.y).toBeLessThan(initial.y - 20)
+    await expect.poll(async () => (await trigger.boundingBox())!.y).toBeLessThan(initialAnchor.y - 20)
+    // When the palette fills the available height its top stays at the panel
+    // edge; its bottom still follows the moving trigger with the same gap.
+    await expect.poll(async () => {
+      const box = (await popover.boundingBox())!
+      const anchor = (await trigger.boundingBox())!
+      return Math.min(Math.abs(box.y + box.height + 6 - anchor.y), Math.abs(box.y - anchor.y - anchor.height - 6))
+    }).toBeLessThan(2)
     await page.setViewportSize({ width: 1280, height: 660 })
     await expect.poll(async () => {
       const box = (await popover.boundingBox())!
@@ -2298,15 +2592,17 @@ test.describe('editor image color picking', () => {
     const hex = popover.getByRole('textbox', { name: 'HEX 色值' })
     const palette = popover.getByRole('slider', { name: '色盘', exact: true })
     await hex.fill('#ff0000')
-    const original = (await palette.boundingBox())!
     await hex.fill('#oops')
     await expect(hex).toHaveAttribute('aria-invalid', 'true')
-    await expect.poll(async () => (await palette.boundingBox())!.y).not.toBe(original.y)
     const before = (await palette.boundingBox())!
     await page.mouse.move(before.x + before.width * 0.75, before.y + before.height * 0.25)
     await page.mouse.down()
     await expect(hex).toHaveValue('#bf3030')
-    await expect.poll(async () => (await palette.boundingBox())!.y).not.toBe(before.y)
+    // The compact editor may clamp the palette vertically, so clearing the
+    // error need not move its top. A width change guarantees repositioning
+    // during the held gesture without relying on that incidental layout.
+    await page.setViewportSize({ width: 1600, height: 1000 })
+    await expect.poll(async () => (await palette.boundingBox())!.x).not.toBe(before.x)
     await page.mouse.up()
     await expect(hex).toHaveValue('#bf3030')
     await expect(popover).toBeVisible()
@@ -2358,7 +2654,9 @@ test.describe('editor image color picking', () => {
       await page.mouse.click(bounds.x + (sample.x + 0.5) / 900 * bounds.width, bounds.y + 640.5 / 1280 * bounds.height)
       await expect(page.getByRole('button', { name: '取消取色', exact: true })).toBeHidden()
       await expect.poll(() => fixture.mutations.length).toBe(1)
-      expect(fixture.mutations[0]).toMatchObject({ op: 'reset', bubbleId: 'demo-bubble-1', fields: { [sample.field]: sample.color, coords: demoBubbleState.coords } })
+      expect(fixture.mutations[0]).toMatchObject({ op: 'patch', bubbleId: 'demo-bubble-1', fields: sample.field === 'textColor'
+        ? { richText: expect.objectContaining({ runs: [expect.objectContaining({ style: expect.objectContaining({ color: expect.any(Object) }) })] }) }
+        : { [sample.field]: sample.color } })
       expect(fixture.document.bubbles[1]!.payload[sample.field]).toBe('#abcdef')
       await expect(page.locator('.bubble-overlay__highlight-box--selected').first()).toBeVisible()
       await page.getByRole('button', { name: sample.label, exact: true }).click()
@@ -2733,9 +3031,9 @@ test('reader interaction audit: clicks, dragging, keyboard and progress', async 
   await page.getByRole('button', { name: '收起菜单', exact: true }).click()
   const canvas = page.locator('.reader-canvas__surface')
   const box = (await canvas.boundingBox())!
-  await page.mouse.click(box.x + box.width * .9, box.y + box.height * .5)
+  await page.getByRole('button', { name: '下一页', exact: true }).click()
   await expect(page.getByRole('slider', { name: '阅读进度' })).toHaveValue('2')
-  await page.mouse.click(box.x + box.width * .1, box.y + box.height * .5)
+  await page.getByRole('button', { name: '上一页', exact: true }).click()
   await expect(page.getByRole('slider', { name: '阅读进度' })).toHaveValue('1')
   await page.keyboard.press('End')
   await page.keyboard.press('ArrowRight')

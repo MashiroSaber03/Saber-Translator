@@ -373,6 +373,45 @@ def test_redetection_equal_iou_keeps_first_persisted_bubble() -> None:
     assert reconciled[0]["originalText"] == "第一条"
 
 
+def test_redetection_keeps_typesetting_while_replacing_detection_geometry() -> None:
+    previous = _bubble_fields(
+        originalText="はっ…", translatedText="哈……！", coords=[10, 10, 110, 210],
+        fontSize=42, textColor="#d03040", fillColor="#fffdf0", textDirection="vertical",
+        strokeEnabled=False, strokeColor="#223344", strokeWidth=1.5,
+        lineSpacing=1.2, inlineAlign="center", blockAlign="end", inpaintMethod="solid",
+        richText={"runs": [{"len": 3, "style": {"font_family": "Microsoft YaHei", "size_pt": 48, "faux_bold": True}},
+                           {"len": 9, "style": {"size_pt": 26, "tracking": 120}}], "paragraphs": []},
+    )
+    detected = _bubble_fields(coords=[12, 14, 112, 214], rotationAngle=8,
+        textlines=[{"polygon": [[12, 14], [112, 14], [112, 214], [12, 214]], "direction": "v", "confidence": 0.9}])
+    detected["autoTextDirection"] = "horizontal"
+    reconciled = _preserve_detected_text([detected, _bubble_fields(coords=[300, 300, 400, 400])], (previous,))
+    for field in ("originalText", "translatedText", "richText", "fontSize", "textColor", "textDirection",
+                  "fillColor", "inpaintMethod", "strokeEnabled", "strokeColor", "strokeWidth",
+                  "lineSpacing", "inlineAlign", "blockAlign"):
+        assert reconciled[0][field] == previous[field], field
+    for field in ("coords", "rotationAngle", "polygon", "textlines", "autoTextDirection"):
+        assert reconciled[0][field] == detected[field], field
+    assert reconciled[1]["translatedText"] == ""
+    assert reconciled[1]["richText"] is None
+
+
+def test_redetection_matches_original_detection_after_typesetting_moves_frame() -> None:
+    previous = (
+        _bubble_fields(coords=[200, 10, 400, 210], translatedText="已经嵌好的对白",
+            polygon=[[10, 10], [110, 10], [110, 110], [10, 110]], fontSize=42),
+        _bubble_fields(coords=[200, 10, 300, 110], translatedText="旁边的对白",
+            polygon=[[200, 10], [300, 10], [300, 110], [200, 110]]),
+    )
+    detected = [_bubble_fields(coords=[10, 10, 110, 110]),
+                _bubble_fields(coords=[200, 10, 300, 110])]
+    reconciled = _preserve_detected_text(detected, previous)
+    assert reconciled[0]["translatedText"] == "已经嵌好的对白"
+    assert reconciled[0]["fontSize"] == 42
+    assert reconciled[1]["translatedText"] == "旁边的对白"
+    assert [bubble["coords"] for bubble in reconciled] == [bubble["coords"] for bubble in detected]
+
+
 def test_core_translation_render_supports_vertical_ascii_blocks() -> None:
     source = Image.new("RGB", (160, 180), "white")
     try:

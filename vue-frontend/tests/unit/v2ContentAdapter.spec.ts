@@ -81,6 +81,11 @@ function documentWithFont(options: {
 }
 
 describe('v2 content adapter', () => {
+  it('loads the saved manual edit marker and defaults historical summaries to false', () => {
+    expect(pageSummaryToImage(pageSummary({ isManuallyAnnotated: true })).isManuallyAnnotated).toBe(true)
+    expect(pageSummaryToImage(pageSummary({ isManuallyAnnotated: false })).isManuallyAnnotated).toBe(false)
+    expect(pageSummaryToImage(pageSummary()).isManuallyAnnotated).toBe(false)
+  })
   it.each([0, 0.1, 1.25, 3])('preserves persisted stroke width %s', strokeWidth => {
     const document = documentWithFont({ defaultFontId: 'font-page-default', fontId: null })
     document.bubbles[0]!.payload.strokeWidth = strokeWidth

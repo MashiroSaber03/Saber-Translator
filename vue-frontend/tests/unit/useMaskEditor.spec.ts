@@ -77,7 +77,10 @@ beforeEach(() => {
     return renderAt(preview.documentRevision, pageId)
   })
   mocks.savePageUserMask.mockResolvedValue({ document: documentAt(2) })
-  mocks.registerPageDocument.mockReturnValue([])
+  mocks.registerPageDocument.mockImplementation(document => {
+    useImageStore().updateCurrentImage({ documentRevision: document.documentRevision, bubbleStates: [], hasUnsavedChanges: false })
+    return []
+  })
   mocks.createMaskRepair.mockResolvedValue({ operationId: 'operation' })
   mocks.getPageDocument.mockResolvedValue(documentAt(2))
   vi.stubGlobal(

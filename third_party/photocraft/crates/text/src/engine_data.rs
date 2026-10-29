@@ -341,6 +341,11 @@ fn format_real(r: f64) -> String {
     if matches!(s.as_str(), "0." | "-0.") {
         return "0.0".into();
     }
+    // Rounding a non-integer can remove every fractional digit. PSD readers
+    // still require a digit after the decimal point (for example, 48.0).
+    if s.ends_with('.') {
+        s.push('0');
+    }
     if let Some(rest) = s.strip_prefix("0.") {
         s = format!(".{rest}");
     } else if let Some(rest) = s.strip_prefix("-0.") {
@@ -381,6 +386,9 @@ mod tests {
         assert_eq!(format_real(0.5), ".5");
         assert_eq!(format_real(-0.25), "-.25");
         assert_eq!(format_real(12.125), "12.125");
+        for (value, expected) in [(48.000003814697266, "48.0"), (47.9999999, "48.0"), (-48.000003814697266, "-48.0")] {
+            assert_eq!(format_real(value), expected);
+        }
     }
 
     #[test]

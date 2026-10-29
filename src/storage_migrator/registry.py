@@ -10,6 +10,7 @@ from .v3_5_0 import stop_unfinished, validate
 from .v3_5_1 import convert as directory_fonts, validate as validate_directory_fonts
 from .v3_5_3 import convert as user_masks
 from .v3_5_4 import convert as editor_documents
+from .v3_5_5 import convert as manual_edit_marker
 
 
 @dataclass(frozen=True)
@@ -25,11 +26,14 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration("3.5.1", "3.5.2"),
     Migration("3.5.2", "3.5.3", user_masks),
     Migration("3.5.3", "3.5.4", editor_documents),
+    Migration("3.5.4", "3.5.5", manual_edit_marker),
 )
 SOURCE_PREPARERS = {"3.5.0": stop_unfinished, "3.5.1": stop_unfinished, "3.5.2": stop_unfinished, "3.5.3": stop_unfinished}
 SOURCE_PREPARERS["3.5.4"] = stop_unfinished
+SOURCE_PREPARERS["3.5.5"] = stop_unfinished
 VERSION_VALIDATORS = {"3.5.0": validate, "3.5.1": validate_directory_fonts, "3.5.2": validate_directory_fonts, "3.5.3": validate_directory_fonts}
 VERSION_VALIDATORS["3.5.4"] = validate_directory_fonts
+VERSION_VALIDATORS["3.5.5"] = validate_directory_fonts
 
 
 def migration_chain(source: str, target: str, steps=MIGRATIONS) -> list[Migration]:

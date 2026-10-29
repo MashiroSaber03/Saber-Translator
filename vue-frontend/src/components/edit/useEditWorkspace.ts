@@ -1,11 +1,12 @@
 import { ref, computed, watch, onMounted, onUnmounted, onErrorCaptured, nextTick, type Ref } from 'vue'
 import { storeToRefs } from 'pinia'
-import { getPageDocument } from '@/api/v2/content'
+import { calculatePageTextFit, getPageDocument } from '@/api/v2/content'
 import { useImageStore } from '@/stores/imageStore'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageViewer } from '@/composables/useImageViewer'
 import { useBrush, type BrushSurface } from '@/composables/useBrush'
 import { useMaskEditor, type MaskTool } from '@/composables/edit/useMaskEditor'
+import { usePageHistory } from '@/composables/edit/usePageHistory'
 import { useBubbleActions } from '@/composables/useBubbleActions'
 import { useEditRender } from '@/composables/useEditRender'
 import { useEditWorkspaceKeyboardShortcuts } from '@/composables/edit/useEditWorkspaceKeyboardShortcuts'
@@ -19,13 +20,14 @@ import {
   registerPageDocument,
 } from '@/services/pageDocumentPersistence'
 import { deepClone } from '@/utils/deepClone'
+import { applyTextStyle, copiedTextStyle, type TextStyleTemplate } from './textStyleClipboard'
+import { plainRun, formatBubbleText, type RunStyle } from './richTextDocument'
 import { showToast } from '@/utils/toast'
 import { isRequestCanceled } from '@/api/client'
 import type EditImageComparison from './EditImageComparison.vue'
 import { LAYOUT_MODE_KEY } from '@/constants'
 import type { BubbleState, BubbleColorField, InpaintMethod } from '@/types/bubble'
 import {
-  parseCompleteTextStyleSettings,
   TEXT_STYLE_DEFAULTS,
 } from '@/defaults/textStyleDefaults'
 
@@ -34,11 +36,17 @@ export type EditWorkspaceEmit = {
 }
 
 export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readonly<Ref<boolean>> = ref(true)) {
+  const isTextFitting = ref(false)
+  const isSearchReplacing = ref(false)
+  const searchTarget = ref<{ pageId: string; bubbleId: string } | null>(null)
+  const focusAfterNavigate = ref(false)
   const imageStore = useImageStore()
   const bubbleStore = useBubbleStore()
 
   const {
-    reRenderFullImage
+    reRenderFullImage,
+    isRendering: isPreviewRendering,
+    renderError,
   } = useEditRender({
     onRenderError: message => showToast(message, 'error')
   })
@@ -58,12 +66,14 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
     handleDrawBubble,
     getDrawingRectStyle,
     handleBubbleUpdate,
+    updateBubbles,
     deleteSelectedBubbles,
+    duplicateSelectedBubbles: duplicateBubbles,
+    nudgeSelectedText: nudgeText,
     repairSelectedBubble: bubbleRepairSelectedBubble,
     handleOcrRecognize: bubbleOcrRecognize
   } = useBubbleActions({
     onReRender: () => isNavigationPending.value ? undefined : reRenderFullImage(),
-    onDelayedPreview: () => isNavigationPending.value ? undefined : reRenderFullImage()
   })
 
   const drawStartX = ref(0)
@@ -71,6 +81,8 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
 
   const {
     brushMode,
+    cloneSource,
+    brushShape,
     brushSize,
     isBrushSubmitting,
     isBrushPainting,
@@ -262,7 +274,6 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
   async function persistCurrentDocument(): Promise<void> {
     const image = currentImage.value
     if (!image || image.documentRevision === undefined) return
-    saveBubbleStatesToImage()
     await Promise.all([
       queuePageDocumentSave(image.id, image.documentRevision, bubbles.value),
       flushPageDocument(image.id),
@@ -290,7 +301,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
   }
 
   function selectFirstBubbleIfExists(): void {
-    if (bubbleStore.bubbles.length > 0) {
+    if (!bubbleStore.selectedBubble && bubbleStore.bubbles.length > 0) {
       bubbleStore.selectBubble(0)
     }
   }
@@ -313,21 +324,6 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
     }
   }
 
-  function saveBubbleStatesToImage(): void {
-    if (!currentImage.value) return
-
-    // null/undefined 表示未处理；[] 表示处理过但用户主动清空。
-    const hadBubbleStates = Array.isArray(currentImage.value.bubbleStates)
-
-    if (bubbles.value.length > 0) {
-      imageStore.updateCurrentBubbleStates(deepClone(bubbles.value))
-      imageStore.setManuallyAnnotated(true)
-    } else if (hadBubbleStates) {
-      imageStore.updateCurrentBubbleStates([])
-      imageStore.setManuallyAnnotated(true)
-    }
-  }
-
   let pageDocumentRequest = 0
   let pageDocumentAbortController: AbortController | null = null
 
@@ -336,14 +332,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
     pageDocumentAbortController?.abort()
     pageDocumentAbortController = null
     isPageDocumentReady.value = false
-    if (currentImage.value?.bubbleStates) {
-      // skipSync=true 避免冗余同步（数据已经在 imageStore 中）
-      bubbleStore.setBubbles([...currentImage.value.bubbleStates], true)
-    } else {
-      // 使用 clearBubblesLocal 仅清除本地状态，不同步到 imageStore
-      // 这保持了 null（未处理）和 []（用户主动清空）的语义区分
-      bubbleStore.clearBubblesLocal()
-    }
+    bubbleStore.clearSelection()
     selectFirstBubbleIfExists()
     const pageId = currentImage.value?.id
     const chapterId = currentImage.value?.chapterId
@@ -359,23 +348,10 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
         if (document.pageId !== pageId || document.chapterId !== chapterId) {
           throw new Error(`页面 ${pageId} 的后端文档身份不匹配`)
         }
-        const loaded = registerPageDocument(document)
-        const pageTextStyle = parseCompleteTextStyleSettings({
-          ...document.pageStyleDefaults,
-          ...(document.defaultFontId
-            ? { fontFamily: document.defaultFontId }
-            : {}),
-        })
-        imageStore.updateCurrentImage({
-          ...pageTextStyle,
-          bubbleStates: loaded,
-          documentRevision: document.documentRevision,
-          hasUnsavedChanges: false,
-        })
-        bubbleStore.setBubbles(loaded, true)
-        if (loaded.length === 0) {
-          currentInpaintMethod.value = pageTextStyle.inpaintMethod
-          currentFillColor.value = pageTextStyle.fillColor
+        registerPageDocument(document)
+        if (bubbles.value.length === 0 && currentImage.value) {
+          currentInpaintMethod.value = currentImage.value.inpaintMethod
+          currentFillColor.value = currentImage.value.fillColor
         }
         handleDocumentLoaded(pageId)
       })
@@ -417,6 +393,22 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
     onApplied: () => reRenderFullImage(),
   })
 
+  const pageHistory = usePageHistory({
+    pageId: computed(() => currentImage.value?.id),
+    revision: computed(() => currentImage.value?.documentRevision),
+    enabled: ordinaryActive,
+    ready: isPageDocumentReady,
+    dirty: computed(() => !!currentImage.value?.hasUnsavedChanges),
+    onRestore: async document => {
+      registerPageDocument(document)
+      selectFirstBubbleIfExists()
+      await reRenderFullImage()
+    },
+  })
+
+  function undoPage(): void { if (!isBusy.value && !isBrushPainting.value && !maskEditor.dirty.value) void pageHistory.undo() }
+  function redoPage(): void { if (!isBusy.value && !isBrushPainting.value && !maskEditor.dirty.value) void pageHistory.redo() }
+
   async function toggleMaskMode(): Promise<void> {
     if (isBusy.value || isBrushPainting.value) return
     if (maskEditor.active.value) {
@@ -443,6 +435,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
     cancelBrushShortcut()
     exitBrushMode()
     if (!tool || wasActive) return
+    brushShape.value = 'brush'
     maskEditor.tool.value = tool
     toggleBrushMode(tool === 'preserve' ? 'restore' : 'repair')
   }
@@ -452,9 +445,13 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
     || isProcessing.value
     || isOcrLoading.value
     || isRepairLoading.value
+    || isTextFitting.value
+    || isSearchReplacing.value
     || isBrushSubmitting.value
     || isNavigationPending.value
     || maskEditor.busy.value
+    || pageHistory.busy.value
+    || pageHistory.initializing.value
   ))
 
   const { colorPickField, isPickingColor, startColorPick, cancelColorPick, pickImageColor } = useImageColorPicker({
@@ -462,7 +459,9 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
     bubble: selectedBubble,
     bubbleIndex: selectedBubbleIndex,
     disabled: isBusy,
-    onPick: (field, color) => handleBubbleUpdateWithSync({ [field]: color }),
+    onPick: (field, color) => {
+      if (!imageComparisonRef.value?.applyPickedColor(field, color)) handleBubbleUpdateWithSync({ [field]: color })
+    },
     onError: message => showToast(message, 'error'),
   })
 
@@ -500,7 +499,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
     }
   }
 
-  const { handleKeyDown, handleKeyUp, cancelBrushShortcut } = useEditWorkspaceKeyboardShortcuts({
+  const { handleKeyDown, handleShortcutCapture, handleKeyUp, cancelBrushShortcut } = useEditWorkspaceKeyboardShortcuts({
     enabled: ordinaryActive,
     isPickingColor,
     cancelColorPick,
@@ -508,9 +507,14 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
     hasSelection,
     exitEditMode: handleExitToolbarAction,
     deleteSelectedBubbles: deleteSelectedBubblesWhenIdle,
+    duplicateSelectedBubbles,
+    selectAllBubbles: () => { if (!isBusy.value && !isDrawingBox.value && !isDrawingMode.value) bubbleStore.selectAll() },
+    nudgeSelectedText: moveSelectedText,
     goToPreviousImage,
     goToNextImage,
     applyAndNext,
+    save: () => maskEditor.active.value ? maskEditor.retry() : reRenderFullImage(),
+    selectBubble: (delta, focusText) => selectAdjacentBubble(delta, focusText),
     toggleBrushMode: activateBrush,
     exitBrushMode,
     zoomIn,
@@ -519,6 +523,8 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
     maskActive: maskEditor.active,
     exitMaskMode: () => { void toggleMaskMode() },
     applyMask: maskEditor.apply,
+    undo: undoPage,
+    redo: redoPage,
   })
 
   watch(ordinaryActive, active => {
@@ -539,15 +545,65 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
   })
 
 
-  function selectPreviousBubble(): void {
+  function selectAdjacentBubble(delta: number, focusText = false): void {
     if (isBusy.value) return
-    bubbleStore.selectPrevious()
+    const index = selectedBubbleIndex.value + delta
+    if (index < 0 || index >= bubbles.value.length) return
+    bubbleStore.selectBubble(index)
+    const bubble = selectedBubble.value
+    const viewport = useOriginalViewport.value ? originalViewportRef.value : translatedViewportRef.value
+    if (bubble && viewport) {
+      const { width, height } = viewport.getBoundingClientRect()
+      const [x1, y1, x2, y2] = bubble.coords
+      const cx = (x1 + x2) / 2 + bubble.position.x, cy = (y1 + y2) / 2 + bubble.position.y
+      const angle = bubble.rotationAngle * Math.PI / 180
+      const rx = (Math.abs(Math.cos(angle)) * (x2 - x1) + Math.abs(Math.sin(angle)) * (y2 - y1)) / 2
+      const ry = (Math.abs(Math.sin(angle)) * (x2 - x1) + Math.abs(Math.cos(angle)) * (y2 - y1)) / 2
+      const viewer = primaryViewer.value, transform = viewer.getTransform(), zoom = transform.scale
+      if (width > 0 && height > 0 && (transform.translateX + (cx - rx) * zoom < 16
+          || transform.translateX + (cx + rx) * zoom > width - 16
+          || transform.translateY + (cy - ry) * zoom < 16
+          || transform.translateY + (cy + ry) * zoom > height - 16)) {
+        viewer.setTransform({ ...transform, translateX: width / 2 - cx * zoom, translateY: height / 2 - cy * zoom })
+        syncViewerTransform(viewer)
+      }
+    }
+    if (focusText) nextTick(() => imageComparisonRef.value?.focusText())
   }
 
-  function selectNextBubble(): void {
-    if (isBusy.value) return
-    bubbleStore.selectNext()
+  const selectPreviousBubble = () => selectAdjacentBubble(-1)
+  const selectNextBubble = () => selectAdjacentBubble(1)
+
+  async function locateSearchResult(pageId: string, bubbleId: string): Promise<void> {
+    if (isBusy.value || brushMode.value) return
+    const index = images.value.findIndex(image => image.id === pageId)
+    if (index < 0) return
+    await switchToImage(index)
+    if (currentImage.value?.id === pageId) searchTarget.value = { pageId, bubbleId }
   }
+  watch([searchTarget, isBusy, focusAfterNavigate], () => {
+    if (!isBusy.value && focusAfterNavigate.value) {
+      focusAfterNavigate.value = false
+      nextTick(() => imageComparisonRef.value?.focusText())
+    }
+    if (!searchTarget.value || isBusy.value || currentImage.value?.id !== searchTarget.value.pageId) return
+    const index = bubbles.value.findIndex(bubble => bubble.backendBubbleId === searchTarget.value!.bubbleId)
+    searchTarget.value = null
+    if (index >= 0) selectAdjacentBubble(index - selectedBubbleIndex.value)
+  }, { flush: 'post' })
+
+  const saveStatus = computed(() => !isPageDocumentReady.value ? '正在加载…'
+    : isOcrLoading.value ? '识别中…'
+    : isTranslateLoading.value ? '翻译中…'
+    : isProcessing.value ? '处理中…'
+    : maskEditor.busy.value ? '处理范围…'
+    : isBrushSubmitting.value || isRepairLoading.value ? '正在修图…'
+    : isTextFitting.value ? '计算字号…'
+    : isSearchReplacing.value ? '替换中…'
+    : renderError.value ? (currentImage.value?.hasUnsavedChanges ? '保存失败' : '出图失败')
+      : currentImage.value?.hasUnsavedChanges ? '正在保存…'
+        : isPreviewRendering.value || (bubbles.value.some(bubble => bubble.translatedText.trim())
+          && currentImage.value?.renderedRevision !== currentImage.value?.documentRevision) ? '出图中…' : '已自动保存')
 
 
   function toggleThumbnails(): void {
@@ -615,7 +671,8 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
 
   function handleWheel(event: WheelEvent, viewport: 'original' | 'translated'): void {
     if (isPickingColor.value) return
-    if (brushMode.value) {
+    if (isBrushPainting.value) return
+    if (brushMode.value && brushShape.value === 'brush') {
       const delta = event.deltaY > 0 ? -5 : 5
       adjustBrushSize(delta)
       return
@@ -828,10 +885,6 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
     }
   }
 
-  function handleReRender(): void {
-    void reRenderFullImage()
-  }
-
   async function handleExitToolbarAction(): Promise<void> {
     await navigateAfterPersist(async () => {
       // Unmounting cancels editor polling, so refresh the result before leaving.
@@ -850,7 +903,10 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
     }
 
     if (selectedBubbleIndex.value >= 0 && !pageOnly) {
-      handleBubbleUpdate(updates)
+      const batchFields = ['textDirection', 'lineSpacing', 'inlineAlign', 'blockAlign', 'strokeEnabled', 'strokeColor', 'strokeWidth', 'rotationAngle', 'inpaintMethod', 'fillColor']
+      if (selectedIndices.value.length > 1 && Object.keys(updates).every(field => batchFields.includes(field)))
+        updateBubbles(selectedIndices.value.map(index => [index, updates]))
+      else handleBubbleUpdate(updates)
     } else if (updates.inpaintMethod !== undefined || updates.fillColor !== undefined) {
       const image = currentImage.value
       if (!image || image.documentRevision === undefined) return
@@ -865,17 +921,50 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
     }
   }
 
-  function handleApplyStyleToAllBubbles(updates: Partial<BubbleState>): void {
+  function handleApplyStyleToAllBubbles(scope: 'selected' | 'page', template = copiedTextStyle.value as TextStyleTemplate | null): void {
+    if (isBusy.value || !template) return
+    const indices = scope === 'page' ? bubbles.value.map((_, i) => i)
+      : selectedIndices.value.length ? selectedIndices.value : [selectedBubbleIndex.value]
+    updateBubbles(indices.flatMap(index => bubbles.value[index]
+      ? [[index, applyTextStyle(bubbles.value[index]!, template)] as [number, Partial<BubbleState>]] : []))
+  }
+
+  function handleFormatText(style: RunStyle, reset = false): void {
     if (isBusy.value) return
-    bubbleStore.updateAllBubbles(updates)
+    const indices = selectedIndices.value.length ? selectedIndices.value : [selectedBubbleIndex.value]
+    updateBubbles(indices.flatMap(index => bubbles.value[index]
+      ? [[index, formatBubbleText(bubbles.value[index]!, reset ? plainRun(bubbles.value[index]!) : style, reset)] as [number, Partial<BubbleState>]] : []))
+  }
+
+  async function fitSelectedText(): Promise<void> {
     const image = currentImage.value
-    if (image?.documentRevision !== undefined) {
-      void queuePageDocumentMutation(image.id, image.documentRevision, bubbles.value, {
-        bubbleFields: Object.fromEntries(bubbles.value.filter(b => b.backendBubbleId)
-          .map(b => [b.backendBubbleId!, Object.keys(updates)])),
-      }).catch(error => showToast(error instanceof Error ? error.message : '文字样式保存失败', 'error'))
-    }
-    handleReRender()
+    if (!image || image.documentRevision === undefined || isBusy.value) return
+    const indices = selectedIndices.value.length ? [...selectedIndices.value] : [selectedBubbleIndex.value]
+    isTextFitting.value = true
+    try {
+      await queuePageDocumentSave(image.id, image.documentRevision, bubbles.value)
+      const revision = currentImage.value?.documentRevision
+      if (currentImage.value?.id !== image.id || revision === undefined) return
+      const result = await calculatePageTextFit(image.id, {
+        baseRevision: revision, bubbleIds: indices.flatMap(index => bubbles.value[index]?.backendBubbleId ?? []),
+      })
+      if (currentImage.value?.id !== image.id || currentImage.value.documentRevision !== revision) return
+      updateBubbles(result.items.flatMap(item => {
+        const index = bubbles.value.findIndex(bubble => bubble.backendBubbleId === item.bubbleId)
+        const bubble = bubbles.value[index]
+        if (!bubble) return []
+        const ratio = item.fontSize / bubble.fontSize
+        return [[index, bubble.richText ? { richText: { ...deepClone(bubble.richText), runs: bubble.richText.runs.map(run => ({ ...run, style: {
+          ...run.style, size_pt: Number(run.style.size_pt ?? bubble.fontSize) * ratio,
+          ...(run.style.leading_pt != null ? { leading_pt: Number(run.style.leading_pt) * ratio } : {}),
+        } })) } } : { fontSize: item.fontSize }] as [number, Partial<BubbleState>]]
+      }))
+    } catch (error) { showToast(error instanceof Error ? error.message : '字号适配失败', 'error') }
+    finally { isTextFitting.value = false }
+  }
+
+  function moveSelectedText(dx: number, dy: number): void {
+    if (!isBusy.value && !isDrawingBox.value && !isDrawingMode.value) nudgeText(dx, dy)
   }
 
   async function handleOcrRecognize(index: number): Promise<void> {
@@ -899,7 +988,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
   }
 
 
-  function activateBrush(mode: 'repair' | 'restore'): void {
+  function activateBrush(mode: 'repair' | 'restore' | 'clone'): void {
     if (isBusy.value) return
     if (maskEditor.active.value) setMaskTool(mode === 'restore' ? 'preserve' : 'repair')
     else toggleBrushMode(mode)
@@ -908,6 +997,11 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
   function deleteSelectedBubblesWhenIdle(): void {
     if (isBusy.value) return
     deleteSelectedBubbles()
+  }
+
+  function duplicateSelectedBubbles(): void {
+    if (isBusy.value || brushMode.value || maskEditor.active.value || isDrawingBox.value || isDrawingMode.value) return
+    duplicateBubbles()
   }
 
   function handleGlobalMouseMove(event: MouseEvent): void {
@@ -919,7 +1013,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
   }
 
 
-  async function applyAndNext(): Promise<void> {
+  async function applyAndNext(focusText = false): Promise<void> {
     await navigateAfterPersist(() => {
       if (canGoNext.value) {
         imageStore.goToNext()
@@ -927,6 +1021,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
         showToast('已应用当前图片', 'success')
       }
     })
+    if (focusText === true) focusAfterNavigate.value = true
   }
 
 
@@ -950,6 +1045,9 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
     }
 
     // 键盘快捷键需要在编辑工作区获得焦点之外仍然可用。
+    // Capture workspace combinations before ProseMirror suppresses native Enter/Escape.
+    // The handler leaves normal input, formatting and IME keys with the focused control.
+    document.addEventListener('keydown', handleShortcutCapture, true)
     document.addEventListener('keydown', handleKeyDown)
     document.addEventListener('keyup', handleKeyUp)
     window.addEventListener('blur', cancelBrushShortcut)
@@ -970,6 +1068,7 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
 
   onUnmounted(() => {
     isOwnerActive = false
+    document.removeEventListener('keydown', handleShortcutCapture, true)
     document.removeEventListener('keydown', handleKeyDown)
     document.removeEventListener('keyup', handleKeyUp)
     window.removeEventListener('blur', cancelBrushShortcut)
@@ -998,6 +1097,10 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
   }, { immediate: true })
 
   return {
+    persistCurrentDocument,
+    pageHistory,
+    undoPage,
+    redoPage,
     handleDocumentLoaded,
     currentInpaintMethod,
     currentFillColor,
@@ -1046,7 +1149,10 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
     toggleDrawingMode,
     getDrawingRectStyle,
     deleteSelectedBubbles: deleteSelectedBubblesWhenIdle,
+    duplicateSelectedBubbles,
     brushMode,
+    cloneSource,
+    brushShape,
     brushSize,
     mouseX,
     mouseY,
@@ -1072,11 +1178,21 @@ export function useEditWorkspace(emit: EditWorkspaceEmit, ordinaryActive: Readon
     handleApplyStyleToAllBubbles,
     handleExitToolbarAction,
     handleBubbleUpdateWithSync,
+    handleFormatText,
+    fitSelectedText,
+    isSearchReplacing,
+    locateSearchResult,
+    refreshAfterTextReplace: reRenderFullImage,
+    moveSelectedText,
+    saveStatus,
+    renderError,
+    retrySave: reRenderFullImage,
     handleOcrRecognize,
     handleReTranslateBubble,
     handleRepairSelectedBubble,
     activateRepairBrush: () => activateBrush('repair'),
     activateRestoreBrush: () => activateBrush('restore'),
+    activateCloneBrush: () => activateBrush('clone'),
     maskEditor,
     toggleMaskMode,
     setMaskTool,

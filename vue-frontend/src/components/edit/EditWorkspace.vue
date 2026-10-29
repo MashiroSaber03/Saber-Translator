@@ -1,14 +1,11 @@
 <template>
   <div
     class="edit-workspace"
+    :class="{ 'edit-workspace--picking-color': isPickingColor }"
     tabindex="0"
     ref="workspaceRef"
     @pointerdown.capture="handleWorkspacePointerDown"
   >
-    <div v-if="!fineActive" class="edit-workspace__modes">
-      <UiButton size="sm" variant="primary" :disabled="modeSwitching" @click="setFineMode(false)">普通编辑</UiButton>
-      <UiButton size="sm" variant="inverse" :disabled="modeSwitching || isBusy" @click="setFineMode(true)">精细编辑</UiButton>
-    </div>
     <div class="edit-workspace__content">
       <EditToolbar
         v-show="!fineActive"
@@ -26,7 +23,10 @@
         :is-drawing-mode="isDrawingMode"
         :has-selection="hasSelection"
         :brush-mode="brushMode"
+        :clone-source="cloneSource"
         :brush-size="brushSize"
+        :brush-shape="brushShape"
+        @brush-shape="brushShape = $event"
         :mouse-x="mouseX"
         :mouse-y="mouseY"
         :is-busy="isBusy"
@@ -59,13 +59,24 @@
         @translate-with-bubbles="translateWithCurrentBubbles"
         @toggle-drawing-mode="toggleDrawingMode"
         @delete-selected-bubbles="deleteSelectedBubbles"
+        @duplicate-selected-bubbles="duplicateSelectedBubbles"
         @repair-selected-bubble="handleRepairSelectedBubble"
         @activate-repair-brush="activateRepairBrush"
         @activate-restore-brush="activateRestoreBrush"
+        @activate-clone-brush="activateCloneBrush"
         @toggle-mask-mode="toggleMaskMode"
         @apply-and-next="applyAndNext"
         @pointer-action-complete="focusWorkspaceAfterPointer"
       >
+        <template #workspace-tools>
+          <div class="edit-workspace__modes edit-workspace__modes--inline">
+            <UiButton size="sm" variant="primary" :disabled="modeSwitching" @click="setFineMode(false)">普通编辑</UiButton>
+            <UiButton size="sm" variant="inverse" :disabled="modeSwitching || isBusy" @click="setFineMode(true)">精细编辑</UiButton>
+            <UiIconButton variant="inverse" size="sm" label="撤销页面操作" :title="pageHistory.error.value || '撤销当前页上一次操作 (Ctrl+Z)；输入框内撤销文字输入'" :disabled="isBusy || !pageHistory.canUndo.value || maskEditor.dirty.value" @click="undoPage"><UiIcon :name="pageHistory.busy.value ? 'loading' : 'rotate-ccw'" size="16" /></UiIconButton>
+            <UiIconButton variant="inverse" size="sm" label="重做页面操作" title="重做 (Ctrl+Shift+Z / Ctrl+Y)" :disabled="isBusy || !pageHistory.canRedo.value || maskEditor.dirty.value" @click="redoPage"><UiIcon name="rotate-cw" size="16" /></UiIconButton>
+          </div>
+          <UiButton variant="inverse" size="xs" class="edit-workspace__save-status" :class="{ 'edit-workspace__save-status--error': renderError }" :disabled="isBusy" title="自动保存；点击重试保存与出图 (Ctrl+S)" @click="retrySave">{{ pageHistory.busy.value ? '正在恢复…' : saveStatus }}</UiButton>
+        </template>
         <template #mask-tools>
           <EditMaskPanel
             :tool="brushMode ? maskEditor.tool.value : null" :visibility="maskEditor.visibility.value" :preview="maskEditor.state.value" :busy="isBusy"
@@ -108,6 +119,7 @@
         :original-scale="originalScale"
         :is-drawing-mode="isDrawingMode"
         :brush-mode="brushMode"
+        :clone-source="cloneSource"
         :current-image-width="currentImageWidth"
         :current-image-height="currentImageHeight"
         :current-drawing-rect="currentDrawingRect"
@@ -135,11 +147,18 @@
         @bubble-resize-end="handleBubbleResizeEnd"
         @bubble-rotate-end="handleBubbleRotateEnd"
         @bubble-update="handleBubbleUpdateWithSync"
-        @apply-to-all-style="handleApplyStyleToAllBubbles"
+        @format-text="handleFormatText"
+        @fit-text="fitSelectedText"
+        @move-text="moveSelectedText"
+        @apply-style="handleApplyStyleToAllBubbles"
         @ocr-recognize="handleOcrRecognize"
         @re-translate="handleReTranslateBubble"
         @pick-color="startImageColorPick"
-      />
+      >
+        <template #editor-header>
+          <ChapterTextSearch v-if="currentImage?.chapterId" :chapter-id="currentImage.chapterId" :disabled="isBusy || !!brushMode" :prepare="persistCurrentDocument" @busy="isSearchReplacing = $event" @locate="locateSearchResult" @changed="refreshAfterTextReplace" />
+        </template>
+      </EditImageComparison>
       <FineEditor v-if="fineMounted && currentImage?.id" ref="fineEditorRef" :inert="switching || !fineActive || undefined" :page-id="currentImage.id" :active="fineActive" :inpaint-method="currentImage.inpaintMethod" :fill-color="currentImage.fillColor" @busy="fineBusy = $event" @document-loaded="handleDocumentLoaded" @method="handleBubbleUpdateWithSync({ inpaintMethod: $event }, true)" @fill-color="handleBubbleUpdateWithSync({ fillColor: $event }, true)">
         <template #toolbar-start>
           <div class="edit-workspace__modes edit-workspace__modes--inline">
@@ -169,6 +188,7 @@ import EditToolbar from './EditToolbar.vue'
 import EditThumbnailPanel from './EditThumbnailPanel.vue'
 import EditMaskPanel from './EditMaskPanel.vue'
 import FineEditor from './FineEditor.vue'
+import ChapterTextSearch from './ChapterTextSearch.vue'
 import { useEditWorkspace, type EditWorkspaceEmit } from './useEditWorkspace'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
@@ -190,8 +210,10 @@ async function setFineMode(value: boolean): Promise<void> {
   if (!guardUnsavedMask()) return
   switching.value = true
   try {
-    if (fineActive.value) await fineEditorRef.value?.saveNow()
-    if (currentImage.value?.id) await flushPageDocument(currentImage.value.id)
+    if (fineActive.value) {
+      await fineEditorRef.value?.saveNow()
+      if (currentImage.value?.id) await flushPageDocument(currentImage.value.id)
+    } else await persistCurrentDocument()
     if (value) {
       if (maskEditor.active.value) toggleMaskMode()
       fineMounted.value = true
@@ -219,6 +241,10 @@ async function navigateFine(next: boolean): Promise<void> {
 }
 
 const {
+  persistCurrentDocument,
+  pageHistory,
+  undoPage,
+  redoPage,
   handleDocumentLoaded,
   currentInpaintMethod,
   currentFillColor,
@@ -270,7 +296,10 @@ const {
   toggleDrawingMode,
   getDrawingRectStyle,
   deleteSelectedBubbles,
+  duplicateSelectedBubbles,
   brushMode,
+  cloneSource,
+  brushShape,
   brushSize,
   mouseX,
   mouseY,
@@ -296,11 +325,21 @@ const {
   handleApplyStyleToAllBubbles,
   handleExitToolbarAction,
   handleBubbleUpdateWithSync,
+  handleFormatText,
+  fitSelectedText,
+  isSearchReplacing,
+  locateSearchResult,
+  refreshAfterTextReplace,
+  moveSelectedText,
+  saveStatus,
+  renderError,
+  retrySave,
   handleOcrRecognize,
   handleReTranslateBubble,
   handleRepairSelectedBubble,
   activateRepairBrush,
   activateRestoreBrush,
+  activateCloneBrush,
   applyAndNext,
   autoDetectBubbles,
   detectAllImages,
@@ -384,6 +423,8 @@ onBeforeRouteUpdate(guardWorkspaceLeave)
   font-size: 12px;
 }
 .edit-workspace__modes--inline { flex-shrink: 0; flex-wrap: nowrap; padding: 0; background: transparent; border: 0; }
+.edit-workspace__save-status.edit-workspace__save-status--error { color: var(--color-status-error-bright); }
+.edit-workspace__save-status { width: 88px; max-width: 88px; flex-shrink: 0; overflow: hidden; white-space: nowrap; font-size: 11px; color: var(--color-action-success-bright); }
 .edit-workspace__page-nav { display: flex; flex-shrink: 0; align-items: center; gap: 5px; padding: 0 10px; border-inline: 1px solid var(--color-overlay-inverse-muted); }
 .edit-workspace__page-index { min-width: 50px; text-align: center; font-variant-numeric: tabular-nums; }
 

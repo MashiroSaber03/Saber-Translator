@@ -304,6 +304,7 @@ class OperationRepository:
         idempotency_key: str,
         regional_inpainting: bool = False,
         from_source: bool = False,
+        clone_offset: tuple[int, int] | None = None,
     ) -> tuple[dict[str, object], bool]:
         self.validate_page_repair_identity(
             base_revision=base_revision,
@@ -320,6 +321,8 @@ class OperationRepository:
             "method": method,
             "repairRevision": base_revision + 1,
         }
+        if clone_offset is not None:
+            request_identity["cloneOffset"] = list(clone_offset)
         if from_source:
             request_identity["fromSource"] = True
         if method == "solid":
@@ -388,7 +391,7 @@ class OperationRepository:
             operation_id = str(uuid.uuid4())
             repair_revision = base_revision + 1
             executor_role = (
-                "api" if method in {"solid", "restore_source"} else "worker"
+                "api" if method in {"solid", "restore_source", "clone"} else "worker"
             )
             try:
                 connection.execute(
@@ -513,6 +516,7 @@ class OperationRepository:
         mask_checksum: str,
         idempotency_key: str,
         from_source: bool = False,
+        clone_offset: tuple[int, int] | None = None,
     ) -> dict[str, object] | None:
         self.validate_page_repair_identity(
             base_revision=base_revision,
@@ -529,6 +533,8 @@ class OperationRepository:
             "method": method,
             "repairRevision": base_revision + 1,
         }
+        if clone_offset is not None:
+            payload["cloneOffset"] = list(clone_offset)
         if from_source:
             payload["fromSource"] = True
         if method == "solid":
@@ -799,6 +805,7 @@ class OperationRepository:
             "litelama",
             "lama_manga",
             "restore_source",
+            "clone",
         }:
             raise ValueError("unsupported page repair method")
         if method != "solid":

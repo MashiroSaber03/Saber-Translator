@@ -29,7 +29,7 @@ import {
 } from '@/services/pageDocumentPersistence'
 import { useToast } from '@/utils/toast'
 import { pageSelectionToPageIndexes } from '@/utils/pageSelection'
-import { parseCompleteTextStyleSettings } from '@/defaults/textStyleDefaults'
+import { normalizeImageTextStyleFields } from '@/defaults/textStyleDefaults'
 import { usePublicUserAccess } from '@/composables/usePublicUserAccess'
 type TranslationMode = 'standard' | 'hq' | 'proofread' | 'removeText'
 
@@ -229,7 +229,6 @@ export function restoreTranslationFromBootstrap(
 async function refreshOpenPageDocument(
   pageId: string,
   imageStore: ReturnType<typeof useImageStore>,
-  bubbleStore: ReturnType<typeof useBubbleStore>,
   settingsStore: ReturnType<typeof useSettingsStore>,
 ): Promise<void> {
   const requested = imageStore.currentImage
@@ -239,27 +238,14 @@ async function refreshOpenPageDocument(
   if (document.pageId !== pageId || document.chapterId !== requested.chapterId) {
     throw new Error(`页面 ${pageId} 的后端文档身份不匹配`)
   }
-  const bubbles = registerPageDocument(document)
-  const pageTextStyle = parseCompleteTextStyleSettings({
-    ...document.pageStyleDefaults,
-    ...(document.defaultFontId
-      ? { fontFamily: document.defaultFontId }
-      : {}),
-  })
-  imageStore.updateCurrentImage({
-    ...pageTextStyle,
-    bubbleStates: bubbles,
-    documentRevision: document.documentRevision,
-    hasUnsavedChanges: false,
-  })
+  registerPageDocument(document)
+  const pageTextStyle = normalizeImageTextStyleFields(imageStore.currentImage)
   settingsStore.updateTextStyle(pageTextStyle)
-  bubbleStore.setBubbles(bubbles, true)
 }
 
 async function refreshCompletedPage(
   pageId: string,
   imageStore: ReturnType<typeof useImageStore>,
-  bubbleStore: ReturnType<typeof useBubbleStore>,
   settingsStore: ReturnType<typeof useSettingsStore>,
 ): Promise<void> {
   const requested = imageStore.images.find(image => image.id === pageId)
@@ -276,12 +262,11 @@ async function refreshCompletedPage(
     ...mapped,
     bubbleStates: existing.bubbleStates,
   })
-  await refreshOpenPageDocument(pageId, imageStore, bubbleStore, settingsStore)
+  await refreshOpenPageDocument(pageId, imageStore, settingsStore)
 }
 
 async function refreshCurrentChapter(
   imageStore: ReturnType<typeof useImageStore>,
-  bubbleStore: ReturnType<typeof useBubbleStore>,
   settingsStore: ReturnType<typeof useSettingsStore>,
 ): Promise<void> {
   const chapterId = imageStore.currentImage?.chapterId || imageStore.images[0]?.chapterId
@@ -319,7 +304,6 @@ async function refreshCurrentChapter(
   await refreshOpenPageDocument(
     currentPageId,
     imageStore,
-    bubbleStore,
     settingsStore,
   )
 }
@@ -363,7 +347,6 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
           void refreshCompletedPage(
             pageId,
             imageStore,
-            bubbleStore,
             settingsStore,
           ).catch((error) => {
             toast.error(
@@ -432,7 +415,7 @@ export function useTranslation(options: TranslationPipelineOptions = {}) {
       observedTerminalContentJobs = currentTerminalContentJobs
 
       if (!shouldRefreshChapter) return
-      void refreshCurrentChapter(imageStore, bubbleStore, settingsStore)
+      void refreshCurrentChapter(imageStore, settingsStore)
         .catch((error) => {
           toast.error(
             `刷新后端翻译结果失败：${error instanceof Error ? error.message : '未知错误'}`,

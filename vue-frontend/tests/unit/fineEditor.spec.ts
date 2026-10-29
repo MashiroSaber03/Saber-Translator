@@ -14,12 +14,14 @@ vi.mock('@/api/client', () => ({ apiClient: { get: mocks.get } }))
 vi.mock('@/api/v2/content', () => ({ getPageDocument: mocks.document }))
 vi.mock('@/api/v2/operations', () => ({ createMaskRepair: mocks.repair, waitForOperation: mocks.wait }))
 vi.mock('@/utils/browserDownload', () => ({ triggerBlobDownload: mocks.download }))
-vi.mock('@/composables/useEditRender', () => ({ useEditRender: () => ({ reRenderFullImage: mocks.render }) }))
+vi.mock('@/composables/useEditRender', () => ({ useEditRender: (callbacks?: { onRenderError: (message: string) => void }) => ({
+  refreshRenderedImage: async () => { const result = await mocks.render(); if (result === false) callbacks?.onRenderError('后端渲染失败'); return result },
+}) }))
 vi.mock('@/composables/usePublicUserAccess', () => ({ usePublicUserAccess: () => ({ modelOptions: (options: unknown) => options }) }))
 vi.mock('@/services/pageDocumentPersistence', () => ({
   flushPageDocument: mocks.flush, hasPendingPageDocument: () => false,
   queueEditorDocumentSave: mocks.queue, registerPageDocument: mocks.register,
-  registerPageEditor: mocks.port, withDocumentTransportReplay: vi.fn(),
+  registerPageEditor: mocks.port, saveEditorDocument: vi.fn(),
 }))
 
 let wrappers: ReturnType<typeof mount>[] = []
@@ -31,7 +33,10 @@ beforeEach(() => {
   })
   mocks.get.mockResolvedValue({ items: [] })
   mocks.document.mockResolvedValue({ pageId: 'page', chapterId: 'chapter', documentRevision: 4 })
-  mocks.register.mockReturnValue([])
+  mocks.register.mockImplementation(document => {
+    useImageStore().updateCurrentImage({ documentRevision: document.documentRevision })
+    return []
+  })
   mocks.port.mockReturnValue(vi.fn())
   mocks.queue.mockResolvedValue(undefined)
   mocks.flush.mockResolvedValue(undefined)
@@ -80,6 +85,19 @@ async function editor(ready = true) {
 }
 
 describe('fine editor page lifecycle', () => {
+  it('keeps a render failure visible after a manual save and retries output without saving twice', async () => {
+    const { wrapper, revise } = await editor()
+    revise(5)
+    mocks.render.mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+    await (wrapper.vm as unknown as { saveNow: () => Promise<void> }).saveNow()
+    expect(wrapper.get('[role="status"]').text()).toContain('后端渲染失败')
+    // The engine normally acknowledges the new revision through its saved reply.
+    revise(4)
+    await (wrapper.vm as unknown as { saveNow: () => Promise<void> }).saveNow()
+    expect(mocks.queue).toHaveBeenCalledOnce()
+    expect(mocks.render).toHaveBeenCalledTimes(2)
+    expect(wrapper.get('[role="status"]').text()).not.toContain('后端渲染失败')
+  })
   it('shows a canvas startup failure and reloads the canvas when retried', async () => {
     const { wrapper, frame } = await editor(false)
     window.dispatchEvent(new MessageEvent('message', {

@@ -184,7 +184,7 @@ export function useTranslateViewActions(options: UseTranslateViewActionsOptions)
     }
     discardPageDocument(pageId)
     imageStore.clearImages()
-    bubbleStore.clearBubblesLocal()
+    bubbleStore.clearSelection()
     showToast('图片已删除', 'success')
     await loadChapterSession()
   }
@@ -234,7 +234,7 @@ export function useTranslateViewActions(options: UseTranslateViewActionsOptions)
     }
     for (const pageId of pageIds) discardPageDocument(pageId)
     imageStore.clearImages()
-    bubbleStore.clearBubblesLocal()
+    bubbleStore.clearSelection()
     showToast('所有图片已清除', 'success')
     await loadChapterSession()
   }

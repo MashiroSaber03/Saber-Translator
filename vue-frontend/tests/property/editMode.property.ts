@@ -69,7 +69,6 @@ describe('edit mode properties', () => {
 
           bubbleStore.setBubbles([...firstBubbles])
           bubbleStore.updateBubble(0, { translatedText: 'changed text' })
-          imageStore.updateCurrentBubbleStates([...bubbleStore.bubbles])
 
           imageStore.setCurrentImageIndex(1)
           bubbleStore.setBubbles([...secondBubbles])
@@ -90,6 +89,7 @@ describe('edit mode properties', () => {
   })
 
   it('keeps dragged bubbles inside image bounds', () => {
+    addTestImage(useImageStore(), 'page.png', '/source')
     fc.assert(
       fc.property(
         bubbleCoordsArbitrary,
@@ -133,6 +133,7 @@ describe('edit mode properties', () => {
   })
 
   it('keeps resized bubbles inside image bounds when resize geometry is valid', () => {
+    addTestImage(useImageStore(), 'page.png', '/source')
     fc.assert(
       fc.property(
         bubbleCoordsArbitrary,
@@ -257,6 +258,7 @@ describe('edit mode properties', () => {
   })
 
   it('does not derive backend-owned automatic direction after coords update', () => {
+    addTestImage(useImageStore(), 'page.png', '/source')
     const bubbleStore = useBubbleStore()
     bubbleStore.setBubbles([makeBubble([0, 0, 200, 100])])
 

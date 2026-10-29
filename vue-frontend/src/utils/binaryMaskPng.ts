@@ -100,6 +100,35 @@ async function deflate(scanlines: Uint8Array<ArrayBuffer>): Promise<Uint8Array<A
   return new Uint8Array(await compressed)
 }
 
+/** Even-odd polygon fill at pixel centres, clipped to the source image. */
+export function paintMaskPolygon(pixels: Uint8Array, width: number, height: number, points: readonly { x: number; y: number }[], value: 0 | 127 | 255): boolean {
+  if (pixels.length !== maskSize(width, height)) throw new Error('修复掩膜尺寸无效')
+  if (points.some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y))) throw new Error('选区坐标无效')
+  if (points.length < 3) return false
+  let changed = false
+  let low = height, high = 0
+  for (const point of points) { low = Math.min(low, point.y); high = Math.max(high, point.y) }
+  const minY = Math.max(0, Math.floor(low))
+  const maxY = Math.min(height - 1, Math.ceil(high))
+  for (let y = minY; y <= maxY; y++) {
+    const crossings: number[] = []
+    const cy = y + 0.5
+    for (let i = 0; i < points.length; i++) {
+      const a = points[i]!, b = points[(i + 1) % points.length]!
+      if ((a.y > cy) !== (b.y > cy)) crossings.push(a.x + (cy - a.y) * (b.x - a.x) / (b.y - a.y))
+    }
+    crossings.sort((a, b) => a - b)
+    for (let i = 0; i + 1 < crossings.length; i += 2) {
+      const left = Math.max(0, Math.ceil(crossings[i]! - 0.5))
+      const right = Math.min(width - 1, Math.ceil(crossings[i + 1]! - 0.5) - 1)
+      for (let x = left; x <= right; x++) {
+        if (pixels[y * width + x] !== value) { pixels[y * width + x] = value; changed = true }
+      }
+    }
+  }
+  return changed
+}
+
 export async function encodeGrayscaleMaskPng(
   width: number, height: number, pixels: Uint8Array,
 ): Promise<Blob> {

@@ -45,6 +45,7 @@ function installCanvasMocks() {
     fill: vi.fn(),
     fillRect: vi.fn(),
     fillStyle: '',
+    clearRect: vi.fn(), closePath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(), strokeStyle: '',
   }
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(
     context as unknown as CanvasRenderingContext2D,
@@ -141,7 +142,10 @@ describe('useBrush', () => {
       pageStyleDefaults: {},
       renderStatus: 'ready',
     })
-    mocks.registerPageDocument.mockReturnValue([])
+    mocks.registerPageDocument.mockImplementation(document => {
+      useImageStore().updateCurrentImage({ documentRevision: document.documentRevision, bubbleStates: [], hasUnsavedChanges: false })
+      return []
+    })
     addTestImage(useImageStore(), 'page.png', '/api/v2/assets/source-1', {
       chapterId: 'chapter-1',
       documentRevision: 3,
@@ -149,6 +153,57 @@ describe('useBrush', () => {
       id: 'page-1',
       width: 200,
     })
+  })
+
+  it.each(['rectangle', 'lasso'] as const)('submits a closed %s selection through the existing repair operation', async shape => {
+    const { brush, wrapper, onBrushComplete } = mountBrush()
+    brush.brushShape.value = shape
+    brush.toggleBrushMode('repair')
+    brush.startBrushPainting(new MouseEvent('mousedown', { button: 0, clientX: 40, clientY: 30 }), createBrushSurface())
+    for (const [clientX, clientY] of (shape === 'rectangle' ? [[80, 30], [80, 80]] : [[80, 30], [80, 80], [40, 80]]))
+      brush.continueBrushPainting(new MouseEvent('mousemove', { clientX, clientY }))
+    brush.finishBrushPainting()
+    await vi.waitFor(() => expect(onBrushComplete).toHaveBeenCalledOnce())
+    expect(mocks.createMaskRepair).toHaveBeenCalledWith('page-1', expect.any(Blob), { baseRevision: 3, method: 'solid', fillColor: '#ffffff' })
+    const preview = HTMLCanvasElement.prototype.getContext.call(document.createElement('canvas'), '2d')!
+    expect(preview.fill).toHaveBeenLastCalledWith('evenodd')
+    wrapper.unmount()
+  })
+
+  it('requires a clone source, freezes its aligned offset and clears it when switching pages', async () => {
+    const { brush, wrapper, onBrushComplete } = mountBrush()
+    brush.toggleBrushMode('clone')
+    const surface = createBrushSurface()
+    brush.startBrushPainting(new MouseEvent('mousedown', { button: 0, clientX: 40, clientY: 40 }), surface)
+    expect(brush.isBrushPainting.value).toBe(false)
+    expect(mocks.createMaskRepair).not.toHaveBeenCalled()
+    brush.startBrushPainting(new MouseEvent('mousedown', { button: 0, altKey: true, clientX: 60, clientY: 20 }), surface)
+    expect(brush.cloneSource.value).toEqual({ x: 60, y: 20 })
+    brush.startBrushPainting(new MouseEvent('mousedown', { button: 0, clientX: 40, clientY: 40 }), surface)
+    brush.finishBrushPainting()
+    await vi.waitFor(() => expect(onBrushComplete).toHaveBeenCalledOnce())
+    expect(mocks.createMaskRepair).toHaveBeenCalledWith('page-1', expect.any(Blob), { baseRevision: 3, method: 'clone', cloneOffset: [20, -20] })
+    addTestImage(useImageStore(), 'next.png', '/api/v2/assets/source-2', { id: 'page-2', chapterId: 'chapter-1', documentRevision: 1 })
+    useImageStore().setCurrentImageIndex(1)
+    await flushPromises()
+    expect(brush.cloneSource.value).toBeNull()
+    expect(brush.brushMode.value).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('cancels an unfinished region on exit without changing the image', async () => {
+    const { brush, wrapper } = mountBrush()
+    brush.brushShape.value = 'rectangle'
+    brush.toggleBrushMode('repair')
+    brush.startBrushPainting(new MouseEvent('mousedown', { button: 0, clientX: 40, clientY: 30 }), createBrushSurface())
+    brush.continueBrushPainting(new MouseEvent('mousemove', { clientX: 80, clientY: 80 }))
+    brush.exitBrushMode()
+    brush.finishBrushPainting()
+    await flushPromises()
+    expect(mocks.createMaskRepair).not.toHaveBeenCalled()
+    expect(brush.isBrushPainting.value).toBe(false)
+    expect(brush.brushMode.value).toBe(null)
+    wrapper.unmount()
   })
 
   it('keeps fast strokes continuous in the preview and submitted mask', async () => {

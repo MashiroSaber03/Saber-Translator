@@ -34,15 +34,14 @@ import UiColorInput from '@/components/ui/UiColorInput.vue'
 import { usePublicUserAccess } from '@/composables/usePublicUserAccess'
 import { inpaintMethodOptions } from '@/utils/textStyleForm'
 import { apiClient } from '@/api/client'
-import { getPageDocument, type V2PageDocument, type V2PageDocumentMutationResponse } from '@/api/v2/content'
-import { flushPageDocument, hasPendingPageDocument, queueEditorDocumentSave, registerPageDocument, registerPageEditor, withDocumentTransportReplay } from '@/services/pageDocumentPersistence'
+import { getPageDocument, type V2PageDocumentMutationResponse } from '@/api/v2/content'
+import { flushPageDocument, hasPendingPageDocument, queueEditorDocumentSave, registerPageDocument, registerPageEditor, saveEditorDocument } from '@/services/pageDocumentPersistence'
 import { useEditRender } from '@/composables/useEditRender'
 import { createUuid } from '@/utils/uuid'
 import { triggerBlobDownload } from '@/utils/browserDownload'
 import type { InpaintMethod } from '@/types/bubble'
 import { createMaskRepair, waitForOperation } from '@/api/v2/operations'
 import { useImageStore } from '@/stores/imageStore'
-import { useBubbleStore } from '@/stores/bubbleStore'
 
 const props = defineProps<{ pageId: string; active: boolean; inpaintMethod: InpaintMethod; fillColor: string }>()
 const emit = defineEmits<{ busy: [value: boolean]; method: [value: InpaintMethod]; fillColor: [value: string]; 'document-loaded': [pageId: string] }>()
@@ -100,24 +99,11 @@ function connectEditor(page: string): void {
   unregister = registerPageEditor(page, { save })
 }
 
-function adopt(document: V2PageDocument): void {
-  const bubbles = registerPageDocument(document)
-  const images = useImageStore()
-  if (images.currentImage?.id !== document.pageId) return
-  images.updateCurrentImage({ ...document.pageStyleDefaults,
-    ...(document.defaultFontId ? { fontFamily: document.defaultFontId } : {}),
-    documentRevision: document.documentRevision, bubbleStates: bubbles, hasUnsavedChanges: false })
-  useBubbleStore().setBubbles(bubbles, true)
-}
-
 async function save(baseRevision: number): Promise<V2PageDocumentMutationResponse> {
   const page = loadedPage
   const snapshot = await request({ op: 'snapshot' })
   if (!snapshot.bytes) throw new Error('编辑快照为空')
-  const body = new FormData()
-  body.append('baseRevision', String(baseRevision))
-  body.append('file', new Blob([new Uint8Array(snapshot.bytes).buffer], { type: 'application/x-photocraft' }), 'page.pcraft')
-  const response = await withDocumentTransportReplay(key => apiClient.put<V2PageDocumentMutationResponse>(`/api/v2/pages/${page}/editor-document`, body, { headers: { 'Idempotency-Key': key } }))
+  const response = await saveEditorDocument(page, baseRevision, new Blob([new Uint8Array(snapshot.bytes).buffer], { type: 'application/x-photocraft' }))
   await request({ op: 'saved', revision: snapshot.revision })
   silentRevision = Math.max(silentRevision, snapshot.revision ?? 0)
   return response
@@ -152,7 +138,7 @@ async function load(): Promise<void> {
     const reply = await request({ op: loadedPage === page ? 'replace' : 'open', pageId: page, label: '普通编辑' }, bytes)
     if (token !== loadVersion || disposed) return
     await request({ op: 'saved', revision: reply.revision })
-    adopt(document)
+    registerPageDocument(document)
     emit('document-loaded', page)
     loadedPage = page
     silentRevision = reply.revision ?? 0
@@ -173,7 +159,7 @@ async function persist(revision: number): Promise<void> {
   error.value = ''
   try {
     await queueEditorDocumentSave(loadedPage, revision)
-    await render.reRenderFullImage()
+    await render.refreshRenderedImage()
   } catch (reason) {
     saveFailed.value = true
     error.value = reason instanceof Error ? reason.message : '保存失败，修改仍保留在当前画布'
@@ -190,8 +176,11 @@ async function saveNow(): Promise<void> {
   if (!loadedPage || loading.value) return
   const reply = await request({ op: 'finish' })
   if ((reply.revision ?? 0) > silentRevision || hasPendingPageDocument(loadedPage)) await persist(reply.revision ?? 0)
+  else if (error.value && !saveFailed.value) {
+    error.value = ''
+    await render.refreshRenderedImage()
+  }
   await flushPageDocument(loadedPage)
-  error.value = ''
 }
 async function retry(): Promise<void> {
   if (repairing.value) return
@@ -228,8 +217,8 @@ async function repairSelection(): Promise<void> {
     await waitForOperation(accepted.operationId)
     try {
       const document = await getPageDocument(loadedPage)
-      adopt(document)
-      await render.reRenderFullImage()
+      registerPageDocument(document)
+      await render.refreshRenderedImage()
       const bytes = await apiClient.get<ArrayBuffer>(`/api/v2/pages/${loadedPage}/editor-document`, { responseType: 'arraybuffer' })
       const reply = await request({ op: 'replace' }, bytes)
       silentRevision = reply.revision ?? silentRevision

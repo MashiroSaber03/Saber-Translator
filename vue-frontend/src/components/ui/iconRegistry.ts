@@ -72,6 +72,7 @@ import {
   Send,
   Settings,
   Sparkles,
+  Stamp,
   Square,
   SquareMinus,
   SquarePlus,
@@ -88,6 +89,7 @@ import {
 import type { LucideIcon } from '@lucide/vue'
 
 export const uiIconRegistry = {
+  stamp: Stamp,
   'alert-triangle': AlertTriangle,
   'align-center': AlignCenter,
   'align-horizontal-center': AlignHorizontalJustifyCenter,

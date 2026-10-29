@@ -2172,6 +2172,7 @@ def test_plan_page_source_bubble_and_render_status_routes(
         idempotency_key="plan-source-existing-bubble",
     )
     assert seeded["document"]["bubbles"]
+    assert seeded["document"]["isManuallyAnnotated"] is True
     app = create_api_app(
         ApiSettings(
             data_root=data_root,
@@ -2209,6 +2210,7 @@ def test_plan_page_source_bubble_and_render_status_routes(
             )
         assert state == "unprocessed"
         assert bubble_count == 0
+        assert repository.get_page_document(page_id)["isManuallyAnnotated"] is False
 
         base_revision = replaced.get_json()["documentRevision"]
         created = client.post(

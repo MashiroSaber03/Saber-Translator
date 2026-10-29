@@ -115,6 +115,21 @@ describe('PageSelectionModal', () => {
     expect(wrapper.emitted('confirm')?.[0]).toEqual([[3]])
   })
 
+  it('only marks direct page input invalid after a real validation error', async () => {
+    const wrapper = mount(PageSelectionModal, {
+      props: { modelValue: true, selectedPages: [] },
+    })
+    const input = wrapper.get('#page-selection-input')
+    expect(input.attributes('aria-invalid')).toBeUndefined()
+
+    await input.setValue('99')
+    await wrapper.get('[data-testid="apply-page-selection-input"]').trigger('click')
+    expect(input.attributes('aria-invalid')).toBe('true')
+
+    await input.setValue('1')
+    expect(input.attributes('aria-invalid')).toBeUndefined()
+  })
+
   it('uses product summary chips and action rows for the modal chrome', () => {
     const wrapper = mount(PageSelectionModal, {
       props: {

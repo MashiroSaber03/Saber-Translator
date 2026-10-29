@@ -1583,6 +1583,7 @@ class ContentRepository:
                     rendered_revision=None,
                     render_status="not_rendered",
                     detection_state="unprocessed",
+                    is_manually_annotated=False,
                     updated_at=_utcnow(),
                 )
             )
@@ -1859,8 +1860,29 @@ class ContentRepository:
         propagate_style_fields: list[str] | None = None,
         user_mask: bytes | None = None,
         editor_document: bytes | None = None,
+        editor_metadata: dict[str, object] | None = None,
     ) -> tuple[dict[str, object], bool]:
         from src.backend_v2.editing.native import NativeEditor, NATIVE_BUBBLE_FIELDS
+
+        metadata: dict[str, dict[str, object]] = {}
+        if editor_metadata is not None:
+            if editor_document is None or editor_metadata.get("pageId") != page_id:
+                raise ValueError("撤销快照与当前页面不匹配")
+            items = editor_metadata.get("bubbles")
+            if not isinstance(items, list):
+                raise ValueError("snapshot bubbles must be an array")
+            for item in items:
+                if not isinstance(item, dict) or not isinstance(item.get("bubbleId"), str):
+                    raise ValueError("snapshot bubble identity is invalid")
+                bubble_id = item["bubbleId"]
+                if bubble_id in metadata:
+                    raise ValueError("duplicate snapshot bubble IDs")
+                payload = validate_bubble_payload(item.get("payload"), render=False)
+                # Native layers own text and style. Only restore the accompanying
+                # OCR/detection/repair metadata here, in the same existing commit.
+                metadata[bubble_id] = {key: value for key, value in payload.items() if key not in NATIVE_BUBBLE_FIELDS}
+            default_font_id = editor_metadata.get("defaultFontId")
+            page_style_defaults_patch = editor_metadata.get("pageStyleDefaults")
 
         if user_mask is not None and self.storage is None:
             raise ValueError("editing assets are unavailable")
@@ -1931,7 +1953,7 @@ class ContentRepository:
             propagated_bubble_fields[field] for field in propagation
         }
         seen_client_mutation_ids: set[str] = set()
-        mutation_keys = {"op", "clientMutationId", "bubbleId", "fields"}
+        mutation_keys = {"op", "clientMutationId", "bubbleId", "sourceBubbleId", "fields"}
         for mutation in mutations:
             unknown_keys = set(mutation) - mutation_keys
             if unknown_keys:
@@ -1942,6 +1964,10 @@ class ContentRepository:
             operation = mutation.get("op")
             if operation not in {"create", "patch", "delete", "reset"}:
                 raise ValueError("bubble mutation op is invalid")
+            if "sourceBubbleId" in mutation:
+                if operation != "create" or not isinstance(mutation["sourceBubbleId"], str):
+                    raise ValueError("sourceBubbleId is only valid for create mutations")
+                uuid.UUID(mutation["sourceBubbleId"])
             client_mutation_id = mutation.get("clientMutationId")
             if (
                 not isinstance(client_mutation_id, str)
@@ -2031,6 +2057,8 @@ class ContentRepository:
         }
         if editor_document is not None:
             request_payload["editorDocumentChecksum"] = hashlib.sha256(editor_document).hexdigest()
+        if editor_metadata is not None:
+            request_payload["editorMetadata"] = metadata
         if user_mask is not None:
             request_payload["userMaskChecksum"] = hashlib.sha256(user_mask).hexdigest()
         request_hash = hashlib.sha256(
@@ -2147,7 +2175,7 @@ class ContentRepository:
             )
             if style_patch:
                 current_style.update(style_patch)
-            calculate_auto_font_size = None
+            auto_fit_ids = []
             native_editor = None
             native_result = None
             if editor_document is not None:
@@ -2168,20 +2196,26 @@ class ContentRepository:
                     raise ValueError("native text ID belongs to another page")
                 order = ids
                 documents = {item["bubbleId"]: item for item in projected}
+                if editor_metadata is not None:
+                    if set(metadata) != set(ids):
+                        raise ValueError("撤销快照的文本框与工程不匹配")
+                    for item in projected:
+                        item["payload"].update(metadata[item["bubbleId"]])
                 renderable_change = True
-            if "fontSize" in propagation and bool(
-                current_style["autoFontSize"]
-            ):
-                from src.core.rendering import calculate_auto_font_size
+            source_bubble_ids = set(documents)
             for mutation in mutations:
                 operation = str(mutation["op"])
                 client_mutation_id = str(mutation["clientMutationId"])
                 fields = mutation.get("fields", {})
                 if operation == "create":
+                    source_id = mutation.get("sourceBubbleId")
+                    if source_id is not None and source_id not in source_bubble_ids:
+                        raise ContentNotFound("source text layer not found on this page")
                     bubble_id = str(uuid.uuid4())
                     validate_font_reference(fields.get("fontId"), field="fontId")
                     documents[bubble_id] = {
                         "bubbleId": bubble_id,
+                        **({"sourceBubbleId": source_id} if source_id is not None else {}),
                         "fontId": fields.get("fontId"),
                         "payload": {
                             key: value
@@ -2309,42 +2343,8 @@ class ContentRepository:
                                     renderable_change = True
                                 payload[field] = materialized
                         elif field == "fontSize":
-                            if (
-                                bool(current_style["autoFontSize"])
-                                and calculate_auto_font_size is not None
-                            ):
-                                coords = payload["coords"]
-                                text = payload["translatedText"]
-                                if text.strip():
-                                    font_id = document["fontId"] or (
-                                        default_font_id
-                                        if default_font_id is not _MISSING
-                                        else page["default_font_id"]
-                                    )
-                                    font_path = (
-                                        resolve_font_path(
-                                            connection,
-                                            self.storage,
-                                            str(font_id) if font_id else None,
-                                        )
-                                        if self.storage is not None
-                                        else None
-                                    )
-                                    if font_path is None:
-                                        from src.shared import constants
-
-                                        font_path = constants.DEFAULT_FONT_RELATIVE_PATH
-                                    calculated = calculate_auto_font_size(
-                                        text,
-                                        coords[2] - coords[0],
-                                        coords[3] - coords[1],
-                                        payload["textDirection"],
-                                        font_path,
-                                        line_spacing=payload["lineSpacing"],
-                                    )
-                                    if payload["fontSize"] != calculated:
-                                        renderable_change = True
-                                    payload["fontSize"] = calculated
+                            if current_style["autoFontSize"]:
+                                if payload["translatedText"].strip(): auto_fit_ids.append(document["bubbleId"])
                             else:
                                 value = current_style["fontSize"]
                                 if payload["fontSize"] != value:
@@ -2359,6 +2359,18 @@ class ContentRepository:
                                 renderable_change = True
                             payload[field] = value
                     document["payload"] = payload
+
+            if auto_fit_ids:
+                if self.storage is None:
+                    raise ValueError("editing assets are unavailable")
+                default_id = default_font_id if default_font_id is not _MISSING else page["default_font_id"]
+                fitted = NativeEditor.fit_payloads([{**documents[id]["payload"],
+                    "fontFamily": resolve_font_path(connection, self.storage, documents[id]["fontId"] or default_id)}
+                    for id in auto_fit_ids], fonts=NativeEditor(self.storage).font_files(connection))
+                for index, id in enumerate(auto_fit_ids):
+                    calculated = fitted[str(index)]
+                    renderable_change |= documents[id]["payload"]["fontSize"] != calculated
+                    documents[id]["payload"]["fontSize"] = calculated
 
             for document in documents.values():
                 document["payload"] = validate_bubble_payload(
@@ -2419,6 +2431,7 @@ class ContentRepository:
             page_values: dict[str, object] = {
                 "document_revision": new_revision,
                 "updated_at": _utcnow(),
+                "is_manually_annotated": True,
             }
             if mutations:
                 page_values["detection_state"] = "processed"
@@ -2494,6 +2507,7 @@ class ContentRepository:
                 pages.c.render_status,
                 pages.c.default_font_id,
                 pages.c.page_style_defaults_json,
+                pages.c.is_manually_annotated,
             ).where(pages.c.id == page_id)
         ).mappings().one_or_none()
         if page is None:
@@ -2537,6 +2551,7 @@ class ContentRepository:
             "renderStatus": page["render_status"],
             "defaultFontId": page["default_font_id"],
             "pageStyleDefaults": page_style,
+            "isManuallyAnnotated": bool(page["is_manually_annotated"]),
             "bubbles": bubble_documents,
         }
 
@@ -2600,6 +2615,7 @@ class ContentRepository:
             "renderedRevision": row["rendered_revision"],
             "renderStatus": row["render_status"],
             "detectionState": row["detection_state"],
+            "isManuallyAnnotated": bool(row["is_manually_annotated"]),
             "sourceUrl": url("source"),
             "thumbnailSourceUrl": url("thumbnail_source"),
             "cleanUrl": url("clean"),

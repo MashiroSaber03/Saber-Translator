@@ -232,7 +232,7 @@ function buildThumbnailItem(image: ImageData, index: number): ProductThumbnailGr
             <UiInput
               id="page-selection-input"
               :model-value="pageSelectionText"
-              :error="pageSelectionInputError"
+              :error="Boolean(pageSelectionInputError)"
               type="text"
               placeholder="例如：1,3,5-10"
               @update:model-value="updatePageSelectionText"

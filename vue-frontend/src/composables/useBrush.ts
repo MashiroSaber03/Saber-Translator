@@ -1,4 +1,4 @@
-import { computed, onUnmounted, ref } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { getPageDocument } from '@/api/v2/content'
 import {
   createMaskRepair,
@@ -17,10 +17,11 @@ import {
 } from '@/constants'
 import { TEXT_STYLE_DEFAULTS } from '@/defaults/textStyleDefaults'
 import type { InpaintMethod } from '@/types/bubble'
-import { encodeBinaryMaskPng } from '@/utils/binaryMaskPng'
+import { encodeBinaryMaskPng, encodeGrayscaleMaskPng, paintMaskPolygon } from '@/utils/binaryMaskPng'
 import { showToast } from '@/utils/toast'
 
-export type BrushMode = 'repair' | 'restore' | null
+export type BrushMode = 'repair' | 'restore' | 'clone' | null
+export type BrushShape = 'brush' | 'rectangle' | 'lasso'
 
 export interface BrushPosition {
   x: number
@@ -37,6 +38,7 @@ export interface BrushSurface {
 export interface BrushBounds {
   path: BrushPosition[]
   radius: number
+  polygon?: BrushPosition[]
 }
 
 export interface CurrentRepairSettings {
@@ -55,6 +57,16 @@ export function useBrush(callbacks?: BrushCallbacks) {
   const bubbleStore = useBubbleStore()
   const imageStore = useImageStore()
   const brushMode = ref<BrushMode>(null)
+  const cloneSource = ref<{ x: number; y: number } | null>(null)
+  let cloneOffset: [number, number] | null = null
+  watch(() => imageStore.currentImage?.id, () => {
+    // A page change cancels its unfinished stroke; never submit old coordinates to the new page.
+    isBrushPainting.value = false
+    exitBrushMode()
+    cloneSource.value = null
+    cloneOffset = null
+  }, { flush: 'sync' })
+  const brushShape = ref<BrushShape>('brush')
   const brushSize = ref(BRUSH_DEFAULT_SIZE)
   const isBrushPainting = ref(false)
   const isBrushSubmitting = ref(false)
@@ -73,7 +85,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
   const brushColor = computed(() => {
     const override = callbacks?.getBrushColor?.()
     if (override) return override
-    if (brushMode.value === 'repair') {
+    if (brushMode.value === 'repair' || brushMode.value === 'clone') {
       return 'rgba(76, 175, 80, 0.4)'
     }
     if (brushMode.value === 'restore') {
@@ -82,14 +94,15 @@ export function useBrush(callbacks?: BrushCallbacks) {
     return 'transparent'
   })
 
-  function enterBrushMode(mode: 'repair' | 'restore'): void {
+  function enterBrushMode(mode: Exclude<BrushMode, null>): void {
     if (brushMode.value === mode) return
     brushMode.value = mode
+    if (mode === 'clone') brushShape.value = 'brush'
     brushPath.value = []
   }
 
   function exitBrushMode(): void {
-    if (isBrushPainting.value) finishBrushPainting()
+    if (isBrushPainting.value && brushShape.value === 'brush') finishBrushPainting()
     brushMode.value = null
     isBrushPainting.value = false
     brushPath.value = []
@@ -97,7 +110,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
     removeBrushCanvas()
   }
 
-  function toggleBrushMode(mode: 'repair' | 'restore'): void {
+  function toggleBrushMode(mode: Exclude<BrushMode, null>): void {
     if (brushMode.value === mode) exitBrushMode()
     else enterBrushMode(mode)
   }
@@ -117,6 +130,11 @@ export function useBrush(callbacks?: BrushCallbacks) {
     if (!position) return
     event.preventDefault()
     event.stopPropagation()
+    if (brushMode.value === 'clone') {
+      if (event.altKey) { cloneSource.value = { x: Math.round(position.x), y: Math.round(position.y) }; cloneOffset = null; return }
+      if (!cloneSource.value) { showToast('先按住 Alt 点击干净背景取样，再涂抹要修补的位置', 'info'); return }
+      cloneOffset ??= [cloneSource.value.x - Math.round(position.x), cloneSource.value.y - Math.round(position.y)]
+    }
     isBrushPainting.value = true
     activeSurface = surface
     brushPath.value = []
@@ -132,6 +150,12 @@ export function useBrush(callbacks?: BrushCallbacks) {
     const position = getBrushPositionInImage(event, activeSurface, true)
     if (position) {
       const previous = brushPath.value[brushPath.value.length - 1]!
+      if (brushShape.value !== 'brush') {
+        if (brushShape.value === 'rectangle') brushPath.value.splice(1, 1, position)
+        else if (Math.hypot(position.x - previous.x, position.y - previous.y) * position.scale >= 2) brushPath.value.push(position)
+        drawSelection()
+        return
+      }
       const distance = Math.hypot(position.x - previous.x, position.y - previous.y)
       const steps = Math.ceil(distance / (brushSize.value / position.scale / 4))
       for (let step = 1; step <= steps; step++) {
@@ -212,7 +236,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
       inpaintMethod: TEXT_STYLE_DEFAULTS.inpaintMethod as InpaintMethod,
       fillColor: TEXT_STYLE_DEFAULTS.fillColor,
     }
-    const method = mode === 'restore'
+    const method = mode === 'clone' ? 'clone' : mode === 'restore'
       ? 'restore_source'
       : settings.inpaintMethod
     const mask = await createBinaryMask(width, height, bounds)
@@ -220,7 +244,9 @@ export function useBrush(callbacks?: BrushCallbacks) {
       const accepted = await createMaskRepair(
         pageId,
         mask,
-        method === 'solid'
+        method === 'clone'
+          ? { baseRevision: current.documentRevision, method, cloneOffset: [...cloneOffset!] as [number, number] }
+          : method === 'solid'
           ? {
               baseRevision: current.documentRevision,
               fillColor: settings.fillColor,
@@ -243,13 +269,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
             // eslint-disable-next-line no-unsafe-finally -- Identity mismatch must prevent adoption even after a failed repair.
             throw new Error(`页面 ${pageId} 的后端文档身份不匹配`)
           }
-          const bubbles = registerPageDocument(document)
-          imageStore.updateCurrentImage({
-            bubbleStates: bubbles,
-            documentRevision: document.documentRevision,
-            hasUnsavedChanges: false,
-          })
-          bubbleStore.setBubbles(bubbles, true)
+          registerPageDocument(document)
         }
       }
     }
@@ -285,9 +305,11 @@ export function useBrush(callbacks?: BrushCallbacks) {
     if (brushPath.value.length === 0) return null
     const scale = brushPath.value[0]?.scale || 1
     const radius = brushSize.value / 2 / scale
+    if (brushShape.value !== 'brush' && selectionPolygon().length < 3) return null
     return {
       path: [...brushPath.value],
       radius,
+      ...(brushShape.value !== 'brush' ? { polygon: selectionPolygon() } : {}),
     }
   }
 
@@ -330,6 +352,7 @@ export function useBrush(callbacks?: BrushCallbacks) {
   }
 
   function drawBrushStroke(position: BrushPosition): void {
+    if (brushShape.value !== 'brush') { drawSelection(); return }
     if (!brushCtx) return
     const radius = brushSize.value / 2 / (position.scale || 1)
     brushCtx.beginPath()
@@ -346,11 +369,39 @@ export function useBrush(callbacks?: BrushCallbacks) {
     brushCtx.fill()
   }
 
+  function selectionPolygon(): BrushPosition[] {
+    const points = brushPath.value
+    if (brushShape.value !== 'rectangle') return points.length >= 3 ? [...points] : []
+    const a = points[0], b = points[1]
+    return a && b && Math.abs(a.x - b.x) >= 1 && Math.abs(a.y - b.y) >= 1
+      ? [a, { ...a, x: b.x }, b, { ...b, x: a.x }] : []
+  }
+
+  function drawSelection(): void {
+    if (!brushCtx || !brushCanvas) return
+    brushCtx.clearRect(0, 0, brushCanvas.width, brushCanvas.height)
+    brushCtx.beginPath()
+    const points = selectionPolygon()
+    points.forEach((point, index) => brushCtx![index ? 'lineTo' : 'moveTo'](point.x * brushCanvasScaleX, point.y * brushCanvasScaleY))
+    brushCtx.closePath()
+    brushCtx.fillStyle = brushColor.value
+    brushCtx.fill('evenodd')
+    brushCtx.strokeStyle = brushColor.value
+    brushCtx.stroke()
+  }
+
   async function createBinaryMask(
     width: number,
     height: number,
     bounds: BrushBounds,
   ): Promise<Blob> {
+    if (bounds.polygon) {
+      const pixels = new Uint8Array(width * height)
+      // The polygon was frozen on mouse-up before releasing the preview canvas.
+      paintMaskPolygon(pixels, width, height, bounds.polygon, 255)
+      if (!pixels.includes(255)) throw new Error('选区没有包含图片像素')
+      return encodeGrayscaleMaskPng(width, height, pixels)
+    }
     return encodeBinaryMaskPng(
       width,
       height,
@@ -375,6 +426,8 @@ export function useBrush(callbacks?: BrushCallbacks) {
 
   return {
     brushMode,
+    cloneSource,
+    brushShape,
     brushSize,
     isBrushSubmitting,
     isBrushPainting,

@@ -210,6 +210,7 @@ withDefaults(defineProps<{
 }
 
 .ui-field--editor > .ui-field__header {
+  min-height: var(--ui-field-editor-header-min-height, 0);
   margin-bottom: 0;
 }
 

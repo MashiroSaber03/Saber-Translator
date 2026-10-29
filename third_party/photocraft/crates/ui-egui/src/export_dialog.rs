@@ -570,11 +570,15 @@ pub fn confirm(app: &mut PhotocraftApp, f: &Map<String, Value>) -> Result<Value,
     app.pick_save(&suggested, move |app, path| {
         let out = export_document(&doc, &f, None)?;
         let export = app.services.export.as_ref().ok_or("no exporter configured")?;
-        let (bytes, warnings) = export(&out, &path, &settings)?;
+        let (bytes, mut warnings) = export(&out, &path, &settings)?;
         let write = app.services.write.as_mut().ok_or("no writer configured")?;
         write(&path, &bytes)?;
         let template = "Exported {path} ({size})";
         app.ui.status = crate::i18n::fmt(tl!(template), &[("path", &path), ("size", &crate::sizing::human_bytes(bytes.len() as f64))]);
+        if app.services.host_save.is_some() {
+            // A flat download is a copy; the host still owns the layered page.
+            warnings.retain(|warning| !warning.ends_with(" layer(s) flattened; layers, masks and blend modes are not kept"));
+        }
         app.ui.status_error = false;
         let template = "Exported {path}";
         let what = crate::i18n::fmt(tl!(template), &[("path", &crate::file_open::display_name(&path))]);

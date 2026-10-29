@@ -13,7 +13,6 @@ import {
   registerPageDocument,
 } from '@/services/pageDocumentPersistence'
 import { useBubbleStore } from '@/stores/bubbleStore'
-import { useImageStore } from '@/stores/imageStore'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
 import type { BubbleState } from '@/types/bubble'
 import type { ImageData } from '@/types/image'
@@ -33,7 +32,6 @@ export function useEditWorkspaceProcessingActions(
   options: UseEditWorkspaceProcessingActionsOptions,
 ) {
   const bubbleStore = useBubbleStore()
-  const imageStore = useImageStore()
   const taskCenterStore = useTaskCenterStore()
   const { translateWithCurrentBubbles: translateWithBubbles } = useTranslation({
     observeProgress: false,
@@ -79,12 +77,6 @@ export function useEditWorkspaceProcessingActions(
       throw new Error(`页面 ${pageId} 的后端文档身份不匹配`)
     }
     const bubbles = registerPageDocument(document)
-    imageStore.updateCurrentImage({
-      bubbleStates: bubbles,
-      documentRevision: document.documentRevision,
-      hasUnsavedChanges: false,
-    })
-    bubbleStore.setBubbles(bubbles, true)
     const preferredIndex = preferredBubbleId
       ? bubbles.findIndex(bubble => bubble.backendBubbleId === preferredBubbleId)
       : -1
@@ -216,7 +208,6 @@ export function useEditWorkspaceProcessingActions(
       await persistCurrentDocument()
       const success = await translateWithBubbles()
       if (success) {
-        showToast('翻译任务已加入任务中心', 'success')
         options.selectFirstBubbleIfExists()
       }
     } catch (error) {

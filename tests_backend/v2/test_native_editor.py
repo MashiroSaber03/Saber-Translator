@@ -29,6 +29,132 @@ def import_page(platform):
     return result['page']['id']
 
 
+@pytest.mark.parametrize('mode', ['text', 'native', 'mask'])
+def test_manual_edit_marker_is_committed_with_each_editor_and_survives_reload(content_platform, mode):
+    from src.backend_v2.content.repository import ContentRepository
+
+    _, engine, repository, storage, _, _, chapter = content_platform
+    page = import_page(content_platform)
+    document = repository.get_page_document(page)
+    assert document['isManuallyAnnotated'] is False
+    with pytest.raises(ContentConflict):
+        repository.mutate_page_document(page_id=page, base_revision=document['documentRevision'] + 1,
+            mutations=[], page_style_defaults_patch={'fontSize': 25}, idempotency_key='failed-manual-marker')
+    assert repository.get_page_document(page)['isManuallyAnnotated'] is False
+    with pytest.raises(ValueError, match='command must mutate'):
+        repository.mutate_page_document(page_id=page, base_revision=document['documentRevision'],
+            mutations=[], idempotency_key='unchanged-manual-marker')
+    assert repository.get_page_document(page)['isManuallyAnnotated'] is False
+    command = dict(page_id=page, base_revision=document['documentRevision'], mutations=[],
+        idempotency_key='manual-marker')
+    if mode == 'text':
+        command['mutations'] = [dict(op='create', clientMutationId='manual',
+            fields=_bubble_fields(translatedText='手动校对'))]
+    elif mode == 'native':
+        with engine.connect() as connection:
+            command['editor_document'] = NativeEditor(storage).read_document(connection, page)
+    else:
+        with Image.new('L', (200, 200), 127) as mask, BytesIO() as output:
+            mask.putpixel((10, 10), 255)
+            mask.save(output, format='PNG')
+            command['user_mask'] = output.getvalue()
+    saved, replayed = repository.mutate_page_document(**command)
+    assert not replayed and saved['document']['isManuallyAnnotated'] is True
+    loaded = ContentRepository(engine)
+    assert loaded.get_page_document(page)['isManuallyAnnotated'] is True
+    assert loaded.get_page_summary(page)['isManuallyAnnotated'] is True
+    assert next(item for item in loaded.list_pages(chapter_id=chapter['id'])['items'] if item['id'] == page)['isManuallyAnnotated'] is True
+    again, replayed = repository.mutate_page_document(**command)
+    assert replayed and again == saved
+
+
+@pytest.mark.parametrize('direction', ['horizontal', 'vertical'])
+def test_font_fit_measures_character_scale_and_keeps_the_frame(tmp_path, direction):
+    from copy import deepcopy
+
+    font = Path(__file__).resolve().parents[2] / 'src/backend_v2/resources/fonts/simhei.ttf'
+    payload = _bubble_fields(translatedText='字', coords=[80, 60, 180, 160], fontSize=80,
+        textDirection=direction, strokeEnabled=False)
+    payload['richText'] = {'runs': [{'len': 3, 'style': {
+        'font_family': 'SimHei', 'size_pt': 80, 'horizontal_scale': 4, 'vertical_scale': 2,
+    }}], 'paragraphs': []}
+    original = deepcopy(payload)
+    size = NativeEditor.fit_payloads([{**payload, 'fontFamily': str(font)}])['0']
+    assert 1 <= size < 40
+    assert payload == original
+    for run in payload['richText']['runs']:
+        run['style']['size_pt'] *= size / 80
+    source, text = tmp_path / 'source.png', tmp_path / 'text.png'
+    Image.new('RGB', (256, 256), 'white').save(source)
+    projection = NativeEditor.invoke(dict(pageId='fit', source=str(source), fonts=[dict(id='font', path=str(font))],
+        bubbles=[dict(bubbleId='box', fontId='font', payload=payload)], text=str(text)))
+    assert projection['bubbles'][0]['payload']['coords'] == [80, 60, 180, 160]
+    with Image.open(text) as image:
+        bounds = image.getchannel('A').getbbox()
+    assert bounds is not None
+    assert bounds[2] - bounds[0] <= 100 and bounds[3] - bounds[1] <= 100
+
+
+def test_ordinary_history_restores_deleted_box_metadata_in_the_native_commit(content_platform):
+    from copy import deepcopy
+
+    page, original, _, _ = _text_page(content_platform)
+    _, _, repository, *_ = content_platform
+    _, binary = _project_asset(content_platform, page)
+    bubble_id = original['bubbles'][0]['bubbleId']
+    removed, _ = repository.mutate_page_document(page_id=page, base_revision=original['documentRevision'],
+        mutations=[dict(op='delete', clientMutationId='delete', bubbleId=bubble_id)], idempotency_key='delete-history')
+    snapshot = deepcopy(original)
+    # The metadata companion must never replace the native text/style projection.
+    snapshot['bubbles'][0]['payload']['translatedText'] = 'ignored companion text'
+    snapshot['bubbles'][0]['payload']['originalText'] = '恢复原文与 OCR 业务数据'
+    command = dict(page_id=page, base_revision=removed['document']['documentRevision'], mutations=[],
+        editor_document=binary, editor_metadata=snapshot, idempotency_key='restore-history')
+    restored, replayed = repository.mutate_page_document(**command)
+    assert not replayed
+    bubble = restored['document']['bubbles'][0]
+    assert bubble['bubbleId'] == bubble_id
+    assert bubble['payload']['originalText'] == '恢复原文与 OCR 业务数据'
+    assert bubble['payload']['translatedText'] == original['bubbles'][0]['payload']['translatedText']
+    again, replayed = repository.mutate_page_document(**command)
+    assert replayed and again == restored
+    invalid = deepcopy(snapshot)
+    invalid['bubbles'] = []
+    with pytest.raises(ValueError, match='文本框与工程不匹配'):
+        repository.mutate_page_document(page_id=page, base_revision=restored['document']['documentRevision'],
+            mutations=[], editor_document=binary, editor_metadata=invalid, idempotency_key='bad-history')
+    assert repository.get_page_document(page) == restored['document']
+
+
+@pytest.mark.parametrize('font_name', ['msyh.ttc', 'Arial_Unicode.ttf'])
+def test_editor_font_metadata_matches_native_first_face(tmp_path, font_name):
+    from src.backend_v2.rendering.fonts import character_font_style
+
+    font = Path(__file__).resolve().parents[2] / 'src/backend_v2/resources/fonts' / font_name
+    source = tmp_path / 'font-source.png'
+    Image.new('RGB', (100, 100), 'white').save(source)
+    result = NativeEditor.invoke(dict(pageId='face', source=str(source), fonts=[dict(id='font', path=str(font))],
+        bubbles=[dict(bubbleId='box', fontId='font', payload=_bubble_fields(translatedText='测试', coords=[0, 0, 100, 100]))]))
+    style = result['bubbles'][0]['payload']['richText']['runs'][0]['style']
+    assert {key: style[key] for key in character_font_style(str(font))} == character_font_style(str(font))
+
+
+def test_rich_editor_catalog_matches_every_bundled_native_face(tmp_path):
+    from src.backend_v2.rendering.fonts import character_font_style
+
+    root = Path(__file__).resolve().parents[2] / 'src/backend_v2/resources/fonts'
+    catalog = [dict(id=str(index), path=str(path)) for index, path in enumerate(sorted(root.iterdir()))
+        if path.suffix.lower() in {'.ttf', '.otf', '.ttc'}]
+    source = tmp_path / 'all-fonts.png'
+    Image.new('RGB', (100, 100), 'white').save(source)
+    result = NativeEditor.invoke(dict(pageId='faces', source=str(source), fonts=catalog,
+        bubbles=[dict(bubbleId=font['id'], fontId=font['id'], payload=_bubble_fields(translatedText='Aa文字', coords=[0, 0, 100, 100])) for font in catalog]))
+    for font, bubble in zip(catalog, result['bubbles'], strict=True):
+        expected = character_font_style(font['path'])
+        style = bubble['payload']['richText']['runs'][0]['style']
+        assert {key: style[key] for key in expected} == expected, font['path']
+
+
 @pytest.mark.parametrize('font_name', ['msyh.ttc', 'Arial_Unicode.ttf'])
 def test_native_emphasis_marks_stay_upright_after_project_reopen(tmp_path, font_name):
     marks = '!！?？¡¿؟‼⁇⁈⁉﹖﹗'
@@ -422,9 +548,132 @@ def _project_asset(platform, page):
     return row.id, storage.resolve_relative_path(row.relative_path).read_bytes()
 
 
+@pytest.mark.parametrize('direction', ['horizontal', 'vertical'])
+def test_ordinary_character_metrics_share_native_style_and_reopen(content_platform, tmp_path, direction):
+    from copy import deepcopy
+
+    page, document, _, fonts = _text_page(content_platform)
+    _, engine, repository, storage, *_ = content_platform
+    bubble_id = document['bubbles'][0]['bubbleId']
+    with engine.connect() as connection:
+        before = NativeEditor(storage).prepare(connection, page, render=True, text_only=True)
+    rich = deepcopy(document['bubbles'][0]['payload']['richText'])
+    for run in rich['runs']:
+        run['style'].update(tracking=150, horizontal_scale=0.65, vertical_scale=1.2)
+    saved, _ = repository.mutate_page_document(page_id=page, base_revision=document['documentRevision'],
+        mutations=[dict(op='patch', clientMutationId='metrics', bubbleId=bubble_id,
+            fields=dict(richText=rich, textDirection=direction))], idempotency_key='ordinary-metrics')
+    with engine.connect() as connection:
+        ordinary = NativeEditor(storage).prepare(connection, page, render=True, text_only=True)
+    assert ordinary.clean == before.clean
+    assert ordinary.user_mask == before.user_mask
+    assert ordinary.text != before.text
+    assert saved['document']['bubbles'][0]['payload']['coords'] == document['bubbles'][0]['payload']['coords']
+    # Fine editing and the translation sidebar must retain the ordinary controls'
+    # character data, even when they change another aspect of the same text.
+    ordinary.document = _project_asset(content_platform, page)[1]
+    fine = _native_edit(content_platform, page, ordinary, fonts, tmp_path,
+        dict(range=[1, 3], color='#ff0000', tracking=250))
+    sidebar, _ = repository.mutate_page_document(page_id=page, base_revision=fine['documentRevision'],
+        mutations=[], page_style_defaults_patch={'autoFontSize': False, 'fontSize': 36}, propagate_style_fields=['fontSize'],
+        idempotency_key='sidebar-metrics')
+    reopened = repository.get_page_document(page)
+    assert reopened == sidebar['document']
+    payload = reopened['bubbles'][0]['payload']
+    assert [run['style']['tracking'] for run in payload['richText']['runs']] == [150, 250, 150]
+    for run in payload['richText']['runs']:
+        assert run['style']['horizontal_scale'] == pytest.approx(0.65)
+        assert run['style']['vertical_scale'] == pytest.approx(1.2)
+        assert run['style']['size_pt'] == 36
+    with engine.connect() as connection:
+        result = NativeEditor(storage).prepare(connection, page, render=True, text_only=True)
+    assert result.bubbles[0]['payload']['richText'] == payload['richText']
+    assert result.clean == ordinary.clean
+    assert result.user_mask == ordinary.user_mask
+
+
+@pytest.mark.parametrize('direction', ['horizontal', 'vertical'])
+def test_redetection_reopens_mixed_typesetting_without_changing_render(tmp_path, direction):
+    from src.backend_v2.translation.pipeline import _preserve_detected_text
+
+    font = Path(__file__).resolve().parents[2] / 'src/backend_v2/resources/fonts/msyh.ttc'
+    fonts = [dict(id='font', path=str(font))]
+    source, initial, styled, refreshed = [tmp_path / name for name in ('source.png', 'initial.pcraft', 'styled.pcraft', 'refreshed.pcraft')]
+    before, after = tmp_path / 'before.png', tmp_path / 'after.png'
+    Image.new('RGB', (240, 320), 'white').save(source)
+    detected = _bubble_fields(translatedText='汉字排版！', coords=[20, 20, 220, 300],
+        fontSize=26, textDirection=direction, strokeWidth=1.5)
+    created = NativeEditor.invoke(dict(pageId='detect', source=str(source), fonts=fonts, output=str(initial),
+        bubbles=[dict(bubbleId='old', fontId='font', payload=detected)]))
+    edited = NativeEditor.invoke(dict(pageId='detect', project=str(initial), fonts=fonts, output=str(styled), text=str(before),
+        commands=[dict(id='type.setStyle', params=dict(layer=created['bubbles'][0]['layer'],
+            range=[0, 2], size=48, color='#d03040', fauxBold=True, tracking=150, horizontalScale=85))]))
+    previous = edited['bubbles'][0]['payload']
+    default_detection = _bubble_fields(coords=detected['coords'], textDirection=direction)
+    payload, = _preserve_detected_text([default_detection], (previous,))
+    result = NativeEditor.invoke(dict(pageId='detect', project=str(styled), fonts=fonts, output=str(refreshed), text=str(after),
+        bubbles=[dict(bubbleId='new', fontId='font', payload=payload)]))
+    assert result['bubbles'][0]['payload']['richText'] == previous['richText']
+    with Image.open(before) as x, Image.open(after) as y:
+        assert x.tobytes() == y.tobytes()
+    reopened = NativeEditor.invoke(dict(pageId='detect', project=str(refreshed), fonts=fonts))
+    assert reopened['bubbles'] == result['bubbles']
+
+
 def _manifest(payload):
     with ZipFile(BytesIO(payload)) as archive:
         return json.loads(archive.read('manifest.json'))
+
+
+@pytest.mark.parametrize('point', [False, True])
+def test_ordinary_duplicate_reuses_native_text_shape_transform_and_effects(content_platform, tmp_path, point):
+    from copy import deepcopy
+    from src.backend_v2.content.repository import ContentNotFound
+
+    page, document, initial, fonts = _text_page(content_platform)
+    source, edited = tmp_path / 'source.pcraft', tmp_path / 'edited.pcraft'
+    source.write_bytes(initial.document)
+    NativeEditor.invoke(dict(pageId=page, project=str(source), fonts=fonts, output=str(edited), commands=[
+        dict(id='type.edit', params=dict(layer=initial.bubbles[0]['layer'],
+            **({'point': [20, 80]} if point else {'box': [10, 10, 180, 180]}),
+            transform=[1.1, 0.1, 0.2, 0.9, 15, 25])),
+        dict(id='type.setStyle', params=dict(layer=initial.bubbles[0]['layer'], tracking=150, horizontalScale=70, verticalScale=125)),
+    ]))
+    repository = content_platform[2]
+    saved, _ = repository.mutate_page_document(page_id=page, base_revision=document['documentRevision'],
+        mutations=[], editor_document=edited.read_bytes(), idempotency_key='fine-source')
+    original = saved['document']['bubbles'][0]
+    fields = deepcopy(original['payload'])
+    fields.pop('autoTextDirection')
+    fields['fontId'] = original['fontId']
+    fields['coords'] = [value + 20 for value in fields['coords']]
+    command = dict(page_id=page, base_revision=saved['document']['documentRevision'],
+        mutations=[dict(op='create', clientMutationId='copy', sourceBubbleId=original['bubbleId'], fields=fields)],
+        idempotency_key='copy-native')
+    copied, replayed = repository.mutate_page_document(**command)
+    assert not replayed
+    again, replayed = repository.mutate_page_document(**command)
+    assert replayed and again == copied
+    copy_id = copied['mutationResults'][0]['bubbleId']
+    values = {value['bubbleId']: value for value in copied['document']['bubbles']}
+    assert values[copy_id]['payload']['richText'] == original['payload']['richText']
+    assert values[original['bubbleId']]['payload'] == original['payload']
+    manifest = _manifest(_project_asset(content_platform, page)[1])
+    page_meta = json.loads(dict(manifest['document']['metadata']['text'])['saber.page'])
+    layers = {layer['id']: layer for layer in manifest['document']['layers']}
+    old = layers[page_meta['bubbles'][original['bubbleId']]['layer']]
+    new = layers[page_meta['bubbles'][copy_id]['layer']]
+    for key in ('shape', 'runs', 'paragraphs', 'orientation', 'warp', 'overflow_visible'):
+        assert new['content'][key] == old['content'][key], key
+    assert new['effects'] == old['effects']
+    assert new['content']['transform']['m'][:4] == pytest.approx(old['content']['transform']['m'][:4])
+    assert new['content']['transform']['m'][4:] == pytest.approx([v + 20 for v in old['content']['transform']['m'][4:]])
+    assert all('sourceBubbleId' not in value for value in page_meta['bubbles'].values())
+    foreign = dict(command, base_revision=copied['document']['documentRevision'], idempotency_key='foreign-copy',
+        mutations=[dict(op='create', clientMutationId='foreign', sourceBubbleId=str(uuid.uuid4()), fields=fields)])
+    with pytest.raises(ContentNotFound, match='not found on this page'):
+        repository.mutate_page_document(**foreign)
+    assert repository.get_page_document(page) == copied['document']
 
 
 def test_sidebar_and_ordinary_same_value_styles_apply_to_all_characters(content_platform, tmp_path):

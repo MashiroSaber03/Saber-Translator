@@ -176,7 +176,13 @@ class PageRepairService:
         fill_color: str | None,
         idempotency_key: str,
         from_source: bool = False,
+        clone_offset: tuple[int, int] | None = None,
     ) -> tuple[dict[str, object], bool]:
+        if method == "clone":
+            if from_source or not isinstance(clone_offset, tuple) or len(clone_offset) != 2 or any(type(value) is not int or abs(value) > 100000 for value in clone_offset):
+                raise ValueError("clone requires a local mask and integer clone offset")
+        elif clone_offset is not None:
+            raise ValueError("clone offset only applies to clone repairs")
         if from_source and method == "restore_source":
             raise ValueError("restore_source only supports a local mask")
         base_revision, method, fill_color = (
@@ -234,6 +240,22 @@ class PageRepairService:
                 raise ValueError(
                     "repair mask dimensions must match the source image"
                 )
+            if clone_offset is not None:
+                from PIL import ImageChops, ImageDraw
+                dx, dy = clone_offset
+                valid = Image.new("L", mask.size)
+                try:
+                    left, top, right, bottom = max(0, -dx), max(0, -dy), min(mask.width, mask.width - dx), min(mask.height, mask.height - dy)
+                    if left >= right or top >= bottom:
+                        raise ValueError("采样区域位于图片之外，请重新取样")
+                    ImageDraw.Draw(valid).rectangle((left, top, right - 1, bottom - 1), fill=255)
+                    cropped = ImageChops.multiply(mask, valid)
+                    mask.close()
+                    mask = cropped
+                    if mask.getbbox() is None:
+                        raise ValueError("采样区域位于图片之外，请重新取样")
+                finally:
+                    valid.close()
             mask_payload = self._mask_payload(mask)
         finally:
             mask.close()
@@ -246,6 +268,7 @@ class PageRepairService:
             mask_checksum=mask_checksum,
             idempotency_key=idempotency_key,
             from_source=from_source,
+            clone_offset=clone_offset,
         )
         if replay is not None:
             return replay, True
@@ -278,6 +301,7 @@ class PageRepairService:
             mask_checksum=mask_checksum,
             idempotency_key=idempotency_key,
             from_source=from_source,
+            clone_offset=clone_offset,
         )
 
     def handle(
@@ -360,7 +384,7 @@ class PageRepairService:
         )
         if method != frozen_method:
             raise RuntimeError("repair plugin cannot change the frozen method")
-        if request.get("fromSource", False) and any(
+        if (request.get("fromSource", False) or method == "clone") and any(
             before.get(key) != value for key, value in (
                 ("sourceAssetId", source_asset_id),
                 ("inputAssetId", input_asset_id),
@@ -412,6 +436,17 @@ class PageRepairService:
                     repaired.paste(fill, mask=mask)
                 finally:
                     fill.close()
+            elif method == "clone":
+                offset = request.get("cloneOffset")
+                if not isinstance(offset, list) or len(offset) != 2 or any(type(value) is not int for value in offset):
+                    raise RuntimeError("clone offset is invalid")
+                repaired = parent.copy()
+                sampled = Image.new("RGB", parent.size)
+                try:
+                    sampled.paste(parent, (-offset[0], -offset[1]))
+                    repaired.paste(sampled, mask=mask)
+                finally:
+                    sampled.close()
             elif method == "restore_source":
                 repaired = parent.copy()
                 repaired.paste(source, mask=mask)
@@ -521,7 +556,7 @@ class PageRepairService:
                     pages.c.id == page_id,
                     pages.c.document_revision == revision,
                 )
-                .values(render_status="stale")
+                .values(render_status="stale", is_manually_annotated=True)
             )
             self.renders.upsert(
                 connection,
@@ -539,6 +574,7 @@ class PageRepairService:
         method_labels = {
             "solid": "纯色填充",
             "restore_source": "恢复原图",
+            "clone": "仿制图章",
             "lama_mpe": "LaMA MPE",
             "litelama": "LiteLaMA",
             "lama_manga": "LaMA Manga",

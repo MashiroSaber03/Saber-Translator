@@ -12,6 +12,7 @@ const props = withDefaults(defineProps<{
   decrementLabel?: string
   decrementText?: string
   disabled?: boolean
+  emptyValue?: number
   incrementLabel?: string
   incrementText?: string
   inputId?: string
@@ -19,6 +20,7 @@ const props = withDefaults(defineProps<{
   min?: number
   modelValue: number | null
   nullable?: boolean
+  placeholder?: string
   size?: 'lg' | 'md' | 'sm' | 'xs'
   step?: number
   spinStep?: number
@@ -31,12 +33,14 @@ const props = withDefaults(defineProps<{
   decrementLabel: '减少数值',
   decrementText: '',
   disabled: false,
+  emptyValue: undefined,
   incrementLabel: '增加数值',
   incrementText: '',
   inputId: undefined,
   max: undefined,
   min: undefined,
   nullable: false,
+  placeholder: undefined,
   size: 'sm',
   step: 1,
   title: '',
@@ -48,11 +52,12 @@ const emit = defineEmits<{
   change: [value: number | null]
 }>()
 
+const stepValue = computed(() => props.modelValue ?? props.emptyValue)
 const canDecrement = computed(() => !props.disabled && (
-  props.modelValue !== null && (props.min === undefined || props.modelValue > props.min)
+  stepValue.value !== undefined && (props.min === undefined || stepValue.value > props.min)
 ))
 const canIncrement = computed(() => !props.disabled && (
-  props.modelValue === null || props.max === undefined || props.modelValue < props.max
+  stepValue.value === undefined || props.max === undefined || stepValue.value < props.max
 ))
 const inputValue = computed(() => props.modelValue ?? '')
 
@@ -87,16 +92,21 @@ function restoreEmptyInput(event: FocusEvent): void {
 
 function stepBy(direction: -1 | 1): void {
   if ((direction < 0 && !canDecrement.value) || (direction > 0 && !canIncrement.value)) return
-  if (props.modelValue === null) {
+  if (stepValue.value === undefined) {
     commitValue(props.min ?? 0)
     return
   }
-  commitValue(Number((props.modelValue + (props.spinStep ?? props.step) * direction).toPrecision(12)))
+  commitValue(Number((stepValue.value + (props.spinStep ?? props.step) * direction).toPrecision(12)))
 }
 function handleArrow(event: KeyboardEvent): void {
   if (props.spinStep === undefined || !['ArrowUp', 'ArrowDown'].includes(event.key)) return
   event.preventDefault()
   stepBy(event.key === 'ArrowUp' ? 1 : -1)
+}
+
+function handleWheel(event: WheelEvent): void {
+  // Scrolling the surrounding panel must not step a focused number input.
+  ;(event.currentTarget as HTMLInputElement).blur()
 }
 </script>
 
@@ -126,6 +136,7 @@ function handleArrow(event: KeyboardEvent): void {
       class="ui-number-field__input"
       type="number"
       :model-value="inputValue"
+      :placeholder="placeholder"
       :min="min"
       :max="max"
       :step="step"
@@ -137,6 +148,7 @@ function handleArrow(event: KeyboardEvent): void {
       @update:model-value="handleInputValue"
       @blur="restoreEmptyInput"
       @keydown="handleArrow"
+      @wheel.passive="handleWheel"
     />
     <span v-if="spinStep !== undefined && !controls" class="ui-number-field__arrows">
       <UiButton variant="ghost" size="xs" :aria-label="incrementLabel" :disabled="!canIncrement" @click="stepBy(1)">▴</UiButton>
@@ -182,6 +194,8 @@ function handleArrow(event: KeyboardEvent): void {
 }
 
 .ui-number-field__input {
+  flex: 1 1 auto;
+  min-width: 0;
   width: var(--ui-number-field-input-width, var(--internal-ui-number-field-input-width));
   text-align: var(--ui-number-field-text-align, center);
 }
@@ -198,6 +212,8 @@ function handleArrow(event: KeyboardEvent): void {
   --ui-button-icon-width: var(--ui-number-field-control-width, 28px);
   --ui-button-icon-height: var(--ui-number-field-control-height, 28px);
 }
+
+.ui-number-field--with-controls > .ui-button { flex-shrink: 0; }
 
 .ui-number-field__control-text {
   font-size: 13px;

@@ -27,11 +27,13 @@ defineProps<{
   isDownloading: boolean
   isImporting: boolean
   textExportFormat: TextExportFormat
+  editModeAvailable?: boolean
 }>()
 
 const emit = defineEmits<{
   (e: 'downloadAll'): void
   (e: 'downloadCurrent'): void
+  (e: 'downloadPsd'): void
   (e: 'exportText'): void
   (e: 'importText', file: File): void
   (e: 'update:downloadFormat', value: DownloadFormat): void
@@ -100,6 +102,7 @@ function handleImportFile(files: File[]): void {
           >
             下载当前页
           </UiButton>
+          <UiButton variant="secondary" :disabled="!hasImages || isDownloading || isImporting || editModeAvailable === false" :title="editModeAvailable === false ? '当前账户未开放编辑模式，无法导出 PSD' : '导出当前页，保留文字及修复背景图层，可在 PS 中继续编辑'" @click="emit('downloadPsd')">当前页 PSD</UiButton>
           <div class="result-export-actions__format-action">
             <div class="result-export-actions__select">
               <UiSelect

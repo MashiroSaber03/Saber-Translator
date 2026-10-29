@@ -506,10 +506,22 @@ def _translation_constraint_warnings(
     return warnings
 
 
-_DETECTION_TEXT_FIELDS = (
+_DETECTION_PRESERVED_FIELDS = (
     "originalText",
     "translatedText",
     "textboxText",
+    "richText",
+    "fontSize",
+    "textColor",
+    "textDirection",
+    "lineSpacing",
+    "inlineAlign",
+    "blockAlign",
+    "strokeEnabled",
+    "strokeColor",
+    "strokeWidth",
+    "fillColor",
+    "inpaintMethod",
 )
 
 
@@ -556,8 +568,18 @@ def _preserve_detected_text(
     *,
     minimum_iou: float = 0.5,
 ) -> list[dict[str, Any]]:
-    """Keep published text while re-detection replaces bubble geometry."""
+    """Keep published text/typesetting while re-detection replaces geometry."""
 
+    # Typesetting may move or resize coords. The stored detection polygon still
+    # identifies the source text; manually added frames fall back to coords.
+    source_bounds = []
+    for previous in existing:
+        polygon = previous.get("polygon")
+        if polygon:
+            xs, ys = zip(*polygon)
+            source_bounds.append([min(xs), min(ys), max(xs), max(ys)])
+        else:
+            source_bounds.append(previous.get("coords"))
     unmatched = set(range(len(existing)))
     reconciled: list[dict[str, Any]] = []
     for payload in detected:
@@ -566,7 +588,7 @@ def _preserve_detected_text(
         for index in sorted(unmatched):
             overlap = _box_iou(
                 payload.get("coords"),
-                existing[index].get("coords"),
+                source_bounds[index],
             )
             if overlap >= minimum_iou and (
                 best_index is None or overlap > best_iou
@@ -577,7 +599,7 @@ def _preserve_detected_text(
         if best_index is not None:
             previous = existing[best_index]
             unmatched.remove(best_index)
-            for field in _DETECTION_TEXT_FIELDS:
+            for field in _DETECTION_PRESERVED_FIELDS:
                 if field in previous:
                     current[field] = previous[field]
         reconciled.append(current)

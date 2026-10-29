@@ -9,6 +9,8 @@ import { showToast } from '@/utils/toast'
 import type { MaskOverlay } from '@/utils/maskPreview'
 import BubbleEditor from './BubbleEditor.vue'
 import BubbleOverlay from './BubbleOverlay.vue'
+import type { TextStyleTemplate } from './textStyleClipboard'
+import type { RunStyle } from './richTextDocument'
 
 type ViewMode = 'dual' | 'original' | 'translated'
 type LayoutMode = 'horizontal' | 'vertical'
@@ -127,7 +129,10 @@ const emit = defineEmits<{
   bubbleResizeEnd: [index: number, newCoords: BubbleCoords]
   bubbleRotateEnd: [index: number, angle: number]
   bubbleUpdate: [updates: Partial<BubbleState>]
-  applyToAllStyle: [updates: Partial<BubbleState>]
+  formatText: [style: RunStyle, reset?: boolean]
+  fitText: []
+  moveText: [dx: number, dy: number]
+  applyStyle: [scope: 'selected' | 'page', template?: TextStyleTemplate]
   ocrRecognize: [index: number]
   reTranslate: [index: number]
   pickColor: [field: BubbleColorField]
@@ -142,6 +147,7 @@ const translatedWrapperRef = ref<HTMLElement | null>(null)
 const translatedImageRef = ref<HTMLImageElement | null>(null)
 const translatedPanelRef = ref<HTMLElement | null>(null)
 const editPanelRef = ref<HTMLElement | null>(null)
+const bubbleEditorRef = ref<InstanceType<typeof BubbleEditor>>()
 const originalPanelCollapsed = ref(false)
 const translatedPanelCollapsed = ref(false)
 const originalMaskRef = ref<HTMLCanvasElement | null>(null)
@@ -163,6 +169,8 @@ watch([() => props.maskOverlay, originalMaskRef, translatedMaskRef], ([overlay])
 }, { flush: 'post' })
 
 defineExpose({
+  focusText: () => bubbleEditorRef.value?.focusText(),
+  applyPickedColor: (field: string, value: string) => bubbleEditorRef.value?.applyPickedColor(field, value) ?? false,
   originalViewportRef,
   originalWrapperRef,
   originalImageRef,
@@ -373,6 +381,7 @@ defineExpose({
     </div>
 
     <div ref="editPanelRef" class="edit-image-comparison__editor-panel">
+      <slot name="editor-header" />
       <div
         class="edit-image-comparison__editor-resize-handle edit-image-comparison__editor-resize-handle--vertical"
         @mousedown="emit('startPanelResize', $event)"
@@ -380,13 +389,19 @@ defineExpose({
         ⋮⋮⋮
       </div>
       <BubbleEditor
+        ref="bubbleEditorRef"
         :bubble="selectedBubble ?? null"
         :bubble-index="selectedBubbleIndex"
         :is-ocr-loading="isOcrLoading"
         :is-translate-loading="isTranslateLoading"
         :disabled="isBusy"
         @update="emit('bubbleUpdate', $event)"
-        @apply-to-all-style="emit('applyToAllStyle', $event)"
+        :selected-count="selectedIndices.length || 1"
+        :selected-bubbles="selectedIndices.flatMap(index => bubbles[index] ? [bubbles[index]!] : [])"
+        @format-text="(style, reset) => emit('formatText', style, reset)"
+        @fit-text="emit('fitText')"
+        @move-text="(dx, dy) => emit('moveText', dx, dy)"
+        @apply-style="(scope, template) => emit('applyStyle', scope, template)"
         @ocr-recognize="emit('ocrRecognize', $event)"
         @re-translate="emit('reTranslate', $event)"
         @pick-color="emit('pickColor', $event)"
@@ -597,10 +612,12 @@ defineExpose({
 }
 
 .edit-image-comparison__editor-panel {
+  flex-direction: column;
   display: flex;
-  flex: 0 0 600px;
-  flex-direction: row;
-  min-width: 520px;
+  flex: 0 0 420px;
+  position: relative;
+  padding-left: 10px;
+  min-width: 340px;
   min-height: 0;
   max-width: 65%;
   overflow: hidden;
@@ -622,6 +639,8 @@ defineExpose({
 }
 
 .edit-image-comparison__editor-resize-handle--vertical {
+  position: absolute;
+  inset: 0 auto 0 0;
   width: 10px;
   cursor: ew-resize;
   writing-mode: vertical-rl;
@@ -678,6 +697,7 @@ defineExpose({
 }
 
 .edit-image-comparison--layout-vertical .edit-image-comparison__editor-panel {
+  padding: 10px 0 0;
   flex: 0 0 auto;
   flex-direction: column;
   width: 100%;
@@ -716,6 +736,7 @@ defineExpose({
   }
 
   .edit-image-comparison__editor-panel {
+    padding: 10px 0 0;
     flex: 0 0 auto;
     flex-direction: column;
     width: 100%;

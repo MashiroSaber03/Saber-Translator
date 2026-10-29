@@ -1197,6 +1197,7 @@ class StyleApplyWorkerService:
                     .values(
                         default_font_id=default_font_id,
                         page_style_defaults_json=canonical_json(new_defaults),
+                        is_manually_annotated=True,
                         document_revision=new_revision,
                         rendered_revision=(
                             new_revision
@@ -1474,6 +1475,7 @@ class TextImportWorkerService:
                 )
                 .values(
                     document_revision=new_revision,
+                    is_manually_annotated=True,
                     rendered_revision=(
                         new_revision
                         if (

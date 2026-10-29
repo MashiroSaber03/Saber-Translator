@@ -230,9 +230,16 @@ fn set_bubbles_inner(session: &mut Session, bubbles: &[Value], fonts: &Value) ->
     for bubble in bubbles {
         let id = bubble.get("bubbleId").and_then(Value::as_str).ok_or("缺少文字对象 ID")?;
         let payload = bubble.get("payload").ok_or("缺少文字数据")?;
-        let prior = previous.get(id);
-        let existing =
+        let source = bubble.get("sourceBubbleId").and_then(Value::as_str);
+        let prior = previous.get(id).or_else(|| source.and_then(|id| previous.get(id)));
+        let mut existing =
             prior.and_then(|v| v.get("layer")).and_then(Value::as_u64).filter(|id| active(session).ok().and_then(|d| d.layer(LayerId(*id))).is_some());
+        if !previous.contains_key(id) && source.is_some() {
+            let original = existing.ok_or("复制的文字层不存在")?;
+            existing = Some(session.execute("layer.duplicate", json!({"layer":original,"inPlace":true,
+                "name":format!("译文 {}", entries.len()+1)})).map_err(|e| e.to_string())?
+                .get("layer").and_then(Value::as_u64).ok_or("无法复制文字层")?);
+        }
         let coords = payload.get("coords").and_then(Value::as_array).filter(|v| v.len() == 4).ok_or("无效的文本框")?;
         let at = |i: usize| coords.get(i).and_then(Value::as_f64).unwrap_or(0.0);
         let x = at(0) + payload.pointer("/position/x").and_then(Value::as_f64).unwrap_or(0.0);
@@ -466,6 +473,51 @@ fn text_bounds(t: &photocraft_doc::TextLayer, dpi: f32) -> [f64; 4] {
     photocraft_text::shared().lock().unwrap_or_else(|e| e.into_inner()).layout(t, dpi).bounds().unwrap_or([0.0, 0.0, 1.0, 1.0]).map(f64::from)
 }
 
+/// Read-only font fitting uses the renderer's shaping, wrapping and glyph bounds.
+/// Scale a copy so rich runs keep their relative sizes; never change repair frames.
+pub fn fit_text(session: &Session, ids: &[String], minimum: u32, maximum: u32) -> Result<Value> {
+    let doc = active(session)?;
+    let projection = project(session)?;
+    let mut engine = photocraft_text::shared().lock().unwrap_or_else(|e| e.into_inner());
+    let mut fitted = Vec::new();
+    for bubble in projection.get("bubbles").and_then(Value::as_array).into_iter().flatten() {
+        let Some(id) = bubble.get("bubbleId").and_then(Value::as_str).filter(|id| ids.iter().any(|wanted| wanted == id)) else { continue };
+        let Some(layer) = bubble.get("layer").and_then(Value::as_u64).and_then(|id| doc.layer(LayerId(id))) else { continue };
+        let LayerContent::Text(text) = &layer.content else { continue };
+        if text.text.trim().is_empty() { continue; }
+        let bounds = match text.shape {
+            photocraft_doc::text::TextShape::Box { x, y, width, height } => [x, y, x + width, y + height],
+            _ => engine.layout(text, doc.resolution_dpi).bounds().unwrap_or([0.0, 0.0, 1.0, 1.0]),
+        };
+        let width = bounds[2] - bounds[0];
+        let height = bounds[3] - bounds[1];
+        let reference = bubble.pointer("/payload/fontSize").and_then(Value::as_f64).unwrap_or(1.0).max(1.0) as f32;
+        let mut low = minimum.clamp(1, 1000);
+        let mut high = maximum.clamp(low, 1000);
+        let mut best = low;
+        while low <= high {
+            let size = low + (high - low) / 2;
+            let factor = size as f32 / reference;
+            let mut candidate = text.clone();
+            candidate.runs = text.char_runs();
+            candidate.overflow_visible = true;
+            for run in &mut candidate.runs {
+                run.style.size_pt *= factor;
+                run.style.leading_pt = run.style.leading_pt.map(|leading| leading * factor);
+            }
+            let layout = engine.layout(&candidate, doc.resolution_dpi);
+            let logical = layout.bounds().unwrap_or([0.0; 4]);
+            let ink = photocraft_text::render::ink_rect(&layout, &Default::default());
+            let fits = (logical[2] - logical[0]).max(ink.width() as f32) <= width + 0.5
+                && (logical[3] - logical[1]).max(ink.height() as f32) <= height + 0.5;
+            if fits { best = size; low = size.saturating_add(1); }
+            else { high = size.saturating_sub(1); }
+        }
+        fitted.push(json!({"bubbleId":id,"fontSize":best}));
+    }
+    Ok(json!(fitted))
+}
+
 fn text_id(page: &str, layer: u64) -> String {
     let hash = blake3::hash(format!("{page}:{layer}").as_bytes()).to_hex().to_string();
     format!("{}-{}-4{}-a{}-{}", &hash[..8], &hash[8..12], &hash[13..16], &hash[17..20], &hash[20..32])
@@ -574,6 +626,11 @@ pub fn png(session: &Session, background: bool) -> Result<Vec<u8>> {
         }
     }
     photocraft_io::export(&doc, "page.png", &Default::default()).map(|r| r.bytes).map_err(|e| e.to_string())
+}
+
+/// Project export uses the same editable layers and writer as the web editor.
+pub fn psd(session: &Session) -> Result<Vec<u8>> {
+    photocraft_io::export(active(session)?, "page.psd", &Default::default()).map(|r| r.bytes).map_err(|e| e.to_string())
 }
 
 // Only the host-owned background is flattened; other layers stay editable.
@@ -685,6 +742,45 @@ mod tests {
     }
     fn fonts() -> Value {
         json!({"font-1":"Inter"})
+    }
+
+    #[test]
+    fn font_fit_measures_rich_runs_without_changing_the_document_or_frame() {
+        for direction in ["horizontal", "vertical"] {
+            let mut session = session();
+            let mut initial = bubble();
+            initial["payload"]["coords"] = json!([10, 10, 110, 110]);
+            initial["payload"]["translatedText"] = json!("WW\nWW");
+            initial["payload"]["textDirection"] = json!(direction);
+            initial["payload"]["richText"] = json!({"runs":[
+                {"len":2,"style":{"font_family":"Inter","size_pt":18,"horizontal_scale":4,"tracking":250}},
+                {"len":3,"style":{"font_family":"Inter","size_pt":36,"horizontal_scale":2,"vertical_scale":2}}
+            ],"paragraphs":[]});
+            set_bubbles(&mut session, &[initial], &fonts()).unwrap();
+            let before = snapshot(&session).unwrap();
+            let result = fit_text(&session, &["text-1".into()], 1, 80).unwrap();
+            assert_eq!(snapshot(&session).unwrap(), before, "measurement is read-only");
+            let size = result[0]["fontSize"].as_f64().unwrap();
+            assert!(size < 30.0, "wide/tall runs cannot be sized by character count");
+            let mut projected = project(&session).unwrap()["bubbles"][0].clone();
+            let frame = projected["payload"]["coords"].clone();
+            let factor = size / projected["payload"]["fontSize"].as_f64().unwrap();
+            for run in projected["payload"]["richText"]["runs"].as_array_mut().unwrap() {
+                run["style"]["size_pt"] = json!(run["style"]["size_pt"].as_f64().unwrap() * factor);
+            }
+            set_bubbles(&mut session, &[projected], &fonts()).unwrap();
+            let projected = project(&session).unwrap();
+            assert_eq!(projected["bubbles"][0]["payload"]["coords"], frame);
+            let layer = projected["bubbles"][0]["layer"].as_u64().unwrap();
+            let doc = active(&session).unwrap();
+            let LayerContent::Text(text) = &doc.layer(LayerId(layer)).unwrap().content else { panic!("text") };
+            let layout = photocraft_text::shared().lock().unwrap_or_else(|e| e.into_inner()).layout(text, doc.resolution_dpi);
+            let logical = layout.bounds().unwrap();
+            let ink = photocraft_text::render::ink_rect(&layout, &Default::default());
+            assert!((logical[2] - logical[0]).max(ink.width() as f32) <= 100.5);
+            assert!((logical[3] - logical[1]).max(ink.height() as f32) <= 100.5);
+            assert_eq!(text.char_runs()[1].style.size_pt / text.char_runs()[0].style.size_pt, 2.0);
+        }
     }
 
     #[test]

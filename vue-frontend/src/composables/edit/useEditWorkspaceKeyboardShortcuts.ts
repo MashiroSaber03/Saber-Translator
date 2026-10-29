@@ -9,9 +9,14 @@ interface UseEditWorkspaceKeyboardShortcutsOptions {
   hasSelection: Ref<boolean>
   exitEditMode: () => Promise<void> | void
   deleteSelectedBubbles: () => void
+  duplicateSelectedBubbles?: () => void
+  selectAllBubbles?: () => void
+  nudgeSelectedText?: (dx: number, dy: number) => void
   goToPreviousImage: () => void
   goToNextImage: () => void
-  applyAndNext: () => Promise<void> | void
+  applyAndNext: (focusText?: boolean) => Promise<void> | void
+  save?: () => unknown
+  selectBubble?: (delta: number, focusText: boolean) => void
   toggleBrushMode: (mode: 'repair' | 'restore') => void
   exitBrushMode: () => void
   zoomIn: () => void
@@ -20,6 +25,8 @@ interface UseEditWorkspaceKeyboardShortcutsOptions {
   maskActive?: Readonly<Ref<boolean>>
   exitMaskMode?: () => void
   applyMask?: () => Promise<void>
+  undo?: () => void
+  redo?: () => void
 }
 
 export function useEditWorkspaceKeyboardShortcuts(options: UseEditWorkspaceKeyboardShortcutsOptions) {
@@ -42,6 +49,7 @@ export function useEditWorkspaceKeyboardShortcuts(options: UseEditWorkspaceKeybo
   function handleKeyDown(event: KeyboardEvent): void {
     if (options.enabled?.value === false) return
     if (event.defaultPrevented) return
+    if (event.isComposing || event.keyCode === 229) return
     if (options.isPickingColor.value) {
       if (event.key === 'Escape') {
         options.cancelColorPick()
@@ -54,10 +62,61 @@ export function useEditWorkspaceKeyboardShortcuts(options: UseEditWorkspaceKeybo
       }
       return
     }
-    if (isEditableTarget(event.target)) return
+    const editable = isEditableTarget(event.target)
+    if (event.target instanceof Element && event.target.closest('[role="dialog"]')) return
+    const textInput = event.target instanceof Element && !!event.target.closest('textarea, [contenteditable="true"]')
+    if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 's' && options.save) {
+      options.save()
+      event.preventDefault()
+      return
+    }
+    if ((!editable || textInput) && event.ctrlKey && !event.altKey && !event.shiftKey && event.key === 'Enter' && !options.brushMode.value) {
+      if (options.maskActive?.value) void options.applyMask?.()
+      else void options.applyAndNext(Boolean(textInput))
+      event.preventDefault()
+      return
+    }
+    if ((!editable || textInput) && event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && !options.maskActive?.value && !options.brushMode.value
+        && (event.key === 'ArrowDown' || event.key === 'ArrowUp') && options.selectBubble) {
+      options.selectBubble(event.key === 'ArrowDown' ? 1 : -1, Boolean(textInput))
+      event.preventDefault()
+      return
+    }
+    if (editable) return
+    const canEditText = !options.maskActive?.value && !options.brushMode.value && options.hasSelection.value
+    if ((event.ctrlKey || event.metaKey) && !event.altKey) {
+      const key = event.key.toLowerCase()
+      if (key === 'a' && !event.shiftKey && !options.maskActive?.value && !options.brushMode.value && options.selectAllBubbles) {
+        options.selectAllBubbles()
+        event.preventDefault()
+        return
+      }
+      if (key === 'd' && !event.shiftKey && canEditText && options.duplicateSelectedBubbles) {
+        if (!event.repeat) options.duplicateSelectedBubbles()
+        event.preventDefault()
+        return
+      }
+      if (key === 'z' || key === 'y') {
+        if (key === 'y' || event.shiftKey) options.redo?.()
+        else options.undo?.()
+        event.preventDefault()
+        return
+      }
+    }
     if ((event.ctrlKey || event.metaKey || event.altKey) &&
         !(event.key === 'Enter' && event.ctrlKey && !event.metaKey && !event.altKey)) return
     switch (event.key) {
+      case 'ArrowLeft':
+      case 'ArrowRight':
+      case 'ArrowUp':
+      case 'ArrowDown': {
+        if (!canEditText || !options.nudgeSelectedText) break
+        const step = event.shiftKey ? 10 : 1
+        options.nudgeSelectedText(event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0,
+          event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0)
+        event.preventDefault()
+        break
+      }
       case 'Escape':
         if (options.brushMode.value) {
           options.exitBrushMode()
@@ -86,13 +145,6 @@ export function useEditWorkspaceKeyboardShortcuts(options: UseEditWorkspaceKeybo
       case 'D':
         if (!options.brushMode.value) {
           void options.goToNextImage()
-          event.preventDefault()
-        }
-        break
-      case 'Enter':
-        if (event.ctrlKey && !options.brushMode.value) {
-          if (options.maskActive?.value) void options.applyMask?.()
-          else void options.applyAndNext()
           event.preventDefault()
         }
         break
@@ -132,7 +184,15 @@ export function useEditWorkspaceKeyboardShortcuts(options: UseEditWorkspaceKeybo
     event.preventDefault()
   }
 
+  // Only these explicit combinations precede the rich-input library. Ordinary
+  // keys still bubble after dropdowns, popovers and the input handle them.
+  function handleShortcutCapture(event: KeyboardEvent): void {
+    if (((event.ctrlKey || event.metaKey) && (event.key === 'Enter' || event.key.toLowerCase() === 's'))
+      || (event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown'))) handleKeyDown(event)
+  }
+
   return {
+    handleShortcutCapture,
     cancelBrushShortcut,
     handleKeyDown,
     handleKeyUp,

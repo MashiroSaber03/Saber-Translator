@@ -183,6 +183,7 @@ function handleImportText(file: File): void {
     <DetectedTextPanel :items="detectedTexts" />
 
     <ExportActions
+      :edit-mode-available="editModeAvailable"
       :download-format="downloadFormat"
       :download-progress="downloadProgress"
       :download-progress-text="downloadProgressText"
@@ -193,6 +194,7 @@ function handleImportText(file: File): void {
       :text-export-format="textExportFormat"
       @download-all="handleDownloadAll"
       @download-current="handleDownloadCurrent"
+      @download-psd="exportImport.downloadCurrentPsd"
       @export-text="handleExportText"
       @import-text="handleImportText"
       @update:download-format="updateDownloadFormat"

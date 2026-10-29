@@ -31,7 +31,7 @@ function createOptions() {
   const image = { id: 'page-1', chapterId: 'chapter-1', fileName: 'page.png' }
   return {
     bubbleStore: {
-      clearBubblesLocal: vi.fn(),
+      clearSelection: vi.fn(),
     },
     imageStore: {
       currentImage: image,
@@ -160,7 +160,7 @@ describe('useTranslateViewActions', () => {
     expect(mocks.deletePage).toHaveBeenCalledWith('page-1')
     expect(mocks.discardPageDocument).toHaveBeenCalledWith('page-1')
     expect(options.imageStore.clearImages).toHaveBeenCalledTimes(2)
-    expect(options.bubbleStore.clearBubblesLocal).toHaveBeenCalledTimes(2)
+    expect(options.bubbleStore.clearSelection).toHaveBeenCalledTimes(2)
     expect(mocks.clearChapterPages).toHaveBeenCalledWith('chapter-1')
     expect(options.translateInit.initializeBookChapterContext).toHaveBeenCalledTimes(2)
     expect(browserConfirm).not.toHaveBeenCalled()
@@ -237,7 +237,7 @@ describe('useTranslateViewActions', () => {
     expect(mocks.deletePage).toHaveBeenCalledWith('page-1')
     expect(mocks.showToast).toHaveBeenCalledWith('图片已删除', 'success')
     expect(options.imageStore.clearImages).toHaveBeenCalledOnce()
-    expect(options.bubbleStore.clearBubblesLocal).toHaveBeenCalledOnce()
+    expect(options.bubbleStore.clearSelection).toHaveBeenCalledOnce()
     expect(mocks.showToast).toHaveBeenCalledWith(
       '刷新后端章节失败：reload failed',
       'error',

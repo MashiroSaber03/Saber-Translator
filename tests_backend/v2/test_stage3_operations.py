@@ -367,12 +367,17 @@ def test_active_page_operation_blocks_concurrent_document_mutation(
         )
 
 
+@pytest.mark.parametrize("manual_marker", [False, True])
 def test_page_detect_publishes_precise_mask_and_keeps_page_state_consistent(
-    operation_platform,
+    operation_platform, manual_marker,
 ) -> None:
     platform = operation_platform
     repository = OperationRepository(platform["engine"])
     with platform["engine"].begin() as connection:
+        connection.execute(
+            update(pages).where(pages.c.id == platform["page_id"])
+            .values(is_manually_annotated=manual_marker)
+        )
         connection.execute(
             update(bubbles)
                 .where(bubbles.c.id == platform["bubble_id"])
@@ -451,6 +456,9 @@ def test_page_detect_publishes_precise_mask_and_keeps_page_state_consistent(
             )
         ).mappings().one()
     assert page == (2, "processed", None, "not_rendered")
+    assert ContentRepository(platform["engine"]).get_page_document(
+        platform["page_id"]
+    )["isManuallyAnnotated"] is manual_marker
     assert bubble_payload["originalText"] == "保留原文"
     assert bubble_payload["autoTextDirection"] == "horizontal"
     assert result["textMaskAssetId"] == mask_row["asset_id"]
@@ -1196,6 +1204,8 @@ def test_page_repair_advances_revision_replays_without_new_mask_and_renders(
         engine=platform["engine"],
         repository=repository,
     )
+    with platform["engine"].connect() as connection:
+        assert connection.execute(select(pages.c.is_manually_annotated).where(pages.c.id == platform["page_id"])).scalar_one() is False
     accepted, replayed = service.create_for_bubble(
         page_id=platform["page_id"],
         bubble_id=platform["bubble_id"],
@@ -1253,6 +1263,8 @@ def test_page_repair_advances_revision_replays_without_new_mask_and_renders(
             )
         ).scalar_one()
     assert page == "stale"
+    with platform["engine"].connect() as connection:
+        assert connection.execute(select(pages.c.is_manually_annotated).where(pages.c.id == platform["page_id"])).scalar_one() is True
     assert render == 2
     with Image.open(platform["data_root"] / clean_path) as repaired:
         assert repaired.getpixel((10, 10)) == (255, 0, 0)
@@ -1615,6 +1627,8 @@ def test_failed_page_repair_sets_explicit_page_state(operation_platform) -> None
         ).one()
     assert render[:4] == ("failed", None, None, None)
     assert json.loads(render.error_json)["code"] == "PAGE_REPAIR_FAILED"
+    with platform["engine"].connect() as connection:
+        assert connection.execute(select(pages.c.is_manually_annotated).where(pages.c.id == platform["page_id"])).scalar_one() is False
 
 
 def test_page_repair_closes_result_when_asset_publication_fails(

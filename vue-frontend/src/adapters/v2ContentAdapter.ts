@@ -313,6 +313,7 @@ export function pageSummaryToImage(page: V2PageSummary): ImageDataLoadInput {
     bubbleStates: null,
     translationStatus: status,
     hasUnsavedChanges: false,
+    isManuallyAnnotated: page.isManuallyAnnotated ?? false,
   }
 }
 

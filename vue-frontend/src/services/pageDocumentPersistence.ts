@@ -1,4 +1,5 @@
 import { createUuid } from '@/utils/uuid'
+import { apiClient } from '@/api/client'
 import {
   mutatePageDocument,
   type V2PageDocument,
@@ -151,6 +152,7 @@ function mutationsFor(
     if (!id) {
       mutations.push({
         clientMutationId: bubble.clientMutationId!,
+        ...(bubble.duplicateSourceId ? { sourceBubbleId: bubble.duplicateSourceId } : {}),
         fields,
         op: 'create',
       })
@@ -199,6 +201,12 @@ function mergeSavedFields(desired: BubbleState[], sent: BubbleState[], saved: Bu
     const before = sentById.get(bubble.backendBubbleId)
     const after = savedById.get(bubble.backendBubbleId)
     if (!before || !after) continue
+    const dx = bubble.coords[0] - before.coords[0], dy = bubble.coords[1] - before.coords[1]
+    if (bubble.coords[2] - before.coords[2] === dx && bubble.coords[3] - before.coords[3] === dy) {
+      // A style save can resize point-text bounds. Preserve a later translation
+      // relative to those new bounds, without turning it into an unintended resize.
+      bubble.coords = after.coords.map((value, i) => value + (i % 2 ? dy : dx)) as BubbleState['coords']
+    }
     // Carry native projections (character runs, normalized geometry, etc.) forward
     // only where the user has not made another change while the save was in flight.
     for (const key of Object.keys(after) as (keyof BubbleState)[]) {
@@ -236,14 +244,29 @@ export async function withDocumentTransportReplay<T>(submit: (key: string) => Pr
   }
 }
 
+export function saveEditorDocument(pageId: string, baseRevision: number, file: Blob, snapshot?: V2PageDocument): Promise<V2PageDocumentMutationResponse> {
+  const body = new FormData()
+  body.append('baseRevision', String(baseRevision))
+  body.append('file', file, 'page.pcraft')
+  if (snapshot) body.append('snapshot', JSON.stringify(snapshot))
+  return withDocumentTransportReplay(key => apiClient.put<V2PageDocumentMutationResponse>(`/api/v2/pages/${encodeURIComponent(pageId)}/editor-document`, body, { headers: { 'Idempotency-Key': key } }))
+}
+
 export function registerPageDocument(document: V2PageDocument): BubbleState[] {
   const bubbles = pageDocumentToBubbles(document)
   const existing = states.get(document.pageId)
+  const image = useImageStore().images.find(image => image.id === document.pageId)
+  // Reads can finish out of order, including reads started before a successful
+  // save. Never publish that old projection or replace an unsaved draft with it.
+  if (document.documentRevision < Math.max(existing?.documentRevision ?? 0, image?.documentRevision ?? 0)) {
+    return cloneBubbles(existing?.desired ?? image?.bubbleStates ?? [])
+  }
   if (
     !existing ||
     (!existing.saving &&
       !existing.promise &&
-      (existing.lastError || canonical(existing.desired) === canonical(existing.persisted)))
+      ((existing.lastError && document.documentRevision !== existing.documentRevision)
+        || canonical(existing.desired) === canonical(existing.persisted)))
   ) {
     const state: PersistedPageState = {
       nativeVersion: 0,
@@ -267,11 +290,27 @@ export function registerPageDocument(document: V2PageDocument): BubbleState[] {
     }
     touchState(document.pageId, state)
     evictSettledStates(document.pageId)
+    publishDocument(document, bubbles, false)
     return bubbles
   }
   touchState(document.pageId, existing)
   evictSettledStates(document.pageId)
   return cloneBubbles(existing.desired)
+}
+
+function publishDocument(document: V2PageDocument, bubbles: BubbleState[], dirty: boolean): void {
+  const images = useImageStore()
+  const index = images.images.findIndex(image => image.id === document.pageId)
+  if (index < 0) return
+  images.updateImageByIndex(index, {
+    ...document.pageStyleDefaults,
+    ...(document.defaultFontId ? { fontFamily: document.defaultFontId } : {}),
+    documentRevision: document.documentRevision,
+    hasUnsavedChanges: dirty,
+    isManuallyAnnotated: document.isManuallyAnnotated ?? false,
+  })
+  if (images.currentImage?.id === document.pageId) useBubbleStore().setBubbles(bubbles, true)
+  else images.updateImageByIndex(index, { bubbleStates: cloneBubbles(bubbles) })
 }
 
 export function queuePageDocumentSave(
@@ -337,6 +376,7 @@ export function queuePageDocumentMutation(
 
 async function persistLoop(pageId: string, state: PersistedPageState): Promise<void> {
   state.saving = true
+  let inFlightFields: Record<string, Set<string>> = {}
   try {
     while (true) {
       await waitForTrailingWindow(state)
@@ -353,7 +393,16 @@ async function persistLoop(pageId: string, state: PersistedPageState): Promise<v
         Object.keys(sentStylePatch).length > 0 ||
         sentDefaultFontChanged ||
         sentPropagation.length > 0
-      if (mutations.length === 0 && !hasStyleCommand && !nativeDirty) return
+      if (mutations.length === 0 && !hasStyleCommand && !nativeDirty) {
+        // A no-op preview may follow a save while native IDs/geometry are being
+        // projected back. Settle on that projection just like a successful write.
+        state.desired = cloneBubbles(state.persisted)
+        const images = useImageStore()
+        const index = images.images.findIndex(image => image.id === pageId)
+        if (index >= 0 && images.images[index]?.documentRevision === state.documentRevision)
+          images.updateImageByIndex(index, { hasUnsavedChanges: false })
+        return
+      }
       // A sidebar propagation and editor bubble delta are separate domain
       // commands. Flush the bubble delta first so the backend never has to
       // guess an overwrite order for the same bubble field.
@@ -376,12 +425,16 @@ async function persistLoop(pageId: string, state: PersistedPageState): Promise<v
       }
       const port = editorPorts.get(pageId)
       if (nativeDirty && !port) throw new Error('精细编辑画布已关闭，请先保存当前修改')
+      if (!nativeDirty && !sendStyleCommand) {
+        inFlightFields = state.desiredBubbleFields
+        state.desiredBubbleFields = {}
+      }
       const response = nativeDirty && port
         ? await port.save(state.documentRevision)
         : await mutateWithTransportReplay(pageId, command)
       const document = response.document
       if (nativeDirty) state.savedNativeVersion = nativeVersion
-      if (!nativeDirty && !sendStyleCommand && sentVersion === state.desiredVersion) state.desiredBubbleFields = {}
+      inFlightFields = {}
       applyCreatedBubbleIds(sent, response.mutationResults)
       applyCreatedBubbleIds(state.desired, response.mutationResults)
       const bubbleStore = useBubbleStore()
@@ -413,19 +466,7 @@ async function persistLoop(pageId: string, state: PersistedPageState): Promise<v
       if (sentVersion === state.desiredVersion) state.desired = cloneBubbles(state.persisted)
       else mergeSavedFields(state.desired, sent, state.persisted)
 
-      const imageIndex = imageStore.images.findIndex(image => image.id === pageId)
-      if (imageIndex >= 0) {
-        imageStore.updateImageByIndex(imageIndex, {
-          ...document.pageStyleDefaults,
-          ...(document.defaultFontId ? { fontFamily: document.defaultFontId } : {}),
-          documentRevision: document.documentRevision,
-          bubbleStates: cloneBubbles(state.desired),
-          hasUnsavedChanges: sentVersion !== state.desiredVersion,
-        })
-      }
-      if (imageStore.currentImage?.id === pageId) {
-        bubbleStore.setBubbles(cloneBubbles(state.desired), true)
-      }
+      publishDocument(document, state.desired, sentVersion !== state.desiredVersion)
       if (sentVersion === state.desiredVersion) {
         if (
           Object.keys(state.desiredStylePatch).length === 0 &&
@@ -437,6 +478,10 @@ async function persistLoop(pageId: string, state: PersistedPageState): Promise<v
       }
     }
   } catch (error) {
+    for (const [id, fields] of Object.entries(inFlightFields)) {
+      const pending = state.desiredBubbleFields[id] ??= new Set()
+      fields.forEach(field => pending.add(field))
+    }
     state.lastError = error instanceof Error ? error : new Error('页面文档写入失败')
     throw state.lastError
   } finally {

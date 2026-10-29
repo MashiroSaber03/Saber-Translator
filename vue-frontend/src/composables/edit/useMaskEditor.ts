@@ -71,13 +71,7 @@ export function useMaskEditor(options: {
 
   function adopt(document: V2PageDocument): void {
     if (imageStore.currentImage?.id !== document.pageId) return
-    const bubbles = registerPageDocument(document)
-    imageStore.updateCurrentImage({
-      documentRevision: document.documentRevision,
-      bubbleStates: bubbles,
-      hasUnsavedChanges: false,
-    })
-    bubbleStore.setBubbles(bubbles, true)
+    registerPageDocument(document)
   }
 
   function drawOverlay(rebuild = false): void {

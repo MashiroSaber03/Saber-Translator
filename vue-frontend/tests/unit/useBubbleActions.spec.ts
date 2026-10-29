@@ -12,6 +12,7 @@ import { createBubbleState } from '@/utils/bubbleFactory'
 const {
   getPageDocumentMock,
   queuePageDocumentSaveMock,
+  queuePageDocumentMutationMock,
   registerPageDocumentMock,
   runBubbleRepairMock,
   runPageOperationMock,
@@ -19,6 +20,7 @@ const {
 } = vi.hoisted(() => ({
   getPageDocumentMock: vi.fn(),
   queuePageDocumentSaveMock: vi.fn(),
+  queuePageDocumentMutationMock: vi.fn().mockResolvedValue(undefined),
   registerPageDocumentMock: vi.fn(),
   runBubbleRepairMock: vi.fn(),
   runPageOperationMock: vi.fn(),
@@ -34,7 +36,7 @@ vi.mock('@/api/v2/operations', () => ({
 }))
 vi.mock('@/services/pageDocumentPersistence', () => ({
   queuePageDocumentSave: queuePageDocumentSaveMock,
-  queuePageDocumentMutation: vi.fn().mockResolvedValue(undefined),
+  queuePageDocumentMutation: queuePageDocumentMutationMock,
   registerPageDocument: registerPageDocumentMock,
 }))
 vi.mock('@/utils/toast', () => ({
@@ -67,6 +69,7 @@ describe('useBubbleActions backend-first operations', () => {
     vi.useFakeTimers()
     showToastMock.mockReset()
     queuePageDocumentSaveMock.mockReset().mockResolvedValue(undefined)
+    queuePageDocumentMutationMock.mockReset().mockResolvedValue(undefined)
     runPageOperationMock.mockReset().mockResolvedValue(undefined)
     runBubbleRepairMock.mockReset().mockResolvedValue(undefined)
     const { fontFamily, ...pageStyleDefaults } = createDefaultSettings().textStyle
@@ -78,13 +81,18 @@ describe('useBubbleActions backend-first operations', () => {
       pageStyleDefaults,
       bubbles: [],
     })
-    registerPageDocumentMock.mockReset().mockReturnValue([
+    registerPageDocumentMock.mockReset().mockImplementation(document => {
+      const bubbles = [
       createBubbleState({
         backendBubbleId: 'bubble-1',
         coords: [0, 0, 100, 60],
         originalText: '后端识别文本',
       }),
-    ])
+      ]
+      useImageStore().updateCurrentImage({ ...document.pageStyleDefaults, documentRevision: document.documentRevision, hasUnsavedChanges: false })
+      useBubbleStore().setBubbles(bubbles, true)
+      return bubbles
+    })
     seedEditor()
   })
 
@@ -168,7 +176,7 @@ describe('useBubbleActions backend-first operations', () => {
     expect(onReRender).toHaveBeenCalledOnce()
   })
 
-  it('runs one trailing preview after edits arrive during an in-flight preview', async () => {
+  it('delegates preview coalescing to the shared save and render path without a second timer', async () => {
     let resolveFirst!: () => void
     const onDelayedPreview = vi
       .fn<() => Promise<void>>()
@@ -178,7 +186,7 @@ describe('useBubbleActions backend-first operations', () => {
       .mockResolvedValueOnce(undefined)
     const Harness = defineComponent({
       setup() {
-        const actions = useBubbleActions({ onDelayedPreview })
+        const actions = useBubbleActions({ onReRender: onDelayedPreview })
         return {
           update: (text: string) => actions.handleBubbleUpdate({ translatedText: text }),
         }
@@ -192,7 +200,7 @@ describe('useBubbleActions backend-first operations', () => {
     await vi.advanceTimersByTimeAsync(150)
     update('第二次')
     await vi.advanceTimersByTimeAsync(150)
-    expect(onDelayedPreview).toHaveBeenCalledTimes(1)
+    expect(onDelayedPreview).toHaveBeenCalledTimes(2)
     resolveFirst()
     await flushPromises()
     await vi.runOnlyPendingTimersAsync()
@@ -209,5 +217,44 @@ describe('useBubbleActions backend-first operations', () => {
       width: '30px',
       height: '50px',
     })
+  })
+
+  it('duplicates the selected text with independent rich styles and fresh identities', () => {
+    const store = useBubbleStore()
+    store.updateBubble(0, { translatedText: '中文！', position: { x: 3, y: 4 }, richText: {
+      runs: [{ len: 9, style: { size_pt: 40, tracking: 150, horizontal_scale: 0.8, language: 'ja' } }],
+      paragraphs: [{ len: 9, style: { align: 'Center' } }],
+    } })
+    store.addBubble([10, 20, 80, 90], { backendBubbleId: 'second', translatedText: '第二框' })
+    store.toggleMultiSelect(1)
+    const onReRender = vi.fn()
+    useBubbleActions({ onReRender }).duplicateSelectedBubbles()
+    expect(store.bubbles).toHaveLength(4)
+    expect(store.selectedIndices).toEqual([2, 3])
+    expect(store.bubbles[2]).toMatchObject({ coords: [20, 20, 120, 80], translatedText: '中文！', originalText: '',
+      position: { x: 3, y: 4 }, richText: store.bubbles[0]!.richText })
+    expect(store.bubbles[2]!.backendBubbleId).toBeUndefined()
+    expect(store.bubbles[2]!.duplicateSourceId).toBe('bubble-1')
+    expect(store.bubbles[2]!.clientMutationId).toBeUndefined()
+    store.bubbles[2]!.richText!.runs[0]!.style.tracking = 900
+    expect(store.bubbles[0]!.richText!.runs[0]!.style.tracking).toBe(150)
+    expect(onReRender).toHaveBeenCalledOnce()
+  })
+
+  it('nudges multiple frames through the existing geometry commit without accumulating normalized offsets', async () => {
+    const store = useBubbleStore()
+    store.updateBubble(0, { position: { x: 2, y: 3 } })
+    store.addBubble([10, 20, 80, 90], { backendBubbleId: 'second', position: { x: -4, y: 5 } })
+    store.toggleMultiSelect(1)
+    const onDelayedPreview = vi.fn()
+    useBubbleActions({ onReRender: onDelayedPreview }).nudgeSelectedText(1, -10)
+    expect(store.bubbles.map(bubble => bubble.position)).toEqual([{ x: 2, y: 3 }, { x: -4, y: 5 }])
+    expect(store.bubbles.map(bubble => bubble.coords)).toEqual([[1, -10, 101, 50], [11, 10, 81, 80]])
+    expect(queuePageDocumentMutationMock).toHaveBeenCalledOnce()
+    expect(queuePageDocumentMutationMock).toHaveBeenCalledWith('page-1', 7, store.bubbles, {
+      bubbleFields: { 'bubble-1': ['coords'], second: ['coords'] },
+    })
+    await vi.advanceTimersByTimeAsync(150)
+    expect(onDelayedPreview).toHaveBeenCalledOnce()
   })
 })

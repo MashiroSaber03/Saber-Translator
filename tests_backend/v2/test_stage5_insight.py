@@ -1277,14 +1277,14 @@ def test_page_analysis_keeps_noncontiguous_targets_and_uses_previous_context(
     third_page_id = _import_insight_test_page(
         platform,
         chapter_id=str(platform["chapter"]["id"]),
-        logical_path="noncontiguous-page-3.png",
+        logical_path="page-3.png",
         color=(160, 170, 180),
         idempotency_key="noncontiguous-page-3",
     )
     fourth_page_id = _import_insight_test_page(
         platform,
         chapter_id=str(platform["chapter"]["id"]),
-        logical_path="noncontiguous-page-4.png",
+        logical_path="page-4.png",
         color=(150, 160, 170),
         idempotency_key="noncontiguous-page-4",
     )
@@ -1436,7 +1436,7 @@ def test_retry_includes_newly_analyzed_pages_in_current_book_order(insight_platf
     original = commands.create_analysis_job(command={"bookId": book_id, "scope": "full"}, idempotency_key="retry-base")
     assert _run_job(platform, FakeInsightAlgorithms(fail_page=2)) == "completed_with_errors"
     added = _import_insight_test_page(
-        platform, chapter_id=platform["chapter"]["id"], logical_path="new-context.png",
+        platform, chapter_id=platform["chapter"]["id"], logical_path="page-3.png",
         color=(110, 60, 80), idempotency_key="new-context",
     )
     commands.create_analysis_job(command={"bookId": book_id, "scope": "page", "pageIds": [added]},
@@ -2167,7 +2167,7 @@ def test_derived_rebuild_uses_available_pages_and_reports_partial_coverage(
         ),
     ).import_page(
         chapter_id=str(platform["chapter"]["id"]),
-        logical_path="new-page.png",
+        logical_path="page-3.png",
         text_style=dict(DEFAULT_TEXT_STYLE),
         upload=BytesIO(payload.getvalue()),
         idempotency_key="new-page-derived-import",

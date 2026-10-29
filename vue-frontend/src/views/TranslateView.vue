@@ -41,7 +41,6 @@ import WebImportModal from '@/components/translate/WebImportModal.vue'
 import WebImportDisclaimer from '@/components/translate/WebImportDisclaimer.vue'
 import QuickWorkspacePromoteModal from '@/components/translate/QuickWorkspacePromoteModal.vue'
 import { resetQuickWorkspace } from '@/api/v2/content'
-import { ApiClientError } from '@/api/client'
 import { TERMINAL_JOB_STATUSES } from '@/api/v2/jobs'
 import { confirmProductAction } from '@/composables/useProductConfirm'
 import { useTaskCenterStore } from '@/stores/taskCenterStore'
@@ -171,53 +170,6 @@ watch(
   { immediate: true }
 )
 
-watch(
-  () => bubbleStore.bubbles,
-  bubbles => {
-    const image = imageStore.currentImage
-    if (
-      !image
-      || image.documentRevision === undefined
-      || !image.hasUnsavedChanges
-      || translateInit.isSwitchingImage.value
-      || !isPageDocumentRegistered(image.id)
-    ) {
-      return
-    }
-    void queuePageDocumentSave(
-      image.id,
-      image.documentRevision,
-      bubbles,
-    ).catch(async error => {
-      const message = error instanceof Error ? error.message : '未知错误'
-      if (imageStore.currentImage?.id !== image.id) {
-        showToast(`页面 ${image.fileName} 写入后端失败：${message}`, 'error')
-        return
-      }
-      const restored = await translateInit.switchImage(
-        imageStore.currentImageIndex,
-        false,
-      )
-      if (error instanceof ApiClientError && error.status === 423) {
-        showToast(
-          restored
-            ? '当前章节已被后端任务锁定，本次编辑未保存并已恢复后端版本；如需编辑，请先取消任务'
-            : `当前章节已被后端任务锁定，且重新加载页面失败：${message}`,
-          'warning',
-        )
-        return
-      }
-      showToast(
-        restored
-          ? `当前页写入后端失败，已恢复后端版本：${message}`
-          : `当前页写入后端失败，且重新加载页面失败：${message}`,
-        'error',
-      )
-    })
-  },
-  { deep: true },
-)
-
 const {
   goToNext,
   goToPrevious,
@@ -330,7 +282,7 @@ async function createNewQuickWorkspace() {
   }
   for (const pageId of pageIds) discardPageDocument(pageId)
   imageStore.clearImages()
-  bubbleStore.clearBubblesLocal()
+  bubbleStore.clearSelection()
   showToast('新的快速翻译工作区已创建', 'success')
   await loadChapterSession()
 }
@@ -339,7 +291,7 @@ async function handleQuickWorkspacePromoted() {
   const pageIds = imageStore.images.map(image => image.id)
   for (const pageId of pageIds) discardPageDocument(pageId)
   imageStore.clearImages()
-  bubbleStore.clearBubblesLocal()
+  bubbleStore.clearSelection()
   showToast('快速翻译内容已保存到书架，当前工作区已切换为空白章节', 'success')
   await loadChapterSession()
 }

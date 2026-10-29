@@ -1,4 +1,4 @@
-import { getCurrentInstance, onUnmounted, ref } from 'vue'
+import { ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { getPageDocument } from '@/api/v2/content'
 import {
@@ -15,11 +15,10 @@ import { useImageStore } from '@/stores/imageStore'
 import { showToast } from '@/utils/toast'
 import type { BubbleState, BubbleCoords } from '@/types/bubble'
 import { buildDrawingRectStyle } from '@/components/edit/bubbleOverlayGeometry'
-import { parseCompleteTextStyleSettings } from '@/defaults/textStyleDefaults'
+import { deepClone } from '@/utils/deepClone'
 
 export interface BubbleActionCallbacks {
   onReRender?: () => void | Promise<unknown>
-  onDelayedPreview?: () => void | Promise<unknown>
 }
 
 export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
@@ -53,17 +52,17 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
 
   function handleBubbleDragEnd(index: number, newCoords: BubbleCoords): void {
     bubbleStore.updateBubble(index, { coords: newCoords })
-    triggerDelayedPreview()
+    void requestPreview()
   }
 
   function handleBubbleResizeEnd(index: number, newCoords: BubbleCoords): void {
     bubbleStore.updateBubble(index, { coords: newCoords })
-    triggerDelayedPreview()
+    void requestPreview()
   }
 
   function handleBubbleRotateEnd(index: number, angle: number): void {
     bubbleStore.updateBubble(index, { rotationAngle: angle })
-    triggerDelayedPreview()
+    void requestPreview()
   }
 
   function toggleDrawingMode(): void {
@@ -73,77 +72,85 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
   function handleDrawBubble(coords: BubbleCoords): void {
     bubbleStore.addBubble(coords)
     bubbleStore.selectBubble(bubbleStore.bubbleCount - 1)
-    callbacks?.onReRender?.()
+    void requestPreview()
   }
 
   function getDrawingRectStyle(): Record<string, string> {
     return buildDrawingRectStyle(currentDrawingRect.value)
   }
 
-  let previewTimer: ReturnType<typeof setTimeout> | null = null
-  let isRenderingPreview = false
-  let previewRequestedWhileRendering = false
-  const PREVIEW_DELAY = 150
-
-  // Coalesces rapid geometry/style edits and queues one more preview if a render is already running.
-  function triggerDelayedPreview(): void {
-    if (previewTimer) {
-      clearTimeout(previewTimer)
-    }
-    previewTimer = setTimeout(async () => {
-      previewTimer = null
-      if (isRenderingPreview) {
-        previewRequestedWhileRendering = true
-        return
-      }
-      isRenderingPreview = true
-
-      try {
-        if (callbacks?.onDelayedPreview) {
-          await callbacks.onDelayedPreview()
-        } else if (callbacks?.onReRender) {
-          await callbacks.onReRender()
-        }
-      } catch {
-        showToast('预览渲染失败', 'error')
-      } finally {
-        isRenderingPreview = false
-        if (previewRequestedWhileRendering) {
-          previewRequestedWhileRendering = false
-          triggerDelayedPreview()
-        }
-      }
-    }, PREVIEW_DELAY)
+  async function requestPreview(): Promise<void> {
+    // Saving coalesces edits; rendering cancels obsolete observers. No second timer.
+    try { await callbacks?.onReRender?.() }
+    catch { showToast('预览渲染失败', 'error') }
   }
 
-  if (getCurrentInstance()) {
-    onUnmounted(() => {
-      if (previewTimer) {
-        clearTimeout(previewTimer)
-        previewTimer = null
-      }
-      isRenderingPreview = false
-      previewRequestedWhileRendering = false
-    })
+  function updateBubbles(patches: [number, Partial<BubbleState>][]): void {
+    const fields: Record<string, string[]> = {}
+    for (const [index, updates] of patches) {
+      if (!bubbles.value[index]) continue
+      bubbleStore.updateBubble(index, updates)
+      const id = bubbles.value[index]?.backendBubbleId
+      if (id) fields[id] = Object.keys(updates)
+    }
+    const image = currentImage.value
+    if (image?.documentRevision !== undefined && Object.keys(fields).length) {
+      void queuePageDocumentMutation(image.id, image.documentRevision, bubbles.value, {
+        bubbleFields: fields,
+      }).catch(() => { /* The queued preview reports the same save failure. */ })
+    }
+    void requestPreview()
   }
 
   function handleBubbleUpdate(updates: Partial<BubbleState>): void {
-    bubbleStore.updateSelectedBubble(updates)
-    const image = currentImage.value
-    const bubble = bubbles.value[selectedBubbleIndex.value]
-    if (image?.documentRevision !== undefined && bubble?.backendBubbleId) {
-      void queuePageDocumentMutation(image.id, image.documentRevision, bubbles.value, {
-        bubbleFields: { [bubble.backendBubbleId]: Object.keys(updates) },
-      }).catch(error => showToast(error instanceof Error ? error.message : '文字修改保存失败', 'error'))
-    }
-    triggerDelayedPreview()
+    updateBubbles([[selectedBubbleIndex.value, updates]])
   }
 
   function deleteSelectedBubbles(): void {
     if (hasSelection.value) {
       bubbleStore.deleteSelected()
-      callbacks?.onReRender?.()
+      void requestPreview()
     }
+  }
+
+  function duplicateSelectedBubbles(): void {
+    if (!currentImage.value) return
+    const indices = bubbleStore.selectedIndices.length ? [...bubbleStore.selectedIndices].sort((a, b) => a - b) : [selectedBubbleIndex.value]
+    const copies = indices.flatMap(index => {
+      const bubble = bubbles.value[index]
+      return bubble ? [deepClone(bubble)] : []
+    })
+    if (!copies.length) return
+    const first = bubbles.value.length
+    for (const copy of copies) {
+      bubbleStore.addBubble(copy.coords.map(value => value + 20) as BubbleCoords, {
+        ...copy, backendBubbleId: undefined, clientMutationId: undefined,
+        duplicateSourceId: copy.backendBubbleId ?? copy.duplicateSourceId,
+        originalText: '', textboxText: '', polygon: [], textlines: [], ocrResult: null,
+        autoFgColor: null, autoBgColor: null, colorConfidence: 0,
+      })
+    }
+    bubbleStore.selectBubble(first)
+    for (let index = first + 1; index < bubbles.value.length; index++) bubbleStore.toggleMultiSelect(index)
+    void requestPreview()
+  }
+
+  function nudgeSelectedText(dx: number, dy: number): void {
+    const indices = bubbleStore.selectedIndices.length ? bubbleStore.selectedIndices : [selectedBubbleIndex.value]
+    const fields: Record<string, string[]> = {}
+    for (const index of indices) {
+      const bubble = bubbles.value[index]
+      if (!bubble) continue
+      bubbleStore.updateBubble(index, { coords: bubble.coords.map((value, i) => value + (i % 2 ? dy : dx)) as BubbleCoords })
+      if (bubble.backendBubbleId) fields[bubble.backendBubbleId] = ['coords']
+    }
+    const image = currentImage.value
+    if (image?.documentRevision !== undefined && Object.keys(fields).length) {
+      void queuePageDocumentMutation(image.id, image.documentRevision, bubbles.value, {
+        bubbleFields: fields,
+      }).catch(() => { /* The queued preview reports the same save failure. */ })
+    }
+    void requestPreview()
   }
 
   async function repairSelectedBubble(): Promise<void> {
@@ -241,19 +248,6 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
       throw new Error(`页面 ${pageId} 的后端文档身份不匹配`)
     }
     const updated = registerPageDocument(document)
-    const pageTextStyle = parseCompleteTextStyleSettings({
-      ...document.pageStyleDefaults,
-      ...(document.defaultFontId
-        ? { fontFamily: document.defaultFontId }
-        : {}),
-    })
-    imageStore.updateCurrentImage({
-      ...pageTextStyle,
-      bubbleStates: updated,
-      documentRevision: document.documentRevision,
-      hasUnsavedChanges: false,
-    })
-    bubbleStore.setBubbles(updated, true)
     const index = bubbleId
       ? updated.findIndex(item => item.backendBubbleId === bubbleId)
       : -1
@@ -275,7 +269,10 @@ export function useBubbleActions(callbacks?: BubbleActionCallbacks) {
     handleDrawBubble,
     getDrawingRectStyle,
     handleBubbleUpdate,
+    updateBubbles,
     deleteSelectedBubbles,
+    duplicateSelectedBubbles,
+    nudgeSelectedText,
     repairSelectedBubble,
     handleOcrRecognize
   }

@@ -818,6 +818,7 @@ paths:
                 - $ref: "#/components/schemas/MaskSolidRepairCommand"
                 - $ref: "#/components/schemas/MaskModelRepairCommand"
                 - $ref: "#/components/schemas/MaskRestoreCommand"
+                - $ref: "#/components/schemas/MaskCloneCommand"
       responses:
         "202":
           description: Repair operation was durably created.
@@ -2446,6 +2447,9 @@ paths:
               properties:
                 baseRevision: {type: integer, minimum: 1}
                 file: {type: string, format: binary}
+                snapshot:
+                  type: string
+                  description: Optional JSON PageDocument accompanying an undo snapshot. Only business metadata and page defaults are restored; native layers remain authoritative for text and style.
       responses:
         '200':
           description: Saved native document and atomic text projection.
@@ -2455,6 +2459,67 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
         '423': {$ref: '#/components/responses/Locked'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /pages/{page_id}/export.psd:
+    get:
+      tags: [pages]
+      operationId: exportPagePsd
+      parameters:
+        - $ref: '#/components/parameters/PageId'
+        - in: query
+          name: filename
+          schema: {type: string}
+      responses:
+        '200':
+          description: Editable PSD from the current canonical native document.
+          content:
+            image/vnd.adobe.photoshop:
+              schema: {type: string, format: binary}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /pages/{page_id}/text-fit:
+    post:
+      tags: [pages]
+      operationId: calculatePageTextFit
+      x-command-mode: transient
+      description: Read-only font-size calculation. Does not save or render; callers commit the result through the page document API.
+      parameters:
+        - $ref: '#/components/parameters/PageId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [baseRevision, bubbleIds]
+              properties:
+                baseRevision: {type: integer, minimum: 1}
+                bubbleIds:
+                  type: array
+                  minItems: 1
+                  items: {$ref: '#/components/schemas/Uuid'}
+      responses:
+        '200':
+          description: Suggested font sizes for non-empty text frames.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [bubbleId, fontSize]
+                      properties:
+                        bubbleId: {$ref: '#/components/schemas/Uuid'}
+                        fontSize: {type: integer, minimum: 1}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
         '422': {$ref: '#/components/responses/ValidationError'}
   /editor/fonts:
     get:
@@ -2474,13 +2539,23 @@ paths:
                     items:
                       type: object
                       additionalProperties: false
-                      required: [id, displayName, scope, isDefault, url]
+                      required: [id, displayName, scope, isDefault, url, style]
                       properties:
                         id: {$ref: '#/components/schemas/Uuid'}
                         displayName: {type: string}
                         scope: {type: string, enum: [shared, private]}
                         isDefault: {type: boolean}
                         url: {type: string}
+                        style:
+                          type: object
+                          additionalProperties: false
+                          required: [font_family, font_style, postscript_name, weight, italic]
+                          properties:
+                            font_family: {type: string}
+                            font_style: {type: string}
+                            postscript_name: {type: [string, 'null']}
+                            weight: {type: integer}
+                            italic: {type: boolean}
   /editor/fonts/{font_id}:
     get:
       tags: [pages]
@@ -7016,6 +7091,10 @@ components:
         clientMutationId:
           type: string
           minLength: 1
+        sourceBubbleId:
+          type: string
+          format: uuid
+          description: Optional source text layer on this page; preserves its native paragraph shape and effects.
         fields:
           $ref: "#/components/schemas/CompleteBubbleMutationFields"
     BubblePatchMutation:
@@ -7220,6 +7299,9 @@ components:
             - blockAlign
           allOf:
             - $ref: "#/components/schemas/PageStyleDefaultsPatch"
+        isManuallyAnnotated:
+          type: boolean
+          description: Whether this page has a successfully saved manual edit.
         bubbles:
           type: array
           items:
@@ -7348,6 +7430,17 @@ components:
         method:
           type: string
           const: restore_source
+    MaskCloneCommand:
+      type: object
+      additionalProperties: false
+      required: [target, mask, base_revision, method, clone_dx, clone_dy]
+      properties:
+        target: {type: string, const: mask}
+        mask: {type: string, format: binary, contentMediaType: image/png}
+        base_revision: {type: integer, minimum: 1}
+        method: {type: string, const: clone}
+        clone_dx: {type: integer, minimum: -100000, maximum: 100000}
+        clone_dy: {type: integer, minimum: -100000, maximum: 100000}
     StudioAsset:
       type: object
       additionalProperties: false
@@ -8551,6 +8644,9 @@ components:
         detectionState:
           type: string
           enum: [unprocessed, processed]
+        isManuallyAnnotated:
+          type: boolean
+          description: Whether this page has a successfully saved manual edit.
         sourceUrl: {type: string}
         thumbnailSourceUrl: {type: string}
         cleanUrl: {type: [string, "null"]}

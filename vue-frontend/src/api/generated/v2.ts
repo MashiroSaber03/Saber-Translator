@@ -1752,6 +1752,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/pages/{page_id}/export.psd": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["exportPagePsd"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pages/{page_id}/text-fit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Read-only font-size calculation. Does not save or render; callers commit the result through the page document API. */
+        post: operations["calculatePageTextFit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/editor/fonts": {
         parameters: {
             query?: never;
@@ -4418,6 +4451,11 @@ export interface components {
             /** @constant */
             op: "create";
             clientMutationId: string;
+            /**
+             * Format: uuid
+             * @description Optional source text layer on this page; preserves its native paragraph shape and effects.
+             */
+            sourceBubbleId?: string;
             fields: components["schemas"]["CompleteBubbleMutationFields"];
         };
         BubblePatchMutation: {
@@ -4508,6 +4546,8 @@ export interface components {
             renderStatus: "not_rendered" | "ready" | "stale" | "rendering" | "render_failed" | "awaiting_repair" | "repair_failed";
             defaultFontId: components["schemas"]["Uuid"] | null;
             pageStyleDefaults: WithRequired<components["schemas"]["PageStyleDefaultsPatch"], "fontSize" | "autoFontSize" | "layoutDirection" | "textColor" | "fillColor" | "inpaintMethod" | "useAutoTextColor" | "strokeEnabled" | "strokeColor" | "strokeWidth" | "lineSpacing" | "inlineAlign" | "blockAlign">;
+            /** @description Whether this page has a successfully saved manual edit. */
+            isManuallyAnnotated?: boolean;
             bubbles: components["schemas"]["BubbleDocument"][];
         };
         PageDocumentMutationResponse: {
@@ -4572,6 +4612,17 @@ export interface components {
             base_revision: number;
             /** @constant */
             method: "restore_source";
+        };
+        MaskCloneCommand: {
+            /** @constant */
+            target: "mask";
+            /** Format: binary */
+            mask: string;
+            base_revision: number;
+            /** @constant */
+            method: "clone";
+            clone_dx: number;
+            clone_dy: number;
         };
         StudioAsset: {
             assetId: components["schemas"]["Uuid"];
@@ -5221,6 +5272,8 @@ export interface components {
             renderStatus: "not_rendered" | "ready" | "stale" | "rendering" | "render_failed" | "awaiting_repair" | "repair_failed";
             /** @enum {string} */
             detectionState: "unprocessed" | "processed";
+            /** @description Whether this page has a successfully saved manual edit. */
+            isManuallyAnnotated?: boolean;
             sourceUrl: string;
             thumbnailSourceUrl: string;
             cleanUrl: string | null;
@@ -7414,7 +7467,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "multipart/form-data": components["schemas"]["BubbleRepairCommand"] | components["schemas"]["MaskSolidRepairCommand"] | components["schemas"]["MaskModelRepairCommand"] | components["schemas"]["MaskRestoreCommand"];
+                "multipart/form-data": components["schemas"]["BubbleRepairCommand"] | components["schemas"]["MaskSolidRepairCommand"] | components["schemas"]["MaskModelRepairCommand"] | components["schemas"]["MaskRestoreCommand"] | components["schemas"]["MaskCloneCommand"];
             };
         };
         responses: {
@@ -9787,6 +9840,8 @@ export interface operations {
                     baseRevision: number;
                     /** Format: binary */
                     file: string;
+                    /** @description Optional JSON PageDocument accompanying an undo snapshot. Only business metadata and page defaults are restored; native layers remain authoritative for text and style. */
+                    snapshot?: string;
                 };
             };
         };
@@ -9804,6 +9859,69 @@ export interface operations {
             409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationError"];
             423: components["responses"]["Locked"];
+        };
+    };
+    exportPagePsd: {
+        parameters: {
+            query?: {
+                filename?: string;
+            };
+            header?: never;
+            path: {
+                page_id: components["parameters"]["PageId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Editable PSD from the current canonical native document. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/vnd.adobe.photoshop": string;
+                };
+            };
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationError"];
+        };
+    };
+    calculatePageTextFit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                page_id: components["parameters"]["PageId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    baseRevision: number;
+                    bubbleIds: components["schemas"]["Uuid"][];
+                };
+            };
+        };
+        responses: {
+            /** @description Suggested font sizes for non-empty text frames. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            bubbleId: components["schemas"]["Uuid"];
+                            fontSize: number;
+                        }[];
+                    };
+                };
+            };
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationError"];
         };
     };
     listEditorFonts: {
@@ -9829,6 +9947,13 @@ export interface operations {
                             scope: "shared" | "private";
                             isDefault: boolean;
                             url: string;
+                            style: {
+                                font_family: string;
+                                font_style: string;
+                                postscript_name: string | null;
+                                weight: number;
+                                italic: boolean;
+                            };
                         }[];
                     };
                 };

@@ -103,7 +103,10 @@ describe('useEditWorkspaceProcessingActions', () => {
       pageStyleDefaults: {},
       renderStatus: 'not_rendered',
     })
-    mocks.registerPageDocument.mockReturnValue([])
+    mocks.registerPageDocument.mockImplementation(document => {
+      useImageStore().updateCurrentImage({ documentRevision: document.documentRevision, bubbleStates: [], hasUnsavedChanges: false })
+      return []
+    })
     mocks.createChapterDetectJob.mockResolvedValue({
       batchId: 'batch-1',
       jobIds: ['job-1'],

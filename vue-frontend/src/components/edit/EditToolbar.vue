@@ -1,6 +1,7 @@
 <template>
   <div class="edit-toolbar" @pointerup="handlePointerUp">
     <div class="edit-toolbar__row edit-toolbar__row--primary">
+      <slot name="workspace-tools" />
       <div class="edit-toolbar__image-navigator">
         <UiIconButton
           variant="inverse"
@@ -45,7 +46,7 @@
           class="edit-toolbar__nav-action"
           :disabled="isBusy || !hasBubbles || selectedBubbleIndex <= 0"
           label="上一个气泡"
-          title="上一个气泡"
+          title="上一个气泡 (Alt+↑)"
           @click="$emit('select-previous-bubble')"
         >
           <span class="edit-toolbar__text-glyph" aria-hidden="true">◀</span>
@@ -59,7 +60,7 @@
           class="edit-toolbar__nav-action"
           :disabled="isBusy || !hasBubbles || selectedBubbleIndex >= bubbleCount - 1"
           label="下一个气泡"
-          title="下一个气泡"
+          title="下一个气泡 (Alt+↓)"
           @click="$emit('select-next-bubble')"
         >
           <span class="edit-toolbar__text-glyph" aria-hidden="true">▶</span>
@@ -72,16 +73,6 @@
         <UiIconButton
           variant="inverse"
           size="md"
-          class="edit-toolbar__view-action edit-toolbar__view-action--layout"
-          label="切换布局"
-          title="切换布局：左右/上下"
-          @click="$emit('toggle-layout')"
-        >
-          <UiIcon :name="layoutMode === 'horizontal' ? 'columns' : 'rows'" size="16" />
-        </UiIconButton>
-        <UiIconButton
-          variant="inverse"
-          size="md"
           class="edit-toolbar__view-action edit-toolbar__view-action--mode"
           label="切换视图模式"
           title="切换视图模式"
@@ -89,60 +80,77 @@
         >
           <span class="edit-toolbar__text-glyph edit-toolbar__text-glyph--view-mode" aria-hidden="true">⧉</span>
         </UiIconButton>
-        <UiButton
-          variant="toolbar"
-          class="edit-toolbar__annotation-action"
-          :disabled="!canPreviewClean"
-          :aria-pressed="!!showCleanPreview"
-          :title="!canPreviewClean ? '尚未生成修复图，请先进行背景修复' : showCleanPreview ? '返回查看译图' : '查看不含译文的修复图'"
-          @click="$emit('toggle-clean-preview')"
-        >
-          <span class="edit-toolbar__annotation-label">仅看修复</span>
-        </UiButton>
-        <label class="edit-toolbar__source-overlay" title="0% 隐藏原文，100% 显示原文；译文显示在原文上方">
-          <span>原文</span>
-          <UiInput
-            class="edit-toolbar__source-opacity"
-            type="range"
-            min="0"
-            max="100"
-            step="1"
-            aria-label="原文透明度"
-            :aria-valuetext="`${originalTextOpacity ?? 0}% 原文透明度`"
-            :model-value="originalTextOpacity ?? 0"
-            :disabled="!canOverlaySource"
-            @update:model-value="emit('update-original-text-opacity', Number($event))"
-          />
-          <span class="edit-toolbar__source-opacity-value">{{ originalTextOpacity ?? 0 }}%</span>
-        </label>
-        <label class="edit-toolbar__source-overlay" title="0% 隐藏译文，100% 显示译文；背景保持不变">
-          <span>译文</span>
-          <UiInput
-            class="edit-toolbar__source-opacity"
-            type="range"
-            min="0"
-            max="100"
-            step="1"
-            aria-label="译文透明度"
-            :aria-valuetext="`${translatedTextOpacity ?? 100}% 译文透明度`"
-            :model-value="translatedTextOpacity ?? 100"
-            :disabled="!canFadeTranslated"
-            @update:model-value="emit('update-translated-text-opacity', Number($event))"
-          />
-          <span class="edit-toolbar__source-opacity-value">{{ translatedTextOpacity ?? 100 }}%</span>
-        </label>
-        <UiIconButton
-          variant="inverse"
-          size="md"
-          class="edit-toolbar__view-action edit-toolbar__view-action--sync"
-          :active="syncEnabled"
-          :pressed="syncEnabled"
-          label="同步缩放和拖动"
-          title="同步缩放/拖动"
-          @click="$emit('toggle-sync')"
-        >
-          <span class="edit-toolbar__text-glyph edit-toolbar__text-glyph--sync" aria-hidden="true">🔗</span>
-        </UiIconButton>
+        <details ref="comparisonControls" class="edit-toolbar__comparison" @keydown.esc.stop.prevent="closeComparison">
+          <summary title="图片布局、同步与原文译文对照">视图</summary>
+          <div class="edit-toolbar__comparison-panel" aria-label="原文与译文对照">
+            <div class="edit-toolbar__view-options">
+              <span>布局 · 同步</span><UiIconButton
+                variant="inverse"
+                size="md"
+                class="edit-toolbar__view-action edit-toolbar__view-action--layout"
+                label="切换布局"
+                title="切换布局：左右/上下"
+                @click="$emit('toggle-layout')"
+              >
+                <UiIcon :name="layoutMode === 'horizontal' ? 'columns' : 'rows'" size="16" />
+              </UiIconButton><UiIconButton
+                variant="inverse"
+                size="md"
+                class="edit-toolbar__view-action edit-toolbar__view-action--sync"
+                :active="syncEnabled"
+                :pressed="syncEnabled"
+                label="同步缩放和拖动"
+                title="同步缩放/拖动"
+                @click="$emit('toggle-sync')"
+              >
+                <span class="edit-toolbar__text-glyph edit-toolbar__text-glyph--sync" aria-hidden="true">🔗</span>
+              </UiIconButton>
+            </div>
+            <UiButton
+              variant="toolbar"
+              class="edit-toolbar__annotation-action"
+              :disabled="!canPreviewClean"
+              :aria-pressed="!!showCleanPreview"
+              :title="!canPreviewClean ? '尚未生成修复图，请先进行背景修复' : showCleanPreview ? '返回查看译图' : '查看不含译文的修复图'"
+              @click="$emit('toggle-clean-preview')"
+            >
+              <span class="edit-toolbar__annotation-label">仅看修复</span>
+            </UiButton>
+            <label class="edit-toolbar__source-overlay" title="0% 隐藏原文，100% 显示原文；译文显示在原文上方">
+              <span>原文</span>
+              <UiInput
+                class="edit-toolbar__source-opacity"
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                aria-label="原文透明度"
+                :aria-valuetext="`${originalTextOpacity ?? 0}% 原文透明度`"
+                :model-value="originalTextOpacity ?? 0"
+                :disabled="!canOverlaySource"
+                @update:model-value="emit('update-original-text-opacity', Number($event))"
+              />
+              <span class="edit-toolbar__source-opacity-value">{{ originalTextOpacity ?? 0 }}%</span>
+            </label>
+            <label class="edit-toolbar__source-overlay" title="0% 隐藏译文，100% 显示译文；背景保持不变">
+              <span>译文</span>
+              <UiInput
+                class="edit-toolbar__source-opacity"
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                aria-label="译文透明度"
+                :aria-valuetext="`${translatedTextOpacity ?? 100}% 译文透明度`"
+                :model-value="translatedTextOpacity ?? 100"
+                :disabled="!canFadeTranslated"
+                @update:model-value="emit('update-translated-text-opacity', Number($event))"
+              />
+              <span class="edit-toolbar__source-opacity-value">{{ translatedTextOpacity ?? 100 }}%</span>
+            </label>
+          </div>
+        </details>
+
         <UiIconButton variant="inverse" size="md" class="edit-toolbar__view-action" label="适应屏幕" title="适应屏幕 (双击)" @click="$emit('fit-to-screen')">
           <span class="edit-toolbar__text-glyph edit-toolbar__text-glyph--fit" aria-hidden="true">⛶</span>
         </UiIconButton>
@@ -222,6 +230,16 @@
           <UiIcon name="square-plus" class="edit-toolbar__annotation-icon" size="14" />
           <span class="edit-toolbar__annotation-label">添加</span>
         </UiButton>
+        <UiIconButton
+          variant="inverse"
+          size="sm"
+          label="复制文字框"
+          title="复制选中文字框及其文字样式 (Ctrl+D)"
+          :disabled="isBusy || !!brushMode || isDrawingMode || !hasSelection"
+          @click="$emit('duplicate-selected-bubbles')"
+        >
+          <UiIcon name="copy" size="16" />
+        </UiIconButton>
         <UiButton
           variant="toolbar"
           class="edit-toolbar__annotation-action"
@@ -270,8 +288,12 @@
         >
           <UiIcon name="eraser" class="edit-toolbar__annotation-icon" size="16" />
         </UiIconButton>
-        <span v-if="brushMode" class="edit-toolbar__brush-size" title="再次点击笔刷或按 Esc 退出">
-          {{ brushSize }}px · 滚轮调大小 · Esc 退出
+        <UiIconButton variant="inverse" size="sm" label="仿制图章" title="仿制图章：Alt 点击干净背景取样，再涂抹修补；不复制译文" :pressed="brushMode === 'clone'" :disabled="isBusy" @click="emit('activate-clone-brush')"><UiIcon name="stamp" size="16" /></UiIconButton>
+        <div v-if="brushMode && brushMode !== 'clone'" class="edit-toolbar__shape-select">
+          <UiSelect size="sm" aria-label="修复绘制方式" teleport-to=".edit-toolbar" :model-value="brushShape || 'brush'" :disabled="isBusy" :options="[{value:'brush',label:'笔刷'}, {value:'rectangle',label:'矩形选区'}, {value:'lasso',label:'套索选区'}]" @update:model-value="emit('brush-shape', $event as BrushShape)" />
+        </div>
+        <span v-if="brushMode" class="edit-toolbar__brush-size" :title="brushMode === 'clone' ? (cloneSource ? `取样 ${cloneSource.x},${cloneSource.y}；Alt 点击可重新取样，滚轮调整大小` : '先 Alt 点击干净背景取样，再涂抹修补；滚轮调整大小') : '再次点击笔刷或按 Esc 退出'">
+          {{ brushMode === 'clone' ? `${brushSize}px · ${cloneSource ? 'Alt 重选取样' : 'Alt 点击取样'}` : (!brushShape || brushShape === 'brush' ? `${brushSize}px · 滚轮调大小` : '拖动选择 · 松开执行') }} · Esc 退出
         </span>
 
         <EditToolbarHelp />
@@ -292,7 +314,7 @@
         </UiButton>
       </div>
     </div>
-    <div v-if="brushMode" class="edit-toolbar__brush-cursor" :style="brushCursorStyle"></div>
+    <div v-if="brushMode && (!brushShape || brushShape === 'brush')" class="edit-toolbar__brush-cursor" :style="brushCursorStyle"></div>
   </div>
 </template>
 
@@ -302,7 +324,9 @@ import UiButton from '@/components/ui/UiButton.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import UiIconButton from '@/components/ui/UiIconButton.vue'
 import UiInput from '@/components/ui/UiInput.vue'
-import { computed } from 'vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
+import type { BrushShape } from '@/composables/useBrush'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import EditToolbarHelp from './EditToolbarHelp.vue'
 
 const props = defineProps<{
@@ -319,8 +343,10 @@ const props = defineProps<{
   scale: number
   isDrawingMode: boolean
   hasSelection: boolean
-  brushMode: 'repair' | 'restore' | null
+  brushMode: 'repair' | 'restore' | 'clone' | null
+  cloneSource?: { x: number; y: number } | null
   brushSize: number
+  brushShape?: BrushShape
   mouseX: number
   mouseY: number
   isBusy: boolean
@@ -356,21 +382,32 @@ const emit = defineEmits<{
   (e: 'translate-with-bubbles'): void
   (e: 'toggle-drawing-mode'): void
   (e: 'delete-selected-bubbles'): void
+  (e: 'duplicate-selected-bubbles'): void
   (e: 'repair-selected-bubble'): void
   (e: 'activate-repair-brush'): void
   (e: 'activate-restore-brush'): void
+  (e: 'activate-clone-brush'): void
   (e: 'apply-and-next'): void
   (e: 'pointer-action-complete'): void
   (e: 'toggle-mask-mode'): void
+  (e: 'brush-shape', value: BrushShape): void
 }>()
 
 function handlePointerUp(event: PointerEvent): void {
-  if (event.target instanceof Element && event.target.closest('input:not([type="range"]), [role="combobox"], [role="listbox"]')) return
+  if (event.target instanceof Element && event.target.closest('input, details, [role="combobox"], [role="listbox"]')) return
   emit('pointer-action-complete')
 }
 
+const comparisonControls = ref<HTMLDetailsElement>()
+function closeComparison(): void { if (comparisonControls.value) comparisonControls.value.open = false }
+function closeComparisonOutside(event: PointerEvent): void {
+  if (event.target instanceof Node && !comparisonControls.value?.contains(event.target)) closeComparison()
+}
+onMounted(() => document.addEventListener('pointerdown', closeComparisonOutside))
+onUnmounted(() => document.removeEventListener('pointerdown', closeComparisonOutside))
+
 const brushCursorStyle = computed(() => {
-  const color = props.brushMode === 'repair'
+  const color = props.brushMode === 'repair' || props.brushMode === 'clone'
     ? { fill: 'var(--edit-toolbar-brush-repair-fill)', border: 'var(--edit-toolbar-brush-repair-border)' }
     : { fill: 'var(--edit-toolbar-brush-restore-fill)', border: 'var(--edit-toolbar-brush-restore-border)' }
 
@@ -392,7 +429,19 @@ const brushCursorStyle = computed(() => {
 </script>
 
 <style scoped>
+.edit-toolbar__view-options { display: flex; gap: 8px; align-items: center; color: var(--color-text-inverse); font-size: 12px; }
+
 .edit-toolbar {
+  --ui-select-background: var(--color-surface-inverse);
+  --ui-select-color: var(--color-text-inverse);
+  --ui-select-border: 1px solid var(--color-overlay-inverse-muted);
+  --ui-selector-arrow-text: var(--color-text-inverse);
+  --ui-selector-control-text: var(--color-text-inverse);
+  --ui-selector-dropdown-background: var(--color-surface-inverse-panel);
+  --ui-selector-dropdown-border: var(--color-overlay-inverse-muted);
+  --ui-selector-option-hover-background: var(--color-overlay-inverse-subtle);
+  --ui-selector-option-selected-background: color-mix(in srgb, var(--color-action-brand) 30%, transparent);
+  --ui-selector-option-selected-text: var(--color-text-inverse);
   --edit-toolbar-shell-start: var(--color-surface-inverse-panel);
   --edit-toolbar-shell-end: var(--color-surface-inverse);
   --edit-toolbar-shell-divider: var(--color-overlay-inverse-subtle);
@@ -442,6 +491,10 @@ const brushCursorStyle = computed(() => {
 .edit-toolbar__row--secondary {
   background: var(--edit-toolbar-row-overlay);
 }
+
+.edit-toolbar__comparison { position: relative; color: var(--color-text-inverse); }
+.edit-toolbar__comparison summary { cursor: pointer; padding: 7px 10px; border: 1px solid var(--color-overlay-inverse-muted); border-radius: var(--radius-sm); font-size: 13px; }
+.edit-toolbar__comparison-panel { position: absolute; top: calc(100% + 6px); inset-inline-end: 0; z-index: var(--z-local-popover); display: grid; gap: 12px; padding: 14px; min-width: 280px; background: var(--color-surface-inverse-panel); border: 1px solid var(--color-overlay-inverse-muted); border-radius: var(--radius-md); box-shadow: var(--shadow-medium); }
 
 .edit-toolbar__spacer {
   flex: 1;
@@ -572,6 +625,8 @@ const brushCursorStyle = computed(() => {
   display: flex;
   gap: 10px;
 }
+
+.edit-toolbar__shape-select { width: 112px; flex-shrink: 0; }
 
 .edit-toolbar__annotation-action--loading {
   opacity: 0.7;

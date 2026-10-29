@@ -106,6 +106,34 @@ fn save_copy_and_export_keep_the_editable_document_identity() {
 }
 
 #[test]
+fn embedded_flat_download_keeps_layers_without_a_data_loss_warning() {
+    for extra_warning in [false, true] {
+        let mut app = app();
+        app.services.host_save = Some(Box::new(|| {}));
+        if extra_warning {
+            app.services.export = Some(Box::new(|_, _, _| Ok((vec![1], vec![
+                "2 layer(s) flattened; layers, masks and blend modes are not kept".into(),
+                "unsupported colour profile".into(),
+            ]))));
+        }
+        let before = identity(&app);
+        let (dialog, _) = crate::file_dialog::fake(vec![Some(crate::file_dialog::FileDialogAnswer::SaveTo("export.png".into()))]);
+        app.services.file_dialog = Some(dialog);
+        crate::export_dialog::confirm(&mut app, json!({"format": "png", "scale": 100}).as_object().unwrap()).unwrap();
+        app.poll_file_dialog(&egui::Context::default(), None);
+        assert_eq!(identity(&app), before);
+        assert_eq!(app.session.active().unwrap().doc.layer_count(), 2);
+        assert_eq!(app.ui.status_error, extra_warning);
+        assert!(!app.ui.status.contains("flattened"), "{}", app.ui.status);
+        if extra_warning {
+            assert!(app.ui.status.contains("unsupported colour profile"), "{}", app.ui.status);
+        } else {
+            assert!(app.ui.status.starts_with("Exported export.png"), "{}", app.ui.status);
+        }
+    }
+}
+
+#[test]
 fn web_download_and_automation_saves_use_the_same_identity_completion() {
     let mut app = app();
     let (dialog, _) = crate::file_dialog::fake(vec![Some(crate::file_dialog::FileDialogAnswer::SaveTo("Untitled-1.psd".into()))]);

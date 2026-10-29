@@ -13,15 +13,15 @@ fn process(request: Value) -> Result<Value, String> {
     let read = |key: &str| -> Result<Vec<u8>, String> {
         std::fs::read(request.get(key).and_then(Value::as_str).ok_or_else(|| format!("{key} required"))?).map_err(|e| e.to_string())
     };
-    if let Some(default) = request.get("defaultFontId").and_then(Value::as_str).and_then(|id| fonts.get(id)).cloned() {
-        fonts.insert("__default".into(), default);
-        fonts.insert("__defaultId".into(), request["defaultFontId"].clone());
-    }
     if request.get("project").and_then(Value::as_str).is_some() {
         photocraft_saber::open(&mut session, &read("project")?, page)?;
     } else {
         let clean = if request.get("base").and_then(Value::as_str).is_some() { Some(read("base")?) } else { None };
         photocraft_saber::create(&mut session, &read("source")?, clean.as_deref(), page)?;
+    }
+    if let Some(default) = request.get("defaultFontId").and_then(Value::as_str).and_then(|id| fonts.get(id)).cloned() {
+        fonts.insert("__default".into(), default);
+        fonts.insert("__defaultId".into(), request["defaultFontId"].clone());
     }
     let fonts = Value::Object(fonts);
     photocraft_saber::set_fonts(&mut session, &fonts)?;
@@ -51,6 +51,7 @@ fn process(request: Value) -> Result<Value, String> {
         ("png", request.get("png").is_some().then(|| photocraft_saber::png(&session, false))),
         ("clean", request.get("clean").is_some().then(|| photocraft_saber::png(&session, true))),
         ("text", request.get("text").is_some().then(|| photocraft_saber::text_png(&session))),
+        ("psd", request.get("psd").is_some().then(|| photocraft_saber::psd(&session))),
     ] {
         if let Some(bytes) = bytes {
             let bytes = bytes?;
@@ -58,7 +59,14 @@ fn process(request: Value) -> Result<Value, String> {
             std::fs::write(path, bytes).map_err(|e| e.to_string())?;
         }
     }
-    photocraft_saber::project(&session)
+    let mut projection = photocraft_saber::project(&session)?;
+    if let Some(ids) = request.get("fitText").and_then(Value::as_array) {
+        let ids = ids.iter().filter_map(Value::as_str).map(str::to_string).collect::<Vec<_>>();
+        let minimum = request.get("minFontSize").and_then(Value::as_u64).unwrap_or(1).clamp(1, 1000) as u32;
+        let maximum = request.get("maxFontSize").and_then(Value::as_u64).unwrap_or(80).clamp(1, 1000) as u32;
+        projection["fontFits"] = photocraft_saber::fit_text(&session, &ids, minimum, maximum)?;
+    }
+    Ok(projection)
 }
 
 fn main() {

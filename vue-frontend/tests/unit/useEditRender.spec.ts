@@ -75,7 +75,7 @@ describe('useEditRender backend-first orchestration', () => {
       3,
       useBubbleStore().bubbles,
     )
-    expect(flushPageDocumentMock).toHaveBeenCalledWith('page-1')
+    expect(flushPageDocumentMock).not.toHaveBeenCalled()
     expect(getPageRenderStatusMock).toHaveBeenCalledTimes(1)
     expect(getPageRenderStatusMock).toHaveBeenCalledWith('page-1', expect.any(AbortSignal))
     expect(useImageStore().currentImage).toMatchObject({

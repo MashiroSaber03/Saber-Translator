@@ -1,6 +1,6 @@
 import { apiClient, ApiClientError } from '@/api/client'
 import { createUuid } from '@/utils/uuid'
-import type { components } from '@/api/generated/v2'
+import type { components, operations } from '@/api/generated/v2'
 import type { TextStyleSettings } from '@/types/settings'
 
 export type V2BookDetail = components['schemas']['BookDetail']
@@ -373,6 +373,15 @@ export async function getPageDocument(
     `${API_ROOT}/pages/${encodeURIComponent(pageId)}/document`,
     { signal },
   )
+}
+
+export function calculatePageTextFit(pageId: string, command: operations['calculatePageTextFit']['requestBody']['content']['application/json']) {
+  return apiClient.post<operations['calculatePageTextFit']['responses'][200]['content']['application/json']>(
+    `${API_ROOT}/pages/${encodeURIComponent(pageId)}/text-fit`, command)
+}
+
+export function downloadPagePsd(pageId: string): Promise<Blob> {
+  return apiClient.get<Blob>(`${API_ROOT}/pages/${encodeURIComponent(pageId)}/export.psd`, { responseType: 'blob' })
 }
 
 export async function mutatePageDocument(

@@ -1,4 +1,4 @@
-import { onUnmounted, ref, type Ref } from 'vue'
+import { onUnmounted, ref, watch, type Ref } from 'vue'
 
 interface UseEditWorkspaceResizeActionsOptions {
   layoutMode: Ref<'horizontal' | 'vertical'>
@@ -20,6 +20,20 @@ export function useEditWorkspaceResizeActions(options: UseEditWorkspaceResizeAct
     if (direction === 'row' || direction === 'row-reverse') return false
     return options.layoutMode.value === 'vertical'
   }
+
+  watch([options.editPanelRef, options.layoutMode], ([panel]) => {
+    if (!panel) return
+    for (const property of ['flex', 'min-width', 'height']) panel.style.removeProperty(property)
+    try {
+      const vertical = usesVerticalFlow(panel.parentElement)
+      const stored = Number(localStorage.getItem(vertical ? 'saber.edit-panel-height' : 'saber.edit-panel-width'))
+      if (!Number.isFinite(stored) || stored <= 0) return
+      const size = Math.max(vertical ? 200 : 300, Math.min((vertical ? window.innerHeight : window.innerWidth) * 0.6, stored))
+      panel.style.flex = `0 0 ${size}px`
+      if (vertical) panel.style.height = `${size}px`
+      else panel.style.minWidth = `${size}px`
+    } catch { /* A browser preference must not block editing. */ }
+  }, { flush: 'post' })
 
   function startDividerDrag(event: MouseEvent): void {
     dividerIsVertical = usesVerticalFlow(options.originalPanelRef.value?.parentElement ?? null)
@@ -107,6 +121,11 @@ export function useEditWorkspaceResizeActions(options: UseEditWorkspaceResizeAct
   }
 
   function stopPanelResize(): void {
+    const panel = options.editPanelRef.value
+    if (isResizingPanel.value && panel) {
+      try { localStorage.setItem(panelResizeIsVertical ? 'saber.edit-panel-height' : 'saber.edit-panel-width', String(panelResizeIsVertical ? panel.offsetHeight : panel.offsetWidth)) }
+      catch { /* Keep the current width when browser storage is unavailable. */ }
+    }
     isResizingPanel.value = false
     document.body.style.cursor = ''
     document.body.style.userSelect = ''

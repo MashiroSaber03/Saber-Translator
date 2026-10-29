@@ -26,6 +26,7 @@ const exportImportMock = vi.hoisted(() => ({
     downloadProgress: 42,
   },
   downloadCurrentImage: vi.fn(),
+  downloadCurrentPsd: vi.fn(),
   downloadAllImages: vi.fn(),
   exportText: vi.fn(),
   importText: vi.fn(),
@@ -38,6 +39,7 @@ vi.mock('@/composables/useExportImport', () => ({
     downloadProgressText: { value: exportImportMock.state.downloadProgressText },
     downloadProgress: { value: exportImportMock.state.downloadProgress },
     downloadCurrentImage: exportImportMock.downloadCurrentImage,
+    downloadCurrentPsd: exportImportMock.downloadCurrentPsd,
     downloadAllImages: exportImportMock.downloadAllImages,
     exportText: exportImportMock.exportText,
     importText: exportImportMock.importText,
@@ -52,6 +54,7 @@ describe('ImageResultDisplay', () => {
     exportImportMock.state.downloadProgressText = '正在打包下载'
     exportImportMock.state.downloadProgress = 42
     exportImportMock.downloadCurrentImage.mockReset()
+    exportImportMock.downloadCurrentPsd.mockReset()
     exportImportMock.downloadAllImages.mockReset()
     exportImportMock.exportText.mockReset()
     exportImportMock.importText.mockReset()
@@ -70,6 +73,20 @@ describe('ImageResultDisplay', () => {
     expect(wrapper.findAllComponents(UiButton).filter(button => (
       ['下载当前页', '下载全部', '导出文本', '导入 Saber JSON'].includes(button.text())
     )).every(button => button.props('disabled'))).toBe(true)
+  })
+
+  it('exports PSD through the common download action and respects the existing edit-mode permission', async () => {
+    exportImportMock.state.isDownloading = false
+    addTestImage(useImageStore(), 'page.png', '/api/v2/assets/source-1')
+    const wrapper = mount(ImageResultDisplay)
+    const psd = wrapper.findAll('button').find(button => button.text() === '当前页 PSD')!
+    expect(psd.attributes('disabled')).toBeUndefined()
+    await psd.trigger('click')
+    expect(exportImportMock.downloadCurrentPsd).toHaveBeenCalledOnce()
+    await wrapper.setProps({ editModeAvailable: false })
+    expect(psd.attributes('disabled')).toBeDefined()
+    expect(psd.attributes('title')).toContain('未开放编辑模式')
+    expect(wrapper.findAll('button').find(button => button.text() === '下载当前页')!.attributes('disabled')).toBeUndefined()
   })
 
   it('lets the image-size control enlarge the image beyond its frame width', async () => {

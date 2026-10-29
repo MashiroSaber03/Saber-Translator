@@ -16,6 +16,7 @@ describe('bubbleStore', () => {
   })
 
   it('leaves automatic direction to the backend when bubble coords change', () => {
+    addTestImage(useImageStore(), 'page.png', '/source')
     const bubbleStore = useBubbleStore()
 
     bubbleStore.setBubbles([
@@ -35,6 +36,7 @@ describe('bubbleStore', () => {
   })
 
   it('keeps the selected bubble when backend state replaces the same stable bubbles', () => {
+    addTestImage(useImageStore(), 'page.png', '/source')
     const bubbleStore = useBubbleStore()
     bubbleStore.setBubbles([
       createBubbleState({
@@ -67,6 +69,7 @@ describe('bubbleStore', () => {
   })
 
   it('owns its bubble state instead of mutating the caller snapshot', () => {
+    addTestImage(useImageStore(), 'page.png', '/source')
     const bubbleStore = useBubbleStore()
     const external = [createBubbleState({
       backendBubbleId: 'bubble-1',
@@ -133,7 +136,7 @@ describe('bubbleStore', () => {
     bubbleStore.updateAllBubbles({ textColor: '#111111' })
     bubbleStore.deleteSelected()
     bubbleStore.clearBubbles()
-    bubbleStore.clearBubblesLocal()
+    bubbleStore.clearSelection()
 
     expect(consoleLog).not.toHaveBeenCalled()
   })

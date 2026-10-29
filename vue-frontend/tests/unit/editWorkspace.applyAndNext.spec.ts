@@ -277,8 +277,7 @@ describe('EditWorkspace backend-owned navigation', () => {
 
   it('waits for the authoritative page style before allowing edits', () => {
     expect(source).toContain('const isPageDocumentReady = ref(false)')
-    expect(source).toContain('...document.pageStyleDefaults')
-    expect(source).toContain('? { fontFamily: document.defaultFontId }')
+    expect(source).toContain('registerPageDocument(document)')
     expect(source).toContain('!isPageDocumentReady.value')
     expect(source).toContain("{ flush: 'sync' }")
   })

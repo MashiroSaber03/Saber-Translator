@@ -24,6 +24,7 @@ def baseline(tmp_path_factory):
     initialize_database(root)
     # The migration protocol fixtures need existing files, not real font payloads.
     with closing(sqlite3.connect(root / "saber.sqlite3")) as db, db:
+        db.execute("ALTER TABLE pages DROP COLUMN is_manually_annotated")
         # Use the actual historical contract, not today's schema with an old label.
         original_assets = next(statement for statement in contract_sql("3.5.1").split(";")
                                if statement.lstrip().startswith("CREATE TABLE page_assets ("))
@@ -67,7 +68,7 @@ def manager(root, **kwargs):
 
 
 def test_version_numeric_and_registry():
-    assert STORAGE_VERSION == "3.5.4"
+    assert STORAGE_VERSION == "3.5.5"
     assert parse_version("3.5.10") > parse_version("3.5.9")
     for value in ("3.5", "3.05.0", "3.6.0-rc1", "v3.5.1"):
         with pytest.raises(ValueError):
@@ -81,8 +82,10 @@ def test_version_numeric_and_registry():
 def test_current_check_and_readonly_cli(root):
     from src.storage_migrator.v3_5_3 import convert as add_user_masks
     from src.storage_migrator.v3_5_4 import convert as add_editor_documents
+    from src.storage_migrator.v3_5_5 import convert as add_manual_marker
     add_user_masks(root)
     add_editor_documents(root)
+    add_manual_marker(root)
     with closing(sqlite3.connect(root / "saber.sqlite3")) as db, db:
         db.execute("UPDATE schema_metadata SET storage_version=?", (STORAGE_VERSION,))
     assert StorageManager(root, "local").check()["status"] == "current"
@@ -90,6 +93,32 @@ def test_current_check_and_readonly_cli(root):
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)["status"] == "current"
     assert not control_root(root).exists()
+
+
+def test_manual_marker_upgrade_preserves_existing_pages_and_artwork(root):
+    import uuid
+
+    with StorageManager(root, "local", target="3.5.4") as migration:
+        migration.prepare(initialize_database)
+        migration.before_start()
+        migration.confirm_ready()
+    page_id = str(uuid.uuid4())
+    with closing(sqlite3.connect(root / "saber.sqlite3")) as db, db:
+        chapter_id = db.execute("SELECT id FROM chapters LIMIT 1").fetchone()[0]
+        db.execute("INSERT INTO pages(id,chapter_id,ordinal,logical_source_path,document_revision) VALUES(?,?,?,?,?)",
+                   (page_id, chapter_id, 1, "saved-page.png", 41))
+        before = db.execute("SELECT * FROM pages WHERE id=?", (page_id,)).fetchone()
+    artwork = (root / "objects" / "saved.txt").read_bytes()
+    with StorageManager(root, "local") as migration:
+        assert migration.prepare(initialize_database)["status"] == "awaiting_health"
+        migration.before_start()
+        migration.confirm_ready()
+        assert migration.check()["status"] == "current"
+    with closing(sqlite3.connect(root / "saber.sqlite3")) as db:
+        after = db.execute("SELECT * FROM pages WHERE id=?", (page_id,)).fetchone()
+        assert after == (*before, 0)
+        validate_schema(db, contract_sql("3.5.5"))
+    assert (root / "objects" / "saved.txt").read_bytes() == artwork
 
 
 def test_empty_check_does_not_create_directories(tmp_path):
@@ -503,8 +532,10 @@ def test_real_launcher_confirms_candidate_and_cleans_backup(root):
             db.execute("ALTER TABLE app_settings DROP COLUMN old_fixture_column")
         from src.storage_migrator.v3_5_3 import convert as add_user_masks
         from src.storage_migrator.v3_5_4 import convert as add_editor_documents
+        from src.storage_migrator.v3_5_5 import convert as add_manual_marker
         add_user_masks(work)
         add_editor_documents(work)
+        add_manual_marker(work)
     ready = threading.Event()
     errors = []
     with socket.socket() as listener:

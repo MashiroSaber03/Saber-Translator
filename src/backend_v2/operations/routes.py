@@ -284,6 +284,8 @@ def create_operations_blueprint(
                     "base_revision",
                     "method",
                     "fill_color",
+                    "clone_dx",
+                    "clone_dy",
                 },
                 allowed_file_keys={"mask"},
             )
@@ -302,6 +304,8 @@ def create_operations_blueprint(
                 ),
                 idempotency_key=_require_idempotency_key(),
                 from_source=target == "page_mask",
+                clone_offset=(_integer_value(request.form.get("clone_dx"), "clone_dx"), _integer_value(request.form.get("clone_dy"), "clone_dy"))
+                    if "clone_dx" in request.form or "clone_dy" in request.form else None,
             )
         else:
             raise ValueError("repair target must be bubble, mask, or page_mask")

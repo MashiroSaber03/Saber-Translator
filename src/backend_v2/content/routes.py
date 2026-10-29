@@ -361,9 +361,48 @@ def create_content_blueprint(
 
     @blueprint.get("/editor/fonts")
     def editor_fonts() -> Response:
+        from src.backend_v2.rendering.fonts import character_font_style, resolve_font_path
+
         public_access.require_feature("editMode")
-        return jsonify({"items": [{**font, "url": f"/api/v2/editor/fonts/{font['id']}"}
-                                  for font in font_repository.list()]})
+        catalog = font_repository.list()
+        with engine.connect() as connection:
+            return jsonify({"items": [
+                {**font, "url": f"/api/v2/editor/fonts/{font['id']}",
+                 "style": character_font_style(resolve_font_path(connection, storage, font["id"]))}
+                for font in catalog
+            ]})
+
+    @blueprint.get("/pages/<page_id>/export.psd")
+    def export_page_psd(page_id: str) -> Response:
+        from io import BytesIO
+        from src.backend_v2.editing.native import NativeEditor
+
+        public_access.require_feature("editMode")
+        with read_transaction(engine) as connection:
+            repository._get_page_document(connection, page_id)
+            payload = NativeEditor(storage).export_psd(connection, page_id)
+        return send_file(BytesIO(payload), mimetype="image/vnd.adobe.photoshop", as_attachment=True,
+                         download_name=_asset_download_name(request.args.get("filename"), asset_id=page_id, suffix=".psd"), max_age=0)
+
+    @blueprint.post("/pages/<page_id>/text-fit")
+    def fit_text(page_id: str) -> Response:
+        from src.backend_v2.editing.native import NativeEditor
+
+        public_access.require_feature("editMode")
+        body = _json_body(allowed_keys={"baseRevision", "bubbleIds"})
+        ids = body.get("bubbleIds")
+        if not isinstance(ids, list) or not ids or not all(isinstance(item, str) for item in ids):
+            raise ValueError("bubbleIds must be a non-empty array of text layer IDs")
+        with read_transaction(engine) as connection:
+            document = repository._get_page_document(connection, page_id)
+            if document["documentRevision"] != _required_integer(body, "baseRevision", minimum=1):
+                raise ContentConflict("page document revision changed")
+            items = {item["bubbleId"]: item for item in document["bubbles"]}
+            if any(item not in items for item in ids):
+                raise ContentNotFound("text layer not found on this page")
+            fitted = NativeEditor(storage).fit_text(connection, page_id, list(dict.fromkeys(ids)))
+        # Calculation only; the caller uses the ordinary document commit, undo and render path.
+        return jsonify({"items": fitted})
 
     @blueprint.get("/editor/fonts/<font_id>")
     def editor_font(font_id: str) -> Response:
@@ -377,7 +416,7 @@ def create_content_blueprint(
     @blueprint.put("/pages/<page_id>/editor-document")
     def save_editor_document(page_id: str) -> Response:
         public_access.require_feature("editMode")
-        _validate_multipart_fields(allowed_form_keys={"baseRevision"}, allowed_file_keys={"file"})
+        _validate_multipart_fields(allowed_form_keys={"baseRevision", "snapshot"}, allowed_file_keys={"file"})
         upload = request.files.get("file")
         if upload is None:
             raise ValueError("editor document is required")
@@ -385,10 +424,14 @@ def create_content_blueprint(
         payload = upload.stream.read(128 * 1024 * 1024 + 1)
         if not payload or len(payload) > 128 * 1024 * 1024:
             raise ValueError("编辑文档为空或超过 128 MiB")
+        snapshot = json.loads(request.form["snapshot"]) if "snapshot" in request.form else None
+        if snapshot is not None and not isinstance(snapshot, dict):
+            raise ValueError("snapshot must be an object")
         result, replayed = repository.mutate_page_document(
             page_id=page_id,
             base_revision=_integer_value(request.form.get("baseRevision"), "baseRevision", minimum=1),
             mutations=[], editor_document=payload, idempotency_key=_require_idempotency_key(),
+            editor_metadata=snapshot,
         )
         response = jsonify(result)
         response.headers["Idempotency-Replayed"] = "true" if replayed else "false"

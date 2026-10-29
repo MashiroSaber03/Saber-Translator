@@ -43,6 +43,22 @@ async function harness(ordinaryActive = ref(true)) {
 }
 
 describe('repair choices without a selected text box', () => {
+  it('brings the next off-screen bubble into view without changing its geometry or zoom', async () => {
+    const { editor, wrapper } = await harness()
+    const store = useBubbleStore()
+    store.addBubble([0, 0, 50, 50])
+    store.addBubble([1000, 2000, 1100, 2100])
+    store.selectBubble(0)
+    const viewport = document.createElement('div')
+    vi.spyOn(viewport, 'getBoundingClientRect').mockReturnValue({ width: 300, height: 400 } as DOMRect)
+    editor.imageComparisonRef.value = { originalViewportRef: viewport, translatedViewportRef: viewport } as never
+    editor.selectNextBubble()
+    expect(editor.toolbarScale.value).toBe(1)
+    expect(editor.translatedTransformStyle.value.transform).toBe('translate(-900px, -1850px) scale(1)')
+    expect(editor.originalTransformStyle.value.transform).toBe(editor.translatedTransformStyle.value.transform)
+    expect(store.bubbles[1]!.coords).toEqual([1000, 2000, 1100, 2100])
+    wrapper.unmount()
+  })
   it('fits an image loaded while hidden, without resetting a completed fit on mode switches', async () => {
     const active = ref(false)
     const { editor, wrapper } = await harness(active)
@@ -76,7 +92,23 @@ describe('repair choices without a selected text box', () => {
     editor.handleDocumentLoaded('another-page')
     expect(editor.isBusy.value).toBe(true)
     editor.handleDocumentLoaded('page')
+    await flushPromises()
     expect(editor.isBusy.value).toBe(false)
+    wrapper.unmount()
+  })
+  it('keeps the selected text box when the same page is loaded again', async () => {
+    const { editor, wrapper } = await harness()
+    const store = useBubbleStore()
+    store.addBubble([10, 10, 40, 60])
+    store.addBubble([80, 80, 120, 160])
+    store.selectBubble(1)
+
+    editor.handleDocumentLoaded('page')
+    expect(store.selectedIndex).toBe(1)
+
+    store.clearSelection()
+    editor.handleDocumentLoaded('page')
+    expect(store.selectedIndex).toBe(0)
     wrapper.unmount()
   })
   it('saves the chosen method and color as page defaults through existing persistence', async () => {

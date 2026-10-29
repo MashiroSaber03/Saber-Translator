@@ -1,7 +1,7 @@
 import { inflateSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
 
-import { encodeBinaryMaskPng, encodeGrayscaleMaskPng, paintMaskCircles } from '@/utils/binaryMaskPng'
+import { encodeBinaryMaskPng, encodeGrayscaleMaskPng, paintMaskCircles, paintMaskPolygon } from '@/utils/binaryMaskPng'
 
 function readBlobBytes(blob: Blob): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {
@@ -39,6 +39,25 @@ async function decodePng(blob: Blob) {
 }
 
 describe('binary mask PNG encoder', () => {
+  it('uses even-odd fill for overlapping lasso loops, leaving the inner loop untouched', () => {
+    const pixels = new Uint8Array(8 * 8)
+    paintMaskPolygon(pixels, 8, 8, [{x:0,y:0},{x:6,y:0},{x:6,y:6},{x:0,y:6},{x:0,y:0},
+      {x:2,y:2},{x:4,y:2},{x:4,y:4},{x:2,y:4},{x:2,y:2}], 255)
+    expect(pixels[1 * 8 + 1]).toBe(255)
+    expect(pixels[3 * 8 + 3]).toBe(0)
+    expect([...pixels].filter(v => v === 255)).toHaveLength(32)
+  })
+  it('fills a clipped rectangle and a concave lasso at pixel centres, without touching the exterior', () => {
+    const pixels = new Uint8Array(8 * 8)
+    paintMaskPolygon(pixels, 8, 8, [{x:-2,y:1},{x:4,y:1},{x:4,y:4},{x:-2,y:4}], 255)
+    expect([...pixels].filter(v => v === 255)).toHaveLength(12)
+    expect(pixels[4 * 8 + 3]).toBe(0)
+    paintMaskPolygon(pixels, 8, 8, [{x:0,y:0},{x:6,y:0},{x:6,y:2},{x:2,y:2},{x:2,y:6},{x:0,y:6}], 127)
+    expect(pixels[1 * 8 + 5]).toBe(127)
+    expect(pixels[5 * 8 + 1]).toBe(127)
+    expect(pixels[5 * 8 + 5]).toBe(0)
+    expect(paintMaskPolygon(pixels, 8, 8, [{x:1,y:1},{x:2,y:2}], 255)).toBe(false)
+  })
   it('encodes a single-frame 8-bit grayscale binary PNG', async () => {
     const blob = await encodeBinaryMaskPng(16, 12, [{ x: 8, y: 6, radius: 3 }])
     const png = await decodePng(blob)

@@ -6,6 +6,7 @@ import { ApiClientError } from '@/api/client'
 import { useBubbleStore } from '@/stores/bubbleStore'
 import { useImageStore } from '@/stores/imageStore'
 import { createBubbleState } from '@/utils/bubbleFactory'
+import { addTestImage } from '../helpers/imageFixtures'
 
 const { mutateMock } = vi.hoisted(() => ({
   mutateMock: vi.fn(),
@@ -46,6 +47,128 @@ function bubblePayload(overrides: Record<string, unknown> = {}): Record<string, 
 }
 
 describe('page document persistence coordinator', () => {
+  it('marks only a committed manual edit and retains that marker across document reloads', async () => {
+    const persistence = await import('@/services/pageDocumentPersistence')
+    const images = useImageStore()
+    addTestImage(images, 'page.png', '/source', { id: 'page-1', chapterId: 'chapter-1', isManuallyAnnotated: false })
+    const row = { bubbleId: 'bubble-1', fontId: 'font-2', ordinal: 1, payload: bubblePayload({ translatedText: '原译文' }), updatedRevision: 1 }
+    persistence.registerPageDocument({ ...serverDocument([row], 1), isManuallyAnnotated: false })
+    const bubbles = useBubbleStore()
+    bubbles.updateBubble(0, { translatedText: '手动校对' })
+    expect(images.currentImage!.isManuallyAnnotated).toBe(false)
+    mutateMock.mockRejectedValueOnce(new Error('save failed'))
+    await expect(persistence.queuePageDocumentSave('page-1', 1, bubbles.bubbles)).rejects.toThrow('save failed')
+    expect(images.currentImage!.isManuallyAnnotated).toBe(false)
+    const committed = { ...serverDocument([{ ...row, payload: bubblePayload({ translatedText: '手动校对' }), updatedRevision: 2 }], 2), isManuallyAnnotated: true }
+    mutateMock.mockResolvedValueOnce(mutationResponse(committed))
+    await persistence.queuePageDocumentSave('page-1', 1, bubbles.bubbles)
+    expect(images.currentImage!.isManuallyAnnotated).toBe(true)
+    persistence.registerPageDocument({ ...serverDocument([row], 1), isManuallyAnnotated: false })
+    expect(images.currentImage!.isManuallyAnnotated).toBe(true)
+    persistence.registerPageDocument(committed)
+    expect(images.currentImage!.isManuallyAnnotated).toBe(true)
+  })
+  it('publishes one page draft and ignores older reads before the next save', async () => {
+    const persistence = await import('@/services/pageDocumentPersistence')
+    const images = useImageStore()
+    addTestImage(images, 'page.png', '/source', { id: 'page-1', chapterId: 'chapter-1' })
+    const row = (text: string, revision: number) => ({ bubbleId: 'bubble-1', fontId: 'font-2', ordinal: 1,
+      payload: bubblePayload({ translatedText: text }), updatedRevision: revision })
+    persistence.registerPageDocument(serverDocument([row('新版本', 20)], 20))
+    const bubbles = useBubbleStore()
+    expect(bubbles.bubbles).toBe(images.currentImage!.bubbleStates)
+    bubbles.selectBubble(0)
+    const retained = persistence.registerPageDocument(serverDocument([row('较早返回的内容', 19)], 19))
+    expect(retained[0]!.translatedText).toBe('新版本')
+    expect(images.currentImage!.documentRevision).toBe(20)
+    expect(bubbles.selectedIndex).toBe(0)
+    bubbles.updateBubble(0, { translatedText: '继续编辑' })
+    expect(images.currentImage!.bubbleStates![0]!.translatedText).toBe('继续编辑')
+    mutateMock.mockResolvedValueOnce(mutationResponse(serverDocument([row('继续编辑', 21)], 21)))
+    await persistence.queuePageDocumentSave('page-1', 20, bubbles.bubbles)
+    expect(mutateMock.mock.calls[0]![1].baseRevision).toBe(20)
+    expect(bubbles.bubbles).toBe(images.currentImage!.bubbleStates)
+    expect(bubbles.selectedIndex).toBe(0)
+  })
+  it('settles the dirty indicator on an unchanged save without a backend mutation or undo entry', async () => {
+    const persistence = await import('@/services/pageDocumentPersistence')
+    const images = useImageStore()
+    addTestImage(images, 'page.png', '/source', { id: 'page-1', chapterId: 'chapter-1', documentRevision: 1, hasUnsavedChanges: true })
+    const current = persistence.registerPageDocument(serverDocument([], 1))
+    await persistence.queuePageDocumentSave('page-1', 1, current)
+    expect(images.currentImage?.hasUnsavedChanges).toBe(false)
+    expect(mutateMock).not.toHaveBeenCalled()
+  })
+  it('keeps failed edits when a background refresh returns the same revision and retries them through the ordinary commit', async () => {
+    const persistence = await import('@/services/pageDocumentPersistence')
+    const row = { bubbleId: 'bubble-1', fontId: 'font-2', ordinal: 1, updatedRevision: 1,
+      payload: bubblePayload({ translatedText: '校对前' }) }
+    const document = serverDocument([row], 1)
+    const initial = persistence.registerPageDocument(document)
+    mutateMock.mockRejectedValueOnce(new Error('offline'))
+    await expect(persistence.queuePageDocumentSave('page-1', 1, [{ ...initial[0]!, translatedText: '校对后😀' }])).rejects.toThrow('offline')
+    const retained = persistence.registerPageDocument(document)
+    expect(retained[0]!.translatedText).toBe('校对后😀')
+    mutateMock.mockResolvedValueOnce(mutationResponse(serverDocument([{ ...row, updatedRevision: 2,
+      payload: bubblePayload({ translatedText: '校对后😀' }) }], 2)))
+    await persistence.queuePageDocumentSave('page-1', 1, retained)
+    expect(mutateMock.mock.calls.at(-1)![1].mutations[0].fields.translatedText).toBe('校对后😀')
+  })
+  it('rebases a pending move onto native point-text bounds changed by a style save', async () => {
+    const persistence = await import('@/services/pageDocumentPersistence')
+    const saved = (payload: Record<string, unknown>, revision: number) => ({ bubbleId: 'bubble-1', ordinal: 1,
+      fontId: 'font-2', updatedRevision: revision, payload: bubblePayload(payload) })
+    const initial = persistence.registerPageDocument(serverDocument([saved({}, 1)], 1))
+    let complete!: (response: ReturnType<typeof mutationResponse>) => void
+    mutateMock.mockImplementationOnce(() => new Promise(resolve => { complete = resolve }))
+      .mockImplementationOnce(async (_page, command) => {
+        expect(command.mutations[0].fields).toEqual({ coords: [1, 0, 161, 80] })
+        return mutationResponse(serverDocument([saved({ fontSize: 48, coords: [1, 0, 161, 80] }, 3)], 3))
+      })
+    const styled = initial.map(bubble => ({ ...bubble, fontSize: 48 }))
+    const first = persistence.queuePageDocumentSave('page-1', 1, styled)
+    const flush = persistence.flushPageDocument('page-1')
+    await vi.waitFor(() => expect(mutateMock).toHaveBeenCalledOnce())
+    const moved = persistence.queuePageDocumentSave('page-1', 1, styled.map(bubble => ({ ...bubble, coords: [1, 0, 101, 80] })))
+    complete(mutationResponse(serverDocument([saved({ fontSize: 48, coords: [0, 0, 160, 80] }, 2)], 2)))
+    await Promise.all([first, moved, flush])
+  })
+
+  it('uses the existing create mutation to copy a native text layer and drops the pending copy hint after saving', async () => {
+    const persistence = await import('@/services/pageDocumentPersistence')
+    const source = { bubbleId: 'source', fontId: 'font-2', ordinal: 1, payload: bubblePayload({ translatedText: '原文字形' }), updatedRevision: 1 }
+    const [initial] = persistence.registerPageDocument(serverDocument([source], 1))
+    const copy = createBubbleState({ ...initial, backendBubbleId: undefined, duplicateSourceId: 'source', coords: [20, 20, 120, 100] })
+    mutateMock.mockImplementationOnce(async (_page, command) => mutationResponse(serverDocument([
+      source, { ...source, bubbleId: 'copy', ordinal: 2, payload: bubblePayload({ translatedText: '原文字形', coords: copy.coords }), updatedRevision: 2 },
+    ], 2), [{ op: 'create', bubbleId: 'copy', clientMutationId: command.mutations[0].clientMutationId }]))
+    await persistence.queuePageDocumentSave('page-1', 1, [initial!, copy])
+    expect(mutateMock.mock.calls[0]![1].mutations).toEqual([expect.objectContaining({ op: 'create', sourceBubbleId: 'source' })])
+    expect(mutateMock.mock.calls[0]![1].mutations[0].fields).not.toHaveProperty('duplicateSourceId')
+    const saved = persistence.registerPageDocument(serverDocument([
+      source, { ...source, bubbleId: 'copy', ordinal: 2, payload: bubblePayload({ translatedText: '原文字形', coords: copy.coords }), updatedRevision: 2 },
+    ], 2))
+    expect(saved[1]!.duplicateSourceId).toBeUndefined()
+    expect(saved[1]!.backendBubbleId).toBe('copy')
+  })
+
+  it('settles no-op projections so an authoritative undo document can replace the cache', async () => {
+    const persistence = await import('@/services/pageDocumentPersistence')
+    const first = serverDocument([{
+      bubbleId: 'bubble-1', fontId: 'font-2', ordinal: 1, payload: bubblePayload(), updatedRevision: 1,
+    }], 1)
+    const initial = persistence.registerPageDocument(first)
+    // The store's factory and the API adapter use different property order.
+    // They are the same persisted bubble and must not block a restored document.
+    const fromStore = initial.map(bubble => createBubbleState(bubble))
+    expect(JSON.stringify(fromStore)).not.toBe(JSON.stringify(initial))
+    await persistence.queuePageDocumentSave('page-1', 1, fromStore)
+    expect(mutateMock).not.toHaveBeenCalled()
+    const restored = persistence.registerPageDocument({ ...first, documentRevision: 2 })
+    await expect(persistence.queuePageDocumentSave('page-1', 2, restored)).resolves.toBeUndefined()
+    expect(mutateMock).not.toHaveBeenCalled()
+  })
+
   beforeEach(() => {
     setActivePinia(createPinia())
     mutateMock.mockReset()
@@ -326,6 +449,23 @@ describe('page document persistence coordinator', () => {
       }], 2))
     })
     await persistence.queuePageDocumentMutation('page-1', 1, initial, { bubbleFields: { 'bubble-1': ['fontSize'] } })
+    expect(mutateMock).toHaveBeenCalledOnce()
+  })
+
+  it('consumes explicit fields once when rendering queues the identical pending document', async () => {
+    const persistence = await import('@/services/pageDocumentPersistence')
+    const savedBubble = (payload: Record<string, unknown>, revision: number) => ({ bubbleId: 'bubble-1', ordinal: 1,
+      fontId: 'font-2', updatedRevision: revision, payload: bubblePayload(payload) })
+    const initial = persistence.registerPageDocument(serverDocument([savedBubble({}, 1)], 1))
+    let complete!: (response: ReturnType<typeof mutationResponse>) => void
+    mutateMock.mockImplementationOnce(() => new Promise(resolve => { complete = resolve }))
+    const changed = initial.map(b => ({ ...b, fontSize: 36 }))
+    const save = persistence.queuePageDocumentMutation('page-1', 1, changed, { bubbleFields: { 'bubble-1': ['fontSize'] } })
+    const flush = persistence.flushPageDocument('page-1')
+    await vi.waitFor(() => expect(mutateMock).toHaveBeenCalledOnce())
+    const renderSave = persistence.queuePageDocumentSave('page-1', 1, changed)
+    complete(mutationResponse(serverDocument([savedBubble({ fontSize: 36 }, 2)], 2)))
+    await Promise.all([save, flush, renderSave])
     expect(mutateMock).toHaveBeenCalledOnce()
   })
 

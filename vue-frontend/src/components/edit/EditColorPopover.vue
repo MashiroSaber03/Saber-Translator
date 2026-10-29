@@ -15,7 +15,6 @@ const emit = defineEmits<{
 const popover = ref<HTMLElement | null>(null)
 const position = ref<CSSProperties>({ visibility: 'hidden' })
 const editor = props.anchor.closest('.bubble-editor')
-const styleSection = props.anchor.closest('.bubble-editor__style-section')
 let resizeObserver: ResizeObserver | undefined
 
 function updatePosition(): void {
@@ -30,8 +29,7 @@ function updatePosition(): void {
   const rightEdge = Math.min(window.innerWidth - padding, (bounds?.right ?? window.innerWidth) - padding)
   const topEdge = Math.max(padding, (bounds?.top ?? 0) + padding)
   const bottomEdge = Math.min(window.innerHeight - padding, (bounds?.bottom ?? window.innerHeight) - padding)
-  const clip = styleSection?.getBoundingClientRect()
-  if (anchor.bottom < Math.max(topEdge, clip?.top ?? topEdge) || anchor.top > Math.min(bottomEdge, clip?.bottom ?? bottomEdge) || anchor.right < leftEdge || anchor.left > rightEdge) {
+  if (anchor.bottom < topEdge || anchor.top > bottomEdge || anchor.right < leftEdge || anchor.left > rightEdge) {
     emit('close')
     return
   }
@@ -72,7 +70,6 @@ onMounted(() => {
   resizeObserver = new ResizeObserver(updatePosition)
   if (popover.value) resizeObserver.observe(popover.value)
   if (editor) resizeObserver.observe(editor)
-  if (styleSection) resizeObserver.observe(styleSection)
   document.addEventListener('pointerdown', handleOutside, true)
   window.addEventListener('scroll', updatePosition, true)
   window.addEventListener('resize', updatePosition)

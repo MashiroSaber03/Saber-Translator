@@ -200,7 +200,11 @@ describe('useTextStyleSync backend ownership', () => {
       pageStyleDefaults: { ...pageStyleDefaults, fontSize: 19 },
       renderStatus: 'ready',
     })
-    registerPageDocumentMock.mockReturnValue([authoritativeBubble])
+    registerPageDocumentMock.mockImplementation(document => {
+      imageStore.updateCurrentImage({ ...document.pageStyleDefaults, documentRevision: document.documentRevision, hasUnsavedChanges: false })
+      bubbleStore.setBubbles([authoritativeBubble], true)
+      return [authoritativeBubble]
+    })
     const { useTextStyleSync } = await import('@/composables/useTextStyleSync')
 
     await useTextStyleSync().handleTextStyleChanged('fontSize', 30)
@@ -214,7 +218,7 @@ describe('useTextStyleSync backend ownership', () => {
     expect(bubbleStore.bubbles[0]?.translatedText).toBe('后端版本')
     expect(settingsStore.settings.textStyle.fontSize).toBe(19)
     expect(showToastMock).toHaveBeenCalledWith(
-      '文字样式写入后端失败，已恢复后端版本：revision conflict',
+      '文字样式保存失败，已重新加载后端版本：revision conflict',
       'error',
     )
   })
@@ -236,7 +240,7 @@ describe('useTextStyleSync backend ownership', () => {
 
     expect(getPageRenderStatusMock).toHaveBeenCalledWith(image.id, expect.any(AbortSignal))
     expect(showToastMock).toHaveBeenCalledWith(
-      '文字样式已保存，但后端重渲染失败',
+      '文字样式已保存，后端渲染失败',
       'error',
     )
   })
@@ -260,8 +264,8 @@ describe('useTextStyleSync backend ownership', () => {
     expect(getPageRenderStatusMock.mock.calls.length).toBeGreaterThan(1)
     expect(getPageRenderStatusMock.mock.calls.length).toBeLessThanOrEqual(61)
     expect(showToastMock).toHaveBeenCalledWith(
-      '文字样式已保存，后端仍在生成最新预览',
-      'info',
+      '文字样式已保存，后端渲染仍在继续，可稍后刷新查看结果',
+      'error',
     )
   })
 
@@ -277,7 +281,7 @@ describe('useTextStyleSync backend ownership', () => {
 
     expect(getPageRenderStatusMock).toHaveBeenCalledTimes(5)
     expect(showToastMock).toHaveBeenCalledWith(
-      '文字样式已保存，但无法读取后端渲染状态：status endpoint unavailable',
+      '文字样式已保存，status endpoint unavailable',
       'error',
     )
   })

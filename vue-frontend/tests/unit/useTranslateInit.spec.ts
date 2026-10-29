@@ -6,6 +6,7 @@ import { useTranslation } from '@/composables/useTranslationPipeline'
 import { useImageStore } from '@/stores/imageStore'
 import { useSettingsStore } from '@/stores/settings'
 import { createDefaultSettings } from '@/stores/settings/defaults'
+import { discardPageDocument } from '@/services/pageDocumentPersistence'
 
 const mocks = vi.hoisted(() => ({
   getPageDocument: vi.fn(),
@@ -116,6 +117,7 @@ function bootstrap(
 
 describe('useTranslateInit', () => {
   beforeEach(() => {
+    for (const page of ['page-1', 'page-2']) discardPageDocument(page)
     setActivePinia(createPinia())
     vi.clearAllMocks()
     routeState.query = {}

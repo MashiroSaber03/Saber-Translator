@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const persistenceMocks = vi.hoisted(() => ({
   flushPageDocument: vi.fn(),
   queuePageDocumentMutation: vi.fn(),
+  registerPageDocument: vi.fn(),
 }))
 
 const translationMocks = vi.hoisted(() => ({
@@ -15,15 +16,21 @@ const taskCenterMocks = vi.hoisted(() => ({
 }))
 
 const contentMocks = vi.hoisted(() => ({
+  getPageDocument: vi.fn(),
   getPageRenderStatus: vi.fn(),
 }))
+
+const toastMocks = vi.hoisted(() => ({ showToast: vi.fn() }))
+vi.mock('@/utils/toast', () => toastMocks)
 
 vi.mock('@/services/pageDocumentPersistence', () => ({
   flushPageDocument: persistenceMocks.flushPageDocument,
   queuePageDocumentMutation: persistenceMocks.queuePageDocumentMutation,
+  registerPageDocument: persistenceMocks.registerPageDocument,
 }))
 
 vi.mock('@/api/v2/content', () => ({
+  getPageDocument: contentMocks.getPageDocument,
   getPageRenderStatus: contentMocks.getPageRenderStatus,
 }))
 
@@ -42,6 +49,9 @@ import { useSettingsStore } from '@/stores/settings'
 describe('useTextStyleSync page defaults', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    toastMocks.showToast.mockReset()
+    contentMocks.getPageDocument.mockReset()
+    persistenceMocks.registerPageDocument.mockReset()
     persistenceMocks.flushPageDocument.mockReset()
     persistenceMocks.flushPageDocument.mockResolvedValue(undefined)
     persistenceMocks.queuePageDocumentMutation.mockReset()
@@ -53,9 +63,27 @@ describe('useTextStyleSync page defaults', () => {
     contentMocks.getPageRenderStatus.mockResolvedValue({
       pageId: '00000000-0000-0000-0000-000000000001',
       renderedRevision: 3,
+      documentRevision: 3,
+      cleanUrl: '/clean',
       renderStatus: 'ready',
       translatedUrl: '/translated?revision=3',
     })
+  })
+
+  it('reports a failed style save without claiming that the retained draft was reverted', async () => {
+    const imageStore = useImageStore()
+    imageStore.setImages([{
+      id: 'page-1', chapterId: 'chapter-1', documentRevision: 3,
+      fileName: 'page.png', sourceAssetUrl: '/source', bubbleStates: [],
+      lineSpacing: 1, hasUnsavedChanges: false, translationStatus: 'pending',
+    }])
+    persistenceMocks.queuePageDocumentMutation.mockRejectedValue(new Error('连接中断'))
+    contentMocks.getPageDocument.mockResolvedValue({ pageId: 'page-1', chapterId: 'chapter-1', documentRevision: 3 })
+
+    await useTextStyleSync().handleTextStyleChanged('lineSpacing', 1.5)
+
+    expect(imageStore.currentImage).toMatchObject({ lineSpacing: 1.5, hasUnsavedChanges: true })
+    expect(toastMocks.showToast).toHaveBeenCalledWith('文字样式保存失败，修改已保留，请重试：连接中断', 'error')
   })
 
   it('persists inpaintMethod as a page default without propagating it to existing bubbles', async () => {

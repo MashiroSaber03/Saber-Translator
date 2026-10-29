@@ -30,6 +30,8 @@ export interface BubbleState {
   backendBubbleId?: string
   /** Correlates an unsaved UI bubble with the backend-created identity. */
   clientMutationId?: string
+  /** Pending create command only; canonical saves replace this with a new identity. */
+  duplicateSourceId?: string
   originalText: string
   translatedText: string
   textboxText: string

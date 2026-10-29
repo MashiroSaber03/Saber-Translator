@@ -3,12 +3,15 @@ import { defineComponent, h } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useBubbleStore } from '@/stores/bubbleStore'
+import { useImageStore } from '@/stores/imageStore'
+import { addTestImage } from '../helpers/imageFixtures'
 import { createBubbleState } from '@/utils/bubbleFactory'
 import { useBubbleActions } from '@/composables/useBubbleActions'
 
 describe('useBubbleActions cleanup', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    addTestImage(useImageStore(), 'page.png', '/source')
     vi.useFakeTimers()
   })
 
@@ -16,7 +19,7 @@ describe('useBubbleActions cleanup', () => {
     vi.useRealTimers()
   })
 
-  it('clears pending preview timers when the owning component unmounts', async () => {
+  it('leaves no second preview timer to fire after unmount', async () => {
     const onDelayedPreview = vi.fn()
 
     const Harness = defineComponent({
@@ -30,7 +33,7 @@ describe('useBubbleActions cleanup', () => {
         ])
         bubbleStore.selectBubble(0)
 
-        return useBubbleActions({ onDelayedPreview })
+        return useBubbleActions({ onReRender: onDelayedPreview })
       },
       render() {
         return h('button', {
@@ -47,6 +50,6 @@ describe('useBubbleActions cleanup', () => {
     await vi.runAllTimersAsync()
     await flushPromises()
 
-    expect(onDelayedPreview).not.toHaveBeenCalled()
+    expect(onDelayedPreview).toHaveBeenCalledOnce()
   })
 })

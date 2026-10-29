@@ -128,6 +128,37 @@ class NativeEditor:
         return answer["document"]
 
     @staticmethod
+    def fit_payloads(payloads, *, minimum=1, maximum=80, fonts=None):
+        """Compatibility/pipeline input; measurement stays in the native text engine."""
+        from PIL import Image
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            Image.new("RGB", (1, 1), "white").save(root / "source.png")
+            paths = {str(payload["fontFamily"]) for payload in payloads}
+            catalog = list(fonts) if fonts is not None else []
+            by_path = {item["path"]: item["id"] for item in catalog}
+            for path in paths - by_path.keys():
+                catalog.append(dict(id=path, path=path))
+                by_path[path] = path
+            documents = [dict(bubbleId=str(index), fontId=by_path[str(payload["fontFamily"])],
+                              payload={key: value for key, value in payload.items() if key != "fontFamily"})
+                         for index, payload in enumerate(payloads)]
+            result = NativeEditor.invoke(dict(pageId="fit", source=str(root / "source.png"),
+                bubbles=documents, fonts=catalog,
+                fitText=[item["bubbleId"] for item in documents], minFontSize=minimum, maxFontSize=maximum))
+            return {item["bubbleId"]: item["fontSize"] for item in result["fontFits"]}
+
+    def fit_text(self, connection, page_id, ids):
+        temporary_root = self.storage.data_root / "temp" / "editing"
+        temporary_root.mkdir(parents=True, exist_ok=True)
+        with TemporaryDirectory(dir=temporary_root) as directory:
+            path = Path(directory) / "page.pcraft"
+            path.write_bytes(self.read_document(connection, page_id))
+            return self.invoke(dict(pageId=page_id, project=str(path),
+                fonts=self.font_files(connection), fitText=ids))["fontFits"]
+
+    @staticmethod
     def render_image(image, payloads):
         """Pure algorithm entry point for existing pipeline/plug-in callers."""
         from PIL import Image
@@ -146,6 +177,16 @@ class NativeEditor:
                                      png=str(root / "result.png")))
             with Image.open(root / "result.png") as output:
                 return output.convert("RGB")
+
+    def export_psd(self, connection, page_id: str) -> bytes:
+        temporary_root = self.storage.data_root / "temp" / "editing"
+        temporary_root.mkdir(parents=True, exist_ok=True)
+        with TemporaryDirectory(dir=temporary_root) as directory:
+            root = Path(directory)
+            (root / "document.pcraft").write_bytes(self.read_document(connection, page_id))
+            self.invoke(dict(pageId=page_id, project=str(root / "document.pcraft"),
+                             fonts=self.font_files(connection), psd=str(root / "page.psd")))
+            return (root / "page.psd").read_bytes()
 
     def prepare(self, connection, page_id: str, *, documents=None, uploaded: bytes | None = None,
                 render: bool = False, repair: bytes | None = None, text_only: bool = False,

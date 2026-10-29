@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import type {
   BubbleState,
   BubbleCoords,
@@ -21,9 +21,13 @@ function bubbleIdentity(bubble: BubbleState | undefined): string | null {
 }
 
 export const useBubbleStore = defineStore('bubble', () => {
-  const bubbles = ref<BubbleState[]>([])
+  const imageStore = useImageStore()
+  // The page owns its editable draft. This store adds selection and operations,
+  // rather than keeping another copy that every edit must synchronize.
+  const bubbles = computed(() => imageStore.currentImage?.bubbleStates ?? [])
   const selectedIndex = ref<number>(-1)
   const selectedIndices = ref<number[]>([])
+  watch(() => imageStore.currentImage?.id, clearSelection, { flush: 'sync' })
 
   const selectedBubble = computed<BubbleState | null>(() => {
     if (selectedIndex.value >= 0 && selectedIndex.value < bubbles.value.length) {
@@ -36,23 +40,20 @@ export const useBubbleStore = defineStore('bubble', () => {
   const hasBubbles = computed<boolean>(() => bubbles.value.length > 0)
   const hasSelection = computed<boolean>(() => selectedIndex.value >= 0)
 
-  function syncToCurrentImage(): void {
-    const imageStore = useImageStore()
-    const currentImage = imageStore.currentImage
-    if (currentImage) {
-      const clonedBubbles = cloneBubbleStates(bubbles.value)
-      currentImage.bubbleStates = clonedBubbles
-      currentImage.hasUnsavedChanges = true
+  function markDirty(): void {
+    if (imageStore.currentImage) {
+      imageStore.currentImage.hasUnsavedChanges = true
     }
   }
 
-  function setBubbles(newBubbles: BubbleState[], skipSync: boolean = false): void {
+  function setBubbles(newBubbles: BubbleState[], fromDocument: boolean = false): void {
     const primaryIdentity = bubbleIdentity(selectedBubble.value ?? undefined)
     const selectedIdentities = selectedIndices.value
       .map(index => bubbleIdentity(bubbles.value[index]))
       .filter((identity): identity is string => Boolean(identity))
     const ownedBubbles = cloneBubbleStates(newBubbles)
-    bubbles.value = ownedBubbles
+    if (!imageStore.currentImage) return
+    imageStore.currentImage.bubbleStates = ownedBubbles
     const indexByIdentity = new Map(
       ownedBubbles
         .map((bubble, index) => [bubbleIdentity(bubble), index] as const)
@@ -64,8 +65,8 @@ export const useBubbleStore = defineStore('bubble', () => {
     selectedIndex.value = primaryIdentity
       ? (indexByIdentity.get(primaryIdentity) ?? -1)
       : -1
-    if (!skipSync) {
-      syncToCurrentImage()
+    if (!fromDocument) {
+      markDirty()
     }
   }
 
@@ -105,8 +106,9 @@ export const useBubbleStore = defineStore('bubble', () => {
       ...overrides,
       coords: integerCoords,
     })
-    bubbles.value.push(newBubble)
-    syncToCurrentImage()
+    const pageBubbles = textStyle.bubbleStates ??= []
+    pageBubbles.push(newBubble)
+    markDirty()
     return newBubble
   }
 
@@ -124,18 +126,13 @@ export const useBubbleStore = defineStore('bubble', () => {
     }
 
     clearSelection()
-    syncToCurrentImage()
+    markDirty()
   }
 
   function clearBubbles(): void {
-    bubbles.value = []
+    if (imageStore.currentImage) imageStore.currentImage.bubbleStates = []
     clearSelection()
-    syncToCurrentImage()
-  }
-
-  function clearBubblesLocal(): void {
-    bubbles.value = []
-    clearSelection()
+    markDirty()
   }
 
   function selectBubble(index: number): void {
@@ -163,6 +160,11 @@ export const useBubbleStore = defineStore('bubble', () => {
   function clearSelection(): void {
     selectedIndex.value = -1
     selectedIndices.value = []
+  }
+
+  function selectAll(): void {
+    selectedIndices.value = bubbles.value.map((_, index) => index)
+    if (selectedIndex.value < 0 && bubbles.value.length) selectedIndex.value = 0
   }
 
   function clearMultiSelect(): void {
@@ -195,7 +197,7 @@ export const useBubbleStore = defineStore('bubble', () => {
     const bubble = bubbles.value[index]
     if (bubble) {
       Object.assign(bubble, updates)
-      syncToCurrentImage()
+      markDirty()
       return true
     }
     return false
@@ -215,7 +217,7 @@ export const useBubbleStore = defineStore('bubble', () => {
         Object.assign(bubble, updates)
       }
     }
-    syncToCurrentImage()
+    markDirty()
   }
 
   return {
@@ -231,11 +233,11 @@ export const useBubbleStore = defineStore('bubble', () => {
     addBubble,
     deleteSelected,
     clearBubbles,
-    clearBubblesLocal,
 
     selectBubble,
     toggleMultiSelect,
     clearSelection,
+    selectAll,
     clearMultiSelect,
     selectNext,
     selectPrevious,
